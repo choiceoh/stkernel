@@ -11559,7 +11559,7 @@ def test_fleet_reservation_tooling_contracts() -> None:
           "preflight checks declarations against origin/main, notes checkout lag, syncs its own copy")
     check('md5sum < "$copy"' in fleet and "ab-lever2.sh:bench/ab-lever.sh" in fleet,
           "preflight compares the srv2 runner copies against the repo (the 16:09 trap)")
-    check("OVERDUE" in fleet and "SILENT" in fleet and "never a kill" in fleet,
+    check("OVERDUE" in fleet and "SILENT" in fleet and "Live owners are never killed" in fleet,
           "status flags an overdue or silent holder and the tool still never kills a live one")
     from fleet_priority import rank as rank_fleet
     queued = ["1|boot|100|30|boot|boot|", "2|probe|100|5|probe|probe|"]
@@ -11665,10 +11665,18 @@ def test_fleet_reservation_tooling_contracts() -> None:
     check(os.path.exists(chain) and subprocess.run(["bash", "-n", chain], capture_output=True).returncode == 0,
           "bench/chain.sh parses")
     chsrc = open(chain, encoding="utf-8").read()
-    check("--after)" in chsrc and "--legs)" in chsrc and 'yield "$S" 15' in chsrc
-          and "restore-needed" not in chsrc and "CHAIN_FLOOR_N" in chsrc and "judge.py" in chsrc,
-          "chain.sh: N arms, --after checks, --legs, yield between arms, no cleanup restore, a "
-          "defaults sample only while the floor is thin, judge per arm")
+    check("--after|--legs)" in chsrc and "--after and --legs are disabled" in chsrc
+          and 'LEGS=onepass bash "$LEVER"' in chsrc and 'eval ' not in chsrc
+          and 'yield "$S" 15' in chsrc and "restore-needed" not in chsrc
+          and "CHAIN_FLOOR_N" in chsrc and "judge.py" in chsrc,
+          "chain.sh: onepass per arm, reject extra GPU hooks before boot, no cleanup restore, "
+          "defaults only while the floor is thin, judge per arm")
+    guard = open(os.path.join(REPO, "bench", "fleet_onepass.py"), encoding="utf-8").read()
+    check("fleet_onepass.py" in fleet and "--rehearsal-only" in fleet
+          and 'LEGS=none and separate GPU checks are disabled' in lever
+          and '"${FLEET_BOOT_INTENT:-}" != recovery' in lever
+          and "onepass" in guard,
+          "GPU admission and rehearsal use the canonical workload guard; boot-only is idle recovery")
 
 
 def test_fleet_experiment_behaviors():

@@ -2,9 +2,30 @@
 
 Optimize the time from an agent's question to usable evidence. Submit once,
 continue independent implementation, and read the shared result. `fleet.sh`
-still owns GPU admission, preflight, short-probe yielding and production restore.
+owns GPU admission and fast source preflight. GPU experiments run only the standard
+onepass workload; separate GPU probes, sanitizer runs and custom measurements are
+not admission stages. The central idle controller owns production recovery after
+at least five idle minutes.
 Submissions never deploy or interrupt another holder. Waiting GPU jobs are
 ranked at the next free fleet boundary by downstream benefit, duration and age.
+
+For a direct measurement, use `fleet.sh onepass SESSION NAME`: it waits for idle
+serving and runs onepass once, without a boot. The checkout must describe that
+running source. For changed code or knobs, use `fleet.sh pair SESSION NAME KNOBS`
+or `fleet.sh chain SESSION EST NOTE -- NAME=KNOBS ...`. Each requested arm runs
+onepass once; the first arm publishes its committed source only when necessary.
+Both helpers reuse matching baselines and default to one baseline sample.
+
+`run --gpu` accepts only these current canonical runners and recorded pair or
+baseline jobs. Arbitrary wrappers, standalone GPU tests, sanitizer campaigns,
+`chain --after`, `--legs`, and experiment prefill warmup requests are rejected
+before CPU preparation or queueing. The internal `--probe` lane is retained only
+for the canonical live onepass. Old `startup` request campaigns must be expressed
+as pair/chain knob arms. Passive memory/proof collection can observe the same
+onepass workload. Pending command edits and final execution recheck the policy;
+already-running older controllers retain their accepted payloads.
+Bare `request`/`wait` and unvalidated `adopt` cannot create new GPU holds; the
+registered supervisor owns admission for every new GPU command.
 
 Plans now batch their independent CPU stages, publish reusable evidence before
 creating another checkout on a cache hit, and keep core/fleet/startup results
@@ -17,11 +38,14 @@ experiment needing execution gets a detached private checkout of that commit, so
 can immediately continue editing its original checkout. Build outputs from CPU
 checks are isolated too. Put submission manifests and reports outside the repo.
 
-1. State the hypothesis and choose the relevant CPU suite.
-2. Submit the CPU check; another agent's identical request joins it or reads its
+1. State the hypothesis. The fast CPU source admission is automatic; do not add
+   the full logic suite as a routine prerequisite. Select a focused CPU test only
+   when the change needs it.
+2. If needed, submit that CPU check; an identical request joins it or reads its
    saved result. Do independent work while it runs.
 3. Submit one GPU candidate with the CPU experiment ID in `depends_on`.
-   The worker waits outside the GPU queue until prerequisites succeed. A failed,
+   Omit `depends_on` when no additional CPU test is necessary. The worker waits
+   outside the GPU queue until requested prerequisites succeed. A failed,
    incomplete, interrupted or blocked prerequisite prevents GPU admission.
 4. Read `inbox` for incremental results, or `result ID` for the complete evidence.
    Inspect `state` and `result.evidence`; an exit code or a marker count alone is
@@ -37,9 +61,9 @@ export REPO=/home/choiceoh/stkernel
 request_dir=$(mktemp -d /tmp/fleet-request.XXXXXX)
 jq -n --arg rev "$(git -C "$REPO" rev-parse HEAD)" '{
   kind: "cpu", revision: $rev,
-  hypothesis: "The changed kernel preserves CPU math, layout and dispatch contracts",
-  command: ["python3", "bench/cpu_checks.py", "--suite", "logic"],
-  timeout_s: 900
+  hypothesis: "The deployment identity change preserves onepass source selection",
+  command: ["python3", "bench/cpu_checks.py", "--test", "tests/test_onepass_deploy.py"],
+  timeout_s: 30
 }' > "$request_dir/cpu.json"
 bash "$REPO/bench/fleet.sh" submit fusion "$request_dir/cpu.json"
 # {"id":"...","disposition":"submitted|joined|reused","state":"..."}
@@ -67,7 +91,7 @@ for inspecting or reproducing the failure. These suggestions never run commands,
 retry a failed experiment or send messages to an agent. CPU reproduction hides
 CUDA devices and retains CPU-only evidence scope. Fix the input/revision before
 submitting a corrected experiment; a successful process exit is still insufficient
-to promote incomplete CPU/probe evidence.
+to promote incomplete CPU or onepass evidence.
 
 ## Find your work and inspect a reservation
 
@@ -96,12 +120,10 @@ log and structured-result commands. It does not run, retry, promote, cancel or
 acquire anything. Use the existing `status` command when serving-health checks are
 needed.
 
-New `run --gpu` and `run --probe` supervisors retain combined waiting/payload/
-restore output in a private per-ticket log while continuing live output. A
-successful payload followed by failed restore is reported as failed, with both
-exit codes. A cancelled or dead supervisor is not reported as successful. Capture
-errors do not prevent recovery; a saved `log_error` warns that output may be
-incomplete. A blocked or disconnected viewer may miss live chunks; it can retrieve
+New `run --gpu` supervisors retain combined waiting/payload output in a private
+per-ticket log while continuing live output. Sessions release the fleet after
+measurement; they do not restore production. A cancelled or dead supervisor is
+not reported as successful. A saved `log_error` warns that output may be incomplete. A blocked or disconnected viewer may miss live chunks; it can retrieve
 the retained output with `logs`.
 
 `logs` reads at most the last 256 KiB and accepts 1..2000 lines (default 80).
@@ -114,12 +136,12 @@ remain separate.
 ## Edit a waiting reservation
 
 For a reservation created by the current `fleet.sh run --gpu` (including pair
-and chain wrappers) or `run --probe`, inspect and revise it before GO:
+and chain wrappers), inspect and revise it before GO:
 
 ```bash
 bash bench/fleet.sh edit fusion
 bash bench/fleet.sh edit fusion --expect-revision 1 --est 20 --note "updated cells" \
-  --cwd /home/choiceoh/stkernel -- bash /tmp/revised-cells.sh
+  --cwd /home/choiceoh/stkernel -- bash bench/pair.sh revised "VLLM_TEST=1"
 # Metadata only; the existing command is retained:
 bash bench/fleet.sh edit fusion --note "CPU checks passed; smaller workload"
 ```
@@ -132,7 +154,7 @@ preflight using the waiter's pinned controller before the edit commits. A failed
 check, concurrent edit or admission during preflight keeps the previous command.
 `--expect-revision` prevents an agent from overwriting a revision it has not read.
 
-Edits retain the session, ticket, original enqueue time, PID, GPU/probe kind and
+Edits retain the session, ticket, original enqueue time, PID, GPU kind and
 queue neighbors. Normal boundary scheduling still applies; changing the duration
 can change its priority. Admission and edits use the same fleet lock: after GO,
 or during recovery, edits are refused. The private pending record retains prior
@@ -514,14 +536,12 @@ already covered by their measurement plan, never additional workloads. Explicit
 repeats remain separate. Each candidate checks its own baseline requirements
 again before running; sharing does not turn repeated measurements into new boots.
 
-Each managed pair measures its declared workloads on one attested serving boot
-and makes one restore decision after the group. The legacy `pair.sh` remains
-available for existing callers. Other
-agents can enqueue their own pairs between submissions; long multi-candidate
-experiments should be separate submissions. Candidate/baseline evidence stays
-together and short probes can still yield through the existing fleet path.
-There is no GPU preemption. A pair/chain's hold remains intact except for its
-existing explicit short-probe yield points.
+Each managed pair measures its declared onepass workloads on one attested serving
+boot and releases the fleet after the group. The `pair.sh` wrapper remains
+available for direct callers. Other agents can enqueue their own pairs between
+submissions; long multi-candidate experiments should be separate submissions.
+Candidate/baseline evidence stays together. There is no GPU preemption and no
+separate GPU probe stage.
 
 Pair results require fresh onepass records bearing the experiment ID, the
 requested knobs, a matching revision/build/workload/runtime, complete quality
@@ -536,50 +556,24 @@ available, without rerunning the candidate. Completion of a shared baseline
 also publishes those updated results without needing an agent to poll them.
 Existing `chain.sh` also publishes
 each candidate's verdict before the next arm and stops dependent arms after
-execution or proof/quality failure. Failed pairs/chains restore production when
-the existing queue policy requires it, without spending another baseline sample.
+execution or proof/quality failure. Failed pairs/chains release the fleet;
+production recovery belongs to the central five-minute idle controller.
 
-## Probe manifest
+## Onepass-only GPU submissions
 
-Use `kind: "probe"`, `command: ["bash", "probes/...", "..."]`, the pinned GPU
-`context`, external `inputs` and optional prerequisites. The standard probe
-preflight/idle-serving rules apply. Generic probes return their log and process
-exit status as `probe-log` evidence. An exit code alone stays `incomplete`.
+GPU submissions use `kind: "pair"` with literal `VLLM_*` knobs. A custom `command`
+is refused, so the worker always executes the standard onepass pair runner.
+`kind: "probe"` and nonempty `probe_contract` are no longer accepted. Historical
+queued probe requests are marked blocked before creating a worker checkout or
+acquiring GPUs; retrying one requires a new pair manifest. Completed historical
+reports remain readable.
 
-For automatic CPU → numerical probe → pair progression, declare the numerical
-contract before submission and add that probe ID to the pair's `depends_on`:
-
-```json
-{
-  "kind": "probe",
-  "revision": "FULL_40_CHARACTER_COMMIT_SHA",
-  "hypothesis": "Strided QK normalization is bit-exact on every tested layout and regime",
-  "command": ["bash", "probes/run_mk_probe.sh", "probes/qk_norm_strided_check.py"],
-  "context": {
-    "image": "sha256:IMMUTABLE_64_CHARACTER_LOCAL_IMAGE_ID",
-    "model": "IMMUTABLE_MODEL_REVISION",
-    "hardware": "PINNED_GPU_AND_DRIVER_IDENTITIES"
-  },
-  "depends_on": ["CPU_EXPERIMENT_ID"],
-  "probe_contract": {
-    "checks": {"mismatches": {"op": "eq", "value": 0}},
-    "proof": ["strided_lane", "decline_guards"],
-    "min_samples": 150
-  },
-  "estimate_min": 10
-}
-```
-
-The existing QK probe now emits this report after its real comparisons and
-fallback-guard checks. Other probes can call `bench/probe_report.py`'s
-`write_report(metrics, proof, samples, device)` after completing their checks.
-`run_mk_probe.sh` forwards the runner's fresh challenge and mounts a private
-report directory into its container. Structured probes pin the immutable image
-ID; custom wrappers must honor `IMAGE` and forward the report fields themselves.
-Missing, stale, mismatched, nonfinite or insufficient reports never unlock the
-next job. Threshold failures and unknown lane proof fail the probe. A successful
-`gpu-probe` establishes only its declared numerical contract; the pair still
-checks serving quality, proof, throughput and a matching noise floor.
+Use an optional relevant CPU request in `depends_on`, then submit the candidate
+pair directly. Onepass supplies serving quality, corruption, proof and performance
+evidence. Compatible saved baselines remain reusable; unifying the workload does
+not request another baseline, another boot, or another measurement. Additional
+GPU microbenchmarks, prechecks, sanitizers and post-measurement sweeps are excluded
+from this path.
 
 ## Queue policy and CPU content reuse
 
@@ -587,9 +581,8 @@ checks serving quality, proof, throughput and a matching noise floor.
 boundary, a ready job's score is `(1 + pending transitive dependents) /
 estimate_min + wait_seconds / 1800`. At 30 minutes waiting, oldest-first takes
 precedence, so a stream of tiny jobs cannot indefinitely starve a long one.
-Explicit `front` and a chosen yielded probe retain their order; a yielded holder
-resumes before other work. Ineligible probes wait for idle serving. Legacy jobs
-participate with zero known dependents. Ranking never interrupts a live holder;
+Explicit `front` retains its order. Legacy jobs participate with zero known
+dependents. Ranking never interrupts a live holder;
 CPU jobs and prerequisite waits never enter this GPU queue. Estimates use the
 declared duration until at least three successful matching execution samples
 exist, then the p90 of the latest 20 (rounded up to minutes). Matching includes
@@ -685,7 +678,7 @@ a repeat. Snapshot checkouts and logs are retained for inspection. Remove a
 finished snapshot only with `git worktree remove` after preserving needed
 artifacts; never remove a queued/running job's checkout.
 
-`stats` separates CPU/pair/probe/baseline counts, shared/reused requests, and p50/p95 time
+`stats` separates CPU/pair/baseline counts and historical probe records, shared/reused requests, and p50/p95 time
 to start and to a successful result. It also reports completion-to-delivery and
 completion-to-acknowledgment p50/p95 across subscribed consumers. The regular
 fields cover successful results; `terminal_*` fields also include failures,

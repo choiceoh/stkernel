@@ -20,10 +20,19 @@ def explain(classification, command, environ=None):
     answer = dict(classification=classification, authoritative='fleet.sh classify_cmd',
                   evidence=[], limits=dict(reasons=MAX_REASONS, file_bytes=MAX_FILE_BYTES),
                   truncated_files=[], skipped_files=[])
-    if env.get('FLEET_REHEARSE') == '1':
-        answer.update(reason='FLEET_REHEARSE=1 selects CPU execution before command inspection.',
-                      evidence=[dict(source='environment', name='FLEET_REHEARSE', match='1')])
-        return answer
+    if classification == 'nogpu' and env.get('FLEET_REHEARSE') == '1':
+        from fleet_onepass import validate
+        try:
+            reviewed_rehearsal = validate(command, os.getcwd(),
+                env.get('FLEET_RUNNER_REPO') or env.get('REPO', os.getcwd()), env,
+                rehearsal_only=True)
+        except (OSError, ValueError):
+            pass
+        else:
+            answer.update(reason='FLEET_REHEARSE=1 selects CPU execution for this verified canonical helper.',
+                          evidence=[dict(source='environment', name='FLEET_REHEARSE', match='1',
+                                         entry=reviewed_rehearsal['entry'])])
+            return answer
     reviewed = {'bench/cpu_compile.py'}
     if env.get('REPO'):
         reviewed.add(str(Path(env['REPO']) / 'bench/cpu_compile.py'))

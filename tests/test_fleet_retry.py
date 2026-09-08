@@ -94,6 +94,32 @@ class RetryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'controller changed'):
             ex.verify(current)
 
+    def test_controller_pin_roundtrip_covers_campaign_bytes(self):
+        from fleet_pin import pin
+        campaign = self.repo / 'probes/run_ar_consumer_campaign.sh'
+        campaign.parent.mkdir()
+        campaign.write_text('#!/bin/bash\n# canonical campaign fixture\n')
+        controller = pin(self.repo, self.root / 'controller-pins')
+        payload = dict(retry_controller=dict(repo=str(controller), sha256=controller.name),
+                       snapshot=dict(runner=ex.digest(controller / 'bench/experiments.py')))
+        self.assertEqual(retrying.controller_path(payload), controller)
+        (controller / 'probes/run_ar_consumer_campaign.sh').write_text('# changed campaign\n')
+        with self.assertRaisesRegex(ValueError, 'controller changed'):
+            retrying.controller_path(payload)
+
+    def test_legacy_controller_pin_accepts_only_original_bench_files(self):
+        from fleet_pin import source_files, file_identity
+        files = source_files(self.repo)
+        legacy = file_identity({Path(name).name:data for name,data in files.items()})
+        payload = dict(retry_controller=dict(repo=str(self.repo), sha256=legacy),
+                       snapshot=dict(runner=ex.digest(self.repo / 'bench/experiments.py')))
+        self.assertEqual(retrying.controller_path(payload), self.repo)
+        campaign = self.repo / 'probes/run_ar_consumer_campaign.sh'
+        campaign.parent.mkdir()
+        campaign.write_text('# added campaign must not be ignored\n')
+        with self.assertRaisesRegex(ValueError, 'controller changed'):
+            retrying.controller_path(payload)
+
     def test_shared_failure_creates_one_attempt_and_keeps_each_subscription(self):
         store = self.store(); payload = self.payload()
         old = store.submit('owner', payload)['id']
