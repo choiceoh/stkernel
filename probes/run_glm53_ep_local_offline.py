@@ -150,11 +150,13 @@ def main():
         before = lifecycle.snapshot()
         save("before.json", before)
         mode = lifecycle.validate_before(before)
-        if mode == "present":
-            lifecycle.idle(before["local"]["port"])
+        result["incoming_mode"] = mode
+        if mode in ("present", "stopped"):
+            if mode == "present":
+                lifecycle.idle(before["local"]["port"])
             lifecycle.with_paused(before, run, save, before_restore=cleanup)
             result["restored_original"] = True
-            if before["local"]["port"] != 8000:
+            if mode == "present" and before["local"]["port"] != 8000:
                 lifecycle.restore_public(args.out, save, result)
         else:
             try:
