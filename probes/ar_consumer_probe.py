@@ -38,6 +38,7 @@ def main():
     ap.add_argument('--trace', action='store_true')
     args = ap.parse_args()
     os.environ.update(MAX_JOBS='1', VLLM_GLM53_MK_PDL='1',
+        VLLM_GLM53_AR_CONSUMER_PDL='1',
         VLLM_GLM53_MK_MHC_BF16='1', VLLM_GLM53_MEGAKERNEL='1',
         VLLM_GLM53_MK_MHC='1', VLLM_GLM53_MK_GEMM='1',
         VLLM_GLM53_MK_FP8_PACK2='1', VLLM_GLM53_MK_GEMM_TRANSPOSE_M8='2',
@@ -57,7 +58,7 @@ def main():
     receipt = {'status': 'RUNNING', 'torch': torch.__version__, 'cuda': torch.version.cuda,
         'mode': 'distributed' if args.distributed else 'delayed-producer',
         'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in (Path(mk._SRC), Path(shim._SRC), delay_path)},
+            for p in (Path(mk._SRC), Path(mk.__file__), Path(shim._SRC), Path(shim.__file__), delay_path)},
         'cases': [], 'ar_ownership_cases': [], 'samples': []}
     if args.compile_only:
         assert hasattr(ar, 'oneshot_ar_consumer')
@@ -72,6 +73,8 @@ def main():
     mk._AR_NOTE = False
     mk._MHC_BF16_OK = True
     mk._ensure_workspace('cuda')
+    assert mk._selftest_ar_consumer(), 'large-warmup/small-capture lifecycle'
+    receipt['mhc_warmup_capture'] = 'PASS'
     rank = int(os.environ.get('AR_CONSUMER_RANK', '0'))
     if args.distributed:
         import torch.distributed as dist

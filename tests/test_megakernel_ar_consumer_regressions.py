@@ -153,6 +153,7 @@ int main() {
 
     def test_layout_cache_preserves_graph_storage_and_versions(self):
         m = driver()
+        m.ENABLE_AR_CONSUMER = False
         capture = [False]
         class Pack:
             def float(self): return self
@@ -187,6 +188,65 @@ int main() {
             fn._version += 1
             self.assertIsNone(m._mhc_bf16_weight(fn, ar_consumer=True))
 
+    def test_large_warmup_prepares_first_small_capture_without_repacking(self):
+        # Reproduce serving: T=12 visits the weight eagerly, then the graph
+        # ladder captures T=12 and T=6 without an eager T=6 weight visit.
+        for enabled, exact in ((False, True), (True, True), (True, False)):
+            with self.subTest(enabled=enabled, exact=exact):
+                m = driver()
+                m.ENABLE_AR_CONSUMER = m._AR_CONSUMER_OK = enabled
+                m.ENABLE_MHC_BF16 = m._MHC_BF16_OK = True
+                m._ARMED['mhc'] = True
+                capture = [False]
+                packed_layouts = []
+                launches = []
+
+                class Tensor:
+                    dtype, device, is_cuda, _version = 'fp32', 'cuda:0', True, 0
+                    def __init__(self, *shape): self.shape = shape
+                    def data_ptr(self): return id(self)
+                    def is_contiguous(self): return True
+                    def float(self): return self
+                    def view(self, *_): return self
+                    def to(self, _):
+                        self_test.assertFalse(capture[0], 'packing during capture')
+                        return Tensor(*self.shape)
+
+                self_test = self
+                def vector_pack(_):
+                    self.assertFalse(capture[0], 'vector packing during capture')
+                    pack = Tensor(24, 4096, 4)
+                    packed_layouts.append(pack)
+                    return pack
+                m._mhc_bf16_vec4 = vector_pack
+                m._ar_note = lambda _: None
+                workspace = {key: Tensor() for key in ('yp', 'rp', 'sq', 'pmix', 'ol_stash', 'barrier_mhc')}
+                m._ensure_workspace = lambda _: workspace
+                m._EXT = SimpleNamespace(run_mhc=lambda ptrs, scalars, ints, bf16, early:
+                    launches.append((ints[0], ptrs[4], bf16, early)))
+                fake_torch = SimpleNamespace(float32='fp32', bfloat16='bf16', int32='int32',
+                    cuda=SimpleNamespace(is_current_stream_capturing=lambda: capture[0]),
+                    empty=lambda *shape, **_: Tensor(*shape), empty_like=lambda t: Tensor(*t.shape),
+                    isfinite=lambda _: SimpleNamespace(all=lambda: True), equal=lambda *_: exact)
+                fn = Tensor(24, 16384)
+                def call(t):
+                    return m._mhc_call(Tensor(t, 4096), Tensor(t, 4, 4096), Tensor(t, 4),
+                        Tensor(t, 16), fn, Tensor(3), Tensor(24), Tensor(4096),
+                        t, 1e-6, 1e-6, 1e-6, 1., 1e-6, 20)
+
+                with patch.dict(sys.modules, {'torch': fake_torch}):
+                    call(12)
+                    entry = next(iter(m._MHC_BF16_CACHE.values()))
+                    self.assertEqual(len(packed_layouts), int(enabled and exact))
+                    capture[0] = True
+                    call(12)
+                    call(6)
+                    self.assertEqual(launches[0], launches[1])
+                    expected = entry[2] if enabled else entry[1]
+                    self.assertEqual(launches[2], (6, (expected if exact else fn).data_ptr(), exact, enabled))
+                    self.assertEqual(len(packed_layouts), int(enabled and exact))
+                    self.assertEqual(len(m._MHC_BF16_CACHE), 1)
+
     def test_mhc_weight_only_before_wait(self):
         source = (MK / 'glm53_megakernel.cu').read_text()
         body = source.split('__device__ void mk_mhc_p1_impl(', 1)[1].split('MK_MHC_TS(1);', 1)[0]
@@ -207,12 +267,13 @@ int main() {
         import ast
         tree = ast.parse((MK / 'glm53_megakernel.py').read_text())
         function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_mhc_call')
-        guarded = [n for n in function.body if isinstance(n, ast.If)
-                   and 'AR consumer MHC CAPTURED' in ast.unparse(n)]
-        self.assertEqual(len(guarded), 1)
-        condition = ast.unparse(guarded[0].test)
-        self.assertIn('_ar_consumer is None', condition)
-        self.assertIn('is_current_stream_capturing()', condition)
+        for marker in ('AR consumer MHC CAPTURED', 'mhc-bf16 CAPTURED'):
+            guarded = [n for n in function.body if isinstance(n, ast.If)
+                       and marker in ast.unparse(n)]
+            self.assertEqual(len(guarded), 1)
+            condition = ast.unparse(guarded[0].test)
+            self.assertIn('_ar_consumer is None', condition)
+            self.assertIn('is_current_stream_capturing()', condition)
 
 
 if __name__ == '__main__':

@@ -39,7 +39,12 @@ takes precedence over those optional hints for these small collectives.
    CTAs that later obtain a tail ticket.
 5. MHC arithmetic, BF16 bit patterns, projection reduction order and GEMM packs
    are unchanged. Scalar and vector layouts retain their own storage under one
-   versioned cache entry; capture cannot allocate a missing pack. New MHC
+   versioned cache entry. When the candidate is enabled, the first eager
+   visit prepares both layouts even for T=12: the serving graph ladder
+   reaches that scalar shape before T=6. Capture cannot allocate a missing
+   pack. The startup and GPU gates exercise this large-warmup/small-capture
+   transition with fresh weights and require the actual vector layout.
+   New MHC
    instantiations use their own occupancy queries. Distinct AllReduce entry
    points compile away the mode branch and preserve the ordinary kernel ABI.
 

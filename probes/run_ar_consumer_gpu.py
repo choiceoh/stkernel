@@ -164,6 +164,7 @@ def main():
             (args.out / (filename + '.json')).write_text(data)
         report = json.loads((args.out / (filename + '.json')).read_text())
         assert report['status'] == 'PASS' and len(report['cases']) == 36, (node, stage)
+        assert report['mhc_warmup_capture'] == 'PASS', (node, stage, 'MHC warmup/capture lifecycle')
         ownership = report['ar_ownership_cases']
         expected = {(n, seed) for n in AR_OWNERSHIP_SIZES for seed in (17, 0, 29)} if distributed else set()
         assert len(ownership) == len(expected), (node, stage, 'AR ownership coverage')

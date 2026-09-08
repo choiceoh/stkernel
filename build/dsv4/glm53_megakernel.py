@@ -1791,7 +1791,13 @@ def _mhc_bf16_weight(fn, *, ar_consumer=False):
         if (not bool(torch.isfinite(fn).all())
                 or not torch.equal(fn.view(torch.int32), restored.view(torch.int32))):
             packed = None
-        entry = (fn, packed, None)
+        # The serving warmup/capture ladder visits T=12 before decode T=6.
+        # Prepare both immutable layouts on the first eager weight visit,
+        # even when that shape uses the scalar kernel. Waiting until the
+        # first small shape would miss the vector pack during capture.
+        vector = (_mhc_bf16_vec4(packed)
+                  if packed is not None and ENABLE_AR_CONSUMER else None)
+        entry = (fn, packed, vector)
         _MHC_BF16_CACHE[key] = entry
     if not ar_consumer or entry[1] is None:
         return entry[1]
@@ -1833,7 +1839,7 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
         _AR_CONSUMER_CAPTURED.add(num_tokens)
         logger.warning("[megakernel] AR consumer MHC CAPTURED T=%d bf16=%s vec4=%s",
                        num_tokens, packed is not None, packed is not None)
-    if (packed is not None and _ARMED["mhc"]
+    if (packed is not None and _ar_consumer is None and _ARMED["mhc"]
             and num_tokens not in _MHC_BF16_CAPTURED
             and torch.cuda.is_current_stream_capturing()):
         _MHC_BF16_CAPTURED.add(num_tokens)
@@ -2095,21 +2101,32 @@ def _selftest_ar_consumer() -> bool:
     for t in (1, 2, 6, 8, 16):
         with torch.inference_mode(False):
             fn = (torch.randn(NOUT, HC * HIDDEN, device="cuda") * .02).bfloat16().float()
-        if ENABLE_MHC_BF16:
-            assert _mhc_bf16_weight(fn, ar_consumer=t <= 8) is not None
         values = (torch.randn(t, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
                   torch.randn(t, HC, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
                   torch.rand(t, HC, device="cuda"), torch.rand(t, HC * HC, device="cuda"),
                   fn, hc_scale_ones(), hc_base_zeros(),
                   torch.randn(HIDDEN, device="cuda", dtype=torch.bfloat16),
                   t, 1e-6, 1e-6, 1e-6, 1., 1e-6, SINKHORN_SERVED)
+        # Match the model's ladder: this weight first visits a large scalar
+        # shape. Do not explicitly prepare the small-shape layout or warm
+        # its BF16 consumer before capture; either would mask a cache miss.
+        warm = (torch.zeros(12, HIDDEN, device="cuda", dtype=torch.bfloat16),
+                torch.zeros(12, HC, HIDDEN, device="cuda", dtype=torch.bfloat16),
+                torch.zeros(12, HC, device="cuda"), torch.zeros(12, HC * HC, device="cuda"),
+                *values[4:8], 12, *values[9:])
+        _mhc_call(*warm, _ar_consumer=False)
         for fp32 in (True, False):
-            # Resolve all persistent storage before capture.
+            # Resolve output/workspace and native FP32 launch setup.
             _mhc_call(*values, _fp32_fn=fp32, _ar_consumer=False)
-            _mhc_call(*values, _fp32_fn=fp32, _ar_consumer=True)
+            if fp32:
+                _mhc_call(*values, _fp32_fn=True, _ar_consumer=True)
             torch.cuda.synchronize()
             graph = torch.cuda.CUDAGraph()
             with torch.cuda.graph(graph):
+                if not fp32 and ENABLE_MHC_BF16:
+                    packed = _mhc_bf16_weight(fn, ar_consumer=t <= 8)
+                    expected = (NOUT, HIDDEN, HC) if t <= 8 else (NOUT, HC * HIDDEN)
+                    assert packed is not None and tuple(packed.shape) == expected
                 got = _mhc_call(*values, _fp32_fn=fp32, _ar_consumer=True)
             for scale in (1., 0., -.5):
                 values[0].fill_(scale * .03125)
@@ -2120,7 +2137,8 @@ def _selftest_ar_consumer() -> bool:
                 if not all(torch.equal(a, b) for a, b in zip(ref, got)):
                     logger.warning("[megakernel] AR consumer MHC mismatch T=%d fp32=%s", t, fp32)
                     return False
-    logger.warning("[megakernel] AR consumer MHC self-test PASS (exact outputs and graphs)")
+    logger.warning("[megakernel] AR consumer MHC self-test PASS "
+                   "(large warmup, small capture, exact outputs and graphs)")
     return True
 
 
