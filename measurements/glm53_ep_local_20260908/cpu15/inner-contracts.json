@@ -1,0 +1,33 @@
+{
+  "command": "/Users/ost/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 -B -m unittest discover -s tests -p test_glm53_ep_capsule_inners.py -v",
+  "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+  "tests_run": 10,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "wall_seconds": 0.028,
+  "evidence_kind": "captured merged stdout/stderr from focused CPU-only mock contracts; no accelerator imports or execution",
+  "log": {
+    "path": "/tmp/glm53-ep-capsule-inner-tests-final.log",
+    "sha256": "add0ddc2cd5ae56037293cbba8e34bfc2feec2b194dd64ca088c54a0875fd320",
+    "bytes": 1965
+  },
+  "files": {
+    "probes/glm53_ep_local_compile_check.py": {
+      "sha256": "4187c1150ce16bc12e33dec8d6136b108f36dc3792b2f45421fd44a3c6a082cf",
+      "bytes": 7349
+    },
+    "probes/glm53_ep_local_check.py": {
+      "sha256": "8a9c8bd1e3d04bb4b557181ec55e16a2698bd079540af4c6d1a2ae6cce39348c",
+      "bytes": 13019
+    },
+    "probes/glm53_ep_route_remap_check.py": {
+      "sha256": "241c11de8db10b550f6a624e91ec729882d4993b1919abe7b187acec4252e568",
+      "bytes": 8063
+    },
+    "tests/test_glm53_ep_capsule_inners.py": {
+      "sha256": "fccae5d3ff7a57d72e3c0d25355193ab4409ae2d2668c26ae362fe313efc599d",
+      "bytes": 13136
+    }
+  }
+}

@@ -361,7 +361,7 @@ expert IDs before loading their unused weights. Valid weights retain the
 same Float32 comparison, NaN/zero behavior, route order and atomics. Focused
 actual-source oracles pass 8 route-cache and 10 publication tests, including
 poisoned invalid-route weight storage and exact store addresses/payloads.
-The current full offline runner requires a matching CPU14 receipt before GPU
+That revision required a matching CPU14 receipt before GPU
 execution; queued binding v6 retains its independent frozen CPU13 kernel.
 The [CPU14 preparation](../measurements/glm53_ep_local_20260908/cpu14/README.md)
 first refused head's 6.10 GiB available memory against the unchanged 12 GiB
@@ -375,6 +375,16 @@ checks eight static weight loads now guarded by a valid-ID branch and ten Q0
 adaptive stores replaced by ten plain stores. It does not claim fewer executed
 transactions or measured speed. This uses the original image's bindings: a full capsule-bound CuTe
 compile and GPU suite still precede any performance conclusion.
+
+The [CPU15 integration](../measurements/glm53_ep_local_20260908/cpu15/README.md)
+connects the proven capsule to the actual CuTe compiler and every MoE/remap
+GPU cell. Fixed read-only mounts and exact Python environment are shared;
+actual binding binaries, paired metadata and base pathfinder identity are
+checked before accelerator work and after it. The current runner requires
+CPU15's matching runtime/source receipt, explicit PASS/complete and successful
+final recheck; a failed result with full artifacts is rejected. Local focused
+contracts and independent review pass. Actual capsule-bound compiler and GPU
+results are recorded separately when executed, not inferred from v6.
 
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).

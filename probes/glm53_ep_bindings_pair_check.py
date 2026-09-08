@@ -14,7 +14,10 @@ import importlib.metadata
 import json
 from pathlib import Path
 
-from glm53_ep_bindings_capsule import validate_capsule
+if __package__:
+    from .glm53_ep_bindings_capsule import validate_capsule
+else:
+    from glm53_ep_bindings_capsule import validate_capsule
 
 SITE = Path('/usr/local/lib/python3.12/dist-packages')
 MODULE_FILES = {

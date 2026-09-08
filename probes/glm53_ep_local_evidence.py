@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 if __package__:
     from .glm53_ep_route_remap_check import compile_cases
+    from .glm53_ep_capsule_runtime import validate_runtime_receipt
 else:
     from glm53_ep_route_remap_check import compile_cases
+    from glm53_ep_capsule_runtime import validate_runtime_receipt
 
 CPU_TEST_MODULES = (
     "test_glm53_ep_prefill_local.py",
@@ -16,6 +18,11 @@ CPU_TEST_MODULES = (
     "test_glm53_ep_binding_check.py",
     "test_glm53_ep_task_publication.py",
     "test_glm53_ep_route_scale_cache.py",
+    "test_glm53_ep_capsule_runtime.py",
+    "test_glm53_ep_capsule_wrappers.py",
+    "test_glm53_ep_capsule_inners.py",
+    "test_glm53_ep_bindings_capsule.py",
+    "test_glm53_ep_bindings_pair.py",
 )
 CONTRACT_PATHS = tuple("tests/"+name for name in CPU_TEST_MODULES) + (
     "probes/glm53_ep_local_check.py",
@@ -28,6 +35,10 @@ CONTRACT_PATHS = tuple("tests/"+name for name in CPU_TEST_MODULES) + (
     "probes/glm53_ep_sanitizer.py",
     "probes/glm53_ep_binding_check.py",
     "probes/run_glm53_ep_binding_offline.py",
+    "probes/glm53_ep_capsule_runtime.py",
+    "probes/glm53_ep_bindings_capsule.py",
+    "probes/glm53_ep_bindings_pair_check.py",
+    "probes/run_glm53_ep_bindings_pair_offline.py",
 )
 
 
@@ -61,6 +72,11 @@ def validate_compile_evidence(root, path):
             or evidence["cache_key"][-1] != "glm53_ep_prefill_local_v1"
             or not evidence.get("artifacts") or not evidence.get("resources")):
         raise ValueError("actual no-device local CuTe compile proof required")
+    validate_runtime_receipt(evidence.get("binding_runtime"))
+    if (evidence.get("verdict") != "PASS" or evidence.get("phase") != "complete"
+            or evidence.get("binding_runtime_rechecked") is not True
+            or "error" in evidence or "binding_runtime_recheck_error" in evidence):
+        raise ValueError("completed capsule-bound compiler success and runtime recheck required")
     contracts = evidence.get("contracts", {})
     if (contracts.get("tests_run", 0) <= 0 or contracts.get("failures") != 0
             or contracts.get("errors") != 0 or contracts.get("skips") != 0):

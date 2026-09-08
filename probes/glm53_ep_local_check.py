@@ -15,7 +15,12 @@ import statistics
 import time
 from types import SimpleNamespace
 
-from glm53_ep_local_evidence import validate_compile_evidence
+if __package__:
+    from .glm53_ep_local_evidence import validate_compile_evidence
+    from .glm53_ep_capsule_runtime import verify_runtime
+else:
+    from glm53_ep_local_evidence import validate_compile_evidence
+    from glm53_ep_capsule_runtime import verify_runtime
 
 CASES = {
     "balanced4096": (4096, "balanced"),
@@ -110,17 +115,22 @@ def parse_args():
     ap.add_argument("--case", choices=CASES, required=True)
     ap.add_argument("--sanitize", action="store_true")
     ap.add_argument("--compile-evidence", type=Path, required=True)
+    ap.add_argument("--capsule-root", type=Path, required=True)
+    ap.add_argument("--manifest-sha256", required=True)
     ap.add_argument("--output", type=Path, required=True)
     return ap.parse_args()
 
 
 def run_case(args, result):
-    import torch
-    from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
-    from vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe import FlashInferB12xExperts
-    assert torch.cuda.get_device_capability() == (12, 1)
-    assert md._GLM53_EP_PREFILL_LOCAL
+    # Bind the imported package and CPU receipt before importing accelerator
+    # consumers: even a device-capability query is later than this admission.
+    result["phase"] = "binding-runtime"
+    runtime = verify_runtime(args.capsule_root, args.manifest_sha256)
+    result["binding_runtime"] = runtime
+    result["phase"] = "source-binding"
     compiled = validate_compile_evidence(Path("/repo"), args.compile_evidence)
+    if compiled.get("binding_runtime") != runtime:
+        raise ValueError("CPU compile and GPU binding runtimes differ")
     for filename, want in compiled["sources"].items():
         assert hashlib.sha256(Path(filename).read_bytes()).hexdigest() == want, filename
     provenance = {}
@@ -131,6 +141,34 @@ def run_case(args, result):
             have = hashlib.sha256(Path(target).read_bytes()).hexdigest()
             assert have == want, (name, have, want)
             provenance[name] = have
+    operation_error = None
+    try:
+        result["phase"] = "prepare"
+        _run_case(args, result, provenance)
+    except BaseException as exc:
+        operation_error = exc
+        raise
+    finally:
+        if operation_error is None:
+            result["phase"] = "binding-runtime-recheck"
+        try:
+            if verify_runtime(args.capsule_root, args.manifest_sha256) != runtime:
+                raise RuntimeError("binding runtime changed during GPU probe")
+            result["binding_runtime_rechecked"] = True
+        except BaseException as exc:
+            result["binding_runtime_recheck_error"] = repr(exc)
+            if operation_error is None:
+                raise
+    result.update(verdict="PASS", phase="complete")
+    print("EP_LOCAL_GPU PASS; full-model TTFT and TP4 remain separate gates", flush=True)
+
+
+def _run_case(args, result, provenance):
+    import torch
+    from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
+    from vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe import FlashInferB12xExperts
+    assert torch.cuda.get_device_capability() == (12, 1)
+    assert md._GLM53_EP_PREFILL_LOCAL
     torch.manual_seed(905308)
     w13, sf13, w2, sf2 = expert_set()
     # Deliberately different expert scales exercise the generic scale branch.
@@ -223,11 +261,10 @@ def run_case(args, result):
             wall_ms=dict(compact=wall[0], local=wall[1]),
             device_ms=dict(compact=device[0], local=device[1]),
             wall_speedup_pct=100*(statistics.median(wall[0])/statistics.median(wall[1])-1))
-    result.update(verdict="PASS", phase="complete", device=torch.cuda.get_device_name(),
+    result.update(device=torch.cuda.get_device_name(),
                   max_allocated_bytes=torch.cuda.max_memory_allocated(),
                   max_reserved_bytes=torch.cuda.max_memory_reserved(),
                   performance_acceptance=False)
-    print("EP_LOCAL_GPU PASS; full-model TTFT and TP4 remain separate gates", flush=True)
 
 
 def main():

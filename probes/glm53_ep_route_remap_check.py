@@ -9,6 +9,11 @@ import json
 from pathlib import Path
 import time
 
+if __package__:
+    from .glm53_ep_capsule_runtime import verify_runtime
+else:
+    from glm53_ep_capsule_runtime import verify_runtime
+
 
 def compile_cases():
     cases = []
@@ -117,25 +122,56 @@ def verify_gpu(result):
             exact(out_weights, expected[1], label+"-weights")
         result["checks"].append(dict(label=label, rows=rows, changed_storage=True))
     torch.cuda.synchronize()
+
+
+def run_check(args, result):
+    if __package__:
+        from .glm53_ep_local_evidence import validate_compile_evidence
+    else:
+        from glm53_ep_local_evidence import validate_compile_evidence
+    root = Path(__file__).resolve().parents[1]
+    result["phase"] = "binding-runtime"
+    runtime = verify_runtime(args.capsule_root, args.manifest_sha256)
+    result["binding_runtime"] = runtime
+    result["phase"] = "source-binding"
+    evidence = validate_compile_evidence(root, args.compile_evidence)
+    if evidence.get("binding_runtime") != runtime:
+        raise ValueError("CPU compile and GPU binding runtimes differ")
+    for target, want in evidence["mounted_sources"].items():
+        assert hashlib.sha256(Path(target).read_bytes()).hexdigest() == want, target
+    operation_error = None
+    try:
+        verify_gpu(result)
+    except BaseException as exc:
+        operation_error = exc
+        raise
+    finally:
+        if operation_error is None:
+            result["phase"] = "binding-runtime-recheck"
+        try:
+            if verify_runtime(args.capsule_root, args.manifest_sha256) != runtime:
+                raise RuntimeError("binding runtime changed during remap probe")
+            result["binding_runtime_rechecked"] = True
+        except BaseException as exc:
+            result["binding_runtime_recheck_error"] = repr(exc)
+            if operation_error is None:
+                raise
     result.update(verdict="PASS", phase="complete", performance_acceptance=False)
 
 
 def main():
-    from glm53_ep_local_evidence import validate_compile_evidence
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--compile-evidence", type=Path, required=True)
+    ap.add_argument("--capsule-root", type=Path, required=True)
+    ap.add_argument("--manifest-sha256", required=True)
     ap.add_argument("--output", type=Path, required=True)
     args = ap.parse_args()
-    root = Path(__file__).resolve().parents[1]
-    result = dict(started=time.time(), phase="source-binding", verdict="FAIL",
+    result = dict(started=time.time(), phase="binding-runtime", verdict="FAIL",
                   performance_acceptance=False)
     try:
-        evidence = validate_compile_evidence(root, args.compile_evidence)
-        for target, want in evidence["mounted_sources"].items():
-            assert hashlib.sha256(Path(target).read_bytes()).hexdigest() == want, target
-        verify_gpu(result)
+        run_check(args, result)
     except BaseException as exc:
-        result["error"] = repr(exc)
+        result.update(verdict="FAIL", error=repr(exc))
         raise
     finally:
         result["ended"] = time.time()

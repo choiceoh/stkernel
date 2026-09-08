@@ -15,6 +15,10 @@ sys.path.insert(0, str(ROOT/"probes"))
 import glm53_ep_local_check as probe
 import glm53_ep_local_evidence as binding
 import run_glm53_ep_local_offline as runner
+import glm53_ep_capsule_runtime as runtime
+
+CAPSULE_ARGS = ["--capsule-root", runtime.CAPSULE_MOUNT,
+                "--manifest-sha256", runtime.CAPSULE_SHA256]
 
 
 @unittest.skipUnless(importlib.util.find_spec("torch"), "requires torch; pinned CPU image covers this")
@@ -68,6 +72,8 @@ class EvidenceTests(unittest.TestCase):
             path.write_text("contract "+name)
         sources = {target: binding.digest(path) for target, path in binding.mounted_sources(root).items()}
         evidence = dict(arm="local", cuda_initialized=False,
+                        verdict="PASS", phase="complete", binding_runtime_rechecked=True,
+                        binding_runtime=runtime.expected_runtime_receipt(),
                         cache_key=["glm53_ep_prefill_local_v1"], artifacts=["ptx"], resources=["cubin"],
                         sources=sources, mounted_sources=sources.copy(),
                         remap_compilation=[dict(case, ptx_sha256="ptx", cubin_sha256="cubin")
@@ -86,6 +92,20 @@ class EvidenceTests(unittest.TestCase):
             (root/"build/glm53/moe_dynamic_ep_local.py").write_text("changed")
             with self.assertRaisesRegex(ValueError, "compiled overlay source changed"):
                 binding.validate_compile_evidence(root, path)
+
+    def test_complete_artifacts_cannot_override_failed_runtime_recheck(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);path,evidence=self.fixture(root)
+            for key,value in (("verdict","FAIL"),("phase","binding-runtime-recheck"),
+                              ("binding_runtime_rechecked",False),("error","failure"),
+                              ("binding_runtime_recheck_error","changed capsule")):
+                path.write_text(json.dumps(dict(evidence,**{key:value})))
+                with self.assertRaisesRegex(ValueError,"completed capsule-bound"):
+                    binding.validate_compile_evidence(root,path)
+            altered=dict(evidence);del altered["binding_runtime"]
+            path.write_text(json.dumps(altered))
+            with self.assertRaisesRegex(ValueError,"runtime identity"):
+                binding.validate_compile_evidence(root,path)
 
     def test_missing_mount_skips_and_changed_test_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -115,7 +135,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_stale_receipt_is_rejected_before_service_inventory_or_pause(self):
         with tempfile.TemporaryDirectory() as directory:
-            args = ["runner", "--revision", "a"*40, "--out", str(Path(directory)/"capture")]
+            args = ["runner", "--revision", "a"*40, "--out", str(Path(directory)/"capture")] + CAPSULE_ARGS
             with (patch.object(sys, "argv", args),
                   patch.object(runner.signal, "signal"),
                   patch.object(runner.lifecycle, "check_holder"),
@@ -123,6 +143,7 @@ class EvidenceTests(unittest.TestCase):
                   patch.object(runner.lifecycle, "snapshot") as snapshot,
                   patch.object(runner.lifecycle, "with_paused") as pause,
                   patch.object(runner, "validate_compile_evidence", side_effect=ValueError("stale receipt")),
+                  patch.object(runner.capsule_runtime, "validate_capsule_input", return_value=Path(runtime.CAPSULE_MOUNT)),
                   redirect_stdout(io.StringIO())):
                 self.assertEqual(runner.main(), 1)
             snapshot.assert_not_called()
@@ -131,7 +152,7 @@ class EvidenceTests(unittest.TestCase):
     def test_failed_probe_preserves_phase_and_partial_results(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/"result.json"
-            args = ["probe", "--case", "balanced4096", "--compile-evidence", "unused", "--output", str(path)]
+            args = ["probe", "--case", "balanced4096", "--compile-evidence", "unused", "--output", str(path)] + CAPSULE_ARGS
             def fail(args, result):
                 result.update(phase="changed-control", controls=[{"bad_rows": 1}])
                 raise ValueError("unstable control")
@@ -164,11 +185,13 @@ class EvidenceTests(unittest.TestCase):
             (root/'build/glm53').mkdir(parents=True)
             (root/'build/glm53/manifest.tsv').write_text('')
             output = Path(directory)/'capture'
-            with (patch.object(sys, 'argv', ['runner', '--revision', 'a'*40, '--out', str(output)]),
+            with (patch.object(sys, 'argv', ['runner', '--revision', 'a'*40, '--out', str(output)] + CAPSULE_ARGS),
                   patch.object(runner, '__file__', str(root/'probes/run_glm53_ep_local_offline.py')),
                   patch.dict(runner.os.environ, FLEET_SESSION='unit-stopped'),
                   patch.object(runner.signal, 'signal'), patch.object(runner.lifecycle, 'check_holder'),
-                  patch.object(runner.lifecycle, 'pinned'), patch.object(runner, 'validate_compile_evidence'),
+                  patch.object(runner.lifecycle, 'pinned'),
+                  patch.object(runner, 'validate_compile_evidence', return_value={'binding_runtime': runtime.expected_runtime_receipt()}),
+                  patch.object(runner.capsule_runtime, 'validate_capsule_input', return_value=Path(runtime.CAPSULE_MOUNT)),
                   patch.object(runner.sanitizer_support, 'preflight', return_value={'verdict':'PASS'}),
                   patch.object(runner, 'resources', return_value={}),
                   patch.object(runner.lifecycle, 'snapshot', return_value=before),
