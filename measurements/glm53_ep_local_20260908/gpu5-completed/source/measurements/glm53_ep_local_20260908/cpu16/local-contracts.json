@@ -1,0 +1,23 @@
+{
+  "scope": "Local actual-source oracles and mocked wrapper/lifecycle tests, not GPU or compiler proof",
+  "tests": {
+    "route_scale_cache": 11,
+    "task_publication": 12,
+    "sanitizer_fixture": 8,
+    "capsule_wrappers": 13
+  },
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "independent_read_only_review": "PASS",
+  "sources": {
+    "overlay/modules/glm53_moe/moe_dynamic_ep_local.py": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9",
+    "tests/test_glm53_ep_route_scale_cache.py": "b4c85443d81a69c0a1542f537b8947b119457ba7fed28c319240546ca329cc06",
+    "tests/test_glm53_ep_task_publication.py": "46e8094e17e16a2e3736737827a69f50cc731499f92858cf1fbb9137db4dbfef",
+    "tests/test_glm53_ep_sanitizer.py": "61c269124cb37cbd02d6930a448a3b2422e625569e1061ca1637093f32b8705d",
+    "tests/test_glm53_ep_capsule_wrappers.py": "6617a7182ff992123cb19d79ca0370c069d831a56434f28f93af16c1b52bf5ac",
+    "probes/run_glm53_ep_local_offline.py": "28c4d875730b9f2c9816e170c4357b1399e6e86913b765b53593e844f45bf233"
+  },
+  "composition_matches_kernel": true,
+  "expected_pinned_cpu_test_count": 134
+}

@@ -1,0 +1,1271 @@
+{
+  "captured_at_unix": 1788874457.3643653,
+  "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b",
+  "job": "/tmp/glm53-ep-local-gpu-0908-5",
+  "revision": "d53fd44f2b8a69869cddc9df10fa4cbb21bc56d9",
+  "source_clean": true,
+  "files": {
+    "job/capture/balanced4096.json": {
+      "bytes": 7066,
+      "sha256": "ca1ed7e79f5e18953c80947b8e341991fae31265557e480a2156c23b86474cdc",
+      "mtime_ns": 1788873514141158122,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/balanced4096.json"
+    },
+    "job/capture/balanced4096.log": {
+      "bytes": 7287,
+      "sha256": "13c2365817f6b688f184464b8eaf12638f4232153658d2fb0b5d666292974e14",
+      "mtime_ns": 1788873514141158122,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/balanced4096.log"
+    },
+    "job/capture/balanced6912.json": {
+      "bytes": 7366,
+      "sha256": "a0101f6dc4e3eebce8d815f68e39349a5b6cf7f2d1bc9f913d8da9f343b77fac",
+      "mtime_ns": 1788873552476987702,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/balanced6912.json"
+    },
+    "job/capture/balanced6912.log": {
+      "bytes": 7439,
+      "sha256": "4ed89acb3e824e395dc153307328ad07ce77847e27e83a259311e031d0c7eec6",
+      "mtime_ns": 1788873552476987702,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/balanced6912.log"
+    },
+    "job/capture/balanced8192.json": {
+      "bytes": 7054,
+      "sha256": "8125948c52439df44c0fffb0eb959530cf06e5a3442cb6c6642a5cf79130c5f2",
+      "mtime_ns": 1788873597662843511,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/balanced8192.json"
+    },
+    "job/capture/balanced8192.log": {
+      "bytes": 7407,
+      "sha256": "925703f6dac5403570ac15c7e40ce6567a3ba446d7e47caca00848a0bfcfe413",
+      "mtime_ns": 1788873597662843511,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/balanced8192.log"
+    },
+    "job/capture/before.json": {
+      "bytes": 41738,
+      "sha256": "459fd7379f8198d266339289e04a9848089634ad000b66b36cddb84697b6b650",
+      "mtime_ns": 1788873448097245510,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/before.json"
+    },
+    "job/capture/completion.json": {
+      "bytes": 31331,
+      "sha256": "4d0b2eddc3fdb091cf6c83fb0bb3802761cc76117204cf50b18f559dcd57618e",
+      "mtime_ns": 1788873632336520825,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/completion.json"
+    },
+    "job/capture/concentrated6912.json": {
+      "bytes": 5056,
+      "sha256": "30a176ed3547cdb0cc1d014de170405558d1f17afef533ae10792e29dccab0bb",
+      "mtime_ns": 1788873628767438148,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/concentrated6912.json"
+    },
+    "job/capture/concentrated6912.log": {
+      "bytes": 6881,
+      "sha256": "3fdd48f35776860cf0efbdbdfccd0e99881e869fc030ce4b79a9b0a224442992",
+      "mtime_ns": 1788873628767698820,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/concentrated6912.log"
+    },
+    "job/capture/progress.json": {
+      "bytes": 31196,
+      "sha256": "c90cd2c30d152256ea3bdf9d27438ecd7e4ac78c1118b1cfcdbcb62c50e95623",
+      "mtime_ns": 1788873631028566767,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/progress.json"
+    },
+    "job/capture/remap.json": {
+      "bytes": 4327,
+      "sha256": "5718ddf9258ac8e03f80fad5aee40604e95feee67eca20b33167d44c43787e1f",
+      "mtime_ns": 1788873468683122283,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/remap.json"
+    },
+    "job/capture/remap.log": {
+      "bytes": 3494,
+      "sha256": "14dbd101c69594c926555f3eb15e7c423ad631826c24fc5902d2dbc663b4343f",
+      "mtime_ns": 1788873468683122283,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/remap.log"
+    },
+    "job/capture/resources-balanced4096.json": {
+      "bytes": 363,
+      "sha256": "263dbb7932c4cba7f6ec5517e3e6e12b6c700c21020795b4ebc3c229e9c4ce85",
+      "mtime_ns": 1788873472827370101,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/resources-balanced4096.json"
+    },
+    "job/capture/resources-balanced6912.json": {
+      "bytes": 363,
+      "sha256": "b4c44fff5db95372032a63b56bf4677851f4db63f454e7b879c7c6f65ce012b7",
+      "mtime_ns": 1788873517697766407,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/resources-balanced6912.json"
+    },
+    "job/capture/resources-balanced8192.json": {
+      "bytes": 363,
+      "sha256": "3febfe625fde4fa974d72e736e296cd5c536483f415b839c9ffedf662f6c31ff",
+      "mtime_ns": 1788873556280728313,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/resources-balanced8192.json"
+    },
+    "job/capture/resources-before.json": {
+      "bytes": 363,
+      "sha256": "e0fb6ddebbffe2b8b99e58a3df51a23837dc810381be37c866e706e257c4038b",
+      "mtime_ns": 1788873447657745679,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/resources-before.json"
+    },
+    "job/capture/resources-concentrated6912.json": {
+      "bytes": 363,
+      "sha256": "3d6cdcd4fe98ff0a0ccecc544f8ee415949cdf5ea66e6ab4475105f52c5ca8ab",
+      "mtime_ns": 1788873601273764350,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/resources-concentrated6912.json"
+    },
+    "job/capture/resources-remap.json": {
+      "bytes": 363,
+      "sha256": "18ab09d88708a19fc1001d826eb60c0b6c2e996100bbdfed16e2dbf9654f7d91",
+      "mtime_ns": 1788873449657994101,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/resources-remap.json"
+    },
+    "job/capture/restored.json": {
+      "bytes": 41738,
+      "sha256": "54ca1832ace8f85da19d1b1bd5bf23a620103ced4c05a2f20b4acb153f738e1f",
+      "mtime_ns": 1788873632197356752,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/restored.json"
+    },
+    "job/capture/sanitizer-preflight.json": {
+      "bytes": 1490,
+      "sha256": "c4b306fc63fe322966dcca2dece6b1225d7c7e042bc64bfb1341319d4b03d34c",
+      "mtime_ns": 1788873446553528627,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/sanitizer-preflight.json"
+    },
+    "job/capture/stopped-restored.json": {
+      "bytes": 41738,
+      "sha256": "9b346d532b1ac883c365ee80da8f27c6c667b35ddc4c9d29bdb77c58ac595efe",
+      "mtime_ns": 1788873631801988199,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/stopped-restored.json"
+    },
+    "job/capture/stopped.json": {
+      "bytes": 41738,
+      "sha256": "bea6a6a578d9f4fbece554624890b58580dace26344aa4c0999a90910f8945bc",
+      "mtime_ns": 1788873448484828158,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/capture/stopped.json"
+    },
+    "job/cpu-evidence.json": {
+      "bytes": 28302,
+      "sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c",
+      "mtime_ns": 1788873143721391375,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/cpu-evidence.json"
+    },
+    "job/driver-start.json": {
+      "bytes": 4664,
+      "sha256": "4ff23e4fc2441dfa20a1300b79febc03b6911926945ed19ab153bc86b6400115",
+      "mtime_ns": 1788873144508483936,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/driver-start.json"
+    },
+    "job/driver.pid": {
+      "bytes": 6,
+      "sha256": "7130587de0befd2594b23872e755020bdab7719a26cd1ec6f342080f1f1b944d",
+      "mtime_ns": 1788873143723197906,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/driver.pid"
+    },
+    "job/driver.py": {
+      "bytes": 8424,
+      "sha256": "2e3cf64024ce86675da62ec4947db812b6d96bff93fdddf97d30a8d11d626766",
+      "mtime_ns": 1788873143721320991,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/driver.py"
+    },
+    "job/exit.json": {
+      "bytes": 4694,
+      "sha256": "5fc30218dbe8c74a93a4c3ae734668fa91f1441ea9c6c5015eb9b7d7dddabe0d",
+      "mtime_ns": 1788874004018297039,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/exit.json"
+    },
+    "job/fleet.log": {
+      "bytes": 45985,
+      "sha256": "a81367f60bb0dd7227ebdbf067ace65c2908824b350363f35802ea205addf7e5",
+      "mtime_ns": 1788874003560284100,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/fleet.log"
+    },
+    "job/submission.json": {
+      "bytes": 4541,
+      "sha256": "282e505c7641ddef12d9943621bb9fa81d51eb31bfdfa04c9afa3a78c8938d69",
+      "mtime_ns": 1788873143722499841,
+      "source": "/tmp/glm53-ep-local-gpu-0908-5/submission.json"
+    },
+    "source/build/glm53/async_llm.py": {
+      "bytes": 47513,
+      "sha256": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0",
+      "mtime_ns": 1788873142458945390,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/async_llm.py"
+    },
+    "source/build/glm53/b12x_moe.py": {
+      "bytes": 31331,
+      "sha256": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/b12x_moe.py"
+    },
+    "source/build/glm53/chunk_delta_h.py": {
+      "bytes": 13349,
+      "sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/chunk_delta_h.py"
+    },
+    "source/build/glm53/cuda_communicator.py": {
+      "bytes": 32391,
+      "sha256": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/cuda_communicator.py"
+    },
+    "source/build/glm53/deneb_boot_stamps.py": {
+      "bytes": 11173,
+      "sha256": "cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/deneb_boot_stamps.py"
+    },
+    "source/build/glm53/dflash_utils.py": {
+      "bytes": 5518,
+      "sha256": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/dflash_utils.py"
+    },
+    "source/build/glm53/dsv4_oneshot_ar.cu": {
+      "bytes": 36138,
+      "sha256": "7c75403c14142b70da2d87ff3d8906051539740f1b3ecea2107b040a323cd6cf",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/dsv4_oneshot_ar.cu"
+    },
+    "source/build/glm53/dsv4_oneshot_shim.py": {
+      "bytes": 21380,
+      "sha256": "ef6fffb1474965f16702217f72b6e9e07a941f8528e617039561a8ac4cc1ca34",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/dsv4_oneshot_shim.py"
+    },
+    "source/build/glm53/flashinfer_b12x_moe.py": {
+      "bytes": 99815,
+      "sha256": "5c7cdbc7d87129d3314725923a674728da113f7918b9c33dab164aa1c5cfc56d",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/flashinfer_b12x_moe.py"
+    },
+    "source/build/glm53/flashinfer_mla_sparse_sm90.py": {
+      "bytes": 28100,
+      "sha256": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/flashinfer_mla_sparse_sm90.py"
+    },
+    "source/build/glm53/fp8_lm_head.py": {
+      "bytes": 19647,
+      "sha256": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/fp8_lm_head.py"
+    },
+    "source/build/glm53/glm47_moe.py": {
+      "bytes": 9881,
+      "sha256": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm47_moe.py"
+    },
+    "source/build/glm53/glm53_chat.py": {
+      "bytes": 6456,
+      "sha256": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_chat.py"
+    },
+    "source/build/glm53/glm53_decode_first.py": {
+      "bytes": 18281,
+      "sha256": "220c91024677afa63622c8d169ff901b24353f02af81d2f4873af2b363fc2836",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_decode_first.py"
+    },
+    "source/build/glm53/glm53_dev_lab.py": {
+      "bytes": 5605,
+      "sha256": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_dev_lab.py"
+    },
+    "source/build/glm53/glm53_dflash_early_fc.py": {
+      "bytes": 6376,
+      "sha256": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_dflash_early_fc.py"
+    },
+    "source/build/glm53/glm53_draft_dump.py": {
+      "bytes": 5782,
+      "sha256": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_draft_dump.py"
+    },
+    "source/build/glm53/glm53_drafter_prep.py": {
+      "bytes": 13603,
+      "sha256": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_drafter_prep.py"
+    },
+    "source/build/glm53/glm53_ep_route_remap.py": {
+      "bytes": 5493,
+      "sha256": "9d83120fb20e4aae382e3971a86c1a3b6970e591dd31ee5d7fc3e1a2ca521339",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_ep_route_remap.py"
+    },
+    "source/build/glm53/glm53_fp8_dense.py": {
+      "bytes": 63156,
+      "sha256": "a2b7508eaa12a43212615869deac1c855c5441f540406f53703b7cd85c4e6046",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_fp8_dense.py"
+    },
+    "source/build/glm53/glm53_indexer_gate.py": {
+      "bytes": 6273,
+      "sha256": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_indexer_gate.py"
+    },
+    "source/build/glm53/glm53_kda_onepass.py": {
+      "bytes": 41197,
+      "sha256": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_kda_onepass.py"
+    },
+    "source/build/glm53/glm53_kpool_indexer.py": {
+      "bytes": 66372,
+      "sha256": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_kpool_indexer.py"
+    },
+    "source/build/glm53/glm53_lab_middleware.py": {
+      "bytes": 1013,
+      "sha256": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd",
+      "mtime_ns": 1788873142460423360,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_lab_middleware.py"
+    },
+    "source/build/glm53/glm53_megakernel.cu": {
+      "bytes": 177496,
+      "sha256": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_megakernel.cu"
+    },
+    "source/build/glm53/glm53_megakernel.py": {
+      "bytes": 125258,
+      "sha256": "53a26fc2821b0b3e76a1ea0d12354a2eb35c538f55d8daa2fd03b000128da7fb",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_megakernel.py"
+    },
+    "source/build/glm53/glm53_nvfp4_bproj.py": {
+      "bytes": 8093,
+      "sha256": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_nvfp4_bproj.py"
+    },
+    "source/build/glm53/glm53_nvfp4_scale.py": {
+      "bytes": 2577,
+      "sha256": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_nvfp4_scale.py"
+    },
+    "source/build/glm53/glm53_prefill_collectives.py": {
+      "bytes": 28425,
+      "sha256": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_prefill_collectives.py"
+    },
+    "source/build/glm53/glm53_prefill_fastpath.py": {
+      "bytes": 3530,
+      "sha256": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_prefill_fastpath.py"
+    },
+    "source/build/glm53/glm53_prep_fused.py": {
+      "bytes": 62614,
+      "sha256": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_prep_fused.py"
+    },
+    "source/build/glm53/glm53_rank_cache.py": {
+      "bytes": 19200,
+      "sha256": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_rank_cache.py"
+    },
+    "source/build/glm53/glm53_renderer_warmup.py": {
+      "bytes": 5006,
+      "sha256": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_renderer_warmup.py"
+    },
+    "source/build/glm53/glm53_startup_cache.py": {
+      "bytes": 13495,
+      "sha256": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm53_startup_cache.py"
+    },
+    "source/build/glm53/glm5next_attention.py": {
+      "bytes": 27202,
+      "sha256": "4bed9915da4c2f45e17cec2995f61963528dccc3f5832a9ae50db19e0faeada9",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm5next_attention.py"
+    },
+    "source/build/glm53/glm5next_kda.py": {
+      "bytes": 35295,
+      "sha256": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a",
+      "mtime_ns": 1788873142460945393,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm5next_kda.py"
+    },
+    "source/build/glm53/glm5next_model.py": {
+      "bytes": 74950,
+      "sha256": "1b2fe00fadac5db22ce01e35f6be23e3e6e7b75e92b6d09af434175f811f96d7",
+      "mtime_ns": 1788873142461945394,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm5next_model.py"
+    },
+    "source/build/glm53/glm5next_multimodal.py": {
+      "bytes": 31356,
+      "sha256": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568",
+      "mtime_ns": 1788873142461945394,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/glm5next_multimodal.py"
+    },
+    "source/build/glm53/gpu_worker.py": {
+      "bytes": 60529,
+      "sha256": "c85092ab70c42692ae8cb7ae4ba4d35d7fbe885cee767ea969990483929d2834",
+      "mtime_ns": 1788873142461945394,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/gpu_worker.py"
+    },
+    "source/build/glm53/kda.py": {
+      "bytes": 65164,
+      "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+      "mtime_ns": 1788873142461945394,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/kda.py"
+    },
+    "source/build/glm53/kv_cache_coordinator.py": {
+      "bytes": 40664,
+      "sha256": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d",
+      "mtime_ns": 1788873142461945394,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/kv_cache_coordinator.py"
+    },
+    "source/build/glm53/manifest.tsv": {
+      "bytes": 8618,
+      "sha256": "b37797125c0c5dd17963ace5635820749c90e5b1b486792aa737c2ec5ba29057",
+      "mtime_ns": 1788873142461945394,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/manifest.tsv"
+    },
+    "source/build/glm53/moe_dispatch.py": {
+      "bytes": 175149,
+      "sha256": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+      "mtime_ns": 1788873142461945394,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_dispatch.py"
+    },
+    "source/build/glm53/moe_dynamic_ep_local.py": {
+      "bytes": 37063,
+      "sha256": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9",
+      "mtime_ns": 1788873142461945394,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_dynamic_ep_local.py"
+    },
+    "source/build/glm53/moe_dynamic_gated_tiled.py": {
+      "bytes": 3840,
+      "sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_dynamic_gated_tiled.py"
+    },
+    "source/build/glm53/moe_dynamic_prefill.py": {
+      "bytes": 91792,
+      "sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_dynamic_prefill.py"
+    },
+    "source/build/glm53/moe_dynamic_prefill_n128.py": {
+      "bytes": 46473,
+      "sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_dynamic_prefill_n128.py"
+    },
+    "source/build/glm53/moe_gate_sm121.py": {
+      "bytes": 12724,
+      "sha256": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_gate_sm121.py"
+    },
+    "source/build/glm53/moe_micro_kernel.py": {
+      "bytes": 113270,
+      "sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_micro_kernel.py"
+    },
+    "source/build/glm53/moe_sf_pack.py": {
+      "bytes": 7321,
+      "sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_sf_pack.py"
+    },
+    "source/build/glm53/moe_static_common.py": {
+      "bytes": 9913,
+      "sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_static_common.py"
+    },
+    "source/build/glm53/moe_static_kernel_v4.py": {
+      "bytes": 98224,
+      "sha256": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_static_kernel_v4.py"
+    },
+    "source/build/glm53/moe_static_kernel_v5.py": {
+      "bytes": 9670,
+      "sha256": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/moe_static_kernel_v5.py"
+    },
+    "source/build/glm53/mtp.py": {
+      "bytes": 19541,
+      "sha256": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/mtp.py"
+    },
+    "source/build/glm53/parallel_state.py": {
+      "bytes": 86872,
+      "sha256": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8",
+      "mtime_ns": 1788873142462945396,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/parallel_state.py"
+    },
+    "source/build/glm53/qwen3_dflash2.py": {
+      "bytes": 23042,
+      "sha256": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee",
+      "mtime_ns": 1788873142463945398,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/qwen3_dflash2.py"
+    },
+    "source/build/glm53/sampler.py": {
+      "bytes": 11843,
+      "sha256": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb",
+      "mtime_ns": 1788873142463945398,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/sampler.py"
+    },
+    "source/build/glm53/sparse_attn_indexer_kpool.py": {
+      "bytes": 69400,
+      "sha256": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d",
+      "mtime_ns": 1788873142463945398,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/sparse_attn_indexer_kpool.py"
+    },
+    "source/build/glm53/spec_decode_rejection_warmup.py": {
+      "bytes": 10760,
+      "sha256": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d",
+      "mtime_ns": 1788873142463945398,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/spec_decode_rejection_warmup.py"
+    },
+    "source/build/glm53/tilelang.py": {
+      "bytes": 37391,
+      "sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+      "mtime_ns": 1788873142463945398,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/tilelang.py"
+    },
+    "source/build/glm53/tilelang_kernels.py": {
+      "bytes": 44789,
+      "sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+      "mtime_ns": 1788873142463945398,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/tilelang_kernels.py"
+    },
+    "source/build/glm53/zz_deneb_boot_stamps.pth": {
+      "bytes": 54,
+      "sha256": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca",
+      "mtime_ns": 1788873142463945398,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/build/glm53/zz_deneb_boot_stamps.pth"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/README.md": {
+      "bytes": 2690,
+      "sha256": "fd397f099fcf6413bc75655777190f908001bde5506f4f8df93afdef9f015ee2",
+      "mtime_ns": 1788873142524311971,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/README.md"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/SHA256SUMS": {
+      "bytes": 7894,
+      "sha256": "2ce41b19b68c89333d66e073f129af2b802d71b2791379034cc1ae1d57cfa5ad",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/SHA256SUMS"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/collect.py": {
+      "bytes": 3126,
+      "sha256": "f8a3390af02ef61a451a3e6cab6130ae6cf9cecd1e77abcccbfa054cce03ed7e",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/collect.py"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/compiler-inspection.json": {
+      "bytes": 4689,
+      "sha256": "ca31b73258ea2662a0af1a225df205254595d83cb9f96bd2893fe6696d69a193",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/compiler-inspection.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/driver.pid": {
+      "bytes": 6,
+      "sha256": "60894d1d17b9f7902ee6fecebcfebafdfc2304c03c44d4d014db3f3a1332bab9",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/driver.pid"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/driver.py": {
+      "bytes": 782,
+      "sha256": "7145a403cec8c2bf4e5ad04a984003accd80d17ae478db14a0a124266cc49492",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/driver.py"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/exit.json": {
+      "bytes": 1521,
+      "sha256": "eb4a8b4d2dfbbf4e5791623707414770b2e265e93f786907157a648c1dc39460",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/exit.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/fleet.log": {
+      "bytes": 48171,
+      "sha256": "31b1def7b44b5e10d3bd540557c8e93ccdd351776cd5e7037462313699920b6b",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/fleet.log"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/kernel-local-contracts.json": {
+      "bytes": 1399,
+      "sha256": "ce571d5138e7d8290ca65feaa20b3e1eb38c81b89e998369a0693cfb00b58a3e",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/kernel-local-contracts.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/launch.json": {
+      "bytes": 312,
+      "sha256": "84c69fe15fa9c0b60be96e71dda96c5fab238e844883412e2e63a36cb43910a3",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/launch.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local-contracts.json": {
+      "bytes": 1114,
+      "sha256": "8b805e6160ec0e7af49a7f21c272462645b2d09edc9a1ede35e362f085e67646",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local-contracts.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin.gz": {
+      "bytes": 64400,
+      "sha256": "30dfc40dd4a9c76bbf9344eb4f6d17ff3749fbb0e29f3aa4cc34fd48eb4b0593",
+      "mtime_ns": 1788873142524597523,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz": {
+      "bytes": 146447,
+      "sha256": "fa3d5f64bc6b56ea24a6566c5142646a33e3ab5e63a4d4a7e4c8be1897faa2d7",
+      "mtime_ns": 1788873142525325077,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+      "bytes": 325,
+      "sha256": "792e298351a987a48eb76f5d7ff6d7094a9f9d2895a1e553c15832cc3eea38e2",
+      "mtime_ns": 1788873142525325077,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-bf16-i32/kernel.cubin.gz": {
+      "bytes": 2635,
+      "sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504",
+      "mtime_ns": 1788873142526201606,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-bf16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-bf16-i32/kernel.ptx.gz": {
+      "bytes": 1282,
+      "sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc",
+      "mtime_ns": 1788873142526248854,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-bf16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp16-i32/kernel.cubin.gz": {
+      "bytes": 2635,
+      "sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504",
+      "mtime_ns": 1788873142526248854,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp16-i32/kernel.ptx.gz": {
+      "bytes": 1282,
+      "sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc",
+      "mtime_ns": 1788873142526330134,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp32-i32/kernel.cubin.gz": {
+      "bytes": 2561,
+      "sha256": "f379f2ca9cb5acb249324440b190f8e9d5e8db4433979b8455bc9d0448d5c377",
+      "mtime_ns": 1788873142526330134,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp32-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp32-i32/kernel.ptx.gz": {
+      "bytes": 1273,
+      "sha256": "71df2ac4a7592fb15983e901188ee7504fd271ee722cc641adbaa4b5f686f3ed",
+      "mtime_ns": 1788873142526407718,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp32-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-bf16-i32/kernel.cubin.gz": {
+      "bytes": 2635,
+      "sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504",
+      "mtime_ns": 1788873142526407718,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-bf16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-bf16-i32/kernel.ptx.gz": {
+      "bytes": 1282,
+      "sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc",
+      "mtime_ns": 1788873142526489014,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-bf16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp16-i32/kernel.cubin.gz": {
+      "bytes": 2635,
+      "sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504",
+      "mtime_ns": 1788873142526489014,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp16-i32/kernel.ptx.gz": {
+      "bytes": 1282,
+      "sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc",
+      "mtime_ns": 1788873142526567383,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp32-i32/kernel.cubin.gz": {
+      "bytes": 2561,
+      "sha256": "f379f2ca9cb5acb249324440b190f8e9d5e8db4433979b8455bc9d0448d5c377",
+      "mtime_ns": 1788873142526567383,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp32-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp32-i32/kernel.ptx.gz": {
+      "bytes": 1273,
+      "sha256": "71df2ac4a7592fb15983e901188ee7504fd271ee722cc641adbaa4b5f686f3ed",
+      "mtime_ns": 1788873142526660279,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp32-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i32/kernel.cubin.gz": {
+      "bytes": 3287,
+      "sha256": "e4145c4a5b9a0bfff9a866058e87dcdf735fa596515ac6069e4e3a9c9f679939",
+      "mtime_ns": 1788873142526660279,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i32/kernel.ptx.gz": {
+      "bytes": 1698,
+      "sha256": "07e96d3e10c2d37b5f5ba87e85300583a1528d94ae1b51b1014eb50910c8448b",
+      "mtime_ns": 1788873142526729367,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i64/kernel.cubin.gz": {
+      "bytes": 3379,
+      "sha256": "f3ae5782b0b1676a1522c5ffa9cb17888f753c3b508a27bfc6c7c4c15b833b56",
+      "mtime_ns": 1788873142526729367,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i64/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i64/kernel.ptx.gz": {
+      "bytes": 1739,
+      "sha256": "474f3a4ffc55baff0295816cd9a5fd01fb331951bddd2f9068e1738bc3cbba63",
+      "mtime_ns": 1788873142526811975,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i64/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i32/kernel.cubin.gz": {
+      "bytes": 3287,
+      "sha256": "e4145c4a5b9a0bfff9a866058e87dcdf735fa596515ac6069e4e3a9c9f679939",
+      "mtime_ns": 1788873142526811975,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i32/kernel.ptx.gz": {
+      "bytes": 1698,
+      "sha256": "07e96d3e10c2d37b5f5ba87e85300583a1528d94ae1b51b1014eb50910c8448b",
+      "mtime_ns": 1788873142526919063,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i64/kernel.cubin.gz": {
+      "bytes": 3379,
+      "sha256": "f3ae5782b0b1676a1522c5ffa9cb17888f753c3b508a27bfc6c7c4c15b833b56",
+      "mtime_ns": 1788873142526919063,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i64/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i64/kernel.ptx.gz": {
+      "bytes": 1739,
+      "sha256": "474f3a4ffc55baff0295816cd9a5fd01fb331951bddd2f9068e1738bc3cbba63",
+      "mtime_ns": 1788873142526995351,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i64/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i32/kernel.cubin.gz": {
+      "bytes": 3249,
+      "sha256": "1e8d6d04f30d64e8cd6e28b8ec9f70752a05451493107acf82fe0478f63a5ab3",
+      "mtime_ns": 1788873142526995351,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i32/kernel.ptx.gz": {
+      "bytes": 1664,
+      "sha256": "732f862a0ea8a492dc8e8eff783b691a189d5a627944a518cfc3971ee8cc1093",
+      "mtime_ns": 1788873142527066151,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i64/kernel.cubin.gz": {
+      "bytes": 3332,
+      "sha256": "ff2c0644ebe6a110d81a34ba00652bc0085e057776d62a4a708fe399da61ef7e",
+      "mtime_ns": 1788873142527066151,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i64/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i64/kernel.ptx.gz": {
+      "bytes": 1702,
+      "sha256": "44c55fa56cb8b11a41482a873a94d173cad2a524eb018d2316735a04d8abcb97",
+      "mtime_ns": 1788873142527129911,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i64/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i32/kernel.cubin.gz": {
+      "bytes": 3433,
+      "sha256": "307e55161db01bd2da672aede1cd70c7f68a275d113b18249a86b81069ee943c",
+      "mtime_ns": 1788873142527129911,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i32/kernel.ptx.gz": {
+      "bytes": 1715,
+      "sha256": "cacedd9f54f682fa4bbd8d00ede7ebcdc8dbd9f09ef5f0955d1ae4adad972b94",
+      "mtime_ns": 1788873142527206152,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i64/kernel.cubin.gz": {
+      "bytes": 3492,
+      "sha256": "9d576b9db7180facd2dc9d870e8619571238d88d03c6f37165bfe11c6ed60893",
+      "mtime_ns": 1788873142527206152,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i64/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i64/kernel.ptx.gz": {
+      "bytes": 1736,
+      "sha256": "3241b5ae2557f48d01fb1273f8ae03e969f97f68519ba0e047b87e34a348e3ae",
+      "mtime_ns": 1788873142527297640,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i64/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i32/kernel.cubin.gz": {
+      "bytes": 3433,
+      "sha256": "307e55161db01bd2da672aede1cd70c7f68a275d113b18249a86b81069ee943c",
+      "mtime_ns": 1788873142527297640,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i32/kernel.ptx.gz": {
+      "bytes": 1715,
+      "sha256": "cacedd9f54f682fa4bbd8d00ede7ebcdc8dbd9f09ef5f0955d1ae4adad972b94",
+      "mtime_ns": 1788873142527371944,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i64/kernel.cubin.gz": {
+      "bytes": 3492,
+      "sha256": "9d576b9db7180facd2dc9d870e8619571238d88d03c6f37165bfe11c6ed60893",
+      "mtime_ns": 1788873142527371944,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i64/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i64/kernel.ptx.gz": {
+      "bytes": 1736,
+      "sha256": "3241b5ae2557f48d01fb1273f8ae03e969f97f68519ba0e047b87e34a348e3ae",
+      "mtime_ns": 1788873142527480936,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i64/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i32/kernel.cubin.gz": {
+      "bytes": 3389,
+      "sha256": "d7b1ff6aed8015cf6badf2c9aec8bf8d85fb5da2793e2a2baee0f6c54fee857d",
+      "mtime_ns": 1788873142527480936,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i32/kernel.ptx.gz": {
+      "bytes": 1690,
+      "sha256": "4337df12efce044cf683ac8a4f1b1e89c4f49ccd0f77f120304391b074d74ea1",
+      "mtime_ns": 1788873142527559960,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i64/kernel.cubin.gz": {
+      "bytes": 3440,
+      "sha256": "de6d58a377b4cab1247ee3bd01bc8f9a4042d21cb6a4c58692d4fff071b24763",
+      "mtime_ns": 1788873142527559960,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i64/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i64/kernel.ptx.gz": {
+      "bytes": 1713,
+      "sha256": "d4c5a90cf61e3666c48b68e93019aac8f5000b212d9b5fa6e1f696f4dfc6aaa3",
+      "mtime_ns": 1788873142527639208,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i64/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-bf16-i32/kernel.cubin.gz": {
+      "bytes": 3160,
+      "sha256": "64b72f200ef0629594cbecf6135047fa68cbe5a2e848017ace27cdf387e648f6",
+      "mtime_ns": 1788873142527639208,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-bf16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-bf16-i32/kernel.ptx.gz": {
+      "bytes": 1642,
+      "sha256": "0919d9f7663d0efa1b4994e0c71578859da9b61bdcad5b255cfa8cf8298bbbc0",
+      "mtime_ns": 1788873142527734088,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-bf16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp16-i32/kernel.cubin.gz": {
+      "bytes": 3160,
+      "sha256": "64b72f200ef0629594cbecf6135047fa68cbe5a2e848017ace27cdf387e648f6",
+      "mtime_ns": 1788873142527734088,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp16-i32/kernel.ptx.gz": {
+      "bytes": 1642,
+      "sha256": "0919d9f7663d0efa1b4994e0c71578859da9b61bdcad5b255cfa8cf8298bbbc0",
+      "mtime_ns": 1788873142527800504,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp32-i32/kernel.cubin.gz": {
+      "bytes": 3115,
+      "sha256": "a83064484a63e2384e5689be14378b996fcc935eb1a28162f541f828d3202840",
+      "mtime_ns": 1788873142527800504,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp32-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp32-i32/kernel.ptx.gz": {
+      "bytes": 1606,
+      "sha256": "a187af17629ed00d1be6e114b026539a4e8d1d4fdca7510e08c6fb808dad6187",
+      "mtime_ns": 1788873142527869081,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp32-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-bf16-i32/kernel.cubin.gz": {
+      "bytes": 3289,
+      "sha256": "35abb692c3bf1088961f85c652a2e109e7a34b4ea6332fcd587257fc60e4b2d3",
+      "mtime_ns": 1788873142527869081,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-bf16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-bf16-i32/kernel.ptx.gz": {
+      "bytes": 1657,
+      "sha256": "6ef622fec0144ef9d5448565265f3fb5a94fda0d84a9a97bf86d36724df5ea88",
+      "mtime_ns": 1788873142527945033,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-bf16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp16-i32/kernel.cubin.gz": {
+      "bytes": 3289,
+      "sha256": "35abb692c3bf1088961f85c652a2e109e7a34b4ea6332fcd587257fc60e4b2d3",
+      "mtime_ns": 1788873142527945033,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp16-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp16-i32/kernel.ptx.gz": {
+      "bytes": 1657,
+      "sha256": "6ef622fec0144ef9d5448565265f3fb5a94fda0d84a9a97bf86d36724df5ea88",
+      "mtime_ns": 1788873142528017417,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp16-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp32-i32/kernel.cubin.gz": {
+      "bytes": 3235,
+      "sha256": "de72c133d762abbb432087da4ec1cbd1bde4e98b2f68c5adacb2be62c470fc8e",
+      "mtime_ns": 1788873142528017417,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp32-i32/kernel.cubin.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp32-i32/kernel.ptx.gz": {
+      "bytes": 1632,
+      "sha256": "525b9e7ad6fd0955b5314dc830208c1ab1f597082a77dab957797dc07061c3b1",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp32-i32/kernel.ptx.gz"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/local/result.json": {
+      "bytes": 28302,
+      "sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/local/result.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/prepare.py": {
+      "bytes": 11422,
+      "sha256": "ceb3b62c0296cec2b817d79f342fd84ce29f1d95911fc10909296b2251845654",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/prepare.py"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/route-scale-cache-tests.log": {
+      "bytes": 2226,
+      "sha256": "753b3e7ad0aaab385bc3d0ab158c774e1e2d4b40536832f1e6d17d0c319d67ae",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/route-scale-cache-tests.log"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/sanitizer-fixture-tests.log": {
+      "bytes": 1424,
+      "sha256": "1e1cf5b1909dd8bc24e28b6bca26402135481ba0185e89d4d5b482d69b8890d8",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/sanitizer-fixture-tests.log"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/source-identity.json": {
+      "bytes": 308,
+      "sha256": "f1e4c4c8de44932abc9973f545dd223652ea3bd5e8434e7f1834eb14d721eba3",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/source-identity.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/source-manifest.json": {
+      "bytes": 15420,
+      "sha256": "339842bc15a95701e0b3b71fbc450e0aeb1c61aed9e9d83ece9ab0d2dba82809",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/source-manifest.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/started.json": {
+      "bytes": 46,
+      "sha256": "f15754e7ac35e82918c412739ae64a9b7f92a47d166d4f29e47283f196189bf3",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/started.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/submission.json": {
+      "bytes": 1420,
+      "sha256": "38dcba5f3eba960c1a1ad792052060d7fcd7e2aa36818a2f747ee2e6272304d1",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/submission.json"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/task-publication-tests.log": {
+      "bytes": 2243,
+      "sha256": "89a3de6fff3245ac650c9d01ab6f946c9292e3a47ad7213398ca82fb3c6bff75",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/task-publication-tests.log"
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu16/wrapper-tests.log": {
+      "bytes": 2509,
+      "sha256": "d8939169090682d1ee5e9485dae09f39e7cc20a5b8984a12df410fa781b5a40e",
+      "mtime_ns": 1788873142528094281,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/measurements/glm53_ep_local_20260908/cpu16/wrapper-tests.log"
+    },
+    "source/probes/glm53_ep_binding_check.py": {
+      "bytes": 2199,
+      "sha256": "1d8027b4575bed172b4daeb2a19c10b44977afd34d3d483fb038b0cf4404463c",
+      "mtime_ns": 1788873142607945620,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_ep_binding_check.py"
+    },
+    "source/probes/glm53_ep_bindings_capsule.py": {
+      "bytes": 15356,
+      "sha256": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+      "mtime_ns": 1788873142607945620,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_ep_bindings_capsule.py"
+    },
+    "source/probes/glm53_ep_bindings_pair_check.py": {
+      "bytes": 6235,
+      "sha256": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0",
+      "mtime_ns": 1788873142607945620,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_ep_bindings_pair_check.py"
+    },
+    "source/probes/glm53_ep_capsule_runtime.py": {
+      "bytes": 5679,
+      "sha256": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+      "mtime_ns": 1788873142607945620,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_ep_capsule_runtime.py"
+    },
+    "source/probes/glm53_ep_local_check.py": {
+      "bytes": 13019,
+      "sha256": "8a9c8bd1e3d04bb4b557181ec55e16a2698bd079540af4c6d1a2ae6cce39348c",
+      "mtime_ns": 1788873142607945620,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_ep_local_check.py"
+    },
+    "source/probes/glm53_ep_local_compile_check.py": {
+      "bytes": 7349,
+      "sha256": "4187c1150ce16bc12e33dec8d6136b108f36dc3792b2f45421fd44a3c6a082cf",
+      "mtime_ns": 1788873142607945620,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_ep_local_compile_check.py"
+    },
+    "source/probes/glm53_ep_local_evidence.py": {
+      "bytes": 4852,
+      "sha256": "052bbc888b326d7fd330cb9cc622dae526c3ebf1f3362f96a9e0dc05e5cf7dde",
+      "mtime_ns": 1788873142607945620,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_ep_local_evidence.py"
+    },
+    "source/probes/glm53_ep_route_remap_check.py": {
+      "bytes": 8063,
+      "sha256": "241c11de8db10b550f6a624e91ec729882d4993b1919abe7b187acec4252e568",
+      "mtime_ns": 1788873142607945620,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_ep_route_remap_check.py"
+    },
+    "source/probes/glm53_ep_sanitizer.py": {
+      "bytes": 6104,
+      "sha256": "7144f2b4c488e073257845dc65b028c220a06831ac9ce654d6fbaa2f01ca7e1a",
+      "mtime_ns": 1788873142607945620,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_ep_sanitizer.py"
+    },
+    "source/probes/glm53_probe_lifecycle.py": {
+      "bytes": 10998,
+      "sha256": "ac981627094546373ffbee6970a23d9356f23642b628dd228168324c50b7cc16",
+      "mtime_ns": 1788873142608945622,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/glm53_probe_lifecycle.py"
+    },
+    "source/probes/run_glm53_ep_binding_offline.py": {
+      "bytes": 6113,
+      "sha256": "357ce3de1b087135b4661aeea8fe7a6ea5ce978de024a9f1c9c83b4aba766514",
+      "mtime_ns": 1788873142612945628,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/run_glm53_ep_binding_offline.py"
+    },
+    "source/probes/run_glm53_ep_bindings_pair_offline.py": {
+      "bytes": 11396,
+      "sha256": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587",
+      "mtime_ns": 1788873142612945628,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/run_glm53_ep_bindings_pair_offline.py"
+    },
+    "source/probes/run_glm53_ep_local_cpu_compile.py": {
+      "bytes": 6022,
+      "sha256": "2353825ca1bd395a122439402b2eac892518d52c99e52de1872d6dad70f18da8",
+      "mtime_ns": 1788873142612945628,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/run_glm53_ep_local_cpu_compile.py"
+    },
+    "source/probes/run_glm53_ep_local_offline.py": {
+      "bytes": 10950,
+      "sha256": "28c4d875730b9f2c9816e170c4357b1399e6e86913b765b53593e844f45bf233",
+      "mtime_ns": 1788873142612945628,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/run_glm53_ep_local_offline.py"
+    },
+    "source/tests/test_glm53_ep_binding_check.py": {
+      "bytes": 6567,
+      "sha256": "eedeca9b4bc0f01c4fa2a20518182dba6a5a6854b55c36c7c6af394541f5b26f",
+      "mtime_ns": 1788873142616646706,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_binding_check.py"
+    },
+    "source/tests/test_glm53_ep_bindings_capsule.py": {
+      "bytes": 13743,
+      "sha256": "e24b1dae1a3bdc67ed41a33b44d25e4bb6274fafaa7781f30ac0cbc8c335b6fb",
+      "mtime_ns": 1788873142616646706,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_bindings_capsule.py"
+    },
+    "source/tests/test_glm53_ep_bindings_pair.py": {
+      "bytes": 14769,
+      "sha256": "8dfedc98646a0580781cad5e14921d4ce277c8f899e1ec65fb26af496a5bff6a",
+      "mtime_ns": 1788873142616646706,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_bindings_pair.py"
+    },
+    "source/tests/test_glm53_ep_capsule_inners.py": {
+      "bytes": 13136,
+      "sha256": "fccae5d3ff7a57d72e3c0d25355193ab4409ae2d2668c26ae362fe313efc599d",
+      "mtime_ns": 1788873142616646706,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_capsule_inners.py"
+    },
+    "source/tests/test_glm53_ep_capsule_runtime.py": {
+      "bytes": 6145,
+      "sha256": "624a496cfa8a37be53c9625962e1119d89a8d87f1d9de5c8f20b9a34f8c6779f",
+      "mtime_ns": 1788873142616945634,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_capsule_runtime.py"
+    },
+    "source/tests/test_glm53_ep_capsule_wrappers.py": {
+      "bytes": 19170,
+      "sha256": "6617a7182ff992123cb19d79ca0370c069d831a56434f28f93af16c1b52bf5ac",
+      "mtime_ns": 1788873142616945634,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_capsule_wrappers.py"
+    },
+    "source/tests/test_glm53_ep_local_probe.py": {
+      "bytes": 11920,
+      "sha256": "5a8fb78fd9dcc233fb02e1253bfd6247b24baaeb0c80387c6e381ccaafc0b325",
+      "mtime_ns": 1788873142616945634,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_local_probe.py"
+    },
+    "source/tests/test_glm53_ep_prefill_local.py": {
+      "bytes": 11388,
+      "sha256": "3f79ec33eaabff5521b898b6e72555116e8c1797b51f3b5871fb9c46a203130a",
+      "mtime_ns": 1788873142616945634,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_prefill_local.py"
+    },
+    "source/tests/test_glm53_ep_route_remap.py": {
+      "bytes": 16234,
+      "sha256": "7f6a9ab88f1eaf219a662f4ffca41cb42aef941fb14bd3c0289f677f16e1da5c",
+      "mtime_ns": 1788873142616945634,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_route_remap.py"
+    },
+    "source/tests/test_glm53_ep_route_scale_cache.py": {
+      "bytes": 26918,
+      "sha256": "b4c85443d81a69c0a1542f537b8947b119457ba7fed28c319240546ca329cc06",
+      "mtime_ns": 1788873142616945634,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_route_scale_cache.py"
+    },
+    "source/tests/test_glm53_ep_sanitizer.py": {
+      "bytes": 9669,
+      "sha256": "61c269124cb37cbd02d6930a448a3b2422e625569e1061ca1637093f32b8705d",
+      "mtime_ns": 1788873142616945634,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_sanitizer.py"
+    },
+    "source/tests/test_glm53_ep_task_publication.py": {
+      "bytes": 22046,
+      "sha256": "46e8094e17e16a2e3736737827a69f50cc731499f92858cf1fbb9137db4dbfef",
+      "mtime_ns": 1788873142616945634,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_ep_task_publication.py"
+    },
+    "source/tests/test_glm53_probe_lifecycle.py": {
+      "bytes": 10674,
+      "sha256": "c35a83f6e3eb34adc6a77b240994a7ce1cdc86d4da3f2e9a81220de4bf3f2706",
+      "mtime_ns": 1788873142617945636,
+      "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/tests/test_glm53_probe_lifecycle.py"
+    },
+    "runtime/capsule-manifest.json": {
+      "bytes": 20559,
+      "sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+      "mtime_ns": 1788868220230051715,
+      "source": "/tmp/glm53-bindings-capsule-cpu0908-2/capsule/capsule-manifest.json"
+    },
+    "runtime/cpu2/receipt.json": {
+      "bytes": 2218,
+      "sha256": "d85e9203ac41dbb265db57da0ee6793c7fa3372013bf276662b64a65ee6c42f8",
+      "mtime_ns": 1788868220886016624,
+      "source": "/tmp/glm53-bindings-capsule-cpu0908-2/receipt.json"
+    },
+    "runtime/cpu2/result.json": {
+      "bytes": 98041,
+      "sha256": "611cd509d98b9a8075a92c4d01e2a4ef0de9f50856d08430c568b34f788ef9cd",
+      "mtime_ns": 1788868220709734437,
+      "source": "/tmp/glm53-bindings-capsule-cpu0908-2/result.json"
+    },
+    "runtime/cpu2/container.log": {
+      "bytes": 67,
+      "sha256": "35e598bf1215584657daf6dc174f832c92e3c5b5940d260fed8b4c5f3d7961b8",
+      "mtime_ns": 1788868220709895061,
+      "source": "/tmp/glm53-bindings-capsule-cpu0908-2/container.log"
+    },
+    "runtime/cpu2/base-distributions.json": {
+      "bytes": 2965757,
+      "sha256": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1",
+      "mtime_ns": 1788868219824893641,
+      "source": "/tmp/glm53-bindings-capsule-cpu0908-2/base-distributions.json"
+    },
+    "runtime/cpu2/distribution-resolution.json": {
+      "bytes": 3064809,
+      "sha256": "56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2",
+      "mtime_ns": 1788868219936893821,
+      "source": "/tmp/glm53-bindings-capsule-cpu0908-2/distribution-resolution.json"
+    },
+    "fleet-state/log": {
+      "bytes": 118792,
+      "sha256": "fde986f1f24f7396a100858446ff0332e5249d52784ec243c2ade26118b4e44e",
+      "mtime_ns": 1788874003899284629,
+      "source": "/home/choiceoh/glm53-logs/fleet/log"
+    },
+    "fleet-state/events.log": {
+      "bytes": 64912,
+      "sha256": "702ca3a022e6d1a55f6f3c0093fc82a08961655457f3a6ae68fe7cf0fe83ed9b",
+      "mtime_ns": 1788874003786284453,
+      "source": "/home/choiceoh/glm53-logs/fleet/events.log"
+    },
+    "fleet-state/ledger.tsv": {
+      "bytes": 43479,
+      "sha256": "821d209adace0d0cfed7d73448b67e8283d5fe2b16d2444a042d4dcaa1b38009",
+      "mtime_ns": 1788874003772284431,
+      "source": "/home/choiceoh/glm53-logs/fleet/ledger.tsv"
+    },
+    "fleet-state/lifecycle.jsonl": {
+      "bytes": 71335,
+      "sha256": "d745005a8a3f4a0c0e33064a1d3362181360a0e35d29c4c25c40017cfc03ecdd",
+      "mtime_ns": 1788874003661284258,
+      "source": "/home/choiceoh/glm53-logs/fleet/lifecycle.jsonl"
+    },
+    "fleet-state/queue": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime_ns": 1788874003899284629,
+      "source": "/home/choiceoh/glm53-logs/fleet/queue"
+    },
+    "fleet-state/holder": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source": "/home/choiceoh/glm53-logs/fleet/holder",
+      "absent": true
+    }
+  },
+  "lifecycle_events": [
+    {
+      "t": 1788873151.8511014,
+      "session": "eplocal0908v5",
+      "event": "ready",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/8b95c559152210a9b2d4624cea751c41a865f89fe56bfeae1e88e70467595d93",
+      "protocol": 2,
+      "source_sha256": {
+        "fleet.sh": "654b6812b0b08655d74ed63a0519d211ecae1c787e014a4c7bdf0c71007884f7",
+        "fleet_boot.py": "dc01cffc16b8e06b98d93b834d8606149ca14809c7a086d2b48ac44f4f0605f5",
+        "fleet_handoff.py": "21e7d234702cbf746f55e83e10bbb60e22394bac9cab342ff8b67e2f73c856f9"
+      }
+    },
+    {
+      "t": 1788873444.758573,
+      "session": "eplocal0908v5",
+      "event": "accepted",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/8b95c559152210a9b2d4624cea751c41a865f89fe56bfeae1e88e70467595d93",
+      "revision": 1
+    },
+    {
+      "t": 1788873632.45995,
+      "session": "eplocal0908v5",
+      "event": "payload-finished",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/8b95c559152210a9b2d4624cea751c41a865f89fe56bfeae1e88e70467595d93",
+      "rc": 1
+    },
+    {
+      "t": 1788873632.4907322,
+      "session": "eplocal0908v5",
+      "event": "restore-start",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/8b95c559152210a9b2d4624cea751c41a865f89fe56bfeae1e88e70467595d93"
+    },
+    {
+      "t": 1788874003.6620662,
+      "session": "eplocal0908v5",
+      "event": "restore-finished",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/8b95c559152210a9b2d4624cea751c41a865f89fe56bfeae1e88e70467595d93",
+      "rc": 0,
+      "seconds": 371.18251861899626
+    }
+  ],
+  "capsule_files_checked": 116,
+  "scope": "Terminal snapshot; no live service equality check after handoff"
+}

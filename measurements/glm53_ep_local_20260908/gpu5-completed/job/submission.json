@@ -1,0 +1,104 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b",
+  "revision": "d53fd44f2b8a69869cddc9df10fa4cbb21bc56d9",
+  "source_clean": true,
+  "scheduler": "/home/choiceoh/stkernel",
+  "scheduler_state": {
+    "revision": "c7401026315fbf4f82ee4c8592766f3bdf63d9b8",
+    "approved_main": "c7401026315fbf4f82ee4c8592766f3bdf63d9b8",
+    "approved_fixes": [
+      "d95a2cdb46f2446bd4b58f7d5969b42c895f0b3d",
+      "4a2c960ad632596ca3224ead88da43160012d393"
+    ],
+    "approved_identical_directories": [
+      "bench",
+      "launchers",
+      "profiles",
+      "tests"
+    ]
+  },
+  "cpu_state": {
+    "revision": "111fff02f66f3e07a8332da1117afb75b161f0d6",
+    "submission_sha256": "38dcba5f3eba960c1a1ad792052060d7fcd7e2aa36818a2f747ee2e6272304d1",
+    "exit_sha256": "eb4a8b4d2dfbbf4e5791623707414770b2e265e93f786907157a648c1dc39460",
+    "result_sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c"
+  },
+  "cpu_evidence_sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c",
+  "cpu_summary": {
+    "tests_run": 134,
+    "mounted_source_count": 13,
+    "contract_source_count": 27,
+    "remap_compile_count": 24,
+    "binding_runtime": {
+      "schema": 1,
+      "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+      "binding_identity": {
+        "version": "13.0.3",
+        "root": "/opt/glm53-bindings-capsule",
+        "modules": {
+          "cuda.bindings.driver": {
+            "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+            "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+          },
+          "cuda.bindings._bindings.cydriver": {
+            "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+            "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+          }
+        },
+        "distributions": {
+          "cuda-bindings": {
+            "version": "13.0.3",
+            "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+            "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+          },
+          "cuda-python": {
+            "version": "13.0.3",
+            "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+            "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+          }
+        }
+      },
+      "pathfinder": {
+        "version": "1.7.0",
+        "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+        "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+        "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+        "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+      }
+    }
+  },
+  "capsule_root": "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+  "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "bundle_sha256": "4786b0c9f0567f12838da5cbaa7e270a5aff83ddcf0142b3b95b555aa4b015b1",
+  "driver_sha256": "2e3cf64024ce86675da62ec4947db812b6d96bff93fdddf97d30a8d11d626766",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "eplocal0908v5",
+    "45",
+    "CPU16-matched full MoE remap/numerics/streams/sanitizers; capsule13.0.3 and exact incoming restore",
+    "--",
+    "python3",
+    "-B",
+    "/home/choiceoh/stkernel-ep-local-gpu-0908-5b/probes/run_glm53_ep_local_offline.py",
+    "--revision",
+    "d53fd44f2b8a69869cddc9df10fa4cbb21bc56d9",
+    "--out",
+    "/tmp/glm53-ep-local-gpu-0908-5/capture",
+    "--capsule-root",
+    "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+    "--manifest-sha256",
+    "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "created": 1788873143.7214718,
+  "session": "eplocal0908v5",
+  "performance_acceptance": false,
+  "full_gpu_acceptance": false,
+  "enqueue_while_other_holder_allowed": true,
+  "go_time_lifecycle_guards_unchanged": true,
+  "queue_before": "",
+  "holder_before": "arconsumer0908v17|4133545|srv2|1788872734|20|Only missing B2; includes main #494; preserve original reservation and GPU evidence|boot\n",
+  "restore_debt_before": "{\"acquired\": 1788872734.7101753, \"owner\": {\"host\": \"srv2\", \"pid\": 4133545, \"protocol\": 2, \"session\": \"arconsumer0908v17\", \"start\": \"37420174\"}}\n"
+}

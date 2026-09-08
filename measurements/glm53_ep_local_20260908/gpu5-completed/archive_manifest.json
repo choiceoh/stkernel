@@ -1,0 +1,1637 @@
+{
+  "host": "choiceoh@srv2",
+  "records": [
+    {
+      "original_path": "fleet-state/events.log",
+      "stored_path": "fleet-state/events.log.gz",
+      "original_bytes": 64912,
+      "stored_bytes": 15642,
+      "original_sha256": "702ca3a022e6d1a55f6f3c0093fc82a08961655457f3a6ae68fe7cf0fe83ed9b",
+      "stored_sha256": "09ee3579e40996ffb2f2554c6fda718ad6d8a9ec1ce70865d819c06f78445446"
+    },
+    {
+      "original_path": "fleet-state/holder",
+      "stored_path": "fleet-state/holder.gz",
+      "original_bytes": 0,
+      "stored_bytes": 20,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "original_path": "fleet-state/ledger.tsv",
+      "stored_path": "fleet-state/ledger.tsv.gz",
+      "original_bytes": 43479,
+      "stored_bytes": 13531,
+      "original_sha256": "821d209adace0d0cfed7d73448b67e8283d5fe2b16d2444a042d4dcaa1b38009",
+      "stored_sha256": "b36db3de161f334c0802bfb10277ff48b33cf54f19a8d8ab54410af557c6e0f9"
+    },
+    {
+      "original_path": "fleet-state/lifecycle.jsonl",
+      "stored_path": "fleet-state/lifecycle.jsonl.gz",
+      "original_bytes": 71335,
+      "stored_bytes": 6354,
+      "original_sha256": "d745005a8a3f4a0c0e33064a1d3362181360a0e35d29c4c25c40017cfc03ecdd",
+      "stored_sha256": "13940d10756e4c655e8f939f582b013103f9aaa34278c0ec8abc7928d2be9129"
+    },
+    {
+      "original_path": "fleet-state/log",
+      "stored_path": "fleet-state/log.gz",
+      "original_bytes": 118792,
+      "stored_bytes": 26498,
+      "original_sha256": "fde986f1f24f7396a100858446ff0332e5249d52784ec243c2ade26118b4e44e",
+      "stored_sha256": "b97304358ac89da468c9c12261984a02db66cbcd194a592417ebf1b86c3ca783"
+    },
+    {
+      "original_path": "fleet-state/queue",
+      "stored_path": "fleet-state/queue.gz",
+      "original_bytes": 0,
+      "stored_bytes": 20,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "original_path": "job/capture/balanced4096.json",
+      "stored_path": "job/capture/balanced4096.json",
+      "original_bytes": 7066,
+      "stored_bytes": 7066,
+      "original_sha256": "ca1ed7e79f5e18953c80947b8e341991fae31265557e480a2156c23b86474cdc",
+      "stored_sha256": "ca1ed7e79f5e18953c80947b8e341991fae31265557e480a2156c23b86474cdc"
+    },
+    {
+      "original_path": "job/capture/balanced4096.log",
+      "stored_path": "job/capture/balanced4096.log.gz",
+      "original_bytes": 7287,
+      "stored_bytes": 2840,
+      "original_sha256": "13c2365817f6b688f184464b8eaf12638f4232153658d2fb0b5d666292974e14",
+      "stored_sha256": "14df115833374468562657c9de9a40810077d600a5592072b6abfa6324307fad"
+    },
+    {
+      "original_path": "job/capture/balanced6912.json",
+      "stored_path": "job/capture/balanced6912.json",
+      "original_bytes": 7366,
+      "stored_bytes": 7366,
+      "original_sha256": "a0101f6dc4e3eebce8d815f68e39349a5b6cf7f2d1bc9f913d8da9f343b77fac",
+      "stored_sha256": "a0101f6dc4e3eebce8d815f68e39349a5b6cf7f2d1bc9f913d8da9f343b77fac"
+    },
+    {
+      "original_path": "job/capture/balanced6912.log",
+      "stored_path": "job/capture/balanced6912.log.gz",
+      "original_bytes": 7439,
+      "stored_bytes": 2801,
+      "original_sha256": "4ed89acb3e824e395dc153307328ad07ce77847e27e83a259311e031d0c7eec6",
+      "stored_sha256": "305037dc9d3fcc7d8ef98e5d74e6888dde21642e237cf4cf60b2fdd364a6362e"
+    },
+    {
+      "original_path": "job/capture/balanced8192.json",
+      "stored_path": "job/capture/balanced8192.json",
+      "original_bytes": 7054,
+      "stored_bytes": 7054,
+      "original_sha256": "8125948c52439df44c0fffb0eb959530cf06e5a3442cb6c6642a5cf79130c5f2",
+      "stored_sha256": "8125948c52439df44c0fffb0eb959530cf06e5a3442cb6c6642a5cf79130c5f2"
+    },
+    {
+      "original_path": "job/capture/balanced8192.log",
+      "stored_path": "job/capture/balanced8192.log.gz",
+      "original_bytes": 7407,
+      "stored_bytes": 2819,
+      "original_sha256": "925703f6dac5403570ac15c7e40ce6567a3ba446d7e47caca00848a0bfcfe413",
+      "stored_sha256": "f688d1c7e8f541de4cbc2f27c48bd38d3e03be1e1fecaf197a4cbfba99046929"
+    },
+    {
+      "original_path": "job/capture/before.json",
+      "stored_path": "job/capture/before.json",
+      "original_bytes": 41738,
+      "stored_bytes": 41738,
+      "original_sha256": "459fd7379f8198d266339289e04a9848089634ad000b66b36cddb84697b6b650",
+      "stored_sha256": "459fd7379f8198d266339289e04a9848089634ad000b66b36cddb84697b6b650"
+    },
+    {
+      "original_path": "job/capture/completion.json",
+      "stored_path": "job/capture/completion.json",
+      "original_bytes": 31331,
+      "stored_bytes": 31331,
+      "original_sha256": "4d0b2eddc3fdb091cf6c83fb0bb3802761cc76117204cf50b18f559dcd57618e",
+      "stored_sha256": "4d0b2eddc3fdb091cf6c83fb0bb3802761cc76117204cf50b18f559dcd57618e"
+    },
+    {
+      "original_path": "job/capture/concentrated6912.json",
+      "stored_path": "job/capture/concentrated6912.json",
+      "original_bytes": 5056,
+      "stored_bytes": 5056,
+      "original_sha256": "30a176ed3547cdb0cc1d014de170405558d1f17afef533ae10792e29dccab0bb",
+      "stored_sha256": "30a176ed3547cdb0cc1d014de170405558d1f17afef533ae10792e29dccab0bb"
+    },
+    {
+      "original_path": "job/capture/concentrated6912.log",
+      "stored_path": "job/capture/concentrated6912.log.gz",
+      "original_bytes": 6881,
+      "stored_bytes": 2503,
+      "original_sha256": "3fdd48f35776860cf0efbdbdfccd0e99881e869fc030ce4b79a9b0a224442992",
+      "stored_sha256": "a1f856d0fb2132a6b247744ea0de9dcbf1e2cb209e9aeae33ee6a538f502d297"
+    },
+    {
+      "original_path": "job/capture/progress.json",
+      "stored_path": "job/capture/progress.json",
+      "original_bytes": 31196,
+      "stored_bytes": 31196,
+      "original_sha256": "c90cd2c30d152256ea3bdf9d27438ecd7e4ac78c1118b1cfcdbcb62c50e95623",
+      "stored_sha256": "c90cd2c30d152256ea3bdf9d27438ecd7e4ac78c1118b1cfcdbcb62c50e95623"
+    },
+    {
+      "original_path": "job/capture/remap.json",
+      "stored_path": "job/capture/remap.json",
+      "original_bytes": 4327,
+      "stored_bytes": 4327,
+      "original_sha256": "5718ddf9258ac8e03f80fad5aee40604e95feee67eca20b33167d44c43787e1f",
+      "stored_sha256": "5718ddf9258ac8e03f80fad5aee40604e95feee67eca20b33167d44c43787e1f"
+    },
+    {
+      "original_path": "job/capture/remap.log",
+      "stored_path": "job/capture/remap.log.gz",
+      "original_bytes": 3494,
+      "stored_bytes": 1002,
+      "original_sha256": "14dbd101c69594c926555f3eb15e7c423ad631826c24fc5902d2dbc663b4343f",
+      "stored_sha256": "974237f6df40ef51c1fe0399361c1878dd8b45f1dc328787d8391e4710ea0416"
+    },
+    {
+      "original_path": "job/capture/resources-balanced4096.json",
+      "stored_path": "job/capture/resources-balanced4096.json",
+      "original_bytes": 363,
+      "stored_bytes": 363,
+      "original_sha256": "263dbb7932c4cba7f6ec5517e3e6e12b6c700c21020795b4ebc3c229e9c4ce85",
+      "stored_sha256": "263dbb7932c4cba7f6ec5517e3e6e12b6c700c21020795b4ebc3c229e9c4ce85"
+    },
+    {
+      "original_path": "job/capture/resources-balanced6912.json",
+      "stored_path": "job/capture/resources-balanced6912.json",
+      "original_bytes": 363,
+      "stored_bytes": 363,
+      "original_sha256": "b4c44fff5db95372032a63b56bf4677851f4db63f454e7b879c7c6f65ce012b7",
+      "stored_sha256": "b4c44fff5db95372032a63b56bf4677851f4db63f454e7b879c7c6f65ce012b7"
+    },
+    {
+      "original_path": "job/capture/resources-balanced8192.json",
+      "stored_path": "job/capture/resources-balanced8192.json",
+      "original_bytes": 363,
+      "stored_bytes": 363,
+      "original_sha256": "3febfe625fde4fa974d72e736e296cd5c536483f415b839c9ffedf662f6c31ff",
+      "stored_sha256": "3febfe625fde4fa974d72e736e296cd5c536483f415b839c9ffedf662f6c31ff"
+    },
+    {
+      "original_path": "job/capture/resources-before.json",
+      "stored_path": "job/capture/resources-before.json",
+      "original_bytes": 363,
+      "stored_bytes": 363,
+      "original_sha256": "e0fb6ddebbffe2b8b99e58a3df51a23837dc810381be37c866e706e257c4038b",
+      "stored_sha256": "e0fb6ddebbffe2b8b99e58a3df51a23837dc810381be37c866e706e257c4038b"
+    },
+    {
+      "original_path": "job/capture/resources-concentrated6912.json",
+      "stored_path": "job/capture/resources-concentrated6912.json",
+      "original_bytes": 363,
+      "stored_bytes": 363,
+      "original_sha256": "3d6cdcd4fe98ff0a0ccecc544f8ee415949cdf5ea66e6ab4475105f52c5ca8ab",
+      "stored_sha256": "3d6cdcd4fe98ff0a0ccecc544f8ee415949cdf5ea66e6ab4475105f52c5ca8ab"
+    },
+    {
+      "original_path": "job/capture/resources-remap.json",
+      "stored_path": "job/capture/resources-remap.json",
+      "original_bytes": 363,
+      "stored_bytes": 363,
+      "original_sha256": "18ab09d88708a19fc1001d826eb60c0b6c2e996100bbdfed16e2dbf9654f7d91",
+      "stored_sha256": "18ab09d88708a19fc1001d826eb60c0b6c2e996100bbdfed16e2dbf9654f7d91"
+    },
+    {
+      "original_path": "job/capture/restored.json",
+      "stored_path": "job/capture/restored.json",
+      "original_bytes": 41738,
+      "stored_bytes": 41738,
+      "original_sha256": "54ca1832ace8f85da19d1b1bd5bf23a620103ced4c05a2f20b4acb153f738e1f",
+      "stored_sha256": "54ca1832ace8f85da19d1b1bd5bf23a620103ced4c05a2f20b4acb153f738e1f"
+    },
+    {
+      "original_path": "job/capture/sanitizer-preflight.json",
+      "stored_path": "job/capture/sanitizer-preflight.json",
+      "original_bytes": 1490,
+      "stored_bytes": 1490,
+      "original_sha256": "c4b306fc63fe322966dcca2dece6b1225d7c7e042bc64bfb1341319d4b03d34c",
+      "stored_sha256": "c4b306fc63fe322966dcca2dece6b1225d7c7e042bc64bfb1341319d4b03d34c"
+    },
+    {
+      "original_path": "job/capture/stopped-restored.json",
+      "stored_path": "job/capture/stopped-restored.json",
+      "original_bytes": 41738,
+      "stored_bytes": 41738,
+      "original_sha256": "9b346d532b1ac883c365ee80da8f27c6c667b35ddc4c9d29bdb77c58ac595efe",
+      "stored_sha256": "9b346d532b1ac883c365ee80da8f27c6c667b35ddc4c9d29bdb77c58ac595efe"
+    },
+    {
+      "original_path": "job/capture/stopped.json",
+      "stored_path": "job/capture/stopped.json",
+      "original_bytes": 41738,
+      "stored_bytes": 41738,
+      "original_sha256": "bea6a6a578d9f4fbece554624890b58580dace26344aa4c0999a90910f8945bc",
+      "stored_sha256": "bea6a6a578d9f4fbece554624890b58580dace26344aa4c0999a90910f8945bc"
+    },
+    {
+      "original_path": "job/cpu-evidence.json",
+      "stored_path": "job/cpu-evidence.json",
+      "original_bytes": 28302,
+      "stored_bytes": 28302,
+      "original_sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c",
+      "stored_sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c"
+    },
+    {
+      "original_path": "job/driver-start.json",
+      "stored_path": "job/driver-start.json",
+      "original_bytes": 4664,
+      "stored_bytes": 4664,
+      "original_sha256": "4ff23e4fc2441dfa20a1300b79febc03b6911926945ed19ab153bc86b6400115",
+      "stored_sha256": "4ff23e4fc2441dfa20a1300b79febc03b6911926945ed19ab153bc86b6400115"
+    },
+    {
+      "original_path": "job/driver.pid",
+      "stored_path": "job/driver.pid",
+      "original_bytes": 6,
+      "stored_bytes": 6,
+      "original_sha256": "7130587de0befd2594b23872e755020bdab7719a26cd1ec6f342080f1f1b944d",
+      "stored_sha256": "7130587de0befd2594b23872e755020bdab7719a26cd1ec6f342080f1f1b944d"
+    },
+    {
+      "original_path": "job/driver.py",
+      "stored_path": "job/driver.py",
+      "original_bytes": 8424,
+      "stored_bytes": 8424,
+      "original_sha256": "2e3cf64024ce86675da62ec4947db812b6d96bff93fdddf97d30a8d11d626766",
+      "stored_sha256": "2e3cf64024ce86675da62ec4947db812b6d96bff93fdddf97d30a8d11d626766"
+    },
+    {
+      "original_path": "job/exit.json",
+      "stored_path": "job/exit.json",
+      "original_bytes": 4694,
+      "stored_bytes": 4694,
+      "original_sha256": "5fc30218dbe8c74a93a4c3ae734668fa91f1441ea9c6c5015eb9b7d7dddabe0d",
+      "stored_sha256": "5fc30218dbe8c74a93a4c3ae734668fa91f1441ea9c6c5015eb9b7d7dddabe0d"
+    },
+    {
+      "original_path": "job/fleet.log",
+      "stored_path": "job/fleet.log.gz",
+      "original_bytes": 45985,
+      "stored_bytes": 9244,
+      "original_sha256": "a81367f60bb0dd7227ebdbf067ace65c2908824b350363f35802ea205addf7e5",
+      "stored_sha256": "52e9c4ef4e0e129eb97dbb5962af640568bc76aee507174d305aba80db3429f3"
+    },
+    {
+      "original_path": "job/submission.json",
+      "stored_path": "job/submission.json",
+      "original_bytes": 4541,
+      "stored_bytes": 4541,
+      "original_sha256": "282e505c7641ddef12d9943621bb9fa81d51eb31bfdfa04c9afa3a78c8938d69",
+      "stored_sha256": "282e505c7641ddef12d9943621bb9fa81d51eb31bfdfa04c9afa3a78c8938d69"
+    },
+    {
+      "original_path": "runtime/capsule-manifest.json",
+      "stored_path": "runtime/capsule-manifest.json",
+      "original_bytes": 20559,
+      "stored_bytes": 20559,
+      "original_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+      "stored_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+    },
+    {
+      "original_path": "runtime/cpu2/base-distributions.json",
+      "stored_path": "runtime/cpu2/base-distributions.json",
+      "original_bytes": 2965757,
+      "stored_bytes": 2965757,
+      "original_sha256": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1",
+      "stored_sha256": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1"
+    },
+    {
+      "original_path": "runtime/cpu2/container.log",
+      "stored_path": "runtime/cpu2/container.log.gz",
+      "original_bytes": 67,
+      "stored_bytes": 82,
+      "original_sha256": "35e598bf1215584657daf6dc174f832c92e3c5b5940d260fed8b4c5f3d7961b8",
+      "stored_sha256": "02a2956d2ecba32be607d43813cc00f2c9c73f8c6244e895c226112f14e13998"
+    },
+    {
+      "original_path": "runtime/cpu2/distribution-resolution.json",
+      "stored_path": "runtime/cpu2/distribution-resolution.json",
+      "original_bytes": 3064809,
+      "stored_bytes": 3064809,
+      "original_sha256": "56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2",
+      "stored_sha256": "56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2"
+    },
+    {
+      "original_path": "runtime/cpu2/receipt.json",
+      "stored_path": "runtime/cpu2/receipt.json",
+      "original_bytes": 2218,
+      "stored_bytes": 2218,
+      "original_sha256": "d85e9203ac41dbb265db57da0ee6793c7fa3372013bf276662b64a65ee6c42f8",
+      "stored_sha256": "d85e9203ac41dbb265db57da0ee6793c7fa3372013bf276662b64a65ee6c42f8"
+    },
+    {
+      "original_path": "runtime/cpu2/result.json",
+      "stored_path": "runtime/cpu2/result.json",
+      "original_bytes": 98041,
+      "stored_bytes": 98041,
+      "original_sha256": "611cd509d98b9a8075a92c4d01e2a4ef0de9f50856d08430c568b34f788ef9cd",
+      "stored_sha256": "611cd509d98b9a8075a92c4d01e2a4ef0de9f50856d08430c568b34f788ef9cd"
+    },
+    {
+      "original_path": "source/build/glm53/async_llm.py",
+      "stored_path": "source/build/glm53/async_llm.py",
+      "original_bytes": 47513,
+      "stored_bytes": 47513,
+      "original_sha256": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0",
+      "stored_sha256": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0"
+    },
+    {
+      "original_path": "source/build/glm53/b12x_moe.py",
+      "stored_path": "source/build/glm53/b12x_moe.py",
+      "original_bytes": 31331,
+      "stored_bytes": 31331,
+      "original_sha256": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68",
+      "stored_sha256": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68"
+    },
+    {
+      "original_path": "source/build/glm53/chunk_delta_h.py",
+      "stored_path": "source/build/glm53/chunk_delta_h.py",
+      "original_bytes": 13349,
+      "stored_bytes": 13349,
+      "original_sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+      "stored_sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739"
+    },
+    {
+      "original_path": "source/build/glm53/cuda_communicator.py",
+      "stored_path": "source/build/glm53/cuda_communicator.py",
+      "original_bytes": 32391,
+      "stored_bytes": 32391,
+      "original_sha256": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe",
+      "stored_sha256": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe"
+    },
+    {
+      "original_path": "source/build/glm53/deneb_boot_stamps.py",
+      "stored_path": "source/build/glm53/deneb_boot_stamps.py",
+      "original_bytes": 11173,
+      "stored_bytes": 11173,
+      "original_sha256": "cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67",
+      "stored_sha256": "cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67"
+    },
+    {
+      "original_path": "source/build/glm53/dflash_utils.py",
+      "stored_path": "source/build/glm53/dflash_utils.py",
+      "original_bytes": 5518,
+      "stored_bytes": 5518,
+      "original_sha256": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98",
+      "stored_sha256": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98"
+    },
+    {
+      "original_path": "source/build/glm53/dsv4_oneshot_ar.cu",
+      "stored_path": "source/build/glm53/dsv4_oneshot_ar.cu",
+      "original_bytes": 36138,
+      "stored_bytes": 36138,
+      "original_sha256": "7c75403c14142b70da2d87ff3d8906051539740f1b3ecea2107b040a323cd6cf",
+      "stored_sha256": "7c75403c14142b70da2d87ff3d8906051539740f1b3ecea2107b040a323cd6cf"
+    },
+    {
+      "original_path": "source/build/glm53/dsv4_oneshot_shim.py",
+      "stored_path": "source/build/glm53/dsv4_oneshot_shim.py",
+      "original_bytes": 21380,
+      "stored_bytes": 21380,
+      "original_sha256": "ef6fffb1474965f16702217f72b6e9e07a941f8528e617039561a8ac4cc1ca34",
+      "stored_sha256": "ef6fffb1474965f16702217f72b6e9e07a941f8528e617039561a8ac4cc1ca34"
+    },
+    {
+      "original_path": "source/build/glm53/flashinfer_b12x_moe.py",
+      "stored_path": "source/build/glm53/flashinfer_b12x_moe.py",
+      "original_bytes": 99815,
+      "stored_bytes": 99815,
+      "original_sha256": "5c7cdbc7d87129d3314725923a674728da113f7918b9c33dab164aa1c5cfc56d",
+      "stored_sha256": "5c7cdbc7d87129d3314725923a674728da113f7918b9c33dab164aa1c5cfc56d"
+    },
+    {
+      "original_path": "source/build/glm53/flashinfer_mla_sparse_sm90.py",
+      "stored_path": "source/build/glm53/flashinfer_mla_sparse_sm90.py",
+      "original_bytes": 28100,
+      "stored_bytes": 28100,
+      "original_sha256": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973",
+      "stored_sha256": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973"
+    },
+    {
+      "original_path": "source/build/glm53/fp8_lm_head.py",
+      "stored_path": "source/build/glm53/fp8_lm_head.py",
+      "original_bytes": 19647,
+      "stored_bytes": 19647,
+      "original_sha256": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac",
+      "stored_sha256": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac"
+    },
+    {
+      "original_path": "source/build/glm53/glm47_moe.py",
+      "stored_path": "source/build/glm53/glm47_moe.py",
+      "original_bytes": 9881,
+      "stored_bytes": 9881,
+      "original_sha256": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+      "stored_sha256": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_chat.py",
+      "stored_path": "source/build/glm53/glm53_chat.py",
+      "original_bytes": 6456,
+      "stored_bytes": 6456,
+      "original_sha256": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+      "stored_sha256": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_decode_first.py",
+      "stored_path": "source/build/glm53/glm53_decode_first.py",
+      "original_bytes": 18281,
+      "stored_bytes": 18281,
+      "original_sha256": "220c91024677afa63622c8d169ff901b24353f02af81d2f4873af2b363fc2836",
+      "stored_sha256": "220c91024677afa63622c8d169ff901b24353f02af81d2f4873af2b363fc2836"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_dev_lab.py",
+      "stored_path": "source/build/glm53/glm53_dev_lab.py",
+      "original_bytes": 5605,
+      "stored_bytes": 5605,
+      "original_sha256": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335",
+      "stored_sha256": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_dflash_early_fc.py",
+      "stored_path": "source/build/glm53/glm53_dflash_early_fc.py",
+      "original_bytes": 6376,
+      "stored_bytes": 6376,
+      "original_sha256": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd",
+      "stored_sha256": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_draft_dump.py",
+      "stored_path": "source/build/glm53/glm53_draft_dump.py",
+      "original_bytes": 5782,
+      "stored_bytes": 5782,
+      "original_sha256": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360",
+      "stored_sha256": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_drafter_prep.py",
+      "stored_path": "source/build/glm53/glm53_drafter_prep.py",
+      "original_bytes": 13603,
+      "stored_bytes": 13603,
+      "original_sha256": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce",
+      "stored_sha256": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_ep_route_remap.py",
+      "stored_path": "source/build/glm53/glm53_ep_route_remap.py",
+      "original_bytes": 5493,
+      "stored_bytes": 5493,
+      "original_sha256": "9d83120fb20e4aae382e3971a86c1a3b6970e591dd31ee5d7fc3e1a2ca521339",
+      "stored_sha256": "9d83120fb20e4aae382e3971a86c1a3b6970e591dd31ee5d7fc3e1a2ca521339"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_fp8_dense.py",
+      "stored_path": "source/build/glm53/glm53_fp8_dense.py",
+      "original_bytes": 63156,
+      "stored_bytes": 63156,
+      "original_sha256": "a2b7508eaa12a43212615869deac1c855c5441f540406f53703b7cd85c4e6046",
+      "stored_sha256": "a2b7508eaa12a43212615869deac1c855c5441f540406f53703b7cd85c4e6046"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_indexer_gate.py",
+      "stored_path": "source/build/glm53/glm53_indexer_gate.py",
+      "original_bytes": 6273,
+      "stored_bytes": 6273,
+      "original_sha256": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28",
+      "stored_sha256": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_kda_onepass.py",
+      "stored_path": "source/build/glm53/glm53_kda_onepass.py",
+      "original_bytes": 41197,
+      "stored_bytes": 41197,
+      "original_sha256": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee",
+      "stored_sha256": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_kpool_indexer.py",
+      "stored_path": "source/build/glm53/glm53_kpool_indexer.py",
+      "original_bytes": 66372,
+      "stored_bytes": 66372,
+      "original_sha256": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319",
+      "stored_sha256": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_lab_middleware.py",
+      "stored_path": "source/build/glm53/glm53_lab_middleware.py",
+      "original_bytes": 1013,
+      "stored_bytes": 1013,
+      "original_sha256": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd",
+      "stored_sha256": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_megakernel.cu",
+      "stored_path": "source/build/glm53/glm53_megakernel.cu",
+      "original_bytes": 177496,
+      "stored_bytes": 177496,
+      "original_sha256": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c",
+      "stored_sha256": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_megakernel.py",
+      "stored_path": "source/build/glm53/glm53_megakernel.py",
+      "original_bytes": 125258,
+      "stored_bytes": 125258,
+      "original_sha256": "53a26fc2821b0b3e76a1ea0d12354a2eb35c538f55d8daa2fd03b000128da7fb",
+      "stored_sha256": "53a26fc2821b0b3e76a1ea0d12354a2eb35c538f55d8daa2fd03b000128da7fb"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_nvfp4_bproj.py",
+      "stored_path": "source/build/glm53/glm53_nvfp4_bproj.py",
+      "original_bytes": 8093,
+      "stored_bytes": 8093,
+      "original_sha256": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20",
+      "stored_sha256": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_nvfp4_scale.py",
+      "stored_path": "source/build/glm53/glm53_nvfp4_scale.py",
+      "original_bytes": 2577,
+      "stored_bytes": 2577,
+      "original_sha256": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8",
+      "stored_sha256": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_prefill_collectives.py",
+      "stored_path": "source/build/glm53/glm53_prefill_collectives.py",
+      "original_bytes": 28425,
+      "stored_bytes": 28425,
+      "original_sha256": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+      "stored_sha256": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_prefill_fastpath.py",
+      "stored_path": "source/build/glm53/glm53_prefill_fastpath.py",
+      "original_bytes": 3530,
+      "stored_bytes": 3530,
+      "original_sha256": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be",
+      "stored_sha256": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_prep_fused.py",
+      "stored_path": "source/build/glm53/glm53_prep_fused.py",
+      "original_bytes": 62614,
+      "stored_bytes": 62614,
+      "original_sha256": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e",
+      "stored_sha256": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_rank_cache.py",
+      "stored_path": "source/build/glm53/glm53_rank_cache.py",
+      "original_bytes": 19200,
+      "stored_bytes": 19200,
+      "original_sha256": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26",
+      "stored_sha256": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_renderer_warmup.py",
+      "stored_path": "source/build/glm53/glm53_renderer_warmup.py",
+      "original_bytes": 5006,
+      "stored_bytes": 5006,
+      "original_sha256": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8",
+      "stored_sha256": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8"
+    },
+    {
+      "original_path": "source/build/glm53/glm53_startup_cache.py",
+      "stored_path": "source/build/glm53/glm53_startup_cache.py",
+      "original_bytes": 13495,
+      "stored_bytes": 13495,
+      "original_sha256": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76",
+      "stored_sha256": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76"
+    },
+    {
+      "original_path": "source/build/glm53/glm5next_attention.py",
+      "stored_path": "source/build/glm53/glm5next_attention.py",
+      "original_bytes": 27202,
+      "stored_bytes": 27202,
+      "original_sha256": "4bed9915da4c2f45e17cec2995f61963528dccc3f5832a9ae50db19e0faeada9",
+      "stored_sha256": "4bed9915da4c2f45e17cec2995f61963528dccc3f5832a9ae50db19e0faeada9"
+    },
+    {
+      "original_path": "source/build/glm53/glm5next_kda.py",
+      "stored_path": "source/build/glm53/glm5next_kda.py",
+      "original_bytes": 35295,
+      "stored_bytes": 35295,
+      "original_sha256": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a",
+      "stored_sha256": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a"
+    },
+    {
+      "original_path": "source/build/glm53/glm5next_model.py",
+      "stored_path": "source/build/glm53/glm5next_model.py",
+      "original_bytes": 74950,
+      "stored_bytes": 74950,
+      "original_sha256": "1b2fe00fadac5db22ce01e35f6be23e3e6e7b75e92b6d09af434175f811f96d7",
+      "stored_sha256": "1b2fe00fadac5db22ce01e35f6be23e3e6e7b75e92b6d09af434175f811f96d7"
+    },
+    {
+      "original_path": "source/build/glm53/glm5next_multimodal.py",
+      "stored_path": "source/build/glm53/glm5next_multimodal.py",
+      "original_bytes": 31356,
+      "stored_bytes": 31356,
+      "original_sha256": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568",
+      "stored_sha256": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568"
+    },
+    {
+      "original_path": "source/build/glm53/gpu_worker.py",
+      "stored_path": "source/build/glm53/gpu_worker.py",
+      "original_bytes": 60529,
+      "stored_bytes": 60529,
+      "original_sha256": "c85092ab70c42692ae8cb7ae4ba4d35d7fbe885cee767ea969990483929d2834",
+      "stored_sha256": "c85092ab70c42692ae8cb7ae4ba4d35d7fbe885cee767ea969990483929d2834"
+    },
+    {
+      "original_path": "source/build/glm53/kda.py",
+      "stored_path": "source/build/glm53/kda.py",
+      "original_bytes": 65164,
+      "stored_bytes": 65164,
+      "original_sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+      "stored_sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e"
+    },
+    {
+      "original_path": "source/build/glm53/kv_cache_coordinator.py",
+      "stored_path": "source/build/glm53/kv_cache_coordinator.py",
+      "original_bytes": 40664,
+      "stored_bytes": 40664,
+      "original_sha256": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d",
+      "stored_sha256": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d"
+    },
+    {
+      "original_path": "source/build/glm53/manifest.tsv",
+      "stored_path": "source/build/glm53/manifest.tsv",
+      "original_bytes": 8618,
+      "stored_bytes": 8618,
+      "original_sha256": "b37797125c0c5dd17963ace5635820749c90e5b1b486792aa737c2ec5ba29057",
+      "stored_sha256": "b37797125c0c5dd17963ace5635820749c90e5b1b486792aa737c2ec5ba29057"
+    },
+    {
+      "original_path": "source/build/glm53/moe_dispatch.py",
+      "stored_path": "source/build/glm53/moe_dispatch.py",
+      "original_bytes": 175149,
+      "stored_bytes": 175149,
+      "original_sha256": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+      "stored_sha256": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905"
+    },
+    {
+      "original_path": "source/build/glm53/moe_dynamic_ep_local.py",
+      "stored_path": "source/build/glm53/moe_dynamic_ep_local.py",
+      "original_bytes": 37063,
+      "stored_bytes": 37063,
+      "original_sha256": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9",
+      "stored_sha256": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9"
+    },
+    {
+      "original_path": "source/build/glm53/moe_dynamic_gated_tiled.py",
+      "stored_path": "source/build/glm53/moe_dynamic_gated_tiled.py",
+      "original_bytes": 3840,
+      "stored_bytes": 3840,
+      "original_sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+      "stored_sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d"
+    },
+    {
+      "original_path": "source/build/glm53/moe_dynamic_prefill.py",
+      "stored_path": "source/build/glm53/moe_dynamic_prefill.py",
+      "original_bytes": 91792,
+      "stored_bytes": 91792,
+      "original_sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+      "stored_sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5"
+    },
+    {
+      "original_path": "source/build/glm53/moe_dynamic_prefill_n128.py",
+      "stored_path": "source/build/glm53/moe_dynamic_prefill_n128.py",
+      "original_bytes": 46473,
+      "stored_bytes": 46473,
+      "original_sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+      "stored_sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4"
+    },
+    {
+      "original_path": "source/build/glm53/moe_gate_sm121.py",
+      "stored_path": "source/build/glm53/moe_gate_sm121.py",
+      "original_bytes": 12724,
+      "stored_bytes": 12724,
+      "original_sha256": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b",
+      "stored_sha256": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b"
+    },
+    {
+      "original_path": "source/build/glm53/moe_micro_kernel.py",
+      "stored_path": "source/build/glm53/moe_micro_kernel.py",
+      "original_bytes": 113270,
+      "stored_bytes": 113270,
+      "original_sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+      "stored_sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655"
+    },
+    {
+      "original_path": "source/build/glm53/moe_sf_pack.py",
+      "stored_path": "source/build/glm53/moe_sf_pack.py",
+      "original_bytes": 7321,
+      "stored_bytes": 7321,
+      "original_sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+      "stored_sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a"
+    },
+    {
+      "original_path": "source/build/glm53/moe_static_common.py",
+      "stored_path": "source/build/glm53/moe_static_common.py",
+      "original_bytes": 9913,
+      "stored_bytes": 9913,
+      "original_sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+      "stored_sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9"
+    },
+    {
+      "original_path": "source/build/glm53/moe_static_kernel_v4.py",
+      "stored_path": "source/build/glm53/moe_static_kernel_v4.py",
+      "original_bytes": 98224,
+      "stored_bytes": 98224,
+      "original_sha256": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+      "stored_sha256": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480"
+    },
+    {
+      "original_path": "source/build/glm53/moe_static_kernel_v5.py",
+      "stored_path": "source/build/glm53/moe_static_kernel_v5.py",
+      "original_bytes": 9670,
+      "stored_bytes": 9670,
+      "original_sha256": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+      "stored_sha256": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11"
+    },
+    {
+      "original_path": "source/build/glm53/mtp.py",
+      "stored_path": "source/build/glm53/mtp.py",
+      "original_bytes": 19541,
+      "stored_bytes": 19541,
+      "original_sha256": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade",
+      "stored_sha256": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade"
+    },
+    {
+      "original_path": "source/build/glm53/parallel_state.py",
+      "stored_path": "source/build/glm53/parallel_state.py",
+      "original_bytes": 86872,
+      "stored_bytes": 86872,
+      "original_sha256": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8",
+      "stored_sha256": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8"
+    },
+    {
+      "original_path": "source/build/glm53/qwen3_dflash2.py",
+      "stored_path": "source/build/glm53/qwen3_dflash2.py",
+      "original_bytes": 23042,
+      "stored_bytes": 23042,
+      "original_sha256": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee",
+      "stored_sha256": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee"
+    },
+    {
+      "original_path": "source/build/glm53/sampler.py",
+      "stored_path": "source/build/glm53/sampler.py",
+      "original_bytes": 11843,
+      "stored_bytes": 11843,
+      "original_sha256": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb",
+      "stored_sha256": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb"
+    },
+    {
+      "original_path": "source/build/glm53/sparse_attn_indexer_kpool.py",
+      "stored_path": "source/build/glm53/sparse_attn_indexer_kpool.py",
+      "original_bytes": 69400,
+      "stored_bytes": 69400,
+      "original_sha256": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d",
+      "stored_sha256": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d"
+    },
+    {
+      "original_path": "source/build/glm53/spec_decode_rejection_warmup.py",
+      "stored_path": "source/build/glm53/spec_decode_rejection_warmup.py",
+      "original_bytes": 10760,
+      "stored_bytes": 10760,
+      "original_sha256": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d",
+      "stored_sha256": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d"
+    },
+    {
+      "original_path": "source/build/glm53/tilelang.py",
+      "stored_path": "source/build/glm53/tilelang.py",
+      "original_bytes": 37391,
+      "stored_bytes": 37391,
+      "original_sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+      "stored_sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1"
+    },
+    {
+      "original_path": "source/build/glm53/tilelang_kernels.py",
+      "stored_path": "source/build/glm53/tilelang_kernels.py",
+      "original_bytes": 44789,
+      "stored_bytes": 44789,
+      "original_sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+      "stored_sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12"
+    },
+    {
+      "original_path": "source/build/glm53/zz_deneb_boot_stamps.pth",
+      "stored_path": "source/build/glm53/zz_deneb_boot_stamps.pth",
+      "original_bytes": 54,
+      "stored_bytes": 54,
+      "original_sha256": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca",
+      "stored_sha256": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/README.md",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/README.md",
+      "original_bytes": 2690,
+      "stored_bytes": 2690,
+      "original_sha256": "fd397f099fcf6413bc75655777190f908001bde5506f4f8df93afdef9f015ee2",
+      "stored_sha256": "fd397f099fcf6413bc75655777190f908001bde5506f4f8df93afdef9f015ee2"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/SHA256SUMS",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/SHA256SUMS",
+      "original_bytes": 7894,
+      "stored_bytes": 7894,
+      "original_sha256": "2ce41b19b68c89333d66e073f129af2b802d71b2791379034cc1ae1d57cfa5ad",
+      "stored_sha256": "2ce41b19b68c89333d66e073f129af2b802d71b2791379034cc1ae1d57cfa5ad"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/collect.py",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/collect.py",
+      "original_bytes": 3126,
+      "stored_bytes": 3126,
+      "original_sha256": "f8a3390af02ef61a451a3e6cab6130ae6cf9cecd1e77abcccbfa054cce03ed7e",
+      "stored_sha256": "f8a3390af02ef61a451a3e6cab6130ae6cf9cecd1e77abcccbfa054cce03ed7e"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/compiler-inspection.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/compiler-inspection.json",
+      "original_bytes": 4689,
+      "stored_bytes": 4689,
+      "original_sha256": "ca31b73258ea2662a0af1a225df205254595d83cb9f96bd2893fe6696d69a193",
+      "stored_sha256": "ca31b73258ea2662a0af1a225df205254595d83cb9f96bd2893fe6696d69a193"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/driver.pid",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/driver.pid",
+      "original_bytes": 6,
+      "stored_bytes": 6,
+      "original_sha256": "60894d1d17b9f7902ee6fecebcfebafdfc2304c03c44d4d014db3f3a1332bab9",
+      "stored_sha256": "60894d1d17b9f7902ee6fecebcfebafdfc2304c03c44d4d014db3f3a1332bab9"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/driver.py",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/driver.py",
+      "original_bytes": 782,
+      "stored_bytes": 782,
+      "original_sha256": "7145a403cec8c2bf4e5ad04a984003accd80d17ae478db14a0a124266cc49492",
+      "stored_sha256": "7145a403cec8c2bf4e5ad04a984003accd80d17ae478db14a0a124266cc49492"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/exit.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/exit.json",
+      "original_bytes": 1521,
+      "stored_bytes": 1521,
+      "original_sha256": "eb4a8b4d2dfbbf4e5791623707414770b2e265e93f786907157a648c1dc39460",
+      "stored_sha256": "eb4a8b4d2dfbbf4e5791623707414770b2e265e93f786907157a648c1dc39460"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/fleet.log",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/fleet.log.gz",
+      "original_bytes": 48171,
+      "stored_bytes": 11052,
+      "original_sha256": "31b1def7b44b5e10d3bd540557c8e93ccdd351776cd5e7037462313699920b6b",
+      "stored_sha256": "29372757fe233da1fe8c99b475d8a4193e1a119cb9b82b7c5efcab8d60ea192a"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/kernel-local-contracts.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/kernel-local-contracts.json",
+      "original_bytes": 1399,
+      "stored_bytes": 1399,
+      "original_sha256": "ce571d5138e7d8290ca65feaa20b3e1eb38c81b89e998369a0693cfb00b58a3e",
+      "stored_sha256": "ce571d5138e7d8290ca65feaa20b3e1eb38c81b89e998369a0693cfb00b58a3e"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/launch.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/launch.json",
+      "original_bytes": 312,
+      "stored_bytes": 312,
+      "original_sha256": "84c69fe15fa9c0b60be96e71dda96c5fab238e844883412e2e63a36cb43910a3",
+      "stored_sha256": "84c69fe15fa9c0b60be96e71dda96c5fab238e844883412e2e63a36cb43910a3"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local-contracts.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local-contracts.json",
+      "original_bytes": 1114,
+      "stored_bytes": 1114,
+      "original_sha256": "8b805e6160ec0e7af49a7f21c272462645b2d09edc9a1ede35e362f085e67646",
+      "stored_sha256": "8b805e6160ec0e7af49a7f21c272462645b2d09edc9a1ede35e362f085e67646"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin.gz",
+      "original_bytes": 64400,
+      "stored_bytes": 64400,
+      "original_sha256": "30dfc40dd4a9c76bbf9344eb4f6d17ff3749fbb0e29f3aa4cc34fd48eb4b0593",
+      "stored_sha256": "30dfc40dd4a9c76bbf9344eb4f6d17ff3749fbb0e29f3aa4cc34fd48eb4b0593"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz",
+      "original_bytes": 146447,
+      "stored_bytes": 146447,
+      "original_sha256": "fa3d5f64bc6b56ea24a6566c5142646a33e3ab5e63a4d4a7e4c8be1897faa2d7",
+      "stored_sha256": "fa3d5f64bc6b56ea24a6566c5142646a33e3ab5e63a4d4a7e4c8be1897faa2d7"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log.gz",
+      "original_bytes": 325,
+      "stored_bytes": 262,
+      "original_sha256": "792e298351a987a48eb76f5d7ff6d7094a9f9d2895a1e553c15832cc3eea38e2",
+      "stored_sha256": "ac94c9757662e8cc110f57837b0eaaabc040bb534b87e13f25110143505072bb"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-bf16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-bf16-i32/kernel.cubin.gz",
+      "original_bytes": 2635,
+      "stored_bytes": 2635,
+      "original_sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504",
+      "stored_sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-bf16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-bf16-i32/kernel.ptx.gz",
+      "original_bytes": 1282,
+      "stored_bytes": 1282,
+      "original_sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc",
+      "stored_sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp16-i32/kernel.cubin.gz",
+      "original_bytes": 2635,
+      "stored_bytes": 2635,
+      "original_sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504",
+      "stored_sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp16-i32/kernel.ptx.gz",
+      "original_bytes": 1282,
+      "stored_bytes": 1282,
+      "original_sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc",
+      "stored_sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp32-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp32-i32/kernel.cubin.gz",
+      "original_bytes": 2561,
+      "stored_bytes": 2561,
+      "original_sha256": "f379f2ca9cb5acb249324440b190f8e9d5e8db4433979b8455bc9d0448d5c377",
+      "stored_sha256": "f379f2ca9cb5acb249324440b190f8e9d5e8db4433979b8455bc9d0448d5c377"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp32-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i32-fp32-i32/kernel.ptx.gz",
+      "original_bytes": 1273,
+      "stored_bytes": 1273,
+      "original_sha256": "71df2ac4a7592fb15983e901188ee7504fd271ee722cc641adbaa4b5f686f3ed",
+      "stored_sha256": "71df2ac4a7592fb15983e901188ee7504fd271ee722cc641adbaa4b5f686f3ed"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-bf16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-bf16-i32/kernel.cubin.gz",
+      "original_bytes": 2635,
+      "stored_bytes": 2635,
+      "original_sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504",
+      "stored_sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-bf16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-bf16-i32/kernel.ptx.gz",
+      "original_bytes": 1282,
+      "stored_bytes": 1282,
+      "original_sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc",
+      "stored_sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp16-i32/kernel.cubin.gz",
+      "original_bytes": 2635,
+      "stored_bytes": 2635,
+      "original_sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504",
+      "stored_sha256": "b7e41fef096f29d24970e023c9ca7d6bdbf28d08f855a0d347fa903ed5f8f504"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp16-i32/kernel.ptx.gz",
+      "original_bytes": 1282,
+      "stored_bytes": 1282,
+      "original_sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc",
+      "stored_sha256": "172e83eacde7f8917970758541a3025a641015408bf34cd7265fe0d23cfc45fc"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp32-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp32-i32/kernel.cubin.gz",
+      "original_bytes": 2561,
+      "stored_bytes": 2561,
+      "original_sha256": "f379f2ca9cb5acb249324440b190f8e9d5e8db4433979b8455bc9d0448d5c377",
+      "stored_sha256": "f379f2ca9cb5acb249324440b190f8e9d5e8db4433979b8455bc9d0448d5c377"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp32-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/empty-i64-fp32-i32/kernel.ptx.gz",
+      "original_bytes": 1273,
+      "stored_bytes": 1273,
+      "original_sha256": "71df2ac4a7592fb15983e901188ee7504fd271ee722cc641adbaa4b5f686f3ed",
+      "stored_sha256": "71df2ac4a7592fb15983e901188ee7504fd271ee722cc641adbaa4b5f686f3ed"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i32/kernel.cubin.gz",
+      "original_bytes": 3287,
+      "stored_bytes": 3287,
+      "original_sha256": "e4145c4a5b9a0bfff9a866058e87dcdf735fa596515ac6069e4e3a9c9f679939",
+      "stored_sha256": "e4145c4a5b9a0bfff9a866058e87dcdf735fa596515ac6069e4e3a9c9f679939"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i32/kernel.ptx.gz",
+      "original_bytes": 1698,
+      "stored_bytes": 1698,
+      "original_sha256": "07e96d3e10c2d37b5f5ba87e85300583a1528d94ae1b51b1014eb50910c8448b",
+      "stored_sha256": "07e96d3e10c2d37b5f5ba87e85300583a1528d94ae1b51b1014eb50910c8448b"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i64/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i64/kernel.cubin.gz",
+      "original_bytes": 3379,
+      "stored_bytes": 3379,
+      "original_sha256": "f3ae5782b0b1676a1522c5ffa9cb17888f753c3b508a27bfc6c7c4c15b833b56",
+      "stored_sha256": "f3ae5782b0b1676a1522c5ffa9cb17888f753c3b508a27bfc6c7c4c15b833b56"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i64/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-bf16-i64/kernel.ptx.gz",
+      "original_bytes": 1739,
+      "stored_bytes": 1739,
+      "original_sha256": "474f3a4ffc55baff0295816cd9a5fd01fb331951bddd2f9068e1738bc3cbba63",
+      "stored_sha256": "474f3a4ffc55baff0295816cd9a5fd01fb331951bddd2f9068e1738bc3cbba63"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i32/kernel.cubin.gz",
+      "original_bytes": 3287,
+      "stored_bytes": 3287,
+      "original_sha256": "e4145c4a5b9a0bfff9a866058e87dcdf735fa596515ac6069e4e3a9c9f679939",
+      "stored_sha256": "e4145c4a5b9a0bfff9a866058e87dcdf735fa596515ac6069e4e3a9c9f679939"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i32/kernel.ptx.gz",
+      "original_bytes": 1698,
+      "stored_bytes": 1698,
+      "original_sha256": "07e96d3e10c2d37b5f5ba87e85300583a1528d94ae1b51b1014eb50910c8448b",
+      "stored_sha256": "07e96d3e10c2d37b5f5ba87e85300583a1528d94ae1b51b1014eb50910c8448b"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i64/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i64/kernel.cubin.gz",
+      "original_bytes": 3379,
+      "stored_bytes": 3379,
+      "original_sha256": "f3ae5782b0b1676a1522c5ffa9cb17888f753c3b508a27bfc6c7c4c15b833b56",
+      "stored_sha256": "f3ae5782b0b1676a1522c5ffa9cb17888f753c3b508a27bfc6c7c4c15b833b56"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i64/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp16-i64/kernel.ptx.gz",
+      "original_bytes": 1739,
+      "stored_bytes": 1739,
+      "original_sha256": "474f3a4ffc55baff0295816cd9a5fd01fb331951bddd2f9068e1738bc3cbba63",
+      "stored_sha256": "474f3a4ffc55baff0295816cd9a5fd01fb331951bddd2f9068e1738bc3cbba63"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i32/kernel.cubin.gz",
+      "original_bytes": 3249,
+      "stored_bytes": 3249,
+      "original_sha256": "1e8d6d04f30d64e8cd6e28b8ec9f70752a05451493107acf82fe0478f63a5ab3",
+      "stored_sha256": "1e8d6d04f30d64e8cd6e28b8ec9f70752a05451493107acf82fe0478f63a5ab3"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i32/kernel.ptx.gz",
+      "original_bytes": 1664,
+      "stored_bytes": 1664,
+      "original_sha256": "732f862a0ea8a492dc8e8eff783b691a189d5a627944a518cfc3971ee8cc1093",
+      "stored_sha256": "732f862a0ea8a492dc8e8eff783b691a189d5a627944a518cfc3971ee8cc1093"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i64/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i64/kernel.cubin.gz",
+      "original_bytes": 3332,
+      "stored_bytes": 3332,
+      "original_sha256": "ff2c0644ebe6a110d81a34ba00652bc0085e057776d62a4a708fe399da61ef7e",
+      "stored_sha256": "ff2c0644ebe6a110d81a34ba00652bc0085e057776d62a4a708fe399da61ef7e"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i64/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i32-fp32-i64/kernel.ptx.gz",
+      "original_bytes": 1702,
+      "stored_bytes": 1702,
+      "original_sha256": "44c55fa56cb8b11a41482a873a94d173cad2a524eb018d2316735a04d8abcb97",
+      "stored_sha256": "44c55fa56cb8b11a41482a873a94d173cad2a524eb018d2316735a04d8abcb97"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i32/kernel.cubin.gz",
+      "original_bytes": 3433,
+      "stored_bytes": 3433,
+      "original_sha256": "307e55161db01bd2da672aede1cd70c7f68a275d113b18249a86b81069ee943c",
+      "stored_sha256": "307e55161db01bd2da672aede1cd70c7f68a275d113b18249a86b81069ee943c"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i32/kernel.ptx.gz",
+      "original_bytes": 1715,
+      "stored_bytes": 1715,
+      "original_sha256": "cacedd9f54f682fa4bbd8d00ede7ebcdc8dbd9f09ef5f0955d1ae4adad972b94",
+      "stored_sha256": "cacedd9f54f682fa4bbd8d00ede7ebcdc8dbd9f09ef5f0955d1ae4adad972b94"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i64/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i64/kernel.cubin.gz",
+      "original_bytes": 3492,
+      "stored_bytes": 3492,
+      "original_sha256": "9d576b9db7180facd2dc9d870e8619571238d88d03c6f37165bfe11c6ed60893",
+      "stored_sha256": "9d576b9db7180facd2dc9d870e8619571238d88d03c6f37165bfe11c6ed60893"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i64/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-bf16-i64/kernel.ptx.gz",
+      "original_bytes": 1736,
+      "stored_bytes": 1736,
+      "original_sha256": "3241b5ae2557f48d01fb1273f8ae03e969f97f68519ba0e047b87e34a348e3ae",
+      "stored_sha256": "3241b5ae2557f48d01fb1273f8ae03e969f97f68519ba0e047b87e34a348e3ae"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i32/kernel.cubin.gz",
+      "original_bytes": 3433,
+      "stored_bytes": 3433,
+      "original_sha256": "307e55161db01bd2da672aede1cd70c7f68a275d113b18249a86b81069ee943c",
+      "stored_sha256": "307e55161db01bd2da672aede1cd70c7f68a275d113b18249a86b81069ee943c"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i32/kernel.ptx.gz",
+      "original_bytes": 1715,
+      "stored_bytes": 1715,
+      "original_sha256": "cacedd9f54f682fa4bbd8d00ede7ebcdc8dbd9f09ef5f0955d1ae4adad972b94",
+      "stored_sha256": "cacedd9f54f682fa4bbd8d00ede7ebcdc8dbd9f09ef5f0955d1ae4adad972b94"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i64/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i64/kernel.cubin.gz",
+      "original_bytes": 3492,
+      "stored_bytes": 3492,
+      "original_sha256": "9d576b9db7180facd2dc9d870e8619571238d88d03c6f37165bfe11c6ed60893",
+      "stored_sha256": "9d576b9db7180facd2dc9d870e8619571238d88d03c6f37165bfe11c6ed60893"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i64/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp16-i64/kernel.ptx.gz",
+      "original_bytes": 1736,
+      "stored_bytes": 1736,
+      "original_sha256": "3241b5ae2557f48d01fb1273f8ae03e969f97f68519ba0e047b87e34a348e3ae",
+      "stored_sha256": "3241b5ae2557f48d01fb1273f8ae03e969f97f68519ba0e047b87e34a348e3ae"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i32/kernel.cubin.gz",
+      "original_bytes": 3389,
+      "stored_bytes": 3389,
+      "original_sha256": "d7b1ff6aed8015cf6badf2c9aec8bf8d85fb5da2793e2a2baee0f6c54fee857d",
+      "stored_sha256": "d7b1ff6aed8015cf6badf2c9aec8bf8d85fb5da2793e2a2baee0f6c54fee857d"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i32/kernel.ptx.gz",
+      "original_bytes": 1690,
+      "stored_bytes": 1690,
+      "original_sha256": "4337df12efce044cf683ac8a4f1b1e89c4f49ccd0f77f120304391b074d74ea1",
+      "stored_sha256": "4337df12efce044cf683ac8a4f1b1e89c4f49ccd0f77f120304391b074d74ea1"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i64/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i64/kernel.cubin.gz",
+      "original_bytes": 3440,
+      "stored_bytes": 3440,
+      "original_sha256": "de6d58a377b4cab1247ee3bd01bc8f9a4042d21cb6a4c58692d4fff071b24763",
+      "stored_sha256": "de6d58a377b4cab1247ee3bd01bc8f9a4042d21cb6a4c58692d4fff071b24763"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i64/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/mapped-i64-fp32-i64/kernel.ptx.gz",
+      "original_bytes": 1713,
+      "stored_bytes": 1713,
+      "original_sha256": "d4c5a90cf61e3666c48b68e93019aac8f5000b212d9b5fa6e1f696f4dfc6aaa3",
+      "stored_sha256": "d4c5a90cf61e3666c48b68e93019aac8f5000b212d9b5fa6e1f696f4dfc6aaa3"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-bf16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-bf16-i32/kernel.cubin.gz",
+      "original_bytes": 3160,
+      "stored_bytes": 3160,
+      "original_sha256": "64b72f200ef0629594cbecf6135047fa68cbe5a2e848017ace27cdf387e648f6",
+      "stored_sha256": "64b72f200ef0629594cbecf6135047fa68cbe5a2e848017ace27cdf387e648f6"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-bf16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-bf16-i32/kernel.ptx.gz",
+      "original_bytes": 1642,
+      "stored_bytes": 1642,
+      "original_sha256": "0919d9f7663d0efa1b4994e0c71578859da9b61bdcad5b255cfa8cf8298bbbc0",
+      "stored_sha256": "0919d9f7663d0efa1b4994e0c71578859da9b61bdcad5b255cfa8cf8298bbbc0"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp16-i32/kernel.cubin.gz",
+      "original_bytes": 3160,
+      "stored_bytes": 3160,
+      "original_sha256": "64b72f200ef0629594cbecf6135047fa68cbe5a2e848017ace27cdf387e648f6",
+      "stored_sha256": "64b72f200ef0629594cbecf6135047fa68cbe5a2e848017ace27cdf387e648f6"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp16-i32/kernel.ptx.gz",
+      "original_bytes": 1642,
+      "stored_bytes": 1642,
+      "original_sha256": "0919d9f7663d0efa1b4994e0c71578859da9b61bdcad5b255cfa8cf8298bbbc0",
+      "stored_sha256": "0919d9f7663d0efa1b4994e0c71578859da9b61bdcad5b255cfa8cf8298bbbc0"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp32-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp32-i32/kernel.cubin.gz",
+      "original_bytes": 3115,
+      "stored_bytes": 3115,
+      "original_sha256": "a83064484a63e2384e5689be14378b996fcc935eb1a28162f541f828d3202840",
+      "stored_sha256": "a83064484a63e2384e5689be14378b996fcc935eb1a28162f541f828d3202840"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp32-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i32-fp32-i32/kernel.ptx.gz",
+      "original_bytes": 1606,
+      "stored_bytes": 1606,
+      "original_sha256": "a187af17629ed00d1be6e114b026539a4e8d1d4fdca7510e08c6fb808dad6187",
+      "stored_sha256": "a187af17629ed00d1be6e114b026539a4e8d1d4fdca7510e08c6fb808dad6187"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-bf16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-bf16-i32/kernel.cubin.gz",
+      "original_bytes": 3289,
+      "stored_bytes": 3289,
+      "original_sha256": "35abb692c3bf1088961f85c652a2e109e7a34b4ea6332fcd587257fc60e4b2d3",
+      "stored_sha256": "35abb692c3bf1088961f85c652a2e109e7a34b4ea6332fcd587257fc60e4b2d3"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-bf16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-bf16-i32/kernel.ptx.gz",
+      "original_bytes": 1657,
+      "stored_bytes": 1657,
+      "original_sha256": "6ef622fec0144ef9d5448565265f3fb5a94fda0d84a9a97bf86d36724df5ea88",
+      "stored_sha256": "6ef622fec0144ef9d5448565265f3fb5a94fda0d84a9a97bf86d36724df5ea88"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp16-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp16-i32/kernel.cubin.gz",
+      "original_bytes": 3289,
+      "stored_bytes": 3289,
+      "original_sha256": "35abb692c3bf1088961f85c652a2e109e7a34b4ea6332fcd587257fc60e4b2d3",
+      "stored_sha256": "35abb692c3bf1088961f85c652a2e109e7a34b4ea6332fcd587257fc60e4b2d3"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp16-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp16-i32/kernel.ptx.gz",
+      "original_bytes": 1657,
+      "stored_bytes": 1657,
+      "original_sha256": "6ef622fec0144ef9d5448565265f3fb5a94fda0d84a9a97bf86d36724df5ea88",
+      "stored_sha256": "6ef622fec0144ef9d5448565265f3fb5a94fda0d84a9a97bf86d36724df5ea88"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp32-i32/kernel.cubin.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp32-i32/kernel.cubin.gz",
+      "original_bytes": 3235,
+      "stored_bytes": 3235,
+      "original_sha256": "de72c133d762abbb432087da4ec1cbd1bde4e98b2f68c5adacb2be62c470fc8e",
+      "stored_sha256": "de72c133d762abbb432087da4ec1cbd1bde4e98b2f68c5adacb2be62c470fc8e"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp32-i32/kernel.ptx.gz",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/remap/offset-i64-fp32-i32/kernel.ptx.gz",
+      "original_bytes": 1632,
+      "stored_bytes": 1632,
+      "original_sha256": "525b9e7ad6fd0955b5314dc830208c1ab1f597082a77dab957797dc07061c3b1",
+      "stored_sha256": "525b9e7ad6fd0955b5314dc830208c1ab1f597082a77dab957797dc07061c3b1"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/result.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/local/result.json",
+      "original_bytes": 28302,
+      "stored_bytes": 28302,
+      "original_sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c",
+      "stored_sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/prepare.py",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/prepare.py",
+      "original_bytes": 11422,
+      "stored_bytes": 11422,
+      "original_sha256": "ceb3b62c0296cec2b817d79f342fd84ce29f1d95911fc10909296b2251845654",
+      "stored_sha256": "ceb3b62c0296cec2b817d79f342fd84ce29f1d95911fc10909296b2251845654"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/route-scale-cache-tests.log",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/route-scale-cache-tests.log.gz",
+      "original_bytes": 2226,
+      "stored_bytes": 536,
+      "original_sha256": "753b3e7ad0aaab385bc3d0ab158c774e1e2d4b40536832f1e6d17d0c319d67ae",
+      "stored_sha256": "cb67589b008fa4609fd84219753ee40edfedde1a74fe401089a60fa536c047a0"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/sanitizer-fixture-tests.log",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/sanitizer-fixture-tests.log.gz",
+      "original_bytes": 1424,
+      "stored_bytes": 400,
+      "original_sha256": "1e1cf5b1909dd8bc24e28b6bca26402135481ba0185e89d4d5b482d69b8890d8",
+      "stored_sha256": "cfb01a77a27b305ecffbcc4b1bec90dfef7a97b4083d4f3a2c30c533394e519b"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/source-identity.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/source-identity.json",
+      "original_bytes": 308,
+      "stored_bytes": 308,
+      "original_sha256": "f1e4c4c8de44932abc9973f545dd223652ea3bd5e8434e7f1834eb14d721eba3",
+      "stored_sha256": "f1e4c4c8de44932abc9973f545dd223652ea3bd5e8434e7f1834eb14d721eba3"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/source-manifest.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/source-manifest.json",
+      "original_bytes": 15420,
+      "stored_bytes": 15420,
+      "original_sha256": "339842bc15a95701e0b3b71fbc450e0aeb1c61aed9e9d83ece9ab0d2dba82809",
+      "stored_sha256": "339842bc15a95701e0b3b71fbc450e0aeb1c61aed9e9d83ece9ab0d2dba82809"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/started.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/started.json",
+      "original_bytes": 46,
+      "stored_bytes": 46,
+      "original_sha256": "f15754e7ac35e82918c412739ae64a9b7f92a47d166d4f29e47283f196189bf3",
+      "stored_sha256": "f15754e7ac35e82918c412739ae64a9b7f92a47d166d4f29e47283f196189bf3"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/submission.json",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/submission.json",
+      "original_bytes": 1420,
+      "stored_bytes": 1420,
+      "original_sha256": "38dcba5f3eba960c1a1ad792052060d7fcd7e2aa36818a2f747ee2e6272304d1",
+      "stored_sha256": "38dcba5f3eba960c1a1ad792052060d7fcd7e2aa36818a2f747ee2e6272304d1"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/task-publication-tests.log",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/task-publication-tests.log.gz",
+      "original_bytes": 2243,
+      "stored_bytes": 546,
+      "original_sha256": "89a3de6fff3245ac650c9d01ab6f946c9292e3a47ad7213398ca82fb3c6bff75",
+      "stored_sha256": "a0d30c8d8e305bd1838878d1fd459b31414f68b31f1f9ed2c9defcd71ae383a0"
+    },
+    {
+      "original_path": "source/measurements/glm53_ep_local_20260908/cpu16/wrapper-tests.log",
+      "stored_path": "source/measurements/glm53_ep_local_20260908/cpu16/wrapper-tests.log.gz",
+      "original_bytes": 2509,
+      "stored_bytes": 585,
+      "original_sha256": "d8939169090682d1ee5e9485dae09f39e7cc20a5b8984a12df410fa781b5a40e",
+      "stored_sha256": "6a5297e42fcd41abeb35f9638386080adfe115a51a443f8b696b6b4bf2d2d5eb"
+    },
+    {
+      "original_path": "source/probes/glm53_ep_binding_check.py",
+      "stored_path": "source/probes/glm53_ep_binding_check.py",
+      "original_bytes": 2199,
+      "stored_bytes": 2199,
+      "original_sha256": "1d8027b4575bed172b4daeb2a19c10b44977afd34d3d483fb038b0cf4404463c",
+      "stored_sha256": "1d8027b4575bed172b4daeb2a19c10b44977afd34d3d483fb038b0cf4404463c"
+    },
+    {
+      "original_path": "source/probes/glm53_ep_bindings_capsule.py",
+      "stored_path": "source/probes/glm53_ep_bindings_capsule.py",
+      "original_bytes": 15356,
+      "stored_bytes": 15356,
+      "original_sha256": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+      "stored_sha256": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4"
+    },
+    {
+      "original_path": "source/probes/glm53_ep_bindings_pair_check.py",
+      "stored_path": "source/probes/glm53_ep_bindings_pair_check.py",
+      "original_bytes": 6235,
+      "stored_bytes": 6235,
+      "original_sha256": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0",
+      "stored_sha256": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0"
+    },
+    {
+      "original_path": "source/probes/glm53_ep_capsule_runtime.py",
+      "stored_path": "source/probes/glm53_ep_capsule_runtime.py",
+      "original_bytes": 5679,
+      "stored_bytes": 5679,
+      "original_sha256": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+      "stored_sha256": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7"
+    },
+    {
+      "original_path": "source/probes/glm53_ep_local_check.py",
+      "stored_path": "source/probes/glm53_ep_local_check.py",
+      "original_bytes": 13019,
+      "stored_bytes": 13019,
+      "original_sha256": "8a9c8bd1e3d04bb4b557181ec55e16a2698bd079540af4c6d1a2ae6cce39348c",
+      "stored_sha256": "8a9c8bd1e3d04bb4b557181ec55e16a2698bd079540af4c6d1a2ae6cce39348c"
+    },
+    {
+      "original_path": "source/probes/glm53_ep_local_compile_check.py",
+      "stored_path": "source/probes/glm53_ep_local_compile_check.py",
+      "original_bytes": 7349,
+      "stored_bytes": 7349,
+      "original_sha256": "4187c1150ce16bc12e33dec8d6136b108f36dc3792b2f45421fd44a3c6a082cf",
+      "stored_sha256": "4187c1150ce16bc12e33dec8d6136b108f36dc3792b2f45421fd44a3c6a082cf"
+    },
+    {
+      "original_path": "source/probes/glm53_ep_local_evidence.py",
+      "stored_path": "source/probes/glm53_ep_local_evidence.py",
+      "original_bytes": 4852,
+      "stored_bytes": 4852,
+      "original_sha256": "052bbc888b326d7fd330cb9cc622dae526c3ebf1f3362f96a9e0dc05e5cf7dde",
+      "stored_sha256": "052bbc888b326d7fd330cb9cc622dae526c3ebf1f3362f96a9e0dc05e5cf7dde"
+    },
+    {
+      "original_path": "source/probes/glm53_ep_route_remap_check.py",
+      "stored_path": "source/probes/glm53_ep_route_remap_check.py",
+      "original_bytes": 8063,
+      "stored_bytes": 8063,
+      "original_sha256": "241c11de8db10b550f6a624e91ec729882d4993b1919abe7b187acec4252e568",
+      "stored_sha256": "241c11de8db10b550f6a624e91ec729882d4993b1919abe7b187acec4252e568"
+    },
+    {
+      "original_path": "source/probes/glm53_ep_sanitizer.py",
+      "stored_path": "source/probes/glm53_ep_sanitizer.py",
+      "original_bytes": 6104,
+      "stored_bytes": 6104,
+      "original_sha256": "7144f2b4c488e073257845dc65b028c220a06831ac9ce654d6fbaa2f01ca7e1a",
+      "stored_sha256": "7144f2b4c488e073257845dc65b028c220a06831ac9ce654d6fbaa2f01ca7e1a"
+    },
+    {
+      "original_path": "source/probes/glm53_probe_lifecycle.py",
+      "stored_path": "source/probes/glm53_probe_lifecycle.py",
+      "original_bytes": 10998,
+      "stored_bytes": 10998,
+      "original_sha256": "ac981627094546373ffbee6970a23d9356f23642b628dd228168324c50b7cc16",
+      "stored_sha256": "ac981627094546373ffbee6970a23d9356f23642b628dd228168324c50b7cc16"
+    },
+    {
+      "original_path": "source/probes/run_glm53_ep_binding_offline.py",
+      "stored_path": "source/probes/run_glm53_ep_binding_offline.py",
+      "original_bytes": 6113,
+      "stored_bytes": 6113,
+      "original_sha256": "357ce3de1b087135b4661aeea8fe7a6ea5ce978de024a9f1c9c83b4aba766514",
+      "stored_sha256": "357ce3de1b087135b4661aeea8fe7a6ea5ce978de024a9f1c9c83b4aba766514"
+    },
+    {
+      "original_path": "source/probes/run_glm53_ep_bindings_pair_offline.py",
+      "stored_path": "source/probes/run_glm53_ep_bindings_pair_offline.py",
+      "original_bytes": 11396,
+      "stored_bytes": 11396,
+      "original_sha256": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587",
+      "stored_sha256": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587"
+    },
+    {
+      "original_path": "source/probes/run_glm53_ep_local_cpu_compile.py",
+      "stored_path": "source/probes/run_glm53_ep_local_cpu_compile.py",
+      "original_bytes": 6022,
+      "stored_bytes": 6022,
+      "original_sha256": "2353825ca1bd395a122439402b2eac892518d52c99e52de1872d6dad70f18da8",
+      "stored_sha256": "2353825ca1bd395a122439402b2eac892518d52c99e52de1872d6dad70f18da8"
+    },
+    {
+      "original_path": "source/probes/run_glm53_ep_local_offline.py",
+      "stored_path": "source/probes/run_glm53_ep_local_offline.py",
+      "original_bytes": 10950,
+      "stored_bytes": 10950,
+      "original_sha256": "28c4d875730b9f2c9816e170c4357b1399e6e86913b765b53593e844f45bf233",
+      "stored_sha256": "28c4d875730b9f2c9816e170c4357b1399e6e86913b765b53593e844f45bf233"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_binding_check.py",
+      "stored_path": "source/tests/test_glm53_ep_binding_check.py",
+      "original_bytes": 6567,
+      "stored_bytes": 6567,
+      "original_sha256": "eedeca9b4bc0f01c4fa2a20518182dba6a5a6854b55c36c7c6af394541f5b26f",
+      "stored_sha256": "eedeca9b4bc0f01c4fa2a20518182dba6a5a6854b55c36c7c6af394541f5b26f"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_bindings_capsule.py",
+      "stored_path": "source/tests/test_glm53_ep_bindings_capsule.py",
+      "original_bytes": 13743,
+      "stored_bytes": 13743,
+      "original_sha256": "e24b1dae1a3bdc67ed41a33b44d25e4bb6274fafaa7781f30ac0cbc8c335b6fb",
+      "stored_sha256": "e24b1dae1a3bdc67ed41a33b44d25e4bb6274fafaa7781f30ac0cbc8c335b6fb"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_bindings_pair.py",
+      "stored_path": "source/tests/test_glm53_ep_bindings_pair.py",
+      "original_bytes": 14769,
+      "stored_bytes": 14769,
+      "original_sha256": "8dfedc98646a0580781cad5e14921d4ce277c8f899e1ec65fb26af496a5bff6a",
+      "stored_sha256": "8dfedc98646a0580781cad5e14921d4ce277c8f899e1ec65fb26af496a5bff6a"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_capsule_inners.py",
+      "stored_path": "source/tests/test_glm53_ep_capsule_inners.py",
+      "original_bytes": 13136,
+      "stored_bytes": 13136,
+      "original_sha256": "fccae5d3ff7a57d72e3c0d25355193ab4409ae2d2668c26ae362fe313efc599d",
+      "stored_sha256": "fccae5d3ff7a57d72e3c0d25355193ab4409ae2d2668c26ae362fe313efc599d"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_capsule_runtime.py",
+      "stored_path": "source/tests/test_glm53_ep_capsule_runtime.py",
+      "original_bytes": 6145,
+      "stored_bytes": 6145,
+      "original_sha256": "624a496cfa8a37be53c9625962e1119d89a8d87f1d9de5c8f20b9a34f8c6779f",
+      "stored_sha256": "624a496cfa8a37be53c9625962e1119d89a8d87f1d9de5c8f20b9a34f8c6779f"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_capsule_wrappers.py",
+      "stored_path": "source/tests/test_glm53_ep_capsule_wrappers.py",
+      "original_bytes": 19170,
+      "stored_bytes": 19170,
+      "original_sha256": "6617a7182ff992123cb19d79ca0370c069d831a56434f28f93af16c1b52bf5ac",
+      "stored_sha256": "6617a7182ff992123cb19d79ca0370c069d831a56434f28f93af16c1b52bf5ac"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_local_probe.py",
+      "stored_path": "source/tests/test_glm53_ep_local_probe.py",
+      "original_bytes": 11920,
+      "stored_bytes": 11920,
+      "original_sha256": "5a8fb78fd9dcc233fb02e1253bfd6247b24baaeb0c80387c6e381ccaafc0b325",
+      "stored_sha256": "5a8fb78fd9dcc233fb02e1253bfd6247b24baaeb0c80387c6e381ccaafc0b325"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_prefill_local.py",
+      "stored_path": "source/tests/test_glm53_ep_prefill_local.py",
+      "original_bytes": 11388,
+      "stored_bytes": 11388,
+      "original_sha256": "3f79ec33eaabff5521b898b6e72555116e8c1797b51f3b5871fb9c46a203130a",
+      "stored_sha256": "3f79ec33eaabff5521b898b6e72555116e8c1797b51f3b5871fb9c46a203130a"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_route_remap.py",
+      "stored_path": "source/tests/test_glm53_ep_route_remap.py",
+      "original_bytes": 16234,
+      "stored_bytes": 16234,
+      "original_sha256": "7f6a9ab88f1eaf219a662f4ffca41cb42aef941fb14bd3c0289f677f16e1da5c",
+      "stored_sha256": "7f6a9ab88f1eaf219a662f4ffca41cb42aef941fb14bd3c0289f677f16e1da5c"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_route_scale_cache.py",
+      "stored_path": "source/tests/test_glm53_ep_route_scale_cache.py",
+      "original_bytes": 26918,
+      "stored_bytes": 26918,
+      "original_sha256": "b4c85443d81a69c0a1542f537b8947b119457ba7fed28c319240546ca329cc06",
+      "stored_sha256": "b4c85443d81a69c0a1542f537b8947b119457ba7fed28c319240546ca329cc06"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_sanitizer.py",
+      "stored_path": "source/tests/test_glm53_ep_sanitizer.py",
+      "original_bytes": 9669,
+      "stored_bytes": 9669,
+      "original_sha256": "61c269124cb37cbd02d6930a448a3b2422e625569e1061ca1637093f32b8705d",
+      "stored_sha256": "61c269124cb37cbd02d6930a448a3b2422e625569e1061ca1637093f32b8705d"
+    },
+    {
+      "original_path": "source/tests/test_glm53_ep_task_publication.py",
+      "stored_path": "source/tests/test_glm53_ep_task_publication.py",
+      "original_bytes": 22046,
+      "stored_bytes": 22046,
+      "original_sha256": "46e8094e17e16a2e3736737827a69f50cc731499f92858cf1fbb9137db4dbfef",
+      "stored_sha256": "46e8094e17e16a2e3736737827a69f50cc731499f92858cf1fbb9137db4dbfef"
+    },
+    {
+      "original_path": "source/tests/test_glm53_probe_lifecycle.py",
+      "stored_path": "source/tests/test_glm53_probe_lifecycle.py",
+      "original_bytes": 10674,
+      "stored_bytes": 10674,
+      "original_sha256": "c35a83f6e3eb34adc6a77b240994a7ce1cdc86d4da3f2e9a81220de4bf3f2706",
+      "stored_sha256": "c35a83f6e3eb34adc6a77b240994a7ce1cdc86d4da3f2e9a81220de4bf3f2706"
+    },
+    {
+      "original_path": "source_identity.json",
+      "stored_path": "source_identity.json",
+      "original_bytes": 68515,
+      "stored_bytes": 68515,
+      "original_sha256": "14cd5953211ee7b613b8e7ac40699b43aca8b99e71c6934ae188b314157b303f",
+      "stored_sha256": "14cd5953211ee7b613b8e7ac40699b43aca8b99e71c6934ae188b314157b303f"
+    }
+  ]
+}

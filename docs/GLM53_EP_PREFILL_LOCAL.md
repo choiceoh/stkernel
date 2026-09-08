@@ -576,8 +576,13 @@ follows from the successful balanced cells. This result does not isolate
 CPU16's address cache from earlier kernel changes or accumulation order.
 
 The offline before/stopped/restored records are exactly equal for all four
-incoming stopped containers. The separate normal-fleet public restoration
-was still waiting for service health at the archived snapshot; wrapper
-restored_original=true is not final public restoration or queue release proof.
-The next step is to preserve terminal fleet evidence and identify the failing
-row/element and repeatability before changing code or running another GPU job.
+incoming stopped containers. The earlier snapshot was taken while the normal
+fleet supervisor was still restoring public serving. The later
+[terminal archive](../measurements/glm53_ep_local_20260908/gpu5-completed/README.md)
+separately confirms health/proof completion, restore-finished rc0 and normal
+release at22:26:43 KST. The outer job retains exit1 for the numerical failure.
+All204 archived inputs have original/stored hashes, including the closed job,
+frozen source and CPU16 evidence, runtime receipts and fleet lifecycle records.
+No current-container equality after release is inferred from those snapshots.
+The next step is to identify the failing row/element and repeatability before
+changing kernel arithmetic or running another full GPU suite.
