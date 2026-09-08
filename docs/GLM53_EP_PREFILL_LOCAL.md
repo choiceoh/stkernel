@@ -619,3 +619,27 @@ syntax checks and independent read-only review. Both remain unexecuted. The
 GPU preparer requires the successful CPU17 receipt commit to be the immediate
 single child of the actual CPU17 source revision; no unrelated commit may be
 inserted between that source and its receipt for this prepared depth2 path.
+
+## CPU17 completion and binary provenance
+
+CPU17 ran through the normal CPU lane on September9 at00:12:23–00:12:39 KST,
+using frozen source `123fbb01211eaf8cec46fd0965dd9320d02a375b`. All146 pinned
+tests passed without skips, errors or failures, with29 contracts,13 mounted
+sources and24 remap compilations. CUDA stayed uninitialized and the13.0.3
+capsule identity passed its before/after checks. Available host memory was
+99919020KiB; the12GiB guard was retained. The approved scheduler uses its own
+independent checkout; normal shared fleet coordination and production
+restoration policy are unchanged.
+
+The first collector rejected exact binary equality and preserved the original
+files and comparison under `cpu17.collecting`. CuTe PTX, cubin and resource
+output, and all24 remap PTX files, match CPU16 exactly. The24 remap cubins
+have different hashes. A strict ELF comparison found exactly four differing bytes per cubin,
+confined to the source mtime in two non-allocated DWARF debug-line sections.
+The decoded times match the two frozen checkouts. All executable/allocated
+sections, headers and every other byte are identical. Six altered-byte checks
+were rejected. The original mismatch is preserved; full cubin equality is
+not claimed. The [CPU17 archive](../measurements/glm53_ep_local_20260908/cpu17/README.md)
+records this separate adjudication plus original/stored hashes and successful
+remote identity checks before and after copying. This is compiler evidence
+only. Concentrated6912 numerics and the full GPU/sanitizer gates remain open.
