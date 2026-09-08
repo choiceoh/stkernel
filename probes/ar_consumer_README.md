@@ -51,7 +51,9 @@ containers stop on failure; the fleet supervisor owns approved-main recovery
 or a validated transfer to the next boot job.
 
 The probe first uses a deliberately delayed producer, then the real four-node
-RDMA AllReduce. Each run tests six token counts, two weight storage paths and
+RDMA AllReduce. Peers receive a committed source archive in a fresh directory
+and attest the source bytes; they do not need a pre-existing Git checkout.
+Each run tests six token counts, two weight storage paths and
 three changes behind fixed CUDA graph pointers: 36 cases, six outputs each,
 with exact baseline/candidate comparisons. Independent CPU AR sums and FP64
 MHC equations provide separate oracles. Both modes also run memcheck and

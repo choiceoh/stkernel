@@ -38,14 +38,16 @@ def main():
     peer_root = Path('/home/choiceoh/ar-consumer-probe-' + session)
     peer_out = Path('/home/choiceoh/ar-consumer-evidence-' + session)
     receipts = []
+    # Workers need only this committed source, not a pre-existing Git clone
+    # or GitHub credentials. Every rank later attests the actual CUDA bytes.
+    archive = subprocess.check_output(['git', '-C', str(ROOT), 'archive', '--format=tar', revision])
 
     def prepare(node):
         root = ROOT if node == 'local' else peer_root
         out = args.out if node == 'local' else peer_out
         if node != 'local':
-            remote(node, ['git', '-C', '/home/choiceoh/stkernel', 'fetch', 'origin', revision])
-            remote(node, ['git', '-C', '/home/choiceoh/stkernel', 'worktree', 'add', '--detach', str(root), revision])
-            remote(node, ['mkdir', '-p', str(out)])
+            remote(node, ['mkdir', str(root), str(out)])
+            remote(node, ['tar', '-xf', '-', '-C', str(root)], input=archive)
         remote(node, ['docker', 'image', 'inspect', IMAGE], stdout=subprocess.DEVNULL)
         names = remote(node, ['docker', 'ps', '--format', '{{.Names}}'], capture_output=True, text=True).stdout.splitlines()
         assert not any(n in ('glm53', 'glm53-worker') for n in names), (node, names)
