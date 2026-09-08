@@ -17,7 +17,7 @@ VLLM_GLM53_DRAFTER_CTX_KV_W4	[drafter-ctx-kv] serving	[drafter-ctx-kv] serving
 VLLM_GLM53_PREP_FUSED	[prep-fused] plan built: mode=on	[prep-fused] plan built: mode=
 VLLM_GLM53_INDEXER_GATE_SPLITK	split-K routing	[indexer-gate]
 VLLM_GLM53_MK_MHC	'mhc': True	[megakernel] armed=
-VLLM_GLM53_AR_CONSUMER_PDL	[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True	[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True
+VLLM_GLM53_AR_CONSUMER_PDL	[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True	[megakernel] AR consumer MHC CAPTURED
 VLLM_GLM53_MK_GEMM	'gemm': True	[megakernel] armed=
 VLLM_GLM53_MK_FP8_PACK2	[megakernel] fp8-pack2 CAPTURED	[megakernel] fp8-pack2 CAPTURED
 VLLM_GLM53_MK_GEMM_TRANSPOSE_M8	[megakernel] transpose-m8 CAPTURED	[megakernel] transpose-m8 CAPTURED
