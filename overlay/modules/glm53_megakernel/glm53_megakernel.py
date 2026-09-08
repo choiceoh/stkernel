@@ -1811,7 +1811,9 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
     _ar_note(weight)
     early = ((ENABLE_AR_CONSUMER and _AR_CONSUMER_OK) if _ar_consumer is None
              else bool(_ar_consumer)) and 0 < num_tokens <= 8
-    if (early and _ARMED["mhc"] and num_tokens not in _AR_CONSUMER_CAPTURED
+    # Explicit overrides belong to the self-test/probe, not serving evidence.
+    if (early and _ar_consumer is None and _ARMED["mhc"]
+            and num_tokens not in _AR_CONSUMER_CAPTURED
             and torch.cuda.is_current_stream_capturing()):
         _AR_CONSUMER_CAPTURED.add(num_tokens)
         logger.warning("[megakernel] AR consumer MHC CAPTURED T=%d bf16=%s",

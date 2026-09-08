@@ -85,6 +85,17 @@ class ConsumerTests(unittest.TestCase):
         dense = (ROOT / 'overlay/modules/glm53_model/glm53_fp8_dense.py').read_text()
         self.assertIn('_register_compile_factor(\n    "VLLM_GLM53_AR_CONSUMER_PDL",', dense)
 
+    def test_probe_capture_is_not_serving_evidence(self):
+        import ast
+        tree = ast.parse((MK / 'glm53_megakernel.py').read_text())
+        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_mhc_call')
+        guarded = [n for n in function.body if isinstance(n, ast.If)
+                   and 'AR consumer MHC CAPTURED' in ast.unparse(n)]
+        self.assertEqual(len(guarded), 1)
+        condition = ast.unparse(guarded[0].test)
+        self.assertIn('_ar_consumer is None', condition)
+        self.assertIn('is_current_stream_capturing()', condition)
+
 
 if __name__ == '__main__':
     unittest.main()
