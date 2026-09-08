@@ -1,0 +1,25 @@
+{
+  "returncode": 0,
+  "command": [
+    "docker",
+    "run",
+    "--rm",
+    "--runtime",
+    "runc",
+    "--network",
+    "none",
+    "--memory",
+    "4g",
+    "--cpus",
+    "2",
+    "-e",
+    "CUTE_DSL_ARCH=sm_121a",
+    "--entrypoint",
+    "python3",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "-c",
+    "import inspect,json,hashlib\nfrom pathlib import Path\nfrom flashinfer.fused_moe import B12xMoEWrapper\np=Path(\"/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/worker_base.py\")\ns=p.read_text()\nassert \"worker_extension_cls\" in s and \"worker_class.__bases__\" in s\nsignature=str(inspect.signature(B12xMoEWrapper.run))\nassert {\"x\",\"w1_weight\",\"token_selected_experts\",\"token_final_scales\"} <= set(inspect.signature(B12xMoEWrapper.run).parameters)\nprint(json.dumps(dict(worker_extension_supported=True,worker_source_sha256=hashlib.sha256(p.read_bytes()).hexdigest(),b12x_signature=signature)))\n"
+  ],
+  "stdout": "{\"worker_extension_supported\": true, \"worker_source_sha256\": \"7da44338c2645ebf03d23394e452b31a8e3da1011fd1b42fcfcccfe99551b3fe\", \"b12x_signature\": \"(self, x: torch.Tensor, w1_weight: torch.Tensor, w1_weight_sf: torch.Tensor, w2_weight: torch.Tensor, w2_weight_sf: torch.Tensor, token_selected_experts: torch.Tensor, token_final_scales: torch.Tensor, *, w1_alpha: torch.Tensor, w2_alpha: torch.Tensor, fc2_input_scale: Optional[torch.Tensor] = None, input_global_scale: Optional[torch.Tensor] = None) -> torch.Tensor\"}\n",
+  "stderr": ""
+}
