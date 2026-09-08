@@ -146,6 +146,29 @@ def _wrap_weights_iter(cls, name):
         pass
 
 
+def _dev_free_gib():
+    """Free device memory, or None before CUDA is up.
+
+    40차: `Actual usage is 63.52 GiB for consumed memory (weights + non-torch)`
+    hides 13.1 GiB that is neither weights nor KV nor activation, and on this
+    unified-memory box every one of those bytes is host RAM that earlyoom counts
+    (it killed the serving worker four times on 2026-09-08/09 at MemAvailable
+    5%). Stamping free memory around each boot phase says which phase takes it,
+    which is the only way to aim at it. Two cudaMemGetInfo calls per phase.
+
+    is_initialized() first, on purpose: touching mem_get_info earlier would
+    CREATE the context and move the very boundary being measured.
+    """
+    try:
+        import torch
+        if not torch.cuda.is_initialized():
+            return None
+        free, _total = torch.cuda.mem_get_info()
+        return free / (1 << 30)
+    except Exception:
+        return None
+
+
 def _wrap(cls, name, label):
     fn = getattr(cls, name, None)
     if fn is None or (cls, name) in _ORIG:
@@ -154,6 +177,7 @@ def _wrap(cls, name, label):
 
     def timed(*a, **kw):
         t = time.monotonic()
+        free0 = _dev_free_gib()
         lab = label
         group = kw.get("group_name")  # init_model_parallel_group(..., group_name="tp")
         if group:
@@ -165,8 +189,14 @@ def _wrap(cls, name, label):
             if done is not None:
                 done.set()
             now = time.monotonic()
+            free1 = _dev_free_gib()
+            mem = ""
+            if free1 is not None:
+                mem = (f" dev free {free1:.2f} GiB"
+                       + (f" ({free0 - free1:+.2f} GiB used this phase)"
+                          if free0 is not None else ""))
             _log(f"{lab} took {now - t:.1f}s "
-                 f"(at {now - _T0:.1f}s since interpreter start)")
+                 f"(at {now - _T0:.1f}s since interpreter start){mem}")
 
     try:
         setattr(cls, name, timed)
