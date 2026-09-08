@@ -22,8 +22,10 @@ class PendingTests(unittest.TestCase):
         self.queue.write_text(f'10|before|100|5|before|boot|{self.pid}\n'
                              f'20|mine|101|10|original|boot|{self.pid}\n'
                              f'30|after|102|5|after|boot|{self.pid}\n')
+        # Synthetic reservations must not inherit the supervisor's prepared payload.
         for patcher in (patch.object(handoff, 'identity', return_value='owner-start'),
-                        patch.dict(os.environ, REPO=str(self.root), FLEET_EXPERIMENT_ID='')):
+                        patch.dict(os.environ, REPO=str(self.root), FLEET_EXPERIMENT_ID='',
+                                   FLEET_PREPARE_MANIFEST='')):
             patcher.start(); self.addCleanup(patcher.stop)
         pending.register(self.root, 'mine', ['old', 'spaced argument'], '/pinned/fleet.sh', 'boot')
 
@@ -109,6 +111,22 @@ class PendingTests(unittest.TestCase):
         self.queue.write_text(self.queue.read_text().replace('|9|new note|', '|10|original|'))
         self.assertTrue(handoff.admit(self.root, 'mine', self.pid, 'boot', '10', 'original'))
         self.assertEqual((self.root / 'holder').read_text().split('|')[4:6], ['9', 'new note'])
+
+
+class FixtureIsolationTests(unittest.TestCase):
+    def test_supervisor_prepare_manifest_does_not_leak_into_synthetic_edit(self):
+        with tempfile.TemporaryDirectory() as parent:
+            manifest = Path(parent) / 'prepared.json'
+            payload = b'{"spec_path": null, "marker": "parent supervisor"}\n'
+            manifest.write_bytes(payload)
+            with patch.dict(os.environ, FLEET_PREPARE_MANIFEST=str(manifest)):
+                case = PendingTests('test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers')
+                result = unittest.TestResult()
+                case.run(result)
+                self.assertEqual(result.testsRun, 1)
+                self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+                self.assertEqual(os.environ['FLEET_PREPARE_MANIFEST'], str(manifest))
+                self.assertEqual(manifest.read_bytes(), payload)
 
 
 if __name__ == '__main__':
