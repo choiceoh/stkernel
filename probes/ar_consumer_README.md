@@ -70,6 +70,13 @@ MHC equations provide separate oracles. Both modes also run memcheck and
 racecheck. C1 segment samples include warm and cold L2; they cannot establish
 engine-step speed by themselves.
 
+Racecheck retains all kernel instrumentation with four CPU workers and a
+24 GiB memory cap (32 GiB available required); other stages retain an 8 GiB
+cap (16 GiB available required). Swap is capped at the memory limit. Check-only
+runs omit unused timing packs and the cold-cache buffer. Container exit/OOM
+state is retained before cleanup, and a numerical PASS without a clean
+sanitizer summary does not admit the serving comparison.
+
 After the GPU gate the campaign uses the same deployed source for defaults,
 candidate, defaults, retaining standard onepass quality, decode-window steps,
 three fixed-length 2048-token requests, prefill contexts and SSE channels.

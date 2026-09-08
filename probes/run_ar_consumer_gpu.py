@@ -8,11 +8,50 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = 'sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211'
 NODES = ('local', '10.10.10.1', '10.10.10.3', '10.10.10.4')
 IPS = '10.10.10.2,10.10.10.1,10.10.10.3,10.10.10.4'
+GIB = 1024**3
+
+
+def memory_budget(stage):
+    # Racecheck's instrumentation exceeded the old 8 GiB cgroup limit.
+    # All serving containers are stopped; keep an additional 8 GiB free
+    # beyond the bounded probe budget and preserve every kernel check.
+    limit = 24 if stage == 'racecheck' else 8
+    return limit, (limit + 8) * GIB
+
+
+def run_container(node, command, name, diagnostics, log):
+    """Keep exit/OOM evidence before removing only this probe's container."""
+    try:
+        remote(node, command, stdout=log, stderr=subprocess.STDOUT, timeout=900)
+    finally:
+        active_error = sys.exc_info()[0]
+        cleanup_errors = []
+        try:
+            state = remote(node, ['docker', 'inspect', '--format',
+                '{"state":{{json .State}},"image":{{json .Image}},'
+                '"memory_limit":{{json .HostConfig.Memory}},'
+                '"memory_swap_limit":{{json .HostConfig.MemorySwap}},'
+                '"cpus":{{json .HostConfig.CpusetCpus}}}', name],
+                capture_output=True, text=True, timeout=15)
+            diagnostics.write_text(state.stdout)
+        except subprocess.SubprocessError as exc:
+            cleanup_errors.append(str(exc))
+            diagnostics.write_text(json.dumps({'inspection_error': str(exc)}) + '\n')
+        try:
+            remote(node, ['docker', 'rm', '-f', name],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        except subprocess.SubprocessError as exc:
+            cleanup_errors.append(str(exc))
+        # An inspect/cleanup error must not replace the original launch/OOM
+        # exception. A successful launch still requires successful cleanup.
+        if cleanup_errors and active_error is None:
+            raise RuntimeError('container diagnostics/cleanup failed: ' + '; '.join(cleanup_errors))
 
 
 def remote(node, argv, **kwargs):
@@ -72,10 +111,13 @@ def main():
         mem = remote(node, ['python3', '-c',
             "from pathlib import Path; print(next(x.split()[1] for x in Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:')))"],
             capture_output=True, text=True)
-        assert int(mem.stdout.strip()) >= 16 * 1024**2, (node, 'less than 16 GiB available')
-        cmd = ['docker', 'run', '--rm', '--name', name, '--gpus', 'device=0',
+        limit_gib, required_bytes = memory_budget(stage)
+        assert int(mem.stdout.strip()) * 1024 >= required_bytes, (
+            node, f'need {required_bytes // GIB} GiB available before {stage}')
+        cmd = ['docker', 'run', '--name', name, '--gpus', 'device=0',
             '--network=host', '--device=/dev/infiniband', '--cap-add=IPC_LOCK',
-            '--ulimit', 'memlock=-1:-1', '--cpuset-cpus=14-17', '--memory=8g', '--shm-size=1g',
+            '--ulimit', 'memlock=-1:-1', '--cpuset-cpus=14-17',
+            f'--memory={limit_gib}g', f'--memory-swap={limit_gib}g', '--shm-size=1g',
             '-e', 'MAX_JOBS=1', '-e', 'OMP_NUM_THREADS=1',
             '-e', 'AR_CONSUMER_BUILD=/evidence/build',
             '-e', 'VLLM_GLM53_MK_BUILD_ROOT=/evidence/build/mk',
@@ -89,8 +131,10 @@ def main():
         target = '/repo/probes/ar_consumer_probe.py'
         if stage in ('memcheck', 'racecheck'):
             cmd += ['--entrypoint', '/san/compute-sanitizer', IMAGE, '--tool', stage,
-                    '--target-processes', 'application-only', '--error-exitcode', '77',
-                    'python3', target, '--check-only']
+                    '--target-processes', 'application-only', '--error-exitcode', '77']
+            if stage == 'racecheck':
+                cmd += ['--racecheck-num-workers', '4']
+            cmd += ['python3', target, '--check-only']
         else:
             cmd += ['--entrypoint', 'python3', IMAGE, target, '--trace']
         if distributed:
@@ -98,7 +142,11 @@ def main():
         filename = ('' if distributed else 'local-') + stage + '-rank' + str(rank)
         cmd += ['--out', '/evidence/' + filename + '.json']
         with (args.out / (filename + '.log')).open('w') as log:
-            remote(node, cmd, stdout=log, stderr=subprocess.STDOUT, timeout=900)
+            run_container(node, cmd, name, args.out / (filename + '.container.json'), log)
+        if stage in ('memcheck', 'racecheck'):
+            summary = ('ERROR SUMMARY: 0 errors' if stage == 'memcheck' else
+                       'RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)')
+            assert summary in (args.out / (filename + '.log')).read_text(), (node, stage)
         if node != 'local':
             data = remote(node, ['cat', str(out / (filename + '.json'))], capture_output=True, text=True).stdout
             (args.out / (filename + '.json')).write_text(data)

@@ -83,10 +83,14 @@ def main():
     receipt['rank'] = rank
     torch.manual_seed(53)
     packs = {n: mk.build_mk_weight_w4(torch.randn(n, 4096, device='cuda',
-                   dtype=torch.bfloat16) * .02) for n in (4096, 6144, 6416)}
+                   dtype=torch.bfloat16) * .02)
+             for n in ((4096,) if args.check_only else (4096, 6144, 6416))}
     from mhc_reuse_bench import mathematical_reference
     from megakernel_glm53_bench import _l2_flush
-    _l2_flush()
+    # Sanitizers exercise the same 36 graph/oracle cases at N=4096. They
+    # need neither the other timing packs nor the large cold-cache buffer.
+    if not args.check_only:
+        _l2_flush()
     torch.cuda.synchronize()
     fn = (torch.randn(24, 16384, device='cuda') * .02).bfloat16().float()
     assert mk._mhc_bf16_weight(fn) is not None
