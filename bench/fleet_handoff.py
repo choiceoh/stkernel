@@ -70,7 +70,8 @@ def successor(directory, session):
     from fleet_priority import rank, downstream
     from experiment_metrics import estimates
     db = Path(os.environ.get('FLEET_EXPERIMENT_ROOT', directory / 'experiments')) / 'experiments.sqlite3'
-    lines = ['|'.join(row) for row in rows(directory) if row[1] != session
+    from fleet_pause import paused
+    lines = ['|'.join(row) for row in rows(directory) if row[1] != session and not paused(directory, row[1], row)
              and (len(row) < 7 or not row[6] or identity(int(row[6])))]
     def marker(name):
         path = directory / name
@@ -97,12 +98,15 @@ def claim_held(directory, session, pid):
 
 def admit(directory, session, pid, kind, estimate='30', note=''):
     """Commit holder BEFORE debt transfer so the receiver can always recover."""
+    from fleet_pause import paused
+    if paused(directory, session):
+        return False
     debt = read(directory / 'restore-debt.json')
     value = read(receipt(directory, session))
     managed = kind == 'boot' and live(value) and value['pid'] == pid
     if debt:
         target = debt.get('target')
-        if target and live(target) and any(r[1] == target['session'] for r in rows(directory)):
+        if target and live(target) and not paused(directory, target['session']) and any(r[1] == target['session'] for r in rows(directory)):
             if target['session'] != session:
                 return False
         if not managed:
