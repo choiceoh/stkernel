@@ -22,7 +22,7 @@ class PrepareTests(unittest.TestCase):
         self.repo.mkdir()
         self.directory = self.root / 'fleet'
         # Queued controller records always carry their pinned fleet path.
-        self.fleet_script = self.root / 'controller' / 'bench' / 'fleet.sh'
+        self.fleet_script = self.root / 'queued-controller' / 'bench' / 'fleet.sh'
         self.fleet_script.parent.mkdir(parents=True)
         self.fleet_script.write_text('#!/bin/sh\nexit 1\n')
         self.git('init', '-q')
