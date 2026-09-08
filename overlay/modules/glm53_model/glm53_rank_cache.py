@@ -8,6 +8,7 @@ format. One readiness vote keeps InstantTensor's distributed source iterator
 on the same path on every rank. No process-wide loader patches are added.
 """
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 import mmap
@@ -233,6 +234,41 @@ def _restore(directory, manifest, state):
     """
     if manifest["size"] == 0:
         return set(manifest["loaded"])
+    stats = dict(mode="serial", chunks=0, bytes=manifest["size"], read_s=0.0,
+                 hash_s=0.0, mapped_hash_s=0.0, host_copy_s=0.0, submit_s=0.0,
+                 copy_wait_s=0.0, reader_wait_s=0.0, drop_s=0.0, alloc_s=0.0,
+                 pinned_bytes=0, ok=False)
+    started = time.perf_counter()
+    try:
+        buffers = None
+        if os.environ.get("VLLM_GLM53_RANK_CACHE_PIPELINE", "0") == "1":
+            devices = {t.device for t in state.values() if t.numel()}
+            if len(devices) == 1 and next(iter(devices)).type == "cuda":
+                t0 = time.perf_counter()
+                try:
+                    buffers = [torch.empty(CHUNK_BYTES, dtype=torch.uint8,
+                                           device="cpu", pin_memory=True) for _ in range(2)]
+                except RuntimeError as exc:
+                    # No target has been touched; the existing serial path is safe.
+                    logger.warning("[rank-cache] pipeline staging unavailable; using serial: %r", exc)
+                stats["alloc_s"] = time.perf_counter() - t0
+            else:
+                logger.warning("[rank-cache] pipeline requires one CUDA device; using serial")
+        if buffers is None:
+            _restore_serial(directory, manifest, state, stats)
+        else:
+            stats.update(mode="pipeline", pinned_bytes=2 * CHUNK_BYTES)
+            _restore_pipeline(directory, manifest, state, buffers, stats)
+        stats["ok"] = True
+        return set(manifest["loaded"])
+    finally:
+        stats["total_s"] = time.perf_counter() - started
+        logger.warning("[rank-cache-io] %s", json.dumps(stats, sort_keys=True))
+
+
+def _restore_serial(directory, manifest, state, stats):
+    # Original mapped read/hash/copy ordering. mapped_hash_s includes page faults;
+    # it must not be called pure SHA time or added to the pipelined read timer.
     staging = HostStaging()
     with (directory / "weights.bin").open("rb") as source:
         with mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_COPY) as mapped:
@@ -241,16 +277,91 @@ def _restore(directory, manifest, state):
                     view = memoryview(mapped)[chunk["offset"]:chunk["offset"] + chunk["size"]]
                     raw = None
                     try:
+                        t0 = time.perf_counter()
                         if hashlib.sha256(view).hexdigest() != chunk["sha256"]:
                             raise RuntimeError("rank-cache payload checksum mismatch; remove cache and retry")
+                        stats["mapped_hash_s"] += time.perf_counter() - t0
                         raw = torch.frombuffer(view, dtype=torch.uint8)
                         target = state[chunk["name"]].reshape(-1).view(torch.uint8)
-                        staging.copy_from_cpu(target[chunk["start"]:chunk["start"] + chunk["size"]], raw)
+                        staging.copy_from_cpu(target[chunk["start"]:chunk["start"] + chunk["size"]], raw, stats)
+                        stats["pinned_bytes"] = 0 if staging.buffer is None else staging.buffer.numel()
                     finally:
                         del raw
                         view.release()
+                    t0 = time.perf_counter()
                     _drop_file_pages(source.fileno(), chunk["offset"], chunk["size"], mapped)
-    return set(manifest["loaded"])
+                    stats["drop_s"] += time.perf_counter() - t0
+                    stats["chunks"] += 1
+
+
+def _read_into_slot(source, chunk, buffer):
+    """One CPU reader owns source position; hash the exact pinned bytes copied.
+
+    No CUDA calls on this thread. The caller waits for a slot's previous GPU
+    event before handing it back. Short reads are retried, truncation is fatal.
+    """
+    with memoryview(buffer[:chunk["size"]].numpy()) as view:
+        t0 = time.perf_counter()
+        source.seek(chunk["offset"])
+        done = 0
+        while done < len(view):
+            count = source.readinto(view[done:])
+            if not count:
+                raise RuntimeError("short rank-cache read; remove cache and retry")
+            done += count
+        t1 = time.perf_counter()
+        if hashlib.sha256(view).hexdigest() != chunk["sha256"]:
+            raise RuntimeError("rank-cache payload checksum mismatch; remove cache and retry")
+        t2 = time.perf_counter()
+        # Pinned storage is independent of file pages, including during DMA.
+        _drop_file_pages(source.fileno(), chunk["offset"], chunk["size"])
+        return dict(read_s=t1-t0, hash_s=t2-t1, drop_s=time.perf_counter()-t2)
+
+
+def _restore_pipeline(directory, manifest, state, buffers, stats):
+    """Overlap one checked disk reader with DMA, bounded to two 64 MiB slots.
+
+    Copies stay on the caller's stream. A slot event prevents CPU overwrite
+    before DMA completion; the final stream drain precedes all post-load hooks
+    and also runs on failure. Partial restoration never falls back to source.
+    """
+    chunks = manifest["chunks"]
+    device = state[chunks[0]["name"]].device
+    stream = torch.cuda.current_stream(device)
+    events = [torch.cuda.Event(), torch.cuda.Event()]
+    used = [False, False]
+    with (directory / "weights.bin").open("rb", buffering=0) as source:
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="rank-cache-read") as reader:
+            future = reader.submit(_read_into_slot, source, chunks[0], buffers[0])
+            try:
+                with torch.no_grad():
+                    for index, chunk in enumerate(chunks):
+                        slot = index % 2
+                        t0 = time.perf_counter()
+                        timings = future.result()  # checksum passed before publishing
+                        stats["reader_wait_s"] += time.perf_counter() - t0
+                        for key, value in timings.items():
+                            stats[key] += value
+                        target = state[chunk["name"]].reshape(-1).view(torch.uint8)
+                        t0 = time.perf_counter()
+                        target[chunk["start"]:chunk["start"] + chunk["size"]].copy_(
+                            buffers[slot][:chunk["size"]], non_blocking=True)
+                        events[slot].record(stream)
+                        used[slot] = True
+                        stats["submit_s"] += time.perf_counter() - t0
+                        stats["chunks"] += 1
+                        if index + 1 < len(chunks):
+                            other = 1 - slot
+                            if used[other]:
+                                t0 = time.perf_counter()
+                                events[other].synchronize()
+                                stats["copy_wait_s"] += time.perf_counter() - t0
+                            future = reader.submit(_read_into_slot, source,
+                                                   chunks[index+1], buffers[other])
+            finally:
+                t0 = time.perf_counter()
+                stream.synchronize()
+                stats["copy_wait_s"] += time.perf_counter() - t0
 
 
 def _all_ranks_ready(ready):
@@ -337,6 +448,8 @@ def load_rank_cached(model, weights, load):
         directory = Path(root) / digest_json(identity)
     except Exception as exc:
         logger.warning("[rank-cache] unavailable; using source loader: %r", exc)
+    stages = {"context_s": time.perf_counter() - start}
+    phase_start = time.perf_counter()
     manifest = None
     if directory is not None:
         try:
@@ -344,14 +457,26 @@ def load_rank_cached(model, weights, load):
                 manifest = _read_manifest(directory, identity, state)
         except Exception as exc:
             logger.warning("[rank-cache] rejecting %s; using source loader: %r", directory, exc)
-    if _all_ranks_ready(manifest is not None):
+    stages["manifest_s"] = time.perf_counter() - phase_start
+    phase_start = time.perf_counter()
+    all_ready = _all_ranks_ready(manifest is not None)
+    stages["vote_s"] = time.perf_counter() - phase_start
+    if all_ready:
         # Deliberately outside the fallback catch: partial restoration is fatal.
+        phase_start = time.perf_counter()
         loaded = _restore(directory, manifest, state)
+        stages["restore_s"] = time.perf_counter() - phase_start
+        phase_start = time.perf_counter()
         if checkpoint_identity(source) != identity["checkpoint"]:
             raise RuntimeError("checkpoint changed during rank-cache restore")
+        stages["checkpoint_recheck_s"] = time.perf_counter() - phase_start
+        stages.update(kind="hit", rank=identity["rank"], total_s=time.perf_counter()-start)
+        logger.warning("[rank-cache-stage] %s", json.dumps(stages, sort_keys=True))
         logger.warning("[rank-cache] hit rank=%d bytes=%d in %.3fs; post-load hooks follow",
                        identity["rank"], manifest["size"], time.perf_counter() - start)
         return loaded
+    stages.update(kind="miss", total_s=time.perf_counter()-start)
+    logger.warning("[rank-cache-stage] %s", json.dumps(stages, sort_keys=True))
     if manifest is not None:
         logger.warning("[rank-cache] another rank missed; all ranks use source loader")
     loaded = load(weights)

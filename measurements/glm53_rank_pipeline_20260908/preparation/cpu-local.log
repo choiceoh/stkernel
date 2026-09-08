@@ -1,0 +1,160 @@
+test_cache_hit_preserves_bytes_strides_offset_and_padding (test_glm53_startup_artifacts.Fp8ArtifactTests.test_cache_hit_preserves_bytes_strides_offset_and_padding) ... ok
+test_concurrent_writers_publish_complete_artifacts (test_glm53_startup_artifacts.Fp8ArtifactTests.test_concurrent_writers_publish_complete_artifacts) ... ok
+test_corrupt_storage_metadata_and_truncation_rebuild (test_glm53_startup_artifacts.Fp8ArtifactTests.test_corrupt_storage_metadata_and_truncation_rebuild) ... [fp8-cache] rejecting 274a5b3318271240ae3b328f4b1e7b66a0a0a547332576f31662db1ea74f8581.pt; rebuilding: ValueError('cached storage checksum mismatch')
+[fp8-cache] rejecting 274a5b3318271240ae3b328f4b1e7b66a0a0a547332576f31662db1ea74f8581.pt; rebuilding: ValueError('cached identity mismatch')
+[fp8-cache] rejecting 274a5b3318271240ae3b328f4b1e7b66a0a0a547332576f31662db1ea74f8581.pt; rebuilding: RuntimeError('mmap can only be used with files saved with `torch.save(_use_new_zipfile_serialization=True), please torch.save your checkpoint with this option in order to use mmap.')
+ok
+test_disabled_cache_does_no_hashing_or_disk_io (test_glm53_startup_artifacts.Fp8ArtifactTests.test_disabled_cache_does_no_hashing_or_disk_io) ... ok
+test_float_scales_and_noncontiguous_weight (test_glm53_startup_artifacts.Fp8ArtifactTests.test_float_scales_and_noncontiguous_weight) ... ok
+test_source_bytes_shape_and_runtime_invalidate (test_glm53_startup_artifacts.Fp8ArtifactTests.test_source_bytes_shape_and_runtime_invalidate) ... ok
+test_source_check_can_evict_artifact (test_glm53_startup_artifacts.Fp8ArtifactTests.test_source_check_can_evict_artifact) ... ok
+test_write_failure_preserves_result_and_cleans_temporary (test_glm53_startup_artifacts.Fp8ArtifactTests.test_write_failure_preserves_result_and_cleans_temporary) ... [fp8-cache] write skipped: OSError('disk error')
+ok
+test_cache_hit_starts_timer_without_reading_source_iterator (test_glm53_startup_artifacts.LoaderTimingTests.test_cache_hit_starts_timer_without_reading_source_iterator) ... [boot-stamp] weights: 1 tensors, 0.0 GiB | read 0.0s (0.00 GiB/s) | apply 0.0s
+ok
+test_checkpoint_change_during_load_is_not_published (test_glm53_startup_artifacts.RankArtifactTests.test_checkpoint_change_during_load_is_not_published) ... [rank-cache-stage] {"context_s": 0.0002672094851732254, "kind": "miss", "manifest_s": 5.833804607391357e-06, "total_s": 0.00028024986386299133, "vote_s": 6.750226020812988e-06}
+[rank-cache] save unavailable; source weights remain active: ValueError('model schema or checkpoint changed while loading')
+[rank-cache] save skipped on all ranks; a peer cannot publish
+ok
+test_config_tp_rank_runtime_and_env_invalidate (test_glm53_startup_artifacts.RankArtifactTests.test_config_tp_rank_runtime_and_env_invalidate) ... [rank-cache-stage] {"context_s": 0.00019808299839496613, "kind": "miss", "manifest_s": 5.666166543960571e-06, "total_s": 0.00020966585725545883, "vote_s": 5.500391125679016e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-stage] {"context_s": 0.00022233277559280396, "kind": "miss", "manifest_s": 6.250105798244476e-06, "total_s": 0.00023408234119415283, "vote_s": 5.166977643966675e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-stage] {"context_s": 0.0002193748950958252, "kind": "miss", "manifest_s": 7.041729986667633e-06, "total_s": 0.00023337453603744507, "vote_s": 6.625428795814514e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache] evicted stale artifact /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp6qpogjb4/cache/4554714bded0842c90e99e33b36179cfa85fd64eb68d0081e1d65d1e23da5f17 (0.0 GB; keep=2)
+[rank-cache-stage] {"context_s": 0.00018862541764974594, "kind": "miss", "manifest_s": 7.665716111660004e-06, "total_s": 0.00020120851695537567, "vote_s": 4.459172487258911e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache] evicted stale artifact /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp6qpogjb4/cache/494bb742abcc641251bdaf32fbc6d992250b9d52f7274e5e042863fe9d375575 (0.0 GB; keep=2)
+ok
+test_disabled_path_does_not_read_source_metadata (test_glm53_startup_artifacts.RankArtifactTests.test_disabled_path_does_not_read_source_metadata) ... ok
+test_disk_failure_and_unpublished_directory_keep_source_path (test_glm53_startup_artifacts.RankArtifactTests.test_disk_failure_and_unpublished_directory_keep_source_path) ... [rank-cache-stage] {"context_s": 0.00019237492233514786, "kind": "miss", "manifest_s": 4.416331648826599e-06, "total_s": 0.0002026660367846489, "vote_s": 5.4175034165382385e-06}
+[rank-cache] write skipped; source weights remain active: OSError('disk failure')
+[rank-cache-stage] {"context_s": 0.00018254201859235764, "kind": "miss", "manifest_s": 5.000270903110504e-06, "total_s": 0.00019237492233514786, "vote_s": 4.417262971401215e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+ok
+test_ep_meta_noncontiguous_and_secondary_sources_decline (test_glm53_startup_artifacts.RankArtifactTests.test_ep_meta_noncontiguous_and_secondary_sources_decline) ... [rank-cache] unavailable; using source loader: ValueError('rank cache does not support EP/EPLB/LoRA')
+[rank-cache-stage] {"context_s": 0.0006067920476198196, "kind": "miss", "manifest_s": 1.257285475730896e-07, "total_s": 0.0006149169057607651, "vote_s": 7.582828402519226e-06}
+[rank-cache] save unavailable; source weights remain active: ValueError('local rank cache context is unavailable')
+[rank-cache] save skipped on all ranks; a peer cannot publish
+[rank-cache] unavailable; using source loader: ValueError('unsupported rank tensor weight')
+[rank-cache-stage] {"context_s": 0.00020562484860420227, "kind": "miss", "manifest_s": 8.288770914077759e-08, "total_s": 0.0002100002020597458, "vote_s": 3.958120942115784e-06}
+[rank-cache] save unavailable; source weights remain active: ValueError('local rank cache context is unavailable')
+[rank-cache] save skipped on all ranks; a peer cannot publish
+[rank-cache] unavailable; using source loader: ValueError('rank cache does not support secondary weight sources')
+[rank-cache-stage] {"context_s": 7.541850209236145e-06, "kind": "miss", "manifest_s": 4.190951585769653e-08, "total_s": 1.0209158062934875e-05, "vote_s": 2.3748725652694702e-06}
+[rank-cache] save unavailable; source weights remain active: ValueError('local rank cache context is unavailable')
+[rank-cache] save skipped on all ranks; a peer cannot publish
+ok
+test_ineligible_rank_still_joins_readiness_vote (test_glm53_startup_artifacts.RankArtifactTests.test_ineligible_rank_still_joins_readiness_vote) ... [rank-cache] unavailable; using source loader: ValueError('rank cache does not support EP/EPLB/LoRA')
+[rank-cache-stage] {"context_s": 1.3832934200763702e-05, "kind": "miss", "manifest_s": 4.284083843231201e-08, "total_s": 1.9458122551441193e-05, "vote_s": 5.291774868965149e-06}
+[rank-cache] save unavailable; source weights remain active: ValueError('local rank cache context is unavailable')
+[rank-cache] save skipped on all ranks; a peer cannot publish
+ok
+test_missing_truncated_or_incomplete_metadata_falls_back_before_copy (test_glm53_startup_artifacts.RankArtifactTests.test_missing_truncated_or_incomplete_metadata_falls_back_before_copy) ... [rank-cache-stage] {"context_s": 0.00018412526696920395, "kind": "miss", "manifest_s": 4.7907233238220215e-06, "total_s": 0.0001943754032254219, "vote_s": 5.041249096393585e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache] rejecting /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp1oj2j8go/cache/528ed0a658f8ef5d3e485656fbabafa8544c6b4aa43cb1d67f4d6f18c521ddb1; using source loader: ValueError('rank-cache file size mismatch')
+[rank-cache-stage] {"context_s": 0.000177750363945961, "kind": "miss", "manifest_s": 9.975023567676544e-05, "total_s": 0.0002822503447532654, "vote_s": 4.2924657464027405e-06}
+[rank-cache] keeping existing artifact /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp1oj2j8go/cache/528ed0a658f8ef5d3e485656fbabafa8544c6b4aa43cb1d67f4d6f18c521ddb1
+[rank-cache] rejecting /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp1oj2j8go/cache/528ed0a658f8ef5d3e485656fbabafa8544c6b4aa43cb1d67f4d6f18c521ddb1; using source loader: ValueError('rank cache is incomplete')
+[rank-cache-stage] {"context_s": 0.00014920905232429504, "kind": "miss", "manifest_s": 6.908364593982697e-05, "total_s": 0.0002226671203970909, "vote_s": 3.958120942115784e-06}
+[rank-cache] keeping existing artifact /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp1oj2j8go/cache/528ed0a658f8ef5d3e485656fbabafa8544c6b4aa43cb1d67f4d6f18c521ddb1
+[rank-cache] rejecting /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp1oj2j8go/cache/528ed0a658f8ef5d3e485656fbabafa8544c6b4aa43cb1d67f4d6f18c521ddb1; using source loader: ValueError('invalid rank-cache chunk extent')
+[rank-cache-stage] {"context_s": 0.00014904234558343887, "kind": "miss", "manifest_s": 6.22505322098732e-05, "total_s": 0.0002155005931854248, "vote_s": 3.874301910400391e-06}
+[rank-cache] keeping existing artifact /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp1oj2j8go/cache/528ed0a658f8ef5d3e485656fbabafa8544c6b4aa43cb1d67f4d6f18c521ddb1
+ok
+test_outer_wrapper_runs_post_load_once_after_cache_restore (test_glm53_startup_artifacts.RankArtifactTests.test_outer_wrapper_runs_post_load_once_after_cache_restore) ... [rank-cache-stage] {"context_s": 0.0002453746274113655, "kind": "miss", "manifest_s": 5.292706191539764e-06, "total_s": 0.0002580825239419937, "vote_s": 6.9998204708099365e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 133, "chunks": 10, "copy_wait_s": 0.0, "drop_s": 2.2749416530132294e-05, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 1.5500932931900024e-05, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.009242583066225052}
+[rank-cache-stage] {"checkpoint_recheck_s": 0.00012808386236429214, "context_s": 0.00019454210996627808, "kind": "hit", "manifest_s": 8.062459528446198e-05, "rank": 0, "restore_s": 0.009286709129810333, "total_s": 0.009695041924715042, "vote_s": 4.499219357967377e-06}
+[rank-cache] hit rank=0 bytes=133 in 0.010s; post-load hooks follow
+ok
+test_partially_overlapping_views_keep_the_source_loader (test_glm53_startup_artifacts.RankArtifactTests.test_partially_overlapping_views_keep_the_source_loader) ... [rank-cache] unavailable; using source loader: ValueError('unsupported overlapping rank tensor shifted_view')
+[rank-cache-stage] {"context_s": 0.00023291632533073425, "kind": "miss", "manifest_s": 8.288770914077759e-08, "total_s": 0.00024112500250339508, "vote_s": 7.666647434234619e-06}
+[rank-cache] save unavailable; source weights remain active: ValueError('local rank cache context is unavailable')
+[rank-cache] save skipped on all ranks; a peer cannot publish
+ok
+test_payload_corruption_aborts_without_source_fallback (test_glm53_startup_artifacts.RankArtifactTests.test_payload_corruption_aborts_without_source_fallback) ... [rank-cache-stage] {"context_s": 0.00020233355462551117, "kind": "miss", "manifest_s": 5.249865353107452e-06, "total_s": 0.00021375063806772232, "vote_s": 5.749985575675964e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 133, "chunks": 1, "copy_wait_s": 0.0, "drop_s": 5.8747828006744385e-06, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 4.250556230545044e-06, "mode": "serial", "ok": false, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.004119000397622585}
+ok
+test_peer_disk_shortfall_prevents_every_rank_from_writing (test_glm53_startup_artifacts.RankArtifactTests.test_peer_disk_shortfall_prevents_every_rank_from_writing) ... [rank-cache-stage] {"context_s": 0.00023999996483325958, "kind": "miss", "manifest_s": 6.250105798244476e-06, "total_s": 0.00025624968111515045, "vote_s": 9.500421583652496e-06}
+[rank-cache] save skipped on all ranks; a peer cannot publish
+ok
+test_peer_miss_forces_source_load_even_with_local_hit (test_glm53_startup_artifacts.RankArtifactTests.test_peer_miss_forces_source_load_even_with_local_hit) ... [rank-cache-stage] {"context_s": 0.00020087510347366333, "kind": "miss", "manifest_s": 5.166977643966675e-06, "total_s": 0.00021291710436344147, "vote_s": 6.4158812165260315e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-stage] {"context_s": 0.0002038329839706421, "kind": "miss", "manifest_s": 8.433405309915543e-05, "total_s": 0.000295332632958889, "vote_s": 6.708316504955292e-06}
+[rank-cache] another rank missed; all ranks use source loader
+[rank-cache] save skipped on all ranks; a peer cannot publish
+ok
+test_pre_finalization_snapshot_and_reload_bypass (test_glm53_startup_artifacts.RankArtifactTests.test_pre_finalization_snapshot_and_reload_bypass) ... [rank-cache-stage] {"context_s": 0.00018445774912834167, "kind": "miss", "manifest_s": 4.915520548820496e-06, "total_s": 0.0001959158107638359, "vote_s": 6.042420864105225e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 133, "chunks": 10, "copy_wait_s": 0.0, "drop_s": 1.7873011529445648e-05, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 1.2250617146492004e-05, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.002661791630089283}
+[rank-cache-stage] {"checkpoint_recheck_s": 0.00010866671800613403, "context_s": 0.00020504184067249298, "kind": "hit", "manifest_s": 8.237548172473907e-05, "rank": 0, "restore_s": 0.0026917504146695137, "total_s": 0.003093082457780838, "vote_s": 4.666857421398163e-06}
+[rank-cache] hit rank=0 bytes=133 in 0.003s; post-load hooks follow
+ok
+test_rank_hit_skips_iterator_and_preserves_parameters_buffers (test_glm53_startup_artifacts.RankArtifactTests.test_rank_hit_skips_iterator_and_preserves_parameters_buffers) ... [rank-cache-stage] {"context_s": 0.0002004159614443779, "kind": "miss", "manifest_s": 4.8335641622543335e-06, "total_s": 0.00021141581237316132, "vote_s": 5.709007382392883e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 133, "chunks": 10, "copy_wait_s": 0.0, "drop_s": 1.7998740077018738e-05, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 1.1669471859931946e-05, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.004091416485607624}
+[rank-cache-stage] {"checkpoint_recheck_s": 0.00010716728866100311, "context_s": 0.00021458417177200317, "kind": "hit", "manifest_s": 8.366722613573074e-05, "rank": 0, "restore_s": 0.004124125465750694, "total_s": 0.004536334425210953, "vote_s": 6.166286766529083e-06}
+[rank-cache] hit rank=0 bytes=133 in 0.005s; post-load hooks follow
+ok
+test_registered_layer_aliases_are_saved_once_and_restored_in_place (test_glm53_startup_artifacts.RankArtifactTests.test_registered_layer_aliases_are_saved_once_and_restored_in_place) ... [rank-cache-stage] {"context_s": 0.00021879281848669052, "kind": "miss", "manifest_s": 4.8335641622543335e-06, "total_s": 0.00023125018924474716, "vote_s": 7.209368050098419e-06}
+[rank-cache] saved rank=0 bytes=357 in 0.001s; post-load hooks follow
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 357, "chunks": 24, "copy_wait_s": 0.0, "drop_s": 3.324821591377258e-05, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 2.3126602172851562e-05, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.002718541771173477}
+[rank-cache-stage] {"checkpoint_recheck_s": 0.00010970793664455414, "context_s": 0.00020062457770109177, "kind": "hit", "manifest_s": 9.045936167240143e-05, "rank": 0, "restore_s": 0.0027488339692354202, "total_s": 0.003156375139951706, "vote_s": 6.125308573246002e-06}
+[rank-cache] hit rank=0 bytes=357 in 0.003s; post-load hooks follow
+[rank-cache] rejecting /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmpzgyi6iup/cache/a57329bd8f07553a1622e12dcc691b6bbbce37e4b675486fd4860bdf02dc96b8; using source loader: ValueError('rank-cache registration alias mismatch')
+[rank-cache-stage] {"context_s": 0.00019341614097356796, "kind": "miss", "manifest_s": 9.250082075595856e-05, "total_s": 0.00029241666197776794, "vote_s": 6.083399057388306e-06}
+[rank-cache] keeping existing artifact /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmpzgyi6iup/cache/a57329bd8f07553a1622e12dcc691b6bbbce37e4b675486fd4860bdf02dc96b8
+ok
+test_source_change_even_with_restored_mtime_invalidates (test_glm53_startup_artifacts.RankArtifactTests.test_source_change_even_with_restored_mtime_invalidates) ... [rank-cache-stage] {"context_s": 0.00018854066729545593, "kind": "miss", "manifest_s": 4.166737198829651e-06, "total_s": 0.00019920803606510162, "vote_s": 6.125308573246002e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-stage] {"context_s": 0.0001865830272436142, "kind": "miss", "manifest_s": 6.124377250671387e-06, "total_s": 0.00019737519323825836, "vote_s": 4.375353455543518e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+ok
+test_transformers_label_keys_and_tuples_survive_json_identity (test_glm53_startup_artifacts.RankArtifactTests.test_transformers_label_keys_and_tuples_survive_json_identity) ... [rank-cache-stage] {"context_s": 0.00018116645514965057, "kind": "miss", "manifest_s": 4.750676453113556e-06, "total_s": 0.00019179191440343857, "vote_s": 5.584210157394409e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 133, "chunks": 10, "copy_wait_s": 0.0, "drop_s": 1.466553658246994e-05, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 1.020822674036026e-05, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.003951165825128555}
+[rank-cache-stage] {"checkpoint_recheck_s": 9.504146873950958e-05, "context_s": 0.00017524976283311844, "kind": "hit", "manifest_s": 7.691700011491776e-05, "rank": 0, "restore_s": 0.003975666128098965, "total_s": 0.00432779174298048, "vote_s": 4.375353455543518e-06}
+[rank-cache] hit rank=0 bytes=133 in 0.004s; post-load hooks follow
+ok
+test_vote_transport_reuses_exact_artifact_but_source_change_invalidates (test_glm53_startup_artifacts.RankArtifactTests.test_vote_transport_reuses_exact_artifact_but_source_change_invalidates) ... [rank-cache-stage] {"context_s": 0.0001698751002550125, "kind": "miss", "manifest_s": 4.166737198829651e-06, "total_s": 0.0001798328012228012, "vote_s": 5.4175034165382385e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 133, "chunks": 10, "copy_wait_s": 0.0, "drop_s": 1.6082078218460083e-05, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 1.1751428246498108e-05, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.002539750188589096}
+[rank-cache-stage] {"checkpoint_recheck_s": 9.625032544136047e-05, "context_s": 0.00016945786774158478, "kind": "hit", "manifest_s": 7.062498480081558e-05, "rank": 0, "restore_s": 0.002566874958574772, "total_s": 0.002907915972173214, "vote_s": 4.207715392112732e-06}
+[rank-cache] hit rank=0 bytes=133 in 0.003s; post-load hooks follow
+[rank-cache] pipeline requires one CUDA device; using serial
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 133, "chunks": 10, "copy_wait_s": 0.0, "drop_s": 1.4998950064182281e-05, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 1.0378658771514893e-05, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.003463124856352806}
+[rank-cache-stage] {"checkpoint_recheck_s": 8.87913629412651e-05, "context_s": 0.00016695726662874222, "kind": "hit", "manifest_s": 6.358232349157333e-05, "rank": 0, "restore_s": 0.0034845415502786636, "total_s": 0.003810165449976921, "vote_s": 5.749985575675964e-06}
+[rank-cache] hit rank=0 bytes=133 in 0.004s; post-load hooks follow
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 133, "chunks": 10, "copy_wait_s": 0.0, "drop_s": 1.875218003988266e-05, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 9.583309292793274e-06, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.0035302499309182167}
+[rank-cache-stage] {"checkpoint_recheck_s": 9.062513709068298e-05, "context_s": 0.00016141682863235474, "kind": "hit", "manifest_s": 5.808286368846893e-05, "rank": 0, "restore_s": 0.0035608746111392975, "total_s": 0.00387674942612648, "vote_s": 5.207955837249756e-06}
+[rank-cache] hit rank=0 bytes=133 in 0.004s; post-load hooks follow
+[rank-cache-stage] {"context_s": 0.00017308350652456284, "kind": "miss", "manifest_s": 5.832873284816742e-06, "total_s": 0.0001838328316807747, "vote_s": 4.542060196399689e-06}
+[rank-cache] saved rank=0 bytes=133 in 0.001s; post-load hooks follow
+ok
+test_cpu_vote_rejects_invalid_group_without_collective_or_cuda (test_glm53_startup_artifacts.RankConsensusTests.test_cpu_vote_rejects_invalid_group_without_collective_or_cuda) ... ok
+test_four_real_gloo_ranks_agree_on_all_hit_and_partial_miss (test_glm53_startup_artifacts.RankConsensusTests.test_four_real_gloo_ranks_agree_on_all_hit_and_partial_miss) ... ok
+test_single_rank_needs_no_collective_or_process_group (test_glm53_startup_artifacts.RankConsensusTests.test_single_rank_needs_no_collective_or_process_group) ... ok
+test_cpu_targets_keep_exact_serial_path (test_glm53_rank_pipeline.RankPipelineTests.test_cpu_targets_keep_exact_serial_path) ... [rank-cache] pipeline requires one CUDA device; using serial
+[rank-cache-io] {"alloc_s": 0.0, "bytes": 121, "chunks": 8, "copy_wait_s": 0.0, "drop_s": 2.5960616767406464e-05, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 1.729372888803482e-05, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 0.006038207560777664}
+ok
+test_late_bad_checksum_never_publishes_bad_chunk_and_drains_dma (test_glm53_rank_pipeline.RankPipelineTests.test_late_bad_checksum_never_publishes_bad_chunk_and_drains_dma) ... [rank-cache-io] {"alloc_s": 2.1209008991718292e-05, "bytes": 121, "chunks": 3, "copy_wait_s": 5.249865353107452e-06, "drop_s": 5.9157609939575195e-06, "hash_s": 4.458241164684296e-06, "host_copy_s": 0.0, "mapped_hash_s": 0.0, "mode": "pipeline", "ok": false, "pinned_bytes": 32, "read_s": 9.207986295223236e-06, "reader_wait_s": 6.662402302026749e-05, "submit_s": 7.749535143375397e-06, "total_s": 0.0003576250746846199}
+ok
+test_late_truncation_is_fatal_and_drains_earlier_copies (test_glm53_rank_pipeline.RankPipelineTests.test_late_truncation_is_fatal_and_drains_earlier_copies) ... [rank-cache-io] {"alloc_s": 1.579243689775467e-05, "bytes": 121, "chunks": 3, "copy_wait_s": 3.541819751262665e-06, "drop_s": 2.5425106287002563e-06, "hash_s": 1.9157305359840393e-06, "host_copy_s": 0.0, "mapped_hash_s": 0.0, "mode": "pipeline", "ok": false, "pinned_bytes": 32, "read_s": 1.962576061487198e-05, "reader_wait_s": 3.629270941019058e-05, "submit_s": 6.209127604961395e-06, "total_s": 0.00020854175090789795}
+ok
+test_partial_readinto_retries_until_full_chunk (test_glm53_rank_pipeline.RankPipelineTests.test_partial_readinto_retries_until_full_chunk) ... ok
+test_pin_allocation_failure_falls_back_before_any_write (test_glm53_rank_pipeline.RankPipelineTests.test_pin_allocation_failure_falls_back_before_any_write) ... [rank-cache] pipeline staging unavailable; using serial: RuntimeError('pin unavailable')
+[rank-cache-io] {"alloc_s": 2.9542483389377594e-05, "bytes": 121, "chunks": 0, "copy_wait_s": 0.0, "drop_s": 0.0, "hash_s": 0.0, "host_copy_s": 0.0, "mapped_hash_s": 0.0, "mode": "serial", "ok": true, "pinned_bytes": 0, "read_s": 0.0, "reader_wait_s": 0.0, "submit_s": 0.0, "total_s": 7.912516593933105e-05}
+ok
+test_reader_failure_keeps_buffer_alive_until_prior_dma_drained (test_glm53_rank_pipeline.RankPipelineTests.test_reader_failure_keeps_buffer_alive_until_prior_dma_drained) ... [rank-cache-io] {"alloc_s": 1.1208467185497284e-05, "bytes": 121, "chunks": 1, "copy_wait_s": 2.750195562839508e-06, "drop_s": 8.745118975639343e-07, "hash_s": 8.754432201385498e-07, "host_copy_s": 0.0, "mapped_hash_s": 0.0, "mode": "pipeline", "ok": false, "pinned_bytes": 32, "read_s": 2.6654452085494995e-06, "reader_wait_s": 9.993091225624084e-07, "submit_s": 2.874992787837982e-06, "total_s": 0.00015429221093654633}
+ok
+test_two_slots_preserve_bytes_with_delayed_dma_and_tail (test_glm53_rank_pipeline.RankPipelineTests.test_two_slots_preserve_bytes_with_delayed_dma_and_tail) ... [rank-cache-io] {"alloc_s": 1.2917444109916687e-05, "bytes": 121, "chunks": 8, "copy_wait_s": 9.873881936073303e-06, "drop_s": 8.12578946352005e-06, "hash_s": 6.497837603092194e-06, "host_copy_s": 0.0, "mapped_hash_s": 0.0, "mode": "pipeline", "ok": true, "pinned_bytes": 32, "read_s": 1.6209669411182404e-05, "reader_wait_s": 9.312760084867477e-05, "submit_s": 1.4666467905044556e-05, "total_s": 0.00034620799124240875}
+ok
+
+----------------------------------------------------------------------
+Ran 37 tests in 0.875s
+
+OK
+CPU_RESULT={"tests": 37, "failures": 0, "errors": 0, "skips": 0, "torch": "2.11.0", "cuda_initialized": false}

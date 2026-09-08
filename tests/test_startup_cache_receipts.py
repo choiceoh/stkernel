@@ -46,6 +46,20 @@ class BootReceiptTests(unittest.TestCase):
                     contextlib.redirect_stdout(io.StringIO()):
                 exec(compile(gate, "startup_cache_boots receipt gate", "exec"), {})
 
+    def test_rank_pipeline_requires_measured_path_and_bounded_pinned_storage(self):
+        phases = "".join(f"[boot-stamp] {name} took 1.0s\n" for name in (
+            "cudagraph-memory-profile", "encoder-profile", "profile-run", "cudagraph-capture", "compile+warmup"))
+        packs = "packs: rtn=0 gptq=0 gptq_failed=0 cached=258\n"
+        for stage, mode, slots in (("BASE1", "serial", 1), ("FAST1", "pipeline", 2)):
+            receipt = dict(mode=mode, ok=True, chunks=8, pinned_bytes=slots*64*1024*1024)
+            def suffix(row):
+                return phases + "[rank-cache-io] " + json.dumps(row) + "\n[rank-cache-stage] {\"kind\":\"hit\"}\n"
+            self.check_receipts(stage, 1, 258, 0, mode="rank-pipeline", packs=packs, suffix=suffix(receipt))
+            for bad in (dict(receipt, mode="fallback"), dict(receipt, ok=False),
+                        dict(receipt, pinned_bytes=0), dict(receipt, chunks=0)):
+                with self.assertRaises(AssertionError):
+                    self.check_receipts(stage, 1, 258, 0, mode="rank-pipeline", packs=packs, suffix=suffix(bad))
+
     def test_prime_accepts_new_packs_but_timed_arms_require_hits(self):
         self.check_receipts("PRIME", 0, 0, 0)
         self.check_receipts("BASE1", 0, 0, 253)

@@ -394,8 +394,9 @@ class RankArtifactTests(unittest.TestCase):
 
     def test_vote_transport_reuses_exact_artifact_but_source_change_invalidates(self):
         expected = None
-        for policy in ("0", "1", "0"):
-            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_CPU_VOTE": policy}):
+        for policy, pipeline in (("0", "0"), ("1", "0"), ("0", "1"), ("0", "0")):
+            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_CPU_VOTE": policy,
+                                         "VLLM_GLM53_RANK_CACHE_PIPELINE": pipeline}):
                 model = self.model()
                 self.load(model)
                 if expected is None:
