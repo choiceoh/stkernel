@@ -47,6 +47,51 @@ class FeedbackTests(unittest.TestCase):
         spec.update(changes)
         return spec
 
+    def test_jobs_filter_includes_joined_requests_beyond_global_limit(self):
+        store=self.store()
+        shared=self.manual_job(store,'owner')
+        joined=store.submit('reader',store.get(shared)['payload'])
+        self.assertEqual(joined['disposition'],'joined')
+        withdrawn=self.manual_job(store,'reader',command=['true','withdrawn'])
+        store.submit('other',store.get(withdrawn)['payload'])
+        completed=[]
+        for state in sorted(ex.TERMINAL):
+            job=self.manual_job(store,'reader',command=['true',state])
+            store.state(job,state)
+            completed.append(job)
+        with store.db:
+            store.db.execute('INSERT INTO withdrawals VALUES(?,?,?,?)',
+                             (withdrawn,'reader',shared,'newer request'))
+        for index in range(105):
+            self.manual_job(store,'other',command=['true',str(index)])
+        global_jobs=self.cli('jobs')
+        self.assertEqual(len(global_jobs),100)
+        self.assertNotIn(shared,{row['id'] for row in global_jobs})
+        rows=self.cli('jobs','--session','reader','--active')
+        self.assertEqual([row['id'] for row in rows],[shared])
+        self.assertEqual(set(rows[0]),{'id','state','created','started','finished'})
+        self.assertEqual({row['id'] for row in self.cli('jobs','--session','reader')},
+                         {shared,*completed})
+        self.assertIn(withdrawn,{row['id'] for row in self.cli('jobs','--session','other','--limit','1000')})
+        self.assertEqual(self.cli('jobs','--session','missing','--active'),[])
+        active=self.cli('jobs','--active','--limit','1000')
+        self.assertTrue(all(row['state'] not in ex.TERMINAL for row in active))
+        self.assertIn(withdrawn,{row['id'] for row in active})
+
+    def test_jobs_limit_is_bounded_and_keeps_newest_requests(self):
+        store=self.store()
+        first=self.manual_job(store,'reader',command=['true','first'])
+        second=self.manual_job(store,'reader',command=['true','second'])
+        with store.db:
+            store.db.execute('UPDATE jobs SET created=1 WHERE id=?',(first,))
+            store.db.execute('UPDATE jobs SET created=2 WHERE id=?',(second,))
+        self.assertEqual([row['id'] for row in self.cli('jobs','--session','reader','--limit','1')],[second])
+        for value in ('0','1001','-1'):
+            result=self.cli('jobs','--limit',value,ok=False)
+            self.assertEqual(result.returncode,2)
+            self.assertIn('jobs limit must be 1..1000',result.stderr)
+        self.assertEqual(self.cli('jobs','--session','not a session',ok=False).returncode,2)
+
     def test_dependency_completion_is_observed_without_a_second_of_idle_time(self):
         store=self.store()
         prerequisite=self.manual_job(store,'gate')
