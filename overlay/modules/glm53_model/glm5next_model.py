@@ -109,6 +109,7 @@ from .multimodal import (
 logger = init_logger(__name__)
 
 _PREFILL_SP_ENABLED = os.environ.get("VLLM_GLM53_PREFILL_SP") == "1"
+_EP_PREFILL_LOCAL = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
 if _PREFILL_SP_ENABLED:
     from vllm.distributed.device_communicators.glm53_prefill_collectives import (
         partial_tp_output,
@@ -170,8 +171,8 @@ def _prefill_sp_layer_reduction_ok(layer):
     config = getattr(runner, "moe_config", None)
     if (
         config is None
-        or getattr(config, "tp_size", None) != 4
-        or getattr(config, "ep_size", None) != 1
+        or (getattr(config, "tp_size", None), getattr(config, "ep_size", None))
+           not in (((4, 1), (1, 4)) if _EP_PREFILL_LOCAL else ((4, 1),))
         or getattr(config, "dp_size", None) != 1
         or getattr(config, "is_sequence_parallel", None) is not False
         or getattr(config, "skip_final_all_reduce", None) is not False
@@ -903,7 +904,9 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
             and parallel.tensor_parallel_size == 4
             and parallel.pipeline_parallel_size == 1
             and getattr(parallel, "data_parallel_size", 1) == 1
-            and not getattr(parallel, "enable_expert_parallel", False)
+            and (not getattr(parallel, "enable_expert_parallel", False)
+                 or (_EP_PREFILL_LOCAL and config.n_routed_experts == 288
+                     and config.num_experts_per_token == 8 and config.moe_intermediate_size == 2048))
             and not getattr(parallel, "enable_eplb", False)
             and getattr(parallel, "decode_context_parallel_size", 1) == 1
             and getattr(parallel, "prefill_context_parallel_size", 1) == 1
@@ -940,7 +943,7 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
     def _can_prefill_sequence_parallel(self, hidden_states, positions) -> bool:
         if not self._prefill_sp_config_ok:
             return self._prefill_sp_decline(
-                "config gate (needs mhc, hidden 4096, 4 streams, TP4/PP1/DP1, no EP/EPLB/DCP/PCP, "
+                "config gate (needs mhc, hidden 4096, 4 streams, TP4/PP1/DP1, EP requires ep-prefill-local; no EPLB/DCP/PCP, "
                 "no sequence-parallel MoE, all layers on this rank)", positions.shape[0])
         if (
             torch.compiler.is_compiling()

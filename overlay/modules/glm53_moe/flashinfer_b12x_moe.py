@@ -48,6 +48,17 @@ _VLLM_WEIGHT_ATTRS = (
 )
 
 
+_EP_LOCAL_PREFILL_ENABLED = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
+
+
+def ep_local_prefill_eligible(*, enabled, use_ep, no_dummy, experts, hidden, intermediate,
+                              tokens, topk, activation, alpha, beta, limit, capturing):
+    return (enabled and use_ep and no_dummy and not capturing
+            and (experts, hidden, intermediate, topk) == (72, 4096, 2048, 8)
+            and type(tokens) is int and 4096 <= tokens <= 16384
+            and (activation, alpha, beta, limit) == ("swigluoai_uninterleave", 1.0, 0.0, 10.0))
+
+
 def b12x_ep_kernel_expert_count(
     num_local_experts: int, use_ep: bool, no_dummy: bool = False
 ) -> int:
@@ -2047,6 +2058,29 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 return got
         return torch.bfloat16
 
+    def _apply_ep_local_prefill(self, output, hidden_states, w1, w2, topk_ids, topk_weights):
+        """Keep full tokens and let the M128 producer discard remote slots."""
+        from flashinfer.fused_moe import b12x_fused_moe
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch
+        cls = moe_dispatch._ep_local_prefill_kernel(
+            E=72, m=hidden_states.shape[0], k=4096, n=2048, num_topk=8, tile_m=128,
+            activation=self._activation_str, swiglu_alpha=self._swiglu_alpha,
+            swiglu_beta=self._swiglu_beta, swiglu_limit=self._swiglu_limit,
+            quant_mode="nvfp4", tiled=bool(getattr(w1, "_b12x_tile_major", False)))
+        if cls is None:
+            raise RuntimeError("expert-local wrapper and dispatcher activation differ")
+        b12x_fused_moe(
+            x=hidden_states, w1_weight=w1, w1_weight_sf=self.w1_sf_mma,
+            w2_weight=w2, w2_weight_sf=self.w2_sf_mma,
+            token_selected_experts=topk_ids, token_final_scales=topk_weights,
+            num_experts=72, num_local_experts=72, top_k=8,
+            w1_alpha=self.g1_alphas, w2_alpha=self.g2_alphas,
+            fc2_input_scale=self._fc2_input_scale, output=output,
+            activation=self._activation_str, swiglu_alpha=self._swiglu_alpha,
+            swiglu_beta=self._swiglu_beta, swiglu_limit=self._swiglu_limit)
+        logger.info_once("[ep-prefill-local] LAUNCHED full-token E72/I2048/top8 T=%d", hidden_states.shape[0])
+        return output
+
     def _apply_ep_compact(
         self,
         output: torch.Tensor,
@@ -2278,6 +2312,15 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             topk_ids, topk_weights = self._remap_ep_tensors(
                 topk_ids, topk_weights, expert_map
             )
+            if ep_local_prefill_eligible(
+                enabled=_EP_LOCAL_PREFILL_ENABLED, use_ep=self._use_ep, no_dummy=self._ep_no_dummy,
+                experts=self._kernel_num_experts, hidden=self.hidden_dim,
+                intermediate=self.intermediate_size_per_partition, tokens=hidden_states.shape[0],
+                topk=topk_ids.shape[1], activation=self._activation_str,
+                alpha=self._swiglu_alpha, beta=self._swiglu_beta, limit=self._swiglu_limit,
+                capturing=torch.cuda.is_current_stream_capturing()):
+                return self._apply_ep_local_prefill(
+                    output, hidden_states, w1, w2, topk_ids, topk_weights)
             zero_micro_chunks = b12x_ep_zero_weight_micro_chunks(
                 topk_ids.size(0),
                 topk_ids.size(1),

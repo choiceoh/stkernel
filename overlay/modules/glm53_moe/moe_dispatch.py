@@ -93,6 +93,30 @@ _GLM53_B12X_PREFILL_REUSE = (
 _GLM53_B12X_PREFILL_FC1_N128 = (
     os.environ.get("VLLM_GLM53_B12X_PREFILL_FC1_N128") == "1"
 )
+_GLM53_EP_PREFILL_LOCAL = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
+
+
+def _ep_local_prefill_kernel(*, E, m, k, n, num_topk, tile_m, activation,
+                             swiglu_alpha, swiglu_beta, swiglu_limit, quant_mode, tiled):
+    if not _GLM53_EP_PREFILL_LOCAL or not 4096 <= m <= 16384:
+        return None
+    if ((E, k, n, num_topk) != (72, 4096, 2048, 8)
+            or (activation, swiglu_alpha, swiglu_beta, swiglu_limit, quant_mode)
+            != ("swigluoai_uninterleave", 1.0, 0.0, 10.0, "nvfp4")):
+        return None
+    # This call can carry E72 as an invalid-ID sentinel. Once this geometry
+    # is selected it MUST NOT silently run a stock kernel on those IDs.
+    if (_FORCED_BACKEND not in (None, "dynamic")
+            or os.environ.get(_FORCE_MOE_W4A16_ENV, "0") == "1"):
+        raise ValueError("expert-local prefill cannot use a forced incompatible backend")
+    if tiled or tile_m != 128 or torch.cuda.get_device_capability() != (12, 1):
+        raise ValueError("expert-local prefill requires row-major SM121 M128")
+    from .moe_dynamic_ep_local import MoEGatedEPLocalKernel, stock_contract_matches
+    if not stock_contract_matches():
+        raise RuntimeError("expert-local prefill inherited gated source has drifted")
+    return MoEGatedEPLocalKernel
+
+
 MoEGatedPrefillReuseKernel = None
 MoEGatedPrefillN128Kernel = None
 _prefill_reuse_announce = [False]
@@ -1591,6 +1615,7 @@ def _dynamic_kernel_cache_key(
     share_input_across_experts: bool,
     prefill_reuse: bool = False,
     prefill_fc1_n128: bool = False,
+    ep_local_prefill: bool = False,
     tiled: bool = False,
 ) -> Tuple:
     """The dynamic kernel's cache key (see :func:`_static_kernel_cache_key`).
@@ -1623,6 +1648,8 @@ def _dynamic_kernel_cache_key(
     # stock kernel must never share an artifact. Adding it renames stock
     # on-disk artifacts once (a one-time recompile) -- the suffixes below
     # keep the reuse lanes separately keyed on top of it.
+    if ep_local_prefill:
+        return key + ("glm53_ep_prefill_local_v1",)
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
     return key + ("glm53_prefill_reuse_v1",) if prefill_reuse else key
@@ -3423,6 +3450,12 @@ def _get_dynamic_kernel(
     # tile_m comes from the workspace's shared selection so the kernel's task
     # and scale indexing matches the allocated scratch geometry.
     mma_tiler_mn = (tile_m, _level_tile_n(activation_precision))
+    ep_local_cls = _ep_local_prefill_kernel(
+        E=E, m=m, k=k, n=n, num_topk=num_topk, tile_m=tile_m, activation=activation,
+        swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit,
+        quant_mode=quant_mode, tiled=tiled)
+    if ep_local_cls is not None:
+        share_input_across_experts = False  # per-expert scales, local route count
     prefill_reuse = (
         (_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128)
         and m >= 3456
@@ -3477,6 +3510,7 @@ def _get_dynamic_kernel(
         tiled=tiled,
         prefill_reuse=prefill_reuse,
         prefill_fc1_n128=prefill_fc1_n128,
+        ep_local_prefill=ep_local_cls is not None,
     )
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -3546,6 +3580,13 @@ def _get_dynamic_kernel(
             swiglu_limit=swiglu_limit,
             share_input_across_experts=share_input_across_experts,
         )
+    if ep_local_cls is not None:
+        kernel = ep_local_cls(
+            sf_vec_size=sf_vec_size, mma_tiler_mn=mma_tiler_mn,
+            input_scales_are_reciprocal=input_scales_are_reciprocal,
+            fast_math=fast_math, activation=activation, swiglu_alpha=swiglu_alpha,
+            swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit,
+            share_input_across_experts=False)
     launch = _DynamicMoELaunch(
         kernel,
         k=k,
@@ -3708,7 +3749,9 @@ def _get_dynamic_kernel(
             stream_fake,
             options="--opt-level 2 --enable-tvm-ffi",
         ),
-        extra_key_files=_kernel_source_files(),
+        extra_key_files=_kernel_source_files() + (
+            (os.path.join(os.path.dirname(__file__), "moe_dynamic_ep_local.py"),)
+            if ep_local_cls is not None else ()),
     )
 
     if prefill_reuse:

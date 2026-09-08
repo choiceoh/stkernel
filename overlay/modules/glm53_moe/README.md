@@ -315,3 +315,15 @@ the lane declines to the stock dispatcher — with the knob armed that decline
 now logs `[b12x prefill reuse] declining the opt-in lane ...` instead of
 silently serving stock perf. GPU numerics/spill/occupancy validation is
 still pending; keep both at 0 until the combined campaign.
+
+## Full-token expert-local prefill candidate
+
+`VLLM_GLM53_EP_PREFILL_LOCAL=1` with `ENABLE_EP=1` selects a new E72,
+I2048, top8 M128 producer for 4096..16384 eager rows and permits the exact
+TP4/EP4 MHC sequence-parallel path. The producer discards remote sentinel
+IDs before reserving expert rows, quantizes original token rows and scatters
+directly to the caller output. Existing EP compact prefill and decode
+fallbacks remain for other shapes. The source pin and a separate artifact
+key prevent stock-kernel execution on invalid remote IDs. Both flags stay
+default-off; GPU correctness, routing sensitivity, memory and direct TTFT
+are unmeasured. See `docs/GLM53_EP_PREFILL_LOCAL.md`.
