@@ -21,7 +21,7 @@ class LinuxSupervisorTests(unittest.TestCase):
         self.repo, self.logs, self.bin = [self.root/p for p in ('repo', 'logs', 'bin')]
         for path in (self.repo/'bench', self.repo/'profiles', self.logs/'fleet', self.bin):
             path.mkdir(parents=True)
-        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'fleet_inspect.py', 'experiment_metrics.py'):
+        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'fleet_inspect.py', 'experiment_metrics.py', 'fleet_launch.py', 'fleet_prepare.py', 'fleet_classify.py'):
             shutil.copy(ROOT/'bench'/name, self.repo/'bench'/name)
         (self.repo/'profiles/glm53.env').write_text('VLLM_TEST=0\n')
         (self.repo/'bench/fleet_restore.sh').write_text('''#!/bin/bash
@@ -349,6 +349,87 @@ test ! -e "$LOGD/fail-restore"
         self.assertIn('RETAINED_END', retained)
         self.assertEqual((self.logs/'restores').read_text().splitlines(), ['slow-reader'])
         self.assertFalse(self.held('slow-reader'))
+
+
+    def test_detached_cpu_acknowledges_before_completion(self):
+        gate=self.logs/'cpu-continue'
+        code=f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)\nprint("CPU_DONE")'
+        result=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'run','--cpu','--detach','cpu-detached','--',
+                               sys.executable,'-c',code],env=self.env,cwd=self.repo,capture_output=True,text=True,timeout=8)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        receipt=json.loads(result.stdout)
+        self.assertEqual(receipt['state'],'running-cpu')
+        self.assertFalse((self.logs/'fleet/holder').exists())
+        gate.touch()
+        self.until(lambda:'CPU_DONE' in Path(receipt['startup_log']).read_text())
+
+    def test_detached_gpu_ticket_and_historical_log(self):
+        gate=self.logs/'continue'
+        first=self.launch('first',f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        command=['bash',str(self.repo/'bench/fleet.sh'),'run','--gpu','--detach','detached','1','fixture','--',
+                 sys.executable,'-c','print("DETACHED_DONE")']
+        result=subprocess.run(command,env=self.env,cwd=self.repo,capture_output=True,text=True,timeout=8)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        receipt=json.loads(result.stdout)
+        self.assertEqual(receipt['state'],'queued');self.assertTrue(receipt['ticket'])
+        again=subprocess.run(command,env=self.env,cwd=self.repo,capture_output=True,text=True,timeout=8)
+        self.assertEqual(json.loads(again.stdout)['pid'],receipt['pid'])
+        gate.touch();self.assertEqual(self.wait(first),0)
+        self.until(lambda:self.show('detached')['state']=='succeeded')
+        history=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'history','detached','--json'],
+                               env=self.env,capture_output=True,text=True,timeout=5)
+        self.assertEqual(history.returncode,0,history.stderr)
+        self.assertIn(receipt['ticket'],history.stdout)
+        logs=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'logs','detached','--ticket',receipt['ticket']],
+                            env=self.env,capture_output=True,text=True,timeout=5)
+        self.assertEqual(logs.returncode,0,logs.stderr);self.assertIn('DETACHED_DONE',logs.stdout)
+
+    def test_preparation_failure_does_not_enqueue_or_restore(self):
+        spec=self.repo/'prepare.json';spec.write_text(json.dumps(dict(required_paths=['missing-model'])))
+        result=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'run','--gpu','--detach','--prepare',str(spec),
+                               'not-ready','--',sys.executable,'-c','pass'],env=self.env,cwd=self.repo,
+                              capture_output=True,text=True,timeout=8)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('required path is missing',result.stdout+result.stderr)
+        self.assertFalse((self.logs/'fleet/holder').exists())
+        self.assertEqual((self.logs/'fleet/queue').read_text(),'')
+        self.assertFalse((self.logs/'restores').exists())
+
+    def test_same_command_edit_rebinds_changed_source(self):
+        gate=self.logs/'continue'
+        first=self.launch('first',f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        script=self.repo/'candidate.py';script.write_text('print("OLD")\n')
+        output=(self.logs/'rebind.log').open('w');self.addCleanup(output.close)
+        second=subprocess.Popen(['bash',str(self.repo/'bench/fleet.sh'),'run','--gpu','rebind','--',
+                                 sys.executable,str(script)],env=self.env,cwd=self.repo,stdout=output,stderr=subprocess.STDOUT)
+        self.children.append(second);self.until(lambda:'waiting:' in (self.logs/'rebind.log').read_text())
+        script.write_text('print("NEW_INPUT")\n')
+        result=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'edit','rebind','--',sys.executable,str(script)],
+                              env=self.env,capture_output=True,text=True,timeout=8)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(json.loads(result.stdout)['revision'],2)
+        gate.touch();self.assertEqual(self.wait(first),0);self.assertEqual(self.wait(second),0)
+        self.assertIn('NEW_INPUT',(self.logs/'rebind.log').read_text())
+
+    def test_source_change_while_queued_is_rejected_before_go(self):
+        gate=self.logs/'continue'
+        first=self.launch('first',f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        script=self.repo/'candidate.py';script.write_text('print("ORIGINAL")\n')
+        output=(self.logs/'source-change.log').open('w');self.addCleanup(output.close)
+        second=subprocess.Popen(['bash',str(self.repo/'bench/fleet.sh'),'run','--gpu','source-change','--',
+                                 sys.executable,str(script)],env=self.env,cwd=self.repo,stdout=output,stderr=subprocess.STDOUT)
+        self.children.append(second)
+        self.until(lambda:self.ready('source-change'))
+        script.write_text('raise RuntimeError("must never run")\n')
+        gate.touch()
+        self.assertEqual(self.wait(first),0);self.assertEqual(self.wait(second),3)
+        value=self.show('source-change')
+        self.assertIsNone(value.get('payload_returncode'))
+        self.assertEqual((self.logs/'restores').read_text().splitlines(),['first'])
+        self.assertIn('queued input changed',(self.logs/'source-change.log').read_text())
 
 
 if __name__ == '__main__':

@@ -243,6 +243,10 @@ class Store:
                 job TEXT NOT NULL, phase TEXT NOT NULL, seconds REAL NOT NULL, at REAL NOT NULL, ok INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS timing_phases ON timings(phase,at);
             CREATE TABLE IF NOT EXISTS baseline_demands (job TEXT PRIMARY KEY, evaluations TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS retry_attempts (
+                source TEXT NOT NULL, attempt TEXT NOT NULL, session TEXT NOT NULL,
+                reason TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(source,attempt,session));
+            CREATE INDEX IF NOT EXISTS retry_attempt_ids ON retry_attempts(attempt);
         """)
 
     def event(self, job, kind, data):
@@ -313,7 +317,10 @@ class Store:
             for baseline in retired_baselines:
                 dequeue(self.get(baseline)['payload'], baseline)
 
-    def submit(self, session, payload, repeat=None):
+    def is_retry(self, job):
+        return self.db.execute('SELECT 1 FROM retry_attempts WHERE attempt=? LIMIT 1', (job,)).fetchone() is not None
+
+    def submit(self, session, payload, repeat=None, *, retry_failed=False):
         identity = {k: v for k, v in payload.items() if k != "repo"}
         identity["spec"] = {k: v for k, v in payload["spec"].items()
                             if k not in {"hypothesis", "estimate_min"}}
@@ -331,7 +338,9 @@ class Store:
                         raise ValueError("prerequisite external inputs changed or are not pinned by this request: " + path)
             old = self.db.execute("SELECT id,state FROM jobs WHERE fingerprint=? ORDER BY created DESC LIMIT 1",
                                   (fingerprint,)).fetchone()
-            if old and old['state'] != 'retired' and not repeat:
+            retryable = old and (old['state'] in {'failed', 'blocked', 'interrupted'}
+                                or payload['spec']['kind'] == 'baseline' and old['state'] == 'incomplete')
+            if old and old['state'] != 'retired' and not repeat and not (retry_failed and retryable):
                 job = old["id"]
                 disposition = "reused" if old["state"] in TERMINAL else "joined"
             else:
@@ -402,6 +411,10 @@ def ensure_worker(store, job):
             store.state(job, "interrupted", {"reason": "worker exited without a result; inspect log before an explicit repeat"})
             return
         payload = store.get(job)["payload"]
+        controller = None
+        if payload.get('retry_controller'):
+            from experiment_retry import controller_path
+            controller = controller_path(payload)
         checkout = store.root / job / "checkout"
         if Path(payload["repo"]) != checkout:
             # Freeze the submitted commit so agents may keep editing their own
@@ -414,7 +427,7 @@ def ensure_worker(store, job):
             with store.db:
                 store.db.execute("UPDATE jobs SET payload=? WHERE id=?", (encoded(payload), job))
         with (store.root / job / "run.log").open("ab", buffering=0) as output:
-            subprocess.Popen([sys.executable, str(checkout / "bench/experiments.py"), "--root", str(store.root), "worker", job],
+            subprocess.Popen([sys.executable, str((controller or checkout) / "bench/experiments.py"), "--root", str(store.root), "worker", job],
                              stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
                              start_new_session=True, close_fds=True)
 
@@ -442,6 +455,9 @@ def child_env(payload, store, job):
 
 
 def verify(payload):
+    if payload.get('retry_controller'):
+        from experiment_retry import controller_path
+        controller_path(payload)
     current = snapshot(Path(payload["repo"]), payload["spec"], payload["paths"]["MK_OVERLAY_STAMP"])
     if current != payload["snapshot"]:
         raise ValueError("source, build, runner or external inputs changed while queued; resubmit after checking the new context")
@@ -713,7 +729,9 @@ def worker(store, job):
                     if identity(Path(payload['repo']), spec, payload['environment']) != payload['cpu_identity']:
                         raise ValueError('CPU environment changed while waiting for shared evidence')
                     failure = joined_failure(store, joined, payload)
-                    if failure and not store.get(job)['repeat_reason']:
+                    retried_owner = joined and store.db.execute(
+                        'SELECT 1 FROM retry_attempts WHERE attempt=? AND source=? LIMIT 1', (job, joined)).fetchone()
+                    if failure and not store.get(job)['repeat_reason'] and not retried_owner:
                         store.state(job, 'blocked', failure)
                         return 0
                     hit = store.db.execute("SELECT job FROM cpu_cache WHERE key=?", (payload["cpu_identity"]["key"],)).fetchone()
@@ -908,6 +926,10 @@ def main():
     retire.add_argument('id')
     retire.add_argument('--replacement',required=True)
     retire.add_argument('--reason',required=True)
+    retry = sub.add_parser('retry', help='retry an unsuccessful request using its saved manifest and valid evidence')
+    retry.add_argument('session')
+    retry.add_argument('id')
+    retry.add_argument('--reason', required=True)
     pending = sub.add_parser('pending')
     pending.add_argument('id')
     estimate = sub.add_parser('estimate')
@@ -975,6 +997,10 @@ def main():
     elif args.action == 'retire':
         from experiment_retirement import retire
         answer = retire(store,args.session,args.id,args.replacement,args.reason)
+    elif args.action == 'retry':
+        from experiment_retry import retry
+        answer = retry(store, args.session, args.id, args.reason,
+                       Path(os.environ.get('REPO', HERE.parent)).resolve())
     elif args.action == 'collect':
         answer = collect(store, args.session, args.path, Path(os.environ.get('REPO', HERE.parent)).resolve())
     elif args.action == "worker":
