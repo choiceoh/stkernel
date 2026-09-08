@@ -22,6 +22,92 @@ TOP_K = 8
 _SESSION = None
 
 
+def memory_snapshot(torch):
+    """Small, read-only counters from this process; never initialize CUDA."""
+    def counters(path):
+        result = {}
+        for line in Path(path).read_text().splitlines():
+            fields = line.split()
+            if len(fields) == 3 and fields[2] == 'kB' and fields[1].isdigit():
+                result[fields[0].rstrip(':')] = int(fields[1])
+        return result
+    initialized = torch.cuda.is_initialized()
+    return dict(process_kib=counters('/proc/self/smaps_rollup'),
+                host_kib=counters('/proc/meminfo'), cuda_initialized=initialized,
+                pinned=torch.cuda.memory.host_memory_stats() if initialized else {},
+                device=dict(allocated=torch.cuda.memory_allocated(),
+                            reserved=torch.cuda.memory_reserved()) if initialized else {})
+
+
+def reclaim_host_memory(torch):
+    """Diagnostic-only: return unused host allocator pages, retaining live tensors.
+
+    The caller owns an idle private boot. Do not flush the GPU allocator,
+    discard model/cache objects, change allocation policy or reset statistics.
+    The private PyTorch API is checked before any reclaim operation.
+    """
+    import ctypes
+    import gc
+    initialized = torch.cuda.is_initialized()
+    release_pinned = getattr(torch._C, '_host_emptyCache', None)
+    if initialized and not callable(release_pinned):
+        raise RuntimeError('pinned host allocator release API unavailable')
+    libc = ctypes.CDLL(None)
+    trim = getattr(libc, 'malloc_trim', None)
+    if trim is None:
+        raise RuntimeError('glibc malloc_trim unavailable')
+    trim.argtypes = [ctypes.c_size_t]
+    trim.restype = ctypes.c_int
+    if initialized:
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError('host reclaim cannot run during capture')
+        torch.cuda.synchronize()
+    before = memory_snapshot(torch)
+    collected = gc.collect()
+    if initialized:
+        release_pinned()
+    returned = trim(0)
+    after = memory_snapshot(torch)
+    return dict(before=before, after=after, gc_collected=collected,
+                pinned_release_called=initialized, malloc_trim_result=returned,
+                gpu_cache_flushed=False)
+
+
+def validate_memory_report(report, source_sha256):
+    if report.get('op') != 'reclaim':
+        raise ValueError('host reclaim report required')
+    ranks = report.get('ranks', [])
+    if (len(ranks) != 4 or any(type(r.get('rank')) is not int for r in ranks)
+            or {r.get('rank') for r in ranks} != {0, 1, 2, 3}):
+        raise ValueError('all four memory reports required')
+    for row in [*ranks, report.get('api', {})]:
+        if row.get('source_sha256') != source_sha256 or row.get('active') is not False:
+            raise ValueError('memory report source or idle state mismatch')
+        evidence = row['memory']
+        if (evidence.get('gpu_cache_flushed') is not False
+                or type(evidence.get('malloc_trim_result')) is not int
+                or evidence['malloc_trim_result'] not in (0, 1)):
+            raise ValueError('unexpected host reclaim operation')
+        if (type(evidence.get('gc_collected')) is not int or evidence['gc_collected'] < 0
+                or evidence.get('pinned_release_called') is not evidence['before']['cuda_initialized']):
+            raise ValueError('invalid host reclaim receipt')
+        for phase in ('before', 'after'):
+            snap = evidence[phase]
+            for group in ('process_kib', 'host_kib', 'pinned', 'device'):
+                values = snap[group]
+                if not isinstance(values, dict) or any(type(v) is not int or v < 0 for v in values.values()):
+                    raise ValueError('invalid host memory counters')
+            if not {'MemTotal', 'MemAvailable'} <= snap['host_kib'].keys() or 'Pss' not in snap['process_kib']:
+                raise ValueError('missing process/host memory counters')
+            if (type(snap.get('cuda_initialized')) is not bool
+                    or not 0 < snap['host_kib']['MemTotal'] >= snap['host_kib']['MemAvailable']):
+                raise ValueError('invalid host memory state')
+            if row in ranks and (snap.get('cuda_initialized') is not True
+                    or not {'active_bytes.current', 'allocated_bytes.current'} <= snap['pinned'].keys()):
+                raise ValueError('missing initialized worker pinned allocator counters')
+    return report
+
+
 def histogram(ids, rows):
     if len(ids) != rows * TOP_K:
         raise ValueError('route slot count mismatch')
@@ -182,6 +268,11 @@ class WorkerExtension:
         if op == 'status':
             return dict(rank=rank, active=_SESSION is not None,
                         source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+        if op == 'reclaim':
+            if _SESSION is not None or kwargs:
+                raise RuntimeError('host reclaim requires an idle observer without arguments')
+            return dict(rank=rank, active=False, memory=reclaim_host_memory(torch),
+                        source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
         if op == 'end':
             if _SESSION is None:
                 raise RuntimeError('no active observation')
@@ -231,12 +322,21 @@ async def middleware(request, call_next):
         if set(body) - {'op', 'request_id', 'mode', 'limit'}:
             raise ValueError('unknown observation arguments')
         op = body.pop('op')
-        if op not in ('status', 'begin', 'end'):
+        if op not in ('status', 'begin', 'end', 'reclaim'):
             raise ValueError('unknown observation operation')
         if op != 'begin' and body:
             raise ValueError('arguments only supported for begin')
         ranks = await request.app.state.engine_client.collective_rpc(
             'glm53_prefill_observe', timeout=60, args=(op,), kwargs=body)
-        return JSONResponse(dict(op=op, ranks=ranks))
+        result = dict(op=op, ranks=ranks)
+        if op == 'reclaim':
+            import torch
+            # Worker RPC completes before API-process reclaim. No model request
+            # is admitted by the owned collector until this response validates.
+            from starlette.concurrency import run_in_threadpool
+            result['api'] = dict(active=False,
+                source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                memory=await run_in_threadpool(reclaim_host_memory, torch))
+        return JSONResponse(result)
     except Exception as exc:
         return JSONResponse({'error': repr(exc)}, status_code=500)

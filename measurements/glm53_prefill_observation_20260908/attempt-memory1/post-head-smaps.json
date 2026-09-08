@@ -1,0 +1,886 @@
+{
+  "3894969": {
+    "name": "vllm",
+    "largest_mappings": [
+      [
+        "[anonymous]",
+        {
+          "Size": 22361672,
+          "Rss": 3225428,
+          "Pss": 3225428,
+          "Anonymous": 3225428,
+          "Locked": 16,
+          "Private_Dirty": 3225428,
+          "Shared_Dirty": 0,
+          "maps": 506
+        }
+      ],
+      [
+        "[heap]",
+        {
+          "Size": 634740,
+          "Rss": 630000,
+          "Pss": 630000,
+          "Anonymous": 630000,
+          "Locked": 0,
+          "Private_Dirty": 630000,
+          "Shared_Dirty": 0,
+          "maps": 3
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13",
+        {
+          "Size": 615244,
+          "Rss": 63148,
+          "Pss": 24782,
+          "Anonymous": 5596,
+          "Locked": 0,
+          "Private_Dirty": 5596,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/triton/_C/libtriton.so",
+        {
+          "Size": 172976,
+          "Rss": 67576,
+          "Pss": 23881,
+          "Anonymous": 2036,
+          "Locked": 0,
+          "Private_Dirty": 2036,
+          "Shared_Dirty": 0,
+          "maps": 7
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cpu.so",
+        {
+          "Size": 181356,
+          "Rss": 54636,
+          "Pss": 21338,
+          "Anonymous": 3476,
+          "Locked": 0,
+          "Private_Dirty": 3476,
+          "Shared_Dirty": 0,
+          "maps": 10
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/_mlir/_mlir_libs/_cutlass_ir.cu13.cpython-312-aarch64-linux-gnu.so",
+        {
+          "Size": 166504,
+          "Rss": 54976,
+          "Pss": 20970,
+          "Anonymous": 3968,
+          "Locked": 0,
+          "Private_Dirty": 3968,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/llvmlite/binding/libllvmlite.so",
+        {
+          "Size": 138488,
+          "Rss": 40212,
+          "Pss": 17698,
+          "Anonymous": 6444,
+          "Locked": 0,
+          "Private_Dirty": 6444,
+          "Shared_Dirty": 0,
+          "maps": 8
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/tilelang/lib/libtvm_compiler.so",
+        {
+          "Size": 60252,
+          "Rss": 41068,
+          "Pss": 13981,
+          "Anonymous": 440,
+          "Locked": 0,
+          "Private_Dirty": 440,
+          "Shared_Dirty": 0,
+          "maps": 8
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libnvrtc.so.13",
+        {
+          "Size": 97236,
+          "Rss": 27296,
+          "Pss": 11466,
+          "Anonymous": 3552,
+          "Locked": 0,
+          "Private_Dirty": 3552,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libnvJitLink.so.13",
+        {
+          "Size": 87728,
+          "Rss": 24792,
+          "Pss": 9986,
+          "Anonymous": 2584,
+          "Locked": 0,
+          "Private_Dirty": 2584,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so",
+        {
+          "Size": 357516,
+          "Rss": 16256,
+          "Pss": 5808,
+          "Anonymous": 588,
+          "Locked": 0,
+          "Private_Dirty": 588,
+          "Shared_Dirty": 0,
+          "maps": 10
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_python.so",
+        {
+          "Size": 20388,
+          "Rss": 14204,
+          "Pss": 5205,
+          "Anonymous": 580,
+          "Locked": 0,
+          "Private_Dirty": 580,
+          "Shared_Dirty": 0,
+          "maps": 9
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/cv2/cv2.abi3.so",
+        {
+          "Size": 37436,
+          "Rss": 7228,
+          "Pss": 2904,
+          "Anonymous": 748,
+          "Locked": 0,
+          "Private_Dirty": 748,
+          "Shared_Dirty": 0,
+          "maps": 12
+        }
+      ],
+      [
+        "/usr/lib/aarch64-linux-gnu/libcuda.so.580.159.03",
+        {
+          "Size": 94264,
+          "Rss": 6076,
+          "Pss": 2830,
+          "Anonymous": 1208,
+          "Locked": 0,
+          "Private_Dirty": 1208,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/tilelang/lib/libtilelang.so",
+        {
+          "Size": 14044,
+          "Rss": 7924,
+          "Pss": 2727,
+          "Anonymous": 132,
+          "Locked": 0,
+          "Private_Dirty": 132,
+          "Shared_Dirty": 0,
+          "maps": 8
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cusparselt/lib/libcusparseLt.so.0",
+        {
+          "Size": 267756,
+          "Rss": 6052,
+          "Pss": 2717,
+          "Anonymous": 1052,
+          "Locked": 0,
+          "Private_Dirty": 1052,
+          "Shared_Dirty": 0,
+          "maps": 5
+        }
+      ],
+      [
+        "/usr/bin/python3.12",
+        {
+          "Size": 7656,
+          "Rss": 6512,
+          "Pss": 2606,
+          "Anonymous": 1156,
+          "Locked": 0,
+          "Private_Dirty": 1156,
+          "Shared_Dirty": 0,
+          "maps": 3
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/grpc/_cython/cygrpc.cpython-312-aarch64-linux-gnu.so",
+        {
+          "Size": 15176,
+          "Rss": 5516,
+          "Pss": 2145,
+          "Anonymous": 460,
+          "Locked": 0,
+          "Private_Dirty": 460,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ]
+    ],
+    "shared_memory_maps": []
+  },
+  "3896054": {
+    "name": "VLLM::EngineCor",
+    "largest_mappings": [
+      [
+        "[anonymous]",
+        {
+          "Size": 19142408,
+          "Rss": 579448,
+          "Pss": 579448,
+          "Anonymous": 579448,
+          "Locked": 16,
+          "Private_Dirty": 579448,
+          "Shared_Dirty": 0,
+          "maps": 565
+        }
+      ],
+      [
+        "[heap]",
+        {
+          "Size": 584568,
+          "Rss": 578592,
+          "Pss": 578592,
+          "Anonymous": 578592,
+          "Locked": 0,
+          "Private_Dirty": 578592,
+          "Shared_Dirty": 0,
+          "maps": 1
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13",
+        {
+          "Size": 615244,
+          "Rss": 63148,
+          "Pss": 24782,
+          "Anonymous": 5596,
+          "Locked": 0,
+          "Private_Dirty": 5596,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/triton/_C/libtriton.so",
+        {
+          "Size": 172976,
+          "Rss": 67576,
+          "Pss": 23881,
+          "Anonymous": 2036,
+          "Locked": 0,
+          "Private_Dirty": 2036,
+          "Shared_Dirty": 0,
+          "maps": 7
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/_mlir/_mlir_libs/_cutlass_ir.cu13.cpython-312-aarch64-linux-gnu.so",
+        {
+          "Size": 166504,
+          "Rss": 54976,
+          "Pss": 20970,
+          "Anonymous": 3968,
+          "Locked": 0,
+          "Private_Dirty": 3968,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cpu.so",
+        {
+          "Size": 181356,
+          "Rss": 50028,
+          "Pss": 19034,
+          "Anonymous": 3476,
+          "Locked": 0,
+          "Private_Dirty": 3476,
+          "Shared_Dirty": 0,
+          "maps": 10
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/llvmlite/binding/libllvmlite.so",
+        {
+          "Size": 138488,
+          "Rss": 40212,
+          "Pss": 17698,
+          "Anonymous": 6444,
+          "Locked": 0,
+          "Private_Dirty": 6444,
+          "Shared_Dirty": 0,
+          "maps": 8
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/tilelang/lib/libtvm_compiler.so",
+        {
+          "Size": 60252,
+          "Rss": 41068,
+          "Pss": 13981,
+          "Anonymous": 440,
+          "Locked": 0,
+          "Private_Dirty": 440,
+          "Shared_Dirty": 0,
+          "maps": 8
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libnvrtc.so.13",
+        {
+          "Size": 97236,
+          "Rss": 27296,
+          "Pss": 11466,
+          "Anonymous": 3552,
+          "Locked": 0,
+          "Private_Dirty": 3552,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libnvJitLink.so.13",
+        {
+          "Size": 87728,
+          "Rss": 24792,
+          "Pss": 9986,
+          "Anonymous": 2584,
+          "Locked": 0,
+          "Private_Dirty": 2584,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so",
+        {
+          "Size": 357516,
+          "Rss": 16256,
+          "Pss": 5808,
+          "Anonymous": 588,
+          "Locked": 0,
+          "Private_Dirty": 588,
+          "Shared_Dirty": 0,
+          "maps": 10
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_python.so",
+        {
+          "Size": 20388,
+          "Rss": 13756,
+          "Pss": 4981,
+          "Anonymous": 580,
+          "Locked": 0,
+          "Private_Dirty": 580,
+          "Shared_Dirty": 0,
+          "maps": 9
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/cv2/cv2.abi3.so",
+        {
+          "Size": 37436,
+          "Rss": 7228,
+          "Pss": 2904,
+          "Anonymous": 748,
+          "Locked": 0,
+          "Private_Dirty": 748,
+          "Shared_Dirty": 0,
+          "maps": 12
+        }
+      ],
+      [
+        "/usr/lib/aarch64-linux-gnu/libcuda.so.580.159.03",
+        {
+          "Size": 94264,
+          "Rss": 6076,
+          "Pss": 2830,
+          "Anonymous": 1208,
+          "Locked": 0,
+          "Private_Dirty": 1208,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/tilelang/lib/libtilelang.so",
+        {
+          "Size": 14044,
+          "Rss": 7924,
+          "Pss": 2727,
+          "Anonymous": 132,
+          "Locked": 0,
+          "Private_Dirty": 132,
+          "Shared_Dirty": 0,
+          "maps": 8
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cusparselt/lib/libcusparseLt.so.0",
+        {
+          "Size": 267756,
+          "Rss": 6052,
+          "Pss": 2717,
+          "Anonymous": 1052,
+          "Locked": 0,
+          "Private_Dirty": 1052,
+          "Shared_Dirty": 0,
+          "maps": 5
+        }
+      ],
+      [
+        "/usr/bin/python3.12",
+        {
+          "Size": 7656,
+          "Rss": 6512,
+          "Pss": 2606,
+          "Anonymous": 1156,
+          "Locked": 0,
+          "Private_Dirty": 1156,
+          "Shared_Dirty": 0,
+          "maps": 3
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/grpc/_cython/cygrpc.cpython-312-aarch64-linux-gnu.so",
+        {
+          "Size": 15176,
+          "Rss": 5516,
+          "Pss": 2145,
+          "Anonymous": 460,
+          "Locked": 0,
+          "Private_Dirty": 460,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ]
+    ],
+    "shared_memory_maps": [
+      {
+        "mapping": "/dev/shm/psm_13ebfa37",
+        "permissions": "rw-s",
+        "Size": 163844,
+        "KernelPageSize": 4,
+        "MMUPageSize": 4,
+        "Rss": 1444,
+        "Pss": 722,
+        "Pss_Dirty": 722,
+        "Shared_Clean": 0,
+        "Shared_Dirty": 1444,
+        "Private_Clean": 0,
+        "Private_Dirty": 0,
+        "Referenced": 1444,
+        "Anonymous": 0,
+        "KSM": 0,
+        "LazyFree": 0,
+        "AnonHugePages": 0,
+        "ShmemPmdMapped": 0,
+        "FilePmdMapped": 0,
+        "Shared_Hugetlb": 0,
+        "Private_Hugetlb": 0,
+        "Swap": 0,
+        "SwapPss": 0,
+        "Locked": 0,
+        "VmFlags": "rd wr sh mr mw me ms"
+      }
+    ]
+  },
+  "3896513": {
+    "name": "VLLM::Worker_TP",
+    "largest_mappings": [
+      [
+        "/dev/zero (deleted)",
+        {
+          "Size": 3898820,
+          "Rss": 3898820,
+          "Pss": 3898820,
+          "Anonymous": 0,
+          "Locked": 0,
+          "Private_Dirty": 3796844,
+          "Shared_Dirty": 0,
+          "maps": 797
+        }
+      ],
+      [
+        "[anonymous]",
+        {
+          "Size": 2243900632,
+          "Rss": 3360892,
+          "Pss": 3360892,
+          "Anonymous": 3360892,
+          "Locked": 16,
+          "Private_Dirty": 3360892,
+          "Shared_Dirty": 0,
+          "maps": 4576
+        }
+      ],
+      [
+        "[heap]",
+        {
+          "Size": 2270932,
+          "Rss": 2036436,
+          "Pss": 2036436,
+          "Anonymous": 2036436,
+          "Locked": 0,
+          "Private_Dirty": 2036436,
+          "Shared_Dirty": 0,
+          "maps": 13
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13",
+        {
+          "Size": 615244,
+          "Rss": 501192,
+          "Pss": 462836,
+          "Anonymous": 5636,
+          "Locked": 0,
+          "Private_Dirty": 5636,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cudnn/lib/libcudnn_engines_precompiled.so.9",
+        {
+          "Size": 294032,
+          "Rss": 290952,
+          "Pss": 290952,
+          "Anonymous": 1428,
+          "Locked": 0,
+          "Private_Dirty": 1428,
+          "Shared_Dirty": 0,
+          "maps": 8
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cusparselt/lib/libcusparseLt.so.0",
+        {
+          "Size": 267756,
+          "Rss": 267692,
+          "Pss": 264357,
+          "Anonymous": 1052,
+          "Locked": 0,
+          "Private_Dirty": 1052,
+          "Shared_Dirty": 0,
+          "maps": 5
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2",
+        {
+          "Size": 190520,
+          "Rss": 190404,
+          "Pss": 189718,
+          "Anonymous": 164,
+          "Locked": 0,
+          "Private_Dirty": 164,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcusparse.so.12",
+        {
+          "Size": 170808,
+          "Rss": 170744,
+          "Pss": 169677,
+          "Anonymous": 184,
+          "Locked": 0,
+          "Private_Dirty": 184,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcusolver.so.12",
+        {
+          "Size": 150040,
+          "Rss": 149976,
+          "Pss": 149378,
+          "Anonymous": 140,
+          "Locked": 0,
+          "Private_Dirty": 140,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/_mlir/_mlir_libs/_cutlass_ir.cu13.cpython-312-aarch64-linux-gnu.so",
+        {
+          "Size": 166504,
+          "Rss": 166404,
+          "Pss": 132398,
+          "Anonymous": 5616,
+          "Locked": 0,
+          "Private_Dirty": 5616,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcurand.so.10",
+        {
+          "Size": 144488,
+          "Rss": 123812,
+          "Pss": 123448,
+          "Anonymous": 36,
+          "Locked": 0,
+          "Private_Dirty": 36,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cpu.so",
+        {
+          "Size": 181356,
+          "Rss": 152824,
+          "Pss": 119398,
+          "Anonymous": 3476,
+          "Locked": 0,
+          "Private_Dirty": 3476,
+          "Shared_Dirty": 0,
+          "maps": 10
+        }
+      ],
+      [
+        "/dev/nvidiactl",
+        {
+          "Size": 114660,
+          "Rss": 114660,
+          "Pss": 114657,
+          "Anonymous": 0,
+          "Locked": 0,
+          "Private_Dirty": 102768,
+          "Shared_Dirty": 0,
+          "maps": 67
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/triton/_C/libtriton.so",
+        {
+          "Size": 172976,
+          "Rss": 128976,
+          "Pss": 85281,
+          "Anonymous": 2036,
+          "Locked": 0,
+          "Private_Dirty": 2036,
+          "Shared_Dirty": 0,
+          "maps": 7
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libnvrtc.so.13",
+        {
+          "Size": 97236,
+          "Rss": 95920,
+          "Pss": 80090,
+          "Anonymous": 3552,
+          "Locked": 0,
+          "Private_Dirty": 3552,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/llvmlite/binding/libllvmlite.so",
+        {
+          "Size": 138488,
+          "Rss": 97524,
+          "Pss": 75010,
+          "Anonymous": 6444,
+          "Locked": 0,
+          "Private_Dirty": 6444,
+          "Shared_Dirty": 0,
+          "maps": 8
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libnvJitLink.so.13",
+        {
+          "Size": 87728,
+          "Rss": 86384,
+          "Pss": 71578,
+          "Anonymous": 2584,
+          "Locked": 0,
+          "Private_Dirty": 2584,
+          "Shared_Dirty": 0,
+          "maps": 4
+        }
+      ],
+      [
+        "/usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so",
+        {
+          "Size": 357516,
+          "Rss": 81184,
+          "Pss": 70736,
+          "Anonymous": 588,
+          "Locked": 0,
+          "Private_Dirty": 588,
+          "Shared_Dirty": 0,
+          "maps": 10
+        }
+      ]
+    ],
+    "shared_memory_maps": [
+      {
+        "mapping": "/dev/shm/nccl-YlURBs (deleted)",
+        "permissions": "rw-s",
+        "Size": 33412,
+        "KernelPageSize": 4,
+        "MMUPageSize": 4,
+        "Rss": 33412,
+        "Pss": 33122,
+        "Pss_Dirty": 33122,
+        "Shared_Clean": 0,
+        "Shared_Dirty": 580,
+        "Private_Clean": 0,
+        "Private_Dirty": 32832,
+        "Referenced": 33412,
+        "Anonymous": 0,
+        "KSM": 0,
+        "LazyFree": 0,
+        "AnonHugePages": 0,
+        "ShmemPmdMapped": 0,
+        "FilePmdMapped": 0,
+        "Shared_Hugetlb": 0,
+        "Private_Hugetlb": 0,
+        "Swap": 0,
+        "SwapPss": 0,
+        "Locked": 0,
+        "VmFlags": "rd wr sh mr mw me ms"
+      },
+      {
+        "mapping": "/dev/shm/psm_13ebfa37",
+        "permissions": "rw-s",
+        "Size": 163844,
+        "KernelPageSize": 4,
+        "MMUPageSize": 4,
+        "Rss": 1444,
+        "Pss": 722,
+        "Pss_Dirty": 722,
+        "Shared_Clean": 0,
+        "Shared_Dirty": 1444,
+        "Private_Clean": 0,
+        "Private_Dirty": 0,
+        "Referenced": 1444,
+        "Anonymous": 0,
+        "KSM": 0,
+        "LazyFree": 0,
+        "AnonHugePages": 0,
+        "ShmemPmdMapped": 0,
+        "FilePmdMapped": 0,
+        "Shared_Hugetlb": 0,
+        "Private_Hugetlb": 0,
+        "Swap": 0,
+        "SwapPss": 0,
+        "Locked": 0,
+        "VmFlags": "rd wr sh mr mw me ms"
+      },
+      {
+        "mapping": "/dev/shm/nccl-arhkUG (deleted)",
+        "permissions": "rw-s",
+        "Size": 33412,
+        "KernelPageSize": 4,
+        "MMUPageSize": 4,
+        "Rss": 33412,
+        "Pss": 33122,
+        "Pss_Dirty": 33122,
+        "Shared_Clean": 0,
+        "Shared_Dirty": 580,
+        "Private_Clean": 0,
+        "Private_Dirty": 32832,
+        "Referenced": 33412,
+        "Anonymous": 0,
+        "KSM": 0,
+        "LazyFree": 0,
+        "AnonHugePages": 0,
+        "ShmemPmdMapped": 0,
+        "FilePmdMapped": 0,
+        "Shared_Hugetlb": 0,
+        "Private_Hugetlb": 0,
+        "Swap": 0,
+        "SwapPss": 0,
+        "Locked": 0,
+        "VmFlags": "rd wr sh mr mw me ms"
+      },
+      {
+        "mapping": "/dev/shm/nccl-eCQoq4 (deleted)",
+        "permissions": "rw-s",
+        "Size": 33412,
+        "KernelPageSize": 4,
+        "MMUPageSize": 4,
+        "Rss": 33412,
+        "Pss": 33350,
+        "Pss_Dirty": 33350,
+        "Shared_Clean": 0,
+        "Shared_Dirty": 124,
+        "Private_Clean": 0,
+        "Private_Dirty": 33288,
+        "Referenced": 33412,
+        "Anonymous": 0,
+        "KSM": 0,
+        "LazyFree": 0,
+        "AnonHugePages": 0,
+        "ShmemPmdMapped": 0,
+        "FilePmdMapped": 0,
+        "Shared_Hugetlb": 0,
+        "Private_Hugetlb": 0,
+        "Swap": 0,
+        "SwapPss": 0,
+        "Locked": 0,
+        "VmFlags": "rd wr sh mr mw me ms"
+      },
+      {
+        "mapping": "/dev/shm/nccl-SK0Dd7 (deleted)",
+        "permissions": "rw-s",
+        "Size": 33412,
+        "KernelPageSize": 4,
+        "MMUPageSize": 4,
+        "Rss": 33412,
+        "Pss": 33122,
+        "Pss_Dirty": 33122,
+        "Shared_Clean": 0,
+        "Shared_Dirty": 580,
+        "Private_Clean": 0,
+        "Private_Dirty": 32832,
+        "Referenced": 33412,
+        "Anonymous": 0,
+        "KSM": 0,
+        "LazyFree": 0,
+        "AnonHugePages": 0,
+        "ShmemPmdMapped": 0,
+        "FilePmdMapped": 0,
+        "Shared_Hugetlb": 0,
+        "Private_Hugetlb": 0,
+        "Swap": 0,
+        "SwapPss": 0,
+        "Locked": 0,
+        "VmFlags": "rd wr sh mr mw me ms"
+      }
+    ]
+  }
+}
