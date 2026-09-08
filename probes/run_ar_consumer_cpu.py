@@ -24,7 +24,7 @@ def main():
         '-e', 'NVIDIA_VISIBLE_DEVICES=void', '-e', 'CUDA_VISIBLE_DEVICES=',
         '-e', 'MAX_JOBS=1', '-e', 'OMP_NUM_THREADS=1',
         '-e', 'AR_CONSUMER_BUILD=/evidence/build',
-        '-e', 'VLLM_GLM53_MK_BUILD_DIR=/evidence/build/mk',
+        '-e', 'VLLM_GLM53_MK_BUILD_ROOT=/evidence/build/mk',
         '-e', 'VLLM_DSV4_OSAR_BUILD_ROOT=/evidence/build/osar',
         '--mount', f'type=bind,src={ROOT},dst=/repo,readonly',
         '--mount', f'type=bind,src={args.out},dst=/evidence',
