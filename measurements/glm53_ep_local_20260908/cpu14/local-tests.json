@@ -1,0 +1,48 @@
+{
+  "head": "de6533a47960ebb305bd4ea84ed35857e0e970e7",
+  "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+  "scope": "Focused local CPU source oracles only; no Docker/GPU/fleet or remote mutation",
+  "files": {
+    "overlay/modules/glm53_moe/moe_dynamic_ep_local.py": {
+      "sha256": "664a2481b9f2065a4e8f08842a30e7840b83c78b79bcebbb6187f9a085acba55",
+      "size": 36594
+    },
+    "tests/test_glm53_ep_route_scale_cache.py": {
+      "sha256": "d0572162c527dd930ab116a7d894aae314dda7700ba7e8e3254f2fe9febca68b",
+      "size": 20339
+    },
+    "tests/test_glm53_ep_task_publication.py": {
+      "sha256": "f9260af34f57c26da403e637166a90141c0dce5b63c01fae43238bdcb8d31caf",
+      "size": 18403
+    }
+  },
+  "tests": [
+    {
+      "command": "python3 -m unittest discover -s tests -p test_glm53_ep_route_scale_cache.py -v",
+      "capture": "stdout and stderr merged by tee with shell pipefail",
+      "log_path": "/tmp/glm53-cpu14-route-weight-tests.log",
+      "log_sha256": "b2a9c4b97b12eee1930fd8a5a320d935f6774484dcb62cccf6ef2f469b7ce48c",
+      "size": 1602,
+      "tests_run": 8,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "exit_code": 0,
+      "seconds": 0.053
+    },
+    {
+      "command": "python3 -m unittest discover -s tests -p test_glm53_ep_task_publication.py -v",
+      "capture": "stdout and stderr merged by tee with shell pipefail",
+      "log_path": "/tmp/glm53-cpu14-publication-tests.log",
+      "log_sha256": "6a2eb2e46bd62bd1cb5db466719a590982f11191582ddee15c9ecb5533aed3f0",
+      "size": 1899,
+      "tests_run": 10,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "exit_code": 0,
+      "seconds": 1.351
+    }
+  ],
+  "git_diff_check_exit": 0
+}

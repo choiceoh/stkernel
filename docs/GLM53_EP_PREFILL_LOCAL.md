@@ -355,7 +355,11 @@ actual-source oracles pass 8 route-cache and 10 publication tests, including
 poisoned invalid-route weight storage and exact store addresses/payloads.
 The current full offline runner requires a matching CPU14 receipt before GPU
 execution; queued binding v6 retains its independent frozen CPU13 kernel.
-Compiler and runtime savings for these changes require separate evidence.
+The [CPU14 preparation](../measurements/glm53_ep_local_20260908/cpu14/README.md)
+was refused before creating a source clone or job: head had 6.10 GiB available,
+below the unchanged 12 GiB guard. The expected 71-test pinned suite and actual
+CuTe compilation have not run. Compiler and runtime savings require separate
+evidence; the 18 local tests are not a compiler or GPU PASS.
 
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).
