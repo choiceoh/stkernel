@@ -70,7 +70,8 @@ class AdmissionTests(unittest.TestCase):
         kernel = Kernel()
         torch = SimpleNamespace(Tensor=FakeTensor, int32="int32", int64="int64",
                                 float32="float32", float16="float16", bfloat16="bfloat16")
-        ns = extract(REMAP, {"ep_route_remap_supported", "try_remap_ep_local"}, dict(
+        ns = extract(REMAP, {"_ep_route_remap_metadata", "ep_route_remap_supported",
+                             "try_remap_ep_local"}, dict(
             torch=torch, triton=SimpleNamespace(cdiv=lambda n, d: (n+d-1)//d),
             _remap_ep_local_kernel=kernel))
         return ns, kernel, launcher
@@ -132,6 +133,63 @@ class AdmissionTests(unittest.TestCase):
         launch.side_effect = RuntimeError("launch failed")
         with self.assertRaisesRegex(RuntimeError, "launch failed"):
             ns["try_remap_ep_local"](**self.inputs())
+
+    def test_launch_sizes_are_validated_once_and_recomputed_for_reused_tensors(self):
+        ns, kernel, launch = self.namespace()
+        args = self.inputs()
+        ids, mapping = args["topk_ids"], args["expert_map"]
+        # Admission already has the dense shape; avoid additional Tensor size
+        # queries to prepare the launch, or reading the map size a second time.
+        ids.numel = Mock(side_effect=AssertionError("redundant ids size query"))
+        mapping.numel = Mock(wraps=mapping.numel)
+        for rows, map_len in ((4097, 288), (8192, 144), (4096, 0)):
+            with self.subTest(rows=rows, map_len=map_len):
+                for name in ("topk_ids", "topk_weights", "out_ids", "out_scales"):
+                    args[name].shape = (rows, 8)
+                mapping.shape = (map_len,)
+                mapping.numel.reset_mock()
+                launch.reset_mock()
+                self.assertTrue(ns["try_remap_ep_local"](**args))
+                mapping.numel.assert_called_once_with()
+                launch.assert_called_once()
+                sent, constants = launch.call_args
+                self.assertEqual(sent[5], rows * 8)
+                self.assertEqual(kernel.grid, ((rows * 8 + 255) // 256,))
+                self.assertEqual(constants["MAP_LEN"], map_len)
+                self.assertTrue(constants["HAS_MAP"])
+                self.assertIs(sent[2], mapping if map_len else args["out_ids"])
+        ids.numel.assert_not_called()
+
+    def test_reused_tensor_metadata_is_revalidated_after_every_launch(self):
+        ns, _, launch = self.namespace()
+        args = self.inputs()
+        self.assertTrue(ns["try_remap_ep_local"](**args))
+        for name, attribute, invalid in (
+            ("topk_ids", "shape", (4095, 8)),
+            ("topk_ids", "_contiguous", False),
+            ("out_ids", "device", "cuda:1"),
+            ("topk_weights", "dtype", "float16"),
+            ("expert_map", "device", "cuda:1"),
+            ("expert_map", "shape", ((1 << 31),)),
+        ):
+            with self.subTest(tensor=name, attribute=attribute):
+                tensor = args[name]
+                original = getattr(tensor, attribute)
+                setattr(tensor, attribute, invalid)
+                launch.reset_mock()
+                self.assertFalse(ns["try_remap_ep_local"](**args))
+                launch.assert_not_called()
+                setattr(tensor, attribute, original)
+                self.assertTrue(ns["try_remap_ep_local"](**args))
+                launch.assert_called_once()
+
+    def test_public_support_check_is_boolean_and_never_launches(self):
+        ns, _, launch = self.namespace()
+        args = self.inputs()
+        self.assertIs(ns["ep_route_remap_supported"](**args), True)
+        args["out_ids"].device = "cuda:1"
+        self.assertIs(ns["ep_route_remap_supported"](**args), False)
+        launch.assert_not_called()
 
 
 class WrapperScratchTests(unittest.TestCase):

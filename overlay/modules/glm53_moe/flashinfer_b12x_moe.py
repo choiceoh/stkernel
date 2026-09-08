@@ -2327,7 +2327,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 )
             local_prefill = ep_local_prefill_eligible(
                 enabled=_EP_LOCAL_PREFILL_ENABLED, use_ep=self._use_ep, no_dummy=self._ep_no_dummy,
-                experts=self._kernel_num_experts, hidden=self.hidden_dim,
+                experts=expect_e, hidden=self.hidden_dim,
                 intermediate=self.intermediate_size_per_partition, tokens=hidden_states.shape[0],
                 topk=topk_ids.shape[1], activation=self._activation_str,
                 alpha=self._swiglu_alpha, beta=self._swiglu_beta, limit=self._swiglu_limit,

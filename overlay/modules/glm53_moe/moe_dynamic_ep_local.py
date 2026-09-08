@@ -251,6 +251,10 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         # prepared once per CTA instead of once per token/route in every lane.
         # The existing Q0-init CTA barrier publishes these shared stores.
         expert_scales_addr = route_hist_addr
+        # Row allocation is the last use of each selected expert ID.  Reuse
+        # its existing route slot for the transformed scale's raw bits, so
+        # all lanes can broadcast it without a per-thread local-memory array.
+        route_scales_addr = route_expert_ids_addr
         if tidx < num_experts:
             gs_value = input_global_scale[tidx].to(cutlass.Float32)
             if (
@@ -368,8 +372,10 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                     phys_row,
                                 )
                                 _st_shared_i32(
-                                    route_expert_ids_addr + route_slot * Int32(4),
-                                    expert_id,
+                                    route_scales_addr + route_slot * Int32(4),
+                                    _ld_shared_i32(
+                                        expert_scales_addr + expert_id * Int32(4)
+                                    ),
                                 )
 
                                 local_topk += Int32(1)
@@ -384,20 +390,18 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
 
                     local_topk = _ld_shared_i32(route_expert_ids_addr + (route_slot_base + Int32(31)) * Int32(4))
                     if local_topk > Int32(0):
-                        # Cache only this token's selected scales.  The CTA's
-                        # shared expert cache already holds the unchanged
-                        # Float32 reciprocal result, including zero scales.
-                        route_gs = cute.make_rmem_tensor((8,), cutlass.Float32)
+                        # The preceding warp barrier publishes lane 0's raw
+                        # scale words.  Slots remain live until the next
+                        # batch's CTA barrier, just like physical-row slots.
+                        # Preserve Float32 equality and the first scale bits;
+                        # varied scales are reread by shared warp broadcast.
                         first_gs = cutlass.Float32(0.0)
                         route_scales_equal = Int32(1)
                         cache_slot = Int32(0)
                         while cache_slot < local_topk:
                             route_slot = route_slot_base + cache_slot
-                            expert_id = _ld_shared_i32(
-                                route_expert_ids_addr + route_slot * Int32(4)
-                            )
                             gs_value = Uint32(_ld_shared_i32(
-                                expert_scales_addr + expert_id * Int32(4)
+                                route_scales_addr + route_slot * Int32(4)
                             )).bitcast(cutlass.Float32)
                             # Compare while the transformed scale is already
                             # in a register; do not reread the route cache.
@@ -405,7 +409,6 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                 first_gs = gs_value
                             elif gs_value != first_gs:
                                 route_scales_equal = Int32(0)
-                            route_gs[cache_slot] = gs_value
                             cache_slot += Int32(1)
 
                         sf_idx = lane_id
@@ -426,7 +429,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                             # Quantized payload is identical only when all
                             # selected experts use the same input global scale.
                             if route_scales_equal > Int32(0):
-                                gs_value = route_gs[0]
+                                gs_value = first_gs
                                 packed64 = Uint64(0)
                                 scale_byte = Uint8(0)
                                 if self.fast_math:
@@ -491,7 +494,9 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                     tile_row = phys_row - phys_tile * Int32(
                                         self.tile_shape_mnk[0]
                                     )
-                                    gs_value = route_gs[cache_slot]
+                                    gs_value = Uint32(_ld_shared_i32(
+                                        route_scales_addr + route_slot * Int32(4)
+                                    )).bitcast(cutlass.Float32)
 
                                     packed64 = Uint64(0)
                                     scale_byte = Uint8(0)

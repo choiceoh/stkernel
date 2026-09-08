@@ -48,36 +48,53 @@ def _remap_ep_local_kernel(
         tl.store(output_bits + slot, weight, mask=live)
 
 
+def _ep_route_remap_metadata(
+    topk_ids, topk_weights, *, expert_map, num_local_experts,
+    local_expert_offset, out_ids, out_scales,
+):
+    """Validate one call and return its launch sizes without caching tensors."""
+    if (num_local_experts != 72 or type(local_expert_offset) is not int
+            or not 0 <= local_expert_offset <= (1 << 31) - 1):
+        return None
+    tensors = (topk_ids, topk_weights, out_ids, out_scales)
+    if not all(isinstance(t, torch.Tensor) for t in tensors):
+        return None
+    shape = topk_ids.shape
+    if len(shape) != 2 or not 4096 <= shape[0] <= 16384 or shape[1] != 8:
+        return None
+    weight_dtype = topk_weights.dtype
+    if (topk_ids.dtype not in (torch.int32, torch.int64)
+            or weight_dtype not in (torch.float32, torch.float16, torch.bfloat16)
+            or out_ids.dtype != torch.int32 or out_scales.dtype != weight_dtype):
+        return None
+    if not topk_ids.is_cuda or not topk_ids.is_contiguous():
+        return None
+    device = topk_ids.device
+    if any(t.shape != shape or t.device != device or not t.is_contiguous()
+           for t in (topk_weights, out_ids, out_scales)):
+        return None
+    map_len = 0
+    if expert_map is not None:
+        if (not isinstance(expert_map, torch.Tensor) or expert_map.ndim != 1
+                or expert_map.dtype not in (torch.int32, torch.int64)
+                or expert_map.device != device or not expert_map.is_contiguous()):
+            return None
+        map_len = expert_map.numel()
+        if map_len > (1 << 31) - 1:
+            return None
+    return shape[0] * shape[1], map_len
+
+
 def ep_route_remap_supported(
     topk_ids, topk_weights, *, expert_map, num_local_experts,
     local_expert_offset, out_ids, out_scales,
 ):
     """Check metadata without copying data, synchronizing, or probing CUDA."""
-    if (num_local_experts != 72 or type(local_expert_offset) is not int
-            or not 0 <= local_expert_offset <= (1 << 31) - 1):
-        return False
-    tensors = (topk_ids, topk_weights, out_ids, out_scales)
-    if not all(isinstance(t, torch.Tensor) for t in tensors):
-        return False
-    shape = tuple(topk_ids.shape)
-    if len(shape) != 2 or not 4096 <= shape[0] <= 16384 or shape[1] != 8:
-        return False
-    if (topk_ids.dtype not in (torch.int32, torch.int64)
-            or topk_weights.dtype not in (torch.float32, torch.float16, torch.bfloat16)
-            or out_ids.dtype != torch.int32 or out_scales.dtype != topk_weights.dtype):
-        return False
-    if not topk_ids.is_cuda:
-        return False
-    if any(tuple(t.shape) != shape or t.device != topk_ids.device
-           or not t.is_contiguous() for t in tensors):
-        return False
-    if expert_map is not None:
-        if (not isinstance(expert_map, torch.Tensor) or expert_map.ndim != 1
-                or expert_map.dtype not in (torch.int32, torch.int64)
-                or expert_map.device != topk_ids.device or not expert_map.is_contiguous()
-                or expert_map.numel() > (1 << 31) - 1):
-            return False
-    return True
+    return _ep_route_remap_metadata(
+        topk_ids, topk_weights, expert_map=expert_map,
+        num_local_experts=num_local_experts, local_expert_offset=local_expert_offset,
+        out_ids=out_ids, out_scales=out_scales,
+    ) is not None
 
 
 def try_remap_ep_local(
@@ -85,20 +102,21 @@ def try_remap_ep_local(
     local_expert_offset, out_ids, out_scales,
 ):
     """Write existing route scratch in one launch; False requests Torch fallback."""
-    if not ep_route_remap_supported(
+    metadata = _ep_route_remap_metadata(
         topk_ids, topk_weights, expert_map=expert_map,
         num_local_experts=num_local_experts, local_expert_offset=local_expert_offset,
         out_ids=out_ids, out_scales=out_scales,
-    ):
+    )
+    if metadata is None:
         return False
+    num_pairs, map_len = metadata
     has_map = expert_map is not None
-    map_len = expert_map.numel() if has_map else 0
     # Empty-map and offset specializations never need a map load. Give them a
     # valid typed pointer instead of relying on a zero-sized tensor's nullptr.
     map_tensor = expert_map if map_len else out_ids
-    _remap_ep_local_kernel[(triton.cdiv(topk_ids.numel(), 256),)](
+    _remap_ep_local_kernel[(triton.cdiv(num_pairs, 256),)](
         topk_ids, topk_weights, map_tensor, out_ids, out_scales,
-        topk_ids.numel(), local_expert_offset,
+        num_pairs, local_expert_offset,
         MAP_LEN=map_len, HAS_MAP=has_map, BLOCK=256, num_warps=4,
     )
     return True

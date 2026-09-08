@@ -15,6 +15,7 @@ CPU_TEST_MODULES = (
     "test_glm53_ep_sanitizer.py",
     "test_glm53_ep_binding_check.py",
     "test_glm53_ep_task_publication.py",
+    "test_glm53_ep_route_scale_cache.py",
 )
 CONTRACT_PATHS = tuple("tests/"+name for name in CPU_TEST_MODULES) + (
     "probes/glm53_ep_local_check.py",
