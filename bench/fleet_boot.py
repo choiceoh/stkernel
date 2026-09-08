@@ -350,7 +350,7 @@ class Supervisor:
                     # owning supervisor still supplies fleet and recovery context.
                     for key in ('FLEET_DIR', 'FLEET_SESSION', 'FLEET_PID', 'FLEET_RUNNER_REPO',
                                 'FLEET_RESTORE_MANAGED', 'FLEET_NO_RESTORE_CHECK', 'FLEET',
-                                'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_RECOVERY_RECEIPT'):
+                                'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_VALIDATION_LEVEL', 'FLEET_RECOVERY_RECEIPT'):
                         if key in self.env:
                             payload_env[key] = self.env[key]
                     rc = self.execute(payload, payload_environment(payload_env), accepted['cwd'])

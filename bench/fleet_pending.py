@@ -183,7 +183,7 @@ def register(directory, session, command, fleet, kind):
                  start=handoff.identity(pid), host=socket.gethostname(), protocol=handoff.PROTOCOL,
                  state='queued', revision=1, pause_protocol=1, command=list(command), cwd=os.getcwd(),
                  estimate_min=int(row[3]), note=row[4], kind=kind, fleet=fleet,
-                 repo=os.environ['REPO'], validation_env={k:os.environ[k] for k in ('LOGD', 'PATH', 'HEAD_URL', 'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_RECOVERY_RECEIPT', 'PROFILE', 'IMAGE', 'MODEL_HOST_PATH') if k in os.environ},
+                 repo=os.environ['REPO'], validation_env={k:os.environ[k] for k in ('LOGD', 'PATH', 'HEAD_URL', 'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_VALIDATION_LEVEL', 'FLEET_RECOVERY_RECEIPT', 'PROFILE', 'IMAGE', 'MODEL_HOST_PATH') if k in os.environ},
                  experiment=os.environ.get('FLEET_EXPERIMENT_ID'),
                  launch_id=os.environ.get('FLEET_LAUNCH_ID'),
                  prepare_manifest=os.environ.get('FLEET_PREPARE_MANIFEST'),
@@ -332,7 +332,7 @@ def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None
                 if updated.get('validation_env', {}).get('FLEET_VALIDATION_REQUIRED') == '1' and updated['kind'] == 'boot':
                     # Preparation owns the signed deployment target identities;
                     # the controller's REPO is not necessarily the candidate.
-                    fleet_prepare.validate_targets(directory, path)
+                    fleet_prepare.validate_targets(directory, path, controller=updated)
     with lock(directory):
         current, rows, index = inspect(directory, session)
         if current != original:
