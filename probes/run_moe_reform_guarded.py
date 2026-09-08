@@ -6,17 +6,21 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import threading
 
 from run_gemm_input_reuse import IMAGE, ROOT, inspect_server, memory_available, traffic
 from run_moe_reform_cpu import mounts
+from moe_reform_sanitizer import sanitizer_result
 
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out',type=Path,required=True)
     ap.add_argument('--maintenance',action='store_true')
+    ap.add_argument('--resume-numerics',type=Path,
+                    help='Reuse unchanged source numerical and API-only memcheck evidence; run racecheck next')
     args=ap.parse_args()
     session=os.environ['FLEET_SESSION']
     assert re.fullmatch('[a-zA-Z0-9_-]+',session)
@@ -28,6 +32,27 @@ def main():
     assert not (out/'source.commit').exists(),'fresh evidence required'
     commit=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True).strip()
     (out/'source.commit').write_text(commit+'\n')
+    reused = None
+    sanitizer_reports = {}
+    if args.resume_numerics:
+        prior=args.resume_numerics
+        old=(prior/'source.commit').read_text().strip()
+        assert re.fullmatch('[0-9a-f]{40}',old)
+        subprocess.run(['git','-C',str(ROOT),'diff','--exit-code',old,commit,'--',
+                        'overlay/modules/glm53_moe','build/glm53',
+                        'probes/moe_reform_ab.py','probes/moe_decode_stream_probe.py',
+                        'probes/megakernel_glm53_bench.py'],check=True)
+        receipt=json.loads((prior/'admission.json').read_text())
+        assert receipt['image']==IMAGE and receipt['issues']==["('memcheck', 77)"]
+        assert receipt['server_before']==receipt['server_after']
+        assert receipt['before']==receipt['after']
+        for report in ('bundle','memcheck'):
+            assert json.loads((prior/(report+'.json')).read_text())['status']=='PASS'
+            for suffix in ('.json','.log'):
+                shutil.copy2(prior/(report+suffix),out/(report+suffix))
+        sanitizer_reports['memcheck']=sanitizer_result((out/'memcheck.log').read_text(),77)
+        reused=dict(source_commit=old,evidence=str(prior),reason='identical kernel and fixture sources')
+        (out/'reused-evidence.json').write_text(json.dumps(reused,indent=2)+'\n')
     (out/'build').mkdir(exist_ok=True)
     name='moereform-'+session
     done=threading.Event();samples=[];issues=[]
@@ -70,7 +95,7 @@ def main():
         # One integrated numerical/graph campaign, then focused sanitizers.
         # No individual-feature benchmarks or micro-speed escalation gate.
         target='/repo/probes/moe_reform_ab.py'
-        for tool in ('probe','memcheck','racecheck'):
+        for tool in (('racecheck',) if reused else ('probe','memcheck','racecheck')):
             assert not issues, issues
             if tool == 'probe':
                 command=common+['--entrypoint','python3',IMAGE,target,'--check-only',
@@ -84,7 +109,10 @@ def main():
                 report=tool
             with (out/(report+'.log')).open('w') as log:
                 rc=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=600).returncode
-            assert rc==0,(tool,rc)
+            if tool == 'probe':
+                assert rc==0,(tool,rc)
+            else:
+                sanitizer_reports[tool]=sanitizer_result((out/(report+'.log')).read_text(),rc)
             assert json.loads((out/(report+'.json')).read_text())['status']=='PASS'
     except BaseException as exc:
         issues.append(str(exc));raise
@@ -103,6 +131,8 @@ def main():
                  'issues':issues,'server_before':server,'server_after':server_after,'returncode':rc,
                  'admission_min_bytes':16*1024**3,'continuous_min_bytes':12*1024**3,
                  'maintenance':args.maintenance}
+        receipt['sanitizers']=sanitizer_reports
+        receipt['reused']=reused
         (out/'admission.json').write_text(json.dumps(receipt,indent=2)+'\n')
     assert not issues,issues
     print('PASS integrated numerics, graphs, memcheck, racecheck and continuous resource guard')

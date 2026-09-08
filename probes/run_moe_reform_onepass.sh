@@ -15,6 +15,9 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
 mkdir -p "$out"
 python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$out/before-metrics.txt"
 touched=0
+resume_supervisor=${MOE_RESUME_SUPERVISOR:-0}
+resume_restore=${MOE_RESUME_RESTORE:-0}
+[[ $resume_supervisor =~ ^[0-9]+$ && $resume_restore =~ ^[0-9]+$ ]] || exit 2
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM
@@ -39,6 +42,16 @@ cleanup() {
     fi
   fi
   echo "$rc" > "$out/runner.exit"
+  # An operator-requested continuation can retain the existing owned lease
+  # while pausing its final restore until this A/B is complete.
+  if [[ $resume_restore != 0 ]]; then
+    # The paused restore already published approved overlays before waiting.
+    # Republish approved source after A/B before it resumes its public boot.
+    (cd "$RESTORE_REPO" && git fetch origin && git merge --ff-only origin/main &&
+      bash launchers/deploy-overlays.sh glm53) > "$out/resume-restore-deploy.log" 2>&1 || rc=1
+    kill -CONT "$resume_restore" || rc=1
+  fi
+  if [[ $resume_supervisor != 0 ]]; then kill -CONT "$resume_supervisor" || rc=1; fi
   exit "$rc"
 }
 trap cleanup EXIT
@@ -53,7 +66,9 @@ for node in 1 3 4; do
   pids+=($!)
 done
 for pid in "${pids[@]}"; do wait "$pid"; done
-python3 probes/run_moe_reform_guarded.py --maintenance --out "$out/numerics"
+resume_args=()
+if [[ -n ${MOE_RESUME_NUMERICS:-} ]]; then resume_args=(--resume-numerics "$MOE_RESUME_NUMERICS"); fi
+python3 probes/run_moe_reform_guarded.py --maintenance --out "$out/numerics" "${resume_args[@]}"
 bash launchers/deploy-overlays.sh glm53 > "$out/deploy.log" 2>&1
 export MOE_ONEPASS_OUT=$out
 export FLEET=/home/choiceoh/stkernel/bench/fleet.sh LEVER=$REPO/probes/moe_reform_lever.sh
