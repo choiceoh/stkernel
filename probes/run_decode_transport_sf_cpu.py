@@ -58,6 +58,8 @@ def stages():
         yield 'sf-direct-tm'+str(tile_m), ['probes/b12x_static_compile_check.py',
             '--specs', 't,r,sf6', '--m', '80', '--max-rows', '640',
             '--dynamic', 'sf6', '--tile-m', str(tile_m)], '3g', True
+    yield 'sf-wrapper', ['probes/sf6_wrapper_cpu_check.py', '--cpu',
+        '--out', '/evidence/result.json'], '3g', True
 
 
 def option(payload, name, default=''):
@@ -82,7 +84,7 @@ def validate_stage(stage, payload, output):
     if stage == 'contracts':
         result = json.loads((output/'result.json').read_text())
         assert result['passed'] is True and result['coverage_complete'] is True, result
-    elif stage.startswith('transport-') or stage == 'sf-expand':
+    elif stage.startswith('transport-') or stage in ('sf-expand', 'sf-wrapper'):
         result = json.loads((output/'result.json').read_text())
         assert result['status'] == 'PASS', result
         if stage.startswith('transport-'):
@@ -90,6 +92,12 @@ def validate_stage(stage, payload, output):
             assert result['modes'] == [int(option(payload, '--compact')),
                                        int(option(payload, '--inline')), 0, 0, 0], result
             assert result['cuda_initialized'] is False, result
+        if stage == 'sf-wrapper':
+            assert result['mode'] == 'cpu' and result['cuda_initialized'] is False, result
+            assert [(c['rows'], c['backend'], c['repeats'], c['status']) for c in result['cases']] == [
+                (6,'static',3,'PASS'), (16,'static',3,'PASS'),
+                (513,'dynamic',3,'PASS'), (4096,'dynamic',3,'PASS')], result
+            assert result['rejected_invalid_cases'] == 4, result
     else:
         validate_compile_log(payload, (output/'stdout.log').read_text())
 

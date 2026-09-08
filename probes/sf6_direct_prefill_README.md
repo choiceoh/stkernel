@@ -53,7 +53,7 @@ REPO="$PWD" bash /home/choiceoh/stkernel/bench/fleet.sh run --cpu \
   sf6-direct-cpu 15 'SF6 direct prefill compiler and owner checks' -- \
   python3 probes/run_decode_transport_sf_cpu.py --out /absolute/fresh/evidence \
   --stage contracts --stage sf-m6 --stage sf-m8 --stage sf-m16 \
-  --stage sf-compat --stage sf-expand --stage sf-direct-tm128
+  --stage sf-compat --stage sf-expand --stage sf-direct-tm128 --stage sf-wrapper
 ```
 
 The runner uses an immutable serving image, runc, no GPU/network visibility,
@@ -61,3 +61,8 @@ two CPU cores and bounded memory/swap. Selected-stage receipts do not claim
 coverage of unrelated transport modes. GPU testing uses only the canonical
 onepass workflow; the legacy standalone numerical harness is not admission
 for an independent GPU run.
+
+The decorated-wrapper CPU stage invokes the installed FlashInfer wrapper
+with raw scale arguments set to None and an explicit packed owner. It mocks
+only dispatch/launch and checks both workspace routes; it does not claim
+trace-dump mode, actual model boot, CUDA graph replay or kernel numerics.

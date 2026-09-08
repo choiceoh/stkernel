@@ -27,7 +27,8 @@ def namespace():
     names = {'_WeightViews', '_get_weight_views', '_prepared_reform_scales',
              '_sf6_tensor_version', '_register_cache_eviction', '_tile_expert_weights',
              '_scale_runtime_addresses', 'prepare_packed_only_weight_views',
-             'launch_sm120_dynamic_moe', '_dynamic_kernel_cache_key'}
+             'launch_sm120_dynamic_moe', '_dynamic_kernel_cache_key',
+             '_dynamic_workspace_tile_m'}
     nodes = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))
              and node.name in names]
     assert len(nodes) == len(names)
@@ -42,6 +43,7 @@ def namespace():
         _FORCED_BACKEND=None, _GLM53_B12X_FORCE_BACKEND=None,
         _GLM53_B12X_PREFILL_REUSE=False, _GLM53_B12X_PREFILL_FC1_N128=False,
         _static_v2_config_for=lambda **kw:dict(tiled=True,reform_sf_pack=True),
+        _select_dynamic_tile_m=lambda rows,experts,activation:16,
         _check_memref_limit=lambda *a:None, _expand_to_experts=lambda t,n:t,
         _sf_pack_dummy=Mock(side_effect=AssertionError('dummy requested on direct path')))
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'actual-sf6-dispatch', 'exec'), ns)
@@ -143,6 +145,15 @@ class PackedViews(unittest.TestCase):
             self.ns[setting] = original
         self.ns['_static_v2_config_for'] = lambda **kw:dict(tiled=True,reform_sf_pack=False)
         self.assertIsNone(prepare(**args))
+
+    def test_sf6_workspace_uses_supported_gated_tile_for_prefill_tails(self):
+        choose = self.ns['_dynamic_workspace_tile_m']
+        args = dict(state_E=288,weight_E=288,k=4096,n=512,num_topk=8,
+                    quant_mode='nvfp4',activation='swigluoai_uninterleave',swiglu_limit=10.)
+        for rows in (648,4096,8192,65536):
+            self.assertEqual(choose(routed_rows=rows,**args),128)
+        self.ns['_static_v2_config_for'] = lambda **kw:dict(tiled=True,reform_sf_pack=False)
+        self.assertEqual(choose(routed_rows=648,**args),16)
 
 
 if __name__ == '__main__':
