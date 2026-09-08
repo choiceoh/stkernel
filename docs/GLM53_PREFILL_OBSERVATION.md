@@ -2,8 +2,10 @@
 
 Status: worker instrumentation, isolated boot/restoration, canonical quality/TTFT
 requests and all-rank trace transfer/analysis are implemented. CPU contracts pass;
-the source will be frozen before its first normal fleet submission. **No GPU run is submitted
-and no new speedup is claimed.** M64 and INT8 remain off and deprioritized. The
+the first capture is queued as `glm53observe0908v1` with frozen source
+`75686447d5cca72904b7050e333f8c319884a28d` on all four nodes. Preflight passed;
+at the 09:52 KST submission it was first behind `deploycache0908v6`. **No live
+result or new speedup is claimed.** M64 and INT8 remain off and deprioritized. The
 observation branch starts from current main separately from preserved PR #455.
 
 ## Implemented pieces
