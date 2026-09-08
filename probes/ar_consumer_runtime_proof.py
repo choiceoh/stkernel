@@ -34,6 +34,10 @@ report = dict(host=socket.gethostname(), image=obj['Image'],
     source_sha256=hashes, knobs={k: env.get(k) for k in expected},
     log_sha256=hashlib.sha256(log.encode()).hexdigest(),
     markers={marker: marker in log for marker in required})
+memory_fields = {'MemTotal', 'MemFree', 'MemAvailable', 'AnonPages', 'Shmem', 'Slab'}
+report['host_memory_kib'] = {line.split(':', 1)[0]: int(line.split()[1])
+    for line in Path('/proc/meminfo').read_text().splitlines()
+    if line.split(':', 1)[0] in memory_fields}
 print(json.dumps(report, indent=2), flush=True)
 assert report['running'] and report['knobs'] == expected
 assert hashes == files

@@ -42,7 +42,14 @@ if [[ $rc == 0 && ${LEGS:-onepass} != none ]]; then
   export INPUT_REUSE_CHANNELS_OUT=$out/channels-$name.jsonl MK_COLD_COMPILE=0
   if rg -q 'first boot on build' "$out/prepare-$name.log" 2>/dev/null; then export MK_COLD_COMPILE=1
   elif ! command -v rg >/dev/null && grep -q 'first boot on build' "$out/prepare-$name.log"; then export MK_COLD_COMPILE=1; fi
+  # Retain host RAM pressure even if earlyoom terminates the engine and the
+  # after-traffic runtime proof is unavailable. This observer is read-only,
+  # bounded, and reaped before the next arm; it never changes memory policy.
+  timeout 920 vmstat -w -t 2 > "$out/host-memory-$name.log" 2>&1 &
+  memory_pid=$!
   timeout 900 python3 "$REPO/probes/input_reuse_channels.py" --name "$name" || rc=$?
+  kill "$memory_pid" 2>/dev/null || true
+  wait "$memory_pid" 2>/dev/null || true
 fi
 collect "runtime-$name" || rc=1
 cp /home/choiceoh/glm53-logs/glm53.log "$out/boot-$name.log"

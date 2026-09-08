@@ -3,8 +3,10 @@
 `VLLM_GLM53_AR_CONSUMER_PDL=1` lets the next MHC load its immutable
 projection weights while the current one-shot AllReduce waits for peers.
 The existing GEMM PDL prologue can then prepare its weights along the same
-stream. The profile default is **0**. This is an ordering experiment; no
-serving speedup has been established yet.
+stream. The profile default is **0**. The first matched serving pair measured
+44.535 ms/step for the candidate and 45.172 ms/step for the baseline (1.41%
+lower latency). The second baseline was interrupted by host earlyoom, so the
+repeatability verdict remains open. See [the serving record](ar_consumer_v14.md).
 
 The candidate requires `VLLM_GLM53_MK_PDL=1` and is bounded to at most
 eight 4096-wide tokens, including the C=1 speculative verification bucket.
@@ -82,6 +84,15 @@ containers stop on failure. It stops its loopback serving before releasing
 the hold so public-port admission cannot mistake it for an unfinished boot.
 The fleet supervisor owns approved-main recovery
 or a validated transfer to the next boot job.
+
+If only the second serving baseline failed after A1/B1 completed, add
+`--baseline-only` to measure one new B2 arm with the complete original
+workload. This still requires GPU correctness evidence, current-main source,
+the deployment CPU gate, an idle service and fresh four-rank runtime proof.
+Do not combine a retry with earlier measurements until the serving source,
+profile, image and ordered request hashes are verified unchanged. Host RAM is
+recorded before/after every arm and sampled during requests; memory protection
+and boot budgeting are unchanged.
 
 GPU validation automatically searches the newest 50 `ARCONSUMER-*/gpu`
 receipts under `LOGD` (default `/home/choiceoh/glm53-logs`). No result-directory

@@ -4,10 +4,18 @@ set -euo pipefail
 export REPO=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO"
 gpu_evidence=
-if (( $# )); then
-  [[ $# == 2 && $1 == --gpu-evidence ]] || { echo 'usage: run_ar_consumer_campaign.sh [--gpu-evidence DIR]'; exit 2; }
-  gpu_evidence=$2
-fi
+baseline_only=0
+while (( $# )); do
+  case $1 in
+    --gpu-evidence)
+      [[ $# -ge 2 && -n $2 && $2 != --* && -z $gpu_evidence ]] || { echo 'one GPU evidence directory required'; exit 2; }
+      gpu_evidence=$2; shift 2;;
+    --baseline-only)
+      [[ $baseline_only == 0 ]] || { echo 'duplicate --baseline-only'; exit 2; }
+      baseline_only=1; shift;;
+    *) echo 'usage: run_ar_consumer_campaign.sh [--gpu-evidence DIR] [--baseline-only]'; exit 2;;
+  esac
+done
 session=${FLEET_SESSION:?}
 [[ ${FLEET_RESTORE_MANAGED:-0} == 1 ]] || { echo 'supervised boot hold required'; exit 2; }
 IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-logs/fleet/holder
@@ -84,5 +92,11 @@ export ONEPASS_FIXED_DECODE_TOKENS=2048 ONEPASS_FIXED_DECODE_REPS=3 ONEPASS_REQU
 export ONEPASS_JSONL=$AR_CONSUMER_OUT/records.raw.jsonl ONEPASS_VERDICTS=$AR_CONSUMER_OUT/verdicts.jsonl
 # Publish the requested candidate step first; retain two same-build baseline
 # arms and finish on defaults without adding another baseline boot.
-bash bench/chain.sh "${session}A1=VLLM_GLM53_AR_CONSUMER_PDL=1" \
-  "${session}B1=" "${session}B2="
+if [[ $baseline_only == 1 ]]; then
+  # A failed second baseline must not repeat already completed A1/B1 arms.
+  # Keep the complete workload, boot proof and correctness/deployment gates.
+  bash bench/chain.sh "${session}B2="
+else
+  bash bench/chain.sh "${session}A1=VLLM_GLM53_AR_CONSUMER_PDL=1" \
+    "${session}B1=" "${session}B2="
+fi
