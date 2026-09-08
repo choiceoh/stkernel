@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exact same source on both arms; retain normal onepass and SSE quality evidence.
+# Compatibility wrapper: one canonical onepass, then passive all-rank proof.
 set -euo pipefail
 name=${1:?}; knobs=${2:-}; out=${AR_CONSUMER_OUT:?}
 # Every comparison arm names its mode so a profile promotion cannot silently
@@ -8,6 +8,9 @@ mode=
 for pair in $knobs; do
   [[ $pair != VLLM_GLM53_AR_CONSUMER_PDL=* ]] || mode=${pair#*=}
 done
+if [[ -z $mode ]]; then
+  mode=$(sed -nE 's/^VLLM_GLM53_AR_CONSUMER_PDL=([01])$/\1/p' "$REPO/profiles/glm53.env" | tail -1)
+fi
 [[ $mode == 0 || $mode == 1 ]] || { echo 'explicit VLLM_GLM53_AR_CONSUMER_PDL=0 or 1 required'; exit 2; }
 expected=$(python3 - "$REPO" <<'PY'
 import hashlib,json,sys
@@ -35,24 +38,13 @@ collect() {
   [[ $(curl -s --max-time 3 -o /dev/null -w '%{http_code}' http://10.10.10.2:18000/health || true) == 000 ]] || status=1
   return "$status"
 }
+# Source hashes and logs add no model requests. All GPU quality and timing
+# evidence comes from the canonical arm; there is no boot-only staging pass.
 rc=0
-LEGS=none bash "$REPO/bench/ab-lever.sh" "$name" "$knobs" > "$out/prepare-$name.log" 2>&1 || rc=$?
-tail -n 20 "$out/prepare-$name.log"
-collect "prepared-$name" || rc=1
-if [[ $rc == 0 && ${LEGS:-onepass} != none ]]; then
-  export SPEC_K=5 BENCH_MODEL=glm-5.3-flash
-  export INPUT_REUSE_CHANNELS_OUT=$out/channels-$name.jsonl MK_COLD_COMPILE=0
-  if rg -q 'first boot on build' "$out/prepare-$name.log" 2>/dev/null; then export MK_COLD_COMPILE=1
-  elif ! command -v rg >/dev/null && grep -q 'first boot on build' "$out/prepare-$name.log"; then export MK_COLD_COMPILE=1; fi
-  # Retain host RAM pressure even if earlyoom terminates the engine and the
-  # after-traffic runtime proof is unavailable. This observer is read-only,
-  # bounded, and reaped before the next arm; it never changes memory policy.
-  timeout 920 vmstat -w -t 2 > "$out/host-memory-$name.log" 2>&1 &
-  memory_pid=$!
-  timeout 900 python3 "$REPO/probes/input_reuse_channels.py" --name "$name" || rc=$?
-  kill "$memory_pid" 2>/dev/null || true
-  wait "$memory_pid" 2>/dev/null || true
+bash "$REPO/bench/ab-lever.sh" "$name" "$knobs" > "$out/onepass-$name.log" 2>&1 || rc=$?
+tail -n 20 "$out/onepass-$name.log"
+if [[ $rc == 0 ]]; then
+  collect "runtime-$name" || rc=1
 fi
-collect "runtime-$name" || rc=1
-cp /home/choiceoh/glm53-logs/glm53.log "$out/boot-$name.log"
+cp "${LOGD:-/home/choiceoh/glm53-logs}/glm53.log" "$out/boot-$name.log" || rc=1
 exit "$rc"

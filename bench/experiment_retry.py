@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Explicit retries preserve successful evidence and keep unsuccessful attempts."""
 from pathlib import Path
-import hashlib
-import json
 import re
 import subprocess
 import time
@@ -16,10 +14,14 @@ def controller_path(payload):
     from experiments import digest
     controller = payload['retry_controller']
     directory = Path(controller['repo'])
-    files = {p.name: digest(p) for p in sorted((directory / 'bench').iterdir())
-             if p.suffix in ('.py', '.sh') and p.is_file()}
-    identity = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
-    if identity != controller['sha256'] or digest(directory / 'bench/experiments.py') != payload['snapshot']['runner']:
+    from fleet_pin import source_files, file_identity
+    files = source_files(directory)
+    identities = {file_identity(files)}
+    # Older pins used bench basenames and contained no campaign entrypoints.
+    # Keep those exact receipts readable without ignoring new controlled files.
+    if all(Path(name).parent == Path('bench') for name in files):
+        identities.add(file_identity({Path(name).name:data for name,data in files.items()}))
+    if controller['sha256'] not in identities or digest(directory / 'bench/experiments.py') != payload['snapshot']['runner']:
         raise ValueError('pinned retry controller changed; retry preparation must be repeated')
     return directory
 
@@ -33,7 +35,10 @@ def source(store, session, job):
     if row['state'] not in RETRYABLE:
         raise ValueError('retry requires failed, blocked, or interrupted state; '
                          'incomplete evidence needs result refresh or an explicit additional sample')
-    if row['payload']['spec']['kind'] not in {'cpu', 'pair', 'probe'}:
+    if row['payload']['spec']['kind'] == 'probe':
+        from experiments import ONEPASS_ONLY
+        raise ValueError(ONEPASS_ONLY)
+    if row['payload']['spec']['kind'] not in {'cpu', 'pair'}:
         raise ValueError('retry the consuming experiment, not its internal baseline reservation')
     from experiments import TERMINAL
     for dependency in row['payload']['spec']['depends_on']:

@@ -376,31 +376,58 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(stats["by_kind"]["cpu"]["valid_results"], 1)
         self.assertEqual(stats["requests"]["submitted"], 1)
 
-    def test_cpu_probe_pair_dependencies_complete_without_manual_promotion(self):
+    def test_cpu_pair_dependencies_complete_without_extra_gpu_probe(self):
         context = dict(image=self.image, model="fixture", hardware="fixture")
         cpu = self.submit("cpu")
-        command = [sys.executable, "-c", "import sys; sys.path.insert(0,'bench'); "
-                   "from probe_report import write_report; "
-                   "write_report({'mismatches':0},{'lane':True},12,'fake-gpu')"]
-        probe = self.submit("probe", kind="probe", depends_on=[cpu["id"]], command=command, context=context,
-                            probe_contract={"checks":{"mismatches":{"op":"eq","value":0}},
-                                            "proof":["lane"],"min_samples":12})
         pair = self.submit("pair", kind="pair", command=[], knobs={"VLLM_TEST":"1"},
-                           context=context, depends_on=[probe["id"]])
+                           context=context, depends_on=[cpu["id"]])
         self.assertEqual(self.wait(pair["id"])["state"], "succeeded")
-        report = self.wait(probe["id"])["result"]
-        self.assertEqual(report["evidence"], "gpu-probe")
-        self.assertEqual(report["scope"], "declared numerical contract only")
+        self.assertEqual(self.wait(cpu["id"])["result"]["evidence"], "cpu-only")
+        self.assertEqual((self.logs / "arms").read_text().count("onepass"), 2)
+        store = ex.Store(self.jobs)
+        try:
+            kinds = {store.get(row['id'])['payload']['spec']['kind'] for row in store.list_jobs()}
+            self.assertEqual(kinds, {"cpu", "pair", "baseline"})
+        finally:
+            store.db.close()
 
-    def test_probe_exit_zero_without_report_cannot_unlock_candidate(self):
+    def test_custom_gpu_probe_rejected_before_source_or_gpu_inspection(self):
         context = dict(image=self.image, model="fixture", hardware="fixture")
-        probe = self.submit("probe", kind="probe", command=[sys.executable, "-c", "pass"], context=context,
-                            probe_contract={"checks":{"mismatches":{"op":"eq","value":0}},
-                                            "proof":["lane"],"min_samples":1})
-        pair = self.submit("pair", kind="pair", command=[], knobs={"VLLM_TEST":"1"},
-                           context=context, depends_on=[probe["id"]])
-        self.assertEqual(self.wait(pair["id"])["state"], "blocked")
-        self.assertFalse((self.logs / "arms").exists())
+        raw = dict(kind="probe", revision=self.sha, hypothesis="custom GPU workload",
+                   command=[sys.executable, "-c", "pass"], context=context)
+        with patch.object(ex, 'snapshot', side_effect=AssertionError('no source inspection')):
+            with self.assertRaisesRegex(ValueError, "onepass-only"):
+                ex.normalize(raw, self.repo)
+            raw['probe_contract'] = {"checks":{"mismatches":{"op":"eq","value":0}},
+                                     "proof":["lane"],"min_samples":1}
+            with self.assertRaisesRegex(ValueError, "onepass-only"):
+                ex.normalize(raw, self.repo)
+        self.assertFalse((self.logs / "admissions").exists())
+
+    def test_legacy_gpu_probe_blocked_before_worker_checkout_or_execution(self):
+        store = ex.Store(self.jobs)
+        try:
+            for entry in (ex.ensure_worker, ex.worker, ex.execute):
+                with self.subTest(entry=entry.__name__):
+                    spec = dict(kind="probe", revision=self.sha, hypothesis="legacy queued probe",
+                                command=["GPU_MARKER"], depends_on=[])
+                    payload = dict(spec=spec, repo=str(self.repo), environment={}, paths={}, snapshot={})
+                    job = store.submit("legacy", payload, repeat=entry.__name__)["id"]
+                    with patch.object(ex, 'verify', side_effect=AssertionError('no source inspection')), \
+                         patch.object(ex.subprocess, 'Popen', side_effect=AssertionError('no child process')), \
+                         patch.object(ex.subprocess, 'run', side_effect=AssertionError('no worktree')):
+                        entry(store, job)
+                    row = store.get(job)
+                    self.assertEqual(row['state'], 'blocked')
+                    self.assertEqual(row['result']['evidence'], 'onepass-policy')
+                    self.assertIn('onepass-only', row['result']['reason'])
+                    self.assertFalse((self.jobs / job / 'checkout').exists())
+                    from experiment_retry import source
+                    with self.assertRaisesRegex(ValueError, 'onepass-only'):
+                        source(store, 'legacy', job)
+        finally:
+            store.db.close()
+        self.assertFalse((self.logs / "admissions").exists())
 
     def test_default_candidates_share_one_baseline_without_promotion_claim(self):
         context = dict(image=self.image, model="fixture", hardware="fixture")
@@ -503,7 +530,8 @@ class SubmissionTests(unittest.TestCase):
     def test_failed_prerequisite_blocks_gpu_before_admission(self):
         bad = self.submit(command=[sys.executable, "-c", "raise SystemExit(7)"])
         self.assertEqual(self.wait(bad["id"])["state"], "failed")
-        gpu = self.submit("gpu-agent", kind="probe", command=["GPU_MARKER"], depends_on=[bad["id"]],
+        gpu = self.submit("gpu-agent", kind="pair", command=[], knobs={"VLLM_TEST":"1"},
+                          depends_on=[bad["id"]],
                           context={"image": self.image, "model": "fixture", "hardware": "fixture"})
         result = self.wait(gpu["id"])
         self.assertEqual(result["state"], "blocked", result)
