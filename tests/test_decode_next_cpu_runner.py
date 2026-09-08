@@ -127,6 +127,32 @@ class RunnerTests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     runner.validate_stage('transport-00', payload, output)
 
+    def test_unpack_codegen_requires_both_arms_and_intact_assembly(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            result = dict(status='PASS', mode='cpu', cuda_initialized=False,
+                          evidence='isolated-unpack-compile-only', cases=[])
+            for words in (1, 4, 8):
+                for arm in ('scalar', 'u8x4'):
+                    case = dict(words=words, arm=arm, artifacts={})
+                    for suffix in ('ptx', 'cubin', 'sass'):
+                        name = f'{words}-{arm}.{suffix}'
+                        data = name.encode()
+                        (output/name).write_bytes(data)
+                        case['artifacts'][suffix] = dict(path=name, sha256=hashlib.sha256(data).hexdigest())
+                    result['cases'].append(case)
+            path = output/'result.json'
+            path.write_text(json.dumps(result))
+            runner.validate_stage('sf-unpack-codegen', [], output)
+            for cases in (result['cases'][:-1], result['cases'] + result['cases'][:1]):
+                path.write_text(json.dumps(dict(result, cases=cases)))
+                with self.assertRaises(AssertionError):
+                    runner.validate_stage('sf-unpack-codegen', [], output)
+            path.write_text(json.dumps(result))
+            (output/'8-u8x4.sass').write_bytes(b'tampered assembly')
+            with self.assertRaises(AssertionError):
+                runner.validate_stage('sf-unpack-codegen', [], output)
+
 
 if __name__ == '__main__':
     unittest.main()
