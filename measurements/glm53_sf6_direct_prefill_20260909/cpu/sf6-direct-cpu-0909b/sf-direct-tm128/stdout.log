@@ -1,0 +1,9 @@
+2026-09-08 18:31:22,583 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m80_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_8ea911671f92bf05
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-08 18:31:27,436 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m80_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_8ea911671f92bf05.o
+[b12x static v2] lane serving: static2_m80_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1 (mac=48, m=80, routed=640, smem=101376 B)
+2026-09-08 18:31:27,446 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_cf93baeedfd01c43
+2026-09-08 18:31:36,542 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_cf93baeedfd01c43.o
+[t,r,sf6] compiled in 5.0 s: ['static_v2:32/2/2/32/False'] mac=48
+[dynamic tiled=True sf6=True tm=128] compiled in 9.1 s mac=48
+VERDICT: PASS

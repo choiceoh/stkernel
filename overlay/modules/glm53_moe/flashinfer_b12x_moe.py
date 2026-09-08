@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any
-from weakref import WeakValueDictionary
+from weakref import WeakKeyDictionary, WeakValueDictionary, ref
 
 from vllm.logger import init_logger
 
@@ -34,6 +34,132 @@ from vllm.utils.flashinfer import (
 
 
 logger = init_logger(__name__)
+
+
+# Registration contains no scale tensor or owning model reference. Preparation
+# and source release happen only in the model's final load hook, never while
+# the checkpoint loader can still write these Parameters.
+_SF6_PENDING = WeakKeyDictionary()
+
+
+def _b12x_sf6_requested() -> bool:
+    return "sf6" in {part.strip() for part in os.environ.get(
+        "VLLM_GLM53_B12X_STATIC_V2", "").split(",")}
+
+
+def _b12x_sf6_generation(*tensors):
+    """Non-owning identity for a sealed inference generation; no tensor work."""
+    result = []
+    for tensor in tensors:
+        try:
+            version = int(tensor._version)
+        except RuntimeError:
+            version = -1  # Inference-mode tensors are immutable by contract.
+        result.append((tensor.data_ptr(), version, tuple(tensor.shape),
+                       str(tensor.dtype), str(tensor.device)))
+    return tuple(result)
+
+
+def _b12x_require_packed_owner(views):
+    if not getattr(views, "packed_only", False):
+        raise RuntimeError("SF6 source release requires a packed-only weight owner")
+    scales = getattr(views, "reform_scales", None)
+    if not getattr(scales, "enabled", False):
+        raise RuntimeError("SF6 source release requires both lossless packed planes")
+    for name in ("w1_scale_storage", "w2_scale_storage", "_w13_sf_storage",
+                 "_down_sf_storage", "sfb_w13_ptr", "sfb_down_ptr"):
+        if getattr(views, name, None) is not None:
+            raise RuntimeError("packed-only SF6 owner retained raw scale field: " + name)
+    if views.sfb1_packed is not scales.fc1 or views.sfb2_packed is not scales.fc2:
+        raise RuntimeError("SF6 weight views must own the admitted packed planes")
+
+
+def _b12x_release_raw_scales(experts, layer, views):
+    """Commit a validated packed owner, then remove every known raw alias.
+
+    No empty or misleadingly-shaped tensor stands in for the freed source.
+    Packed-only apply() has a separate contract accepting actual None scales.
+    Errors during the commit propagate; they must not resume a raw fallback.
+    """
+    _b12x_require_packed_owner(views)
+    names = ("w13_weight_scale", "w2_weight_scale")
+    originals = tuple(getattr(layer, name) for name in names)
+    descriptors = (experts.quant_config._w1, experts.quant_config._w2)
+    raw_views = (experts.w1_sf_mma, experts.w2_sf_mma)
+    for name, tensor, descriptor, mma in zip(names, originals, descriptors, raw_views):
+        if not isinstance(tensor, torch.nn.Parameter) or layer._parameters.get(name) is not tensor:
+            raise RuntimeError("SF6 source must be a registered scale Parameter: " + name)
+        if descriptor.scale is None or mma is None:
+            raise RuntimeError("SF6 raw scale aliases disappeared before finalisation")
+        pointer = tensor.untyped_storage().data_ptr()
+        if (descriptor.scale.untyped_storage().data_ptr() != pointer
+                or mma.untyped_storage().data_ptr() != pointer):
+            raise RuntimeError("SF6 scale aliases do not share the loaded source: " + name)
+        if pointer in (views.sfb1_packed.untyped_storage().data_ptr(),
+                       views.sfb2_packed.untyped_storage().data_ptr()):
+            raise RuntimeError("packed SF6 storage aliases its raw source")
+    # No raw-mode wrapper may have captured pointers from this generation.
+    if experts._wrapper is not None:
+        raise RuntimeError("SF6 raw scales must be released before the first wrapper call")
+    generation = _b12x_sf6_generation(layer.w13_weight, layer.w2_weight,
+                                     experts.g1_alphas, experts.g2_alphas)
+    released = sum(t.numel() * t.element_size() for t in originals)
+    experts._sf6_weight_views = views
+    experts._sf6_generation = generation
+    for descriptor in descriptors:
+        descriptor.scale = None
+    for name in ("w1_scale", "w2_scale"):
+        # Real vLLM exposes read-only properties backed by the descriptors;
+        # plain attribute aliases (compatibility adapters) must go as well.
+        if name in vars(experts):
+            setattr(experts, name, None)
+    experts.w1_sf_mma = experts.w2_sf_mma = None
+    for name in names:
+        layer.register_parameter(name, None)
+    if experts.w1_scale is not None or experts.w2_scale is not None:
+        raise RuntimeError("SF6 raw scale references survived ownership transfer")
+    return released
+
+
+def finalize_packed_scale_owners(model) -> int:
+    """Prepare SF6 and release eligible sources after all weight loading.
+
+    The final model hook calls this before any capture. Nonrepresentable
+    layers and unsupported geometries/backends retain their ordinary scales.
+    The model, rather than a raw-tensor cache/finalizer, owns the packed data.
+    """
+    from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch
+
+    released, layers = 0, 0
+    for layer in model.modules():
+        pending = _SF6_PENDING.get(layer)
+        experts = pending() if pending is not None else None
+        if experts is None or experts._use_ep or experts._sf6_finalized:
+            continue
+        if layer.w13_weight.device.type == "cuda" and torch.cuda.is_current_stream_capturing():
+            raise RuntimeError("SF6 model ownership must be finalised before graph capture")
+        if experts._wrapper is not None:
+            raise RuntimeError("SF6 model ownership finalisation happened after first inference")
+        views = moe_dispatch.prepare_packed_only_weight_views(
+            w1_fp4=layer.w13_weight, w1_blockscale=experts.w1_sf_mma,
+            w2_fp4=layer.w2_weight, w2_blockscale=experts.w2_sf_mma,
+            w1_alphas=experts.g1_alphas, w2_alphas=experts.g2_alphas,
+            n=layer.w13_weight.size(1)//2, k=experts.hidden_dim,
+            num_experts=experts.global_num_experts,
+            num_local_experts=experts.num_local_experts, num_topk=experts.topk,
+            activation=experts._activation_str,
+            swiglu_alpha=experts._swiglu_alpha, swiglu_beta=experts._swiglu_beta,
+            swiglu_limit=experts._swiglu_limit,
+            activation_precision="fp4", quant_mode="nvfp4",
+        )
+        if views is not None:
+            released += _b12x_release_raw_scales(experts, layer, views)
+            layers += 1
+        experts._sf6_finalized = True
+    if layers:
+        logger.warning("[b12x sf6] packed-only owners finalised: layers=%d raw_bytes_released=%d; "
+                       "decode and prefill read immutable packed scales", layers, released)
+    return released
 
 
 # Attrs vLLM stashes on expert Parameters. Replacing a Parameter for the EP
@@ -1139,8 +1265,20 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._wrapper: Any | None = None
         self.w1_sf_mma: torch.Tensor | None = None
         self.w2_sf_mma: torch.Tensor | None = None
+        self._sf6_weight_views: Any | None = None
+        self._sf6_generation: tuple | None = None
+        self._sf6_finalized = False
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        if self._sf6_weight_views is not None:
+            if (layer.w13_weight_scale is None and layer.w2_weight_scale is None
+                    and self.w1_scale is None and self.w2_scale is None
+                    and self.w1_sf_mma is None and self.w2_sf_mma is None
+                    and self._sf6_generation == _b12x_sf6_generation(
+                        layer.w13_weight, layer.w2_weight, self.g1_alphas, self.g2_alphas)):
+                return  # Repeated finalisation of the same sealed load.
+            raise RuntimeError("packed-only SF6 weights changed; load a fresh model before inference")
+        self._sf6_finalized = False
         # Normalise block scales to absorb the per-expert weight global scale
         # (w_gs).  vLLM's NVFP4 convention stores:
         #   block_scale = max_abs * w_gs / fp4_max,  g1_alphas = 1/w_gs
@@ -1356,6 +1494,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                     ),
                     device,
                 )
+
+        if not self._use_ep and _b12x_sf6_requested():
+            _SF6_PENDING[layer] = ref(self)
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
@@ -2242,18 +2383,26 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool | None,
     ):
-        assert self.w1_scale is not None and self.w2_scale is not None, (
-            "w1_scale and w2_scale must not be None for FlashInferB12xExperts"
-        )
+        packed_views = self._sf6_weight_views
+        if packed_views is None:
+            assert self.w1_scale is not None and self.w2_scale is not None, (
+                "w1_scale and w2_scale must not be None for FlashInferB12xExperts"
+            )
+        elif (self._use_ep or self.w1_scale is not None or self.w2_scale is not None
+              or self.w1_sf_mma is not None or self.w2_sf_mma is not None):
+            raise RuntimeError("packed-only SF6 owner mixed with EP or raw scale references")
         assert self.g1_alphas is not None and self.g2_alphas is not None, (
             "g1_alphas and g2_alphas must not be None for FlashInferB12xExperts"
         )
         assert self._fc2_input_scale is not None, (
             "_fc2_input_scale must be set by process_weights_after_loading"
         )
-        assert self.w1_sf_mma is not None and self.w2_sf_mma is not None, (
-            "process_weights_after_loading must run before FlashInferB12xExperts.apply"
-        )
+        if packed_views is None:
+            assert self.w1_sf_mma is not None and self.w2_sf_mma is not None, (
+                "process_weights_after_loading must run before FlashInferB12xExperts.apply"
+            )
+        elif self._sf6_generation != _b12x_sf6_generation(w1, w2, self.g1_alphas, self.g2_alphas):
+            raise RuntimeError("packed-only SF6 model generation changed after finalisation")
 
         if self._use_ep:
             expect_e = self._kernel_num_experts
@@ -2341,6 +2490,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             token_selected_experts=topk_ids.to(torch.int32),
             token_final_scales=topk_weights,
         )
+        if packed_views is not None:
+            run_kwargs["_weight_views"] = packed_views
         if self._direct_out:
             wrapper.run(**run_kwargs, out=output)
             return output

@@ -1,0 +1,38 @@
+2026-09-08 18:29:06,233 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m16_k4096_n512_t8_r640_tm32f2g2a32wut_78f5e1a8bee407c8
+2026-09-08 18:29:08,971 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m16_k4096_n512_t8_r640_tm32f2g2a32wut_78f5e1a8bee407c8.o
+[b12x static v2] lane serving: static2_m16_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=16, routed=128, smem=101376 B)
+2026-09-08 18:29:08,973 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m16_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_1f6757d002477177
+[t,r] compiled in 2.9 s: ['static_v2:32/2/2/32/False'] mac=48
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-08 18:29:11,090 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m16_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_1f6757d002477177.o
+[b12x static v2] lane serving: static2_m16_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1 (mac=48, m=16, routed=128, smem=101376 B)
+2026-09-08 18:29:11,092 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f
+[t,r,sf6] compiled in 2.1 s: ['static_v2:32/2/2/32/False'] mac=48
+[dynamic tiled=True] COMPILE FAIL after 0.0 s: AttributeError: module 'cutlass.cute' has no attribute 'const_expr'
+_packages/cutlass/base_dsl/compiler.py", line 1250, in __call__
+    return self._compile(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/compiler.py", line 1396, in _compile
+    return func._dsl_object._func(func, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2782, in _func
+    return self._func_impl(funcBody, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2795, in _func_impl
+    result = self.generate_mlir(
+             ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2318, in generate_mlir
+    module, module_hash, result = self.generate_original_ir(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 1987, in generate_original_ir
+    module, result = build_ir_module()
+                     ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 1948, in build_ir_module
+    result = funcBody(*ir_args, **ir_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 3506, in __call__
+    if cute.const_expr(self._reform_sf_pack):
+       ^^^^^^^^^^^^^^^
+AttributeError: module 'cutlass.cute' has no attribute 'const_expr'
+
+VERDICT: FAIL

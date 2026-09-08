@@ -25,6 +25,9 @@ untouched (same tiles, same smem layouts, same MMA order: results are
 bit-identical to v4 up to the bf16 atomic scatter order). The SF tensors keep
 their stock layout: the SM120 block-scaled layout already stores a 128-row
 block's scales for one 512-wide k tile as a contiguous 4 KB.
+With ``sf6``, both prefill and decode instead use the exact packed SF6-v1
+planes. The inherited kernel gathers and expands directly in shared memory;
+this entry point does not create descriptors over original scale storage.
 
 Cost of the layout: the storage is permuted once when the weight views are
 built (a copy in the probe; in-place at weight post-processing in serving),
@@ -104,7 +107,8 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
         next_item: cute.Tensor,
-        sfb1_packed: cute.Tensor,   # cell q: 6-bit FC1 scales (u8), dummy otherwise
+        sfb1_packed: cute.Tensor,   # packed FC1 scales; dummy off lane
+        sfb2_packed: cute.Tensor,   # sf6 FC2 scales; dummy off lane
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
     ):
@@ -132,14 +136,15 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
             packed_a.shape, self.sf_vec_size
         )
         sfa_tensor = cute.make_tensor(sfa_ptr, sfa_layout)
-        sfb_w13_layout = blockscaled_utils.tile_atom_to_shape_SF(
-            (w13_rows, w13_k, w13_e), self.sf_vec_size
-        )
-        sfb_w13_tensor = cute.make_tensor(sfb_w13_ptr, sfb_w13_layout)
-        sfb_down_layout = blockscaled_utils.tile_atom_to_shape_SF(
-            (down_rows, down_k, down_e), self.sf_vec_size
-        )
-        sfb_down_tensor = cute.make_tensor(sfb_down_ptr, sfb_down_layout)
+        if cutlass.const_expr(not self.reform_sf_pack):
+            sfb_w13_layout = blockscaled_utils.tile_atom_to_shape_SF(
+                (w13_rows, w13_k, w13_e), self.sf_vec_size
+            )
+            sfb_w13_tensor = cute.make_tensor(sfb_w13_ptr, sfb_w13_layout)
+            sfb_down_layout = blockscaled_utils.tile_atom_to_shape_SF(
+                (down_rows, down_k, down_e), self.sf_vec_size
+            )
+            sfb_down_tensor = cute.make_tensor(sfb_down_ptr, sfb_down_layout)
 
         # (N, K_in, K_tiles, E) -> (N, (K_in, K_tiles), E): one hierarchical
         # K mode whose inner extent is the k tile, so the v4 tile shapes
@@ -158,17 +163,25 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
         tma_b_w13, gB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
             b_w13_h, self.b1_smem_layout_staged, (self.fc1_tile_n, self.fc1_tile_k), 1
         )
-        tma_sfb_w13, gSFB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
-            sfb_w13_tensor, self.sfb1_smem_layout_staged, self.sfb1_tile_shape_nk, 1,
-            internal_type=cutlass.Int16,
-        )
+        if cutlass.const_expr(self.reform_sf_pack):
+            # Typed dead arguments; the SF6 kernel never builds or touches
+            # a descriptor over the released original scale allocation.
+            tma_sfb_w13, gSFB_w13 = tma_sfa, gSFA
+        else:
+            tma_sfb_w13, gSFB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
+                sfb_w13_tensor, self.sfb1_smem_layout_staged, self.sfb1_tile_shape_nk, 1,
+                internal_type=cutlass.Int16,
+            )
         tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
             b_down_h, self.b2_smem_layout_staged, (self.fc2_tile_n, self.fc2_tile_k), 1
         )
-        tma_sfb_down, gSFB_down = self._dense_cls._make_tma_atoms_and_tensors(
-            sfb_down_tensor, self.sfb2_smem_layout_staged, self.sfb_tile_shape_nk, 1,
-            internal_type=cutlass.Int16,
-        )
+        if cutlass.const_expr(self.reform_sf_pack):
+            tma_sfb_down, gSFB_down = tma_sfa, gSFA
+        else:
+            tma_sfb_down, gSFB_down = self._dense_cls._make_tma_atoms_and_tensors(
+                sfb_down_tensor, self.sfb2_smem_layout_staged, self.sfb_tile_shape_nk, 1,
+                internal_type=cutlass.Int16,
+            )
 
         grid = (*self.cluster_shape_mn, max_active_clusters)
         self.kernel(
@@ -219,6 +232,7 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
             stamps,
             next_item,
             sfb1_packed,
+            sfb2_packed,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],

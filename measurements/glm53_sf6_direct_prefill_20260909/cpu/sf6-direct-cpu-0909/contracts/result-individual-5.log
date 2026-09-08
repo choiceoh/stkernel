@@ -1,0 +1,18 @@
+[b12x sf6] packed-only owners finalised: layers=1 raw_bytes_released=24576; decode and prefill read immutable packed scales
+[b12x sf6] packed-only owners finalised: layers=1 raw_bytes_released=24576; decode and prefill read immutable packed scales
+[b12x sf6] packed-only owners finalised: layers=1 raw_bytes_released=24576; decode and prefill read immutable packed scales
+test_bad_owner_or_alias_fails_before_source_release (test_moe_sf6_owner.ModelOwnership.test_bad_owner_or_alias_fails_before_source_release) ... ok
+test_model_apply_and_repeated_postload_never_rebuild_raw (test_moe_sf6_owner.ModelOwnership.test_model_apply_and_repeated_postload_never_rebuild_raw) ... ok
+test_nonrepresentable_layer_keeps_both_original_planes (test_moe_sf6_owner.ModelOwnership.test_nonrepresentable_layer_keeps_both_original_planes) ... ok
+test_only_requested_model_layers_and_non_ep_are_finalised (test_moe_sf6_owner.ModelOwnership.test_only_requested_model_layers_and_non_ep_are_finalised) ... ok
+test_pending_registry_never_owns_model_or_experts (test_moe_sf6_owner.ModelOwnership.test_pending_registry_never_owns_model_or_experts) ... ok
+test_real_lossless_owner_releases_all_raw_aliases_and_survives (test_moe_sf6_owner.ModelOwnership.test_real_lossless_owner_releases_all_raw_aliases_and_survives) ... ok
+test_requested_flag_has_no_substring_or_default_activation (test_moe_sf6_owner.ModelOwnership.test_requested_flag_has_no_substring_or_default_activation) ... ok
+test_dynamic_prefill_keeps_explicit_owner (test_moe_sf6_owner.PackedWrapper.test_dynamic_prefill_keeps_explicit_owner) ... ok
+test_invalid_or_raw_mixed_owner_is_rejected (test_moe_sf6_owner.PackedWrapper.test_invalid_or_raw_mixed_owner_is_rejected) ... ok
+test_repeated_captured_calls_use_owner_without_allocating_or_raw_cache (test_moe_sf6_owner.PackedWrapper.test_repeated_captured_calls_use_owner_without_allocating_or_raw_cache) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.127s
+
+OK

@@ -1,0 +1,19 @@
+{
+  "attempts": [],
+  "collection_status": "FAILED",
+  "errors": [
+    "reservation ended before admitted observation"
+  ],
+  "helper_sha256": "3ff3a73f64ed0c815cdf2a6e4b51bb0aeada7228d9f328d56a9f14e9d3305d32",
+  "mode": "baseline",
+  "name": "sf6-base-0909v2B",
+  "phases": {},
+  "pid": 2842777,
+  "runtime_validation": "NOT_COLLECTED",
+  "schema": "sf6-baseline-observation-v1",
+  "session": "sf6-base-0909v2",
+  "sf6_direct": true,
+  "source_commit": "85e25370779c2b8a6c9aaefa275b1dc8f27d60d0",
+  "start": "40677085",
+  "ticket": "17889043822842777"
+}

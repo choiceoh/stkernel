@@ -1,0 +1,34 @@
+{
+  "pid": 2930391,
+  "argv": [
+    "/usr/bin/python3",
+    "/home/choiceoh/glm53-logs/sf6-base-0909v3-inputs/observe_sf6_baseline.py",
+    "--repo",
+    "/home/choiceoh/stkernel-sf6-direct-0909",
+    "--out",
+    "/home/choiceoh/glm53-logs/SF6-BASE-sf6-base-0909v3",
+    "--name",
+    "sf6-base-0909v3B",
+    "--session",
+    "sf6-base-0909v3",
+    "--ticket",
+    "17889056112929421",
+    "--pid",
+    "2929421",
+    "--start",
+    "40799859",
+    "--port",
+    "18000",
+    "--revision",
+    "b7b06b70a534fdfae756f7410ac40305763f6c3a"
+  ],
+  "helper_sha256": "f4b5cfd560e37892b6793f8450d3b53b775492690b7348652a366f35d961b2a6",
+  "reservation": {
+    "session": "sf6-base-0909v3",
+    "ticket": "17889056112929421",
+    "pid": 2929421,
+    "start": "40799859",
+    "launch_id": "368b2fcbeabe41208ce22c53b07b7a61"
+  },
+  "source_commit": "b7b06b70a534fdfae756f7410ac40305763f6c3a"
+}

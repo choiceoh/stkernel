@@ -106,7 +106,8 @@ def main():
     receipt = {'status': 'RUNNING', 'torch': torch.__version__, 'cuda': torch.version.cuda,
         'mode': 'distributed' if args.distributed else 'delayed-producer',
         'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in (Path(mk._SRC), Path(mk.__file__), Path(shim._SRC), Path(shim.__file__), delay_path)},
+            for p in (Path(mk._SRC), Path(mk.__file__), Path(shim._SRC),
+                      Path(shim._TRANSPORT_HEADER), Path(shim.__file__), delay_path)},
         'cases': [], 'ar_ownership_cases': [], 'samples': []}
     if args.compile_only:
         assert hasattr(ar, 'oneshot_ar_consumer')

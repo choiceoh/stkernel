@@ -13,10 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited at eb379b15: consumer weight notes, PDL/occupancy counts,
-# and the standalone MHC normalized-weight call contract differ from upstream.
-# The three audited helper tests and access graphs are unchanged.
-LOGIC_AUDIT = 'f640ad0e2fba5cbbfc514e4707734014eacf3b91091eeebb6c904f9f245ff2a0'
+# Re-audited for SF6 default adoption plus main PR #504 boot-memory checks.
+# Only the existing default and boot-stamp assertions changed; the three
+# audited helper tests, access graphs and source closure are unchanged.
+LOGIC_AUDIT = 'ad35be30dfebd81d009ff85fe63f7204d5bcf58bf582d26c7c139a693b75761f'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

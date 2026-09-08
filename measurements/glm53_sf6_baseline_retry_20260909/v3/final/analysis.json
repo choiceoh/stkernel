@@ -1,0 +1,169 @@
+{
+  "schema": "sf6-baseline-retry-result-v1",
+  "scope": "PASS for single baseline record/memory/runtime observation; original A/B remains INVALID",
+  "source_commit": "b7b06b70a534fdfae756f7410ac40305763f6c3a",
+  "baseline_record": {
+    "name": "sf6-base-0909v3B",
+    "boot_id": "419c258c75ed309eeecf10ac3823aaaf903fa1ce093d48725e021c79165f75c6|2026-09-08T22:13:55.737545576Z",
+    "cold_compile": true,
+    "fixed_pooled_step_s": 20.20661328323696,
+    "ms_per_step": 49.48874836089341,
+    "windows": 91,
+    "windows_med": 19.873337126471245,
+    "median_ms_per_step": 50.318675400922075,
+    "output_tok_s": 62.843273357113915,
+    "acceptance_all_requests": 0.44227304227304226,
+    "prefill": [
+      {
+        "ctx": 2000,
+        "tok": 2128,
+        "cold_s": 2.431041133007966,
+        "warm_s": 0.8887508490006439,
+        "cold_tok_s": 875.3451231682747,
+        "warm_tok_s": 2394.3718336728793,
+        "ttft_samples_s": [
+          2.431041133007966,
+          0.8887508490006439,
+          0.8902865640120581
+        ],
+        "combined": false
+      },
+      {
+        "ctx": 32000,
+        "tok": 32545,
+        "cold_s": 10.847696892975364,
+        "warm_s": 10.847696892975364,
+        "cold_tok_s": 3000.1760116541554,
+        "warm_tok_s": 3000.1760116541554,
+        "ttft_samples_s": [
+          10.847696892975364
+        ],
+        "combined": true
+      },
+      {
+        "ctx": 128000,
+        "tok": 128559,
+        "cold_s": 41.44591194699751,
+        "warm_s": 41.44591194699751,
+        "cold_tok_s": 3101.849952400752,
+        "warm_tok_s": 3101.849952400752,
+        "ttft_samples_s": [
+          41.44591194699751
+        ],
+        "combined": true
+      }
+    ],
+    "quality": {
+      "ok": 18,
+      "total": 18
+    },
+    "korean": {
+      "dirty": 0,
+      "n": 8,
+      "kinds": {
+        "replacement": 0,
+        "lone_jamo": 0,
+        "cjk_mixed": 0,
+        "control": 0
+      },
+      "hits": []
+    },
+    "exclusive": true,
+    "recorded_request_output_hashes_validated": true,
+    "ordered_stream_hashes_verified": false,
+    "independent_stream_hashes_verified": false
+  },
+  "memory": {
+    "samples": 148,
+    "minimum_available_gib": {
+      "choiceoh@10.10.10.4": 18.629413604736328,
+      "local": 12.684127807617188,
+      "choiceoh@10.10.10.1": 18.048423767089844,
+      "choiceoh@10.10.10.3": 14.172050476074219
+    }
+  },
+  "traffic": {
+    "before": {
+      "finished": 0.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "after": {
+      "finished": 8.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "samples": 202,
+    "max_running": 1.0,
+    "max_waiting": 0.0
+  },
+  "cross_run_raw_comparison": {
+    "primary": "fixed_pooled_step_s",
+    "candidate_step_s": 20.281701533352084,
+    "baseline_step_s": 20.20661328323696,
+    "step_s_change_pct": 0.3716023514807265,
+    "candidate_ms_per_step": 49.30552785995582,
+    "baseline_ms_per_step": 49.48874836089341,
+    "saved_ms_per_step": 0.1832205009375869,
+    "ms_per_step_reduction_pct": 0.37022658080068105,
+    "windows_med_change_pct": 0.03489022701816946,
+    "output_tok_s_change_pct": -1.4138025785219388,
+    "prefill": [
+      {
+        "ctx": 2000,
+        "candidate_cold_s": 2.440095250029117,
+        "baseline_cold_s": 2.431041133007966,
+        "candidate_cold_tok_s": 872.0971035760211,
+        "baseline_cold_tok_s": 875.3451231682747,
+        "cold_ttft_change_pct": 0.37243783736180536,
+        "cold_note": "Both cold_compile flags are true; actual MHC runtime differs, so this is only a cross-run raw timing comparison.",
+        "warm_independent": true,
+        "candidate_warm_s": 0.8382783400011249,
+        "baseline_warm_s": 0.8887508490006439,
+        "candidate_warm_tok_s": 2538.536305252912,
+        "baseline_warm_tok_s": 2394.3718336728793,
+        "warm_ttft_change_pct": -5.679039188122614,
+        "warm_kind": "minimum of two repeated TTFT requests",
+        "same_cold_compile_flag": true
+      },
+      {
+        "ctx": 32000,
+        "candidate_cold_s": 10.881572252023034,
+        "baseline_cold_s": 10.847696892975364,
+        "candidate_cold_tok_s": 2990.836181228263,
+        "baseline_cold_tok_s": 3000.1760116541554,
+        "cold_ttft_change_pct": 0.3122815781256394,
+        "cold_note": "Both cold_compile flags are true; actual MHC runtime differs, so this is only a cross-run raw timing comparison.",
+        "warm_independent": false,
+        "warm_note": "one combined request; stored warm equals cold and is not a separate warm sample",
+        "same_cold_compile_flag": true
+      },
+      {
+        "ctx": 128000,
+        "candidate_cold_s": 42.228542328986805,
+        "baseline_cold_s": 41.44591194699751,
+        "candidate_cold_tok_s": 3044.362720324202,
+        "baseline_cold_tok_s": 3101.849952400752,
+        "cold_ttft_change_pct": 1.8883174364461963,
+        "cold_note": "Both cold_compile flags are true; actual MHC runtime differs, so this is only a cross-run raw timing comparison.",
+        "warm_independent": false,
+        "warm_note": "one combined request; stored warm equals cold and is not a separate warm sample",
+        "same_cold_compile_flag": true
+      }
+    ]
+  },
+  "strict_ab_verdict": "NOT_A_MATCHED_AB",
+  "limitations": [
+    "old A MHC AR consumer selftest failed and no fused consumer capture; new B selftest passed and captured T=6 on all ranks",
+    "API bind/port, git revision, serving argv/script identity differ although63overlay/profile/benchmark bytes are identical",
+    "separate boots/time; no repeated independent A/B sample or SF6-specific causal speed conclusion",
+    "canonical records validate recorded request/output digests; no independent SSE transcript or dedicated SF6 GPU numerics/sanitizer"
+  ],
+  "original_candidate": {
+    "name": "sf6-direct-0909v1A",
+    "source_commit": "85e25370779c2b8a6c9aaefa275b1dc8f27d60d0",
+    "record_sha256": "8acb36b7d955dfd9883a7f1d6b36f7eafd619d434016182ea60e370319bc2bc9"
+  },
+  "baseline_record_sha256": "9167a2b2456a9cfa964802bfc498d9ce0f68b7e300636a0682e47c9c09c4bddc",
+  "ordered_request_sha256_match": true
+}

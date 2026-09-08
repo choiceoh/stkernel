@@ -1,0 +1,174 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "core",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "tests/test_logic.py",
+        "--component",
+        "core"
+      ],
+      "returncode": 0,
+      "seconds": 4.295,
+      "log": "/tmp/sf6-default-adoption-0909/main-sync/cpu-core-0.log",
+      "skipped": [],
+      "tests_run": 71161,
+      "counts": null
+    },
+    {
+      "suite": "sensitivity",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "bench/cpu_contracts.py",
+        "--mutation-audit",
+        "--report",
+        "/tmp/sf6-default-adoption-0909/main-sync/cpu-sensitivity-1.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.474,
+      "log": "/tmp/sf6-default-adoption-0909/main-sync/cpu-sensitivity-1.log",
+      "skipped": [],
+      "tests_run": 7,
+      "counts": {
+        "passed": true,
+        "coverage_complete": true,
+        "tests_run": 7,
+        "skipped": [],
+        "scope": "fault sensitivity of three declared CPU helpers only",
+        "controls": [
+          {
+            "contract": "math",
+            "tests_run": 98,
+            "count_unit": "assertions",
+            "passed": true,
+            "coverage_complete": true,
+            "skipped": [],
+            "error": null,
+            "mutation": null,
+            "applications": 0,
+            "scope": "declared CPU helper contract",
+            "full_suite": false
+          },
+          {
+            "contract": "layout",
+            "tests_run": 29,
+            "count_unit": "assertions",
+            "passed": true,
+            "coverage_complete": true,
+            "skipped": [],
+            "error": null,
+            "mutation": null,
+            "applications": 0,
+            "scope": "declared CPU helper contract",
+            "full_suite": false
+          },
+          {
+            "contract": "dispatch",
+            "tests_run": 18,
+            "count_unit": "assertions",
+            "passed": true,
+            "coverage_complete": true,
+            "skipped": [],
+            "error": null,
+            "mutation": null,
+            "applications": 0,
+            "scope": "declared CPU helper contract",
+            "full_suite": false
+          }
+        ],
+        "mutations": [
+          {
+            "name": "logits-byte-width",
+            "status": "detected",
+            "result": {
+              "contract": "math",
+              "tests_run": 15,
+              "count_unit": "assertions",
+              "passed": false,
+              "coverage_complete": true,
+              "skipped": [],
+              "error": {
+                "type": "SystemExit",
+                "message": "1",
+                "exit_code": 1
+              },
+              "mutation": "logits-byte-width",
+              "applications": 1,
+              "scope": "declared CPU helper contract",
+              "full_suite": false
+            }
+          },
+          {
+            "name": "request-boundary",
+            "status": "detected",
+            "result": {
+              "contract": "math",
+              "tests_run": 6,
+              "count_unit": "assertions",
+              "passed": false,
+              "coverage_complete": true,
+              "skipped": [],
+              "error": {
+                "type": "SystemExit",
+                "message": "1",
+                "exit_code": 1
+              },
+              "mutation": "request-boundary",
+              "applications": 1,
+              "scope": "declared CPU helper contract",
+              "full_suite": false
+            }
+          },
+          {
+            "name": "shard-stride",
+            "status": "detected",
+            "result": {
+              "contract": "layout",
+              "tests_run": 21,
+              "count_unit": "assertions",
+              "passed": false,
+              "coverage_complete": true,
+              "skipped": [],
+              "error": {
+                "type": "SystemExit",
+                "message": "1",
+                "exit_code": 1
+              },
+              "mutation": "shard-stride",
+              "applications": 4,
+              "scope": "declared CPU helper contract",
+              "full_suite": false
+            }
+          },
+          {
+            "name": "reuse-mask",
+            "status": "detected",
+            "result": {
+              "contract": "dispatch",
+              "tests_run": 1,
+              "count_unit": "assertions",
+              "passed": false,
+              "coverage_complete": true,
+              "skipped": [],
+              "error": {
+                "type": "SystemExit",
+                "message": "1",
+                "exit_code": 1
+              },
+              "mutation": "reuse-mask",
+              "applications": 1,
+              "scope": "declared CPU helper contract",
+              "full_suite": false
+            }
+          }
+        ],
+        "detected": 4,
+        "total": 4
+      }
+    }
+  ],
+  "passed": true,
+  "coverage_complete": true,
+  "tests_run": 71168
+}

@@ -1580,6 +1580,18 @@ class Glm5NextForConditionalGeneration(
         Runs inside the profile forward, before KV sizing, so the freed bytes
         become KV. No-op unless VLLM_GLM53_FP8_DENSE_FREE_BF16=1.
         """
+        if (not getattr(self, "_sf6_owners_finalized", False)
+                and "sf6" in {part.strip() for part in os.environ.get(
+                    "VLLM_GLM53_B12X_STATIC_V2", "").split(",")}):
+            # This entry is above the traced region and runs after the full
+            # checkpoint walk, before profiling and KV sizing. Never release
+            # scale Parameters from the loader's earlier per-module hooks.
+            from vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe import (
+                finalize_packed_scale_owners,
+            )
+
+            finalize_packed_scale_owners(self)
+            self._sf6_owners_finalized = True
         if not getattr(self, "_bf16_released", False):
             self._bf16_released = True
             try:
