@@ -160,6 +160,28 @@ def snapshot_errors(mode, expected, head_before, head_after, ranks, phase,
     return errors
 
 
+def runtime_binding_errors(mode, expected, head, record, prepared):
+    """A completed record and valid preparation latch one existing boot.
+
+    This permits passive reads after the hold is released. Current mounted
+    sources still have to pass the subsequent four-rank snapshot comparison.
+    """
+    errors = []
+    if not isinstance(prepared, dict) or set(prepared) != set(HOSTS):
+        return ["runtime read requires four valid prepared rank reports"]
+    for host, report in prepared.items():
+        errors.extend(host + " prepared: " + error for error in proof.validate_report(report, expected))
+    reference = prepared.get("srv2", {})
+    if (not isinstance(head, dict) or mode_from_metadata(head) != mode
+            or head.get("image") != proof.IMAGE
+            or any(head.get(key) != reference.get(key) for key in ("boot_id", "image", "knobs"))):
+        errors.append("runtime head does not match the prepared boot/image/configuration")
+    if (not record or record.get("record", {}).get("boot_id") != reference.get("boot_id")
+            or not reference.get("boot_id")):
+        errors.append("completed arm record does not match the prepared head boot")
+    return errors
+
+
 class Reader:
     """The only system interactions; all commands are reads of existing state."""
 
@@ -292,14 +314,21 @@ class Observer:
         before_record = self.records().get(name)
         head_before = self.reader.head()
         owned_before = self.reader.owned()
-        ranks = self.reader.ranks(mode, self.expected) if owned_before else {}
+        prepared = self.prepared(name) if phase == "runtime" else None
+        binding_errors = (runtime_binding_errors(mode, self.expected, head_before, before_record, prepared)
+                          if phase == "runtime" else [])
+        may_collect = not binding_errors if phase == "runtime" else owned_before
+        ranks = self.reader.ranks(mode, self.expected) if may_collect else {}
         head_after = self.reader.head()
         owned_after = self.reader.owned()
         after_record = self.records().get(name)
         errors = snapshot_errors(mode, self.expected, head_before, head_after, ranks, phase,
-                                 before_record, after_record, self.prepared(name) if phase == "runtime" else None)
-        if not owned_before or not owned_after:
+                                 before_record, after_record, prepared)
+        if phase == "prepared" and (not owned_before or not owned_after):
             errors.append("requested session did not own the boot hold throughout snapshot")
+        if phase == "runtime":
+            errors.extend(binding_errors)
+            errors.extend(runtime_binding_errors(mode, self.expected, head_after, after_record, prepared))
         arm = self.state["arms"][name]
         if arm.get("head_boot_id") and arm["head_boot_id"] != (head_before or {}).get("boot_id"):
             errors.append("a different boot already owns this arm's prepared proof")
@@ -327,6 +356,7 @@ class Observer:
                        started_at=started, completed_at=self.clock(), head_before=head_before,
                        head_after=head_after, record_sha256=(before_record or {}).get("sha256"),
                        owned_before=owned_before, owned_after=owned_after,
+                       runtime_bound_before=not binding_errors if phase == "runtime" else None,
                        record_present_before=bool(before_record), record_present_after=bool(after_record),
                        artifacts_sha256=artifacts, errors=errors)
         (attempt / "receipt.json").write_bytes(json_bytes(receipt))
@@ -409,8 +439,16 @@ def terminal_failure(directory, session, ticket):
     value = json.loads(path.read_text())
     if ticket and value.get("ticket") != ticket:
         return "reservation ticket changed while observing"
-    if value.get("state") in ("cancelled", "finished") and value.get("outcome") != "succeeded":
-        return "reservation terminated: " + str(value.get("outcome", value.get("state")))
+    if value.get("state") == "cancelled":
+        return "reservation terminated: cancelled"
+    if value.get("state") == "finished":
+        rc, outcome = value.get("returncode"), value.get("outcome")
+        # Current records retain returncode; older controllers may also retain
+        # outcome. Successful release must not abort an in-flight passive read.
+        if ((type(rc) is int and rc == 0 and outcome not in ("failed", "cancelled"))
+                or (rc is None and outcome == "succeeded")):
+            return None
+        return "reservation terminated: " + str(outcome or f"returncode={rc}")
     return None
 
 
@@ -421,7 +459,7 @@ def main(argv=None):
     parser.add_argument("--baseline", required=True)
     parser.add_argument("--timeout", type=float, default=7200)
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--session", required=True, help="only read this session's owned boot hold")
+    parser.add_argument("--session", required=True, help="prepare only this session's owned boot; finish reads on the same recorded boot")
     parser.add_argument("--ticket")
     parser.add_argument("--fleet-dir", type=Path, default=Path("/home/choiceoh/glm53-logs/fleet"))
     args = parser.parse_args(argv)

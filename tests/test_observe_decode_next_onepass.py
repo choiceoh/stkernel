@@ -36,7 +36,7 @@ class FakeReader:
 
     def head(self):
         return dict(boot_id="srv2|" + self.mode + self.suffix, running=True,
-                    image=observer.proof.IMAGE, knobs=observer.proof.expected_knobs(self.mode))
+                    image=observer.proof.IMAGE, knobs=fixtures.report(self.mode, "srv2")["knobs"])
 
     def ranks(self, mode, expected):
         self.rank_calls += 1
@@ -76,6 +76,8 @@ class ObserverTests(unittest.TestCase):
             self.reader.mode = mode
             self.agent.snapshot(name, "prepared")
             sha = self.record(name)
+            if mode == "baseline":
+                self.reader.owner = False  # Final B survives canonical release.
             self.agent.snapshot(name, "runtime")
             arm = self.agent.state["arms"][name]
             self.assertEqual(arm["status"], "PASS")
@@ -155,6 +157,55 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(self.reader.rank_calls, calls)
         self.assertEqual(self.agent.state["arms"]["runA"]["status"], "FAIL")
 
+    def test_runtime_release_during_collection_keeps_latched_boot_valid(self):
+        self.agent.snapshot("runA", "prepared")
+        self.record("runA")
+        self.reader.on_ranks = lambda: setattr(self.reader, "owner", False)
+        self.agent.snapshot("runA", "runtime")
+        self.assertEqual(self.agent.state["arms"]["runA"]["status"], "PASS")
+        receipt = json.loads((self.out / "observed-runtime-runA.json").read_text())
+        self.assertTrue(receipt["owned_before"])
+        self.assertFalse(receipt["owned_after"])
+        self.assertTrue(receipt["runtime_bound_before"])
+
+    def test_runtime_after_release_new_boot_never_collects_or_passes(self):
+        self.agent.snapshot("runA", "prepared")
+        self.record("runA")
+        self.reader.owner, self.reader.suffix = False, "new-boot"
+        calls = self.reader.rank_calls
+        self.agent.snapshot("runA", "runtime")
+        self.assertEqual(self.reader.rank_calls, calls)
+        self.assertEqual(self.agent.state["arms"]["runA"]["status"], "FAIL")
+        self.assertFalse((self.out / "observed-runtime-runA.json").exists())
+
+    def test_after_release_still_rejects_mounted_source_drift(self):
+        self.agent.snapshot("runA", "prepared")
+        self.record("runA")
+        self.reader.owner = False
+        original = self.reader.ranks
+        def changed(mode, expected):
+            ranks = original(mode, expected)
+            ranks["srv3"]["report"]["source_sha256"] = {"/pkg/changed.py": "f" * 64}
+            return ranks
+        with patch.object(self.reader, "ranks", side_effect=changed):
+            self.agent.snapshot("runA", "runtime")
+        self.assertEqual(self.agent.state["arms"]["runA"]["status"], "FAIL")
+        self.assertFalse((self.out / "observed-runtime-runA.json").exists())
+
+    def test_runtime_latch_rejects_head_image_configuration_or_missing_record(self):
+        self.agent.snapshot("runA", "prepared")
+        self.record("runA")
+        record = self.agent.records()["runA"]
+        prepared = self.agent.prepared("runA")
+        self.assertEqual(observer.runtime_binding_errors("candidate", fixtures.MANIFEST,
+                         self.reader.head(), record, prepared), [])
+        for field, value in (("image", "other-image"), ("knobs", {}), ("running", False)):
+            head = dict(self.reader.head(), **{field: value})
+            self.assertTrue(observer.runtime_binding_errors("candidate", fixtures.MANIFEST,
+                            head, record, prepared), field)
+        self.assertTrue(observer.runtime_binding_errors("candidate", fixtures.MANIFEST,
+                        self.reader.head(), None, prepared))
+
     def test_partial_record_is_ignored_and_duplicate_complete_records_fail(self):
         path = self.out / "records.raw.jsonl"
         raw = b'{"name":"runA","boot_id":"actual"}'
@@ -189,6 +240,12 @@ class ObserverTests(unittest.TestCase):
         before = path.read_bytes()
         self.assertIn("terminated", observer.terminal_failure(directory, "session", "ticket"))
         self.assertEqual(path.read_bytes(), before)
+        for success in (dict(state="finished", returncode=0),
+                        dict(state="finished", outcome="succeeded")):
+            path.write_text(json.dumps(dict(ticket="ticket", **success)))
+            self.assertIsNone(observer.terminal_failure(directory, "session", "ticket"))
+        path.write_text(json.dumps(dict(ticket="ticket", state="cancelled", returncode=0)))
+        self.assertIn("cancelled", observer.terminal_failure(directory, "session", "ticket"))
 
 
 class ReaderTests(unittest.TestCase):
