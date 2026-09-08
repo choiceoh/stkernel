@@ -343,7 +343,15 @@ or selected-package dependency conflict was introduced; two existing unrelated
 conflicts remain recorded. No Torch/context/device or CUDA API was used.
 The [v6 pair](../measurements/glm53_ep_local_20260908/binding_gpu_submission/v6queued/README.md)
 then entered the normal queue at 20:52:34 using frozen `63f56a54` and the exact
-CPU2 capsule. That receipt is queue admission, not a clean GPU result.
+CPU2 capsule. The subsequent [completed v6 pair](../measurements/glm53_ep_local_20260908/binding_gpu_submission/v6completed/README.md)
+received GO at 21:02:53 and independently verified **34 errors/exit86 for
+installed13.3.1 versus 0 errors/exit0 for capsule13.0.3**. Both returned one
+device and driver API13000. The exact baseline failure is retained, so the
+separate `COMPATIBILITY_OBSERVED` verdict still has outer exit1. All four
+original stopped container records match the restored records exactly before
+handoff at 21:03:09. The later live container changes are separately recorded
+in the next holder's interval. V6 is complete and no longer queued; this is
+minimal binding compatibility, not full CuTe/MoE or prefill validation.
 
 The subsequent CPU14 candidate removes the Q0 store helper's short-request
 L2-retention predicate from both store paths: this dispatcher only admits
@@ -356,10 +364,17 @@ poisoned invalid-route weight storage and exact store addresses/payloads.
 The current full offline runner requires a matching CPU14 receipt before GPU
 execution; queued binding v6 retains its independent frozen CPU13 kernel.
 The [CPU14 preparation](../measurements/glm53_ep_local_20260908/cpu14/README.md)
-was refused before creating a source clone or job: head had 6.10 GiB available,
-below the unchanged 12 GiB guard. The expected 71-test pinned suite and actual
-CuTe compilation have not run. Compiler and runtime savings require separate
-evidence; the 18 local tests are not a compiler or GPU PASS.
+first refused head's 6.10 GiB available memory against the unchanged 12 GiB
+guard. After the prior holder ended, memory rose to 88.89 GiB and one normal
+CPU14 run passed at 21:04:38 KST: actual CuTe, 24 Triton variants and 71 pinned
+tests with zero failures/errors/skips/CUDA initialization. Source `881456a1`
+binds all 13 mounted and 18 contract files. REG168/STACK112/SHARED1024 stay
+unchanged; PTX941539→939211B and cubin298456→288664B. All remap PTX hashes match
+CPU13. The [receipt-bound PTX inspection](../measurements/glm53_ep_local_20260908/cpu14/q0-load-store-inspection.md)
+checks eight static weight loads now guarded by a valid-ID branch and ten Q0
+adaptive stores replaced by ten plain stores. It does not claim fewer executed
+transactions or measured speed. This uses the original image's bindings: a full capsule-bound CuTe
+compile and GPU suite still precede any performance conclusion.
 
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).

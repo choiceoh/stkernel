@@ -1,0 +1,37 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-0908-14",
+  "revision": "881456a1f43fcf61de1bb5822b883dd2fd32e693",
+  "scheduler": "/home/choiceoh/stkernel",
+  "scheduler_revision": "5ba0747a739fea095b4590d0c07c9c5e438eb7fe",
+  "scheduler_approved_main": "5ba0747a739fea095b4590d0c07c9c5e438eb7fe",
+  "approved_scheduler_ancestor": true,
+  "approved_identical_directories": [
+    "bench",
+    "launchers",
+    "profiles",
+    "tests"
+  ],
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "eplocalcpu0908v14head",
+    "6",
+    "CPU14 committed EP local kernel follow-up; compare CPU13; runc no devices 4g 2cpu",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-ep-local-0908-14/probes/run_glm53_ep_local_cpu_compile.py",
+    "--image",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "--arm",
+    "local",
+    "--output",
+    "/tmp/glm53-ep-local-compile0908-14-head/local"
+  ],
+  "created": 1788869068.0678446,
+  "host_mem_available_kib": 93212272,
+  "existing_frozen_source_reused": false,
+  "serving_memory_reclaimed": false,
+  "reason": "CPU14 committed EP local kernel candidate, current CPU-only wrapper and source contracts; compare CPU13"
+}

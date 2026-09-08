@@ -1,0 +1,14 @@
+{
+  "tests": 71,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "cuda_initialized": false,
+  "mounted_sources": 13,
+  "contract_sources": 18,
+  "remap_count": 24,
+  "remap_ptx_equal": true,
+  "full_gpu_acceptance": false,
+  "performance_acceptance": false,
+  "compiled_artifacts_verified": true
+}

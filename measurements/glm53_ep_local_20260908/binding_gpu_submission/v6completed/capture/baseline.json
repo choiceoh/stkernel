@@ -1,0 +1,47 @@
+{
+  "verdict": "OBSERVED",
+  "phase": "complete",
+  "arm": "baseline",
+  "performance_acceptance": false,
+  "full_gpu_acceptance": false,
+  "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "scope": "Torch context then binding identity/count/version only; no MoE or CuTe",
+  "cuda_initialized_before": false,
+  "cuda_initialized_after": true,
+  "binding_identity": {
+    "version": "13.3.1",
+    "root": "/usr/local/lib/python3.12/dist-packages",
+    "modules": {
+      "cuda.bindings.driver": {
+        "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+        "sha256": "23596c158b5ef437517605405aa25978d7a442fa1c222d59a392300bc39a0119"
+      },
+      "cuda.bindings._bindings.cydriver": {
+        "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+        "sha256": "6ae437b694ad31accb9cd8745fa5dd9e52e11af045e0da683966be7b3341e67e"
+      }
+    },
+    "distributions": {
+      "cuda-bindings": {
+        "version": "13.3.1",
+        "path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+        "sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f"
+      },
+      "cuda-python": {
+        "version": "13.3.1",
+        "path": "/usr/local/lib/python3.12/dist-packages/cuda_python-13.3.1.dist-info/METADATA",
+        "sha256": "8bea0c1333aaef1205d3cdea2690d935b4127448c1ed78e55c179fe1658856fd"
+      }
+    }
+  },
+  "cuda_bindings": "13.3.1",
+  "count_result": [
+    0,
+    1
+  ],
+  "version_result": [
+    0,
+    13000
+  ],
+  "tensor_numel": 1
+}
