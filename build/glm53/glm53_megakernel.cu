@@ -480,6 +480,8 @@ struct MKGemm2Ctx {
   // emits the fp8 A group + per-row scale into g_mk2_aq / g_mk2_axs -- and
   // the down launch runs with a_ready, staging those groups instead of
   // quantizing x. Its griddepcontrol.wait orders it after the gate_up grid.
+  const uint8_t* input_q = nullptr;  // invocation-owned packed input
+  const float* input_s = nullptr;
   int a_ready = 0;
   int pair_act = 0;
   int n_int = 0;               // gate width = up width = the down launch's k
@@ -1087,6 +1089,384 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     if constexpr (LR) lr_done();
   }
   MK2_TS(3);
+}
+
+// M<=8 input reuse. Scratch belongs to the individual invocation/graph;
+// it never aliases the shared-expert handoff. Each warp stages only the
+// sixteen W rows it consumes, so the K loop needs no block-wide barrier.
+struct MKInputPackCtx {
+  const __nv_bfloat16* x;
+  uint8_t* aq;
+  float* scales;
+  int m, k;
+};
+__global__ void mk_input_pack_kernel(MKInputPackCtx c) {
+  asm volatile("griddepcontrol.launch_dependents;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  const int row=threadIdx.x>>5, lane=threadIdx.x&31, kb=blockIdx.x;
+  float v[4]={}, mx=0;
+  if (row<c.m) {
+    const uint2 raw=*(const uint2*)(c.x+(size_t)row*c.k+kb*KSTEP+lane*4);
+    const __nv_bfloat16* bf=(const __nv_bfloat16*)&raw;
+#pragma unroll
+    for (int j=0;j<4;++j) {v[j]=__bfloat162float(bf[j]);mx=fmaxf(mx,fabsf(v[j]));}
+  }
+  mx=__uint_as_float(__reduce_max_sync(0xffffffffu,__float_as_uint(mx)));
+  if (row<c.m) {
+    const float scale=mk_act_scale(mx), inv=mk_act_rcp(scale);
+    const uint32_t packed=mk_f32x4_to_e4m3(v[0]*inv,v[1]*inv,v[2]*inv,v[3]*inv);
+    const int q=lane>>3, word=lane&7, ks=((word>>1)-q)&3;
+    const size_t offset=(size_t)kb*1024+ks*256+(row*4+q)*8+(word&1)*4;
+    *(uint32_t*)(c.aq+offset)=packed;
+    if (lane==0)c.scales[kb*8+row]=scale;
+  }
+}
+constexpr int GEMM_INPUT_SMEM=MK_SMEM_ALIGN+W4_RAW_NBUF2*W4_RAW_BYTES;
+__global__ void __launch_bounds__(MK_THREADS,3)
+mk_gemm_input_kernel(const MKGemm2Ctx c) {
+  asm volatile("griddepcontrol.launch_dependents;");
+  extern __shared__ uint8_t smem[];
+  uint8_t* sraw=smem;
+  const uint32_t sm=(uint32_t)__cvta_generic_to_shared(sraw);
+  sraw+=(MK_SMEM_ALIGN-(sm&(MK_SMEM_ALIGN-1)))&(MK_SMEM_ALIGN-1);
+  __shared__ int last;
+  const int lane=threadIdx.x&31, warp=threadIdx.x>>5, g=lane>>2, q=lane&3;
+  const int kblk=c.k/KSTEP, nt=blockIdx.x/c.ksr, slice=blockIdx.x%c.ksr;
+  const int kb0=kblk*slice/c.ksr, kbn=kblk*(slice+1)/c.ksr;
+  const bool live_warp=nt*128+warp*16<c.n_orig;
+  constexpr int NB=W4_RAW_NBUF2,DIST=NB-1;
+  auto stage_raw=[&](int kb,int buf) {
+    // The final 6416-wide tile has only one real 16-row warp.
+    if(!live_warp) {mk_cp_commit();return;}
+    const uint8_t* w=c.wq4+((size_t)nt*kblk+kb)*8192;
+    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)nt*kblk+kb)*1024;
+    uint8_t* d=sraw+buf*W4_RAW_BYTES;
+#pragma unroll
+    for(int u=0;u<2;++u) {
+      const int t=warp*64+lane+u*32,r=t>>2,ch=t&3;
+      mk_cp_async16(d+r*W4_RAW_PITCH+((ch^((r>>1)&3))<<4),w+(size_t)t*16);
+    }
+    if(lane<8) {
+      const int st=warp*8+lane;
+      mk_cp_async16(d+W4_RAW_NIB+st*16,s+(size_t)st*16);
+    }
+    mk_cp_commit();
+  };
+  float acc[4]={};
+  auto mma_fold=[&](int kb) {
+    if(!live_warp)return;
+    const uint8_t* raw=sraw+(kb%NB)*W4_RAW_BYTES;
+    uint32_t l0a[2],l1a[2],l0b[2],l1b[2];int slot[2];
+#pragma unroll
+    for(int j=0;j<2;++j) {
+      const int r=warp*16+j*8+g;
+      const uint32_t ex=*(const uint16_t*)(raw+W4_RAW_NIB+r*8+2*q);
+      const uint32_t ea=ex&255u,eb=ex>>8;
+      const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+      const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
+    }
+    float ka[4]={};
+#pragma unroll
+    for(int ks=0;ks<4;++ks) {
+      const int wsel=(ks+q)&3;uint32_t wb[2][2];
+#pragma unroll
+      for(int j=0;j<2;++j) {
+        const uint32_t w=*(const uint32_t*)(raw+slot[j]+4*wsel);
+        const uint32_t l0=wsel<2?l0a[j]:l0b[j],l1=wsel<2?l1a[j]:l1b[j];
+        wb[j][0]=__byte_perm(l0,l1,w&0x7777u)|__byte_perm(0x8000u,0u,(w>>3)&0x1111u);
+        wb[j][1]=__byte_perm(l0,l1,(w>>16)&0x7777u)|__byte_perm(0x8000u,0u,(w>>19)&0x1111u);
+      }
+      uint2 x=make_uint2(0,0);
+      if(g<c.m)x=*(const uint2*)(c.input_q+(size_t)kb*1024+ks*256+lane*8);
+      asm volatile("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
+          "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+          : "+f"(ka[0]),"+f"(ka[1]),"+f"(ka[2]),"+f"(ka[3])
+          : "r"(wb[0][0]),"r"(wb[1][0]),"r"(wb[0][1]),"r"(wb[1][1]),"r"(x.x),"r"(x.y));
+    }
+    const float s0=2*q<c.m?c.input_s[kb*8+2*q]*c.wgs:0.f;
+    const float s1=2*q+1<c.m?c.input_s[kb*8+2*q+1]*c.wgs:0.f;
+    acc[0]+=ka[0]*s0;acc[1]+=ka[1]*s1;acc[2]+=ka[2]*s0;acc[3]+=ka[3]*s1;
+  };
+#pragma unroll
+  for(int d=0;d<DIST;++d)if(kb0+d<kbn)stage_raw(kb0+d,(kb0+d)%NB);
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  mk_cp_wait_upto(min(DIST-1,kbn-kb0-1));__syncwarp();
+  for(int kb=kb0;;++kb) {
+    if(kb+DIST<kbn)stage_raw(kb+DIST,(kb+DIST)%NB);
+    mma_fold(kb);
+    if(kb+1>=kbn)break;
+    mk_cp_wait_upto(min(DIST-1,kbn-kb-2));__syncwarp();
+  }
+  // Existing fixed-order split reduction and rounding are retained.
+  auto store_tile=[&](auto store) {
+#pragma unroll
+    for(int i=0;i<4;++i) {
+      const int row=2*q+(i&1),col=nt*128+warp*16+g+(i>=2?8:0);
+      if(row<c.m && col<c.n_orig)store(row,col,acc[i]);
+    }
+  };
+  if(c.ksr==1) {
+    store_tile([&](int r,int col,float v) {
+      if(col<c.n_orig)c.out[(size_t)r*c.n_orig+col]=__float2bfloat16(v*(c.rgs?c.rgs[col]:1.f));
+    });return;
+  }
+  float* partial=g_mk2_partial+(size_t)slice*c.m*c.n;
+  store_tile([&](int r,int col,float v){partial[(size_t)r*c.n+col]=v;});
+  __syncthreads();__threadfence();__syncthreads();
+  if(threadIdx.x==0) {
+    const unsigned prev=atomicAdd(&g_mk2_tile_arrive[nt],1u);
+    last=prev+1u==(unsigned)c.ksr;
+    if(last)g_mk2_tile_arrive[nt]=0u;
+  }
+  __syncthreads();
+  if(last) {
+    __threadfence();
+    for(int t=threadIdx.x;t<c.m*32;t+=MK_THREADS) {
+      const int r=t>>5,col=nt*128+(t&31)*4;
+      if(col>=c.n_orig)continue;  // padded partials and row scales are unused
+      const float* src=g_mk2_partial+(size_t)r*c.n+col;
+      float4 v=make_float4(0,0,0,0);
+      for(int s=0;s<c.ksr;++s) {
+        const float4 p=__ldcg((const float4*)(src+(size_t)s*c.m*c.n));
+        v.x+=p.x;v.y+=p.y;v.z+=p.z;v.w+=p.w;
+      }
+      const float4 rg=c.rgs?*(const float4*)(c.rgs+col):make_float4(1,1,1,1);
+      v.x*=rg.x;v.y*=rg.y;v.z*=rg.z;v.w*=rg.w;
+      __nv_bfloat16* out=c.out+(size_t)r*c.n_orig+col;
+      if(col<c.n_orig)out[0]=__float2bfloat16(v.x);
+      if(col+1<c.n_orig)out[1]=__float2bfloat16(v.y);
+      if(col+2<c.n_orig)out[2]=__float2bfloat16(v.z);
+      if(col+3<c.n_orig)out[3]=__float2bfloat16(v.w);
+    }
+  }
+}
+
+// C=1 opt-in: one CTA per 16 output columns, one warp per original K slice.
+// W4 packs, FP8 preparation, per-slice arithmetic and reduction order are unchanged.
+// Exact route only: M6/N6416/K4096 and split8; two W staging buffers.
+// MODE 0 retains runtime geometry; MODE 1/2 specialize it, with 3/4 blocks per SM.
+template <int MODE>
+__global__ void __launch_bounds__(MK_THREADS,MODE==2?4:3)
+mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
+  constexpr int NB=2;
+  const int m=MODE?6:c.m;
+  asm volatile("griddepcontrol.launch_dependents;");
+  extern __shared__ uint8_t smem[];
+  uint8_t* sraw=smem;
+  const uint32_t sm=(uint32_t)__cvta_generic_to_shared(sraw);
+  sraw+=(MK_SMEM_ALIGN-(sm&(MK_SMEM_ALIGN-1)))&(MK_SMEM_ALIGN-1);
+  float* partial=reinterpret_cast<float*>(sraw+NB*W4_RAW_BYTES);
+  const int lane=threadIdx.x&31, warp=threadIdx.x>>5, g=lane>>2, q=lane&3;
+  const int kblk=MODE?32:c.k/KSTEP, nt=blockIdx.x, slice=warp;
+  const int kb0=MODE?warp*4:kblk*slice/c.ksr;
+  const int kbn=MODE?kb0+4:kblk*(slice+1)/c.ksr;
+  constexpr int DIST=NB-1;
+  auto stage_raw=[&](int kb,int buf) {
+    const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
+    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/8)*kblk+kb)*1024+(nt%8)*128;
+    uint8_t* d=sraw+buf*W4_RAW_BYTES;
+#pragma unroll
+    for(int u=0;u<2;++u) {
+      const int t=warp*64+lane+u*32,r=t>>2,ch=t&3;
+      mk_cp_async16(d+r*W4_RAW_PITCH+((ch^((r>>1)&3))<<4),w+(size_t)(lane+u*32)*16);
+    }
+    if(lane<8) {
+      const int st=warp*8+lane;
+      mk_cp_async16(d+W4_RAW_NIB+st*16,s+(size_t)lane*16);
+    }
+    mk_cp_commit();
+  };
+  float acc[4]={};
+  auto mma_fold=[&](int kb) {
+    const uint8_t* raw=sraw+(kb%NB)*W4_RAW_BYTES;
+    uint32_t l0a[2],l1a[2],l0b[2],l1b[2];int slot[2];
+#pragma unroll
+    for(int j=0;j<2;++j) {
+      const int r=warp*16+j*8+g;
+      const uint32_t ex=*(const uint16_t*)(raw+W4_RAW_NIB+r*8+2*q);
+      const uint32_t ea=ex&255u,eb=ex>>8;
+      const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+      const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
+    }
+    float ka[4]={};
+#pragma unroll
+    for(int ks=0;ks<4;++ks) {
+      const int wsel=(ks+q)&3;uint32_t wb[2][2];
+#pragma unroll
+      for(int j=0;j<2;++j) {
+        const uint32_t w=*(const uint32_t*)(raw+slot[j]+4*wsel);
+        const uint32_t l0=wsel<2?l0a[j]:l0b[j],l1=wsel<2?l1a[j]:l1b[j];
+        wb[j][0]=__byte_perm(l0,l1,w&0x7777u)|__byte_perm(0x8000u,0u,(w>>3)&0x1111u);
+        wb[j][1]=__byte_perm(l0,l1,(w>>16)&0x7777u)|__byte_perm(0x8000u,0u,(w>>19)&0x1111u);
+      }
+      uint2 x=make_uint2(0,0);
+      if(g<m)x=*(const uint2*)(c.input_q+(size_t)kb*1024+ks*256+lane*8);
+      asm volatile("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
+          "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+          : "+f"(ka[0]),"+f"(ka[1]),"+f"(ka[2]),"+f"(ka[3])
+          : "r"(wb[0][0]),"r"(wb[1][0]),"r"(wb[0][1]),"r"(wb[1][1]),"r"(x.x),"r"(x.y));
+    }
+    const float s0=2*q<m?c.input_s[kb*8+2*q]*c.wgs:0.f;
+    const float s1=2*q+1<m?c.input_s[kb*8+2*q+1]*c.wgs:0.f;
+    acc[0]+=ka[0]*s0;acc[1]+=ka[1]*s1;acc[2]+=ka[2]*s0;acc[3]+=ka[3]*s1;
+  };
+#pragma unroll
+  for(int d=0;d<DIST;++d)if(kb0+d<kbn)stage_raw(kb0+d,(kb0+d)%NB);
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  mk_cp_wait_upto(min(DIST-1,kbn-kb0-1));__syncwarp();
+  if constexpr (MODE) {
+#pragma unroll
+    for(int offset=0;offset<4;++offset) {
+      const int kb=kb0+offset;
+      if(offset+DIST<4)stage_raw(kb+DIST,(kb+DIST)%NB);
+      mma_fold(kb);
+      if(offset+1<4) {mk_cp_wait_upto(0);__syncwarp();}
+    }
+  } else {
+  for(int kb=kb0;;++kb) {
+    if(kb+DIST<kbn)stage_raw(kb+DIST,(kb+DIST)%NB);
+    mma_fold(kb);
+    if(kb+1>=kbn)break;
+    mk_cp_wait_upto(min(DIST-1,kbn-kb-2));__syncwarp();
+  }
+  }
+  // Each warp owns one of the original eight K slices. Publish all
+  // 6x16 partials inside this CTA, then reduce in exactly the old slice order.
+  // This removes device-wide partial traffic, arrival atomics and fences.
+#pragma unroll
+  for(int i=0;i<4;++i) {
+    const int row=2*q+(i&1),col=g+(i>=2?8:0);
+    if(row<m)partial[(warp*m+row)*16+col]=acc[i];
+  }
+  __syncthreads();
+  for(int t=threadIdx.x;t<m*16;t+=MK_THREADS) {
+    const int row=t/16,col=nt*16+t%16;
+    float value=0.f;
+#pragma unroll
+    for(int s=0;s<8;++s)value+=partial[s*m*16+t];
+    value*=c.rgs?c.rgs[col]:1.f;
+    c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
+  }
+}
+
+// Opt-in CTA=4: preserve 10/11/11 groups for foreground N4096/N6144.
+template <int TILES, int NB>
+__global__ void __launch_bounds__(TILES*96,TILES==1?6:3)
+mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
+  constexpr int MODE=0,m=6;
+  constexpr int RAW_NIB=TILES*48*64,RAW_BYTES=TILES*48*72;
+  asm volatile("griddepcontrol.launch_dependents;");
+  extern __shared__ uint8_t smem[];
+  uint8_t* sraw=smem;
+  const uint32_t sm=(uint32_t)__cvta_generic_to_shared(sraw);
+  sraw+=(MK_SMEM_ALIGN-(sm&(MK_SMEM_ALIGN-1)))&(MK_SMEM_ALIGN-1);
+  float* partial=reinterpret_cast<float*>(sraw+NB*RAW_BYTES);
+  const int lane=threadIdx.x&31, warp=threadIdx.x>>5, g=lane>>2, q=lane&3;
+  const int kblk=32,nt=blockIdx.x*TILES+warp/3,slice=warp%3;
+  const int kb0=32*slice/3,kbn=32*(slice+1)/3;
+  constexpr int DIST=NB-1;
+  auto stage_raw=[&](int kb,int buf) {
+    const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
+    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/8)*kblk+kb)*1024+(nt%8)*128;
+    uint8_t* d=sraw+buf*RAW_BYTES;
+#pragma unroll
+    for(int u=0;u<2;++u) {
+      const int t=warp*64+lane+u*32,r=t>>2,ch=t&3;
+      mk_cp_async16(d+r*W4_RAW_PITCH+((ch^((r>>1)&3))<<4),w+(size_t)(lane+u*32)*16);
+    }
+    if(lane<8) {
+      const int st=warp*8+lane;
+      mk_cp_async16(d+RAW_NIB+st*16,s+(size_t)lane*16);
+    }
+    mk_cp_commit();
+  };
+  float acc[4]={};
+  auto mma_fold=[&](int kb) {
+    const uint8_t* raw=sraw+(kb%NB)*RAW_BYTES;
+    uint32_t l0a[2],l1a[2],l0b[2],l1b[2];int slot[2];
+#pragma unroll
+    for(int j=0;j<2;++j) {
+      const int r=warp*16+j*8+g;
+      const uint32_t ex=*(const uint16_t*)(raw+RAW_NIB+r*8+2*q);
+      const uint32_t ea=ex&255u,eb=ex>>8;
+      const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+      const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
+    }
+    float ka[4]={};
+#pragma unroll
+    for(int ks=0;ks<4;++ks) {
+      const int wsel=(ks+q)&3;uint32_t wb[2][2];
+#pragma unroll
+      for(int j=0;j<2;++j) {
+        const uint32_t w=*(const uint32_t*)(raw+slot[j]+4*wsel);
+        const uint32_t l0=wsel<2?l0a[j]:l0b[j],l1=wsel<2?l1a[j]:l1b[j];
+        wb[j][0]=__byte_perm(l0,l1,w&0x7777u)|__byte_perm(0x8000u,0u,(w>>3)&0x1111u);
+        wb[j][1]=__byte_perm(l0,l1,(w>>16)&0x7777u)|__byte_perm(0x8000u,0u,(w>>19)&0x1111u);
+      }
+      uint2 x=make_uint2(0,0);
+      if(g<m)x=*(const uint2*)(c.input_q+(size_t)kb*1024+ks*256+lane*8);
+      asm volatile("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
+          "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+          : "+f"(ka[0]),"+f"(ka[1]),"+f"(ka[2]),"+f"(ka[3])
+          : "r"(wb[0][0]),"r"(wb[1][0]),"r"(wb[0][1]),"r"(wb[1][1]),"r"(x.x),"r"(x.y));
+    }
+    const float s0=2*q<m?c.input_s[kb*8+2*q]*c.wgs:0.f;
+    const float s1=2*q+1<m?c.input_s[kb*8+2*q+1]*c.wgs:0.f;
+    acc[0]+=ka[0]*s0;acc[1]+=ka[1]*s1;acc[2]+=ka[2]*s0;acc[3]+=ka[3]*s1;
+  };
+#pragma unroll
+  for(int d=0;d<DIST;++d)if(kb0+d<kbn)stage_raw(kb0+d,(kb0+d)%NB);
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  mk_cp_wait_upto(min(DIST-1,kbn-kb0-1));__syncwarp();
+  if constexpr (MODE) {
+#pragma unroll
+    for(int offset=0;offset<4;++offset) {
+      const int kb=kb0+offset;
+      if(offset+DIST<4)stage_raw(kb+DIST,(kb+DIST)%NB);
+      mma_fold(kb);
+      if(offset+1<4) {mk_cp_wait_upto(0);__syncwarp();}
+    }
+  } else {
+  for(int kb=kb0;;++kb) {
+    if(kb+DIST<kbn)stage_raw(kb+DIST,(kb+DIST)%NB);
+    mma_fold(kb);
+    if(kb+1>=kbn)break;
+    mk_cp_wait_upto(min(DIST-1,kbn-kb-2));__syncwarp();
+  }
+  }
+  // Each three-warp group owns the original three K slices. Publish all
+  // 6x16 partials inside this CTA, then reduce in exactly the old slice order.
+  // This removes device-wide partial traffic, arrival atomics and fences.
+#pragma unroll
+  for(int i=0;i<4;++i) {
+    const int row=2*q+(i&1),col=g+(i>=2?8:0);
+    if(row<m)partial[(warp*m+row)*16+col]=acc[i];
+  }
+  __syncthreads();
+  for(int t=threadIdx.x;t<TILES*96;t+=TILES*96) {
+    const int tile=t/96,local=t%96,row=local/16;
+    const int col=(blockIdx.x*TILES+tile)*16+local%16;
+    float value=0.f;
+#pragma unroll
+    for(int s=0;s<3;++s)value+=partial[(tile*3+s)*96+local];
+    value*=c.rgs?c.rgs[col]:1.f;
+    c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
+  }
 }
 
 // ===========================================================================
@@ -2325,10 +2705,30 @@ bool g_attrs_set = false;
 // construction of GEMM2_SMEM; the v2 unit rule sizes its grid from it)
 int g_gemm2_bps = 0;
 int g_gemm2_m8_bps = 0;
+int g_gemm_input_bps = 0;
+int g_input_cta_bps[3] = {};
+constexpr int INPUT_CTA_SMEM=MK_SMEM_ALIGN+2*W4_RAW_BYTES+8*6*16*sizeof(float);
+constexpr int INPUT_CTA3_SMEM=MK_SMEM_ALIGN+2*2*48*72+2*3*96*sizeof(float);
+int g_input_cta3_bps=0;
 int g_mk_sms = 0;  // multiprocessors, from the device (48 on GB10)
 
 void set_kernel_attrs() {
   if (g_attrs_set) return;
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta3_kernel<2,2>,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA3_SMEM));
+  MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &g_input_cta3_bps,mk_gemm_input_cta3_kernel<2,2>,192,INPUT_CTA3_SMEM));
+  auto input_cta_attrs=[&](auto kernel,int mode) {
+    MK_CHECK_CUDA(cudaFuncSetAttribute(kernel,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA_SMEM));
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &g_input_cta_bps[mode],kernel,MK_THREADS,INPUT_CTA_SMEM));
+  };
+  input_cta_attrs(mk_gemm_input_cta_kernel<0>,0);
+  input_cta_attrs(mk_gemm_input_cta_kernel<1>,1);
+  input_cta_attrs(mk_gemm_input_cta_kernel<2>,2);
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_kernel,
+      cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_INPUT_SMEM));
+  MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &g_gemm_input_bps, mk_gemm_input_kernel, MK_THREADS, GEMM_INPUT_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm2_kernel<1, false>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
@@ -2410,12 +2810,12 @@ bool mk_pdl_enabled() {
   return v == 1;
 }
 
-template <typename K, typename A>
+template <int THREADS=MK_THREADS, typename K, typename A>
 void mk_launch(K kernel, int grid, int smem, cudaStream_t stream,
                const A& args) {
   cudaLaunchConfig_t cfg = {};
   cfg.gridDim = dim3(grid);
-  cfg.blockDim = dim3(MK_THREADS);
+  cfg.blockDim = dim3(THREADS);
   cfg.dynamicSmemBytes = smem;
   cfg.stream = stream;
   cudaLaunchAttribute at[1];
@@ -2426,6 +2826,28 @@ void mk_launch(K kernel, int grid, int smem, cudaStream_t stream,
   MK_CHECK_CUDA(cudaLaunchKernelEx(&cfg, kernel, args));
 }
 
+int g_input_cta_mode = -1;
+int mk_gemm_input_cta_mode() {
+  if (g_input_cta_mode < 0) {
+    const char* value=std::getenv("VLLM_GLM53_MK_INPUT_CTA");
+    g_input_cta_mode=value && value[0]>='1' && value[0]<='4' && value[1]=='\0'
+        ? value[0]-'0' : 0;
+  }
+  return g_input_cta_mode;
+}
+int g_input_reuse_mode = -1;
+int mk_gemm_input_mode() {
+  if (g_input_reuse_mode < 0) {
+    const char* value = getenv("VLLM_GLM53_MK_INPUT_REUSE");
+    g_input_reuse_mode = value && value[0] == '1' && value[1] == '\0' ? 1 : 0;
+  }
+  return g_input_reuse_mode;
+}
+bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
+  // n is the logical output width; the real KDA projection pads 6416 to 6528.
+  return !bg && !lr && m == 6 && k == 4096 &&
+      (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)));
+}
 int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
 // k-slices per tile for one v2 launch, from the 30차 sweeps (srv2, ksr 1/2/3/
 // 4/6/8 on every production shape, single and back-to-back): what wins is
@@ -2599,6 +3021,9 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c2.lr_slot = bg != 0 ? 1 : 0;
   const int nblk = c2.n / SMEM_W_ROWS;
   c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
+  const bool input_reuse = mk_gemm_input_mode() &&
+      mk_input_shape(c2.m, c2.n_orig, c2.k, bg != 0, c2.lr_r != 0) &&
+      (c2.n_orig==6416 || c2.ksr==3);
   // one slice per tile stores bf16 straight from the accumulators (no
   // partial is read or written), so the partial bound is a split's
   // contract only: m = 32 on the head (32 x 38,784 floats) is served whole
@@ -2607,7 +3032,33 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                   && (c2.ksr == 1
                       || (size_t)c2.m * c2.n * c2.ksr <= (size_t)MK2_PART_ELEMS),
               "gemm2 plan out of contract");
-  mk_launch_gemm2(c2, stream);
+  if (input_reuse) {
+    const int qbytes = (c2.k / KSTEP) * 1024;
+    const int sbytes = (c2.k / KSTEP) * 8 * sizeof(float);
+    // PyTorch owns this allocation on the current stream. CUDA graph capture
+    // retains its pool; later consumers on this stream wait before reuse.
+    auto packed = torch::empty({qbytes + sbytes}, x.options().dtype(torch::kUInt8));
+    auto* q = packed.data_ptr<uint8_t>();
+    auto* scales = reinterpret_cast<float*>(q + qbytes);
+    c2.input_q = q; c2.input_s = scales;
+    mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
+              MKInputPackCtx{c2.x, q, scales, c2.m, c2.k});
+    const int cta=mk_gemm_input_cta_mode();
+    if (cta==4 && c2.ksr==3 && (c2.n_orig==4096 || c2.n_orig==6144)) {
+      mk_launch<192>(mk_gemm_input_cta3_kernel<2,2>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
+    } else if (cta && c2.ksr==8) {
+      if (cta==1)
+        mk_launch(mk_gemm_input_cta_kernel<0>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
+      else if (cta==2 || cta==4)
+        mk_launch(mk_gemm_input_cta_kernel<1>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
+      else
+        mk_launch(mk_gemm_input_cta_kernel<2>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
+    } else {
+      mk_launch(mk_gemm_input_kernel, nblk * c2.ksr, GEMM_INPUT_SMEM, stream, c2);
+    }
+  } else {
+    mk_launch_gemm2(c2, stream);
+  }
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
@@ -2717,6 +3168,176 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   auto stream = c10::cuda::getCurrentCUDAStream();
   a.grid = mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
   mk_launch(mk_mla_kernel, a.grid, MLA_SMEM, stream, a);
+}
+
+// Large-M prefill: 32 slots per online-softmax tile, with Q fragments kept
+// in registers across the whole row. Compared with the decode kernel above,
+// this halves the number of softmax/barrier rounds and removes its repeated
+// shared-memory Q loads. No query grouping, slot sorting or KV approximation.
+// Two K quarters x four N groups cover a 16-head x 32-slot score tile.
+// The 39,296-byte workspace fits two CTAs/SM on the supported GB10; the
+// launch bound also reserves registers for two CTAs (inspect ptxas spills).
+constexpr int MLA_PREFILL_TILE = 32;
+constexpr int MLA_PREFILL_STAGES = 2;
+constexpr int MLA_PREFILL_KQ = 2;
+constexpr int MLA_PREFILL_NG = 4;
+constexpr int MLA_PREFILL_PP = MLA_PREFILL_TILE + 8;
+constexpr int MLA_PREFILL_RING = MLA_PREFILL_STAGES * MLA_PREFILL_TILE * MLA_RP;
+constexpr int MLA_PREFILL_SCORES = MLA_PREFILL_KQ * MLA_H * MLA_PREFILL_TILE * 4;
+constexpr int MLA_PREFILL_PROBS = MLA_H * MLA_PREFILL_PP * 2;
+constexpr int MLA_PREFILL_SMEM = MLA_PREFILL_RING + MLA_PREFILL_SCORES
+                                + MLA_PREFILL_PROBS + MLA_SMEM_C;
+
+__global__ __launch_bounds__(MK_THREADS, 2)
+void mk_mla_prefill32_kernel(const MKMlaArgs a) {
+  extern __shared__ __align__(16) char prefill_smem[];
+  uint8_t* ring = (uint8_t*)prefill_smem;
+  float* ss = (float*)(ring + MLA_PREFILL_RING);
+  __nv_bfloat16* sp = (__nv_bfloat16*)((uint8_t*)ss + MLA_PREFILL_SCORES);
+  float* scorr = (float*)((uint8_t*)sp + MLA_PREFILL_PROBS);
+  const int t = blockIdx.x, lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+  const int g = lane >> 2, q4 = lane & 3;
+  const int kq = warp / MLA_PREFILL_NG, n0 = (warp % MLA_PREFILL_NG) * 8;
+  asm volatile("griddepcontrol.launch_dependents;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  const int len = a.lens[t];
+  const float sscale = a.sm_scale * a.ckv_scale;
+  // Every index is compile-time constant in both unrolled loops: these are
+  // registers, not an addressable local-memory array. Each fragment retains
+  // the input BF16 bits, including subnormals.
+  uint32_t qreg[MLA_D / 16 / MLA_PREFILL_KQ][4];
+  const __nv_bfloat16* q = a.q + ((size_t)t * MLA_H + g) * MLA_D;
+#pragma unroll
+  for (int ks = 0; ks < MLA_D / 16 / MLA_PREFILL_KQ; ++ks) {
+    const int k = kq * (MLA_D / MLA_PREFILL_KQ) + ks * 16 + q4 * 2;
+    qreg[ks][0] = *(const uint32_t*)(q + k);
+    qreg[ks][1] = *(const uint32_t*)(q + 8 * MLA_D + k);
+    qreg[ks][2] = *(const uint32_t*)(q + k + 8);
+    qreg[ks][3] = *(const uint32_t*)(q + 8 * MLA_D + k + 8);
+  }
+  float acc[8][4];
+#pragma unroll
+  for (int nt = 0; nt < 8; ++nt)
+    acc[nt][0] = acc[nt][1] = acc[nt][2] = acc[nt][3] = 0.f;
+  float m0 = -INFINITY, m1 = -INFINITY, l0 = 0.f, l1 = 0.f;
+  const int ntile = (len + MLA_PREFILL_TILE - 1) / MLA_PREFILL_TILE;
+  auto issue = [&](int ti) {
+    uint8_t* dst = ring + (ti % MLA_PREFILL_STAGES) * MLA_PREFILL_TILE * MLA_RP;
+#pragma unroll
+    for (int r = 0; r < MLA_PREFILL_TILE / MLA_WARPS; ++r) {
+      const int row = r * MLA_WARPS + warp;
+      const int j = ti * MLA_PREFILL_TILE + row;
+      // A partial tile rereads the first valid slot; softmax masks the tail.
+      // Empty rows never issue a load, so their slot storage may be poisoned.
+      const int slot = a.slots[(size_t)t * a.W + (j < len ? j : 0)];
+      mk_cp_async16(dst + row * MLA_RP + lane * 16,
+                    a.ckv + (size_t)slot * MLA_D + lane * 16);
+    }
+    mk_cp_commit();
+  };
+  if (ntile) issue(0);
+#pragma unroll 1
+  for (int ti = 0; ti < ntile; ++ti) {
+    mk_cp_wait<0>();
+    __syncthreads();
+    if (ti + 1 < ntile) issue(ti + 1);
+    const uint8_t* tile = ring + (ti % MLA_PREFILL_STAGES) * MLA_PREFILL_TILE * MLA_RP;
+    const int kmax = min(MLA_PREFILL_TILE, len - ti * MLA_PREFILL_TILE);
+    float c0 = 0.f, c1 = 0.f, c2 = 0.f, c3 = 0.f;
+    const uint8_t* cb = tile + (n0 + g) * MLA_RP;
+#pragma unroll
+    for (int ks = 0; ks < MLA_D / 16 / MLA_PREFILL_KQ; ++ks) {
+      const int k = kq * (MLA_D / MLA_PREFILL_KQ) + ks * 16 + q4 * 2;
+      mla_mma_bf16(c0, c1, c2, c3,
+                   qreg[ks][0], qreg[ks][1], qreg[ks][2], qreg[ks][3],
+                   mla_e4m3x2(cb + k), mla_e4m3x2(cb + k + 8));
+    }
+    float* sh = ss + kq * MLA_H * MLA_PREFILL_TILE;
+    sh[g * MLA_PREFILL_TILE + n0 + q4 * 2] = c0;
+    sh[g * MLA_PREFILL_TILE + n0 + q4 * 2 + 1] = c1;
+    sh[(g + 8) * MLA_PREFILL_TILE + n0 + q4 * 2] = c2;
+    sh[(g + 8) * MLA_PREFILL_TILE + n0 + q4 * 2 + 1] = c3;
+    __syncthreads();
+    const int h0 = warp * 2;
+    float s0 = 0.f, s1 = 0.f;
+#pragma unroll
+    for (int p = 0; p < MLA_PREFILL_KQ; ++p) {
+      const float* psh = ss + p * MLA_H * MLA_PREFILL_TILE;
+      s0 += psh[h0 * MLA_PREFILL_TILE + lane];
+      s1 += psh[(h0 + 1) * MLA_PREFILL_TILE + lane];
+    }
+    const bool valid = lane < kmax;
+    s0 = valid ? s0 * sscale : -INFINITY;
+    s1 = valid ? s1 * sscale : -INFINITY;
+    const float nm0 = fmaxf(m0, mla_warp_max(s0));
+    const float nm1 = fmaxf(m1, mla_warp_max(s1));
+    const float cr0 = __expf(m0 - nm0), cr1 = __expf(m1 - nm1);
+    const float p0 = valid ? __expf(s0 - nm0) : 0.f;
+    const float p1 = valid ? __expf(s1 - nm1) : 0.f;
+    l0 = fmaf(l0, cr0, mla_warp_sum(p0));
+    l1 = fmaf(l1, cr1, mla_warp_sum(p1));
+    m0 = nm0; m1 = nm1;
+    sp[h0 * MLA_PREFILL_PP + lane] = __float2bfloat16(p0 * a.ckv_scale);
+    sp[(h0 + 1) * MLA_PREFILL_PP + lane] = __float2bfloat16(p1 * a.ckv_scale);
+    if (!lane) { scorr[h0] = cr0; scorr[h0 + 1] = cr1; }
+    __syncthreads();
+    const float crg = scorr[g], crg8 = scorr[g + 8];
+#pragma unroll
+    for (int nt = 0; nt < 8; ++nt) {
+      acc[nt][0] *= crg; acc[nt][1] *= crg;
+      acc[nt][2] *= crg8; acc[nt][3] *= crg8;
+    }
+#pragma unroll
+    for (int ks = 0; ks < MLA_PREFILL_TILE / 16; ++ks) {
+      const __nv_bfloat16* pa = sp + g * MLA_PREFILL_PP + ks * 16;
+      const uint32_t a0 = *(const uint32_t*)(pa + q4 * 2);
+      const uint32_t a1 = *(const uint32_t*)(pa + 8 * MLA_PREFILL_PP + q4 * 2);
+      const uint32_t a2 = *(const uint32_t*)(pa + q4 * 2 + 8);
+      const uint32_t a3 = *(const uint32_t*)(pa + 8 * MLA_PREFILL_PP + q4 * 2 + 8);
+      const uint8_t* cv = tile + (ks * 16 + q4 * 2) * MLA_RP + warp * 64;
+#pragma unroll
+      for (int nt = 0; nt < 8; ++nt) {
+        const int n = nt * 8 + g;
+        mla_mma_bf16(acc[nt][0], acc[nt][1], acc[nt][2], acc[nt][3], a0, a1, a2, a3,
+                     mla_e4m3x2_strided(cv + n, MLA_RP),
+                     mla_e4m3x2_strided(cv + 8 * MLA_RP + n, MLA_RP));
+      }
+    }
+    __syncthreads();
+  }
+  float* sl = scorr + MLA_H;
+  if (!lane) { sl[warp * 2] = l0; sl[warp * 2 + 1] = l1; }
+  __syncthreads();
+  const float ig = sl[g] > 0.f ? __frcp_rn(sl[g]) : 0.f;
+  const float ig8 = sl[g + 8] > 0.f ? __frcp_rn(sl[g + 8]) : 0.f;
+  __nv_bfloat16* o0 = a.out + ((size_t)t * MLA_H + g) * MLA_D;
+  __nv_bfloat16* o8 = a.out + ((size_t)t * MLA_H + g + 8) * MLA_D;
+#pragma unroll
+  for (int nt = 0; nt < 8; ++nt) {
+    const int col = warp * 64 + nt * 8 + q4 * 2;
+    *(__nv_bfloat162*)(o0 + col) = __floats2bfloat162_rn(acc[nt][0] * ig, acc[nt][1] * ig);
+    *(__nv_bfloat162*)(o8 + col) = __floats2bfloat162_rn(acc[nt][2] * ig8, acc[nt][3] * ig8);
+  }
+}
+
+void mk_run_mla_prefill32(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                         std::vector<int64_t> ints) {
+  TORCH_CHECK(ptrs.size() == 5 && scalars.size() == 2 && ints.size() == 2,
+              "run_mla_prefill32 arg contract");
+  TORCH_CHECK(ints[0] >= 128 && ints[0] <= 8192 && ints[1] > 0 && ints[1] <= 2176,
+              "mla prefill32 requires bounded prefill T and W");
+  TORCH_CHECK((ptrs[0] & 15) == 0 && (ptrs[1] & 15) == 0 && (ptrs[4] & 3) == 0,
+              "mla prefill32 requires aligned Q, FP8 cache and BF16 output");
+  MKMlaArgs a{};
+  a.q = (const __nv_bfloat16*)ptrs[0]; a.ckv = (const uint8_t*)ptrs[1];
+  a.slots = (const int*)ptrs[2]; a.lens = (const int*)ptrs[3];
+  a.out = (__nv_bfloat16*)ptrs[4];
+  a.sm_scale = (float)scalars[0]; a.ckv_scale = (float)scalars[1];
+  a.T = (int)ints[0]; a.W = (int)ints[1]; a.splits = 1;
+  // Independent CTAs: ragged rows are dynamically scheduled by CUDA. No
+  // persistent-grid barrier, split scratch, prepare kernel or membership map.
+  mk_launch(mk_mla_prefill32_kernel, a.T, MLA_PREFILL_SMEM,
+            c10::cuda::getCurrentCUDAStream(), a);
 }
 
 void mk_run_mla_prefill_pair(std::vector<int64_t> ptrs, std::vector<double> scalars,
@@ -2870,6 +3491,27 @@ std::vector<int64_t> mk_gemm2_plan(int64_t m, int64_t n, int64_t k) {
   const int ksr = mk_choose_ksr2((int)m, n_pad, (int)k);
   return {(int64_t)ksr, (int64_t)((n_pad / SMEM_W_ROWS) * ksr),
           (int64_t)(mk_use_compact_m8((int)m, n_pad, (int)k) ? g_gemm2_m8_bps : g_gemm2_bps)};
+}
+std::vector<int64_t> mk_gemm_input_plan(int m, int n, int k, bool bg, bool lr) {
+  set_kernel_attrs();
+  const bool shape = mk_gemm_input_mode() && mk_input_shape(m, n, k, bg, lr);
+  TORCH_CHECK(m >= 1 && m <= 32 && n >= 1 && k >= KSTEP && k % KSTEP == 0,
+              "input plan dimensions out of contract");
+  const int n_pad = ((n + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
+  const int ordinary = mk_choose_ksr2(m, n_pad, k, lr);
+  const int split = ordinary;  // retain the existing FP32 reduction order
+  const bool enabled=shape && (n==6416 || split==3);
+  const int cta = enabled && n==6416 && split == 8 ? mk_gemm_input_cta_mode() : 0;
+  const bool cta3=enabled && n!=6416;
+  return {enabled, split, cta3 ? g_input_cta3_bps : cta ? g_input_cta_bps[cta==4?1:cta-1] : g_gemm_input_bps,
+          enabled ? (k / KSTEP) * 1056 : 0};
+}
+std::vector<int64_t> mk_gemm_input_cta_plan(int m,int n,int k,bool bg,bool lr) {
+  const auto input=mk_gemm_input_plan(m,n,k,bg,lr);
+  const bool cta3=input[0] && n!=6416 && input[1]==3;
+  const int mode=input[0] && (input[1]==8 || cta3) ? mk_gemm_input_cta_mode() : 0;
+  return {mode,cta3?3:8,cta3?g_input_cta3_bps:mode?g_input_cta_bps[mode==4?1:mode-1]:0,
+          cta3?INPUT_CTA3_SMEM:mode?INPUT_CTA_SMEM:0};
 }
 void mk_set_gemm2(int64_t ksr) {
   if (ksr >= 0) g_probe_ksr2 = (int)ksr;
@@ -3093,6 +3735,34 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");
+  m.def("gemm_input_mode", &mk_gemm_input_mode);
+  m.def("set_gemm_input", [](int mode) {
+    TORCH_CHECK(mode == 0 || mode == 1, "input reuse mode must be 0 or 1");
+    g_input_reuse_mode = mode;
+  }, "boot/probe override; existing captured graphs retain their route");
+  m.def("gemm_input_plan", &mk_gemm_input_plan);
+  m.def("gemm_input_cta_mode", &mk_gemm_input_cta_mode);
+  m.def("gemm_input_cta_plan", &mk_gemm_input_cta_plan);
+  m.def("set_input_cta", [](int mode) {
+    TORCH_CHECK(mode>=0 && mode<=4); g_input_cta_mode=mode;
+  }, "independent input-CTA gate; 0 preserves the input-reuse default");
+  m.def("input_cta_info", []() {
+    set_kernel_attrs();std::vector<int64_t> out;
+    auto note=[&](auto kernel,int smem) {
+      cudaFuncAttributes a{};int bps=0;
+      MK_CHECK_CUDA(cudaFuncGetAttributes(&a,kernel));
+      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&bps,kernel,MK_THREADS,smem));
+      out.insert(out.end(),{a.numRegs,(int64_t)a.localSizeBytes,bps,smem});
+    };
+    note(mk_gemm_input_kernel,GEMM_INPUT_SMEM);
+    note(mk_gemm_input_cta_kernel<0>,INPUT_CTA_SMEM);
+    note(mk_gemm_input_cta_kernel<1>,INPUT_CTA_SMEM);
+    note(mk_gemm_input_cta_kernel<2>,INPUT_CTA_SMEM);
+    cudaFuncAttributes a{};
+    MK_CHECK_CUDA(cudaFuncGetAttributes(&a,mk_gemm_input_cta3_kernel<2,2>));
+    out.insert(out.end(),{a.numRegs,(int64_t)a.localSizeBytes,g_input_cta3_bps,INPUT_CTA3_SMEM});
+    return out;
+  });
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");
   m.def("gemm2_plan", &mk_gemm2_plan, "bench: {ksr, units, blocks/SM} of (m, n, k)");
   m.def("set_gemm2", &mk_set_gemm2, "bench: force the GEMM's ksr (-1 = keep)");
@@ -3105,6 +3775,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_prep", &mk_run_prep, "MK_PREP: fused decode-step preparation (CUDA form of glm53_prep_fused)");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");
+  m.def("run_mla_prefill32", &mk_run_mla_prefill32, "MK MLA register-Q prefill over 32-slot tiles");
   m.def("run_mla_prefill_group4", &mk_run_mla_prefill_group4, "MK MLA exact-selection (not bit-exact output) four-query reuse");
   m.def("run_smlp2", &mk_run_smlp2, "MK_SEG_SMLP2 (two PDL-chained v2 launches, no barrier)");
   m.def("mla_grid", &mk_mla_grid, "MK_SEG_MLA resident grid");

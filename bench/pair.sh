@@ -8,8 +8,7 @@
 #
 # Steps: candidate boot + onepass (proof recorded) -> yield the fleet to a
 # short probe if one waits -> a defaults boot ONLY when this build has no
-# baseline or its noise floor needs a sample (fewer than 3), and only when
-# nobody with a boot job is queued behind us (fleet.sh restore-needed) ->
+# baseline (one sample by default; PAIR_FLOOR_N=3 explicitly fills the floor) ->
 # judge (delta vs floor, gates) -> verdict written. FLEET_REHEARSE=1 runs the
 # whole thing without a GPU (ab-lever fabricates records; fleet.sh runs it in
 # parallel, never holding the fleet).
@@ -21,7 +20,8 @@ REPO=${REPO:-/home/choiceoh/stkernel}
 FLEET=${FLEET:-$LOGD/fleet.sh}
 LEVER=${LEVER:-$LOGD/ab-lever2.sh}
 S=${FLEET_SESSION:-pair}
-PAIR_FLOOR_N=${PAIR_FLOOR_N:-3}
+PAIR_FLOOR_N=${PAIR_FLOOR_N:-1}
+[[ "$PAIR_FLOOR_N" =~ ^[1-9][0-9]*$ ]] || { echo 'PAIR_FLOOR_N must be positive'; exit 2; }
 cd "$REPO" || exit 1
 # A failed candidate must not spend another measurement boot. Restore only
 # when this holder has no boot successor, preserving the original failure.
@@ -44,17 +44,13 @@ python3 bench/judge.py "$NAME" --write --fail-invalid ${FLEET_REHEARSE:+--allow-
 # our place and continue with the next boot after it
 [ -x "$FLEET" ] && bash "$FLEET" yield "$S" 15 2>&1 | sed 's/^/   /'
 
-# does this build need a defaults sample? (no baseline, or a thin floor)
+# Reuse a valid sample by default. A thin noise floor is reported, not
+# automatically replenished on each candidate.
 need_base=0
-bl=$(python3 bench/baseline.py --brief 2>/dev/null)
-case "$bl" in *"NONE for build"*|*"none for build"*) need_base=1;; esac
 nb=$(python3 bench/baseline.py --count-for "$NAME") || exit $?
 [ "${nb:-0}" -lt "$PAIR_FLOOR_N" ] && need_base=1
 if [ "$need_base" = 1 ]; then
-  # the baseline SAMPLE is a measurement, not a restore: without it this build
-  # has no verdict (FUS7 #3, 20:00: "no baseline on this build" after the sample
-  # was skipped because a boot job followed). Only a bare restore is skippable.
-  echo "== $(date +%T) defaults arm ${NAME}BASE (baseline sample ${nb:-0}/$PAIR_FLOOR_N on this build; the verdict needs it)"
+  echo "== $(date +%T) defaults arm ${NAME}BASE (baseline sample ${nb:-0}/$PAIR_FLOOR_N on this build)"
   bash "$LEVER" "${NAME}BASE" "" 2>&1 | tail -30 || exit $?
   python3 bench/judge.py "$NAME" --write --fail-invalid ${FLEET_REHEARSE:+--allow-rehearsal} || exit $?
 else

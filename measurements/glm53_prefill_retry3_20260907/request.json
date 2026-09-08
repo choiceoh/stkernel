@@ -1,0 +1,9 @@
+{
+  "REPO": "/home/choiceoh/stkernel-prefill-fused-serving",
+  "RETRY_JOB": "/tmp/glm53-prefill-retry3.p4vlb5hz",
+  "RETRY_REV": "6f797df28c29e7e4cb606724e2416dbc1c5dcfcc",
+  "IMAGE": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "HEAD_URL": "http://10.10.10.2:8000",
+  "requested_at_kst": "2026-09-07T14:32:35.050083",
+  "reason": "User requested space recovery and resume prefill validation. Live srv1 now has 280 GiB free after external cleanup; deliberate retry after documented disk refusal, corrected tested attestation, same source and reduced capacity, 128 GiB pre-deploy disk reserve and 10 GiB all-node client memory guard, B/A/B then public production restore."
+}

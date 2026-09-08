@@ -50,6 +50,43 @@ A profile also carries the serving knobs that are the model's rather than the
 fleet's -- backend, speculative depth, draft placement -- and, where a bring-up
 is blocked, says so and names the one flip that would isolate the cause.
 
+GLM53's C=1 M6/N6416/K4096 projection defaults to
+`VLLM_GLM53_MK_INPUT_CTA=4` (operator promotion, 2026-09-08), which builds on
+the value `2` route described here. That route retains the
+eight original K slices and sums their partials within one CTA. The independent
+startup gate falls back to the existing input-reuse kernel; setting the knob
+to `0` selects that previous route explicitly. Repeated kernel measurements
+show 24.5% lower warm latency and 7.9% lower read-evicted latency. That
+2026-09-08 promotion ran no serving bracket of its own, so its serving
+step/output and quality acceptance were left unmeasured after baseline boot
+failures; the separate value `4` bracket described below is not evidence for
+it. [Measurements and failure receipts](../measurements/glm53_input_cta_20260907/README.md).
+
+The value `4` retains the CTA2 N6416 kernel and adds a three-slice
+CTA for foreground M6/N4096 or N6144/K4096. A failed three-slice startup
+check falls back to separately validated CTA2. Other shapes, background
+work, low-rank correction, and non-three-slice overrides retain their
+existing route. The profile default is now `4` (operator promotion,
+2026-09-08); set the knob to `2` to roll back to the previous default.
+Its N6144 warm kernel latency is 32.544 -> 26.208 us (-19.5%) with -5.7%
+read-evicted, and N4096 is -7.9% read-evicted with no warm gain. Racecheck
+reported zero hazards and memcheck zero errors, and all four nodes proved
+actual CTA4 serving capture. Serving throughput is **not** established: the
+same-build CTA2/CTA4/CTA2 bracket had pooled step/s 21.752/21.962/21.892, so
+the candidate's +0.627% lies inside the baselines' own 0.641% spread.
+[Kernel, sanitizer and serving evidence](../measurements/glm53_input_cta_next_20260908/README.md).
+
+GLM53 MoE defaults to `VLLM_GLM53_B12X_STATIC_V2=t,r` (operator promotion,
+2026-09-08, PR #461). For M<=8 this combines M16 padding, FC1 N128/K256 and
+FC2 N256; larger M retains the existing `t` geometry and weight storage.
+The corrected bundle passed 13 GPU shapes and 130 numerical/graph comparisons.
+The same-build C=1 A-B measured pooled step/s 21.727898 -> 22.076208 (+1.603%)
+and output tok/s 70.612170 -> 72.787236 (+3.080%), with quality 18/18 and
+Korean corruption 0/8 in both arms. Window median rose 0.116%; one boot per
+arm does not independently establish repeatability. Set the knob to `t` to
+restore the previous geometry.
+[Full evidence](../measurements/glm53_decode_reform_20260908/README.md).
+
 ## 프로필별 구성
 
 | | `dsv4` | `glm53` | `qwen38` |
@@ -91,7 +128,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·tail-select 융합, tail 슬롯, MHC TileLang 프리필 big_fuse 오버라이드 + MK 훅 (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_mhc_tilelang`; 34차 §8 일몰: radix top-k 확장, SM121 MLA 프리필, MHC SMALLM/ONEPASS; KDA 프리필 버킷(`kda.py`·`chunk_delta_h.py`)은 #368 이 direct-out 을 얹어 유지) | 6 | 일부 | · | ● | · |
 | `glm53_drafter` | **묶음(34차)**: DFlash2 드래프터 접수, fp8 로더, 워밍업, early-fc, 준비 캐시, fp8 lm_head (옛 `glm53_dflash2_fp8_head`·`glm53_dflash_loader_fp8`·`glm53_dflash_warmup`·`glm53_dflash_early_fc`·`glm53_drafter_prep`·`fp8_lm_head`) | 6 | 일부 | · | ● | · |
 | `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) + 정적(디코드) MoE 커널 v4(35·38차, `moe_static_kernel_v4.py` + 공유 헬퍼 `moe_static_common.py`, 프로필 기본값 `u`; v2/v3 은 34차 §8 일몰) + 순수 프리필 dynamic 재사용 후보(#368) + v5 `moe_static_kernel_v5.py`(타일 우선 가중치, 셀 `t`, 39차; `z`·`h` 는 39차 §3g/§3h 일몰) + 그 배치를 읽는 gated 프리필 커널 서브클래스 `moe_dynamic_gated_tiled.py` + NVFP4 블록 스케일 6-bit 패커 `moe_sf_pack.py`(39차 §4c) | 11 | — | · | ● | · |
-| `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 및 순수 프리필 collectives, 디코드 우선 스케줄러(39차, 기본값 `DECODE_FIRST=1` v3.2 순차 모드(디코더 뒤 대기 ≤20 s, 그 뒤 번갈아)), 채팅 옵션 검증 및 GLM 본문 보존 | 13 | 일부 | · | ● | · |
+| `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 및 순수 프리필 collectives, 디코드 우선 스케줄러(39차, 기본값 `DECODE_FIRST=1` v3.2 순차 모드(디코더 뒤 대기 ≤20 s, 그 뒤 번갈아)), 채팅 옵션 검증 및 GLM 본문 보존 | 16 | 일부 | · | ● | · |
 | `glm53_prefix_cache` | 하이브리드 KV 프리픽스 캐시 조정자 수정(39차; 스톡은 이 레이아웃에서 히트 0). 기본값 `PREFIX_CACHE=1`(같은 접두사 재질문 92~99.6% 재사용, warm 수용률 = cold) | 1 | — | · | ● | · |
 | `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |
 | `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · |

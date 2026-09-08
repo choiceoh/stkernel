@@ -1,0 +1,43 @@
+{
+  "source_commit": "916adc0",
+  "source_sha256": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae",
+  "object_sha256": "a9162775a37a3df079bba8282343df6dffe18e73ae2c8fc27b9bca28769fcd9f",
+  "cuda_compiler": "13.0.88",
+  "host_compiler": "GCC 13.3.0",
+  "standard": "c++17",
+  "arch": "sm_121a",
+  "session": "inputctacpu0907",
+  "lane": "cpu",
+  "cuda_context_loaded": false,
+  "entrypoint": "bench/cpu_compile.py",
+  "torch_headers_image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "definitions": [
+    "TORCH_EXTENSION_NAME=input_cta_cpu",
+    "_GLIBCXX_USE_CXX11_ABI=1",
+    "MK_FP8_PACK2_DEF=1",
+    "MK_GEMM_TRANSPOSE_M8_DEF=1",
+    "MK_GEMM_COMPACT_M8_DEF=1",
+    "MK_M8_FASTPATH_DEF=1"
+  ],
+  "modes": [
+    {
+      "mode": 1,
+      "registers": 78,
+      "spill_stores": 0,
+      "spill_loads": 0
+    },
+    {
+      "mode": 2,
+      "registers": 75,
+      "spill_stores": 0,
+      "spill_loads": 0
+    },
+    {
+      "mode": 3,
+      "registers": 64,
+      "spill_stores": 0,
+      "spill_loads": 0
+    }
+  ],
+  "outcome": "compile pass; no GPU numerical or performance verdict"
+}

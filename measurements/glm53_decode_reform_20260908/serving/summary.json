@@ -1,0 +1,188 @@
+{
+  "per_boot": [
+    {
+      "name": "MOERFA1",
+      "mode": "t,r",
+      "windows": 77,
+      "step_s": 22.076208178906867,
+      "ms_per_step": 45.29763408172011,
+      "median_step_s": 21.850819885201474,
+      "output_tok_s": 72.78723589592241,
+      "acceptance_all_requests": 0.46710144927536235,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2128,
+          "cold_s": 2.0303069400251843,
+          "warm_s": 0.8488502260297537,
+          "cold_tok_s": 1048.1173846421486,
+          "warm_tok_s": 2506.920461048932,
+          "ttft_samples_s": [
+            2.0303069400251843,
+            0.8821116369799711,
+            0.8488502260297537
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 32545,
+          "cold_s": 10.931039426999632,
+          "warm_s": 10.931039426999632,
+          "cold_tok_s": 2977.301492446725,
+          "warm_tok_s": 2977.301492446725,
+          "ttft_samples_s": [
+            10.931039426999632
+          ],
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 128559,
+          "cold_s": 41.931617269001435,
+          "warm_s": 41.931617269001435,
+          "cold_tok_s": 3065.920381159234,
+          "warm_tok_s": 3065.920381159234,
+          "ttft_samples_s": [
+            41.931617269001435
+          ],
+          "combined": true
+        }
+      ]
+    },
+    {
+      "name": "MOERFB1",
+      "mode": "t",
+      "windows": 81,
+      "step_s": 21.727898474251166,
+      "ms_per_step": 46.023779114443975,
+      "median_step_s": 21.825397042767207,
+      "output_tok_s": 70.61216954738669,
+      "acceptance_all_requests": 0.45090412828386217,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2128,
+          "cold_s": 1.9593574690516107,
+          "warm_s": 0.8557431009830907,
+          "cold_tok_s": 1086.0703233647394,
+          "warm_tok_s": 2486.7276143451477,
+          "ttft_samples_s": [
+            1.9593574690516107,
+            0.8874468299909495,
+            0.8557431009830907
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 32545,
+          "cold_s": 13.506659029982984,
+          "warm_s": 13.506659029982984,
+          "cold_tok_s": 2409.552201455181,
+          "warm_tok_s": 2409.552201455181,
+          "ttft_samples_s": [
+            13.506659029982984
+          ],
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 128559,
+          "cold_s": 45.652455001021735,
+          "warm_s": 45.652455001021735,
+          "cold_tok_s": 2816.036946909487,
+          "warm_tok_s": 2816.036946909487,
+          "ttft_samples_s": [
+            45.652455001021735
+          ],
+          "combined": true
+        }
+      ]
+    }
+  ],
+  "baseline": {
+    "step_s": 21.727898474251166,
+    "output_tok_s": 70.61216954738669,
+    "median_step_s": 21.825397042767207
+  },
+  "change_pct": {
+    "step_s": 1.603052891049117,
+    "output_tok_s": 3.0802995609362727,
+    "median_step_s": 0.11648284053871194
+  },
+  "matched_requests": true,
+  "matched_source_sha256": {
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "d9b62d352233f32269e24f5e3012536044685873912bc19cbca5c7d47f91b343",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11"
+  },
+  "matched_controls": {
+    "VLLM_GLM53_MK_INPUT_REUSE": "1",
+    "VLLM_GLM53_MK_INPUT_CTA": "4"
+  },
+  "source_commit": "1f265b1",
+  "prefill_comparison": [
+    {
+      "ctx": 2000,
+      "kind": "repeat-min-TTFT",
+      "per_boot_tok_s": [
+        2506.920461048932,
+        2486.7276143451477
+      ],
+      "baseline_mean_tok_s": 2486.7276143451477,
+      "candidate_change_pct": 0.8120248710513422
+    },
+    {
+      "ctx": 32000,
+      "kind": "single-request",
+      "per_boot_tok_s": [
+        2977.301492446725,
+        2409.552201455181
+      ],
+      "baseline_mean_tok_s": 2409.552201455181,
+      "candidate_change_pct": 23.562439969080895
+    },
+    {
+      "ctx": 128000,
+      "kind": "single-request",
+      "per_boot_tok_s": [
+        3065.920381159234,
+        2816.036946909487
+      ],
+      "baseline_mean_tok_s": 2816.036946909487,
+      "candidate_change_pct": 8.873585075791922
+    }
+  ],
+  "note": "One integrated A-B campaign; one boot per arm. Boot drift is not independently estimated. Within-boot windows are correlated. Acceptance covers all requests; output tok/s covers fixed 2K decode only."
+}

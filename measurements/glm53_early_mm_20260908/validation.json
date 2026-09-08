@@ -1,0 +1,32 @@
+{
+  "tested_source_commit": "c001cb9e335db488390125347b133b80f0e60de2",
+  "local_python": "/Users/ost/.local/open-webui-venv/bin/python",
+  "full_gate": {
+    "command": "python tests/test_logic.py",
+    "exit_code": 0,
+    "logic_checks": 71014,
+    "megakernel_regressions": 30,
+    "fleet_regressions": 107,
+    "log": "logic-full.log"
+  },
+  "focused": [
+    {
+      "command": "python tests/test_glm53_renderer_warmup.py",
+      "tests": 9,
+      "exit_code": 0
+    },
+    {
+      "command": "python tests/test_startup_cache_receipts.py",
+      "tests": 4,
+      "exit_code": 0
+    }
+  ],
+  "real_processor": {
+    "command": "python probes/glm53_renderer_warmup_check.py --template launchers/chat_template_mm_v2.jinja --out screen.json",
+    "checks": 6,
+    "tensor_fields": 20,
+    "exit_code": 0,
+    "evidence": "screen.json"
+  },
+  "scope": "CPU preprocessing and startup scheduling; no new GPU kernel. Serving throughput and acceptance are confounded by concurrent non-loopback traffic."
+}

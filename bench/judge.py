@@ -75,17 +75,20 @@ def unproved(rec):
     return bool(knobs) and any((rec.get("proof") or {}).get(k) is not True for k in knobs)
 
 
-def floor_of(rows, rec):
+def floor_of(rows, rec, objective=None):
     """(rel spread, n, scope): spread of windows_med over the baselines of the
     build; fewer than 2 -> the harness across builds; fewer than 2 -> None."""
+    from measurement_contract import metric_value, metric_compatible
+    objective = objective or {'metric': 'decode_steps'}
     bases, _ = baselines_on(rows, rec)
     def windows(records):
         # Multiple onepass records on the same attested boot are one noise
         # sample. Older untagged rows retain their legacy interpretation.
         boots = {}
         for index, x in enumerate(records):
-            if not record_errors(x):
-                boots[x.get("boot_id") or ("legacy", index)] = x["decode"]["windows_med"]
+            value = metric_value(x, objective)
+            if not record_errors(x) and value is not None and metric_compatible(x, rec, objective):
+                boots[x.get("boot_id") or ("legacy", index)] = value
         return list(boots.values())
     wins = windows(bases)
     scope = "same build"
@@ -114,7 +117,9 @@ def fmt(rec):
             f"{'cold' if rec.get('cold_compile') else '':<5}{rec.get('t','')[5:16]}")
 
 
-def judge(cand, base, rows):
+def judge(cand, base, rows, objective=None):
+    from measurement_contract import objective as normalize_objective, metric_value, metric_compatible
+    objective = normalize_objective(objective)
     out = {"cand": cand.get("name"), "base": base.get("name") if base else None,
            "build": build_of(cand), "harness": cand.get("harness"), "session": cand.get("session"),
            "status": "incomplete"}
@@ -122,6 +127,7 @@ def judge(cand, base, rows):
     proof = cand.get("proof_ok")
     out["gates"] = gates
     out["proof_ok"] = proof
+    out['objective'] = objective
     if unproved(cand):
         out.update(status="invalid", verdict=f"UNPROVED (proof {proof or 'none'}): the delta is not evidence")
         return out
@@ -131,17 +137,24 @@ def judge(cand, base, rows):
     if base is None:
         out["verdict"] = "no baseline on this build"
         return out
-    if not compatible(base, cand) or not is_baseline(base)[0] or record_errors(base):
+    if (not compatible(base, cand) or not is_baseline(base)[0] or record_errors(base)
+            or not metric_compatible(base, cand, objective)):
         out["verdict"] = "baseline is incompatible or failed its gates"
         return out
-    cw = (cand.get("decode") or {}).get("windows_med") or 0
-    bw = (base.get("decode") or {}).get("windows_med") or 0
-    out["delta"] = cw / bw - 1 if bw else None
-    fl, n, scope = floor_of(rows, cand)
+    if objective['metric'] == 'quality':
+        out.update(status='valid', decision='quality_pass', verdict='all declared onepass quality/proof gates passed')
+        return out
+    cw, bw = metric_value(cand, objective), metric_value(base, objective)
+    if cw is None or bw is None:
+        out['verdict'] = 'missing finite objective measurement'
+        return out
+    out['candidate_value'], out['baseline_value'] = cw, bw
+    out["delta"] = (1 - cw / bw) if objective['metric'] == 'prefill_ttft' else (cw / bw - 1)
+    fl, n, scope = floor_of(rows, cand, objective)
     out["floor"], out["floor_n"], out["floor_scope"] = fl, n, scope
     if out["delta"] is None:
         out["verdict"] = "no decode window"
-    elif fl is None:
+    elif fl is None or (objective['metric'] != 'decode_steps' and n < 3):
         out["verdict"] = f"{100 * out['delta']:+.1f}% with no floor yet (n={n}): one more baseline sample"
     elif abs(out["delta"]) <= fl:
         out["status"] = "inconclusive"
@@ -149,6 +162,7 @@ def judge(cand, base, rows):
     else:
         out["status"] = "valid" if scope == "same build" else "inconclusive"
         out["verdict"] = f"{100 * out['delta']:+.1f}% BEYOND the floor ±{100 * fl:.1f}% (n={n}, {scope})"
+    out['decision'] = ('improved' if out['delta'] > 0 else 'regressed') if out['status'] == 'valid' else 'unresolved'
     return out
 
 
@@ -178,7 +192,7 @@ def main() -> int:
     print("judge> " + fmt(cand))
     if base:
         print("judge> " + fmt(base))
-    v = judge(cand, base, rows)
+    v = judge(cand, base, rows, json.loads(os.environ['FLEET_OBJECTIVE']) if os.environ.get('FLEET_OBJECTIVE') else None)
     print(f"judge> verdict: {v['verdict']}")
     if a.write:
         v["t"] = time.strftime("%F %T")

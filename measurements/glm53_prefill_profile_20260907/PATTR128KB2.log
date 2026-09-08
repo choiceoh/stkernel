@@ -1,0 +1,11 @@
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+ 128000  128559        3072     (1 req)     41.85s          -  o o o
+=> 3/3 correct
+decode: windows n=13 med 21.8 [19.8, 22.8] step/s (inside the answers only; per context: 128K: n=13 med 21.8), raw acc 38.0%, tokens/step 2.899 (k=5.0), generated 1000 tokens over 58s
+응답 1개 · 문자 1,801
+  깨진 응답: 0/1 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass PATTR128KB2: 58s total

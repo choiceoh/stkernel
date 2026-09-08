@@ -1,0 +1,592 @@
+
+=== GRAPHMEMBASE1-srv1.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=164) [boot-stamp] dist-world took 21.9s (at 32.7s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group tp took 1.8s (at 34.6s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dcp took 0.0s (at 34.6s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pcp took 0.0s (at 34.6s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pp took 0.0s (at 34.6s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dp took 0.0s (at 34.6s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group ep took 1.3s (at 35.9s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-model-parallel took 3.2s (at 35.9s since interpreter start)
+(Worker pid=164) [boot-stamp] init-device took 25.5s (at 36.2s since interpreter start)
+(Worker_TP1 pid=164) WARNING 09-07 22:50:38 [glm53_rank_cache.py:344] [rank-cache] hit rank=1 bytes=48092653608 in 48.570s; post-load hooks follow
+(Worker_TP1 pid=164) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP1 pid=164) WARNING 09-07 22:50:52 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.967 read=2.171 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 22:50:52 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.145 key_s=2.090 read_s=0.269 copy_s=0.608 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 1.2s (1.87 GiB/s) | apply 0.0s
+(Worker_TP1 pid=164) WARNING 09-07 22:50:57 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.380 read=0.360 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 22:50:57 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.175 key_s=2.448 read_s=0.311 copy_s=0.699 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] load-model took 74.8s (at 111.0s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] encoder-profile took 21.8s (at 135.4s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] profile-run took 32.9s (at 144.5s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] cudagraph-memory-profile took 3.0s (at 147.8s since interpreter start)
+(Worker_TP1 pid=164) INFO 09-07 22:51:37 [gpu_worker.py:582] Available KV cache memory: 7.93 GiB
+(Worker_TP1 pid=164) [boot-stamp] profile/determine-memory took 36.5s (at 147.8s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] kv-cache-alloc took 0.6s (at 148.4s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] cudagraph-capture took 1.7s (at 156.0s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] compile+warmup took 10.1s (at 158.6s since interpreter start)
+
+=== GRAPHMEMBASE1-srv2.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=263) [boot-stamp] dist-world took 6.4s (at 13.2s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group tp took 1.9s (at 15.1s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group dcp took 0.0s (at 15.1s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group pcp took 0.0s (at 15.1s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group pp took 0.0s (at 15.1s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group dp took 0.0s (at 15.1s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group ep took 1.3s (at 16.4s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-model-parallel took 3.2s (at 16.4s since interpreter start)
+(Worker pid=263) [boot-stamp] init-device took 9.9s (at 16.8s since interpreter start)
+(Worker_TP0 pid=263) WARNING 09-07 22:50:36 [glm53_rank_cache.py:344] [rank-cache] hit rank=0 bytes=48092653608 in 46.849s; post-load hooks follow
+(Worker_TP0 pid=263) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP0 pid=263) WARNING 09-07 22:50:51 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.985 read=2.235 quantize=0.000 write=0.000
+(Worker_TP0 pid=263) WARNING 09-07 22:50:51 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.194 key_s=2.131 read_s=0.391 copy_s=0.631 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 2.3s (0.94 GiB/s) | apply 0.0s
+(Worker_TP0 pid=263) WARNING 09-07 22:50:57 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.353 read=0.345 quantize=0.000 write=0.000
+(Worker_TP0 pid=263) WARNING 09-07 22:50:57 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.224 key_s=2.472 read_s=0.433 copy_s=0.728 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) [boot-stamp] load-model took 74.7s (at 91.5s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] encoder-profile took 21.9s (at 116.0s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] profile-run took 33.0s (at 125.2s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] cudagraph-memory-profile took 2.6s (at 128.3s since interpreter start)
+(Worker_TP0 pid=263) INFO 09-07 22:51:37 [gpu_worker.py:582] Available KV cache memory: 6.69 GiB
+(Worker_TP0 pid=263) [boot-stamp] profile/determine-memory took 36.5s (at 128.3s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] kv-cache-alloc took 0.6s (at 129.0s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] cudagraph-capture took 1.7s (at 136.6s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] compile+warmup took 10.1s (at 139.1s since interpreter start)
+
+=== GRAPHMEMBASE1-srv3.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=208) [boot-stamp] dist-world took 20.2s (at 30.0s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group tp took 1.8s (at 31.9s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group dcp took 0.0s (at 31.9s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group pcp took 0.0s (at 31.9s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group pp took 0.0s (at 31.9s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group dp took 0.0s (at 31.9s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group ep took 1.3s (at 33.2s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-model-parallel took 3.2s (at 33.2s since interpreter start)
+(Worker pid=208) [boot-stamp] init-device took 23.7s (at 33.6s since interpreter start)
+(Worker_TP2 pid=208) WARNING 09-07 22:50:29 [glm53_rank_cache.py:344] [rank-cache] hit rank=2 bytes=48092653608 in 39.219s; post-load hooks follow
+(Worker_TP2 pid=208) WARNING 09-07 22:50:42 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.996 read=2.083 quantize=0.000 write=0.000
+(Worker_TP2 pid=208) WARNING 09-07 22:50:42 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.141 key_s=2.123 read_s=0.244 copy_s=0.616 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=208) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP2 pid=208) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 10.9s (0.20 GiB/s) | apply 0.0s
+(Worker_TP2 pid=208) WARNING 09-07 22:50:57 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.372 read=0.342 quantize=0.000 write=0.000
+(Worker_TP2 pid=208) WARNING 09-07 22:50:57 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.168 key_s=2.479 read_s=0.279 copy_s=0.708 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=208) [boot-stamp] load-model took 74.7s (at 108.3s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] encoder-profile took 21.9s (at 132.8s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] profile-run took 33.0s (at 141.9s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] cudagraph-memory-profile took 2.7s (at 145.1s since interpreter start)
+(Worker_TP2 pid=208) INFO 09-07 22:51:37 [gpu_worker.py:582] Available KV cache memory: 6.55 GiB
+(Worker_TP2 pid=208) [boot-stamp] profile/determine-memory took 36.5s (at 145.1s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] kv-cache-alloc took 0.6s (at 145.8s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] cudagraph-capture took 1.7s (at 153.4s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] compile+warmup took 10.2s (at 155.9s since interpreter start)
+
+=== GRAPHMEMBASE1-srv4.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=208) [boot-stamp] dist-world took 17.0s (at 27.5s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group tp took 1.9s (at 29.4s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group dcp took 0.0s (at 29.4s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group pcp took 0.0s (at 29.4s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group pp took 0.0s (at 29.4s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group dp took 0.0s (at 29.4s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group ep took 1.3s (at 30.7s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-model-parallel took 3.2s (at 30.7s since interpreter start)
+(Worker pid=208) [boot-stamp] init-device took 20.5s (at 31.1s since interpreter start)
+(Worker_TP3 pid=208) WARNING 09-07 22:50:30 [glm53_rank_cache.py:344] [rank-cache] hit rank=3 bytes=48092653608 in 40.531s; post-load hooks follow
+(Worker_TP3 pid=208) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP3 pid=208) WARNING 09-07 22:50:48 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.990 read=3.572 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 22:50:48 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.263 key_s=2.157 read_s=0.476 copy_s=0.832 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 5.4s (0.40 GiB/s) | apply 0.0s
+(Worker_TP3 pid=208) WARNING 09-07 22:50:57 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.391 read=0.366 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 22:50:57 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.297 key_s=2.524 read_s=0.517 copy_s=0.921 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) [boot-stamp] load-model took 74.9s (at 106.0s since interpreter start)
+(Worker_TP3 pid=208) [boot-stamp] encoder-profile took 21.8s (at 130.3s since interpreter start)
+(Worker_TP3 pid=208) [boot-stamp] profile-run took 33.0s (at 139.5s since interpreter start)
+(Worker_TP3 pid=208) [boot-stamp] cudagraph-memory-profile took 2.7s (at 142.7s since interpreter start)
+(Worker_TP3 pid=208) INFO 09-07 22:51:37 [gpu_worker.py:582] Available KV cache memory: 10.04 GiB
+(Worker_TP3 pid=208) [boot-stamp] profile/determine-memory took 36.6s (at 142.7s since interpreter start)
+(Worker_TP3 pid=208) [boot-stamp] kv-cache-alloc took 0.6s (at 143.3s since interpreter start)
+(Worker_TP3 pid=208) [boot-stamp] cudagraph-capture took 1.7s (at 150.9s since interpreter start)
+(Worker_TP3 pid=208) [boot-stamp] compile+warmup took 10.2s (at 153.5s since interpreter start)
+
+=== GRAPHMEMBASE2-srv1.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=164) [boot-stamp] dist-world took 20.4s (at 27.6s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group tp took 1.9s (at 29.4s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dcp took 0.0s (at 29.4s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pcp took 0.0s (at 29.4s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pp took 0.0s (at 29.4s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dp took 0.0s (at 29.4s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group ep took 1.3s (at 30.7s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-model-parallel took 3.2s (at 30.7s since interpreter start)
+(Worker pid=164) [boot-stamp] init-device took 24.0s (at 31.1s since interpreter start)
+(Worker_TP1 pid=164) WARNING 09-07 23:05:09 [glm53_rank_cache.py:344] [rank-cache] hit rank=1 bytes=48092653608 in 48.413s; post-load hooks follow
+(Worker_TP1 pid=164) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP1 pid=164) WARNING 09-07 23:05:24 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.034 read=2.153 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 23:05:24 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.146 key_s=2.166 read_s=0.259 copy_s=0.606 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 1.1s (1.96 GiB/s) | apply 0.0s
+(Worker_TP1 pid=164) WARNING 09-07 23:05:29 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.391 read=0.361 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 23:05:29 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.177 key_s=2.537 read_s=0.295 copy_s=0.695 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] load-model took 75.8s (at 106.9s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] encoder-profile took 22.0s (at 131.4s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] profile-run took 33.7s (at 141.1s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] cudagraph-memory-profile took 2.4s (at 144.0s since interpreter start)
+(Worker_TP1 pid=164) INFO 09-07 23:06:09 [gpu_worker.py:582] Available KV cache memory: 9.57 GiB
+(Worker_TP1 pid=164) [boot-stamp] profile/determine-memory took 37.0s (at 144.0s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] kv-cache-alloc took 0.6s (at 144.9s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] cudagraph-capture took 1.7s (at 152.5s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] compile+warmup took 10.1s (at 155.0s since interpreter start)
+
+=== GRAPHMEMBASE2-srv2.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=223) [boot-stamp] dist-world took 6.3s (at 14.2s since interpreter start)
+(Worker pid=223) [boot-stamp] dist-group tp took 1.9s (at 16.1s since interpreter start)
+(Worker pid=223) [boot-stamp] dist-group dcp took 0.0s (at 16.1s since interpreter start)
+(Worker pid=223) [boot-stamp] dist-group pcp took 0.0s (at 16.1s since interpreter start)
+(Worker pid=223) [boot-stamp] dist-group pp took 0.0s (at 16.1s since interpreter start)
+(Worker pid=223) [boot-stamp] dist-group dp took 0.0s (at 16.1s since interpreter start)
+(Worker pid=223) [boot-stamp] dist-group ep took 1.3s (at 17.4s since interpreter start)
+(Worker pid=223) [boot-stamp] dist-model-parallel took 3.2s (at 17.4s since interpreter start)
+(Worker pid=223) [boot-stamp] init-device took 9.8s (at 17.6s since interpreter start)
+(Worker_TP0 pid=223) WARNING 09-07 23:05:07 [glm53_rank_cache.py:344] [rank-cache] hit rank=0 bytes=48092653608 in 46.661s; post-load hooks follow
+(Worker_TP0 pid=223) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP0 pid=223) WARNING 09-07 23:05:21 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.948 read=2.182 quantize=0.000 write=0.000
+(Worker_TP0 pid=223) WARNING 09-07 23:05:21 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.185 key_s=2.079 read_s=0.361 copy_s=0.634 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=223) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 3.8s (0.57 GiB/s) | apply 0.0s
+(Worker_TP0 pid=223) WARNING 09-07 23:05:29 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.370 read=0.369 quantize=0.000 write=0.000
+(Worker_TP0 pid=223) WARNING 09-07 23:05:29 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.221 key_s=2.441 read_s=0.413 copy_s=0.727 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=223) [boot-stamp] load-model took 75.9s (at 93.5s since interpreter start)
+(Worker_TP0 pid=223) [boot-stamp] encoder-profile took 22.7s (at 118.0s since interpreter start)
+(Worker_TP0 pid=223) [boot-stamp] profile-run took 33.9s (at 127.7s since interpreter start)
+(Worker_TP0 pid=223) [boot-stamp] cudagraph-memory-profile took 2.4s (at 130.6s since interpreter start)
+(Worker_TP0 pid=223) INFO 09-07 23:06:09 [gpu_worker.py:582] Available KV cache memory: 8.22 GiB
+(Worker_TP0 pid=223) [boot-stamp] profile/determine-memory took 37.0s (at 130.6s since interpreter start)
+(Worker_TP0 pid=223) [boot-stamp] kv-cache-alloc took 0.6s (at 131.5s since interpreter start)
+(Worker_TP0 pid=223) [boot-stamp] cudagraph-capture took 1.7s (at 139.2s since interpreter start)
+(Worker_TP0 pid=223) [boot-stamp] compile+warmup took 10.1s (at 141.7s since interpreter start)
+
+=== GRAPHMEMBASE2-srv3.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=207) [boot-stamp] dist-world took 22.4s (at 33.4s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group tp took 1.9s (at 35.3s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group dcp took 0.0s (at 35.3s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group pcp took 0.0s (at 35.3s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group pp took 0.0s (at 35.3s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group dp took 0.0s (at 35.3s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group ep took 1.3s (at 36.6s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-model-parallel took 3.2s (at 36.6s since interpreter start)
+(Worker pid=207) [boot-stamp] init-device took 25.9s (at 37.0s since interpreter start)
+(Worker_TP2 pid=207) WARNING 09-07 23:05:05 [glm53_rank_cache.py:344] [rank-cache] hit rank=2 bytes=48092653608 in 44.318s; post-load hooks follow
+(Worker_TP2 pid=207) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP2 pid=207) WARNING 09-07 23:05:18 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.994 read=2.050 quantize=0.000 write=0.000
+(Worker_TP2 pid=207) WARNING 09-07 23:05:18 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.140 key_s=2.102 read_s=0.239 copy_s=0.601 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=207) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 6.9s (0.32 GiB/s) | apply 0.0s
+(Worker_TP2 pid=207) WARNING 09-07 23:05:29 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.392 read=0.361 quantize=0.000 write=0.000
+(Worker_TP2 pid=207) WARNING 09-07 23:05:29 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.170 key_s=2.470 read_s=0.277 copy_s=0.692 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=207) [boot-stamp] load-model took 75.7s (at 112.7s since interpreter start)
+(Worker_TP2 pid=207) [boot-stamp] encoder-profile took 22.0s (at 137.2s since interpreter start)
+(Worker_TP2 pid=207) [boot-stamp] profile-run took 33.7s (at 146.9s since interpreter start)
+(Worker_TP2 pid=207) [boot-stamp] cudagraph-memory-profile took 2.8s (at 150.1s since interpreter start)
+(Worker_TP2 pid=207) INFO 09-07 23:06:09 [gpu_worker.py:582] Available KV cache memory: 7.83 GiB
+(Worker_TP2 pid=207) [boot-stamp] profile/determine-memory took 37.3s (at 150.1s since interpreter start)
+(Worker_TP2 pid=207) [boot-stamp] kv-cache-alloc took 0.6s (at 150.8s since interpreter start)
+(Worker_TP2 pid=207) [boot-stamp] cudagraph-capture took 1.7s (at 158.4s since interpreter start)
+(Worker_TP2 pid=207) [boot-stamp] compile+warmup took 10.1s (at 160.9s since interpreter start)
+
+=== GRAPHMEMBASE2-srv4.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=207) [boot-stamp] dist-world took 18.5s (at 29.1s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group tp took 1.9s (at 31.0s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group dcp took 0.0s (at 31.0s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group pcp took 0.0s (at 31.0s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group pp took 0.0s (at 31.0s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group dp took 0.0s (at 31.0s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group ep took 1.3s (at 32.3s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-model-parallel took 3.2s (at 32.3s since interpreter start)
+(Worker pid=207) [boot-stamp] init-device took 22.0s (at 32.7s since interpreter start)
+(Worker_TP3 pid=207) WARNING 09-07 23:05:04 [glm53_rank_cache.py:344] [rank-cache] hit rank=3 bytes=48092653608 in 44.181s; post-load hooks follow
+(Worker_TP3 pid=207) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP3 pid=207) WARNING 09-07 23:05:20 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.045 read=2.086 quantize=0.000 write=0.000
+(Worker_TP3 pid=207) WARNING 09-07 23:05:20 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.168 key_s=2.189 read_s=0.285 copy_s=0.580 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=207) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 5.1s (0.43 GiB/s) | apply 0.0s
+(Worker_TP3 pid=207) WARNING 09-07 23:05:29 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.392 read=0.347 quantize=0.000 write=0.000
+(Worker_TP3 pid=207) WARNING 09-07 23:05:29 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.202 key_s=2.560 read_s=0.325 copy_s=0.669 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=207) [boot-stamp] load-model took 75.8s (at 108.5s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] encoder-profile took 21.8s (at 133.0s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] profile-run took 33.7s (at 142.7s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] cudagraph-memory-profile took 2.7s (at 145.9s since interpreter start)
+(Worker_TP3 pid=207) INFO 09-07 23:06:09 [gpu_worker.py:582] Available KV cache memory: 10.92 GiB
+(Worker_TP3 pid=207) [boot-stamp] profile/determine-memory took 37.3s (at 145.9s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] kv-cache-alloc took 0.7s (at 146.5s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] cudagraph-capture took 1.7s (at 154.1s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] compile+warmup took 10.1s (at 156.7s since interpreter start)
+
+=== GRAPHMEMFAST1-srv1.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=164) [boot-stamp] dist-world took 30.0s (at 37.9s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group tp took 1.9s (at 39.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dcp took 0.0s (at 39.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pcp took 0.0s (at 39.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pp took 0.0s (at 39.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dp took 0.0s (at 39.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group ep took 1.3s (at 41.1s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-model-parallel took 3.2s (at 41.1s since interpreter start)
+(Worker pid=164) [boot-stamp] init-device took 33.5s (at 41.3s since interpreter start)
+(Worker_TP1 pid=164) WARNING 09-07 22:55:31 [glm53_rank_cache.py:344] [rank-cache] hit rank=1 bytes=48092653608 in 49.787s; post-load hooks follow
+(Worker_TP1 pid=164) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP1 pid=164) WARNING 09-07 22:55:46 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.009 read=2.201 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 22:55:46 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.156 key_s=2.156 read_s=0.282 copy_s=0.627 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 1.1s (2.04 GiB/s) | apply 0.0s
+(Worker_TP1 pid=164) WARNING 09-07 22:55:51 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.391 read=0.363 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 22:55:51 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.186 key_s=2.527 read_s=0.319 copy_s=0.716 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] load-model took 75.8s (at 117.2s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] encoder-profile took 21.9s (at 141.7s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] profile-run took 33.0s (at 150.8s since interpreter start)
+(Worker_TP1 pid=164) INFO 09-07 22:56:27 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=1; model/MM profile and real graph warmup retained
+(Worker_TP1 pid=164) INFO 09-07 22:56:27 [gpu_worker.py:582] Available KV cache memory: 9.46 GiB
+(Worker_TP1 pid=164) [boot-stamp] profile/determine-memory took 33.6s (at 151.1s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] kv-cache-alloc took 0.6s (at 152.0s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] cudagraph-capture took 2.0s (at 160.2s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] compile+warmup took 10.6s (at 162.7s since interpreter start)
+
+=== GRAPHMEMFAST1-srv2.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=263) [boot-stamp] dist-world took 9.6s (at 20.7s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group tp took 1.9s (at 22.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group dcp took 0.0s (at 22.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group pcp took 0.0s (at 22.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group pp took 0.0s (at 22.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group dp took 0.0s (at 22.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group ep took 1.3s (at 23.9s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-model-parallel took 3.2s (at 23.9s since interpreter start)
+(Worker pid=263) [boot-stamp] init-device took 13.2s (at 24.3s since interpreter start)
+(Worker_TP0 pid=263) WARNING 09-07 22:55:29 [glm53_rank_cache.py:344] [rank-cache] hit rank=0 bytes=48092653608 in 46.805s; post-load hooks follow
+(Worker_TP0 pid=263) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP0 pid=263) WARNING 09-07 22:55:44 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.991 read=2.246 quantize=0.000 write=0.000
+(Worker_TP0 pid=263) WARNING 09-07 22:55:44 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.198 key_s=2.153 read_s=0.390 copy_s=0.629 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 3.1s (0.71 GiB/s) | apply 0.0s
+(Worker_TP0 pid=263) WARNING 09-07 22:55:51 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.392 read=0.397 quantize=0.000 write=0.000
+(Worker_TP0 pid=263) WARNING 09-07 22:55:51 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.237 key_s=2.522 read_s=0.445 copy_s=0.725 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) [boot-stamp] load-model took 75.8s (at 100.1s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] encoder-profile took 21.8s (at 124.5s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] profile-run took 33.1s (at 133.7s since interpreter start)
+(Worker_TP0 pid=263) INFO 09-07 22:56:28 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=0; model/MM profile and real graph warmup retained
+(Worker_TP0 pid=263) INFO 09-07 22:56:28 [gpu_worker.py:582] Available KV cache memory: 7.46 GiB
+(Worker_TP0 pid=263) [boot-stamp] profile/determine-memory took 34.0s (at 134.2s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] kv-cache-alloc took 0.8s (at 134.9s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] cudagraph-capture took 2.0s (at 143.0s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] compile+warmup took 10.6s (at 145.5s since interpreter start)
+
+=== GRAPHMEMFAST1-srv3.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=206) [boot-stamp] dist-world took 29.8s (at 38.1s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group tp took 1.9s (at 40.0s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group dcp took 0.0s (at 40.0s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group pcp took 0.0s (at 40.0s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group pp took 0.0s (at 40.1s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group dp took 0.0s (at 40.1s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group ep took 1.3s (at 41.3s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-model-parallel took 3.2s (at 41.3s since interpreter start)
+(Worker pid=206) [boot-stamp] init-device took 33.4s (at 41.7s since interpreter start)
+(Worker_TP2 pid=206) WARNING 09-07 22:55:23 [glm53_rank_cache.py:344] [rank-cache] hit rank=2 bytes=48092653608 in 41.294s; post-load hooks follow
+(Worker_TP2 pid=206) WARNING 09-07 22:55:36 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.005 read=2.096 quantize=0.000 write=0.000
+(Worker_TP2 pid=206) WARNING 09-07 22:55:36 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.146 key_s=2.143 read_s=0.258 copy_s=0.623 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=206) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP2 pid=206) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 10.7s (0.20 GiB/s) | apply 0.0s
+(Worker_TP2 pid=206) WARNING 09-07 22:55:51 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.383 read=0.351 quantize=0.000 write=0.000
+(Worker_TP2 pid=206) WARNING 09-07 22:55:51 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.173 key_s=2.503 read_s=0.292 copy_s=0.717 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=206) [boot-stamp] load-model took 75.7s (at 117.4s since interpreter start)
+(Worker_TP2 pid=206) [boot-stamp] encoder-profile took 21.9s (at 141.9s since interpreter start)
+(Worker_TP2 pid=206) [boot-stamp] profile-run took 33.0s (at 151.1s since interpreter start)
+(Worker_TP2 pid=206) INFO 09-07 22:56:28 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=2; model/MM profile and real graph warmup retained
+(Worker_TP2 pid=206) INFO 09-07 22:56:28 [gpu_worker.py:582] Available KV cache memory: 7.52 GiB
+(Worker_TP2 pid=206) [boot-stamp] profile/determine-memory took 33.9s (at 151.6s since interpreter start)
+(Worker_TP2 pid=206) [boot-stamp] kv-cache-alloc took 0.7s (at 152.4s since interpreter start)
+(Worker_TP2 pid=206) [boot-stamp] cudagraph-capture took 2.0s (at 160.4s since interpreter start)
+(Worker_TP2 pid=206) [boot-stamp] compile+warmup took 10.6s (at 163.0s since interpreter start)
+
+=== GRAPHMEMFAST1-srv4.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=206) [boot-stamp] dist-world took 26.7s (at 38.9s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group tp took 1.9s (at 40.8s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group dcp took 0.0s (at 40.8s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group pcp took 0.0s (at 40.8s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group pp took 0.0s (at 40.9s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group dp took 0.0s (at 40.9s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-group ep took 1.3s (at 42.1s since interpreter start)
+(Worker pid=206) [boot-stamp] dist-model-parallel took 3.2s (at 42.1s since interpreter start)
+(Worker pid=206) [boot-stamp] init-device took 30.3s (at 42.5s since interpreter start)
+(Worker_TP3 pid=206) WARNING 09-07 22:55:24 [glm53_rank_cache.py:344] [rank-cache] hit rank=3 bytes=48092653608 in 42.235s; post-load hooks follow
+(Worker_TP3 pid=206) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP3 pid=206) WARNING 09-07 22:55:40 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.025 read=2.077 quantize=0.000 write=0.000
+(Worker_TP3 pid=206) WARNING 09-07 22:55:40 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.170 key_s=2.182 read_s=0.283 copy_s=0.583 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=206) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 7.0s (0.31 GiB/s) | apply 0.0s
+(Worker_TP3 pid=206) WARNING 09-07 22:55:51 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.392 read=0.356 quantize=0.000 write=0.000
+(Worker_TP3 pid=206) WARNING 09-07 22:55:51 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.203 key_s=2.553 read_s=0.327 copy_s=0.668 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=206) [boot-stamp] load-model took 75.9s (at 118.4s since interpreter start)
+(Worker_TP3 pid=206) [boot-stamp] encoder-profile took 21.7s (at 142.7s since interpreter start)
+(Worker_TP3 pid=206) [boot-stamp] profile-run took 33.0s (at 151.9s since interpreter start)
+(Worker_TP3 pid=206) INFO 09-07 22:56:28 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=3; model/MM profile and real graph warmup retained
+(Worker_TP3 pid=206) INFO 09-07 22:56:28 [gpu_worker.py:582] Available KV cache memory: 11.64 GiB
+(Worker_TP3 pid=206) [boot-stamp] profile/determine-memory took 34.0s (at 152.4s since interpreter start)
+(Worker_TP3 pid=206) [boot-stamp] kv-cache-alloc took 0.8s (at 153.2s since interpreter start)
+(Worker_TP3 pid=206) [boot-stamp] cudagraph-capture took 2.0s (at 161.2s since interpreter start)
+(Worker_TP3 pid=206) [boot-stamp] compile+warmup took 10.6s (at 163.8s since interpreter start)
+
+=== GRAPHMEMFAST2-srv1.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=164) [boot-stamp] dist-world took 18.6s (at 28.9s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group tp took 1.8s (at 30.7s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dcp took 0.0s (at 30.7s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pcp took 0.0s (at 30.7s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pp took 0.0s (at 30.7s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dp took 0.0s (at 30.7s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group ep took 1.2s (at 31.9s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-model-parallel took 3.1s (at 31.9s since interpreter start)
+(Worker pid=164) [boot-stamp] init-device took 22.0s (at 32.3s since interpreter start)
+(Worker_TP1 pid=164) WARNING 09-07 23:00:24 [glm53_rank_cache.py:344] [rank-cache] hit rank=1 bytes=48092653608 in 49.487s; post-load hooks follow
+(Worker_TP1 pid=164) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP1 pid=164) WARNING 09-07 23:00:38 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.007 read=2.147 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 23:00:38 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.151 key_s=2.130 read_s=0.263 copy_s=0.601 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 2.1s (1.03 GiB/s) | apply 0.0s
+(Worker_TP1 pid=164) WARNING 09-07 23:00:44 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.394 read=0.392 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 23:00:44 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.185 key_s=2.500 read_s=0.305 copy_s=0.695 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] load-model took 75.4s (at 107.6s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] encoder-profile took 21.9s (at 131.9s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] profile-run took 32.8s (at 141.1s since interpreter start)
+(Worker_TP1 pid=164) INFO 09-07 23:01:21 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=1; model/MM profile and real graph warmup retained
+(Worker_TP1 pid=164) INFO 09-07 23:01:21 [gpu_worker.py:582] Available KV cache memory: 7.72 GiB
+(Worker_TP1 pid=164) [boot-stamp] profile/determine-memory took 33.6s (at 141.6s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] kv-cache-alloc took 0.7s (at 142.4s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] cudagraph-capture took 2.1s (at 150.3s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] compile+warmup took 10.4s (at 152.8s since interpreter start)
+
+=== GRAPHMEMFAST2-srv2.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=263) [boot-stamp] dist-world took 7.3s (at 13.8s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group tp took 1.8s (at 15.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group dcp took 0.0s (at 15.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group pcp took 0.0s (at 15.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group pp took 0.0s (at 15.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group dp took 0.0s (at 15.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group ep took 1.2s (at 16.9s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-model-parallel took 3.1s (at 16.9s since interpreter start)
+(Worker pid=263) [boot-stamp] init-device took 10.8s (at 17.3s since interpreter start)
+(Worker_TP0 pid=263) WARNING 09-07 23:00:24 [glm53_rank_cache.py:344] [rank-cache] hit rank=0 bytes=48092653608 in 47.341s; post-load hooks follow
+(Worker_TP0 pid=263) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP0 pid=263) WARNING 09-07 23:00:39 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.006 read=2.237 quantize=0.000 write=0.000
+(Worker_TP0 pid=263) WARNING 09-07 23:00:39 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.197 key_s=2.144 read_s=0.394 copy_s=0.638 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 1.1s (2.04 GiB/s) | apply 0.0s
+(Worker_TP0 pid=263) WARNING 09-07 23:00:44 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.379 read=0.369 quantize=0.000 write=0.000
+(Worker_TP0 pid=263) WARNING 09-07 23:00:44 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.234 key_s=2.494 read_s=0.443 copy_s=0.730 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) [boot-stamp] load-model took 74.2s (at 91.4s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] encoder-profile took 22.1s (at 116.8s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] profile-run took 32.9s (at 126.1s since interpreter start)
+(Worker_TP0 pid=263) INFO 09-07 23:01:21 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=0; model/MM profile and real graph warmup retained
+(Worker_TP0 pid=263) INFO 09-07 23:01:21 [gpu_worker.py:582] Available KV cache memory: 6.52 GiB
+(Worker_TP0 pid=263) [boot-stamp] profile/determine-memory took 33.7s (at 126.6s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] kv-cache-alloc took 0.7s (at 127.3s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] cudagraph-capture took 2.1s (at 135.3s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] compile+warmup took 10.2s (at 137.6s since interpreter start)
+
+=== GRAPHMEMFAST2-srv3.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=208) [boot-stamp] dist-world took 23.7s (at 32.2s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group tp took 1.8s (at 34.1s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group dcp took 0.0s (at 34.1s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group pcp took 0.0s (at 34.1s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group pp took 0.0s (at 34.1s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group dp took 0.0s (at 34.1s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-group ep took 1.2s (at 35.3s since interpreter start)
+(Worker pid=208) [boot-stamp] dist-model-parallel took 3.1s (at 35.3s since interpreter start)
+(Worker pid=208) [boot-stamp] init-device took 27.1s (at 35.7s since interpreter start)
+(Worker_TP2 pid=208) WARNING 09-07 23:00:18 [glm53_rank_cache.py:344] [rank-cache] hit rank=2 bytes=48092653608 in 42.438s; post-load hooks follow
+(Worker_TP2 pid=208) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP2 pid=208) WARNING 09-07 23:00:33 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.963 read=2.023 quantize=0.000 write=0.000
+(Worker_TP2 pid=208) WARNING 09-07 23:00:33 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.135 key_s=2.090 read_s=0.235 copy_s=0.609 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=208) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 7.5s (0.29 GiB/s) | apply 0.0s
+(Worker_TP2 pid=208) WARNING 09-07 23:00:45 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.360 read=0.599 quantize=0.000 write=0.000
+(Worker_TP2 pid=208) WARNING 09-07 23:00:45 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.190 key_s=2.425 read_s=0.302 copy_s=0.748 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=208) [boot-stamp] load-model took 75.6s (at 111.3s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] encoder-profile took 21.6s (at 135.3s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] profile-run took 32.7s (at 144.5s since interpreter start)
+(Worker_TP2 pid=208) INFO 09-07 23:01:21 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=2; model/MM profile and real graph warmup retained
+(Worker_TP2 pid=208) INFO 09-07 23:01:21 [gpu_worker.py:582] Available KV cache memory: 6.23 GiB
+(Worker_TP2 pid=208) [boot-stamp] profile/determine-memory took 33.6s (at 145.0s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] kv-cache-alloc took 0.7s (at 145.7s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] cudagraph-capture took 2.1s (at 153.7s since interpreter start)
+(Worker_TP2 pid=208) [boot-stamp] compile+warmup took 10.4s (at 156.2s since interpreter start)
+
+=== GRAPHMEMFAST2-srv4.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=210) [boot-stamp] dist-world took 18.7s (at 28.3s since interpreter start)
+(Worker pid=210) [boot-stamp] dist-group tp took 1.8s (at 30.2s since interpreter start)
+(Worker pid=210) [boot-stamp] dist-group dcp took 0.0s (at 30.2s since interpreter start)
+(Worker pid=210) [boot-stamp] dist-group pcp took 0.0s (at 30.2s since interpreter start)
+(Worker pid=210) [boot-stamp] dist-group pp took 0.0s (at 30.2s since interpreter start)
+(Worker pid=210) [boot-stamp] dist-group dp took 0.0s (at 30.2s since interpreter start)
+(Worker pid=210) [boot-stamp] dist-group ep took 1.2s (at 31.4s since interpreter start)
+(Worker pid=210) [boot-stamp] dist-model-parallel took 3.1s (at 31.4s since interpreter start)
+(Worker pid=210) [boot-stamp] init-device took 22.1s (at 31.8s since interpreter start)
+(Worker_TP3 pid=210) WARNING 09-07 23:00:19 [glm53_rank_cache.py:344] [rank-cache] hit rank=3 bytes=48092653608 in 42.760s; post-load hooks follow
+(Worker_TP3 pid=210) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP3 pid=210) WARNING 09-07 23:00:35 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.043 read=2.092 quantize=0.000 write=0.000
+(Worker_TP3 pid=210) WARNING 09-07 23:00:35 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.169 key_s=2.195 read_s=0.286 copy_s=0.588 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=210) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 5.8s (0.37 GiB/s) | apply 0.0s
+(Worker_TP3 pid=210) WARNING 09-07 23:00:44 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.390 read=0.363 quantize=0.000 write=0.000
+(Worker_TP3 pid=210) WARNING 09-07 23:00:44 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.202 key_s=2.567 read_s=0.330 copy_s=0.673 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=210) [boot-stamp] load-model took 75.5s (at 107.3s since interpreter start)
+(Worker_TP3 pid=210) [boot-stamp] encoder-profile took 21.3s (at 131.4s since interpreter start)
+(Worker_TP3 pid=210) [boot-stamp] profile-run took 32.7s (at 140.6s since interpreter start)
+(Worker_TP3 pid=210) INFO 09-07 23:01:21 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=3; model/MM profile and real graph warmup retained
+(Worker_TP3 pid=210) INFO 09-07 23:01:21 [gpu_worker.py:582] Available KV cache memory: 10.29 GiB
+(Worker_TP3 pid=210) [boot-stamp] profile/determine-memory took 33.6s (at 141.1s since interpreter start)
+(Worker_TP3 pid=210) [boot-stamp] kv-cache-alloc took 0.7s (at 141.9s since interpreter start)
+(Worker_TP3 pid=210) [boot-stamp] cudagraph-capture took 2.1s (at 149.8s since interpreter start)
+(Worker_TP3 pid=210) [boot-stamp] compile+warmup took 10.4s (at 152.3s since interpreter start)
+
+=== GRAPHMEMPRIME-srv1.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=164) [boot-stamp] dist-world took 22.9s (at 30.0s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group tp took 1.8s (at 31.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dcp took 0.0s (at 31.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pcp took 0.0s (at 31.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group pp took 0.0s (at 31.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group dp took 0.0s (at 31.8s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-group ep took 1.3s (at 33.1s since interpreter start)
+(Worker pid=164) [boot-stamp] dist-model-parallel took 3.1s (at 33.1s since interpreter start)
+(Worker pid=164) [boot-stamp] init-device took 26.4s (at 33.5s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] weights: 148498 tensors, 184.2 GiB | read 30.6s (6.02 GiB/s) | apply 20.4s
+(Worker_TP1 pid=164) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP1 pid=164) [boot-stamp] load-model still running after 120s; its thread is at:
+(Worker_TP1 pid=164) WARNING 09-07 22:43:03 [glm53_rank_cache.py:377] [rank-cache] saved rank=1 bytes=48092653608 in 116.457s; post-load hooks follow
+(Worker_TP1 pid=164) WARNING 09-07 22:43:03 [glm53_rank_cache.py:310] [rank-cache] evicted stale artifact /cache/glm53-ranks/bd63f2df4a3a7065429e6e02186d70b7b2b054c28f7a1c82cfbf9cc9aaee04df (48.1 GB; keep=2)
+(Worker_TP1 pid=164) [boot-stamp] load-model still running after 180s; its thread is at:
+(Worker_TP1 pid=164) [boot-stamp] load-model still running after 240s; its thread is at:
+(Worker_TP1 pid=164) WARNING 09-07 22:44:09 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=0 miss=213 errors=0 host-seconds=key=2.018 read=0.039 quantize=5.554 write=10.254
+(Worker_TP1 pid=164) WARNING 09-07 22:44:09 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.206 key_s=2.159 read_s=0.298 copy_s=0.595 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 1.1s (1.99 GiB/s) | apply 0.0s
+(Worker_TP1 pid=164) WARNING 09-07 22:44:16 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=0 miss=31 errors=0 host-seconds=key=0.365 read=0.002 quantize=1.993 write=0.704
+(Worker_TP1 pid=164) WARNING 09-07 22:44:16 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.238 key_s=2.502 read_s=0.329 copy_s=0.685 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] load-model took 248.6s (at 282.1s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] profile/determine-memory still running after 60s; its thread is at:
+(Worker_TP1 pid=164) [boot-stamp] profile-run still running after 60s; its thread is at:
+(Worker_TP1 pid=164) [boot-stamp] encoder-profile still running after 60s; its thread is at:
+(Worker_TP1 pid=164) [boot-stamp] encoder-profile took 78.6s (at 364.6s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] profile-run took 102.5s (at 386.5s since interpreter start)
+(Worker_TP1 pid=164) INFO 09-07 22:46:02 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=1; model/MM profile and real graph warmup retained
+(Worker_TP1 pid=164) INFO 09-07 22:46:02 [gpu_worker.py:582] Available KV cache memory: 6.98 GiB
+(Worker_TP1 pid=164) [boot-stamp] profile/determine-memory took 103.1s (at 386.7s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] kv-cache-alloc took 0.7s (at 387.8s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] cudagraph-capture took 2.0s (at 438.1s since interpreter start)
+(Worker_TP1 pid=164) [boot-stamp] compile+warmup took 52.9s (at 440.8s since interpreter start)
+
+=== GRAPHMEMPRIME-srv2.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=263) [boot-stamp] dist-world took 2.5s (at 13.6s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group tp took 1.8s (at 15.5s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group dcp took 0.0s (at 15.5s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group pcp took 0.0s (at 15.5s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group pp took 0.0s (at 15.5s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group dp took 0.0s (at 15.5s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-group ep took 1.3s (at 16.7s since interpreter start)
+(Worker pid=263) [boot-stamp] dist-model-parallel took 3.1s (at 16.7s since interpreter start)
+(Worker pid=263) [boot-stamp] init-device took 6.1s (at 17.1s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] weights: 148498 tensors, 184.2 GiB | read 45.6s (4.04 GiB/s) | apply 5.5s
+(Worker_TP0 pid=263) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP0 pid=263) WARNING 09-07 22:42:01 [glm53_rank_cache.py:377] [rank-cache] saved rank=0 bytes=48092653608 in 54.579s; post-load hooks follow
+(Worker_TP0 pid=263) WARNING 09-07 22:42:01 [glm53_rank_cache.py:310] [rank-cache] evicted stale artifact /cache/glm53-ranks/9b1c5bdff7eb25e58f59aed054a2d03242cc5959976ad0f20fe19983d5af4549 (48.1 GB; keep=2)
+(Worker_TP0 pid=263) [boot-stamp] load-model still running after 120s; its thread is at:
+(Worker_TP0 pid=263) WARNING 09-07 22:43:04 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=0 miss=213 errors=0 host-seconds=key=1.982 read=0.066 quantize=5.590 write=4.119
+(Worker_TP0 pid=263) WARNING 09-07 22:43:04 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.212 key_s=2.150 read_s=0.416 copy_s=0.607 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) [boot-stamp] load-model still running after 180s; its thread is at:
+(Worker_TP0 pid=263) [boot-stamp] load-model still running after 240s; its thread is at:
+(Worker_TP0 pid=263) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 65.0s (0.03 GiB/s) | apply 0.0s
+(Worker_TP0 pid=263) WARNING 09-07 22:44:17 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=0 miss=31 errors=0 host-seconds=key=0.395 read=0.005 quantize=3.094 write=0.623
+(Worker_TP0 pid=263) WARNING 09-07 22:44:17 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.253 key_s=2.524 read_s=0.470 copy_s=0.703 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) [boot-stamp] load-model took 249.8s (at 267.0s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] profile/determine-memory still running after 60s; its thread is at:
+(Worker_TP0 pid=263) [boot-stamp] profile-run still running after 60s; its thread is at:
+(Worker_TP0 pid=263) [boot-stamp] encoder-profile still running after 60s; its thread is at:
+(Worker_TP0 pid=263) [boot-stamp] encoder-profile took 78.7s (at 348.2s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] profile-run took 102.5s (at 370.1s since interpreter start)
+(Worker_TP0 pid=263) INFO 09-07 22:46:02 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=0; model/MM profile and real graph warmup retained
+(Worker_TP0 pid=263) INFO 09-07 22:46:02 [gpu_worker.py:582] Available KV cache memory: 6.2 GiB
+(Worker_TP0 pid=263) [boot-stamp] profile/determine-memory took 103.2s (at 370.4s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] kv-cache-alloc took 0.6s (at 371.3s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] cudagraph-capture took 2.0s (at 421.7s since interpreter start)
+(Worker_TP0 pid=263) [boot-stamp] compile+warmup took 52.9s (at 424.4s since interpreter start)
+
+=== GRAPHMEMPRIME-srv3.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=205) [boot-stamp] dist-world took 24.7s (at 32.6s since interpreter start)
+(Worker pid=205) [boot-stamp] dist-group tp took 1.8s (at 34.4s since interpreter start)
+(Worker pid=205) [boot-stamp] dist-group dcp took 0.0s (at 34.4s since interpreter start)
+(Worker pid=205) [boot-stamp] dist-group pcp took 0.0s (at 34.4s since interpreter start)
+(Worker pid=205) [boot-stamp] dist-group pp took 0.0s (at 34.4s since interpreter start)
+(Worker pid=205) [boot-stamp] dist-group dp took 0.0s (at 34.4s since interpreter start)
+(Worker pid=205) [boot-stamp] dist-group ep took 1.3s (at 35.7s since interpreter start)
+(Worker pid=205) [boot-stamp] dist-model-parallel took 3.1s (at 35.7s since interpreter start)
+(Worker pid=205) [boot-stamp] init-device took 28.2s (at 36.1s since interpreter start)
+(Worker_TP2 pid=205) [boot-stamp] weights: 148498 tensors, 184.2 GiB | read 45.6s (4.04 GiB/s) | apply 5.5s
+(Worker_TP2 pid=205) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP2 pid=205) WARNING 09-07 22:41:50 [glm53_rank_cache.py:377] [rank-cache] saved rank=2 bytes=48092653608 in 43.092s; post-load hooks follow
+(Worker_TP2 pid=205) WARNING 09-07 22:41:50 [glm53_rank_cache.py:310] [rank-cache] evicted stale artifact /cache/glm53-ranks/0c05506a9ad764f8eb2d19d93c60ab08a4d67143fd4b1ddf13d2e26fe4196bd4 (48.1 GB; keep=2)
+(Worker_TP2 pid=205) [boot-stamp] load-model still running after 120s; its thread is at:
+(Worker_TP2 pid=205) WARNING 09-07 22:42:45 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=0 miss=213 errors=0 host-seconds=key=1.984 read=0.039 quantize=5.210 write=2.978
+(Worker_TP2 pid=205) WARNING 09-07 22:42:45 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.157 key_s=2.130 read_s=0.260 copy_s=0.574 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=205) [boot-stamp] load-model still running after 180s; its thread is at:
+(Worker_TP2 pid=205) [boot-stamp] load-model still running after 240s; its thread is at:
+(Worker_TP2 pid=205) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 85.4s (0.03 GiB/s) | apply 0.0s
+(Worker_TP2 pid=205) WARNING 09-07 22:44:17 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=0 miss=31 errors=0 host-seconds=key=0.394 read=0.003 quantize=3.064 write=0.593
+(Worker_TP2 pid=205) WARNING 09-07 22:44:17 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.189 key_s=2.501 read_s=0.300 copy_s=0.670 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=205) [boot-stamp] load-model took 249.8s (at 285.8s since interpreter start)
+(Worker_TP2 pid=205) [boot-stamp] profile/determine-memory still running after 60s; its thread is at:
+(Worker_TP2 pid=205) [boot-stamp] profile-run still running after 60s; its thread is at:
+(Worker_TP2 pid=205) [boot-stamp] encoder-profile still running after 60s; its thread is at:
+(Worker_TP2 pid=205) [boot-stamp] encoder-profile took 78.8s (at 367.2s since interpreter start)
+(Worker_TP2 pid=205) [boot-stamp] profile-run took 102.4s (at 388.9s since interpreter start)
+(Worker_TP2 pid=205) INFO 09-07 22:46:02 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=2; model/MM profile and real graph warmup retained
+(Worker_TP2 pid=205) INFO 09-07 22:46:02 [gpu_worker.py:582] Available KV cache memory: 5.81 GiB
+(Worker_TP2 pid=205) [boot-stamp] profile/determine-memory took 103.1s (at 389.2s since interpreter start)
+(Worker_TP2 pid=205) [boot-stamp] kv-cache-alloc took 0.7s (at 390.4s since interpreter start)
+(Worker_TP2 pid=205) [boot-stamp] cudagraph-capture took 2.0s (at 440.7s since interpreter start)
+(Worker_TP2 pid=205) [boot-stamp] compile+warmup took 53.1s (at 443.5s since interpreter start)
+
+=== GRAPHMEMPRIME-srv4.log ===
+[boot-stamp] installed, 13 phases wrapped
+(Worker pid=207) [boot-stamp] dist-world took 18.7s (at 30.9s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group tp took 1.8s (at 32.7s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group dcp took 0.0s (at 32.7s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group pcp took 0.0s (at 32.7s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group pp took 0.0s (at 32.7s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group dp took 0.0s (at 32.7s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-group ep took 1.3s (at 34.0s since interpreter start)
+(Worker pid=207) [boot-stamp] dist-model-parallel took 3.1s (at 34.0s since interpreter start)
+(Worker pid=207) [boot-stamp] init-device took 22.1s (at 34.3s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] weights: 148498 tensors, 184.2 GiB | read 36.9s (4.99 GiB/s) | apply 14.2s
+(Worker_TP3 pid=207) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP3 pid=207) WARNING 09-07 22:41:54 [glm53_rank_cache.py:377] [rank-cache] saved rank=3 bytes=48092653608 in 47.844s; post-load hooks follow
+(Worker_TP3 pid=207) WARNING 09-07 22:41:55 [glm53_rank_cache.py:310] [rank-cache] evicted stale artifact /cache/glm53-ranks/92d9439e1574f221d0d204da582f5c80d44b7acce6645fe76450c856a6e732dc (48.1 GB; keep=2)
+(Worker_TP3 pid=207) [boot-stamp] load-model still running after 120s; its thread is at:
+(Worker_TP3 pid=207) [boot-stamp] load-model still running after 180s; its thread is at:
+(Worker_TP3 pid=207) WARNING 09-07 22:43:18 [glm53_startup_cache.py:294] [fp8-cache] Glm5NextForCausalLM enabled=True hit=0 miss=213 errors=0 host-seconds=key=1.971 read=0.082 quantize=6.017 write=4.595
+(Worker_TP3 pid=207) WARNING 09-07 22:43:18 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.250 key_s=2.215 read_s=0.476 copy_s=0.791 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=207) [boot-stamp] load-model still running after 240s; its thread is at:
+(Worker_TP3 pid=207) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 51.2s (0.04 GiB/s) | apply 0.0s
+(Worker_TP3 pid=207) WARNING 09-07 22:44:17 [glm53_startup_cache.py:294] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=0 miss=31 errors=0 host-seconds=key=0.390 read=0.003 quantize=3.119 write=0.773
+(Worker_TP3 pid=207) WARNING 09-07 22:44:17 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.283 key_s=2.587 read_s=0.514 copy_s=0.880 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=207) [boot-stamp] load-model took 250.1s (at 284.4s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] profile/determine-memory still running after 60s; its thread is at:
+(Worker_TP3 pid=207) [boot-stamp] profile-run still running after 60s; its thread is at:
+(Worker_TP3 pid=207) [boot-stamp] encoder-profile still running after 60s; its thread is at:
+(Worker_TP3 pid=207) [boot-stamp] encoder-profile took 78.5s (at 365.5s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] profile-run took 102.6s (at 387.4s since interpreter start)
+(Worker_TP3 pid=207) INFO 09-07 22:46:02 [gpu_worker.py:530] [glm53-graph-profile] skipped unused estimate rank=3; model/MM profile and real graph warmup retained
+(Worker_TP3 pid=207) INFO 09-07 22:46:02 [gpu_worker.py:582] Available KV cache memory: 10.95 GiB
+(Worker_TP3 pid=207) [boot-stamp] profile/determine-memory took 103.5s (at 388.0s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] kv-cache-alloc took 0.7s (at 388.7s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] cudagraph-capture took 2.0s (at 439.0s since interpreter start)
+(Worker_TP3 pid=207) [boot-stamp] compile+warmup took 53.1s (at 441.8s since interpreter start)

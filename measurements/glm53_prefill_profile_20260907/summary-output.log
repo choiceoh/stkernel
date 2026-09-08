@@ -1,0 +1,248 @@
+{
+  "issues": [],
+  "contexts": {
+    "32": {
+      "tokens": 32545,
+      "ttft_s": {
+        "before": 11.879995085997507,
+        "profiled": 10.647223431034945,
+        "after": 10.553399788972456
+      },
+      "instrumented_vs_after_ratio": 1.0088903712489437,
+      "categories": {
+        "moe_expert": {
+          "rank_mean_pct": 32.08277602253099,
+          "rank_min_pct": 31.854057771616667,
+          "rank_max_pct": 32.477066045482154
+        },
+        "mla_and_indexer": {
+          "rank_mean_pct": 16.396389654542446,
+          "rank_min_pct": 16.271200806093084,
+          "rank_max_pct": 16.491921347849544
+        },
+        "dense_gemm_and_quant": {
+          "rank_mean_pct": 12.941085125440027,
+          "rank_min_pct": 12.81451572047403,
+          "rank_max_pct": 13.09067797293331
+        },
+        "communication": {
+          "rank_mean_pct": 12.67321288641206,
+          "rank_min_pct": 11.605307042747555,
+          "rank_max_pct": 13.539569609109556
+        },
+        "kda": {
+          "rank_mean_pct": 10.769684384329606,
+          "rank_min_pct": 10.741792197084882,
+          "rank_max_pct": 10.798886494963646
+        },
+        "mhc": {
+          "rank_mean_pct": 4.946855334550569,
+          "rank_min_pct": 4.866717465466758,
+          "rank_max_pct": 5.009990474798336
+        },
+        "elementwise_and_copy": {
+          "rank_mean_pct": 4.147864561492556,
+          "rank_min_pct": 4.122622359318662,
+          "rank_max_pct": 4.2024629167418945
+        },
+        "transport_codec": {
+          "rank_mean_pct": 3.597741325550995,
+          "rank_min_pct": 3.5316379462043037,
+          "rank_max_pct": 3.6803134976624783
+        },
+        "norm_quant_other": {
+          "rank_mean_pct": 0.2719672817770795,
+          "rank_min_pct": 0.2639727738234018,
+          "rank_max_pct": 0.27827122609108723
+        },
+        "moe_shared_and_glue": {
+          "rank_mean_pct": 0.15781163205880852,
+          "rank_min_pct": 0.15317043743240816,
+          "rank_max_pct": 0.15982724097805792
+        },
+        "other": {
+          "rank_mean_pct": 0.13064701307429305,
+          "rank_min_pct": 0.12893768698389851,
+          "rank_max_pct": 0.132689103934743
+        },
+        "memory_copy": {
+          "rank_mean_pct": 0.02636356187267965,
+          "rank_min_pct": 0.025542401476563482,
+          "rank_max_pct": 0.02722876784290051
+        },
+        "sampling_and_drafter": {
+          "rank_mean_pct": 0.00014585938340328053,
+          "rank_min_pct": 0.00011271382116610227,
+          "rank_max_pct": 0.0002396968040882687
+        }
+      },
+      "ranks": {
+        "10.10.10.1": {
+          "span_ms": 10556.142803710938,
+          "busy_ms": 10392.392645507813,
+          "idle_ms": 163.750158203125,
+          "cross_category_overlap_ms": 0.0818017578125,
+          "communication_compute_overlap_ms": 0.01052734375,
+          "prefill_chunks": 6,
+          "selected_events": 17449,
+          "excluded_events": 3934
+        },
+        "10.10.10.3": {
+          "span_ms": 10563.256463867188,
+          "busy_ms": 10395.160294921876,
+          "idle_ms": 168.0961689453125,
+          "cross_category_overlap_ms": 0.0041591796875,
+          "communication_compute_overlap_ms": 0.00051171875,
+          "prefill_chunks": 6,
+          "selected_events": 17449,
+          "excluded_events": 3934
+        },
+        "10.10.10.4": {
+          "span_ms": 10552.070102539063,
+          "busy_ms": 10323.643873046874,
+          "idle_ms": 228.4262294921875,
+          "cross_category_overlap_ms": 0.078017578125,
+          "communication_compute_overlap_ms": 0.0009921875,
+          "prefill_chunks": 6,
+          "selected_events": 17450,
+          "excluded_events": 3942
+        },
+        "local": {
+          "span_ms": 10546.3637578125,
+          "busy_ms": 10322.294123046875,
+          "idle_ms": 224.069634765625,
+          "cross_category_overlap_ms": 0.05830078125,
+          "communication_compute_overlap_ms": 0.000927734375,
+          "prefill_chunks": 6,
+          "selected_events": 17449,
+          "excluded_events": 3934
+        }
+      }
+    },
+    "128": {
+      "tokens": 128559,
+      "ttft_s": {
+        "before": 42.05527613195591,
+        "profiled": 42.17654371500248,
+        "after": 41.85471308697015
+      },
+      "instrumented_vs_after_ratio": 1.0076892326884095,
+      "categories": {
+        "moe_expert": {
+          "rank_mean_pct": 28.152682560750122,
+          "rank_min_pct": 27.957987409220234,
+          "rank_max_pct": 28.47165376896023
+        },
+        "mla_and_indexer": {
+          "rank_mean_pct": 20.42144441985747,
+          "rank_min_pct": 20.274876469546676,
+          "rank_max_pct": 20.52194301229125
+        },
+        "dense_gemm_and_quant": {
+          "rank_mean_pct": 13.124944680527562,
+          "rank_min_pct": 13.033846248428171,
+          "rank_max_pct": 13.308909339513352
+        },
+        "communication": {
+          "rank_mean_pct": 12.113763266667267,
+          "rank_min_pct": 11.128266537927432,
+          "rank_max_pct": 12.75539802562212
+        },
+        "kda": {
+          "rank_mean_pct": 10.727703545132442,
+          "rank_min_pct": 10.70048278803296,
+          "rank_max_pct": 10.779336971121488
+        },
+        "mhc": {
+          "rank_mean_pct": 5.063437441483575,
+          "rank_min_pct": 4.95357147150019,
+          "rank_max_pct": 5.136170490405513
+        },
+        "transport_codec": {
+          "rank_mean_pct": 4.187766930064832,
+          "rank_min_pct": 4.128901378696913,
+          "rank_max_pct": 4.271574453402701
+        },
+        "elementwise_and_copy": {
+          "rank_mean_pct": 3.905776224453389,
+          "rank_min_pct": 3.8868453551198554,
+          "rank_max_pct": 3.9596616141055403
+        },
+        "norm_quant_other": {
+          "rank_mean_pct": 0.27876891873072474,
+          "rank_min_pct": 0.27173578512574853,
+          "rank_max_pct": 0.28624432626109353
+        },
+        "moe_shared_and_glue": {
+          "rank_mean_pct": 0.1442222527675162,
+          "rank_min_pct": 0.14157916115579547,
+          "rank_max_pct": 0.14599583377935463
+        },
+        "other": {
+          "rank_mean_pct": 0.13005035747528787,
+          "rank_min_pct": 0.12887097203094924,
+          "rank_max_pct": 0.13233345317905282
+        },
+        "memory_copy": {
+          "rank_mean_pct": 0.02625504109376353,
+          "rank_min_pct": 0.02541747017774041,
+          "rank_max_pct": 0.028085319382875323
+        },
+        "sampling_and_drafter": {
+          "rank_mean_pct": 9.276614359636027e-05,
+          "rank_min_pct": 8.808441423083205e-05,
+          "rank_max_pct": 9.904811354922207e-05
+        }
+      },
+      "ranks": {
+        "10.10.10.1": {
+          "span_ms": 41962.91587304688,
+          "busy_ms": 41343.8215234375,
+          "idle_ms": 619.094349609375,
+          "cross_category_overlap_ms": 0.295875,
+          "communication_compute_overlap_ms": 0.0,
+          "prefill_chunks": 19,
+          "selected_events": 57603,
+          "excluded_events": 7401
+        },
+        "10.10.10.3": {
+          "span_ms": 41964.367721679686,
+          "busy_ms": 41328.5683203125,
+          "idle_ms": 635.7994013671876,
+          "cross_category_overlap_ms": 0.072958984375,
+          "communication_compute_overlap_ms": 0.0,
+          "prefill_chunks": 19,
+          "selected_events": 57603,
+          "excluded_events": 7401
+        },
+        "10.10.10.4": {
+          "span_ms": 41959.66735839844,
+          "busy_ms": 41152.09344433594,
+          "idle_ms": 807.5739140625,
+          "cross_category_overlap_ms": 0.3425068359375,
+          "communication_compute_overlap_ms": 0.0,
+          "prefill_chunks": 19,
+          "selected_events": 57604,
+          "excluded_events": 7423
+        },
+        "local": {
+          "span_ms": 41961.92298632812,
+          "busy_ms": 41131.35960839844,
+          "idle_ms": 830.5633779296875,
+          "cross_category_overlap_ms": 0.141947265625,
+          "communication_compute_overlap_ms": 0.0,
+          "prefill_chunks": 19,
+          "selected_events": 57603,
+          "excluded_events": 7401
+        }
+      }
+    }
+  },
+  "memory_min_gib": {
+    "local": 17.402881622314453,
+    "choiceoh@10.10.10.1": 22.551631927490234,
+    "choiceoh@10.10.10.3": 18.419246673583984,
+    "choiceoh@10.10.10.4": 21.23629379272461
+  },
+  "scope": "Current observed production model settings, reduced KV capacity; diagnostic only"
+}

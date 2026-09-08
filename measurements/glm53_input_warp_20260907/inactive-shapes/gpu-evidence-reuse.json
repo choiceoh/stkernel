@@ -1,0 +1,20 @@
+{
+  "source_directory": "/home/choiceoh/glm53-logs/INPUTSERVE20907",
+  "source_commit": "36b71f686a8349b6e16a9ac39e414dd818881a44",
+  "code_sha256": {
+    "overlay/modules/glm53_megakernel/glm53_megakernel.cu": "0cbbe7c96d3815de307cf1d5d56fe7fab1fac25a41c5b430b5230aca31603baf",
+    "overlay/modules/glm53_megakernel/glm53_megakernel.py": "974aa58e85589fc929684644ff3476f7e21c070487eed34a5e45dc80a264b3f3",
+    "probes/gemm_input_serving_gate.py": "79097bff776d215b4a47a72b1a08eb2b7b15aaa1f5b144f0ea469ca4bd99a534",
+    "probes/gemm_input_reuse.py": "abc78b44be1e1955c8efde8fc30ea90045ae5084e52677a895d25c652e41b6bd",
+    "profiles/glm53.env": "5f1b304fc0e07766931a1b048b2986fef27209d9ffc50852a1c1beaa62a64342"
+  },
+  "artifacts_sha256": {
+    "production-gate.json": "684bd0ccaecde406c7f5d0e6d46d8f3b6a894b5b5ebb2ebfca58a28b12d158a2",
+    "production-gate.log": "71da6f2ee22c9f2ed8a3dcc04981790740e2189fa308627ceebfdb1ddea0869f",
+    "racecheck.json": "b9dd9024be15b077aa776609aa861dc281780b247d3ce3176cdd68ae68f9afcd",
+    "racecheck.log": "06d6a7d9b1eede628493d22a9cc1585beba5bcceac14c2c6b64b2847f2f925e0",
+    "memcheck.json": "b9dd9024be15b077aa776609aa861dc281780b247d3ce3176cdd68ae68f9afcd",
+    "memcheck.log": "68de985e221481289065609df592ae562c61f683506710d8ae2ce602f41995cf"
+  },
+  "reason": "Main updated benchmark orchestration only; tested CUDA, driver, fixture and profile are byte-identical."
+}

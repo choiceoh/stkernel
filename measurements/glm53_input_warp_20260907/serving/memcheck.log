@@ -1,0 +1,4 @@
+========= COMPUTE-SANITIZER
+WARNING 09-07 09:39:30 [glm53_megakernel.py:2265] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+PASS serving-source numerics, fallback, scratch lifetime and replay gates
+========= ERROR SUMMARY: 0 errors

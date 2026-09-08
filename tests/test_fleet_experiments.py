@@ -13,6 +13,8 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "bench"))
@@ -21,6 +23,7 @@ import judge
 import cpu_evidence
 import fleet_priority
 import probe_report
+from measurement_contract import metadata
 
 BASH = shutil.which("bash")
 FAKE_FLEET = r'''#!/usr/bin/env bash
@@ -56,34 +59,99 @@ echo "$1 ${LEGS:-onepass}" >> "$LOGD/arms"
 if [ "${FAIL_ARM:-}" = "$1" ]; then exit 7; fi
 [ "${LEGS:-onepass}" != none ] || exit 0
 python3 - "$1" "${2:-}" <<'PY'
-import json, os, subprocess, sys
-name, knobs = sys.argv[1:]
-knobs = dict(v.split('=', 1) for v in knobs.split())
-r = dict(name=name, git=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
-         overlay=open(os.environ['MK_OVERLAY_STAMP']).read().strip()[:12], harness=39,
-         doc_lang='ko', thinking=True, workload={'ctx':[2000,32000,128000], 'seed':7, 'max_tokens':400, 'combine_min_ctx':32000},
-         boot_id=name,
-         runtime=json.loads(os.environ.get('FLEET_CONTEXT', '{}')), knobs=knobs,
-         experiment_id=os.environ.get('FLEET_EXPERIMENT_ID'),
-         quality={'ok':9,'total':9}, korean={'dirty':0,'n':5},
-         decode={'windows_med':120 if knobs else 100}, prefill=[],
-         proof={k:True for k in knobs}, proof_ok=f'{len(knobs)}/{len(knobs)}')
-with open(os.environ['ONEPASS_JSONL'], 'a') as f: f.write(json.dumps(r)+'\n')
+import json, os, sys
+from pathlib import Path
+Path(os.environ['LOGD'],'served.json').write_text(json.dumps(dict(
+ boot_id=sys.argv[1], knobs=dict(v.split('=',1) for v in sys.argv[2].split()))))
 PY
+python3 bench/onepass.py --name "$1"
+'''
+
+FAKE_ONEPASS = r'''import json, os, subprocess, sys
+from pathlib import Path
+from measurement_contract import metadata
+
+def _served_build(repo):
+ return json.loads(Path(os.environ['LOGD'],'served.json').read_text())
+
+if __name__ == '__main__':
+ name = sys.argv[sys.argv.index('--name')+1]
+ served = _served_build('.')
+ knobs = served['knobs']
+ work = json.loads(os.environ.get('FLEET_WORKLOAD', '{}'))
+ r = dict(name=name, git=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+          overlay=Path(os.environ['MK_OVERLAY_STAMP']).read_text().strip()[:12],
+          **metadata(work), **served,
+          runtime=json.loads(os.environ.get('FLEET_CONTEXT', '{}')),
+          experiment_id=os.environ.get('FLEET_EXPERIMENT_ID'),
+          quality={'ok':9,'total':9}, korean={'dirty':0,'n':5},
+          decode={'windows_med':120 if knobs else 100},
+          prefill=[dict(ctx=c,cold_s=.8 if knobs else 1) for c in work.get('ctx',[2000,32000,128000])],
+          proof={k:True for k in knobs}, proof_ok=f'{len(knobs)}/{len(knobs)}')
+ r['requests'] = [dict(fixed_decode=True, completion_tokens=work['fixed_decode_tokens'],
+                       decode_s=8 if knobs else 10) for _ in range(work.get('fixed_decode_reps',0))]
+ with open(os.environ['ONEPASS_JSONL'],'a') as f: f.write(json.dumps(r)+'\n')
 '''
 
 
 def record(name="base", speed=100, **changes):
-    row = dict(name=name, overlay="a" * 12, git="b" * 40, harness=39, doc_lang="ko", thinking=True,
+    row = dict(name=name, overlay="a" * 12, git="b" * 40, **metadata(),
                knobs={}, quality={"ok": 9, "total": 9}, korean={"dirty": 0, "n": 5},
                decode={"windows_med": speed}, proof={}, proof_ok="0/0",
-               workload={"ctx": [2000, 32000, 128000], "seed": 7, "max_tokens":400, "combine_min_ctx":32000},
                boot_id=f"{name}-{speed}", runtime={})
     row.update(changes)
     return row
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_actual_onepass_producer_matches_shared_baseline_contract(self):
+        from onepass import build_record
+        from measurement_contract import workload, evaluations
+        from experiment_baselines import reference
+        for work in (workload(), workload(dict(ctx=[4096], fixed_decode_tokens=64,
+                                                fixed_decode_reps=2, require_exclusive=True))):
+            args = SimpleNamespace(**dict(work, ctx=','.join(map(str, work['ctx'])), name='actual'))
+            produced = build_record(args, 'b' * 40)
+            payload = dict(snapshot=dict(build='a' * 64), spec=dict(revision='b'*40, context={},
+                evaluations=[dict(workload=work, objective={'metric':'decode_steps'})]))
+            produced.update(overlay='a'*12, runtime={})
+            self.assertTrue(judge.compatible(produced, reference(payload)))
+            self.assertFalse(judge.compatible(dict(produced, harness=39), reference(payload)))
+        for bad in ([], False, {'ctx':[{}]}, {'ctx':[True]}, {'require_exclusive':1}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                workload(bad)
+        with self.assertRaises(ValueError):
+            evaluations({'evaluations':[{'objective':{'metric':'decode_tokens'}}]})
+
+    def test_prefill_uses_ttft_and_does_not_mix_compile_regimes(self):
+        obj = {'metric':'prefill_ttft', 'ctx':2000}
+        bases = [record(str(i), prefill=[dict(ctx=2000, cold_s=t)]) for i,t in enumerate((1,1.01,.99))]
+        cand = record('fast-prefill', prefill=[dict(ctx=2000, cold_s=.7)])
+        verdict = judge.judge(cand, bases[0], bases, obj)
+        self.assertEqual(verdict['decision'], 'improved')
+        self.assertAlmostEqual(verdict['delta'], .3)
+        self.assertEqual(judge.judge(dict(cand, cold_compile=True), bases[0], bases, obj)['status'], 'incomplete')
+        self.assertEqual(judge.judge(cand, bases[0], bases[:2], obj)['status'], 'incomplete')
+        self.assertEqual(judge.judge(dict(cand, prefill=[]), bases[0], bases, obj)['status'], 'incomplete')
+
+    def test_decode_tokens_measures_requests_and_rejects_truncation(self):
+        from measurement_contract import workload, metric_value
+        work = workload(dict(fixed_decode_tokens=100, fixed_decode_reps=2, require_exclusive=True))
+        def requests(seconds):
+            return [dict(fixed_decode=True, completion_tokens=100, decode_s=seconds) for _ in range(2)]
+        obj = {'metric':'decode_tokens'}
+        bases = [record(str(i), workload=work, requests=requests(s)) for i,s in enumerate((1,1.01,.99))]
+        cand = record('fast', workload=work, requests=requests(.5))
+        self.assertEqual(metric_value(cand, obj), 198)
+        self.assertEqual(judge.judge(cand, bases[0], bases, obj)['decision'], 'improved')
+        cand['requests'][0]['completion_tokens'] = 99
+        self.assertIsNone(metric_value(cand, obj))
+        quality = judge.judge(record('quality'), bases[0], bases, {'metric':'quality'})
+        self.assertEqual(quality['status'], 'incomplete')  # incompatible workloads remain incompatible
+        quality = judge.judge(record('quality'), record(), [record()], {'metric':'quality'})
+        self.assertEqual(quality['decision'], 'quality_pass')
+        self.assertNotIn('delta', quality)
+
     def test_replays_of_one_boot_do_not_establish_a_noise_floor(self):
         bases = [record(speed=n, boot_id="one-boot") for n in (99, 100, 101)]
         verdict = judge.judge(record("candidate", 120), bases[-1], bases)
@@ -228,12 +296,15 @@ class SubmissionTests(unittest.TestCase):
             f"PROFILE_OVERLAY_DIR={self.overlay}\nVLLM_TEST=0\n")
         (self.repo / "bench/fleet.sh").write_text(FAKE_FLEET)
         (self.repo / "bench/ab-lever.sh").write_text(FAKE_LEVER)
+        (self.repo / "bench/onepass.py").write_text(FAKE_ONEPASS)
         for name in ("pair.sh", "chain.sh", "baseline.py", "judge.py", "experiments.py", "cpu_checks.py",
-                     "cpu_evidence.py", "probe_report.py", "experiment_baselines.py", "fleet_priority.py"):
+                     "cpu_evidence.py", "probe_report.py", "experiment_baselines.py", "fleet_priority.py", "fleet_handoff.py", "measurement_contract.py",
+                     "serving_group.py", "experiment_resources.py", "prepared_artifacts.py", "cpu_unittest.py",
+                     "experiment_plan.py", "cpu_compile.py", "experiment_sharing.py", "experiment_groups.py", "experiment_retirement.py", "experiment_metrics.py", "cpu_contracts.py", "experiment_submission.py", "experiment_explain.py"):
             shutil.copy(ROOT / "bench" / name, self.repo / "bench" / name)
         for script in (self.repo / "bench").glob("*.sh"):
             script.chmod(0o755)
-        (self.repo / ".gitignore").write_text("__pycache__/\n")
+        (self.repo / ".gitignore").write_text("__pycache__/\nbuild/\n")
         self.commit()
         (self.overlay / "manifest.tsv").write_text("# source_commit=" + self.sha + "\n")
         self.stamp.write_text(ex.digest(self.overlay / "manifest.tsv"))
@@ -274,10 +345,16 @@ class SubmissionTests(unittest.TestCase):
 
     def test_detached_cpu_work_and_shared_result(self):
         output = self.root / "count"
-        command = [sys.executable, "-c", f"import time; time.sleep(.4); open({str(output)!r},'a').write('run\\n')"]
+        release = self.root/'release'
+        command = [sys.executable, "-c", "import time;from pathlib import Path\n"
+            f"with open({str(output)!r},'a') as stream:stream.write('run\\n')\n"
+            "deadline=time.monotonic()+10\n"
+            f"while not Path({str(release)!r}).exists():\n assert time.monotonic()<deadline\n time.sleep(.01)\n"]
         a = self.submit(command=command)
         b = self.submit("agent-b", command=command, hypothesis="another consumer of the same contract")
         self.assertEqual(a["id"], b["id"])
+        self.assertEqual(b['disposition'],'joined')
+        release.touch()
         result = self.wait(a["id"])
         self.assertEqual(result["state"], "succeeded", result)
         self.assertEqual(result["result"]["evidence"], "cpu-only")
@@ -319,15 +396,19 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(self.wait(pair["id"])["state"], "blocked")
         self.assertFalse((self.logs / "arms").exists())
 
-    def test_two_candidates_share_three_independent_baseline_boots(self):
+    def test_default_candidates_share_one_baseline_without_promotion_claim(self):
         context = dict(image=self.image, model="fixture", hardware="fixture")
         first = self.submit("first", kind="pair", command=[], knobs={"VLLM_TEST":"1"}, context=context)
         second = self.submit("second", kind="pair", command=[], knobs={"VLLM_TEST":"2"}, context=context)
         self.assertEqual(self.wait(first["id"])["state"], "succeeded")
         self.assertEqual(self.wait(second["id"])["state"], "succeeded")
         arms = (self.logs / "arms").read_text()
-        self.assertEqual(arms.count("-BASE-"), 3, arms)
-        self.assertEqual(arms.count("onepass"), 5, arms)
+        self.assertEqual(arms.count("-BASE-"), 1, arms)
+        self.assertEqual(arms.count("onepass"), 3, arms)
+        result = self.cli('result', second['id'])['result']
+        self.assertTrue(result['comparison_complete'])
+        self.assertFalse(result['promotion_ready'])
+        self.assertEqual(result['verdict']['decision'], 'unresolved')
         store = ex.Store(self.jobs)
         baselines = [json.loads(r[0]) for r in store.db.execute("SELECT payload FROM jobs")
                      if json.loads(r[0])["spec"]["kind"] == "baseline"]
@@ -472,6 +553,25 @@ class SubmissionTests(unittest.TestCase):
         ex.ensure_worker(store, job)
         self.assertEqual(store.get(job)["state"], "interrupted")
 
+    def test_worker_finishing_during_lock_check_keeps_terminal_result(self):
+        store = ex.Store(self.jobs)
+        self.addCleanup(store.db.close)
+        original_lock = ex.worker_lock
+        for terminal in sorted(ex.TERMINAL):
+            with self.subTest(terminal=terminal):
+                payload = dict(spec=dict(depends_on=[], revision=self.sha,
+                                         hypothesis=terminal, command=["true", terminal]), environment={})
+                job = store.submit("agent", payload)["id"]
+                def finish_then_lock(current, identifier):
+                    current.state(identifier, terminal, {"completed": True})
+                    return original_lock(current, identifier)
+                with patch.object(ex, "worker_lock", side_effect=finish_then_lock), \
+                     patch.object(ex.subprocess, "Popen") as launch:
+                    ex.ensure_worker(store, job)
+                    launch.assert_not_called()
+                self.assertEqual(store.get(job)["state"], terminal)
+                self.assertEqual(store.get(job)["result"], {"completed": True})
+
     def test_pair_publishes_candidate_before_restore_and_has_valid_shared_evidence(self):
         context = dict(image=self.image, model="immutable-model-fixture", hardware="fake-nodes")
         bases = [record(speed=n, git=self.sha, overlay=self.stamp.read_text()[:12], runtime=context) for n in (99,100,101)]
@@ -491,8 +591,10 @@ class SubmissionTests(unittest.TestCase):
         result = self.wait(job["id"])
         self.assertEqual(result["state"], "succeeded", result)
         before = (self.logs / "arms").read_text()
-        self.assertEqual(before.count("onepass"), 4)  # three independent defaults, one candidate
-        self.assertEqual(result["result"]["verdict"]["floor_n"], 3)
+        self.assertEqual(before.count("onepass"), 2)  # one defaults sample and one candidate
+        self.assertEqual(result["result"]["verdict"]["floor_n"], 1)
+        self.assertEqual(result['result']['evidence'], 'gpu-pair-screen')
+        self.assertFalse(result['result']['promotion_ready'])
         result = self.cli("result", job["id"])
         self.assertEqual(result["state"], "succeeded", result)
         self.assertEqual((self.logs / "arms").read_text(), before)
@@ -504,7 +606,65 @@ class SubmissionTests(unittest.TestCase):
         job = self.submit(kind="pair", command=[], knobs={"VLLM_TEST": "1"}, context=context)
         result = self.wait(job["id"])
         self.assertEqual(result["state"], "succeeded", result)
-        self.assertEqual((self.logs / "arms").read_text().count("-BASE-"), 3)
+        self.assertEqual((self.logs / "arms").read_text().count("-BASE-"), 1)
+
+    def test_confirmation_acquires_only_missing_samples_and_later_screen_reuses_them(self):
+        context = self.pair_context()
+        first = self.submit('screen',kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=context)
+        self.assertEqual(self.wait(first['id'])['state'], 'succeeded')
+        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 1)
+        confirm = self.submit('confirm',kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=context,baseline_policy='confirm')
+        result = self.wait(confirm['id'])
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertEqual(result['result']['verdict']['floor_n'], 3)
+        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 3)
+        third = self.submit('later',kind='pair',command=[],knobs={'VLLM_TEST':'2'},context=context)
+        self.assertEqual(self.wait(third['id'])['state'], 'succeeded')
+        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 3)
+
+    def test_baseline_policy_rejects_unknown_values_and_non_pair_requests(self):
+        for kind, policy in (('cpu','minimal'),('pair','skip'),('pair',None),('pair',[])):
+            raw = dict(kind=kind, revision=self.sha, hypothesis='test', command=['true'] if kind=='cpu' else [],
+                       knobs={} if kind=='cpu' else {'VLLM_TEST':'1'},context=self.pair_context(),baseline_policy=policy)
+            with self.subTest(kind=kind,policy=policy), self.assertRaises(ValueError):
+                ex.normalize(raw, self.repo)
+
+    def test_minimal_result_reuses_valid_baseline_when_latest_defaults_failed(self):
+        context = self.pair_context()
+        job = self.submit(kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=context)
+        self.assertEqual(self.wait(job['id'])['state'], 'succeeded')
+        bad = record('FAILED-DEFAULTS',git=self.sha,overlay=self.stamp.read_text()[:12],runtime=context,
+                     quality={'ok':8,'total':9})
+        with (self.logs/'onepass.jsonl').open('a') as stream: stream.write(json.dumps(bad)+'\n')
+        store = ex.Store(self.jobs)
+        self.addCleanup(store.db.close)
+        state, result = ex.pair_result(store.get(job['id'])['payload'], job['id'])
+        self.assertEqual(state, 'succeeded')
+        self.assertNotEqual(result['baseline']['name'], 'FAILED-DEFAULTS')
+        self.assertEqual(result['baseline_samples'], 1)
+        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 1)
+
+    def test_shell_pair_reuses_one_baseline_and_counts_each_boot_once(self):
+        env = dict(self.env, LEVER=str(self.repo/'bench/ab-lever.sh'), FLEET=str(self.repo/'bench/fleet.sh'))
+        env.pop('PAIR_FLOOR_N',None)
+        for name in ('FIRST','SECOND','THIRD'):
+            result = subprocess.run([BASH,str(self.repo/'bench/pair.sh'),name,'VLLM_TEST=1'],
+                                    cwd=self.repo,env=env,text=True,capture_output=True,timeout=10)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        arms = (self.logs/'arms').read_text()
+        self.assertEqual(arms.count('BASE onepass'),1,arms)
+        ledger = self.logs/'onepass.jsonl'
+        rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+        with ledger.open('a') as stream:
+            stream.write(json.dumps(next(row for row in rows if row['name']=='FIRSTBASE'))+'\n')
+        count = subprocess.check_output(['python3',str(self.repo/'bench/baseline.py'),'--count-for','THIRD'],
+                                         cwd=self.repo,env=env,text=True).strip()
+        self.assertEqual(count,'1')
+
+    def test_legacy_saved_requests_keep_the_three_sample_contract(self):
+        from experiment_baselines import required_samples
+        self.assertEqual(required_samples({'kind':'pair'}),3)
+        self.assertEqual(required_samples({'kind':'pair','baseline_policy':'minimal'}),1)
 
     def test_invalid_manifest_and_old_prerequisite_are_rejected(self):
         for change in ({"revision":"main"}, {"env":{"SKIP_BOOT":"1"}}, {"env":{"FLEET_REHEARSE":"1"}},
@@ -539,6 +699,289 @@ class SubmissionTests(unittest.TestCase):
                            env=env, cwd=self.repo, capture_output=True, text=True, timeout=5)
         self.assertEqual(p.returncode, 7, p.stdout + p.stderr)
         self.assertNotIn("NEXT", (self.logs / "arms").read_text())
+
+    def refresh_deployed_fixture(self):
+        self.commit()
+        (self.overlay / 'manifest.tsv').write_text('# source_commit=' + self.sha + '\n')
+        self.stamp.write_text(ex.digest(self.overlay / 'manifest.tsv'))
+
+    def pair_context(self):
+        return dict(image=self.image, model='fixture', hardware='fixture')
+
+    def test_grouped_objectives_use_two_boots_and_one_final_restore(self):
+        fleet = self.repo / 'bench/fleet.sh'
+        fleet.write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
+                                          'restore-needed) echo restore-check >> "$LOGD/restore-checks"; exit 0;;'))
+        self.refresh_deployed_fixture()
+        evaluations = [dict(objective={'metric':'prefill_ttft','ctx':2000}, workload={'ctx':[2000]}),
+                       dict(objective={'metric':'quality'}, workload={'ctx':[2000]}),
+                       dict(objective={'metric':'decode_tokens'}, workload=dict(ctx=[2000],
+                            fixed_decode_tokens=100, fixed_decode_reps=2, require_exclusive=True))]
+        job = self.submit(kind='pair', command=[], knobs={'VLLM_TEST':'1'},
+                          evaluations=evaluations, context=self.pair_context())
+        result = self.wait(job['id'])
+        self.assertEqual(result['state'], 'succeeded', (result, Path(result['log']).read_text()))
+        self.assertEqual(len(result['result']['evaluations']), 3)
+        records = [json.loads(line) for line in (self.logs/'onepass.jsonl').read_text().splitlines()]
+        self.assertEqual(len(records), 4)  # two workloads per boot, quality reuses the first
+        self.assertEqual(len({r['boot_id'] for r in records}), 2)
+        self.assertEqual((self.logs/'arms').read_text().count('onepass'), 2)
+        self.assertTrue(result['result']['comparison_complete'])
+        self.assertFalse(result['result']['promotion_ready'])
+        self.assertEqual((self.logs/'arms').read_text().count('RESTORE none'), 1)
+        self.assertEqual((self.logs/'restore-checks').read_text().count('restore-check'), 1)
+
+    def test_group_failure_stops_remaining_workloads_and_restores_once(self):
+        fleet = self.repo / 'bench/fleet.sh'
+        fleet.write_text(FAKE_FLEET.replace('restore-needed) exit 1;;', 'restore-needed) exit 0;;'))
+        onepass = self.repo / 'bench/onepass.py'
+        onepass.write_text(FAKE_ONEPASS.replace("knobs = served['knobs']",
+            "knobs = served['knobs']\n if knobs and name.endswith('-E2'): raise SystemExit(7)"))
+        self.refresh_deployed_fixture()
+        evaluations = [dict(objective={'metric':'quality'}, workload={'ctx':[c]}) for c in (2000,4000,8000)]
+        job = self.submit(kind='pair', command=[], knobs={'VLLM_TEST':'1'},
+                          evaluations=evaluations, context=self.pair_context())
+        result = self.wait(job['id'])
+        self.assertEqual(result['state'], 'failed', result)
+        rows = [json.loads(l) for l in (self.logs/'onepass.jsonl').read_text().splitlines()]
+        self.assertEqual(len([r for r in rows if r['experiment_id'] == job['id']]), 1)
+        self.assertEqual((self.logs/'arms').read_text().count('RESTORE none'), 1)
+
+    def test_defaults_with_unexpected_knobs_cannot_unlock_candidate(self):
+        lever = self.repo / 'bench/ab-lever.sh'
+        lever.write_text(FAKE_LEVER.replace('"${2:-}"', '"${2:-VLLM_TEST=1}"'))
+        self.refresh_deployed_fixture()
+        job = self.submit(kind='pair', command=[], knobs={'VLLM_TEST':'2'}, context=self.pair_context())
+        self.assertEqual(self.wait(job['id'])['state'], 'blocked')
+        self.assertEqual((self.logs/'arms').read_text().count('onepass'), 1)
+
+    def test_candidate_with_unrequested_enabled_knob_is_rejected(self):
+        onepass = self.repo / 'bench/onepass.py'
+        onepass.write_text(FAKE_ONEPASS.replace("knobs = served['knobs']",
+            "knobs = served['knobs']\n if knobs: knobs['VLLM_UNREQUESTED'] = '1'"))
+        self.refresh_deployed_fixture()
+        job = self.submit(kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=self.pair_context())
+        result = self.wait(job['id'])
+        self.assertEqual(result['state'],'failed',result)
+        self.assertIn('exactly match',result['result']['reason'])
+
+    def test_individual_unittest_reports_counts_and_reuses_identical_tree(self):
+        (self.repo/'tests').mkdir()
+        (self.repo/'tests/test_individual.py').write_text(
+            'import unittest\nclass Contract(unittest.TestCase):\n def test_ok(self): self.assertEqual(3*3,9)\n')
+        self.commit()
+        command = [sys.executable, 'tests/test_individual.py']
+        first = self.submit(command=command)
+        result = self.wait(first['id'])
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertEqual(result['result']['checks']['tests_run'], 1)
+        self.assertEqual(result['result']['command'][1:3], ['bench/cpu_checks.py','--test'])
+        subprocess.run(['git','-C',str(self.repo),'-c','user.name=T','-c','user.email=t@invalid',
+                        'commit','--allow-empty','-qm','identical tree'], check=True)
+        self.sha = ex.git(self.repo, 'rev-parse', 'HEAD')
+        repeated = self.wait(self.submit('again', command=command)['id'])
+        self.assertEqual(repeated['result']['cache_source'], first['id'])
+
+    def test_empty_skipped_and_failing_unittests_never_report_complete_pass(self):
+        (self.repo/'tests').mkdir()
+        files = {
+            'empty': 'import unittest\n',
+            'skipped': "import unittest\nclass C(unittest.TestCase):\n @unittest.skip('fixture unavailable')\n def test_x(self): pass\n",
+            'failure': 'import unittest\nclass C(unittest.TestCase):\n def test_x(self): self.fail("broken")\n'}
+        for name, text in files.items():
+            (self.repo/f'tests/test_{name}.py').write_text(text)
+        self.commit()
+        for name in files:
+            result = self.wait(self.submit(name, command=[sys.executable,f'tests/test_{name}.py'])['id'])
+            self.assertEqual(result['state'], 'failed', result)
+            self.assertFalse(result['result']['checks']['passed'])
+            self.assertEqual(result['result']['checks']['tests_run'], 0 if name=='empty' else 1)
+        self.assertFalse((self.fleet/'holder').exists())
+
+    def test_cpu_pool_capacity_and_stale_lease_recovery(self):
+        import experiment_resources as resources
+        (self.fleet/'cpu-policy.json').write_text(json.dumps(dict(slots=1,memory_mb=128,reserve_mb=0)))
+        store = ex.Store(self.jobs)
+        def job(name):
+            return store.submit(name, dict(environment={}, paths={'FLEET_DIR':str(self.fleet)},
+                spec=dict(revision=self.sha, depends_on=[], hypothesis=name, command=[name])))['id']
+        first, second = job('first'), job('second')
+        request = resources.normalize({'cpu_memory_mb':64})
+        with patch.object(resources, 'memory', return_value=(1024,1024)):
+            self.assertTrue(resources.acquire(store, first, request))
+            self.assertFalse(resources.acquire(store, second, request))
+            with store.db:
+                store.db.execute('UPDATE cpu_leases SET pid=?', (1073741824,))
+            self.assertTrue(resources.acquire(store, second, request))
+            with self.assertRaisesRegex(ValueError, 'capacity'):
+                resources.acquire(store, first, resources.normalize({'cpu_memory_mb':256}))
+
+    def test_cpu_ram_budget_terminates_own_group_without_gpu_hold(self):
+        command = [sys.executable, '-c', 'import time; data=bytearray(80*1024*1024); time.sleep(20)']
+        job = self.submit(command=command, resources={'cpu_memory_mb':32})
+        result = self.wait(job['id'])
+        self.assertEqual(result['state'], 'failed', result)
+        self.assertEqual(result['result']['returncode'], 137)
+        self.assertFalse((self.fleet/'holder').exists())
+        self.assertEqual(ex.Store(self.jobs).db.execute('SELECT count(*) FROM cpu_leases').fetchone()[0], 0)
+
+    def test_cpu_resource_wait_is_counted_before_start(self):
+        (self.fleet/'cpu-policy.json').write_text(json.dumps(dict(slots=1,memory_mb=256,reserve_mb=0)))
+        release = self.root/'release'
+        first = self.submit('first',command=[sys.executable,'-c','import time;from pathlib import Path\ndeadline=time.monotonic()+10\n'
+                            f'while not Path({str(release)!r}).exists():\n assert time.monotonic()<deadline\n time.sleep(.01)\n'],
+                            resources={'cpu_memory_mb':128})
+        store = ex.Store(self.jobs)
+        deadline = time.monotonic()+5
+        while store.get(first['id'])['state'] != 'running' and time.monotonic()<deadline:
+            time.sleep(.01)
+        first_start = store.get(first['id'])['started']
+        self.assertIsNotNone(first_start)
+        second = self.submit('second',resources={'cpu_memory_mb':128})
+        deadline=time.monotonic()+5
+        while store.get(second['id'])['state']!='waiting_cpu' and time.monotonic()<deadline:
+            time.sleep(.01)
+        self.assertEqual(store.get(second['id'])['state'],'waiting_cpu')
+        self.assertIsNone(store.get(second['id'])['started'])
+        released_at=time.time();release.touch()
+        result = self.wait(second['id'])
+        self.assertEqual(result['state'],'succeeded',result)
+        self.assertGreaterEqual(result['started'],released_at)
+        self.assertGreater(result['started'],result['created'])
+        self.wait(first['id'])
+
+    def test_cpu_cleanup_covers_child_after_leader_exits(self):
+        import experiment_resources as resources
+        marker = self.root/'child.pid'
+        command = [sys.executable, '-c',
+            "import subprocess; from pathlib import Path; p=subprocess.Popen(['sleep','30']); "
+            f"Path({str(marker)!r}).write_text(str(p.pid))"]
+        proc = subprocess.Popen(command, start_new_session=True)
+        proc.wait(timeout=5)
+        unrelated = subprocess.Popen(['sleep','30'], start_new_session=True)
+        try:
+            resources.stop(proc)
+            status = subprocess.run(['ps','-p',marker.read_text(),'-o','stat='], capture_output=True,text=True)
+            self.assertTrue(status.returncode or status.stdout.strip().startswith('Z'), status.stdout)
+            self.assertIsNone(unrelated.poll())
+        finally:
+            resources.stop(unrelated)
+
+    def test_prepared_artifacts_move_to_gpu_snapshot_and_detect_corruption(self):
+        context = self.pair_context()
+        command = [sys.executable,'-c', "from pathlib import Path; Path('build').mkdir(); Path('build/ready.o').write_bytes(b'object')"]
+        cpu = self.submit('prepare', command=command, outputs=['build/ready.o'], context=context)
+        prepared = self.wait(cpu['id'])
+        self.assertEqual(prepared['state'], 'succeeded', prepared)
+        gpu = self.submit('consumer',kind='pair',command=[],knobs={'VLLM_TEST':'1'},
+                          context=context,depends_on=[cpu['id']])
+        result = self.wait(gpu['id'])
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertEqual((Path(result['checkout'])/'build/ready.o').read_bytes(), b'object')
+        artifact = prepared['result']['artifacts'][0]
+        Path(artifact['path']).write_bytes(b'changed')
+        before = (self.logs/'arms').read_text()
+        bad = self.submit('changed-artifact',kind='pair',command=[],knobs={'VLLM_TEST':'2'},
+                          context=context,depends_on=[cpu['id']])
+        failed = self.wait(bad['id'])
+        self.assertEqual(failed['state'], 'failed', failed)
+        self.assertIn('artifact changed', failed['result']['reason'])
+        self.assertEqual((self.logs/'arms').read_text(), before)
+
+    def test_readiness_failure_never_enters_gpu_queue(self):
+        job = self.submit(kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=self.pair_context(),
+                          resources={'disk_mb':1,'disk_path':str(self.root/'missing-disk')})
+        self.assertEqual(self.wait(job['id'])['state'], 'failed')
+        self.assertNotIn('--gpu', (self.logs/'admissions').read_text())
+        self.assertFalse((self.logs/'arms').exists())
+
+    def test_compile_entrypoint_only_builds_an_object_and_is_cpu_classified(self):
+        nvcc = self.bin/'nvcc'
+        nvcc.write_text('#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n'
+                        'Path(sys.argv[-1]).write_text(json.dumps(sys.argv[1:]))\n')
+        nvcc.chmod(0o755)
+        (self.repo/'kernel.cu').write_text('__global__ void kernel() {}\n')
+        self.commit()
+        command = [sys.executable,'bench/cpu_compile.py','--source','kernel.cu','--arch','sm_90','--output','build/kernel.o']
+        classified = subprocess.run([BASH,str(ROOT/'bench/fleet.sh'),'classify',*command],
+                                    cwd=self.repo, env=self.env, text=True,capture_output=True,timeout=5)
+        self.assertEqual(classified.stdout.strip(), 'nogpu', classified.stderr)
+        job = self.submit(command=command,outputs=['build/kernel.o'])
+        result = self.wait(job['id'])
+        self.assertEqual(result['state'], 'succeeded', result)
+        args = json.loads(Path(result['result']['artifacts'][0]['path']).read_text())
+        self.assertEqual(args[:2], ['--compile','-arch=sm_90'])
+        rejected = subprocess.run([*command,'--run'],cwd=self.repo,env=self.env,capture_output=True)
+        self.assertNotEqual(rejected.returncode,0)
+
+    def test_plan_prepares_before_deployment_then_resolves_gpu_dependencies(self):
+        (self.repo/'tests').mkdir()
+        (self.repo/'tests/test_plan.py').write_text(
+            'import unittest\nclass C(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
+        self.commit()  # deliberately not deployed yet
+        raw = dict(hypothesis='Improve 2K TTFT',knobs={'VLLM_TEST':'1'},context=self.pair_context(),
+                   objective={'metric':'prefill_ttft','ctx':2000},workload={'ctx':[2000]},
+                   cpu_suites=[],cpu_tests=['tests/test_plan.py'],prepare=[dict(
+                    command=[sys.executable,'-c',"from pathlib import Path; Path('build').mkdir(); Path('build/a.o').write_text('ready')"],
+                    outputs=['build/a.o'])])
+        path = self.root/'plan-input.json'
+        path.write_text(json.dumps(raw))
+        preview = self.cli('plan','planner',str(path))
+        self.assertFalse(preview['stages'][-1]['dependencies_resolved'])
+        self.assertIn('pending-stage:checks',preview['stages'][-1]['manifest']['depends_on'])
+        plan = self.cli('plan','planner',str(path),'--prepare-only')
+        self.assertEqual(plan['mode'],'prepare-only')
+        self.assertTrue(plan['stages'][-1]['dependencies_resolved'])
+        self.assertNotIn('submission',plan['stages'][-1])
+        for stage in plan['stages'][:-1]:
+            self.assertEqual(self.wait(stage['submission']['id'])['state'],'succeeded')
+        self.assertFalse((self.logs/'arms').exists())
+        (self.overlay/'manifest.tsv').write_text('# source_commit='+self.sha+'\n')
+        self.stamp.write_text(ex.digest(self.overlay/'manifest.tsv'))
+        gpu = self.cli('submit','planner',plan['stages'][-1]['path'])
+        self.assertEqual(self.wait(gpu['id'])['state'],'succeeded')
+
+    def test_collect_delivery_and_ack_preserve_evidence_scope(self):
+        path = self.root/'private.jsonl'
+        path.write_text(json.dumps(record('private'))+'\n')
+        archive = self.cli('collect','reader',str(path))
+        result = self.cli('result',archive['id'])
+        self.assertEqual(result['state'],'incomplete')
+        self.assertEqual(result['result']['evidence'],'external-archive')
+        self.assertEqual(Path(archive['artifact']).read_bytes(),path.read_bytes())
+        job = self.submit('reader')
+        self.wait(job['id'])
+        rejected = self.cli('ack','reader','999999',ok=False)
+        self.assertNotEqual(rejected.returncode,0)
+        inbox = self.cli('inbox','reader','--wait','1')
+        self.cli('ack','reader',str(inbox['cursor']))
+        stats = self.cli('stats')['result_consumption']
+        self.assertEqual(stats['delivery_s']['n'],1)
+        self.assertEqual(stats['acknowledgment_s']['n'],1)
+        self.assertEqual(stats['terminal_acknowledgment_s']['n'],2)
+        self.assertGreaterEqual(stats['acknowledgment_s']['p50'],stats['delivery_s']['p50'])
+
+    def test_plan_preserves_cpu_submission_when_deployment_is_missing(self):
+        (self.repo/'tests').mkdir()
+        (self.repo/'tests/test_plan.py').write_text(
+            'import unittest\nclass C(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
+        self.commit()
+        raw = dict(hypothesis='Quality contract',knobs={'VLLM_TEST':'1'},context=self.pair_context(),
+                   objective={'metric':'quality'},cpu_suites=[],cpu_tests=['tests/test_plan.py'])
+        path = self.root/'plan-input.json'
+        path.write_text(json.dumps(raw))
+        failed = self.cli('plan','planner',str(path),'--submit',ok=False)
+        self.assertEqual(failed.returncode,2,failed.stdout+failed.stderr)
+        plan = json.loads(failed.stdout)
+        self.assertIn('error',plan)
+        self.assertTrue(Path(plan['path']).is_file())
+        self.assertEqual(self.wait(plan['stages'][0]['submission']['id'])['state'],'succeeded')
+        self.assertFalse((self.logs/'arms').exists())
+        (self.overlay/'manifest.tsv').write_text('# source_commit='+self.sha+'\n')
+        self.stamp.write_text(ex.digest(self.overlay/'manifest.tsv'))
+        completed = self.cli('plan','planner',str(path),'--submit')
+        self.assertEqual(self.wait(completed['stages'][-1]['submission']['id'])['state'],'succeeded')
+        self.assertEqual((self.logs/'arms').read_text().count('onepass'),2)  # one quality baseline and one candidate
 
 
 if __name__ == "__main__":

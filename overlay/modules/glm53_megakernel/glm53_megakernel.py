@@ -66,6 +66,9 @@ ENABLE_MHC_BF16 = ENABLE_MHC and os.environ.get("VLLM_GLM53_MK_MHC_BF16") == "1"
 ENABLE_MHC_PRE = ENABLE_MHC and _flag("VLLM_GLM53_MK_MHC_PRE", "1")
 ENABLE_GEMM = MASTER and _flag("VLLM_GLM53_MK_GEMM")
 ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
+# Large prefill only: register-resident Q and 32-slot softmax tiles. Exact
+# selected slots and BF16 Q, with a different reduction/rounding order.
+ENABLE_MLA_PREFILL32 = ENABLE_MLA and _flag("VLLM_GLM53_MK_MLA_PREFILL32")
 # Experimental exact-selection pair reuse; the old span-scanning UNION lane
 # is not used. Default off until output/state and serving brackets close.
 ENABLE_MLA_PREFILL_PAIR = ENABLE_MLA and (
@@ -664,15 +667,76 @@ def _calib_hessian_for(name, k=None):
         return None
 
 
-def _weight_md5(weight) -> str:
+_PACK_STAGING = None
+_PACK_IO_STATS = dict(calib_s=0.0, key_s=0.0, read_s=0.0, copy_s=0.0,
+                      fast_hits=0, legacy_hits=0, sha_hits=0, md5_fallback=0,
+                      aliases=0, alias_errors=0)
+
+
+def _pack_staging():
+    global _PACK_STAGING
+    if _PACK_STAGING is None:
+        from vllm.model_executor.layers.glm53_startup_cache import HostStaging
+        _PACK_STAGING = HostStaging()
+    return _PACK_STAGING
+
+
+def _pack_fast_io():
+    # Transfer policy only; the existing cache keys and pack bytes are identical.
+    return os.environ.get("VLLM_GLM53_MK_PACK_FAST_IO", "0") == "1"
+
+
+def _pack_sha256():
+    return os.environ.get("VLLM_GLM53_MK_PACK_SHA256", "0") == "1"
+
+
+def _weight_digest(weight, algorithm) -> str:
     import torch
 
     w = weight.detach().contiguous()
     b = w.view(torch.uint8) if w.dtype != torch.uint8 else w
+    if _pack_fast_io():
+        digest = hashlib.new(algorithm)
+        for _, chunk in _pack_staging().chunks_to_cpu(b.reshape(-1)):
+            digest.update(memoryview(chunk.numpy()))
+        return digest.hexdigest()
     # NumPy exposes this contiguous uint8 storage through the buffer
     # protocol. Hash those same bytes directly: tobytes() otherwise makes
     # another full host copy (50 MiB for a KDA in-projection) on every hit.
-    return hashlib.md5(b.cpu().numpy()).hexdigest()
+    return hashlib.new(algorithm, b.cpu().numpy()).hexdigest()
+
+
+def _weight_md5(weight) -> str:
+    return _weight_digest(weight, "md5")
+
+
+def _load_pack_blob(path, fast):
+    import torch
+    if fast:
+        try:
+            return torch.load(path, map_location="cpu", mmap=True, weights_only=True)
+        except (TypeError, RuntimeError) as exc:
+            # Legacy non-ZIP packs and older torch retain the ordinary loader.
+            if "mmap" not in str(exc):
+                raise
+    return torch.load(path, map_location="cpu", weights_only=True)
+
+
+def _pack_tensor_to_device(tensor, device, fast):
+    import torch
+    if tensor is None:
+        return None
+    if (not fast or torch.device(device).type != "cuda"
+            or tensor.device.type != "cpu" or not tensor.is_contiguous()):
+        return tensor.to(device)
+    # Pack files contain dense contiguous tensors. Copy logical bytes into an
+    # independent allocation, including offset views; mapped input stays alive
+    # until HostStaging has synchronized the final H2D chunk. Unusual strides
+    # retain Tensor.to's established layout behavior above.
+    target = torch.empty_like(tensor, device=device)
+    _pack_staging().copy_from_cpu(target.view(torch.uint8).reshape(-1),
+                                  tensor.view(torch.uint8).reshape(-1))
+    return target
 
 
 def _pack_cache_path(weight, per_row: bool, gptq: bool, rank: int):
@@ -682,11 +746,36 @@ def _pack_cache_path(weight, per_row: bool, gptq: bool, rank: int):
     # the bytes AND the shape: two weights of the same seed and element
     # count are byte-identical at different shapes (the bench's [2048 x
     # 4096] and [4096 x 2048] collided on the first run of this cache)
-    key = (f"{_weight_md5(weight)}-{weight.shape[0]}x{weight.shape[1]}-"
-           f"{str(weight.dtype).split('.')[-1]}-v{MK_PACK_VERSION}-"
-           f"{'row' if per_row else 'ten'}-{'gptq' if gptq else 'rtn'}-"
-           f"lr{rank}")
-    return os.path.join(root, f"rank{_mk_rank()}", key + ".pt")
+    suffix = (f"-{weight.shape[0]}x{weight.shape[1]}-"
+              f"{str(weight.dtype).split('.')[-1]}-v{MK_PACK_VERSION}-"
+              f"{'row' if per_row else 'ten'}-{'gptq' if gptq else 'rtn'}-"
+              f"lr{rank}.pt")
+    directory = os.path.join(root, f"rank{_mk_rank()}")
+    if not _pack_sha256():
+        return os.path.join(directory, _weight_md5(weight) + suffix)
+    path = os.path.join(directory, "sha256-" + _weight_digest(weight, "sha256") + suffix)
+    if os.path.isfile(path):
+        _PACK_IO_STATS["sha_hits"] += 1
+        return path
+    # Migrate lazily using the live weight's historical key. Hardlinking keeps
+    # the exact pack bytes, consumes no duplicate tensor storage, and publishes
+    # atomically without overwriting a concurrent writer. A warm hit above
+    # never computes MD5; disabling this policy retains the historical path.
+    _PACK_IO_STATS["md5_fallback"] += 1
+    legacy = os.path.join(directory, _weight_md5(weight) + suffix)
+    if os.path.isfile(legacy):
+        try:
+            os.link(legacy, path)
+            _PACK_IO_STATS["aliases"] += 1
+        except FileExistsError:
+            if not os.path.isfile(path):
+                _PACK_IO_STATS["alias_errors"] += 1
+                return legacy
+        except OSError:
+            # Read-only or non-linkable caches still reuse the existing pack.
+            _PACK_IO_STATS["alias_errors"] += 1
+            return legacy
+    return path
 
 
 def build_mk_weight_w4(weight, name=None, per_row=None):
@@ -748,7 +837,9 @@ def build_mk_weight_w4(weight, name=None, per_row=None):
     kg = k // 16
     per_row = (_w4_lever("VLLM_GLM53_MK_PACK_ROWSHIFT", "1") == "1"
                if per_row is None else bool(per_row))
+    started = time.perf_counter()
     calib = _calib_hessian_for(name, k)
+    _PACK_IO_STATS["calib_s"] += time.perf_counter() - started
     try:
         lr_rank = int(_w4_lever("VLLM_GLM53_MK_PACK_LORC", "0"))
     except ValueError:
@@ -757,21 +848,34 @@ def build_mk_weight_w4(weight, name=None, per_row=None):
     if lr_rank % 8:
         lr_rank = (lr_rank // 8) * 8   # the kernel walks r in eights
     cache = None
+    started = time.perf_counter()
     try:
         cache = _pack_cache_path(weight, per_row, calib is not None, lr_rank)
     except Exception as e:
         logger.warning("[megakernel] pack cache key failed (%r) -> no cache", e)
+    finally:
+        _PACK_IO_STATS["key_s"] += time.perf_counter() - started
     if cache and os.path.exists(cache):
         try:
-            blob = torch.load(cache, map_location="cpu")
+            fast = _pack_fast_io()
+            started = time.perf_counter()
+            try:
+                blob = _load_pack_blob(cache, fast)
+            finally:
+                _PACK_IO_STATS["read_s"] += time.perf_counter() - started
             if blob.get("version") == MK_PACK_VERSION:
                 dev = weight.device
-                pk = MKPack(blob["wq4"].to(dev), blob["ws4"].to(dev),
-                            float(blob["wgs"]),
-                            None if blob["rgs"] is None else blob["rgs"].to(dev),
-                            None if blob["lr_a"] is None else blob["lr_a"].to(dev),
-                            None if blob["lr_b"] is None else blob["lr_b"].to(dev))
+                started = time.perf_counter()
+                try:
+                    pk = MKPack(_pack_tensor_to_device(blob["wq4"], dev, fast),
+                                _pack_tensor_to_device(blob["ws4"], dev, fast),
+                                float(blob["wgs"]),
+                                *(_pack_tensor_to_device(blob[key], dev, fast)
+                                  for key in ("rgs", "lr_a", "lr_b")))
+                finally:
+                    _PACK_IO_STATS["copy_s"] += time.perf_counter() - started
                 _PACK_STATS["cached"] += 1
+                _PACK_IO_STATS["fast_hits" if fast else "legacy_hits"] += 1
                 return pk
         except Exception as e:
             logger.warning("[megakernel] pack cache %s unreadable (%r) -> rebuild",
@@ -878,6 +982,13 @@ def pack_stats_line() -> str:
             f"{_w4_lever('VLLM_GLM53_MK_PACK_ROWSHIFT', '1')} gptq="
             f"{_w4_lever('VLLM_GLM53_MK_PACK_GPTQ', '1')} lorc="
             f"{_w4_lever('VLLM_GLM53_MK_PACK_LORC', '0')}")
+
+
+def pack_io_stats_line() -> str:
+    """Cumulative startup host times, including the transfer synchronizations."""
+    return (f"fast={int(_pack_fast_io())} sha256={int(_pack_sha256())} "
+            + " ".join(f"{key}={value:.3f}" if key.endswith("_s")
+                       else f"{key}={value}" for key, value in _PACK_IO_STATS.items()))
 
 
 def mk_w4_dequant_rowmajor(wq4_rm, ws4_rm, wgs=1.0, rgs=None):
@@ -1148,12 +1259,16 @@ def _ar_note(*tensors) -> None:
 _M8_CAPTURED = set()
 
 
-def _note_m8_capture(m, n, k, lr=False):
+def _note_m8_capture(m, n, k, lr=False, bg=False):
     """Record production-shaped launches, excluding the startup self-tests."""
     if m != 6 or lr or not _ARMED["gemm"] or (n, k) in _M8_CAPTURED:
         return
     import torch
     if not torch.cuda.is_current_stream_capturing():
+        return
+    # The input-reuse marker reports that kernel's split and occupancy.
+    # Do not label its launch as the ordinary compact/transposed GEMM.
+    if _EXT.gemm_input_plan(m, n, k, bool(bg), bool(lr))[0]:
         return
     _M8_CAPTURED.add((n, k))
     plan = _EXT.gemm2_plan(m, n, k)
@@ -1166,6 +1281,40 @@ def _note_m8_capture(m, n, k, lr=False):
                        m, n, k, int(plan[2]) == 3)
         if os.environ.get("VLLM_GLM53_MK_M8_FASTPATH") == "1":
             logger.warning("[megakernel] m8-fastpath CAPTURED M=%d N=%d K=%d", m, n, k)
+
+
+_INPUT_CAPTURED = set()
+_INPUT_CTA_CAPTURED = set()
+
+
+def _note_input_capture(m, n, k, bg, lr):
+    if (not _ARMED["gemm"] or m != 6 or bg or lr
+            or (n, k) != (6416, 4096)
+            or (m, n, k, bg, lr) in _INPUT_CAPTURED):
+        return
+    plan = _EXT.gemm_input_plan(m, n, k, bool(bg), bool(lr))
+    if not plan[0]:
+        return
+    import torch
+    if torch.cuda.is_current_stream_capturing():
+        _INPUT_CAPTURED.add((m, n, k, bg, lr))
+        logger.warning("[megakernel] input-reuse CAPTURED M=%d N=%d K=%d split=%d bps=%d scratch=%d",
+                       m, n, k, plan[1], plan[2], plan[3])
+
+
+def _note_input_cta_capture(m, n, k, bg, lr):
+    if (not _ARMED["gemm"] or m != 6 or bg or lr
+            or k != 4096 or n not in (4096, 6144, 6416)
+            or (m, n, k) in _INPUT_CTA_CAPTURED):
+        return
+    plan = _EXT.gemm_input_cta_plan(m, n, k, bool(bg), bool(lr))
+    if not plan[0]:
+        return
+    import torch
+    if torch.cuda.is_current_stream_capturing():
+        _INPUT_CTA_CAPTURED.add((m, n, k))
+        logger.warning("[megakernel] input-cta CAPTURED M=%d N=%d K=%d mode=%d split=%d bps=%d smem=%d",
+                       m, n, k, *plan)
 
 
 def _gemm_call(x, mk_pack, n_rows, bg=False):
@@ -1192,7 +1341,9 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
                   0 if lr_a is None else lr_a.data_ptr(),
                   0 if lr_b is None else lr_b.data_ptr(),
                   0 if lr_a is None else int(lr_a.shape[1]))
-    _note_m8_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), lr_a is not None)
+    _note_m8_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), lr_a is not None, bg)
+    _note_input_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), bg, lr_a is not None)
+    _note_input_cta_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), bg, lr_a is not None)
     return out
 
 
@@ -2130,6 +2281,76 @@ def _selftest_gemm() -> bool:
     return True
 
 
+def _selftest_input_reuse():
+    """Check the actual M6 routes with changing captured inputs before arming."""
+    import torch
+    mode = _EXT.gemm_input_mode()
+    armed = _ARMED["gemm"]
+    _ARMED["gemm"] = False  # self-test captures are not serving receipts
+    try:
+        with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
+            shapes = ((6416, 4096), (4096, 4096), (6144, 4096)) if _EXT.gemm_input_cta_mode() == 4 else ((6416, 4096),)
+            for n, k in shapes:
+                x = torch.randn(6, k, device="cuda", dtype=torch.bfloat16) * .3
+                w = torch.randn(n, k, device="cuda", dtype=torch.bfloat16) * .05
+                pack = build_mk_weight_w4(w)
+                wr = mk_w4_dequant(pack[0], pack[1], n, pack[2],
+                                  pack[3] if len(pack) > 3 else None).float()
+                graph = torch.cuda.CUDAGraph()
+                _gemm_call(x, pack, n)
+                torch.cuda.synchronize()
+                with torch.cuda.graph(graph):
+                    y = _gemm_call(x, pack, n)
+                for case in ("random", "zero", "random2"):
+                    if case == "zero":
+                        x.zero_()
+                    else:
+                        x.normal_().mul_(.3)
+                    graph.replay()
+                    _EXT.set_gemm_input(0)
+                    baseline = _gemm_call(x, pack, n)
+                    _EXT.set_gemm_input(mode)
+                    ref = _mk_quant_x_ref(x) @ wr.T
+                    torch.cuda.synchronize()
+                    if not torch.equal(y, baseline):
+                        raise RuntimeError(f"input reuse changed output bits N={n} K={k} case={case}")
+                    relative, over = _exact_gate(y, ref)
+                    if not bool(torch.isfinite(y).all()) or relative > 1e-3 or over:
+                        raise RuntimeError(f"input reuse N={n} K={k} case={case}: {relative=} {over=}")
+                logger.warning("[megakernel] input-reuse exact graph M=6 N=%d K=%d PASS", n, k)
+        return True
+    finally:
+        _EXT.set_gemm_input(mode)
+        _ARMED["gemm"] = armed
+
+
+def _arm_gemm(gate):
+    """Validate the established routes before testing the independent CTA lane."""
+    cta = _EXT.gemm_input_cta_mode()
+    _EXT.set_input_cta(0)
+    try:
+        _ARMED["gemm"] = gate("gemm", _selftest_gemm)
+        if _ARMED["gemm"] and _EXT.gemm_input_mode():
+            if not gate("input_reuse", _selftest_input_reuse):
+                _EXT.set_gemm_input(0)
+                logger.warning("[megakernel] input-reuse DISARM; original GEMM retained")
+    finally:
+        _EXT.set_input_cta(cta)
+    if cta and _ARMED["gemm"] and _EXT.gemm_input_mode():
+        if cta == 4:
+            # Validate the enabled default first. A three-slice-only failure
+            # must preserve the separately validated eight-slice CTA route.
+            _EXT.set_input_cta(2)
+        if not gate("input_cta", _selftest_input_reuse):
+            _EXT.set_input_cta(0)
+            logger.warning("[megakernel] input-cta DISARM; input-reuse GEMM retained")
+        elif cta == 4:
+            _EXT.set_input_cta(4)
+            if not gate("input_cta3", _selftest_input_reuse):
+                _EXT.set_input_cta(2)
+                logger.warning("[megakernel] input-cta3 DISARM; validated CTA=2 retained")
+
+
 def hc_scale_ones():
     import torch
 
@@ -2175,7 +2396,7 @@ def arm() -> None:
         if ENABLE_MHC_PRE and _ARMED["mhc"]:
             _ARMED["mhc_pre"] = _gate("mhc_pre", _selftest_mhc_pre)
     if ENABLE_GEMM:
-        _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
+        _arm_gemm(_gate)
     if ENABLE_MLA:
         _ARMED["mla"] = _gate("mla", _selftest_mla)
     if ENABLE_SMLP2:
@@ -2279,6 +2500,17 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     assert (H, D) == (MLA_H, MLA_D), f"mla: shape {(H, D)} != {(MLA_H, MLA_D)}"
     assert q_nope.is_contiguous() and slots.is_contiguous()
     assert slots.dtype == torch.int32 and lens.dtype == torch.int32
+    if (ENABLE_MLA_PREFILL32 and not ENABLE_MLA_PREFILL_PAIR
+            and 4096 <= T <= 8192 and 1 <= slots.shape[1] <= 2176
+            and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
+            and ckv.element_size() == 1 and lens.is_contiguous()
+            and not torch.cuda.is_current_stream_capturing()):
+        result = _mla_prefill32(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out)
+        if not getattr(_mla_prefill32, "_announced", False):
+            _mla_prefill32._announced = True
+            logger.warning("[megakernel] mla prefill32 LAUNCHED T=%d W=%d register-Q tile=32",
+                           T, slots.shape[1])
+        return result
     if (ENABLE_MLA_PREFILL_PAIR and 128 <= T <= 8192
             and 1 <= slots.shape[1] <= 2176
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
@@ -2298,6 +2530,19 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
          ws["barrier_mla"].data_ptr()],
         [float(sm_scale), float(ckv_scale)],
         [int(T), int(slots.shape[1]), int(splits)],
+    )
+    return out
+
+
+def _mla_prefill32(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out=None):
+    import torch
+
+    if out is None:
+        out = torch.empty_like(q_nope)
+    _EXT.run_mla_prefill32(
+        [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(),
+         out.data_ptr()], [float(sm_scale), float(ckv_scale)],
+        [int(q_nope.shape[0]), int(slots.shape[1])],
     )
     return out
 
@@ -2408,6 +2653,8 @@ def _selftest_mla() -> bool:
     # store), which the decode shapes never exercise.
     cases = [(8, 2048, False), (16, 2048, True), (32, 512, True), (1, 64, False),
              (40, 2048, True), (100, 2048, True)]
+    if ENABLE_MLA_PREFILL32 and not ENABLE_MLA_PREFILL_PAIR:
+        cases += [(128, 1, True), (129, 33, True), (131, 2176, True)]
     if ENABLE_MLA_PREFILL_PAIR:
         # The optional path begins at T=128. Its boot gate must exercise
         # shared selections, repeated slots, low overlap, odd T and empty
@@ -2426,6 +2673,11 @@ def _selftest_mla() -> bool:
             lens = torch.randint(1, W + 1, (T,), dtype=torch.int32, device=dev)
         else:
             lens = torch.full((T,), W, dtype=torch.int32, device=dev)
+        if ENABLE_MLA_PREFILL32 and T >= 128:
+            lens[0] = 0
+            slots[0].fill_(-1)
+            lens[1] = W
+            slots[1].fill_(0)  # repeated selections preserve multiplicity
         if ENABLE_MLA_PREFILL_PAIR and T >= 128:
             slots[1].copy_(slots[0])
             lens[1].copy_(lens[0])
@@ -2450,7 +2702,12 @@ def _selftest_mla() -> bool:
                 lens[4:12].fill_(W)
                 slots[9, common].copy_(slots[8, 0])
         sm, ks = MLA_D ** -0.5, 0.7
-        got = mla_decode(q, cache.view(torch.uint8), slots, lens, sm, ks)
+        # Small edge fixtures exercise the new device kernel directly; the
+        # serving selector keeps actual chunks below 4096 on the old kernel.
+        # This does not emit the serving-path engagement marker.
+        mla_call = (_mla_prefill32 if ENABLE_MLA_PREFILL32 and not ENABLE_MLA_PREFILL_PAIR
+                    and T >= 128 else mla_decode)
+        got = mla_call(q, cache.view(torch.uint8), slots, lens, sm, ks)
         ref = mla_decode_ref(q, cache, slots, lens, sm, ks)
         torch.cuda.synchronize()
         error = _rel_err(got.float(), ref.float())
@@ -2459,8 +2716,8 @@ def _selftest_mla() -> bool:
                            T, W, error)
             return False
         worst = max(worst, error)
-    logger.warning("[megakernel] selftest mla rel=%.2e pair_prefill=%s group=%d -> ARM",
-                   worst, ENABLE_MLA_PREFILL_PAIR, MLA_PREFILL_GROUP)
+    logger.warning("[megakernel] selftest mla rel=%.2e pair_prefill=%s group=%d prefill32=%s -> ARM",
+                   worst, ENABLE_MLA_PREFILL_PAIR, MLA_PREFILL_GROUP, ENABLE_MLA_PREFILL32)
     return True
 
 

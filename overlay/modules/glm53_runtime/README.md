@@ -403,3 +403,76 @@ all four transports. `probes/run_glm53_prefill_transport_check.sh` checks
 v3 packets and sums against v2 on one GPU with a simulated exchange;
 `--compile-only` compiles the new kernels on the CPU for SM121. Neither
 the compile nor the simulated exchange proves real NCCL speed or quality.
+
+Three independent follow-up controls are available for matched experiments:
+
+* `VLLM_GLM53_PREFILL_SP_FUSE_MHC=1` keeps the v3 receive packet until MHC
+  post, where one kernel performs source-ordered FP32 decode/sum, the same
+  intermediate BF16 rounding, and the residual mix. The next MHC pre uses
+  its existing implementation. Packet and output storage belong to each
+  invocation, including repeated auxiliary and next-layer consumers.
+* `VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS` and
+  `VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS` independently select the gather
+  and reduction crossover. Both default to `-1`, inheriting the shared
+  4096 threshold; `0` means ungated. They do not affect v1/v2. Use identical
+  settings on all ranks; these are real global chunk rows, not request size.
+* `VLLM_GLM53_PREFILL_SP_DIRECT_NCCL=1` exchanges the same v3 byte packets
+  with grouped native PyNCCL sends/receives on the current CUDA stream.
+  Peer order, including self, remains 0..3. Validation precedes the group;
+  a communication error propagates without attempting another collective.
+
+Fusion and direct exchange default to `0` until numerical and serving
+evidence supports promotion. Their improvements must not be added to the
+earlier percentages or treated as reaching the original 40% target.
+
+Validation in a current fleet turn (same checkout path on all four nodes):
+
+```bash
+# GPU-free compilation; the combined probe turn also runs this first.
+bash probes/run_glm53_prefill_transport_check.sh --compile-only
+# GPU probes require fleet.sh run --gpu --probe.
+bash probes/run_glm53_prefill_transport_check.sh --skip-scale --fuse-mhc
+bash probes/run_glm53_prefill_tp4_check.sh fp8-v3 \
+  --rows 128 129 2128 4095 4096 6143 6144 6912 8185 \
+  --ag-min-tokens 6144 --rs-min-tokens 4096 --direct-nccl --fuse-mhc --timing
+```
+
+The deliberately different probe thresholds exercise both dispatch choices;
+they are not tuned production values. The single-GPU fusion probe compares
+bit patterns against the mounted production TileLang MHC post and post/pre
+continuation, and checks repeated consumers and nondefault streams. TP4
+adds actual exchange plus MHC equality, threshold-edge padding cases, and
+mirrored BF16/v2/v3/direct timings using the slowest rank in each sample.
+Neither gate substitutes for a clean, matched serving throughput/quality pair.
+
+After a probe triggered host `earlyoom` beside idle serving on 2026-09-07,
+the GPU launchers require spare UMA memory on every participating node:
+8 GiB probe budget plus 10% of total RAM (minimum 8 GiB) left for existing
+work. Missing counters or insufficient headroom refuse the next container;
+there is no override. Large probes may need an offline fleet boot turn.
+See [follow-up evidence](../../../docs/GLM53_PREFILL_FOLLOWUP_20260907.md)
+for the fixed numerical failure, memory incident, and unpromoted direct path.
+
+For serving retests, `ONEPASS_MEMORY_DIR=/absolute/run/directory` makes
+`ab-lever.sh` run the existing onepass client through `bench/onepass_memory.py`.
+It checks available host RAM on the head and all three workers before sending
+requests and while the owned client runs. Less than 10 GiB, missing counters
+or an unreachable node cancels that client and fails the leg; serving workers
+and host OOM policy are untouched. Per-arm JSONL samples are kept in that
+directory. This is a sampled cancellation guard, not a memory reservation or
+a guarantee against an instantaneous allocation spike. It needs real spare
+memory before the workload, and it must be enabled on both comparison arms.
+
+## 엔진 시작과 겹치는 CPU 멀티모달 예열
+
+`async_llm.py`의 입력·출력 처리기 초기화 후, 엔진 생성 직전에
+`glm53_renderer_warmup.py`를 호출한다. 입력 처리기의 `MultiModalBudget`도 전역
+Torch 스레드 설정을 바꾸므로 이 초기화가 끝난 다음에만 백그라운드 작업을 시작한다.
+`VLLM_GLM53_EARLY_MM_WARMUP=1`일 때만 GLM5-next, 단일 API 프로세스,
+spawn, CPU 영상 처리 구성을 지원한다. 기존 단일 MM executor에서 일반·읽기 전용
+전처리기 예열과 캐시 비우기를 동일 순서로 수행한다. 정상 warmup과 shutdown은
+이 작업을 먼저 기다린다. 실패한 전처리기는 정상 위치에서 다시 예열하며 실제
+ChatParams를 쓰는 템플릿 예열은 기존 위치에 남는다. 프로필 기본값은 1이며
+`=0`으로 기존 실행 순서를 복원한다. 4노드 교차 측정에서 준비된 캐시의 재부팅은
+평균 219.5 → 212.0초였다. 각 실행 품질 6/6, 한국어 깨짐 0/4와 실제 CPU 전처리
+결과 일치를 확인했다. [측정 증거](../../../measurements/glm53_early_mm_20260908/README.md)를 참고한다.

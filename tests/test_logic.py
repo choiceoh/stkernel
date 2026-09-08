@@ -3506,7 +3506,7 @@ def test_b12x_sf_pack_is_lossless() -> None:
 
 
 def test_b12x_static_v2_controls() -> None:
-    """The decode-streaming static kernel is opt-in, exact-geometry, spec-parsed.
+    """The decode-streaming static kernel is exact-geometry and spec-parsed.
 
     `VLLM_GLM53_B12X_STATIC_V2` selects `MoEStaticKernelV4` for the served
     GLM-5.3 TP geometry only (34차 §8: the v2 and v3 kernels are gone, and
@@ -3523,6 +3523,7 @@ def test_b12x_static_v2_controls() -> None:
         "_is_glm53_b12x_tp_geometry",
         "_static_v2_config_for",
         "_static_v2_cache_key",
+        "_static_v2_decode_config",
         "_static_kernel_cache_key",
     }
     ns = load_defs(dispatch_path, names, {"Tuple": tuple, "Dict": dict, "torch": None})
@@ -3533,7 +3534,7 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False, "tiled": False, "sf_pack": False},
+                      "a_ring": False, "tiled": False, "sf_pack": False, "decode_reform": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring, "
           "row-major weights")
     v4 = parse("u")
@@ -3555,6 +3556,27 @@ def test_b12x_static_v2_controls() -> None:
           and parse("t,s", probe=True)["stamps"]
           and not parse("u")["tiled"] and not parse("v")["tiled"],
           "t composes with v, g and s; u and v stay row-major")
+    reform = parse("t,r")
+    check(reform["decode_reform"] and not tiled["decode_reform"],
+          "the integrated decode tile reform is selected explicitly by the r token")
+    for bad in ("r", "u,r", "t,r,v", "t,r,q", "t,r,xs", "t,r,xa", "t,r,f3", "t,r,g3"):
+        try:
+            parse(bad, probe=True)
+            check(False, f"incompatible integrated geometry must be refused: {bad}")
+        except ValueError:
+            pass
+    specialize = ns["_static_v2_decode_config"]
+    for m in (1, 2, 6, 8):
+        check(specialize(reform, m) == reform, "M<=8 keeps the complete reform bundle")
+    for m in (0, 9, 16, 32, 64):
+        check(specialize(reform, m) == tiled,
+              "larger batches share the unchanged tiled baseline cache and geometry")
+    check(reform["decode_reform"], "specialization must not mutate the caller config")
+    saved_key = ns["_static_kernel_cache_key"]
+    ns["_static_kernel_cache_key"] = lambda **fields: ()
+    check(ns["_static_v2_cache_key"](tiled) != ns["_static_v2_cache_key"](reform),
+          "integrated and baseline kernel cache identities must differ")
+    ns["_static_kernel_cache_key"] = saved_key
     # h (39차 §3b) is retired: an SF box of 64 rows is not expressible -- the
     # 128-row block interleaves its four 32-row groups at 4 B, so half the
     # rows is 8 B of every 16 and TMA's innermost box dim wants 16 B
@@ -3793,10 +3815,10 @@ def test_b12x_static_v2_controls() -> None:
           "the v4/v5 kernels, their helpers and the tiled gated subclass are new files "
           "(absent preimage) in the module manifest; v2/v3 rows are gone")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check('VLLM_GLM53_B12X_STATIC_V2=t' in profile,
-          "the profile ships the v5 tile-major lane (spec t) as the default "
-          "(39차 §3i/§4f: probe -2.0~2.7% vs u by interleaved repeats, boot "
-          "bracket 21.9 vs 21.4 step/s, lane proved serving 1/1)")
+    check([line.partition('=')[2] for line in profile.splitlines()
+           if line.startswith('VLLM_GLM53_B12X_STATIC_V2=')] == ['t,r'],
+          "the profile ships exactly one t,r default after the corrected C=1 "
+          "MoE bundle promotion; explicit t remains the previous geometry")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v4.py" in runner and "moe_static_common.py" in runner
           and "moe_static_kernel_v5.py" in runner and "moe_dynamic_gated_tiled.py" in runner
@@ -8479,12 +8501,12 @@ def test_glm53_megakernel_contracts() -> None:
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 8
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 13
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm2, both mhc storage paths, mla, and four MLA prefill "
-          "pair/group4 kernels of #368) triggers its dependents at entry and "
+          "every segment kernel (gemm2, input pack/consumers, both mhc storage paths, mla, and four MLA prefill "
+          "pair/group4 kernels of #368, plus register-Q prefill32) triggers its dependents at entry and "
           "is launched programmatically behind the MK_PDL knob")
     # -- 34차 §8: the persistent v1 GEMM (grid barrier, shared A quant,
     #    remainder split-K, dynamic unit hand-out) and the MK_SEG_KDA block
@@ -8510,11 +8532,11 @@ def test_glm53_megakernel_contracts() -> None:
           "and the probe snapshot is one knob")
     # the lane's A quantizer: exact scale (33차 lever 1) shared by the
     # per-slice quant and the SMLP2 pair emitter
-    check(cu.count("mk_act_rcp(") == 3 and cu.count("mk_act_scale(") == 3
+    check(cu.count("mk_act_rcp(") == 4 and cu.count("mk_act_scale(") == 4
           and "return fmaxf(amax * (1.0f / 448.0f), 1.0e-30f);" in cu
           and "mk_pow2_scale" not in cu and "mk_pack4" not in cu
           and "mk_warp_amax" not in cu,
-          "A quant: one exact-scale helper pair for the two quantizers; the "
+          "A quant: one exact-scale helper pair for the three quantizers; the "
           "persistent lane's pow2 helpers went with it")
     check("def exact_fixture(dev=\"cuda\", shape=None):" in pysrc_full
           and "def _selftest_gemm_exact() -> float:" in pysrc_full,
@@ -8646,7 +8668,7 @@ def test_glm53_megakernel_contracts() -> None:
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
-    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 5
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 9
           and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu
           and "&g_gemm2_m8_bps, mk_gemm2_kernel<1, false, true>, MK_THREADS, GEMM2_M8_SMEM" in cu,
           "the persistent grids check residency before launching: a grid "
@@ -11583,11 +11605,12 @@ def test_fleet_reservation_tooling_contracts() -> None:
 
 
 def test_fleet_experiment_behaviors():
-    import unittest
-    suite = unittest.defaultTestLoader.discover(os.path.join(REPO, "tests"), pattern="test_fleet_experiments.py")
-    result = unittest.TextTestRunner(verbosity=1).run(suite)
-    check(result.wasSuccessful(), "fleet asynchronous submissions, prerequisites and evidence contracts")
-    return result.testsRun
+    sys.path.insert(0,os.path.join(REPO,'bench'))
+    from cpu_unittest import execute
+    from pathlib import Path
+    report = execute('tests/test_fleet*.py',Path(REPO))
+    check(report['passed'], "fleet asynchronous submissions, prerequisites and evidence contracts")
+    return report['tests_run']
 
 
 def test_megakernel_regression_suite():
@@ -11607,7 +11630,20 @@ def test_megakernel_regression_suite():
     return result.testsRun
 
 
+def test_glm53_graph_profile_regressions():
+    import unittest
+    suite = unittest.defaultTestLoader.discover(
+        os.path.dirname(os.path.abspath(__file__)), pattern="test_glm53_graph_profile.py")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    check(result.testsRun >= 6 and result.wasSuccessful(),
+          "GLM graph-profile memory sizing and required warmup regressions")
+
+
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--component',choices=['all','core'],default='all')
+    component = parser.parse_args().component
     test_skip_topk()
     test_rank_cache_eviction_contracts()
     test_nvfp4_static_scale_contracts()
@@ -11689,6 +11725,7 @@ if __name__ == "__main__":
     test_cuda_builds_keep_the_arch_specific_target()
     test_self_built_kernels_persist_their_caches()
     test_boot_stamps_measure_without_changing_the_boot()
+    test_glm53_graph_profile_regressions()
     test_cudagraph_mem_profiling_off_keeps_the_kv_size()
     test_kv_cache_is_pinned_in_tokens()
     test_earlyoom_is_fireable_on_unified_memory()
@@ -11728,6 +11765,6 @@ if __name__ == "__main__":
     test_worker_launch_does_not_let_the_remote_reparse_envv()
     test_supervisor_paces_and_stops_relaunching()
     test_fleet_reservation_tooling_contracts()
-    fleet_regressions = test_fleet_experiment_behaviors()
+    fleet_regressions = test_fleet_experiment_behaviors() if component == 'all' else 0
     regressions = test_megakernel_regression_suite()
-    print(f"all OK ({PASS} checks; {regressions} megakernel regressions; {fleet_regressions} fleet regressions)")
+    print(f"{component} OK ({PASS} checks; {regressions} megakernel regressions; {fleet_regressions} fleet regressions)")

@@ -7172,3 +7172,424 @@ to 0 restores the measured baseline. This is a profile promotion, not a new
 performance or quality verdict, and does not restart the running service.
 
 [Matched serving and kernel evidence, raw records and reproduction](measurements/glm53_decode_followup_20260907/README.md).
+
+### C=1 one-time FP8 input preparation, retained wide-projection candidate (2026-09-07)
+
+Private-source GB10 probe `c475b65` quantizes each activation group once and
+uses the existing `a_ready` GEMM consumer. Production kernel sources and
+defaults are unchanged. Thirty changed-input graph cases pass exact output,
+FP8 byte/scale, finite and independent FP32 oracle checks. Each of six
+geometries has 24 alternating samples per arm in cold and warm conditions;
+timing includes the extra preparation kernel.
+
+M6/N6528/K4096 improves **42.720 -> 38.480 us warm (-9.93% latency)** and
+**133.104 -> 131.824 us cold (-0.96%)**. M6/N6144/K4096 improves 6.84% warm
+but regresses 0.82% cold. Small controls regress up to 5.09%. Retain the
+N6528 candidate and exclude regressing shapes from a future selective path.
+Warm-cache gains are useful evidence; mixed results do not justify either
+universal deployment or rejection of the winning shape. The 64 MiB flush
+does not reproduce the full model, and **candidate step/s and output tok/s
+remain unmeasured**.
+
+Two earlier attempts produced no GPU timing: a compile error, then a probe
+aborted when the public head gracefully exited during compilation. Initial
+host memory admission was inadequate (about 9 GiB available, falling to
+6.8 GiB); the corrected runner requires 16 GiB and aborts below 12 GiB.
+The initiating shutdown cause remains unresolved. The user reported no
+intentional shutdown, so restoration was submitted through the canonical
+fleet runner. See the evidence page for the final recovery state.
+
+[Full timings, numerical gates, source hashes, failed attempts and recovery](measurements/glm53_input_reuse_20260907/README.md).
+### W4 startup cache transport — warm boots 28 s faster (2026-09-07)
+
+PR #442 replaces the W4 cache's pageable weight copy for MD5 with a reusable
+64 MiB pinned host buffer, and uses mmap plus bounded transfers for cached
+pack tensors. Existing MD5 keys, pack filenames, format 4, quantization and
+serving kernels are unchanged. The transfer flag is excluded from rank/FP8
+identity so both paths can reuse exactly the same artifacts. The new flag is
+`VLLM_GLM53_MK_PACK_FAST_IO`; the GLM profile now defaults to **1**, with **0**
+restoring the legacy path. It adds one bounded host buffer per worker and no
+new on-disk artifact type. Pinned allocation failures and unsupported layouts
+retain synchronous copies; legacy serialization retains the eager reader.
+
+The first normal fleet attempt (`mkpackio0907`, runtime `3adbb0f`) exposed a
+benchmark compatibility defect after priming: canonical `onepass.ask_stream`
+now accepts a timing argument, but the startup response recorder accepted
+only four positional arguments. No quality request was sent. Its cache
+receipts passed, then the failed gate restored control serving successfully.
+The recorder now forwards positional/keyword timing and decode controls and
+restores the original callable even on failure. A regression exercises the
+actual timing-object mutation and response record. This did not change the
+model runtime. Initial evidence: `/home/choiceoh/glm53-logs/pack-io-20260907-run1`.
+
+The successful retry (`mkpackio20907`) ran through the normal fleet queue on
+runtime **`3a2a223e24084c465712b6c75cb512965d7d9ed6`**, overlay **`853856f14b53`**.
+All 56 overlays were verified on four nodes at deployment; each boot retained
+matching hashes for the three cache/pack helpers. The same profile, effective
+speculative K **5**, `PREFILL_WARMUP=0` and canonical Korean **2K/32K** onepass
+were used throughout. PRIME warmed compilation/artifacts and is excluded
+from the comparison. Timed order was **FAST1 → BASE1 → BASE2 → FAST2**, two
+boots per path, with all-rank, FP8 and W4 receipt gates before each onepass.
+
+| Metric | BASE1 | BASE2 | FAST1 | FAST2 |
+|---|---:|---:|---:|---:|
+| Health-ready wall, seconds | 252 | 255 | 223 | 228 |
+| Head load-model, seconds | 109.9 | 106.8 | 85.7 | 85.2 |
+| Head W4 attachment, seconds | 28.250 | 29.013 | 11.826 | 11.893 |
+| Head W4 key generation, seconds | 25.897 | 26.503 | 10.163 | 10.224 |
+| Head W4 file reads, seconds | 2.639 | 2.676 | 0.842 | 0.849 |
+| Head W4 device copies, seconds | 0.127 | 0.132 | 0.745 | 0.752 |
+| Head memory-profile phase, seconds | 36.1 | 36.2 | 37.2 | 36.5 |
+| Korean facts / corrupt responses | 6/6; 0/4 | 6/6; 0/4 | 6/6; 0/4 | 6/6; 0/4 |
+| Raw speculative acceptance | 46.57% | 50.31% | 48.43% | 48.09% |
+
+Mean health-ready time is **253.5 → 225.5 s**, a **28.0 s (11.0%)** reduction
+in this matched warm bracket. Head model loading is **108.35 → 85.45 s**;
+W4 attachment is **28.632 → 11.860 s**. Key generation is the dominant saved
+phase (**26.200 → 10.194 s**). Mapping reduces file-read time, while staging
+actually adds about **0.62 s** to device copies; the combined path still wins.
+The cumulative W4 I/O counters include pack callers outside the dense-attach
+wrapper, so their sum is not exactly its timer. All timers are host wall time
+with synchronization, not isolated GPU kernel timings. Unlike comparing
+PRIME (**358 s**) with a warm boot, the four timed memory-profile phases are
+all warm (**36.1–37.2 s**). Other startup/peer timings vary, so the exact 28 s
+wall difference is an observed bracket result, not a guaranteed saving.
+
+Every timed boot had **4/4 rank hits**, **976/976 FP8 hits**, and **1,012 W4
+cache hits** (253 per node) on the requested transfer path. There were zero
+cache errors, failed pack restores, pinned-allocation warnings or FP8
+source-copy disarms. The separate GPU probe passed **74** byte/hash/layout
+checks using three real format-4 packs, multiple weight shapes, another CUDA
+stream, the 64 MiB boundary and synchronous fallback. All prompt hashes match
+across arms, but generated text differs (0/4 exact matches against BASE1 for
+FAST1, BASE2 and FAST2). Raw acceptance means are **48.44% / 48.26%** for
+BASE/FAST; this small sample does not establish broad acceptance equivalence
+or a decode-throughput improvement. The full 128K warmup is outside this run.
+
+Across 162 ten-second host samples per node, minimum available RAM was
+**14.04 / 7.01 / 9.34 / 11.75 GiB** on srv1/2/3/4, with no net swap-use increase.
+These include priming/teardown and are sampled OS values, not CUDA peak memory.
+The successful final FAST2 boot passed health/quality checks and the holder
+was released with exit **0** at 17:31 KST. No further GPU runs were needed.
+
+Validation also passed **7 focused pack/recorder tests**, the existing **27
+startup-artifact tests**, **70,979 CPU logic checks**, **30 megakernel** and
+**32 fleet regressions** locally with Torch. The deployment's lightweight
+logic gate passed **6,683 checks** plus those megakernel/fleet regressions.
+The final default/comment/result update and optional-Torch test guard do not
+change the runtime exercised by the bracket. Before merge, review follow-ups
+preserved Tensor.to semantics for CPU destinations and allowed zero W4 hits
+during PRIME. Timed arms still require hits. All **9** focused pack/recorder/
+receipt tests passed; the measured CUDA path is unchanged. PR #442 merged as
+`e00df24d837610cf9536c3f88a1c67dd61d5bdb9`.
+
+Evidence on srv2: `/home/choiceoh/glm53-logs/pack-io-20260907-run2` contains
+node logs/states/hashes, exact response files, onepass JSON, health timers,
+resource samples, `pack-io-gpu.json`, `report.json` and `report.md`. The same
+files and report scripts are retained locally under `runs/pack-io-20260907-run2`.
+
+### GLM compile cache survives identical-runtime redeploys (2026-09-07)
+
+The launcher previously cleared the head's torch.compile cache whenever the
+deployed manifest SHA changed. Deployment adds `# source_commit=...`, so a
+docs/benchmark-only commit cleared usable compiled artifacts even when every
+overlay byte and binding stayed identical. The new helper keys reuse on all
+overlay bytes, canonical source/target/base-contract rows, and the already
+attested immutable image ID. Manifest comments and row order do not affect
+this content key. `.overlay-sha` still records the exact deployment manifest
+SHA consumed by fleet/onepass; a separate `.compile-overlay.json` receipt
+links content to that provenance. Missing/invalid receipts, changed content,
+or an intervening older launcher cause invalidation. First adoption clears
+once. Deletion or stamp errors abort before worker/head start; failed deletion
+cannot publish a successful reuse receipt. The scope remains the existing
+head compile directory; this does not alter worker cache policy or model code.
+
+Normal fleet CPU job **`compilecache0907`**, source **`3c3a30e`**, passed using
+copies of all **56** live overlay files and serving image
+`sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`.
+Real Docker containers created/deleted a tiny **root-owned** compiled-file
+fixture in a disposable directory; no serving cache/model mount, GPU operation,
+or service restart was involved (host Docker default runtime: `runc`).
+
+- Changing only deployment metadata would trigger legacy invalidation. The
+  new path preserved the artifact's bytes, inode and nanosecond mtime through
+  two reuse calls while updating the fleet SHA correctly.
+- Changing a copied runtime file with an unchanged manifest invalidated and
+  removed the fixture, proving that the new key covers actual source bytes.
+- Content hashing/receipt updates took **3.93 / 3.67 ms** on those reuse calls.
+  These are helper timings, **not measured boot-time savings**. End-to-end
+  restart latency, generated output and compiler cache-hit behavior were not
+  remeasured for this launcher-only change. The prior **225.5 s** warm-boot
+  result remains the latest matched startup result, not a new baseline claim.
+
+Validation: **9 lifecycle tests**, **4 actual worker-launch-block tests**,
+**70,979 CPU logic checks**, **30 megakernel** and **73 fleet regressions** pass;
+Python compilation, launcher shell syntax and diff checks pass. The lifecycle
+tests cover mapping/base/image changes, migration/corrupt receipts, old-launcher
+intervention, deletion failure and interrupted stamp writes.
+
+[Raw CPU lifecycle receipt](measurements/glm53_compile_cache_20260907/report.json).
+The full output is also retained on srv2 under
+`/home/choiceoh/glm53-logs/compile-cache-20260907` and locally in
+`runs/compile-cache-20260907`. Reproduce in the CPU lane with
+`python3 probes/glm53_compile_cache_check.py`; it only mutates disposable copies.
+
+### GLM53 C=1 input reuse with warp-local weight staging (2026-09-07)
+
+The actual M6/N6416/K4096 projection now quantizes X once per K group, stages
+only each warp's W rows, and skips the seven padded tail warps. It keeps the
+original split 8, fixed-order reduction and BF16 output bits. Invocation-owned
+scratch is retained by CUDA graph pools; other shapes, background calls and
+low-rank correction use the original path. A failing startup gate disables
+only input reuse.
+
+Fleet `inputserve40907`, source `e997de1`, passes 100 numerical rows, baseline
+bit equality, 40 alternating graph replays, startup self-test, racecheck
+(0 hazards/errors/warnings) and memcheck (0 errors). On the actual serving
+source, 32 alternating pairs give **42.624 -> 32.352 us warm (-24.10%)** and
+**78.000 -> 75.488 us read-evicted (-3.22%)**, including preparation. The
+candidate wins all 32 warm pairs and 30/32 read-evicted pairs. The earlier
+simple prototype's warm reduction was 9.93% on padded-width weights.
+
+An earlier serving A1 was correctly rejected as inactive: its selector used
+logical N6528, while the model uses logical N6416 padded to N6528. Its output
+tok/s increased 1.65% without executing the candidate, so it is not a gain
+claim. The corrected B/A/A/B requires all-rank real-shape capture before
+traffic. The real B1/A1/A2 boots measure pooled step/s **21.641/21.724/21.870**,
+window medians **21.865/21.853/21.855**, and output tok/s
+**69.558/71.147/69.959**. Facts pass 24/24 for each. A2 fails the existing
+Korean gate on two `Halvorsen博士` expressions (four Han characters, no
+replacement/jamo/control errors), and the chain stops before B2. Because
+the harness combines reasoning and final content, the affected channel is
+unknown. Preserve the gate failure and incomplete bracket. Approved main was
+restored at 19:26:50 KST with health 200 verified at 19:28.
+
+After these results were reported, the operator explicitly requested default
+promotion. `VLLM_GLM53_MK_INPUT_REUSE` now defaults to **1**; **0** restores
+the original GEMM. Startup numerical/replay fallback remains active. This
+promotion does not relabel the Korean gate or establish a stable serving
+speedup. The channel-recording follow-up failed on zero decode windows in
+its first baseline and stopped before the candidate; approved main was
+restored at 20:25:15 KST, with health 200 verified after recovery.
+
+[Kernel evidence, routing correction, serving records and recovery](measurements/glm53_input_warp_20260907/README.md).
+
+### GLM prefill fusion / split thresholds / direct packets (2026-09-07)
+
+PR #439, tested source `52b23e2`: the first GPU run exposed a production-MHC
+first-product rounding mismatch. Corrected order passes 28 fused-post cases
+and 260 real TP4 transport/threshold cases, including bit-exact next-pre
+continuation and nondefault streams. Direct PyNCCL exchange is numerically
+correct but has severe 4K latency cliffs; leave it off.
+
+The subsequent exclusive serving arm `SPFUSED0907` (overlay `284770d1a222`)
+proved 3/3 selected paths and completed 2K/4K/8K/32K requests. At 128K,
+earlyoom terminated the head worker with 6,114 MiB available; the request
+returned no content. The arm is invalid and its baseline never ran. No
+serving gain or original 40% target claim is supported. Keep all new options
+at their existing defaults. The earlier probe-induced headroom incident
+received a verified defaults recovery; probe launchers now refuse inadequate
+host memory, which does not resolve the separate long-context serving issue.
+
+[Failure analysis, recovery details and device evidence](docs/GLM53_PREFILL_FOLLOWUP_20260907.md).
+
+
+The scheduled retry on `6f797df` (main `0b6dc75` included) used a dedicated
+ledger and common reduced capacity (KV_TOKENS 524288, MAX_LEN 262144).
+Its defaults workload completed 128K: retrieval 15/15, Korean corruption
+0/11, no traffic issues, minimum observed head MemAvailable 20.7 GiB.
+128K TTFT was 41.401 s; this is a single baseline, not an improvement result.
+A head-only stamp assumption in the post-leg helper stopped the first chain.
+After correction, the next admission refused before deploy because srv1
+had only 18.9 GiB free disk (32 GiB test floor); five rank-cache artifacts
+occupied 224 GiB. No candidate/baseline comparison completed and no default
+promotion is warranted. [Retry, memory and disk evidence](measurements/glm53_prefill_retry_20260907/README.md).
+
+
+After disk recovery, the fresh `spfrt30907` bracket on the same `6f797df`
+source completed B1/A/B2 by 14:58:36 KST. All 33 requests completed with
+retrieval 45/45, Korean corruption 0/33, no traffic or memory-guard issues,
+and matching four-node attestations. Request bodies and token counts match.
+Relative to the two baseline means, prefill/first-content throughput changed
+**2K +1.74%, 4K +2.09%, 8K -1.75%, 32K +0.74%, 128K +0.27%**. Long-context
+deltas are inside baseline variation; the 40% target remains unmet and new
+options remain unpromoted. Capacity is still the common reduced test setting.
+[Matched results and full raw evidence](measurements/glm53_prefill_retry3_20260907/README.md).
+
+
+### Current GLM prefill attribution (2026-09-07, pattr20907)
+
+Profiled the actually deployed settings on source `6f797df`, manifest
+`0aca81454720`, pinned `a3dd4c0f...` image. Actual NVFP4 static scale was **0**,
+unlike the earlier #439 bracket's 16. Preserve this scope difference.
+Matched Korean onepass inputs with distinct cache salts: 32,545 / 128,559
+actual tokens, clean control → profile → clean control, all four rank traces.
+All six requests: retrieval **18/18**, Korean corruption **0/6**, cache hits 0,
+no traffic or 12 GiB memory-guard errors (minimum head headroom 17.40 GiB).
+
+Mean per-rank occupied prefill time: MoE **32.08 / 28.15%**, MLA/indexer
+**16.40 / 20.42%**, dense GEMM/quant **12.94 / 13.12%**, NCCL **12.67 / 12.11%**,
+KDA **10.77 / 10.73%**, MHC **4.95 / 5.06%** (32K / 128K). Communication and
+compute overlap is effectively zero. Explicit pure-prefill ranges, not a
+decode-step estimate, identify six / nineteen chunks; token totals match all
+requests and ranks. Occupancy unions avoid double-counting streams.
+
+The FP8 RS-unpack + MHC-post scope of #439's standalone microbenchmark is
+only **2.64 / 3.08%** of prefill. A hypothetical 12.7% reduction of that work
+would save roughly 0.34–0.39% of total time, not 12.7% end-to-end. This is a
+budget illustration, not a new performance verdict. Larger remaining
+candidates are communication/MLP overlap and MoE/MLA kernel design; previous
+MoE reuse and MLA pair/group regressions do not justify re-enabling them.
+
+Clean TTFT before/profile/after: 32K **11.880 / 10.647 / 10.553 s**;
+128K **42.055 / 42.177 / 41.855 s**. The first 32K control has a first-process
+cost that is not isolated; profile-vs-later-control differs by <1% at both
+sizes. This diagnostic proves no new speedup or cumulative 40% gain.
+Reduced KV capacity (415 blocks, maximum length 262144) is retained as a
+limitation. Initial reset-API 404 occurred before any model request and was
+corrected with supported request cache salts; both recovery receipts remain.
+Final full-capacity public recovery **16:33:32**, health 200, four-node
+command/image/mount/env verification passed, fleet exit 0. Six attribution
+CPU tests pass. [Report, per-rank analysis and raw trace manifest](measurements/glm53_prefill_profile_20260907/README.md).
+
+## GLM53 W4 키 SHA256 — warm 부팅 234 → 226.5초 (2026-09-07)
+
+PR #452, 런타임 `7132fd15306166f15ce783fe2580dad661f22801` (main #451 위).
+4× GB10 TP4에서 같은 코드·이미지·준비된 rank/FP8/compile 캐시로 B/A/A/B.
+기존 MD5 부팅 **236/232초**, SHA256 **224/229초**: 평균 **7.5초(3.2%) 단축**.
+헤드 W4 키는 **10.3045 → 2.4990초**, 모델 로딩 **84.85 → 77.40초**;
+profile은 **36.65 → 36.85초**. 기존 팩은 최초 1회 hardlink로 재사용하고
+이후 MD5 계산을 생략한다. 가중치·팩·추론 산술은 그대로다.
+
+준비 부팅 541초는 비교에서 제외. timed 4회 모두 compile reuse, rank 4/4 hit,
+FP8 976/976 hit, 랭크당 W4 254 hit; 후보 MD5 fallback/alias error/repack 0.
+준비 포함 5회 모두 품질 6/6·한국어 손상 0/4. GPU exact 36+36개 통과.
+raw acceptance는 B 51.77/49.19%, A 49.87/45.65%로 변동했고 디코드는
+B 21.9/21.9, A 21.9/21.8 step/s: 처리량·수용률 개선 주장은 하지 않는다.
+`VLLM_GLM53_MK_PACK_SHA256=1`을 프로필 기본값으로 채택; `=0`은 기존 MD5 경로.
+마지막 control SHA256=0·HTTP 200 확인 후 플릿 반납, 새 기본값은 다음 배포부터 적용.
+상세 조건·한계·실행 절차·증거: [측정 묶음](measurements/glm53_pack_key_20260907/README.md).
+
+### GLM53 C=1 CTA-local split-K reduction (2026-09-07, PR454)
+
+Compared against PR449's enabled input-reuse default on the exact
+M6/N6416/K4096 projection. Eight warps retain the original eight K slices;
+shared-memory reduction replaces global partial traffic, arrival atomics and
+device fences. The W4 packs, FP8 input bytes and output rounding are unchanged.
+
+Actual serving source `916adc0` on GB10, 32 alternating samples per mode,
+including input preparation:
+
+| Kernel | Warm us | Read-evicted us |
+|---|---:|---:|
+| Enabled input reuse | 32.512 | 75.360 |
+| Fixed geometry CTA, mode 2 | 24.544 (-24.51%) | 69.424 (-7.88%) |
+
+Mode 2 wins 31/32 pairs in each regime. All 160 numerical rows match baseline
+bits and the independent FP32 oracle; 120 changing-input retained-graph checks,
+startup checks, racecheck and memcheck pass. The 64-register/four-block variant
+is slower than the selected 75-register/three-block variant. CPU validation:
+6,687 logic checks, 30 megakernel regressions, 92 fleet checks and 12 focused
+driver/transport tests pass; native nvcc compilation has no register spills.
+
+The first B/A/A/B serving attempt failed in its CTA=0 baseline: srv1's initial
+MHC check raised CUDA error 800 and its worker exited before health. Other
+ranks passed startup checks. No step/output measurement exists for this
+attempt. Failure logs are preserved. Approved main `944f65c` was restored at
+23:20:48 KST, with health 200 observed at 23:20:22. Retry `inputctaserve20907`
+on unchanged runtime source `d920bea` reproduced **32.368 -> 24.416 us warm
+(-24.57%)** and **75.648 -> 69.712 us read-evicted (-7.85%)**. Numerical,
+retained-graph, sanitizer and independent four-node startup checks all pass.
+Its CTA=0 serving baseline failed at 00:18:35 on 2026-09-08 with an unhealthy
+one-shot proxy during warmup. No step/output/quality rows were produced.
+Approved-main restoration completed at 00:33:16; exit code 1 is retained.
+
+After both attempts were reported, the operator explicitly requested default
+promotion and PR merge on 2026-09-08. `VLLM_GLM53_MK_INPUT_CTA=2` is now the
+GLM profile default; `0` restores the existing input-reuse kernel. This is an
+operator promotion based on repeated kernel gains, not a serving acceptance
+verdict. Independent startup fallback remains active, and the failed serving
+evidence is preserved. The promotion integrates main `bb123cf` without
+changing the measured CUDA source bytes.
+
+[Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).
+
+### GLM53 CPU renderer warmup overlap (2026-09-08, PR456)
+
+PR #452를 `bb123cf`로 먼저 머지한 뒤, main `4b0f1d1` 위의 동일 런타임
+`c001cb9`로 4노드 재부팅을 PRIME/B/A/A/B 순서로 검증했다.
+일반·읽기 전용 CPU MM 전처리기의 기존 예열을 입력 처리기 초기화 뒤부터
+엔진 시작과 겹친다. 실제 ChatParams 예열 및 HTTP 준비 전에 완료를 기다리고,
+실패한 전처리기는 기존 위치에서 재시도한다. 입력 처리기의 전역 Torch 스레드
+설정과 겹치지 않는 순서, 종료 시 캐시를 닫기 전 join도 검증했다.
+
+| 경로 | HTTP 준비 시간 | 평균 |
+|---|---|---:|
+| 기존 순서 | 218 / 221 s | 219.5 s |
+| 앞당긴 CPU 예열 | 213 / 211 s | 212.0 s |
+
+**7.5초 / 3.4% 단축**. 모델 로딩 79.30 → 79.25초, 메모리 프로파일링
+36.45 → 36.55초로 유지되며, 기본 경로의 마지막 예열 6.901 / 9.685초가
+엔진 시작과 겹친다. PRIME 314초는 컴파일 준비를 포함하므로 비교에서 제외했다.
+모든 부팅 품질 6/6, 한국어 깨짐 0/4. 네 랭크 캐시 적중, FP8 976 hits/0 errors,
+랭크마다 W4 SHA256 캐시 255개 적중과 재팩·fallback·alias 오류 0을 확인했다.
+실제 이미지·영상 CPU 전처리 6개 검사/20개 텐서 필드가 정확히 일치했다.
+CPU 검사: 로직 71,014, 메가커널 30, 플릿 107, 렌더러 9, 수집 증거 4 통과.
+
+응답 검사 중 외부 API 요청이 있어 처리량·TTFT·수용률 개선 주장은 하지 않는다.
+각 실행에서 첫 health 응답이 기록된 POST 완료보다 먼저 나온 것을 확인했다.
+`VLLM_GLM53_EARLY_MM_WARMUP=1`을 프로필 기본값으로 채택했다. 마지막 control=0의
+정상 상태·품질 확인 후 02:41:53 KST 플릿을 반납했고, 다음 작업이 02:41:58에
+획득했다. 기본값은 다음 배포부터 적용된다.
+[조건·한계·원본 식별자·재현 절차](measurements/glm53_early_mm_20260908/README.md).
+
+### GLM startup unused graph profile (2026-09-08, PR #460)
+
+`VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE` remains **0**. Fleet `graphmem0908`, same source `b945723`, four nodes, warm B/A/A/B: health **205 / 212 / 202 / 205 s** (baseline 205, candidate 207). Head memory profile + subsequent warmup fell **46.85 -> 44.25 s**, but total readiness did not improve. All boots: first text/image/video outputs passed; quality 6/6, corruption 0/4. Timed ranks: 976 FP8 hits, four rank hits, W4 255/rank, no cache errors. FAST2 had two non-loopback POST completions, so its request timings are contaminated. [Evidence](measurements/glm53_graph_profile_20260908/README.md).
+
+The cold PRIME also exposed redundant CUDA extension compilation after deploying unchanged `.cu` bytes: deploy rewrites file mtimes while Ninja consumes those bind-mounted timestamps. The subsequent identical-source deployment bracket below confirms a full-readiness improvement.
+
+### GLM identical-source redeploy — 121 s faster readiness (2026-09-08, PR #460)
+
+Fleet `deploycache0908v6` completed with exit **0** on four nodes, pinned runtime `f1814b2e676d12d0ceac8cd6843934e8da8b7fdb`. Warm B/A/A/B health walls were **341 / 211 / 215 / 327 s**: baseline mean **334 s**, candidate **213 s**, **121 s / 36.2% faster**. The 387-second cache-creation PRIME is excluded. Health wall starts after overlay publication and ends at the new container's first successful health response; this is identical-source redeployment with populated caches, not an empty-cache first-install result.
+
+`DEPLOY_PRESERVE_IDENTICAL` now defaults to **1 for GLM**. The production helper compares contents with rsync, retains identical files' inode/mtime and normalizes permissions. Actual edits receive fresh destination timestamps even from older checkouts. Canonical head SHA256 verification and full worker parity remain; `DEPLOY_PRESERVE_IDENTICAL=0` restores legacy install/scp. In both FAST boots, all **60 files on all four nodes** retained SHA256, inode and mtime, with **zero Ninja log changes**. Both controls rewrote all 60 identical files and rebuilt both OSAR and megakernel extensions on every node.
+
+PRIME passed official clean-checkout/current-main admission. Timed arms replayed publication only after the existing source revision, manifest and every deployed file matched the pinned canonical build on all four nodes; the replay cannot admit a new revision. All arms used identical runtime environment/image, `PREFILL_WARMUP=0` for the separate background prefill benchmark, graph-profile skip **0**, and retained required model/MM profiling, actual graph capture and kernel warmup. Nested head timers: model **134.75 -> 79.30 s**, memory profile **103.85 -> 36.15 s**. Do not sum nested phase timers.
+
+Every boot passed first text/image/video responses and Korean onepass **6/6**, corruption **0/4**. Every timed boot had four rank hits, **976 FP8 hits / zero misses/errors**, and **258 W4 hits per rank** under CTA4. All five boot logs contain exactly seven loopback POST completions and no external or pre-health POST completions. Swap usage did not increase. The supervisor accepted handoff to the next fleet holder at **10:23:42 KST**. This establishes startup savings; it does not establish general throughput or bit-exact generation equivalence. [Report and reproducible raw evidence](measurements/glm53_overlay_deploy_20260908/README.md).
+
+
+## GLM53 C=1 MoE 타일 묶음과 FP4 주소 수정 (2026-09-08, PR #461)
+
+M16 패딩, FC1 N128/K256, FC2 N256을 하나의 `t,r` 후보로 묶었다.
+기존 `t`의 가중치 저장 형식·128열 BF16 반올림 경계와 M>8 폴백은 유지했다.
+첫 M2/U8 수치 실패(3.5 / 한계 0.1875)는 nibble 주소에 byte swizzle을 적용한
+오류였다. 바이트 변환 후 swizzle하도록 고치고 소비 주소와 전체 1,024바이트를
+대조한다. 수정 후 13개 형상·130회 수치/그래프 비교 PASS, racecheck 0 hazards.
+memcheck의 커널 컴파일 전 CUDA 함수 조회 오류 34건은 원문과 종료 코드 77을
+보존했고, 다른 메모리 오류는 없었다. CPU 검사기는 다른 API·메모리 오류를 거부한다.
+
+실측 소스 `1f265b1`, TP4·C=1·SPEC_K=5·CTA=4 양팔 동일.
+`MOERFA1(t,r)` → `MOERFB1(t)` 한 번의 A-B, 팔당 고정 2K 출력 3회.
+
+| 지표 | B (`t`) | A (`t,r`) | 관측 변화 |
+|---|---:|---:|---:|
+| 고정 창 합산 step/s | 21.727898 | 22.076208 | +1.603% |
+| 합산 ms/step | 46.023779 | 45.297634 | -0.726145 ms |
+| 창 중앙값 step/s | 21.825397 | 21.850820 | +0.116% |
+| 고정 2K 출력 tok/s | 70.612170 | 72.787236 | +3.080% |
+| 전체 요청 수용률 | 45.0904% | 46.7101% | +1.6197 pp |
+| 품질 / 한국어 손상 | 18/18 / 0/8 | 18/18 / 0/8 | 통과 |
+
+2K warm / 32K / 128K 프리필 tok/s는 B 2486.73 / 2409.55 / 2816.04,
+A 2506.92 / 2977.30 / 3065.92. 긴 프리필은 부팅당 단일 요청이며 M>8 코드는
+같으므로 후보에 귀속되는 프리필 개선으로 판정하지 않는다.
+
+세 요청의 합산 step/s 방향은 모두 A 우세지만 같은 부팅의 표본이다. 중앙값을
+쓰는 표준 judge는 +0.1%, baseline floor 미확보로 기록했다. **한 팔당 한 부팅이므로
+대폭·안정적 성능 이득이나 기각을 확정하지 않는다.**
+후속 운영자 지시로 기본값을 `t,r`로 승격한다(PR #461, 2026-09-08).
+롤백은 `t`. 승격은 추가 GPU 실측을 뜻하지 않으며 위 단일 A-B 한계는 유지한다.
+같은 소스/이미지·4-rank 활성 M6 레인·CTA 제어·요청 해시·출력 길이를 검증했다.
+[전체 증거와 재현 경로](measurements/glm53_decode_reform_20260908/README.md).

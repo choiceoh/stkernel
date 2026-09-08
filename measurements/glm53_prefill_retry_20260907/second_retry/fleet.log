@@ -1,0 +1,29 @@
+preflight spfrt20907 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /tmp/glm53-prefill-retry2.7gy5_ruh/run.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS=2048,VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS=4096,VLLM_GLM53_PREFILL_SP_FUSE_MHC=1
+  NOTE declared only in the checkout (not in origin/main yet): VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS VLLM_GLM53_PREFILL_SP_FUSE_MHC
+  this arm (VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS,VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS,VLLM_GLM53_PREFILL_SP_FUSE_MHC) has no record on build 6f797df
+  baseline: NONE for build 6f797df -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 1/1, held by spfrt0907 [boot] (pid 1299250@srv2, since 13:56, est 40m, Deliberate retry of SPFUSED0907 after host memory termination: common reduced cache capacity, all-node 10 GiB client-cancellation guard, private endpoint and separate ledger; baseline/candidate/baseline with production restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_14:14:26
+waiting: pos 1/1, legacy busy (0 procs, 0 reqs, booting) 2026-09-07_14:15:26
+parent 1457724 is gone; giving up 2026-09-07_14:16:57
+preflight spfrt20907 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /tmp/glm53-prefill-retry2.7gy5_ruh/run.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS=2048,VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS=4096,VLLM_GLM53_PREFILL_SP_FUSE_MHC=1
+  NOTE declared only in the checkout (not in origin/main yet): VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS VLLM_GLM53_PREFILL_SP_FUSE_MHC
+  this arm (VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS,VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS,VLLM_GLM53_PREFILL_SP_FUSE_MHC) has no record on build 6f797df
+  baseline: NONE for build 6f797df -- a defaults arm is worth its boot
+  -> PASS
+GO spfrt20907 2026-09-07_14:17:16
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=29G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=23G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=26G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+REFUSED: choiceoh@10.10.10.1 has less than 32 GiB spare disk before deploy

@@ -1,0 +1,29 @@
+{
+  "purpose": "Identify current pure-prefill GPU bottlenecks; no serving speedup claim",
+  "model_source": "6f797df28c29e7e4cb606724e2416dbc1c5dcfcc",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "contexts": [
+    32000,
+    128000
+  ],
+  "order": [
+    "32K B1",
+    "128K B1",
+    "32K profile",
+    "128K profile",
+    "32K B2",
+    "128K B2"
+  ],
+  "workload": "Canonical Korean onepass, seed 7, thinking on, all three retrieval questions, full answer",
+  "cache": "Distinct cache_salt per request, identical unsalted body hashes and actual prompt token counts; zero cache-hit delta required",
+  "capture": "start immediately before onepass; stop asynchronously at first content/reasoning token; keep answer for quality checks",
+  "trace_selection": "Deduplicated explicit GPU execute_context_N(T)_generation_0(0) ranges only; all four ranks",
+  "accounting": "Kernel work sum, occupied interval union, exclusive category occupancy, compute/communication overlap and GPU idle are separate",
+  "runtime": "Snapshot and preserve observed production settings including dynamic NVFP4 scale=0; record reduced KV capacity separately",
+  "guards": "128 GiB free disk per node before boot; 12 GiB MemAvailable per node during request; owned client cancellation; finally restore public service",
+  "limits": [
+    "Profiler changes runtime; clean TTFT controls are not replaced by trace sums",
+    "One capture per size; ranks are not independent performance repetitions",
+    "No new kernel numerical change, default promotion, cumulative 40 percent verdict, or full-capacity 128K acceptance"
+  ]
+}

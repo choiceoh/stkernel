@@ -1343,6 +1343,8 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         logger.warning("[fp8-dense] %s megakernel %s in %.1f s",
                        type(model).__name__, _mkmod2.pack_stats_line(),
                        time.perf_counter() - t_fold)
+        logger.warning("[mk-pack-io] %s %s", type(model).__name__,
+                       _mkmod2.pack_io_stats_line())
     except Exception:
         pass
     if shapes:

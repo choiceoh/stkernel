@@ -1,0 +1,23 @@
+{
+  "code_revision": "0fdf45a2fde825a0370f377261a94f563582a0d0",
+  "macos": {
+    "tests": 127,
+    "passed": true,
+    "coverage_complete": true
+  },
+  "linux": {
+    "tests": 136,
+    "passed": true,
+    "coverage_complete": true,
+    "note": "Full gate preceded only the total_memory mock isolation change in test_fleet_runtime.py; 15 runtime tests passed again after that fixture fix."
+  },
+  "gpu_runs": 0,
+  "source_sha256": {
+    "bench/fleet.sh": "f1fa6e46b4febbada79bf98a747f143f48563291952a4b2abc67610975620353",
+    "bench/fleet_entry.py": "f9acf5a75d0c8319abce6bc422cf5f0651ed4da586e4da85da496499f6ac3e7b",
+    "bench/fleet_handoff.py": "67932c67f8acc434115beceed3ac1c59a5fe41baaf8351179770b9a625423aa2",
+    "bench/fleet_boot.py": "6801164741612bc4b49ed50df6d48b33a14a99af529e88d310f740ef3fbad950",
+    "bench/fleet_restore.sh": "c4a06cfe3536f297df0ad02de31e442b4a9a8e3d7203cceb1bb2aca42e6e05eb",
+    "bench/startup_cache_boots.sh": "31f31f3468988c5793b669ef92bc42c79f86e49e9b5a7cf359e7c40b8e497657"
+  }
+}

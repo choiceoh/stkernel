@@ -1,0 +1,70 @@
+preflight mlaprefill50907 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  baseline: NONE for build 6e8d1a9 -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:17:36
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_22:18:06
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:24:52
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (0 procs, 1 reqs) 2026-09-07_22:25:07
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control) 2026-09-07_22:25:22
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (0 procs, 1 reqs) 2026-09-07_22:25:38
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (2 procs, 0 reqs) 2026-09-07_22:25:53
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_22:26:08
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:27:08
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_22:28:08
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:29:54
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control) 2026-09-07_22:30:09
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (0 procs, 1 reqs) 2026-09-07_22:30:39
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (2 procs, 0 reqs) 2026-09-07_22:31:09
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_22:31:24
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:32:24
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_22:33:24
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:34:55
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (0 procs, 1 reqs) 2026-09-07_22:35:10
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control) 2026-09-07_22:35:55
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (2 procs, 0 reqs) 2026-09-07_22:36:10
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_22:36:25
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:37:26
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_22:38:11
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:39:56
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (0 procs, 1 reqs) 2026-09-07_22:40:26
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_22:41:12
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_22:41:27
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:42:27
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_22:43:27
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (1 procs, 0 reqs) 2026-09-07_22:44:57
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control) 2026-09-07_22:45:28
+waiting: pos 3/3, held by packkey0907 [boot] (pid 3793399@srv2, since 22:13, est 45m, SHA256 W4 keys: exact GPU proof, prime legacy aliases then matched warm B/A/A/B whole boots and Korean quality; restore control), legacy busy (0 procs, 1 reqs) 2026-09-07_22:45:43
+waiting: pos 3/3 2026-09-07_22:46:13
+waiting: pos 2/2, held by moeoverlap10907 [boot] (pid 3850839@srv2, since 22:46, est 35m, PR453 MoE two-stripe TP overlap: four-rank BF16/FP8 numerics, changed inputs and matched kernel timings; exact container restore) 2026-09-07_22:46:28
+waiting: pos 2/2, held by moeoverlap10907 [boot] (pid 3850839@srv2, since 22:46, est 35m, PR453 MoE two-stripe TP overlap: four-rank BF16/FP8 numerics, changed inputs and matched kernel timings; exact container restore), legacy busy (0 procs, 0 reqs, booting) 2026-09-07_22:47:43
+waiting: pos 2/2, held by moeoverlap10907 [boot] (pid 3850839@srv2, since 22:46, est 35m, PR453 MoE two-stripe TP overlap: four-rank BF16/FP8 numerics, changed inputs and matched kernel timings; exact container restore) 2026-09-07_22:48:43
+waiting: pos 2/2, held by moeoverlap10907 [boot] (pid 3850839@srv2, since 22:46, est 35m, PR453 MoE two-stripe TP overlap: four-rank BF16/FP8 numerics, changed inputs and matched kernel timings; exact container restore), legacy busy (0 procs, 0 reqs, booting) 2026-09-07_22:49:44
+waiting: pos 1/1, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore) 2026-09-07_22:50:29
+waiting: pos 1/1, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (3 procs, 0 reqs) 2026-09-07_22:58:15
+waiting: pos 1/1, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_22:58:30
+waiting: pos 1/1, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (2 procs, 0 reqs) 2026-09-07_22:59:31
+waiting: pos 1/1, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:00:31
+waiting: pos 1/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:01:46
+waiting: pos 1/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (2 procs, 0 reqs) 2026-09-07_23:10:33
+waiting: pos 1/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore) 2026-09-07_23:11:03
+waiting: pos 1/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (2 procs, 0 reqs) 2026-09-07_23:12:18
+waiting: pos 1/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_23:12:33
+waiting: pos 1/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (1 procs, 0 reqs) 2026-09-07_23:13:34
+waiting: pos 1/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_23:14:34
+waiting: pos 1/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (1 procs, 1 reqs) 2026-09-07_23:20:35
+GO mlaprefill50907 2026-09-07_23:20:50
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=14G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=10G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=12G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+6e8d1a9 fix(bench): collect prefill launch proof from container file logs
+56 overlays + manifest deployed and SHA-256 verified on head + 3 workers.
+restart to apply: launchers/start-glm53-nvfp4-tp4.sh   (expect a long
+recompile warmup on the first boot after an overlay-source change)
+deployed build dbae9aaeb4f9 = 6e8d1a9 (registry: /home/choiceoh/glm53-logs/fleet/builds.tsv)
+{"started": "2026-09-07T22:17:34.372510", "exit_code": 0, "ended": "2026-09-07T23:57:26.558665"}

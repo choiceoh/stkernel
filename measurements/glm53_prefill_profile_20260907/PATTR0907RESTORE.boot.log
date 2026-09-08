@@ -1,0 +1,62 @@
+== [PATTR0907RESTORE] boot 16:28:56 caller env:  (profile defaults otherwise) ==
+load-format: instanttensor (default is instanttensor)
+prefix-cache: enabled (hybrid-APC coordinator, mamba align mode)
+chat: chat_template_mm_v2.jinja -> chat_template.0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42.jinja (reasoning=glm45, tools=glm47)
+overlays: 56 base contracts verified against sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+  KV pinned: 2000000 tokens -> 1056 blocks (2304/block + 187 hybrid)
+scheduler: decode-first v3 sequential (decode steps 6, chunk 1152, fair=1, floor 1000 tok/s)
+== 이전 컨테이너 회수·잔여 lock 정리 (노드 병렬) ==
+== memfree preflight ==
+# node          MemFree   AnonPages   (GiB, after reclaim)
+  10.10.10.2     106.4       0.3
+  10.10.10.1     110.2       0.7
+  10.10.10.3     102.7       3.9
+  10.10.10.4      96.4      12.6
+  ! 10.10.10.4 holds 12.6 GiB anon against 10.10.10.2's 0.3 -- an unexpected tenant
+  min=96.4  -boot=11  -margin=10  => usable 75.4 GiB => GMU 0.63
+  cudagraph mem profiling off: GMU 0.6229 -> 0.6229 (KV unchanged, -12 s boot)
+035c3b20a71be328916a4a7ff8845e61a2cf5089ff91ec35b478af3c837197e1
+f435dfcfd34ebf854577961af8a2ac30b837f80cb816429626619a9923500786
+98f90599f1c295bbaecd864c6097576135b0174d2128ecf0faf0bd193b1be2a0
+worker rank=1 @10.10.10.1 launched
+worker rank=2 @10.10.10.3 launched
+worker rank=3 @10.10.10.4 launched
+2e45bdb154024ef9b4a9ac711ee3cd8fdfeb07ebc53c90d7edf9eac4f3e4c8fe
+head rank=0 launched — poll :8000/v1/models (cold boot ~15min)
+== [PATTR0907RESTORE] wait for health 16:29:11 ==
+up after 255s
+== [PATTR0907RESTORE] fingerprint (head log) ==
+(APIServer pid=29) WARNING 09-07 07:29:35 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PDL
+(APIServer pid=29) WARNING 09-07 07:29:42 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 07:30:03 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=261) INFO 09-07 07:30:17 [moe_gate_sm121.py:280] DSV4 fused small-M router gate armed (triton split-K, fp32 out).
+(Worker_TP0 pid=261) WARNING 09-07 07:31:13 [glm53_megakernel.py:2462] [megakernel] selftest mla rel=2.67e-03 pair_prefill=False group=2 -> ARM
+(Worker_TP0 pid=261) WARNING 09-07 07:31:13 [glm53_megakernel.py:2183] [megakernel] armed={'mhc': True, 'mhc_pre': True, 'gemm': True, 'mla': True, 'smlp2': False}
+(Worker_TP0 pid=261) WARNING 09-07 07:31:43 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.653 mk=25.085 empty_cache=0.077 (includes existing syncs)
+(Worker_TP0 pid=261) WARNING 09-07 07:31:43 [glm53_fp8_dense.py:1330] [fp8-dense] Glm5NextForCausalLM (knob VLLM_GLM53_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 213 linears w8a8 (4.04 GB bf16), 0 kept bf16, 0 disarmed by the
+(Worker_TP0 pid=261) WARNING 09-07 07:31:43 [glm53_fp8_dense.py:1343] [fp8-dense] Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gpt
+(Worker_TP0 pid=261) WARNING 09-07 07:31:43 [glm53_fp8_dense.py:1351] [fp8-dense] Glm5NextForCausalLM shapes: [1024x4096]x42, [4096x512]x42, [6416x4096]x34, [4096x2048]x34, [4096x1536]x22, [2048x4096]x11, [8192x512]x11, [4096x4096
+(Worker_TP0 pid=261) WARNING 09-07 07:32:01 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.036 mk=3.873 empty_cache=0.079 (includes existing syncs)
+(Worker_TP0 pid=261) WARNING 09-07 07:32:01 [glm53_fp8_dense.py:1330] [fp8-dense] DFlash2Qwen3ForCausalLM (knob VLLM_DFLASH2_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 31 linears w8a8 (0.73 GB bf16), 0 kept bf16, 0 disarmed b
+(Worker_TP0 pid=261) WARNING 09-07 07:32:01 [glm53_fp8_dense.py:1343] [fp8-dense] DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1
+(Worker_TP0 pid=261) WARNING 09-07 07:32:01 [glm53_fp8_dense.py:1351] [fp8-dense] DFlash2Qwen3ForCausalLM shapes: [1024x4096]x10, [1536x4096]x5, [4096x1024]x5, [6144x4096]x5, [4096x3072]x5, [4096x20480]x1
+(Worker_TP0 pid=261) INFO 09-07 07:32:40 [glm53_indexer_gate.py:129] [indexer-gate] VLLM_GLM53_INDEXER_GATE_SPLITK=1: first split-K routing, e.g. x(12, 4096) torch.bfloat16 @ w(4096, 32) (M<=16 admitted)
+(Worker_TP0 pid=261) INFO 09-07 07:32:41 [gpu_worker.py:564] Available KV cache memory: 7.64 GiB
+(Worker_TP0 pid=261) Capturing dflash2 CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s](Worker_TP0 pid=261) WARNING 09-07 07:32:50 [glm53_fp8_dense.py:603] [fp8-dense] drafter lane serving: 30 of 31 opaque GEMM calls per
+(Worker_TP0 pid=261) WARNING 09-07 07:32:50 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=261) WARNING 09-07 07:32:50 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64
+(EngineCore pid=150) WARNING 09-07 07:32:55 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=261) WARNING 09-07 07:33:30 [flashinfer_mla_sparse_sm90.py:497] [megakernel] mla shadow timing (T=1242): mk=1771.6 us wrapper=5728.1 us
+(Worker_TP0 pid=261) WARNING 09-07 07:33:30 [flashinfer_mla_sparse_sm90.py:520] [megakernel] mla shadow vs wrapper rel=1.23e-03 (T=1242, rows<=1242, real KV) -> ARMED
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 37.4 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 4.8 s
+== [PATTR0907RESTORE] head log kept: /home/choiceoh/glm53-logs/boot-PATTR0907RESTORE.log ==
+== [PATTR0907RESTORE] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [PATTR0907RESTORE] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 07:29:42 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 07:30:03 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=261) WARNING 09-07 07:32:50 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=261) WARNING 09-07 07:32:50 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=150) WARNING 09-07 07:32:55 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [PATTR0907RESTORE] done 16:33:32 ==

@@ -1,0 +1,71 @@
+{
+  "srv1": {
+    "t": "2026-09-07T14:34:42.886410",
+    "disk": {
+      "total": 982819848192,
+      "used": 632791146496,
+      "free": 300028665856
+    },
+    "rank_caches": [
+      {
+        "key": "957bbd7631199245df8c07b9379cf1008a02505e103d46ff8f61866698e26c23",
+        "weights_bytes": 48092653608,
+        "manifest_mtime": "2026-09-07T14:03:14.907520",
+        "rank": 1,
+        "environment_digest": "d3dc3bdcd45b8d172a2d3a472808a35f23fd0c63f72df1e543dd3e24b2617a0a"
+      },
+      {
+        "key": "d0ed5ee6e677cdfa60e76449bb6879c4bffd005d26f109e97c57a1e86b668872",
+        "weights_bytes": 48092653608,
+        "manifest_mtime": "2026-09-07T13:51:17.016665",
+        "rank": 1,
+        "environment_digest": "111760fac89586f6818275fcd19fe978b1c773288a493557801d8d650af62ce3"
+      }
+    ]
+  },
+  "choiceoh@srv2": {
+    "t": "2026-09-07T14:34:42.424663",
+    "disk": {
+      "total": 4030802149376,
+      "used": 2955056021504,
+      "free": 870916034560
+    },
+    "rank_caches": [
+      {
+        "key": "4149185405cd4d9f3ee916bb74b08492fd499e3da473ab32adfdc2796c3c7382",
+        "weights_bytes": 48092653608,
+        "manifest_mtime": "2026-09-07T13:17:28.433105",
+        "rank": 0,
+        "environment_digest": "28e5aa1ce907521afcf93611d827054aa3eb4720090bfbab1ca226287c55524a"
+      },
+      {
+        "key": "42feecca9325583e7a4d5a9b48ed7577dd43e4d2c9efc4fd628fdf12d4e8273e",
+        "weights_bytes": 48092653608,
+        "manifest_mtime": "2026-09-07T13:48:16.080613",
+        "rank": 0,
+        "environment_digest": "6f1031767c5c18d09878fcafeb7f1dd03c69a5e3dc4b0c39bff04eae012490f6"
+      },
+      {
+        "key": "86572ccb645fb8e319bb210d33e36e41a054b811c6f5056c1d358b6d8c517dfa",
+        "weights_bytes": 48092653608,
+        "manifest_mtime": "2026-09-07T13:30:12.488129",
+        "rank": 0,
+        "environment_digest": "ab3f2c0b72fe71667d7610c6f31759a8f0bd9cddb9e6c5a486c516929387bf7f"
+      },
+      {
+        "key": "88da56e4fb719dcde184bdc1241ef63b560e93c50cf733b99a62d98a5f83aeee",
+        "weights_bytes": 48092653608,
+        "manifest_mtime": "2026-09-07T01:41:12.224245",
+        "rank": 0,
+        "environment_digest": "65f5eab35b9fc98e4b7e1705ae9f0e85e1e3db60d4e280e7ea3b45a57797e7a3"
+      },
+      {
+        "key": "c6a82860e8383844d31f17ce6e97979f50b8a3328b2f8fddd546a090d477c01d",
+        "weights_bytes": 48092653608,
+        "manifest_mtime": "2026-09-07T14:00:38.500660",
+        "rank": 0,
+        "environment_digest": "83888b792d1d258468772e235ee6a07e846ef95898c03f8b07d4dcf37ed2695b"
+      }
+    ]
+  }
+}

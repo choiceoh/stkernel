@@ -1,0 +1,42 @@
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py", line 2893, in _run_ninja_build
+    subprocess.run(
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['ninja', '-v', '-j', '1']' returned non-zero exit status 2.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/repo/probes/gemm_input_reuse.py", line 165, in <module>
+    if __name__=='__main__': main()
+                             ^^^^^^
+  File "/repo/probes/gemm_input_reuse.py", line 77, in main
+    ext,identity=build(args.build_dir)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/probes/gemm_input_reuse.py", line 61, in build
+    ext=load(name='input_reuse_'+sha[:16],sources=[str(path)],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py", line 1927, in load
+    return _jit_compile(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py", line 2382, in _jit_compile
+    _write_ninja_file_and_build_library(
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py", line 2543, in _write_ninja_file_and_build_library
+    _run_ninja_build(
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py", line 2910, in _run_ninja_build
+    raise RuntimeError(message) from e
+RuntimeError: Error building extension 'input_reuse_99a723c9f065f1e7': [1/2] /usr/local/cuda/bin/nvcc -MD -MF candidate.cuda.o.d -DTORCH_EXTENSION_NAME=input_reuse_99a723c9f065f1e7 -DTORCH_API_INCLUDE_EXTENSION_H -isystem /usr/local/lib/python3.12/dist-packages/torch/include -isystem /usr/local/lib/python3.12/dist-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /usr/include/python3.12 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options '-fPIC' -O2 -gencode arch=compute_121a,code=sm_121a -DMK_FP8_PACK2_DEF=1 -DMK_GEMM_TRANSPOSE_M8_DEF=1 -DMK_GEMM_COMPACT_M8_DEF=1 -DMK_M8_FASTPATH_DEF=1 -std=c++20 -c /build/99a723c9f065f1e7/candidate.cu -o candidate.cuda.o 
+FAILED: [code=2] candidate.cuda.o 
+/usr/local/cuda/bin/nvcc -MD -MF candidate.cuda.o.d -DTORCH_EXTENSION_NAME=input_reuse_99a723c9f065f1e7 -DTORCH_API_INCLUDE_EXTENSION_H -isystem /usr/local/lib/python3.12/dist-packages/torch/include -isystem /usr/local/lib/python3.12/dist-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /usr/include/python3.12 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options '-fPIC' -O2 -gencode arch=compute_121a,code=sm_121a -DMK_FP8_PACK2_DEF=1 -DMK_GEMM_TRANSPOSE_M8_DEF=1 -DMK_GEMM_COMPACT_M8_DEF=1 -DMK_M8_FASTPATH_DEF=1 -std=c++20 -c /build/99a723c9f065f1e7/candidate.cu -o candidate.cuda.o 
+/build/99a723c9f065f1e7/candidate.cu(2641): error: no instance of function template "<unnamed>::mk_launch" matches the argument list
+            argument types are: (void (const __nv_bfloat16 *, int, int), int, int, c10::cuda::CUDAStream, const __nv_bfloat16 *, int, int)
+      mk_launch(mk_probe_pack_input, c2.k / KSTEP, 0, stream, c2.x, c2.m, c2.k);
+      ^
+/build/99a723c9f065f1e7/candidate.cu(2442): note #3322-D: number of parameters of function template "<unnamed>::mk_launch" does not match the call
+  void mk_launch(K kernel, int grid, int smem, cudaStream_t stream,
+       ^
+
+1 error detected in the compilation of "/build/99a723c9f065f1e7/candidate.cu".
+ninja: build stopped: subcommand failed.
+

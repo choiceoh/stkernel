@@ -1,0 +1,16 @@
+{"host": "srv3", "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211", "source_sha256": "24b4e23d27dc49a742ef4531e4032f99f8a25400d93187d76d949e97817d8b62", "env": {"VLLM_GLM53_MK_SMLP2": "0", "VLLM_GLM53_MK_INPUT_REUSE": "1", "VLLM_GLM53_MK_PACK_ROWSHIFT": "1", "VLLM_GLM53_MK_INPUT_CTA": "0", "VLLM_GLM53_MK_PACK_CACHE": "/cache/mkpacks", "VLLM_GLM53_MK_PACK_LORC": "0", "VLLM_GLM53_MK_PACK_SHA256": "1", "VLLM_GLM53_MK_FP8_PACK2": "1", "VLLM_GLM53_MEGAKERNEL": "1", "VLLM_GLM53_MK_CALIB_DIR": "/cache/mkcalib", "VLLM_GLM53_MK_GEMM_TRANSPOSE_M8": "2", "VLLM_GLM53_MK_HEAD_TARGET": "0", "VLLM_GLM53_MK_CALIB": "0", "VLLM_CACHE_ROOT": "/cache/vllm", "VLLM_GLM53_MK_GEMM": "1", "VLLM_GLM53_MK_MHC_BF16": "1", "TRITON_CACHE_DIR": "/cache/triton", "VLLM_GLM53_MK_CALIB_TOKENS": "32768", "VLLM_GLM53_MK_MLA_PREFILL_GROUP": "2", "VLLM_GLM53_MK_PDL": "1", "VLLM_GLM53_MK_PACK_FAST_IO": "1", "VLLM_GLM53_MK_PACK_GPTQ": "1", "VLLM_GLM53_MK_M8_FASTPATH": "1", "VLLM_GLM53_MK_MLA": "1", "VLLM_GLM53_MK_HEAD_DRAFT": "0", "VLLM_GLM53_MK_MHC": "1", "VLLM_GLM53_MK_MLA_PREFILL_PAIR": "0", "MAX_JOBS": "1"}, "status": "STARTING"}
+[megakernel] source md5=77e994a8 kernels=13 (/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu)
+WARNING 09-07 19:26:00 [glm53_megakernel.py:2051] [megakernel] selftest mhc-bf16 all outputs bit equal -> ARM
+WARNING 09-07 19:26:01 [glm53_megakernel.py:2230] [megakernel] exact gemm m=8 n=1024: plan=[8, 64, 2] PASS
+WARNING 09-07 19:26:01 [glm53_megakernel.py:2230] [megakernel] exact gemm m=16 n=1024: plan=[8, 64, 2] PASS
+WARNING 09-07 19:26:01 [glm53_megakernel.py:2230] [megakernel] exact gemm m=32 n=1024: plan=[8, 64, 2] PASS
+WARNING 09-07 19:26:01 [glm53_megakernel.py:2230] [megakernel] exact gemm m=8 n=2048: plan=[3, 48, 2] PASS
+INFO 09-07 19:26:05 [deep_gemm.py:191] deep_gemm not found in site-packages, trying vendored vllm.third_party.deep_gemm
+INFO 09-07 19:26:05 [deep_gemm.py:136] DeepGEMM E8M0 enabled on current platform.
+WARNING 09-07 19:26:07 [glm53_megakernel.py:2275] [megakernel] selftest gemm exact=2.01e-05 (m=8/16/32 + forced split) -> ARM (plans ksr/units/bps: [1024x4096]=[8, 64, 2], in_proj=[8, 408, 2])
+WARNING 09-07 19:26:07 [glm53_megakernel.py:2317] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+WARNING 09-07 19:26:07 [glm53_megakernel.py:2317] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+WARNING 09-07 19:26:07 [glm53_megakernel.py:2317] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+WARNING 09-07 19:26:08 [glm53_megakernel.py:2317] [megakernel] input-reuse exact graph M=6 N=4096 K=4096 PASS
+WARNING 09-07 19:26:08 [glm53_megakernel.py:2317] [megakernel] input-reuse exact graph M=6 N=6144 K=4096 PASS
+NODE_CHECK={"status": "PASS", "torch": "2.13.0+cu130", "source_sha256": "24b4e23d27dc49a742ef4531e4032f99f8a25400d93187d76d949e97817d8b62", "mhc_bf16": true, "gemm": true, "input_modes": [0, 2, 4]}
