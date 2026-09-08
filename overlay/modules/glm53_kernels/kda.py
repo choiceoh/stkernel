@@ -36,8 +36,10 @@ from .solve_tril import solve_tril
 # layer per step -- 5 x 34 layers = 170 launches per decode step on
 # GLM-5.3-Flash.  With VLLM_GLM53_KDA_STRIDED=1 the kernel reads them through
 # explicit per-token strides instead and the copies go away.  The result is
-# bit-identical either way (a copy was all they ever were), but this stays off
-# by default until a bracket run adopts it.
+# bit-identical either way (a copy was all they ever were).  On by default since
+# 40차 on the strength of the arming gate (36/36 bit-identical, including this
+# profile's own 4-seq x 6-token verify shape); the marker below is what a boot
+# has to show before any number from it is quotable.
 _KDA_STRIDED_INPUTS = (
     os.environ.get("VLLM_GLM53_KDA_STRIDED", "0").strip().lower()
     in ("1", "true", "yes", "on")

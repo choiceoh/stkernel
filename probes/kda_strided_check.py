@@ -10,8 +10,10 @@ strides instead.
 Claimed equivalence: for the SAME values, feeding the kernel a token-strided
 view must produce the SAME bytes as feeding it a contiguous copy.  A stride is
 addressing, not arithmetic, so anything short of bit-equality means the stride
-arithmetic is wrong.  This probe is that gate; the profile keeps the knob at 0
-until it passes.  No timing here -- this is correctness, not a speed claim.
+arithmetic is wrong.  This probe is that gate, and it is what the profile's
+default rests on: it passed 36/36 on 2026-09-09 and the knob went to 1 the same
+day.  No timing here -- this is correctness, not a speed claim, and the gate
+says nothing about whether the lane is reached (the serving marker does).
 
 The contiguous arm IS the knob-at-0 arm: with VLLM_GLM53_KDA_STRIDED unset,
 _glm53_kda_input makes every input contiguous and hands the same kernel the
