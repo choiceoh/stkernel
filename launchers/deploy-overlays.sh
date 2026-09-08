@@ -104,6 +104,17 @@ load_overlay_manifest() {
 }
 load_overlay_manifest
 
+# Keep this GLM-specific and opt-in until the same-source redeploy bracket.
+PRESERVE_IDENTICAL=0
+if [ "$PROFILE" = glm53 ] && [ "${DEPLOY_PRESERVE_IDENTICAL:-0}" = 1 ]; then
+  . "$REPO/launchers/lib/glm53-overlay-sync.sh"
+  command -v rsync >/dev/null || { echo "ABORT: rsync is required for identical-source GLM deployment (DEPLOY_PRESERVE_IDENTICAL=0 uses legacy publication)"; exit 1; }
+  for ip in $WORKERS; do
+    ssh $SSHOPT "choiceoh@$ip" 'command -v rsync >/dev/null' || { echo "ABORT: rsync unavailable on $ip; no overlays published"; exit 1; }
+  done
+  PRESERVE_IDENTICAL=1
+fi
+
 PYFILES=()
 SOURCE_PATHS=("$MANIFEST")
 for f in "${OVFILES[@]}"; do
@@ -127,16 +138,6 @@ if [ "$PROFILE" = glm53 ]; then
   bash "$REPO/launchers/check-glm53-chat.sh" "${MODEL_HOST_PATH:-$PROFILE_MODEL_PATH}" "${IMAGE:-$PROFILE_IMAGE}"
 fi
 
-# Keep this GLM-specific and opt-in until the same-source redeploy bracket.
-PRESERVE_IDENTICAL=0
-if [ "$PROFILE" = glm53 ] && [ "${DEPLOY_PRESERVE_IDENTICAL:-0}" = 1 ]; then
-  . "$REPO/launchers/lib/glm53-overlay-sync.sh"
-  command -v rsync >/dev/null
-  for ip in $WORKERS; do
-    ssh $SSHOPT "choiceoh@$ip" 'command -v rsync >/dev/null'
-  done
-  PRESERVE_IDENTICAL=1
-fi
 echo "[overlay-deploy] preserve_identical=$PRESERVE_IDENTICAL source=$SOURCE_COMMIT"
 echo "=== head ($HEAD_OV) ==="
 mkdir -p "$HEAD_OV"

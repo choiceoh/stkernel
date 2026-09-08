@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import stat
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / 'launchers/lib/glm53-overlay-sync.sh'
 
 
+@unittest.skipUnless(shutil.which("rsync"), "rsync is needed for identical-source publication only")
 class OverlaySyncTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

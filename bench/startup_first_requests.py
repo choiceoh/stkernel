@@ -5,12 +5,25 @@ import base64
 import hashlib
 import json
 from pathlib import Path
+import re
 import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "probes"))
 import vision_probe as vision
+
+
+def output_ok(label, text, ttft, reasoning):
+    if label == "text":
+        semantic = all(str(i) in text for i in range(1, 6))
+    else:
+        # Check the visible colors, not the language chosen for their names.
+        # The same correct red-to-blue clip description can be Korean or English.
+        red = re.search(r"빨|붉|적색|\bred\b", text, re.I)
+        blue = re.search(r"파|푸|청색|\bblue\b", text, re.I)
+        semantic = bool(red and blue)
+    return semantic and ttft is not None and not reasoning and "\ufffd" not in text
 
 
 def main():
@@ -34,11 +47,7 @@ def main():
         for label, content in cases:
             started = time.time()
             text, ttft, total, reasoning = vision.ask(vision.model_name(), content, 120, 180)
-            if label == "text":
-                ok = all(str(i) in text for i in range(1, 6))
-            else:
-                ok = any(word in text for word in ("빨", "붉", "적색")) and any(word in text for word in ("파", "푸", "청색"))
-            ok = ok and ttft is not None and not reasoning and "\ufffd" not in text
+            ok = output_ok(label, text, ttft, reasoning)
             row = dict(kind=label, started=started, ttft_s=ttft, total_s=total,
                        content=text, reasoning=reasoning, ok=ok)
             result["requests"].append(row)
