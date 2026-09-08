@@ -1,0 +1,8 @@
+{
+  "script_sha256": "e2471a0c80aeca4b5b4cb471dbe8b86367ee3a3c4147b7f135d3d7ea7bd41a80",
+  "outer_and_remote_syntax": "PASS",
+  "independent_read_review": "PASS",
+  "executed": false,
+  "required_revision": "69f5b8330bf63534f950e36cb2c40e844e7806f1",
+  "scope": "Future terminal-only archive, including raw diagnostics and paired component timing when available; no GPU/full-model acceptance"
+}
