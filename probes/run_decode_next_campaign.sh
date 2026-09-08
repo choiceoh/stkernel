@@ -48,7 +48,7 @@ cleanup() {
   local rc=$?
   trap - EXIT
   # Stop this experiment's loopback serving; the central idle owner recovers.
-  if [[ $touched == 1 ]]; then
+  if [[ $touched == 1 && ${FLEET_RESTORE_MANAGED:-0} == 1 ]]; then
     stop_serving > "$DECODE_NEXT_OUT/stop-experiment.log" 2>&1 || rc=1
   fi
   printf '%s\n' "$rc" > "$DECODE_NEXT_OUT/campaign.exit"
