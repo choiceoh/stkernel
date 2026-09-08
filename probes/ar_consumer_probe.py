@@ -17,6 +17,9 @@ import statistics
 
 ROOT = Path(__file__).resolve().parents[1]
 MOD = ROOT / 'overlay/modules'
+AR_OWNERSHIP_SIZES = (1, 7, 8, 9, 2047, 2048, 2049, 4095, 4096, 4097,
+                      24575, 24576, 24577, 32767, 32768, 32769,
+                      98303, 98304, 98305, 131071, 131072)
 
 
 def module(name, path):
@@ -54,7 +57,8 @@ def main():
     receipt = {'status': 'RUNNING', 'torch': torch.__version__, 'cuda': torch.version.cuda,
         'mode': 'distributed' if args.distributed else 'delayed-producer',
         'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in (Path(mk._SRC), Path(shim._SRC), delay_path)}, 'cases': [], 'samples': []}
+            for p in (Path(mk._SRC), Path(shim._SRC), delay_path)},
+        'cases': [], 'ar_ownership_cases': [], 'samples': []}
     if args.compile_only:
         assert hasattr(ar, 'oneshot_ar_consumer')
         receipt.update(status='PASS', mode='compile-only')
@@ -81,6 +85,40 @@ def main():
         ar.connect(infos)
         dist.barrier()
     receipt['rank'] = rank
+    if args.distributed:
+        # Exercise scalar-only, vector/CTA boundaries and the second
+        # grid-stride iteration directly, including sizes outside the
+        # serving dispatch's <=32768 gate. Fixed pointers change contents
+        # across replays; CPU Gloo provides an independent exact AR oracle.
+        for n in AR_OWNERSHIP_SIZES:
+            x = torch.zeros(n, device='cuda', dtype=torch.bfloat16)
+            graphs = {}
+            for early in (False, True):
+                call = ar.oneshot_ar_consumer if early else ar.oneshot_ar
+                call(x)
+                torch.cuda.synchronize()
+                graph = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(graph):
+                    output = call(x)
+                graphs[early] = (graph, output)
+            for seed in (17, 0, 29):
+                torch.manual_seed(seed)
+                if seed:
+                    x.copy_(torch.randint(-8, 9, x.shape, device='cuda').bfloat16() / 32)
+                    x.add_(rank / 32)
+                else:
+                    x.zero_()
+                expected = x.cpu()
+                dist.all_reduce(expected)
+                dist.barrier()
+                for early in (False, True):
+                    graphs[early][0].replay()
+                    actual = graphs[early][1].cpu()
+                    assert torch.equal(actual, expected), ('AR ownership oracle', n, seed, early, rank)
+                receipt['ar_ownership_cases'].append({'elements': n, 'seed': seed, 'pass': True})
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(receipt, indent=2) + '\n')
+        print(f"PASS {len(receipt['ar_ownership_cases'])} AR ownership boundary/graph cases", flush=True)
     torch.manual_seed(53)
     print('Preparing fixed GEMM/MHC fixtures', flush=True)
     packs = {n: mk.build_mk_weight_w4(torch.randn(n, 4096, device='cuda',

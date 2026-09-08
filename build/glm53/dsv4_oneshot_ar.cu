@@ -231,6 +231,13 @@ __device__ __forceinline__ void osar_prefetch(const HintArgs &h,
   }
 }
 
+// Keep this arithmetic host-testable against an independent enumeration of
+// the vector and scalar-tail accesses. Block zero also guards an empty call.
+template <bool VECTOR_EXACT>
+__host__ __device__ constexpr bool osar_block_owns(int block, int threads, int n) {
+  return block == 0 || block * threads < (VECTOR_EXACT ? (n >> 3) : n);
+}
+
 template <bool CONSUMER_PDL>
 __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
                                               bf16 *dst, int n, int nbytes,
@@ -244,11 +251,11 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   // the smallest plain call has n = hidden and many blocks fall entirely past
   // the payload. The 16B lanes make this starker: with blockDim 256 and
   // n = 4096 there are only nv = 512 vectors, so threads 0..511 (blocks 0-1)
-  // do all the copying and blocks 2..47 copy nothing. `owns` below is still
-  // ELEMENT-granular (blockIdx.x * blockDim.x < n), so it stays conservative:
-  // blocks 2..15 own per the formula yet carry no lanes, and they still pay
-  // the launch/sync/counter cost (and a vacuous fence). Correctness is
-  // unaffected -- a block with no lanes has nothing to order either way.
+  // do all the copying and blocks 2..47 copy nothing. The ordinary path keeps
+  // its conservative element-granular ownership. The PDL candidate instead
+  // counts actual 16B lanes: at T=6 only 12 blocks, rather than all 48, need
+  // the ring guard, writer fences and peer wait. Empty blocks retire sooner
+  // and leave resources for the dependent MHC weight preparation.
   //
   // The peer wait is the expensive one. Data-owning blocks polling the same
   // three volatile flags for the whole RDMA latency window generate traffic
@@ -259,9 +266,10 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   // atomicAdd stays unconditional -- the invariant is that every launch adds
   // exactly ARGRID, and that is what makes the last-block test sound.
   //
-  // Block 0 owns unconditionally so an n == 0 collective still takes the ring
-  // guard rather than publishing into a slot nobody checked.
-  const bool owns = (blockIdx.x == 0) || (blockIdx.x * blockDim.x < n);
+  // Block 0 owns unconditionally: it covers the n % 8 scalar tail and ensures
+  // an n == 0 collective cannot publish into a slot nobody guarded. Every
+  // block still contributes its ticket and may become the final publisher.
+  const bool owns = osar_block_owns<CONSUMER_PDL>(blockIdx.x, blockDim.x, n);
   // Block 0 always owns, so it always walks every phase and is the sample.
   const bool timer = (blockIdx.x == 0) && (threadIdx.x == 0);
   long long t0 = timer ? clock64() : 0;

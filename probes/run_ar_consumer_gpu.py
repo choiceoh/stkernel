@@ -62,6 +62,8 @@ def remote(node, argv, **kwargs):
 
 
 def main():
+    from ar_consumer_probe import AR_OWNERSHIP_SIZES
+
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args()
@@ -162,6 +164,10 @@ def main():
             (args.out / (filename + '.json')).write_text(data)
         report = json.loads((args.out / (filename + '.json')).read_text())
         assert report['status'] == 'PASS' and len(report['cases']) == 36, (node, stage)
+        ownership = report['ar_ownership_cases']
+        expected = {(n, seed) for n in AR_OWNERSHIP_SIZES for seed in (17, 0, 29)} if distributed else set()
+        assert len(ownership) == len(expected), (node, stage, 'AR ownership coverage')
+        assert {(c['elements'], c['seed']) for c in ownership if c['pass']} == expected, (node, stage)
         return {'node': node, 'stage': filename, 'source_sha256': report['source_sha256'],
                 'kernel_filter': RACECHECK_KERNELS if stage == 'racecheck' else None}
 

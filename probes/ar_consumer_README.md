@@ -17,6 +17,11 @@ takes precedence over those optional hints for these small collectives.
 1. AR waits for its own producer before reading input or protocol state.
 2. Every copy thread still performs the original system fence. The final
    CTA publishes the transmit sequence through the unchanged counter protocol.
+   The candidate derives ownership from 16-byte vector lanes; empty CTAs
+   skip the ring/peer waits and vacuous fences but retain all 48 publication
+   tickets. At 1/2/6/8 tokens this reduces waiting CTAs from 16/32/48/48 to
+   2/4/12/16. Block zero always owns, covering scalar tails and empty calls.
+   The ordinary kernel retains its prior conservative ownership.
 3. Each AR CTA releases dependent launch before waiting for peer arrivals.
    All CTAs must reach their release points before CUDA can launch a consumer.
 4. MHC reads only immutable `fn` weights before its dependency wait. The BF16
@@ -50,6 +55,8 @@ production CUDA and delayed producer in the exact serving image without GPU
 access. It caps host memory and retains the generated objects for inspection.
 Add `--checks-only` with a separate fresh output directory to run the core and
 megakernel CPU regressions, including vector layout and graph-cache lifetime.
+The compiled host ownership oracle enumerates every size from 0 through
+131,072 BF16 elements against the actual vector/tail access mapping.
 This uses the same device-free image; run those gates before GPU admission.
 
 On srv2, from a committed clean checkout based on current main, use the
@@ -73,7 +80,11 @@ and attest the source bytes; they do not need a pre-existing Git checkout.
 Each run tests six token counts, two weight storage paths and
 three changes behind fixed CUDA graph pointers: 36 cases, six outputs each,
 with exact baseline/candidate comparisons. Independent CPU AR sums and FP64
-MHC equations provide separate oracles. Both modes also run memcheck and
+MHC equations provide separate oracles. The distributed probe additionally
+requires 63 standalone AR graph cases: 21 scalar/vector/CTA/grid-stride
+boundary sizes, each with three input updates and a CPU Gloo oracle. Both
+ordinary and candidate bindings must match, including the scalar tail.
+Both modes also run memcheck and
 racecheck. C1 segment samples include warm and cold L2; they cannot establish
 engine-step speed by themselves.
 

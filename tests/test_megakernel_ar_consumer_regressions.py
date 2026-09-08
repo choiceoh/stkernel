@@ -3,6 +3,9 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 import sys
+import shutil
+import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -75,6 +78,55 @@ class ConsumerTests(unittest.TestCase):
         self.assertLess(release, kernel.index('while (left)'))
         self.assertIn('done_ctr, 1ULL) %\n               ARGRID == ARGRID - 1', kernel)
         self.assertIn('cfg.gridDim = dim3(ARGRID);', source)
+
+    def test_collective_ownership_covers_actual_vector_and_tail_accesses(self):
+        source = (OSAR / 'dsv4_oneshot_ar.cu').read_text()
+        start = source.index('template <bool VECTOR_EXACT>')
+        end = source.index('\n}', start) + 2
+        helper = source[start:end].replace('__host__ __device__ ', '')
+        self.assertIn('osar_block_owns<CONSUMER_PDL>(blockIdx.x, blockDim.x, n)', source)
+        compiler = shutil.which('c++')
+        self.assertIsNotNone(compiler, 'host C++ compiler required for the ownership oracle')
+        # Derive owners by visiting the actual grid-stride vector positions,
+        # not by copying the launch mask. Grow the payload one BF16 at a time
+        # through MAXEL, retaining the visited vectors and enumerating tails.
+        oracle = r'''
+#include <cstdio>
+int main() {
+  constexpr int blocks = 48, threads = 256, limit = 131072;
+  bool vector_owners[blocks] = {};
+  for (int n = 0; n <= limit; ++n) {
+    if (n && n % 8 == 0) {
+      int vector = n / 8 - 1;
+      int lane = vector % (blocks * threads);
+      vector_owners[lane / threads] = true;
+    }
+    bool accessed[blocks];
+    for (int b = 0; b < blocks; ++b) accessed[b] = vector_owners[b];
+    for (int i = n / 8 * 8; i < n; ++i) {
+      int lane = (i - n / 8 * 8) % (blocks * threads);
+      accessed[lane / threads] = true;
+    }
+    for (int b = 0; b < blocks; ++b) {
+      bool expected = accessed[b] || b == 0;
+      bool candidate = osar_block_owns<true>(b, threads, n);
+      bool ordinary = osar_block_owns<false>(b, threads, n);
+      if (candidate != expected || (expected && !ordinary)) {
+        std::fprintf(stderr, "ownership mismatch n=%d block=%d\n", n, b);
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'ownership.cc'
+            binary = Path(tmp) / 'ownership'
+            path.write_text(helper + '\n' + oracle)
+            subprocess.run([compiler, '-std=c++17', '-O2', str(path), '-o', str(binary)],
+                           check=True, capture_output=True, text=True, timeout=60)
+            subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=30)
 
     def test_bf16_layout_preserves_every_bit_pattern(self):
         try:
