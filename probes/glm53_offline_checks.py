@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Run pinned probes during an owned boot turn, restoring stopped containers.
+"""Run pinned probes during an owned boot turn without recovery boots.
 
 No deploy, image replacement, container deletion, or weaker memory guard.
-An entirely absent incoming fleet is supported; the standard public restore
-is then required unless another boot is queued. Partial fleets are refused.
+An entirely absent incoming fleet is supported. The central idle controller
+owns public recovery after release. Fully stopped fleets are reusable; partial
+or mixed running/stopped fleets are refused.
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -99,12 +100,15 @@ def validate_before(states):
         raise RuntimeError('four-node inventory required')
     if all(v is None for v in states.values()):
         return 'absent'
-    if not all(v is not None and v['running'] and not v['auto_remove'] and
+    if not all(v is not None and not v['auto_remove'] and
                v['image'] == IMAGE and v['overlays'] and v['manifest'] for v in states.values()):
-        raise RuntimeError('require four running, persistent, pinned-image containers or four absent containers')
+        raise RuntimeError('require four persistent, pinned-image containers or four absent containers')
+    running = {v['running'] for v in states.values()}
+    if len(running) != 1:
+        raise RuntimeError('mixed running and stopped incoming fleet')
     if states['local']['port'] not in (8000, 18000):
         raise RuntimeError('unknown incoming endpoint')
-    return 'present'
+    return 'present' if running == {True} else 'stopped'
 
 
 def identity(state):
@@ -112,8 +116,8 @@ def identity(state):
 
 
 def transition(node, before, action):
-    if action not in ('stop','start'):
-        raise ValueError('only stop/start transitions are supported')
+    if action != 'stop':
+        raise ValueError('session recovery starts are disabled; central idle controller owns recovery')
     check_holder()
     code = INSPECT + '\n' + f'''
 expected={before!r}
@@ -132,8 +136,8 @@ print(json.dumps(after))
 
 
 def transition_all(before, action):
-    # Settle every action before proceeding; one failed stop still triggers
-    # recovery of every original container in the outer finally block.
+    # Settle every stop before proceeding; a partial failure must not start
+    # the probe while other nodes are still changing state.
     with ThreadPoolExecutor(max_workers=4) as pool:
         tasks = {n: pool.submit(transition, n, before[n], action) for n in NODES}
         results, errors = {}, {}
@@ -166,32 +170,10 @@ def idle(port):
             raise RuntimeError('incoming traffic is not idle: ' + metric)
 
 
-def wait_restore(before, timeout=1800):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        states = snapshot()
-        if any(states[n] is None or identity(states[n]) != identity(before[n]) for n in NODES):
-            raise RuntimeError('restore identity/config/source mismatch')
-        if not all(states[n]['running'] for n in NODES):
-            raise RuntimeError('a restored container exited')
-        if healthy(before['local']['port']):
-            return states
-        time.sleep(10)
-    raise RuntimeError('original endpoint did not recover health')
-
-
 def with_paused(before, run, save):
-    """Always recover the original set, including a partially failed stop."""
-    try:
-        save('stopped.json', transition_all(before, 'stop'))
-        return run()
-    finally:
-        previous = signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        try:
-            save('restarted.json', transition_all(before, 'start'))
-            save('restored.json', wait_restore(before))
-        finally:
-            signal.signal(signal.SIGTERM, previous)
+    """Stop the incoming set once and leave recovery to the idle controller."""
+    save('stopped.json', transition_all(before, 'stop'))
+    return run()
 
 
 def pinned(path, revision):
@@ -216,7 +198,7 @@ def run_probe(cmd, path, log):
                 os.killpg(child.pid, signal.SIGKILL)
                 child.wait()
         # The head-only probe runners normally clean themselves. Also handle
-        # interrupted shells before restarting serving; match our own unique
+        # interrupted shells before releasing the fleet; match our own unique
         # session prefix, never another holder's or production containers.
         check_holder()
         names = subprocess.check_output(['docker', 'ps', '-a', '--format', '{{.Names}}'], text=True).splitlines()
@@ -224,31 +206,6 @@ def run_probe(cmd, path, log):
         for container in names:
             if container.startswith(prefixes):
                 subprocess.run(['docker', 'rm', '-f', container], check=True, timeout=45)
-
-
-def restore_public(out, save, result):
-    check_holder()
-    repo = Path('/home/choiceoh/stkernel')
-    needed = subprocess.run(['bash', str(repo/'bench/fleet.sh'), 'restore-needed',
-                             os.environ['FLEET_SESSION']], capture_output=True)
-    if needed.returncode == 1 and needed.stdout.strip().startswith(b'no ('):
-        result['public_restore'] = 'handed to queued boot per fleet policy'
-        return
-    if needed.returncode != 0 or not needed.stdout.strip().startswith(b'yes ('):
-        raise RuntimeError('fleet restore decision unavailable')
-    env = dict(os.environ, REPO=str(repo), IMAGE=IMAGE, LEGS='none',
-               GLM53_API_PORT='8000', GLM53_API_HOST='0.0.0.0', HEAD='10.10.10.2',
-               HEAD_URL='http://10.10.10.2:8000', HEALTH_BUDGET_S='1800')
-    with (out/'public-restore.log').open('x') as log:
-        subprocess.run(['bash', str(repo/'bench/ab-lever.sh'), 'PREFILLGATESRESTORE', ''],
-                       env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-    if not healthy(8000):
-        raise RuntimeError('public restore health failed')
-    restored = snapshot()
-    if validate_before(restored) != 'present' or restored['local']['port'] != 8000:
-        raise RuntimeError('public restore four-node check failed')
-    save('public-restored.json', restored)
-    result['public_restore'] = 'healthy standard public configuration'
 
 
 def main():
@@ -261,7 +218,7 @@ def main():
     def interrupted(signum, frame):
         raise InterruptedError('termination requested')
     signal.signal(signal.SIGTERM, interrupted)
-    result = dict(started=time.time(), exit_code=1, probes={})
+    result = dict(started=time.time(), exit_code=1, probes={}, public_recovery='central idle controller')
     try:
         check_holder()
         pinned(str(Path(__file__).resolve().parents[1]), os.environ['OFFLINE_SOURCE_REV'])
@@ -294,19 +251,9 @@ def main():
                 print('DONE ' + label + ' rc=' + str(entry['exit_code']), flush=True)
         if mode == 'present':
             with_paused(before, run, save)
-            result['restored_original'] = True
-            if before['local']['port'] != 8000:
-                restore_public(args.out, save, result)
         else:
-            try:
-                run()
-            finally:
-                # Last-holder public recovery still runs if a probe aborts.
-                previous = signal.signal(signal.SIGTERM, signal.SIG_IGN)
-                try:
-                    restore_public(args.out, save, result)
-                finally:
-                    signal.signal(signal.SIGTERM, previous)
+            run()
+        result['cleanup_complete'] = True
         result['exit_code'] = 0 if all(v['exit_code'] == 0 for v in result['probes'].values()) else 1
     except BaseException as exc:
         result['error'] = repr(exc)

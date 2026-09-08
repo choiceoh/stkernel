@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Durable restore responsibility at fleet boundaries (caller holds .lock).
+"""Fleet admission and compatibility receipts (caller holds .lock).
 
-Only a live supervised boot waiter can accept stopped serving. A handoff pins
-that waiter until admission; its supervisor then owns restoration even if its
-payload fails before its first boot. The previous supervisor waits for that
-receipt and reclaims the hold if the receiver disappears.
+Sessions release their hold without restoring production. Only the central idle
+controller may recover after the fleet has been unused for 300 seconds. Legacy
+restore debt is retired at the next admission and never blocks a queued probe.
 """
 import argparse
 import hashlib
@@ -90,27 +89,17 @@ def claim_held(directory, session, pid):
     holder = (directory / 'holder').read_text().split('|')
     value = read(receipt(directory, session))
     if holder[:2] != [session, str(pid)] or not live(value) or value['pid'] != pid:
-        raise ValueError('restore responsibility requires this live supervisor hold')
-    debt = read(directory / 'restore-debt.json')
-    if not debt or debt['owner'] != value:
-        write(directory / 'restore-debt.json', dict(owner=value, acquired=time.time()))
+        raise ValueError('admission requires this live supervisor hold')
+    (directory / 'restore-debt.json').unlink(missing_ok=True)
 
 
 def admit(directory, session, pid, kind, estimate='30', note=''):
-    """Commit holder BEFORE debt transfer so the receiver can always recover."""
+    """Commit ownership and reset the central idle clock without restore debt."""
     from fleet_pause import paused
     if paused(directory, session):
         return False
-    debt = read(directory / 'restore-debt.json')
     value = read(receipt(directory, session))
     managed = kind == 'boot' and live(value) and value['pid'] == pid
-    if debt:
-        target = debt.get('target')
-        if target and live(target) and not paused(directory, target['session']) and any(r[1] == target['session'] for r in rows(directory)):
-            if target['session'] != session:
-                return False
-        if not managed:
-            return False
     from fleet_pending import metadata
     current = metadata(directory, session, pid)
     if current:
@@ -123,6 +112,10 @@ def admit(directory, session, pid, kind, estimate='30', note=''):
     temporary.replace(directory / 'holder')
     if managed:
         claim_held(directory, session, pid)
+    else:
+        (directory / 'restore-debt.json').unlink(missing_ok=True)
+    from fleet_idle import activity
+    activity(directory, 'acquire')
     return True
 
 

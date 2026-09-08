@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch fleet idle time independently of experiment sessions
+
+[Timer]
+OnBootSec=15
+OnUnitInactiveSec=15
+AccuracySec=1
+Unit=fleet-idle-recovery.service
+
+[Install]
+WantedBy=timers.target

@@ -24,6 +24,15 @@ HEAD=${HEAD:-10.10.10.2}
 PORT=${GLM53_API_PORT:-8000}
 ARM=$NAME
 cd "$REPO" || exit 1
+# Recovery labels are reserved for the central idle controller. Bare restoration
+# calls from old cleanup wrappers cannot bypass fleet_restore.sh's authority.
+case "${NAME^^}" in
+  *RESTORE|*RECOVER|*RESTORE[0-9]*|*RECOVER[0-9]*|PRODRESTORE) export FLEET_BOOT_INTENT=recovery ;;
+esac
+if [ "${FLEET_BOOT_INTENT:-}" = recovery ] || [ -n "${FLEET_DEPLOY_RECOVERY_RECEIPT:-}" ]; then
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" authorize \
+    "${FLEET_DIR:-$LOGD/fleet}" "${FLEET_SESSION:-}" >/dev/null || exit 2
+fi
 # 39차 idea 2 -- rehearsal: no boot, no leg; the LAST real record is copied under
 # this arm's name with rehearsal=true (judge/baseline ignore such rows unless
 # asked), so a chain's flow, judge parsing and log handling can be checked

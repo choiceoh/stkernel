@@ -913,36 +913,80 @@ build and baseline identities remain exact. Experiment results report CPU
 `explanation.cache_reuse` as `cached`, `identity_match`, `changed` or `unknown`,
 including changed file/component names without environment values.
 
-## Validate deployment and recovery before GPU admission
+## Quick experiment admission and stable release recovery
 
-New boot requests prepare the candidate deployment and an approved main recovery
-checkout before joining the GPU queue. Literal campaign checkout and image/model
-overrides are bound to the preparation; dynamic deployment scripts declare
-`deployment_targets` in their preparation spec as objects with `repo`, `profile`
-and optional `image`/`model` fields. The fixed gate covers the full logic
-suite, runtime guard audit, GLM overlay synchronization and the CPU-only Docker
-chat release checks. It runs with GPU visibility disabled, clean controller-free
-environment, single-thread math libraries and low scheduling priority. Passing
-receipts bind tested source, tools/packages, immutable image, tokenizer/config
-files and the fixed checkpoint config consumed by logic checks.
+New boot requests run a short CPU admission check before joining the GPU queue:
+shell syntax, composition of the selected profile, and syntax/manifest contracts
+for its overlay files. The check has a 30-second execution limit, imports no
+model kernels, runs no full logic/Fleet suite and starts no chat-check container.
+Its receipt binds clean source, the selected profile, checker and required tools;
+queue rechecks and deployment consume that receipt without repeating the checks.
+Admission is a syntax/deployment check, not numerical or release evidence. The
+experiment's GPU correctness and onepass validation remain responsible for actual
+kernel outputs, communication and performance. Explicitly declared experiment CPU
+prerequisites still run; they are not silently dropped.
 
-The fleet host may select an existing complete CPU Python environment with a
-private `FLEET_VALIDATION_STORE/python` file containing its absolute interpreter
-path. Validation and recovery CLI calls use that same interpreter and bind its
-packages and Python startup files to the receipt. Missing dependencies or skipped
-checks cannot produce a passing receipt; the helper does not install packages.
+Literal campaign checkout and image/model overrides are bound to preparation;
+dynamic deployment scripts declare `deployment_targets` with `repo`, `profile`
+and optional `image`/`model`. Direct deployment still requires the complete CPU
+release gate: full logic, runtime guard audit, GLM overlay synchronization and
+CPU-only chat release checks. To request it separately:
 
-The deployer consumes matching receipts. A cache miss during a GPU hold refuses
-without starting another CPU suite. Recovery uses the approved source and receipt
-pinned before admission, so a later main commit cannot add untested recovery work
-to the hold. The last boot holder restores; an eligible queued successor still
-receives recovery responsibility directly. With no candidate changes the next
-request reuses the same evidence. Unknown custom tokenizer dependencies require
-an explicit dependency audit before this release-gate cache can be used.
+```bash
+python3 bench/fleet_validation.py validate --repo "$PWD" --profile glm53 --level release
+```
 
-The first validation of changed code may outlast the detached launch receipt
-window. Its startup log remains available and the detached worker continues;
-the caller receives `starting` without a fictitious queue ticket. Repeating the
-same launch joins that worker. On rollout, prime the final source on the fleet
-host before publishing a new deployer so older pinned restores can consume its
-CPU evidence. Existing pinned runners are never rewritten.
+Recovery reuses an existing release-validated approved main checkout, even after
+main advances. A private per-production-repository pointer keeps that choice
+stable. Older evidence is verified by its original approved validator; quick
+admission evidence can never authorize recovery. Source changes, rewritten main,
+changed release dependencies and altered receipts still reject reuse. Only the
+first setup without a valid recovery must acquire a complete release receipt.
+Refresh the recovery version explicitly, outside a GPU hold:
+
+```bash
+python3 bench/fleet_validation.py prepare-recovery --repo "$PRODUCTION_REPO" --refresh-recovery
+```
+
+The pointer changes only after the new release check succeeds. A failed refresh
+leaves the prior validated recovery intact. The fleet host can select its CPU
+Python environment with a private `FLEET_VALIDATION_STORE/python` file containing
+an absolute interpreter path. Full release evidence binds its installed packages,
+Python startup inputs, image and tokenizer/config files. Admission uses isolated
+stdlib Python and does not scan installed ML packages or tokenizer data.
+
+A receipt miss during a GPU hold refuses without starting CPU validation.
+Sessions prepare only their candidate; they no longer acquire a recovery receipt
+or own a restoration obligation. Successful, failed and cancelled sessions clean
+up their temporary resources and release immediately. `restore-needed` always
+returns no. Pair/chain baseline measurements remain, but cleanup RESTORE/RECOVER
+arms and automatic restarts of paused original containers are forbidden.
+
+## Automatic recovery after five idle minutes
+
+`fleet-idle-recovery.timer` checks every 15 seconds. Only its controller may run
+`fleet_restore.sh`, under a process-bound fleet lease, after at least 300 seconds
+of proven idle time. Enqueue, acquisition, release, cancellation and detected
+serving traffic reset the monotonic clock. A host reboot or unknown Docker/GPU
+state restarts observation. The controller rechecks requests, GPU processes and
+runnable reservations immediately before claiming the hold. Dead/paused tickets
+are excluded; probes waiting for absent serving can resume after recovery.
+
+Already healthy approved defaults need no reboot. Recovery consumes the stable
+release receipt and never starts a full CPU suite. Missing evidence defers recovery;
+prime or refresh it explicitly using the command above. Failures retry only after
+another quiet window. `fleet.sh status` shows the controller state and reason.
+
+Install the user service on srv2 (the repository stays at an approved clean commit):
+
+```bash
+install -m 0644 launchers/fleet-idle-recovery.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now fleet-idle-recovery.timer
+```
+
+During migration, already running older controllers must also defer their final
+restore. Their restore entrypoint can be replaced with a recorded no-boot bridge
+after checking the current holder/queue and preserving the original script.
+Payloads and measured baseline arms are not interrupted or rewritten. New runner
+snapshots use the central policy directly.

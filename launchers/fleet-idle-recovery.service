@@ -1,0 +1,12 @@
+[Unit]
+Description=Restore the fleet only after five idle minutes
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/choiceoh/stkernel
+ExecStart=/usr/bin/python3 /home/choiceoh/stkernel/bench/fleet_idle.py tick /home/choiceoh/glm53-logs/fleet
+TimeoutStartSec=3700
+TimeoutStopSec=30
+KillMode=control-group
+Nice=19

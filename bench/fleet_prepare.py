@@ -598,8 +598,8 @@ def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, exe
     return path
 
 
-def validate_targets(directory, manifest, *, verify_only=False, _validated_value=None):
-    """Run or consume deployment gates for the accepted payload's actual source."""
+def validate_targets(directory, manifest, *, verify_only=False, _validated_value=None, controller=None):
+    """Check actual deployment sources under their reservation's pinned contract."""
     value = _validated_value
     if value is None:
         value = fleet_prepared.read(directory, manifest)
@@ -615,14 +615,33 @@ def validate_targets(directory, manifest, *, verify_only=False, _validated_value
     for name in ('FLEET_DIR', 'FLEET_SESSION', 'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED'):
         if name in os.environ:
             validation_env[name] = os.environ[name]
+    validator = Path(__file__).with_name('fleet_validation.py')
+    level = 'admission'
+    if controller is not None:
+        fleet = controller.get('fleet')
+        if not isinstance(fleet, str) or not Path(fleet).is_absolute():
+            raise ValueError('reservation has no pinned validation controller')
+        validator = Path(fleet).with_name('fleet_validation.py')
+        accepted_env = controller.get('validation_env', {})
+        level = accepted_env.get('FLEET_VALIDATION_LEVEL', 'release')
+        if level not in ('admission', 'release'):
+            raise ValueError('reservation has an unknown validation level')
+        for name in ('FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED'):
+            if name in accepted_env:
+                validation_env[name] = accepted_env[name]
+        validation_env.update(FLEET_DIR=str(directory), FLEET_SESSION=controller['session'])
+    # Never let an editor's managed-admission context change a legacy helper's
+    # default release contract. Old helpers also do not accept --level.
+    validation_env.pop('FLEET_VALIDATION_LEVEL', None)
     python = shutil.which('python3', path=validation_env.get('PATH', os.defpath))
     if not python:
         raise ValueError('deployment target environment has no python3 executable')
     results = []
     for target in targets:
         target = deployment_target(target, value['cwd'])
-        argv = [python, str(Path(__file__).with_name('fleet_validation.py')), 'validate',
-                '--repo', target['repo'], '--profile', target['profile']]
+        argv = [python, str(validator), 'validate', '--repo', target['repo'], '--profile', target['profile']]
+        if level == 'admission':
+            argv += ['--level', 'admission']
         for key in ('image', 'model'):
             if target.get(key):
                 argv += ['--' + key, target[key]]
@@ -649,7 +668,8 @@ def check_pending(directory, session, *, refresh=False, external=True, withdraw_
         validate(value, refresh=refresh, external=external, directory=directory)
         if (external and record.get('kind') == 'boot'
                 and record.get('validation_env', {}).get('FLEET_VALIDATION_REQUIRED') == '1'):
-            validate_targets(directory, record['prepare_manifest'], verify_only=True, _validated_value=value)
+            validate_targets(directory, record['prepare_manifest'], verify_only=True,
+                             _validated_value=value, controller=record)
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         if withdraw_failed and external:
             # pause_failed acquires .lock and compares the checked revision.

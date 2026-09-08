@@ -105,7 +105,7 @@ def describe(directory, session, rows, holder, now=None, ticket=None):
         raise ValueError('unknown reservation: ' + session)
     result = {k:value[k] for k in ('session', 'ticket', 'enqueued_at', 'revision', 'command', 'cwd',
               'kind', 'estimate_min', 'note', 'experiment', 'phase', 'started_at', 'payload_finished_at',
-              'finished_at', 'pause_reason', 'paused_at', 'resumed_at', 'payload_returncode', 'recovery_returncode', 'returncode', 'outcome', 'log_path', 'error', 'log_error')
+              'finished_at', 'recovery_policy', 'recovery_deferred', 'pause_reason', 'paused_at', 'resumed_at', 'payload_returncode', 'recovery_returncode', 'returncode', 'outcome', 'log_path', 'error', 'log_error')
               if value and k in value}
     result.update(session=session, source='saved' if value else 'legacy', position=None, editable=False)
     if ticket is not None:

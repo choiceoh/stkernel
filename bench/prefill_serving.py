@@ -3,7 +3,7 @@
 
 Use run only after the frozen GPU gate passes, through fleet.sh run --gpu.
 The source checkout must be clean and based on current origin/main. This
-uses fleet deploy and chain, then always restores the public default arm.
+uses fleet deploy and chain, then releases immediately to the next job.
 No candidate is promoted. `arm` is the chain's after hook, not a standalone
 unreserved client. All metrics, metadata and archive work is outside TTFT.
 """
@@ -152,9 +152,9 @@ def verify_gate(candidate, directory, repo):
     complete=json.loads((directory/'completion.json').read_text())
     gate=complete['probes'][candidate]
     if not complete.get('ended') or complete.get('error') or gate['exit_code'] != 0 or gate['revision'] != revision:
-        raise RuntimeError('candidate GPU gate or recovery is incomplete/failed')
-    if not complete.get('restored_original') and not complete.get('public_restore'):
-        raise RuntimeError('offline serving recovery evidence missing')
+        raise RuntimeError('candidate GPU gate is incomplete/failed')
+    if not (complete.get('cleanup_complete') or complete.get('restored_original') or complete.get('public_restore')):
+        raise RuntimeError('offline probe cleanup evidence missing')
     log=(directory/(candidate+'.log')).read_bytes()
     if not log or (candidate=='moe' and b'MOE_STREAM_ALL_GATES_PASS' not in log):
         raise RuntimeError('GPU gate log incomplete')
@@ -312,9 +312,7 @@ def run_bracket(args):
         PREFILL_SERVING_RUNNER=str(ROOT/'bench/prefill_serving.py'),PREFILL_SERVING_FIRST_ARM=args.name+'B1',
         PREFILL_SERVING_OUT=str(out),PREFILL_SERVING_CANDIDATE=args.candidate,PREFILL_SERVING_REV=args.revision)
     result=dict(started=time.time(),exit_code=1)
-    changed=False
     try:
-        changed=True
         run_owned(['bash',str(fleet),'deploy',os.environ['FLEET_SESSION'],args.revision],env=env)
         pinned(str(repo),args.revision)
         contract=source_contract(repo,args.revision)
@@ -334,30 +332,7 @@ def run_bracket(args):
     except BaseException as exc:
         result['error']=repr(exc)
     finally:
-        if changed:
-            previous=signal.signal(signal.SIGTERM,signal.SIG_IGN)
-            try:
-                check_holder()
-                restore=dict(env,KV_TOKENS='2000000',MAX_LEN='1048576',
-                    GLM53_API_PORT='8000',GLM53_API_HOST='0.0.0.0',HEAD='10.10.10.2',HEAD_URL='http://10.10.10.2:8000')
-                with (out/'public-restore.log').open('x') as log:
-                    run_owned(['bash',str(repo/'bench/ab-lever.sh'),args.name+'RESTORE',''],
-                              cwd=repo,env=restore,stdout=log,stderr=subprocess.STDOUT)
-                restored=capture(args.candidate,out,'RESTORE')
-                attest(restored,source_contract(repo,args.revision),knob,False,public=True)
-                baseline_file=out/(args.name+'B1.json')
-                if baseline_file.exists():
-                    baseline=json.loads(baseline_file.read_text())['before']
-                    if any(restored[n][k]!=baseline[n][k] for n in NODES for k in ('model','hardware')):
-                        raise RuntimeError('restored model/hardware differs from measured baseline')
-                with urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=10) as r:
-                    if r.status!=200:raise RuntimeError('public health failed')
-                save(out/'public-restored.json',restored)
-                result['restored']=True
-            except BaseException as exc:
-                result.update(exit_code=1,restore_error=repr(exc))
-            finally:
-                signal.signal(signal.SIGTERM,previous)
+        result['public_recovery'] = 'central idle controller'
         result['ended']=time.time()
         save(out/'completion.json',result)
     return result['exit_code']
