@@ -74,6 +74,57 @@ class OnepassIntegrationTests(unittest.TestCase):
         self.assertFalse((self.directory / 'holder').exists())
         self.assertFalse((self.directory / 'pending').exists())
 
+    def prepare_preflight_fixture(self):
+        (self.repo / 'profiles').mkdir()
+        shutil.copyfile(ROOT / 'profiles/glm53.env', self.repo / 'profiles/glm53.env')
+        # Exercise the actual shell preflight and canonical entrypoint policy,
+        # but use the copied profile without fetching or executing a payload.
+        git = self.bin / 'git'
+        git.write_text('#!/bin/sh\nexit 1\n')
+        git.chmod(0o700)
+
+    def test_preflight_canonical_chain_ignores_header_example_knobs(self):
+        self.prepare_preflight_fixture()
+        chain = self.repo / 'bench/chain.sh'
+        self.assertIn('NAME="VLLM_X=1 VLLM_Y=1"', chain.read_text())
+        result = self.run_fleet('preflight', 'chain-header', '--', 'bash', str(chain),
+                                'A=VLLM_GLM53_MEGAKERNEL=1')
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn('PASS knobs declared', result.stdout)
+        self.assertNotIn('VLLM_X', result.stdout)
+        self.assertNotIn('VLLM_Y', result.stdout)
+        self.assert_no_work()
+
+    def test_preflight_ignores_indented_source_comment_knobs(self):
+        self.prepare_preflight_fixture()
+        chain = self.repo / 'bench/chain.sh'
+        chain.write_text(chain.read_text() + '\n \t# VLLM_COMMENT_EXAMPLE=1\n')
+        result = self.run_fleet('preflight', 'chain-comment', '--', 'bash', str(chain), 'A=')
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn('VLLM_COMMENT_EXAMPLE', result.stdout)
+        self.assert_no_work()
+
+    def test_preflight_still_rejects_example_names_in_actual_caller_knobs(self):
+        self.prepare_preflight_fixture()
+        result = self.run_fleet('preflight', 'chain-undeclared', '--', 'bash',
+                                str(self.repo / 'bench/chain.sh'), 'A=VLLM_X=1 VLLM_Y=1')
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('FAIL undeclared', result.stdout)
+        self.assertIn('VLLM_X VLLM_Y', result.stdout)
+        self.assert_no_work()
+
+    def test_preflight_still_checks_executable_source_assignments(self):
+        self.prepare_preflight_fixture()
+        chain = self.repo / 'bench/chain.sh'
+        # This fixture's canonical source contains a real assignment, ensuring
+        # comment filtering does not disable source knob inspection altogether.
+        chain.write_text(chain.read_text() + '\nVLLM_UNDECLARED_SOURCE=1\n')
+        result = self.run_fleet('preflight', 'chain-source', '--', 'bash', str(chain), 'A=')
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('FAIL undeclared', result.stdout)
+        self.assertIn('VLLM_UNDECLARED_SOURCE', result.stdout)
+        self.assert_no_work()
+
     def test_arbitrary_gpu_command_is_rejected_before_cpu_preparation(self):
         # The marker is harmless even if invoked; the text also identifies
         # this as GPU work to the existing CPU/GPU classifier.
