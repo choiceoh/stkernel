@@ -1,0 +1,174 @@
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "74881c493d3145ed8842ba64b83a0720", "phase": "waiting", "reason": "dequeue", "since": 408005.381437316, "updated_at": 1788905612.4443498, "version": 1}
+GO sf6-base-0909v3 2026-09-09_07:13:32
+  node 10.10.10.1: gpu=ok stray=4 ram=11G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=7G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+{"artifacts": {"c99a9c3aa25649127595ed00ed3c0ed454cfb1d8878bd8e3fb3f32ddc89736a8.log": "c633483f417f432166841329bc34fe836070f8699e9f1c8b3bae51e5fc4723ba", "c99a9c3aa25649127595ed00ed3c0ed454cfb1d8878bd8e3fb3f32ddc89736a8.report.json": "fbe09565729aac7b1db0e92d097e9b857c0f1a0f65b88c96435217a08e538424"}, "completed_at": 1788905611.5991182, "context": {"checker": "f232834ae5e341fdee5e217efcfd50e64bd050be4947969adc936563866d4bca", "gate": "overlay-admission", "profile": "glm53", "selected": ["shell-syntax", "selected-profile-compose", "overlay-manifest-syntax"], "validator": "1201372f0f6b0e9f10d5f20ee2c1ad8b7bc9f974c7413c09d989c369b2b29c96", "version": 1}, "coverage_complete": true, "key": "c99a9c3aa25649127595ed00ed3c0ed454cfb1d8878bd8e3fb3f32ddc89736a8", "passed": true, "profile": "glm53", "receipt": "/home/choiceoh/glm53-logs/fleet/validation/receipts/c99a9c3aa25649127595ed00ed3c0ed454cfb1d8878bd8e3fb3f32ddc89736a8.json", "reused": true, "scope": "admission-full-tree", "source": "b7b06b70a534fdfae756f7410ac40305763f6c3a", "started_at": 1788905611.291374, "tests_run": 3, "version": 1}
+/home/choiceoh/stkernel-sf6-direct-0909/build/glm53  (63 overlays from 9 modules)
+[overlay-deploy] preserve_identical=1 source=b7b06b70a534fdfae756f7410ac40305763f6c3a
+=== head (/home/choiceoh/overlays/glm53) ===
+  6c6f6a9f19795a1b4ea8d90fe208c110c2168d1fae35a9fb82a33a72bcb62490  manifest.tsv
+  b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b  moe_gate_sm121.py
+  ac12107a7aa0b8b10560b04d819525e8fccbb34869c3108eb4c1ab666c7e434a  dsv4_oneshot_shim.py
+  9f0c0a88dea9fc7f70ba639cdc5f3f19e09e48037a4af4da82941632d0f0d0d3  dsv4_oneshot_ar.cu
+  98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6  dsv4_oneshot_transport.h
+  f8172c263ee4fa78990c28d362d742c9f6411bfa6eac6c7c54353f18d0cbccef  glm53_megakernel.py
+  55dc409cdd04b97db16093779b3c2633c080d7fb3582b0e572f4b168fe307f4f  glm53_megakernel.cu
+  200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d  sparse_attn_indexer_kpool.py
+  c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319  glm53_kpool_indexer.py
+  d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e  kda.py
+  fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739  chunk_delta_h.py
+  bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1  tilelang.py
+  432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12  tilelang_kernels.py
+  fffad9c75ca329dc51cb9dea1be7be021a4126ad03d690fd5bcd7f0b4bb772f9  flashinfer_b12x_moe.py
+  70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655  moe_micro_kernel.py
+  bc76cb045ce7c85f3299494369aa0d6c5820b139a22b31eab2d016830c44fcb4  moe_dispatch.py
+  a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3  b12x_moe.py
+  bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9  moe_static_common.py
+  f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a  moe_sf_pack.py
+  eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c  moe_static_kernel_v4.py
+  4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e  moe_static_kernel_v5.py
+  a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d  moe_dynamic_gated_tiled.py
+  6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e  moe_dynamic_gated_sf6.py
+  6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5  moe_dynamic_prefill.py
+  da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4  moe_dynamic_prefill_n128.py
+  c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631  moe_reform_sf_pack.py
+  55bac92238139d67a5e83d610dafe657efa1419cdfd4d32570d441406887c10f  glm5next_model.py
+  1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be  glm53_prefill_fastpath.py
+  a4f3ead934c2f20eb311a32d507d17edd8552d74bc6d507fbcdd0f37695dff53  glm5next_attention.py
+  e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28  glm53_indexer_gate.py
+  672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a  glm5next_kda.py
+  1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973  flashinfer_mla_sparse_sm90.py
+  cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee  glm53_kda_onepass.py
+  c6d660e97dbb6a776cbb5e2b62bf3a7d4a31ef3b8dd0c8fd4896dc3d0851b7db  glm53_fp8_dense.py
+  34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76  glm53_startup_cache.py
+  0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26  glm53_rank_cache.py
+  0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8  glm53_nvfp4_scale.py
+  43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20  glm53_nvfp4_bproj.py
+  78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade  mtp.py
+  8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568  glm5next_multimodal.py
+  4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee  qwen3_dflash2.py
+  6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98  dflash_utils.py
+  fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d  spec_decode_rejection_warmup.py
+  99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd  glm53_dflash_early_fc.py
+  70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce  glm53_drafter_prep.py
+  ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac  fp8_lm_head.py
+  ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e  glm53_prep_fused.py
+  c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb  sampler.py
+  cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67  deneb_boot_stamps.py
+  b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca  zz_deneb_boot_stamps.pth
+  356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335  glm53_dev_lab.py
+  a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd  glm53_lab_middleware.py
+  d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0  glm53_chat.py
+  d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d  glm47_moe.py
+  ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe  cuda_communicator.py
+  90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22  glm53_prefill_collectives.py
+  2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8  parallel_state.py
+  6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360  glm53_draft_dump.py
+  a248cab9a91c7d5c1c089d717ee3b01d0b329e7e429d69dd24dccc029f32731f  glm53_decode_first.py
+  25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0  async_llm.py
+  9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8  glm53_renderer_warmup.py
+  c85092ab70c42692ae8cb7ae4ba4d35d7fbe885cee767ea969990483929d2834  gpu_worker.py
+  fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c  kv_zero_worker_utils.py
+  1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d  kv_cache_coordinator.py
+=== 10.10.10.3 (/home/choiceoh/overlays/glm53) ===
+  verified
+=== 10.10.10.1 (/home/choiceoh/overlays/glm53) ===
+  verified
+=== 10.10.10.4 (/home/choiceoh/overlays/glm53) ===
+  verified
+63 overlays + manifest deployed and SHA-256 verified on head + 3 workers.
+restart to apply: launchers/start-glm53-nvfp4-tp4.sh   (expect a long
+recompile warmup on the first boot after an overlay-source change)
+{"live": false, "manifest": "/home/choiceoh/overlays/glm53/manifest.tsv", "manifest_sha256": "6c6f6a9f19795a1b4ea8d90fe208c110c2168d1fae35a9fb82a33a72bcb62490", "overlay_dir": "/home/choiceoh/overlays/glm53", "reused": false, "source_commit": "b7b06b70a534fdfae756f7410ac40305763f6c3a"}
+== [sf6-base-0909v3B] boot 07:13:38 caller env:  (profile defaults otherwise) ==
+load-format: instanttensor (default is instanttensor)
+prefix-cache: enabled (hybrid-APC coordinator, mamba align mode)
+chat: chat_template_mm_v2.jinja -> chat_template.0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42.jinja (reasoning=glm45, tools=glm47)
+overlays: 63 base contracts verified against sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+  KV pinned: 1100000 tokens -> 665 blocks (2304/block + 187 hybrid)
+scheduler: decode-first v3 sequential (decode steps 6, chunk 1152, fair=1, floor 1000 tok/s)
+== 이전 컨테이너 회수·잔여 lock 정리 (노드 병렬) ==
+== memfree preflight ==
+# node          MemFree   AnonPages   (GiB, after reclaim)
+  10.10.10.2     105.9       0.4
+  10.10.10.1     109.5       0.7
+  10.10.10.3     102.9       4.3
+  10.10.10.4      99.1      10.3
+  ! 10.10.10.4 holds 10.3 GiB anon against 10.10.10.2's 0.4 -- an unexpected tenant
+  min=99.1  -boot=11  -margin=10  => usable 78.1 GiB => GMU 0.65
+  GMU 0.73 -> 0.65 (실측 채택)
+  cudagraph estimate not applied: GMU 0.65 -> 0.6429 (graph headroom retained; skip unused dry capture=0)
+[compile-cache] {"action": "invalidate", "content_sha256": "621bf161aab99e86b985f7b3f91ee047910fb0a2311523d8055c0e36b8f9aabf", "deployment_sha256": "6c6f6a9f19795a1b4ea8d90fe208c110c2168d1fae35a9fb82a33a72bcb62490", "elapsed_s": 0.54971, "version": 1}
+43d005b4bed7c6e0924e5b9ae6b554a6101fb1428cf236989229367c038f0006
+e02ad4a44c4f1322286e6fe245e67fa53d9eed8483a5820e286b3c8624f88eb6
+37e716e7eb65d4f01b2dd441ce63880b8d06d34321091d1687dba1180455a15b
+worker rank=1 @10.10.10.1 launched
+worker rank=2 @10.10.10.3 launched
+worker rank=3 @10.10.10.4 launched
+419c258c75ed309eeecf10ac3823aaaf903fa1ce093d48725e021c79165f75c6
+head rank=0 launched — poll :18000/v1/models (cold boot ~15min)
+== [sf6-base-0909v3B] wait for health 07:13:56 ==
+up after 480s
+== [sf6-base-0909v3B] first boot on build 6c6f6a9f1979: cold compile (cold prefill column not comparable) ==
+== [sf6-base-0909v3B] fingerprint (head log) ==
+(APIServer pid=29) WARNING 09-08 22:14:19 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_AR_CONSUMER_PDL
+(APIServer pid=29) WARNING 09-08 22:14:19 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PDL
+(APIServer pid=29) WARNING 09-08 22:14:37 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+WARNING 09-08 22:14:54 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+(Worker_TP0 pid=356) INFO 09-08 22:15:07 [moe_gate_sm121.py:280] DSV4 fused small-M router gate armed (triton split-K, fp32 out).
+(Worker_TP0 pid=356) WARNING 09-08 22:17:00 [glm53_megakernel.py:2864] [megakernel] selftest mla rel=2.67e-03 pair_prefill=False group=2 prefill32=False -> ARM
+(Worker_TP0 pid=356) WARNING 09-08 22:17:00 [glm53_megakernel.py:2549] [megakernel] armed={'mhc': True, 'mhc_pre': True, 'gemm': True, 'mla': True, 'smlp2': False}
+(Worker_TP0 pid=356) WARNING 09-08 22:17:09 [glm53_fp8_dense.py:1339] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.638 mk=3.310 empty_cache=0.085 (includes existing syncs)
+(Worker_TP0 pid=356) WARNING 09-08 22:17:09 [glm53_fp8_dense.py:1342] [fp8-dense] Glm5NextForCausalLM (knob VLLM_GLM53_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 213 linears w8a8 (4.04 GB bf16), 0 kept bf16, 0 disarmed by the
+(Worker_TP0 pid=356) WARNING 09-08 22:17:09 [glm53_fp8_dense.py:1355] [fp8-dense] Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=223 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gpt
+(Worker_TP0 pid=356) WARNING 09-08 22:17:09 [glm53_fp8_dense.py:1365] [fp8-dense] Glm5NextForCausalLM shapes: [1024x4096]x42, [4096x512]x42, [6416x4096]x34, [4096x2048]x34, [4096x1536]x22, [2048x4096]x11, [8192x512]x11, [4096x4096
+(Worker_TP0 pid=356) WARNING 09-08 22:18:41 [glm53_fp8_dense.py:1339] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.037 mk=0.550 empty_cache=0.107 (includes existing syncs)
+(Worker_TP0 pid=356) WARNING 09-08 22:18:41 [glm53_fp8_dense.py:1342] [fp8-dense] DFlash2Qwen3ForCausalLM (knob VLLM_DFLASH2_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 31 linears w8a8 (0.73 GB bf16), 0 kept bf16, 0 disarmed b
+(Worker_TP0 pid=356) WARNING 09-08 22:18:41 [glm53_fp8_dense.py:1355] [fp8-dense] DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=258 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1
+(Worker_TP0 pid=356) WARNING 09-08 22:18:41 [glm53_fp8_dense.py:1365] [fp8-dense] DFlash2Qwen3ForCausalLM shapes: [1024x4096]x10, [1536x4096]x5, [4096x1024]x5, [6144x4096]x5, [4096x3072]x5, [4096x20480]x1
+(Worker_TP0 pid=356) WARNING 09-08 22:20:03 [dsv4_oneshot_shim.py:426] [osar] consumer PDL self-test PASS
+(Worker_TP0 pid=356) INFO 09-08 22:20:49 [glm53_indexer_gate.py:129] [indexer-gate] VLLM_GLM53_INDEXER_GATE_SPLITK=1: first split-K routing, e.g. x(12, 4096) torch.bfloat16 @ w(4096, 32) (M<=16 admitted)
+(Worker_TP0 pid=356) WARNING 09-08 22:20:57 [dsv4_oneshot_shim.py:607] [osar] consumer PDL CAPTURED numel=24576
+(Worker_TP0 pid=356) INFO 09-08 22:20:57 [gpu_worker.py:582] Available KV cache memory: 9.4 GiB
+(Worker_TP0 pid=356) Capturing dflash2 CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s](Worker_TP0 pid=356) WARNING 09-08 22:21:05 [glm53_fp8_dense.py:615] [fp8-dense] drafter lane serving: 30 of 31 opaque GEMM calls per
+(EngineCore pid=245) WARNING 09-08 22:21:24 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=223 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 15.5 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=258 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 1.5 s
+== [sf6-base-0909v3B] onepass 07:22:01 ctx=2000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         875        2394      2.43s      0.89s  o o o
+  32000   32545        3000     (1 req)     10.85s          -  o o o
+ 128000  128559        3102     (1 req)     41.45s          -  o o o
+fixed2K rep=0 tokens=2048/2048 decode=62.39 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=63.50 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=62.65 tok/s
+  warm 처리량: 2394 -> 3102 tok/s (over 2128 -> 128559 tokens)
+=> 18/18 correct
+decode: windows n=91 med 19.9 [18.9, 20.9] step/s (inside the answers only; per context: 2K: n=103 med 19.9  32K: n=14 med 19.9  128K: n=10 med 19.9), raw acc 44.2%, tokens/step 3.211 (k=5.0), generated 9271 tokens over 202s
+응답 8개 · 문자 23,334
+  깨진 응답: 0/8 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass sf6-base-0909v3B: 203s total
+== [sf6-base-0909v3B] acceptance counters ==
+vllm:spec_decode_num_drafts_total 2886.0
+vllm:spec_decode_num_draft_tokens_total 14430.0
+vllm:spec_decode_num_accepted_tokens_total 6382.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2170.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1537.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1142.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 864.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 669.0
+== [sf6-base-0909v3B] head log kept: /home/choiceoh/glm53-logs/boot-sf6-base-0909v3B.log ==
+== [sf6-base-0909v3B] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [sf6-base-0909v3B] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-08 22:14:37 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+WARNING 09-08 22:14:54 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+(EngineCore pid=245) WARNING 09-08 22:21:24 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+== [sf6-base-0909v3B] done 07:25:25 ==
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "909599837e924a7b801ce17b5f6d2e07", "phase": "waiting", "reason": "release", "since": 408718.221386531, "updated_at": 1788906325.2843075, "version": 1}

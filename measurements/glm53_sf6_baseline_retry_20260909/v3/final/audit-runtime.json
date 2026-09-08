@@ -1,0 +1,349 @@
+{
+  "checks": {
+    "observer_complete_pass": true,
+    "observer_helper_sha": true,
+    "source_commit_bind": true,
+    "manifest_63_and_original": true,
+    "manifest_matches_original_git": true,
+    "single_record": true,
+    "prepared_receipt_sha": true,
+    "prepared_receipt_identity": true,
+    "prepared_receipt_pass": true,
+    "prepared_seal_coverage": true,
+    "prepared_all_seals": true,
+    "prepared_head_stable": true,
+    "prepared_record_presence": true,
+    "prepared_head_record_boot": true,
+    "prepared_owned": true,
+    "prepared_srv1_log_sha_parser": true,
+    "prepared_srv1_runtime_valid": true,
+    "prepared_srv1_host_api": true,
+    "prepared_srv2_log_sha_parser": true,
+    "prepared_srv2_runtime_valid": true,
+    "prepared_srv2_host_api": true,
+    "prepared_srv3_log_sha_parser": true,
+    "prepared_srv3_runtime_valid": true,
+    "prepared_srv3_host_api": true,
+    "prepared_srv4_log_sha_parser": true,
+    "prepared_srv4_runtime_valid": true,
+    "prepared_srv4_host_api": true,
+    "runtime_receipt_sha": true,
+    "runtime_receipt_identity": true,
+    "runtime_receipt_pass": true,
+    "runtime_seal_coverage": true,
+    "runtime_all_seals": true,
+    "runtime_head_stable": true,
+    "runtime_record_presence": true,
+    "runtime_head_record_boot": true,
+    "runtime_record_raw_binding": true,
+    "runtime_srv1_log_sha_parser": true,
+    "runtime_srv1_runtime_valid": true,
+    "runtime_srv1_host_api": true,
+    "runtime_srv2_log_sha_parser": true,
+    "runtime_srv2_runtime_valid": true,
+    "runtime_srv2_host_api": true,
+    "runtime_srv3_log_sha_parser": true,
+    "runtime_srv3_runtime_valid": true,
+    "runtime_srv3_host_api": true,
+    "runtime_srv4_log_sha_parser": true,
+    "runtime_srv4_runtime_valid": true,
+    "runtime_srv4_host_api": true,
+    "both_phase_head_same": true,
+    "actual_record_api": true,
+    "four_distinct_rank_boots": true,
+    "old_a_attempt_all_seals": true,
+    "srv1_within_arm": true,
+    "srv1_old_log_sha_parser": true,
+    "srv2_within_arm": true,
+    "srv2_old_log_sha_parser": true,
+    "srv3_within_arm": true,
+    "srv3_old_log_sha_parser": true,
+    "srv4_within_arm": true,
+    "srv4_old_log_sha_parser": true
+  },
+  "errors": [],
+  "ranks": {
+    "prepared_srv1": {
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "boot_id": "e02ad4a44c4f1322286e6fe245e67fa53d9eed8483a5820e286b3c8624f88eb6|2026-09-08T22:13:54.721821477Z",
+      "gmu": "0.6429",
+      "kv_blocks": "665",
+      "mhc_pass": true,
+      "mhc_capture_tokens": [
+        6
+      ],
+      "prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ],
+      "validation": []
+    },
+    "prepared_srv2": {
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "boot_id": "419c258c75ed309eeecf10ac3823aaaf903fa1ce093d48725e021c79165f75c6|2026-09-08T22:13:55.737545576Z",
+      "gmu": "0.6429",
+      "kv_blocks": "665",
+      "mhc_pass": true,
+      "mhc_capture_tokens": [
+        6
+      ],
+      "prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ],
+      "validation": []
+    },
+    "prepared_srv3": {
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "boot_id": "43d005b4bed7c6e0924e5b9ae6b554a6101fb1428cf236989229367c038f0006|2026-09-08T22:13:54.700637221Z",
+      "gmu": "0.6429",
+      "kv_blocks": "665",
+      "mhc_pass": true,
+      "mhc_capture_tokens": [
+        6
+      ],
+      "prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ],
+      "validation": []
+    },
+    "prepared_srv4": {
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "boot_id": "37e716e7eb65d4f01b2dd441ce63880b8d06d34321091d1687dba1180455a15b|2026-09-08T22:13:55.083013917Z",
+      "gmu": "0.6429",
+      "kv_blocks": "665",
+      "mhc_pass": true,
+      "mhc_capture_tokens": [
+        6
+      ],
+      "prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ],
+      "validation": []
+    },
+    "runtime_srv1": {
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "boot_id": "e02ad4a44c4f1322286e6fe245e67fa53d9eed8483a5820e286b3c8624f88eb6|2026-09-08T22:13:54.721821477Z",
+      "gmu": "0.6429",
+      "kv_blocks": "665",
+      "mhc_pass": true,
+      "mhc_capture_tokens": [
+        6
+      ],
+      "prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ],
+      "validation": []
+    },
+    "runtime_srv2": {
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "boot_id": "419c258c75ed309eeecf10ac3823aaaf903fa1ce093d48725e021c79165f75c6|2026-09-08T22:13:55.737545576Z",
+      "gmu": "0.6429",
+      "kv_blocks": "665",
+      "mhc_pass": true,
+      "mhc_capture_tokens": [
+        6
+      ],
+      "prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ],
+      "validation": []
+    },
+    "runtime_srv3": {
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "boot_id": "43d005b4bed7c6e0924e5b9ae6b554a6101fb1428cf236989229367c038f0006|2026-09-08T22:13:54.700637221Z",
+      "gmu": "0.6429",
+      "kv_blocks": "665",
+      "mhc_pass": true,
+      "mhc_capture_tokens": [
+        6
+      ],
+      "prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ],
+      "validation": []
+    },
+    "runtime_srv4": {
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "boot_id": "37e716e7eb65d4f01b2dd441ce63880b8d06d34321091d1687dba1180455a15b|2026-09-08T22:13:55.083013917Z",
+      "gmu": "0.6429",
+      "kv_blocks": "665",
+      "mhc_pass": true,
+      "mhc_capture_tokens": [
+        6
+      ],
+      "prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ],
+      "validation": []
+    }
+  },
+  "old_a_comparison": {
+    "srv1": {
+      "unchanged_fields": {
+        "source_sha256": true,
+        "image": true,
+        "gmu": true,
+        "kv_blocks": true,
+        "mounts": true,
+        "template": true,
+        "entrypoint": true
+      },
+      "knob_differences": {
+        "VLLM_GLM53_B12X_STATIC_V2": [
+          "t,r,sf6",
+          "t,r"
+        ]
+      },
+      "argv_differences": [
+        [
+          6,
+          "0.0.0.0",
+          "127.0.0.1"
+        ],
+        [
+          8,
+          "8000",
+          "18000"
+        ]
+      ],
+      "argv_lengths": [
+        67,
+        67
+      ],
+      "old_mhc_mismatch": [
+        "AR consumer MHC mismatch T=16 fp32=False scale=1.0 early=False"
+      ],
+      "old_mhc_capture_tokens": [],
+      "old_mhc_pass": false,
+      "old_prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ]
+    },
+    "srv2": {
+      "unchanged_fields": {
+        "source_sha256": true,
+        "image": true,
+        "gmu": true,
+        "kv_blocks": true,
+        "mounts": true,
+        "template": true,
+        "entrypoint": true
+      },
+      "knob_differences": {
+        "VLLM_GLM53_B12X_STATIC_V2": [
+          "t,r,sf6",
+          "t,r"
+        ]
+      },
+      "argv_differences": [
+        [
+          6,
+          "0.0.0.0",
+          "127.0.0.1"
+        ],
+        [
+          8,
+          "8000",
+          "18000"
+        ]
+      ],
+      "argv_lengths": [
+        66,
+        66
+      ],
+      "old_mhc_mismatch": [
+        "AR consumer MHC mismatch T=16 fp32=False scale=1.0 early=False"
+      ],
+      "old_mhc_capture_tokens": [],
+      "old_mhc_pass": false,
+      "old_prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ]
+    },
+    "srv3": {
+      "unchanged_fields": {
+        "source_sha256": true,
+        "image": true,
+        "gmu": true,
+        "kv_blocks": true,
+        "mounts": true,
+        "template": true,
+        "entrypoint": true
+      },
+      "knob_differences": {
+        "VLLM_GLM53_B12X_STATIC_V2": [
+          "t,r,sf6",
+          "t,r"
+        ]
+      },
+      "argv_differences": [
+        [
+          6,
+          "0.0.0.0",
+          "127.0.0.1"
+        ],
+        [
+          8,
+          "8000",
+          "18000"
+        ]
+      ],
+      "argv_lengths": [
+        67,
+        67
+      ],
+      "old_mhc_mismatch": [
+        "AR consumer MHC mismatch T=16 fp32=False scale=1.0 early=False"
+      ],
+      "old_mhc_capture_tokens": [],
+      "old_mhc_pass": false,
+      "old_prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ]
+    },
+    "srv4": {
+      "unchanged_fields": {
+        "source_sha256": true,
+        "image": true,
+        "gmu": true,
+        "kv_blocks": true,
+        "mounts": true,
+        "template": true,
+        "entrypoint": true
+      },
+      "knob_differences": {
+        "VLLM_GLM53_B12X_STATIC_V2": [
+          "t,r,sf6",
+          "t,r"
+        ]
+      },
+      "argv_differences": [
+        [
+          6,
+          "0.0.0.0",
+          "127.0.0.1"
+        ],
+        [
+          8,
+          "8000",
+          "18000"
+        ]
+      ],
+      "argv_lengths": [
+        67,
+        67
+      ],
+      "old_mhc_mismatch": [
+        "AR consumer MHC mismatch T=16 fp32=False scale=1.0 early=False"
+      ],
+      "old_mhc_capture_tokens": [],
+      "old_mhc_pass": false,
+      "old_prep_disarm_reasons": [
+        "['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']"
+      ]
+    }
+  },
+  "source_commit": "b7b06b70a534fdfae756f7410ac40305763f6c3a",
+  "old_a_attempt": "/tmp/sf6-direct-onepass-0909v1/final/attempts/prepared-sf6-direct-0909v1A-1788899861582588589",
+  "record_sha256": "9167a2b2456a9cfa964802bfc498d9ce0f68b7e300636a0682e47c9c09c4bddc",
+  "status": "PASS"
+}
