@@ -28,6 +28,7 @@ import json
 import os
 import random
 import sys
+import re
 import time
 import urllib.error
 import urllib.request
@@ -48,10 +49,30 @@ WORDS = ["reactor", "harbor", "lattice", "quarry", "ember", "meridian", "syntax"
          "granite", "voltage", "cirrus", "tundra", "beacon", "ledger", "prism"]
 
 
-def one(model: str, ctx: int, rng: random.Random) -> tuple[int, float]:
+def counters() -> dict:
+    """The engine counters that can explain a latency tail on a repeated long
+    prefill: preemption (the KV pool full enough to evict a running request and
+    recompute it), how full the pool is, and whether the prefix cache is being
+    asked anything at all."""
+    names = ("num_preemptions_total", "prefix_cache_queries_total", "prefix_cache_hits_total",
+             "gpu_cache_usage_perc", "gpu_prefix_cache_hit_rate")
+    out = {}
+    try:
+        text = urllib.request.urlopen(BASE + "/metrics", timeout=5).read().decode()
+    except Exception:
+        return out
+    for name in names:
+        vals = re.findall(r"^vllm:%s(?:\{[^}]*\})?\s+([0-9.eE+-]+)" % re.escape(name), text, re.M)
+        if vals:
+            out[name] = sum(float(v) for v in vals) if "usage" not in name and "rate" not in name \
+                else max(float(v) for v in vals)
+    return out
+
+
+def one(model: str, ctx: int, rng: random.Random, max_tokens: int = 1) -> tuple[int, float]:
     nonce = f"{rng.getrandbits(48):012x}"
     text = " ".join(rng.choice(WORDS) for _ in range(int(ctx / 1.3)))
-    body = json.dumps({"model": model, "max_tokens": 1, "temperature": 0,
+    body = json.dumps({"model": model, "max_tokens": max_tokens, "temperature": 0,
                        "messages": [{"role": "user", "content": f"{nonce} {text} End."}],
                        "chat_template_kwargs": {"thinking": False}}).encode()
     req = urllib.request.Request(BASE + "/v1/chat/completions", body,
@@ -65,6 +86,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ctx", type=int, default=128000)
     ap.add_argument("--n", type=int, default=6)
+    # Both engine deaths happened inside onepass's 128K stage, which GENERATES
+    # after the long prefill; a max_tokens=1 probe stops before the decode and
+    # did not reproduce them in 6 tries per side. Give it the decode too.
+    ap.add_argument("--max-tokens", type=int, default=1)
     ap.add_argument("--json", default="")
     args = ap.parse_args()
     model = resolve_model()
@@ -73,7 +98,12 @@ def main() -> int:
     runs, died = [], None
     for i in range(args.n):
         try:
-            tok, wall = one(model, args.ctx, rng)
+            before = counters()
+            tok, wall = one(model, args.ctx, rng, args.max_tokens)
+            after = counters()
+            delta = {k: round(after[k] - before.get(k, 0.0), 3) for k in after
+                     if k.endswith("_total")}
+            delta.update({k: after[k] for k in after if not k.endswith("_total")})
         except urllib.error.HTTPError as exc:
             try:
                 detail = exc.read().decode("utf-8", "replace")[:400]
@@ -86,8 +116,11 @@ def main() -> int:
             died = {"at": i + 1, "code": 0, "detail": f"{type(exc).__name__}: {exc}"}
             print(f"  request {i + 1}/{args.n}: DIED {type(exc).__name__}: {exc}", file=sys.stderr)
             break
-        runs.append({"tok": tok, "wall": wall})
-        print(f"  request {i + 1}/{args.n}: tok {tok}  wall {wall:6.1f}s  {tok / wall:,.0f} tok/s")
+        runs.append({"tok": tok, "wall": wall, "counters": delta})
+        note = " ".join(f"{k.replace('_total', '').replace('num_', '')}={v:g}"
+                        for k, v in sorted(delta.items()) if v)
+        print(f"  request {i + 1}/{args.n}: tok {tok}  wall {wall:6.1f}s  "
+              f"{tok / wall:,.0f} tok/s  {note}")
     ok = len(runs)
     print(f"\nSURVIVED {ok}/{args.n} long prefills" + ("" if died is None else f"; died on #{died['at']}"))
     if runs:
