@@ -256,8 +256,10 @@ def _restore(directory, manifest, state):
 def _all_ranks_ready(ready):
     """InstantTensor uses the WORLD device group: never mix hits/source loads.
 
-    Use that established group directly, avoiding both extra Gloo object
-    exchanges and vLLM's custom all-reduce initialization on this control vote.
+    By default use that established group directly. The CPU-vote experiment
+    uses WORLD's existing Gloo group for the same fixed-size MIN reduction,
+    avoiding NCCL initialization solely for cache control on warm hits. All
+    ranks must select the same policy before loading; no local fallback is safe.
     Even a rank whose local identity/metadata check failed must participate.
     """
     from vllm.distributed import get_world_group
@@ -266,9 +268,15 @@ def _all_ranks_ready(ready):
     world = get_world_group()
     if world.world_size == 1:
         return ready
-    group = world.device_group
-    device = (torch.device("cuda", torch.cuda.current_device())
-              if dist.get_backend(group) == "nccl" else torch.device("cpu"))
+    if os.environ.get("VLLM_GLM53_RANK_CACHE_CPU_VOTE", "0") == "1":
+        group = world.cpu_group
+        if group is None or dist.get_backend(group) != "gloo":
+            raise RuntimeError("rank-cache CPU vote requires the existing WORLD Gloo group")
+        device = torch.device("cpu")
+    else:
+        group = world.device_group
+        device = (torch.device("cuda", torch.cuda.current_device())
+                  if dist.get_backend(group) == "nccl" else torch.device("cpu"))
     vote = torch.tensor(int(ready), dtype=torch.int32, device=device)
     dist.all_reduce(vote, op=dist.ReduceOp.MIN, group=group)
     return bool(vote.item())
