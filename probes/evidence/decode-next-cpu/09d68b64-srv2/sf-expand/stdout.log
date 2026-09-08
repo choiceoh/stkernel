@@ -1,0 +1,27 @@
+Traceback (most recent call last):
+  File "/repo/probes/moe_reform_sf6_check.py", line 192, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/repo/probes/moe_reform_sf6_check.py", line 93, in main
+    expanders = {block: compile_expand(block) for block in (2048, 4096)}
+                        ^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/probes/moe_reform_sf6_check.py", line 89, in compile_expand
+    return cute.compile(entry, src, dst,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/inspect.py", line 3310, in signature
+    return Signature.from_callable(obj, follow_wrapped=follow_wrapped,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/inspect.py", line 3054, in from_callable
+    return _signature_from_callable(obj, sigcls=cls,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/inspect.py", line 2566, in _signature_from_callable
+    return _signature_from_function(sigcls, obj,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/inspect.py", line 2393, in _signature_from_function
+    annotations = get_annotations(func, globals=globals, locals=locals, eval_str=eval_str)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/inspect.py", line 285, in get_annotations
+    value if not isinstance(value, str) else eval(value, globals, locals)
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 1, in <module>
+NameError: name 'cute' is not defined

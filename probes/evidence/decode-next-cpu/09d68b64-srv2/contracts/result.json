@@ -1,0 +1,217 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "core",
+      "command": [
+        "/usr/bin/python3",
+        "tests/test_logic.py",
+        "--component",
+        "core"
+      ],
+      "returncode": 0,
+      "seconds": 4.668,
+      "log": "/evidence/result-core-0.log",
+      "skipped": [],
+      "tests_run": 71123,
+      "counts": null
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_ar_transport_next.py",
+        "/evidence/result-individual-1.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 1.616,
+      "log": "/evidence/result-individual-1.log",
+      "skipped": [],
+      "tests_run": 8,
+      "counts": {
+        "tests_run": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_ar_transport_next.TransportTests.test_actual_geometry_and_publication_helpers",
+          "test_ar_transport_next.TransportTests.test_actual_inline_descriptors_with_mock_verbs_and_ring_reuse",
+          "test_ar_transport_next.TransportTests.test_compact_capture_and_poison_failure_dispatch",
+          "test_ar_transport_next.TransportTests.test_header_and_mode_flags_bind_the_actual_build",
+          "test_ar_transport_next.TransportTests.test_modes_are_exact_opt_in",
+          "test_ar_transport_next.TransportTests.test_nonfinite_error_cannot_hide_behind_exact_baseline",
+          "test_ar_transport_next.TransportTests.test_publication_and_proxy_integration_keep_order",
+          "test_ar_transport_next.TransportTests.test_rank_mode_mismatch_declines_before_connect"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_ar_transport_next.TransportTests.test_actual_geometry_and_publication_helpers": 0.8031341940513812,
+          "test_ar_transport_next.TransportTests.test_actual_inline_descriptors_with_mock_verbs_and_ring_reuse": 0.6661052560084499,
+          "test_ar_transport_next.TransportTests.test_compact_capture_and_poison_failure_dispatch": 0.0037578780320473015,
+          "test_ar_transport_next.TransportTests.test_header_and_mode_flags_bind_the_actual_build": 0.006250793987419456,
+          "test_ar_transport_next.TransportTests.test_modes_are_exact_opt_in": 0.013032132002990693,
+          "test_ar_transport_next.TransportTests.test_nonfinite_error_cannot_hide_behind_exact_baseline": 0.0030232680146582425,
+          "test_ar_transport_next.TransportTests.test_publication_and_proxy_integration_keep_order": 0.00023411295842379332,
+          "test_ar_transport_next.TransportTests.test_rank_mode_mismatch_declines_before_connect": 0.020322431984823197
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_megakernel_ar_consumer_regressions.py",
+        "/evidence/result-individual-2.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 1.672,
+      "log": "/evidence/result-individual-2.log",
+      "skipped": [],
+      "tests_run": 12,
+      "counts": {
+        "tests_run": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_bf16_layout_preserves_every_bit_pattern",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_collective_ownership_covers_actual_vector_and_tail_accesses",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_eligibility_and_capture_dispatch",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_exact_environment_gate",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_large_warmup_prepares_first_small_capture_without_repacking",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_layout_cache_preserves_graph_storage_and_versions",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_mhc_weight_only_before_wait",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_probe_capture_is_not_serving_evidence",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_profile_default_on_and_cache_identity",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_protocol_wait_and_publication_order",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_runtime_failure_does_not_split_collectives",
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_standalone_pre_packs_the_real_three_dimensional_weight_view"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_bf16_layout_preserves_every_bit_pattern": 1.0926716650137678,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_collective_ownership_covers_actual_vector_and_tail_accesses": 0.0546821029856801,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_eligibility_and_capture_dispatch": 0.0036489819758571684,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_exact_environment_gate": 0.013071093009784818,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_large_warmup_prepares_first_small_capture_without_repacking": 0.055660280981101096,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_layout_cache_preserves_graph_storage_and_versions": 0.01752137200674042,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_mhc_weight_only_before_wait": 0.00039939297130331397,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_probe_capture_is_not_serving_evidence": 0.020920064998790622,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_profile_default_on_and_cache_identity": 0.0002604959881864488,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_protocol_wait_and_publication_order": 0.0001460330095142126,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_runtime_failure_does_not_split_collectives": 0.003211445000488311,
+          "test_megakernel_ar_consumer_regressions.ConsumerTests.test_standalone_pre_packs_the_real_three_dimensional_weight_view": 0.051871506962925196
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_moe_reform_sf_pack.py",
+        "/evidence/result-individual-3.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 1.112,
+      "log": "/evidence/result-individual-3.log",
+      "skipped": [],
+      "tests_run": 10,
+      "counts": {
+        "tests_run": 10,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_moe_reform_sf_pack.ByteContract.test_all_byte_codes_and_packing_boundaries",
+          "test_moe_reform_sf_pack.ByteContract.test_byte_map_matches_nvfp4_row_and_k_coordinates",
+          "test_moe_reform_sf_pack.ByteContract.test_fc2_real_cute_layout_anchor",
+          "test_moe_reform_sf_pack.ByteContract.test_full_code_range_falls_back_without_clipping",
+          "test_moe_reform_sf_pack.ByteContract.test_rejects_invalid_encodings_and_geometry",
+          "test_moe_reform_sf_pack.DispatchContract.test_defaults_stay_off_and_q_stays_probe_only",
+          "test_moe_reform_sf_pack.TensorContract.test_actual_packer_rejects_bad_storage",
+          "test_moe_reform_sf_pack.TensorContract.test_actual_torch_packer_both_planes_and_source_retention",
+          "test_moe_reform_sf_pack.TensorContract.test_chunk_edges_and_both_plane_admission",
+          "test_moe_reform_sf_pack.TensorContract.test_serving_cache_generation_and_owner_lifetime"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_moe_reform_sf_pack.ByteContract.test_all_byte_codes_and_packing_boundaries": 0.013323830033186823,
+          "test_moe_reform_sf_pack.ByteContract.test_byte_map_matches_nvfp4_row_and_k_coordinates": 0.07201397098833695,
+          "test_moe_reform_sf_pack.ByteContract.test_fc2_real_cute_layout_anchor": 1.9311963114887476e-05,
+          "test_moe_reform_sf_pack.ByteContract.test_full_code_range_falls_back_without_clipping": 0.0001656159874983132,
+          "test_moe_reform_sf_pack.ByteContract.test_rejects_invalid_encodings_and_geometry": 0.0011242420296184719,
+          "test_moe_reform_sf_pack.DispatchContract.test_defaults_stay_off_and_q_stays_probe_only": 0.02799118001712486,
+          "test_moe_reform_sf_pack.TensorContract.test_actual_packer_rejects_bad_storage": 0.0020684829796664417,
+          "test_moe_reform_sf_pack.TensorContract.test_actual_torch_packer_both_planes_and_source_retention": 0.042054722958710045,
+          "test_moe_reform_sf_pack.TensorContract.test_chunk_edges_and_both_plane_admission": 0.00253488402813673,
+          "test_moe_reform_sf_pack.TensorContract.test_serving_cache_generation_and_owner_lifetime": 0.04468831099802628
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_decode_next_cpu_runner.py",
+        "/evidence/result-individual-4.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.053,
+      "log": "/evidence/result-individual-4.log",
+      "skipped": [],
+      "tests_run": 7,
+      "counts": {
+        "tests_run": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_decode_next_cpu_runner.RunnerTests.test_absent_auto_removed_container_counts_as_clean",
+          "test_decode_next_cpu_runner.RunnerTests.test_missing_or_duplicate_spec_cannot_hide_behind_pass",
+          "test_decode_next_cpu_runner.RunnerTests.test_partial_stage_success_does_not_claim_complete_gate",
+          "test_decode_next_cpu_runner.RunnerTests.test_payload_timeout_receipt_survives_both_cleanup_timeouts",
+          "test_decode_next_cpu_runner.RunnerTests.test_requested_dynamic_arm_must_also_compile",
+          "test_decode_next_cpu_runner.RunnerTests.test_successful_compile_with_failed_cleanup_is_not_pass",
+          "test_decode_next_cpu_runner.RunnerTests.test_transport_receipt_requires_requested_modes_and_no_context"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_decode_next_cpu_runner.RunnerTests.test_absent_auto_removed_container_counts_as_clean": 0.00011555198580026627,
+          "test_decode_next_cpu_runner.RunnerTests.test_missing_or_duplicate_spec_cannot_hide_behind_pass": 0.00011595198884606361,
+          "test_decode_next_cpu_runner.RunnerTests.test_partial_stage_success_does_not_claim_complete_gate": 0.000814561964944005,
+          "test_decode_next_cpu_runner.RunnerTests.test_payload_timeout_receipt_survives_both_cleanup_timeouts": 0.0005245130159892142,
+          "test_decode_next_cpu_runner.RunnerTests.test_requested_dynamic_arm_must_also_compile": 2.518401015549898e-05,
+          "test_decode_next_cpu_runner.RunnerTests.test_successful_compile_with_failed_cleanup_is_not_pass": 0.0006418570410460234,
+          "test_decode_next_cpu_runner.RunnerTests.test_transport_receipt_requires_requested_modes_and_no_context": 0.0015353779890574515
+        },
+        "failure_details": []
+      }
+    }
+  ],
+  "passed": true,
+  "coverage_complete": true,
+  "tests_run": 71160
+}

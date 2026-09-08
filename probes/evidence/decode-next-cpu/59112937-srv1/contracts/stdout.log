@@ -1,0 +1,194 @@
+CPU core: /usr/bin/python3 tests/test_logic.py --component core
+09 knobs) ... OK
+  profile keys have readers (152) ... OK
+  bf16-release guards ........... OK
+  DSpark speed-path guards ...... OK
+  acceptance lever guards ....... OK
+  ngram-ceiling sim math ........ OK
+  UE8M0 scale repair ............. OK
+  EP stock top-k chunks .......... OK
+  EP fixed/stock output init ..... OK
+  b12x zero-weight micro ......... OK
+  GLM53 b12x tuning controls ..... OK
+  b12x static v2 controls ........ OK
+  EP micro chunk width .......... OK
+  EP tail fixed shape ........... OK
+  EP compact shape align ........ OK
+  EP compact warmup ladder ...... OK
+  *_once args hashable .......... OK
+  dflash2 selector check ........ OK
+  dflash2 selector score precision  OK
+  overlay logger defined ........ OK
+  osar MAXEL rank agreement ..... OK
+  bench served-model resolve .... OK
+  extra-env comma guard ......... OK
+  torch imports guarded ......... OK
+  dflash2 conv mask buffer ....... OK
+  dflash AOT guard stays removed  OK
+  hot-path env latches ........... OK
+  launcher load-format gate ..... OK
+  launcher reject-method gate ... OK
+  dflash2 prefix-cache fail-closed  OK
+  accept profile arithmetic ..... OK
+  DSV4 launcher adoptions ....... OK
+  launcher nofile limit ......... OK
+  prefill ladder probe .......... OK
+  fp8 acceptance contracts ....... OK
+  glm53 V2/deploy contracts ...... OK
+  launcher head guard .......... OK
+  preflight applies GMU ......... OK
+  no hardcoded image paths ...... OK
+  b12x EP routing ................ OK
+  b12x EP preflight .............. OK
+  b12x EP launcher ............... OK
+  deploy refusal exits non-zero .. OK
+  fp8-dense nvfp4 scheme contract .. OK
+  benches ask the server for the model .. OK
+  korean gate notation vs damage .. OK
+  every module is mounted or explained .. OK
+  profile knobs are all readable .. OK
+  fp8-dense bf16 release contract .. OK
+  mhc probe contracts ............ OK
+  mhc bigfuse knob ............... OK
+  census KDA group ............... OK
+  census owner axis .............. OK
+  census streaming reader ....... OK
+  trace step tail cut ........... OK
+  profiles README module table .. OK
+  dflash warmup buckets .......... OK
+  DSV4 spec warmup contract ...... OK
+  DSV4 UE8M0 host guard ......... OK
+  GLM53 kpool packed scratch ...... OK
+  GLM53 KDA prefill regimes ....... OK
+  GLM53 KDA prefill direct out ... OK
+  GLM53 upstream prefill batch ..... OK
+  one-shot SM121 grid contract .... OK
+  cuda builds keep the sm_121a-specific target .. OK
+  self-built kernels persist their caches .. OK
+  boot stamps measure without changing the boot .. OK
+  cudagraph mem profiling off keeps kv size .. OK
+  kv cache is pinned in tokens ... OK
+  earlyoom fireable on UMA ...... OK
+  fp8-dense drafter patterns + opaque op .. OK
+  spec_k compile factor .. OK
+  dev lab contracts .. OK
+  mk head lane contracts .......... OK
+  ab runner measures both ....... OK
+  osar wait is split by message size .. OK
+  osar prefetch hints contract .. OK
+  glm53_dflash_early_fc contracts .. OK
+  glm53_drafter_prep contracts .... OK
+  indexer decode fused contracts .. OK
+  drafter ctx-KV W4 contracts ..... OK
+  trace step nodes tool ........... OK
+  micro-fusion bundle 2 contracts .. OK
+  glm53 megakernel contracts .. OK
+  prefill warmup contracts ... OK
+  w4 layout roundtrip ...... OK
+  megakernel core is shared ..... OK
+  glm53 prep fused contracts .. OK
+  launcher continued-string assignments carry no comments .. OK
+  launcher restores PREFILL_WARMUP from caller env .. OK
+  decode-first scheduler contracts .. OK
+  profile keys not via EXTRA_ENV .. OK
+  glm53 IndexCache layer rule ... OK
+  glm53 indexer gate split-K contracts .. OK
+  bracket runner contracts .. OK
+  trace composition analyze .. OK
+  drafter fc probe contracts .. OK
+  fp8-dense build peak .......... OK
+  hy4 entry point parity ........ OK
+  common tp4 library ............ OK
+  worker envv not re-parsed ..... OK
+  supervisor relaunch pacing .... OK
+core OK (71123 checks; 50 megakernel regressions; 0 fleet regressions)
+
+CPU individual: /usr/bin/python3 bench/cpu_unittest.py tests/test_ar_transport_next.py /evidence/result-individual-1.counts.json
+[osar] consumer PDL CAPTURED numel=1
+[oneshot] compact AR CAPTURED numel=1 ctas=12 tickets=48
+[osar] source md5=a2d7bc9d kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] source md5=a2d7bc9d kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] source md5=a2d7bc9d kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] source md5=a2d7bc9d kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] source md5=dbaa9e2e kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] connected rank=0 world=4 shadow=True
+[osar] transport modes differ across ranks -> NCCL
+[osar] local setup failed on rank 0: RuntimeError('transport mode build mismatch: [0, 1, 8, 8, 8]')
+[osar] 3/4 ranks ready -> every rank stays on NCCL
+[osar] local setup failed on rank 0: RuntimeError('transport inline capability missing: [1, 1, 8, 7, 8]')
+[osar] 3/4 ranks ready -> every rank stays on NCCL
+[osar] local setup failed on rank 0: RuntimeError('transport mode build mismatch: [1, 1, 8, 8, 8]')
+[osar] 3/4 ranks ready -> every rank stays on NCCL
+[osar] connected rank=0 world=4 shadow=True
+test_actual_geometry_and_publication_helpers (test_ar_transport_next.TransportTests.test_actual_geometry_and_publication_helpers) ... ok
+test_actual_inline_descriptors_with_mock_verbs_and_ring_reuse (test_ar_transport_next.TransportTests.test_actual_inline_descriptors_with_mock_verbs_and_ring_reuse) ... ok
+test_compact_capture_and_poison_failure_dispatch (test_ar_transport_next.TransportTests.test_compact_capture_and_poison_failure_dispatch) ... ok
+test_header_and_mode_flags_bind_the_actual_build (test_ar_transport_next.TransportTests.test_header_and_mode_flags_bind_the_actual_build) ... ok
+test_modes_are_exact_opt_in (test_ar_transport_next.TransportTests.test_modes_are_exact_opt_in) ... ok
+test_nonfinite_error_cannot_hide_behind_exact_baseline (test_ar_transport_next.TransportTests.test_nonfinite_error_cannot_hide_behind_exact_baseline) ... ok
+test_publication_and_proxy_integration_keep_order (test_ar_transport_next.TransportTests.test_publication_and_proxy_integration_keep_order) ... ok
+test_rank_mode_mismatch_declines_before_connect (test_ar_transport_next.TransportTests.test_rank_mode_mismatch_declines_before_connect) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.955s
+
+OK
+
+CPU individual: /usr/bin/python3 bench/cpu_unittest.py tests/test_megakernel_ar_consumer_regressions.py /evidence/result-individual-2.counts.json
+[osar] consumer PDL CAPTURED numel=4096
+[megakernel] mhc-bf16 CAPTURED T=12 cached=1
+[megakernel] mhc-bf16 CAPTURED T=6 cached=1
+[megakernel] mhc-bf16 CAPTURED T=12 cached=1
+[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True
+[megakernel] mhc-bf16 CAPTURED T=6 cached=1
+[megakernel] AR consumer MHC CAPTURED T=6 bf16=False vec4=False
+test_bf16_layout_preserves_every_bit_pattern (test_megakernel_ar_consumer_regressions.ConsumerTests.test_bf16_layout_preserves_every_bit_pattern) ... ok
+test_collective_ownership_covers_actual_vector_and_tail_accesses (test_megakernel_ar_consumer_regressions.ConsumerTests.test_collective_ownership_covers_actual_vector_and_tail_accesses) ... ok
+test_eligibility_and_capture_dispatch (test_megakernel_ar_consumer_regressions.ConsumerTests.test_eligibility_and_capture_dispatch) ... ok
+test_exact_environment_gate (test_megakernel_ar_consumer_regressions.ConsumerTests.test_exact_environment_gate) ... ok
+test_large_warmup_prepares_first_small_capture_without_repacking (test_megakernel_ar_consumer_regressions.ConsumerTests.test_large_warmup_prepares_first_small_capture_without_repacking) ... ok
+test_layout_cache_preserves_graph_storage_and_versions (test_megakernel_ar_consumer_regressions.ConsumerTests.test_layout_cache_preserves_graph_storage_and_versions) ... ok
+test_mhc_weight_only_before_wait (test_megakernel_ar_consumer_regressions.ConsumerTests.test_mhc_weight_only_before_wait) ... ok
+test_probe_capture_is_not_serving_evidence (test_megakernel_ar_consumer_regressions.ConsumerTests.test_probe_capture_is_not_serving_evidence) ... ok
+test_profile_default_on_and_cache_identity (test_megakernel_ar_consumer_regressions.ConsumerTests.test_profile_default_on_and_cache_identity) ... ok
+test_protocol_wait_and_publication_order (test_megakernel_ar_consumer_regressions.ConsumerTests.test_protocol_wait_and_publication_order) ... ok
+test_runtime_failure_does_not_split_collectives (test_megakernel_ar_consumer_regressions.ConsumerTests.test_runtime_failure_does_not_split_collectives) ... ok
+test_standalone_pre_packs_the_real_three_dimensional_weight_view (test_megakernel_ar_consumer_regressions.ConsumerTests.test_standalone_pre_packs_the_real_three_dimensional_weight_view) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 1.423s
+
+OK
+
+CPU individual: /usr/bin/python3 bench/cpu_unittest.py tests/test_moe_reform_sf_pack.py /evidence/result-individual-3.counts.json
+[b12x sf6] prepared FC1+FC2; raw prefill scales retained; packed bytes=18624
+[b12x sf6] prepared FC1+FC2; raw prefill scales retained; packed bytes=18624
+test_all_byte_codes_and_packing_boundaries (test_moe_reform_sf_pack.ByteContract.test_all_byte_codes_and_packing_boundaries) ... ok
+test_byte_map_matches_nvfp4_row_and_k_coordinates (test_moe_reform_sf_pack.ByteContract.test_byte_map_matches_nvfp4_row_and_k_coordinates) ... ok
+test_full_code_range_falls_back_without_clipping (test_moe_reform_sf_pack.ByteContract.test_full_code_range_falls_back_without_clipping) ... ok
+test_rejects_invalid_encodings_and_geometry (test_moe_reform_sf_pack.ByteContract.test_rejects_invalid_encodings_and_geometry) ... ok
+test_defaults_stay_off_and_q_stays_probe_only (test_moe_reform_sf_pack.DispatchContract.test_defaults_stay_off_and_q_stays_probe_only) ... ok
+test_actual_packer_rejects_bad_storage (test_moe_reform_sf_pack.TensorContract.test_actual_packer_rejects_bad_storage) ... ok
+test_actual_torch_packer_both_planes_and_source_retention (test_moe_reform_sf_pack.TensorContract.test_actual_torch_packer_both_planes_and_source_retention) ... ok
+test_chunk_edges_and_both_plane_admission (test_moe_reform_sf_pack.TensorContract.test_chunk_edges_and_both_plane_admission) ... ok
+test_serving_cache_generation_and_owner_lifetime (test_moe_reform_sf_pack.TensorContract.test_serving_cache_generation_and_owner_lifetime) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 1.639s
+
+OK
+
+CPU individual: /usr/bin/python3 bench/cpu_unittest.py tests/test_decode_next_cpu_runner.py /evidence/result-individual-4.counts.json
+test_absent_auto_removed_container_counts_as_clean (test_decode_next_cpu_runner.RunnerTests.test_absent_auto_removed_container_counts_as_clean) ... ok
+test_missing_or_duplicate_spec_cannot_hide_behind_pass (test_decode_next_cpu_runner.RunnerTests.test_missing_or_duplicate_spec_cannot_hide_behind_pass) ... ok
+test_partial_stage_success_does_not_claim_complete_gate (test_decode_next_cpu_runner.RunnerTests.test_partial_stage_success_does_not_claim_complete_gate) ... ok
+test_payload_timeout_receipt_survives_both_cleanup_timeouts (test_decode_next_cpu_runner.RunnerTests.test_payload_timeout_receipt_survives_both_cleanup_timeouts) ... ok
+test_requested_dynamic_arm_must_also_compile (test_decode_next_cpu_runner.RunnerTests.test_requested_dynamic_arm_must_also_compile) ... ok
+test_successful_compile_with_failed_cleanup_is_not_pass (test_decode_next_cpu_runner.RunnerTests.test_successful_compile_with_failed_cleanup_is_not_pass) ... ok
+test_transport_receipt_requires_requested_modes_and_no_context (test_decode_next_cpu_runner.RunnerTests.test_transport_receipt_requires_requested_modes_and_no_context) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.006s
+
+OK
+

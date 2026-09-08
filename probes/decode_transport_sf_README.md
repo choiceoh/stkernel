@@ -78,3 +78,31 @@ flags in all four ranks and the full `t,r,sf6` kernel, including fallback,
 changed inputs and retained graph lifetimes. The existing baseline-only AR
 GPU runner does not establish correctness of enabled follow-up flags.
 Prior #473 GPU receipts cannot validate changed transport code or its header.
+
+## Recorded CPU validation: 2026-09-09
+
+All 11 required CPU stages passed for production code `e8e20130`.
+The [summary](evidence/decode-next-cpu/summary.json) selects successful stages,
+verifies their log hashes and records the component source paths compared
+between commits. Original failed/partial reports are retained unchanged.
+No failed stage supplies successful coverage, and no transport compiler was
+repeated after the scale-only correction.
+
+| Gate | Result |
+| --- | --- |
+| Serving-image core and focused tests | 71,123 core assertions, including 50 megakernel regression cases; 37 additional test cases passed, zero skips |
+| Native transport | All four compact/inline combinations compiled; actual extension modes and CUDA-not-initialized checked |
+| Serving MoE at max_rows=640 | `t,r` and `t,r,sf6` compiled for M=2/6/8/16; actual FC1/FC2 byte maps passed for the eligible shapes |
+| Compatibility | `u`, `v`, `t`, probe-only `t,q`, and tiled prefill compiled |
+| Production expansion helper | 2048/4096-byte methods compiled, plus sf6 M=1/2/6/8 and raw M=16 fallback at max_rows=128 |
+
+The immutable image is Torch 2.13.0+cu130 / CUDA 13.0. Transport ran on srv1,
+and final scale gates ran on srv2, all through the official CPU lane using
+device-free, network-free containers and fresh caches. A retry on srv1 was
+declined by the 12 GiB memory guard before creating a container; it moved to
+the node with available memory without changing that guard.
+
+The first actual CuTe check caught an FC2 ordering error: shared memory needs
+`[K64][row128][512B]` order. Commit `09d68b64` fixes packing and adds the exact
+coordinate regression. The final probe-only fix resolves annotations at
+definition time (`e8e20130`). Device execution and step speed remain unmeasured.

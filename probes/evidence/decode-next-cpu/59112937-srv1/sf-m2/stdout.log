@@ -1,0 +1,56 @@
+2026-09-08 15:52:54,932 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256_f02b9d0e21f131e7
+DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-08 15:52:56,861 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256_f02b9d0e21f131e7.o
+[b12x static v2] lane serving: static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256 (mac=48, m=2, routed=16, smem=98304 B)
+2026-09-08 15:52:56,863 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_ee9cdc675bcef8a9
+[t,r] compiled in 2.0 s: ['static_v2:32/2/2/32/False'] mac=48
+DECODE_REFORM_LAYOUT_PASS 1024
+Traceback (most recent call last):
+  File "/repo/probes/b12x_static_compile_check.py", line 62, in main
+    compiled, mac = md._get_static_kernel_v2(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 2228, in _get_static_kernel_v2
+    compiled = build_and_load_cute_dsl_kernel(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 309, in build_and_load_cute_dsl_kernel
+    return spec.build_and_load()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/core.py", line 320, in build_and_load
+    self.build()
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 178, in build
+    self._compiled_kernel = self.compile_fn()
+                            ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 2231, in <lambda>
+    lambda: cute.compile(
+            ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/compiler.py", line 1250, in __call__
+    return self._compile(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/compiler.py", line 1396, in _compile
+    return func._dsl_object._func(func, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2782, in _func
+    return self._func_impl(funcBody, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2795, in _func_impl
+    result = self.generate_mlir(
+             ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2318, in generate_mlir
+    module, module_hash, result = self.generate_original_ir(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 1987, in generate_original_ir
+    module, result = build_ir_module()
+                     ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 1948, in build_ir_module
+    result = funcBody(*ir_args, **ir_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py", line 121, in __call__
+    self._setup_attributes(hidden_size=hidden_size)
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py", line 459, in _setup_attributes
+    self._verify_reform_sf_layout(hidden_size)
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py", line 492, in _verify_reform_sf_layout
+    assert actual == expected, (kind, e, rt, kt, row, col, actual, expected)
+           ^^^^^^^^^^^^^^^^^^
+AssertionError: ('fc2', 0, 0, 0, 0, 4, 512, 4096)
+[t,r,sf6] COMPILE FAIL after 0.5 s: AssertionError: ('fc2', 0, 0, 0, 0, 4, 512, 4096)
+VERDICT: FAIL
