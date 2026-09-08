@@ -325,11 +325,20 @@ IDs before reserving expert rows, quantizes original token rows and scatters
 directly to the caller output. Existing EP compact prefill and decode
 fallbacks remain for other shapes. The source pin and a separate artifact
 key prevent stock-kernel execution on invalid remote IDs. Both flags stay
-default-off; GPU correctness, routing sensitivity, memory and direct TTFT
-are unmeasured. See `docs/GLM53_EP_PREFILL_LOCAL.md`.
+default-off. The preceding v2 source passed eight plain component numerical
+fixtures; its five timed cases improved 2.105x–3.545x versus the E72 compact
+wrapper, excluding remap, shared expert, transport and full-model prefill.
+The first sanitizer failed to start (missing path, exit 127), followed by exact
+original restoration and normal fleet release. These results do not establish
+production TP4/TTFT improvement. See `docs/GLM53_EP_PREFILL_LOCAL.md` and
+`measurements/glm53_ep_local_20260908/attempt2/README.md`.
 
 The admitted candidate uses a single Triton remap into existing scratch and
 prepares expert scales once per CTA in dead histogram storage. Its fallback
 retains the original Torch remap. The new source passed no-device CuTe and
-24-specialization Triton compilation plus 29 pinned CPU tests; GPU proof
-must include remap and changed scales before attributing any speed gain.
+24-specialization Triton compilation plus 37 pinned CPU tests in cpu7; the
+earlier cpu6 receipt retains its 29-test result. CuTe resources remain
+REG168 STACK1040 SHARED1024. The head's pinned Compute Sanitizer 2025.3.1.0
+version check also passed without CUDA devices. This is a preflight, not a
+memcheck/racecheck result. New-source GPU proof remains pending and must
+include remap and changed scales before attributing any speed gain.

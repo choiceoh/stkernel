@@ -56,20 +56,40 @@ forecast. Global useful FLOPs remain unchanged by TP-to-EP repartitioning;
 75% fewer experts per rank is not a 75% speedup. The 1.40x direct prefill
 throughput objective remains open.
 
-The final candidate passed actual E72/I2048 CuTe compilation and 29 focused
+The final candidate passed actual E72/I2048 CuTe compilation and 37 focused
 CPU tests without skips in the immutable-image no-device runner. CUDA remained
 uninitialized. All 24 admitted Triton dtype/branch specializations also
-compiled for explicit SM121 without a device. [Final compilation evidence](../measurements/glm53_ep_local_20260908/cpu6/README.md)
-records 168 registers and 1040 stack bytes, compared with 168/1520 for the
+compiled for explicit SM121 without a device. [Final compilation evidence](../measurements/glm53_ep_local_20260908/cpu7/README.md)
+for source `38aa70f239e1e5a5b9052ae7839438eccadf66dc` records 168 registers,
+1040 stack bytes and 1024 shared bytes, compared with 168/1520 registers/stack for the
 original candidate. This 480-byte (31.6%) stack reduction is a compiler
-resource result, not a GPU latency result. The unchanged stock generic
+resource result, not a GPU latency result. Its CuTe PTX and cubin hashes are
+unchanged from the historical [cpu6 compilation](../measurements/glm53_ep_local_20260908/cpu6/README.md),
+which passed 29 tests before the sanitizer preflight contracts were added.
+The unchanged stock generic
 E72/I2048 arm last compiled at 255 registers and 432 stack bytes in
 [cpu4](../measurements/glm53_ep_local_20260908/cpu4/README.md).
 
-The preceding source `36d4f006bdb0850011dccdbe2a5b8de64789e0b3` began normal
-fleet GPU validation as `eplocal0908v2`. Its frozen source is unchanged and
-its result cannot validate the new remap or CTA scale cache. Separate
-same-source GPU proof is required for these refinements.
+The preceding source `36d4f006bdb0850011dccdbe2a5b8de64789e0b3` completed
+eight plain GPU fixtures as `eplocal0908v2`; all passed the numerical gates.
+[Attempt 2 evidence](../measurements/glm53_ep_local_20260908/attempt2/README.md)
+records 2.105x–3.545x compact-to-local component speedups across the five
+timed balanced/concentrated fixtures. Both arms received pre-remapped routes;
+these single-GB10 timings exclude remap, shared expert, transport and full-model
+prefill. Remote, duplicate and zero-weight fixtures were not timed. The first
+memcheck cell failed before execution because the configured sanitizer path
+did not exist (exit 127); no memcheck/racecheck verdict was obtained. The exact
+four-node original service was restored, and normal fleet release is recorded
+at 15:30:44 KST. This result cannot validate the newer fused remap or CTA
+scale cache, or establish production TP4/TTFT improvement.
+
+The intervening v3 queue entry was cancelled normally before its payload ran.
+GPU proof for the newest source is still pending; the corrected v4 submission
+is a subsequent step, not a completed validation. The head's no-device
+sanitizer preflight now passes with Compute Sanitizer 2025.3.1.0, whose
+executable SHA-256 is pinned and recorded in
+[cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md). Running its
+version check does not provide device memcheck or racecheck evidence.
 
 The isolated GPU runner uses the actual legacy compact wrapper as its control
 with the profile's 8192-token pair-slice capacity. Eight fixtures cover balanced,
@@ -90,7 +110,8 @@ NaN payloads, infinities and signed zero. It also runs under each sanitizer.
 
 Before any service inventory or pause, the runner verifies that every mounted
 MoE source and probe/test contract matches the passing no-device compilation
-receipt. Missing or stale proof fails closed. The GPU container checks the
+receipt and runs a bounded no-device check of the pinned sanitizer executable.
+Missing or stale proof fails closed. The GPU container checks the
 installed source hashes again. A tested normal-fleet
 lifecycle stops and restores exact incoming containers around these checks.
 GPU correctness and sanitizer checks must
