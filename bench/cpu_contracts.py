@@ -13,9 +13,11 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited against b1afa41: only a full-runner graph regression wrapper
-# and its invocation are added. All other upstream AST nodes are identical.
-LOGIC_AUDIT = 'bca5684f02ba4e84eb54420b5a145cbd63a14f21ed3b2d97d6b363e3a1c8812a'
+# Re-audited against 0f8bcf6 + the 40차 IndexCache fix: the added AST nodes are
+# test_glm53_index_cache_layer_rule, its call, and the chunk-file cases inside
+# test_decode_first_scheduler_contracts. None of the three audited helpers,
+# their tests or the access graphs in DEPENDENCY_AUDITS are touched.
+LOGIC_AUDIT = 'e5a79d23774129c2caba475f9375e81c1aea8ba3e1d61e4489aa1dfd372ccc7b'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

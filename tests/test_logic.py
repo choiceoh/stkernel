@@ -6608,7 +6608,8 @@ def test_decode_first_scheduler_contracts() -> None:
     env_keys = ("VLLM_GLM53_SCHED_MODE", "VLLM_GLM53_SCHED_MAX_WAIT_S", "VLLM_GLM53_SCHED_DECODE_STEPS", "VLLM_GLM53_SCHED_CHUNK_REF_CTX",
                 "VLLM_GLM53_SCHED_CHUNK_MAX",
                 "VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_EVERY", "VLLM_GLM53_SCHED_MIN_DECODERS",
-                "VLLM_GLM53_SCHED_FAIR", "VLLM_GLM53_SCHED_PREFILL_FLOOR", "VLLM_GLM53_SCHED_FLOOR_GRACE_S")
+                "VLLM_GLM53_SCHED_FAIR", "VLLM_GLM53_SCHED_PREFILL_FLOOR", "VLLM_GLM53_SCHED_FLOOR_GRACE_S",
+                "VLLM_GLM53_SCHED_CHUNK_FILE")
     saved_env = {k: os.environ.pop(k, None) for k in env_keys}
     sys.modules.update(fakes)
     clock = [100.0]
@@ -6833,6 +6834,49 @@ def test_decode_first_scheduler_contracts() -> None:
         m.running = [dec(), dec(), pre("x")]
         m.schedule()
         check(m.calls[-1][1] == 1, "at min_decoders -> capped")
+        # ---- the dev instrument (40차): a chunk file pins the chunk for a
+        # sweep, including the SOLO prefill this scheduler otherwise leaves to
+        # stock -- that is the case the small-chunk penalty lives in.
+        import tempfile
+        for k in ("VLLM_GLM53_SCHED_MIN_DECODERS", "VLLM_GLM53_SCHED_PREFILL_EVERY",
+                  "VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_FLOOR",
+                  "VLLM_GLM53_SCHED_FLOOR_GRACE_S"):
+            os.environ.pop(k, None)
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "chunk")
+            os.environ["VLLM_GLM53_SCHED_CHUNK_FILE"] = path
+            c = Sched()
+            check(c.chunk_file == path and any("chunk_file=" + path in w for w in warnings),
+                  "the instrument is named in the armed line so a boot log says whether it is on")
+            c.running = [pre("solo", 0)]; c.waiting = []
+            clock[0] = 700.0
+            c.schedule()
+            check(c.calls[-1][:2] == (False, 0), "no file yet -> off: the solo prefill is stock, uncapped")
+            open(path, "w").write("2304\n")
+            clock[0] = 700.5
+            c.schedule()
+            check(c.calls[-1][:2] == (False, 2304), "the file's chunk caps a SOLO prefill (no decoder in play)")
+            check(c.scheduler_config.long_prefill_token_threshold == 0, "and the stock threshold is restored after the step")
+            open(path, "w").write("junk")
+            clock[0] = 701.0
+            c.schedule()
+            check(c.calls[-1][:2] == (False, 0), "junk in the file reads as off, never as a crash on the serving path")
+            # absolute: it replaces the planned chunk on a mixed step too
+            open(path, "w").write("4608")
+            os.environ["VLLM_GLM53_SCHED_MODE"] = "mixed"
+            c2 = Sched()
+            c2.running = [dec(), pre("long", 100000)]; c2.waiting = []
+            clock[0] = 702.0
+            c2.schedule()
+            check(c2.calls[-1][:2] == (False, 4608) and c2._capped_steps == 1,
+                  "on a planned prefill step the file wins over the plan's chunk")
+            os.environ.pop("VLLM_GLM53_SCHED_CHUNK_FILE")
+            c3 = Sched()
+            c3.running = [pre("solo2", 0)]; c3.waiting = []
+            clock[0] = 703.0
+            c3.schedule()
+            check(c3.calls[-1][:2] == (False, 0) and c3.chunk_file == "",
+                  "unset (production) -> the instrument is not even consulted")
     finally:
         for name, old in saved_modules.items():
             if old is None:
@@ -6854,7 +6898,9 @@ def test_decode_first_scheduler_contracts() -> None:
           "DECODE_FIRST=1 reaches vLLM as --scheduler-cls and is a caller-overridable profile key")
     check('DECODE_FIRST=1 needs ASYNC_SCHED=1' in launcher, "launcher refuses DECODE_FIRST without the async scheduler")
     check("\nDECODE_FIRST=1\n" in profile and all(f"\n{k}=" in profile for k in env_keys),  # 39차 DF4: promoted
-          "profile declares DECODE_FIRST=1 and the eleven VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+          "profile declares DECODE_FIRST=1 and the twelve VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+    check("\nVLLM_GLM53_SCHED_CHUNK_FILE=\n" in profile,
+          "the dev instrument is declared EMPTY: the launcher forwards a profile knob only when it is non-empty")
     check("\nVLLM_GLM53_SCHED_MODE=sequential\n" in profile and "\nVLLM_GLM53_SCHED_MAX_WAIT_S=20\n" in profile
           and "\nVLLM_GLM53_SCHED_DECODE_STEPS=6\n" in profile
           and "\nVLLM_GLM53_SCHED_MIXED_CHUNK=1152\n" in profile and "\nVLLM_GLM53_SCHED_CHUNK_REF_CTX=32768\n" in profile
@@ -10105,6 +10151,71 @@ def test_profile_keys_not_passed_via_extra_env() -> None:
 
 
 
+def test_glm53_index_cache_layer_rule() -> None:
+    """IndexCache (40차): the reuse frequency counts INDEXER layers, so on
+    GLM-5.3's interleaved stack (11 of 45) the FIRST one always computes its own
+    top-k. The inherited global-layer-id rule skipped layer 3, whose shared
+    topk_indices_buffer nothing had written that step."""
+    ns = load_defs("overlay/modules/glm53_model/glm5next_attention.py",
+                   {"_indexer_layer_ids", "_resolve_skip_topk"}, {})
+    ids, skip = ns["_indexer_layer_ids"], ns["_resolve_skip_topk"]
+    glm53 = [3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43]
+    types = ["deepseek_sparse_attention" if i in glm53 else "linear_attention" for i in range(45)]
+
+    class _Cfg:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    check(ids(_Cfg(layer_types=types)) == glm53,
+          "layer_types names the indexer layers (GLM-5.3: 11 of 45)")
+    check(ids(_Cfg(linear_attn_config={"full_attn_layers": list(reversed(glm53))})) == glm53,
+          "linear_attn_config.full_attn_layers is the fallback, in order")
+    check(ids(_Cfg()) == [], "no layer map -> no indexer layers -> reuse stays off")
+
+    off = _Cfg(layer_types=types, index_topk_freq=6)
+    check(not any(skip(off, i) for i in range(45)), "use_index_cache off must not skip any layer")
+
+    on6 = _Cfg(layer_types=types, use_index_cache=True, index_topk_freq=6)
+    computed = [i for i in glm53 if not skip(on6, i)]
+    check(computed == [3, 27], f"freq=6 computes ordinals 0 and 6 = layers 3 and 27, got {computed}")
+    check(not skip(on6, 3), "the FIRST indexer layer always computes (the buffer it would read is unwritten)")
+    check(not any(skip(on6, i) for i in range(45) if i not in glm53),
+          "a KDA layer runs no indexer at all, so it is never a reuse layer")
+    # the old rule is the bug, not a variant: it skipped layer 3 and computed 4 of 11
+    check([i for i in glm53 if not (max(i - 1, 0) % 6 != 0)] == [7, 19, 31, 43],
+          "control: the inherited global-id rule computes 4 of 11 and skips the first")
+    attn_src = open(_overlay_source("overlay/modules/glm53_model/glm5next_attention.py"),
+                    encoding="utf-8").read()
+    check("max(layer_id - 1, 0) %" not in attn_src, "the global-layer-id rule is gone from the overlay")
+
+    on2 = _Cfg(layer_types=types, use_index_cache=True, index_topk_freq=2)
+    check([i for i in glm53 if not skip(on2, i)] == glm53[::2], "freq=2 computes every other indexer layer")
+    pat = _Cfg(layer_types=types, use_index_cache=True, index_topk_freq=6,
+               index_topk_pattern=["S" if i == 7 else "F" for i in range(45)])
+    check(skip(pat, 7) and not skip(pat, 3) and not skip(pat, 11),
+          "an explicit index_topk_pattern wins over the frequency")
+
+    launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check("\nINDEX_CACHE_FREQ=0\n" in profile and profile.count("\nINDEX_CACHE_FREQ=") == 1,
+          "profile declares INDEX_CACHE_FREQ exactly once and OFF (it is an approximation, unmeasured)")
+    check("MAMBA_CACHE_DTYPE INDEX_CACHE_FREQ" in launcher,
+          "INDEX_CACHE_FREQ is a caller-overridable profile key")
+    check('ABORT: INDEX_CACHE_FREQ must be a non-negative integer' in launcher,
+          "a non-numeric frequency aborts the boot instead of reaching vLLM")
+    check("""--hf-overrides '{\\"use_index_cache\\":true,\\"index_topk_freq\\":$INDEX_CACHE_FREQ}'""" in launcher
+          and "${HF_OVERRIDES_FLAG:+$HF_OVERRIDES_FLAG }\\" in launcher,
+          "the JSON reaches vLLM single-quoted (a bare {\"a\":1,\"b\":2} is brace expansion in the remote shell)")
+    cfg_path = "/home/choiceoh/models/glm53-redhat-nvfp4/config.json"
+    if os.path.exists(cfg_path):
+        import json as _json
+        doc = _json.load(open(cfg_path, encoding="utf-8"))
+        text = doc.get("text_config", doc)
+        check(ids(_Cfg(layer_types=text["layer_types"])) == glm53,
+              "the served checkpoint still has these 11 indexer layers")
+    print("  glm53 IndexCache layer rule ... OK")
+
+
 def test_glm53_indexer_gate_splitk_contracts() -> None:
     """The profile adopts split-K on the checkpoint's small-M shape; the
     helper retains its explicit knob and stock fallback on other shapes."""
@@ -11709,6 +11820,7 @@ if __name__ == "__main__":
     test_launcher_restores_prefill_warmup_from_caller_env()
     test_decode_first_scheduler_contracts()
     test_profile_keys_not_passed_via_extra_env()
+    test_glm53_index_cache_layer_rule()
     test_glm53_indexer_gate_splitk_contracts()
     test_bracket_runner_contracts()
     test_trace_composition_analyze()
