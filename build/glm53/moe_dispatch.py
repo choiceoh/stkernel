@@ -3503,7 +3503,7 @@ class _DynamicMoELaunch:
             task_valid_rows_ptr, layout=cute.make_layout((max_tasks,), stride=(1,))
         )
         packed_args = ()
-        if cute.const_expr(self._reform_sf_pack):
+        if cutlass.const_expr(self._reform_sf_pack):
             packed_args = (sfb1_packed, sfb2_packed)
         self._kernel(
             a_input,
