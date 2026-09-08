@@ -10163,6 +10163,31 @@ def test_profile_keys_not_passed_via_extra_env() -> None:
 
 
 
+def test_mm_limit_video_slot_is_off_by_decision() -> None:
+    """40차: the video slot is paid at BOOT whether or not a video is ever sent
+    -- the encoder cache is sized by the largest profiled item, and the boot
+    says so ("Encoder cache will be initialized with a budget of 32242 tokens,
+    and profiled with 1 video items"). The per-phase device stamps price that
+    phase at +4.89 GiB, which on this unified-memory box is host RAM earlyoom
+    counts. Operator's call (2026-09-09): rarely used, so keep it off.
+
+    This is NOT the 39차 VID reading that video is broken -- the operator says
+    it works on this build, and that ledger entry is superseded. The pin exists
+    because nothing pinned this before and the setting has already flipped once
+    without a decision behind it."""
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    rows = [l for l in profile.splitlines() if l.startswith("MM_LIMIT=")]
+    check(len(rows) == 1, f"the profile declares MM_LIMIT exactly once: {rows}")
+    import json as _json
+    value = _json.loads(rows[0].split("=", 1)[1].strip().strip("'"))
+    check(value.get("video") == 0,
+          f"the video slot stays off until a video workload asks for it back: {value}")
+    check(value.get("image", 0) >= 1, f"images stay on: {value}")
+    check("+4.89 GiB" in profile or "4.89 GiB" in profile,
+          "the profile carries the measured cost this decision rests on")
+    print("  mm limit video slot off by decision ...... OK")
+
+
 def test_kv_block_zero_guard() -> None:
     """40차: the KV-zeroing Triton kernel writes to RAW ADDRESSES and nothing
     bounded the block index -- only the column inside a page was masked. The
@@ -11888,6 +11913,7 @@ if __name__ == "__main__":
     test_launcher_restores_prefill_warmup_from_caller_env()
     test_decode_first_scheduler_contracts()
     test_profile_keys_not_passed_via_extra_env()
+    test_mm_limit_video_slot_is_off_by_decision()
     test_kv_block_zero_guard()
     test_glm53_index_cache_layer_rule()
     test_glm53_indexer_gate_splitk_contracts()
