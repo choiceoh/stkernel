@@ -39,12 +39,20 @@ _CUBLAS_ROUTER_GEMM_F120 = (
 
 
 def _allow_cublas_router_gemm_family120(no_bias: bool) -> bool:
-    return (
+    allowed = (
         _CUBLAS_ROUTER_GEMM_F120
         and no_bias
         and current_platform.is_cuda()
         and current_platform.is_device_capability_family(120)
     )
+    if allowed:
+        # armed != serving: the knob can be on while the weight dtype or
+        # out_dtype still disqualify the tier, in which case nothing changed.
+        # This fires only from the two sites that decide eligibility, and only
+        # when the family-120 arm is the reason -- bench/proof-markers.tsv
+        # reads it.
+        logger.info_once("[router-gemm] family-120 cuBLAS out_dtype tier serving")
+    return allowed
 
 
 @PluggableLayer.register("gate_linear")

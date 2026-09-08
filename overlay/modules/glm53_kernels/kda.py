@@ -60,8 +60,23 @@ def _glm53_kda_addressable(x) -> bool:
     return True
 
 
+_KDA_STRIDED_SERVING = False
+
+
 def _glm53_kda_input(x):
+    global _KDA_STRIDED_SERVING
     if _KDA_STRIDED_INPUTS and _glm53_kda_addressable(x):
+        # armed != serving: the knob can be on and every input still arrive
+        # contiguous (a step whose slices came from index_select), in which case
+        # this lane is doing nothing. The marker fires on the first input that
+        # is genuinely token-strided, which is the only state worth measuring --
+        # bench/proof-markers.tsv reads it.
+        if not _KDA_STRIDED_SERVING and not x.is_contiguous():
+            _KDA_STRIDED_SERVING = True
+            from vllm.logger import init_logger
+            init_logger(__name__).warning(
+                "[kda-strided] token-strided recurrent inputs serving"
+            )
         return x
     return x.contiguous()
 from .utils import FLA_CHUNK_SIZE, is_amd
