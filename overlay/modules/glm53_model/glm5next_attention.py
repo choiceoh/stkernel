@@ -603,11 +603,14 @@ class Glm5NextMLAAttention(nn.Module):
             # IndexCache: reuse the previous indexer layer's top-k selection
             # on the layers in between (off unless the config says otherwise;
             # the launcher's INDEX_CACHE_FREQ sets it through --hf-overrides).
-            _skip_topk = _resolve_skip_topk(config, extract_layer_index(prefix))
-            if getattr(config, "use_index_cache", False):
+            _layer_id = extract_layer_index(prefix)
+            _skip_topk = _resolve_skip_topk(config, _layer_id)
+            _layers = _indexer_layer_ids(config) if getattr(config, "use_index_cache", False) else []
+            if _layers and _layer_id == _layers[0]:
                 # The serving proof (armed != serving): a forwarded knob can
                 # still take the stock path, so the lane says what it decided.
-                _layers = _indexer_layer_ids(config)
+                # Only the first indexer layer builds it -- info_once dedupes the
+                # LOGGING, not the work behind it, and every layer would redo it.
                 _computing = [i for i in _layers if not _resolve_skip_topk(config, i)]
                 logger.info_once(
                     "[index-cache] top-k reuse serving: %d of %d indexer layers compute "
