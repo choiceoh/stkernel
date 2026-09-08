@@ -179,7 +179,7 @@ class CoalescingTests(unittest.TestCase):
 
     def test_only_missing_baseline_workloads_are_measured(self):
         store=ex.Store(self.jobs)
-        job=self.manual_job(store,'baseline-owner',kind='pair',evaluations=[{'workload':{'ctx':[2000]}},{'workload':{'ctx':[32000]}}])
+        job=self.manual_job(store,'baseline-owner',kind='pair',baseline_policy='confirm',evaluations=[{'workload':{'ctx':[2000]}},{'workload':{'ctx':[32000]}}])
         payload=store.get(job)['payload'];payload['baseline_samples']=3
         rows=[[{'boot_id':f'a{i}'} for i in range(3)],[{'boot_id':f'b{i}'} for i in range(2)]]
         calls=[]

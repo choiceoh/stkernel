@@ -393,26 +393,42 @@ include external fixtures, model metadata and immutable weight manifests in
 `inputs`. The runner hashes those files; it does not rehash hundreds of GB of
 model weights or independently attest every hardware identifier.
 
-Once a pair's prerequisites and preflight pass, the worker reserves a shared
-defaults job if the context has fewer than three independent baseline samples per performance workload (one for a
-quality-only workload, which makes no speed claim).
+Pairs default to `"baseline_policy": "minimal"`. Once prerequisites and
+preflight pass, the worker reserves a shared defaults job only if the context
+has no usable baseline for a requested workload. One baseline supports the
+initial comparison; subsequent compatible candidates reuse it without a new
+defaults boot. A thin noise floor does not automatically trigger more samples.
 Compatible candidates join that reservation and wait outside the GPU queue.
 The defaults job measures only workloads still missing samples on each separate boot,
-then releases all waiting candidates. There is no candidate/default flip for
-every member of a new campaign just to build its noise floor. A single new
-candidate still pays for that three-sample floor; sharing primarily benefits
-multiple candidates and avoids the former first-pair incomplete result.
+then releases all waiting candidates. A new candidate therefore needs two
+measurement boots (one baseline, one candidate), instead of four. Later
+candidates need only their own boot while the context remains compatible.
+
+A minimal result uses `evidence: "gpu-pair-screen"`, `comparison_complete: true`
+and `promotion_ready: false`. `state: succeeded` means the comparison completed;
+the unchanged statistical judge may still report `incomplete` or `inconclusive`.
+Observed deltas are available to choose the next experiment without claiming a
+confirmed speedup. Result polling never acquires another baseline.
+
+Set `"baseline_policy": "confirm"` explicitly for confirmation. It requires
+three independent baselines for a performance workload and one for quality.
+Existing compatible samples count, so confirmation after a one-baseline screen
+adds only the two missing defaults boots. Confirmation runs its candidate again.
+Minimal and confirmation reservations remain distinct, but share compatible
+records. Already submitted jobs without a policy keep their previous contract.
+The shell `fleet.sh pair` path also defaults to one baseline; `PAIR_FLOOR_N=3`
+explicitly asks it to replenish the independent floor one sample per call.
 
 The reservation key includes revision, deployed sources, image, model/hardware
 context, workload/environment, external inputs and ledger location. Failed
 defaults block their consumers. Repeat the candidate with an explicit reason
 to retry a failed shared reservation. Container ID plus StartedAt supplies
 `boot_id`: repeated onepass runs on the same boot count once. Historical rows
-without boot identity cannot fill the new shared reservation's three samples.
+without boot identity cannot fill the shared reservation.
 
 Open baseline reservations now combine different objectives and workload
 subsets for the same attested serving configuration. Quality demands need one
-usable boot; performance demands still need three, with the warm-compile rule
+usable boot; confirmation performance demands need three, with the warm-compile rule
 retained for TTFT. A reservation accumulates at most six evaluation requirements
 and eight candidate dependencies. It collects for 0.5 seconds outside the GPU
 hold and seals when execution starts. Running reservations accept only demands
@@ -676,20 +692,23 @@ Commit/deploy one build containing the candidate toggles, then use:
 REPO="$PWD" bash bench/fleet.sh startup startup-agent bench/startup-campaign.example.json 45
 ```
 
-The example runs `PRIME, BASE1, FASTIOR1, SHAKEYR1, SHAKEYR2, FASTIOR2, BASE2`:
-seven boots instead of two independent five-boot trials. Each candidate still
-has two boots. Three candidates use nine instead of fifteen. These are boot
-counts, not measured wall-clock savings. Both shared cache directories stay
+The default example runs `PRIME, BASE1, FASTIOR1, SHAKEYR1, SHAKEYR2, FASTIOR2`:
+six boots with one shared baseline. Each candidate still has two boots. Three
+candidates use eight boots. Set `"baseline_policy": "confirm"` to append `BASE2`
+and check drift: seven boots for two candidates, or nine for three. These are
+boot counts, not measured wall-clock savings. Both shared cache directories stay
 fixed; every arm explicitly sets the same knob keys. Malformed, duplicate,
 cache-off or changed-cache campaigns fail validation.
 
 Every arm retains four-node cache receipts, canonical onepass response/quality
 evidence and a distinct matching boot. Pack IO/key campaigns retain their GPU
 checks on PRIME. The campaign pins source/profile/deployed manifest/workload,
-rejects changed identities and compares its two controls for drift (10% default,
-at most 25%). `campaign-result.json` contains health timings and paired candidate
-summaries. It is exploration evidence with `promotion_ready: false`; drift
-makes the result incomplete. Final promotion still needs the relevant direct
+rejects changed identities. The minimal result is `exploration-unconfirmed`
+with `baseline_drift_fraction: null`; no drift bound is inferred from one
+baseline. Confirmation compares its two controls for drift (10% default, at
+most 25%). `campaign-result.json` contains health timings and paired candidate
+summaries. Both modes are exploration evidence with `promotion_ready: false`;
+excessive observed drift makes confirmation incomplete. Final promotion needs the relevant direct
 consumer metric and independent matched validation. Older unrelated builds'
 baselines are never reused.
 

@@ -301,8 +301,8 @@ class FeedbackTests(unittest.TestCase):
         store=self.store()
         owners=[store.db.execute("SELECT dependency FROM dependencies WHERE job=? AND kind='baseline'",(j['id'],)).fetchone()[0] for j in jobs]
         self.assertEqual(owners[0],owners[1])
-        base=store.get(owners[0]);self.assertEqual(len(baseline.samples(base['payload'],1)),3)
-        self.assertEqual((self.logs/'arms').read_text().count('onepass'),4)
+        base=store.get(owners[0]);self.assertEqual(len(baseline.samples(base['payload'],1)),1)
+        self.assertEqual((self.logs/'arms').read_text().count('onepass'),2)
 
     def test_baseline_cannot_expand_after_start_but_accepts_covered_quality(self):
         store=self.store()

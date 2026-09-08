@@ -1,5 +1,6 @@
 {
   "schema": 1,
+  "baseline_policy": "minimal",
   "baseline": {"VLLM_GLM53_MK_PACK_FAST_IO": "0", "VLLM_GLM53_MK_PACK_SHA256": "0"},
   "prime": {"VLLM_GLM53_MK_PACK_FAST_IO": "1", "VLLM_GLM53_MK_PACK_SHA256": "1"},
   "candidates": [
