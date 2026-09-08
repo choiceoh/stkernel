@@ -1,0 +1,24 @@
+waiting: pos 1/1, held by mb9221-0909 [boot] (pid 2818991@srv2, since 06:47, est 35m, 40차 한방: KV zeroing 블록 인덱스 가드(오버레이) + MAX_BATCHED=9221(=4x2304+SPEC_K) 로 청크 6912->9216. 사망 재현 여부와 프리필 +1.9/2.4% 를 같은 부팅에서), legacy busy (1 procs, 0 reqs, booting) 2026-09-09_06:53:03
+waiting: pos 1/1, held by mb9221-0909 [boot] (pid 2818991@srv2, since 06:47, est 35m, 40차 한방: KV zeroing 블록 인덱스 가드(오버레이) + MAX_BATCHED=9221(=4x2304+SPEC_K) 로 청크 6912->9216. 사망 재현 여부와 프리필 +1.9/2.4% 를 같은 부팅에서), legacy busy (1 procs, 0 reqs) 2026-09-09_06:54:30
+waiting: pos 1/1, held by mb9221-0909 [boot] (pid 2818991@srv2, since 06:47, est 35m, 40차 한방: KV zeroing 블록 인덱스 가드(오버레이) + MAX_BATCHED=9221(=4x2304+SPEC_K) 로 청크 6912->9216. 사망 재현 여부와 프리필 +1.9/2.4% 를 같은 부팅에서), legacy busy (2 procs, 0 reqs) 2026-09-09_06:55:05
+waiting: pos 1/1, held by mb9221-0909 [boot] (pid 2818991@srv2, since 06:47, est 35m, 40차 한방: KV zeroing 블록 인덱스 가드(오버레이) + MAX_BATCHED=9221(=4x2304+SPEC_K) 로 청크 6912->9216. 사망 재현 여부와 프리필 +1.9/2.4% 를 같은 부팅에서), legacy busy (2 procs, 1 reqs) 2026-09-09_06:55:06
+waiting: pos 1/1, held by mb9221-0909 [boot] (pid 2818991@srv2, since 06:47, est 35m, 40차 한방: KV zeroing 블록 인덱스 가드(오버레이) + MAX_BATCHED=9221(=4x2304+SPEC_K) 로 청크 6912->9216. 사망 재현 여부와 프리필 +1.9/2.4% 를 같은 부팅에서), legacy busy (2 procs, 0 reqs) 2026-09-09_06:55:26
+waiting: pos 1/1, held by mb9221-0909 [boot] (pid 2818991@srv2, since 06:47, est 35m, 40차 한방: KV zeroing 블록 인덱스 가드(오버레이) + MAX_BATCHED=9221(=4x2304+SPEC_K) 로 청크 6912->9216. 사망 재현 여부와 프리필 +1.9/2.4% 를 같은 부팅에서), legacy busy (2 procs, 1 reqs) 2026-09-09_06:55:28
+waiting: pos 1/1, held by mb9221-0909 [boot] (pid 2818991@srv2, since 06:47, est 35m, 40차 한방: KV zeroing 블록 인덱스 가드(오버레이) + MAX_BATCHED=9221(=4x2304+SPEC_K) 로 청크 6912->9216. 사망 재현 여부와 프리필 +1.9/2.4% 를 같은 부팅에서), legacy busy (2 procs, 0 reqs) 2026-09-09_06:55:51
+waiting: pos 1/1, held by mb9221-0909 [boot] (pid 2818991@srv2, since 06:47, est 35m, 40차 한방: KV zeroing 블록 인덱스 가드(오버레이) + MAX_BATCHED=9221(=4x2304+SPEC_K) 로 청크 6912->9216. 사망 재현 여부와 프리필 +1.9/2.4% 를 같은 부팅에서), legacy busy (2 procs, 1 reqs) 2026-09-09_06:55:55
+waiting: pos 1/1, held by mb9221-0909 [boot] (pid 2818991@srv2, since 06:47, est 35m, 40차 한방: KV zeroing 블록 인덱스 가드(오버레이) + MAX_BATCHED=9221(=4x2304+SPEC_K) 로 청크 6912->9216. 사망 재현 여부와 프리필 +1.9/2.4% 를 같은 부팅에서), legacy busy (1 procs, 1 reqs, booting) 2026-09-09_06:56:30
+waiting: pos 1/1, legacy busy (0 procs, 1 reqs, booting) 2026-09-09_06:56:31
+waiting: pos 1/1, legacy busy (0 procs, 0 reqs, booting) 2026-09-09_06:56:35
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "5713d4f4e40a47979a2d886882176d7c", "phase": "waiting", "reason": "dequeue", "since": 406990.367322199, "updated_at": 1788904597.43024, "version": 1}
+GO sf6-base-0909v2 2026-09-09_06:56:37
+  node 10.10.10.1: gpu=ok stray=4 ram=11G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=7G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=12G path=ok 
+{"base": "bb22740a0664b890be61a2010603982e4091f4cc", "head": "85e25370779c2b8a6c9aaefa275b1dc8f27d60d0", "ignored_changes": [], "ok": false, "ref": "origin/main", "relevant_changes": ["build/glm53/kv_zero_worker_utils.py"], "required": "c5c759bb5623c625a48aa45b392e0c3f89550225"}
+candidate must include relevant changes from origin/main: build/glm53/kv_zero_worker_utils.py
+ABORT: HEAD is not based on current origin/main; refusing a stale overlay rollback
+  HEAD        85e25370
+  origin/main c5c759bb
+ABORT: Command '['bash', '/home/choiceoh/stkernel-sf6-direct-0909/launchers/deploy-overlays.sh', 'glm53']' returned non-zero exit status 1.
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "3b8498ff65244a90a263db36199c4dfd", "phase": "waiting", "reason": "release", "since": 406992.738114514, "updated_at": 1788904599.8010345, "version": 1}

@@ -1,0 +1,84 @@
+{
+  "scope": "single baseline record; not full A/B verdict",
+  "status": "PASS",
+  "record": {
+    "name": "sf6-base-0909v3B",
+    "boot_id": "419c258c75ed309eeecf10ac3823aaaf903fa1ce093d48725e021c79165f75c6|2026-09-08T22:13:55.737545576Z",
+    "cold_compile": true,
+    "fixed_pooled_step_s": 20.20661328323696,
+    "ms_per_step": 49.48874836089341,
+    "windows": 91,
+    "windows_med": 19.873337126471245,
+    "median_ms_per_step": 50.318675400922075,
+    "output_tok_s": 62.843273357113915,
+    "acceptance_all_requests": 0.44227304227304226,
+    "prefill": [
+      {
+        "ctx": 2000,
+        "tok": 2128,
+        "cold_s": 2.431041133007966,
+        "warm_s": 0.8887508490006439,
+        "cold_tok_s": 875.3451231682747,
+        "warm_tok_s": 2394.3718336728793,
+        "ttft_samples_s": [
+          2.431041133007966,
+          0.8887508490006439,
+          0.8902865640120581
+        ],
+        "combined": false
+      },
+      {
+        "ctx": 32000,
+        "tok": 32545,
+        "cold_s": 10.847696892975364,
+        "warm_s": 10.847696892975364,
+        "cold_tok_s": 3000.1760116541554,
+        "warm_tok_s": 3000.1760116541554,
+        "ttft_samples_s": [
+          10.847696892975364
+        ],
+        "combined": true
+      },
+      {
+        "ctx": 128000,
+        "tok": 128559,
+        "cold_s": 41.44591194699751,
+        "warm_s": 41.44591194699751,
+        "cold_tok_s": 3101.849952400752,
+        "warm_tok_s": 3101.849952400752,
+        "ttft_samples_s": [
+          41.44591194699751
+        ],
+        "combined": true
+      }
+    ],
+    "quality": {
+      "ok": 18,
+      "total": 18
+    },
+    "korean": {
+      "dirty": 0,
+      "n": 8,
+      "kinds": {
+        "replacement": 0,
+        "lone_jamo": 0,
+        "cjk_mixed": 0,
+        "control": 0
+      },
+      "hits": []
+    },
+    "exclusive": true,
+    "recorded_request_output_hashes_validated": true,
+    "ordered_stream_hashes_verified": false,
+    "independent_stream_hashes_verified": false
+  },
+  "memory": {
+    "samples": 148,
+    "minimum_available_gib": {
+      "local": 12.684127807617188,
+      "choiceoh@10.10.10.1": 18.048423767089844,
+      "choiceoh@10.10.10.3": 14.172050476074219,
+      "choiceoh@10.10.10.4": 18.629413604736328
+    }
+  }
+}

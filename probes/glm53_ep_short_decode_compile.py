@@ -13,6 +13,31 @@ import unittest
 from glm53_ep_capsule_runtime import verify_runtime
 
 
+CPU_TEST_MODULES = ('test_glm53_ep_micro_tile.py', 'test_glm53_ep_short_decode.py',
+                    'test_glm53_ep_route_remap.py', 'test_glm53_ep_local_selftest.py')
+CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
+    'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py')
+
+
+def source_receipt(root, *, verify_mounted=False):
+    mounted = {}
+    names = set()
+    for line in (root/'build/glm53/manifest.tsv').read_text().splitlines():
+        if not line or line.startswith('#'):
+            continue
+        name, target, *_ = line.split('\t')
+        if '/flashinfer/' in target or name == 'flashinfer_b12x_moe.py':
+            assert target not in mounted, 'duplicate mounted source: '+target
+            content = (root/'build/glm53'/name).read_bytes()
+            if verify_mounted:
+                assert content == Path(target).read_bytes(), target
+            mounted[target] = hashlib.sha256(content).hexdigest()
+            names.add(name)
+    assert {'moe_dispatch.py', 'moe_micro_kernel.py', 'glm53_ep_route_remap.py', 'glm53_ep_local_selftest.py'} <= names
+    return dict(mounted_sources=mounted, contract_sources={
+        name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in CONTRACT_PATHS})
+
+
 def compile_candidate(output, result):
     os.environ.update(CUTE_DSL_ARCH='sm_121a', CUTE_DSL_KEEP='ptx,cubin',
                       CUTE_DSL_DUMP_DIR=str(output),
@@ -76,22 +101,12 @@ def compile_candidate(output, result):
     assert not torch.cuda.is_initialized()
     result['phase']='cpu-contracts'
     root=Path(__file__).resolve().parents[1]
-    names=('test_glm53_ep_micro_tile.py','test_glm53_ep_short_decode.py','test_glm53_ep_route_remap.py')
-    suite=unittest.TestSuite(unittest.defaultTestLoader.discover(str(root/'tests'),pattern=name) for name in names)
+    suite=unittest.TestSuite(unittest.defaultTestLoader.discover(str(root/'tests'),pattern=name) for name in CPU_TEST_MODULES)
     checked=unittest.TextTestRunner(verbosity=2).run(suite)
     result['contracts']=dict(tests_run=checked.testsRun,failures=len(checked.failures),errors=len(checked.errors),skips=len(checked.skipped))
     assert checked.wasSuccessful() and not checked.skipped,result['contracts']
     assert not torch.cuda.is_initialized(),'CPU compile/tests created a CUDA context'
     result['cuda_initialized']=False
-    mounted={}
-    for line in (root/'build/glm53/manifest.tsv').read_text().splitlines():
-        if not line or line.startswith('#'):continue
-        name,target,*_=line.split('\t')
-        if '/flashinfer/' in target or name=='flashinfer_b12x_moe.py':
-            source=root/'build/glm53'/name
-            assert source.read_bytes()==Path(target).read_bytes(),target
-            mounted[target]=hashlib.sha256(source.read_bytes()).hexdigest()
-    result['mounted_sources']=mounted
 
 
 def main():
@@ -105,7 +120,11 @@ def main():
         assert not list(Path('/dev').glob('nvidia*')),'CPU container exposes devices'
         runtime=verify_runtime(args.capsule_root,args.manifest_sha256)
         result['binding_runtime']=runtime
+        root=Path(__file__).resolve().parents[1]
+        sources=source_receipt(root,verify_mounted=True)
+        result.update(sources)
         compile_candidate(args.output,result)
+        assert source_receipt(root,verify_mounted=True)==sources,'compile/test source changed'
         assert verify_runtime(args.capsule_root,args.manifest_sha256)==runtime
         result.update(verdict='PASS',phase='complete',binding_runtime_rechecked=True)
     except BaseException as exc:

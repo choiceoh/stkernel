@@ -13,10 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited for short EP decode: only unrelated EP assertions changed;
-# the three helper tests and load_defs AST match the prior reviewed version.
-# Their reviewed dependency access graphs remain unchanged.
-LOGIC_AUDIT = 'cc3bead52f151f5f19f93cc05e60a72987d24581e7395fea7b48748f783c141c'
+# Re-audited after merging SF6/boot-memory assertions with EP short-decode,
+# compact warmup and structured proof assertions. The three audited helper
+# tests and load_defs AST match main; dependency access graphs are unchanged.
+LOGIC_AUDIT = 'c93004583c15e6ef9ace34e74934cdb8b472a229562697b1e339a9125a3a2940'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

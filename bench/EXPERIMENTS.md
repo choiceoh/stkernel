@@ -848,16 +848,25 @@ bash bench/fleet.sh run --gpu --detach --prepare prepare.json agent 20 "candidat
 
 CPU preparation runs once per preparation, with GPUs hidden and GPU-classified
 commands refused. It does not run again at every queue poll. File/revision checks
-repeat before GO; remote ref refresh and image checks run outside the fleet lock
-every 30 seconds while waiting. CPU preparation inputs are bound too. Local checks
+repeat before GO; image checks run outside the fleet lock every 30 seconds while
+waiting. Managed boot reservations fetch main and approve the exact deployment
+candidate before queueing. The signed preparation stores each target's profile,
+image/model overrides, candidate SHA and accepted main SHA; declared ancestry
+checks also retain their resolved SHA. Later main commits alone cannot invalidate
+that reservation. Deployment authenticates the running reservation and verifies
+its unchanged clean candidate against the accepted receipt, without another fetch
+or CPU suite. A changed candidate needs an explicit edit or new preparation;
+there is no automatic rebase during the GPU hold. Generic CPU preparations and
+older pinned controllers retain their original ref-check contract.
+CPU preparation inputs are bound too. Local checks
 and admission share the lock. A failed older check cannot discard a newer edit.
 An explicit `edit agent -- bash probes/candidate.sh` rebinds changed source even
 when the argv is identical. New reservations pause on preparation failure before
 acquiring a hold. Their ticket, original age and owner survive for editing and
 explicit resumption; they do not acquire restore responsibility. Existing pinned
-controllers retain their original contract. A fresh fetch or dynamic environment check performed by
-the payload after GO can still reveal a later change; preparation is not an atomic
-snapshot of remote services and never silently rebases a candidate.
+controllers retain their original contract. Dynamic environment checks performed
+by a payload after GO can still reveal a later change; preparation is not an
+atomic snapshot of remote services.
 
 
 ## Reuse preparation and pause for revisions
@@ -877,7 +886,9 @@ what changed and refuses reuse. Successful audited `cpu_checks.py` suites and
 contracts reuse their passing evidence. Arbitrary CPU commands with unknown
 transitive dependencies run again on fresh preparation or an ordinary edit;
 explicit `--prepared` refuses to reuse them. Receipts are authenticated in the
-private fleet preparation store. Changing SSH connection metadata does not force
+private fleet preparation store. A successful CPU receipt first used by a boot reservation gains its
+fixed deployment approval before queueing, without repeating the CPU command.
+Changing SSH connection metadata does not force
 revalidation; that metadata is removed from the payload environment too. Literal `env NAME=value`, `env -u` and `env -i`
 prefixes select payload settings; the supervisor supplies its owned fleet and
 recovery context after applying them.

@@ -1,7 +1,7 @@
 # tp_oneshot_ar
 
 Host-register RDMA one-shot AllReduce for small decode tensors (27us against
-NCCL's 67us on this fabric). Both files are new, so this half is portable;
+NCCL's 67us on this fabric). All three source files are new, so this half is portable;
 the CUDACommunicator.all_reduce hook is per-image and lives in a
 `*_oneshot_wiring` module.
 
@@ -38,6 +38,15 @@ the existing all-rank bootstrap vote, so every rank stays on NCCL. The fixed
 graph behavior. A block barrier between each thread's system fence and thread
 0's completion atomic also guarantees that the last block cannot publish a
 partially copied RDMA payload.
+
+The optional `VLLM_GLM53_AR_COMPACT_CTA=1` consumer uses 12 CTAs for
+1..32768 elements, with four completion tickets per CTA. Ordinary calls in
+the same process retain 48 CTAs and use the same sequence-based publication
+rule. `VLLM_GLM53_AR_PROXY_INLINE=1` prepares per-peer/per-slot WR pairs once
+and sends the eight-byte completion flag inline. Both options default to 0;
+the adopted consumer PDL default stays enabled. Implementation, CPU gates and
+remaining device evidence are described in
+[`decode_transport_sf_README.md`](../../../probes/decode_transport_sf_README.md).
 
 ## L2 prefetch during the peer wait (2026-09-04, `VLLM_GLM53_AR_PREFETCH`)
 

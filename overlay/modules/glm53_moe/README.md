@@ -1,5 +1,17 @@
 # glm53_moe
 
+`t,r,sf6` is the GLM53 profile default after operator adoption on 2026-09-09.
+It gathers each actual MMA scale stage, packs 2048 bytes into 1552 bytes,
+and expands with volatile reads and barriers before MMA consumption.
+Decode and static/dynamic prefill read packed storage directly. Eligible layers
+release raw scale Parameters, quantization descriptors and MMA/cache aliases
+before profiling; unsupported byte spans retain both original planes.
+The measured 42-layer owner lifecycle retained 3.35687 GiB packed scales per
+rank after releasing 4.42969 GiB raw scales, a 1.07281 GiB tensor-storage
+reduction from raw-only. This is not a matched host-memory or speed result.
+Restart with `t,r` to use raw scales. Implementation, adoption and validation
+limits are in [`sf6_direct_prefill_README.md`](../../../probes/sf6_direct_prefill_README.md).
+
 GLM-5.3 MoE — b12x 공유 워크스페이스, EP 마이크로커널 레인, 직접 출력.
 
 2026-09-05 (34차, 운영자 "디폴트화된 모듈들을 4~5개씩 하나로 묶어라") 에 아래 모듈들을 이 디렉터리 하나로 합쳤다. **매니페스트 행·베이스 계약·소스 파일·노브·기본값은 그대로**이고 디렉터리와 `manifest.tsv`·`requires`·README 만 합쳐졌다(합성 결과 `build/glm53/` 의 파일은 바이트 동일(메가커널 .cu 주석의 경로 한 줄 제외), 행 순서만 바뀜). 옛 이름은 원장·런북·커밋에 그대로 남아 있고, 아래 절이 옛 모듈 하나씩이다.
@@ -199,7 +211,8 @@ b12x_shared_workspace).
 
 **34차 §8 (2026-09-06, 운영자 "전부 지워")**: `moe_static_kernel_v2.py`(레인 `1`/`m..`/`d`)와 `moe_static_kernel_v3.py`(레인 `w`/`e`/`k`)는 삭제됐다 — v4 `u`(38차 부록 +2%)가 두 세대 앞선다. 둘이 공유하던 스탬프 슬롯·PTX 헬퍼는 `moe_static_common.py` 로 옮겨 v4 가 거기서 import 한다. 파서는 옛 토큰을 조용히 재매핑하지 않고 거부한다(`u`/`v` 만 유효). 아래 v2/v3 서술은 기록이다.
 
-`VLLM_GLM53_B12X_STATIC_V2` (profile default `u` = v4 since 38차; `w` = v3 was the 35차 default, `""` = stock) routes the exact
+`VLLM_GLM53_B12X_STATIC_V2` (current profile default `t,r,sf6`; historical
+`u` = v4, `w` = v3, `""` = stock) routes the exact
 GLM-5.3 TP geometry's static (decode) MoE launches to `MoEStaticKernelV2`, a
 rework of flashinfer's `MoEStaticKernel` with the same workspace, weight
 views, routing frontend and arithmetic (FC1 accumulation order, fp4 quant of
@@ -375,3 +388,30 @@ stopped. The normal supervisor restored all four public containers and
 health 200, then released at 16:49:14 KST. The CPU8-pinned v3 retry is waiting
 normally behind `attr0908`, with no diagnostic result yet. Full serving and
 direct TTFT remain unverified.
+
+### Decode regression repair
+
+The exact EP6-token, E72/H4096/I2048/top8 zero-weight lane now prepares its
+existing eight-row input in one Triton launch. It reads the original router
+IDs and weights, performs the same local remap, copies six input rows, and
+pads the last two rows with row zero and positive-zero weights. The same
+four staging tensors remain pinned across 18/12/6-token graph captures.
+Unsupported metadata retains the existing remap path; a submitted kernel
+failure propagates. The micro result still uses the established six-row
+copy-back, so the padded kernel cannot write beyond the caller's output.
+
+Only that lane's exact E72/M8/top8 micro compiler selects M32/N128. Its
+cache key includes the tile; the fixed top1 control and other geometries
+retain the existing selector. Physical activation/scale loads still span
+128 rows. These changes remove preparation launches and reduce padded MMA
+work; a throughput gain requires the canonical full-model onepass result.
+
+When EP/local-prefill/zero-weight are armed together, each serving worker
+runs `glm53_ep_local_selftest.py` once after allocating both pinned decode
+workspaces and before readiness. It uses isolated synthetic weights and the
+actual serving methods, preserves the original numerical thresholds,
+checks changed values at the same addresses and a nondefault stream, and
+compares fused preparation bytes with the original remap/padding. Failure
+rejects readiness and preserves diagnostics. Compiled kernels remain warm;
+canary scratch entries are restored. This is a startup numerical gate, not
+full sanitizer or performance acceptance.

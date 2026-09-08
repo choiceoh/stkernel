@@ -1,0 +1,24 @@
+[osar] consumer PDL CAPTURED numel=4096
+[megakernel] mhc-bf16 large fallback CAPTURED T=12 storage=fp32
+[megakernel] mhc-bf16 CAPTURED T=6 cached=1
+[megakernel] mhc-bf16 large fallback CAPTURED T=12 storage=fp32
+[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True
+[megakernel] mhc-bf16 CAPTURED T=6 cached=1
+[megakernel] AR consumer MHC CAPTURED T=6 bf16=False vec4=False
+test_bf16_layout_preserves_every_bit_pattern (test_megakernel_ar_consumer_regressions.ConsumerTests.test_bf16_layout_preserves_every_bit_pattern) ... ok
+test_collective_ownership_covers_actual_vector_and_tail_accesses (test_megakernel_ar_consumer_regressions.ConsumerTests.test_collective_ownership_covers_actual_vector_and_tail_accesses) ... ok
+test_eligibility_and_capture_dispatch (test_megakernel_ar_consumer_regressions.ConsumerTests.test_eligibility_and_capture_dispatch) ... ok
+test_exact_environment_gate (test_megakernel_ar_consumer_regressions.ConsumerTests.test_exact_environment_gate) ... ok
+test_large_warmup_prepares_first_small_capture_without_repacking (test_megakernel_ar_consumer_regressions.ConsumerTests.test_large_warmup_prepares_first_small_capture_without_repacking) ... ok
+test_layout_cache_preserves_graph_storage_and_versions (test_megakernel_ar_consumer_regressions.ConsumerTests.test_layout_cache_preserves_graph_storage_and_versions) ... ok
+test_mhc_weight_only_before_wait (test_megakernel_ar_consumer_regressions.ConsumerTests.test_mhc_weight_only_before_wait) ... ok
+test_probe_capture_is_not_serving_evidence (test_megakernel_ar_consumer_regressions.ConsumerTests.test_probe_capture_is_not_serving_evidence) ... ok
+test_profile_default_on_and_cache_identity (test_megakernel_ar_consumer_regressions.ConsumerTests.test_profile_default_on_and_cache_identity) ... ok
+test_protocol_wait_and_publication_order (test_megakernel_ar_consumer_regressions.ConsumerTests.test_protocol_wait_and_publication_order) ... ok
+test_runtime_failure_does_not_split_collectives (test_megakernel_ar_consumer_regressions.ConsumerTests.test_runtime_failure_does_not_split_collectives) ... ok
+test_standalone_pre_packs_the_real_three_dimensional_weight_view (test_megakernel_ar_consumer_regressions.ConsumerTests.test_standalone_pre_packs_the_real_three_dimensional_weight_view) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.684s
+
+OK

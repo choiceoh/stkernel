@@ -1,0 +1,11 @@
+test_fc1_two_independent_bases_expand_without_neighbor_or_ring_alias (test_moe_static_sf6_direct.StaticDirectScales.test_fc1_two_independent_bases_expand_without_neighbor_or_ring_alias) ... ok
+test_fc2_selective_bulk_and_actual_unpack_all_codes_halves_and_ring_slots (test_moe_static_sf6_direct.StaticDirectScales.test_fc2_selective_bulk_and_actual_unpack_all_codes_halves_and_ring_slots) ... ok
+test_legacy_q_4096_in_place_expansion_is_unchanged (test_moe_static_sf6_direct.StaticDirectScales.test_legacy_q_4096_in_place_expansion_is_unchanged) ... ok
+test_no_original_scale_tensor_is_created_outside_raw_only_branch (test_moe_static_sf6_direct.StaticDirectScales.test_no_original_scale_tensor_is_created_outside_raw_only_branch) ... ok
+test_ordinary_and_reform_geometry_transaction_contract (test_moe_static_sf6_direct.StaticDirectScales.test_ordinary_and_reform_geometry_transaction_contract) ... ok
+test_source_map_matches_actual_mma_byte_positions_for_both_geometries (test_moe_static_sf6_direct.StaticDirectScales.test_source_map_matches_actual_mma_byte_positions_for_both_geometries) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.087s
+
+OK

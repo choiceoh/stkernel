@@ -278,8 +278,12 @@ int main() {
                 with patch.object(torch.Tensor, 'is_cuda', property(lambda _: True)), \
                      patch.object(torch.cuda, 'is_current_stream_capturing', lambda: captured[0]):
                     call(12)
-                    self.assertEqual(seen[-1].dtype, torch.bfloat16)
+                    self.assertEqual(seen[-1].dtype, torch.float32)
                     self.assertEqual(tuple(seen[-1].shape), (24, 16384))
+                    self.assertEqual(launches[-1], (12, flat.data_ptr(), False, False))
+                    entry = next(iter(m._MHC_BF16_CACHE.values()))
+                    self.assertEqual(entry[1].dtype, torch.bfloat16)
+                    self.assertEqual(entry[2] is not None, enabled)
                     captured[0] = True
                     call(6)
                     selected = seen[-1]

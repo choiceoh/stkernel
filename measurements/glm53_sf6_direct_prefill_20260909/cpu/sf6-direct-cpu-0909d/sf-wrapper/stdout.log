@@ -1,0 +1,49 @@
+{
+  "cases": [
+    {
+      "backend": "static",
+      "explicit_owner": true,
+      "raw_scales": null,
+      "repeats": 3,
+      "rows": 6,
+      "status": "PASS"
+    },
+    {
+      "backend": "static",
+      "explicit_owner": true,
+      "raw_scales": null,
+      "repeats": 3,
+      "rows": 16,
+      "status": "PASS"
+    },
+    {
+      "backend": "dynamic",
+      "explicit_owner": true,
+      "raw_scales": null,
+      "repeats": 3,
+      "rows": 513,
+      "status": "PASS"
+    },
+    {
+      "backend": "dynamic",
+      "explicit_owner": true,
+      "raw_scales": null,
+      "repeats": 3,
+      "rows": 4096,
+      "status": "PASS"
+    }
+  ],
+  "cuda_initialized": false,
+  "mode": "cpu",
+  "rejected_invalid_cases": 4,
+  "run_signature": "(self, x: torch.Tensor, w1_weight: torch.Tensor, w1_weight_sf: Optional[torch.Tensor], w2_weight: torch.Tensor, w2_weight_sf: Optional[torch.Tensor], token_selected_experts: torch.Tensor, token_final_scales: torch.Tensor, *, w1_alpha: torch.Tensor, w2_alpha: torch.Tensor, fc2_input_scale: Optional[torch.Tensor] = None, input_global_scale: Optional[torch.Tensor] = None, out: Optional[torch.Tensor] = None, _weight_views: Any = None) -> torch.Tensor",
+  "scope": "actual decorated wrapper, mocked dispatcher; no kernel execution",
+  "source_sha256": {
+    "api_logging.py": "0302b4ff890c9d0de9c91f340794d8805b68b467690fe3fbec3dfb29f05720ad",
+    "b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+    "moe.py": "b0cfdb25ef2cccc8f5f962dd859218b9ceb5d6bd4a4241b0d462fbedf4171684",
+    "sf6_wrapper_cpu_check.py": "028f4f34f6438125097d0a6b472dbbf4e4a62bcc6b65ea9e5a2751fb40bc8e8c"
+  },
+  "status": "PASS",
+  "trace_template_type": "TraceTemplate"
+}

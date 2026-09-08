@@ -1758,6 +1758,7 @@ _MHC_BF16_CACHE = {}
 _MHC_BF16_CACHE_LIMIT = 256
 _MHC_BF16_OK = False
 _MHC_BF16_CAPTURED = set()
+_MHC_BF16_LARGE_CAPTURED = set()
 _AR_CONSUMER_OK = False
 _AR_CONSUMER_CAPTURED = set()
 
@@ -1828,8 +1829,14 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
     ws = _ensure_workspace(x_flat.device)
     early = ((ENABLE_AR_CONSUMER and _AR_CONSUMER_OK) if _ar_consumer is None
              else bool(_ar_consumer)) and 0 < num_tokens <= 8
-    packed = (_mhc_bf16_weight(fn, ar_consumer=early) if ENABLE_MHC_BF16 and _MHC_BF16_OK
-              and not _fp32_fn else None)
+    prepared = (_mhc_bf16_weight(fn, ar_consumer=early) if ENABLE_MHC_BF16 and _MHC_BF16_OK
+                and not _fp32_fn else None)
+    # The v4 boot failed the exact T=16 graph test on the ordinary BF16
+    # storage path, while its FP32 fallback passed. Until the cause is known,
+    # retain BF16 storage only for the tested 1..8-token shapes. Still visit
+    # the cache at eager T=12: that prepares both immutable layouts needed by
+    # the first small capture. This changes storage dispatch, not the gate.
+    packed = prepared if 0 < num_tokens <= 8 else None
     weight = fn if packed is None else packed
     _ar_note(weight)
     # Explicit overrides belong to the self-test/probe, not serving evidence.
@@ -1845,6 +1852,12 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
         _MHC_BF16_CAPTURED.add(num_tokens)
         logger.warning("[megakernel] mhc-bf16 CAPTURED T=%d cached=%d",
                        num_tokens, len(_MHC_BF16_CACHE))
+    if (prepared is not None and num_tokens > 8 and _ar_consumer is None and _ARMED["mhc"]
+            and num_tokens not in _MHC_BF16_LARGE_CAPTURED
+            and torch.cuda.is_current_stream_capturing()):
+        _MHC_BF16_LARGE_CAPTURED.add(num_tokens)
+        logger.warning("[megakernel] mhc-bf16 large fallback CAPTURED T=%d storage=fp32",
+                       num_tokens)
     _EXT.run_mhc(
         [x_flat.data_ptr(), residual_flat.data_ptr(), pm_flat.data_ptr(),
          cm_flat.data_ptr(), weight.data_ptr(), hc_scale.data_ptr(),
@@ -2099,6 +2112,34 @@ def _selftest_bf16_mhc() -> bool:
         _MHC_BF16_OK = ok
 
 
+def _mhc_ar_mismatch_details(ref, got):
+    """Failure-only diagnostics; never replaces or relaxes the exact gate."""
+    import torch
+
+    details = []
+    names = ("residual", "post_mix", "comb_mix", "layer_input")
+    for name, expected, actual in zip(names, ref, got):
+        a, b = expected.detach().float(), actual.detach().float()
+        different = a != b
+        finite = torch.isfinite(a) & torch.isfinite(b)
+        differences = different.reshape(-1).nonzero()
+        first = int(differences[0].item()) if differences.numel() else None
+        # Nonfinite operands are reported separately. Keep inf in the max
+        # if subtraction of two finite FP32 values itself overflows.
+        delta = (a - b).abs()[finite]
+        details.append(dict(output=name, shape=list(actual.shape),
+            ref_dtype=str(expected.dtype), got_dtype=str(actual.dtype),
+            exact=torch.equal(expected, actual), different=int(different.sum().item()),
+            finite_max_abs=float(delta.max().item()) if delta.numel() else None,
+            ref_nonfinite=int((~torch.isfinite(a)).sum().item()),
+            got_nonfinite=int((~torch.isfinite(b)).sum().item()),
+            first_flat_index=first,
+            first_ref=float(a.reshape(-1)[first].item()) if first is not None else None,
+            first_got=float(b.reshape(-1)[first].item()) if first is not None else None,
+            ref_ptr=expected.data_ptr(), got_ptr=actual.data_ptr()))
+    return details
+
+
 def _selftest_ar_consumer() -> bool:
     """Exact outputs and repeated graphs; RDMA overlap is checked separately."""
     import torch
@@ -2139,7 +2180,19 @@ def _selftest_ar_consumer() -> bool:
                 graph.replay()
                 torch.cuda.synchronize()
                 if not all(torch.equal(a, b) for a, b in zip(ref, got)):
-                    logger.warning("[megakernel] AR consumer MHC mismatch T=%d fp32=%s", t, fp32)
+                    logger.warning("[megakernel] AR consumer MHC mismatch T=%d fp32=%s "
+                                   "scale=%s early=%s outputs=%s", t, fp32, scale, t <= 8,
+                                   _mhc_ar_mismatch_details(ref, got))
+                    # Read the retained cache entry; do not warm/repack a
+                    # failing path or alter any captured pointers to diagnose it.
+                    entry = _MHC_BF16_CACHE.get((fn.device, fn.data_ptr(), fn._version))
+                    layouts = [None if value is None else dict(
+                        ptr=value.data_ptr(), shape=list(value.shape), stride=list(value.stride()),
+                        dtype=str(value.dtype)) for value in entry] if entry else None
+                    logger.warning("[megakernel] AR consumer MHC mismatch storage "
+                                   "fn_version=%s cache=%s inputs=%s workspace=%s",
+                                   fn._version, layouts, [value.data_ptr() for value in values[:8]],
+                                   {key: value.data_ptr() for key, value in (_WS or {}).items()})
                     return False
     logger.warning("[megakernel] AR consumer MHC self-test PASS "
                    "(large warmup, small capture, exact outputs and graphs)")
