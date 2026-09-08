@@ -15,6 +15,9 @@ from glm53_offline_checks import check_holder
 
 
 class PrivateObserverAPI:
+    JSON_PATHS = ('/glm53/prefill-observe',)
+    STATUS_PATHS = ('/start_profile', '/stop_profile')
+
     def __init__(self, base):
         if base != 'http://127.0.0.1:18000':
             raise ValueError('owned loopback diagnostic endpoint on port 18000 required')
@@ -22,7 +25,7 @@ class PrivateObserverAPI:
 
     def post(self, path, payload=None):
         check_holder()
-        if path not in ('/glm53/prefill-observe', '/start_profile', '/stop_profile'):
+        if path not in (*self.JSON_PATHS, *self.STATUS_PATHS):
             raise ValueError('unsupported observation endpoint')
         data = b'' if payload is None else json.dumps(payload).encode()
         request = urllib.request.Request(self.base+path, data=data,
@@ -32,7 +35,7 @@ class PrivateObserverAPI:
         timeout=600 if path in ('/start_profile','/stop_profile') else 60
         with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read()
-            return json.loads(raw) if path == '/glm53/prefill-observe' else {'status':response.status}
+            return json.loads(raw) if path in self.JSON_PATHS else {'status':response.status}
 
 
 def idle_observers(reply, source_sha256):

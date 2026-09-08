@@ -1,0 +1,26 @@
+{
+  "session": "glm53cpuvotemem0908v1",
+  "source": "/home/choiceoh/stkernel-cpu-vote-memory-0908-1",
+  "revision": "6e693f53a118bce9fc0a8b457943c3880a9fb59b",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-cpu-vote-memory-0908-1/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "glm53cpuvotemem0908v1",
+    "65",
+    "PR470 warm-cache GPU/CPU/GPU readiness-vote memory bracket; no model requests, no promotion",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-cpu-vote-memory-0908-1/bench/glm53_cpu_vote_memory_pair.py",
+    "--revision",
+    "6e693f53a118bce9fc0a8b457943c3880a9fb59b",
+    "--out",
+    "/tmp/glm53-cpu-vote-memory-0908-1/capture"
+  ],
+  "environment": {
+    "REPO": "/home/choiceoh/stkernel-cpu-vote-memory-0908-1",
+    "FLEET_OBSERVATION_CLONES": "1"
+  },
+  "started": 1788840473.2682328
+}

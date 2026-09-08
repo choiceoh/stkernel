@@ -102,3 +102,17 @@ capture when every node passes the unchanged 12 GiB request guard. Keep the
 128 GiB disk reserve and all other services/capacity intact. An allocation
 reduction alone is not a throughput gain; no new boot or GPU job was submitted
 for this CPU preparation.
+
+## September 8 memory attempt
+
+The normal fleet run glm53cpuvotemem0908v1 reached its private PRIME server but
+failed before the first memory sample because the client had not registered
+the new memory endpoint. No paired memory, TTFT or quality result exists.
+Exact original recovery passed on all four nodes; the subsequent supervisor
+public refresh and release completed at 13:34:54 KST.
+
+The dedicated memory client now registers only its empty-body JSON endpoint.
+A test exercises its actual HTTP request/parsing implementation. The local
+13-test run has two environment skips; pinned-image validation and any retry
+remain pending. [Raw failure and restoration evidence](../measurements/glm53_rank_cache_cpu_vote_20260908/attempt1/README.md)
+close this attempt without claiming a performance gain.

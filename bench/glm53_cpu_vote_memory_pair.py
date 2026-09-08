@@ -17,6 +17,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'probes'))
 import glm53_cpu_vote_host as host
 import glm53_cpu_vote_memory as memory
 
+class PrivateMemoryAPI(PrivateObserverAPI):
+    JSON_PATHS = (*PrivateObserverAPI.JSON_PATHS, '/glm53/cpu-vote-memory')
+
+    def post(self, path, payload=None):
+        if path == '/glm53/cpu-vote-memory' and payload != {}:
+            raise ValueError('memory receipt accepts no options')
+        return super().post(path, payload)
+
+
 ARMS = (('PRIME', '0'), ('BASE0', '0'), ('CPU', '1'), ('BASE1', '0'))
 
 
@@ -138,7 +147,7 @@ class Run(base.Run):
                         matched(baseline, initial)
                     if self.arm == 'BASE0':
                         baseline = initial
-                    api = PrivateObserverAPI('http://127.0.0.1:18000')
+                    api = PrivateMemoryAPI('http://127.0.0.1:18000')
                     base.lifecycle.idle(18000)
                     idle_observers(api.post('/glm53/prefill-observe', {'op': 'status'}), self.sha)
                     time.sleep(15)
