@@ -102,10 +102,13 @@ def gumbel_block_argmax(
     logits_cache_stride,
     logits_cache_col_ptr,
     vocab_size,
-    IS_DRAFTING: tl.constexpr,
     APPLY_TEMPERATURE: tl.constexpr,
     USE_FP64: tl.constexpr,
     PER_TOKEN_COL: tl.constexpr = False,
+    # Defaults to the target's stream, so a caller that has not been taught
+    # about the split -- the image's own rejection_sampler_utils.py, when that
+    # file is not overlaid -- keeps the behaviour it had.
+    IS_DRAFTING: tl.constexpr = False,
 ):
     req_state_idx = tl.load(expanded_idx_mapping_ptr + token_idx).to(tl.int64)
     is_valid_req = req_state_idx >= 0

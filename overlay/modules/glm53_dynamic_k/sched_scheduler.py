@@ -259,7 +259,11 @@ class Scheduler(SchedulerInterface):
                     vllm_max_batch_size=self.scheduler_config.max_num_seqs,
                     vllm_num_speculative_tokens=self.num_spec_tokens,
                 )
-            if speculative_config.num_speculative_tokens_per_seq_len:
+            # `is not None`, not truthiness: [] is the one value that most
+            # needs the validator -- it leaves uses_dynamic_speculative_decoding
+            # true with an empty schedule, so the decode-query-length union goes
+            # empty and NO decode CUDA graph is captured, silently.
+            if speculative_config.num_speculative_tokens_per_seq_len is not None:
                 # deneb fork (vLLM #54801): upstream assigned this raw, so the
                 # only validator in the module never saw it -- [[0,1]] survived
                 # config and raised "not enough values to unpack" on the first

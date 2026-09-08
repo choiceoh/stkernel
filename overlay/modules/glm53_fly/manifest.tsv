@@ -3,3 +3,4 @@
 fly.py	vllm/v1/spec_decode/fly.py	absent
 llm_base_proposer.py	vllm/v1/spec_decode/llm_base_proposer.py	b9c26acf8b77cb56f062213aa6b9eebab58dc69980e78430da027493fc757237
 gpu_rejection_sampler.py	vllm/v1/worker/gpu/spec_decode/rejection_sampler.py	308d4171f892f27231655289ceb03cd4566533c7d26b8f98bd62ef0a34f986f0
+rejection_sampler_utils.py	vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py	659e82c2ce1249a6e614f7adf62e3824329a7b79e7a4caa55cfadf254068a98a

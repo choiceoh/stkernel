@@ -38,7 +38,6 @@ body; the hunks below were applied by hand against this image's structure.
 | `gumbel.py` | `_DRAFT_NOISE_SALT`; `IS_DRAFTING` through `gumbel_block_argmax` -> `_gumbel_sample_kernel` -> `gumbel_sample(is_drafting=...)` |
 | `dflash2_speculator.py` | the local `gumbel_noised_argmax` takes and applies the salt; the selector walk passes `IS_DRAFTING=True` |
 | `spec_speculator.py` | `sample_draft` passes `is_drafting=True` |
-| `spec_rejection_sampler_utils.py` | the resample is the target's draw: `IS_DRAFTING=False` |
 | `dspark_speculator.py` | its own `gumbel_sample` call is a draft draw: `is_drafting=True` |
 
 ## The rename that is not taken
@@ -55,6 +54,12 @@ adds the 1 back. So `sample_draft` keeps its stock shape and only gains
 `gumbel_sample`'s new `is_drafting` defaults to `False` for the same reason: a
 caller that has not been taught about the split is, by construction, not
 drafting.
+
+`rejection_sampler_utils.py`'s one line (the resample is the target's draw,
+`IS_DRAFTING=False`) lives in `glm53_fly`, which owns that file for FLy's
+kernels. `gumbel_block_argmax`'s `IS_DRAFTING` defaults to `False` so this
+module stands alone: with `glm53_fly` absent the image's own copy of that file
+calls it unchanged and keeps the target's stream.
 
 The PR's `dflash/speculator.py` hunk (`sample_pos - 2` -> `- 1`) is deliberately
 **not** here either: `tests/test_logic.py` pins that this repo does not

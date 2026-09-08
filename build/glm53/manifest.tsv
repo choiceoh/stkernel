@@ -65,7 +65,6 @@ gate_linear.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layer
 dflash2_speculator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash2/speculator.py	66aa43b74abfdaa9aa09e00e6511fab273e7c8a1c5da6c0d06e1daa07216ffd5
 dspark_speculator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dspark/speculator.py	a72c6d0dbf37ed41b901c0a2178de51aca2c74e6dffdffb89ce223bae2f64598
 gumbel.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/gumbel.py	8d04f3068a8dc22de69ec7ec6ab4f4192b8d45b5c3e253dcb7817eaf6c1314cd
-spec_rejection_sampler_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py	659e82c2ce1249a6e614f7adf62e3824329a7b79e7a4caa55cfadf254068a98a
 spec_speculator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/speculator.py	325dca3bb1aee7f3ce237f913e301f3008d765525ebf650ea4b88f195692471e
 config_vllm.py	/usr/local/lib/python3.12/dist-packages/vllm/config/vllm.py	2469664631e33ba4b317ca085405aa1b751e405f9c52ff9d3dda61a0cfc6c5a9
 cudagraph_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cudagraph_utils.py	c183937e6eb5b9c28c79d98fb4c64f562e7649d5f6d65743e6640b2f378ecf9f
@@ -75,3 +74,4 @@ speculative.py	/usr/local/lib/python3.12/dist-packages/vllm/config/speculative.p
 fly.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/spec_decode/fly.py	absent
 llm_base_proposer.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/spec_decode/llm_base_proposer.py	b9c26acf8b77cb56f062213aa6b9eebab58dc69980e78430da027493fc757237
 gpu_rejection_sampler.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/rejection_sampler.py	308d4171f892f27231655289ceb03cd4566533c7d26b8f98bd62ef0a34f986f0
+rejection_sampler_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py	659e82c2ce1249a6e614f7adf62e3824329a7b79e7a4caa55cfadf254068a98a

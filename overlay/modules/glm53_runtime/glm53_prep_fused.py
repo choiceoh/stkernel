@@ -100,7 +100,7 @@ _SPECULATORS = ("DFlashSpeculator", "DSparkSpeculator", "DFlash2Speculator")
 # glm53:v13-b12x. mla/indexer.py is the glm53_tail_slot_persistent copy that
 # is mounted over the image's. Drift anywhere -> stay stock (the fast path
 # was read against exactly these files).
-PREIMAGES: dict[str, str] = {
+PREIMAGES: dict[str, str | tuple[str, ...]] = {
     "v1/worker/gpu/model_runner.py":
         "f84255d75435e84f44972d3fd25e53447f9d4d2edd8bff4f8c19dfb793448415",
     "v1/worker/gpu/input_batch.py":
@@ -111,11 +111,14 @@ PREIMAGES: dict[str, str] = {
         "1dd3dd2826a2cc73005e7baecb71c26de8d56285b35d780716ab11ffe0f8495b",
     "v1/worker/gpu/buffer_utils.py":
         "51d37bde4f2f17d5aa9354faf35269ca1adde0eb16e73ae0d8b9860353ce57b7",
-    # glm53_dynamic_k overlays this file (vLLM #54801): the decode-query-length
-    # union now also reads the sequence-length draft schedule. prep-fused does
-    # not build that union, so the pin just follows the overlaid content.
-    "v1/worker/gpu/cudagraph_utils.py":
+    # glm53_dynamic_k may overlay this file (vLLM #54801): the
+    # decode-query-length union then also reads the sequence-length draft
+    # schedule. prep-fused does not build that union, so either content is one
+    # it was read against.
+    "v1/worker/gpu/cudagraph_utils.py": (
+        "c183937e6eb5b9c28c79d98fb4c64f562e7649d5f6d65743e6640b2f378ecf9f",
         "cd7bc832145c168f80c1cc30db227e8f529a569c1f6e3f4ae908414ea97b7d06",
+    ),
     "v1/worker/gpu/dp_utils.py":
         "3c882f85109ba47e473953351d166c4377ceb995205e91cbf128ca5075775a5d",
     "v1/worker/gpu/states.py":
@@ -128,12 +131,15 @@ PREIMAGES: dict[str, str] = {
         "3dcd6ad34ee1d1db2875f7f7dd51d90ee0e64041ab282180687770a38b26acb1",
     "v1/attention/backend.py":
         "301c76c90d5f26cdecfedfb385f8f17453154106d2decf763a31cb978f1a5d99",
-    # glm53_spec_state overlays this file (vLLM #51508); the pin follows the
-    # OVERLAID content, because that is what prep-fused's fused path has to
-    # agree with. Its own kernels re-apply the same staleness rule -- see
-    # nacc_stale in the fused kernel and in _glm53_regather_nacc_kernel.
-    "v1/attention/backends/gdn_attn.py":
+    # glm53_spec_state may overlay this file (vLLM #51508). Both contents are
+    # ones this module was read against -- its own kernels re-apply the same
+    # staleness rule either way (nacc_stale in the fused kernel and in
+    # _glm53_regather_nacc_kernel) -- so neither presence nor absence of that
+    # module should decide whether prep-fused arms.
+    "v1/attention/backends/gdn_attn.py": (
+        "f27f887e71a7d092b79f7de55044a303456cfbd1e5eaf3461b394da9b3f21eba",
         "d3fb32a2c2f15a70d53f5b7af00c9176d9cfb0595496a5523680f0facbb381c7",
+    ),
     "v1/attention/backends/utils.py":
         "cb9a34eb45a94847c8c9862952fe9ca5df4e7c7510425a5280afcbb48d941890",
     "v1/attention/backends/mla/compressor_utils.py":
@@ -219,7 +225,16 @@ _CUDA_DTYPES = (  # (attribute path, dtype) the CUDA kernel hard-codes
 
 
 def check_preimages(root: str) -> list[str]:
-    """Return the relative paths whose sha256 differs from PREIMAGES."""
+    """Return the relative paths whose sha256 is not one this module read.
+
+    A value may be a single hash or a tuple of them. The tuple exists because a
+    file this module reasons about can be legitimately owned by another overlay
+    module: pinning only that module's output would make prep-fused's arming
+    depend on that feature being loaded, and pinning only the image's would
+    disarm the moment it is. Listing both keeps the drift check while leaving
+    the modules independent -- so this is not a weakening: an unexpected edit
+    still matches nothing.
+    """
     bad = []
     for rel, want in PREIMAGES.items():
         path = os.path.join(root, rel)
@@ -228,8 +243,9 @@ def check_preimages(root: str) -> list[str]:
                 got = hashlib.sha256(f.read()).hexdigest()
         except OSError:
             got = "absent"
-        if got != want:
-            bad.append(f"{rel}: {got[:12]} != {want[:12]}")
+        allowed = want if isinstance(want, tuple) else (want,)
+        if got not in allowed:
+            bad.append(f"{rel}: {got[:12]} != {'/'.join(w[:12] for w in allowed)}")
     return bad
 
 

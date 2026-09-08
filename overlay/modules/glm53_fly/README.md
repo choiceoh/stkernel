@@ -1,10 +1,15 @@
 # glm53_fly — entropy-gated deferred verification (vLLM #53987)
 
-`fly.py` is new (`absent`); the other two replace their
-`0.1.dev20051+g487ecf187` originals. Two more of the PR's source files are
-owned by modules that already had them: `config/speculative.py`
-(`glm53_dynamic_k`) and `v1/worker/gpu/spec_decode/rejection_sampler_utils.py`
-(`glm53_draft_noise`).
+`fly.py` is new (`absent`); the other three replace their
+`0.1.dev20051+g487ecf187` originals. `config/speculative.py` belongs to
+`glm53_dynamic_k`, which already had it for #54801.
+
+`rejection_sampler_utils.py` is this module's, not `glm53_draft_noise`'s, even
+though it also carries that PR's one-line `IS_DRAFTING=False`: the FLy kernels
+are the bulk of the file, and splitting it the other way made the two modules
+require each other -- two names for one thing. `requires` now runs one way,
+`glm53_fly -> glm53_draft_noise` (its `gumbel_block_argmax` call) and
+`glm53_dynamic_k` (the `fly_*` config fields).
 
 ## What it is
 

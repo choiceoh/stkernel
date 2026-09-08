@@ -9835,10 +9835,24 @@ def test_glm53_prep_fused_contracts() -> None:
         {"os": os, "hashlib": hashlib, "logger": _CapturingLogger()},
     )
     pins = ns["PREIMAGES"]
-    check(len(pins) >= 15 and all(re.fullmatch(r"[0-9a-f]{64}", v) for v in pins.values()),
+    # A value may be one digest, or a tuple of the contents this module was read
+    # against when another overlay module legitimately owns the file (image +
+    # that module's output). A tuple is not a wildcard: an unexpected edit still
+    # matches nothing, and the alternative -- pinning one of the two -- makes
+    # prep-fused's arming depend on an unrelated feature module being loaded.
+    def _digests(value):
+        return value if isinstance(value, tuple) else (value,)
+    check(len(pins) >= 15
+          and all(re.fullmatch(r"[0-9a-f]{64}", d)
+                  for v in pins.values() for d in _digests(v)),
           "preimage table must pin full sha256 digests of the bypassed runner files")
+    check(all(len(set(_digests(v))) == len(_digests(v)) and len(_digests(v)) <= 2
+              for v in pins.values()),
+          "a pinned file may list at most two distinct contents: the image's and "
+          "the one overlay module that owns it")
     tail_idx = open(_overlay_source("overlay/glm53_kpool_indexer.py"), "rb").read()
-    check(pins["v1/attention/backends/mla/indexer.py"] == hashlib.sha256(tail_idx).hexdigest(),
+    check(hashlib.sha256(tail_idx).hexdigest()
+          in _digests(pins["v1/attention/backends/mla/indexer.py"]),
           "the pinned mla/indexer.py must be the mounted glm53_tail_slot_persistent copy")
     for rel in ("v1/worker/gpu/model_runner.py", "v1/worker/gpu/input_batch.py",
                 "v1/worker/gpu/block_table.py", "v1/worker/gpu/buffer_utils.py",

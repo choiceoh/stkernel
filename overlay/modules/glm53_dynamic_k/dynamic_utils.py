@@ -67,7 +67,12 @@ def validate_and_normalize_dynamic_sd_schedule(
     # the static K -- so its caller passes first_range_start=0.
     if parsed_schedule[0][0] != first_range_start:
         raise ValueError(
-            f"The first range must start at {first_range_start}."
+            "The first batch-size range must start at 1 so every runtime batch "
+            "size has a defined schedule."
+            if first_range_start == 1 else
+            "The first sequence-length range must start at 0 so every length "
+            "below the first threshold has a defined schedule; lengths past the "
+            "last range fall back to the static num_speculative_tokens."
         )
 
     return parsed_schedule
