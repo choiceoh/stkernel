@@ -17,7 +17,7 @@ from glm53_ep_local_evidence import validate_compile_evidence
 
 CASES = ("balanced4096", "balanced6912", "balanced8192", "concentrated6912",
          "remote4096", "duplicate4096", "zeros4097", "balanced16384")
-CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu12/local/result.json")
+CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu13/local/result.json")
 
 
 def resources(require_memory):

@@ -343,6 +343,8 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                     if lane_id == Int32(0):
                         topk_slot = Int32(0)
                         local_topk = Int32(0)
+                        producer_first_gs = cutlass.Float32(0.0)
+                        producer_scales_equal = Int32(1)
                         while topk_slot < num_topk:
                             pair_idx = token_idx * num_topk + topk_slot
                             expert_id = topk_ids[pair_idx].to(Int32)
@@ -370,16 +372,37 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                     route_phys_rows_addr + route_slot * Int32(4),
                                     phys_row,
                                 )
+                                selected_scale_bits = _ld_shared_i32(
+                                    expert_scales_addr + expert_id * Int32(4)
+                                )
                                 _st_shared_i32(
                                     route_scales_addr + route_slot * Int32(4),
-                                    _ld_shared_i32(
-                                        expert_scales_addr + expert_id * Int32(4)
-                                    ),
+                                    selected_scale_bits,
                                 )
+                                # Reuse this already-loaded word while the
+                                # input copy is in flight. Compare Float32,
+                                # preserving signed-zero equality and the
+                                # single-NaN case (never compare the first
+                                # selected scale with itself).
+                                selected_gs = Uint32(selected_scale_bits).bitcast(
+                                    cutlass.Float32
+                                )
+                                if local_topk == Int32(0):
+                                    producer_first_gs = selected_gs
+                                elif selected_gs != producer_first_gs:
+                                    producer_scales_equal = Int32(0)
 
                                 local_topk += Int32(1)
                             topk_slot += Int32(1)
-                        _st_shared_i32(route_expert_ids_addr + (route_slot_base + Int32(31)) * Int32(4), local_topk)
+                        # Only this Q0 producer/consumer uses slot 31. Top8
+                        # leaves bit 4 free above the four-bit route count;
+                        # publish equality in the existing count word, with
+                        # no extra shared store or slot. The same warp barrier
+                        # publishes both this state and the raw scale slots.
+                        _st_shared_i32(
+                            route_expert_ids_addr + (route_slot_base + Int32(31)) * Int32(4),
+                            local_topk | (producer_scales_equal << Int32(4)),
+                        )
                     cute.arch.sync_warp()
                     q0_ready = q0_bulk_try_wait(q0_bulk_barrier_addr, q0_bulk_phase)
                     while q0_ready == Int32(0):
@@ -387,28 +410,18 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                             q0_bulk_barrier_addr, q0_bulk_phase
                         )
 
-                    local_topk = _ld_shared_i32(route_expert_ids_addr + (route_slot_base + Int32(31)) * Int32(4))
+                    route_state = _ld_shared_i32(
+                        route_expert_ids_addr + (route_slot_base + Int32(31)) * Int32(4)
+                    )
+                    local_topk = route_state & Int32(15)
                     if local_topk > Int32(0):
-                        # The preceding warp barrier publishes lane 0's raw
-                        # scale words.  Slots remain live until the next
-                        # batch's CTA barrier, just like physical-row slots.
-                        # Preserve Float32 equality and the first scale bits;
-                        # varied scales are reread by shared warp broadcast.
-                        first_gs = cutlass.Float32(0.0)
-                        route_scales_equal = Int32(1)
-                        cache_slot = Int32(0)
-                        while cache_slot < local_topk:
-                            route_slot = route_slot_base + cache_slot
-                            gs_value = Uint32(_ld_shared_i32(
-                                route_scales_addr + route_slot * Int32(4)
-                            )).bitcast(cutlass.Float32)
-                            # Compare while the transformed scale is already
-                            # in a register; do not reread the route cache.
-                            if cache_slot == Int32(0):
-                                first_gs = gs_value
-                            elif gs_value != first_gs:
-                                route_scales_equal = Int32(0)
-                            cache_slot += Int32(1)
+                        # Every lane reloads published state; lane 0's
+                        # registers are not shared. The next batch's CTA
+                        # barrier still protects the raw selected-scale slots.
+                        first_gs = Uint32(_ld_shared_i32(
+                            route_scales_addr + route_slot_base * Int32(4)
+                        )).bitcast(cutlass.Float32)
+                        route_scales_equal = route_state >> Int32(4)
 
                         sf_idx = lane_id
                         while sf_idx < sf_blocks_per_row:
