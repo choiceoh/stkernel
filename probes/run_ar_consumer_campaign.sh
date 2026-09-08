@@ -13,15 +13,38 @@ export AR_CONSUMER_OUT=${AR_CONSUMER_OUT:-/home/choiceoh/glm53-logs/ARCONSUMER-$
 [[ ! -e $AR_CONSUMER_OUT ]] || { echo 'fresh evidence required'; exit 2; }
 mkdir -p "$AR_CONSUMER_OUT"
 git rev-parse HEAD > "$AR_CONSUMER_OUT/source.commit"
+stop_serving() {
+  python3 - <<'PY'
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import os,shlex,subprocess
+held=Path('/home/choiceoh/glm53-logs/fleet/holder').read_text().split('|')
+assert held[0]==os.environ['FLEET_SESSION'] and held[-1].strip()=='boot'
+code='import subprocess,sys; name=sys.argv[1]; names=subprocess.check_output(["docker","ps","--format","{{.Names}}"],text=True).splitlines(); subprocess.run(["docker","stop","-t","30",name],check=True,timeout=40) if name in names else None'
+def stop(node):
+    cmd=['python3','-c',code,'glm53' if node==2 else 'glm53-worker']
+    if node!=2:cmd=['ssh','-o','BatchMode=yes','choiceoh@10.10.10.'+str(node),shlex.join(cmd)]
+    subprocess.run(cmd,check=True,timeout=50)
+with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(stop,[2,1,3,4]))
+PY
+}
+touched=0
+cleanup() {
+  local rc=$?
+  trap - EXIT
+  # A live loopback-only server looks "booting" to public-port admission.
+  # Release our serving processes before the supervisor transfers the hold;
+  # its restore/handoff policy retains responsibility for the public service.
+  if [[ $touched == 1 ]]; then
+    stop_serving > "$AR_CONSUMER_OUT/stop-experiment.log" 2>&1 || rc=1
+  fi
+  exit "$rc"
+}
+trap cleanup EXIT
 python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$AR_CONSUMER_OUT/before-metrics.txt"
 # The fleet supervisor owns recovery, including early exits and queue handoff.
-docker stop -t 30 glm53 >/dev/null
-pids=()
-for node in 1 3 4; do
-  ssh -o BatchMode=yes "choiceoh@10.10.10.$node" docker stop -t 30 glm53-worker >/dev/null &
-  pids+=($!)
-done
-for pid in "${pids[@]}"; do wait "$pid"; done
+touched=1
+stop_serving > "$AR_CONSUMER_OUT/stop-before-probe.log" 2>&1
 python3 probes/run_ar_consumer_gpu.py --out "$AR_CONSUMER_OUT/gpu"
 bash launchers/deploy-overlays.sh glm53 > "$AR_CONSUMER_OUT/deploy.log" 2>&1
 export FLEET=/home/choiceoh/stkernel/bench/fleet.sh LEVER=$REPO/probes/ar_consumer_lever.sh

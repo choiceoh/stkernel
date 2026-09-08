@@ -47,7 +47,9 @@ REPO="$PWD" bash /home/choiceoh/stkernel/bench/fleet.sh run --gpu \
 ```
 
 The campaign verifies an idle service before stopping it. Its own GPU probe
-containers stop on failure; the fleet supervisor owns approved-main recovery
+containers stop on failure. It stops its loopback serving before releasing
+the hold so public-port admission cannot mistake it for an unfinished boot.
+The fleet supervisor owns approved-main recovery
 or a validated transfer to the next boot job.
 
 The probe first uses a deliberately delayed producer, then the real four-node
