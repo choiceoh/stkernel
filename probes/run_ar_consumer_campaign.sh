@@ -35,7 +35,7 @@ cleanup() {
   # A live loopback-only server looks "booting" to public-port admission.
   # Release our serving processes before the supervisor transfers the hold;
   # its restore/handoff policy retains responsibility for the public service.
-  if [[ $touched == 1 ]]; then
+  if [[ $touched == 1 && ${FLEET_RESTORE_MANAGED:-0} == 1 ]]; then
     stop_serving > "$AR_CONSUMER_OUT/stop-experiment.log" 2>&1 || rc=1
   fi
   exit "$rc"
