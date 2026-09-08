@@ -236,6 +236,7 @@ class PriorityTests(unittest.TestCase):
     def test_real_admission_function_preserves_live_holder_and_uses_priority_when_free(self):
         source = (ROOT / "bench/fleet.sh").read_text()
         function = source[source.index("_try_hold() {"):source.index("_ledger_row() {")]
+        function = next(line for line in source.splitlines() if line.startswith("kind_of() {")) + "\n" + function
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             queue = root / "queue"
@@ -255,7 +256,11 @@ legacy_busy() { return 1; }
 me() { echo host; }
 now() { date +%s; }
 '''
-            env = dict(os.environ, FLEET_DIR=directory, LOGD=directory, REPO=str(ROOT))
+            # A restore can invoke this test from an older pinned controller.
+            # The extracted admission function must use this checkout's
+            # helpers and temporary fleet, not the caller's live runner.
+            env = dict(os.environ, FLEET_DIR=directory, LOGD=directory,
+                       REPO=str(ROOT), FLEET_RUNNER_REPO=str(ROOT))
             def admit():
                 return subprocess.run([BASH, "-c", setup + function + "\n_try_hold short $$ 2 note boot"],
                                       env=env, capture_output=True, text=True)
@@ -265,6 +270,7 @@ now() { date +%s; }
             holder.unlink()
             result = admit()
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn('command not found', result.stderr)
             self.assertTrue(holder.read_text().startswith("short|"))
 
 
@@ -298,7 +304,7 @@ class SubmissionTests(unittest.TestCase):
         (self.repo / "bench/ab-lever.sh").write_text(FAKE_LEVER)
         (self.repo / "bench/onepass.py").write_text(FAKE_ONEPASS)
         for name in ("pair.sh", "chain.sh", "baseline.py", "judge.py", "experiments.py", "cpu_checks.py",
-                     "cpu_evidence.py", "probe_report.py", "experiment_baselines.py", "fleet_priority.py", "fleet_handoff.py", "measurement_contract.py",
+                     "cpu_evidence.py", "fleet_source.py", "probe_report.py", "experiment_baselines.py", "fleet_priority.py", "fleet_handoff.py", "measurement_contract.py",
                      "serving_group.py", "experiment_resources.py", "prepared_artifacts.py", "cpu_unittest.py",
                      "experiment_plan.py", "cpu_compile.py", "experiment_sharing.py", "experiment_groups.py", "experiment_retirement.py", "experiment_metrics.py", "cpu_contracts.py", "experiment_submission.py", "experiment_explain.py"):
             shutil.copy(ROOT / "bench" / name, self.repo / "bench" / name)

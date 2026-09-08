@@ -84,6 +84,13 @@ def main():
     if Path('/proc').exists():
         lines = [line for line in lines if len(line.split('|')) < 7 or not line.split('|')[6]
                  or identity(int(line.split('|')[6]))]
+    from fleet_pause import paused
+    paused_lines = [line for line in lines if paused(directory, line.split('|')[1], line.split('|'))]
+    if args.apply and paused_lines:
+        from fleet_pause import reconcile
+        for line in paused_lines:
+            reconcile(directory, line.split('|')[1])
+    lines = [line for line in lines if line not in paused_lines]
     rows = rank(lines, downstream(db),
                 time.time(), marker("priority-front"), marker("priority-yield"), not args.boot_only, estimates(db))
     # A finishing holder selected this live supervisor using this same policy.
@@ -100,7 +107,10 @@ def main():
         temporary.write_text("".join(r["line"] + "\n" for r in rows))
         temporary.replace(queue)
     else:
-        print(json.dumps([{k: v for k, v in r.items() if k not in {"line", "key"}} for r in rows]))
+        from fleet_pause import parked
+        answer = [{k: v for k, v in r.items() if k not in {"line", "key"}} for r in rows]
+        answer.extend(dict(session=v['session'], state='paused') for v in parked(directory))
+        print(json.dumps(answer))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-09-08",
+  "scope": "Read-only inspection of retained srv2 records. No GPU execution, serving changes, queue edits, or candidate checkout edits were performed.",
+  "main_revision_checked": "0bbd96c30d1e644caba9acb672420e516c41af8e",
+  "failures": [
+    {
+      "session": "arconsumer0908v6",
+      "revision": "3a98b0b81006303d022554bb8663b923d5083370",
+      "payload_error": "ABORT: candidate needs current main",
+      "cause": "The campaign fetched main and rejected source ancestry after fleet admission, before creating its evidence directory or starting its GPU probe.",
+      "log": "/home/choiceoh/ar-consumer-checks-3a98b0b/campaign.log",
+      "log_lines": [
+        11,
+        16,
+        17,
+        18
+      ],
+      "guard": "/home/choiceoh/stkernel-ar-consumer-3a98b0b/probes/run_ar_consumer_campaign.sh",
+      "guard_lines": [
+        10,
+        11
+      ],
+      "go_local_time": "2026-09-08 15:52:59 KST",
+      "restore_completed_local_time": "2026-09-08 15:58:20 KST",
+      "go_to_restore_complete_seconds": 321,
+      "timing_scope": "Observed elapsed interval including final recovery, not GPU measurement time or a demonstrated saving.",
+      "remediation_scope": "Fetch and validate the required main ancestry before GPU queue admission; retain source identity validation before execution."
+    },
+    {
+      "session": "arconsumer0908v8",
+      "revision": "4a55756",
+      "payload_error": "ABORT: candidate needs current main",
+      "cause": "Fetched main after GO; required main ancestry was missing before any serving mutation.",
+      "log": "/home/choiceoh/glm53-logs/fleet/run-logs/da02fddcf1e87113ecc6de7063a00082b0550e5fdf4f84696581d064766e3683.log",
+      "guard": "/home/choiceoh/stkernel-ar-consumer-4a55756/probes/run_ar_consumer_campaign.sh",
+      "payload_after_accept_seconds": 2.4,
+      "restore_seconds": 472.8,
+      "timing_scope": "Observed lifecycle event intervals, not demonstrated savings."
+    },
+    {
+      "session": "epbindinggpu0908v2",
+      "revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00",
+      "payload_error": "RuntimeError('require four running, persistent, pinned-image containers or four absent containers')",
+      "cause": "The incoming four pinned persistent containers were all stopped. validate_before only accepted all running or all absent, rejecting the stopped-container handoff before the diagnostic GPU cell started.",
+      "log": "/tmp/glm53-ep-binding-gpu0908-2/fleet.log",
+      "log_lines": [
+        9,
+        14,
+        338
+      ],
+      "completion": "/tmp/glm53-ep-binding-gpu0908-2/capture/completion.json",
+      "before_snapshot": "/tmp/glm53-ep-binding-gpu0908-2/capture/before.json",
+      "guard": "/home/choiceoh/stkernel-ep-binding-gpu0908-2/probes/glm53_probe_lifecycle.py",
+      "guard_lines": [
+        92,
+        95,
+        96,
+        97,
+        98,
+        99
+      ],
+      "exit_code": 1,
+      "diagnostic_command_recorded": false,
+      "diagnostic_cell_started_recorded": false,
+      "sanitizer_cpu_preflight": "PASS",
+      "go_local_time": "2026-09-08 16:44:07 KST",
+      "restore_completed_local_time": "2026-09-08 16:49:14 KST",
+      "go_to_restore_complete_seconds": 307,
+      "timing_scope": "Observed elapsed interval including final recovery, not GPU measurement time or a demonstrated saving.",
+      "incoming_states": [
+        {
+          "node": "local",
+          "exists": true,
+          "running": false,
+          "auto_remove": false,
+          "pinned_image_matches": true,
+          "overlays_present": true,
+          "manifest_present": true,
+          "port": 8000
+        },
+        {
+          "node": "10.10.10.1",
+          "exists": true,
+          "running": false,
+          "auto_remove": false,
+          "pinned_image_matches": true,
+          "overlays_present": true,
+          "manifest_present": true,
+          "port": 8000
+        },
+        {
+          "node": "10.10.10.3",
+          "exists": true,
+          "running": false,
+          "auto_remove": false,
+          "pinned_image_matches": true,
+          "overlays_present": true,
+          "manifest_present": true,
+          "port": 8000
+        },
+        {
+          "node": "10.10.10.4",
+          "exists": true,
+          "running": false,
+          "auto_remove": false,
+          "pinned_image_matches": true,
+          "overlays_present": true,
+          "manifest_present": true,
+          "port": 8000
+        }
+      ],
+      "followup_checked": {
+        "session": "epbindinggpu0908v3",
+        "checkout": "/home/choiceoh/stkernel-ep-binding-gpu0908-3",
+        "revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00",
+        "same_rejecting_guard": true,
+        "pull_request": "https://github.com/choiceoh/stkernel/pull/478",
+        "pull_request_title": "perf: fuse full-token expert-local GLM prefill",
+        "pull_request_head_checked": "31d5c7dbb911f830cd45b04e9313f23399e7fdbc",
+        "pull_request_head_same_rejecting_guard": true
+      },
+      "module_present_on_checked_main": false,
+      "private_probe_patch_applied": false,
+      "remediation_scope": "The unmerged lifecycle and its callers need homogeneous stopped-container admission plus exact original-state recovery. Do not copy those candidate modules into main or alter the active frozen checkout. A CPU capability check can reject an incompatible recipient before queue admission; a one-time live snapshot check alone cannot establish compatibility with a later stopped handoff."
+    }
+  ],
+  "privacy": "Only error excerpts, source paths/revisions, timing markers, and whitelisted container-state booleans were retained. Original container configuration, environment, mounts, and full snapshot contents were not copied.",
+  "fixes": {
+    "ancestry": "New runs recognize literal guards before queueing and validate local source again under the admission lock; remote refresh occurs while waiting.",
+    "stopped_containers": {
+      "pull_request": "https://github.com/choiceoh/stkernel/pull/484",
+      "source_commit": "9764c1f6056c092c2a8abce31b46bd6c5b476e22",
+      "base_pull_request": 478,
+      "cpu_tests_passed": 39,
+      "live_gpu_validation": false
+    }
+  }
+}

@@ -7639,7 +7639,7 @@ def test_osar_prefetch_hints_contract() -> None:
                                   "glm53_megakernel.py"), encoding="utf-8").read()
     for site, note, launch in (
             ("gemm", "_ar_note(mk_pack[0], mk_pack[1])", "_EXT.run_gemm("),
-            ("mhc", "_ar_note(fn)", "_EXT.run_mhc(")):
+            ("mhc", "_ar_note(weight)", "_EXT.run_mhc(")):
         n_at, l_at = drv.find(note), drv.find(launch)
         check(0 < n_at < l_at, f"{site} launch notes its weights first")
 
@@ -8184,11 +8184,13 @@ def test_self_built_kernels_persist_their_caches() -> None:
           "self-test, gated under the fused segment's arm")
     check("cm_i = torch.eye(HC, dtype=torch.float32, device=device).reshape(1, HC * HC)" in mkp
           and "x0[:num_tokens], residual.reshape(-1, hc_mult, hidden)," in mkp
-          and "pm0[:num_tokens], cm_i[:num_tokens], fn, hc_scale, hc_base," in mkp
+          and "pm0[:num_tokens], cm_i[:num_tokens]," in mkp
+          and "fn.reshape(hc_mult * (2 + hc_mult), hc_mult * hidden).contiguous()," in mkp.split("def mhc_pre_only(", 1)[1].split("def mhc_pre_hook(", 1)[0]
           and "identity = identity and bool(torch.equal(rc, res)) and bool(torch.equal(res_ref, res))" in mkp
           and 'spec_k = (os.environ.get("VLLM_GLM53_SPEC_K") or "7").strip()' in mkp
           and "ts.append(int(spec_k) + 1)" in mkp,
-          "identity post coefficients from static buffers sliced per call; "
+          "identity post coefficients from static buffers sliced per call "
+          "and standalone pre weights normalized to the fused input layout; "
           "the self-test proves the identity bitwise and adds T=k+1 only on "
           "a non-7 spec boot")
     # 37차 (operator: "200줄 쿠다"): the fused decode-step preparation kernel
@@ -8501,7 +8503,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 13
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 14
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
@@ -8668,7 +8670,7 @@ def test_glm53_megakernel_contracts() -> None:
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
-    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 9
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 10
           and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu
           and "&g_gemm2_m8_bps, mk_gemm2_kernel<1, false, true>, MK_THREADS, GEMM2_M8_SMEM" in cu,
           "the persistent grids check residency before launching: a grid "
@@ -10149,6 +10151,71 @@ def test_profile_keys_not_passed_via_extra_env() -> None:
     print("  profile keys not via EXTRA_ENV .. OK")
 
 
+
+
+def test_glm53_index_cache_layer_rule() -> None:
+    """IndexCache (40차): the reuse frequency counts INDEXER layers, so on
+    GLM-5.3's interleaved stack (11 of 45) the FIRST one always computes its own
+    top-k. The inherited global-layer-id rule skipped layer 3, whose shared
+    topk_indices_buffer nothing had written that step."""
+    ns = load_defs("overlay/modules/glm53_model/glm5next_attention.py",
+                   {"_indexer_layer_ids", "_resolve_skip_topk"}, {})
+    ids, skip = ns["_indexer_layer_ids"], ns["_resolve_skip_topk"]
+    glm53 = [3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43]
+    types = ["deepseek_sparse_attention" if i in glm53 else "linear_attention" for i in range(45)]
+
+    class _Cfg:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    check(ids(_Cfg(layer_types=types)) == glm53,
+          "layer_types names the indexer layers (GLM-5.3: 11 of 45)")
+    check(ids(_Cfg(linear_attn_config={"full_attn_layers": list(reversed(glm53))})) == glm53,
+          "linear_attn_config.full_attn_layers is the fallback, in order")
+    check(ids(_Cfg()) == [], "no layer map -> no indexer layers -> reuse stays off")
+
+    off = _Cfg(layer_types=types, index_topk_freq=6)
+    check(not any(skip(off, i) for i in range(45)), "use_index_cache off must not skip any layer")
+
+    on6 = _Cfg(layer_types=types, use_index_cache=True, index_topk_freq=6)
+    computed = [i for i in glm53 if not skip(on6, i)]
+    check(computed == [3, 27], f"freq=6 computes ordinals 0 and 6 = layers 3 and 27, got {computed}")
+    check(not skip(on6, 3), "the FIRST indexer layer always computes (the buffer it would read is unwritten)")
+    check(not any(skip(on6, i) for i in range(45) if i not in glm53),
+          "a KDA layer runs no indexer at all, so it is never a reuse layer")
+    # the old rule is the bug, not a variant: it skipped layer 3 and computed 4 of 11
+    check([i for i in glm53 if not (max(i - 1, 0) % 6 != 0)] == [7, 19, 31, 43],
+          "control: the inherited global-id rule computes 4 of 11 and skips the first")
+    attn_src = open(_overlay_source("overlay/modules/glm53_model/glm5next_attention.py"),
+                    encoding="utf-8").read()
+    check("max(layer_id - 1, 0) %" not in attn_src, "the global-layer-id rule is gone from the overlay")
+
+    on2 = _Cfg(layer_types=types, use_index_cache=True, index_topk_freq=2)
+    check([i for i in glm53 if not skip(on2, i)] == glm53[::2], "freq=2 computes every other indexer layer")
+    pat = _Cfg(layer_types=types, use_index_cache=True, index_topk_freq=6,
+               index_topk_pattern=["S" if i == 7 else "F" for i in range(45)])
+    check(skip(pat, 7) and not skip(pat, 3) and not skip(pat, 11),
+          "an explicit index_topk_pattern wins over the frequency")
+
+    launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check("\nINDEX_CACHE_FREQ=0\n" in profile and profile.count("\nINDEX_CACHE_FREQ=") == 1,
+          "profile declares INDEX_CACHE_FREQ exactly once and OFF (it is an approximation, unmeasured)")
+    check("MAMBA_CACHE_DTYPE INDEX_CACHE_FREQ" in launcher,
+          "INDEX_CACHE_FREQ is a caller-overridable profile key")
+    check('ABORT: INDEX_CACHE_FREQ must be a non-negative integer' in launcher,
+          "a non-numeric frequency aborts the boot instead of reaching vLLM")
+    check("""--hf-overrides '{\\"use_index_cache\\":true,\\"index_topk_freq\\":$INDEX_CACHE_FREQ}'""" in launcher
+          and "${HF_OVERRIDES_FLAG:+$HF_OVERRIDES_FLAG }\\" in launcher,
+          "the JSON reaches vLLM single-quoted (a bare {\"a\":1,\"b\":2} is brace expansion in the remote shell)")
+    cfg_path = "/home/choiceoh/models/glm53-redhat-nvfp4/config.json"
+    if os.path.exists(cfg_path):
+        import json as _json
+        doc = _json.load(open(cfg_path, encoding="utf-8"))
+        text = doc.get("text_config", doc)
+        check(ids(_Cfg(layer_types=text["layer_types"])) == glm53,
+              "the served checkpoint still has these 11 indexer layers")
+    print("  glm53 IndexCache layer rule ... OK")
 
 
 def test_glm53_indexer_gate_splitk_contracts() -> None:
@@ -11755,6 +11822,7 @@ if __name__ == "__main__":
     test_launcher_restores_prefill_warmup_from_caller_env()
     test_decode_first_scheduler_contracts()
     test_profile_keys_not_passed_via_extra_env()
+    test_glm53_index_cache_layer_rule()
     test_glm53_indexer_gate_splitk_contracts()
     test_bracket_runner_contracts()
     test_trace_composition_analyze()

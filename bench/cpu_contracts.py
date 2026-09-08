@@ -13,11 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited against 16834a4 (40차 dev instrument): the only added AST nodes are
-# inside test_decode_first_scheduler_contracts (the chunk-file cases and one env
-# key) plus two launcher/profile checks after it. None of the three audited
-# helpers, their tests or the access graphs in DEPENDENCY_AUDITS are touched.
-LOGIC_AUDIT = '17d05a4e0ab9fcf3d293c8f2149cb0945bf25f4ae563d25c7a4b4ec91c5ab7c9'
+# Re-audited at eb379b15: consumer weight notes, PDL/occupancy counts,
+# and the standalone MHC normalized-weight call contract differ from upstream.
+# The three audited helper tests and access graphs are unchanged.
+LOGIC_AUDIT = 'dd7382695cb15635b1d04f844b11872421bd7c9452dea53b96df9a4336f75f5d'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

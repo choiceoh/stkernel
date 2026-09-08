@@ -69,6 +69,84 @@ CUDA devices and retains CPU-only evidence scope. Fix the input/revision before
 submitting a corrected experiment; a successful process exit is still insufficient
 to promote incomplete CPU/probe evidence.
 
+## Find your work and inspect a reservation
+
+```bash
+# Only your active structured requests; includes requests shared with peers.
+bash bench/fleet.sh jobs --session fusion --active
+bash bench/fleet.sh jobs --session fusion --limit 20
+
+# Fast local snapshot: no Docker, SSH, serving health, or baseline queries.
+bash bench/fleet.sh show
+bash bench/fleet.sh show fusion
+bash bench/fleet.sh show fusion --json
+bash bench/fleet.sh logs fusion --tail 80
+```
+
+`jobs` retains its existing JSON list format. Session filtering happens before
+the result limit, so unrelated recent jobs cannot hide your older request.
+Withdrawn subscriptions are omitted only for that subscriber; `--active` excludes
+all terminal states. The default limit is 100; `--limit` accepts 1..1000.
+
+`show` with no name lists the current holder and queue. With a reservation name,
+it reports the exact argv/cwd/revision, position and current blocker while queued,
+phase and elapsed time while executing, and retained exit status after completion.
+It also tells you whether editing is still possible and prints the matching edit,
+log and structured-result commands. It does not run, retry, promote, cancel or
+acquire anything. Use the existing `status` command when serving-health checks are
+needed.
+
+New `run --gpu` and `run --probe` supervisors retain combined waiting/payload/
+restore output in a private per-ticket log while continuing live output. A
+successful payload followed by failed restore is reported as failed, with both
+exit codes. A cancelled or dead supervisor is not reported as successful. Capture
+errors do not prevent recovery; a saved `log_error` warns that output may be
+incomplete. A blocked or disconnected viewer may miss live chunks; it can retrieve
+the retained output with `logs`.
+
+`logs` reads at most the last 256 KiB and accepts 1..2000 lines (default 80).
+The command never follows a pipe or waits for future output. Older live controllers
+can expose their existing stdout log if it is a regular file. Missing old terminal
+output or completion status is reported as unavailable instead of guessed. A
+reused session name shows the latest reservation; earlier per-ticket log files
+remain separate.
+
+## Edit a waiting reservation
+
+For a reservation created by the current `fleet.sh run --gpu` (including pair
+and chain wrappers) or `run --probe`, inspect and revise it before GO:
+
+```bash
+bash bench/fleet.sh edit fusion
+bash bench/fleet.sh edit fusion --expect-revision 1 --est 20 --note "updated cells" \
+  --cwd /home/choiceoh/stkernel -- bash /tmp/revised-cells.sh
+# Metadata only; the existing command is retained:
+bash bench/fleet.sh edit fusion --note "CPU checks passed; smaller workload"
+```
+
+`--` replaces the entire argv, without shell interpolation. Use `env KEY=value
+command ...` to set command-specific environment variables. Otherwise the
+original supervisor environment is retained; `--cwd` changes the payload's
+working directory. The executable and the actual replacement command must pass
+preflight using the waiter's pinned controller before the edit commits. A failed
+check, concurrent edit or admission during preflight keeps the previous command.
+`--expect-revision` prevents an agent from overwriting a revision it has not read.
+
+Edits retain the session, ticket, original enqueue time, PID, GPU/probe kind and
+queue neighbors. Normal boundary scheduling still applies; changing the duration
+can change its priority. Admission and edits use the same fleet lock: after GO,
+or during recovery, edits are refused. The private pending record retains prior
+revisions; the lifecycle acceptance event records the revision actually executed.
+No new reservation, baseline measurement or production restore is created by an
+edit.
+
+Already-running **older** controllers and bare `request`/`wait` reservations do
+not have an editable command record and are explicitly refused. An installed
+update cannot replace another process's pinned controller. Structured `submit`
+experiments allow queue note/estimate edits, but their command/cwd remain bound to
+the submitted evidence identity. Change their manifest through
+`submit --supersedes` instead; that replacement follows normal submission order.
+
 ## Submit a batch
 
 ```json
@@ -716,3 +794,169 @@ CPU validation of these changes uses the regular fleet suite, startup campaign
 and receipt tests. Run `tests/test_boot_supervisor_linux.py` explicitly on Linux
 for real shell admission, cancellation and handoff with fake system commands;
 it never accesses GPUs, SSH or production containers.
+
+## Detach, retry and inspect an exact reservation
+
+```bash
+REPO="$PWD" bash bench/fleet.sh run --gpu --detach agent 20 "candidate" -- bash probes/candidate.sh
+REPO="$PWD" bash bench/fleet.sh run --cpu --detach cpu-agent -- python3 bench/cpu_checks.py --suite fleet
+bash bench/fleet.sh history agent --json
+bash bench/fleet.sh show agent --ticket TICKET
+bash bench/fleet.sh logs agent --ticket TICKET
+bash bench/fleet.sh classify --explain bash probes/candidate.sh
+bash bench/fleet.sh retry agent EXPERIMENT_ID --reason "temporary dependency restored"
+```
+
+Detached launch returns a private log path, process identity and a durable queued
+ticket or CPU-start receipt. A repeated identical launch joins the same process;
+its timeout returns `accepted=false`, never a fabricated ticket. A completed launch
+retains its result; use a fresh session for independent raw work. Queued commands
+can still be replaced with `edit`. GPU reservation history keeps previous commands,
+outcomes and logs by ticket, including when a session name is reused. Discovery
+lists the recent 1,000 tickets; older known tickets remain directly accessible.
+CPU detach exposes its startup log and completion receipt, without creating a GPU
+reservation. `classify --explain` reports the matching argv or source line; the
+classification policy remains unchanged and CPU refusal prints those reasons.
+
+`retry` applies to experiments created by `submit`/`batch`, whose source, environment,
+inputs and dependencies have a saved manifest. It accepts failed, blocked or
+interrupted attempts and retains the original result. It freshly attests the saved
+source, joins compatible work and keeps successful CPU evidence and baseline samples.
+A failed shared baseline is acquired again only for an explicit retry. This is not
+an independent `--repeat` measurement. Failed prerequisites must be repaired explicitly.
+Raw shell requests lack a complete declared environment/dependency contract; retrying
+those uses a new `run` with the intended command and inputs shown by `show`.
+
+## Prepare ordinary runs before they take a turn
+
+Every new `run` checks executable/script existence, shell/Python syntax and binds
+literal source-file arguments and the execution checkout revision. It recognizes
+literal campaign ancestry and clean-tree guards, including scripts outside the
+checkout. Known scripts that derive `REPO` from their parent and `cd "$REPO"` use
+that source checkout. Arbitrary shell expressions, nested imports and dynamic `cd`
+are not inferred; declare additional inputs or a bounded CPU check explicitly:
+
+```json
+{
+  "required_paths": ["models/config.json", "build/cpu-proof.json"],
+  "absent_paths": ["build/new-candidate-evidence"],
+  "git": {"ancestor": "origin/main", "clean": true},
+  "images": ["registry.example/model@sha256:REPLACE_WITH_DIGEST"],
+  "cpu_command": ["python3", "bench/cpu_checks.py", "--test", "tests/test_candidate.py"],
+  "timeout_seconds": 120
+}
+```
+
+```bash
+# Check immediately without reserving GPUs, or attach the same checks to a run.
+bash bench/fleet.sh prepare agent --spec prepare.json -- bash probes/candidate.sh
+bash bench/fleet.sh run --gpu --detach --prepare prepare.json agent 20 "candidate" -- bash probes/candidate.sh
+```
+
+CPU preparation runs once per preparation, with GPUs hidden and GPU-classified
+commands refused. It does not run again at every queue poll. File/revision checks
+repeat before GO; remote ref refresh and image checks run outside the fleet lock
+every 30 seconds while waiting. CPU preparation inputs are bound too. Local checks
+and admission share the lock. A failed older check cannot discard a newer edit.
+An explicit `edit agent -- bash probes/candidate.sh` rebinds changed source even
+when the argv is identical. New reservations pause on preparation failure before
+acquiring a hold. Their ticket, original age and owner survive for editing and
+explicit resumption; they do not acquire restore responsibility. Existing pinned
+controllers retain their original contract. A fresh fetch or dynamic environment check performed by
+the payload after GO can still reveal a later change; preparation is not an atomic
+snapshot of remote services and never silently rebases a candidate.
+
+
+## Reuse preparation and pause for revisions
+
+```bash
+MANIFEST=$(bash bench/fleet.sh prepare agent --spec prepare.json -- bash probes/candidate.sh)
+bash bench/fleet.sh run --gpu --detach --prepared "$MANIFEST" agent 20 "candidate" -- bash probes/candidate.sh
+bash bench/fleet.sh pause agent --reason "input needs revision"
+# After revising the candidate, bind and validate its new inputs.
+bash bench/fleet.sh edit agent -- bash probes/candidate.sh
+bash bench/fleet.sh resume agent
+```
+
+`--prepared` accepts the same session, command, cwd, specification, source,
+explicit input files, runtime, image and effective environment. A mismatch names
+what changed and refuses reuse. Successful audited `cpu_checks.py` suites and
+contracts reuse their passing evidence. Arbitrary CPU commands with unknown
+transitive dependencies run again on fresh preparation or an ordinary edit;
+explicit `--prepared` refuses to reuse them. Receipts are authenticated in the
+private fleet preparation store. Changing SSH connection metadata does not force
+revalidation; that metadata is removed from the payload environment too. Literal `env NAME=value`, `env -u` and `env -i`
+prefixes select payload settings; the supervisor supplies its owned fleet and
+recovery context after applying them.
+
+An ordinary command edit attempts compatible preparation reuse and prepares
+again only when needed. An explicit `--prepared` mismatch refuses the edit and
+retains the original reservation. An identical command edit deliberately accepts
+new source/input state after checking it. Editing a paused reservation keeps it
+paused; `resume` validates it outside the queue lock and uses a revision comparison
+before making it runnable. `--expect-revision N` protects pause, resume and edit
+against concurrent changes.
+
+Paused reservations preserve their ticket and original arrival time in the saved
+record, outside the runnable queue. Existing pinned controllers therefore skip
+them too. Other jobs can acquire GPUs while the owner fixes its command or inputs.
+`show` exposes the pause reason and resume action; cancellation still stops the
+owning waiter. Resuming restores the same ticket and age to queue priority.
+A check of an older revision cannot pause or remove a newer edit.
+
+Known audited CPU suites omit nonexecuted documentation and measurement outputs
+from their source key. Declared inputs, executable files, symlinks, code and
+runtime changes remain bound; unreviewed test changes restore the full source
+scope. Eight audited campaign wrappers use the same source-aware main ancestry
+check, allowing only irrelevant upstream prose/output changes. GPU revision,
+build and baseline identities remain exact. Experiment results report CPU
+`explanation.cache_reuse` as `cached`, `identity_match`, `changed` or `unknown`,
+including changed file/component names without environment values.
+
+## Quick experiment admission and stable release recovery
+
+New boot requests run a short CPU admission check before joining the GPU queue:
+shell syntax, composition of the selected profile, and syntax/manifest contracts
+for its overlay files. The check has a 30-second execution limit, imports no
+model kernels, runs no full logic/Fleet suite and starts no chat-check container.
+Its receipt binds clean source, the selected profile, checker and required tools;
+queue rechecks and deployment consume that receipt without repeating the checks.
+Admission is a syntax/deployment check, not numerical or release evidence. The
+experiment's GPU correctness and onepass validation remain responsible for actual
+kernel outputs, communication and performance. Explicitly declared experiment CPU
+prerequisites still run; they are not silently dropped.
+
+Literal campaign checkout and image/model overrides are bound to preparation;
+dynamic deployment scripts declare `deployment_targets` with `repo`, `profile`
+and optional `image`/`model`. Direct deployment still requires the complete CPU
+release gate: full logic, runtime guard audit, GLM overlay synchronization and
+CPU-only chat release checks. To request it separately:
+
+```bash
+python3 bench/fleet_validation.py validate --repo "$PWD" --profile glm53 --level release
+```
+
+Recovery reuses an existing release-validated approved main checkout, even after
+main advances. A private per-production-repository pointer keeps that choice
+stable. Older evidence is verified by its original approved validator; quick
+admission evidence can never authorize recovery. Source changes, rewritten main,
+changed release dependencies and altered receipts still reject reuse. Only the
+first setup without a valid recovery must acquire a complete release receipt.
+Refresh the recovery version explicitly, outside a GPU hold:
+
+```bash
+python3 bench/fleet_validation.py prepare-recovery --repo "$PRODUCTION_REPO" --refresh-recovery
+```
+
+The pointer changes only after the new release check succeeds. A failed refresh
+leaves the prior validated recovery intact. The fleet host can select its CPU
+Python environment with a private `FLEET_VALIDATION_STORE/python` file containing
+an absolute interpreter path. Full release evidence binds its installed packages,
+Python startup inputs, image and tokenizer/config files. Admission uses isolated
+stdlib Python and does not scan installed ML packages or tokenizer data.
+
+A receipt miss during a GPU hold refuses without starting CPU validation. The
+last holder owns restoration, while an eligible queued successor receives that
+responsibility directly. Existing pinned runners retain their original behavior
+and are never rewritten during rollout. New controllers also support source-side
+deployers from before the admission/release split.

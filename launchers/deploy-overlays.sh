@@ -10,6 +10,15 @@ set -euo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common-tp4.sh"
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
+VALIDATOR_REPO=${FLEET_RUNNER_REPO:-$REPO}
+if [ ! -f "$VALIDATOR_REPO/bench/fleet_validation.py" ] \
+    || [ ! -f "$VALIDATOR_REPO/bench/fleet_source.py" ]; then
+  # An older pinned supervisor may fetch this deployment code during restore.
+  # Its runner predates the helpers; consume the preprimed source-side receipt.
+  VALIDATOR_REPO=$REPO
+fi
+VALIDATOR="$VALIDATOR_REPO/bench/fleet_validation.py"
+PROFILE=${PROFILE:-${1:-dsv4}}
 
 require_deployable_checkout() {
   command -v git >/dev/null 2>&1 \
@@ -21,9 +30,20 @@ require_deployable_checkout() {
     git -C "$REPO" status --short
     exit 1
   fi
+  if [ -n "${FLEET_DEPLOY_RECOVERY_RECEIPT:-}" ]; then
+    # Recovery was approved and validated before the GPU reservation. Verify
+    # that exact receipt; do not change its source when main advances.
+    [ "$PROFILE" = glm53 ] && [ -z "${IMAGE+x}${MODEL_HOST_PATH+x}" ] \
+      || { echo 'ABORT: recovery requires glm53 profile defaults'; exit 1; }
+    python3 "$VALIDATOR" verify-recovery --repo "$REPO" \
+      --receipt "$FLEET_DEPLOY_RECOVERY_RECEIPT" >/dev/null
+    SOURCE_COMMIT=$(git -C "$REPO" rev-parse --verify HEAD)
+    return
+  fi
   git -C "$REPO" fetch --quiet origin main \
     || { echo "ABORT: could not refresh origin/main"; exit 1; }
   git -C "$REPO" merge-base --is-ancestor origin/main HEAD \
+    || python3 "$VALIDATOR_REPO/bench/fleet_source.py" require-base origin/main --repo "$REPO" \
     || {
       echo "ABORT: HEAD is not based on current origin/main; refusing a stale overlay rollback"
       echo "  HEAD        $(git -C "$REPO" rev-parse --short HEAD)"
@@ -36,7 +56,12 @@ require_deployable_checkout() {
 require_deployable_checkout
 # Which model this deploys. The profile names its modules; the composer renders
 # them into the flat directory + single manifest this script has always shipped.
-PROFILE=${PROFILE:-${1:-dsv4}}
+# Managed experiments consume their quick admission receipt; direct deployment
+# retains the full release gate. Recovery was already checked above against its
+# original validator and must not repeat that check with a different validator.
+if [ -z "${FLEET_DEPLOY_RECOVERY_RECEIPT:-}" ]; then
+  python3 "$VALIDATOR" validate --repo "$REPO" --profile "$PROFILE" >&2
+fi
 bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
 BUILD="$REPO/build/$PROFILE"
 # The profile owns its package root and, if it has one, its overlay
@@ -131,14 +156,6 @@ if ((${#PYFILES[@]} > 0)); then
 fi
 rm -rf "$BUILD/__pycache__"
 bash -n "$REPO/launchers/${PROFILE_LAUNCHER:-start-hy4-tp4.sh}" "$REPO/launchers/deploy-overlays.sh"
-python3 "$REPO/launchers/audit-runtime-guards.py" --self-test
-if [ -f "$REPO/tests/test_logic.py" ]; then
-  python3 "$REPO/tests/test_logic.py" || { echo "ABORT: tests/test_logic.py failed"; exit 1; }
-fi
-if [ "$PROFILE" = glm53 ]; then
-  python3 -m unittest discover -s "$REPO/tests" -p test_glm53_overlay_sync.py
-  bash "$REPO/launchers/check-glm53-chat.sh" "${MODEL_HOST_PATH:-$PROFILE_MODEL_PATH}" "${IMAGE:-$PROFILE_IMAGE}"
-fi
 
 echo "[overlay-deploy] preserve_identical=$PRESERVE_IDENTICAL source=$SOURCE_COMMIT"
 echo "=== head ($HEAD_OV) ==="

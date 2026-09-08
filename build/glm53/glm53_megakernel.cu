@@ -1688,7 +1688,17 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
   __syncthreads();  // sqred reuse
 }
 
-template <bool BF16_FN>
+__device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
+  // BF16 -> FP32 appends sixteen zero bits. Keep this bit expansion at the
+  // current multiply: ordinary conversions are loop-invariant and nvcc
+  // hoists all 96 floats, defeating the packed register representation.
+  uint32_t low, high;
+  asm volatile("shl.b32 %0, %1, 16;" : "=r"(low) : "r"(packed));
+  asm volatile("and.b32 %0, %1, 0xffff0000;" : "=r"(high) : "r"(packed));
+  return make_float2(__uint_as_float(low), __uint_as_float(high));
+}
+
+template <bool BF16_FN, bool AR_CONSUMER = false>
 __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
   // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
   // streams for this thread's h -- lives in 96 REGISTERS, loaded once, and
@@ -1733,17 +1743,44 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
     const int h = c * HCHUNK + threadIdx.x;  // HCHUNK == MK_THREADS
     float xv = 0.0f, res[HC] = {0.0f, 0.0f, 0.0f, 0.0f};
     float pm[HC], cm[HC][HC];
-    if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
+    if constexpr (!AR_CONSUMER)
+      if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
     float fnr[NOUT][HC];
+    uint2 fnv[NOUT];
+    if constexpr (BF16_FN && AR_CONSUMER) {
+      // Candidate packs [output, hidden, stream]. Four exact BF16 values
+      // for one h share an aligned 64-bit load; adjacent lanes remain
+      // contiguous. This cuts 96 scalar loads to 24 vector loads without
+      // changing the FP32 conversion or subsequent accumulation order.
+      // Keep these coefficients packed while waiting and processing tokens.
+      // Expand only the current output's four values at the multiply: the
+      // live weight state then needs 48 registers instead of 96 floats.
 #pragma unroll
-    for (int m = 0; m < NOUT; ++m)
+      for (int m = 0; m < NOUT; ++m) {
+        // An ordinary vector load participates in the memory clobber below.
+        // __ldg is a read-only intrinsic that nvcc can sink past that wait.
+        fnv[m] = ((const uint2*)a.fn)[(size_t)m * HIDDEN + h];
+      }
+    } else {
 #pragma unroll
-      for (int j = 0; j < HC; ++j)
-        if constexpr (BF16_FN)
-          fnr[m][j] = __bfloat162float(((const __nv_bfloat16*)a.fn)[
-              (size_t)m * HC * HIDDEN + j * HIDDEN + h]);
-        else
-          fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
+      for (int m = 0; m < NOUT; ++m)
+#pragma unroll
+        for (int j = 0; j < HC; ++j)
+          if constexpr (BF16_FN)
+            fnr[m][j] = __bfloat162float(((const __nv_bfloat16*)a.fn)[
+                (size_t)m * HC * HIDDEN + j * HIDDEN + h]);
+          else
+            fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
+    }
+    if constexpr (AR_CONSUMER) {
+      // Only immutable model weights were read above. Keep the exact same
+      // projection values in registers while the upstream RDMA collective
+      // completes; no activation, workspace or arrival counter is touched
+      // before this dependency wait. The memory clobber prevents sinking
+      // weight loads or hoisting input loads across the boundary.
+      asm volatile("griddepcontrol.wait;" ::: "memory");
+      if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
+    }
     int pend = -1;  // a token whose chunk is done but not yet published
     for (int t = g; t < a.num_tokens; t += groups) {
       float nxv = 0.0f, nres[HC] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -1764,8 +1801,17 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
 #pragma unroll
       for (int m = 0; m < NOUT; ++m) {
         float v = 0.0f;
+        if constexpr (BF16_FN && AR_CONSUMER) {
+          const float2 lo = mk_mhc_unpack_bf16_late(fnv[m].x);
+          const float2 hi = mk_mhc_unpack_bf16_late(fnv[m].y);
+          v += lo.x * r[0];
+          v += lo.y * r[1];
+          v += hi.x * r[2];
+          v += hi.y * r[3];
+        } else {
 #pragma unroll
-        for (int j = 0; j < HC; ++j) v += fnr[m][j] * r[j];
+          for (int j = 0; j < HC; ++j) v += fnr[m][j] * r[j];
+        }
         part[threadIdx.x][m] = v;
       }
       part[threadIdx.x][NOUT] = sqr;
@@ -1824,6 +1870,12 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
         for (int j = 0; j < HC; ++j) cm[k][j] = ncm[k][j];
       }
     }
+  }
+  if constexpr (AR_CONSUMER) {
+    // An occupancy-clamped grid need not divide NCHUNK. Even blocks with
+    // no projection item must wait before taking shared tail tickets.
+    if (bid >= NCHUNK * groups)
+      asm volatile("griddepcontrol.wait;" ::: "memory");
   }
   MK_MHC_TS(1);
   // ---- tails: take tokens off the ticket counter until it runs past T;
@@ -1899,6 +1951,14 @@ __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
   // p2|p3 and the p3|p4 that a p3 storing sumsq per chunk had already
   // retired.)
   mk_mhc_p1_impl<true>(a, blockIdx.x);
+  MK_MHC_TS(7);
+}
+
+template <bool BF16_FN>
+__global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
+  asm volatile("griddepcontrol.launch_dependents;");
+  MK_MHC_TS(0);
+  mk_mhc_p1_impl<BF16_FN, true>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
@@ -3066,12 +3126,17 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 // ints: num_tokens, sinkhorn_repeat
 // scalars: rms_eps, pre_eps, sinkhorn_eps, post_mult, norm_eps
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                std::vector<int64_t> ints, bool bf16_fn = false) {
+                std::vector<int64_t> ints, bool bf16_fn = false,
+                bool ar_consumer = false) {
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
   TORCH_CHECK(ptrs.size() == 18 && ints.size() == 2 && scalars.size() == 5,
               "run_mhc arg contract");
+  // A BF16 consumer pointer has the vector layout. Never silently send it
+  // to the scalar-layout fallback when an internal caller breaks the gate.
+  TORCH_CHECK(!ar_consumer || (mk_pdl_enabled() && ints[0] > 0 && ints[0] <= 8),
+              "AR consumer requires PDL and 1..8 tokens");
   MKMhcArgs a{};
   a.x_in = (const __nv_bfloat16*)ptrs[0];
   a.residual_in = (const __nv_bfloat16*)ptrs[1];
@@ -3100,6 +3165,29 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.norm_eps = (float)scalars[4];
 
   auto stream = c10::cuda::getCurrentCUDAStream();
+  // Separate occupancy for both new instantiations. Only immutable fn may
+  // be prepared early, and only when the caller opted into the PDL chain.
+  // A serialized launch remains correct: overlap is opportunistic.
+  if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 8) {
+    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true> : mk_mhc_ar_kernel<false>;
+    static int ar_grids[2] = {0, 0};
+    int& grid = ar_grids[bf16_fn ? 1 : 0];
+    if (!grid) {
+      int per_sm = 0, sms = 0;
+      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &per_sm, kernel, MK_THREADS, 0));
+      MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
+      // Packed coefficients fit two CTAs per SM, but doubling the token
+      // groups also doubles fn traffic and delays release of the next grid.
+      // Keep one CTA per SM so the saved registers remain available to the
+      // overlapping AR/input-pack/GEMM kernels. Still verify residency.
+      grid = std::min(std::min(per_sm, 1) * sms, MK_MHC_GRID_CAP);
+      TORCH_CHECK(grid > 0, "AR consumer MHC has no resident blocks");
+    }
+    a.grid = grid;
+    mk_launch(kernel, grid, 0, stream, a);
+    return;
+  }
   // A persistent grid must be fully resident or the grid barrier deadlocks.
   // Ask the device rather than assume, and clamp to what it answers. Cached
   // because the barrier's ticket arithmetic also needs the grid to be the
@@ -3771,7 +3859,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("read_ts2", &mk_read_ts2, "v2 unit timestamps (MK_PHASE_TS builds)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC", pybind11::arg("ptrs"),
         pybind11::arg("scalars"), pybind11::arg("ints"),
-        pybind11::arg("bf16_fn") = false);
+        pybind11::arg("bf16_fn") = false,
+        pybind11::arg("ar_consumer") = false);
   m.def("run_prep", &mk_run_prep, "MK_PREP: fused decode-step preparation (CUDA form of glm53_prep_fused)");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");

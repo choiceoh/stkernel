@@ -1,0 +1,125 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "core",
+      "command": [
+        "/usr/bin/python3",
+        "tests/test_logic.py",
+        "--component",
+        "core"
+      ],
+      "returncode": 0,
+      "seconds": 6.296,
+      "log": "build/fleet-queued-edit-final-cpu-core-0.log",
+      "skipped": [],
+      "tests_run": 71087,
+      "counts": null
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_boot_supervisor_linux.py",
+        "build/fleet-queued-edit-final-cpu-individual-1.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 17.437,
+      "log": "build/fleet-queued-edit-final-cpu-individual-1.log",
+      "skipped": [],
+      "tests_run": 14,
+      "counts": {
+        "tests_run": 14,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancel_after_offer_reclaims_and_restores",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancel_between_holder_and_debt_transfer_restores",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancelled_waiter_leaves_donor_to_restore",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_damaged_pending_record_cannot_skip_restore_or_leave_hold",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_edit_actual_waiter_executes_only_replacement_in_updated_cwd",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_failed_edit_keeps_original_then_active_edit_is_refused",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_failed_restore_leaves_visible_debt_and_nonzero_exit",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_go_during_edit_preflight_runs_original_and_rejects_late_commit",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_nested_restore_policy_defers_until_supervisor_finishes",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_probe_edit_preserves_probe_admission_and_never_restores",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_probe_waits_for_restore_and_active_cancellation_recovers",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_receiver_failure_preserves_payload_code_and_restores",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_restore_debt_does_not_allow_probe_to_block_recovery_boot",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_two_real_waiters_handoff_with_one_final_restore"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancel_after_offer_reclaims_and_restores": 0.9352765499497764,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancel_between_holder_and_debt_transfer_restores": 0.3491414689924568,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancelled_waiter_leaves_donor_to_restore": 0.5523273680009879,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_damaged_pending_record_cannot_skip_restore_or_leave_hold": 0.42048425698885694,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_edit_actual_waiter_executes_only_replacement_in_updated_cwd": 2.67782108602114,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_failed_edit_keeps_original_then_active_edit_is_refused": 1.6761186479707249,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_failed_restore_leaves_visible_debt_and_nonzero_exit": 0.46765202400274575,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_go_during_edit_preflight_runs_original_and_rejects_late_commit": 1.7097328559611924,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_nested_restore_policy_defers_until_supervisor_finishes": 0.4171262989984825,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_probe_edit_preserves_probe_admission_and_never_restores": 1.5213151759817265,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_probe_waits_for_restore_and_active_cancellation_recovers": 1.5550224210019223,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_receiver_failure_preserves_payload_code_and_restores": 1.6460413389722817,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_restore_debt_does_not_allow_probe_to_block_recovery_boot": 1.7984288909938186,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_two_real_waiters_handoff_with_one_final_restore": 1.6448999309795909
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_fleet_pending.py",
+        "build/fleet-queued-edit-final-cpu-individual-2.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.094,
+      "log": "build/fleet-queued-edit-final-cpu-individual-2.log",
+      "skipped": [],
+      "tests_run": 7,
+      "counts": {
+        "tests_run": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_fleet_pending.PendingTests.test_admission_wins_during_preflight_and_edit_cannot_change_payload",
+          "test_fleet_pending.PendingTests.test_closed_dead_reused_and_legacy_waiters_are_rejected",
+          "test_fleet_pending.PendingTests.test_concurrent_editor_wins_without_lost_update",
+          "test_fleet_pending.PendingTests.test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers",
+          "test_fleet_pending.PendingTests.test_experiment_payload_cannot_bypass_snapshot_but_note_can_change",
+          "test_fleet_pending.PendingTests.test_failed_preflight_invalid_metadata_and_empty_command_keep_original",
+          "test_fleet_pending.PendingTests.test_holder_metadata_reads_committed_record_after_interrupted_queue_write"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_fleet_pending.PendingTests.test_admission_wins_during_preflight_and_edit_cannot_change_payload": 0.0038485669647343457,
+          "test_fleet_pending.PendingTests.test_closed_dead_reused_and_legacy_waiters_are_rejected": 0.003890102030709386,
+          "test_fleet_pending.PendingTests.test_concurrent_editor_wins_without_lost_update": 0.0034293390344828367,
+          "test_fleet_pending.PendingTests.test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers": 0.003685656003654003,
+          "test_fleet_pending.PendingTests.test_experiment_payload_cannot_bypass_snapshot_but_note_can_change": 0.00420528301037848,
+          "test_fleet_pending.PendingTests.test_failed_preflight_invalid_metadata_and_empty_command_keep_original": 0.002740738040301949,
+          "test_fleet_pending.PendingTests.test_holder_metadata_reads_committed_record_after_interrupted_queue_write": 0.003719031985383481
+        },
+        "failure_details": []
+      }
+    }
+  ],
+  "passed": true,
+  "coverage_complete": true,
+  "tests_run": 71108
+}
