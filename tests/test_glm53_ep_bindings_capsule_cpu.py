@@ -1,5 +1,6 @@
 """Mock-only contracts: no Docker, CUDA imports, wheel staging, or GPU calls."""
 from contextlib import redirect_stdout
+import copy
 import hashlib
 import io
 import json
@@ -15,6 +16,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "probes"))
 import glm53_ep_bindings_capsule_check as check
 import run_glm53_ep_bindings_capsule_cpu as runner
+
+
+def installed_distribution(root, directory, name, version, *, legacy=False):
+    path = Path(root) / directory
+    path.mkdir()
+    (path / ("PKG-INFO" if legacy else "METADATA")).write_text(
+        "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version
+        + "\nRequires-Dist: other>=1\n\nFull metadata body for " + directory + "\n")
+    return check.metadata.PathDistribution(path)
 
 
 class WrapperTests(unittest.TestCase):
@@ -121,6 +131,74 @@ class InnerTests(unittest.TestCase):
                 self.assertEqual(record["metadata_sha256"], check.file_hash(record["metadata_path"]))
                 self.assertEqual(record["requires_dist"], ["other>=1"])
 
+    def test_runtime_resolution_preserves_all_shadowed_metadata_without_version_or_order_selection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cryptography = [installed_distribution(folder, directory, "cryptography", version, legacy=legacy)
+                            for directory, version, legacy in (
+                                ("a-crypto.dist-info", "50.0.0", False),
+                                ("b-crypto.egg-info", "41.0.7", True),
+                                ("c-crypto.dist-info", "41.0.7", False))]
+            six = installed_distribution(folder, "six.dist-info", "six", "1.17.0")
+            distributions = [*cryptography, six]
+            with patch.object(check.metadata, "distributions", return_value=distributions):
+                records = check.snapshot_distributions()
+            before = copy.deepcopy(records)
+            selected = {"cryptography": cryptography[1], "six": six}
+            with patch.object(check.metadata, "distribution", side_effect=selected.__getitem__) as lookup:
+                result = check.resolve_distributions(records)
+            self.assertEqual([call.args[0] for call in lookup.call_args_list], ["cryptography", "six"])
+            self.assertEqual((result["raw_count"], result["effective_count"], result["shadowed_count"]), (4, 2, 2))
+            self.assertEqual(result["effective_distributions"], [records[1], records[3]])
+            self.assertEqual(result["shadowed_distributions"], [records[0], records[2]])
+            self.assertEqual(result["selections"][0]["snapshot_index"], 1)
+            self.assertEqual(result["selections"][0]["shadowed_snapshot_indices"], [0, 2])
+            self.assertEqual(records, before)
+            self.assertEqual(result["search_path"], sys.path)
+            # Reordering the raw inventory must not change runtime selection.
+            with patch.object(check.metadata, "distribution", side_effect=selected.__getitem__):
+                reordered = check.resolve_distributions(list(reversed(records)))
+            self.assertEqual(reordered["effective_distributions"], result["effective_distributions"])
+            for record in result["shadowed_distributions"]:
+                self.assertIn("Full metadata body", record["metadata_text"])
+                self.assertEqual(record["metadata_sha256"], check.file_hash(record["metadata_path"]))
+
+    def test_runtime_selection_requires_exact_saved_path_version_hash_and_dependency_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            selected = installed_distribution(folder, "selected.dist-info", "PyJWT", "2.13.0")
+            record = check.distribution_record(selected)
+            for field, value in (("metadata_path", str(Path(folder) / "unknown/METADATA")),
+                                 ("version", "2.7.0"), ("metadata_sha256", "0" * 64),
+                                 ("requires_dist", []), ("metadata_text", "different body")):
+                changed = copy.deepcopy(record)
+                changed[field] = value
+                with self.subTest(field=field), patch.object(check.metadata, "distribution", return_value=selected):
+                    with self.assertRaisesRegex(RuntimeError, "snapshot"):
+                        check.resolve_distributions([changed])
+            # A second saved record at the same resolved path is ambiguous,
+            # even when every byte and version is identical.
+            with patch.object(check.metadata, "distribution", return_value=selected):
+                with self.assertRaisesRegex(RuntimeError, "exactly one"):
+                    check.resolve_distributions([record, copy.deepcopy(record)])
+            # Runtime bytes changing after the snapshot cannot be adopted.
+            Path(record["metadata_path"]).write_text(record["metadata_text"] + "changed after snapshot\n")
+            with patch.object(check.metadata, "distribution", return_value=selected):
+                with self.assertRaisesRegex(RuntimeError, "changed from its snapshot"):
+                    check.resolve_distributions([record])
+
+    def test_unknown_missing_or_wrong_name_runtime_lookup_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            original = installed_distribution(folder, "known.dist-info", "six", "1.17.0")
+            unknown = installed_distribution(folder, "unknown.dist-info", "six", "1.17.0")
+            wrong_name = installed_distribution(folder, "wrong-name.dist-info", "other", "1.17.0")
+            records = [check.distribution_record(original)]
+            for resolved in (unknown, wrong_name):
+                with patch.object(check.metadata, "distribution", return_value=resolved):
+                    with self.assertRaisesRegex(RuntimeError, "exactly one"):
+                        check.resolve_distributions(records)
+            with patch.object(check.metadata, "distribution", side_effect=check.metadata.PackageNotFoundError("six")):
+                with self.assertRaisesRegex(RuntimeError, "lookup is missing"):
+                    check.resolve_distributions(records)
+
     def test_actual_module_files_must_be_inside_capsule_and_unchanged(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / "capsule"
@@ -205,19 +283,29 @@ class InnerTests(unittest.TestCase):
         for compatible in (False, True):
             with self.subTest(compatible=compatible), tempfile.TemporaryDirectory() as folder:
                 output, events = Path(folder), []
-                base = [dict(name="cuda-bindings", version="13.3.1", requires_dist=[])]
+                base = [dict(name="cuda-bindings", version="13.3.1", requires_dist=[]),
+                        dict(name="cuda-bindings", version="13.0.1", requires_dist=[])]
+                effective = base[:1]
                 manifest = dict(distributions=[dict(name="cuda-bindings", version="13.0.3", requires_dist=[])])
                 report = dict(compatible=compatible, baseline_conflicts=[{"owner": "unrelated"}])
 
+                def resolve(actual_base):
+                    self.assertEqual(json.loads((output / "base-distributions.json").read_text()), base)
+                    self.assertEqual(actual_base, base)
+                    events.append("resolve")
+                    return dict(raw_count=2, effective_count=1, shadowed_count=1,
+                                effective_distributions=effective, shadowed_distributions=base[1:])
+
                 def stage(wheels, destination):
                     self.assertTrue((output / "base-distributions.json").is_file())
+                    self.assertTrue((output / "distribution-resolution.json").is_file())
                     self.assertEqual(len(wheels), 2)
                     self.assertEqual(destination, output / "capsule")
                     events.append("stage")
                     return dict(manifest_sha256="a" * 64, manifest=manifest)
 
                 def dependencies(actual_base, selected, *, marker_environment):
-                    self.assertEqual(actual_base, base)
+                    self.assertEqual(actual_base, effective)
                     self.assertEqual(selected, manifest["distributions"])
                     self.assertIn("python_version", marker_environment)
                     events.append("dependencies")
@@ -237,6 +325,7 @@ class InnerTests(unittest.TestCase):
                         patch.object(check, "runtime_identity", return_value={}), \
                         patch.object(check, "accelerator_modules", return_value=[]), \
                         patch.object(check, "snapshot_distributions", return_value=base), \
+                        patch.object(check, "resolve_distributions", side_effect=resolve), \
                         patch.object(check, "base_pathfinder_identity", return_value={"version": "1.7.0"}), \
                         patch.object(check, "stage_capsule", side_effect=stage), \
                         patch.object(check, "validate_capsule", side_effect=validate), \
@@ -251,8 +340,11 @@ class InnerTests(unittest.TestCase):
                         import_check.assert_not_called()
                 receipt = json.loads((output / "result.json").read_text())
                 self.assertEqual(receipt["dependencies"], report)
+                self.assertEqual(receipt["base_distributions"]["count"], 2)
+                self.assertEqual(receipt["distribution_resolution"]["effective_count"], 1)
+                self.assertEqual(receipt["distribution_resolution"]["shadowed_count"], 1)
                 self.assertEqual(receipt["verdict"], "PASS" if compatible else "FAIL")
-                self.assertEqual(events, ["stage", "validate", "dependencies"] +
+                self.assertEqual(events, ["resolve", "stage", "validate", "dependencies"] +
                                  (["imports", "validate"] if compatible else []))
 
 

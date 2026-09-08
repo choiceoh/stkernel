@@ -62,23 +62,67 @@ def runtime_identity():
     return result
 
 
+def distribution_record(distribution):
+    """Bind parsed dependency metadata to its complete filesystem record."""
+    from packaging.utils import canonicalize_name
+    base = Path(distribution._path)
+    # Keep system/legacy egg metadata in the complete inventory too.
+    path = next((path for path in (base / "METADATA", base / "PKG-INFO", base)
+                 if path.is_file()), None)
+    if path is None:
+        raise RuntimeError("installed distribution metadata file is missing")
+    raw = path.read_bytes()
+    return dict(name=canonicalize_name(distribution.metadata["Name"]),
+                version=distribution.version, requires_dist=distribution.requires or [],
+                metadata_path=str(path.resolve()), metadata_sha256=hashlib.sha256(raw).hexdigest(),
+                metadata_text=raw.decode("utf-8"))
+
+
 def snapshot_distributions():
     """Read every installed METADATA before altering the Python search path."""
-    from packaging.utils import canonicalize_name
-    records = []
-    for distribution in metadata.distributions():
-        base = Path(distribution._path)
-        # Keep system/legacy egg metadata in the complete inventory too.
-        path = next((path for path in (base / "METADATA", base / "PKG-INFO", base)
-                     if path.is_file()), None)
-        if path is None:
-            raise RuntimeError("installed distribution metadata file is missing")
-        raw = path.read_bytes()
-        records.append(dict(name=canonicalize_name(distribution.metadata["Name"]),
-                            version=distribution.version, requires_dist=distribution.requires or [],
-                            metadata_path=str(path.resolve()), metadata_sha256=hashlib.sha256(raw).hexdigest(),
-                            metadata_text=raw.decode("utf-8")))
+    records = [distribution_record(distribution) for distribution in metadata.distributions()]
     return sorted(records, key=lambda record: (record["name"], record["metadata_path"]))
+
+
+def resolve_distributions(records):
+    """Select the runtime metadata lookup result, preserving all shadow records.
+
+    This observes importlib.metadata's current distribution lookup; it neither
+    chooses a highest/first/last version nor proves a package's later imports.
+    The selected path must identify exactly one complete saved snapshot record.
+    """
+    from packaging.utils import canonicalize_name
+    groups = {}
+    for index, record in enumerate(records):
+        name = canonicalize_name(record["name"])
+        if name != record["name"]:
+            raise RuntimeError("snapshot distribution name is not canonical")
+        groups.setdefault(name, []).append(index)
+    if not groups:
+        raise RuntimeError("complete distribution snapshot is empty")
+    effective, shadowed, selections = [], [], []
+    for name, indices in sorted(groups.items()):
+        try:
+            current = distribution_record(metadata.distribution(name))
+        except metadata.PackageNotFoundError as exc:
+            raise RuntimeError("runtime distribution lookup is missing: " + name) from exc
+        matched = [index for index in indices if records[index]["metadata_path"] == current["metadata_path"]]
+        if current["name"] != name or len(matched) != 1:
+            raise RuntimeError("runtime distribution path does not bind exactly one snapshot record: " + name)
+        selected_index = matched[0]
+        if current != records[selected_index]:
+            raise RuntimeError("runtime distribution metadata changed from its snapshot: " + name)
+        other_indices = [index for index in indices if index != selected_index]
+        effective.append(records[selected_index])
+        shadowed.extend(records[index] for index in other_indices)
+        selections.append(dict(name=name, version=current["version"], metadata_path=current["metadata_path"],
+                               metadata_sha256=current["metadata_sha256"], snapshot_index=selected_index,
+                               shadowed_snapshot_indices=other_indices))
+    return dict(schema=1, resolver="importlib.metadata.distribution(canonical_name)",
+                scope="effective distribution metadata lookup; not package import identity",
+                search_path=list(sys.path), raw_count=len(records), effective_count=len(effective),
+                shadowed_count=len(shadowed), selections=selections,
+                effective_distributions=effective, shadowed_distributions=shadowed)
 
 
 def base_pathfinder_identity(records):
@@ -163,13 +207,20 @@ def run_check(wheels, output):
         metadata_path = output / "base-distributions.json"
         metadata_path.write_text(json.dumps(base, indent=2) + "\n")
         receipt["base_distributions"] = dict(path=str(metadata_path), count=len(base), sha256=file_hash(metadata_path))
-        pathfinder = base_pathfinder_identity(base)
+        resolution = resolve_distributions(base)
+        resolution_path = output / "distribution-resolution.json"
+        resolution_path.write_text(json.dumps(resolution, indent=2) + "\n")
+        receipt["distribution_resolution"] = dict(path=str(resolution_path), sha256=file_hash(resolution_path),
+            raw_count=resolution["raw_count"], effective_count=resolution["effective_count"],
+            shadowed_count=resolution["shadowed_count"])
+        effective = resolution["effective_distributions"]
+        pathfinder = base_pathfinder_identity(effective)
         staged = stage_capsule([wheels / PINNED_WHEELS[name]["filename"] for name in sorted(PINNED_WHEELS)],
                                output / "capsule")
         receipt["capsule_manifest_sha256"] = staged["manifest_sha256"]
         manifest = validate_capsule(output / "capsule", staged["manifest_sha256"])
         receipt["marker_environment"] = default_environment()
-        report = check_dependencies(base, manifest["distributions"], marker_environment=receipt["marker_environment"])
+        report = check_dependencies(effective, manifest["distributions"], marker_environment=receipt["marker_environment"])
         receipt["dependencies"] = report
         if not report["compatible"]:
             raise RuntimeError("capsule introduces or retains a selected-package dependency conflict")
