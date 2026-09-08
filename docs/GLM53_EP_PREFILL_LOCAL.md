@@ -84,8 +84,11 @@ at 15:30:44 KST. This result cannot validate the newer fused remap or CTA
 scale cache, or establish production TP4/TTFT improvement.
 
 The intervening v3 queue entry was cancelled normally before its payload ran.
-GPU proof for the newest source is still pending; the corrected v4 submission
-is a subsequent step, not a completed validation. The head's no-device
+GPU proof for the newest source is still pending. The corrected normal fleet
+[submission v4](../measurements/glm53_ep_local_20260908/submission4/README.md)
+passed preflight and queued at 15:54:23 KST with frozen source
+`71e804e7aa6b29d6ddf4577809a5fa5e05a999e6`. Its archived admission snapshot
+shows first in queue, with no GPU payload started. The head's no-device
 sanitizer preflight now passes with Compute Sanitizer 2025.3.1.0, whose
 executable SHA-256 is pinned and recorded in
 [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md). Running its
