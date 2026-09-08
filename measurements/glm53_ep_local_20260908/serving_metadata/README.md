@@ -55,3 +55,15 @@ and tests the real launcher custom-ops transformation for byte preservation.
 Unsupported graph configurations are rejected. This is configuration proof;
 the dedicated serving runner, original full-argv/source/container bindings,
 all-rank runtime execution and actual restoration checks remain unimplemented.
+
+The later [original-binding tests](original-binding-tests.log) pass 20 focused
+cases without skips. [Their source hashes](original-binding-checks.json) bind
+the current helper/tests. `configured_incoming()` now requires original
+Cmd/Env/container ID/start time, rather than bare capacity records. Typed
+per-node endpoint substitutions normalize only the validated public/private
+host and port; original argv and environment otherwise differ only by the EP
+flag and two explicit EP knobs. Supplied image/model/source provenance must
+remain identical. Whole-arm checksums also detect changed outer knobs or
+replay controls, including a consistent change to all three arms. These are
+accidental-drift checks, not snapshot authentication. The actual Docker
+collection, live source/image attestation and serving runner remain pending.

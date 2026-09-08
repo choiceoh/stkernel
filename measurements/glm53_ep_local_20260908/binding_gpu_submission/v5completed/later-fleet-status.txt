@@ -1,0 +1,14 @@
+fleet: HELD by attr3-0908 [boot] (pid 3100369@srv2, since 19:54, est 40m, 40차: 211 ms 커널 귀속 3차 — 프로파일러 창 하나에 청크 8192/1152 두 크기(창을 크기마다 열면 첫 장 뒤로 500). 128K 레그 없음)
+legacy: 2 bench/boot procs, 0 requests in flight, head booting
+queue (1):
+  1. arconsumer0908v13 [boot] (since 19:53, est 60m, expect ~60m, ETA ~20:34) MHC standalone 3D fix: GPU gate then candidate-first C1 A/B/B step
+  marker 19:54 FLEET-held-by-attr3-0908.done
+  marker 11:08 FLEET-held-by-alignprod.done
+log:
+  2026-09-08_19:54:31 ledger epbindinggpu0908v5 held=3m boots=1 records=0 wasted=1
+  2026-09-08_19:54:31 release epbindinggpu0908v5
+  2026-09-08_19:54:31 GO attr3-0908 (pid 3100369)
+  2026-09-08_19:55:55 deploy attr3-0908 main -> build 4e55f16c49ba = c4dba2d
+production: NOT defaults: VLLM_GLM53_SCHED_CHUNK_FILE=/prof/sched_chunk (health 000)
+deployed: 4e55f16c49ba = c4dba2d (by attr3-0908, 19:55)
+baseline: NONE for build c4dba2d -- a defaults arm is worth its boot

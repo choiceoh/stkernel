@@ -1,0 +1,23 @@
+   14ec4:	f00002b9 	adrp	x25, 6b000 <_Z18getCUDALibraryPathPcb@@Base+0xf4a0>
+   14ec8:	9116033b 	add	x27, x25, #0x580
+   14ecc:	9135c361 	add	x1, x27, #0xd70
+   14ed0:	aa1503e0 	mov	x0, x21
+   14ed4:	97ffed8f 	bl	10510 <dlsym@plt>
+   14ed8:	aa0003f7 	mov	x23, x0
+   14edc:	912482c1 	add	x1, x22, #0x920
+   14ee0:	f90043e1 	str	x1, [sp, #128]
+   14ee4:	aa0103e0 	mov	x0, x1
+   14ee8:	f9070c37 	str	x23, [x1, #3608]
+   14eec:	b4035c37 	cbz	x23, 1ba70 <PyInit_cydriver@@Base+0x96b8>
+   14ef0:	b94093e1 	ldr	w1, [sp, #144]
+   14ef4:	3400b5c1 	cbz	w1, 165ac <PyInit_cydriver@@Base+0x41f4>
+   165a8:	17fff9dd 	b	14d1c <PyInit_cydriver@@Base+0x2964>
+   165ac:	f94043e0 	ldr	x0, [sp, #128]
+   165b0:	d2800004 	mov	x4, #0x0                   	// #0
+   165b4:	d2800003 	mov	x3, #0x0                   	// #0
+   165b8:	5281f402 	mov	w2, #0xfa0                 	// #4000
+   165bc:	910e4001 	add	x1, x0, #0x390
+   165c0:	91362360 	add	x0, x27, #0xd88
+   165c4:	d63f02e0 	blr	x23
+   165c8:	7107d01f 	cmp	w0, #0x1f4
+   165cc:	54042c00 	b.eq	1eb4c <PyInit_cydriver@@Base+0xc794>  // b.none

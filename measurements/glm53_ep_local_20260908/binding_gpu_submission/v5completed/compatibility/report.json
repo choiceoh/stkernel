@@ -1,0 +1,352 @@
+{
+  "verdict": "Concrete isolated compatibility experiment recommended; not yet executed or a production package recommendation",
+  "observed_basis": "Archived V5 binding.json reports cuda-bindings13.3.1, cuDeviceGetCount success/count1 and cuDriverGetVersion success/13000; parent reports34 sanitizer cuGetProcAddress_v2 INVALID_VALUE diagnostics.",
+  "source_basis": [
+    {
+      "file": "driver-template-13.3.1.pyx",
+      "url": "https://raw.githubusercontent.com/NVIDIA/cuda-python/v13.3.1/cuda_bindings/cuda/bindings/_bindings/cydriver.pyx.in",
+      "bytes": 860158,
+      "sha256": "d15dfb898939694a8db621de08bcde95e88de1c124f82a29066f46e4ee5f5a0e"
+    },
+    {
+      "file": "driver-template-13.0.3.pyx",
+      "url": "https://raw.githubusercontent.com/NVIDIA/cuda-python/v13.0.3/cuda_bindings/cuda/bindings/_bindings/cydriver.pyx.in",
+      "bytes": 798500,
+      "sha256": "79e38a81a1b20213124321ca27ffdd4c21bd2a062a75de221cfd4d64fae2c3a0"
+    },
+    {
+      "file": "pyproject-13.3.1.toml",
+      "url": "https://raw.githubusercontent.com/NVIDIA/cuda-python/v13.3.1/cuda_bindings/pyproject.toml",
+      "bytes": 2896,
+      "sha256": "e084980648ecc971519757e053ec290a671587b2ba7b0b8761ba1f203f69b947"
+    },
+    {
+      "file": "pyproject-13.0.3.toml",
+      "url": "https://raw.githubusercontent.com/NVIDIA/cuda-python/v13.0.3/cuda_bindings/pyproject.toml",
+      "bytes": 1990,
+      "sha256": "86e5eb41b8000a615779f2af931ab7f41d86c0911689ae6fbb0b1cab842e2ed1"
+    },
+    {
+      "file": "pypi-13.0.3.json",
+      "url": "https://pypi.org/pypi/cuda-bindings/13.0.3/json",
+      "bytes": 24361,
+      "sha256": "158626d483255f4bdfda5342343ae396a00389f992fa4b9f0973e833a0d681f2"
+    },
+    {
+      "file": "pypi-13.3.1.json",
+      "url": "https://pypi.org/pypi/cuda-bindings/13.3.1/json",
+      "bytes": 19245,
+      "sha256": "2e0875e47754dd16a9cd8f971f93c3c80450eb2d404d45190dce404bf1b0ab72"
+    }
+  ],
+  "abi_lookup_summary": {
+    "13.0.3": {
+      "default_lookups": 470,
+      "max_abi": 13000,
+      "above_driver": 0,
+      "above_by_version": {}
+    },
+    "13.3.1": {
+      "default_lookups": 504,
+      "max_abi": 13030,
+      "above_driver": 34,
+      "above_by_version": {
+        "13020": 12,
+        "13030": 13,
+        "13010": 9
+      }
+    }
+  },
+  "explanation": "Official generated13.3.1 loader eagerly requests34 default-stream symbols at CUDA ABI versions above13000 on first cuDeviceGetCount; NVIDIA specifies such requests return INVALID_VALUE.13.0.3 default loader contains no query above13000. This matches the34 observations but still requires installedbinary/source identity matching and a same-runtime experiment.",
+  "candidate_wheel": {
+    "filename": "cuda_bindings-13.0.3-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+    "url": "https://files.pythonhosted.org/packages/61/3c/c33fd3aa5fcc89aa1c135e477a0561f29142ab5fe028ca425fc87f7f0a74/cuda_bindings-13.0.3-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+    "sha256": "b899e5a513c11eaa18648f9bf5265d8de2a93f76ef66a6bfca0a2887303965cd",
+    "bytes": 11709086,
+    "metadata_sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235",
+    "dependencies": [
+      "cuda-pathfinder~=1.1",
+      "cuda-toolkit[nvjitlink,nvrtc,nvvm]==13.*; extra == \"all\"",
+      "cuda-toolkit[cufile]==13.*; sys_platform == \"linux\" and extra == \"all\""
+    ]
+  },
+  "official_urls": {
+    "loader13_3_1": "https://github.com/NVIDIA/cuda-python/blob/v13.3.1/cuda_bindings/cuda/bindings/_bindings/cydriver.pyx.in#L528-L569",
+    "loader13_0_3": "https://github.com/NVIDIA/cuda-python/blob/v13.0.3/cuda_bindings/cuda/bindings/_bindings/cydriver.pyx.in",
+    "driver_entrypoint_contract": "https://docs.nvidia.com/cuda/archive/13.0.0/cuda-driver-api/group__CUDA__DRIVER__ENTRY__POINT.html",
+    "bindings13_3_1_requirements": "https://nvidia.github.io/cuda-python/cuda-bindings/13.3.1/install.html#runtime-requirements",
+    "bindings13_0_3_requirements": "https://nvidia.github.io/cuda-python/cuda-bindings/13.0.3/install.html#runtime-requirements",
+    "bindings13_0_3_notes": "https://nvidia.github.io/cuda-python/cuda-bindings/13.0.3/release/13.0.3-notes.html",
+    "runtime_variables": "https://nvidia.github.io/cuda-python/cuda-bindings/13.3.1/environment_variables.html",
+    "pypi": "https://pypi.org/project/cuda-bindings/13.0.3/"
+  },
+  "dependency_notes": [
+    "Mandatory cuda-pathfinder~=1.1 means >=1.1,<2; an installed1.4.x/1.5.x would satisfy it, but actual installedversion must be inventoried.",
+    "Do not request [all] extras: they can pull CUDA Toolkit libraries and confound a package-only experiment.",
+    "cuda-python13.3.1 metadata requires cuda-bindings~=13.3.1 plus cuda-core~=1.0.0; isolated13.0.3 override may create a metadata conflict that must be recorded. cuda-python13.0.3 instead requires bindings~=13.0.3.",
+    "Actual image Cutlass/FlashInfer/cuda-core reverse dependencies were not available in inspected archivedmetadata; enumerate importlib.metadata Requires-Dist entries in a no-device pinnedimage container before broaderCuTe testing.",
+    "Both13.3.1 and13.0.3 officially list Linuxdriver>=580.65.06, so the observedR580 stack is not categorically unsupported by13.3.1."
+  ],
+  "isolated_experiment": [
+    "Through normal fleet --cpu, download exactwheel and verifySHA; stage completewheel package under a unique target directory without altering baseimage or production site-packages.",
+    "Record all targetfiles/hashes, originalimageID, PythonABI/arch, originalandselecteddistributionmetadata, pathfinder version, and every installed reverse requirement on bindings. Assert cuda.bindings.driver and _bindings.cydriver resolve entirely from chosen target and cuda.pathfinder remains samebasepackage.",
+    "Run matched fresh baseline13.3.1 and candidate13.0.3 processes with same tinyTorchcontext, firstbindingcount, version, immutablebaseimage, driver and sanitizercommand/flags. Keep all34 errors and nonzeroexit visible; no waivers, loader monkeypatches, or report suppression.",
+    "Onlycandidate exactcount1/version13000 with sanitizer clean exit/summary can clear this specific loader diagnostic. Then CPUcompile/type/import checks and originalMoE sanitizer/numerics/full-modelacceptance stillremain."
+  ],
+  "alternative_control": "A separate diagnostic may directly call official cuDeviceGetCount from libcuda.so.1 (or request only its documentedABI2000 via cuGetProcAddress). This avoids the Python eagerloader while keeping sanitizer active, but is not a fix forCuTe, whose latercuda.bindings calls would still initialize thatloader.",
+  "not_recommended": [
+    "Blind productionimage downgrade ordriverupgrade.",
+    "Switch only hardware_info.py count call to Torch and interpret subsequentunreachedbindings as fixed.",
+    "Clamping every requestedABI to13000 can select mismatchedCstruct/functionsignatures; NVIDIA discouragesCUDA type/APIversionmixing.",
+    "CUDA_PYTHON_DISABLE_MAJOR_VERSION_WARNING only affectswarnings and cannot fix theseentrypointrequests."
+  ],
+  "mutations_performed": "Only local /tmp researchsource/metadata downloads; no package installation,container execution,GPU work,queue mutation,or production change.",
+  "reproduction": {
+    "command": "python3 extract_loader_counts.py",
+    "source_files": [
+      "driver-template-13.0.3.pyx",
+      "driver-template-13.3.1.pyx"
+    ],
+    "method": "Regex over exact _F_cuGetProcAddress_v2 callsites, retain CU_GET_PROC_ADDRESS_DEFAULT, count ABI>13000. PTDS alternative calls are excluded. These are generated template calls, pending installedbinary mapping."
+  },
+  "loader_high_abi_entries": [
+    {
+      "line": 1050,
+      "symbol": "cuMemcpyWithAttributesAsync",
+      "destination": "__cuMemcpyWithAttributesAsync",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1054,
+      "symbol": "cuMemcpy3DWithAttributesAsync",
+      "destination": "__cuMemcpy3DWithAttributesAsync",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1142,
+      "symbol": "cuStreamBeginCaptureToCig",
+      "destination": "__cuStreamBeginCaptureToCig",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1146,
+      "symbol": "cuStreamEndCaptureToCig",
+      "destination": "__cuStreamEndCaptureToCig",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1186,
+      "symbol": "cuStreamBeginRecaptureToGraph",
+      "destination": "__cuStreamBeginRecaptureToGraph",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1286,
+      "symbol": "cuLaunchHostFunc",
+      "destination": "__cuLaunchHostFunc_v2",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1310,
+      "symbol": "cuStreamGetDevResource",
+      "destination": "__cuStreamGetDevResource",
+      "abi_version": 13010,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1663,
+      "symbol": "cuKernelGetParamCount",
+      "destination": "__cuKernelGetParamCount",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1931,
+      "symbol": "cuMulticastBindMem",
+      "destination": "__cuMulticastBindMem_v2",
+      "abi_version": 13010,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1939,
+      "symbol": "cuMulticastBindAddr",
+      "destination": "__cuMulticastBindAddr_v2",
+      "abi_version": 13010,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1951,
+      "symbol": "cuLogicalEndpointIdReserve",
+      "destination": "__cuLogicalEndpointIdReserve",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1955,
+      "symbol": "cuLogicalEndpointIdRelease",
+      "destination": "__cuLogicalEndpointIdRelease",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1959,
+      "symbol": "cuLogicalEndpointCreate",
+      "destination": "__cuLogicalEndpointCreate",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1963,
+      "symbol": "cuLogicalEndpointAddDevice",
+      "destination": "__cuLogicalEndpointAddDevice",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1967,
+      "symbol": "cuLogicalEndpointDestroy",
+      "destination": "__cuLogicalEndpointDestroy",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1971,
+      "symbol": "cuLogicalEndpointBindAddr",
+      "destination": "__cuLogicalEndpointBindAddr",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1975,
+      "symbol": "cuLogicalEndpointBindMem",
+      "destination": "__cuLogicalEndpointBindMem",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1979,
+      "symbol": "cuLogicalEndpointUnbind",
+      "destination": "__cuLogicalEndpointUnbind",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1983,
+      "symbol": "cuLogicalEndpointExport",
+      "destination": "__cuLogicalEndpointExport",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1987,
+      "symbol": "cuLogicalEndpointImport",
+      "destination": "__cuLogicalEndpointImport",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1991,
+      "symbol": "cuLogicalEndpointGetLimits",
+      "destination": "__cuLogicalEndpointGetLimits",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 1995,
+      "symbol": "cuLogicalEndpointQuery",
+      "destination": "__cuLogicalEndpointQuery",
+      "abi_version": 13030,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2107,
+      "symbol": "cuFuncGetParamCount",
+      "destination": "__cuFuncGetParamCount",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2335,
+      "symbol": "cuGraphNodeGetContainingGraph",
+      "destination": "__cuGraphNodeGetContainingGraph",
+      "abi_version": 13010,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2339,
+      "symbol": "cuGraphNodeGetLocalId",
+      "destination": "__cuGraphNodeGetLocalId",
+      "abi_version": 13010,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2343,
+      "symbol": "cuGraphNodeGetToolsId",
+      "destination": "__cuGraphNodeGetToolsId",
+      "abi_version": 13010,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2347,
+      "symbol": "cuGraphGetId",
+      "destination": "__cuGraphGetId",
+      "abi_version": 13010,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2351,
+      "symbol": "cuGraphExecGetId",
+      "destination": "__cuGraphExecGetId",
+      "abi_version": 13010,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2495,
+      "symbol": "cuGraphNodeGetParams",
+      "destination": "__cuGraphNodeGetParams",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2759,
+      "symbol": "cuCoredumpRegisterStartCallback",
+      "destination": "__cuCoredumpRegisterStartCallback",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2763,
+      "symbol": "cuCoredumpRegisterCompleteCallback",
+      "destination": "__cuCoredumpRegisterCompleteCallback",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2767,
+      "symbol": "cuCoredumpDeregisterStartCallback",
+      "destination": "__cuCoredumpDeregisterStartCallback",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2771,
+      "symbol": "cuCoredumpDeregisterCompleteCallback",
+      "destination": "__cuCoredumpDeregisterCompleteCallback",
+      "abi_version": 13020,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    },
+    {
+      "line": 2807,
+      "symbol": "cuDevSmResourceSplit",
+      "destination": "__cuDevSmResourceSplit",
+      "abi_version": 13010,
+      "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "resolver-entry.disasm.txt": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/resolver-entry.disasm.txt",
+    "size": 1074,
+    "sha256": "f2d88e90bec4d60c468798627db58e67a9946defbc5476752973f7f1ba642d9f"
+  },
+  "cydriver.disassembly.txt": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/cydriver.disassembly.txt",
+    "size": 3722658,
+    "sha256": "fda578374f9a4c8333475e24d0de603b23ef23eb550c2219eb88fbc1378fcb54"
+  },
+  "symbols.txt": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/symbols.txt",
+    "size": 93,
+    "sha256": "5284fa9577653f46d39189c20a83339e5680b92cc29574a4295e1ecd9fe7c6d2"
+  },
+  "copy.json": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/copy.json",
+    "size": 506,
+    "sha256": "2b0b8e219b24b5f155320da1d666cedf5717e10a5f8559bcf584c933f8d37528"
+  },
+  "SHA256SUMS": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/SHA256SUMS",
+    "size": 1162,
+    "sha256": "3ba16173415c7ef50263a74c5220a1474c9b13b19bf94aea13bd3576e6cadb83"
+  },
+  "first-lookups.disasm.txt": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/first-lookups.disasm.txt",
+    "size": 1613,
+    "sha256": "b7311de45bfff83c28f6f82eb84180a9a15cfdafaa120bc818736a742c2ee280"
+  },
+  "README.md": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/README.md",
+    "size": 1963,
+    "sha256": "d5f4e67d65ef9636cc213a437815643362b3339159b93567eab7d4847bea4668"
+  },
+  "map.py": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/map.py",
+    "size": 6396,
+    "sha256": "27831c37c6b5d67e6015ff53e8778c61b784b7b22855101b0bffd60c5b6f8cdf"
+  },
+  "lookup-map.md": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/lookup-map.md",
+    "size": 2405,
+    "sha256": "a1253382ed86f61beb84c662a6673e032cddb54a9c62268df37ba3995c3065bb"
+  },
+  "cydriver.cpython-312-aarch64-linux-gnu.so": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/cydriver.cpython-312-aarch64-linux-gnu.so",
+    "size": 533024,
+    "sha256": "6ae437b694ad31accb9cd8745fa5dd9e52e11af045e0da683966be7b3341e67e"
+  },
+  "lookup-map.json": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/lookup-map.json",
+    "size": 34649,
+    "sha256": "b85f0453beda6742fb06130ef6c1b6a205904ecc3991221b59b7ac4061d2175b"
+  },
+  "METADATA": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/METADATA",
+    "size": 2498,
+    "sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f"
+  },
+  "sections.txt": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/sections.txt",
+    "size": 2827,
+    "sha256": "ea8fa3ea85ea9ca9b076c573186c5c36efcfcb34100fdc58e4977a9a6a646320"
+  },
+  "RECORD": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/RECORD",
+    "size": 9340,
+    "sha256": "2ef4de802fa152d7ff666aa6e14c1136b4ae4e3d23193be636e88542f979830e"
+  },
+  "package-identity.json": {
+    "source": "/tmp/glm53-cydriver-v5-static-0908/package-identity.json",
+    "size": 1164,
+    "sha256": "8ec7e802e62dc1be5b2b46eb0006cf9b5b65445ea5c8c7da724ebdf98c41624c"
+  }
+}

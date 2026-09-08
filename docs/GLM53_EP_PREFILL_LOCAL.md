@@ -299,6 +299,28 @@ This API-only diagnostic deliberately keeps its already-compiled source;
 it neither executes nor validates the later CPU12/13 Q0 changes. GO-time
 incoming-state, idle, identity and recovery checks remain enforced.
 
+V5 subsequently received GO at 19:51:06 and [completed](../measurements/glm53_ep_local_20260908/binding_gpu_submission/v5completed/README.md)
+with the same 34 `cuGetProcAddress_v2` API errors, sanitizer exit 86 and outer
+exit 1. Torch context creation completed first; all reports fall inside the
+first binding `cuDeviceGetCount()` call. Count and driver-version queries
+returned success (1 device, API 13000). No MoE or CuTe was imported or run.
+Thus the binding initialization reproduces the blocker independently of the
+kernel; the log alone does not establish which lookup versions caused it.
+All four original public container identities, configuration and source
+hashes were restored with their running state before the normal handoff at
+19:54:31. The separate later health snapshot belongs to the next holder's boot.
+No identical retry is queued; compatibility needs a changed, bounded experiment
+before the full GPU suite resumes.
+
+Static analysis of the installed, package-RECORD-matched `cydriver` binary
+subsequently mapped every reported site to an ABI request above the observed
+driver version: 9 at 13010, 12 at 13020 and 13 at 13030. These match all 34
+newer-version requests in NVIDIA's 13.3.1 source. The official 13.0.3 loader
+has none above 13000. A bounded no-device inventory confirms the relevant
+Torch/Cutlass/FlashInfer dependency constraints allow a paired bindings and
+cuda-python 13.0.3 capsule, with the base image preserved. This identifies a
+concrete compatibility experiment, not a successful runtime replacement.
+
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).
 The v4 CPU proof, mounted sources, raw logs, recovery and release records are
@@ -395,8 +417,16 @@ recovered from Docker Cmd. The original four public-rank capacity records
 are mandatory, so three consistently reduced new arms cannot pass. Exact
 COMPILE_CFG is retained and replayed; the existing launcher custom-ops
 transformation must preserve its bytes, or the helper rejects the config.
-Twelve new tests plus eight existing parser tests passed without skips. This helper starts no processes and is not yet connected
-to the full serving runner; source/image/log identity, all-rank execution,
+The latest helper also requires original Cmd/Env and container ID/start time,
+accepting only typed per-node public-to-private host/port substitutions. It
+compares the full original argv and environment against every arm except
+the explicit EP flag and two EP settings, and preserves supplied image/model/
+source provenance. An arm-envelope checksum detects accidental changes to
+knobs or replay controls after configuration; it does not authenticate input
+snapshots. Twenty focused tests passed without skips, including three-arm
+configuration drift and outer-envelope mutation. The earlier eight parser
+tests are unchanged. This helper starts no processes and is not yet connected
+to the full serving runner; live source/image/log identity, all-rank execution,
 actual capacity restoration and direct fresh-request metrics remain required.
 
 A future EP arm must separately record requested ENABLE_EP and compare it

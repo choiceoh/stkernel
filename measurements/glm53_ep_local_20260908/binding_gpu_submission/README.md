@@ -1,10 +1,15 @@
 # CUDA binding diagnostic submission evidence
 
+**V5 ran and reproduced 34 CUDA API errors without MoE or CuTe.** Its
+[completed evidence](v5completed/README.md) records successful API return values,
+sanitizer exit 86, outer exit 1 and exact four-node restoration before handoff.
+There is no performance result or currently queued retry.
+
 The binding GPU diagnostic did **not run in v1, v2, v3 or v4**. V3 received GO at
 2026-09-08 17:35:38 KST but its mixed incoming state failed the strict lifecycle
 guard before the GPU payload. This archive contains submission and
-recovery evidence; it provides no new GPU sanitizer, numerical, performance,
-or serving acceptance result.
+recovery evidence. V5 adds a failed GPU sanitizer diagnostic; none of these
+attempts provides numerical, performance or serving acceptance.
 
 | Attempt | Frozen source | Observed outcome |
 | --- | --- | --- |
@@ -93,4 +98,5 @@ Verify this directory with `shasum -a 256 -c SHA256SUMS`.
 V5 was subsequently accepted into the normal queue at 18:59 using the
 CPU11-pinned `8dc665b0` source with the stopped-container lifecycle.
 Its [submission snapshot](v5queued/README.md) is separate from these completed
-v1–v4 attempts and contains no GPU result.
+v1–v4 attempts and contains no GPU result. V5's later outcome is in
+[v5completed](v5completed/README.md); the earlier queue snapshot stays unchanged.

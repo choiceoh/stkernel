@@ -1,0 +1,29 @@
+{
+  "started": 1788865802.8809974,
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "host_mem_available_kib": 98054380,
+  "command": [
+    "docker",
+    "run",
+    "--rm",
+    "--runtime=runc",
+    "--network=none",
+    "--memory=512m",
+    "--memory-swap=512m",
+    "--cpus=1",
+    "--pids-limit=64",
+    "-e",
+    "NVIDIA_VISIBLE_DEVICES=void",
+    "-e",
+    "CUDA_VISIBLE_DEVICES=",
+    "--entrypoint=python3",
+    "--mount",
+    "type=bind,source=/tmp/glm53-bindings-metadata0908,target=/evidence",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "-c",
+    "\nimport hashlib,importlib.metadata as md,json,pathlib,sys\nfrom packaging.requirements import Requirement\nfrom packaging.utils import canonicalize_name\ndevices=sorted(str(p) for p in pathlib.Path('/dev').glob('nvidia*'))\nassert not devices, devices\ndistributions=list(md.distributions())\nversions={canonicalize_name(d.metadata['Name']):d.version for d in distributions}\nfocus={'cuda-bindings','cuda-python','cuda-core','cuda-pathfinder','nvidia-cutlass-dsl','flashinfer-python','vllm','torch'}\nrecords=[]\nfor d in distributions:\n    name=canonicalize_name(d.metadata['Name'])\n    dependencies=[]\n    for raw in d.requires or []:\n        req=Requirement(raw)\n        dep=canonicalize_name(req.name)\n        if dep not in focus: continue\n        active=req.marker is None or req.marker.evaluate({'extra':''})\n        current=versions.get(dep)\n        selected='13.0.3' if dep in {'cuda-bindings','cuda-python'} else current\n        dependencies.append(dict(requirement=raw,name=dep,active=active,current=current,\n            current_satisfies=current is not None and req.specifier.contains(current,prereleases=True),\n            pair13_0_3_satisfies=selected is not None and req.specifier.contains(selected,prereleases=True)))\n    if name in focus or any(x['name'] in {'cuda-bindings','cuda-python'} for x in dependencies):\n        metadata=d.read_text('METADATA')\n        records.append(dict(name=name,version=d.version,path=str(d._path),\n            metadata_sha256=hashlib.sha256(metadata.encode()).hexdigest(),\n            requires_dist=d.requires or [],relevant_requirements=dependencies))\nresult=dict(scope='Installed metadata only; no Torch/CUDA imports or package changes',\n    distribution_count=len(distributions),python=sys.version,machine=__import__('platform').machine(),\n    exposed_device_nodes=devices,imported_accelerator_modules=[n for n in sys.modules if n=='torch' or n=='cuda' or n.startswith(('torch.','cuda.'))],\n    installed_focus={k:versions.get(k) for k in sorted(focus)},records=records)\nassert not result['imported_accelerator_modules']\npathlib.Path('/evidence/metadata.json').write_text(json.dumps(result,indent=2)+'\\n')\nprint(json.dumps(result))\n"
+  ],
+  "source_sha256": "316c1b9f11491b2d6d504434066e55d496c46beec3fd6bd9f673bf007c45e04d",
+  "exit_code": 0,
+  "ended": 1788865803.6471014
+}

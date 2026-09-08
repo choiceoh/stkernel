@@ -1,0 +1,17 @@
+{
+  "container.log": {
+    "source": "/tmp/glm53-bindings-metadata0908/container.log",
+    "size": 16763,
+    "sha256": "1cf259fb8078939ed8541a412478b54cfa454ef9b474246e53461a49586a6663"
+  },
+  "metadata.json": {
+    "source": "/tmp/glm53-bindings-metadata0908/metadata.json",
+    "size": 21863,
+    "sha256": "dd07077103f40d670e2f145680d1d42976ce331488bfab4e9e666ad47a8fbb6e"
+  },
+  "receipt.json": {
+    "source": "/tmp/glm53-bindings-metadata0908/receipt.json",
+    "size": 2990,
+    "sha256": "a87f6fedbcfdaa824f6cf373a725d1442f3af8153613e34740dda9ea0b8bfac3"
+  }
+}
