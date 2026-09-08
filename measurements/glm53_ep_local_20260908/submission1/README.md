@@ -1,7 +1,12 @@
-Normal fleet GPU admission: eplocal0908v1, 2026-09-08 14:20:31 KST.
+Superseded while still queued at 2026-09-08 15:02:03 KST. Normal fleet cancel
+stopped its waiter; the driver exited 143 and no GPU payload started. The
+refined source is queued separately as eplocal0908v2. Final cancellation and
+replacement admission evidence is in ../submission2/.
+
+Original normal fleet GPU admission: eplocal0908v1, 2026-09-08 14:20:31 KST.
 Preflight passed. At 14:21 KST the session was queued third, behind the AR/MHC
 consumer and prefill step-cost jobs, with approximate fleet ETA 17:20 KST.
-No GPU cell has run yet. Queue forecasts can change.
+No GPU cell ran for this source. The original queue forecast is historical.
 
 Frozen execution source is 98ce2cf07794e9361c2fdbc9b11b6bc7ffaffb07 at
 /home/choiceoh/stkernel-ep-local-gpu-0908-1 on the head. Do not modify this copy.

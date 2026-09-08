@@ -53,6 +53,12 @@ resource result, not a GPU latency result. The unchanged stock generic
 E72/I2048 arm last compiled at 255 registers and 432 stack bytes in
 [cpu4](../measurements/glm53_ep_local_20260908/cpu4/README.md).
 
+The refined source is queued through normal fleet as `eplocal0908v2` at
+revision `36d4f006bdb0850011dccdbe2a5b8de64789e0b3`; the original queued
+source was cancelled before any GPU cell ran. [Admission evidence](../measurements/glm53_ep_local_20260908/submission2/README.md)
+records the replacement and its queue snapshot. GPU correctness and latency
+remain pending.
+
 The isolated GPU runner uses the actual legacy compact wrapper as its control
 with the profile's 8192-token pair-slice capacity. Eight fixtures cover balanced,
 concentrated, empty-local, duplicate, zero-weight and odd-tail routes, plus
