@@ -54,6 +54,7 @@ def register(directory, session, command, fleet, kind):
                  experiment=os.environ.get('FLEET_EXPERIMENT_ID'),
                  history=[])
     handoff.write(path(directory, session), value)
+    return value
 
 
 def inspect(directory, session):
@@ -150,11 +151,12 @@ def metadata(directory, session, pid):
     return None
 
 
-def transition(directory, session, state):
+def transition(directory, session, state, **details):
     """Owner-only state change under .lock; return the admitted argv and cwd."""
     value = handoff.read(path(directory, session))
     if not value or value['pid'] != os.getpid() or value['start'] != handoff.identity(os.getpid()):
         raise ValueError('queued command ownership changed')
+    value.update(details)
     value['state'] = state
     handoff.write(path(directory, session), value)
     return value

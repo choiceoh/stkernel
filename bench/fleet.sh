@@ -9,6 +9,7 @@
 #   fleet.sh chain fusion 30 "what" -- A="VLLM_X=1" B=""     N arms, one hold, verdicts   (bracket)
 #   fleet.sh pair  fusion FUS7 "VLLM_X=1 VLLM_Y=1"            one candidate arm             (bracket)
 #   fleet.sh run --gpu|--cpu fusion 20 "what" -- <cmd>         anything else; --cpu runs now, in parallel
+#   fleet.sh show [session] | logs session                 fast state, exact command, retained output
 #   fleet.sh status | board | events                           where things stand
 #   fleet.sh edit fusion --est 20 --note "updated" -- <cmd>  revise before GO; keep ticket
 #   fleet.sh cancel fusion                                     leave (stops your waiter too)
@@ -106,6 +107,7 @@ export REPO
 case "${1:-}" in
   submit|batch|result|inbox|jobs|stats|plan|ack|collect|retire|estimate) exec python3 "$REPO/bench/experiments.py" "$@";;
   await) shift; exec python3 "$REPO/bench/experiments.py" wait "$@";;
+  show|logs) exec python3 "$REPO/bench/fleet_inspect.py" "$@";;
   edit) shift; exec python3 "$REPO/bench/fleet_pending.py" "$@";;
   priority) exec python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR";;
 esac
@@ -322,7 +324,7 @@ _enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repea
     # and take one turn between them (09-06: `run fusion` twice); refuse
     local qpid; qpid=$(grep "^[0-9]*|$1|" "$Q" | head -1 | cut -d'|' -f7)
     if [ -n "$qpid" ] && [ -n "$pid" ] && [ "$qpid" != "$pid" ] && kill -0 "$qpid" 2>/dev/null && [ "${FLEET_SAME_SESSION:-0}" != 1 ]; then
-      echo "session '$1' is already queued by a live process (pid $qpid): use another name (e.g. $1-2), or FLEET_SAME_SESSION=1 to share the ticket" >&2
+      echo "session '$1' is already queued by a live process (pid $qpid): inspect it with fleet.sh show $1; use fleet.sh edit $1 before GO, or another name for different work" >&2
       logit "refused duplicate session $1 (pid $pid vs queued $qpid)"; return 2
     fi
     awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" -v kind="$kind" -v pid="$pid" '$2==s {$4=est; $5=note; $6=kind; if (pid!="") $7=pid} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
