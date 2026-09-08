@@ -83,6 +83,25 @@ class RecordTests(unittest.TestCase):
         self.assertFalse(result["prefill"][1]["warm_independent"])
         self.assertNotIn("candidate_warm_s", result["prefill"][1])
 
+    def test_canonical_record_keeps_checks_without_independent_stream_claim(self):
+        result = analyze.validate_record(self.record, canonical=True)
+        self.assertAlmostEqual(result["ms_per_step"], 45.29763408172011)
+        self.assertFalse(result["independent_stream_hashes_verified"])
+        self.assertFalse(result["ordered_stream_hashes_verified"])
+        with self.assertRaisesRegex(ValueError, "stream/request count"):
+            analyze.validate_record(self.record)
+        with self.assertRaisesRegex(ValueError, "injected stream"):
+            analyze.validate_record(self.record, self.channels, canonical=True)
+        for mutate in (lambda r: r["quality"].update(ok=17),
+                       lambda r: r["requests"][-1].update(completion_tokens=2047),
+                       lambda r: r["requests"][0].update(output_sha256="missing"),
+                       lambda r: r["decode"].update(fixed_pooled_step_s=1000),
+                       lambda r: r["traffic"]["after"].update(finished=9)):
+            record = deepcopy(self.record)
+            mutate(record)
+            with self.assertRaises(ValueError):
+                analyze.validate_record(record, canonical=True)
+
 
 class CampaignTests(unittest.TestCase):
     def setUp(self):
@@ -154,6 +173,34 @@ class CampaignTests(unittest.TestCase):
     def summary(self):
         return analyze.summarize(self.out, "A", "B")
 
+    def canonical_evidence(self):
+        for name in ("A", "B"):
+            (self.out / ("channels-" + name + ".jsonl")).unlink()
+            (self.out / ("arm-" + name + ".exit")).unlink()
+            (self.out / ("memory-" + name + ".jsonl")).rename(self.out / (name + ".memory.jsonl"))
+        for directory in ("transport-gpu", "sf6-gpu"):
+            shutil.rmtree(self.out / directory)
+        (self.out / "campaign.exit").write_text("0\n")
+        record_hashes = {json.loads(line)["name"]: hashlib.sha256(line).hexdigest()
+                         for line in (self.out / "records.raw.jsonl").read_bytes().splitlines()}
+        for name in ("A", "B"):
+            for prefix in ("prepared", "runtime"):
+                files = []
+                for host in analyze.HOSTS:
+                    stem = prefix + "-" + name + "-" + host
+                    (self.out / (stem + ".log")).write_text("observed startup log\n")
+                    files.extend(stem + suffix for suffix in (".json", ".log"))
+                write(self.out / ("observed-" + prefix + "-" + name + ".json"), dict(status="PASS", errors=[],
+                    artifacts_sha256={filename: hashlib.sha256((self.out / filename).read_bytes()).hexdigest() for filename in files}))
+        write(self.out / "observer.json", dict(schema=1, status="PASS", source_commit=self.revision,
+            candidate="A", baseline="B", errors=[], arms={name: dict(mode=mode, status="PASS",
+                head_boot_id="srv2|" + mode, errors=[], record_sha256=record_hashes[name],
+                before_receipt="observed-prepared-" + name + ".json", after_receipt="observed-runtime-" + name + ".json")
+                for name, mode in (("A", "candidate"), ("B", "baseline"))}))
+
+    def canonical_summary(self):
+        return analyze.summarize(self.out, "A", "B", canonical=True)
+
     def test_complete_copied_evidence_is_portable_without_current_source(self):
         moved = self.fixture.base / "copied-evidence"
         shutil.copytree(self.out, moved)
@@ -215,6 +262,70 @@ class CampaignTests(unittest.TestCase):
         self.records[1]["boot_id"] = self.records[0]["boot_id"]
         self.write_records()
         self.assertIn("distinct", self.summary()["errors"][0]["error"])
+
+    def test_canonical_complete_has_measured_coverage_without_fake_gpu_pass(self):
+        self.canonical_evidence()
+        result = self.canonical_summary()
+        self.assertTrue(result["valid"], result["errors"])
+        self.assertEqual(result["mode"], "canonical")
+        self.assertEqual(result["dedicated_gpu_correctness"], "not run under onepass-only policy")
+        self.assertFalse(result["independent_stream_hashes_verified"])
+        self.assertEqual(result["gpu"], {})
+        self.assertEqual(result["coverage"], dict(measured_onepass_valid=True, startup_selftests_verified=True,
+            independent_stream_hashes_verified=False, dedicated_gpu_correctness_verified=False))
+        self.assertTrue(all(not row["independent_stream_hashes_verified"] for row in result["per_boot"]))
+        self.assertIsNotNone(result["comparison"])
+        self.assertFalse(self.summary()["valid"], "strict default must still require its independent gates")
+
+    def test_canonical_missing_final_exit_is_pending_not_valid(self):
+        self.canonical_evidence()
+        (self.out / "campaign.exit").unlink()
+        result = self.canonical_summary()
+        self.assertEqual(result["status"], "PENDING", result["errors"])
+        self.assertFalse(result["valid"])
+        self.assertIsNone(result["comparison"])
+        self.assertTrue(result["pending"])
+        (self.out / "campaign.exit").write_text("7\n")
+        self.assertEqual(self.canonical_summary()["status"], "INVALID")
+
+    def test_canonical_missing_runtime_and_quality_failure_remain_invalid(self):
+        self.canonical_evidence()
+        (self.out / "prepared-A-srv4.json").unlink()
+        self.records[0]["quality"]["ok"] = 17
+        self.write_records()
+        result = self.canonical_summary()
+        self.assertEqual(result["status"], "INVALID")
+        self.assertIsNone(result["comparison"])
+        self.assertFalse(result["coverage"]["measured_onepass_valid"])
+        self.assertFalse(result["coverage"]["startup_selftests_verified"])
+        self.assertTrue(any(row["stage"] == "A srv4 runtime" for row in result["errors"]))
+        self.assertTrue(any("18/18" in row["error"] for row in result["errors"]))
+
+    def test_canonical_observer_completion_is_mandatory(self):
+        self.canonical_evidence()
+        path = self.out / "observer.json"
+        correct = analyze.read_json(path)
+        for mutate in (lambda r: r.update(status="RUNNING"), lambda r: r.update(errors=["missed snapshot"]),
+                       lambda r: r["arms"]["A"].update(head_boot_id="another boot"),
+                       lambda r: r["arms"]["A"].update(record_sha256="0" * 64),
+                       lambda r: r["arms"].pop("B"), lambda r: r.update(source_commit="0" * 40)):
+            observer = deepcopy(correct)
+            mutate(observer)
+            write(path, observer)
+            result = self.canonical_summary()
+            self.assertFalse(result["valid"])
+            self.assertIsNone(result["comparison"])
+            self.assertTrue(any(error["stage"] == "passive observer completion" for error in result["errors"]))
+        path.unlink()
+        self.assertFalse(self.canonical_summary()["valid"])
+
+    def test_canonical_changed_observer_artifact_does_not_pass(self):
+        self.canonical_evidence()
+        path = self.out / "runtime-B-srv2.log"
+        path.write_text("changed retained log\n")
+        result = self.canonical_summary()
+        self.assertFalse(result["valid"])
+        self.assertTrue(any("sealed artifact" in row["error"] for row in result["errors"]))
 
 
 if __name__ == "__main__":

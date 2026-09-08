@@ -2,7 +2,7 @@
 
 This follow-up implements three opt-in candidates above the adopted AR/MHC
 consumer path. `VLLM_GLM53_AR_CONSUMER_PDL=1` and `t,r` remain the defaults.
-The operator resumed GPU correctness and onepass testing on 2026-09-09.
+The operator resumed GPU onepass testing on 2026-09-09.
 CPU checks and compiler results establish host contracts and buildability; device numerics, transport
 ordering under RDMA, sanitizer results and step-speed gains remain separate.
 
@@ -79,41 +79,45 @@ changed inputs and retained graph lifetimes. The existing baseline-only AR
 GPU runner does not establish correctness of enabled follow-up flags.
 Prior #473 GPU receipts cannot validate changed transport code or its header.
 
-## Authorized GPU and onepass campaign
+## Canonical onepass campaign
 
-`run_decode_next_campaign.sh` uses one supervised fleet boot reservation.
-It first stops serving after the normal idle gate, then runs a fresh four-rank
-plain correctness cohort with both transport flags enabled and a local full-MoE
-SF6 correctness gate. These collect no microbenchmark timing. Sanitizer cohorts
-are separately selectable in the transport runner and are not scheduled here.
-Actual mode/capability, mixed launch geometry, changed-input graph replay,
-zero/reactivated experts, exact scale expansion and raw fallback must pass.
+PR #500 changed fleet admission while this request was waiting. The active test
+uses the current canonical `bench/chain.sh` directly, with one all-three
+candidate arm and one empty-knob profile baseline. The earlier standalone GPU
+harness remains available as source, but is not admitted or run by this campaign.
+Dedicated GPU numerical and sanitizer coverage therefore remains unmeasured.
+The active GPU evidence is the model's startup checks and onepass quality gates.
+No wrapper whitelist, custom lever, boot-only leg or additional GPU hook is added.
 
-The same frozen overlay is then deployed once. `bench/chain.sh` executes exactly
-one all-three candidate boot and one empty-knob baseline boot. Each runs the
-unchanged 2K/32K/128K onepass quality/prefill workload and fixed 3 x 2048 decode.
-Four-rank identity before/after and continuous 10 GiB MemAvailable guards retain
-source, image, configuration, chat-template, actual lane and memory evidence.
-GPU correctness uses bounded owned containers and fresh caches. The baseline
-keeps the adopted consumer PDL path and `t,r`; only the three candidate options
-differ. Candidate-only KV or GMU adjustments are not allowed.
+Both boots use the same frozen overlay and immutable serving image, SPEC_K=5,
+the standard 2K/32K/128K quality/prefill workload and fixed 3 x 2048 decode.
+`ONEPASS_MEMORY_DIR` selects the canonical four-host 10 GiB guard. The original
+KV/GMU remain unchanged, and the standard default baseline remains available
+for normal serving. Production recovery belongs to the central idle controller.
+
+`observe_decode_next_onepass.py` is a separate passive observer. It sends no
+completion requests and never launches/stops GPU work. It captures the existing
+four-rank runtime proof and boot logs before and after each arm, plus a hash of
+the original onepass record. `analyze_decode_next_onepass.py --canonical`
+requires both observed boots, ordered request hashes, exact mode/source/image
+identity, full quality, Korean and exclusive-traffic coverage, memory evidence,
+and the final supervisor exit. The canonical client records output hashes;
+independent raw SSE capture and standalone GPU numerical proof are explicitly
+not claimed. The analyzer's original stricter mode remains unchanged.
 
 The primary rate is `decode.fixed_pooled_step_s`; its reciprocal is ms/step.
-Window medians and prefill are reported separately, with ordered request hashes,
-SSE channels, quality and exclusivity gates. One boot per arm is a bounded
-comparison, not a repeatability or significance claim. Cold-compile-prefill
-values are not comparable when the arms have different compile states.
-The campaign stops its own loopback server at exit. Production recovery remains
-with the central idle controller. This test does not promote defaults or merge.
+Window medians and prefill are reported separately. One boot per arm is a bounded
+comparison, not a repeatability or significance claim. Compile-cold-prefill
+values are not comparable across different compile states. This test does not
+promote defaults or merge the optimization.
 
-From a clean composed checkout on srv2, preserve the existing reservation order:
-
-```bash
-REPO="$PWD" bash /home/choiceoh/stkernel/bench/fleet.sh run --gpu --detach \
-  --prepare probes/decode_next_prepare.json decode-next-0909 100 \
-  'PR498 compact+inline+SF6 GPU correctness then A/B onepass, one boot each' \
-  -- bash probes/run_decode_next_campaign.sh
-```
+Use `probes/decode_next_prepare.json` with the official `fleet.sh run --gpu`
+command. Pass the fixed workload, output directory and immutable image as literal
+`env NAME=value` arguments to the canonical chain; its two arm arguments are
+`NAMEA=VLLM_GLM53_AR_COMPACT_CTA=1 VLLM_GLM53_AR_PROXY_INLINE=1 VLLM_GLM53_B12X_STATIC_V2=t,r,sf6`
+and `NAMEB=`. Start the passive observer before allowing the reservation to run.
+The earlier `run_decode_next_campaign.sh`/`decode_next_lever.sh` are historical
+harnesses and are not an alternate admission path under onepass-only policy.
 
 ## Recorded CPU validation: 2026-09-09
 

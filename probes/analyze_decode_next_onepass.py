@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Portable, read-only audit of the one-boot-per-arm decode-next campaign.
 
-The campaign verifies current source before serving. This analyzer checks the
-retained identities, complete GPU receipts and their sealed artifacts without
-consulting git, Docker, CUDA, a remote machine or the current source checkout.
+The default checks independent stream and GPU receipts. --canonical audits the
+official onepass-only path, which has neither. Both modes retain complete
+workload, runtime identity and memory checks without consulting git, Docker,
+CUDA, a remote machine or the current source checkout.
 """
 from __future__ import annotations
 
@@ -159,7 +160,7 @@ def validate_memory(rows):
     return dict(samples=len(rows), minimum_available_gib={host: value / 1024**2 for host, value in minima.items()})
 
 
-def validate_record(record, channels):
+def validate_record(record, channels=None, *, canonical=False):
     require(not record.get("evidence_issues"), "onepass evidence issues: " + str(record.get("evidence_issues")))
     require(all(record.get(key) == value for key, value in metadata(WORKLOAD).items()),
             "unchanged Korean/thinking/exclusive fixed 3x2048 workload required")
@@ -169,8 +170,11 @@ def validate_record(record, channels):
     wanted_order += [(2000, "fixed-all", rep) for rep in range(3)]
     require([(q["ctx"], q["question"], q.get("rep")) for q in requests] == wanted_order,
             "complete ordered quality ladder and three fixed requests required")
-    require(len(channels) == len(requests), "stream/request count differs")
-    for index, (q, channel) in enumerate(zip(requests, channels)):
+    if canonical:
+        require(channels is None, "canonical mode does not admit injected stream evidence")
+    else:
+        require(isinstance(channels, list) and len(channels) == len(requests), "stream/request count differs")
+    for index, q in enumerate(requests):
         fixed = index >= 5
         limit = 2048 if fixed else (400 if index < 3 else 1200)
         require(q.get("fixed_decode", False) is fixed and q["min_tokens"] == (2048 if fixed else 0)
@@ -188,13 +192,15 @@ def validate_record(record, channels):
                 "request timing arithmetic differs")
         require(all(isinstance(q[key], str) and SHA.fullmatch(q[key]) for key in ("request_sha256", "output_sha256")),
                 "request/output digest missing")
-        require(channel["request_sha256"] == q["request_sha256"] and channel["output_sha256"] == q["output_sha256"]
-                and channel["timing"] == q and channel["finish_reason"] == q["finish_reason"],
-                "ordered stream request/output hash or timing mismatch: " + str(index))
-        parts = channel["channels"]
-        require(set(parts) == {"content", "reasoning_content", "reasoning"}
-                and all(isinstance(text, str) for text in parts.values()) and any(parts.values()),
-                "stream channels incomplete")
+        if not canonical:
+            channel = channels[index]
+            require(channel["request_sha256"] == q["request_sha256"] and channel["output_sha256"] == q["output_sha256"]
+                    and channel["timing"] == q and channel["finish_reason"] == q["finish_reason"],
+                    "ordered stream request/output hash or timing mismatch: " + str(index))
+            parts = channel["channels"]
+            require(set(parts) == {"content", "reasoning_content", "reasoning"}
+                    and all(isinstance(text, str) for text in parts.values()) and any(parts.values()),
+                    "stream channels incomplete")
     traffic = record["traffic"]
     require(traffic["samples"] and not traffic["issues"], "exclusive traffic receipt missing/failed")
     for state in [traffic["before"], *traffic["samples"], traffic["after"]]:
@@ -244,7 +250,8 @@ def validate_record(record, channels):
                 windows_med=decode["windows_med"], median_ms_per_step=1000 / decode["windows_med"],
                 output_tok_s=sum(q["completion_tokens"] - 1 for q in fixed) / sum(q["decode_s"] for q in fixed),
                 acceptance_all_requests=decode.get("acc_raw"), prefill=prefill, quality=record["quality"],
-                korean=korean, exclusive=True, ordered_stream_hashes_verified=True)
+                korean=korean, exclusive=True, recorded_request_output_hashes_validated=True,
+                ordered_stream_hashes_verified=not canonical, independent_stream_hashes_verified=not canonical)
 
 
 def comparison(candidate, baseline):
@@ -276,13 +283,53 @@ def comparison(candidate, baseline):
                 prefill=prefill)
 
 
-def summarize(root, candidate, baseline):
+def validate_observer(root, candidate, baseline, revision, records):
+    """A passive observer's completion is separate from supervisor completion."""
+    report = read_json(root / "observer.json")
+    require(report.get("schema") == 1 and report.get("status") == "PASS" and not report.get("errors"),
+            "passive observer is not complete: " + str(report.get("status")) + " " + str(report.get("errors", [])))
+    require(report.get("source_commit") == revision and report.get("candidate") == candidate
+            and report.get("baseline") == baseline, "observer source/arm identity differs")
+    arms = report.get("arms", {})
+    require(set(arms) == {candidate, baseline}, "both observed arms required")
+    record_hashes = {transport_evidence._record(line)["name"]: hashlib.sha256(line).hexdigest()
+                     for line in (root / "records.raw.jsonl").read_bytes().splitlines() if line.strip()}
+    for mode, name in (("candidate", candidate), ("baseline", baseline)):
+        arm = arms[name]
+        require(arm.get("mode") == mode and arm.get("status") == "PASS" and not arm.get("errors")
+                and arm.get("head_boot_id") == records[name]["boot_id"], "observer arm incomplete or boot differs: " + name)
+        require(arm.get("record_sha256") == record_hashes[name], "observed onepass record changed: " + name)
+        for field, prefix in (("before_receipt", "prepared"), ("after_receipt", "runtime")):
+            filename = "observed-" + prefix + "-" + name + ".json"
+            require(arm.get(field) == filename, "observer phase receipt identity differs")
+            receipt = read_json(root / filename)
+            require(receipt.get("status") == "PASS" and not receipt.get("errors"), "observer phase did not pass: " + filename)
+            required = {prefix + "-" + name + "-" + host + suffix for host in HOSTS for suffix in (".json", ".log")}
+            hashes = receipt.get("artifacts_sha256", {})
+            require(isinstance(hashes, dict) and required <= set(hashes), "observer phase artifacts incomplete")
+            sealed(root, receipt, hashes)
+    return dict(status="PASS", source_commit=revision, arms=[candidate, baseline],
+                record_and_snapshot_artifacts_verified=True,
+                first_snapshot="before completed record; not necessarily before traffic")
+
+
+def summarize(root, candidate, baseline, *, canonical=False):
     root = Path(root)
     result = dict(schema="decode-next-onepass-v1", status="INVALID", valid=False, errors=[], per_boot=[],
                   candidate=candidate, baseline=baseline, comparison=None, gpu={},
+                  mode="canonical" if canonical else "independent-gates", pending=[],
                   note="One boot per arm. Observed differences only; no statistical significance claim. "
                        "Within-boot windows are correlated and do not estimate boot drift. "
                        "Output hashes match each arm's recorded stream; outputs need not match across arms.")
+    if canonical:
+        result.update(independent_stream_hashes_verified=False,
+                      dedicated_gpu_correctness="not run under onepass-only policy",
+                      coverage=dict(measured_onepass_valid=False, startup_selftests_verified=False,
+                                    independent_stream_hashes_verified=False, dedicated_gpu_correctness_verified=False))
+        result["note"] = ("One boot per arm. Observed differences only; no statistical significance claim. "
+                          "Within-boot windows are correlated and do not estimate boot drift. "
+                          "Request/output hashes come from onepass itself; there is no independent SSE recording. "
+                          "Startup self-tests and onepass quality do not replace dedicated GPU numerical or race testing.")
 
     def check(stage, action):
         try:
@@ -310,21 +357,28 @@ def summarize(root, candidate, baseline):
     result["campaign_cleanup"] = "pending" if not exit_path.exists() else "complete"
     if exit_path.exists():
         check("campaign exit/cleanup", lambda: require(exit_path.read_text().strip() == "0", "campaign exited " + exit_path.read_text().strip()))
+    elif canonical:
+        result["pending"].append("supervisor final exit receipt is not available")
     if campaign is None:
         return result
     revision, records = campaign
     result["source_commit"] = revision
+    if canonical:
+        result["observer"] = check("passive observer completion", lambda: validate_observer(root, candidate, baseline, revision, records))
     snapshots, manifests, rows = {}, {}, {}
     for mode, name in (("candidate", candidate), ("baseline", baseline)):
-        check(name + " arm exit", lambda name=name: require((root / ("arm-" + name + ".exit")).read_text().strip() == "0", "serving arm failed"))
+        if not canonical:
+            check(name + " arm exit", lambda name=name: require((root / ("arm-" + name + ".exit")).read_text().strip() == "0", "serving arm failed"))
         record = records[name]
-        row = check(name + " onepass/channels", lambda: validate_record(record, read_jsonl(root / ("channels-" + name + ".jsonl"))))
+        row = check(name + (" onepass" if canonical else " onepass/channels"), lambda: validate_record(
+            record, None if canonical else read_jsonl(root / ("channels-" + name + ".jsonl")), canonical=canonical))
         if row is not None:
             rows[name] = row
             result["per_boot"].append(row)
         else:
             result["per_boot"].append(dict(name=name, valid=False, unvalidated_decode=record.get("decode", {})))
-        memory = check(name + " memory", lambda: validate_memory(read_jsonl(root / ("memory-" + name + ".jsonl"))))
+        memory_path = name + ".memory.jsonl" if canonical else "memory-" + name + ".jsonl"
+        memory = check(name + " memory", lambda: validate_memory(read_jsonl(root / memory_path)))
         if row is not None:
             row["memory"] = memory
         expected = check(name + " expected source", lambda: runtime_proof.validate_manifest(read_json(root / ("expected-" + name + ".json"))))
@@ -354,10 +408,16 @@ def summarize(root, candidate, baseline):
         == [[q[key] for key in identity_keys] for q in records[baseline]["requests"]], "ordered requests differ between arms"))
     if candidate in manifests and baseline in manifests:
         check("matched source manifests", lambda: require(manifests[candidate] == manifests[baseline], "candidate/baseline source manifests differ"))
-        result["gpu"]["transport"] = check("transport GPU gate", lambda: retained_transport(root / "transport-gpu", manifests[candidate], revision))
-        result["gpu"]["sf6"] = check("SF6 GPU gate", lambda: retained_sf6(root / "sf6-gpu", manifests[candidate], revision))
-    result["valid"] = not result["errors"]
-    result["status"] = "PASS" if result["valid"] else "INVALID"
+        if not canonical:
+            result["gpu"]["transport"] = check("transport GPU gate", lambda: retained_transport(root / "transport-gpu", manifests[candidate], revision))
+            result["gpu"]["sf6"] = check("SF6 GPU gate", lambda: retained_sf6(root / "sf6-gpu", manifests[candidate], revision))
+    if canonical:
+        result["coverage"]["measured_onepass_valid"] = len(rows) == 2 and not any(
+            error["stage"].endswith(("onepass", "memory")) or error["stage"] == "matched ordered requests"
+            for error in result["errors"])
+        result["coverage"]["startup_selftests_verified"] = all(len(snapshots.get(mode, {})) == 4 for mode in ("baseline", "candidate"))
+    result["valid"] = not result["errors"] and not result["pending"]
+    result["status"] = "INVALID" if result["errors"] else "PENDING" if result["pending"] else "PASS"
     if result["valid"]:
         result["comparison"] = comparison(rows[candidate], rows[baseline])
     return result
@@ -368,8 +428,9 @@ def main(argv=None):
     parser.add_argument("root", type=Path)
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--baseline", required=True)
+    parser.add_argument("--canonical", action="store_true", help="official onepass-only evidence; no independent SSE or GPU gates")
     args = parser.parse_args(argv)
-    result = summarize(args.root, args.candidate, args.baseline)
+    result = summarize(args.root, args.candidate, args.baseline, canonical=args.canonical)
     print(json.dumps(result, indent=2, allow_nan=False))
     return 0 if result["valid"] else 1
 
