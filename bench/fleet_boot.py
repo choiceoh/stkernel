@@ -276,6 +276,25 @@ class Supervisor:
             self.warning(f'ready receipt cleanup: {exc}')
         return self.call('withdraw', self.session, '--pid', str(pid))
 
+    def accepted_payload(self, accepted):
+        from fleet_prepare import command_environment
+        payload, environment = command_environment(accepted['command'], self.env)
+        # A literal env -i/-u may select payload settings, but the owning
+        # supervisor still supplies fleet and recovery context.
+        for key in ('FLEET_DIR', 'FLEET_SESSION', 'FLEET_PID', 'FLEET_RUNNER_REPO',
+                    'FLEET_RESTORE_MANAGED', 'FLEET_NO_RESTORE_CHECK', 'FLEET',
+                    'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_VALIDATION_LEVEL', 'FLEET_RECOVERY_RECEIPT'):
+            if key in self.env:
+                environment[key] = self.env[key]
+        # Edits may replace the prepared receipt while this supervisor waits.
+        # Only the admitted record owns that selection, never the original
+        # process environment or an env prefix supplied by the payload.
+        if accepted.get('prepare_manifest'):
+            environment['FLEET_PREPARE_MANIFEST'] = accepted['prepare_manifest']
+        else:
+            environment.pop('FLEET_PREPARE_MANIFEST', None)
+        return payload, payload_environment(environment)
+
     def run(self):
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, self.signal)
@@ -302,15 +321,7 @@ class Supervisor:
                     from fleet_onepass import validate as validate_onepass
                     contract = validate_onepass(accepted['command'], accepted['cwd'], self.repo,
                                                 environment=self.env, kind=self.kind)
-                    from fleet_prepare import command_environment
-                    payload, payload_env = command_environment(accepted['command'], self.env)
-                    # A literal env -i/-u may select payload settings, but the
-                    # owning supervisor still supplies fleet and recovery context.
-                    for key in ('FLEET_DIR', 'FLEET_SESSION', 'FLEET_PID', 'FLEET_RUNNER_REPO',
-                                'FLEET_RESTORE_MANAGED', 'FLEET_NO_RESTORE_CHECK', 'FLEET',
-                                'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_VALIDATION_LEVEL', 'FLEET_RECOVERY_RECEIPT'):
-                        if key in self.env:
-                            payload_env[key] = self.env[key]
+                    payload, payload_env = self.accepted_payload(accepted)
                     if contract['entry'] == 'bench/onepass.py':
                         from onepass_deploy import ensure
                         ensure(Path(payload_env.get('REPO', accepted['cwd'])), live=True,
