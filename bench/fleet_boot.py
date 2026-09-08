@@ -299,6 +299,9 @@ class Supervisor:
                 if self.kind == 'boot' and self.call('nodes') and os.environ.get('FLEET_NODES') == 'strict':
                     rc = 4
                 elif not self.stopping:
+                    from fleet_onepass import validate as validate_onepass
+                    contract = validate_onepass(accepted['command'], accepted['cwd'], self.repo,
+                                                environment=self.env, kind=self.kind)
                     from fleet_prepare import command_environment
                     payload, payload_env = command_environment(accepted['command'], self.env)
                     # A literal env -i/-u may select payload settings, but the
@@ -308,6 +311,10 @@ class Supervisor:
                                 'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_VALIDATION_LEVEL', 'FLEET_RECOVERY_RECEIPT'):
                         if key in self.env:
                             payload_env[key] = self.env[key]
+                    if contract['entry'] == 'bench/onepass.py':
+                        from onepass_deploy import ensure
+                        ensure(Path(payload_env.get('REPO', accepted['cwd'])), live=True,
+                               environment=payload_env)
                     rc = self.execute(payload, payload_environment(payload_env), accepted['cwd'])
                     self.mark_pending('running', phase='payload', payload_returncode=rc,
                                       payload_finished_at=time.time())

@@ -31,6 +31,7 @@ TERMINAL = {"succeeded", "failed", "blocked", "incomplete", "interrupted", "reti
 RESERVED = {"HOME", "PATH", "PYTHONPATH", "BASH_ENV", "ENV", "REPO", "LOGD",
             "LEVER", "SKIP_BOOT", "LEGS", "MK_OVERLAY_STAMP", "MK_COLD_COMPILE"}
 BASE_ENV = ("HOME", "PATH", "USER", "LOGNAME", "LANG", "LC_ALL", "SSH_AUTH_SOCK", "TMPDIR")
+ONEPASS_ONLY = "GPU work is onepass-only; submit kind=pair with knobs and no custom command"
 
 
 class RetiredJob(ValueError):
@@ -89,12 +90,6 @@ def snapshot(repo, spec, stamp):
                 text=True, stderr=subprocess.PIPE, timeout=15).strip()
             if result["image"] != spec["context"]["image"]:
                 raise ValueError("context.image must pin the local immutable sha256 image ID")
-        elif spec.get("probe_contract"):
-            result["image"] = subprocess.check_output(
-                ["docker", "image", "inspect", spec["context"]["image"], "--format", "{{.Id}}"],
-                text=True, stderr=subprocess.PIPE, timeout=15).strip()
-            if result["image"] != spec["context"]["image"]:
-                raise ValueError("structured probe requires the pinned local immutable image ID")
     return result
 
 
@@ -107,8 +102,10 @@ def normalize(raw, repo):
     if set(raw) - allowed:
         raise ValueError("unknown manifest fields: " + ", ".join(sorted(set(raw) - allowed)))
     kind = raw.get("kind")
-    if kind not in {"cpu", "pair", "probe"}:
-        raise ValueError("kind must be cpu, pair or probe")
+    if kind == "probe":
+        raise ValueError(ONEPASS_ONLY)
+    if kind not in {"cpu", "pair"}:
+        raise ValueError("kind must be cpu or pair; GPU work is onepass-only")
     baseline_policy = raw.get('baseline_policy', 'minimal')
     if baseline_policy not in ('minimal', 'confirm') or ('baseline_policy' in raw and kind != 'pair'):
         raise ValueError('baseline_policy applies only to pair and must be minimal or confirm')
@@ -138,9 +135,9 @@ def normalize(raw, repo):
     if kind == "pair" and (command or not knobs):
         raise ValueError("pair takes knobs and runs the standard onepass pair, not a custom command")
     if kind != "pair" and (not command or knobs):
-        raise ValueError("cpu/probe takes command, not knobs")
+        raise ValueError("cpu takes command, not knobs")
     # Effective launcher settings must be declared in the pair, not inherited
-    # from an agent's shell. CPU/probe environments are part of their identity.
+    # from an agent's shell. CPU environments are part of their identity.
     if kind == "pair" and set(env) - {"QUALITY_CTX", "HEALTH_BUDGET_S"}:
         raise ValueError("pair env supports QUALITY_CTX and HEALTH_BUDGET_S only; use knobs")
     if kind == "pair" and (not re.fullmatch(r"[0-9]+(?:,[0-9]+)*", env.get("QUALITY_CTX", "2000,32000,128000"))
@@ -168,12 +165,7 @@ def normalize(raw, repo):
         raise ValueError("timeout_s must be an integer between 1 and 86400 (CPU commands only)")
     probe_contract = raw.get("probe_contract")
     if probe_contract is not None:
-        from probe_report import contract
-        if kind != "probe":
-            raise ValueError("probe_contract is only valid for probes")
-        if not re.fullmatch(r"sha256:[a-f0-9]{64}", context["image"]):
-            raise ValueError("structured probe context.image must be an immutable sha256 image ID")
-        contract(probe_contract)
+        raise ValueError(ONEPASS_ONLY + "; probe_contract is no longer supported")
     from measurement_contract import evaluations
     from experiment_resources import normalize as resource_spec
     evals = evaluations(raw) if kind == 'pair' else None
@@ -393,6 +385,15 @@ def worker_lock(store, job):
     return stream
 
 
+def reject_legacy_gpu(store, job, spec):
+    """Old queued custom GPU jobs cannot bypass current admission policy."""
+    if spec.get("kind") in {"cpu", "pair", "baseline"}:
+        return False
+    store.state(job, "blocked", {"reason": ONEPASS_ONLY,
+                                 "evidence": "onepass-policy"})
+    return True
+
+
 def ensure_worker(store, job):
     if store.get(job)["state"] in TERMINAL:
         return
@@ -411,6 +412,8 @@ def ensure_worker(store, job):
             store.state(job, "interrupted", {"reason": "worker exited without a result; inspect log before an explicit repeat"})
             return
         payload = store.get(job)["payload"]
+        if reject_legacy_gpu(store, job, payload["spec"]):
+            return
         controller = None
         if payload.get('retry_controller'):
             from experiment_retry import controller_path
@@ -546,6 +549,8 @@ def execute(store, job):
     if row['state'] == 'retired':
         return 0
     payload, spec = row["payload"], row["payload"]["spec"]
+    if reject_legacy_gpu(store, job, spec):
+        return 4
     if spec["kind"] != "cpu":
         holder = Path(payload["paths"]["FLEET_DIR"]) / "holder"
         if not holder.exists() or holder.read_text().split("|", 1)[0] != "exp-" + job:
@@ -585,44 +590,27 @@ def execute(store, job):
         store.state(job, state, result)
         return 0 if state in {'succeeded', 'incomplete'} else 4
     command = spec['command']
-    nonce = uuid.uuid4().hex
-    binding = dict(revision=spec["revision"], snapshot=payload["snapshot"], context=spec["context"])
-    if spec["kind"] == "probe":
-        report_path = store.root / job / "probe-report.json"
-        report_path.unlink(missing_ok=True)
-        os.environ.update(FLEET_PROBE_REPORT=str(report_path), FLEET_PROBE_NONCE=nonce,
-                          FLEET_PROBE_BINDING=encoded(binding))
-    failure_reason = None
-    if spec["kind"] == "cpu":
-        from experiment_resources import run_cpu
-        rc, failure_reason = run_cpu(store, job, command, payload)
-    else:
-        from experiment_metrics import timed
-        with timed(store,job,'gpu_run'):
-            rc = subprocess.call(command, cwd=payload["repo"])
+    from experiment_resources import run_cpu
+    rc, failure_reason = run_cpu(store, job, command, payload)
     if rc:
-        result = {"returncode": rc, "evidence": "cpu-only" if spec["kind"] == "cpu" else "process-exit",
+        result = {"returncode": rc, "evidence": "cpu-only",
                   "reason": failure_reason or "experiment failed; dependent jobs will not execute"}
         report = store.root / job / "cpu-report.json"
-        if spec["kind"] == "cpu" and report.exists():
+        if report.exists():
             result["checks"] = json.loads(report.read_text())
         store.state(job, "failed", result)
         return rc
     verify(payload)
-    if spec["kind"] == "cpu":
-        state, result = "succeeded", {"returncode": 0, "evidence": "cpu-only", "command": command,
-                                     "revision": spec["revision"], "context": spec["context"]}
-        from prepared_artifacts import capture
-        result["artifacts"] = capture(payload)
-        report = store.root / job / "cpu-report.json"
-        if report.exists():
-            result["checks"] = json.loads(report.read_text())
-            if (result["checks"].get("passed") is not True
-                    or result["checks"].get("coverage_complete") is not True):
-                state = "failed"
-    else:
-        from probe_report import adjudicate
-        state, result = adjudicate(report_path, spec.get("probe_contract"), job, nonce, binding)
+    state, result = "succeeded", {"returncode": 0, "evidence": "cpu-only", "command": command,
+                                 "revision": spec["revision"], "context": spec["context"]}
+    from prepared_artifacts import capture
+    result["artifacts"] = capture(payload)
+    report = store.root / job / "cpu-report.json"
+    if report.exists():
+        result["checks"] = json.loads(report.read_text())
+        if (result["checks"].get("passed") is not True
+                or result["checks"].get("coverage_complete") is not True):
+            state = "failed"
     from experiment_submission import cacheable_dependencies
     if (spec["kind"] == "cpu" and state == "succeeded" and payload.get("cpu_identity")
             and cacheable_dependencies(store,payload)
@@ -682,6 +670,8 @@ def worker(store, job):
             return 0
         payload = store.get(job)["payload"]
         spec = payload["spec"]
+        if reject_legacy_gpu(store, job, spec):
+            return 4
         shared_fd = None
         with store.db:
             store.db.execute("UPDATE jobs SET worker_pid=? WHERE id=?", (os.getpid(), job))
@@ -704,8 +694,6 @@ def worker(store, job):
                       if spec["kind"] == "baseline" else spec["command"])
             if spec["kind"] != "cpu":
                 pf = [payload["bash"], fleet, "preflight"]
-                if spec["kind"] == "probe":
-                    pf.append("--probe")
                 from experiment_metrics import timed
                 with timed(store,job,'preflight'):
                     rc = subprocess.call([*pf, "exp-" + job, "--", *actual], env=env, cwd=payload["repo"])
@@ -809,8 +797,6 @@ def worker(store, job):
             with store.db:
                 store.event(job,'duration_estimate',estimate)
             lane = ["--cpu"] if spec["kind"] == "cpu" else ["--gpu"]
-            if spec["kind"] == "probe":
-                lane.append("--probe")
             command = [payload["bash"], fleet, "run", *lane, "exp-" + job,
                        str(estimate['minutes']), "experiment " + job, "--", sys.executable,
                        str(HERE / "experiments.py"), "--root", str(store.root), "execute", job]

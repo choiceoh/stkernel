@@ -1,106 +1,54 @@
 #!/usr/bin/env bash
-# fleet.sh -- turn-taking for the TP4 fleet among sessions (39차, operator:
-# "멀티세션간 플릿 테스트 대기 및 순번 같은거 프로그램 만들어").
+# fleet.sh -- one queue for canonical onepass GPU experiments.
 #
-# QUICKSTART (six lines; the rest of this header is the reference)
-#   fleet.sh submit agent spec.json                       async CPU / single pair / probe, deduplicated
-#   fleet.sh result ID | inbox agent --after CURSOR        shared evidence; no GPU wait in the agent
-#   See bench/EXPERIMENTS.md for CPU prerequisites and repeat samples.
-#   fleet.sh chain fusion 30 "what" -- A="VLLM_X=1" B=""     N arms, one hold, verdicts   (bracket)
-#   fleet.sh pair  fusion FUS7 "VLLM_X=1 VLLM_Y=1"            one candidate arm             (bracket)
-#   fleet.sh run --gpu|--cpu fusion 20 "what" -- <cmd>         anything else; --cpu runs now, in parallel
-#   fleet.sh run --gpu --detach s 20 "what" -- <cmd>       return after durable queue receipt
-#   fleet.sh retry agent ID --reason "fixed"                 retry saved experiment; reuse valid evidence
-#   fleet.sh prepare s --spec prep.json -- <cmd>               validate inputs without queueing
-#   fleet.sh run --gpu --prepared MANIFEST s 20 "what" -- <cmd> reuse matching preparation
-#   fleet.sh pause s --reason "revise inputs" | resume s         retain ticket and age
-#   fleet.sh history s | show s --ticket T | logs s --ticket T
-#   fleet.sh classify --explain <cmd>                          source lines behind CPU/GPU decision
-#   fleet.sh show [session] | logs session                 fast state, exact command, retained output
-#   fleet.sh status | board | events                           where things stand
-#   fleet.sh edit fusion --est 20 --note "updated" -- <cmd>  revise before GO; keep ticket
-#   fleet.sh cancel fusion                                     leave (stops your waiter too)
-#   No bypass: a FAILed preflight is not queued. Fix the cause (it is printed) and run again.
+# QUICKSTART
+#   fleet.sh onepass s NAME [est] [note]                 reuse idle serving, onepass only
+#   fleet.sh pair s NAME "VLLM_X=1" [est] [note]          candidate + missing matched baseline
+#   fleet.sh chain s [est] [note] -- A="VLLM_X=1" B=""    onepass once per requested arm
+#   fleet.sh submit agent spec.json                      async CPU / canonical GPU pair, deduplicated
+#   fleet.sh result ID | inbox agent --after CURSOR       shared evidence without holding GPUs
+#   fleet.sh run --cpu s [est] [note] -- <cmd>             CPU work runs now in parallel
+#   fleet.sh run --gpu [--detach] s [est] [note] -- <canonical argv>
+#   fleet.sh run --gpu --prepared MANIFEST s [est] [note] -- <canonical argv>
+#   fleet.sh prepare s --spec prep.json -- <cmd>          prepare inputs without queueing
+#   fleet.sh retry agent ID --reason "fixed"              reuse valid evidence
+#   fleet.sh edit s --expect-revision N -- <canonical argv> revise before GO, retain ticket
+#   fleet.sh pause s --reason "revise inputs" | resume s  retain ticket and age
+#   fleet.sh show [s] | logs s | history s               exact command, retained output
+#   fleet.sh status | board | events | ledger [days]      queue, timings and results
+#   fleet.sh classify --explain <cmd>                    CPU/GPU classification evidence
+#   fleet.sh cancel s                                   stop the waiter and withdraw
 #
-# One queue with aging and downstream priority, and one hold, under $FLEET_DIR on srv2 (every
-# session's chains run there). A session REQUESTS a turn, WAITS until it is
-# at the head of the queue AND nobody holds the fleet AND no legacy bench /
-# boot process is running (peers that never adopted this tool are still
-# respected), then HOLDS it, runs, RELEASES. Nothing here ever kills a live
-# holder: "바로 해" from the operator is `front` (jump the queue) and, for a
-# holder whose process is gone, `kick`.
+# GPU admission accepts current canonical pair, chain, ab-lever, onepass and
+# recorded pair/baseline execution. Unknown wrappers, standalone GPU checks,
+# sanitizers, custom probe manifests, chain --after and LEGS=none are refused
+# before preparation/queueing. Pending edits and execution recheck this policy.
+# --probe is the internal idle-serving scheduling lane; only onepass.py may
+# enter it. A rehearsal skips GPUs only for canonical pair/chain/ab-lever.
+# No bypass: a FAILed preflight is not queued. Fix the printed cause.
 #
-#   fleet.sh request [--probe] <session> [est] [note] enqueue (idempotent), print position
-#   fleet.sh wait    <session> [timeout_min]         block until GO, then hold (pid = caller)
-#   fleet.sh release <session>                       drop the hold (+ legacy FLEET-free-for-*.done)
-#   fleet.sh run     <session> [est_min] [note] -- <cmd...>
-#                                                    request + wait + run + release (trap)
-#   fleet.sh status                                  holder, queue, liveness, legacy busy
-#   fleet.sh adopt   <session> <pid> [est_min] [note] a job already running becomes the holder
-#   fleet.sh front   <session>                       move to the head of the queue
-#   fleet.sh cancel  <session>                       leave the queue
-#   fleet.sh kick    [--force]                       drop a DEAD holder (--force: any holder;
-#                                                    the operator's call, logged as such)
-#   fleet.sh busy                                    "<bench procs> <running+waiting requests>"
-#   fleet.sh preflight [--probe] <session> [-- <cmd...>]
-#                                                    checks BEFORE a boot is spent: srv2 copies
-#                                                    (ab-lever2.sh, fleet.sh) == repo, chain syntax,
-#                                                    every VLLM_* knob the chain sets is declared in
-#                                                    the profile (the launcher forwards only those),
-#                                                    baseline / duplicate-arm notice. `run` refuses
-#                                                    a FAILed preflight -- no override (operator).
-#                                                    A stale srv2 copy is SYNCED from the repo, not
-#                                                    failed; knobs may be declared by the repo profile
-#                                                    or by a tree the chain `cd`s into (a PR checkout)
-#   fleet.sh restore-needed <session>                always no: recovery belongs to the idle controller
-#   fleet.sh run --probe <session> [est] [note] -- <cmd...>
-#                                                    a GPU probe (no boot): needs an IDLE serving
-#                                                    (health 200, 0 requests) or no serving at all,
-#                                                    never a boot in progress; est <= 15 may slip
-#                                                    ahead of queued boot jobs (logged)
-#   fleet.sh board [n]                               every session's last n verdicts + today's boots
-#   fleet.sh ledger [days]                           per-session holds, minutes, boots, records and
-#                                                    boots that produced no measurement
-#   fleet.sh chain <session> [est] [note] -- NAME=KNOBS [NAME=KNOBS ...] [--after NAME 'cmd'] [--legs NAME none]
-#                                                    N arms in one hold (bench/chain.sh): proof per
-#                                                    arm, yield between arms, a defaults sample only
-#                                                    while the build's floor is thin, restore only when
-#                                                    nobody boots behind you, judge + verdicts. NAME=""
-#                                                    is a defaults arm; --after runs a check on that boot
-#   fleet.sh pair <session> <NAME> "<knobs>" [est] [note]
-#                                                    the standard bracket (bench/pair.sh): candidate
-#                                                    boot + onepass + proof, yield to a short probe,
-#                                                    defaults boot only when the build lacks a
-#                                                    baseline / a 3-sample floor and nobody boots
-#                                                    behind you, judge with the noise floor, verdict
-#   fleet.sh deploy <session> <rev>                  the holder deploys <rev> (git + overlays) and the
-#                                                    build registry gets stamp <-> sha <- session
-#   fleet.sh yield <session> [max_est]               holder lets a short queued probe run beside its
-#                                                    idle serving, keeps its place, resumes after
-#   fleet.sh nodes                                   the four nodes: ssh, GPU, stray containers, RAM,
-#                                                    model path -- run at GO (warn; FLEET_NODES=strict refuses)
-#   fleet.sh notify <session> "<cmd>"                hook run on GO / release / preflight-fail / yield
-#                                                    with args <event> <session> <note>; every event
-#                                                    also lands in $FLEET_DIR/events.log
-#   fleet.sh run --gpu|--cpu <session> ...           SAY which it is (operator): --gpu takes a turn in
-#                                                    the queue; --cpu runs NOW in parallel under nice,
-#                                                    never holding. A --cpu job whose script or command
-#                                                    shows GPU use (ab-lever, a boot, a probe container,
-#                                                    torch.cuda...) is REFUSED, no override: fix the
-#                                                    label or the classifier. Without a flag it decides:
-#                                                    GPU evidence -> queue; CPU evidence (rehearsal,
-#                                                    CPU probes, tests, compile checks) -> parallel;
-#                                                    no evidence -> queue, and it says so
-# `status` also prints what production is serving (defaults, or which knobs)
-# and the deployed build. Sessions never restore on release; the central idle
-# controller recovers only after 300 seconds without fleet activity.
-# Records: every release appends to $FLEET_DIR/ledger.tsv; `status` derives ETAs
-# from a session's last actual holds and flags a holder that is SILENT (no
-# heartbeat for 10 min) or OVERDUE (2x its estimate) -- flags only, never a kill.
+# Sessions release immediately after measurements. Recovery belongs exclusively
+# to the central controller after 300 seconds without fleet activity; its
+# authenticated boot-only maintenance action is separate from experiments.
+# A matching baseline is reused; pair and chain target one sample by default.
+# The queue retains aging, downstream priority, pending edits and pause/resume.
 #
-# Files: queue (ticket|session|epoch|est_min|note), holder (session|pid|host|
-# epoch|est_min|note), log. All edits under flock on $FLEET_DIR/.lock.
-# Lives in the repo as bench/fleet.sh; srv2 runs ~/glm53-logs/fleet.sh.
+# Operator/control commands retained for owner lifecycle and compatibility:
+#   wait s [timeout_min] (registered supervisor only); release s
+#   front s; kick [--force]; busy; nodes
+#   preflight [--probe] s -- <canonical argv>; deploy s rev; yield s [max_est]
+#   restore-needed s (always no); notify s "<cmd>" (event hook)
+# Bare request and unvalidated adopt are disabled.
+# None of these makes an arbitrary GPU payload an approved experiment.
+# Live owners are never killed by ordinary scheduling; dead owners can be kicked.
+#
+# Source copies ab-lever2.sh and fleet.sh are refreshed during preflight.
+# Control scripts and accepted source are pinned before waiting; the holder
+# executes the latest accepted command revision. CPU admission uses the fast
+# source gate; GPU quality, prefill, decode and acceptance use the same onepass.
+# See bench/EXPERIMENTS.md for manifests, repeat samples and evidence semantics.
+# Files live under $FLEET_DIR on srv2; mutations hold its .lock.
+# srv2's public entry is ~/glm53-logs/fleet.sh.
 set -uo pipefail
 # Transport metadata must not become a preparation or payload dependency.
 unset SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION LC_TERMINAL LC_TERMINAL_VERSION
@@ -154,6 +102,12 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
   local ok=1 knobs="" chain="" kind=boot
   [ "${1:-}" = "--probe" ] && { kind=probe; shift; }
   echo "preflight $1 [$kind]:"
+  shift
+  [ "${1:-}" = "--" ] && shift
+  if [ $# -gt 0 ]; then
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_onepass.py" \
+      --repo "${FLEET_RUNNER_REPO:-$REPO}" --cwd "$PWD" --kind "$kind" -- "$@" || return 1
+  fi
   for pair in "ab-lever2.sh:bench/ab-lever.sh" "fleet.sh:bench/fleet.sh"; do
     local copy=$LOGD/${pair%%:*} src=$REPO/${pair#*:}
     [ -f "$copy" ] || continue
@@ -165,8 +119,6 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
       echo "  SYNC $copy <- repo (was stale)"; logit "preflight synced $(basename "$copy") from the repo"
     else echo "  FAIL $copy differs from $src and could not be synced"; rm -f "$copy.new"; ok=0; fi
   done
-  shift
-  [ "${1:-}" = "--" ] && shift
   if [ "${1:-}" = bash ] && [ -f "${2:-}" ]; then chain=$2; fi
   if [ -n "$chain" ]; then
     if bash -n "$chain" 2>/dev/null; then echo "  PASS syntax $chain"; else echo "  FAIL syntax $chain"; ok=0; fi
@@ -234,7 +186,10 @@ _event() {  # event session note
 # Evidence for GPU wins over evidence for CPU; no evidence at all is treated as
 # GPU (queued) and says so. A rehearsal never needs the GPU.
 classify_cmd() {  # cmd... -> gpu|nogpu|unknown
-  [ "${FLEET_REHEARSE:-0}" = 1 ] && { echo nogpu; return; }
+  if [ "${FLEET_REHEARSE:-0}" = 1 ] && python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_onepass.py" \
+      --repo "${FLEET_RUNNER_REPO:-$REPO}" --cwd "$PWD" --rehearsal-only -- "$@" >/dev/null 2>&1; then
+    echo nogpu; return
+  fi
   # This reviewed entrypoint invokes nvcc --compile only. A .cu input is not
   # device execution; its argument parser rejects runtime/launcher commands.
   case "${1##*/}" in python|python3|python3.*)
@@ -455,10 +410,11 @@ _kick() {  # preserve the same lock used by idle recovery and admission
 cmd=${1:-status}; shift || true
 case "$cmd" in
   request)
-    kind=boot; [ "${1:-}" = "--probe" ] && { kind=probe; shift; }
-    s=${1:?session}; with_lock _enqueue "$s" "${2:-30}" "${3:-}" "$kind" "$PPID" || exit 6; echo "queued: $s [$kind] at position $(_position "$s") of $(grep -c . "$Q")"; baseline_line;;
+    echo 'bare GPU reservations are disabled; use fleet.sh onepass, pair or chain' >&2; exit 2;;
   wait)
     s=${1:?session}; tmo=${2:-720}; pid=${FLEET_PID:-$PPID}
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_onepass.py" --repo "${FLEET_RUNNER_REPO:-$REPO}" \
+      --directory "$FLEET_DIR" --wait-owner "$s" "$pid" >/dev/null || exit 2
     est=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f4); note=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f5)
     kind=$(kind_of "$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f6)")
     [ -n "$est" ] || { with_lock _enqueue "$s" 30 "" "$kind" "$pid" || exit 6; est=30; note=""; }
@@ -520,6 +476,9 @@ case "$cmd" in
       logit "refused --cpu $s: classifier saw GPU use"; exit 5
     fi
     [ -z "$force" ] && echo "no --gpu/--cpu given: classified as $auto"
+    if [ "$cls" != nogpu ]; then
+      python3 "$REPO/bench/fleet_onepass.py" --repo "$REPO" --cwd "$PWD" --kind "$kind" -- "$@" || exit 2
+    fi
     prep_args=(); [ -n "$prepare_spec" ] && prep_args=(--spec "$prepare_spec")
     [ -n "$prepared_manifest" ] && prep_args+=(--prepared "$prepared_manifest")
     FLEET_PREPARE_MANIFEST=$(python3 "$REPO/bench/fleet_prepare.py" create "$s" --fleet "$REPO/bench/fleet.sh" ${prep_args[@]+"${prep_args[@]}"} -- "$@") || exit 3
@@ -566,7 +525,7 @@ case "$cmd" in
     echo "log:"; tail -4 "$L" | sed 's/^/  /'
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" status "$FLEET_DIR"
     production_line; deployed_line; baseline_line;;
-  adopt) with_lock _adopt "${1:?session}" "${2:?pid}" "${3:-30}" "${4:-}";;
+  adopt) echo 'unvalidated GPU adoption is disabled; submit canonical onepass work' >&2; exit 2;;
   front) with_lock _front "${1:?session}"; echo "$1 -> position $(_position "$1")";;
   withdraw)
     if [ "${2:-}" = --pid ]; then with_lock _withdraw_owned "${1:?session}" "${3:?pid}"
@@ -586,15 +545,16 @@ case "$cmd" in
     [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe] <session> [-- cmd...]" >&2; exit 2; }
     preflight "$@";;
   startup)
-    s=${1:?session}; spec=$(realpath "${2:?campaign JSON}"); est=${3:-45}
-    python3 "$REPO/bench/startup_campaign.py" validate --repo "$REPO" --spec "$spec" || exit 2
-    exec env STARTUP_CACHE_MODE=campaign STARTUP_CAMPAIGN_SPEC="$spec" bash "$0" run --gpu "$s" "$est" "shared startup campaign" -- bash "$REPO/bench/startup_cache_boots.sh";;
+    echo 'GPU work requires onepass: use fleet.sh pair/chain for startup knobs; separate startup request campaigns are disabled' >&2; exit 2;;
+  onepass)
+    s=${1:?session}; name=${2:?NAME}; est=${3:-5}; note=${4:-live onepass $name}
+    exec bash "$0" run --gpu --probe "$s" "$est" "$note" -- python3 "$REPO/bench/onepass.py" --name "$name";;
   chain)
     s=${1:?session}; shift; est=30; note=""
     [ "${1:-}" != "--" ] && { est=$1; shift; }
     [ "${1:-}" != "--" ] && { note=$1; shift; }
     [ "${1:-}" = "--" ] && shift
-    [ $# -gt 0 ] || { echo "usage: fleet.sh chain <session> [est] [note] -- NAME=KNOBS [...] [--after NAME cmd] [--legs NAME none]" >&2; exit 2; }
+    [ $# -gt 0 ] || { echo "usage: fleet.sh chain <session> [est] [note] -- NAME=KNOBS [...]" >&2; exit 2; }
     [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
     exec bash "$0" run $lane "$s" "$est" "${note:-chain $*}" -- bash "$REPO/bench/chain.sh" "$@";;
   pair)

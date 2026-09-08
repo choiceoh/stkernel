@@ -27,6 +27,14 @@ class LinuxSupervisorTests(unittest.TestCase):
         # validation suite covers receipts. Session admission must never prepare
         # a recovery checkout or run its release CPU gate.
         (self.repo/'bench/fleet_validation.py').write_text("import sys\nassert sys.argv[1] == 'validate', 'session attempted recovery preparation'\nprint('{}')\n")
+        # These inert Python commands exercise process ownership, editing and
+        # cancellation. Real onepass admission is covered separately by the
+        # CLI integration tests; no production policy override is introduced.
+        policy = (ROOT/'bench/fleet_onepass.py').read_text()
+        policy = (policy[:policy.index('def validate(')]
+                  + "def validate(*args, **kwargs): return {'entry': 'lifecycle-fixture'}\n\n\n"
+                  + policy[policy.index('def authorize_wait('):])
+        (self.repo/'bench/fleet_onepass.py').write_text(policy)
         (self.repo/'profiles/glm53.env').write_text('VLLM_TEST=0\n')
         (self.repo/'bench/fleet_restore.sh').write_text('''#!/bin/bash
 echo "$FLEET_SESSION" >> "$LOGD/restores"
