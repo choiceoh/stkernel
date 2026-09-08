@@ -472,6 +472,7 @@ print(pathlib.Path(IMAGE_FILE).read_text())
         subprocess.check_call([sys.executable, '-m', 'venv', '--without-pip', str(venv)])
         selected = venv / 'bin/python'
         (self.store / 'python').write_text(str(selected) + '\n')
+        (self.store / 'python').chmod(0o600)
         args = ['validate', '--repo', str(self.repo), '--store', str(self.store), '--format', 'receipt']
         result = self.configured_cli(*args)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -487,6 +488,7 @@ print(pathlib.Path(IMAGE_FILE).read_text())
         other = self.root / 'wrong-store'
         other.mkdir()
         (other / 'python').write_text('/missing/interpreter\n')
+        (other / 'python').chmod(0o600)
         result = self.configured_cli('verify-recovery', '--receipt', str(receipt.resolve()),
                                      '--store', str(other), '--format', 'receipt')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -499,12 +501,14 @@ print(pathlib.Path(IMAGE_FILE).read_text())
         for value, expected in [('python3\n', 'absolute interpreter path'),
                                 ('/missing/python\n', 'missing or not executable')]:
             configuration.write_text(value)
+            configuration.chmod(0o600)
             result = self.configured_cli(*args)
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn(expected, result.stderr)
         configuration.unlink()
         target = self.root / 'config-target'
         target.write_text(sys.executable + '\n')
+        target.chmod(0o600)
         configuration.symlink_to(target)
         result = self.configured_cli(*args)
         self.assertEqual(result.returncode, 2, result.stderr)
