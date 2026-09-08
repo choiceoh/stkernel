@@ -1,6 +1,8 @@
 """CPU audits of actual onepass schema and portable retained GPU admission."""
 from copy import deepcopy
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
+import io
 import json
 from pathlib import Path
 import shutil
@@ -173,7 +175,7 @@ class CampaignTests(unittest.TestCase):
     def summary(self):
         return analyze.summarize(self.out, "A", "B")
 
-    def canonical_evidence(self):
+    def canonical_evidence(self, *, sf6_direct=False):
         for name in ("A", "B"):
             (self.out / ("channels-" + name + ".jsonl")).unlink()
             (self.out / ("arm-" + name + ".exit")).unlink()
@@ -183,23 +185,44 @@ class CampaignTests(unittest.TestCase):
         (self.out / "campaign.exit").write_text("0\n")
         record_hashes = {json.loads(line)["name"]: hashlib.sha256(line).hexdigest()
                          for line in (self.out / "records.raw.jsonl").read_bytes().splitlines()}
-        for name in ("A", "B"):
+        for name, mode in (("A", "candidate"), ("B", "baseline")):
             for prefix in ("prepared", "runtime"):
                 files = []
                 for host in analyze.HOSTS:
                     stem = prefix + "-" + name + "-" + host
-                    (self.out / (stem + ".log")).write_text("observed startup log\n")
+                    raw = b"observed startup log\n"
+                    if sf6_direct:
+                        # Exact preserved bytes, including invalid UTF-8 outside markers.
+                        # Reader and analyzer decode these bytes with errors="replace".
+                        raw = (runtime_fixture.COMMON_LOG + (runtime_fixture.SF6_DIRECT_LOG
+                               if mode == "candidate" else "")).encode() + b"diagnostic: \xff\n"
+                        report = runtime_fixture.direct_report(mode, host)
+                        report.update(source_sha256=self.expected,
+                                      log_sha256=hashlib.sha256(raw).hexdigest(),
+                                      markers=analyze.runtime_proof.parse_markers(raw.decode(errors="replace")))
+                        write(self.out / (stem + ".json"), report)
+                    (self.out / (stem + ".log")).write_bytes(raw)
                     files.extend(stem + suffix for suffix in (".json", ".log"))
-                write(self.out / ("observed-" + prefix + "-" + name + ".json"), dict(status="PASS", errors=[],
+                write(self.out / ("observed-" + prefix + "-" + name + ".json"), dict(
+                    schema=1, status="PASS", phase=prefix, arm=name, mode=mode,
+                    source_commit=self.revision, sf6_direct=sf6_direct, errors=[],
                     artifacts_sha256={filename: hashlib.sha256((self.out / filename).read_bytes()).hexdigest() for filename in files}))
         write(self.out / "observer.json", dict(schema=1, status="PASS", source_commit=self.revision,
-            candidate="A", baseline="B", errors=[], arms={name: dict(mode=mode, status="PASS",
+            candidate="A", baseline="B", sf6_direct=sf6_direct, errors=[], arms={name: dict(mode=mode, status="PASS",
                 head_boot_id="srv2|" + mode, errors=[], record_sha256=record_hashes[name],
                 before_receipt="observed-prepared-" + name + ".json", after_receipt="observed-runtime-" + name + ".json")
                 for name, mode in (("A", "candidate"), ("B", "baseline"))}))
 
-    def canonical_summary(self):
-        return analyze.summarize(self.out, "A", "B", canonical=True)
+    def canonical_summary(self, *, sf6_direct=False):
+        return analyze.summarize(self.out, "A", "B", canonical=True, sf6_direct=sf6_direct)
+
+    def reseal_phase(self, prefix, name):
+        path = self.out / ("observed-" + prefix + "-" + name + ".json")
+        receipt = analyze.read_json(path)
+        receipt["artifacts_sha256"] = {
+            filename: hashlib.sha256((self.out / filename).read_bytes()).hexdigest()
+            for filename in receipt["artifacts_sha256"]}
+        write(path, receipt)
 
     def test_complete_copied_evidence_is_portable_without_current_source(self):
         moved = self.fixture.base / "copied-evidence"
@@ -326,6 +349,124 @@ class CampaignTests(unittest.TestCase):
         result = self.canonical_summary()
         self.assertFalse(result["valid"])
         self.assertTrue(any("sealed artifact" in row["error"] for row in result["errors"]))
+
+    def test_direct_canonical_complete_validates_four_rank_logs_and_identity(self):
+        self.canonical_evidence(sf6_direct=True)
+        with patch.object(analyze.transport_evidence, "source", side_effect=AssertionError("current source read")):
+            result = self.canonical_summary(sf6_direct=True)
+        self.assertTrue(result["valid"], result["errors"])
+        self.assertTrue(result["sf6_direct"])
+        self.assertTrue(result["observer"]["sf6_direct"])
+        self.assertTrue(result["coverage"]["startup_selftests_verified"])
+        self.assertIsNotNone(result["comparison"])
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = analyze.main([str(self.out), "--candidate", "A", "--baseline", "B",
+                                 "--canonical", "--sf6-direct"])
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(output.getvalue())["sf6_direct"])
+
+    def test_direct_variant_cannot_be_downgraded_in_any_evidence_layer(self):
+        self.canonical_evidence(sf6_direct=True)
+        self.assertFalse(self.canonical_summary()["valid"], "direct evidence cannot use legacy validation")
+        targets = [("observer.json", None, None)]
+        targets += [(f"observed-{phase}-{arm}.json", None, None)
+                    for phase in ("prepared", "runtime") for arm in ("A", "B")]
+        targets += [(f"{phase}-{arm}-srv3.json", phase, arm)
+                    for phase in ("prepared", "runtime") for arm in ("A", "B")]
+        for filename, phase, arm in targets:
+            path = self.out / filename
+            original = analyze.read_json(path)
+            for value in (None, False, 1, "true"):
+                with self.subTest(file=filename, value=value):
+                    changed = deepcopy(original)
+                    if value is None:
+                        changed.pop("sf6_direct")
+                    else:
+                        changed["sf6_direct"] = value
+                    write(path, changed)
+                    if phase:
+                        self.reseal_phase(phase, arm)
+                    result = self.canonical_summary(sf6_direct=True)
+                    self.assertFalse(result["valid"], result)
+                    self.assertIsNone(result["comparison"])
+            write(path, original)
+            if phase:
+                self.reseal_phase(phase, arm)
+        self.assertTrue(self.canonical_summary(sf6_direct=True)["valid"])
+
+    def test_direct_release_must_appear_in_matching_preserved_log(self):
+        self.canonical_evidence(sf6_direct=True)
+        log_path = self.out / "runtime-A-srv4.log"
+        report_path = self.out / "runtime-A-srv4.json"
+        raw = log_path.read_bytes()
+        # Retain a valid claimed report, but remove its release event from the log.
+        reduced = b"\n".join(line for line in raw.split(b"\n") if b"packed-only owners finalised:" not in line)
+        self.assertNotEqual(raw, reduced)
+        log_path.write_bytes(reduced)
+        report = analyze.read_json(report_path)
+        report["log_sha256"] = hashlib.sha256(reduced).hexdigest()
+        write(report_path, report)
+        self.reseal_phase("runtime", "A")
+        result = self.canonical_summary(sf6_direct=True)
+        self.assertFalse(result["valid"])
+        self.assertTrue(any("markers differ from retained log" in e["error"] for e in result["errors"]))
+        # Even with consistent hashes and parsed markers, actual release is required.
+        report["markers"] = analyze.runtime_proof.parse_markers(reduced.decode(errors="replace"))
+        write(report_path, report)
+        self.reseal_phase("runtime", "A")
+        result = self.canonical_summary(sf6_direct=True)
+        self.assertFalse(result["valid"])
+        self.assertTrue(any(e["stage"] == "A srv4 runtime" for e in result["errors"]))
+        self.assertIsNone(result["comparison"])
+
+    def test_direct_each_rank_phase_requires_sealed_log_and_report_log_hash(self):
+        self.canonical_evidence(sf6_direct=True)
+        for arm in ("A", "B"):
+            for phase in ("prepared", "runtime"):
+                for host in analyze.HOSTS:
+                    stem = f"{phase}-{arm}-{host}"
+                    report_path = self.out / (stem + ".json")
+                    report = analyze.read_json(report_path)
+                    with self.subTest(arm=arm, phase=phase, host=host):
+                        # A newly sealed report still cannot discard its exact log identity.
+                        changed = deepcopy(report)
+                        changed.pop("log_sha256")
+                        write(report_path, changed)
+                        self.reseal_phase(phase, arm)
+                        result = self.canonical_summary(sf6_direct=True)
+                        self.assertFalse(result["valid"])
+                        self.assertTrue(any("log SHA differs" in e["error"] for e in result["errors"]))
+                        write(report_path, report)
+                        self.reseal_phase(phase, arm)
+        receipt_path = self.out / "observed-prepared-B.json"
+        receipt = analyze.read_json(receipt_path)
+        receipt["artifacts_sha256"].pop("prepared-B-srv1.log")
+        write(receipt_path, receipt)
+        result = self.canonical_summary(sf6_direct=True)
+        self.assertFalse(result["valid"])
+        self.assertTrue(any("phase artifacts incomplete" in e["error"] for e in result["errors"]))
+
+    def test_direct_option_requires_canonical_and_legacy_missing_variant_still_passes(self):
+        result = analyze.summarize(self.out, "A", "B", sf6_direct=True)
+        self.assertFalse(result["valid"])
+        self.assertIn("requires canonical", result["errors"][0]["error"])
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            analyze.main([str(self.out), "--candidate", "A", "--baseline", "B", "--sf6-direct"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--sf6-direct requires --canonical", stderr.getvalue())
+        self.canonical_evidence()
+        for filename in ["observer.json", *(f"observed-{phase}-{arm}.json"
+                          for phase in ("prepared", "runtime") for arm in ("A", "B"))]:
+            path = self.out / filename
+            value = analyze.read_json(path)
+            value.pop("sf6_direct")
+            write(path, value)
+        result = self.canonical_summary()
+        self.assertTrue(result["valid"], result["errors"])
+        self.assertFalse(result["sf6_direct"])
+        self.assertFalse(self.canonical_summary(sf6_direct=True)["valid"])
 
 
 if __name__ == "__main__":

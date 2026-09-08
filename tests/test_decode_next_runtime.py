@@ -25,6 +25,11 @@ CANDIDATE_LOG = """[osar] compact transport self-test cases=21 graph=3 maxerr=0
 [b12x static v2] lane serving: static2_m6_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=65000 B)
 """
 FINALIZED_LOG = "[b12x sf6] packed-only owners finalised: layers=48 raw_bytes_released=268435456; decode and prefill read immutable packed scales\n"
+SF6_DIRECT_LOG = (
+    "[b12x sf6] prepared FC1+FC2; packed bytes=85819392\n" * 42
+    + "[b12x sf6] packed-only owners finalised: layers=42 raw_bytes_released=4756340736; decode and prefill read immutable packed scales\n"
+    + CANDIDATE_LOG.splitlines()[-1] + "\n"
+)
 
 
 def report(mode="baseline", host="srv1"):
@@ -44,7 +49,95 @@ def report(mode="baseline", host="srv1"):
                 markers=proof.parse_markers(COMMON_LOG + (CANDIDATE_LOG if mode == "candidate" else "")))
 
 
+def direct_report(mode="candidate", host="srv1"):
+    value = report(mode, host)
+    value.update(sf6_direct=True, kv_blocks="665")
+    value["serving_argv"][value["serving_argv"].index("--num-gpu-blocks-override") + 1] = "665"
+    value["knobs"].update(proof.expected_knobs(mode, sf6_direct=True))
+    value["markers"] = proof.parse_markers(COMMON_LOG + (SF6_DIRECT_LOG if mode == "candidate" else ""))
+    return value
+
+
 class RuntimeProofTests(unittest.TestCase):
+    def test_direct_only_has_exact_storage_and_four_rank_pair(self):
+        arms = {mode: {host: direct_report(mode, host) for host in ("srv1", "srv2", "srv3", "srv4")}
+                for mode in ("baseline", "candidate")}
+        for mode, reports in arms.items():
+            for value in reports.values():
+                self.assertEqual(proof.validate_report(value, MANIFEST, sf6_direct=True), [])
+                self.assertEqual(value["knobs"]["VLLM_GLM53_AR_COMPACT_CTA"], "0")
+                self.assertEqual(value["knobs"]["VLLM_GLM53_AR_PROXY_INLINE"], "0")
+                self.assertEqual(proof.compare_snapshots(value, copy.deepcopy(value), sf6_direct=True), [])
+        self.assertEqual(proof.compare_arms(arms["baseline"], arms["candidate"], sf6_direct=True), [])
+        self.assertTrue(proof.compare_arms(arms["baseline"], arms["candidate"]))
+        value = arms["candidate"]["srv3"]
+        value["knobs"]["VLLM_GLM53_AR_COMPACT_CTA"] = "1"
+        self.assertTrue(proof.compare_arms(arms["baseline"], arms["candidate"], sf6_direct=True))
+
+    def test_direct_requires_exact_ownership_totals_and_existing_execution(self):
+        for field, expected in proof.SF6_DIRECT_COUNTS.items():
+            for changed in (None, True, 0, expected - 1, expected + 1):
+                value = direct_report()
+                value["markers"][field] = changed
+                self.assertTrue(proof.validate_report(value, MANIFEST, sf6_direct=True), (field, changed))
+        for field, changed in (("common", {}), ("ar_capture_numel", []),
+                               ("mhc_capture_tokens", []), ("sf6_m6_serving", 0)):
+            value = direct_report()
+            value["markers"][field] = changed
+            self.assertTrue(proof.validate_report(value, MANIFEST, sf6_direct=True), field)
+        value = direct_report()
+        value["markers"] = proof.parse_markers(COMMON_LOG + "\n".join(CANDIDATE_LOG.splitlines()[3:]))
+        self.assertTrue(proof.validate_report(value, MANIFEST, sf6_direct=True))
+        value = direct_report("baseline")
+        value["markers"] = proof.parse_markers(COMMON_LOG + SF6_DIRECT_LOG)
+        self.assertTrue(proof.validate_report(value, MANIFEST, sf6_direct=True))
+
+    def test_direct_rejects_transport_execution_even_with_unparseable_counts(self):
+        for mode in ("candidate", "baseline"):
+            for line in (*CANDIDATE_LOG.splitlines()[:3],
+                         "[osar] compact transport self-test cases=21 graph=3 maxerr=0.01"):
+                value = direct_report(mode)
+                log = COMMON_LOG + (SF6_DIRECT_LOG if mode == "candidate" else "") + line
+                value["markers"] = proof.parse_markers(log)
+                self.assertIn("SF6-only arm executed compact/inline transport",
+                              proof.validate_report(value, MANIFEST, sf6_direct=True))
+
+    def test_direct_variant_cannot_be_inferred_or_changed(self):
+        for mode in ("candidate", "baseline"):
+            for changed in (None, False, 1, "true"):
+                value = direct_report(mode)
+                value["sf6_direct"] = changed
+                self.assertTrue(proof.validate_report(value, MANIFEST, sf6_direct=True))
+            value.pop("sf6_direct")
+            self.assertTrue(proof.validate_report(value, MANIFEST, sf6_direct=True))
+            self.assertTrue(proof.validate_report(direct_report(mode), MANIFEST))
+        legacy = report()
+        explicit_legacy = dict(legacy, sf6_direct=False)
+        self.assertEqual(proof.compare_snapshots(legacy, explicit_legacy), [])
+        direct = direct_report()
+        changed = dict(direct, sf6_direct=False)
+        self.assertIn("within-arm drift: sf6_direct", proof.compare_snapshots(direct, changed, sf6_direct=True))
+        with self.assertRaisesRegex(ValueError, "must be a boolean"):
+            proof.expected_knobs("candidate", sf6_direct=1)
+
+    def test_direct_requires_reduced_kv_in_actual_argv(self):
+        for mode in ("candidate", "baseline"):
+            for blocks in ("0", "666", "1056"):
+                value = direct_report(mode)
+                value["kv_blocks"] = blocks
+                value["serving_argv"][value["serving_argv"].index("--num-gpu-blocks-override") + 1] = blocks
+                self.assertIn("SF6 direct requires actual KV override of 665 blocks",
+                              proof.validate_report(value, MANIFEST, sf6_direct=True))
+        value = direct_report()
+        value["serving_argv"][value["serving_argv"].index("--num-gpu-blocks-override") + 1] = "1056"
+        self.assertIn("KV blocks not bound to serving argv", proof.validate_report(value, MANIFEST, sf6_direct=True))
+        self.assertEqual(proof.validate_report(report(), MANIFEST), [])
+
+    def test_direct_cli_passes_variant_to_collection_and_validation(self):
+        with patch.object(proof, "collect_report", return_value=direct_report()) as collect, patch("builtins.print"):
+            self.assertEqual(proof.main(["candidate", json.dumps(MANIFEST), "--sf6-direct"]), 0)
+        collect.assert_called_once_with("candidate", MANIFEST, sf6_direct=True)
+
     def test_actual_small_capture_and_partial_sf6_are_recorded(self):
         candidate = report("candidate")
         self.assertEqual(proof.validate_report(candidate, MANIFEST), [])
@@ -175,6 +268,7 @@ class RuntimeProofTests(unittest.TestCase):
 
     def test_mocked_collection_preserves_actual_docker_and_template_identity(self):
         fixture = report("candidate", "test-host")
+        serving_log = COMMON_LOG + CANDIDATE_LOG
         script = " ".join(fixture["serving_argv"]) + " > /glmlogs/glm53.log 2>&1\n"
         inspect = dict(Image=fixture["image"], Id="actual-container-id",
                        State=dict(Running=True, OOMKilled=False, StartedAt="2026-09-09T01:00:00Z"),
@@ -203,7 +297,7 @@ class RuntimeProofTests(unittest.TestCase):
             if str(path) == "/proc/meminfo":
                 return "\n".join(f"{key}: {value} kB" for key, value in fixture["host_memory_kib"].items())
             self.assertEqual(str(path), "/home/choiceoh/glm53-logs/glm53.log")
-            return COMMON_LOG + CANDIDATE_LOG
+            return serving_log
 
         with patch.object(Path, "read_text", read), patch.object(proof.socket, "gethostname", return_value="test-host"):
             collected = proof.collect_report("candidate", MANIFEST, run=run)
@@ -212,6 +306,19 @@ class RuntimeProofTests(unittest.TestCase):
         self.assertEqual(collected["serving_argv"], fixture["serving_argv"])
         self.assertEqual(collected["template"], fixture["template"])
         self.assertNotIn("UNRELATED_SECRET", collected["knobs"])
+        self.assertEqual(len(calls), 4)
+        self.assertIs(collected["sf6_direct"], False)
+
+        fixture = direct_report("candidate", "test-host")
+        script = " ".join(fixture["serving_argv"]) + " > /glmlogs/glm53.log 2>&1\n"
+        serving_log = COMMON_LOG + SF6_DIRECT_LOG
+        inspect["Config"]["Env"] = [key + "=" + value for key, value in fixture["knobs"].items()]
+        calls.clear()
+        with patch.object(Path, "read_text", read), patch.object(proof.socket, "gethostname", return_value="test-host"):
+            collected = proof.collect_report("candidate", MANIFEST, sf6_direct=True, run=run)
+        self.assertIs(collected["sf6_direct"], True)
+        self.assertEqual(proof.validate_report(collected, MANIFEST, sf6_direct=True), [])
+        self.assertEqual(collected["kv_blocks"], "665")
         self.assertEqual(len(calls), 4)
 
 

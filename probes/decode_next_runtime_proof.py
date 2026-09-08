@@ -35,16 +35,35 @@ COMMON_MARKERS = (
     "[osar] consumer PDL self-test PASS",
     "[megakernel] AR consumer MHC self-test PASS",
 )
+TRANSPORT_MARKERS = (
+    "[oneshot] compact AR CAPTURED", "[osar] compact transport self-test",
+    "[oneshot] inline proxy serving",
+)
+# This campaign pins 42 eligible layers, E=288, K=4096, N=512. Each layer
+# releases E * (2*N*K + K*N) / 16 one-byte source scales. SF6-v1 encodes
+# each 2048-byte stage in 1552 bytes. These are expected storage counts,
+# not a measured reduction in host/GPU memory usage.
+SF6_DIRECT_COUNTS = {
+    "sf6_packed_only_finalizations": 1,
+    "sf6_packed_only_layers": 42,
+    "sf6_raw_bytes_released": 4_756_340_736,
+    "sf6_prepared_count": 42,
+    "sf6_packed_bytes": 3_604_414_464,
+}
+SF6_DIRECT_KV_BLOCKS = "665"
 MEMORY_FIELDS = {"MemTotal", "MemFree", "MemAvailable", "AnonPages", "Shmem", "Slab"}
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
-def expected_knobs(mode):
+def expected_knobs(mode, *, sf6_direct=False):
     if mode not in ("baseline", "candidate"):
         raise ValueError("mode must be baseline or candidate")
+    if type(sf6_direct) is not bool:
+        raise ValueError("sf6_direct must be a boolean")
     on = mode == "candidate"
-    return dict(COMMON_KNOBS, VLLM_GLM53_AR_COMPACT_CTA=str(int(on)),
-                VLLM_GLM53_AR_PROXY_INLINE=str(int(on)),
+    transport_on = on and not sf6_direct
+    return dict(COMMON_KNOBS, VLLM_GLM53_AR_COMPACT_CTA=str(int(transport_on)),
+                VLLM_GLM53_AR_PROXY_INLINE=str(int(transport_on)),
                 VLLM_GLM53_B12X_STATIC_V2="t,r,sf6" if on else "t,r")
 
 
@@ -89,9 +108,9 @@ def parse_markers(log):
         "sf6_packed_only_finalizations": len(finalized),
         "sf6_packed_only_layers": sum(int(layers) for layers, _ in finalized),
         "sf6_raw_bytes_released": sum(int(size) for _, size in finalized),
+        "transport_marker_present": any(marker in log for marker in TRANSPORT_MARKERS),
         "new_marker_present": any(marker in log for marker in (
-            "[oneshot] compact AR CAPTURED", "[osar] compact transport self-test",
-            "[oneshot] inline proxy serving", "[b12x sf6]", "sf6v1")),
+            *TRANSPORT_MARKERS, "[b12x sf6]", "sf6v1")),
     }
 
 
@@ -143,12 +162,15 @@ def covering_mount(path, mounts):
     return max(matches, key=lambda mount: len(mount["destination"]), default=None)
 
 
-def validate_report(report, expected):
+def validate_report(report, expected, *, sf6_direct=False):
     """Return concrete proof failures; no device, filesystem or process access."""
     errors = []
     try:
         expected = validate_manifest(expected)
-        wanted = expected_knobs(report["mode"])
+        wanted = expected_knobs(report["mode"], sf6_direct=sf6_direct)
+        # Missing variant is accepted only for historical, non-direct receipts.
+        if report.get("sf6_direct", False) is not sf6_direct:
+            errors.append("runtime proof variant mismatch")
         if report.get("image") != IMAGE:
             errors.append("immutable image mismatch")
         if report.get("running") is not True or report.get("oom_killed") is not False:
@@ -179,6 +201,8 @@ def validate_report(report, expected):
             errors.append("GMU not bound to serving argv")
         if report["kv_blocks"] != cli_option(argv, "--num-gpu-blocks-override"):
             errors.append("KV blocks not bound to serving argv")
+        if sf6_direct and report["kv_blocks"] != SF6_DIRECT_KV_BLOCKS:
+            errors.append("SF6 direct requires actual KV override of 665 blocks")
         if not 0 < float(report["gmu"]) < 1 or int(report["kv_blocks"]) <= 0:
             errors.append("invalid GMU/KV values")
         mounts = report["mounts"]
@@ -197,13 +221,24 @@ def validate_report(report, expected):
             values = markers.get(field, [])
             if not values or any(type(n) is not int or not 1 <= n <= upper for n in values):
                 errors.append("missing or invalid " + field)
+        if sf6_direct and (markers.get("transport_marker_present") is not False
+                or any(markers.get(field) for field in
+                       ("compact_capture_numel", "compact_selftests", "inline_posts"))):
+            errors.append("SF6-only arm executed compact/inline transport")
         if report["mode"] == "candidate":
-            values = markers.get("compact_capture_numel", [])
-            if not values or any(type(n) is not int or not 1 <= n <= 32768 for n in values):
-                errors.append("missing or invalid actual compact capture")
-            if not markers.get("compact_selftests") or any(n <= 0 for n in markers["compact_selftests"]):
-                errors.append("missing exact compact transport self-test")
-            for field in ("inline_posts", "sf6_m6_serving", "sf6_prepared_count", "sf6_packed_bytes"):
+            if sf6_direct:
+                for field, count in SF6_DIRECT_COUNTS.items():
+                    if type(markers.get(field)) is not int or markers[field] != count:
+                        errors.append("SF6 direct ownership count mismatch: " + field)
+            else:
+                values = markers.get("compact_capture_numel", [])
+                if not values or any(type(n) is not int or not 1 <= n <= 32768 for n in values):
+                    errors.append("missing or invalid actual compact capture")
+                if not markers.get("compact_selftests") or any(n <= 0 for n in markers["compact_selftests"]):
+                    errors.append("missing exact compact transport self-test")
+                if type(markers.get("inline_posts")) is not int or markers["inline_posts"] <= 0:
+                    errors.append("missing actual inline_posts")
+            for field in ("sf6_m6_serving", "sf6_prepared_count", "sf6_packed_bytes"):
                 if type(markers.get(field)) is not int or markers[field] <= 0:
                     errors.append("missing actual " + field)
             if markers.get("sf6_fallback_count") != len(markers["sf6_fallback_reasons"]):
@@ -213,30 +248,37 @@ def validate_report(report, expected):
                             "sf6_m6_serving", "sf6_prepared_count", "sf6_packed_bytes",
                             "sf6_fallback_count", "sf6_fallback_reasons"))):
             errors.append("baseline executed a new candidate lane")
+        elif sf6_direct and any(markers.get(field) for field in SF6_DIRECT_COUNTS):
+            errors.append("baseline contains SF6 direct ownership proof")
     except (KeyError, TypeError, ValueError, OverflowError) as exc:
         errors.append("malformed runtime proof: " + str(exc))
     return errors
 
 
-_IMMUTABLE = ("host", "mode", "image", "boot_id", "source_sha256", "knobs",
+_IMMUTABLE = ("host", "mode", "sf6_direct", "image", "boot_id", "source_sha256", "knobs",
               "config_cmd", "entrypoint", "serving_argv", "serving_script_sha256",
               "gmu", "kv_blocks", "mounts", "template")
 
 
-def compare_snapshots(before, after):
+def _identity(report, key):
+    return report.get(key, False) if key == "sf6_direct" else report.get(key)
+
+
+def compare_snapshots(before, after, *, sf6_direct=False):
     """One host/arm must retain its boot, executable and configuration."""
     if not isinstance(before, dict) or not isinstance(after, dict):
         return ["before/after runtime reports must be objects"]
     errors = []
     for side, value in (("before", before), ("after", after)):
-        errors.extend(side + ": " + error for error in validate_report(value, before.get("source_sha256")))
+        errors.extend(side + ": " + error for error in validate_report(
+            value, before.get("source_sha256"), sf6_direct=sf6_direct))
     errors.extend("within-arm drift: " + key for key in _IMMUTABLE
-                  if before.get(key) != after.get(key))
+                  if _identity(before, key) != _identity(after, key))
     return errors
 
 
-def compare_arms(baseline_by_host, candidate_by_host):
-    """Compare four matching hosts; only the three requested knobs may differ."""
+def compare_arms(baseline_by_host, candidate_by_host, *, sf6_direct=False):
+    """Compare four matching hosts; only this variant's target knobs may differ."""
     errors = []
     if (not isinstance(baseline_by_host, dict) or not isinstance(candidate_by_host, dict)
             or len(baseline_by_host) != 4 or set(baseline_by_host) != set(candidate_by_host)
@@ -255,27 +297,29 @@ def compare_arms(baseline_by_host, candidate_by_host):
             if report.get("mode") != mode:
                 errors.append(host + ": arm mode mismatch")
             errors.extend(host + " " + mode + ": " + error
-                          for error in validate_report(report, reference_sources))
+                          for error in validate_report(report, reference_sources, sf6_direct=sf6_direct))
         for key in _IMMUTABLE:
             if key in ("mode", "boot_id", "knobs"):
                 continue
-            if baseline.get(key) != candidate.get(key):
+            if _identity(baseline, key) != _identity(candidate, key):
                 errors.append(host + ": across-arm drift: " + key)
         if baseline.get("boot_id") == candidate.get("boot_id"):
             errors.append(host + ": arms reused the same boot")
         baseline_env = baseline.get("knobs") if isinstance(baseline.get("knobs"), dict) else {}
         candidate_env = candidate.get("knobs") if isinstance(candidate.get("knobs"), dict) else {}
+        target_knobs = {"VLLM_GLM53_B12X_STATIC_V2"} if sf6_direct else TARGET_KNOBS
         baseline_knobs = {key: value for key, value in baseline_env.items()
-                          if key not in TARGET_KNOBS}
+                          if key not in target_knobs}
         candidate_knobs = {key: value for key, value in candidate_env.items()
-                           if key not in TARGET_KNOBS}
+                           if key not in target_knobs}
         if baseline_knobs != candidate_knobs:
             errors.append(host + ": non-target container knobs changed")
     return errors
 
 
-def collect_report(mode, expected, *, run=subprocess.check_output):
+def collect_report(mode, expected, *, sf6_direct=False, run=subprocess.check_output):
     expected = validate_manifest(expected)
+    expected_knobs(mode, sf6_direct=sf6_direct)
     names = run(["docker", "ps", "--format", "{{.Names}}"], text=True, timeout=20).splitlines()
     selected = [name for name in names if name in ("glm53", "glm53-worker")]
     if len(selected) != 1:
@@ -303,7 +347,7 @@ def collect_report(mode, expected, *, run=subprocess.check_output):
     mounts = sorted((dict(type=mount["Type"], source=mount["Source"],
                           destination=mount["Destination"], rw=mount["RW"])
                      for mount in obj["Mounts"]), key=lambda mount: mount["destination"])
-    return dict(schema=1, mode=mode, host=socket.gethostname(), container=name,
+    return dict(schema=1, mode=mode, sf6_direct=sf6_direct, host=socket.gethostname(), container=name,
                 image=obj["Image"], boot_id=obj["Id"] + "|" + state["StartedAt"],
                 running=state["Running"], oom_killed=state["OOMKilled"],
                 config_cmd=config["Cmd"], entrypoint=config["Entrypoint"],
@@ -321,15 +365,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("baseline", "candidate"))
     parser.add_argument("expected", help="JSON manifest mapping mounted target to SHA256")
+    parser.add_argument("--sf6-direct", action="store_true",
+                        help="SF6-only candidate with exact packed-owner release; transport stays off in both arms")
     args = parser.parse_args(argv)
     try:
         expected = validate_manifest(json.loads(args.expected))
-        report = collect_report(args.mode, expected)
-        errors = validate_report(report, expected)
+        report = collect_report(args.mode, expected, sf6_direct=args.sf6_direct)
+        errors = validate_report(report, expected, sf6_direct=args.sf6_direct)
         report["errors"] = errors
         report["valid"] = not errors
     except (OSError, KeyError, TypeError, ValueError, subprocess.SubprocessError) as exc:
-        report, errors = dict(mode=args.mode, host=socket.gethostname(), valid=False,
+        report, errors = dict(mode=args.mode, sf6_direct=args.sf6_direct, host=socket.gethostname(), valid=False,
                               collection_error=str(exc)), [str(exc)]
     print(json.dumps(report, indent=2, sort_keys=True), flush=True)
     return int(bool(errors))

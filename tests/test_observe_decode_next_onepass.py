@@ -23,8 +23,9 @@ REVISION = "a" * 40
 
 
 class FakeReader:
-    def __init__(self, mode="candidate"):
+    def __init__(self, mode="candidate", *, sf6_direct=False):
         self.mode, self.owner, self.rank_calls = mode, True, 0
+        self.sf6_direct = sf6_direct
         self.suffix = ""
         self.on_ranks = None
 
@@ -35,8 +36,9 @@ class FakeReader:
         return True
 
     def head(self):
+        factory = fixtures.direct_report if self.sf6_direct else fixtures.report
         return dict(boot_id="srv2|" + self.mode + self.suffix, running=True,
-                    image=observer.proof.IMAGE, knobs=fixtures.report(self.mode, "srv2")["knobs"])
+                    image=observer.proof.IMAGE, knobs=factory(self.mode, "srv2")["knobs"])
 
     def ranks(self, mode, expected):
         self.rank_calls += 1
@@ -44,9 +46,11 @@ class FakeReader:
             self.on_ranks()
         values = {}
         for host in observer.HOSTS:
-            report = fixtures.report(mode, host)
+            factory = fixtures.direct_report if self.sf6_direct else fixtures.report
+            report = factory(mode, host)
             report["boot_id"] += self.suffix
-            log = (fixtures.COMMON_LOG + (fixtures.CANDIDATE_LOG if mode == "candidate" else "")).encode()
+            candidate_log = fixtures.SF6_DIRECT_LOG if self.sf6_direct else fixtures.CANDIDATE_LOG
+            log = (fixtures.COMMON_LOG + (candidate_log if mode == "candidate" else "")).encode()
             report["log_sha256"] = observer.digest(log)
             values[host] = dict(report=report, log_b64=base64.b64encode(log).decode(), error="")
         return values
@@ -290,6 +294,139 @@ class ReaderTests(unittest.TestCase):
         with patch.object(observer, "urlopen", return_value=response) as get:
             self.assertTrue(reader.healthy())
         get.assert_called_once_with("http://127.0.0.1:8000/health", timeout=2)
+
+    def test_embedded_collector_binds_variant_for_collect_and_validation(self):
+        for direct in (False, True):
+            reader = observer.Reader(ROOT, 8000, "run", Path("/unavailable"), sf6_direct=direct)
+            result = subprocess.CompletedProcess([], 0, '{"report": {}, "error": "fixture"}', "")
+            with patch.object(observer.subprocess, "run", return_value=result) as run:
+                reader.rank("srv1", "candidate", fixtures.MANIFEST)
+            script = run.call_args.kwargs["input"]
+            self.assertIn("\nSF6_DIRECT=" + repr(direct) + "\n", script)
+            self.assertIn('ns["collect_report"](MODE, EXPECTED, sf6_direct=SF6_DIRECT)', script)
+            self.assertIn('ns["validate_report"](report, EXPECTED, sf6_direct=SF6_DIRECT)', script)
+
+
+class DirectObserverTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.out = Path(self.tmp.name)
+        self.reader = FakeReader(sf6_direct=True)
+        self.agent = self.make_observer()
+
+    def make_observer(self, *, sf6_direct=True, reader=None):
+        value = observer.Observer(self.out, "runA", "runB", REVISION, fixtures.MANIFEST,
+                                  reader or self.reader, sf6_direct=sf6_direct, clock=lambda: 100.)
+        self.addCleanup(value.executor.shutdown, wait=True)
+        return value
+
+    def record(self, name):
+        row = dict(name=name, boot_id=self.reader.head()["boot_id"])
+        with (self.out / "records.raw.jsonl").open("ab") as stream:
+            stream.write(json.dumps(row).encode() + b"\n")
+
+    def test_direct_pair_binds_state_receipts_and_restart(self):
+        for name, mode in (("runA", "candidate"), ("runB", "baseline")):
+            self.reader.mode = mode
+            self.agent.snapshot(name, "prepared")
+            self.record(name)
+            self.agent.snapshot(name, "runtime")
+            self.assertEqual(self.agent.state["arms"][name]["status"], "PASS")
+            for phase in ("prepared", "runtime"):
+                receipt = json.loads((self.out / f"observed-{phase}-{name}.json").read_text())
+                self.assertIs(receipt["sf6_direct"], True)
+        self.assertTrue(self.agent.step())
+        self.assertEqual(self.agent.state["status"], "PASS")
+        self.assertIs(self.agent.state["sf6_direct"], True)
+        resumed = self.make_observer()
+        self.assertEqual(resumed.state["status"], "PASS")
+        self.assertEqual(resumed.prepared("runA"), self.agent.prepared("runA"))
+        with self.assertRaisesRegex(ValueError, "different SF6 variant"):
+            self.make_observer(sf6_direct=False, reader=FakeReader())
+
+    def test_direct_preparation_rejects_legacy_transport_candidate(self):
+        self.agent.reader = FakeReader()
+        self.assertIsNone(observer.mode_from_metadata(self.agent.reader.head(), sf6_direct=True))
+        self.agent.snapshot("runA", "prepared")
+        self.assertFalse((self.out / "observed-prepared-runA.json").exists())
+        receipt = json.loads(next((self.out / "attempts").glob("*/receipt.json")).read_text())
+        self.assertIs(receipt["sf6_direct"], True)
+        self.assertEqual(receipt["status"], "FAIL")
+
+    def test_runtime_rejects_one_rank_variant_drift(self):
+        self.agent.snapshot("runA", "prepared")
+        self.record("runA")
+        original = self.reader.ranks
+        def mixed(mode, expected):
+            values = original(mode, expected)
+            values["srv4"]["report"]["sf6_direct"] = False
+            return values
+        with patch.object(self.reader, "ranks", side_effect=mixed):
+            self.agent.snapshot("runA", "runtime")
+        self.assertEqual(self.agent.state["arms"]["runA"]["status"], "FAIL")
+        self.assertFalse((self.out / "observed-runtime-runA.json").exists())
+
+    def test_restart_refuses_missing_or_changed_direct_receipt_identity(self):
+        self.agent.snapshot("runA", "prepared")
+        path = self.out / "observed-prepared-runA.json"
+        original = json.loads(path.read_text())
+        for value in (False, None, 1, "true"):
+            receipt = dict(original)
+            if value is None:
+                receipt.pop("sf6_direct")
+            else:
+                receipt["sf6_direct"] = value
+            path.write_text(json.dumps(receipt))
+            with self.assertRaisesRegex(ValueError, "different SF6 variant"):
+                self.make_observer()
+        path.write_text(json.dumps(original))
+        self.assertIsNotNone(self.make_observer().prepared("runA"))
+
+    def test_legacy_restart_allows_absent_false_identity_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            reader = FakeReader()
+            original = observer.Observer(directory, "runA", "runB", REVISION, fixtures.MANIFEST, reader)
+            self.addCleanup(original.executor.shutdown, wait=True)
+            original.snapshot("runA", "prepared")
+            for filename in ("observer.json", "observed-prepared-runA.json"):
+                path = Path(directory) / filename
+                value = json.loads(path.read_text())
+                self.assertIs(value.pop("sf6_direct"), False)
+                path.write_text(json.dumps(value))
+            resumed = observer.Observer(directory, "runA", "runB", REVISION, fixtures.MANIFEST, reader)
+            self.addCleanup(resumed.executor.shutdown, wait=True)
+            self.assertIs(resumed.state["sf6_direct"], False)
+            self.assertIsNotNone(resumed.prepared("runA"))
+            with self.assertRaisesRegex(ValueError, "different SF6 variant"):
+                observer.Observer(directory, "runA", "runB", REVISION, fixtures.MANIFEST,
+                                  FakeReader(sf6_direct=True), sf6_direct=True)
+
+    def test_reader_variant_mismatch_is_rejected_before_writing_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "reader and observer SF6 variant"):
+                observer.Observer(Path(directory) / "out", "runA", "runB", REVISION,
+                                  fixtures.MANIFEST, FakeReader(), sf6_direct=True)
+            self.assertFalse((Path(directory) / "out").exists())
+
+    def test_cli_forwards_direct_flag_to_reader_observer_and_ready(self):
+        import io
+        from unittest.mock import MagicMock
+        for options, direct in (([], False), (["--sf6-direct"], True)):
+            fake = MagicMock()
+            fake.step.return_value = True
+            fake.state = {"status": "PASS"}
+            output = io.StringIO()
+            with patch.object(observer, "frozen_manifest", return_value=(REVISION, fixtures.MANIFEST)), \
+                 patch.object(observer, "Reader") as reader_class, \
+                 patch.object(observer, "Observer", return_value=fake) as observer_class, \
+                 patch.object(observer.sys, "stdout", output):
+                self.assertEqual(observer.main(["--out", str(self.out), "--candidate", "runA",
+                    "--baseline", "runB", "--session", "fixture-session", *options]), 0)
+            self.assertIs(reader_class.call_args.kwargs["sf6_direct"], direct)
+            self.assertIs(observer_class.call_args.kwargs["sf6_direct"], direct)
+            ready = json.loads(output.getvalue().split("READY ", 1)[1])
+            self.assertIs(ready["sf6_direct"], direct)
 
 
 if __name__ == "__main__":
