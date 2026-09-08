@@ -44,17 +44,19 @@ chain)
     echo "== [pstep] DEPLOY FAILED -- nothing booted"; exit 1
   fi
   cd "$REPO" || exit 1
-  # Two arms in the one hold. PSTEP is the diagnosis (no leg: the sweep IS the
-  # measurement). IDXC6 is the first candidate for the term the diagnosis is
-  # expected to find -- IndexCache reuse, whose saving is per prefill chunk and
-  # scales with the prefix -- and it carries onepass, because reuse is an
-  # approximation and a prefill number alone cannot promote it.
-  FLEET_SESSION=$S bash bench/chain.sh \
+  # Everything after `chain` is handed to chain.sh verbatim, so a follow-up hold
+  # needs no new script -- only its arms and its own --after clauses. The
+  # default is the 2026-09-08 pair: PSTEP is the diagnosis (no leg, the sweep IS
+  # the measurement) and IDXC6 the first candidate, with onepass because reuse
+  # is an approximation and a prefill number alone cannot promote it.
+  shift
+  [ $# -gt 0 ] || set -- \
     PSTEP="VLLM_GLM53_SCHED_CHUNK_FILE=/prof/sched_chunk" \
     IDXC6="VLLM_GLM53_SCHED_CHUNK_FILE=/prof/sched_chunk INDEX_CACHE_FREQ=6" \
     --legs PSTEP none \
     --after PSTEP "bash $0 measure $OUT" \
     --after IDXC6 "bash $0 measure $OUT/idxc6"
+  FLEET_SESSION=$S bash bench/chain.sh "$@"
   ;;
 measure)
   OUT=${2:?usage: $0 measure <outdir>}
@@ -62,6 +64,9 @@ measure)
   # the IndexCache arm writes under the diagnosis directory and takes no trace
   case "$OUT" in */idxc6) TRACE_CHUNKS="" ;; esac
   cd "$REPO" || exit 1
+  # A stale override file would silently pin the chunk for whatever boots next
+  # (the scheduler reads it every step). Start from a clean slate.
+  : > /home/choiceoh/vllm-prof/sched_chunk
   echo "== [pstep] instrument armed? $(date +%T)"
   # Two independent receipts: the container's env and the scheduler's own line.
   # grep -F because the anchor has brackets (BRE reads them as a class).
@@ -84,6 +89,10 @@ measure)
       echo "no trace captured for chunk $C"
     fi
   done
+  # The arm's own head-log copy is taken BEFORE this step runs, so a serving
+  # error during the sweep lands in a log the next boot overwrites -- that is how
+  # the 2026-09-08 HTTP 500 became unrecoverable. Keep our own copy here.
+  docker logs glm53 > "$OUT/head.log" 2>&1 || echo "docker logs glm53 failed"
   echo "== [pstep] measure done $(date +%T); evidence in $OUT"
   ;;
 *) echo "usage: $0 chain|measure <outdir>" >&2; exit 2;;
