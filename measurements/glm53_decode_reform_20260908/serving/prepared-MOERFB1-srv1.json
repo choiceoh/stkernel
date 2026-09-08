@@ -1,0 +1,27 @@
+{
+  "host": "srv1",
+  "mode": "t",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "boot_id": "8c76a16309b7d012f791599ee37aaba447fb1ffad459d150ae9f1f04bce757fb|2026-09-08T00:32:43.330932493Z",
+  "running": true,
+  "source_sha256": {
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "d9b62d352233f32269e24f5e3012536044685873912bc19cbca5c7d47f91b343",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11"
+  },
+  "knobs": {
+    "VLLM_GLM53_MK_INPUT_REUSE": "1",
+    "VLLM_GLM53_MK_INPUT_CTA": "4",
+    "VLLM_GLM53_B12X_STATIC_V2": "t"
+  },
+  "markers": [
+    "(Worker_TP1 pid=164) [b12x static v2] lane serving: static2_m24_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=24, routed=192, smem=0 B)",
+    "(Worker_TP1 pid=164) [b12x static v2] lane serving: static2_m18_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=18, routed=144, smem=0 B)",
+    "(Worker_TP1 pid=164) [b12x static v2] lane serving: static2_m12_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=12, routed=96, smem=0 B)",
+    "(Worker_TP1 pid=164) [b12x static v2] lane serving: static2_m6_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=6, routed=48, smem=101376 B)",
+    "(Worker_TP1 pid=164) [b12x static v2] lane serving: static2_m28_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=28, routed=224, smem=0 B)",
+    "(Worker_TP1 pid=164) [b12x static v2] lane serving: static2_m7_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=7, routed=56, smem=101376 B)",
+    "(Worker_TP1 pid=164) [b12x static v2] lane serving: static2_m2_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=2, routed=16, smem=101376 B)",
+    "(Worker_TP1 pid=164) [b12x static v2] lane serving: static2_m1_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=1, routed=8, smem=101376 B)"
+  ]
+}

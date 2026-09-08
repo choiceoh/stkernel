@@ -1,0 +1,1224 @@
+{
+  "checked_utc": "2026-09-08T00:19:56.089984+00:00",
+  "source_commit": "1f265b10040c5c82503b43274d8bac678436f732",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "before": null,
+  "after": null,
+  "traffic_samples": [
+    {
+      "traffic": null,
+      "available_bytes": 103067467776
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102950273024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102848581632
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102815240192
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102808317952
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102788440064
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102772019200
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102765469696
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102735319040
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102730559488
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102729990144
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102728724480
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102727512064
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102727487488
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102595903488
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102472237056
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102356582400
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102241099776
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101566095360
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100992671744
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100984066048
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100678508544
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99727130624
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99726876672
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99725647872
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99721138176
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99721138176
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99727380480
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99466391552
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99465363456
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99463790592
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99457757184
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99310448640
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99310231552
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99313156096
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99439300608
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97946513408
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97895649280
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97903931392
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97895649280
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97910263808
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97910005760
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97908973568
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97907421184
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97906905088
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97902178304
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97897394176
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97862021120
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97839755264
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97835552768
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97827807232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97827549184
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97825222656
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97831608320
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97829801984
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97828253696
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97828024320
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97817075712
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97814863872
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97814626304
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97814683648
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97822027776
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97820663808
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97821634560
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97814671360
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97818664960
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97818664960
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97818918912
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97818918912
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97817112576
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97817108480
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97823850496
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97823854592
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97831374848
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97831149568
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97831149568
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97837015040
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97837015040
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97836761088
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97830633472
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97838899200
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97837092864
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97836834816
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97836834816
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97836064768
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97836064768
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97834778624
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97833230336
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97837641728
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97837391872
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97837391872
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97837391872
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97836937216
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97835585536
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97843847168
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97843335168
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97837342720
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97828569088
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97817473024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97817473024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97817473024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97817473024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97817473024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97831133184
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97831133184
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97829953536
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97829122048
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97836929024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97836154880
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97835376640
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97835376640
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97835380736
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97835384832
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97842184192
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97849921536
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97841741824
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97849667584
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97856925696
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97865633792
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97867501568
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97875763200
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97874477056
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97882472448
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97881952256
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97569603584
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97560317952
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97558441984
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97558102016
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97552424960
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97552162816
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97545195520
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97545195520
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97545195520
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97544966144
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97545097216
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97545105408
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97544851456
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97544589312
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97550696448
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97550438400
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97550254080
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97550254080
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97550254080
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97550254080
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97549086720
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97548197888
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97547939840
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97544839168
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97544835072
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97544835072
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97541545984
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97541484544
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97540968448
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97540968448
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97530707968
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97531621376
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97523765248
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97538134016
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97538134016
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97537359872
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97536843776
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97536069632
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97534775296
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97527554048
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97526132736
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97533251584
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97523445760
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97168814080
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97168371712
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97168113664
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97168113664
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96972279808
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96979030016
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96978771968
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96968261632
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96992862208
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97009180672
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97014644736
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97013870592
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97010765824
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97016807424
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97016807424
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97017065472
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024339968
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024479232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024479232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024479232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024475136
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024475136
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024479232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024479232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024479232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97022648320
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97022230528
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97030492160
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97030492160
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97030459392
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97030463488
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97030459392
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97030459392
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97030201344
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97029746688
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97029685248
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97032892416
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97028403200
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97032884224
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97025658880
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97025413120
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97025413120
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97025413120
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97025413120
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97025413120
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97024962560
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97003315200
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97003319296
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96997126144
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96997126144
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96997126144
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96997122048
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96996896768
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96995987456
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96995864576
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96995348480
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96985800704
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96984891392
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96980901888
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96980901888
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96980901888
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96978640896
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96977289216
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96971616256
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96971616256
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96971210752
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96963149824
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96962891776
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96972705792
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96972447744
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96972447744
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96972447744
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96972447744
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96969719808
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96968577024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96983740416
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96982454272
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96989544448
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96989040640
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96988008448
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96980783104
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96980783104
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96980783104
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96980004864
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96979099648
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96973094912
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96972320768
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96966905856
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96973742080
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96968323072
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96968654848
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96966819840
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96966557696
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96966557696
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96975794176
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96973987840
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96970899456
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96977399808
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96976621568
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96975851520
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96974815232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96974041088
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96968597504
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96962945024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96962715648
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96959021056
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96950001664
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96962301952
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96956887040
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96951209984
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96926658560
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96926179328
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96926179328
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96925663232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96744849408
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96726347776
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96725893120
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96724013056
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96542842880
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96535359488
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96534867968
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96354185216
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96329535488
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96328036352
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96135114752
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96127205376
+    },
+    {
+      "traffic": null,
+      "available_bytes": 96122814464
+    },
+    {
+      "traffic": null,
+      "available_bytes": 97166921728
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99638194176
+    }
+  ],
+  "issues": [],
+  "server_before": {
+    "boot_id": "657c3b61b53b38f4d331c78914f0de530058c8686313b4624789e09e5286b676",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false
+  },
+  "server_after": {
+    "boot_id": "657c3b61b53b38f4d331c78914f0de530058c8686313b4624789e09e5286b676",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false
+  },
+  "returncode": 0,
+  "admission_min_bytes": 17179869184,
+  "continuous_min_bytes": 12884901888,
+  "maintenance": true,
+  "sanitizers": {
+    "memcheck": {
+      "returncode": 77,
+      "pre_kernel_api_lookup_errors": 34,
+      "scope": "Only cuGetProcAddress_v2 lookup failures before the first kernel compile; full log retained."
+    },
+    "racecheck": {
+      "returncode": 0,
+      "pre_kernel_api_lookup_errors": 0
+    }
+  },
+  "reused": {
+    "source_commit": "52079ceb3391cd7f77acfcfd73963796a7b4b415",
+    "evidence": "/home/choiceoh/glm53-logs/MOEREFORMFIX0908/numerics",
+    "reason": "identical kernel and fixture sources"
+  }
+}

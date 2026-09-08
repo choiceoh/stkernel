@@ -1,0 +1,44 @@
+[
+  {
+    "name": "MOERFA1",
+    "request": 0,
+    "windows": 25,
+    "pooled_step_s": 22.169380041451525,
+    "output_tok_s": 73.30400495120725
+  },
+  {
+    "name": "MOERFA1",
+    "request": 1,
+    "windows": 25,
+    "pooled_step_s": 22.028200007229557,
+    "output_tok_s": 74.49009590778837
+  },
+  {
+    "name": "MOERFA1",
+    "request": 2,
+    "windows": 27,
+    "pooled_step_s": 22.03428198501667,
+    "output_tok_s": 70.67340217077812
+  },
+  {
+    "name": "MOERFB1",
+    "request": 0,
+    "windows": 27,
+    "pooled_step_s": 21.567456439237166,
+    "output_tok_s": 70.10365079979027
+  },
+  {
+    "name": "MOERFB1",
+    "request": 1,
+    "windows": 28,
+    "pooled_step_s": 21.791857990507577,
+    "output_tok_s": 68.61502111896041
+  },
+  {
+    "name": "MOERFB1",
+    "request": 2,
+    "windows": 26,
+    "pooled_step_s": 21.82564467485542,
+    "output_tok_s": 73.27653286833512
+  }
+]

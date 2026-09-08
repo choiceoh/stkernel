@@ -21,5 +21,6 @@ Compilation now checks every byte against the consumer map, including rows 1
 and 4 that exposed the bug. All three tile changes remain enabled together.
 
 Evidence: `cpu/address-inspection.log`, `cpu/address-inspection.py` and
-`gpu-numerics/bundle.log`. The inspection is CPU-only and is not proof that a
-future correction passes GPU numerical/graph checks.
+`gpu-numerics/bundle.log`. The inspection itself is CPU-only. The subsequent corrected campaign passed
+13 GPU shapes and 130 numerical/graph comparisons; M2/U8 replay 0 changed to
+0.046875 against the newly measured limit 0.125 (same tolerance formula).

@@ -1,0 +1,27 @@
+{
+  "host": "srv3",
+  "mode": "t,r",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "boot_id": "2d837956cc65f731be3b3e65f8042a58ea860421708f7c41e5c0f70d5e0ef27d|2026-09-08T00:21:13.761643079Z",
+  "running": true,
+  "source_sha256": {
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "d9b62d352233f32269e24f5e3012536044685873912bc19cbca5c7d47f91b343",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11"
+  },
+  "knobs": {
+    "VLLM_GLM53_MK_INPUT_REUSE": "1",
+    "VLLM_GLM53_MK_INPUT_CTA": "4",
+    "VLLM_GLM53_B12X_STATIC_V2": "t,r"
+  },
+  "markers": [
+    "(Worker_TP2 pid=206) [b12x static v2] lane serving: static2_m24_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=24, routed=192, smem=101376 B)",
+    "(Worker_TP2 pid=206) [b12x static v2] lane serving: static2_m18_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=18, routed=144, smem=101376 B)",
+    "(Worker_TP2 pid=206) [b12x static v2] lane serving: static2_m12_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=12, routed=96, smem=101376 B)",
+    "(Worker_TP2 pid=206) [b12x static v2] lane serving: static2_m6_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256 (mac=48, m=6, routed=48, smem=98304 B)",
+    "(Worker_TP2 pid=206) [b12x static v2] lane serving: static2_m28_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=28, routed=224, smem=101376 B)",
+    "(Worker_TP2 pid=206) [b12x static v2] lane serving: static2_m7_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256 (mac=48, m=7, routed=56, smem=98304 B)",
+    "(Worker_TP2 pid=206) [b12x static v2] lane serving: static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256 (mac=48, m=2, routed=16, smem=98304 B)",
+    "(Worker_TP2 pid=206) [b12x static v2] lane serving: static2_m1_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256 (mac=48, m=1, routed=8, smem=98304 B)"
+  ]
+}
