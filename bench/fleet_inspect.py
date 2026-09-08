@@ -65,18 +65,36 @@ def process_log(pid):
     return None
 
 
-def describe(directory, session, rows, holder, now=None):
+def describe(directory, session, rows, holder, now=None, ticket=None):
     now = time.time() if now is None else now
     row = next((r for r in rows if r[1] == session), None)
     held = holder if holder and holder[0] == session else None
     warnings = []
     try:
-        value = handoff.read(pending.path(directory, session))
+        value = pending.read_record(directory, session, ticket)
     except (OSError, ValueError) as exc:
         value = None
         warnings.append('Saved reservation record is unreadable: ' + type(exc).__name__)
+    if ticket is not None and value is None:
+        raise ValueError('unknown reservation ticket: ' + session + '/' + ticket)
+    historical = False
+    if ticket is not None:
+        try:
+            latest = pending.read_record(directory, session)
+        except (OSError, ValueError):
+            latest = None
+        historical = (not latest or latest.get('ticket') != ticket
+                      or bool(value.get('state') in FINAL and (row or held))
+                      or bool(row and (row[0] != ticket or row[6] != str(value['pid'])))
+                      or bool(held and (held[1] != str(value['pid'])
+                          or handoff.identity(value['pid']) not in (None, value.get('start')))))
+        if historical:
+            # A reused session/PID must never lend its current queue position,
+            # liveness, edit command or output descriptor to an older ticket.
+            row = held = None
     # A reused session must never show a previous run's argv/result as current.
-    if value and ((row and (value.get('ticket') != row[0] or str(value.get('pid')) != row[6]))
+    if value and ((value.get('state') in FINAL and (row or held))
+                  or (row and (value.get('ticket') != row[0] or str(value.get('pid')) != row[6]))
                   or (held and str(value.get('pid')) != held[1])):
         value = None
     if value and (row or held):
@@ -90,7 +108,9 @@ def describe(directory, session, rows, holder, now=None):
               'finished_at', 'payload_returncode', 'recovery_returncode', 'returncode', 'outcome', 'log_path', 'error', 'log_error')
               if value and k in value}
     result.update(session=session, source='saved' if value else 'legacy', position=None, editable=False)
-    alive = handoff.live(value) if value else False
+    if ticket is not None:
+        result['historical'] = historical
+    alive = handoff.live(value) if value and not historical else False
     if row:
         result.update(ticket=row[0], enqueued_at=row[2], kind=row[5], position=rows.index(row) + 1)
         result.setdefault('estimate_min', float(row[3]))
@@ -144,19 +164,36 @@ def describe(directory, session, rows, holder, now=None):
     if result['editable']:
         result['actions']['edit'] = ['fleet.sh', 'edit', session, '--expect-revision', str(value['revision'])]
     if result.get('log_path'):
-        result['actions']['logs'] = ['fleet.sh', 'logs', session]
+        result['actions']['logs'] = ['fleet.sh', 'logs', session] + (['--ticket', ticket] if ticket else [])
     if result.get('experiment'):
         result['actions']['result'] = ['fleet.sh', 'result', value['experiment']]
     return result
 
 
-def show(directory, session=None):
+def show(directory, session=None, ticket=None):
+    if ticket is not None and session is None:
+        raise ValueError('--ticket requires a reservation session')
     with snapshot_lock(directory):
         rows, holder = read_state(directory)
         if session is not None:
-            return describe(directory, session, rows, holder)
+            return describe(directory, session, rows, holder, ticket=ticket)
         names = list(dict.fromkeys(([holder[0]] if holder else []) + [r[1] for r in rows]))
         return [describe(directory, name, rows, holder) for name in names]
+
+
+def history(directory, session, limit=20):
+    """Bounded summaries for one session, including its latest active ticket."""
+    with snapshot_lock(directory):
+        rows, holder = read_state(directory)
+        result = []
+        for record in pending.history(directory, session, limit):
+            value = describe(directory, session, rows, holder, ticket=record['ticket'])
+            summary = {k:value[k] for k in ('session', 'ticket', 'state', 'kind', 'revision', 'enqueued_at',
+                       'started_at', 'finished_at', 'returncode', 'payload_returncode', 'recovery_returncode',
+                       'historical', 'position') if k in value}
+            summary['note'] = str(value.get('note', ''))[:240]
+            result.append(summary)
+        return result
 
 
 def tail(path, count):
@@ -205,12 +242,29 @@ def main(argv=None):
     view = sub.add_parser('show', help='inspect one reservation, or list the active queue')
     view.add_argument('session', nargs='?')
     view.add_argument('--json', action='store_true')
+    view.add_argument('--ticket')
     logs = sub.add_parser('logs', help='last lines of a reservation log, bounded to 256 KiB')
     logs.add_argument('session')
     logs.add_argument('--tail', type=int, default=80)
+    logs.add_argument('--ticket')
+    past = sub.add_parser('history', help='recent ticket summaries for one reservation session')
+    past.add_argument('session')
+    past.add_argument('--limit', type=int, default=20)
+    past.add_argument('--json', action='store_true')
     args = ap.parse_args(argv)
     try:
-        value = show(Path(os.environ['FLEET_DIR']), args.session)
+        directory = Path(os.environ['FLEET_DIR'])
+        if args.action == 'history':
+            value = history(directory, args.session, args.limit)
+            if args.json:
+                print(json.dumps(value, ensure_ascii=False))
+            elif not value:
+                print('No retained reservations for ' + args.session + '.')
+            else:
+                for row in value:
+                    print(f"{row['ticket']}: {row['state']} [{row['kind']}] {row['note']}")
+            return 0
+        value = show(directory, args.session, args.ticket)
         if args.action == 'logs':
             if not 1 <= args.tail <= 2000:
                 raise ValueError('--tail must be between 1 and 2000')

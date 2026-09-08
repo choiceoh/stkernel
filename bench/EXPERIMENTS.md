@@ -794,3 +794,73 @@ CPU validation of these changes uses the regular fleet suite, startup campaign
 and receipt tests. Run `tests/test_boot_supervisor_linux.py` explicitly on Linux
 for real shell admission, cancellation and handoff with fake system commands;
 it never accesses GPUs, SSH or production containers.
+
+## Detach, retry and inspect an exact reservation
+
+```bash
+REPO="$PWD" bash bench/fleet.sh run --gpu --detach agent 20 "candidate" -- bash probes/candidate.sh
+REPO="$PWD" bash bench/fleet.sh run --cpu --detach cpu-agent -- python3 bench/cpu_checks.py --suite fleet
+bash bench/fleet.sh history agent --json
+bash bench/fleet.sh show agent --ticket TICKET
+bash bench/fleet.sh logs agent --ticket TICKET
+bash bench/fleet.sh classify --explain bash probes/candidate.sh
+bash bench/fleet.sh retry agent EXPERIMENT_ID --reason "temporary dependency restored"
+```
+
+Detached launch returns a private log path, process identity and a durable queued
+ticket or CPU-start receipt. A repeated identical launch joins the same process;
+its timeout returns `accepted=false`, never a fabricated ticket. A completed launch
+retains its result; use a fresh session for independent raw work. Queued commands
+can still be replaced with `edit`. GPU reservation history keeps previous commands,
+outcomes and logs by ticket, including when a session name is reused. Discovery
+lists the recent 1,000 tickets; older known tickets remain directly accessible.
+CPU detach exposes its startup log and completion receipt, without creating a GPU
+reservation. `classify --explain` reports the matching argv or source line; the
+classification policy remains unchanged and CPU refusal prints those reasons.
+
+`retry` applies to experiments created by `submit`/`batch`, whose source, environment,
+inputs and dependencies have a saved manifest. It accepts failed, blocked or
+interrupted attempts and retains the original result. It freshly attests the saved
+source, joins compatible work and keeps successful CPU evidence and baseline samples.
+A failed shared baseline is acquired again only for an explicit retry. This is not
+an independent `--repeat` measurement. Failed prerequisites must be repaired explicitly.
+Raw shell requests lack a complete declared environment/dependency contract; retrying
+those uses a new `run` with the intended command and inputs shown by `show`.
+
+## Prepare ordinary runs before they take a turn
+
+Every new `run` checks executable/script existence, shell/Python syntax and binds
+literal source-file arguments and the execution checkout revision. It recognizes
+literal campaign ancestry and clean-tree guards, including scripts outside the
+checkout. Known scripts that derive `REPO` from their parent and `cd "$REPO"` use
+that source checkout. Arbitrary shell expressions, nested imports and dynamic `cd`
+are not inferred; declare additional inputs or a bounded CPU check explicitly:
+
+```json
+{
+  "required_paths": ["models/config.json", "build/cpu-proof.json"],
+  "absent_paths": ["build/new-candidate-evidence"],
+  "git": {"ancestor": "origin/main", "clean": true},
+  "images": ["registry.example/model@sha256:REPLACE_WITH_DIGEST"],
+  "cpu_command": ["python3", "bench/cpu_checks.py", "--test", "tests/test_candidate.py"],
+  "timeout_seconds": 120
+}
+```
+
+```bash
+# Check immediately without reserving GPUs, or attach the same checks to a run.
+bash bench/fleet.sh prepare agent --spec prepare.json -- bash probes/candidate.sh
+bash bench/fleet.sh run --gpu --detach --prepare prepare.json agent 20 "candidate" -- bash probes/candidate.sh
+```
+
+CPU preparation runs once per preparation, with GPUs hidden and GPU-classified
+commands refused. It does not run again at every queue poll. File/revision checks
+repeat before GO; remote ref refresh and image checks run outside the fleet lock
+every 30 seconds while waiting. CPU preparation inputs are bound too. Local checks
+and admission share the lock. A failed older check cannot discard a newer edit.
+An explicit `edit agent -- bash probes/candidate.sh` rebinds changed source even
+when the argv is identical. Preparation failures withdraw before acquiring a hold,
+so they do not acquire restore responsibility. Existing pinned controllers retain
+their original contract. A fresh fetch or dynamic environment check performed by
+the payload after GO can still reveal a later change; preparation is not an atomic
+snapshot of remote services and never silently rebases a candidate.

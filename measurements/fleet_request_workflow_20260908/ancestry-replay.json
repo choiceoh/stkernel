@@ -1,0 +1,49 @@
+{
+  "mode": "read-only actual historical checkout guard replay; no fetch, queue, GPU or serving changes",
+  "results": [
+    {
+      "repo": "/home/choiceoh/stkernel-ar-consumer-3a98b0b",
+      "checks": [
+        {
+          "kind": "clean",
+          "repo": "/home/choiceoh/stkernel-ar-consumer-3a98b0b",
+          "source": "/home/choiceoh/stkernel-ar-consumer-3a98b0b/probes/run_ar_consumer_campaign.sh",
+          "line": 9
+        },
+        {
+          "kind": "ancestor",
+          "repo": "/home/choiceoh/stkernel-ar-consumer-3a98b0b",
+          "ref": "origin/main",
+          "source": "/home/choiceoh/stkernel-ar-consumer-3a98b0b/probes/run_ar_consumer_campaign.sh",
+          "line": 11,
+          "fetch": "main"
+        }
+      ],
+      "outcome": "refused-before-admission",
+      "error": "/home/choiceoh/stkernel-ar-consumer-3a98b0b/probes/run_ar_consumer_campaign.sh:11: candidate must include origin/main; update the candidate and its CPU evidence before queueing",
+      "seconds": 0.0364
+    },
+    {
+      "repo": "/home/choiceoh/stkernel-ar-consumer-4a55756",
+      "checks": [
+        {
+          "kind": "clean",
+          "repo": "/home/choiceoh/stkernel-ar-consumer-4a55756",
+          "source": "/home/choiceoh/stkernel-ar-consumer-4a55756/probes/run_ar_consumer_campaign.sh",
+          "line": 9
+        },
+        {
+          "kind": "ancestor",
+          "repo": "/home/choiceoh/stkernel-ar-consumer-4a55756",
+          "ref": "origin/main",
+          "source": "/home/choiceoh/stkernel-ar-consumer-4a55756/probes/run_ar_consumer_campaign.sh",
+          "line": 11,
+          "fetch": "main"
+        }
+      ],
+      "outcome": "refused-before-admission",
+      "error": "/home/choiceoh/stkernel-ar-consumer-4a55756/probes/run_ar_consumer_campaign.sh:11: candidate must include origin/main; update the candidate and its CPU evidence before queueing",
+      "seconds": 0.0613
+    }
+  ]
+}

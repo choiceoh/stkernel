@@ -81,7 +81,8 @@ def reserve(store, job):
                 request = dict(id=source['id'],disposition='joined',state=source['state'])
                 break
         if request is None:
-            request = store.submit("baseline-" + job, payload, repeat=row["repeat_reason"])
+            request = store.submit("baseline-" + job, payload, repeat=row["repeat_reason"],
+                                   retry_failed=store.is_retry(job))
             store.db.execute('INSERT OR IGNORE INTO baseline_demands VALUES(?,?)',(request['id'],encoded(wanted)))
         store.db.execute("INSERT OR IGNORE INTO dependencies VALUES(?,?,?)", (job, request["id"], "baseline"))
         store.event(job, "baseline_reserved", request)

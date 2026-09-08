@@ -1,0 +1,20 @@
+{
+  "root": "/Users/ost/Documents/Github2/stkernel2-ep-stopped-handoff",
+  "head": "9764c1f6056c092c2a8abce31b46bd6c5b476e22",
+  "base": "3382967b882a53354a3be74b2657526d71d439cb",
+  "started_utc": "2026-09-08T08:27:19.805113+00:00",
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "-m",
+    "unittest",
+    "test_glm53_probe_lifecycle",
+    "test_glm53_ep_binding_check",
+    "test_glm53_ep_local_probe.EvidenceTests",
+    "test_glm53_ep_sanitizer",
+    "test_glm53_offline_checks",
+    "-v"
+  ],
+  "returncode": 0,
+  "log": "/tmp/fleet-ep-stopped-rebase-20260908/tests.log",
+  "scope": "CPU control-flow regression tests; no GPU execution or live deployment"
+}
