@@ -7639,3 +7639,25 @@ measure 뒤 자체 사본을 남긴다). 128K 요청에서만 두 번 났다(PST
 **3,398 tok/s(+4.4%)**, 32,768 이면 3,475(+6.7%), 상한 3,554(+9.2%). 8,192 이 이번
 부팅의 상한이라 **측정 범위 밖 외삽**이고, 활성 메모리(GMU 0.62)와 큰 M 에서 `b` 가
 상수로 남는지가 미확인이므로 가정하지 않고 잰다.
+
+### 40차 후속 — `MAX_BATCHED=16384` 은 공짜 노브가 아니다 (2026-09-08 15:30, mb16k0908, 팔 실패)
+
+증분 606→376→200 관측(운영자)에 따른 외삽 3,398 tok/s 를 재려던 팔. **부팅은 됐고
+첫 긴 프리필에서 엔진이 죽었다.** 외삽은 여전히 미검증이다.
+
+- 사망 직전 마지막 워커 줄: `[prefill-sp] MHC token shards selected (T=13432, TP=4,
+  full-token attention/MoE)` — **13,432 토큰 청크**는 MAX_BATCHED=8192 에서 나올 수
+  없는 형상이고 이 스택이 서빙한 적 없다. 그 뒤 EngineCore 가
+  `shm_broadcast … RuntimeError: cancelled`(= 워커 사망의 증상), 랭크 1·2·3 로그에는
+  TCPStore 뒷수습만 남아 파이썬 트레이스백 없는 하드 크래시.
+- 죽음의 원인이 KV 고갈은 아니다: 사망 시 `GPU KV cache usage: 8.6%`, running 3 reqs.
+- **다만 메모리 예산은 실제로 뒤집혔다**: 같은 부팅에서 `peak activation 5.7 GiB`,
+  **`Available KV cache memory: 6.15 GiB`** (엔진이 스스로 "GPU 를 다 쓰려면
+  `--kv-cache-memory=19.35 GiB`" 라고 권고). MAX_BATCHED 를 두 배로 올리면 활성
+  메모리가 KV 를 먹는다는 프로필 주석("Raise further only with a boot")이 실측됐다.
+- 체인이 복구 부팅으로 프로덕션을 되돌렸다(health 200, 기본값).
+
+**판정: 16384 은 노브 하나로 승격할 수 없다.** 다시 재려면 두 가지가 먼저다 —
+(a) `--kv-cache-memory` 나 GMU 로 활성/KV 예산을 명시적으로 재배분, (b) SP/MHC
+프리필 경로가 8,192 넘는 청크를 견디는지 **onepass 전에** 짧은 요청 하나로 증명.
+중간값(12288)부터 밟는 편이 부팅 하나를 아낄 수 있다.
