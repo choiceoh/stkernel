@@ -89,3 +89,8 @@ and mounts; no raw container environment was collected. No remote jobs,
 queue entries, containers or services were changed while archiving.
 
 Verify this directory with `shasum -a 256 -c SHA256SUMS`.
+
+V5 was subsequently accepted into the normal queue at 18:59 using the
+CPU11-pinned `8dc665b0` source with the stopped-container lifecycle.
+Its [submission snapshot](v5queued/README.md) is separate from these completed
+v1–v4 attempts and contains no GPU result.

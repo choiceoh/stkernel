@@ -1,0 +1,56 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-0908-12",
+  "revision": "0ae4c08f49c22122f499771ca6cefab1113b3476",
+  "scheduler": "/home/choiceoh/stkernel",
+  "scheduler_revision": "4a2c960ad632596ca3224ead88da43160012d393",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "eplocalcpu0908v12head",
+    "6",
+    "CPU unsigned Q0 scale address with exhaustive AST layout oracle; runc no devices 4g 2cpu",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-ep-local-0908-12/probes/run_glm53_ep_local_cpu_compile.py",
+    "--image",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "--arm",
+    "local",
+    "--output",
+    "/tmp/glm53-ep-local-compile0908-12-head/local"
+  ],
+  "created": 1788861730.346437,
+  "host_mem_available_kib": 96487248,
+  "reason": "Q0 scale layout unsigned bit decomposition and two exhaustive AST address oracles; compare CPU11",
+  "existing_frozen_source_reused": true,
+  "prior_preparation_refusal": {
+    "reason": "Initial head preparation froze source then refused before job creation because 7.47 GiB available was below unchanged 12 GiB guard",
+    "job_started": false
+  },
+  "prior_worker_checks": {
+    "recorded_utc": "2026-09-08T09:59:57.293453+00:00",
+    "source_revision": "0ae4c08f49c22122f499771ca6cefab1113b3476",
+    "minimum_mem_available_kib": 12582912,
+    "workers": [
+      {
+        "ip": "10.10.10.4",
+        "mem_available_kib": 11449432,
+        "source9_exists": true,
+        "source12_exists": false,
+        "job_exists": false
+      },
+      {
+        "ip": "10.10.10.1",
+        "mem_available_kib": 10900928,
+        "source9_exists": false,
+        "source12_exists": false,
+        "job_exists": false
+      }
+    ],
+    "result": "Both otherwise eligible workers below unchanged 12 GiB guard. No copy, freeze, job directory, container, or fleet submission performed.",
+    "serving_memory_reclaimed": false
+  },
+  "serving_memory_reclaimed": false
+}

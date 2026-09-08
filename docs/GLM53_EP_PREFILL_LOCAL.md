@@ -127,6 +127,31 @@ register renaming; row atomics and base loads are unchanged. The
 binds every line to the two compilation receipts. These are not SASS or
 per-request execution counts.
 
+Source `0ae4c08f49c22122f499771ca6cefab1113b3476` also removes signed
+quotient/remainder reconstruction from both Q0 scale-store paths. The M128
+scale layout is expressed as unsigned physical-row/SF bit fields, with the
+same final Int32 byte offset. The actual-AST oracle proves additive row/column
+separation and checks every admissible physical row, all 256 SF columns, and
+complete M128 tile coverage without overlap. Its conservative full allocation
+is 35,913,728 bytes, below the signed 32-bit limit. Quantization, shared loads,
+global stores, route order and synchronization are unchanged.
+
+[CPU12](../measurements/glm53_ep_local_20260908/cpu12/README.md) passed 65 pinned
+CPU tests without failures, errors, skips or CUDA initialization, plus actual
+E72/I2048 CuTe and all 24 Triton compiles. REG168/STACK112/SHARED1024 stay
+unchanged. CuTe PTX/cubin sizes fall from 955476/307264 to 942077/300864 bytes;
+all 24 remap PTX hashes match CPU11. This establishes compilation and CPU
+address equivalence, not GPU performance. Initial head and worker checks
+refused insufficient available RAM before compilation. The unchanged normal
+4 GiB/two-CPU runner started after a later boot transition freed 92.02 GiB on
+head; no serving memory was reclaimed. The offline runner now selects CPU12.
+The receipt-bound PTX inspection shows 41 to nine address arithmetic
+instructions at each of ten equal/varied compiler copies: 320 static
+instructions removed. All 500 before/after instruction lines and shared-load/
+scale-store endpoints were verified. These counts exclude input SF setup,
+physical-row loads, payload stores and pointer widening; they are not SASS,
+executed work or measured prefill improvement.
+
 The preceding source `7254422f044ab3c5d042f32ee7f33add7baf5e00` passed actual
 E72/I2048 CuTe compilation and 48 focused
 CPU tests without skips in the immutable-image no-device runner. CUDA remained
@@ -210,7 +235,8 @@ payload ran. The supervisor's separate public restoration failed an
 approved-main CPU regression gate and released at 17:56:37. This does not
 establish exact restoration or GPU evidence; later observations belong to
 the next holder's boot. Repeated submissions are paused until the idle
-boundary and normal restoration path are ready.
+boundary and normal restoration path are ready. This describes the v4 stop;
+the subsequent v5 submission is recorded below.
 [Submission evidence](../measurements/glm53_ep_local_20260908/binding_gpu_submission/README.md)
 keeps the pre-GPU failures and retry separate.
 
@@ -223,6 +249,16 @@ eight passes without skips. This changes no runtime admission or restoration
 rule. [Reproduction evidence](../measurements/glm53_ep_local_20260908/restore_env_diagnostic/README.md)
 does not establish that approved main contains the fix or that live restoration
 has passed.
+
+Approved main subsequently incorporated the independent PR #487 fixture
+repair (`d95a2cd`), and the normal recovery holder released at 18:48. At 18:59,
+`epbindinggpu0908v5` passed normal preflight and entered the queue using
+frozen `8dc665b0` with its matching CPU11 63-test receipt and PR484 lifecycle.
+The [v5 snapshot](../measurements/glm53_ep_local_20260908/binding_gpu_submission/v5queued/README.md)
+records submission, not GPU execution or successful recovery by this job.
+This API-only diagnostic deliberately keeps its already-compiled source;
+it neither executes nor validates the later CPU12 Q0 arithmetic. GO-time
+incoming-state, idle, identity and recovery checks remain enforced.
 
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).
@@ -269,8 +305,8 @@ run had 31 passes and four existing host-Torch numerics skips, with no errors
 or failures. At that revision the 13 mounted MoE sources matched CPU9; six
 runner/test contract files had changed. Its output and hashes remain in
 serving_metadata. CPU10 subsequently supplied fresh pinned evidence for that
-lifecycle, and CPU11 covers the current row-address kernel and all 18 probe
-contract files with no skipped tests.
+lifecycle. CPU11 covers the earlier row-address kernel, and CPU12 covers
+the current Q0 scale-address kernel and all 18 probe contract files without skips.
 GPU correctness and sanitizer checks must
 compare full-token output with the existing E72 compact path using identical
 weights, balanced/concentrated/empty-local routes, odd tails and changed
@@ -294,7 +330,10 @@ node count/rank and command hashes without executing the payload or storing
 raw arguments. Unsupported commands produce unknown topology with an issue,
 not a claimed EP-disabled launch. This is configured-launch metadata, not
 proof that an EP kernel executed. The EP-local serving marker is also in the
-generic head-log proof table; the old SP marker still proves only arming.
+generic head-log proof table. The SP arming marker alone is insufficient;
+the model also emits `MHC token shards selected` after its shape, metadata and
+all-layer reduction gates pass. Collect that selection marker from fresh logs
+on all four ranks; selection does not establish layer completion or numerics.
 Environment and command lookups both use the observed container ID to avoid
 mixing settings if a container is replaced under the same name. The eight
 parser and three collector/proof tests passed, as did 6795 core checks and 38
@@ -302,6 +341,23 @@ megakernel regressions. Real configured-launch inputs from all four current
 public containers also parsed successfully; this is compatibility evidence,
 not EP execution proof. See the
 [metadata evidence](../measurements/glm53_ep_local_20260908/serving_metadata/README.md).
+
+`bench/glm53_ep_serving_contract.py` now provides pure configuration checks
+for the future bracket. It accepts known public launch inputs for the incoming
+capacity snapshot and private inputs for B1/A/B2, verifies exact rank/TP/EP
+flags and the explicit EP-local/compact settings, and rejects other per-node
+environment or normalized-command differences. It derives replay controls
+from observed max length, batch/sequence limits, effective GMU, graph and
+prefix-cache settings, setting CG_UTIL_DELTA=0 to avoid applying the launcher's
+GMU deduction twice. Both resolved KV_TOKENS and KV_HYBRID_BLOCKS must be
+supplied and reproduce the observed block count. They cannot be uniquely
+recovered from Docker Cmd. The original four public-rank capacity records
+are mandatory, so three consistently reduced new arms cannot pass. Exact
+COMPILE_CFG is retained and replayed; the existing launcher custom-ops
+transformation must preserve its bytes, or the helper rejects the config.
+Twelve new tests plus eight existing parser tests passed without skips. This helper starts no processes and is not yet connected
+to the full serving runner; source/image/log identity, all-rank execution,
+actual capacity restoration and direct fresh-request metrics remain required.
 
 A future EP arm must separately record requested ENABLE_EP and compare it
 with configured topology, require all four ranks' E72/I2048 EP-local launch

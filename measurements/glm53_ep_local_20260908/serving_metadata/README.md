@@ -44,3 +44,14 @@ using the new `parallelism` metadata. These additions do not make it suitable
 for an EP performance verdict.
 
 Verify this directory with `shasum -a 256 -c SHA256SUMS`.
+
+The actual-capacity helper adds original-public-versus-private-B1/A/B2
+configuration checks. Its [test log](capacity-contract-tests.log) records
+12 new tests and eight existing parser tests, all passing without skips.
+The [source record](capacity-contract-checks.json) binds the helper, tests and
+launcher. A review caught discarded original compilation configuration;
+the final helper preserves COMPILE_CFG, requires original four-rank capacity,
+and tests the real launcher custom-ops transformation for byte preservation.
+Unsupported graph configurations are rejected. This is configuration proof;
+the dedicated serving runner, original full-argv/source/container bindings,
+all-rank runtime execution and actual restoration checks remain unimplemented.
