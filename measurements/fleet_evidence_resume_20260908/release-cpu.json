@@ -1,0 +1,63 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "logic",
+      "command": [
+        "/home/choiceoh/vllm-env/bin/python",
+        "tests/test_logic.py"
+      ],
+      "returncode": 0,
+      "seconds": 135.266,
+      "log": "/home/choiceoh/glm53-logs/fleet/validation/receipts/4413677270e52b1656f678a4673dd62583c860dec97e4e4fc5521ffffa3ce202.report-logic-0.log",
+      "skipped": [],
+      "tests_run": 71115,
+      "counts": null
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/home/choiceoh/vllm-env/bin/python",
+        "bench/cpu_unittest.py",
+        "tests/test_glm53_overlay_sync.py",
+        "/home/choiceoh/glm53-logs/fleet/validation/receipts/4413677270e52b1656f678a4673dd62583c860dec97e4e4fc5521ffffa3ce202.report-individual-1.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.633,
+      "log": "/home/choiceoh/glm53-logs/fleet/validation/receipts/4413677270e52b1656f678a4673dd62583c860dec97e4e4fc5521ffffa3ce202.report-individual-1.log",
+      "skipped": [],
+      "tests_run": 6,
+      "counts": {
+        "tests_run": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_accepts_identical_sources",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_rejects_stale_or_missing_destination",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_identical_bytes_keep_inode_and_mtime_despite_new_source_time",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_manifest_revision_changes_without_touching_identical_kernel",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_permissions_are_normalized_and_missing_input_fails",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_same_size_edit_with_older_source_timestamp_updates_content_and_time"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_accepts_identical_sources": 0.08547638700110838,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_rejects_stale_or_missing_destination": 0.07842823199462146,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_identical_bytes_keep_inode_and_mtime_despite_new_source_time": 0.0899850829737261,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_manifest_revision_changes_without_touching_identical_kernel": 0.08926252101082355,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_permissions_are_normalized_and_missing_input_fails": 0.13313140399986878,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_same_size_edit_with_older_source_timestamp_updates_content_and_time": 0.09045173902995884
+        },
+        "failure_details": []
+      }
+    }
+  ],
+  "passed": true,
+  "coverage_complete": true,
+  "tests_run": 71121
+}

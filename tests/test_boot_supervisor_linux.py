@@ -21,8 +21,11 @@ class LinuxSupervisorTests(unittest.TestCase):
         self.repo, self.logs, self.bin = [self.root/p for p in ('repo', 'logs', 'bin')]
         for path in (self.repo/'bench', self.repo/'profiles', self.logs/'fleet', self.bin):
             path.mkdir(parents=True)
-        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'fleet_inspect.py', 'experiment_metrics.py', 'fleet_launch.py', 'fleet_prepare.py', 'fleet_classify.py'):
+        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'fleet_inspect.py', 'experiment_metrics.py', 'fleet_launch.py', 'fleet_prepare.py', 'fleet_classify.py', 'fleet_pause.py', 'fleet_prepared.py', 'fleet_source.py'):
             shutil.copy(ROOT/'bench'/name, self.repo/'bench'/name)
+        # This suite exercises real admission/controller processes. The separate
+        # validation suite covers receipts and approved recovery checkouts.
+        (self.repo/'bench/fleet_validation.py').write_text("import sys\nprint('{}' if sys.argv[1] == 'validate' else '/fixture/recovery.json')\n")
         (self.repo/'profiles/glm53.env').write_text('VLLM_TEST=0\n')
         (self.repo/'bench/fleet_restore.sh').write_text('''#!/bin/bash
 echo "$FLEET_SESSION" >> "$LOGD/restores"
@@ -425,11 +428,74 @@ test ! -e "$LOGD/fail-restore"
         self.until(lambda:self.ready('source-change'))
         script.write_text('raise RuntimeError("must never run")\n')
         gate.touch()
-        self.assertEqual(self.wait(first),0);self.assertEqual(self.wait(second),3)
+        self.assertEqual(self.wait(first),0)
+        self.until(lambda:self.show('source-change')['state']=='paused')
         value=self.show('source-change')
         self.assertIsNone(value.get('payload_returncode'))
         self.assertEqual((self.logs/'restores').read_text().splitlines(),['first'])
-        self.assertIn('queued input changed',(self.logs/'source-change.log').read_text())
+        self.assertIn('queued input changed',value['pause_reason'])
+        self.assertNotIn('source-change',(self.logs/'fleet/queue').read_text())
+        cancelled=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'cancel','source-change'],
+                                 env=self.env,capture_output=True,text=True,timeout=8)
+        self.assertEqual(cancelled.returncode,0,cancelled.stdout+cancelled.stderr)
+        self.assertEqual(self.wait(second),143)
+
+
+    def test_paused_waiter_keeps_ticket_and_runs_after_resuming(self):
+        gate=self.logs/'continue'
+        first=self.launch('first',f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        second=self.launch('paused','print("RESUMED_PAYLOAD")')
+        self.until(lambda:'waiting:' in (self.logs/'paused.log').read_text())
+        before=self.show('paused')
+        paused=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'pause','paused','--reason','edit pending'],
+                              env=self.env,capture_output=True,text=True,timeout=8)
+        self.assertEqual(paused.returncode,0,paused.stdout+paused.stderr)
+        # Simulate an already pinned controller whose priority code knows only
+        # physical queue rows. Parking must work without modifying its sorter.
+        legacy=self.root/'legacy';shutil.copytree(self.repo,legacy)
+        shutil.copy(legacy/'bench/fleet_priority.py',legacy/'bench/legacy_rank.py')
+        (legacy/'bench/fleet_priority.py').write_text("import sys\nfrom legacy_rank import rank, downstream\nfrom pathlib import Path\nif __name__ == '__main__':\n p=Path(sys.argv[1])/'queue'\n p.write_text(''.join(sorted(p.read_text().splitlines(keepends=True),key=lambda r:r.split('|')[0])))\n")
+        output=(self.logs/'third.log').open('w');self.addCleanup(output.close)
+        third=subprocess.Popen(['bash',str(legacy/'bench/fleet.sh'),'run','--gpu','third','--',
+                                sys.executable,'-c','print("THIRD_PAYLOAD")'],
+                               env=dict(self.env,REPO=str(legacy)),stdout=output,stderr=subprocess.STDOUT)
+        self.children.append(third)
+        self.until(lambda:self.ready('third'))
+        gate.touch();self.assertEqual(self.wait(first),0,(self.logs/'first.log').read_text());self.assertEqual(self.wait(third),0,(self.logs/'third.log').read_text())
+        self.assertIsNone(second.poll())
+        value=self.show('paused')
+        self.assertEqual(value['state'],'paused');self.assertEqual(value['ticket'],before['ticket'])
+        self.assertEqual(value['enqueued_at'],before['enqueued_at'])
+        resumed=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'resume','paused'],
+                               env=self.env,capture_output=True,text=True,timeout=8)
+        self.assertEqual(resumed.returncode,0,resumed.stdout+resumed.stderr)
+        self.assertEqual(self.wait(second),0)
+        self.assertIn('RESUMED_PAYLOAD',(self.logs/'paused.log').read_text())
+        self.assertEqual(self.show('paused')['ticket'],before['ticket'])
+
+    def test_env_prefix_preserves_supervisor_recovery_context(self):
+        output=(self.logs/'env-prefix.log').open('w');self.addCleanup(output.close)
+        code='import os; assert os.environ["FLEET_SESSION"]=="env-prefix"; assert os.environ["FLEET_RESTORE_MANAGED"]=="1"; assert os.environ["FLEET_VALIDATION_REQUIRED"]=="1"; assert os.environ["IMAGE"]=="selected-image"; print("OWNED_CONTEXT")'
+        proc=subprocess.Popen(['bash',str(self.repo/'bench/fleet.sh'),'run','--gpu','env-prefix','--',
+                               '/usr/bin/env','-i','FLEET_SESSION=foreign','IMAGE=selected-image',sys.executable,'-c',code],
+                              env=self.env,cwd=self.repo,stdout=output,stderr=subprocess.STDOUT)
+        self.children.append(proc)
+        self.assertEqual(self.wait(proc),0,(self.logs/'env-prefix.log').read_text())
+        self.assertIn('OWNED_CONTEXT',(self.logs/'env-prefix.log').read_text())
+        self.assertEqual((self.logs/'restores').read_text().splitlines(),['env-prefix'])
+
+    def test_prepare_then_run_uses_same_manifest(self):
+        command=[sys.executable,'-c','import os; assert not any(k in os.environ for k in ("SSH_CLIENT","SSH_CONNECTION","SSH_TTY","TERM_PROGRAM")); print("PREPARED_PAYLOAD")']
+        prepared=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'prepare','prepared','--',*command],
+                                env=dict(self.env,SSH_CLIENT='fixture-port-1',TERM_PROGRAM='prepare-terminal'),cwd=self.repo,capture_output=True,text=True,timeout=8)
+        self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
+        path=prepared.stdout.strip()
+        run=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'run','--cpu','--prepared',path,'prepared','--',*command],
+                           env=dict(self.env,SSH_CLIENT='fixture-port-2',SSH_CONNECTION='another-port',TERM_PROGRAM='run-terminal'),cwd=self.repo,capture_output=True,text=True,timeout=8)
+        self.assertEqual(run.returncode,0,run.stdout+run.stderr)
+        self.assertIn('PREPARED_PAYLOAD',run.stdout)
+        self.assertEqual(len(list((self.logs/'fleet/preparations').glob('*.json'))),1)
 
 
 if __name__ == '__main__':

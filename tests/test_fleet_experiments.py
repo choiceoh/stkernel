@@ -304,7 +304,7 @@ class SubmissionTests(unittest.TestCase):
         (self.repo / "bench/ab-lever.sh").write_text(FAKE_LEVER)
         (self.repo / "bench/onepass.py").write_text(FAKE_ONEPASS)
         for name in ("pair.sh", "chain.sh", "baseline.py", "judge.py", "experiments.py", "cpu_checks.py",
-                     "cpu_evidence.py", "probe_report.py", "experiment_baselines.py", "fleet_priority.py", "fleet_handoff.py", "measurement_contract.py",
+                     "cpu_evidence.py", "fleet_source.py", "probe_report.py", "experiment_baselines.py", "fleet_priority.py", "fleet_handoff.py", "measurement_contract.py",
                      "serving_group.py", "experiment_resources.py", "prepared_artifacts.py", "cpu_unittest.py",
                      "experiment_plan.py", "cpu_compile.py", "experiment_sharing.py", "experiment_groups.py", "experiment_retirement.py", "experiment_metrics.py", "cpu_contracts.py", "experiment_submission.py", "experiment_explain.py"):
             shutil.copy(ROOT / "bench" / name, self.repo / "bench" / name)

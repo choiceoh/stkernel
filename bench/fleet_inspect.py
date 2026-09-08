@@ -105,22 +105,29 @@ def describe(directory, session, rows, holder, now=None, ticket=None):
         raise ValueError('unknown reservation: ' + session)
     result = {k:value[k] for k in ('session', 'ticket', 'enqueued_at', 'revision', 'command', 'cwd',
               'kind', 'estimate_min', 'note', 'experiment', 'phase', 'started_at', 'payload_finished_at',
-              'finished_at', 'payload_returncode', 'recovery_returncode', 'returncode', 'outcome', 'log_path', 'error', 'log_error')
+              'finished_at', 'pause_reason', 'paused_at', 'resumed_at', 'payload_returncode', 'recovery_returncode', 'returncode', 'outcome', 'log_path', 'error', 'log_error')
               if value and k in value}
     result.update(session=session, source='saved' if value else 'legacy', position=None, editable=False)
     if ticket is not None:
         result['historical'] = historical
     alive = handoff.live(value) if value and not historical else False
-    if row:
+    from fleet_pause import paused
+    is_parked = bool(value and not historical and not held and paused(directory, session, row))
+    if is_parked:
+        result.update(state='paused', position=None, ahead=[], editable=True,
+                      waiting_for=value.get('pause_reason', 'resume requested by owner'))
+    elif row:
         result.update(ticket=row[0], enqueued_at=row[2], kind=row[5], position=rows.index(row) + 1)
         result.setdefault('estimate_min', float(row[3]))
         result.setdefault('note', row[4])
         if not value:
             alive = bool(handoff.identity(int(row[6])))
-        result['state'] = 'queued' if alive else 'interrupted'
+        result['state'] = ('paused' if value and value['state'] == 'paused' else 'queued') if alive else 'interrupted'
         result['waiting_for'] = ('holder ' + holder[0]) if holder else 'fleet admission checks'
-        result['ahead'] = [r[1] for r in rows[:rows.index(row)]]
-        result['editable'] = bool(value and alive and value['state'] == 'queued')
+        result['ahead'] = [r[1] for r in rows[:rows.index(row)] if not paused(directory, r[1], r)]
+        result['editable'] = bool(value and alive and value['state'] in ('queued','paused'))
+        if result['state'] == 'paused':
+            result['waiting_for'] = value.get('pause_reason','resume requested by owner')
     elif held:
         if not value:
             alive = held[2] == socket.gethostname().split('.')[0] and bool(handoff.identity(int(held[1])))
@@ -163,6 +170,9 @@ def describe(directory, session, rows, holder, now=None, ticket=None):
     result['actions'] = {}
     if result['editable']:
         result['actions']['edit'] = ['fleet.sh', 'edit', session, '--expect-revision', str(value['revision'])]
+    if value and value.get('pause_protocol') == 1 and result['editable']:
+        action = 'resume' if result['state'] == 'paused' else 'pause'
+        result['actions'][action] = ['fleet.sh', action, session, '--expect-revision', str(value['revision'])]
     if result.get('log_path'):
         result['actions']['logs'] = ['fleet.sh', 'logs', session] + (['--ticket', ticket] if ticket else [])
     if result.get('experiment'):
@@ -178,6 +188,8 @@ def show(directory, session=None, ticket=None):
         if session is not None:
             return describe(directory, session, rows, holder, ticket=ticket)
         names = list(dict.fromkeys(([holder[0]] if holder else []) + [r[1] for r in rows]))
+        from fleet_pause import parked
+        names += [v['session'] for v in parked(directory) if v['session'] not in names]
         return [describe(directory, name, rows, holder) for name in names]
 
 

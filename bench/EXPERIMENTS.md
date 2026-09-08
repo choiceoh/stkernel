@@ -859,8 +859,90 @@ repeat before GO; remote ref refresh and image checks run outside the fleet lock
 every 30 seconds while waiting. CPU preparation inputs are bound too. Local checks
 and admission share the lock. A failed older check cannot discard a newer edit.
 An explicit `edit agent -- bash probes/candidate.sh` rebinds changed source even
-when the argv is identical. Preparation failures withdraw before acquiring a hold,
-so they do not acquire restore responsibility. Existing pinned controllers retain
-their original contract. A fresh fetch or dynamic environment check performed by
+when the argv is identical. New reservations pause on preparation failure before
+acquiring a hold. Their ticket, original age and owner survive for editing and
+explicit resumption; they do not acquire restore responsibility. Existing pinned
+controllers retain their original contract. A fresh fetch or dynamic environment check performed by
 the payload after GO can still reveal a later change; preparation is not an atomic
 snapshot of remote services and never silently rebases a candidate.
+
+
+## Reuse preparation and pause for revisions
+
+```bash
+MANIFEST=$(bash bench/fleet.sh prepare agent --spec prepare.json -- bash probes/candidate.sh)
+bash bench/fleet.sh run --gpu --detach --prepared "$MANIFEST" agent 20 "candidate" -- bash probes/candidate.sh
+bash bench/fleet.sh pause agent --reason "input needs revision"
+# After revising the candidate, bind and validate its new inputs.
+bash bench/fleet.sh edit agent -- bash probes/candidate.sh
+bash bench/fleet.sh resume agent
+```
+
+`--prepared` accepts the same session, command, cwd, specification, source,
+explicit input files, runtime, image and effective environment. A mismatch names
+what changed and refuses reuse. Successful audited `cpu_checks.py` suites and
+contracts reuse their passing evidence. Arbitrary CPU commands with unknown
+transitive dependencies run again on fresh preparation or an ordinary edit;
+explicit `--prepared` refuses to reuse them. Receipts are authenticated in the
+private fleet preparation store. Changing SSH connection metadata does not force
+revalidation; that metadata is removed from the payload environment too. Literal `env NAME=value`, `env -u` and `env -i`
+prefixes select payload settings; the supervisor supplies its owned fleet and
+recovery context after applying them.
+
+An ordinary command edit attempts compatible preparation reuse and prepares
+again only when needed. An explicit `--prepared` mismatch refuses the edit and
+retains the original reservation. An identical command edit deliberately accepts
+new source/input state after checking it. Editing a paused reservation keeps it
+paused; `resume` validates it outside the queue lock and uses a revision comparison
+before making it runnable. `--expect-revision N` protects pause, resume and edit
+against concurrent changes.
+
+Paused reservations preserve their ticket and original arrival time in the saved
+record, outside the runnable queue. Existing pinned controllers therefore skip
+them too. Other jobs can acquire GPUs while the owner fixes its command or inputs.
+`show` exposes the pause reason and resume action; cancellation still stops the
+owning waiter. Resuming restores the same ticket and age to queue priority.
+A check of an older revision cannot pause or remove a newer edit.
+
+Known audited CPU suites omit nonexecuted documentation and measurement outputs
+from their source key. Declared inputs, executable files, symlinks, code and
+runtime changes remain bound; unreviewed test changes restore the full source
+scope. Eight audited campaign wrappers use the same source-aware main ancestry
+check, allowing only irrelevant upstream prose/output changes. GPU revision,
+build and baseline identities remain exact. Experiment results report CPU
+`explanation.cache_reuse` as `cached`, `identity_match`, `changed` or `unknown`,
+including changed file/component names without environment values.
+
+## Validate deployment and recovery before GPU admission
+
+New boot requests prepare the candidate deployment and an approved main recovery
+checkout before joining the GPU queue. Literal campaign checkout and image/model
+overrides are bound to the preparation; dynamic deployment scripts declare
+`deployment_targets` in their preparation spec as objects with `repo`, `profile`
+and optional `image`/`model` fields. The fixed gate covers the full logic
+suite, runtime guard audit, GLM overlay synchronization and the CPU-only Docker
+chat release checks. It runs with GPU visibility disabled, clean controller-free
+environment, single-thread math libraries and low scheduling priority. Passing
+receipts bind tested source, tools/packages, immutable image, tokenizer/config
+files and the fixed checkpoint config consumed by logic checks.
+
+The fleet host may select an existing complete CPU Python environment with a
+private `FLEET_VALIDATION_STORE/python` file containing its absolute interpreter
+path. Validation and recovery CLI calls use that same interpreter and bind its
+packages and Python startup files to the receipt. Missing dependencies or skipped
+checks cannot produce a passing receipt; the helper does not install packages.
+
+The deployer consumes matching receipts. A cache miss during a GPU hold refuses
+without starting another CPU suite. Recovery uses the approved source and receipt
+pinned before admission, so a later main commit cannot add untested recovery work
+to the hold. The last boot holder restores; an eligible queued successor still
+receives recovery responsibility directly. With no candidate changes the next
+request reuses the same evidence. Unknown custom tokenizer dependencies require
+an explicit dependency audit before this release-gate cache can be used.
+
+The first validation of changed code may outlast the detached launch receipt
+window. Its startup log remains available and the detached worker continues;
+the caller receives `starting` without a fictitious queue ticket. Repeating the
+same launch joins that worker. On rollout, prime the final source on the fleet
+host before publishing a new deployer so older pinned restores can consume its
+CPU evidence. Existing pinned runners are never rewritten.

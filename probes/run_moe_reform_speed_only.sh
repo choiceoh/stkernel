@@ -19,7 +19,7 @@ IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-lo
 [[ $held == "$session" && $kind == boot ]] || exit 2
 [[ -z $(git status --porcelain) && -z $(git -C "$RESTORE_REPO" status --porcelain) ]] || exit 2
 git fetch origin
-git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs current main'; exit 2; }
+python3 bench/fleet_source.py require-base origin/main || { echo 'ABORT: candidate needs current main'; exit 2; }
 [[ ! -e $out ]] || { echo 'ABORT: fresh evidence required'; exit 2; }
 mkdir -p "$out"
 printf '%s\n' 'User explicitly requested speed comparison after M2/U8 numerical failure; no promotion verdict.' > "$out/known-numerics-failure.txt"
