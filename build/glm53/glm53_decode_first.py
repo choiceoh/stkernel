@@ -70,6 +70,11 @@ VLLM_GLM53_* keys):
   VLLM_GLM53_SCHED_PREFILL_FLOOR  guaranteed prefill tokens/s per prompt (1000; 0 = off)
   VLLM_GLM53_SCHED_FLOOR_GRACE_S  seconds after admission before the floor
                                   is enforced (2.0)
+  VLLM_GLM53_SCHED_CHUNK_FILE     dev only (40차): a file holding the prefill
+                                  chunk to use, re-read 5x/s, absolute (it
+                                  overrides the plan AND caps solo prefill).
+                                  Empty = off = production. Lets one boot
+                                  sweep chunk sizes; see probes/prefill_chunk_sweep.py
 
 Armed by the launcher's DECODE_FIRST=1
 (``--scheduler-cls vllm.v1.core.sched.glm53_decode_first.Glm53DecodeFirstScheduler``).
@@ -131,6 +136,17 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         self.fair = _int_env("VLLM_GLM53_SCHED_FAIR", 1, 0) > 0
         self.prefill_floor = _int_env("VLLM_GLM53_SCHED_PREFILL_FLOOR", 1000, 0)
         self.floor_grace_s = _float_env("VLLM_GLM53_SCHED_FLOOR_GRACE_S", 2.0, 0.0)
+        # 40차 dev instrument (프리필 스텝 고정비 조사). A file whose contents are
+        # the prefill chunk to use, re-read at most every 0.2 s. Empty = off,
+        # which is production: the launcher forwards a profile knob only when
+        # it is non-empty. When it IS set the value is absolute -- it replaces
+        # the planned chunk and also caps the solo prefill this scheduler
+        # otherwise hands to stock, because the small-chunk penalty it exists
+        # to measure is a pure-prefill property (no decoder needed to see it).
+        # One boot then walks every chunk size instead of one boot per size.
+        self.chunk_file = os.environ.get("VLLM_GLM53_SCHED_CHUNK_FILE", "").strip()
+        self._chunk_override = 0
+        self._chunk_read_at = 0.0
         # request_id -> (admission time, num_computed_tokens at admission)
         self._prefill_starts: dict[str, tuple[float, int]] = {}
         # sequential: request_id -> when a running prefill chunk was first
@@ -148,7 +164,7 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         logger.warning(
             "[decode-first] scheduler armed (v3 %s: max_wait=%.0fs, decode_steps=%d, chunk=%d (x pos/%d up to %d), "
             "prefill_every=%d, min_decoders=%d, fair=%s, prefill_floor=%d tok/s after %.1fs, "
-            "max_num_batched_tokens=%d, max_num_seqs=%d, stock threshold=%d)",
+            "max_num_batched_tokens=%d, max_num_seqs=%d, stock threshold=%d, chunk_file=%s)",
             self.mode,
             self.max_wait_s,
             self.decode_steps,
@@ -163,6 +179,7 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
             self.max_num_scheduled_tokens,
             self.max_num_running_reqs,
             self.scheduler_config.long_prefill_token_threshold,
+            self.chunk_file or "off",
         )
 
     def _plan(self, now: float) -> tuple[str, int, int, list] | None:
@@ -257,11 +274,47 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         self.prefill_capacity_bound = False
         return super().schedule(True)
 
+    def _override_chunk(self, now: float) -> int:
+        """The dev instrument's chunk for this step, 0 when it is off. The file
+        is re-read at most five times a second, so a sweep walks chunk sizes
+        inside one boot; an unreadable or junk file reads as off, never as a
+        crash on the serving path."""
+        if not self.chunk_file:
+            return 0
+        if now - self._chunk_read_at >= 0.2:
+            self._chunk_read_at = now
+            try:
+                with open(self.chunk_file) as fh:
+                    self._chunk_override = max(0, int(fh.read().strip() or "0"))
+            except (OSError, ValueError):
+                self._chunk_override = 0
+        return self._chunk_override
+
+    def _with_threshold(self, threshold: int, throttle_prefills: bool) -> SchedulerOutput:
+        """Run the stock step with this chunk cap, then put the config back --
+        also when the stock scheduler raises."""
+        config = self.scheduler_config
+        saved = config.long_prefill_token_threshold
+        if saved <= 0 or saved > threshold:
+            config.long_prefill_token_threshold = threshold
+        try:
+            return super().schedule(throttle_prefills)
+        finally:
+            config.long_prefill_token_threshold = saved
+
     def schedule(self, throttle_prefills: bool = False) -> SchedulerOutput:
-        plan = self._plan(time.monotonic())
+        now = time.monotonic()
+        override = self._override_chunk(now)
+        plan = self._plan(now)
         if plan is None:
+            # Solo prefill and every other stock step. The instrument still
+            # pins the chunk here: that is the case it measures.
+            if override:
+                return self._with_threshold(override, throttle_prefills)
             return super().schedule(throttle_prefills)
         mode, threshold, boost, decoders = plan
+        if override:
+            threshold = override
         if mode == "wait":
             # sequential: decoders keep their full-speed pure steps; the
             # prefill waits (its floor boost is not applied inside the grace)
@@ -306,11 +359,4 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
                 self._max_boost,
             )
 
-        config = self.scheduler_config
-        saved = config.long_prefill_token_threshold
-        if saved <= 0 or saved > threshold:
-            config.long_prefill_token_threshold = threshold
-        try:
-            return super().schedule(throttle_prefills)
-        finally:
-            config.long_prefill_token_threshold = saved
+        return self._with_threshold(threshold, throttle_prefills)
