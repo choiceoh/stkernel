@@ -284,7 +284,6 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         token_idx = Int32(0)
         weight = cutlass.Float32(0.0)
         row = Int32(0)
-        phys_tile = Int32(0)
         phys_row = Int32(0)
         produce_active = Int32(1)
         q0_bulk_phase = Int32(0)
@@ -447,12 +446,6 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                     phys_row = _ld_shared_i32(
                                         route_phys_rows_addr + route_slot * Int32(4)
                                     )
-                                    phys_tile = phys_row // Int32(
-                                        self.tile_shape_mnk[0]
-                                    )
-                                    tile_row = phys_row - phys_tile * Int32(
-                                        self.tile_shape_mnk[0]
-                                    )
                                     output_offset = (
                                         phys_row * output_bytes_per_row
                                         + sf_idx * Int32(8)
@@ -464,18 +457,20 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                         ),
                                         packed64,
                                     )
-                                    k_tile_idx = sf_idx // Int32(4)
-                                    outer_m_idx = tile_row % Int32(32)
-                                    inner_m_idx = (tile_row % Int32(32 * 4)) // Int32(
-                                        32
-                                    )
-                                    inner_k_idx = sf_idx % Int32(4)
-                                    scale_offset = (
-                                        phys_tile * num_k_tiles * Int32(32 * 4 * 4)
-                                        + k_tile_idx * Int32(32 * 4 * 4)
-                                        + outer_m_idx * Int32(4 * 4)
-                                        + inner_m_idx * Int32(4)
-                                        + inner_k_idx
+                                    # M128 scale layout is a bit permutation
+                                    # of nonnegative physical-row / SF indices.
+                                    # Explicit unsigned fields avoid signed
+                                    # quotient/remainder correction per route.
+                                    # H4096/top8/T<=16384 bounds the final byte
+                                    # offset below 2**31, so Int32 is exact.
+                                    scale_offset = Int32(
+                                        (Uint32(phys_row) >> Uint32(7))
+                                        * Uint32(num_k_tiles * Int32(512))
+                                        + (Uint32(sf_idx) >> Uint32(2)) * Uint32(512)
+                                        + (Uint32(phys_row) & Uint32(31)) * Uint32(16)
+                                        + ((Uint32(phys_row) >> Uint32(5)) & Uint32(3))
+                                        * Uint32(4)
+                                        + (Uint32(sf_idx) & Uint32(3))
                                     )
                                     scale_storage[scale_offset] = scale_byte
                                     cache_slot += Int32(1)
@@ -487,12 +482,6 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                     route_slot = route_slot_base + cache_slot
                                     phys_row = _ld_shared_i32(
                                         route_phys_rows_addr + route_slot * Int32(4)
-                                    )
-                                    phys_tile = phys_row // Int32(
-                                        self.tile_shape_mnk[0]
-                                    )
-                                    tile_row = phys_row - phys_tile * Int32(
-                                        self.tile_shape_mnk[0]
                                     )
                                     gs_value = Uint32(_ld_shared_i32(
                                         route_scales_addr + route_slot * Int32(4)
@@ -520,18 +509,20 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                         ),
                                         packed64,
                                     )
-                                    k_tile_idx = sf_idx // Int32(4)
-                                    outer_m_idx = tile_row % Int32(32)
-                                    inner_m_idx = (tile_row % Int32(32 * 4)) // Int32(
-                                        32
-                                    )
-                                    inner_k_idx = sf_idx % Int32(4)
-                                    scale_offset = (
-                                        phys_tile * num_k_tiles * Int32(32 * 4 * 4)
-                                        + k_tile_idx * Int32(32 * 4 * 4)
-                                        + outer_m_idx * Int32(4 * 4)
-                                        + inner_m_idx * Int32(4)
-                                        + inner_k_idx
+                                    # M128 scale layout is a bit permutation
+                                    # of nonnegative physical-row / SF indices.
+                                    # Explicit unsigned fields avoid signed
+                                    # quotient/remainder correction per route.
+                                    # H4096/top8/T<=16384 bounds the final byte
+                                    # offset below 2**31, so Int32 is exact.
+                                    scale_offset = Int32(
+                                        (Uint32(phys_row) >> Uint32(7))
+                                        * Uint32(num_k_tiles * Int32(512))
+                                        + (Uint32(sf_idx) >> Uint32(2)) * Uint32(512)
+                                        + (Uint32(phys_row) & Uint32(31)) * Uint32(16)
+                                        + ((Uint32(phys_row) >> Uint32(5)) & Uint32(3))
+                                        * Uint32(4)
+                                        + (Uint32(sf_idx) & Uint32(3))
                                     )
                                     scale_storage[scale_offset] = scale_byte
                                     cache_slot += Int32(1)

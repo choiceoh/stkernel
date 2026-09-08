@@ -1,4 +1,4 @@
-"""CPU row-address and byte/slot oracles for EP-local task publication."""
+"""CPU row/scale-address and byte/slot oracles for EP-local publication."""
 import ast
 from pathlib import Path
 from types import SimpleNamespace
@@ -132,6 +132,108 @@ class PhysicalRowAddressTests(unittest.TestCase):
                     self.assertTrue(all(address not in addresses
                                         for address in range(lower + count, upper)))
                 self.assertEqual(len(addresses), sum(counts))
+
+
+def scalar_scale_offset(physical_row, sf_index):
+    """Original M128/H4096 scale layout, independently using divmod."""
+    physical_tile, tile_row = divmod(physical_row, 128)
+    k_tile, inner_k = divmod(sf_index, 4)
+    inner_m, outer_m = divmod(tile_row, 32)
+    return (physical_tile * 64 * 512 + k_tile * 512
+            + outer_m * 16 + inner_m * 4 + inner_k)
+
+
+def load_scale_offsets():
+    tree = ast.parse(KERNEL.read_text())
+    method = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+                  and node.name == "initialize_route_q0_and_publish")
+    assignments = [node for node in ast.walk(method) if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == "scale_offset"
+                           for target in node.targets)]
+    if len(assignments) != 2:
+        raise AssertionError("must inspect both equal and varied scale store paths")
+
+    def uint32(value):
+        if not 0 <= value < 1 << 32:
+            raise AssertionError("scale address leaves the unsigned 32-bit range")
+        return value
+
+    def int32(value):
+        if not -(1 << 31) <= value < 1 << 31:
+            raise AssertionError("scale address leaves the signed 32-bit range")
+        return value
+
+    def compile_expression(expression):
+        function = ast.parse("def offset(phys_row, sf_idx): return 0").body[0]
+        function.body[0].value = expression
+        namespace = dict(Int32=int32, Uint32=uint32, num_k_tiles=64)
+        module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
+        exec(compile(module, str(KERNEL), "exec"), namespace)
+        return namespace[function.name]
+
+    def addition_terms(expression):
+        if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Add):
+            return addition_terms(expression.left) + addition_terms(expression.right)
+        return [expression]
+
+    result = []
+    for assignment in assignments:
+        expression = assignment.value
+        if not (isinstance(expression, ast.Call)
+                and isinstance(expression.func, ast.Name)
+                and expression.func.id == "Int32" and len(expression.args) == 1):
+            raise AssertionError("final scale address must retain checked Int32 conversion")
+        # Prove row/SF separability before using exhaustive per-axis checks:
+        # every additive term must depend on exactly one of the two axes.
+        # No sampled Cartesian subset can hide a cross-axis interaction.
+        row_terms, sf_terms = [], []
+        for term in addition_terms(expression.args[0]):
+            axes = {node.id for node in ast.walk(term)
+                    if isinstance(node, ast.Name) and node.id in ("phys_row", "sf_idx")}
+            if axes == {"phys_row"}:
+                row_terms.append(term)
+            elif axes == {"sf_idx"}:
+                sf_terms.append(term)
+            else:
+                raise AssertionError("scale layout is no longer additive per axis")
+        if not row_terms or not sf_terms:
+            raise AssertionError("scale layout must retain both axes")
+        result.append(compile_expression(expression))
+    return result
+
+
+class ScaleOffsetAddressTests(unittest.TestCase):
+    def test_all_physical_rows_and_sf_indices_match_original_layout(self):
+        # Even all 72 experts' maximum padding is included. The actual row
+        # allocator cannot reach this conservative exclusive upper bound.
+        rows_bound = 16384 * 8 + 72 * 127
+        allocation_bytes = ((rows_bound + 127) // 128) * 128 * 256
+        self.assertLess(allocation_bytes, 1 << 31)
+        for offset in load_scale_offsets():
+            # Combined with the AST separability proof, exhaustive checks of
+            # each axis cover every admitted (physical row, SF index) pair.
+            for row in range(rows_bound):
+                expected = scalar_scale_offset(row, 0)
+                self.assertEqual(offset(row, 0), expected)
+                self.assertEqual(offset(row, 255), scalar_scale_offset(row, 255))
+                self.assertTrue(0 <= expected < allocation_bytes)
+            for sf_index in range(256):
+                self.assertEqual(offset(0, sf_index), scalar_scale_offset(0, sf_index))
+                self.assertEqual(offset(rows_bound - 1, sf_index),
+                                 scalar_scale_offset(rows_bound - 1, sf_index))
+            self.assertLess(offset(rows_bound - 1, 255), allocation_bytes)
+
+    def test_m128_tiles_cover_every_scale_byte_without_overlap(self):
+        rows_bound = 16384 * 8 + 72 * 127
+        for offset in load_scale_offsets():
+            # Every within-tile row and K boundary, plus low/high tile bits.
+            for tile in (0, 1, (rows_bound - 1) // 128):
+                start = tile * 128 * 256
+                addresses = {
+                    offset(tile * 128 + tile_row, sf_index)
+                    for tile_row in range(128) for sf_index in range(256)
+                }
+                self.assertEqual(addresses, set(range(start, start + 128 * 256)))
 
 
 class TaskPublicationTests(unittest.TestCase):
