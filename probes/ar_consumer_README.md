@@ -107,8 +107,8 @@ Racecheck hazard storage is capped at 100,000 records via NVIDIA's documented
 `NV_COMPUTE_SANITIZER_MAX_RACECHECK_HAZARDS` setting; launches remain unlimited
 and any reported hazard or warning fails the gate.
 
-After the GPU gate the campaign uses the same deployed source for defaults,
-candidate, defaults, retaining standard onepass quality, decode-window steps,
+After the GPU gate the campaign measures the candidate first, then two
+defaults arms on the same deployed source, retaining standard onepass quality, decode-window steps,
 three fixed-length 2048-token requests, prefill contexts and SSE channels.
 All four ranks must prove source hashes, flags and actual graph capture.
 Raw receipts live under `/home/choiceoh/glm53-logs/ARCONSUMER-<session>/`.

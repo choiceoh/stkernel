@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Supervised maintenance: correctness first, then one same-build B/A/B bracket.
+# Supervised maintenance: correctness first, then candidate and two baselines.
 set -euo pipefail
 export REPO=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO"
@@ -66,5 +66,7 @@ export GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1
 export PREFILL_WARMUP=0 QUALITY_CTX=2000,32000,128000 MAX_JOBS=2
 export ONEPASS_FIXED_DECODE_TOKENS=2048 ONEPASS_FIXED_DECODE_REPS=3 ONEPASS_REQUIRE_EXCLUSIVE=1
 export ONEPASS_JSONL=$AR_CONSUMER_OUT/records.raw.jsonl ONEPASS_VERDICTS=$AR_CONSUMER_OUT/verdicts.jsonl
-bash bench/chain.sh "${session}B1=" \
-  "${session}A1=VLLM_GLM53_AR_CONSUMER_PDL=1" "${session}B2="
+# Publish the requested candidate step first; retain two same-build baseline
+# arms and finish on defaults without adding another baseline boot.
+bash bench/chain.sh "${session}A1=VLLM_GLM53_AR_CONSUMER_PDL=1" \
+  "${session}B1=" "${session}B2="
