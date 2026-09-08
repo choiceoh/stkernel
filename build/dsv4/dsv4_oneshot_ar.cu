@@ -234,7 +234,7 @@ __device__ __forceinline__ void osar_prefetch(const HintArgs &h,
 // Keep this arithmetic host-testable against an independent enumeration of
 // the vector and scalar-tail accesses. Block zero also guards an empty call.
 template <bool VECTOR_EXACT>
-__host__ __device__ constexpr bool osar_block_owns(int block, int threads, int n) {
+__host__ __device__ constexpr bool osar_block_owns(unsigned block, unsigned threads, int n) {
   return block == 0 || block * threads < (VECTOR_EXACT ? (n >> 3) : n);
 }
 
