@@ -2,7 +2,13 @@
 # Preserve the canonical onepass gates while retaining its separate SSE channels.
 set -euo pipefail
 name=${1:?}; knobs=${2:-}; out=${INPUT_CTA_SERVING_OUT:?}
-mode=2
+# An arm without the knob boots the profile default, so read the expected mode
+# from the profile rather than pinning a literal here. chain.sh calls this with
+# empty knobs for its RECOVER and trailing BASE arms; a bracket that wants a
+# specific baseline must name the mode in its own arm.
+mode=$(sed -n 's/^VLLM_GLM53_MK_INPUT_CTA=\([0-9]\+\)[[:space:]]*$/\1/p' \
+  "$REPO/profiles/glm53.env" | tail -1)
+[[ -n $mode ]] || { echo 'no VLLM_GLM53_MK_INPUT_CTA in profiles/glm53.env'; exit 2; }
 for pair in $knobs; do
   [[ $pair != VLLM_GLM53_MK_INPUT_CTA=* ]] || mode=${pair#*=}
 done
