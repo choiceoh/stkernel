@@ -51,20 +51,26 @@ SF6_DIRECT_COUNTS = {
     "sf6_packed_bytes": 3_604_414_464,
 }
 SF6_DIRECT_KV_BLOCKS = "665"
+SF6_UNPACK_KNOB = "VLLM_GLM53_SF6_UNPACK_U8X4"
 MEMORY_FIELDS = {"MemTotal", "MemFree", "MemAvailable", "AnonPages", "Shmem", "Slab"}
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
-def expected_knobs(mode, *, sf6_direct=False):
+def expected_knobs(mode, *, sf6_direct=False, sf6_unpack=False):
     if mode not in ("baseline", "candidate"):
         raise ValueError("mode must be baseline or candidate")
-    if type(sf6_direct) is not bool:
-        raise ValueError("sf6_direct must be a boolean")
+    if type(sf6_direct) is not bool or type(sf6_unpack) is not bool:
+        raise ValueError("sf6_direct and sf6_unpack must be a boolean")
+    if sf6_direct and sf6_unpack:
+        raise ValueError("SF6 variants are mutually exclusive")
     on = mode == "candidate"
-    transport_on = on and not sf6_direct
-    return dict(COMMON_KNOBS, VLLM_GLM53_AR_COMPACT_CTA=str(int(transport_on)),
+    transport_on = on and not (sf6_direct or sf6_unpack)
+    wanted = dict(COMMON_KNOBS, VLLM_GLM53_AR_COMPACT_CTA=str(int(transport_on)),
                 VLLM_GLM53_AR_PROXY_INLINE=str(int(transport_on)),
-                VLLM_GLM53_B12X_STATIC_V2="t,r,sf6" if on else "t,r")
+                VLLM_GLM53_B12X_STATIC_V2="t,r,sf6" if on or sf6_unpack else "t,r")
+    if sf6_unpack:
+        wanted[SF6_UNPACK_KNOB] = str(int(on))
+    return wanted
 
 
 def validate_manifest(expected):
@@ -78,7 +84,7 @@ def validate_manifest(expected):
     return dict(sorted(expected.items()))
 
 
-def parse_markers(log):
+def parse_markers(log, *, sf6_unpack=False):
     prepared = re.findall(
         r"\[b12x sf6\] prepared FC1\+FC2;(?: raw prefill scales retained;)? packed bytes=(\d+)", log)
     fallback = re.findall(
@@ -87,7 +93,7 @@ def parse_markers(log):
     # Neither legacy retention logs nor the new preparation logs prove release.
     finalized = re.findall(
         r"\[b12x sf6\] packed-only owners finalised: layers=(\d+) raw_bytes_released=(\d+)(?:;|\s|$)", log)
-    return {
+    markers = {
         "common": {marker: marker in log for marker in COMMON_MARKERS},
         "ar_capture_numel": [int(n) for n in re.findall(
             r"\[osar\] consumer PDL CAPTURED numel=(\d+)", log)],
@@ -112,6 +118,70 @@ def parse_markers(log):
         "new_marker_present": any(marker in log for marker in (
             *TRANSPORT_MARKERS, "[b12x sf6]", "sf6v1")),
     }
+    # Retained legacy receipts compare this object exactly to the original log.
+    # New evidence fields therefore belong only to the explicit new variant.
+    if sf6_unpack:
+        markers.update(
+            mhc_capture_details=[dict(t=int(t), bf16=bf16 == "True", vec4=vec4 == "True")
+                for t, bf16, vec4 in re.findall(
+                    r"\[megakernel\] AR consumer MHC CAPTURED T=(\d+) bf16=(True|False) vec4=(True|False)", log)],
+            mhc_consumer_failures=re.findall(
+                r"\[megakernel\] (?:AR consumer MHC mismatch T=[^\n]+|selftest ar_consumer_mhc raised -> DISARM that segment only)", log),
+            mhc_ordinary_armed=bool(re.search(
+                r"\[megakernel\] selftest mhc sinkhorn=\d+ rel_errs=\[[^\n]*\] -> ARM(?:\s|$)", log)),
+            sf6_unpack_serving=[dict(backend=backend, u8x4=int(mode), artifact=artifact)
+                for backend, mode, artifact in re.findall(
+                    r"\[b12x sf6 unpack\] lane serving: backend=(static|dynamic) u8x4=([01]) artifact=([A-Za-z0-9_.-]+)(?:\s|$)", log)])
+    return markers
+
+
+def mhc_runtime_state(markers):
+    """Explicit current MHC state for the unpack experiment, never inferred absence."""
+    if markers.get("mhc_ordinary_armed") is not True:
+        raise ValueError("missing explicit ordinary MHC ARM")
+    passed = markers.get("common", {}).get(COMMON_MARKERS[1])
+    failures = markers.get("mhc_consumer_failures")
+    captures = markers.get("mhc_capture_details")
+    if (type(passed) is not bool or not isinstance(failures, list)
+            or any(not isinstance(item, str) or not item for item in failures)
+            or not isinstance(captures, list)):
+        raise ValueError("incomplete explicit MHC self-test/capture state")
+    for item in captures:
+        if (not isinstance(item, dict) or type(item.get("t")) is not int or not 1 <= item["t"] <= 8
+                or item.get("bf16") is not True or item.get("vec4") is not True):
+            raise ValueError("invalid MHC consumer capture mode")
+    tokens = sorted({item["t"] for item in captures})
+    if markers.get("mhc_capture_tokens") != [item["t"] for item in captures]:
+        raise ValueError("MHC capture accounting differs")
+    if passed and not failures and 6 in tokens:
+        return dict(status="PASS", consumer_active=True, captured_t=tokens)
+    if not passed and failures and not captures:
+        return dict(status="FAIL", consumer_active=False, captured_t=[])
+    raise ValueError("MHC requires explicit PASS with T6 capture or explicit FAIL without capture")
+
+
+def sf6_unpack_artifacts(markers, mode):
+    rows = markers.get("sf6_unpack_serving")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("missing actual SF6 unpack kernel artifacts")
+    result = {}
+    for row in rows:
+        if (not isinstance(row, dict) or row.get("backend") not in ("static", "dynamic")
+                or type(row.get("u8x4")) is not int or row["u8x4"] != int(mode == "candidate")
+                or not isinstance(row.get("artifact"), str)):
+            raise ValueError("wrong actual SF6 unpack mode")
+        name = row["artifact"]
+        pattern = r"static2_[A-Za-z0-9_]*sf6v1_[0-9a-f]{16}" if row["backend"] == "static" else r"dynamic_[A-Za-z0-9_]*_tiled_[0-9a-f]{16}"
+        if not re.fullmatch(pattern, name):
+            raise ValueError("SF6 unpack artifact lacks its keyed specialization")
+        prefix, _, fingerprint = name.rpartition("_")
+        old = result.setdefault(prefix, fingerprint)
+        if old != fingerprint:
+            raise ValueError("one unpack shape used different artifact keys")
+    if (not any(name.startswith("static2_m6_") for name in result)
+            or not any(name.startswith("dynamic_") for name in result)):
+        raise ValueError("actual M6 static and dynamic SF6 unpack artifacts required")
+    return result
 
 
 def serving_argv(script):
@@ -162,15 +232,17 @@ def covering_mount(path, mounts):
     return max(matches, key=lambda mount: len(mount["destination"]), default=None)
 
 
-def validate_report(report, expected, *, sf6_direct=False):
+def validate_report(report, expected, *, sf6_direct=False, sf6_unpack=False):
     """Return concrete proof failures; no device, filesystem or process access."""
     errors = []
     try:
         expected = validate_manifest(expected)
-        wanted = expected_knobs(report["mode"], sf6_direct=sf6_direct)
+        wanted = expected_knobs(report["mode"], sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)
         # Missing variant is accepted only for historical, non-direct receipts.
         if report.get("sf6_direct", False) is not sf6_direct:
             errors.append("runtime proof variant mismatch")
+        if report.get("sf6_unpack", False) is not sf6_unpack:
+            errors.append("runtime proof unpack variant mismatch")
         if report.get("image") != IMAGE:
             errors.append("immutable image mismatch")
         if report.get("running") is not True or report.get("oom_killed") is not False:
@@ -201,8 +273,11 @@ def validate_report(report, expected, *, sf6_direct=False):
             errors.append("GMU not bound to serving argv")
         if report["kv_blocks"] != cli_option(argv, "--num-gpu-blocks-override"):
             errors.append("KV blocks not bound to serving argv")
-        if sf6_direct and report["kv_blocks"] != SF6_DIRECT_KV_BLOCKS:
+        if (sf6_direct or sf6_unpack) and report["kv_blocks"] != SF6_DIRECT_KV_BLOCKS:
             errors.append("SF6 direct requires actual KV override of 665 blocks")
+        if sf6_unpack and (cli_option(argv, "--host") != "127.0.0.1"
+                           or cli_option(argv, "--port") != "18000"):
+            errors.append("SF6 unpack requires loopback API port 18000")
         if not 0 < float(report["gmu"]) < 1 or int(report["kv_blocks"]) <= 0:
             errors.append("invalid GMU/KV values")
         mounts = report["mounts"]
@@ -215,18 +290,25 @@ def validate_report(report, expected, *, sf6_direct=False):
                 or not 0 <= mem["MemAvailable"] <= mem["MemTotal"] or mem["MemTotal"] <= 0):
             errors.append("invalid host memory evidence")
         markers = report["markers"]
-        if markers.get("common") != dict.fromkeys(COMMON_MARKERS, True):
+        if sf6_unpack:
+            if markers.get("common", {}).get(COMMON_MARKERS[0]) is not True:
+                errors.append("missing AR self-test PASS")
+            mhc_runtime_state(markers)
+            sf6_unpack_artifacts(markers, report["mode"])
+        elif markers.get("common") != dict.fromkeys(COMMON_MARKERS, True):
             errors.append("missing AR/MHC self-test PASS")
         for field, upper in (("ar_capture_numel", 32768), ("mhc_capture_tokens", 8)):
+            if sf6_unpack and field == "mhc_capture_tokens":
+                continue  # Exact explicit MHC state was checked above.
             values = markers.get(field, [])
             if not values or any(type(n) is not int or not 1 <= n <= upper for n in values):
                 errors.append("missing or invalid " + field)
-        if sf6_direct and (markers.get("transport_marker_present") is not False
+        if (sf6_direct or sf6_unpack) and (markers.get("transport_marker_present") is not False
                 or any(markers.get(field) for field in
                        ("compact_capture_numel", "compact_selftests", "inline_posts"))):
             errors.append("SF6-only arm executed compact/inline transport")
-        if report["mode"] == "candidate":
-            if sf6_direct:
+        if report["mode"] == "candidate" or sf6_unpack:
+            if sf6_direct or sf6_unpack:
                 for field, count in SF6_DIRECT_COUNTS.items():
                     if type(markers.get(field)) is not int or markers[field] != count:
                         errors.append("SF6 direct ownership count mismatch: " + field)
@@ -255,29 +337,35 @@ def validate_report(report, expected, *, sf6_direct=False):
     return errors
 
 
-_IMMUTABLE = ("host", "mode", "sf6_direct", "image", "boot_id", "source_sha256", "knobs",
+_IMMUTABLE = ("host", "mode", "sf6_direct", "sf6_unpack", "image", "boot_id", "source_sha256", "knobs",
               "config_cmd", "entrypoint", "serving_argv", "serving_script_sha256",
               "gmu", "kv_blocks", "mounts", "template")
 
 
 def _identity(report, key):
-    return report.get(key, False) if key == "sf6_direct" else report.get(key)
+    return report.get(key, False) if key in ("sf6_direct", "sf6_unpack") else report.get(key)
 
 
-def compare_snapshots(before, after, *, sf6_direct=False):
+def compare_snapshots(before, after, *, sf6_direct=False, sf6_unpack=False):
     """One host/arm must retain its boot, executable and configuration."""
     if not isinstance(before, dict) or not isinstance(after, dict):
         return ["before/after runtime reports must be objects"]
     errors = []
     for side, value in (("before", before), ("after", after)):
         errors.extend(side + ": " + error for error in validate_report(
-            value, before.get("source_sha256"), sf6_direct=sf6_direct))
+            value, before.get("source_sha256"), sf6_direct=sf6_direct, sf6_unpack=sf6_unpack))
     errors.extend("within-arm drift: " + key for key in _IMMUTABLE
                   if _identity(before, key) != _identity(after, key))
+    if sf6_unpack:
+        try:
+            if mhc_runtime_state(before["markers"]) != mhc_runtime_state(after["markers"]):
+                errors.append("within-arm drift: actual MHC state")
+        except (KeyError, TypeError, ValueError) as exc:
+            errors.append("invalid actual MHC state: " + str(exc))
     return errors
 
 
-def compare_arms(baseline_by_host, candidate_by_host, *, sf6_direct=False):
+def compare_arms(baseline_by_host, candidate_by_host, *, sf6_direct=False, sf6_unpack=False):
     """Compare four matching hosts; only this variant's target knobs may differ."""
     errors = []
     if (not isinstance(baseline_by_host, dict) or not isinstance(candidate_by_host, dict)
@@ -297,7 +385,7 @@ def compare_arms(baseline_by_host, candidate_by_host, *, sf6_direct=False):
             if report.get("mode") != mode:
                 errors.append(host + ": arm mode mismatch")
             errors.extend(host + " " + mode + ": " + error
-                          for error in validate_report(report, reference_sources, sf6_direct=sf6_direct))
+                          for error in validate_report(report, reference_sources, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack))
         for key in _IMMUTABLE:
             if key in ("mode", "boot_id", "knobs"):
                 continue
@@ -307,19 +395,30 @@ def compare_arms(baseline_by_host, candidate_by_host, *, sf6_direct=False):
             errors.append(host + ": arms reused the same boot")
         baseline_env = baseline.get("knobs") if isinstance(baseline.get("knobs"), dict) else {}
         candidate_env = candidate.get("knobs") if isinstance(candidate.get("knobs"), dict) else {}
-        target_knobs = {"VLLM_GLM53_B12X_STATIC_V2"} if sf6_direct else TARGET_KNOBS
+        target_knobs = ({SF6_UNPACK_KNOB} if sf6_unpack else
+                        {"VLLM_GLM53_B12X_STATIC_V2"} if sf6_direct else TARGET_KNOBS)
         baseline_knobs = {key: value for key, value in baseline_env.items()
                           if key not in target_knobs}
         candidate_knobs = {key: value for key, value in candidate_env.items()
                            if key not in target_knobs}
         if baseline_knobs != candidate_knobs:
             errors.append(host + ": non-target container knobs changed")
+        if sf6_unpack:
+            try:
+                if mhc_runtime_state(baseline["markers"]) != mhc_runtime_state(candidate["markers"]):
+                    errors.append(host + ": across-arm drift: actual MHC state")
+                base_keys = sf6_unpack_artifacts(baseline["markers"], "baseline")
+                candidate_keys = sf6_unpack_artifacts(candidate["markers"], "candidate")
+                if set(base_keys) != set(candidate_keys) or any(base_keys[key] == candidate_keys[key] for key in base_keys):
+                    errors.append(host + ": SF6 unpack artifact shapes differ or keys were reused")
+            except (KeyError, TypeError, ValueError) as exc:
+                errors.append(host + ": invalid unpack runtime: " + str(exc))
     return errors
 
 
-def collect_report(mode, expected, *, sf6_direct=False, run=subprocess.check_output):
+def collect_report(mode, expected, *, sf6_direct=False, sf6_unpack=False, run=subprocess.check_output):
     expected = validate_manifest(expected)
-    expected_knobs(mode, sf6_direct=sf6_direct)
+    expected_knobs(mode, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)
     names = run(["docker", "ps", "--format", "{{.Names}}"], text=True, timeout=20).splitlines()
     selected = [name for name in names if name in ("glm53", "glm53-worker")]
     if len(selected) != 1:
@@ -347,7 +446,7 @@ def collect_report(mode, expected, *, sf6_direct=False, run=subprocess.check_out
     mounts = sorted((dict(type=mount["Type"], source=mount["Source"],
                           destination=mount["Destination"], rw=mount["RW"])
                      for mount in obj["Mounts"]), key=lambda mount: mount["destination"])
-    return dict(schema=1, mode=mode, sf6_direct=sf6_direct, host=socket.gethostname(), container=name,
+    return dict(schema=1, mode=mode, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack, host=socket.gethostname(), container=name,
                 image=obj["Image"], boot_id=obj["Id"] + "|" + state["StartedAt"],
                 running=state["Running"], oom_killed=state["OOMKilled"],
                 config_cmd=config["Cmd"], entrypoint=config["Entrypoint"],
@@ -358,7 +457,8 @@ def collect_report(mode, expected, *, sf6_direct=False, run=subprocess.check_out
                 knobs={key: value for key, value in sorted(env.items()) if key.startswith("VLLM_")},
                 mounts=mounts, template=dict(path=template_path, sha256=hashes[template_path]),
                 host_memory_kib=memory_from_text(Path("/proc/meminfo").read_text()),
-                log_sha256=hashlib.sha256(log.encode()).hexdigest(), markers=parse_markers(log))
+                log_sha256=hashlib.sha256(log.encode()).hexdigest(),
+                markers=parse_markers(log, sf6_unpack=sf6_unpack))
 
 
 def main(argv=None):
@@ -367,15 +467,17 @@ def main(argv=None):
     parser.add_argument("expected", help="JSON manifest mapping mounted target to SHA256")
     parser.add_argument("--sf6-direct", action="store_true",
                         help="SF6-only candidate with exact packed-owner release; transport stays off in both arms")
+    parser.add_argument("--sf6-unpack", action="store_true",
+                        help="both arms use packed scales; compare u8x4=1 versus scalar=0")
     args = parser.parse_args(argv)
     try:
         expected = validate_manifest(json.loads(args.expected))
-        report = collect_report(args.mode, expected, sf6_direct=args.sf6_direct)
-        errors = validate_report(report, expected, sf6_direct=args.sf6_direct)
+        report = collect_report(args.mode, expected, sf6_direct=args.sf6_direct, sf6_unpack=args.sf6_unpack)
+        errors = validate_report(report, expected, sf6_direct=args.sf6_direct, sf6_unpack=args.sf6_unpack)
         report["errors"] = errors
         report["valid"] = not errors
     except (OSError, KeyError, TypeError, ValueError, subprocess.SubprocessError) as exc:
-        report, errors = dict(mode=args.mode, sf6_direct=args.sf6_direct, host=socket.gethostname(), valid=False,
+        report, errors = dict(mode=args.mode, sf6_direct=args.sf6_direct, sf6_unpack=args.sf6_unpack, host=socket.gethostname(), valid=False,
                               collection_error=str(exc)), [str(exc)]
     print(json.dumps(report, indent=2, sort_keys=True), flush=True)
     return int(bool(errors))

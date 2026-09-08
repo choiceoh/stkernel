@@ -6,6 +6,7 @@ official onepass-only path, which has neither. Both modes retain complete
 workload, runtime identity and memory checks without consulting git, Docker,
 CUDA, a remote machine or the current source checkout.
 --sf6-direct selects the packed-only SF6 variant of the canonical campaign.
+--sf6-unpack compares scalar/u8x4 expansion with packed-only SF6 in both arms.
 """
 from __future__ import annotations
 
@@ -284,14 +285,17 @@ def comparison(candidate, baseline):
                 prefill=prefill)
 
 
-def validate_observer(root, candidate, baseline, revision, records, *, sf6_direct=False):
+def validate_observer(root, candidate, baseline, revision, records, *, sf6_direct=False, sf6_unpack=False):
     """A passive observer's completion is separate from supervisor completion."""
+    require(type(sf6_direct) is bool and type(sf6_unpack) is bool and not (sf6_direct and sf6_unpack),
+            "SF6 observer variants must be mutually exclusive booleans")
     report = read_json(root / "observer.json")
     require(report.get("schema") == 1 and report.get("status") == "PASS" and not report.get("errors"),
             "passive observer is not complete: " + str(report.get("status")) + " " + str(report.get("errors", [])))
     require(report.get("source_commit") == revision and report.get("candidate") == candidate
             and report.get("baseline") == baseline, "observer source/arm identity differs")
     require(report.get("sf6_direct", False) is sf6_direct, "observer SF6 direct variant differs")
+    require(report.get("sf6_unpack", False) is sf6_unpack, "observer SF6 unpack variant differs")
     arms = report.get("arms", {})
     require(set(arms) == {candidate, baseline}, "both observed arms required")
     record_hashes = {transport_evidence._record(line)["name"]: hashlib.sha256(line).hexdigest()
@@ -308,7 +312,9 @@ def validate_observer(root, candidate, baseline, revision, records, *, sf6_direc
             require(receipt.get("status") == "PASS" and not receipt.get("errors"), "observer phase did not pass: " + filename)
             require(receipt.get("sf6_direct", False) is sf6_direct,
                     "observer phase SF6 direct variant differs: " + filename)
-            if sf6_direct:
+            require(receipt.get("sf6_unpack", False) is sf6_unpack,
+                    "observer phase SF6 unpack variant differs: " + filename)
+            if sf6_direct or sf6_unpack:
                 require(receipt.get("schema") == 1 and receipt.get("phase") == prefix
                         and receipt.get("arm") == name and receipt.get("mode") == mode
                         and receipt.get("source_commit") == revision,
@@ -317,15 +323,17 @@ def validate_observer(root, candidate, baseline, revision, records, *, sf6_direc
             hashes = receipt.get("artifacts_sha256", {})
             require(isinstance(hashes, dict) and required <= set(hashes), "observer phase artifacts incomplete")
             sealed(root, receipt, hashes)
-    return dict(status="PASS", source_commit=revision, arms=[candidate, baseline], sf6_direct=sf6_direct,
+    return dict(status="PASS", source_commit=revision, arms=[candidate, baseline],
+                sf6_direct=sf6_direct, sf6_unpack=sf6_unpack,
                 record_and_snapshot_artifacts_verified=True,
                 first_snapshot="before completed record; not necessarily before traffic")
 
 
-def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False):
+def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False, sf6_unpack=False):
     root = Path(root)
     result = dict(schema="decode-next-onepass-v1", status="INVALID", valid=False, errors=[], per_boot=[],
-                  candidate=candidate, baseline=baseline, comparison=None, gpu={}, sf6_direct=sf6_direct,
+                  candidate=candidate, baseline=baseline, comparison=None, gpu={},
+                  sf6_direct=sf6_direct, sf6_unpack=sf6_unpack,
                   mode="canonical" if canonical else "independent-gates", pending=[],
                   note="One boot per arm. Observed differences only; no statistical significance claim. "
                        "Within-boot windows are correlated and do not estimate boot drift. "
@@ -350,6 +358,9 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False):
     def load_campaign():
         require(type(sf6_direct) is bool and (not sf6_direct or canonical),
                 "SF6 direct evidence requires canonical mode")
+        require(type(sf6_unpack) is bool and (not sf6_unpack or canonical),
+                "SF6 unpack evidence requires canonical mode")
+        require(not (sf6_direct and sf6_unpack), "SF6 direct and unpack variants are mutually exclusive")
         require(candidate != baseline and all(re.fullmatch(r"[A-Za-z0-9_-]+", name) for name in (candidate, baseline)),
                 "distinct safe arm names required")
         revision = (root / "source.commit").read_text().strip()
@@ -376,7 +387,7 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False):
     result["source_commit"] = revision
     if canonical:
         result["observer"] = check("passive observer completion", lambda: validate_observer(
-            root, candidate, baseline, revision, records, sf6_direct=sf6_direct))
+            root, candidate, baseline, revision, records, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack))
     snapshots, manifests, rows = {}, {}, {}
     for mode, name in (("candidate", candidate), ("baseline", baseline)):
         if not canonical:
@@ -388,7 +399,9 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False):
             rows[name] = row
             result["per_boot"].append(row)
         else:
-            result["per_boot"].append(dict(name=name, valid=False, unvalidated_decode=record.get("decode", {})))
+            result["per_boot"].append(dict(name=name, valid=False, unvalidated_decode=record.get("decode", {}),
+                unvalidated_prefill=record.get("prefill", []), unvalidated_quality=record.get("quality", {}),
+                unvalidated_korean=record.get("korean", {})))
         memory_path = name + ".memory.jsonl" if canonical else "memory-" + name + ".jsonl"
         memory = check(name + " memory", lambda: validate_memory(read_jsonl(root / memory_path)))
         if row is not None:
@@ -402,17 +415,18 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False):
             def verify_host():
                 before = read_json(root / ("prepared-" + name + "-" + host + ".json"))
                 after = read_json(root / ("runtime-" + name + "-" + host + ".json"))
-                issues = runtime_proof.validate_report(before, expected, sf6_direct=sf6_direct)
-                issues += runtime_proof.validate_report(after, expected, sf6_direct=sf6_direct)
-                issues += runtime_proof.compare_snapshots(before, after, sf6_direct=sf6_direct)
+                issues = runtime_proof.validate_report(before, expected, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)
+                issues += runtime_proof.validate_report(after, expected, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)
+                issues += runtime_proof.compare_snapshots(before, after, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)
                 require(not issues, "; ".join(issues))
-                if sf6_direct:
+                if sf6_direct or sf6_unpack:
                     for prefix, proof in (("prepared", before), ("runtime", after)):
                         filename = prefix + "-" + name + "-" + host + ".log"
                         raw = (root / filename).read_bytes()
                         require(proof.get("log_sha256") == hashlib.sha256(raw).hexdigest(),
                                 "runtime log SHA differs: " + filename)
-                        require(proof.get("markers") == runtime_proof.parse_markers(raw.decode(errors="replace")),
+                        require(proof.get("markers") == runtime_proof.parse_markers(
+                            raw.decode(errors="replace"), sf6_unpack=sf6_unpack),
                                 "runtime markers differ from retained log: " + filename)
                 require(before["mode"] == after["mode"] == mode and after["host"] == host, "rank host/arm identity mismatch")
                 require(after["knobs"].get("VLLM_GLM53_SPEC_K") == "5", "actual SPEC_K differs")
@@ -422,8 +436,11 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False):
             after = check(name + " " + host + " runtime", verify_host)
             if after is not None:
                 snapshots[mode][host] = after
+        if sf6_unpack and row is not None:
+            row["mhc_runtime"] = {host: runtime_proof.mhc_runtime_state(proof["markers"])
+                                  for host, proof in snapshots[mode].items()}
     check("matched runtime arms", lambda: require(not (issues := runtime_proof.compare_arms(
-        snapshots.get("baseline"), snapshots.get("candidate"), sf6_direct=sf6_direct)), "; ".join(issues)))
+        snapshots.get("baseline"), snapshots.get("candidate"), sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)), "; ".join(issues)))
     identity_keys = ("request_sha256", "prompt_tokens", "seed", "min_tokens", "max_tokens")
     check("matched ordered requests", lambda: require(
         [[q[key] for key in identity_keys] for q in records[candidate]["requests"]]
@@ -438,6 +455,21 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False):
             error["stage"].endswith(("onepass", "memory")) or error["stage"] == "matched ordered requests"
             for error in result["errors"])
         result["coverage"]["startup_selftests_verified"] = all(len(snapshots.get(mode, {})) == 4 for mode in ("baseline", "candidate"))
+    if sf6_unpack:
+        mhc = {mode: {host: runtime_proof.mhc_runtime_state(proof["markers"])
+                      for host, proof in snapshots.get(mode, {}).items()}
+               for mode in ("baseline", "candidate")}
+        complete = all(set(states) == set(HOSTS) for states in mhc.values())
+        matched = complete and mhc["baseline"] == mhc["candidate"]
+        fallback = any(state["status"] == "FAIL" for states in mhc.values() for state in states.values())
+        result["runtime_conditions"] = dict(mhc_by_arm=mhc, mhc_matched_across_arms=matched,
+            conditional_on_matched_mhc_fallback=matched and fallback,
+            expected_sf6_enabled_both_arms=True, target_knob="VLLM_GLM53_SF6_UNPACK_U8X4")
+        result["coverage"]["mhc_consumer_selftests_passed"] = complete and not fallback
+        if matched and fallback:
+            result["note"] += (" Comparison is conditional on the same explicit MHC consumer fallback in both arms; "
+                               "the affected ranks failed that consumer's startup self-test and did not capture it. "
+                               "These results do not establish performance with that consumer enabled.")
     result["valid"] = not result["errors"] and not result["pending"]
     result["status"] = "INVALID" if result["errors"] else "PENDING" if result["pending"] else "PASS"
     if result["valid"]:
@@ -451,11 +483,16 @@ def main(argv=None):
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--baseline", required=True)
     parser.add_argument("--canonical", action="store_true", help="official onepass-only evidence; no independent SSE or GPU gates")
-    parser.add_argument("--sf6-direct", action="store_true", help="packed-only SF6 variant; requires --canonical")
+    variant = parser.add_mutually_exclusive_group()
+    variant.add_argument("--sf6-direct", action="store_true", help="packed-only SF6 variant; requires --canonical")
+    variant.add_argument("--sf6-unpack", action="store_true", help="scalar/u8x4 SF6 variant; requires --canonical")
     args = parser.parse_args(argv)
     if args.sf6_direct and not args.canonical:
         parser.error("--sf6-direct requires --canonical")
-    result = summarize(args.root, args.candidate, args.baseline, canonical=args.canonical, sf6_direct=args.sf6_direct)
+    if args.sf6_unpack and not args.canonical:
+        parser.error("--sf6-unpack requires --canonical")
+    result = summarize(args.root, args.candidate, args.baseline, canonical=args.canonical,
+                       sf6_direct=args.sf6_direct, sf6_unpack=args.sf6_unpack)
     print(json.dumps(result, indent=2, allow_nan=False))
     return 0 if result["valid"] else 1
 

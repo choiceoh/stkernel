@@ -30,6 +30,21 @@ SF6_DIRECT_LOG = (
     + "[b12x sf6] packed-only owners finalised: layers=42 raw_bytes_released=4756340736; decode and prefill read immutable packed scales\n"
     + CANDIDATE_LOG.splitlines()[-1] + "\n"
 )
+MHC_ARM_LOG = "[megakernel] selftest mhc sinkhorn=20 rel_errs=[0.0, 0.0, 0.0, 0.0] -> ARM\n"
+MHC_FALLBACK_LOG = ("[osar] consumer PDL self-test PASS\n"
+                    "[osar] consumer PDL CAPTURED numel=4096\n" + MHC_ARM_LOG
+                    + "[megakernel] AR consumer MHC mismatch T=16 fp32=False scale=1 early=False\n")
+MHC_ACTIVE_LOG = MHC_ARM_LOG + COMMON_LOG + "[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True\n"
+SF6_UNPACK_LOG = (SF6_DIRECT_LOG
+    + "[b12x sf6 unpack] lane serving: backend=static u8x4=1 artifact=static2_m6_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_f0c54eb04301a8a6\n"
+    + "[b12x sf6 unpack] lane serving: backend=dynamic u8x4=1 artifact=dynamic_e288_k4096_n512_t8_tiled_e0c4370075719b32\n")
+
+
+def unpack_log(mode="candidate", *, mhc_active=False):
+    log = SF6_UNPACK_LOG
+    if mode == "baseline":
+        log = log.replace("u8x4=1", "u8x4=0").replace("f0c54eb04301a8a6", "8b9695796f84cd45").replace("e0c4370075719b32", "02112345f14079ae")
+    return (MHC_ACTIVE_LOG if mhc_active else MHC_FALLBACK_LOG) + log
 
 
 def report(mode="baseline", host="srv1"):
@@ -58,7 +73,106 @@ def direct_report(mode="candidate", host="srv1"):
     return value
 
 
+def unpack_report(mode="candidate", host="srv1", *, mhc_active=False):
+    value = direct_report(mode, host)
+    value.update(sf6_direct=False, sf6_unpack=True)
+    value["serving_argv"].extend(["--host", "127.0.0.1", "--port", "18000"])
+    value["knobs"].update(proof.expected_knobs(mode, sf6_unpack=True))
+    value["markers"] = proof.parse_markers(unpack_log(mode, mhc_active=mhc_active), sf6_unpack=True)
+    return value
+
+
 class RuntimeProofTests(unittest.TestCase):
+    def test_unpack_pair_proves_same_explicit_active_or_fallback_state(self):
+        for active in (False, True):
+            arms = {mode: {host: unpack_report(mode, host, mhc_active=active)
+                           for host in ("srv1", "srv2", "srv3", "srv4")}
+                    for mode in ("baseline", "candidate")}
+            for reports in arms.values():
+                for value in reports.values():
+                    self.assertEqual(proof.validate_report(value, MANIFEST, sf6_unpack=True), [])
+                    self.assertEqual(proof.compare_snapshots(value, copy.deepcopy(value), sf6_unpack=True), [])
+                    self.assertEqual(proof.mhc_runtime_state(value["markers"]),
+                        dict(status="PASS" if active else "FAIL", consumer_active=active,
+                             captured_t=[1, 6] if active else []))
+            self.assertEqual(proof.compare_arms(arms["baseline"], arms["candidate"], sf6_unpack=True), [])
+            arms["candidate"]["srv3"] = unpack_report("candidate", "srv3", mhc_active=not active)
+            self.assertIn("srv3: across-arm drift: actual MHC state",
+                          proof.compare_arms(arms["baseline"], arms["candidate"], sf6_unpack=True))
+
+    def test_unpack_rejects_missing_or_contradictory_mhc_evidence(self):
+        for log in (
+                unpack_log().replace("[megakernel] AR consumer MHC mismatch T=16 fp32=False scale=1 early=False\n", ""),
+                unpack_log() + "[megakernel] AR consumer MHC self-test PASS\n",
+                unpack_log() + "[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True\n",
+                unpack_log(mhc_active=True).replace("T=6", "T=2"),
+                unpack_log(mhc_active=True).replace("bf16=True", "bf16=False"),
+                unpack_log().replace(MHC_ARM_LOG, "")):
+            value = unpack_report()
+            value["markers"] = proof.parse_markers(log, sf6_unpack=True)
+            self.assertTrue(proof.validate_report(value, MANIFEST, sf6_unpack=True), log)
+        active = unpack_report(mhc_active=True)
+        after = copy.deepcopy(active)
+        after["markers"] = proof.parse_markers(unpack_log(mhc_active=True)
+            + "[megakernel] AR consumer MHC CAPTURED T=2 bf16=True vec4=True\n", sf6_unpack=True)
+        self.assertIn("within-arm drift: actual MHC state",
+                      proof.compare_snapshots(active, after, sf6_unpack=True))
+
+    def test_unpack_requires_owned_packed_scales_and_real_keyed_lanes_in_both_arms(self):
+        for mode in ("candidate", "baseline"):
+            for field in proof.SF6_DIRECT_COUNTS:
+                value = unpack_report(mode)
+                value["markers"][field] -= 1
+                self.assertTrue(proof.validate_report(value, MANIFEST, sf6_unpack=True), (mode, field))
+            for field, changed in (("sf6_unpack_serving", []), ("sf6_m6_serving", 0),
+                                   ("ar_capture_numel", []), ("transport_marker_present", True)):
+                value = unpack_report(mode)
+                value["markers"][field] = changed
+                self.assertTrue(proof.validate_report(value, MANIFEST, sf6_unpack=True), (mode, field))
+            for changed in ("u8x4=2", "u8x4=" + str(int(mode == "baseline"))):
+                value = unpack_report(mode)
+                value["markers"] = proof.parse_markers(unpack_log(mode).replace(
+                    "u8x4=" + str(int(mode == "candidate")), changed), sf6_unpack=True)
+                self.assertTrue(proof.validate_report(value, MANIFEST, sf6_unpack=True))
+        base = {host: unpack_report("baseline", host) for host in ("srv1", "srv2", "srv3", "srv4")}
+        candidate = {host: unpack_report("candidate", host) for host in base}
+        candidate["srv2"]["markers"]["sf6_unpack_serving"][0]["artifact"] = base["srv2"]["markers"]["sf6_unpack_serving"][0]["artifact"]
+        self.assertIn("srv2: SF6 unpack artifact shapes differ or keys were reused",
+                      proof.compare_arms(base, candidate, sf6_unpack=True))
+
+    def test_unpack_identity_knob_api_bind_and_capacity_are_explicit(self):
+        for mode in ("candidate", "baseline"):
+            for field, change in (("sf6_unpack", None), ("sf6_unpack", 1), ("sf6_direct", True)):
+                value = unpack_report(mode)
+                value[field] = change
+                self.assertTrue(proof.validate_report(value, MANIFEST, sf6_unpack=True))
+            for key in proof.expected_knobs(mode, sf6_unpack=True):
+                value = unpack_report(mode)
+                value["knobs"].pop(key)
+                self.assertTrue(proof.validate_report(value, MANIFEST, sf6_unpack=True), key)
+            for option, changed in (("--host", "0.0.0.0"), ("--port", "8000"),
+                                    ("--num-gpu-blocks-override", "1056")):
+                value = unpack_report(mode)
+                value["serving_argv"][value["serving_argv"].index(option) + 1] = changed
+                self.assertTrue(proof.validate_report(value, MANIFEST, sf6_unpack=True), option)
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            proof.expected_knobs("candidate", sf6_direct=True, sf6_unpack=True)
+        self.assertTrue(proof.validate_report(unpack_report(), MANIFEST, sf6_direct=True))
+
+    def test_unpack_fields_do_not_reinterpret_retained_legacy_markers(self):
+        extra = {"mhc_capture_details", "mhc_consumer_failures", "mhc_ordinary_armed", "sf6_unpack_serving"}
+        for log in (COMMON_LOG, COMMON_LOG + CANDIDATE_LOG, COMMON_LOG + SF6_DIRECT_LOG):
+            old = proof.parse_markers(log)
+            new = proof.parse_markers(log, sf6_unpack=True)
+            self.assertFalse(extra & old.keys())
+            self.assertEqual({key: value for key, value in new.items() if key not in extra}, old)
+        self.assertEqual(proof.compare_snapshots(report(), dict(report(), sf6_unpack=False)), [])
+
+    def test_unpack_cli_passes_variant(self):
+        with patch.object(proof, "collect_report", return_value=unpack_report()) as collect, patch("builtins.print"):
+            self.assertEqual(proof.main(["candidate", json.dumps(MANIFEST), "--sf6-unpack"]), 0)
+        collect.assert_called_once_with("candidate", MANIFEST, sf6_direct=False, sf6_unpack=True)
+
     def test_direct_only_has_exact_storage_and_four_rank_pair(self):
         arms = {mode: {host: direct_report(mode, host) for host in ("srv1", "srv2", "srv3", "srv4")}
                 for mode in ("baseline", "candidate")}
@@ -136,7 +250,7 @@ class RuntimeProofTests(unittest.TestCase):
     def test_direct_cli_passes_variant_to_collection_and_validation(self):
         with patch.object(proof, "collect_report", return_value=direct_report()) as collect, patch("builtins.print"):
             self.assertEqual(proof.main(["candidate", json.dumps(MANIFEST), "--sf6-direct"]), 0)
-        collect.assert_called_once_with("candidate", MANIFEST, sf6_direct=True)
+        collect.assert_called_once_with("candidate", MANIFEST, sf6_direct=True, sf6_unpack=False)
 
     def test_actual_small_capture_and_partial_sf6_are_recorded(self):
         candidate = report("candidate")
@@ -320,6 +434,20 @@ class RuntimeProofTests(unittest.TestCase):
         self.assertEqual(proof.validate_report(collected, MANIFEST, sf6_direct=True), [])
         self.assertEqual(collected["kv_blocks"], "665")
         self.assertEqual(len(calls), 4)
+
+        for mode in ("baseline", "candidate"):
+            fixture = unpack_report(mode, "test-host")
+            script = " ".join(fixture["serving_argv"]) + " > /glmlogs/glm53.log 2>&1\n"
+            serving_log = unpack_log(mode)
+            inspect["Config"]["Env"] = [key + "=" + value for key, value in fixture["knobs"].items()]
+            calls.clear()
+            with patch.object(Path, "read_text", read), patch.object(proof.socket, "gethostname", return_value="test-host"):
+                collected = proof.collect_report(mode, MANIFEST, sf6_unpack=True, run=run)
+            self.assertIs(collected["sf6_unpack"], True)
+            self.assertIs(collected["sf6_direct"], False)
+            self.assertEqual(collected["knobs"][proof.SF6_UNPACK_KNOB], str(int(mode == "candidate")))
+            self.assertEqual(proof.validate_report(collected, MANIFEST, sf6_unpack=True), [])
+            self.assertEqual(len(calls), 4)
 
 
 if __name__ == "__main__":

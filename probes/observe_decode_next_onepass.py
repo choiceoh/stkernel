@@ -86,12 +86,13 @@ def frozen_manifest(repo):
     return revision, proof.validate_manifest(expected)
 
 
-def mode_from_metadata(value, *, sf6_direct=False):
+def mode_from_metadata(value, *, sf6_direct=False, sf6_unpack=False):
     if not value or value.get("running") is not True:
         return None
     for mode in ("candidate", "baseline"):
-        wanted = proof.expected_knobs(mode, sf6_direct=sf6_direct)
-        if all(value.get("knobs", {}).get(key) == wanted[key] for key in proof.TARGET_KNOBS):
+        wanted = proof.expected_knobs(mode, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)
+        keys = proof.TARGET_KNOBS | {proof.SF6_UNPACK_KNOB} if sf6_unpack else proof.TARGET_KNOBS
+        if all(value.get("knobs", {}).get(key) == wanted[key] for key in keys):
             return mode
     return None
 
@@ -122,12 +123,12 @@ def read_records(path, names):
 
 
 def snapshot_errors(mode, expected, head_before, head_after, ranks, phase,
-                    record_before=None, record_after=None, prepared=None, *, sf6_direct=False):
+                    record_before=None, record_after=None, prepared=None, *, sf6_direct=False, sf6_unpack=False):
     """Pure validation; transition races are errors, never relabeled evidence."""
     errors = []
     if (not head_before or not head_after or not head_before.get("boot_id")
             or head_before != head_after
-            or mode_from_metadata(head_before, sf6_direct=sf6_direct) != mode):
+            or mode_from_metadata(head_before, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack) != mode):
         errors.append("head identity/mode changed or unavailable during snapshot")
     if set(ranks) != set(HOSTS):
         errors.append("exactly four rank snapshots required")
@@ -136,7 +137,7 @@ def snapshot_errors(mode, expected, head_before, head_after, ranks, phase,
         rank = ranks.get(host, {})
         report = rank.get("report", {})
         errors.extend(host + ": " + error for error in
-                      proof.validate_report(report, expected, sf6_direct=sf6_direct))
+                      proof.validate_report(report, expected, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack))
         if report.get("mode") != mode:
             errors.append(host + ": wrong mode")
         if rank.get("error"):
@@ -148,7 +149,7 @@ def snapshot_errors(mode, expected, head_before, head_after, ranks, phase,
             errors.append("head proof does not match observed head boot")
         if prepared:
             errors.extend(host + ": " + error for error in
-                          proof.compare_snapshots(prepared.get(host), report, sf6_direct=sf6_direct))
+                          proof.compare_snapshots(prepared.get(host), report, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack))
     if phase == "prepared":
         if record_before is not None or record_after is not None:
             errors.append("onepass record appeared before prepared snapshot completed")
@@ -162,7 +163,7 @@ def snapshot_errors(mode, expected, head_before, head_after, ranks, phase,
     return errors
 
 
-def runtime_binding_errors(mode, expected, head, record, prepared, *, sf6_direct=False):
+def runtime_binding_errors(mode, expected, head, record, prepared, *, sf6_direct=False, sf6_unpack=False):
     """A completed record and valid preparation latch one existing boot.
 
     This permits passive reads after the hold is released. Current mounted
@@ -173,9 +174,9 @@ def runtime_binding_errors(mode, expected, head, record, prepared, *, sf6_direct
         return ["runtime read requires four valid prepared rank reports"]
     for host, report in prepared.items():
         errors.extend(host + " prepared: " + error for error in
-                      proof.validate_report(report, expected, sf6_direct=sf6_direct))
+                      proof.validate_report(report, expected, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack))
     reference = prepared.get("srv2", {})
-    if (not isinstance(head, dict) or mode_from_metadata(head, sf6_direct=sf6_direct) != mode
+    if (not isinstance(head, dict) or mode_from_metadata(head, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack) != mode
             or head.get("image") != proof.IMAGE
             or any(head.get(key) != reference.get(key) for key in ("boot_id", "image", "knobs"))):
         errors.append("runtime head does not match the prepared boot/image/configuration")
@@ -188,12 +189,14 @@ def runtime_binding_errors(mode, expected, head, record, prepared, *, sf6_direct
 class Reader:
     """The only system interactions; all commands are reads of existing state."""
 
-    def __init__(self, repo, port, session, fleet_dir, *, sf6_direct=False):
-        if type(sf6_direct) is not bool:
-            raise ValueError("sf6_direct must be a boolean")
+    def __init__(self, repo, port, session, fleet_dir, *, sf6_direct=False, sf6_unpack=False):
+        proof.expected_knobs("candidate", sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)
+        if sf6_unpack and port != 18000:
+            raise ValueError("SF6 unpack requires observer port 18000")
         self.repo, self.port = repo, port
         self.session, self.fleet_dir = session, Path(fleet_dir)
         self.sf6_direct = sf6_direct
+        self.sf6_unpack = sf6_unpack
 
     def owned(self):
         try:
@@ -229,11 +232,11 @@ class Reader:
 import base64, hashlib, json, subprocess
 ns = {"__name__": "passive_runtime_proof"}
 exec(compile(SOURCE, "decode_next_runtime_proof.py", "exec"), ns)
-report = ns["collect_report"](MODE, EXPECTED, sf6_direct=SF6_DIRECT)
+report = ns["collect_report"](MODE, EXPECTED, sf6_direct=SF6_DIRECT, sf6_unpack=SF6_UNPACK)
 raw = ns["Path"](LOG).read_bytes()
 report["log_sha256"] = hashlib.sha256(raw).hexdigest()
-report["markers"] = ns["parse_markers"](raw.decode(errors="replace"))
-errors = ns["validate_report"](report, EXPECTED, sf6_direct=SF6_DIRECT)
+report["markers"] = ns["parse_markers"](raw.decode(errors="replace"), sf6_unpack=SF6_UNPACK)
+errors = ns["validate_report"](report, EXPECTED, sf6_direct=SF6_DIRECT, sf6_unpack=SF6_UNPACK)
 again = json.loads(subprocess.check_output(["docker", "inspect", report["container"]], text=True, timeout=10))[0]
 if again["Id"] + "|" + again["State"]["StartedAt"] != report["boot_id"] or not again["State"]["Running"]:
     errors.append("rank changed during snapshot")
@@ -242,7 +245,8 @@ print(json.dumps(dict(report=report, log_b64=base64.b64encode(raw).decode(), err
 '''
         script = ("SOURCE=" + repr(source) + "\nMODE=" + repr(mode) + "\nEXPECTED="
                   + repr(expected) + "\nLOG=" + repr(LOG)
-                  + "\nSF6_DIRECT=" + repr(self.sf6_direct) + "\n" + wrapper)
+                  + "\nSF6_DIRECT=" + repr(self.sf6_direct)
+                  + "\nSF6_UNPACK=" + repr(self.sf6_unpack) + "\n" + wrapper)
         command = ["python3", "-"]
         if host != "srv2":
             command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
@@ -264,12 +268,13 @@ print(json.dumps(dict(report=report, log_b64=base64.b64encode(raw).decode(), err
 
 class Observer:
     def __init__(self, out, candidate, baseline, revision, expected, reader,
-                 *, clock=time.time, sf6_direct=False):
-        if type(sf6_direct) is not bool:
-            raise ValueError("sf6_direct must be a boolean")
+                 *, clock=time.time, sf6_direct=False, sf6_unpack=False):
+        proof.expected_knobs("candidate", sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)
         self.out, self.reader, self.clock = Path(out), reader, clock
         self.sf6_direct = sf6_direct
-        if getattr(reader, "sf6_direct", sf6_direct) is not sf6_direct:
+        self.sf6_unpack = sf6_unpack
+        if (getattr(reader, "sf6_direct", sf6_direct) is not sf6_direct
+                or getattr(reader, "sf6_unpack", False) is not sf6_unpack):
             raise ValueError("reader and observer SF6 variant differ")
         self.expected = expected
         self.names = {candidate: "candidate", baseline: "baseline"}
@@ -279,7 +284,7 @@ class Observer:
         for name in self.names:
             retain(self.out / f"expected-{name}.json", json_bytes(expected))
         self.state = dict(schema=1, status="RUNNING", source_commit=revision,
-                          candidate=candidate, baseline=baseline, sf6_direct=sf6_direct,
+                          candidate=candidate, baseline=baseline, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack,
                           errors=[], arms={})
         old = self.out / "observer.json"
         if old.exists():
@@ -287,9 +292,11 @@ class Observer:
             if any(value.get(key) != self.state[key] for key in
                    ("schema", "source_commit", "candidate", "baseline")):
                 raise ValueError("existing observer belongs to a different source/campaign")
-            if value.get("sf6_direct", False) is not sf6_direct:
+            if (value.get("sf6_direct", False) is not sf6_direct
+                    or value.get("sf6_unpack", False) is not sf6_unpack):
                 raise ValueError("existing observer belongs to a different SF6 variant")
             value["sf6_direct"] = sf6_direct
+            value["sf6_unpack"] = sf6_unpack
             self.state = value
         for name, mode in self.names.items():
             arm = self.state["arms"].setdefault(name, dict(mode=mode, status="WAITING", errors=[]))
@@ -299,7 +306,8 @@ class Observer:
                     receipt = json.loads(path.read_text())
                     if receipt.get("status") != "PASS":
                         raise ValueError("non-PASS published snapshot")
-                    if receipt.get("sf6_direct", False) is not sf6_direct:
+                    if (receipt.get("sf6_direct", False) is not sf6_direct
+                            or receipt.get("sf6_unpack", False) is not sf6_unpack):
                         raise ValueError("retained snapshot belongs to a different SF6 variant")
                     for filename, sha in receipt["artifacts_sha256"].items():
                         if Path(filename).name != filename or digest((self.out / filename).read_bytes()) != sha:
@@ -334,7 +342,7 @@ class Observer:
         owned_before = self.reader.owned()
         prepared = self.prepared(name) if phase == "runtime" else None
         binding_errors = (runtime_binding_errors(mode, self.expected, head_before, before_record, prepared,
-                                                sf6_direct=self.sf6_direct)
+                                                sf6_direct=self.sf6_direct, sf6_unpack=self.sf6_unpack)
                           if phase == "runtime" else [])
         may_collect = not binding_errors if phase == "runtime" else owned_before
         ranks = self.reader.ranks(mode, self.expected) if may_collect else {}
@@ -342,13 +350,14 @@ class Observer:
         owned_after = self.reader.owned()
         after_record = self.records().get(name)
         errors = snapshot_errors(mode, self.expected, head_before, head_after, ranks, phase,
-                                 before_record, after_record, prepared, sf6_direct=self.sf6_direct)
+                                 before_record, after_record, prepared,
+                                 sf6_direct=self.sf6_direct, sf6_unpack=self.sf6_unpack)
         if phase == "prepared" and (not owned_before or not owned_after):
             errors.append("requested session did not own the boot hold throughout snapshot")
         if phase == "runtime":
             errors.extend(binding_errors)
             errors.extend(runtime_binding_errors(mode, self.expected, head_after, after_record, prepared,
-                                                 sf6_direct=self.sf6_direct))
+                                                 sf6_direct=self.sf6_direct, sf6_unpack=self.sf6_unpack))
         arm = self.state["arms"][name]
         if arm.get("head_boot_id") and arm["head_boot_id"] != (head_before or {}).get("boot_id"):
             errors.append("a different boot already owns this arm's prepared proof")
@@ -373,7 +382,7 @@ class Observer:
         receipt = dict(schema=1, status="FAIL" if errors else "PASS", phase=phase,
                        timing="before_record" if phase == "prepared" else "after_record",
                        arm=name, mode=mode, source_commit=self.state["source_commit"],
-                       sf6_direct=self.sf6_direct,
+                       sf6_direct=self.sf6_direct, sf6_unpack=self.sf6_unpack,
                        started_at=started, completed_at=self.clock(), head_before=head_before,
                        head_after=head_after, record_sha256=(before_record or {}).get("sha256"),
                        owned_before=owned_before, owned_after=owned_after,
@@ -437,13 +446,13 @@ class Observer:
             if all(arm["status"] == "PASS" for arm in self.state["arms"].values()):
                 errors = proof.compare_arms(self.prepared(self.state["baseline"]),
                                             self.prepared(self.state["candidate"]),
-                                            sf6_direct=self.sf6_direct)
+                                            sf6_direct=self.sf6_direct, sf6_unpack=self.sf6_unpack)
             self.state["errors"].extend(errors)
             self.state["status"] = "PASS" if not errors and all(
                 arm["status"] == "PASS" for arm in self.state["arms"].values()) else "FAIL"
             self.save()
             return True
-        mode = mode_from_metadata(head, sf6_direct=self.sf6_direct)
+        mode = mode_from_metadata(head, sf6_direct=self.sf6_direct, sf6_unpack=self.sf6_unpack)
         for name, wanted in self.names.items():
             arm = self.state["arms"][name]
             if (self.reader.owned() and wanted == mode and name not in records and not arm.get("before_receipt")
@@ -485,8 +494,14 @@ def main(argv=None):
     parser.add_argument("--ticket")
     parser.add_argument("--sf6-direct", action="store_true",
                         help="observe only direct SF6 versus raw scales; compact AR and inline RDMA remain off")
+    parser.add_argument("--sf6-unpack", action="store_true",
+                        help="both arms use SF6; compare actual u8x4=1 versus scalar=0 kernels")
     parser.add_argument("--fleet-dir", type=Path, default=Path("/home/choiceoh/glm53-logs/fleet"))
     args = parser.parse_args(argv)
+    if args.sf6_direct and args.sf6_unpack:
+        parser.error("SF6 variants are mutually exclusive")
+    if args.sf6_unpack and args.port != 18000:
+        parser.error("SF6 unpack requires --port 18000")
     if (args.candidate == args.baseline or not all(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name)
             for name in (args.candidate, args.baseline)) or not 0 < args.timeout <= 7200
             or not 1 <= args.port <= 65535):
@@ -496,11 +511,12 @@ def main(argv=None):
     try:
         revision, expected = frozen_manifest(ROOT)
         observer = Observer(args.out, args.candidate, args.baseline, revision, expected,
-                            Reader(ROOT, args.port, session, args.fleet_dir, sf6_direct=args.sf6_direct),
-                            sf6_direct=args.sf6_direct)
+                            Reader(ROOT, args.port, session, args.fleet_dir,
+                                   sf6_direct=args.sf6_direct, sf6_unpack=args.sf6_unpack),
+                            sf6_direct=args.sf6_direct, sf6_unpack=args.sf6_unpack)
         print("READY " + json.dumps(dict(out=str(args.out), source_commit=revision, targets=len(expected), session=session,
                                          candidate=args.candidate, baseline=args.baseline, port=args.port,
-                                         sf6_direct=args.sf6_direct)), flush=True)
+                                         sf6_direct=args.sf6_direct, sf6_unpack=args.sf6_unpack)), flush=True)
         deadline = time.monotonic() + args.timeout
         while time.monotonic() < deadline:
             if observer.step():
