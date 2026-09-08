@@ -1744,7 +1744,9 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
 #pragma unroll
       for (int m = 0; m < NOUT; ++m) {
         union { uint2 words; __nv_bfloat162 pairs[2]; } bits;
-        bits.words = __ldg(&((const uint2*)a.fn)[(size_t)m * HIDDEN + h]);
+        // An ordinary vector load participates in the memory clobber below.
+        // __ldg is a read-only intrinsic that nvcc can sink past that wait.
+        bits.words = ((const uint2*)a.fn)[(size_t)m * HIDDEN + h];
         const float2 lo = __bfloat1622float2(bits.pairs[0]);
         const float2 hi = __bfloat1622float2(bits.pairs[1]);
         fnr[m][0] = lo.x; fnr[m][1] = lo.y;
