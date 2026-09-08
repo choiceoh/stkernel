@@ -113,7 +113,8 @@ class SourceTests(SourceFixture):
     def test_literal_wrapper_guard_runs_before_gpu_work(self):
         wrappers = [p for p in (ROOT / 'probes').glob('run_*.sh')
                     if 'python3 bench/fleet_source.py require-base origin/main' in p.read_text()]
-        self.assertEqual(len(wrappers), 8)
+        self.assertEqual({p.relative_to(ROOT).as_posix() for p in wrappers},
+                         set(source.WRAPPER_AUDIT) | {'probes/run_decode_next_campaign.sh'})
         self.advance_ref('docs/report.md', 'new prose\n')
         # Run the same helper command, without any wrapper service/GPU actions.
         command = [sys.executable, str(ROOT / 'bench/fleet_source.py'), 'require-base', 'origin/main']

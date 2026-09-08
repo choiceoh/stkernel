@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "evidence": "compile-only",
+  "modes": [
+    0,
+    1,
+    0,
+    0,
+    0
+  ],
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "cuda_initialized": false,
+  "maxel": 131072,
+  "source_sha256": {
+    "overlay/modules/tp_oneshot_ar/dsv4_oneshot_shim.py": "ac12107a7aa0b8b10560b04d819525e8fccbb34869c3108eb4c1ab666c7e434a",
+    "overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu": "9f0c0a88dea9fc7f70ba639cdc5f3f19e09e48037a4af4da82941632d0f0d0d3",
+    "overlay/modules/tp_oneshot_ar/dsv4_oneshot_transport.h": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6"
+  },
+  "extension_path": "/evidence/build/b3abab55d40f/dsv4_oneshot_ar.so",
+  "extension_sha256": "58f143f4f88dcc95f5dacc9e66477686e34ef10b810e0dbf5cc1dae049d0518d"
+}

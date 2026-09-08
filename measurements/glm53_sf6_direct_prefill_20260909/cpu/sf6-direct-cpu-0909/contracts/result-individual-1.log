@@ -1,0 +1,29 @@
+[osar] consumer PDL CAPTURED numel=1
+[oneshot] compact AR CAPTURED numel=1 ctas=12 tickets=48
+[osar] source md5=a2d7bc9d kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] source md5=a2d7bc9d kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] source md5=a2d7bc9d kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] source md5=a2d7bc9d kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] source md5=dbaa9e2e kernels=3 maxel=131072 (/repo/overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu)
+[osar] connected rank=0 world=4 shadow=True
+[osar] transport modes differ across ranks -> NCCL
+[osar] local setup failed on rank 0: RuntimeError('transport mode build mismatch: [0, 1, 8, 8, 8]')
+[osar] 3/4 ranks ready -> every rank stays on NCCL
+[osar] local setup failed on rank 0: RuntimeError('transport inline capability missing: [1, 1, 8, 7, 8]')
+[osar] 3/4 ranks ready -> every rank stays on NCCL
+[osar] local setup failed on rank 0: RuntimeError('transport mode build mismatch: [1, 1, 8, 8, 8]')
+[osar] 3/4 ranks ready -> every rank stays on NCCL
+[osar] connected rank=0 world=4 shadow=True
+test_actual_geometry_and_publication_helpers (test_ar_transport_next.TransportTests.test_actual_geometry_and_publication_helpers) ... ok
+test_actual_inline_descriptors_with_mock_verbs_and_ring_reuse (test_ar_transport_next.TransportTests.test_actual_inline_descriptors_with_mock_verbs_and_ring_reuse) ... ok
+test_compact_capture_and_poison_failure_dispatch (test_ar_transport_next.TransportTests.test_compact_capture_and_poison_failure_dispatch) ... ok
+test_header_and_mode_flags_bind_the_actual_build (test_ar_transport_next.TransportTests.test_header_and_mode_flags_bind_the_actual_build) ... ok
+test_modes_are_exact_opt_in (test_ar_transport_next.TransportTests.test_modes_are_exact_opt_in) ... ok
+test_nonfinite_error_cannot_hide_behind_exact_baseline (test_ar_transport_next.TransportTests.test_nonfinite_error_cannot_hide_behind_exact_baseline) ... ok
+test_publication_and_proxy_integration_keep_order (test_ar_transport_next.TransportTests.test_publication_and_proxy_integration_keep_order) ... ok
+test_rank_mode_mismatch_declines_before_connect (test_ar_transport_next.TransportTests.test_rank_mode_mismatch_declines_before_connect) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 1.174s
+
+OK
