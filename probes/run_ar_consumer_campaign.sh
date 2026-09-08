@@ -90,13 +90,15 @@ export GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1
 export PREFILL_WARMUP=0 QUALITY_CTX=2000,32000,128000 MAX_JOBS=2
 export ONEPASS_FIXED_DECODE_TOKENS=2048 ONEPASS_FIXED_DECODE_REPS=3 ONEPASS_REQUIRE_EXCLUSIVE=1
 export ONEPASS_JSONL=$AR_CONSUMER_OUT/records.raw.jsonl ONEPASS_VERDICTS=$AR_CONSUMER_OUT/verdicts.jsonl
-# Publish the requested candidate step first; retain two same-build baseline
-# arms and finish on defaults without adding another baseline boot.
+# Publish the requested candidate step first; explicitly disable the consumer
+# for both baselines, independent of the profile default. The supervisor owns
+# the final defaults restore or handoff after campaign cleanup stops serving.
 if [[ $baseline_only == 1 ]]; then
   # A failed second baseline must not repeat already completed A1/B1 arms.
   # Keep the complete workload, boot proof and correctness/deployment gates.
-  bash bench/chain.sh "${session}B2="
+  bash bench/chain.sh "${session}B2=VLLM_GLM53_AR_CONSUMER_PDL=0"
 else
   bash bench/chain.sh "${session}A1=VLLM_GLM53_AR_CONSUMER_PDL=1" \
-    "${session}B1=" "${session}B2="
+    "${session}B1=VLLM_GLM53_AR_CONSUMER_PDL=0" \
+    "${session}B2=VLLM_GLM53_AR_CONSUMER_PDL=0"
 fi

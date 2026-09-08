@@ -3,10 +3,16 @@
 `VLLM_GLM53_AR_CONSUMER_PDL=1` lets the next MHC load its immutable
 projection weights while the current one-shot AllReduce waits for peers.
 The existing GEMM PDL prologue can then prepare its weights along the same
-stream. The profile default is **0**. The first matched serving pair measured
-44.535 ms/step for the candidate and 45.172 ms/step for the baseline (1.41%
-lower latency). The second baseline was interrupted by host earlyoom, so the
-repeatability verdict remains open. See [the serving record](ar_consumer_v14.md).
+stream. The profile default is **1**, adopted at the operator's request on
+2026-09-08. Set it to `0` to use the ordinary AllReduce path. The completed
+serving comparison measured
+44.535 ms/step for the candidate versus 45.079 ms/step across two baseline
+boots: **0.544 ms/step lower latency (1.21%)**. The individual baselines were
+45.172 and 44.988 ms/step, giving reductions of 1.41% and 1.01%. This is one
+candidate boot and two baseline boots, with matching serving code and workload;
+it does not establish long-run production performance. The operator requested
+adoption and an end to further measurements after this comparison.
+See [the serving record](ar_consumer_v14.md).
 
 The candidate requires `VLLM_GLM53_MK_PDL=1` and is bounded to at most
 eight 4096-wide tokens, including the C=1 speculative verification bucket.
@@ -94,6 +100,11 @@ profile, image and ordered request hashes are verified unchanged. Host RAM is
 recorded before/after every arm and sampled during requests; memory protection
 and boot budgeting are unchanged.
 
+The campaign names `VLLM_GLM53_AR_CONSUMER_PDL=1` for A1 and `=0` for B1/B2,
+so baseline selection stays unchanged after profile promotion. Its lever
+rejects a missing mode. These commands are retained for reproduction; no
+further measurement is scheduled after the operator's adoption request.
+
 GPU validation automatically searches the newest 50 `ARCONSUMER-*/gpu`
 receipts under `LOGD` (default `/home/choiceoh/glm53-logs`). No result-directory
 argument is required. The reusable units are local probe, local memcheck,
@@ -153,7 +164,8 @@ Racecheck hazard storage is capped at 100,000 records via NVIDIA's documented
 and any reported hazard or warning fails the gate.
 
 After the GPU gate the campaign measures the candidate first, then two
-defaults arms on the same deployed source, retaining standard onepass quality, decode-window steps,
+consumer-off baseline arms on the same deployed source, retaining standard
+onepass quality, decode-window steps,
 three fixed-length 2048-token requests, prefill contexts and SSE channels.
 All four ranks must prove source hashes, flags and actual graph capture.
 Raw receipts live under `/home/choiceoh/glm53-logs/ARCONSUMER-<session>/`.

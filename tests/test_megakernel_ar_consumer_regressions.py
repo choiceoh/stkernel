@@ -301,8 +301,8 @@ int main() {
         self.assertIn('static int ar_grids[2]', source)
         self.assertIn('ar_consumer && mk_pdl_enabled() && a.num_tokens <= 8', source)
 
-    def test_default_off_and_cache_identity(self):
-        self.assertIn('\nVLLM_GLM53_AR_CONSUMER_PDL=0\n', (ROOT / 'profiles/glm53.env').read_text())
+    def test_profile_default_on_and_cache_identity(self):
+        self.assertIn('\nVLLM_GLM53_AR_CONSUMER_PDL=1\n', (ROOT / 'profiles/glm53.env').read_text())
         dense = (ROOT / 'overlay/modules/glm53_model/glm53_fp8_dense.py').read_text()
         self.assertIn('_register_compile_factor(\n    "VLLM_GLM53_AR_CONSUMER_PDL",', dense)
 

@@ -2,11 +2,13 @@
 # Exact same source on both arms; retain normal onepass and SSE quality evidence.
 set -euo pipefail
 name=${1:?}; knobs=${2:-}; out=${AR_CONSUMER_OUT:?}
-mode=0
+# Every comparison arm names its mode so a profile promotion cannot silently
+# change an arm while retaining its old runtime-proof expectation.
+mode=
 for pair in $knobs; do
   [[ $pair != VLLM_GLM53_AR_CONSUMER_PDL=* ]] || mode=${pair#*=}
 done
-[[ $mode == 0 || $mode == 1 ]] || exit 2
+[[ $mode == 0 || $mode == 1 ]] || { echo 'explicit VLLM_GLM53_AR_CONSUMER_PDL=0 or 1 required'; exit 2; }
 expected=$(python3 - "$REPO" <<'PY'
 import hashlib,json,sys
 from pathlib import Path
