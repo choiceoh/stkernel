@@ -71,6 +71,9 @@ done
 touched=1
 stop_serving > "$AR_CONSUMER_OUT/stop-before-probe.log" 2>&1
 if [[ -z $gpu_evidence ]]; then
+  # The runner automatically reuses complete matching groups, including the
+  # successful portion of a previous run that failed in a later group.
+  echo 'GPU validation: reuse matching completed groups; run only missing groups'
   python3 probes/run_ar_consumer_gpu.py --out "$AR_CONSUMER_OUT/gpu"
 fi
 bash launchers/deploy-overlays.sh glm53 > "$AR_CONSUMER_OUT/deploy.log" 2>&1
