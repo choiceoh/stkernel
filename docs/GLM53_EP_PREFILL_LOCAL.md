@@ -608,3 +608,7 @@ records eight diagnostic and17 wrapper tests passing without skips. Full local
 integration has135 passes,11 skips for missing host Torch/packaging and no errors
 or failures. The server gate still requires all146 tests without skips, actual
 CuTe/24-remap compilation and matching runtime/source receipts.
+CPU17 admission was attempted once against published diagnostic source
+`81b8ef91`; host MemAvailable7791744KiB was below the unchanged12GiB guard.
+No remote CPU17 source, bundle transfer or job was created. The numerical
+diagnostic has not been submitted to GPU.
