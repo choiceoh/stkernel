@@ -34,12 +34,34 @@ is to investigate retained serving memory; neither lowering the guard/capacity
 nor repeating this boot unchanged resolves the blocker. Other services remain
 outside the cleanup scope. This is not evidence of a leak or observer overhead.
 
+An opt-in `run --reclaim-host-memory` diagnostic now tests that hypothesis in
+the private boot. Before PRIME, with all observers and request counters idle,
+it records process PSS, host availability, CUDA allocation/reservation and pinned
+allocator active/total counters. Workers synchronize outstanding boot work,
+collect Python garbage, return unused pinned blocks through the pinned runtime's
+`torch._C._host_emptyCache`, and call glibc `malloc_trim(0)`. The API process then
+collects garbage and trims its own heap without initializing CUDA. The GPU
+allocator is not flushed; no live model/KV object or cache entry is discarded.
+Missing APIs, partial rank reports or changed source stop collection. Before/after
+counters remain raw evidence and the subsequent 12 GiB request guard is unchanged.
+
+The option is off by default and does not alter production overlays. The CPU
+tests verify control flow, real CPU tensor identity and the installed release API;
+they do not establish how much memory a live worker can return. Any resulting
+TTFT baseline is explicitly labelled as following host-memory reclaim, and the
+full request/quality/trace checks remain mandatory. There is no measured memory
+saving yet. PyTorch's [host allocator counters](https://docs.pytorch.org/docs/main/generated/torch.cuda.memory.host_memory_stats.html)
+distinguish active bytes from total pinned blocks; glibc's
+[malloc_trim](https://man7.org/linux/man-pages/man3/malloc_trim.3.html) returns free
+heap pages. The installed PyTorch header confirms only freeable host pools are
+released. These mechanisms do not prove that this serving process has free pages.
+
 ## Implemented pieces
 
 `probes/glm53_prefill_observer.py` is a diagnostic mount, not a production overlay.
 The pinned vLLM worker-extension interface can load its `WorkerExtension`; its
 middleware exposes only the local POST `/glm53/prefill-observe` with status,
-begin and end operations. No B12x hook exists before begin or after a successful
+begin, end and the opt-in idle reclaim operation. No B12x hook exists before begin or after a successful
 end. An idle worker reports its source hash and rank.
 
 Begin requires TP4/PP1/DP1 without EP, one identifiable target `Glm5NextModel`,
