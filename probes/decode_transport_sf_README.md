@@ -90,7 +90,7 @@ repeated after the scale-only correction.
 
 | Gate | Result |
 | --- | --- |
-| Serving-image core and focused tests | 71,123 core assertions, including 50 megakernel regression cases; 37 additional test cases passed, zero skips |
+| Serving-image core and focused tests | 71,123 core assertions plus 50 megakernel regression cases; 37 focused test cases passed, zero skips |
 | Native transport | All four compact/inline combinations compiled; actual extension modes and CUDA-not-initialized checked |
 | Serving MoE at max_rows=640 | `t,r` and `t,r,sf6` compiled for M=2/6/8/16; actual FC1/FC2 byte maps passed for the eligible shapes |
 | Compatibility | `u`, `v`, `t`, probe-only `t,q`, and tiled prefill compiled |
