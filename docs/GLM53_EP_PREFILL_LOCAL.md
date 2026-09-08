@@ -643,3 +643,11 @@ not claimed. The [CPU17 archive](../measurements/glm53_ep_local_20260908/cpu17/R
 records this separate adjudication plus original/stored hashes and successful
 remote identity checks before and after copying. This is compiler evidence
 only. Concentrated6912 numerics and the full GPU/sanitizer gates remain open.
+
+
+The [single-case diagnostic](../measurements/glm53_ep_local_20260908/diag-gpu1-queued/README.md)
+was submitted with frozen receipt source `69f5b833`. Approved scheduler source
+`73b2ca05` passed its mandatory validation, then enqueued `eplocaldiag0908v1`
+at00:25:55 KST. Its captured queue position is historical and does not prove
+GPU execution. The concentrated case includes paired component timing only
+after all original numerical comparisons pass.
