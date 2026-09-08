@@ -1,0 +1,207 @@
+{
+  "pid": "3896513",
+  "size_histogram_kib": [
+    [
+      9408,
+      384
+    ],
+    [
+      65536,
+      3
+    ],
+    [
+      4096,
+      8
+    ],
+    [
+      16384,
+      1
+    ],
+    [
+      8192,
+      2
+    ],
+    [
+      2048,
+      7
+    ],
+    [
+      1024,
+      4
+    ],
+    [
+      8,
+      384
+    ],
+    [
+      2308,
+      1
+    ],
+    [
+      64,
+      3
+    ]
+  ],
+  "largest": [
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 65536,
+      "Rss": 65536,
+      "Pss": 65536,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 65536,
+      "Rss": 65536,
+      "Pss": 65536,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 65536,
+      "Rss": 65536,
+      "Pss": 65536,
+      "VmFlags": "rd wr sh mr mw me ms"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 16384,
+      "Rss": 16384,
+      "Pss": 16384,
+      "VmFlags": "rd wr sh mr mw me ms"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    },
+    {
+      "mapping": "/dev/zero (deleted)",
+      "permissions": "rw-s",
+      "Size": 9408,
+      "Rss": 9408,
+      "Pss": 9408,
+      "VmFlags": "rd wr sh mr mw me ms dc"
+    }
+  ]
+}

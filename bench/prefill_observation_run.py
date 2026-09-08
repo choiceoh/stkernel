@@ -27,7 +27,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'probes'))
 import glm53_offline_checks as lifecycle
 import glm53_prefill_trace as trace
-from glm53_prefill_observer import validate_ranks
+from glm53_prefill_observer import validate_ranks,validate_memory_report
 
 
 def save(path,value):path.write_text(json.dumps(value,indent=2,ensure_ascii=False,allow_nan=False)+'\n')
@@ -45,8 +45,9 @@ def settled(nodes,call):
 
 
 class Run:
-    def __init__(self,source,revision,out):
+    def __init__(self,source,revision,out,*,reclaim_host_memory=False):
         self.source,self.revision,self.out=source,revision,out
+        self.reclaim_host_memory=reclaim_host_memory
         self.session=os.environ['FLEET_SESSION']
         self.name='glm53-observe-'+self.session
         self.node_dir=out/'worker'
@@ -173,6 +174,13 @@ class Run:
             save(self.out/'private-before.json',initial)
             api=PrivateObserverAPI('http://127.0.0.1:18000')
             idle_observers(api.post('/glm53/prefill-observe',{'op':'status'}),self.sha)
+            if self.reclaim_host_memory:
+                lifecycle.idle(18000)
+                reclaimed=api.post('/glm53/prefill-observe',{'op':'reclaim'})
+                save(self.out/'host-memory-reclaim.json',reclaimed)
+                validate_memory_report(reclaimed,self.sha)
+                idle_observers(api.post('/glm53/prefill-observe',{'op':'status'}),self.sha)
+                lifecycle.idle(18000)
             phases=[('PRIME',self.phase('baseline','PRIME'))]
             for rep in range(5):phases.append(('BASE'+str(rep),self.phase('baseline','BASE'+str(rep))))
             salts=[]
@@ -212,6 +220,7 @@ class Run:
             raise RuntimeError('frozen fleet runner lacks observation clone cleanup')
         self.out.mkdir(parents=True,exist_ok=False)
         result=dict(source_revision=self.revision,observer_sha256=self.sha,complete=False,performance_acceptance=False)
+        result['host_memory_reclaim_requested']=self.reclaim_host_memory
         save(self.out/'incomplete.json',result)
         before=None;pause_attempted=False
         try:
@@ -257,6 +266,10 @@ def analyze(directory):
     import trace_prefill_attribution as attributed
     complete=json.loads((directory/'completion.json').read_text())
     if not complete.get('complete') or not complete.get('restored_original'):raise ValueError('complete collection and restoration required')
+    reclaimed=None
+    if complete.get('host_memory_reclaim_requested'):
+        reclaimed=validate_memory_report(json.loads((directory/'host-memory-reclaim.json').read_text()),
+                                         complete['observer_sha256'])
     baseline=[];salts=set();identities=None;results={};routing={}
     def phase(name):
         path=directory/name
@@ -335,6 +348,7 @@ def analyze(directory):
         summary[str(ctx)]=dict(samples=len(rows),ttft_median_s=statistics.median(times),
             ttft_min_s=min(times),ttft_max_s=max(times),prompt_tokens=sorted({r['prompt_tokens'] for r in rows}))
     save(directory/'attribution.json',dict(results=results,routing=routing,
+        host_memory_reclaim=reclaimed,
         baseline=dict(summary=summary,requests=baseline,quality_checks=45,prime_excluded=True),
         workload='Canonical Korean onepass; observed model routing, not a production traffic distribution',
         performance_acceptance=False))
@@ -343,11 +357,13 @@ def analyze(directory):
 def main():
     ap=argparse.ArgumentParser(description=__doc__);sub=ap.add_subparsers(dest='command',required=True)
     run=sub.add_parser('run');run.add_argument('--revision',required=True);run.add_argument('--out',type=Path,required=True)
+    run.add_argument('--reclaim-host-memory',action='store_true',
+        help='diagnose and return unused host allocator pages before the guarded PRIME pass')
     analysis=sub.add_parser('analyze');analysis.add_argument('directory',type=Path)
     args=ap.parse_args()
     if args.command=='analyze':analyze(args.directory);return 0
     signal.signal(signal.SIGTERM,lambda *_:(_ for _ in ()).throw(SystemExit(143)))
-    return Run(ROOT,args.revision,args.out.resolve()).run()
+    return Run(ROOT,args.revision,args.out.resolve(),reclaim_host_memory=args.reclaim_host_memory).run()
 
 
 if __name__=='__main__':raise SystemExit(main())

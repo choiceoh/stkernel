@@ -1,0 +1,30 @@
+{
+  "session": "glm53observemem0908v1",
+  "source": "/home/choiceoh/stkernel-prefill-observation-memory-0908-1",
+  "revision": "37db5eb1fb17b1ed03d5116f02e317fc64ffee4c",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-prefill-observation-memory-0908-1/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "glm53observemem0908v1",
+    "65",
+    "Diagnose/reclaim unused host RAM; unchanged 12GiB guard before default TTFT/quality/profile/routes; no promotion",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-prefill-observation-memory-0908-1/bench/prefill_observation_run.py",
+    "run",
+    "--reclaim-host-memory",
+    "--revision",
+    "37db5eb1fb17b1ed03d5116f02e317fc64ffee4c",
+    "--out",
+    "/tmp/glm53-prefill-observation-memory-0908-1/capture"
+  ],
+  "environment": {
+    "REPO": "/home/choiceoh/stkernel-prefill-observation-memory-0908-1",
+    "FLEET_OBSERVATION_CLONES": "1"
+  },
+  "started": 1788834961.4228683,
+  "exit_code": 1,
+  "ended": 1788835790.2538073
+}

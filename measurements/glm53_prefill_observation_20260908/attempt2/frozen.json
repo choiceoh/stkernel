@@ -1,0 +1,30 @@
+{
+  "local": {
+    "source": "/home/choiceoh/stkernel-prefill-observation-0908-2",
+    "revision": "cfd69dd5b7ad89847fabaa3639dbf8c99215c08f",
+    "clean": true,
+    "cpu_source_hashes": true,
+    "disk_free_gib": 882.2660942077637
+  },
+  "10.10.10.1": {
+    "source": "/home/choiceoh/stkernel-prefill-observation-0908-2",
+    "revision": "cfd69dd5b7ad89847fabaa3639dbf8c99215c08f",
+    "clean": true,
+    "cpu_source_hashes": true,
+    "disk_free_gib": 301.5757064819336
+  },
+  "10.10.10.3": {
+    "source": "/home/choiceoh/stkernel-prefill-observation-0908-2",
+    "revision": "cfd69dd5b7ad89847fabaa3639dbf8c99215c08f",
+    "clean": true,
+    "cpu_source_hashes": true,
+    "disk_free_gib": 1716.3327713012695
+  },
+  "10.10.10.4": {
+    "source": "/home/choiceoh/stkernel-prefill-observation-0908-2",
+    "revision": "cfd69dd5b7ad89847fabaa3639dbf8c99215c08f",
+    "clean": true,
+    "cpu_source_hashes": true,
+    "disk_free_gib": 2062.9736137390137
+  }
+}

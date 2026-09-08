@@ -1,0 +1,43 @@
+{
+  "time": 1788833376.7659545,
+  "all_nodes": {
+    "local": {
+      "same_identity": true,
+      "running": true,
+      "id": "a3ae2d7d793c834d080bf2c7a02a2c85e71c9574f12b483d3dc9a56bbf7da081"
+    },
+    "10.10.10.1": {
+      "same_identity": true,
+      "running": true,
+      "id": "d5bf0cae516a57fd22d62b94720cd4a3fef46db6413004d8cf1bffb49d7741ea"
+    },
+    "10.10.10.3": {
+      "same_identity": true,
+      "running": true,
+      "id": "7cf0c3a10ff91a663ea719ecd87082e9ce2179003d6dbf57e1d678da169dbd62"
+    },
+    "10.10.10.4": {
+      "same_identity": true,
+      "running": true,
+      "id": "e3a4c334f464c69efc9f3201d225cf37dd7ee46f3c78828720e7139f5cddb2c2"
+    }
+  },
+  "public_healthy": true,
+  "private_healthy": false,
+  "fleet": {
+    "holder": "",
+    "queue": ""
+  },
+  "session_log": [
+    "2026-09-08_10:54:57 request glm53observe0908v2 est=65m Default prefill TTFT/quality plus separate all-rank profile and model routes; no candidate promotion [boot]",
+    "2026-09-08_10:54:57 GO glm53observe0908v2 (pid 3665925)",
+    "2026-09-08_11:01:25 ledger glm53observe0908v2 held=6m boots=1 records=0 wasted=1",
+    "2026-09-08_11:01:25 release glm53observe0908v2"
+  ],
+  "remaining_clones": {
+    "local": [],
+    "10.10.10.1": [],
+    "10.10.10.3": [],
+    "10.10.10.4": []
+  }
+}

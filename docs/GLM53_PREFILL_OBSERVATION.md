@@ -1,19 +1,81 @@
 # Current-default prefill attribution
 
-Status: worker instrumentation, isolated boot/restoration, canonical quality/TTFT
-requests and all-rank trace transfer/analysis are implemented. CPU contracts pass;
-the first capture is queued as `glm53observe0908v1` with frozen source
-`75686447d5cca72904b7050e333f8c319884a28d` on all four nodes. Preflight passed;
-at the 09:52 KST submission it was first behind `deploycache0908v6`. **No live
-result or new speedup is claimed.** M64 and INT8 remain off and deprioritized. The
-observation branch starts from current main separately from preserved PR #455.
+Status: the first normal capture (`glm53observe0908v1`, source `7568644`) ran
+at 10:23–10:34 KST on September 8, but stopped at clone configuration validation
+before pausing originals or sending observation requests. Docker represented the
+unset OOM-disable flag as null in originals and false in stopped clones. Owned
+clones were removed, all four originals remained intact, and public health was
+verified. **There is no new TTFT, quality, routing or speedup result.**
+
+The comparison fix preserves the exact submitted payload and compares only the
+null/false OOM flag representations as equivalent. Explicit true and every other
+resource/GPU/mount change remain distinct. Sixteen CPU tests and create-only
+checks against all four actual originals pass; evidence is in `hostconfig-fix/`
+and the failed run is retained in `attempt1/` under the measurement directory.
+M64 and INT8 remain off and deprioritized. PR #466 was merged; this correction is
+on a separate branch based on that merge. The corrected capture
+`glm53observe0908v2` started through the normal queue at 10:54:57 KST with
+all-rank frozen source `cfd69dd5b7ad89847fabaa3639dbf8c99215c08f`. All four
+clone preparations and private boot passed. The idle observer RPC also worked,
+but the 12 GiB request guard rejected PRIME before starting its client: head
+had 9.10 GiB available and srv3 had 10.57 GiB. No model request, trace or routing
+report ran. Exact original identities and public health were restored, all owned
+clones were removed, and the fleet released the hold at 11:01:25 KST. Complete
+failure and restoration evidence is in `attempt2/`. The comparison fix is now
+validated through a real private boot; hook execution and capture remain untested.
+
+A read-only post-restoration census still found only 8.58 GiB available on head
+and 10.79 GiB on srv3. Head's GLM API process alone had 4.995 GiB PSS; srv3 also
+had an existing PaddleOCR service using 3.964 GiB of cgroup memory. These are
+different memory measures and are not summed into a causal attribution. There
+were no remaining observation clones and no multi-GiB unrelated head process to
+remove. All four nodes had more than 128 GiB disk space. The immediate next step
+is to investigate retained serving memory; neither lowering the guard/capacity
+nor repeating this boot unchanged resolves the blocker. Other services remain
+outside the cleanup scope. This is not evidence of a leak or observer overhead.
+
+An opt-in `run --reclaim-host-memory` diagnostic now tests that hypothesis in
+the private boot. Before PRIME, with all observers and request counters idle,
+it records process PSS, host availability, CUDA allocation/reservation and pinned
+allocator active/total counters. Workers synchronize outstanding boot work,
+collect Python garbage, return unused pinned blocks through the pinned runtime's
+`torch._C._host_emptyCache`, and call glibc `malloc_trim(0)`. The API process then
+collects garbage and trims its own heap without initializing CUDA. The GPU
+allocator is not flushed; no live model/KV object or cache entry is discarded.
+Missing APIs, partial rank reports or changed source stop collection. Before/after
+counters remain raw evidence and the subsequent 12 GiB request guard is unchanged.
+
+The option is off by default and does not alter production overlays. The CPU
+tests verify control flow, real CPU tensor identity and the installed release API;
+they do not establish how much memory a live worker can return. Any resulting
+TTFT baseline is explicitly labelled as following host-memory reclaim, and the
+full request/quality/trace checks remain mandatory. PyTorch's
+[host allocator counters](https://docs.pytorch.org/docs/main/generated/torch.cuda.memory.host_memory_stats.html)
+distinguish active bytes from total pinned blocks; glibc's
+[malloc_trim](https://man7.org/linux/man-pages/man3/malloc_trim.3.html) returns free
+heap pages. The installed PyTorch header confirms only freeable host pools are
+released. These mechanisms do not prove that this serving process has free pages.
+
+The source `37db5eb1fb17b1ed03d5116f02e317fc64ffee4c` passed 34 pinned CPU-only
+tests and was frozen on all four hosts. Session `glm53observemem0908v1` passed
+normal preflight and started at 11:36:19 KST, using the reclaim option. Reclaim
+returned only 0.31–0.50 MiB PSS per worker and 376.86 MiB in the API process.
+Each worker's PyTorch pinned pool was only about 96 MiB and almost entirely
+active. PRIME still failed the unchanged guard before client spawn. Exact
+originals and public health were restored; the hold was released at 11:49:50.
+No TTFT/quality/profile/routes result exists. Admission is in `submission-memory1/`
+and final evidence in `attempt-memory1/`. This hypothesis is insufficient and
+will not be retried unchanged. A read-only mapping census found 384 allocations
+of 9408 KiB each, matching the installed NCCL default protocol-buffer size.
+NCCL group/buffer ownership is the next audit target; allocation identity and
+reclaimability are not yet proven by that size match.
 
 ## Implemented pieces
 
 `probes/glm53_prefill_observer.py` is a diagnostic mount, not a production overlay.
 The pinned vLLM worker-extension interface can load its `WorkerExtension`; its
 middleware exposes only the local POST `/glm53/prefill-observe` with status,
-begin and end operations. No B12x hook exists before begin or after a successful
+begin, end and the opt-in idle reclaim operation. No B12x hook exists before begin or after a successful
 end. An idle worker reports its source hash and rank.
 
 Begin requires TP4/PP1/DP1 without EP, one identifiable target `Glm5NextModel`,
@@ -63,11 +125,13 @@ All eleven pass in the pinned image with `--runtime runc --network none`, 4 GiB
 RAM and two CPU cores, without GPU access. Raw logs and source hashes are under
 `measurements/glm53_prefill_observation_20260908/preparation/`.
 
-The connected runner adds fourteen tests covering cloned configuration, foreign-name
+The initial connected-runner preparation had fourteen tests covering cloned configuration, foreign-name
 refusal, settled partial failures, failed boot/request recovery, retried original
 restoration, short-request coverage, quality and prompt identity. Together with
 the eleven observer, six trace and eight fleet handoff tests, all 39 pass in the same pinned
-CPU-only runtime without skips. Exact source hashes and raw logs are under
+CPU-only runtime without skips. The host-config correction adds two tests and
+reruns those sixteen runner tests; it also checks Docker creation on all four
+actual hosts without starting the clones. Initial source hashes and raw logs are under
 `measurements/glm53_prefill_observation_20260908/runner-preparation/`. The separate
 Docker API create-only fixture passed requested Config/HostConfig preservation
 without starting either container. Its earlier failed assertion is retained and

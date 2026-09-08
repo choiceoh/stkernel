@@ -43,9 +43,18 @@ chunk counts. Its newest-file heuristic cannot select the next capture's evidenc
 `probes/glm53_prefill_profile.sh` also lacks protected profiler cleanup and uses
 the public endpoint. Reuse suitable parsing/client helpers while adding the
 missing collection contracts; do not launch either script unchanged for this
-campaign. The temporary worker observer, one-request cleanup helper and CPU trace
-validator are implemented; the isolated boot runner and all-rank file collection
-are still pending, and no GPU run is submitted. See `GLM53_PREFILL_OBSERVATION.md`.
+campaign. The observer, isolated boot runner, cleanup, all-rank collection and
+CPU trace validator are implemented. The corrected normal-fleet observation
+passed private boot and idle observer RPC, then the 12 GiB memory guard rejected
+PRIME before any model request. Exact originals and public health were restored
+and the hold released at 11:01:25 KST on September 8. Memory investigation is
+required before retrying; TTFT, compiled-hook coverage and attribution remain
+unmeasured. The subsequent opt-in host-reclaim attempt also failed the unchanged
+memory guard before PRIME; API PSS fell 376.86 MiB but worker PSS fell less than
+1 MiB. It restored exact originals and released at 11:49:50. A mapping census
+now points to native communication buffers for further source attribution,
+without changing communicators or forecasting a speedup. See
+`GLM53_PREFILL_OBSERVATION.md`, `attempt2/` and `attempt-memory1/` evidence.
 Historical traces below are context for hypotheses and cannot replace the current baseline.
 
 ## Current evidence after rebase (2026-09-07)
