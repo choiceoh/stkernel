@@ -1,12 +1,19 @@
 # Current-default prefill attribution
 
-Status: worker instrumentation, isolated boot/restoration, canonical quality/TTFT
-requests and all-rank trace transfer/analysis are implemented. CPU contracts pass;
-the first capture is queued as `glm53observe0908v1` with frozen source
-`75686447d5cca72904b7050e333f8c319884a28d` on all four nodes. Preflight passed;
-at the 09:52 KST submission it was first behind `deploycache0908v6`. **No live
-result or new speedup is claimed.** M64 and INT8 remain off and deprioritized. The
-observation branch starts from current main separately from preserved PR #455.
+Status: the first normal capture (`glm53observe0908v1`, source `7568644`) ran
+at 10:23–10:34 KST on September 8, but stopped at clone configuration validation
+before pausing originals or sending observation requests. Docker represented the
+unset OOM-disable flag as null in originals and false in stopped clones. Owned
+clones were removed, all four originals remained intact, and public health was
+verified. **There is no new TTFT, quality, routing or speedup result.**
+
+The comparison fix preserves the exact submitted payload and compares only the
+null/false OOM flag representations as equivalent. Explicit true and every other
+resource/GPU/mount change remain distinct. Sixteen CPU tests and create-only
+checks against all four actual originals pass; evidence is in `hostconfig-fix/`
+and the failed run is retained in `attempt1/` under the measurement directory.
+M64 and INT8 remain off and deprioritized. PR #466 was merged; this correction is
+on a separate branch based on that merge. A new frozen normal capture is next.
 
 ## Implemented pieces
 
@@ -63,11 +70,13 @@ All eleven pass in the pinned image with `--runtime runc --network none`, 4 GiB
 RAM and two CPU cores, without GPU access. Raw logs and source hashes are under
 `measurements/glm53_prefill_observation_20260908/preparation/`.
 
-The connected runner adds fourteen tests covering cloned configuration, foreign-name
+The initial connected-runner preparation had fourteen tests covering cloned configuration, foreign-name
 refusal, settled partial failures, failed boot/request recovery, retried original
 restoration, short-request coverage, quality and prompt identity. Together with
 the eleven observer, six trace and eight fleet handoff tests, all 39 pass in the same pinned
-CPU-only runtime without skips. Exact source hashes and raw logs are under
+CPU-only runtime without skips. The host-config correction adds two tests and
+reruns those sixteen runner tests; it also checks Docker creation on all four
+actual hosts without starting the clones. Initial source hashes and raw logs are under
 `measurements/glm53_prefill_observation_20260908/runner-preparation/`. The separate
 Docker API create-only fixture passed requested Config/HostConfig preservation
 without starting either container. Its earlier failed assertion is retained and

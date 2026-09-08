@@ -1,0 +1,25 @@
+{
+  "session": "glm53observe0908v1",
+  "source": "/home/choiceoh/stkernel-prefill-observation-0908-1",
+  "revision": "75686447d5cca72904b7050e333f8c319884a28d",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-prefill-observation-0908-1/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "glm53observe0908v1",
+    "65",
+    "Default prefill TTFT/quality plus separate all-rank profile and model routes; no candidate promotion",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-prefill-observation-0908-1/bench/prefill_observation_run.py",
+    "run",
+    "--revision",
+    "75686447d5cca72904b7050e333f8c319884a28d",
+    "--out",
+    "/tmp/glm53-prefill-observation-0908-1/capture"
+  ],
+  "started": 1788828760.296239,
+  "exit_code": 1,
+  "ended": 1788831273.6207778
+}
