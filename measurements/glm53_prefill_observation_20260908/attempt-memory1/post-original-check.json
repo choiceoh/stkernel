@@ -1,0 +1,44 @@
+{
+  "time": 1788836026.3002467,
+  "all_nodes": {
+    "local": {
+      "same_identity": true,
+      "running": true,
+      "id": "3826e2451128f9fe6b3e9fbb5ce82734d4ccee3010a33981d1b51888ebe8593b"
+    },
+    "10.10.10.1": {
+      "same_identity": true,
+      "running": true,
+      "id": "e3975edb8c57356a31e3a5a40d83ba5c0cc3cc24a5ef73b3faa8aeffe2beae4c"
+    },
+    "10.10.10.3": {
+      "same_identity": true,
+      "running": true,
+      "id": "f45fe974cda1377de258b3888ff0c801be6333d381158c5d55022e86014cfa49"
+    },
+    "10.10.10.4": {
+      "same_identity": true,
+      "running": true,
+      "id": "f672bfcaa792433d990460b8723ae61fc58255500f3e438b95b45f51748606d5"
+    }
+  },
+  "public_healthy": true,
+  "private_healthy": false,
+  "fleet": {
+    "holder": "",
+    "queue": ""
+  },
+  "session_log": [
+    "2026-09-08_11:36:02 request glm53observemem0908v1 est=65m Diagnose/reclaim unused host RAM; unchanged 12GiB guard before default TTFT/quality/profile/routes; no promotion [boot]",
+    "2026-09-08_11:36:19 GO glm53observemem0908v1 (pid 3839723)",
+    "2026-09-08_11:49:50 ledger glm53observemem0908v1 held=14m boots=1 records=0 wasted=1",
+    "2026-09-08_11:49:50   kept /home/choiceoh/glm53-logs/boot-glm53observemem0908v1RESTORE.log",
+    "2026-09-08_11:49:50 release glm53observemem0908v1"
+  ],
+  "remaining_clones": {
+    "local": [],
+    "10.10.10.1": [],
+    "10.10.10.3": [],
+    "10.10.10.4": []
+  }
+}

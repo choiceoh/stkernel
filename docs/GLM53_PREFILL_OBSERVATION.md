@@ -49,8 +49,8 @@ The option is off by default and does not alter production overlays. The CPU
 tests verify control flow, real CPU tensor identity and the installed release API;
 they do not establish how much memory a live worker can return. Any resulting
 TTFT baseline is explicitly labelled as following host-memory reclaim, and the
-full request/quality/trace checks remain mandatory. There is no measured memory
-saving yet. PyTorch's [host allocator counters](https://docs.pytorch.org/docs/main/generated/torch.cuda.memory.host_memory_stats.html)
+full request/quality/trace checks remain mandatory. PyTorch's
+[host allocator counters](https://docs.pytorch.org/docs/main/generated/torch.cuda.memory.host_memory_stats.html)
 distinguish active bytes from total pinned blocks; glibc's
 [malloc_trim](https://man7.org/linux/man-pages/man3/malloc_trim.3.html) returns free
 heap pages. The installed PyTorch header confirms only freeable host pools are
@@ -58,9 +58,17 @@ released. These mechanisms do not prove that this serving process has free pages
 
 The source `37db5eb1fb17b1ed03d5116f02e317fc64ffee4c` passed 34 pinned CPU-only
 tests and was frozen on all four hosts. Session `glm53observemem0908v1` passed
-normal preflight and started at 11:36:19 KST, using the reclaim option. Its
-admission evidence is in `submission-memory1/`; reclamation, request execution
-and completion are pending. The prior failures are not being rerun unchanged.
+normal preflight and started at 11:36:19 KST, using the reclaim option. Reclaim
+returned only 0.31–0.50 MiB PSS per worker and 376.86 MiB in the API process.
+Each worker's PyTorch pinned pool was only about 96 MiB and almost entirely
+active. PRIME still failed the unchanged guard before client spawn. Exact
+originals and public health were restored; the hold was released at 11:49:50.
+No TTFT/quality/profile/routes result exists. Admission is in `submission-memory1/`
+and final evidence in `attempt-memory1/`. This hypothesis is insufficient and
+will not be retried unchanged. A read-only mapping census found 384 allocations
+of 9408 KiB each, matching the installed NCCL default protocol-buffer size.
+NCCL group/buffer ownership is the next audit target; allocation identity and
+reclaimability are not yet proven by that size match.
 
 ## Implemented pieces
 
