@@ -3506,7 +3506,7 @@ def test_b12x_sf_pack_is_lossless() -> None:
 
 
 def test_b12x_static_v2_controls() -> None:
-    """The decode-streaming static kernel is opt-in, exact-geometry, spec-parsed.
+    """The decode-streaming static kernel is exact-geometry and spec-parsed.
 
     `VLLM_GLM53_B12X_STATIC_V2` selects `MoEStaticKernelV4` for the served
     GLM-5.3 TP geometry only (34차 §8: the v2 and v3 kernels are gone, and
@@ -3558,7 +3558,7 @@ def test_b12x_static_v2_controls() -> None:
           "t composes with v, g and s; u and v stay row-major")
     reform = parse("t,r")
     check(reform["decode_reform"] and not tiled["decode_reform"],
-          "the integrated decode tile reform is explicit and default-off")
+          "the integrated decode tile reform is selected explicitly by the r token")
     for bad in ("r", "u,r", "t,r,v", "t,r,q", "t,r,xs", "t,r,xa", "t,r,f3", "t,r,g3"):
         try:
             parse(bad, probe=True)
@@ -3815,10 +3815,10 @@ def test_b12x_static_v2_controls() -> None:
           "the v4/v5 kernels, their helpers and the tiled gated subclass are new files "
           "(absent preimage) in the module manifest; v2/v3 rows are gone")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check('VLLM_GLM53_B12X_STATIC_V2=t' in profile,
-          "the profile ships the v5 tile-major lane (spec t) as the default "
-          "(39차 §3i/§4f: probe -2.0~2.7% vs u by interleaved repeats, boot "
-          "bracket 21.9 vs 21.4 step/s, lane proved serving 1/1)")
+    check([line.partition('=')[2] for line in profile.splitlines()
+           if line.startswith('VLLM_GLM53_B12X_STATIC_V2=')] == ['t,r'],
+          "the profile ships exactly one t,r default after the corrected C=1 "
+          "MoE bundle promotion; explicit t remains the previous geometry")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v4.py" in runner and "moe_static_common.py" in runner
           and "moe_static_kernel_v5.py" in runner and "moe_dynamic_gated_tiled.py" in runner

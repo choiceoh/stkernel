@@ -15,7 +15,7 @@ import __future__
 
 # Re-audited against current main: only static-v2 controls differ.
 # All upstream loaders, math/layout/dispatch contracts and launch tests are retained.
-LOGIC_AUDIT = '338f86725143a2b1bc672b4c417382dbe890405b122c1d1a969e0a1fde2a3724'
+LOGIC_AUDIT = 'cd90ac1a1ad43f4e71fcfa345abe55c08caacfb9ffb2f83018bf499869480d85'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

@@ -75,7 +75,7 @@ export ONEPASS_JSONL=$out/records.raw.jsonl ONEPASS_VERDICTS=$out/verdicts.jsonl
 # Traffic/source/length checks still run unchanged inside onepass and the lever.
 rc=0
 bash "$LEVER" MOERFA1 'VLLM_GLM53_B12X_STATIC_V2=t,r' > "$out/arm-A.log" 2>&1 || rc=1
-bash "$LEVER" MOERFB1 '' > "$out/arm-B.log" 2>&1 || rc=1
+bash "$LEVER" MOERFB1 'VLLM_GLM53_B12X_STATIC_V2=t' > "$out/arm-B.log" 2>&1 || rc=1
 python3 bench/judge.py MOERFA1 --write > "$out/judge.log" 2>&1 || rc=1
 python3 probes/analyze_moe_reform_onepass.py "$out" > "$out/analysis.log" 2>&1 || rc=1
 exit "$rc"

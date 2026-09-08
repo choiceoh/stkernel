@@ -22,7 +22,7 @@
   },
   "fleet_session": "moereformfix20908",
   "remote_candidate": "/home/choiceoh/stkernel-moe-reform-fix-v3-0908",
-  "status": "Matched corrected A-B completed: pooled step/s +1.603%, fixed output tok/s +3.080%; one boot each, no stable-win or default-promotion claim",
+  "status": "Corrected measured bundle promoted to profile default by operator request; pooled step/s +1.603%, output +3.080%; no additional GPU measurements",
   "numerics_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
   "numerics": {
     "status": "FAIL",
@@ -82,7 +82,7 @@
     "reused_scope": "Kernel and fixture sources unchanged; numerical and memcheck evidence reused while racecheck completed."
   },
   "serving_summary": "serving/summary.json",
-  "default": "t",
+  "default": "t,r",
   "public_restore": {
     "approved_main": "d7c15287c8ef36e80deac813cf492a7262bbd429",
     "knobs": {
@@ -101,5 +101,19 @@
     "continuation_returncode": 0,
     "supervised_restore_returncode": 0,
     "lease_released": true
+  },
+  "promotion": {
+    "date": "2026-09-08",
+    "previous": "t",
+    "default": "t,r",
+    "rollback": "VLLM_GLM53_B12X_STATIC_V2=t",
+    "basis": "Operator request following completed corrected A-B; measurement limitations retained.",
+    "validation": {
+      "logic_checks": 6742,
+      "megakernel_regressions": 38,
+      "fleet_regressions": 115,
+      "gpu_rerun": false,
+      "kernel_source_unchanged": true
+    }
   }
 }

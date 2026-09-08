@@ -3,7 +3,9 @@
 The corrected bundle completed one matched A-B serving campaign. Observed
 pooled decode step throughput rose **1.60%** and fixed-2K output throughput
 rose **3.08%**. This is one boot per arm, not an independently repeated win.
-The default remains `t`; the candidate is opt-in `t,r` (PR #461).
+The profile default is now `t,r` by operator request (PR #461, 2026-09-08).
+Set the knob to `t` to roll back. The serving figures below retain their
+original one-boot-per-arm limitations; promotion adds no new GPU results.
 
 ## Changes kept together
 
@@ -114,3 +116,9 @@ See `serving/restore-proof.json` and `restore-proof-ownership.json`.
 The supervisor finished recovery with exit 0 and released the fleet. The
 initial payload exit 1 is retained for its API-only diagnostic interruption;
 the completed A-B continuation exited 0. No paused owner processes remain.
+
+Default promotion validation: 6,742 CPU checks, 38 megakernel regressions and
+115 fleet regressions pass (`cpu/promotion-logic.log`). Kernel source hashes
+match the measured candidate. The profile declaration is checked exactly;
+the A-B runner explicitly pins old baseline `t`, and empty lever knobs read
+the current profile default. No additional GPU run was performed.

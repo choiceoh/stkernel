@@ -2,7 +2,8 @@
 # Preserve the canonical onepass gates while retaining its separate SSE channels.
 set -euo pipefail
 name=${1:?}; knobs=${2:-}; out=${MOE_ONEPASS_OUT:?}
-mode=t
+# Empty knobs mean the current profile default, including recovery arms.
+mode=$(sed -n 's/^VLLM_GLM53_B12X_STATIC_V2=\([^[:space:]]*\)[[:space:]]*$/\1/p' "$REPO/profiles/glm53.env" | tail -1)
 for pair in $knobs; do
   [[ $pair != VLLM_GLM53_B12X_STATIC_V2=* ]] || mode=${pair#*=}
 done
