@@ -321,6 +321,19 @@ Torch/Cutlass/FlashInfer dependency constraints allow a paired bindings and
 cuda-python 13.0.3 capsule, with the base image preserved. This identifies a
 concrete compatibility experiment, not a successful runtime replacement.
 
+`glm53_ep_bindings_capsule.py` stages the two exact official 13.0.3 wheels in
+a separate site directory and validates every file against an externally
+pinned manifest. The fixed no-device capsule runner checks target-runtime
+dependencies and actual import origins while retaining base pathfinder.
+`run_glm53_ep_bindings_pair_offline.py` then compares two fresh processes under
+one normal fleet pause: baseline installed 13.3.1 and candidate capsule 13.0.3.
+Both preserve Torch-context-before-binding ordering and unsuppressed memcheck.
+The baseline's 34 errors remain a failed cell and nonzero outer exit; only an
+exactly matched reproduction plus a clean candidate can yield the separate
+`COMPATIBILITY_OBSERVED` diagnostic. Capsule identity is checked before and
+after, and original serving identity/state recovery stays mandatory. This
+runner does not run MoE/CuTe or establish the current kernel's GPU acceptance.
+
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).
 The v4 CPU proof, mounted sources, raw logs, recovery and release records are
