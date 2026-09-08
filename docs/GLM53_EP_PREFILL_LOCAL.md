@@ -409,6 +409,14 @@ The nonnegative row-count prefix also uses unsigned M128 ceil division,
 removing unnecessary signed-division correction without changing task order.
 CPU16 is the new source-bound receipt selected by the offline runner; CPU15
 is historical partial evidence and is never overwritten or retried.
+The [actual CPU16 job](../measurements/glm53_ep_local_20260908/cpu16/README.md)
+then passed at 22:04:46 KST: CuTe, all 24 remap variants and all 134 pinned
+CPU tests without skips. Source `111fff02` matches all 13 mounted and 27
+contract files; capsule runtime identity passed before and after execution,
+and CUDA stayed uninitialized. REG168/STACK112/SHARED1024 are unchanged,
+while PTX grew 939211→964424B and cubin 288664→300032B. The additional shared
+load and code-size growth remain performance tradeoffs to measure. This is
+complete CPU admission evidence, not GPU numerics or a throughput verdict.
 
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).
