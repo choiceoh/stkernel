@@ -6608,7 +6608,8 @@ def test_decode_first_scheduler_contracts() -> None:
     env_keys = ("VLLM_GLM53_SCHED_MODE", "VLLM_GLM53_SCHED_MAX_WAIT_S", "VLLM_GLM53_SCHED_DECODE_STEPS", "VLLM_GLM53_SCHED_CHUNK_REF_CTX",
                 "VLLM_GLM53_SCHED_CHUNK_MAX",
                 "VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_EVERY", "VLLM_GLM53_SCHED_MIN_DECODERS",
-                "VLLM_GLM53_SCHED_FAIR", "VLLM_GLM53_SCHED_PREFILL_FLOOR", "VLLM_GLM53_SCHED_FLOOR_GRACE_S")
+                "VLLM_GLM53_SCHED_FAIR", "VLLM_GLM53_SCHED_PREFILL_FLOOR", "VLLM_GLM53_SCHED_FLOOR_GRACE_S",
+                "VLLM_GLM53_SCHED_CHUNK_FILE")
     saved_env = {k: os.environ.pop(k, None) for k in env_keys}
     sys.modules.update(fakes)
     clock = [100.0]
@@ -6833,6 +6834,49 @@ def test_decode_first_scheduler_contracts() -> None:
         m.running = [dec(), dec(), pre("x")]
         m.schedule()
         check(m.calls[-1][1] == 1, "at min_decoders -> capped")
+        # ---- the dev instrument (40차): a chunk file pins the chunk for a
+        # sweep, including the SOLO prefill this scheduler otherwise leaves to
+        # stock -- that is the case the small-chunk penalty lives in.
+        import tempfile
+        for k in ("VLLM_GLM53_SCHED_MIN_DECODERS", "VLLM_GLM53_SCHED_PREFILL_EVERY",
+                  "VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_FLOOR",
+                  "VLLM_GLM53_SCHED_FLOOR_GRACE_S"):
+            os.environ.pop(k, None)
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "chunk")
+            os.environ["VLLM_GLM53_SCHED_CHUNK_FILE"] = path
+            c = Sched()
+            check(c.chunk_file == path and any("chunk_file=" + path in w for w in warnings),
+                  "the instrument is named in the armed line so a boot log says whether it is on")
+            c.running = [pre("solo", 0)]; c.waiting = []
+            clock[0] = 700.0
+            c.schedule()
+            check(c.calls[-1][:2] == (False, 0), "no file yet -> off: the solo prefill is stock, uncapped")
+            open(path, "w").write("2304\n")
+            clock[0] = 700.5
+            c.schedule()
+            check(c.calls[-1][:2] == (False, 2304), "the file's chunk caps a SOLO prefill (no decoder in play)")
+            check(c.scheduler_config.long_prefill_token_threshold == 0, "and the stock threshold is restored after the step")
+            open(path, "w").write("junk")
+            clock[0] = 701.0
+            c.schedule()
+            check(c.calls[-1][:2] == (False, 0), "junk in the file reads as off, never as a crash on the serving path")
+            # absolute: it replaces the planned chunk on a mixed step too
+            open(path, "w").write("4608")
+            os.environ["VLLM_GLM53_SCHED_MODE"] = "mixed"
+            c2 = Sched()
+            c2.running = [dec(), pre("long", 100000)]; c2.waiting = []
+            clock[0] = 702.0
+            c2.schedule()
+            check(c2.calls[-1][:2] == (False, 4608) and c2._capped_steps == 1,
+                  "on a planned prefill step the file wins over the plan's chunk")
+            os.environ.pop("VLLM_GLM53_SCHED_CHUNK_FILE")
+            c3 = Sched()
+            c3.running = [pre("solo2", 0)]; c3.waiting = []
+            clock[0] = 703.0
+            c3.schedule()
+            check(c3.calls[-1][:2] == (False, 0) and c3.chunk_file == "",
+                  "unset (production) -> the instrument is not even consulted")
     finally:
         for name, old in saved_modules.items():
             if old is None:
@@ -6854,7 +6898,9 @@ def test_decode_first_scheduler_contracts() -> None:
           "DECODE_FIRST=1 reaches vLLM as --scheduler-cls and is a caller-overridable profile key")
     check('DECODE_FIRST=1 needs ASYNC_SCHED=1' in launcher, "launcher refuses DECODE_FIRST without the async scheduler")
     check("\nDECODE_FIRST=1\n" in profile and all(f"\n{k}=" in profile for k in env_keys),  # 39차 DF4: promoted
-          "profile declares DECODE_FIRST=1 and the eleven VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+          "profile declares DECODE_FIRST=1 and the twelve VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+    check("\nVLLM_GLM53_SCHED_CHUNK_FILE=\n" in profile,
+          "the dev instrument is declared EMPTY: the launcher forwards a profile knob only when it is non-empty")
     check("\nVLLM_GLM53_SCHED_MODE=sequential\n" in profile and "\nVLLM_GLM53_SCHED_MAX_WAIT_S=20\n" in profile
           and "\nVLLM_GLM53_SCHED_DECODE_STEPS=6\n" in profile
           and "\nVLLM_GLM53_SCHED_MIXED_CHUNK=1152\n" in profile and "\nVLLM_GLM53_SCHED_CHUNK_REF_CTX=32768\n" in profile
