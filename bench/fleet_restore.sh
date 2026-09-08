@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# One production restore owned by the boot supervisor. Never inherit candidate knobs.
+# Production restore is exclusive to the central five-minute idle controller.
 set -euo pipefail
 session=${FLEET_SESSION:?}
-[[ $(cut -d'|' -f1 "${FLEET_DIR:?}/holder") == "$session" ]] || exit 2
+controller=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+python3 "$controller/fleet_idle.py" authorize "${FLEET_DIR:?}" "$session" >/dev/null || exit 2
+export FLEET_BOOT_INTENT=recovery
 # Apply public-default isolation to deployment and the health check too, not
 # only to the final boot. In particular IMAGE/PROFILE must not select an arm.
 # Match every caller-precedence argument to the GLM ct_load_profile call,
@@ -28,30 +30,16 @@ while IFS= read -r key; do
       unset "$key" ;;
   esac
 done < <(compgen -e)
-configured=/home/choiceoh/stkernel
-if [[ -s $FLEET_DIR/production-repo ]]; then
-  IFS= read -r configured < "$FLEET_DIR/production-repo" || [[ -n $configured ]]
-fi
-repo=${FLEET_PRODUCTION_REPO:-$configured}
-if [[ -n ${FLEET_RECOVERY_RECEIPT:-} ]]; then
-  recovery=$(python3 "${FLEET_RUNNER_REPO:?}/bench/fleet_validation.py" verify-recovery \
-    --receipt "$FLEET_RECOVERY_RECEIPT" --format shell)
-  eval "$recovery"
-  repo=$FLEET_RECOVERY_REPO
-  export FLEET_DEPLOY_RECOVERY_RECEIPT=$FLEET_RECOVERY_RECEIPT
-  cd "$repo"
-elif [[ ${FLEET_VALIDATION_REQUIRED:-0} == 1 ]]; then
-  echo 'prevalidated approved recovery receipt is missing; refusing moving-main restore'
+[[ -n ${FLEET_RECOVERY_RECEIPT:-} ]] || {
+  echo 'prevalidated approved recovery receipt is missing; idle controller must prepare it'
   exit 2
-else
-  # Compatibility for reservations made by an older pinned controller. New
-  # boot tickets require a recovery receipt before they may join the queue.
-  cd "$repo"
-  [[ -z $(git status --porcelain) ]] || { echo 'production checkout is dirty'; exit 2; }
-  git fetch origin
-  git switch --detach origin/main
-  [[ $(git rev-parse HEAD) == $(git rev-parse origin/main) ]] || { echo 'production checkout is not approved main'; exit 2; }
-fi
+}
+recovery=$(python3 "${FLEET_RUNNER_REPO:?}/bench/fleet_validation.py" verify-recovery \
+  --receipt "$FLEET_RECOVERY_RECEIPT" --format shell)
+eval "$recovery"
+repo=$FLEET_RECOVERY_REPO
+export FLEET_DEPLOY_RECOVERY_RECEIPT=$FLEET_RECOVERY_RECEIPT
+cd "$repo"
 # A completed public defaults arm of this approved build needs no second boot.
 if python3 "${FLEET_RUNNER_REPO:?}/bench/fleet_entry.py" production-current "$repo"; then
   echo 'approved public defaults already healthy; no restore boot'

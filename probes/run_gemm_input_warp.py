@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reserved, bounded warp-consumer maintenance probe with unconditional recovery."""
+"""Reserved, bounded warp-consumer maintenance probe with fleet-owned idle recovery."""
 from datetime import datetime, timezone
 import json
 import os
@@ -9,7 +9,6 @@ import subprocess
 import urllib.request
 
 ROOT=Path(__file__).resolve().parents[1]
-CANONICAL=Path('/home/choiceoh/stkernel')
 IMAGE='sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211'
 OUT=Path(os.environ['GEMM_INPUT_WARP_OUT'])
 
@@ -36,7 +35,7 @@ def main():
     (OUT/'before-head.log').write_bytes(Path('/home/choiceoh/glm53-logs/glm53.log').read_bytes())
     receipt={'started_utc':datetime.now(timezone.utc).isoformat(),'before':before,
              'source_commit':subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True).strip(),
-             'probe_returncode':None,'restore_returncode':None,'after':None}
+             'probe_returncode':None,'public_recovery':'central idle controller','after':None}
     def save():(OUT/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     save()
     name='inputwarp-'+session
@@ -56,14 +55,9 @@ def main():
         save()
     finally:
         subprocess.run(['docker','stop','-t','1',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
-        env=dict(os.environ,REPO=str(CANONICAL),LEGS='none',PREFILL_WARMUP='1')
-        with (OUT/'restore.log').open('w') as log:
-            receipt['restore_returncode']=subprocess.run(['bash','/home/choiceoh/glm53-logs/ab-lever2.sh',
-                'INPUTWARPRESTORE0907',''],env=env,stdout=log,stderr=subprocess.STDOUT,timeout=1800).returncode
         receipt['after']=state();receipt['finished_utc']=datetime.now(timezone.utc).isoformat();save()
-    assert receipt['probe_returncode']==receipt['restore_returncode']==0,receipt
-    with urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=5) as r:assert r.status==200
-    print('PASS bounded warp probe and restored public defaults',flush=True)
+    assert receipt['probe_returncode']==0,receipt
+    print('PASS bounded warp probe; fleet released for the next job',flush=True)
 
 
 if __name__=='__main__':main()

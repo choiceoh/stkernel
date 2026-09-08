@@ -52,9 +52,7 @@
 #                                                    A stale srv2 copy is SYNCED from the repo, not
 #                                                    failed; knobs may be declared by the repo profile
 #                                                    or by a tree the chain `cd`s into (a PR checkout)
-#   fleet.sh restore-needed <session>                "yes" when nobody with a BOOT is queued behind you
-#                                                    (the last holder restores production; a holder
-#                                                    with a boot job behind it may skip the restore)
+#   fleet.sh restore-needed <session>                always no: recovery belongs to the idle controller
 #   fleet.sh run --probe <session> [est] [note] -- <cmd...>
 #                                                    a GPU probe (no boot): needs an IDLE serving
 #                                                    (health 200, 0 requests) or no serving at all,
@@ -94,8 +92,8 @@
 #                                                    CPU probes, tests, compile checks) -> parallel;
 #                                                    no evidence -> queue, and it says so
 # `status` also prints what production is serving (defaults, or which knobs)
-# and the deployed build; a release with an empty queue and production not on
-# the defaults prints the restore command (FLEET_AUTO_RESTORE=1 runs it).
+# and the deployed build. Sessions never restore on release; the central idle
+# controller recovers only after 300 seconds without fleet activity.
 # Records: every release appends to $FLEET_DIR/ledger.tsv; `status` derives ETAs
 # from a session's last actual holds and flags a holder that is SILENT (no
 # heartbeat for 10 min) or OVERDUE (2x its estimate) -- flags only, never a kill.
@@ -293,12 +291,9 @@ nodes_check() {  # idea 8: the four nodes before a boot; 0 = all fine
   done
   return $ok
 }
-restore_needed() {  # session -> yes|no
-  if [ "${FLEET_RESTORE_MANAGED:-0}" = 1 ]; then
-    echo "no (the boot supervisor owns the final restore/handoff decision)"; return 1
-  fi
-  echo "yes (a standalone caller cannot transfer restore responsibility; use fleet.sh run --gpu)"
-  return 0
+restore_needed() {  # session -> always no
+  echo "no (only the central controller restores after 300 seconds of idle fleet)"
+  return 1
 }
 
 # ---- legacy awareness: a peer that did not adopt this tool is still busy when
@@ -346,16 +341,21 @@ _enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repea
       logit "refused duplicate session $1 (pid $pid vs queued $qpid)"; return 2
     fi
     awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" -v kind="$kind" -v pid="$pid" '$2==s {$4=est; $5=note; $6=kind; if (pid!="") $7=pid} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue || return 1
     return 0
   fi
   echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}|$kind|$pid" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}"
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue
 }
 _dequeue() {
+  local existed=0
+  grep -q "^[0-9]*|$1|" "$Q" && existed=1
   grep -v "^[0-9]*|$1|" "$Q" > "$Q.tmp"; mv "$Q.tmp" "$Q"
   local marker
   for marker in priority-front priority-yield; do
     [ "$(cat "$FLEET_DIR/$marker" 2>/dev/null)" != "$1" ] || rm -f "$FLEET_DIR/$marker"
   done
+  [ "$existed" = 0 ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dequeue
 }
 _withdraw_owned() {  # session pid; an older supervisor cannot erase a reused name
   local rowpid
@@ -371,6 +371,7 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   if [ -s "$H" ]; then
     if holder_alive; then return 1; fi
     logit "auto-kick dead holder: $(holder_line)"; rm -f "$H"
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dead-holder || return 1
   fi
   # We hold .lock and have no live holder. Every waiter sees the same order;
   # priority cannot interrupt a pair/chain or steal a yielded holder's place.
@@ -426,21 +427,29 @@ _release() {  # session
   if [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$1" ]; then
     _ledger_row "$1"
     rm -f "$H" "$LOGD/FLEET-held-by-$1.done" "$(hb_file "$1")"; logit "release $1"; _event release "$1" ""
-    if [ ! -s "$Q" ] && [ "${FLEET_NO_RESTORE_CHECK:-0}" != 1 ]; then
-      local pl; pl=$(production_line)
-      case "$pl" in *"NOT defaults"*|*"no serving"*|*"health 000"*|*"health 5"*)
-        if [ "${FLEET_AUTO_RESTORE:-0}" = 1 ]; then
-          logit "auto-restore after $1: $pl"; ( LEGS=none PREFILL_WARMUP=1 nohup bash "$LOGD/ab-lever2.sh" PRODRESTORE "" > "$LOGD/auto-restore.log" 2>&1 & )
-        else
-          echo "NOTE: queue empty and $pl -- restore with: LEGS=none bash $LOGD/ab-lever2.sh PRODRESTORE \"\" (FLEET_AUTO_RESTORE=1 does it)"
-        fi;;
-      esac
-    fi
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" release || return 1
     # legacy markers for chains that still poll them
     for p in fusion mkg3 b12x glmfix; do touch "$LOGD/FLEET-free-for-$p.done"; done
     return 0
   fi
   echo "not the holder: $(holder_line 2>/dev/null || echo none)" >&2; return 1
+}
+
+_adopt() {  # caller holds .lock throughout the ownership transition
+  local s=$1 pid=$2 est=${3:-30} note=${4:-}
+  if [ -s "$H" ] && holder_alive; then echo "fleet already held: $(holder_line)" >&2; return 1; fi
+  kill -0 "$pid" 2>/dev/null || { echo "pid $pid is not alive on $(me)" >&2; return 1; }
+  printf '%s|%s|%s|%s|%s|%s|boot\n' "$s" "$pid" "$(me)" "$(now)" "$est" "$note" > "$H"
+  rm -f "$LOGD"/FLEET-free-for-*.done; touch "$LOGD/FLEET-held-by-$s.done"
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" adopt || return 1
+  logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)"
+}
+_kick() {  # preserve the same lock used by idle recovery and admission
+  if [ ! -s "$H" ]; then echo "nothing held"; return 0; fi
+  if holder_alive && [ "${1:-}" != "--force" ]; then echo "holder is ALIVE: $(holder_line) -- use --force only on the operator's word" >&2; return 1; fi
+  logit "kick${1:+ $1} of $(holder_line)"; rm -f "$H"
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" kick || return 1
+  touch "$LOGD"/FLEET-free-for-{fusion,mkg3,b12x,glmfix}.done; echo "kicked"
 }
 
 cmd=${1:-status}; shift || true
@@ -530,15 +539,12 @@ case "$cmd" in
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
     if [ "$kind" = boot ]; then
-      # Quick candidate admission and an existing release-validated recovery
-      # are sufficient for experiments; full release is an explicit action.
+      # Sessions validate only their candidate. The central idle controller
+      # selects a release-validated recovery when the fleet has been idle.
       export FLEET_VALIDATION_STORE=${FLEET_VALIDATION_STORE:-$FLEET_DIR/validation}
       python3 "$REPO/bench/fleet_prepare.py" validate-targets "$s" --prepared "$FLEET_PREPARE_MANIFEST" >&2 || exit 3
-      production_repo=/home/choiceoh/stkernel
-      if [ -s "$FLEET_DIR/production-repo" ]; then IFS= read -r production_repo < "$FLEET_DIR/production-repo" || true; fi
-      production_repo=${FLEET_PRODUCTION_REPO:-$production_repo}
-      FLEET_RECOVERY_RECEIPT=$(python3 "$REPO/bench/fleet_validation.py" prepare-recovery --repo "$production_repo" --store "$FLEET_VALIDATION_STORE" --format receipt) || exit 3
-      export FLEET_RECOVERY_RECEIPT FLEET_VALIDATION_REQUIRED=1 FLEET_VALIDATION_LEVEL=admission
+      unset FLEET_RECOVERY_RECEIPT
+      export FLEET_VALIDATION_REQUIRED=1 FLEET_VALIDATION_LEVEL=admission
     fi
     runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
     with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
@@ -558,13 +564,9 @@ case "$cmd" in
     ls -t "$LOGD"/FLEET-*.done 2>/dev/null | head -4 | while read -r f; do echo "  marker $(stat -c %y "$f" | cut -c12-16) $(basename "$f")"; done
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pause.py" list --format text
     echo "log:"; tail -4 "$L" | sed 's/^/  /'
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" status "$FLEET_DIR"
     production_line; deployed_line; baseline_line;;
-  adopt)  # a job that is ALREADY running (started before this tool, or by hand) becomes the holder
-    s=${1:?session}; pid=${2:?pid}; est=${3:-30}; note=${4:-}
-    if [ -s "$H" ] && holder_alive; then echo "fleet already held: $(holder_line)" >&2; exit 1; fi
-    kill -0 "$pid" 2>/dev/null || { echo "pid $pid is not alive on $(me)" >&2; exit 1; }
-    with_lock sh -c "echo '$s|$pid|$(me)|$(now)|$est|$note|boot' > '$H'; rm -f '$LOGD'/FLEET-free-for-*.done; touch '$LOGD/FLEET-held-by-$s.done'"
-    logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)";;
+  adopt) with_lock _adopt "${1:?session}" "${2:?pid}" "${3:-30}" "${4:-}";;
   front) with_lock _front "${1:?session}"; echo "$1 -> position $(_position "$1")";;
   withdraw)
     if [ "${2:-}" = --pid ]; then with_lock _withdraw_owned "${1:?session}" "${3:?pid}"
@@ -578,10 +580,7 @@ case "$cmd" in
     # the waiter goes first -- it is this tool's own process, recorded at request
     if [ -n "$qpid" ] && kill -0 "$qpid" 2>/dev/null && grep -qE "fleet.sh|fleet_boot.py" "/proc/$qpid/cmdline" 2>/dev/null; then kill "$qpid" 2>/dev/null; sleep 1; echo "stopped waiter pid $qpid"; fi
     with_lock _dequeue "$s"; logit "cancel $s"; echo "cancelled $s";;
-  kick)
-    if [ ! -s "$H" ]; then echo "nothing held"; exit 0; fi
-    if holder_alive && [ "${1:-}" != "--force" ]; then echo "holder is ALIVE: $(holder_line) -- use --force only on the operator's word" >&2; exit 1; fi
-    logit "kick${1:+ $1} of $(holder_line)"; rm -f "$H"; touch "$LOGD"/FLEET-free-for-{fusion,mkg3,b12x,glmfix}.done; echo "kicked";;
+  kick) with_lock _kick "${1:-}";;
   busy) echo "$(busy_procs) $(busy_reqs)";;
   preflight)
     [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe] <session> [-- cmd...]" >&2; exit 2; }
@@ -610,8 +609,8 @@ case "$cmd" in
     printf '%s\t%s\t%s\t%s\t%s\n' "$(ts)" "$stamp" "$sha" "$s" "$rev" >> "$FLEET_DIR/builds.tsv"
     logit "deploy $s $rev -> build $stamp = $sha"; echo "deployed build $stamp = $sha (registry: $FLEET_DIR/builds.tsv)";;
   yield)
-    # The supervisor holds restore responsibility across its payload. Do not
-    # drop that ownership for a nested legacy yield; queued work runs at finish.
+    # The supervisor owns its payload and teardown. Do not drop that ownership
+    # for a nested legacy yield; queued work runs immediately at finish.
     [ "${FLEET_RESTORE_MANAGED:-0}" != 1 ] || { echo "yield deferred to supervised finish"; exit 0; }
     s=${1:?session}; max=${2:-15}
     [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$s" ] || { echo "not the holder"; exit 0; }
