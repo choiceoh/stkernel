@@ -11,14 +11,16 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"
 DISPATCH = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch"
+PREPARE = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap"
 sys.path.insert(0, str(ROOT / "bench"))
 import proof
 
 
 class Tensor:
     """Small row-view storage model for copy/broadcast/lifetime assertions."""
-    def __init__(self, rows, dtype="bf16", device="cuda:0"):
+    def __init__(self, rows, dtype="bf16", device="cuda:0", operations=None):
         self.rows, self.dtype, self.device = rows, dtype, device
+        self.operations = operations
 
     def size(self, dim):
         return len(self.rows) if dim == 0 else len(self.rows[0])
@@ -31,31 +33,36 @@ class Tensor:
         return self.size(0) * self.size(1)
 
     def __getitem__(self, index):
-        return Tensor(self.rows[index], self.dtype, self.device)
+        return Tensor(self.rows[index], self.dtype, self.device, self.operations)
 
     def copy_(self, other):
+        if self.operations is not None:
+            self.operations.append("copy")
         assert len(self.rows) == len(other.rows)
         for dst, src in zip(self.rows, other.rows):
             dst[:] = src
         return self
 
     def zero_(self):
+        if self.operations is not None:
+            self.operations.append("zero")
         for row in self.rows:
             row[:] = [0] * len(row)
         return self
 
     def expand(self, rows, columns):
         assert len(self.rows) == 1 and columns == -1
-        return Tensor(self.rows * rows, self.dtype, self.device)
+        return Tensor(self.rows * rows, self.dtype, self.device, self.operations)
 
 
 class Harness:
     def __init__(self):
         self.calls, self.fallbacks, self.logs, self.allocations = [], [], [], []
+        self.remaps, self.operations, self.prepares = [], [], []
         self.fail_allocate = False
         names = {"b12x_ep_zero_weight_micro_chunks", "b12x_ep_micro_tail",
                  "_apply_ep_zero_weight_micro", "_ep_tail_padded_micro",
-                 "_ep_tail_buffers", "apply"}
+                 "_ep_tail_buffers", "_try_apply_ep_fused_short_decode", "apply"}
         tree = ast.parse(SOURCE.read_text())
         constants = [n for n in tree.body if isinstance(n, ast.Assign)
                      and any(isinstance(t, ast.Name) and
@@ -80,12 +87,13 @@ class Harness:
             _swiglu_alpha=1., _swiglu_beta=0., _swiglu_limit=10.,
             _use_ep=True, _ep_no_dummy=True, _ep_stock_topk_micro=False,
             _ep_compact_enabled=False, hidden_dim=3, intermediate_size_per_partition=2048,
-            num_local_experts=72, w1_scale=object(), w2_scale=object(),
+            num_local_experts=72, local_expert_offset=0,
+            w1_scale=object(), w2_scale=object(),
             w1_sf_mma=object(), w2_sf_mma=object(), _fc2_input_scale=object(),
             g1_alphas=Tensor([[1] for _ in range(72)]),
             g2_alphas=Tensor([[1] for _ in range(72)]),
             _ensure_ep_scratch=lambda *args: None,
-            _remap_ep_tensors=lambda ids, weights, *args, **kw: (ids, weights),
+            _remap_ep_tensors=self.remap,
             _apply_ep_fixed=self.fixed,
         )
         ns["torch"].cuda = SimpleNamespace(is_current_stream_capturing=lambda: True)
@@ -94,16 +102,34 @@ class Harness:
             setattr(self.owner, name, MethodType(ns[name], self.owner))
         self.dispatch = ModuleType(DISPATCH)
         self.dispatch.launch_sm120_moe = self.launch
+        self.prepare = ModuleType(PREPARE)
+        self.prepare.ep_short_decode_prepare_supported = lambda *args, **kw: False
+        self.prepare.try_prepare_ep_short_decode = self.prepare_rows
 
     def zeros(self, shape, *, dtype, device):
         if self.fail_allocate:
             raise RuntimeError("test allocation failure")
-        value = Tensor([[0] * shape[1] for _ in range(shape[0])], dtype, device)
+        value = Tensor([[0] * shape[1] for _ in range(shape[0])], dtype, device, self.operations)
         self.allocations.append(value)
         return value
 
     def log(self, message, *args):
         self.logs.append(message % args)
+
+    def remap(self, ids, weights, *args, **kwargs):
+        self.remaps.append(ids.dtype)
+        return Tensor(ids.rows, "i32", ids.device), weights
+
+    def prepare_rows(self, x, ids, weights, **kw):
+        # Admission/kernel semantics are tested in test_glm53_ep_route_remap;
+        # this stub supplies their output to the actual wrapper continuation.
+        self.prepares.append((x, ids, weights))
+        for row in range(8):
+            source = row if row < 6 else 0
+            kw["pad_x"].rows[row][:] = x.rows[source]
+            kw["pad_ids"].rows[row][:] = ids.rows[source]
+            kw["pad_weights"].rows[row][:] = weights.rows[source] if row < 6 else [0] * 8
+        return True
 
     @staticmethod
     def write_rows(output, x, ids, weights):
@@ -125,14 +151,15 @@ class Harness:
         self.write_rows(output, x, ids, weights)
         return output
 
-    def run(self, tokens, *, all_remote=False, shift=0):
-        x = Tensor([[shift + r + 1, 2, -3] for r in range(tokens)])
+    def run(self, tokens, *, all_remote=False, shift=0, id_dtype="i32"):
+        width = self.owner.hidden_dim
+        x = Tensor([[shift + r + 1, 2, -3] + [0] * (width - 3) for r in range(tokens)])
         ids = Tensor([[72] * 8 if all_remote else [1, 3] + [72] * 6
-                      for _ in range(tokens)], "i32")
+                      for _ in range(tokens)], id_dtype)
         weights = Tensor([[0] * 8 if all_remote else [.25, .5] + [0] * 6
                           for _ in range(tokens)], "fp32")
-        out = Tensor([[999] * 3 for _ in range(tokens)])
-        with patch.dict(sys.modules, {DISPATCH: self.dispatch}):
+        out = Tensor([[999] * width for _ in range(tokens)], operations=self.operations)
+        with patch.dict(sys.modules, {DISPATCH: self.dispatch, PREPARE: self.prepare}):
             self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
                              None, 288, None, None, None, None, None, None, None)
         return x, ids, weights, out
@@ -203,6 +230,98 @@ class ShortDecodeTests(unittest.TestCase):
                                    (good.replace("; padded tail=1", ""), False)):
                 path.write_text(text)
                 self.assertIs(proof.check([knob], str(path))["proof"][knob], expected)
+
+
+class FusedShortDecodeTests(unittest.TestCase):
+    def harness(self):
+        h = Harness()
+        h.owner.hidden_dim = 4096
+        h.prepare.ep_short_decode_prepare_supported = lambda *args, **kw: True
+        return h
+
+    def test_exact_six_rows_bypass_torch_remap_and_all_staging_copies(self):
+        h = self.harness()
+        x, ids, _, out = h.run(6, id_dtype="i64")
+        self.assertEqual(h.remaps, [])
+        self.assertEqual(len(h.prepares), 1)
+        self.assertEqual(len(h.calls), 1)
+        self.assertEqual(h.operations, ["copy"])  # only the original output copyback
+        self.assertEqual(h.owner._ep_tail_ids.dtype, "i32")
+        self.assertEqual(out.rows, [[v * .75 for v in row] for row in x.rows])
+        self.assertEqual(h.calls[0]["a"][6:], [x.rows[0]] * 2)
+        self.assertEqual(h.calls[0]["topk_ids"][6:], [ids.rows[0]] * 2)
+        self.assertEqual(h.calls[0]["topk_weights"][6:], [[0] * 8] * 2)
+        self.assertIn("[ep-short-prepare fused=1]", h.logs[-1])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "boot.log"
+            path.write_text(h.logs[-1])
+            self.assertTrue(proof.check(["VLLM_B12X_EP_ZERO_WEIGHT_MICRO"], str(path))[
+                "proof"]["VLLM_B12X_EP_ZERO_WEIGHT_MICRO"])
+
+    def test_18_then_6_then_changed_6_keeps_exact_staging_and_workspace(self):
+        h = self.harness()
+        h.run(18, id_dtype="i64")
+        buffers = tuple(getattr(h.owner, name) for name in
+                        ("_ep_tail_x", "_ep_tail_ids", "_ep_tail_w", "_ep_tail_out"))
+        for all_remote, shift in ((False, 123), (True, 789)):
+            h.operations.clear()
+            x, _, _, out = h.run(6, all_remote=all_remote, shift=shift, id_dtype="i64")
+            for before, name in zip(buffers, ("_ep_tail_x", "_ep_tail_ids", "_ep_tail_w", "_ep_tail_out")):
+                self.assertIs(before, getattr(h.owner, name))
+            scale = 0 if all_remote else .75
+            self.assertEqual(out.rows, [[v * scale for v in row] for row in x.rows])
+            self.assertEqual(h.operations, ["copy"])
+        self.assertEqual(len(h.allocations), 4)
+        self.assertEqual(len(h.remaps), 1)  # only T18
+
+    def test_unsupported_or_prelaunch_decline_reuses_original_remap_and_padding(self):
+        for decline_at in ("admission", "preparation"):
+            h = self.harness()
+            if decline_at == "admission":
+                h.prepare.ep_short_decode_prepare_supported = lambda *args, **kw: False
+            else:
+                h.prepare.try_prepare_ep_short_decode = lambda *args, **kw: False
+            x, _, _, out = h.run(6, id_dtype="i64")
+            self.assertEqual(len(h.remaps), 1)
+            self.assertEqual(h.operations.count("copy"), 6)
+            self.assertEqual(h.operations.count("zero"), 1)
+            self.assertEqual(len(h.allocations), 4)
+            self.assertEqual(out.rows, [[v * .75 for v in row] for row in x.rows])
+            self.assertIn("[ep-short-prepare fused=0]", h.logs[-1])
+
+    def test_allocation_failure_falls_back_but_launch_errors_never_do(self):
+        h = self.harness()
+        h.fail_allocate = True
+        h.run(6)
+        self.assertEqual(len(h.remaps), 1)
+        self.assertEqual(h.prepares, [])
+        self.assertEqual(h.calls, [])
+        self.assertEqual(h.fallbacks, [6])
+        for fail_at in ("prepare", "compute"):
+            h = self.harness()
+            def fail(*args, **kwargs):
+                raise RuntimeError("device operation failed")
+            if fail_at == "prepare":
+                h.prepare.try_prepare_ep_short_decode = fail
+            else:
+                h.dispatch.launch_sm120_moe = fail
+            with self.assertRaisesRegex(RuntimeError, "device operation failed"):
+                h.run(6)
+            self.assertEqual(h.remaps, [])
+            self.assertEqual(h.fallbacks, [])
+            self.assertFalse(any("[ep-short-prepare fused=1]" in line for line in h.logs))
+
+    def test_other_token_counts_geometry_or_disabled_flag_never_prepare(self):
+        for tokens, width, intermediate, enabled in (
+            (5, 4096, 2048, True), (7, 4096, 2048, True), (8, 4096, 2048, True),
+            (6, 4095, 2048, True), (6, 4096, 1024, True), (6, 4096, 2048, False),
+        ):
+            h = self.harness()
+            h.owner.hidden_dim, h.owner.intermediate_size_per_partition = width, intermediate
+            h.owner._ep_zero_weight_micro = enabled
+            h.run(tokens)
+            self.assertEqual(h.prepares, [])
+            self.assertEqual(len(h.remaps), 1)
 
 
 if __name__ == "__main__":

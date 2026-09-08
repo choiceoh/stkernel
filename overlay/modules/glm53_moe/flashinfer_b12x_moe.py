@@ -1669,6 +1669,51 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             tmp_b=self._ep_tmp_b[:tokens],
         )
 
+    def _try_apply_ep_fused_short_decode(
+        self, output, hidden_states, w1, w2, topk_ids, topk_weights, expert_map
+    ):
+        """Prepare the exact T6 padded lane before any Torch route remap."""
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap import (
+            ep_short_decode_prepare_supported, try_prepare_ep_short_decode,
+        )
+        if not ep_short_decode_prepare_supported(
+            hidden_states, topk_ids, topk_weights, expert_map=expert_map,
+            num_local_experts=self.num_local_experts,
+            local_expert_offset=self.local_expert_offset,
+        ):
+            return None
+        if self._ep_zero_weight_workspace is None:
+            raise RuntimeError("zero-weight micro workspace was not allocated before apply")
+        # The legacy remap produces int32 IDs even when the router uses int64.
+        # Keep its same staging key/addresses across 18/12/6-token captures.
+        buffers = self._ep_tail_buffers(
+            B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS,
+            hidden_states, topk_ids, topk_weights, ids_dtype=torch.int32,
+        )
+        if buffers is None:
+            return None
+        pad_x, pad_ids, pad_weights, _ = buffers
+        if not try_prepare_ep_short_decode(
+            hidden_states, topk_ids, topk_weights, expert_map=expert_map,
+            num_local_experts=self.num_local_experts,
+            local_expert_offset=self.local_expert_offset,
+            pad_x=pad_x, pad_ids=pad_ids, pad_weights=pad_weights,
+        ):
+            return None
+        # A preparation/compute launch failure propagates. Re-running Torch
+        # after a possibly submitted device operation is not a safe fallback.
+        if not self._ep_tail_padded_micro(
+            output, hidden_states, w1, w2, topk_ids, topk_weights, (0, 6),
+            prepared_buffers=buffers,
+        ):
+            raise RuntimeError("prepared six-token EP tail was not consumed")
+        logger.info_once(
+            "[ep-short-prepare fused=1] b12x EP zero-weight micro: "
+            "6 tokens -> 1 top-k=8 calls "
+            "(8 tokens / 64 routed pairs each; padded tail=1)"
+        )
+        return output
+
     def _apply_ep_zero_weight_micro(
         self, output, hidden_states, w1, w2, topk_ids, topk_weights
     ):
@@ -1746,7 +1791,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             )
             return output
         logger.info_once(
-            "b12x EP zero-weight micro: %d tokens -> %d top-k=8 calls "
+            "[ep-short-prepare fused=0] b12x EP zero-weight micro: "
+            "%d tokens -> %d top-k=8 calls "
             "(8 tokens / 64 routed pairs each; padded tail=%d)",
             topk_ids.size(0), len(chunks) + int(tail is not None),
             int(tail is not None),
@@ -1754,7 +1800,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         return output
 
     def _ep_tail_padded_micro(
-        self, output, hidden_states, w1, w2, topk_ids, topk_weights, tail
+        self, output, hidden_states, w1, w2, topk_ids, topk_weights, tail,
+        *, prepared_buffers=None,
     ):
         """Run the short tail as a FULL chunk, padded. Returns whether it ran.
 
@@ -1775,17 +1822,20 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         rem = hi - lo
         if rem <= 0 or rem >= chunk:
             return False
-        buf = self._ep_tail_buffers(chunk, hidden_states, topk_ids, topk_weights)
+        buf = prepared_buffers
+        if buf is None:
+            buf = self._ep_tail_buffers(chunk, hidden_states, topk_ids, topk_weights)
         if buf is None:
             return False
         pad_x, pad_ids, pad_w, pad_out = buf
-        pad_x[:rem].copy_(hidden_states[lo:hi])
-        pad_ids[:rem].copy_(topk_ids[lo:hi])
-        pad_w[:rem].copy_(topk_weights[lo:hi])
-        # Pad rows repeat the tail's first row at weight 0.
-        pad_x[rem:].copy_(hidden_states[lo:lo + 1].expand(chunk - rem, -1))
-        pad_ids[rem:].copy_(topk_ids[lo:lo + 1].expand(chunk - rem, -1))
-        pad_w[rem:].zero_()
+        if prepared_buffers is None:
+            pad_x[:rem].copy_(hidden_states[lo:hi])
+            pad_ids[:rem].copy_(topk_ids[lo:hi])
+            pad_w[:rem].copy_(topk_weights[lo:hi])
+            # Pad rows repeat the tail's first row at weight 0.
+            pad_x[rem:].copy_(hidden_states[lo:lo + 1].expand(chunk - rem, -1))
+            pad_ids[rem:].copy_(topk_ids[lo:lo + 1].expand(chunk - rem, -1))
+            pad_w[rem:].zero_()
         from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch import (
             launch_sm120_moe,
         )
@@ -1818,17 +1868,19 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         output[lo:hi].copy_(pad_out[:rem])
         return True
 
-    def _ep_tail_buffers(self, chunk, hidden_states, topk_ids, topk_weights):
+    def _ep_tail_buffers(self, chunk, hidden_states, topk_ids, topk_weights,
+                         *, ids_dtype=None):
         """Lazily pin the one-chunk staging tensors. None if shapes drift."""
         # Token count is deliberately absent: an 18-token capture's two-row
         # tail and a later six-token capture keep these same strong references.
         # Each launch rewrites all eight staging rows before consuming them.
+        ids_dtype = topk_ids.dtype if ids_dtype is None else ids_dtype
         key = (
             chunk,
             hidden_states.size(1),
             topk_ids.size(1),
             hidden_states.dtype,
-            topk_ids.dtype,
+            ids_dtype,
             topk_weights.dtype,
             hidden_states.device,
         )
@@ -1839,7 +1891,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                     dtype=hidden_states.dtype, device=hidden_states.device)
                 self._ep_tail_ids = torch.zeros(
                     (chunk, topk_ids.size(1)),
-                    dtype=topk_ids.dtype, device=hidden_states.device)
+                    dtype=ids_dtype, device=hidden_states.device)
                 self._ep_tail_w = torch.zeros(
                     (chunk, topk_weights.size(1)),
                     dtype=topk_weights.dtype, device=hidden_states.device)
@@ -2428,6 +2480,15 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                     f"(g1={tuple(self.g1_alphas.shape)} g2={tuple(self.g2_alphas.shape)} "
                     f"want {expect_e})"
                 )
+            if (self._ep_zero_weight_micro and self._ep_no_dummy
+                    and (expect_e, self.hidden_dim, self.intermediate_size_per_partition,
+                         hidden_states.shape[0], topk_ids.shape[1])
+                    == (72, 4096, 2048, 6, 8)):
+                prepared_output = self._try_apply_ep_fused_short_decode(
+                    output, hidden_states, w1, w2, topk_ids, topk_weights, expert_map
+                )
+                if prepared_output is not None:
+                    return prepared_output
             local_prefill = ep_local_prefill_eligible(
                 enabled=_EP_LOCAL_PREFILL_ENABLED, use_ep=self._use_ep, no_dummy=self._ep_no_dummy,
                 experts=expect_e, hidden=self.hidden_dim,

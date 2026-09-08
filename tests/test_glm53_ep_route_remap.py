@@ -6,6 +6,7 @@ kernel against the actual serving remap, without duplicating its semantics.
 import ast
 import importlib.util
 import math
+import operator
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -47,16 +48,247 @@ def slot_reference(expert, *, expert_map, local_expert_offset):
 
 
 class FakeTensor:
+    next_pointer = 1 << 20
+
     def __init__(self, shape=(4097, 8), dtype="int32", device="cuda:0", contiguous=True):
         self.shape, self.dtype, self.device = shape, dtype, device
         self.is_cuda = device.startswith("cuda")
         self.ndim, self._contiguous = len(shape), contiguous
+        self.pointer = FakeTensor.next_pointer
+        FakeTensor.next_pointer += 1 << 20
 
     def is_contiguous(self):
         return self._contiguous
 
     def numel(self):
         return math.prod(self.shape)
+
+    def data_ptr(self):
+        return self.pointer
+
+    def element_size(self):
+        return {"int64": 8, "int32": 4, "float32": 4,
+                "float16": 2, "bfloat16": 2}[self.dtype]
+
+
+class ShortPrepareAdmissionTests(unittest.TestCase):
+    def fixture(self):
+        launch = Mock()
+        class Kernel:
+            def __getitem__(self, grid):
+                self.grid = grid
+                return launch
+        kernel = Kernel()
+        torch = SimpleNamespace(Tensor=FakeTensor, int32="int32", int64="int64",
+                                float32="float32", float16="float16", bfloat16="bfloat16")
+        ns = extract(REMAP, {"_ep_short_decode_metadata", "ep_short_decode_prepare_supported",
+                             "try_prepare_ep_short_decode"}, dict(
+            torch=torch, _prepare_ep_short_decode_kernel=kernel))
+        args = dict(hidden_states=FakeTensor((6, 4096), "bfloat16"),
+                    topk_ids=FakeTensor((6, 8)), topk_weights=FakeTensor((6, 8), "float32"),
+                    expert_map=FakeTensor((288,)), num_local_experts=72,
+                    local_expert_offset=72, pad_x=FakeTensor((8, 4096), "bfloat16"),
+                    pad_ids=FakeTensor((8, 8)), pad_weights=FakeTensor((8, 8), "float32"))
+        return ns, kernel, launch, args
+
+    def test_exact_types_and_map_variants_launch_once_with_owned_buffers(self):
+        for id_dtype in ("int32", "int64"):
+            for weight_dtype in ("float32", "float16", "bfloat16"):
+                for map_len in (None, 0, 288):
+                    ns, kernel, launch, args = self.fixture()
+                    args["topk_ids"].dtype = id_dtype
+                    args["topk_weights"].dtype = args["pad_weights"].dtype = weight_dtype
+                    args["expert_map"] = None if map_len is None else FakeTensor((map_len,), id_dtype)
+                    self.assertTrue(ns["try_prepare_ep_short_decode"](**args))
+                    launch.assert_called_once()
+                    self.assertEqual(kernel.grid, (8,))
+                    sent, constants = launch.call_args
+                    self.assertEqual(constants, dict(MAP_LEN=map_len or 0,
+                                                     HAS_MAP=map_len is not None, num_warps=4))
+                    self.assertIs(sent[0], args["hidden_states"])
+                    self.assertIs(sent[4], args["pad_x"])
+                    self.assertIs(sent[5], args["pad_ids"])
+                    self.assertIs(sent[6], args["pad_weights"])
+                    self.assertIs(sent[3], args["expert_map"] if map_len else args["pad_ids"])
+
+    def test_unsupported_metadata_or_partial_alias_never_launches(self):
+        changes = (
+            {"hidden_states": FakeTensor((7, 4096), "bfloat16")},
+            {"hidden_states": FakeTensor((6, 4096), "float16")},
+            {"hidden_states": FakeTensor((6, 4096), "bfloat16", contiguous=False)},
+            {"hidden_states": FakeTensor((6, 4096), "bfloat16", device="cpu")},
+            {"topk_ids": FakeTensor((6, 7))},
+            {"topk_weights": FakeTensor((6, 8), "float32", device="cuda:1")},
+            {"expert_map": FakeTensor((288, 1))},
+            {"expert_map": FakeTensor((288,), "float32")},
+            {"expert_map": FakeTensor((288,), contiguous=False)},
+            {"expert_map": FakeTensor(((1 << 31),))},
+            {"num_local_experts": 73}, {"local_expert_offset": -1},
+            {"local_expert_offset": True}, {"local_expert_offset": 1 << 31},
+            {"pad_x": FakeTensor((6, 4096), "bfloat16")},
+            {"pad_ids": FakeTensor((8, 8), "int64")},
+            {"pad_weights": FakeTensor((8, 8), "float16")},
+            {"pad_weights": FakeTensor((8, 8), "float32", contiguous=False)},
+        )
+        for change in changes:
+            ns, _, launch, args = self.fixture()
+            self.assertFalse(ns["try_prepare_ep_short_decode"](**dict(args, **change)))
+            launch.assert_not_called()
+        for left, right in (("pad_x", "hidden_states"), ("pad_ids", "topk_ids"),
+                            ("pad_weights", "expert_map"), ("pad_weights", "pad_ids")):
+            ns, _, launch, args = self.fixture()
+            args[left].pointer = args[right].pointer + args[right].element_size()
+            self.assertFalse(ns["try_prepare_ep_short_decode"](**args))
+            launch.assert_not_called()
+
+    def test_metadata_is_fresh_and_launch_errors_propagate(self):
+        ns, _, launch, args = self.fixture()
+        inputs = {k: v for k, v in args.items() if not k.startswith("pad_")}
+        self.assertTrue(ns["ep_short_decode_prepare_supported"](**inputs))
+        launch.assert_not_called()
+        self.assertTrue(ns["try_prepare_ep_short_decode"](**args))
+        args["topk_ids"].shape = (5, 8)
+        launch.reset_mock()
+        self.assertFalse(ns["try_prepare_ep_short_decode"](**args))
+        launch.assert_not_called()
+        args["topk_ids"].shape = (6, 8)
+        launch.side_effect = RuntimeError("device launch failed")
+        with self.assertRaisesRegex(RuntimeError, "device launch failed"):
+            ns["try_prepare_ep_short_decode"](**args)
+
+
+class Vector:
+    """Integer lanes for executing the real Triton preparation source on CPU."""
+    def __init__(self, values):
+        self.values = list(values)
+
+    def binary(self, other, fn, reverse=False):
+        values = other.values if isinstance(other, Vector) else [other] * len(self.values)
+        return Vector(fn(b, a) if reverse else fn(a, b)
+                      for a, b in zip(self.values, values))
+
+    def to(self, dtype):
+        if dtype == "int32":
+            return Vector(_i32(v) for v in self.values)
+        if dtype in ("uint16", "uint32"):
+            mask = (1 << int(dtype[4:])) - 1
+            return Vector(int(v) & mask for v in self.values)
+        return Vector(self.values)
+
+    def __invert__(self):
+        return Vector(not v for v in self.values)
+
+
+for _name, _op in (("add", operator.add), ("sub", operator.sub), ("mul", operator.mul),
+                  ("lt", operator.lt), ("ge", operator.ge),
+                  ("and", operator.and_), ("or", operator.or_)):
+    setattr(Vector, "__" + _name + "__", lambda self, other, op=_op: self.binary(other, op))
+    setattr(Vector, "__r" + _name + "__", lambda self, other, op=_op: self.binary(other, op, True))
+
+
+class Pointer:
+    def __init__(self, values, dtype, offset=0):
+        self.values, self.dtype, self.offset = values, SimpleNamespace(element_ty=dtype), offset
+
+    def to(self, dtype):
+        return Pointer(self.values, dtype, self.offset)
+
+    def __add__(self, offset):
+        return Pointer(self.values, self.dtype.element_ty, self.offset + offset)
+
+
+class TritonLanes:
+    constexpr = object
+    float32, uint32, uint16, int32, int64 = "float32", "uint32", "uint16", "int32", "int64"
+    pointer_type = staticmethod(lambda kind: kind)
+    arange = staticmethod(lambda lo, hi: Vector(range(lo, hi)))
+
+    def program_id(self, _):
+        return self.row
+
+    @staticmethod
+    def where(condition, left, right):
+        if isinstance(condition, Vector):
+            ls = left.values if isinstance(left, Vector) else [left] * len(condition.values)
+            rs = right.values if isinstance(right, Vector) else [right] * len(condition.values)
+            return Vector(l if c else r for c, l, r in zip(condition.values, ls, rs))
+        return left if condition else right
+
+    @staticmethod
+    def load(pointer, mask=True, other=0):
+        offsets = pointer.offset.values
+        masks = mask.values if isinstance(mask, Vector) else [mask] * len(offsets)
+        result = []
+        for index, enabled in zip(offsets, masks):
+            if enabled:
+                if not 0 <= index < len(pointer.values):
+                    raise AssertionError("unmasked out-of-bounds read")
+                result.append(pointer.values[index])
+            else:
+                result.append(other)
+        return Vector(result)
+
+    @staticmethod
+    def store(pointer, value):
+        offsets = pointer.offset.values
+        values = value.values if isinstance(value, Vector) else [value] * len(offsets)
+        for index, item in zip(offsets, values):
+            if not 0 <= index < len(pointer.values):
+                raise AssertionError("out-of-bounds write")
+            pointer.values[index] = item
+
+
+class ShortPrepareKernelTests(unittest.TestCase):
+    def kernel(self):
+        tree = ast.parse(REMAP.read_text())
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                    and n.name == "_prepare_ep_short_decode_kernel")
+        node.decorator_list = []
+        lanes = TritonLanes()
+        ns = {"tl": lanes}
+        exec(compile(ast.Module([node], type_ignores=[]), str(REMAP), "exec"), ns)
+        return lanes, ns[node.name]
+
+    def test_real_kernel_matches_legacy_padding_bits_and_changed_inputs(self):
+        lanes, kernel = self.kernel()
+        ids_pattern = [-1, 0, 71, 72, 73, 143, 288, (1 << 32) + 72]
+        mapping = [-1] * 288
+        mapping[72:76] = [0, 72, 73, (1 << 32) + 7]
+        for dtype, nan, negative_zero in (("float32", 0x7FC01234, 0x80000000),
+                                         ("float16", 0x7E12, 0x8000),
+                                         ("bfloat16", 0x7FC1, 0x8000)):
+            for initial_map in (None, [], mapping):
+                with self.subTest(dtype=dtype, mapped=initial_map is not None):
+                    x = [((i * 31) & 65535) for i in range(6 * 4096)]
+                    ids, weights = ids_pattern * 6, [nan, negative_zero, 5, 9] * 12
+                    mapped = None if initial_map is None else list(initial_map)
+                    px, pi, pw = [77] * (8 * 4096), [77] * 64, [77] * 64
+                    for turn in range(2):
+                        if turn:
+                            x[0], ids[0], weights[0] = 0x7FC1, 72, negative_zero
+                            if mapped:
+                                mapped[72] = 5
+                        saved = (x[:], ids[:], weights[:], None if mapped is None else mapped[:])
+                        for row in range(8):
+                            lanes.row = row
+                            kernel(Pointer(x, "bfloat16"), Pointer(ids, "int64"),
+                                   Pointer(weights, dtype), Pointer(mapped or pi, "int64"),
+                                   Pointer(px, "bfloat16"), Pointer(pi, "int32"),
+                                   Pointer(pw, dtype), 72, MAP_LEN=len(mapped or []),
+                                   HAS_MAP=mapped is not None)
+                        expected_ids, expected_weights = [], []
+                        for row in range(8):
+                            source = row if row < 6 else 0
+                            for slot in range(8):
+                                index = source * 8 + slot
+                                expert, remote = slot_reference(ids[index], expert_map=mapped,
+                                                                local_expert_offset=72)
+                                expected_ids.append(expert)
+                                expected_weights.append(weights[index] if row < 6 and not remote else 0)
+                        self.assertEqual(px, x + x[:4096] * 2)
+                        self.assertEqual(pi, expected_ids)
+                        self.assertEqual(pw, expected_weights)
+                        self.assertEqual((x, ids, weights, mapped), saved)
 
 
 class AdmissionTests(unittest.TestCase):

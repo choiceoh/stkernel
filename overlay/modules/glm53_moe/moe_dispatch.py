@@ -881,6 +881,25 @@ def _select_moe_mma_tiler_mn(
     return (128, 128)
 
 
+def _select_micro_mma_tiler_mn(
+    *, state_E: int, weight_E: int, m: int, k: int, n: int, num_topk: int,
+    skip_zero_weight_expert_id: int | None, quant_mode: str,
+    activation: str, swiglu_alpha: float, swiglu_beta: float,
+    swiglu_limit: float | None,
+) -> Tuple[int, int]:
+    # The padded EP decode lane has at most 64 routed rows. M32 reduces
+    # padded MMA work while retaining the micro kernel's (2, 2, 1) warp
+    # layout and physical M128 A/SFA loads. Other lanes keep their selector.
+    if (
+        (state_E, weight_E, m, k, n, num_topk, skip_zero_weight_expert_id)
+        == (72, 72, 8, 4096, 2048, 8, 72)
+        and (quant_mode, activation, swiglu_alpha, swiglu_beta, swiglu_limit)
+        == ("nvfp4", "swigluoai_uninterleave", 1.0, 0.0, 10.0)
+    ):
+        return (32, 128)
+    return _select_moe_mma_tiler_mn(m * num_topk, n)
+
+
 def _as_grouped_scale_view(
     scale_storage: torch.Tensor,
     rows: int,
@@ -2254,9 +2273,12 @@ def _get_micro_kernel(
         else min(get_max_active_clusters(1), sm_count)
     )
 
-    # Micro always selects tile from routed rows (not just for multi-topk)
-    routed_rows = m * num_topk
-    mma_tiler_mn = _select_moe_mma_tiler_mn(routed_rows, n)
+    mma_tiler_mn = _select_micro_mma_tiler_mn(
+        state_E=state_E, weight_E=weight_E, m=m, k=k, n=n,
+        num_topk=num_topk, skip_zero_weight_expert_id=skip_zero_weight_expert_id,
+        quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit,
+    )
 
     cache_key = _micro_kernel_cache_key(
         quant_mode=quant_mode,
