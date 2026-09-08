@@ -281,7 +281,14 @@ def deployment_targets(command, cwd, spec):
             if target not in result:
                 result.append(target)
     if not result:
-        target = dict(repo=requested_environment.get('REPO') or cwd, profile=requested_environment.get('PROFILE') or 'glm53')
+        target_repo = requested_environment.get('REPO') or cwd
+        # The canonical AR campaign selects its own checkout before invoking
+        # pair. Bind that target even when the caller supplied another REPO.
+        for path in sources(command, cwd):
+            if (path.name == 'run_ar_consumer_campaign.sh' and path.parent.name == 'probes'
+                    and 'export REPO=$(cd "$(dirname "$0")/.." && pwd)' in path.read_text().splitlines()):
+                target_repo = str(path.parent.parent)
+        target = dict(repo=target_repo, profile=requested_environment.get('PROFILE') or 'glm53')
         for name,key in (('IMAGE','image'),('MODEL_HOST_PATH','model')):
             if requested_environment.get(name):
                 target[key] = requested_environment[name]
@@ -399,19 +406,22 @@ def validate(value, *, refresh=False, external=True, directory=None):
     for check in value['checks']:
         repo = check['repo']
         source = f"{check.get('source', repo)}:{check.get('line', 0)}"
-        if refresh and check.get('fetch') and (repo, check['fetch']) not in fetched:
+        if refresh and not check.get('accepted_ref') and check.get('fetch') and (repo, check['fetch']) not in fetched:
             run(['git', 'fetch', '--quiet', 'origin', check['fetch']], repo)
             fetched.add((repo, check['fetch']))
         if check['kind'] == 'clean' and run(['git', 'status', '--porcelain'], repo, 3):
             raise ValueError(source + ': campaign requires a clean checkout')
         if check['kind'] == 'ancestor':
             try:
-                run(['git', 'merge-base', '--is-ancestor', check['ref'], 'HEAD'], repo, 3)
+                run(['git', 'merge-base', '--is-ancestor', check.get('accepted_ref', check['ref']), 'HEAD'], repo, 3)
             except ValueError as exc:
                 raise ValueError(source + ': candidate must include ' + check['ref'] + '; update the candidate and its CPU evidence before queueing') from exc
         if check['kind'] == 'source-base':
             import fleet_source
-            fleet_source.require_base(repo, check['ref'], protected_paths=value.get('protected_paths', []))
+            fleet_source.require_base(repo, check.get('accepted_ref', check['ref']), protected_paths=value.get('protected_paths', []))
+    if value.get('deployment_approvals'):
+        import fleet_approval
+        fleet_approval.validate(value)
     if external:
         for image in value['images']:
             actual = run(['docker', 'image', 'inspect', image, '--format', '{{.Id}}'], cwd, 5)
@@ -461,13 +471,22 @@ def reuse(directory, session, command, cwd, prepared, *, spec_path=None):
     return Path(prepared).resolve()
 
 
-def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, execute_cpu=True, prepared=None):
+def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, execute_cpu=True, prepared=None, approve_deploy=False):
     if not isinstance(command, (list, tuple)) or not command or not command[0] or not all(isinstance(x, str) and '\0' not in x for x in command):
         raise ValueError('prepare requires a command argv')
     command = list(command)
     cwd = str(Path(cwd).resolve())
     if prepared:
-        return reuse(directory, session, command, cwd, prepared, spec_path=spec_path)
+        path = reuse(directory, session, command, cwd, prepared, spec_path=spec_path)
+        value = fleet_prepared.read(directory, path)
+        if not approve_deploy or value.get('deployment_approvals'):
+            return path
+        # A reusable CPU receipt can gain deployment approval before queueing
+        # without executing its successful CPU preparation again.
+        import fleet_approval
+        fleet_approval.freeze(value)
+        validate(value)
+        return write_receipt(directory, value)
     spec = spec_read(spec_path)
     files = sources(command, cwd) + sources(spec['cpu_command'], cwd) if spec.get('cpu_command') else sources(command, cwd)
     if spec_path:
@@ -550,6 +569,9 @@ def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, exe
             value['cpu_result']['reusable'] = True
         except (ValueError, OSError, subprocess.SubprocessError) as exc:
             value['cpu_result']['reason'] = str(exc)
+    if approve_deploy:
+        import fleet_approval
+        fleet_approval.freeze(value)
     validate(value, refresh=True)
     for path in files:
         if path.suffix == '.sh':
@@ -587,7 +609,11 @@ def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, exe
                     raise ValueError('CPU preparation changed source or runtime inputs; prepare again')
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 value['cpu_result'].update(reusable=False, reason=str(exc))
-    fleet_prepared.sign(value, secret)
+    return write_receipt(directory, value)
+
+
+def write_receipt(directory, value):
+    fleet_prepared.sign(value, fleet_prepared.key(directory, create=True))
     root = (Path(directory) / 'preparations').resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = root / (uuid.uuid4().hex + '.json')
@@ -715,6 +741,7 @@ def main(argv=None):
     ap.add_argument('--spec')
     ap.add_argument('--fleet')
     ap.add_argument('--prepared')
+    ap.add_argument('--approve-deploy', action='store_true')
     ap.add_argument('--verify-only', action='store_true')
     ap.add_argument('--refresh', action='store_true')
     ap.add_argument('--local', action='store_true')
@@ -725,7 +752,8 @@ def main(argv=None):
     try:
         directory = Path(os.environ['FLEET_DIR'])
         if args.action == 'create':
-            print(prepare(directory,args.session,command,os.getcwd(),spec_path=args.spec,fleet=args.fleet,prepared=args.prepared))
+            print(prepare(directory,args.session,command,os.getcwd(),spec_path=args.spec,fleet=args.fleet,prepared=args.prepared,
+                          approve_deploy=args.approve_deploy))
         elif args.action == 'validate-targets':
             if not args.prepared:
                 raise ValueError('validate-targets requires --prepared MANIFEST')

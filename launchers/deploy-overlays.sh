@@ -42,6 +42,13 @@ require_deployable_checkout() {
     SOURCE_COMMIT=$(git -C "$REPO" rev-parse --verify HEAD)
     return
   fi
+  if [ "${FLEET_VALIDATION_REQUIRED:-0}" = 1 ] && [ -f "$VALIDATOR_REPO/bench/fleet_approval.py" ]; then
+    # The current reservation owns an exact candidate and base accepted before
+    # queueing. Moving origin/main cannot invalidate it while it waits.
+    python3 "$VALIDATOR_REPO/bench/fleet_approval.py" verify --repo "$REPO" --profile "$PROFILE" >&2
+    SOURCE_COMMIT=$(git -C "$REPO" rev-parse --verify HEAD)
+    return
+  fi
   git -C "$REPO" fetch --quiet origin main \
     || { echo "ABORT: could not refresh origin/main"; exit 1; }
   git -C "$REPO" merge-base --is-ancestor origin/main HEAD \

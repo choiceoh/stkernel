@@ -318,6 +318,15 @@ def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None
                 old = (fleet_prepared.read(directory,old_path) if original.get('prepare_receipt_required')
                        else json.loads(Path(old_path).read_text()) if old_path else {})
                 args = dict(spec_path=old.get('spec_path'), fleet=updated['fleet'])
+                if old.get('deployment_approvals') or (
+                        updated['kind'] == 'boot'
+                        and updated.get('validation_env', {}).get('FLEET_VALIDATION_REQUIRED') == '1'
+                        and updated.get('validation_env', {}).get('FLEET_VALIDATION_LEVEL') == 'admission'
+                        and Path(updated['fleet']).with_name('fleet_approval.py').is_file()):
+                    # Renew approval only when the accepted source/command
+                    # changes; a same-input edit reuses its signed frozen base.
+                    # Legacy controllers retain their original validation gate.
+                    args['approve_deploy'] = True
                 if prepared_manifest:
                     path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],
                                                   prepared=prepared_manifest,**args)

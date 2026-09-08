@@ -158,6 +158,57 @@ print(json.dumps(dict(level=getattr(args, 'level', 'release'), helper=__file__,
                                 _validated_value=prepared, controller=record)[0]['validation']
                 self.assertEqual(result, dict(level=level, helper=str(helper), store='/accepted/store'))
 
+    def test_edit_preserves_fixed_approval_and_only_upgrades_capable_boot_controllers(self):
+        import fleet_prepare
+        import fleet_prepared
+        original = self.saved()
+        pinned = self.root / 'modern'
+        pinned.mkdir()
+        (pinned / 'fleet_approval.py').write_text('# Fixed approval capable controller.\n')
+        cases = (
+            ('signed', '/old/fleet.sh', 'boot', {}, True, True),
+            ('modern', str(pinned / 'fleet.sh'), 'boot', {'FLEET_VALIDATION_REQUIRED': '1', 'FLEET_VALIDATION_LEVEL': 'admission'}, False, True),
+            ('legacy', '/old/fleet.sh', 'boot', {'FLEET_VALIDATION_REQUIRED': '1', 'FLEET_VALIDATION_LEVEL': 'admission'}, False, False),
+            ('release', str(pinned / 'fleet.sh'), 'boot', {'FLEET_VALIDATION_REQUIRED': '1'}, False, False),
+            ('probe', str(pinned / 'fleet.sh'), 'probe', {'FLEET_VALIDATION_REQUIRED': '1', 'FLEET_VALIDATION_LEVEL': 'admission'}, False, False),
+        )
+        for name, fleet, kind, validation_env, approved, expected in cases:
+            with self.subTest(case=name):
+                record = dict(original, fleet=fleet, kind=kind, validation_env=validation_env,
+                              prepare_manifest='/old.json', prepare_receipt_required=True)
+                handoff.write(pending.path(self.root, 'mine'), record)
+                old = dict(spec_path=None, deployment_approvals=[{'candidate': 'approved'}] if approved else [])
+                with patch.object(pending, 'validate'), patch.object(fleet_prepared, 'read', return_value=old), \
+                        patch.object(fleet_prepare, 'prepare', side_effect=[ValueError('changed argv'), Path('/new.json')]) as prepare, \
+                        patch.object(fleet_prepare, 'validate_targets'):
+                    result = pending.edit(self.root, 'mine', command=['new'])
+                self.assertEqual(result['prepare_manifest'], '/new.json')
+                self.assertEqual(result['ticket'], original['ticket'])
+                self.assertEqual(len(prepare.call_args_list), 2)
+                self.assertTrue(all(bool(call.kwargs.get('approve_deploy')) == expected
+                                    for call in prepare.call_args_list))
+
+
+class AcceptedPayloadTests(unittest.TestCase):
+    def test_edited_receipt_wins_over_original_and_payload_environment(self):
+        from fleet_boot import Supervisor
+        supervisor = Supervisor.__new__(Supervisor)
+        supervisor.env = dict(PATH=os.environ['PATH'], FLEET_SESSION='owned', FLEET_DIR='/fleet',
+                              FLEET_PREPARE_MANIFEST='/original.json', FLEET_VALIDATION_REQUIRED='1',
+                              SSH_CLIENT='transport-only')
+        for prefix in ([], ['/usr/bin/env', '-u', 'FLEET_PREPARE_MANIFEST'],
+                       ['/usr/bin/env', '-i', 'FLEET_PREPARE_MANIFEST=/forged.json', 'FLEET_SESSION=foreign']):
+            with self.subTest(prefix=prefix):
+                command, environment = supervisor.accepted_payload(dict(
+                    command=[*prefix, sys.executable, '-c', 'pass'], prepare_manifest='/accepted-edit.json'))
+                self.assertEqual(command, [sys.executable, '-c', 'pass'])
+                self.assertEqual(environment['FLEET_PREPARE_MANIFEST'], '/accepted-edit.json')
+                self.assertEqual(environment['FLEET_SESSION'], 'owned')
+                self.assertEqual(environment['FLEET_VALIDATION_REQUIRED'], '1')
+                self.assertNotIn('SSH_CLIENT', environment)
+        _, environment = supervisor.accepted_payload(dict(command=[sys.executable, '-c', 'pass']))
+        self.assertNotIn('FLEET_PREPARE_MANIFEST', environment)
+
 
 if __name__ == '__main__':
     unittest.main()

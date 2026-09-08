@@ -482,6 +482,7 @@ case "$cmd" in
     fi
     prep_args=(); [ -n "$prepare_spec" ] && prep_args=(--spec "$prepare_spec")
     [ -n "$prepared_manifest" ] && prep_args+=(--prepared "$prepared_manifest")
+    [ "$cls" = nogpu ] || [ "$kind" != boot ] || prep_args+=(--approve-deploy)
     FLEET_PREPARE_MANIFEST=$(python3 "$REPO/bench/fleet_prepare.py" create "$s" --fleet "$REPO/bench/fleet.sh" ${prep_args[@]+"${prep_args[@]}"} -- "$@") || exit 3
     export FLEET_PREPARE_MANIFEST
     if [ "$cls" = nogpu ]; then
