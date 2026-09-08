@@ -107,6 +107,10 @@ def admit(directory, session, pid, kind, estimate='30', note=''):
                 return False
         if not managed:
             return False
+    from fleet_pending import metadata
+    current = metadata(directory, session, pid)
+    if current:
+        estimate, note = current
     temporary = directory / 'holder.tmp'
     with temporary.open('w') as stream:
         stream.write(f'{session}|{pid}|{socket.gethostname().split(".")[0]}|{int(time.time())}|{estimate}|{note}|{kind}\n')

@@ -69,6 +69,42 @@ CUDA devices and retains CPU-only evidence scope. Fix the input/revision before
 submitting a corrected experiment; a successful process exit is still insufficient
 to promote incomplete CPU/probe evidence.
 
+## Edit a waiting reservation
+
+For a reservation created by the current `fleet.sh run --gpu` (including pair
+and chain wrappers) or `run --probe`, inspect and revise it before GO:
+
+```bash
+bash bench/fleet.sh edit fusion
+bash bench/fleet.sh edit fusion --expect-revision 1 --est 20 --note "updated cells" \
+  --cwd /home/choiceoh/stkernel -- bash /tmp/revised-cells.sh
+# Metadata only; the existing command is retained:
+bash bench/fleet.sh edit fusion --note "CPU checks passed; smaller workload"
+```
+
+`--` replaces the entire argv, without shell interpolation. Use `env KEY=value
+command ...` to set command-specific environment variables. Otherwise the
+original supervisor environment is retained; `--cwd` changes the payload's
+working directory. The executable and the actual replacement command must pass
+preflight using the waiter's pinned controller before the edit commits. A failed
+check, concurrent edit or admission during preflight keeps the previous command.
+`--expect-revision` prevents an agent from overwriting a revision it has not read.
+
+Edits retain the session, ticket, original enqueue time, PID, GPU/probe kind and
+queue neighbors. Normal boundary scheduling still applies; changing the duration
+can change its priority. Admission and edits use the same fleet lock: after GO,
+or during recovery, edits are refused. The private pending record retains prior
+revisions; the lifecycle acceptance event records the revision actually executed.
+No new reservation, baseline measurement or production restore is created by an
+edit.
+
+Already-running **older** controllers and bare `request`/`wait` reservations do
+not have an editable command record and are explicitly refused. An installed
+update cannot replace another process's pinned controller. Structured `submit`
+experiments allow queue note/estimate edits, but their command/cwd remain bound to
+the submitted evidence identity. Change their manifest through
+`submit --supersedes` instead; that replacement follows normal submission order.
+
 ## Submit a batch
 
 ```json
