@@ -87,6 +87,9 @@ cap (16 GiB available required). Swap is capped at the memory limit. Check-only
 runs omit unused timing packs and the cold-cache buffer. Container exit/OOM
 state is retained before cleanup, and a numerical PASS without a clean
 sanitizer summary does not admit the serving comparison.
+Racecheck hazard storage is capped at 100,000 records via NVIDIA's documented
+`NV_COMPUTE_SANITIZER_MAX_RACECHECK_HAZARDS` setting; launches remain unlimited
+and any reported hazard or warning fails the gate.
 
 After the GPU gate the campaign uses the same deployed source for defaults,
 candidate, defaults, retaining standard onepass quality, decode-window steps,

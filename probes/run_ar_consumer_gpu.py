@@ -130,6 +130,11 @@ def main():
             '--mount', 'type=bind,src=/usr/local/cuda/compute-sanitizer,dst=/san,readonly',
             '--workdir', '/repo']
         target = '/repo/probes/ar_consumer_probe.py'
+        if stage == 'racecheck':
+            # The default reserves capacity for ten million hazards. Bound
+            # that storage, not the launches: even one reported hazard fails
+            # the zero-warning gate below, and no case is skipped.
+            cmd += ['-e', 'NV_COMPUTE_SANITIZER_MAX_RACECHECK_HAZARDS=100000']
         if stage in ('memcheck', 'racecheck'):
             cmd += ['--entrypoint', '/san/compute-sanitizer', IMAGE, '--tool', stage,
                     '--target-processes', 'application-only', '--error-exitcode', '77']
@@ -157,7 +162,8 @@ def main():
             (args.out / (filename + '.json')).write_text(data)
         report = json.loads((args.out / (filename + '.json')).read_text())
         assert report['status'] == 'PASS' and len(report['cases']) == 36, (node, stage)
-        return {'node': node, 'stage': filename, 'source_sha256': report['source_sha256']}
+        return {'node': node, 'stage': filename, 'source_sha256': report['source_sha256'],
+                'kernel_filter': RACECHECK_KERNELS if stage == 'racecheck' else None}
 
     try:
         for stage in ('probe', 'memcheck', 'racecheck'):
