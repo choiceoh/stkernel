@@ -165,6 +165,10 @@ def main():
         report = json.loads((args.out / (filename + '.json')).read_text())
         assert report['status'] == 'PASS' and len(report['cases']) == 36, (node, stage)
         assert report['mhc_warmup_capture'] == 'PASS', (node, stage, 'MHC warmup/capture lifecycle')
+        pre_cases = report['mhc_pre_view_cases']
+        assert len(pre_cases) == 6 and all(c['passed'] for c in pre_cases)
+        assert {(c['consumer'], c['input_value']) for c in pre_cases} == {
+            (early, value) for early in (False, True) for value in (.03125, 0., -.0625)}
         ownership = report['ar_ownership_cases']
         expected = {(n, seed) for n in AR_OWNERSHIP_SIZES for seed in (17, 0, 29)} if distributed else set()
         assert len(ownership) == len(expected), (node, stage, 'AR ownership coverage')

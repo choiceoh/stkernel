@@ -29,6 +29,54 @@ def module(name, path):
     return result
 
 
+def check_standalone_pre(mk, torch):
+    """Exercise the real first-layer hook with its stock three-dimensional fn."""
+    original = (mk.ENABLE_AR_CONSUMER, mk._AR_CONSUMER_OK,
+                mk._ARMED['mhc_pre'], mk._ar_note)
+    cases, seen = [], []
+    try:
+        # This isolated probe has no armed serving hook/marker. Observe the
+        # actual tensor passed to the binding, not a separately packed oracle.
+        assert not mk._ARMED['mhc']
+        mk._ARMED['mhc_pre'] = True
+        mk._ar_note = seen.append
+        for early in (False, True):
+            mk.ENABLE_AR_CONSUMER = mk._AR_CONSUMER_OK = early
+            with torch.inference_mode(False):
+                fn = (torch.randn(24, 4, 4096, device='cuda') * .02).bfloat16().float()
+            scale, base = torch.ones(3, device='cuda'), torch.zeros(24, device='cuda')
+            norm = torch.ones(4096, device='cuda', dtype=torch.bfloat16)
+            residual = torch.zeros(12, 4, 4096, device='cuda', dtype=torch.bfloat16)
+            def call(res):
+                return mk.mhc_pre_only(res, fn, scale, base,
+                    1e-6, 1e-6, 1e-6, 1., 20, norm, 1e-6)
+            call(residual)
+            assert seen[-1].dtype == torch.bfloat16 and tuple(seen[-1].shape) == (24, 16384)
+            residual = residual[:6]
+            torch.cuda.synchronize()
+            seen.clear()
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                got = call(residual)
+            assert got is not None and len(seen) == 1
+            assert seen[0].dtype == torch.bfloat16
+            assert tuple(seen[0].shape) == ((24, 4096, 4) if early else (24, 16384))
+            x0, pm0, cm0 = mk._pre_bufs(residual.device)
+            for value in (.03125, 0., -.0625):
+                residual.fill_(value)
+                reference = mk._mhc_call(x0[:6], residual, pm0[:6], cm0[:6],
+                    fn.reshape(24, 16384), scale, base, norm, 6,
+                    1e-6, 1e-6, 1e-6, 1., 1e-6, 20,
+                    _fp32_fn=True, _ar_consumer=False)[1:]
+                graph.replay()
+                torch.cuda.synchronize()
+                assert all(torch.equal(a, b) for a, b in zip(got, reference))
+                cases.append(dict(consumer=early, input_value=value, passed=True))
+    finally:
+        mk.ENABLE_AR_CONSUMER, mk._AR_CONSUMER_OK, mk._ARMED['mhc_pre'], mk._ar_note = original
+    return cases
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--compile-only', action='store_true')
@@ -75,6 +123,7 @@ def main():
     mk._ensure_workspace('cuda')
     assert mk._selftest_ar_consumer(), 'large-warmup/small-capture lifecycle'
     receipt['mhc_warmup_capture'] = 'PASS'
+    receipt['mhc_pre_view_cases'] = check_standalone_pre(mk, torch)
     rank = int(os.environ.get('AR_CONSUMER_RANK', '0'))
     if args.distributed:
         import torch.distributed as dist

@@ -247,6 +247,49 @@ int main() {
                     self.assertEqual(len(packed_layouts), int(enabled and exact))
                     self.assertEqual(len(m._MHC_BF16_CACHE), 1)
 
+    def test_standalone_pre_packs_the_real_three_dimensional_weight_view(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest('requires Torch CPU tensors in the serving image')
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                m = driver()
+                m.ENABLE_MHC_BF16 = m._MHC_BF16_OK = True
+                m.ENABLE_AR_CONSUMER = m._AR_CONSUMER_OK = enabled
+                m._ARMED['mhc_pre'] = True
+                m._ARMED['mhc'] = False
+                captured = [False]
+                seen, launches = [], []
+                m._ar_note = seen.append
+                workspace = {key: torch.empty(1) for key in ('yp', 'rp', 'sq', 'pmix', 'ol_stash', 'barrier_mhc')}
+                m._ensure_workspace = lambda _: workspace
+                m._EXT = SimpleNamespace(run_mhc=lambda ptrs, scalars, ints, bf16, early:
+                    launches.append((ints[0], ptrs[4], bf16, early)))
+                flat = torch.randn(24, 16384).bfloat16().float()
+                view = flat.view(24, 4, 4096)
+                scale, base = torch.ones(3), torch.zeros(24)
+                norm = torch.ones(4096, dtype=torch.bfloat16)
+                def call(t):
+                    return m.mhc_pre_only(torch.zeros(t, 4, 4096, dtype=torch.bfloat16),
+                        view, scale, base, 1e-6, 1e-6, 1e-6, 1., 20, norm, 1e-6)
+                # Keep real CPU storage/view/version behavior; replace only
+                # device eligibility and the native launch for this CPU test.
+                with patch.object(torch.Tensor, 'is_cuda', property(lambda _: True)), \
+                     patch.object(torch.cuda, 'is_current_stream_capturing', lambda: captured[0]):
+                    call(12)
+                    self.assertEqual(seen[-1].dtype, torch.bfloat16)
+                    self.assertEqual(tuple(seen[-1].shape), (24, 16384))
+                    captured[0] = True
+                    call(6)
+                    selected = seen[-1]
+                    self.assertEqual(selected.dtype, torch.bfloat16)
+                    self.assertEqual(tuple(selected.shape), (24, 4096, 4) if enabled else (24, 16384))
+                    self.assertEqual(launches[-1], (6, selected.data_ptr(), True, enabled))
+                    self.assertEqual(len(m._MHC_BF16_CACHE), 1)
+                    self.assertEqual(view.data_ptr(), flat.data_ptr())
+                    self.assertTrue(torch.equal(view.reshape_as(flat), flat))
+
     def test_mhc_weight_only_before_wait(self):
         source = (MK / 'glm53_megakernel.cu').read_text()
         body = source.split('__device__ void mk_mhc_p1_impl(', 1)[1].split('MK_MHC_TS(1);', 1)[0]

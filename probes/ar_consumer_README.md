@@ -44,6 +44,10 @@ takes precedence over those optional hints for these small collectives.
    reaches that scalar shape before T=6. Capture cannot allocate a missing
    pack. The startup and GPU gates exercise this large-warmup/small-capture
    transition with fresh weights and require the actual vector layout.
+   The standalone first-layer hook also normalizes the stock wrapper's
+   `[output, stream, hidden]` view to the same flat cache contract. CPU and
+   GPU checks call that public hook, inspect the actual selected weight,
+   and compare both captured layouts against FP32 with changed inputs.
    New MHC
    instantiations use their own occupancy queries. Distinct AllReduce entry
    points compile away the mode branch and preserve the ordinary kernel ABI.

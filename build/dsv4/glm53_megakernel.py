@@ -1989,7 +1989,11 @@ def mhc_pre_only(residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
     x0, pm0, cm_i = _pre_bufs(residual.device)
     _rc, pm, cm, li = _mhc_call(
         x0[:num_tokens], residual.reshape(-1, hc_mult, hidden),
-        pm0[:num_tokens], cm_i[:num_tokens], fn, hc_scale, hc_base,
+        pm0[:num_tokens], cm_i[:num_tokens],
+        # The stock standalone wrapper passes [output, stream, hidden].
+        # Normalize like the fused wrapper before the lossless pack lookup.
+        fn.reshape(hc_mult * (2 + hc_mult), hc_mult * hidden).contiguous(),
+        hc_scale, hc_base,
         norm_weight, num_tokens, rms_eps, hc_pre_eps, hc_sinkhorn_eps,
         hc_post_mult_value, norm_eps, sinkhorn_repeat)
     return pm, cm, li
