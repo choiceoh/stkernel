@@ -1,0 +1,12 @@
+preflight glm53observe0908v2 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  baseline: NONE for build cfd69dd5 -- a defaults arm is worth its boot
+  -> PASS
+GO glm53observe0908v2 2026-09-08_10:54:57
+  node 10.10.10.1: gpu=ok stray=4 ram=14G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=9G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=14G path=ok 
+

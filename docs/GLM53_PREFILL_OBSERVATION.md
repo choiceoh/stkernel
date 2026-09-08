@@ -13,7 +13,10 @@ resource/GPU/mount change remain distinct. Sixteen CPU tests and create-only
 checks against all four actual originals pass; evidence is in `hostconfig-fix/`
 and the failed run is retained in `attempt1/` under the measurement directory.
 M64 and INT8 remain off and deprioritized. PR #466 was merged; this correction is
-on a separate branch based on that merge. A new frozen normal capture is next.
+on a separate branch based on that merge. The corrected capture
+`glm53observe0908v2` started through the normal queue at 10:54:57 KST with
+all-rank frozen source `cfd69dd5b7ad89847fabaa3639dbf8c99215c08f`. All four
+clone preparations passed; private boot and request collection remain pending.
 
 ## Implemented pieces
 
