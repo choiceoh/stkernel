@@ -26,6 +26,9 @@ SWEEP_CTX=${SWEEP_CTX:-32000,128000}
 # 128K/1,152 request would write.
 TRACE_CTX=${TRACE_CTX:-32000}
 TRACE_CHUNKS=${TRACE_CHUNKS:-8192,1152}
+# One home for the override file: the probe writes it and `measure` clears it,
+# and the scheduler reads it under the container's /prof mount.
+CHUNK_FILE=${CHUNK_FILE:-/home/choiceoh/vllm-prof/sched_chunk}
 
 case "$MODE" in
 chain)
@@ -66,7 +69,7 @@ measure)
   cd "$REPO" || exit 1
   # A stale override file would silently pin the chunk for whatever boots next
   # (the scheduler reads it every step). Start from a clean slate.
-  : > /home/choiceoh/vllm-prof/sched_chunk
+  : > "$CHUNK_FILE"
   echo "== [pstep] instrument armed? $(date +%T)"
   # Two independent receipts: the container's env and the scheduler's own line.
   # grep -F because the anchor has brackets (BRE reads them as a class).
@@ -79,7 +82,7 @@ measure)
   # TRACE_CHUNKS="" on the second arm: the attribution only has to be taken once,
   # and a repeat costs the hold ~4 minutes for a picture we already have.
   python3 probes/prefill_chunk_sweep.py --ctx "$SWEEP_CTX" --chunks "$CHUNKS" --reps "${REPS:-2}" \
-    --json "$OUT/sweep.json" ${TRACE_CHUNKS:+--trace-chunks "$TRACE_CHUNKS"} --trace-ctx "$TRACE_CTX" 2>&1 | tee "$OUT/sweep.log"
+    --chunk-file "$CHUNK_FILE" --json "$OUT/sweep.json" ${TRACE_CHUNKS:+--trace-chunks "$TRACE_CHUNKS"} --trace-ctx "$TRACE_CTX" 2>&1 | tee "$OUT/sweep.log"
 
   for C in ${TRACE_CHUNKS//,/ }; do
     t=$(python3 -c "import json,sys;print(json.load(open('$OUT/sweep.json')).get('traces',{}).get('$C',{}).get('trace',''))" 2>/dev/null)
