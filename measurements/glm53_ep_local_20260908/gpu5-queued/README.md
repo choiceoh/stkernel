@@ -25,3 +25,7 @@ nondefault streams, memcheck and racecheck, with exact incoming restoration.
 It is eager component validation, not CUDA graph or full-model TTFT proof.
 The queue receipt itself is not a GPU result. Inspect exit.json and capture
 completion before any follow-up; do not resubmit or edit the frozen tree.
+
+The original fleet log is stored as deterministic `fleet.log.gz`; decompress
+it before checking its original-byte hash in `snapshot-manifest.json`. This
+preserves its whitespace exactly. `SHA256SUMS` covers stored archive bytes.
