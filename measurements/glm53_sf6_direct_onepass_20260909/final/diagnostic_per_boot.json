@@ -1,0 +1,239 @@
+{
+  "status": "INVALID",
+  "valid": false,
+  "comparison": null,
+  "source_commit": "85e25370779c2b8a6c9aaefa275b1dc8f27d60d0",
+  "note": "Candidate record passes alone; baseline has external traffic. These are raw per-boot observations, not a valid SF6 performance comparison.",
+  "per_boot": [
+    {
+      "name": "sf6-direct-0909v1A",
+      "individual_record_valid": true,
+      "record_issue": null,
+      "fixed_pooled_step_s": 20.281701533352084,
+      "ms_per_step": 49.30552785995582,
+      "windows_med": 19.880270978910758,
+      "output_tok_s": 61.95479353796345,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2128,
+          "cold_s": 2.440095250029117,
+          "warm_s": 0.8382783400011249,
+          "cold_tok_s": 872.0971035760211,
+          "warm_tok_s": 2538.536305252912,
+          "ttft_samples_s": [
+            2.440095250029117,
+            0.8382783400011249,
+            0.888291287003085
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 32545,
+          "cold_s": 10.881572252023034,
+          "warm_s": 10.881572252023034,
+          "cold_tok_s": 2990.836181228263,
+          "warm_tok_s": 2990.836181228263,
+          "ttft_samples_s": [
+            10.881572252023034
+          ],
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 128559,
+          "cold_s": 42.228542328986805,
+          "warm_s": 42.228542328986805,
+          "cold_tok_s": 3044.362720324202,
+          "warm_tok_s": 3044.362720324202,
+          "ttft_samples_s": [
+            42.228542328986805
+          ],
+          "combined": true
+        }
+      ],
+      "cold_compile": true,
+      "fixed_requests": [
+        {
+          "rep": 0,
+          "completion_tokens": 2048,
+          "decode_s": 34.310822221043054,
+          "decode_tok_s": 59.660476417978735,
+          "ttft_s": 0.9326847189804539
+        },
+        {
+          "rep": 1,
+          "completion_tokens": 2048,
+          "decode_s": 29.65441394597292,
+          "decode_tok_s": 69.02850967580775,
+          "ttft_s": 0.9458488860400394
+        },
+        {
+          "rep": 2,
+          "completion_tokens": 2048,
+          "decode_s": 35.15542341902619,
+          "decode_tok_s": 58.227146793292754,
+          "ttft_s": 0.8931580950156786
+        }
+      ],
+      "memory": {
+        "samples": 147,
+        "minimum_available_gib": {
+          "choiceoh@10.10.10.4": 18.070236206054688,
+          "choiceoh@10.10.10.3": 11.760799407958984,
+          "choiceoh@10.10.10.1": 15.546649932861328,
+          "local": 10.247013092041016
+        }
+      },
+      "traffic": {
+        "before": {
+          "finished": 0.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "after": {
+          "finished": 8.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "issues": [],
+        "samples": 200,
+        "max_running": 1.0,
+        "max_waiting": 0.0
+      }
+    },
+    {
+      "name": "sf6-direct-0909v1B",
+      "individual_record_valid": false,
+      "record_issue": "onepass evidence issues: ['requests remain after the workload', 'completed requests 11 != own requests 8', 'concurrent or queued external request observed']",
+      "fixed_pooled_step_s": 17.273478354690514,
+      "ms_per_step": 57.892219474629194,
+      "windows_med": null,
+      "output_tok_s": 56.350375109229944,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2128,
+          "cold_s": 2.0027987380162813,
+          "warm_s": 0.8891034639673308,
+          "cold_tok_s": 1062.5131520243153,
+          "warm_tok_s": 2393.422235140669,
+          "ttft_samples_s": [
+            2.0027987380162813,
+            0.890190361009445,
+            0.8891034639673308
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 32545,
+          "cold_s": 10.861985468014609,
+          "warm_s": 10.861985468014609,
+          "cold_tok_s": 2996.229381436347,
+          "warm_tok_s": 2996.229381436347,
+          "ttft_samples_s": [
+            10.861985468014609
+          ],
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 128559,
+          "cold_s": 41.95131375204073,
+          "warm_s": 41.95131375204073,
+          "cold_tok_s": 3064.4809066020302,
+          "warm_tok_s": 3064.4809066020302,
+          "ttft_samples_s": [
+            41.95131375204073
+          ],
+          "combined": true
+        }
+      ],
+      "cold_compile": false,
+      "fixed_requests": [
+        {
+          "rep": 0,
+          "completion_tokens": 2048,
+          "decode_s": 30.461202203994617,
+          "decode_tok_s": 67.20023675662941,
+          "ttft_s": 0.9420892940252088
+        },
+        {
+          "rep": 1,
+          "completion_tokens": 2048,
+          "decode_s": 33.434301870001946,
+          "decode_tok_s": 61.22454741119082,
+          "ttft_s": 1.7079741319757886
+        },
+        {
+          "rep": 2,
+          "completion_tokens": 2048,
+          "decode_s": 45.083362315024715,
+          "decode_tok_s": 45.40477672664193,
+          "ttft_s": 15.13988645398058
+        }
+      ],
+      "memory": {
+        "samples": 170,
+        "minimum_available_gib": {
+          "choiceoh@10.10.10.4": 18.72730255126953,
+          "choiceoh@10.10.10.3": 12.540058135986328,
+          "choiceoh@10.10.10.1": 16.509319305419922,
+          "local": 10.217872619628906
+        }
+      },
+      "traffic": {
+        "before": {
+          "finished": 0.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "after": {
+          "finished": 11.0,
+          "running": 1.0,
+          "waiting": 0.0
+        },
+        "issues": [
+          "requests remain after the workload",
+          "completed requests 11 != own requests 8",
+          "concurrent or queued external request observed"
+        ],
+        "samples": 233,
+        "max_running": 3.0,
+        "max_waiting": 2.0
+      }
+    }
+  ]
+}

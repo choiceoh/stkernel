@@ -1,57 +1,67 @@
-# SF6 direct-prefill onepass: A recorded; B running
+# SF6 direct-prefill onepass: INVALID, no performance verdict
 
-The canonical A/B began at 2026-09-09 05:25:29 KST after 1.2 seconds in the
-queue. This is an execution-status receipt, not a performance result.
+The canonical A/B finished at 2026-09-09 05:50:08 KST with supervisor/payload
+return code 1. Both records exist. The canonical analyzer is INVALID and
+comparison=null; the checker and tested source were not changed.
 
-- Session: `sf6-direct-0909v1`; ticket: `17888991282385029`.
-- Launch: `be907d63be5a4736a1fc232fbae9fd6a`; supervisor PID: `2385029`.
-- Frozen GPU source: `85e25370779c2b8a6c9aaefa275b1dc8f27d60d0`.
-- Source checkout: `/home/choiceoh/stkernel-sf6-direct-0909`.
-- Evidence: `/home/choiceoh/glm53-logs/SF6-DIRECT-sf6-direct-0909v1`.
-- Observer PID: `2390658`; confirmed exact hold OWNED and READY with 63 targets,
-  the frozen source and explicit `sf6_direct=true`; initial errors were empty.
+The baseline onepass failed exclusivity: 11 requests completed versus its own 8,
+one request was still running after completion, and 101/233 traffic samples had
+more than one running/queued request. Peak counts were 3 running and 2 waiting.
+The canonical three-repetition metric cannot be salvaged by selecting a subset;
+per-sample traffic timestamps were not retained to prove individual rep isolation.
+B onepass exited 2 and the chain returned 1.
 
-A uses packed-only `t,r,sf6`; B uses raw `t,r`. Compact AR and inline RDMA are
-both off in both arms. Both retain AR consumer PDL/MK PDL, SPEC_K=5,
-KV_TOKENS=1100000 (actual override 665 required), standard 2K/32K/128K quality and
-prefill, and exclusive fixed 3x2048 decode. Four-node 10 GiB memory guard remains.
-Exact argv/spec and completion instructions are in `probes/sf6_direct_onepass.md`.
+Both arms also failed the common MHC T16 selftest. All eight rank reports lack
+MHC PASS/capture, so no valid prepared/runtime receipts were admitted. Their
+latest failed snapshots are retained as failed, not promoted to accepted proof.
+The same FP32 post_mix/comb_mix mismatch occurs in both arms: maxima
+1.788139343e-7/2.384185791e-7, while residual and layer_input are exact and all
+outputs finite. T16 dispatches the ordinary FP32 kernel; fp32=False is a test
+option and does not imply BF16 kernel execution. Failure disables the MHC
+consumer globally, including T<=8; the ordinary MHC and OSAR PDL are separate.
+The eager/graph mismatch root cause remains unknown.
 
-CPU core 71,159 checks plus 50 megakernel regressions and 80 preparation tests
-passed before submission. Current main's KV-zero boundary fix is shared by
-both arms. Earlier SM121 compile/installed-wrapper CPU receipts remain in the
-separate direct-prefill implementation evidence folder.
+| Recorded metric | A: direct SF6 | B: raw scales, contaminated |
+|---|---:|---:|
+| Pooled decode steps/s | 20.28170 | 17.27348 |
+| ms/step | 49.30553 | 57.89222 |
+| Output tok/s | 61.95479 | 56.35038 |
+| 2K warm TTFT, s | 0.83828 | 0.88910 |
+| 32K TTFT, s | 10.88157 | 10.86199 |
+| 128K TTFT, s | 42.22854 | 41.95131 |
+| Quality | 18/18 | 18/18 |
+| Korean corruption | 0 | 0 |
+| Lowest host MemAvailable, GiB | 10.24701 | 10.21787 |
 
-Per-rank direct ownership finalization, GPU model execution, final quality,
-actual memory and timing are pending. There is no canonical analyzer verdict
-or final exit receipt yet. No default promotion or merge has been performed.
-The old v5 failure is separate and supplies no acceptance evidence for this run.
+These are raw per-boot observations, not an improvement claim. A's individual
+record and 147 memory samples pass their audit. B's individual record fails;
+its 170 memory samples pass the 10 GiB guard. A cold_compile=true and B=false,
+so their cold-prefill values are also incomparable. Net memory savings cannot
+be attributed from these host minima or from the tensor-release counter alone.
 
-The existing 10-minute heartbeat was updated to follow this exact ticket and
-report completion/failure only. The admitted remote source remains frozen;
-this status document is a later local documentation-only addition.
+Direct SF6 lifecycle was observed on every candidate rank: 42 packed layers,
+3,604,414,464 packed bytes, one finalization releasing 4,756,340,736 original
+scale bytes (4.4296875 GiB), M6 serving and zero fallbacks. Baseline SF6 markers
+were all zero. All eight rank reports have actual KV 665, GMU 0.6429 and
+compact/inline 0. Independent read-only review verified 16 latest receipt
+artifact hashes, eight log/report hashes and marker re-parses, and all 63 source
+hashes against frozen 85e25370. This establishes retained source/lifecycle
+observations, not full kernel numerical/race correctness or runtime acceptance.
 
-## Interim candidate result, 2026-09-09 05:40 KST
+Session sf6-direct-0909v1, ticket 17888991282385029, launch
+be907d63be5a4736a1fc232fbae9fd6a. Started 05:25:29 KST after 1.2 s queue wait;
+payload 1478.6 s. Frozen source 85e25370779c2b8a6c9aaefa275b1dc8f27d60d0,
+remote checkout /home/choiceoh/stkernel-sf6-direct-0909. Exact argv/spec are in
+probes/sf6_direct_onepass_v1.json and probes/sf6_direct_prepare.json.
 
-A completed its standard onepass and fixed 3x2048 decode. The individual record
-and its 147 memory samples pass their CPU audit: 20.28170 steps/s,
-49.30553 ms/step, 61.95479 output tok/s, quality 18/18 and Korean corruption 0.
-Prefill TTFT: 2K cold 2.44010 s/warm 0.83828 s, 32K 10.88157 s, 128K 42.22854 s.
-Minimum host MemAvailable was srv1/2/3/4: 15.54665/10.24701/11.76080/18.07024 GiB.
-These are candidate-only measurements, not an A/B verdict.
+The complete 37 MiB raw final snapshot, including all failed attempts and logs,
+is preserved at /tmp/sf6-direct-onepass-0909v1/final; the interim snapshot is
+unchanged. This folder retains the original two-record JSONL, memory samples,
+final supervisor receipt/exit, canonical INVALID analysis, diagnostic raw
+per-boot numbers, and a SHA256 manifest of the complete snapshot. It does not
+contain the full raw log/attempt archive. No failed receipt was rewritten.
 
-The full runtime admission failed: all four ranks missed the required MHC
-selftest PASS and capture. T16 reported FP32 post_mix/comb_mix differences
-(maximum 1.78814e-7/2.38419e-7), while BF16 residual and layer_input were exact.
-The consumer PDL test passed. No valid prepared proof was accepted, so the
-observer marked A's runtime FAIL. The checker and the admitted source are
-unchanged, and B continues through the original chain.
-
-All four failed preparation receipts nevertheless directly record the expected
-SF6 lifecycle: 42 packed layers, 3,604,414,464 packed bytes, one finalization
-releasing 4,756,340,736 raw scale bytes, m6 serving, zero fallbacks and actual
-KV 665. The release count is not a measured net memory saving versus B.
-The preserved intermediate raw record, memory, receipts and logs are at
-/tmp/sf6-direct-onepass-0909v1/interim-0540. Candidate numbers and marker fields
-are retained in candidate_interim.json with comparison=null. Final canonical
-acceptance remains unestablished; no default promotion or merge is warranted.
+No extra GPU run, source mutation on the admitted checkout, default promotion,
+or merge was performed. The heartbeat is paused after reporting this outcome.
+Earlier v5 evidence remains separate. The independently discovered external
+traffic and common MHC failure require resolution before an accepted speed test.
