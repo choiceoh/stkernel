@@ -1,5 +1,6 @@
 """CPU admission/cache/dispatch contracts for full-token expert-local prefill."""
 import ast
+import math
 from pathlib import Path
 import sys
 from types import SimpleNamespace, ModuleType
@@ -21,6 +22,23 @@ def extract(path, names, namespace):
 
 
 class AdmissionTests(unittest.TestCase):
+    def test_wide_workspace_covers_concentrated_and_tail_routes(self):
+        ns=extract(MD, {'_dynamic_task_geometry'}, dict(
+            _LEVEL_TILE_M=128, _LEVEL_TILE_N=128, _DYNAMIC_SLICE_CHUNK=4,
+            _align_up=lambda n, align: (n+align-1)//align*align))
+        geometry=ns['_dynamic_task_geometry']
+        for tokens in (4096,4097,6912,8192,16384):
+            pairs=tokens*8
+            histograms=([pairs]+[0]*71, [0]*72,
+                        [pairs//72+(i<pairs%72) for i in range(72)],
+                        [pairs-71]+[1]*71)
+            tiles,slices,tasks=geometry(72,2048,pairs)
+            self.assertEqual(slices,16)
+            for counts in histograms:
+                actual_tiles=sum(math.ceil(count/128) for count in counts)
+                self.assertLessEqual(actual_tiles,tiles)
+                self.assertLessEqual(actual_tiles*4,tasks)
+
     def test_wrapper_admits_only_exact_eager_local_geometry(self):
         fn = extract(WR, {'ep_local_prefill_eligible'}, {})['ep_local_prefill_eligible']
         good=dict(enabled=True,use_ep=True,no_dummy=True,experts=72,hidden=4096,intermediate=2048,
