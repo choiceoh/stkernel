@@ -68,7 +68,7 @@ def timed(store, job, phase):
 
 def signature(payload):
     spec = payload['spec']
-    value = {k:spec.get(k) for k in ('kind','context','command','knobs','env','resources','api_port')}
+    value = {k:spec.get(k) for k in ('kind','context','command','knobs','env','resources','api_port','baseline_policy')}
     value['host'] = payload.get('snapshot',{}).get('host')
     value['inputs'] = payload.get('snapshot',{}).get('inputs',{})
     if spec.get('kind') in {'pair','baseline'}:

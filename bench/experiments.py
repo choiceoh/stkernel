@@ -103,12 +103,15 @@ def normalize(raw, repo):
         raise ValueError("manifest must be a JSON object")
     allowed = {"kind", "revision", "hypothesis", "command", "knobs", "inputs", "context",
                "env", "depends_on", "estimate_min", "timeout_s", "probe_contract", "evaluations",
-               "resources", "outputs", "api_port"}
+               "resources", "outputs", "api_port", "baseline_policy"}
     if set(raw) - allowed:
         raise ValueError("unknown manifest fields: " + ", ".join(sorted(set(raw) - allowed)))
     kind = raw.get("kind")
     if kind not in {"cpu", "pair", "probe"}:
         raise ValueError("kind must be cpu, pair or probe")
+    baseline_policy = raw.get('baseline_policy', 'minimal')
+    if baseline_policy not in ('minimal', 'confirm') or ('baseline_policy' in raw and kind != 'pair'):
+        raise ValueError('baseline_policy applies only to pair and must be minimal or confirm')
     if not isinstance(raw.get("hypothesis"), str) or not raw["hypothesis"].strip():
         raise ValueError("hypothesis must explain what this experiment decides")
     revision = raw.get("revision", "")
@@ -189,7 +192,8 @@ def normalize(raw, repo):
                 knobs=knobs, env=env, inputs=inputs, context=context,
                 depends_on=sorted(set(deps)), estimate_min=estimate, timeout_s=timeout,
                 probe_contract=probe_contract, evaluations=evals, resources=resource_spec(raw.get('resources')),
-                outputs=sorted(set(outputs)), api_port=port)
+                outputs=sorted(set(outputs)), api_port=port,
+                **({'baseline_policy':baseline_policy} if kind == 'pair' else {}))
 
 
 class Store:
@@ -440,11 +444,11 @@ def knob_mismatch(record, knobs, repo):
 
 def pair_result_one(payload, job, index=0):
     from baseline import load
-    from judge import baselines_on, judge
+    from judge import judge
     rows = load(payload["paths"]["ONEPASS_JSONL"])
     from measurement_contract import evaluations
     from serving_group import name_for
-    from experiment_baselines import reference
+    from experiment_baselines import reference, samples
     from judge import compatible
     evaluation = evaluations(payload["spec"])[index]
     name = name_for("EXP-" + job, payload["spec"], index)
@@ -465,7 +469,9 @@ def pair_result_one(payload, job, index=0):
         return "incomplete", {"evidence": "unmatched", "reason": "record build/revision/workload does not match submission"}
     if knob_mismatch(cand, payload['spec']['knobs'], payload['repo']):
         return 'incomplete', dict(evidence='unmatched', reason='serving knobs do not exactly match the requested configuration')
-    bases, _ = baselines_on(rows, cand)
+    # Use the same vetted, distinct-boot pool as admission. A newer failed
+    # defaults record must not hide an older usable baseline.
+    bases = samples(payload, index)
     from measurement_contract import metric_compatible, metric_value
     obj = evaluation['objective']
     bases = [b for b in bases if metric_compatible(b, cand, obj)
@@ -473,6 +479,17 @@ def pair_result_one(payload, job, index=0):
     verdict = judge(cand, bases[-1] if bases else None, rows, evaluation["objective"])
     result = dict(evidence="gpu-pair", verdict=verdict, candidate=cand, execution_job=producer,
                   baseline=bases[-1] if bases else None)
+    if payload['spec'].get('baseline_policy') == 'minimal':
+        from experiment_baselines import ready
+        # A completed screen is a measured comparison, not a noise-floor or
+        # promotion verdict. Missing/invalid gates never become a screen pass.
+        complete = ready(payload) and (verdict.get('delta') is not None or
+                                      obj['metric'] == 'quality' and verdict['status'] == 'valid')
+        result.update(evidence='gpu-pair-screen', baseline_policy='minimal',
+                      comparison_complete=complete, promotion_ready=False,
+                      baseline_samples=len(samples(payload,index)),
+                      scope='exploratory comparison; completion is not a promotion decision')
+        return ('succeeded' if complete else 'incomplete'), result
     return ("succeeded" if verdict["status"] == "valid" else "incomplete"), result
 
 
@@ -482,7 +499,10 @@ def pair_result(payload, job):
     if len(results) == 1:
         return results[0]
     state = 'succeeded' if all(s == 'succeeded' for s, _ in results) else 'incomplete'
-    return state, dict(evidence='gpu-pair', evaluations=[r for _, r in results])
+    minimal = payload['spec'].get('baseline_policy') == 'minimal'
+    return state, dict(evidence='gpu-pair-screen' if minimal else 'gpu-pair', evaluations=[r for _, r in results],
+                       **(dict(baseline_policy='minimal',comparison_complete=state=='succeeded',promotion_ready=False,
+                               scope='exploratory comparison; completion is not a promotion decision') if minimal else {}))
 
 
 def execute(store, job):

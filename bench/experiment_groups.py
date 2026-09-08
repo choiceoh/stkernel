@@ -13,7 +13,7 @@ def key(payload):
     spec = payload['spec']
     value = dict(snapshot=payload['snapshot'], paths=payload['paths'],
                  environment={k:v for k,v in payload['environment'].items() if k != 'SSH_AUTH_SOCK'},
-                 spec={k:spec.get(k) for k in ('kind','revision','knobs','context','env','inputs','resources','api_port')},
+                 spec={k:spec.get(k) for k in ('kind','revision','knobs','context','env','inputs','resources','api_port','baseline_policy')},
                  artifacts=[{k:a[k] for k in ('relative','sha256')} for a in payload.get('prepared_artifacts',[])])
     return hashlib.sha256(encoded(value).encode()).hexdigest()
 

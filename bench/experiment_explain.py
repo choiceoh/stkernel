@@ -29,6 +29,7 @@ def explain(store, row):
     if not actions and row['state'] in {'failed','incomplete','interrupted','blocked'}:
         actions.append(dict(action='inspect_evidence',argv=['bash',fleet,'result',row['id'],'--details'],path=row['log']))
     return dict(state=row['state'],evidence=result.get('evidence'),reason=result.get('reason'),
+        **({k:result[k] for k in ('baseline_policy','comparison_complete','promotion_ready') if k in result}),
         failed_checks=[dict(suite=c.get('suite'),log=c.get('log'),skipped=c.get('skipped',[]),
                            failures=(c.get('counts') or {}).get('failure_details',[])) for c in failed],
         blocking_dependencies=blockers,next_actions=actions,automatic_retry=False,
