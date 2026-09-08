@@ -1,0 +1,12 @@
+{
+  "status": "reported_pass_tool_output_only",
+  "command": "python3 -B -m unittest discover -s tests -p test_glm53_ep_compact_warmup.py -v",
+  "tests_run": 8,
+  "errors": 0,
+  "skips": 0,
+  "reported_seconds": 0.415,
+  "source": "ep_kernel_extra tool-output transcript in this thread, relayed to root; original stdout was not saved to a file",
+  "source_sha256_at_test_report": "23079af7d6d7277a759226a2ea3c60af96352dd8f9ae43ed0cb5fe24db0de1bb",
+  "test_sha256": "74e70bbf6ab9e4838e458e9eb636be786e47f1c3ab5b3c76777b171f91fc84b1",
+  "note": "Source SHA was taken after a comment-only clarification following the successful run. This is a report, not a reconstructed test log or a fresh execution."
+}
