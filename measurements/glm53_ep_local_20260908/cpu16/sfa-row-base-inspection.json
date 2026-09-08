@@ -1,0 +1,910 @@
+{
+  "schema": 1,
+  "verdict": "VERIFIED_STATIC_COMPILER_OUTPUT",
+  "gpu_acceptance": false,
+  "performance_acceptance": false,
+  "artifacts": {
+    "14": {
+      "receipt": "measurements/glm53_ep_local_20260908/cpu14/local/result.json",
+      "receipt_sha256": "5ee89ff895b3f99076732c25d465a6e6fe318afa28e2319ac376eec401a2052f",
+      "submission_sha256": "bc86c2075227ede68ef4d4110ca4d3a695b5a2c7c30ec95765bfba334bbf31ee",
+      "revision": "881456a1f43fcf61de1bb5822b883dd2fd32e693",
+      "verdict": null,
+      "phase": null,
+      "binding_runtime_rechecked": null,
+      "kernel_sources": {
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_activation.py": "ce4c28f512c7d8cff08e7dfe8a2717713bde112752a137ef09acddd77f420b2b",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py": "b87e2b80f706e1db91b95c8a619806af37f7be25021b33a1da7f117ff4d87610",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py": "7532e1338df8e80c4b8f0bd6473c2ffeda9a5028018c77775c4e9fe2fa47b072",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py": "38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/utils.py": "8cc8cd27082a19868d72effff860aa6a3d8b35b56a12d8098d1384aaf989a398",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_blockscaled_gemm_sm120_b12x.py": "e364a769a64c35424d76e039d55daddd1b0715b5048504ff0afa48fa22351b69",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "664a2481b9f2065a4e8f08842a30e7840b83c78b79bcebbb6187f9a085acba55"
+      },
+      "tests": {
+        "tests_run": 71,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "ptx": {
+        "path": "measurements/glm53_ep_local_20260908/cpu14/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz",
+        "bytes": 939211,
+        "sha256": "7c4bdc1d65f84314089dc399c39e91c90b12c699b34257de697c9fda151d1cc8",
+        "gzip_sha256": "facc20fd19b5b567f52f25db99c3b6947dbe9f205cd7f7327e405b927ff9ce63",
+        "receipt_payload_verified": true
+      },
+      "cubin": {
+        "path": "measurements/glm53_ep_local_20260908/cpu14/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin.gz",
+        "bytes": 288664,
+        "sha256": "a657728bfb29e02e032b0fa43b69cf169fa5ac63b0cb74bf3954100211720dd4",
+        "gzip_sha256": "ed52098893cf0810d521afa8064787402867f7e96a6501ba96a5bb5dc462c075",
+        "receipt_payload_verified": true
+      },
+      "resource_usage": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "binding_runtime": null
+    },
+    "16": {
+      "receipt": "measurements/glm53_ep_local_20260908/cpu16/local/result.json",
+      "receipt_sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c",
+      "submission_sha256": "38dcba5f3eba960c1a1ad792052060d7fcd7e2aa36818a2f747ee2e6272304d1",
+      "revision": "111fff02f66f3e07a8332da1117afb75b161f0d6",
+      "verdict": "PASS",
+      "phase": "complete",
+      "binding_runtime_rechecked": true,
+      "kernel_sources": {
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_activation.py": "ce4c28f512c7d8cff08e7dfe8a2717713bde112752a137ef09acddd77f420b2b",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py": "b87e2b80f706e1db91b95c8a619806af37f7be25021b33a1da7f117ff4d87610",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py": "7532e1338df8e80c4b8f0bd6473c2ffeda9a5028018c77775c4e9fe2fa47b072",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py": "38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/utils.py": "8cc8cd27082a19868d72effff860aa6a3d8b35b56a12d8098d1384aaf989a398",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_blockscaled_gemm_sm120_b12x.py": "e364a769a64c35424d76e039d55daddd1b0715b5048504ff0afa48fa22351b69",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9"
+      },
+      "tests": {
+        "tests_run": 134,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "ptx": {
+        "path": "measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz",
+        "bytes": 964424,
+        "sha256": "aa04b5bd7ed9209c7d9826361439e4e3c331b0e160152deed3074332b57b65ab",
+        "gzip_sha256": "fa3d5f64bc6b56ea24a6566c5142646a33e3ab5e63a4d4a7e4c8be1897faa2d7",
+        "receipt_payload_verified": true
+      },
+      "cubin": {
+        "path": "measurements/glm53_ep_local_20260908/cpu16/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin.gz",
+        "bytes": 300032,
+        "sha256": "0dc09f29c66e4625c71519d101a1708f321613db7b5eb686750f37de98d9faa5",
+        "gzip_sha256": "30dfc40dd4a9c76bbf9344eb4f6d17ff3749fbb0e29f3aa4cc34fd48eb4b0593",
+        "receipt_payload_verified": true
+      },
+      "resource_usage": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "binding_runtime": {
+        "schema": 1,
+        "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+        "binding_identity": {
+          "version": "13.0.3",
+          "root": "/opt/glm53-bindings-capsule",
+          "modules": {
+            "cuda.bindings.driver": {
+              "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+              "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+            },
+            "cuda.bindings._bindings.cydriver": {
+              "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+              "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+            }
+          },
+          "distributions": {
+            "cuda-bindings": {
+              "version": "13.0.3",
+              "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+              "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+            },
+            "cuda-python": {
+              "version": "13.0.3",
+              "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+              "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+            }
+          }
+        },
+        "pathfinder": {
+          "version": "1.7.0",
+          "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+          "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+          "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+          "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+        }
+      }
+    }
+  },
+  "changed_compiler_source": {
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": {
+      "cpu14": "664a2481b9f2065a4e8f08842a30e7840b83c78b79bcebbb6187f9a085acba55",
+      "cpu16": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9"
+    }
+  },
+  "compatibility_bridge": {
+    "receipt": {
+      "receipt": "measurements/glm53_ep_local_20260908/cpu15/failed-compile/local/result.json",
+      "receipt_sha256": "26c81805f8b7cb4700d28bfb1c53b2dcff8fcf465c471cbce4f01bbe3f14195d",
+      "submission_sha256": "0e5bd4e329941be98e747517a61679f55257a3f2e3db1217622fec474297c012",
+      "revision": "30608530f0c908bc5f81db6bdb69fd70ccee9a24",
+      "verdict": "FAIL",
+      "phase": "cpu-contracts",
+      "binding_runtime_rechecked": true,
+      "kernel_sources": null,
+      "tests": {
+        "tests_run": 129,
+        "failures": 0,
+        "errors": 1,
+        "skips": 0
+      },
+      "ptx": {
+        "path": "measurements/glm53_ep_local_20260908/cpu15/failed-compile/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz",
+        "bytes": 939211,
+        "sha256": "7c4bdc1d65f84314089dc399c39e91c90b12c699b34257de697c9fda151d1cc8",
+        "gzip_sha256": "20844db178ebccdcf30003208d5c7e7faaefbd799b1f7f376c625b9106b8a278",
+        "receipt_payload_verified": true
+      },
+      "cubin": {
+        "path": "measurements/glm53_ep_local_20260908/cpu15/failed-compile/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin.gz",
+        "bytes": 288664,
+        "sha256": "a657728bfb29e02e032b0fa43b69cf169fa5ac63b0cb74bf3954100211720dd4",
+        "gzip_sha256": "5fb8e9203840f4f7db1d89e073be760548f9e6d209c8180f9477b597c999d630",
+        "receipt_payload_verified": true
+      },
+      "resource_usage": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "binding_runtime": {
+        "schema": 1,
+        "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+        "binding_identity": {
+          "version": "13.0.3",
+          "root": "/opt/glm53-bindings-capsule",
+          "modules": {
+            "cuda.bindings.driver": {
+              "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+              "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+            },
+            "cuda.bindings._bindings.cydriver": {
+              "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+              "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+            }
+          },
+          "distributions": {
+            "cuda-bindings": {
+              "version": "13.0.3",
+              "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+              "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+            },
+            "cuda-python": {
+              "version": "13.0.3",
+              "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+              "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+            }
+          }
+        },
+        "pathfinder": {
+          "version": "1.7.0",
+          "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+          "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+          "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+          "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+        }
+      }
+    },
+    "ptx_and_cubin_identical_to_cpu14": true,
+    "runtime_identical_to_cpu16": true,
+    "qualification": "CPU15 remains FAIL at cpu-contracts. Its saved compiler payloads are byte-identical to CPU14 under 13.0.3; this is a payload bridge, not passing CPU15 evidence."
+  },
+  "counts": {
+    "equal_store_static_sites": [
+      7,
+      7
+    ],
+    "varied_store_static_sites": [
+      3,
+      7
+    ],
+    "all_q0_store_static_sites": [
+      10,
+      14
+    ],
+    "new_producer_row_base_static_sites": 7,
+    "prefix_row_load_static_sites": [
+      8,
+      72
+    ],
+    "consumer_row_address_operations_per_site": [
+      9,
+      3
+    ],
+    "consumer_operation_scope": "CPU14: nine row/combine ALU instructions. CPU16: one cache-address add, one shared load and one combine add. Common 64-bit conversion, global-pointer add and final store are excluded."
+  },
+  "instruction_evidence": {
+    "14": {
+      "q0_scope_last_line": 1832,
+      "consumer_sites": [
+        {
+          "role": "equal",
+          "packed_store_line": 1258,
+          "scale_store_line": 1271,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1241, %r1229, 8;",
+            "and.b32 \t%r1242, %r1241, -32768;",
+            "shl.b32 \t%r1243, %r1229, 4;",
+            "and.b32 \t%r1244, %r1243, 496;",
+            "shr.u32 \t%r1245, %r1229, 3;",
+            "and.b32 \t%r1246, %r1245, 12;",
+            "or.b32 \t%r1247, %r39, %r1242;",
+            "add.s32 \t%r1248, %r1247, %r1244;",
+            "add.s32 \t%r1249, %r1248, %r1246;",
+            "cvt.s64.s32 \t%rd136, %r1249;",
+            "add.s64 \t%rd137, %rd29, %rd136;",
+            "st.global.b8 \t[%rd137], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1281,
+          "scale_store_line": 1294,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1252, %r1231, 8;",
+            "and.b32 \t%r1253, %r1252, -32768;",
+            "shl.b32 \t%r1254, %r1231, 4;",
+            "and.b32 \t%r1255, %r1254, 496;",
+            "shr.u32 \t%r1256, %r1231, 3;",
+            "and.b32 \t%r1257, %r1256, 12;",
+            "or.b32 \t%r1258, %r39, %r1253;",
+            "add.s32 \t%r1259, %r1258, %r1255;",
+            "add.s32 \t%r1260, %r1259, %r1257;",
+            "cvt.s64.s32 \t%rd139, %r1260;",
+            "add.s64 \t%rd140, %rd29, %rd139;",
+            "st.global.b8 \t[%rd140], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1304,
+          "scale_store_line": 1317,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1263, %r1233, 8;",
+            "and.b32 \t%r1264, %r1263, -32768;",
+            "shl.b32 \t%r1265, %r1233, 4;",
+            "and.b32 \t%r1266, %r1265, 496;",
+            "shr.u32 \t%r1267, %r1233, 3;",
+            "and.b32 \t%r1268, %r1267, 12;",
+            "or.b32 \t%r1269, %r39, %r1264;",
+            "add.s32 \t%r1270, %r1269, %r1266;",
+            "add.s32 \t%r1271, %r1270, %r1268;",
+            "cvt.s64.s32 \t%rd142, %r1271;",
+            "add.s64 \t%rd143, %rd29, %rd142;",
+            "st.global.b8 \t[%rd143], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1327,
+          "scale_store_line": 1340,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1274, %r1235, 8;",
+            "and.b32 \t%r1275, %r1274, -32768;",
+            "shl.b32 \t%r1276, %r1235, 4;",
+            "and.b32 \t%r1277, %r1276, 496;",
+            "shr.u32 \t%r1278, %r1235, 3;",
+            "and.b32 \t%r1279, %r1278, 12;",
+            "or.b32 \t%r1280, %r39, %r1275;",
+            "add.s32 \t%r1281, %r1280, %r1277;",
+            "add.s32 \t%r1282, %r1281, %r1279;",
+            "cvt.s64.s32 \t%rd145, %r1282;",
+            "add.s64 \t%rd146, %rd29, %rd145;",
+            "st.global.b8 \t[%rd146], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1364,
+          "scale_store_line": 1377,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1291, %r1283, 8;",
+            "and.b32 \t%r1292, %r1291, -32768;",
+            "shl.b32 \t%r1293, %r1283, 4;",
+            "and.b32 \t%r1294, %r1293, 496;",
+            "shr.u32 \t%r1295, %r1283, 3;",
+            "and.b32 \t%r1296, %r1295, 12;",
+            "or.b32 \t%r1297, %r39, %r1292;",
+            "add.s32 \t%r1298, %r1297, %r1294;",
+            "add.s32 \t%r1299, %r1298, %r1296;",
+            "cvt.s64.s32 \t%rd150, %r1299;",
+            "add.s64 \t%rd151, %rd29, %rd150;",
+            "st.global.b8 \t[%rd151], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1387,
+          "scale_store_line": 1400,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1302, %r1285, 8;",
+            "and.b32 \t%r1303, %r1302, -32768;",
+            "shl.b32 \t%r1304, %r1285, 4;",
+            "and.b32 \t%r1305, %r1304, 496;",
+            "shr.u32 \t%r1306, %r1285, 3;",
+            "and.b32 \t%r1307, %r1306, 12;",
+            "or.b32 \t%r1308, %r39, %r1303;",
+            "add.s32 \t%r1309, %r1308, %r1305;",
+            "add.s32 \t%r1310, %r1309, %r1307;",
+            "cvt.s64.s32 \t%rd153, %r1310;",
+            "add.s64 \t%rd154, %rd29, %rd153;",
+            "st.global.b8 \t[%rd154], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1415,
+          "scale_store_line": 1428,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1317, %r1311, 8;",
+            "and.b32 \t%r1318, %r1317, -32768;",
+            "shl.b32 \t%r1319, %r1311, 4;",
+            "and.b32 \t%r1320, %r1319, 496;",
+            "shr.u32 \t%r1321, %r1311, 3;",
+            "and.b32 \t%r1322, %r1321, 12;",
+            "or.b32 \t%r1323, %r39, %r1318;",
+            "add.s32 \t%r1324, %r1323, %r1320;",
+            "add.s32 \t%r1325, %r1324, %r1322;",
+            "cvt.s64.s32 \t%rd157, %r1325;",
+            "add.s64 \t%rd158, %rd29, %rd157;",
+            "st.global.b8 \t[%rd158], %rs113;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 1551,
+          "scale_store_line": 1564,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1104, %r1065, 8;",
+            "and.b32 \t%r1105, %r1104, -32768;",
+            "shl.b32 \t%r1106, %r1065, 4;",
+            "and.b32 \t%r1107, %r1106, 496;",
+            "shr.u32 \t%r1108, %r1065, 3;",
+            "and.b32 \t%r1109, %r1108, 12;",
+            "or.b32 \t%r1110, %r41, %r1105;",
+            "add.s32 \t%r1111, %r1110, %r1107;",
+            "add.s32 \t%r1112, %r1111, %r1109;",
+            "cvt.s64.s32 \t%rd112, %r1112;",
+            "add.s64 \t%rd113, %rd29, %rd112;",
+            "st.global.b8 \t[%rd113], %rs114;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 1674,
+          "scale_store_line": 1687,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1144, %r1099, 8;",
+            "and.b32 \t%r1145, %r1144, -32768;",
+            "shl.b32 \t%r1146, %r1099, 4;",
+            "and.b32 \t%r1147, %r1146, 496;",
+            "shr.u32 \t%r1148, %r1099, 3;",
+            "and.b32 \t%r1149, %r1148, 12;",
+            "or.b32 \t%r1150, %r41, %r1145;",
+            "add.s32 \t%r1151, %r1150, %r1147;",
+            "add.s32 \t%r1152, %r1151, %r1149;",
+            "cvt.s64.s32 \t%rd119, %r1152;",
+            "add.s64 \t%rd120, %rd29, %rd119;",
+            "st.global.b8 \t[%rd120], %rs115;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 1808,
+          "scale_store_line": 1821,
+          "operations_after_packed_store": [
+            "shl.b32 \t%r1189, %r1153, 8;",
+            "and.b32 \t%r1190, %r1189, -32768;",
+            "shl.b32 \t%r1191, %r1153, 4;",
+            "and.b32 \t%r1192, %r1191, 496;",
+            "shr.u32 \t%r1193, %r1153, 3;",
+            "and.b32 \t%r1194, %r1193, 12;",
+            "or.b32 \t%r1195, %r41, %r1190;",
+            "add.s32 \t%r1196, %r1195, %r1192;",
+            "add.s32 \t%r1197, %r1196, %r1194;",
+            "cvt.s64.s32 \t%rd126, %r1197;",
+            "add.s64 \t%rd127, %rd29, %rd126;",
+            "st.global.b8 \t[%rd127], %rs116;"
+          ]
+        }
+      ],
+      "prefix_scope": [
+        364,
+        485
+      ],
+      "prefix_static_row_load_lines": [
+        371,
+        385,
+        399,
+        413,
+        427,
+        441,
+        455,
+        469
+      ],
+      "prefix_unroll": "eight expert body, loop increments 8 until72"
+    },
+    "16": {
+      "q0_scope_last_line": 2593,
+      "consumer_sites": [
+        {
+          "role": "equal",
+          "packed_store_line": 1579,
+          "scale_store_line": 1588,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1632, %r1630, 32;",
+            "ld.shared.s32 %r1631, [%r1632];",
+            "add.s32 \t%r1649, %r38, %r1631;",
+            "cvt.s64.s32 \t%rd161, %r1649;",
+            "add.s64 \t%rd162, %rd30, %rd161;",
+            "st.global.b8 \t[%rd162], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1598,
+          "scale_store_line": 1607,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1636, %r1630, 36;",
+            "ld.shared.s32 %r1635, [%r1636];",
+            "add.s32 \t%r1652, %r38, %r1635;",
+            "cvt.s64.s32 \t%rd164, %r1652;",
+            "add.s64 \t%rd165, %rd30, %rd164;",
+            "st.global.b8 \t[%rd165], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1617,
+          "scale_store_line": 1626,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1640, %r1630, 40;",
+            "ld.shared.s32 %r1639, [%r1640];",
+            "add.s32 \t%r1655, %r38, %r1639;",
+            "cvt.s64.s32 \t%rd167, %r1655;",
+            "add.s64 \t%rd168, %rd30, %rd167;",
+            "st.global.b8 \t[%rd168], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1636,
+          "scale_store_line": 1645,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1644, %r1630, 44;",
+            "ld.shared.s32 %r1643, [%r1644];",
+            "add.s32 \t%r1658, %r38, %r1643;",
+            "cvt.s64.s32 \t%rd170, %r1658;",
+            "add.s64 \t%rd171, %rd30, %rd170;",
+            "st.global.b8 \t[%rd171], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1669,
+          "scale_store_line": 1678,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1662, %r1660, 32;",
+            "ld.shared.s32 %r1661, [%r1662];",
+            "add.s32 \t%r1671, %r38, %r1661;",
+            "cvt.s64.s32 \t%rd175, %r1671;",
+            "add.s64 \t%rd176, %rd30, %rd175;",
+            "st.global.b8 \t[%rd176], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1688,
+          "scale_store_line": 1697,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1666, %r1660, 36;",
+            "ld.shared.s32 %r1665, [%r1666];",
+            "add.s32 \t%r1674, %r38, %r1665;",
+            "cvt.s64.s32 \t%rd178, %r1674;",
+            "add.s64 \t%rd179, %rd30, %rd178;",
+            "st.global.b8 \t[%rd179], %rs113;"
+          ]
+        },
+        {
+          "role": "equal",
+          "packed_store_line": 1712,
+          "scale_store_line": 1721,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1678, %r1676, 32;",
+            "ld.shared.s32 %r1677, [%r1678];",
+            "add.s32 \t%r1683, %r38, %r1677;",
+            "cvt.s64.s32 \t%rd182, %r1683;",
+            "add.s64 \t%rd183, %rd30, %rd182;",
+            "st.global.b8 \t[%rd183], %rs113;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 1844,
+          "scale_store_line": 1853,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1370, %r1336, 32;",
+            "ld.shared.s32 %r1369, [%r1370];",
+            "add.s32 \t%r1376, %r40, %r1369;",
+            "cvt.s64.s32 \t%rd109, %r1376;",
+            "add.s64 \t%rd110, %rd30, %rd109;",
+            "st.global.b8 \t[%rd110], %rs114;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 1963,
+          "scale_store_line": 1972,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1407, %r1336, 36;",
+            "ld.shared.s32 %r1406, [%r1407];",
+            "add.s32 \t%r1413, %r40, %r1406;",
+            "cvt.s64.s32 \t%rd116, %r1413;",
+            "add.s64 \t%rd117, %rd30, %rd116;",
+            "st.global.b8 \t[%rd117], %rs115;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 2082,
+          "scale_store_line": 2091,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1444, %r1336, 40;",
+            "ld.shared.s32 %r1443, [%r1444];",
+            "add.s32 \t%r1450, %r40, %r1443;",
+            "cvt.s64.s32 \t%rd123, %r1450;",
+            "add.s64 \t%rd124, %rd30, %rd123;",
+            "st.global.b8 \t[%rd124], %rs116;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 2201,
+          "scale_store_line": 2210,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1481, %r1336, 44;",
+            "ld.shared.s32 %r1480, [%r1481];",
+            "add.s32 \t%r1484, %r40, %r1480;",
+            "cvt.s64.s32 \t%rd130, %r1484;",
+            "add.s64 \t%rd131, %rd30, %rd130;",
+            "st.global.b8 \t[%rd131], %rs117;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 2332,
+          "scale_store_line": 2341,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1520, %r1486, 32;",
+            "ld.shared.s32 %r1519, [%r1520];",
+            "add.s32 \t%r1523, %r40, %r1519;",
+            "cvt.s64.s32 \t%rd137, %r1523;",
+            "add.s64 \t%rd138, %rd30, %rd137;",
+            "st.global.b8 \t[%rd138], %rs118;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 2453,
+          "scale_store_line": 2462,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1557, %r1486, 36;",
+            "ld.shared.s32 %r1556, [%r1557];",
+            "add.s32 \t%r1560, %r40, %r1556;",
+            "cvt.s64.s32 \t%rd144, %r1560;",
+            "add.s64 \t%rd145, %rd30, %rd144;",
+            "st.global.b8 \t[%rd145], %rs119;"
+          ]
+        },
+        {
+          "role": "varied",
+          "packed_store_line": 2573,
+          "scale_store_line": 2582,
+          "operations_after_packed_store": [
+            "add.s32 \t%r1594, %r1486, 40;",
+            "ld.shared.s32 %r1593, [%r1594];",
+            "add.s32 \t%r1597, %r40, %r1593;",
+            "cvt.s64.s32 \t%rd151, %r1597;",
+            "add.s64 \t%rd152, %rd30, %rd151;",
+            "st.global.b8 \t[%rd152], %rs120;"
+          ]
+        }
+      ],
+      "prefix_scope": [
+        364,
+        723
+      ],
+      "prefix_static_row_load_lines": [
+        365,
+        369,
+        374,
+        379,
+        384,
+        389,
+        394,
+        399,
+        404,
+        409,
+        414,
+        419,
+        424,
+        429,
+        434,
+        439,
+        444,
+        449,
+        454,
+        459,
+        464,
+        469,
+        474,
+        479,
+        484,
+        489,
+        494,
+        499,
+        504,
+        509,
+        514,
+        519,
+        524,
+        529,
+        534,
+        539,
+        544,
+        549,
+        554,
+        559,
+        564,
+        569,
+        574,
+        579,
+        584,
+        589,
+        594,
+        599,
+        604,
+        609,
+        614,
+        619,
+        624,
+        629,
+        634,
+        639,
+        644,
+        649,
+        654,
+        659,
+        664,
+        669,
+        674,
+        679,
+        684,
+        689,
+        694,
+        699,
+        704,
+        709,
+        714,
+        719
+      ],
+      "prefix_unroll": "all72 experts, no prefix backedge"
+    }
+  },
+  "producer_row_base_sites": [
+    {
+      "math": {
+        "first_line": 889,
+        "last_line": 896,
+        "text": "\tshl.b32 \t%r1127, %r1117, 8;\n\tand.b32 \t%r1128, %r1127, -32768;\n\tshl.b32 \t%r1129, %r1113, 4;\n\tand.b32 \t%r1130, %r1129, 496;\n\tshr.u32 \t%r1131, %r1113, 3;\n\tand.b32 \t%r1132, %r1131, 12;\n\tor.b32 \t%r1133, %r1132, %r1130;\n\tor.b32 \t%r1119, %r1133, %r1128;"
+      },
+      "store": {
+        "first_line": 899,
+        "last_line": 899,
+        "text": "\tst.shared.s32 [%r1118], %r1119;"
+      },
+      "address": {
+        "first_line": 897,
+        "last_line": 897,
+        "text": "\tadd.s32 \t%r1118, %r1116, 32;"
+      }
+    },
+    {
+      "math": {
+        "first_line": 949,
+        "last_line": 956,
+        "text": "\tshl.b32 \t%r1150, %r1140, 8;\n\tand.b32 \t%r1151, %r1150, -32768;\n\tshl.b32 \t%r1152, %r1136, 4;\n\tand.b32 \t%r1153, %r1152, 496;\n\tshr.u32 \t%r1154, %r1136, 3;\n\tand.b32 \t%r1155, %r1154, 12;\n\tor.b32 \t%r1156, %r1155, %r1153;\n\tor.b32 \t%r1142, %r1156, %r1151;"
+      },
+      "store": {
+        "first_line": 959,
+        "last_line": 959,
+        "text": "\tst.shared.s32 [%r1141], %r1142;"
+      },
+      "address": {
+        "first_line": 957,
+        "last_line": 957,
+        "text": "\tadd.s32 \t%r1141, %r1139, 32;"
+      }
+    },
+    {
+      "math": {
+        "first_line": 1009,
+        "last_line": 1016,
+        "text": "\tshl.b32 \t%r1173, %r1163, 8;\n\tand.b32 \t%r1174, %r1173, -32768;\n\tshl.b32 \t%r1175, %r1159, 4;\n\tand.b32 \t%r1176, %r1175, 496;\n\tshr.u32 \t%r1177, %r1159, 3;\n\tand.b32 \t%r1178, %r1177, 12;\n\tor.b32 \t%r1179, %r1178, %r1176;\n\tor.b32 \t%r1165, %r1179, %r1174;"
+      },
+      "store": {
+        "first_line": 1019,
+        "last_line": 1019,
+        "text": "\tst.shared.s32 [%r1164], %r1165;"
+      },
+      "address": {
+        "first_line": 1017,
+        "last_line": 1017,
+        "text": "\tadd.s32 \t%r1164, %r1162, 32;"
+      }
+    },
+    {
+      "math": {
+        "first_line": 1069,
+        "last_line": 1076,
+        "text": "\tshl.b32 \t%r1196, %r1186, 8;\n\tand.b32 \t%r1197, %r1196, -32768;\n\tshl.b32 \t%r1198, %r1182, 4;\n\tand.b32 \t%r1199, %r1198, 496;\n\tshr.u32 \t%r1200, %r1182, 3;\n\tand.b32 \t%r1201, %r1200, 12;\n\tor.b32 \t%r1202, %r1201, %r1199;\n\tor.b32 \t%r1188, %r1202, %r1197;"
+      },
+      "store": {
+        "first_line": 1079,
+        "last_line": 1079,
+        "text": "\tst.shared.s32 [%r1187], %r1188;"
+      },
+      "address": {
+        "first_line": 1077,
+        "last_line": 1077,
+        "text": "\tadd.s32 \t%r1187, %r1185, 32;"
+      }
+    },
+    {
+      "math": {
+        "first_line": 1140,
+        "last_line": 1147,
+        "text": "\tshl.b32 \t%r1220, %r1210, 8;\n\tand.b32 \t%r1221, %r1220, -32768;\n\tshl.b32 \t%r1222, %r1206, 4;\n\tand.b32 \t%r1223, %r1222, 496;\n\tshr.u32 \t%r1224, %r1206, 3;\n\tand.b32 \t%r1225, %r1224, 12;\n\tor.b32 \t%r1226, %r1225, %r1223;\n\tor.b32 \t%r1212, %r1226, %r1221;"
+      },
+      "store": {
+        "first_line": 1150,
+        "last_line": 1150,
+        "text": "\tst.shared.s32 [%r1211], %r1212;"
+      },
+      "address": {
+        "first_line": 1148,
+        "last_line": 1148,
+        "text": "\tadd.s32 \t%r1211, %r1209, 32;"
+      }
+    },
+    {
+      "math": {
+        "first_line": 1202,
+        "last_line": 1209,
+        "text": "\tshl.b32 \t%r1243, %r1233, 8;\n\tand.b32 \t%r1244, %r1243, -32768;\n\tshl.b32 \t%r1245, %r1229, 4;\n\tand.b32 \t%r1246, %r1245, 496;\n\tshr.u32 \t%r1247, %r1229, 3;\n\tand.b32 \t%r1248, %r1247, 12;\n\tor.b32 \t%r1249, %r1248, %r1246;\n\tor.b32 \t%r1235, %r1249, %r1244;"
+      },
+      "store": {
+        "first_line": 1212,
+        "last_line": 1212,
+        "text": "\tst.shared.s32 [%r1234], %r1235;"
+      },
+      "address": {
+        "first_line": 1210,
+        "last_line": 1210,
+        "text": "\tadd.s32 \t%r1234, %r1232, 32;"
+      }
+    },
+    {
+      "math": {
+        "first_line": 1264,
+        "last_line": 1271,
+        "text": "\tshl.b32 \t%r1267, %r1257, 8;\n\tand.b32 \t%r1268, %r1267, -32768;\n\tshl.b32 \t%r1269, %r1252, 4;\n\tand.b32 \t%r1270, %r1269, 496;\n\tshr.u32 \t%r1271, %r1252, 3;\n\tand.b32 \t%r1272, %r1271, 12;\n\tor.b32 \t%r1273, %r1272, %r1270;\n\tor.b32 \t%r1259, %r1273, %r1268;"
+      },
+      "store": {
+        "first_line": 1274,
+        "last_line": 1274,
+        "text": "\tst.shared.s32 [%r1258], %r1259;"
+      },
+      "address": {
+        "first_line": 1272,
+        "last_line": 1272,
+        "text": "\tadd.s32 \t%r1258, %r1256, 32;"
+      }
+    }
+  ],
+  "representative_excerpts": {
+    "old_producer": {
+      "first_line": 645,
+      "last_line": 659,
+      "text": "\tadd.s32 \t%r916, %r12, %r16806;\n\tshl.b32 \t%r917, %r916, 2;\n\tadd.s32 \t%r909, %r917, %r9;\n\t// begin inline asm\n\tst.shared.s32 [%r909], %r910;\n\t// end inline asm\n\tshl.b32 \t%r918, %r19, 2;\n\tadd.s32 \t%r911, %r918, %r10;\n\t// begin inline asm\n\tld.shared.s32 %r913, [%r911];\n\t// end inline asm\n\tadd.s32 \t%r912, %r909, 1152;\n\t// begin inline asm\n\tst.shared.s32 [%r912], %r913;\n\t// end inline asm"
+    },
+    "new_producer": {
+      "first_line": 883,
+      "last_line": 908,
+      "text": "\tadd.s32 \t%r1125, %r17162, %r12;\n\tshl.b32 \t%r1126, %r1125, 2;\n\tadd.s32 \t%r1116, %r1126, %r9;\n\t// begin inline asm\n\tst.shared.s32 [%r1116], %r1117;\n\t// end inline asm\n\tshl.b32 \t%r1127, %r1117, 8;\n\tand.b32 \t%r1128, %r1127, -32768;\n\tshl.b32 \t%r1129, %r1113, 4;\n\tand.b32 \t%r1130, %r1129, 496;\n\tshr.u32 \t%r1131, %r1113, 3;\n\tand.b32 \t%r1132, %r1131, 12;\n\tor.b32 \t%r1133, %r1132, %r1130;\n\tor.b32 \t%r1119, %r1133, %r1128;\n\tadd.s32 \t%r1118, %r1116, 32;\n\t// begin inline asm\n\tst.shared.s32 [%r1118], %r1119;\n\t// end inline asm\n\tshl.b32 \t%r1134, %r19, 2;\n\tadd.s32 \t%r1120, %r1134, %r10;\n\t// begin inline asm\n\tld.shared.s32 %r1122, [%r1120];\n\t// end inline asm\n\tadd.s32 \t%r1121, %r1116, 1152;\n\t// begin inline asm\n\tst.shared.s32 [%r1121], %r1122;"
+    },
+    "old_equal": {
+      "first_line": 1258,
+      "last_line": 1271,
+      "text": "\tst.global.u64 [%rd131], %rd652;\n\t// end inline asm\n\tshl.b32 \t%r1241, %r1229, 8;\n\tand.b32 \t%r1242, %r1241, -32768;\n\tshl.b32 \t%r1243, %r1229, 4;\n\tand.b32 \t%r1244, %r1243, 496;\n\tshr.u32 \t%r1245, %r1229, 3;\n\tand.b32 \t%r1246, %r1245, 12;\n\tor.b32 \t%r1247, %r39, %r1242;\n\tadd.s32 \t%r1248, %r1247, %r1244;\n\tadd.s32 \t%r1249, %r1248, %r1246;\n\tcvt.s64.s32 \t%rd136, %r1249;\n\tadd.s64 \t%rd137, %rd29, %rd136;\n\tst.global.b8 \t[%rd137], %rs113;"
+    },
+    "new_equal": {
+      "first_line": 1579,
+      "last_line": 1588,
+      "text": "\tst.global.u64 [%rd156], %rd677;\n\t// end inline asm\n\tadd.s32 \t%r1632, %r1630, 32;\n\t// begin inline asm\n\tld.shared.s32 %r1631, [%r1632];\n\t// end inline asm\n\tadd.s32 \t%r1649, %r38, %r1631;\n\tcvt.s64.s32 \t%rd161, %r1649;\n\tadd.s64 \t%rd162, %rd30, %rd161;\n\tst.global.b8 \t[%rd162], %rs113;"
+    },
+    "old_varied": {
+      "first_line": 1551,
+      "last_line": 1564,
+      "text": "\tst.global.u64 [%rd110], %rd653;\n\t// end inline asm\n\tshl.b32 \t%r1104, %r1065, 8;\n\tand.b32 \t%r1105, %r1104, -32768;\n\tshl.b32 \t%r1106, %r1065, 4;\n\tand.b32 \t%r1107, %r1106, 496;\n\tshr.u32 \t%r1108, %r1065, 3;\n\tand.b32 \t%r1109, %r1108, 12;\n\tor.b32 \t%r1110, %r41, %r1105;\n\tadd.s32 \t%r1111, %r1110, %r1107;\n\tadd.s32 \t%r1112, %r1111, %r1109;\n\tcvt.s64.s32 \t%rd112, %r1112;\n\tadd.s64 \t%rd113, %rd29, %rd112;\n\tst.global.b8 \t[%rd113], %rs114;"
+    },
+    "new_varied": {
+      "first_line": 1844,
+      "last_line": 1853,
+      "text": "\tst.global.u64 [%rd107], %rd678;\n\t// end inline asm\n\tadd.s32 \t%r1370, %r1336, 32;\n\t// begin inline asm\n\tld.shared.s32 %r1369, [%r1370];\n\t// end inline asm\n\tadd.s32 \t%r1376, %r40, %r1369;\n\tcvt.s64.s32 \t%rd109, %r1376;\n\tadd.s64 \t%rd110, %rd30, %rd109;\n\tst.global.b8 \t[%rd110], %rs114;"
+    },
+    "old_prefix": {
+      "first_line": 371,
+      "last_line": 398,
+      "text": "\tld.global.b32 \t%r807, [%rd57];\n\tadd.s32 \t%r808, %r807, 127;\n\tshr.s32 \t%r809, %r808, 31;\n\tshr.u32 \t%r810, %r809, 25;\n\tadd.s32 \t%r811, %r808, %r810;\n\tshr.s32 \t%r812, %r811, 7;\n\tand.b32 \t%r813, %r811, -128;\n\tsetp.ne.b32 \t%p38, %r808, %r813;\n\tsetp.lt.s32 \t%p39, %r808, 0;\n\tand.pred \t%p40, %p39, %p38;\n\tselp.b32 \t%r814, -1, 0, %p40;\n\tadd.s32 \t%r815, %r812, %r16802;\n\tadd.s32 \t%r816, %r815, %r814;\n\tst.global.b32 \t[%rd56+4], %r816;\n\tld.global.b32 \t%r817, [%rd57+4];\n\tadd.s32 \t%r818, %r817, 127;\n\tshr.s32 \t%r819, %r818, 31;\n\tshr.u32 \t%r820, %r819, 25;\n\tadd.s32 \t%r821, %r818, %r820;\n\tshr.s32 \t%r822, %r821, 7;\n\tand.b32 \t%r823, %r821, -128;\n\tsetp.ne.b32 \t%p41, %r818, %r823;\n\tsetp.lt.s32 \t%p42, %r818, 0;\n\tand.pred \t%p43, %p42, %p41;\n\tselp.b32 \t%r824, -1, 0, %p43;\n\tadd.s32 \t%r825, %r822, %r816;\n\tadd.s32 \t%r826, %r825, %r824;\n\tst.global.b32 \t[%rd56+8], %r826;"
+    },
+    "new_prefix": {
+      "first_line": 365,
+      "last_line": 378,
+      "text": "\tld.global.b32 \t%r806, [%rd15];\n\tadd.s32 \t%r807, %r806, 127;\n\tshr.u32 \t%r808, %r807, 7;\n\tst.global.b32 \t[%rd17+4], %r808;\n\tld.global.b32 \t%r809, [%rd15+4];\n\tadd.s32 \t%r810, %r809, 127;\n\tshr.u32 \t%r811, %r810, 7;\n\tadd.s32 \t%r812, %r811, %r808;\n\tst.global.b32 \t[%rd17+8], %r812;\n\tld.global.b32 \t%r813, [%rd15+8];\n\tadd.s32 \t%r814, %r813, 127;\n\tshr.u32 \t%r815, %r814, 7;\n\tadd.s32 \t%r816, %r815, %r812;\n\tst.global.b32 \t[%rd17+12], %r816;"
+    },
+    "old_prefix_backedge": {
+      "first_line": 480,
+      "last_line": 485,
+      "text": "\tadd.s32 \t%r885, %r882, %r876;\n\tadd.s32 \t%r16802, %r885, %r884;\n\tadd.s32 \t%r16801, %r16801, 8;\n\tsetp.ne.b32 \t%p62, %r16801, 72;\n\t@%p62 bra \t$L__BB0_50;\n\tst.global.b32 \t[%rd16+288], %r16802;"
+    },
+    "new_prefix_end": {
+      "first_line": 719,
+      "last_line": 725,
+      "text": "\tld.global.b32 \t%r1089, [%rd15+284];\n\tadd.s32 \t%r1090, %r1089, 127;\n\tshr.u32 \t%r1091, %r1090, 7;\n\tadd.s32 \t%r1092, %r1091, %r1088;\n\tst.global.b32 \t[%rd17+288], %r1092;\n$L__BB0_50:\n\tsetp.ne.b32 \t%p38, %r1, 0;"
+    }
+  },
+  "byte_deltas": {
+    "ptx": 25213,
+    "cubin": 11368
+  },
+  "conclusions": [
+    "Physical-row SFA permutation is calculated once per selected producer route and stored 32 bytes after its physical-row slot; all 14 CPU16 Q0 store copies load that cache and combine the SF-only field.",
+    "The seven producer copies are compiler unroll sites, not seven runtime routes. Each admitted selected route still has one cached-base store.",
+    "CPU16 adds a shared-address add and broadcast shared load for each consumed route/SF iteration. H4096 means eight iterations per lane; do not reinterpret 32 lanes as 32 memory transactions.",
+    "Unsigned prefix calculation emitted add 127 then shr.u32 by 7, followed by accumulation. General signed quotient/remainder correction disappeared from the entire prefix.",
+    "Prefix unrolling changed from an eight-site loop to 72 straightline loads; varied Q0 unroll copies increased from 3 to 7. These are observable code-shape changes; no exact cubin-byte attribution is established.",
+    "REG 168, STACK 112 and SHARED 1024 are unchanged; PTX/cubin grew by 25,213/11,368 bytes. Neither resource stability nor smaller hot arithmetic establishes speed, occupancy improvement or GPU correctness."
+  ]
+}

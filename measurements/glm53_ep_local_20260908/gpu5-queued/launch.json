@@ -1,0 +1,23 @@
+{
+  "submitted": true,
+  "job": "/tmp/glm53-ep-local-gpu-0908-5",
+  "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-5b",
+  "revision": "d53fd44f2b8a69869cddc9df10fa4cbb21bc56d9",
+  "session": "eplocal0908v5",
+  "pid": 79637,
+  "cpu_tests": 134,
+  "scheduler_state": {
+    "revision": "c7401026315fbf4f82ee4c8592766f3bdf63d9b8",
+    "approved_main": "c7401026315fbf4f82ee4c8592766f3bdf63d9b8",
+    "approved_fixes": [
+      "d95a2cdb46f2446bd4b58f7d5969b42c895f0b3d",
+      "4a2c960ad632596ca3224ead88da43160012d393"
+    ],
+    "approved_identical_directories": [
+      "bench",
+      "launchers",
+      "profiles",
+      "tests"
+    ]
+  }
+}

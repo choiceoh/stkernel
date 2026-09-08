@@ -544,3 +544,19 @@ A preceding two-stripe prototype was withdrawn before GPU submission after
 finding preserved failures on branch `codex/glm53-prefill-moe-overlap`
 (`021131d`). It is saved only on local branch
 `codex/glm53-prefill-moe-pipeline` at `15b7bd0`. Do not queue it.
+
+## CPU16 full GPU admission
+
+[Full GPU v5](../measurements/glm53_ep_local_20260908/gpu5-queued/README.md)
+entered the normal queue at 22:12:31 KST using frozen source `d53fd44f` and
+CPU16's matching 134-test/capsule receipt. At the preserved snapshot it was
+first behind arconsumer0908v17, with no GPU payload started. A shared-clone
+preparation failure was resolved by a fresh explicit-SHA shallow source;
+the original partial source and failure are preserved, with no duplicate job.
+
+The [CPU16 PTX inspection](../measurements/glm53_ep_local_20260908/cpu16/sfa-row-base-inspection.md)
+confirms row-only scale arithmetic moved into the producer. Each emitted
+consumer now uses a cache-address add, shared load and SF-field combine.
+The compiler also fully unrolled the 72-expert prefix and increased varied
+Q0 static copies from three to seven. These explain code-shape changes,
+not executed store counts or a measured improvement.

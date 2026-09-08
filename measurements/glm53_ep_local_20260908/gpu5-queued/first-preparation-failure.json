@@ -1,0 +1,24 @@
+{
+  "revision": "d53fd44f2b8a69869cddc9df10fa4cbb21bc56d9",
+  "command": [
+    "python3",
+    "-B",
+    "/tmp/glm53_prepare_full_gpu5.py",
+    "--revision",
+    "d53fd44f2b8a69869cddc9df10fa4cbb21bc56d9"
+  ],
+  "exit_code": 1,
+  "submitted": false,
+  "phase": "new source bundle fetch before GPU job creation",
+  "error": "git fetch: ignoring alternate object stores, nesting too deep; prerequisite commits are not connected to repository history",
+  "state": {
+    "captured": 1788873102.6372154,
+    "partial_source_exists": true,
+    "gpu_job_exists": false,
+    "bundle_sha256": "4786b0c9f0567f12838da5cbaa7e270a5aff83ddcf0142b3b95b555aa4b015b1",
+    "alternates": "/home/choiceoh/stkernel-ep-local-0908-16/.git/objects\n",
+    "holder": "arconsumer0908v17|4133545|srv2|1788872734|20|Only missing B2; includes main #494; preserve original reservation and GPU evidence|boot\n",
+    "queue": ""
+  },
+  "repair": "Preserve partial source; create independent explicit-revision shallow source 5b without shared object chain"
+}
