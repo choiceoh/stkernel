@@ -515,6 +515,8 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
             with mock.patch.object(prep,'run',side_effect=run):
                 prep.validate_targets(self.directory,path)
             self.assertNotIn('--image',calls[0][0]);self.assertNotIn('--model',calls[0][0])
+            self.assertIn('--level',calls[0][0])
+            self.assertEqual(calls[0][0][calls[0][0].index('--level')+1],'admission')
             self.assertNotIn('IMAGE',calls[0][1]);self.assertNotIn('MODEL_HOST_PATH',calls[0][1])
         with self.assertRaisesRegex(ValueError,'unsupported env prefix'):
             prep.deployment_targets(['env','-S','bash private.sh'],self.repo,{})

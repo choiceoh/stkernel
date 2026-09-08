@@ -530,15 +530,15 @@ case "$cmd" in
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
     if [ "$kind" = boot ]; then
-      # CPU deployment/recovery gates finish before this request holds GPUs.
-      # Their immutable receipts remain usable when unrelated main commits land.
+      # Quick candidate admission and an existing release-validated recovery
+      # are sufficient for experiments; full release is an explicit action.
       export FLEET_VALIDATION_STORE=${FLEET_VALIDATION_STORE:-$FLEET_DIR/validation}
       python3 "$REPO/bench/fleet_prepare.py" validate-targets "$s" --prepared "$FLEET_PREPARE_MANIFEST" >&2 || exit 3
       production_repo=/home/choiceoh/stkernel
       if [ -s "$FLEET_DIR/production-repo" ]; then IFS= read -r production_repo < "$FLEET_DIR/production-repo" || true; fi
       production_repo=${FLEET_PRODUCTION_REPO:-$production_repo}
       FLEET_RECOVERY_RECEIPT=$(python3 "$REPO/bench/fleet_validation.py" prepare-recovery --repo "$production_repo" --store "$FLEET_VALIDATION_STORE" --format receipt) || exit 3
-      export FLEET_RECOVERY_RECEIPT FLEET_VALIDATION_REQUIRED=1
+      export FLEET_RECOVERY_RECEIPT FLEET_VALIDATION_REQUIRED=1 FLEET_VALIDATION_LEVEL=admission
     fi
     runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
     with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
