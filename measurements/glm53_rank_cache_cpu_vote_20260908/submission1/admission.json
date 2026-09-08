@@ -1,0 +1,42 @@
+{
+  "submitted.json": {
+    "session": "glm53cpuvotemem0908v1",
+    "source": "/home/choiceoh/stkernel-cpu-vote-memory-0908-1",
+    "revision": "6e693f53a118bce9fc0a8b457943c3880a9fb59b",
+    "command": [
+      "bash",
+      "/home/choiceoh/stkernel-cpu-vote-memory-0908-1/bench/fleet.sh",
+      "run",
+      "--gpu",
+      "glm53cpuvotemem0908v1",
+      "65",
+      "PR470 warm-cache GPU/CPU/GPU readiness-vote memory bracket; no model requests, no promotion",
+      "--",
+      "python3",
+      "/home/choiceoh/stkernel-cpu-vote-memory-0908-1/bench/glm53_cpu_vote_memory_pair.py",
+      "--revision",
+      "6e693f53a118bce9fc0a8b457943c3880a9fb59b",
+      "--out",
+      "/tmp/glm53-cpu-vote-memory-0908-1/capture"
+    ],
+    "environment": {
+      "REPO": "/home/choiceoh/stkernel-cpu-vote-memory-0908-1",
+      "FLEET_OBSERVATION_CLONES": "1"
+    },
+    "started": 1788840473.2682328
+  },
+  "fleet_tail": [
+    "preflight glm53cpuvotemem0908v1 [boot]:",
+    "  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo",
+    "  PASS /home/choiceoh/glm53-logs/fleet.sh == repo",
+    "  PASS knobs declared in origin/main: ",
+    "  NOTE checkout is 12 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots",
+    "  baseline: NONE for build 6e693f53 -- a defaults arm is worth its boot",
+    "  -> PASS",
+    "GO glm53cpuvotemem0908v1 2026-09-08_13:07:54",
+    "  node 10.10.10.1: gpu=ok stray=4 ram=13G path=ok ",
+    "  node 10.10.10.2: ssh=FAIL",
+    "  node 10.10.10.3: gpu=ok stray=2 ram=8G path=ok ",
+    "  node 10.10.10.4: gpu=ok stray=16 ram=15G path=ok "
+  ]
+}
