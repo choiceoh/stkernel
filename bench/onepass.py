@@ -151,9 +151,8 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
 
     NOT this process's environment -- ab-lever.sh boots the server with the
     arm's env and then runs this bench in a plain shell, so os.environ here
-    carries none of it. Runtime knobs come from the container's Config.Env;
-    configured EP/TP topology comes separately from its encoded launch command.
-    The overlay stamp identifies the BUILD (a bench with
+    carries none of it. The serving container's own Config.Env is the only
+    honest source, and the overlay stamp identifies the BUILD (a bench with
     no deploy reuses the previous build whatever the git sha says).
     An empty `knobs` IS that build's baseline -- bench/baseline.py reads it
     so the next session can skip re-measuring one. Every failure degrades to
@@ -179,10 +178,7 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
                               capture_output=True, text=True, timeout=10)
         if boot.returncode == 0 and "|" in boot.stdout.strip():
             out["boot_id"] = boot.stdout.strip()
-        # A replacement under the same name must not mix its environment
-        # with the previously observed container's boot/launch metadata.
-        observed_container = out.get("boot_id", name).split("|", 1)[0]
-        raw = subprocess.run(["docker", "inspect", "-f", "{{json .Config.Env}}", observed_container],
+        raw = subprocess.run(["docker", "inspect", "-f", "{{json .Config.Env}}", name],
                              capture_output=True, text=True, timeout=10).stdout
         served = dict(e.split("=", 1) for e in json.loads(raw or "[]")
                       if "=" in e and e.startswith("VLLM_"))
@@ -204,30 +200,6 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
         out["knobs"] = dict(sorted(knobs.items()))
     except Exception:
         pass
-    if "boot_id" in out:
-        # ENABLE_EP is a launcher input, not a container environment entry.
-        # Read the command by the already observed immutable container ID.
-        # This records configured topology only; serving markers and all-rank
-        # execution proof remain separate requirements for EP acceptance.
-        container_id = out["boot_id"].split("|", 1)[0]
-        try:
-            from glm53_launch_metadata import launch_parallelism
-            command = subprocess.run(
-                ["docker", "inspect", "-f", "{{json .Config.Cmd}}", container_id],
-                capture_output=True, text=True, timeout=10,
-            )
-            command.check_returncode()
-            out["parallelism"] = dict(
-                launch_parallelism(json.loads(command.stdout)),
-                container_id=container_id, issues=[],
-            )
-        except Exception:
-            # Unknown topology stays distinct from an observed EP-disabled
-            # launch. Do not include raw command/error text.
-            out["parallelism"] = dict(
-                schema=1, source="container-launch-script", container_id=container_id,
-                enabled=None, issues=["launch metadata unavailable"],
-            )
     return out
 
 
