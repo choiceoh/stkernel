@@ -17,13 +17,23 @@ class PendingTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        # Preparation now resolves the real executable before an edit can
+        # commit. Keep the payloads local and inert while exercising that
+        # check, including edits racing admission or another editor.
+        bindir = self.root / 'bin'
+        bindir.mkdir()
+        for name in ('old', 'new', 'too-late', 'stale'):
+            command = bindir / name
+            command.write_text('#!/bin/sh\nexit 0\n')
+            command.chmod(0o700)
         self.pid = os.getpid()
         self.queue = self.root / 'queue'
         self.queue.write_text(f'10|before|100|5|before|boot|{self.pid}\n'
                              f'20|mine|101|10|original|boot|{self.pid}\n'
                              f'30|after|102|5|after|boot|{self.pid}\n')
         for patcher in (patch.object(handoff, 'identity', return_value='owner-start'),
-                        patch.dict(os.environ, REPO=str(self.root), FLEET_EXPERIMENT_ID='')):
+                        patch.dict(os.environ, REPO=str(self.root), FLEET_EXPERIMENT_ID='',
+                                   FLEET_PREPARE_MANIFEST='', PATH=str(bindir) + os.pathsep + os.environ['PATH'])):
             patcher.start(); self.addCleanup(patcher.stop)
         pending.register(self.root, 'mine', ['old', 'spaced argument'], '/pinned/fleet.sh', 'boot')
 
