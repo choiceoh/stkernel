@@ -49,3 +49,4 @@ VLLM_GLM53_MK_INPUT_CTA	[megakernel] input-cta CAPTURED	[megakernel] input-cta C
 VLLM_GLM53_SCHED_CHUNK_FILE	[decode-first] scheduler armed	VLLM_GLM53_SCHED_CHUNK_FILE
 VLLM_GLM53_KDA_STRIDED	[kda-strided] token-strided recurrent inputs serving	[kda-strided] token-strided recurrent inputs serving
 VLLM_GLM53_ROUTER_CUBLAS_F120	[router-gemm] family-120 cuBLAS out_dtype tier serving	[router-gemm] family-120 cuBLAS out_dtype tier serving
+VLLM_GLM53_REJECT_METHOD	[reject] fly deferred verification serving	[reject] %s verification serving

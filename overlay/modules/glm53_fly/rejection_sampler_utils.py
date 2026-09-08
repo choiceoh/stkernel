@@ -6,6 +6,8 @@ from vllm.triton_utils import tl, tldevice, triton
 from vllm.v1.spec_decode.fly import compute_fly_entropy
 from vllm.v1.worker.gpu.sample.gumbel import gumbel_block_argmax, tl_rand32
 
+_GLM53_VERIFY_SERVING = False
+
 
 @triton.jit
 def _compute_max_and_sumexp(logits):
@@ -1018,6 +1020,20 @@ def rejection_sample(
         # In some cases (e.g. MiMo v2.5 Pro + DFlash) the target model's
         # vocab size is larger than the draft's due to padding.
         vocab_size = min(vocab_size, draft_logits.size(-1))
+
+    # deneb fork: armed != serving. REJECT_METHOD reaches the engine inside
+    # --speculative-config, so nothing in the container's env proves the kernel
+    # actually verified this way; this is that proof, emitted once from the
+    # first real verification step. bench/proof-markers.tsv reads it.
+    global _GLM53_VERIFY_SERVING
+    if not _GLM53_VERIFY_SERVING and (fly_window_size > 0 or use_block_verification):
+        _GLM53_VERIFY_SERVING = True
+        from vllm.logger import init_logger
+        init_logger(__name__).warning(
+            "[reject] %s verification serving%s",
+            "fly deferred" if fly_window_size > 0 else "block",
+            f" (window={fly_window_size})" if fly_window_size > 0 else "",
+        )
 
     fly_entropy = None
     if fly_window_size > 0:

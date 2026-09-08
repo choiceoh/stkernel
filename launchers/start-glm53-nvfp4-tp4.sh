@@ -446,6 +446,11 @@ done
 # ('expected size 7==5'). The fp8-dense module registers VLLM_GLM53_SPEC_K as a
 # compile factor; this is the value it hashes.
 ENVV="$ENVV -e VLLM_GLM53_SPEC_K=$SPEC_K"
+# Same trick for the verification policy: REJECT_METHOD rides inside
+# --speculative-config, so nothing in the container env names it and the
+# served-knob scan (bench/onepass.py _served_build, which only reads VLLM_*)
+# could never see it -- an arm that changes it would be unprovable.
+ENVV="$ENVV -e VLLM_GLM53_REJECT_METHOD=${REJECT_METHOD:-standard}"
 # 37차 (2026-09-06): three of eight boots today spent 302 s in the TP
 # group's FIRST gloo collective (in_the_same_node_as -> broadcast_object_list,
 # every rank inside it, then success) right after the NCCL communicator init
