@@ -69,6 +69,17 @@ The retry adds read-only host-memory receipts to diagnose any recurrence.
 Matching source, profile, image and ordered requests must be checked before
 combining the new baseline with this pair.
 
+The first baseline-only retry, `arconsumer0908v15` at `d980197a`, passed its
+complete deployment CPU gate and reused all 15 GPU correctness stages. It
+was admitted at 21:25:48 KST but stopped before the B2 boot: main #493 landed
+between its initial source check and deployment's refresh. The fallback source
+check also exposed an argparse invocation bug (`require-base --repo REPO REF`).
+Deployment now passes the positional ref before `--repo`; a regression runs
+that exact invocation and proves it accepts documentation-only advancement
+while still rejecting missing upstream runtime code. The retry incorporates
+main #493 instead of weakening the current-main requirement. v15 produced no
+serving record, and its supervisor began approved-main recovery.
+
 ## Retained evidence
 
 - srv2: `/home/choiceoh/glm53-logs/ARCONSUMER-arconsumer0908v14/`.
