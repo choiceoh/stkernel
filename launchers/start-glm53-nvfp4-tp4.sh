@@ -37,7 +37,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER MM_LIMIT \
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD FLY_WINDOW FLY_ENTROPY SPEC_K_SEQLEN PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER MM_LIMIT \
   PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE INDEX_CACHE_FREQ
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
@@ -454,6 +454,11 @@ done
 # ('expected size 7==5'). The fp8-dense module registers VLLM_GLM53_SPEC_K as a
 # compile factor; this is the value it hashes.
 ENVV="$ENVV -e VLLM_GLM53_SPEC_K=$SPEC_K"
+# Same trick for the verification policy: REJECT_METHOD rides inside
+# --speculative-config, so nothing in the container env names it and the
+# served-knob scan (bench/onepass.py _served_build, which only reads VLLM_*)
+# could never see it -- an arm that changes it would be unprovable.
+ENVV="$ENVV -e VLLM_GLM53_REJECT_METHOD=${REJECT_METHOD:-standard}"
 # 37차 (2026-09-06): three of eight boots today spent 302 s in the TP
 # group's FIRST gloo collective (in_the_same_node_as -> broadcast_object_list,
 # every rank inside it, then success) right after the NCCL communicator init
@@ -566,11 +571,95 @@ elif [ "$DFLASH2" = 1 ]; then
   # distributions. The kernel only takes that branch when temp > 0 -- our
   # bench runs at 0.95 -- and it reads the cached draft logits, which exist
   # because DRAFT_SAMPLE defaults to probabilistic.
+  # "fly" is block verification's entropy-gated cousin (vLLM #53987, glm53_fly,
+  # arXiv 2511.22972): instead of truncating the whole window at the first
+  # rejection, a high-entropy -- genuinely ambiguous -- position defers to the
+  # draft token when the next FLY_WINDOW draft tokens would be
+  # accepted natively. It is an approximation, so quality is a gate, not an
+  # assumption.
+  # num_speculative_tokens_per_seq_len (vLLM #54801, glm53_dynamic_k): wind the
+  # draft budget down as the context grows -- draft verification cost scales
+  # with L, so a long input can pay more for the draft than the draft saves.
+  # Entries are [range_start, range_end, num_speculative_tokens] over the
+  # batch's longest sequence, e.g.
+  #   SPEC_K_SEQLEN='[[0,131071,5],[131072,1048576,0]]'
+  # Unset = static SPEC_K, which is the default. No whitespace: the value rides
+  # the same unquoted -e mechanism the profile guard exists for.
+  if [ -n "${SPEC_K_SEQLEN:-}" ]; then
+    case "$SPEC_K_SEQLEN" in
+      *[[:space:]]* ) echo "ABORT: SPEC_K_SEQLEN must not contain whitespace"; exit 1 ;;
+    esac
+    # Shape alone is not enough: '[]' is valid JSON and would leave
+    # uses_dynamic_speculative_decoding() true with an empty schedule, which
+    # empties the decode-query-length union and captures NO decode CUDA graphs
+    # at all -- silently, under cudagraph_mode FULL_DECODE_ONLY. Validate the
+    # whole thing here rather than letting a typo reach vLLM after a 4-node
+    # docker run, the same contract the REJECT_METHOD gate above keeps.
+    if ! _seqlen_err=$(python3 -c '
+import json, sys
+try:
+    schedule = json.loads(sys.argv[1])
+except ValueError as exc:
+    raise SystemExit(f"not JSON: {exc}")
+if not isinstance(schedule, list) or not schedule:
+    raise SystemExit("must be a NON-EMPTY list of [start,end,k] triples")
+for entry in schedule:
+    if (not isinstance(entry, list) or len(entry) != 3
+            or any(isinstance(x, bool) or not isinstance(x, int) for x in entry)):
+        raise SystemExit(f"entry {entry!r} is not three integers [start,end,k]")
+    start, end, k = entry
+    if start < 0 or end < start or k < 0:
+        raise SystemExit(f"entry {entry!r} wants 0 <= start <= end and k >= 0")
+if schedule[0][0] != 0:
+    raise SystemExit("the first range must start at 0")
+previous_end = -1
+for start, end, _ in schedule:
+    if start <= previous_end:
+        raise SystemExit("ranges must be sorted and non-overlapping")
+    previous_end = end
+' "$SPEC_K_SEQLEN" 2>&1); then
+      echo "ABORT: SPEC_K_SEQLEN is not a valid schedule ($_seqlen_err): $SPEC_K_SEQLEN"; exit 1
+    fi
+    _spec_extra="$_spec_extra,\"num_speculative_tokens_per_seq_len\":$SPEC_K_SEQLEN"
+  fi
   case "${REJECT_METHOD:-}" in
     "" ) ;;
-    standard|block )
-      _spec_extra="$_spec_extra,\"rejection_sample_method\":\"$REJECT_METHOD\"" ;;
-    * ) echo "ABORT: REJECT_METHOD must be standard or block, got '$REJECT_METHOD'"; exit 1 ;;
+    standard|block|fly )
+      _spec_extra="$_spec_extra,\"rejection_sample_method\":\"$REJECT_METHOD\""
+      # FLy's two dials, both optional: window (default min(6, K-1)) and the
+      # entropy threshold above which a rejection is treated as ambiguous
+      # (default 0.3). Validated, not interpolated raw: these land inside
+      # SPECCFG_VAL, which the worker lane splices into an unquoted ssh string
+      # the remote shell re-parses, so an unchecked value is both an invalid-JSON
+      # death after a 4-node run and a way for head and workers to disagree.
+      # Validated as JSON, not by glob: a shape check accepts '.5', '5.' and
+      # '00.5', all of which json.loads rejects, so the value would still die
+      # inside the engine after a 4-node run -- the failure this guard exists to
+      # move forward. json.loads is the same tool SPEC_K_SEQLEN uses below.
+      for _fly_pair in "FLY_WINDOW:fly_window_size:int" \
+                       "FLY_ENTROPY:fly_entropy_threshold:float"; do
+        _fly_env=${_fly_pair%%:*}; _fly_rest=${_fly_pair#*:}
+        _fly_key=${_fly_rest%%:*}; _fly_kind=${_fly_rest#*:}
+        _fly_val=${!_fly_env:-}
+        [ -n "$_fly_val" ] || continue
+        if ! _fly_err=$(python3 -c '
+import json, sys
+name, kind, raw = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    value = json.loads(raw)
+except ValueError as exc:
+    raise SystemExit(f"{name}: not a JSON number ({exc})")
+if isinstance(value, bool) or not isinstance(value, int if kind == "int" else (int, float)):
+    raise SystemExit(f"{name}: want a JSON {kind}, got {value!r}")
+if value < 0:
+    raise SystemExit(f"{name}: must be >= 0, got {value!r}")
+' "$_fly_env" "$_fly_kind" "$_fly_val" 2>&1); then
+          echo "ABORT: $_fly_err (value: '$_fly_val')"; exit 1
+        fi
+        _spec_extra="$_spec_extra,\"$_fly_key\":$_fly_val"
+      done
+      : ;;
+    * ) echo "ABORT: REJECT_METHOD must be standard, block or fly, got '$REJECT_METHOD'"; exit 1 ;;
   esac
   SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_speculative_tokens\":$SPEC_K,\"draft_sample_method\":\"$DRAFT_SAMPLE\"$_spec_extra}'"
 else

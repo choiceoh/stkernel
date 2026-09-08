@@ -28,6 +28,59 @@ from .index import prepare_chunk_indices
 from .l2norm import l2norm_fwd
 from .op import exp2, log
 from .solve_tril import solve_tril
+
+# deneb fork (vLLM #55736, opt-in): the decode path hands the recurrent kernel
+# column slices of the merged q|k|v conv output and of the fused qkvbfg_a
+# projection (beta, g).  Those slices are token-strided but contiguous within a
+# token; making each one contiguous first is one copy kernel per tensor per KDA
+# layer per step -- 5 x 34 layers = 170 launches per decode step on
+# GLM-5.3-Flash.  With VLLM_GLM53_KDA_STRIDED=1 the kernel reads them through
+# explicit per-token strides instead and the copies go away.  The result is
+# bit-identical either way (a copy was all they ever were).  On by default since
+# 40차 on the strength of the arming gate (36/36 bit-identical, including this
+# profile's own 4-seq x 6-token verify shape); the marker below is what a boot
+# has to show before any number from it is quotable.
+_KDA_STRIDED_INPUTS = (
+    os.environ.get("VLLM_GLM53_KDA_STRIDED", "0").strip().lower()
+    in ("1", "true", "yes", "on")
+)
+
+
+def kda_strided_inputs_enabled() -> bool:
+    """Whether callers may hand fused_recurrent_kda token-strided views."""
+    return _KDA_STRIDED_INPUTS
+
+
+def _glm53_kda_addressable(x) -> bool:
+    """True when the kernel can read ``x`` with a per-token stride: unit stride
+    in the last dim and, for a 4-D ``[B, T, H, D]`` input, head-major within a
+    token.  Anything else keeps the pre-existing ``.contiguous()`` copy."""
+    if x is None or x.dim() < 3 or x.stride(-1) != 1:
+        return False
+    if x.dim() == 4 and x.stride(-2) != x.shape[-1]:
+        return False
+    return True
+
+
+_KDA_STRIDED_SERVING = False
+
+
+def _glm53_kda_input(x):
+    global _KDA_STRIDED_SERVING
+    if _KDA_STRIDED_INPUTS and _glm53_kda_addressable(x):
+        # armed != serving: the knob can be on and every input still arrive
+        # contiguous (a step whose slices came from index_select), in which case
+        # this lane is doing nothing. The marker fires on the first input that
+        # is genuinely token-strided, which is the only state worth measuring --
+        # bench/proof-markers.tsv reads it.
+        if not _KDA_STRIDED_SERVING and not x.is_contiguous():
+            _KDA_STRIDED_SERVING = True
+            from vllm.logger import init_logger
+            init_logger(__name__).warning(
+                "[kda-strided] token-strided recurrent inputs serving"
+            )
+        return x
+    return x.contiguous()
 from .utils import FLA_CHUNK_SIZE, is_amd
 
 BT_LIST_AUTOTUNE = [32, 64, 128]
@@ -380,6 +433,22 @@ def fused_recurrent_kda_fwd(
     else:
         stride_indices_seq, stride_indices_tok = ssm_state_indices.stride()
 
+    # deneb fork (vLLM #55736): address the inputs with their real per-token
+    # stride.  For a contiguous tensor these are exactly the H * K / HV * V /
+    # HV * K / HV values the kernel used to hard-code, so the addresses -- and
+    # the output -- are unchanged; a token-strided view is now also legal.
+    # No re-validation here: fused_recurrent_kda is the entry point and its
+    # _glm53_kda_input has already either accepted an addressable view or made
+    # the tensor contiguous, so checking again would cost five more Python
+    # calls per KDA layer per decode step (~340 a step across 34 layers) in the
+    # module whose sibling change exists to remove kernel launches -- and an
+    # `assert` would vanish under `python -O` anyway.
+    stride_q_token = q.stride(1)
+    stride_k_token = k.stride(1)
+    stride_v_token = v.stride(1)
+    stride_g_token = g.stride(1)
+    stride_beta_token = beta.stride(1)
+
     grid = (NK, NV, N * HV)
     fused_recurrent_gated_delta_rule_fwd_kernel[grid](
         q=q,
@@ -407,6 +476,11 @@ def fused_recurrent_kda_fwd(
         stride_final_state_token=stride_final_state_token,
         stride_indices_seq=stride_indices_seq,
         stride_indices_tok=stride_indices_tok,
+        stride_q_token=stride_q_token,
+        stride_k_token=stride_k_token,
+        stride_v_token=stride_v_token,
+        stride_g_token=stride_g_token,
+        stride_beta_token=stride_beta_token,
         IS_BETA_HEADWISE=beta.ndim == v.ndim,
         USE_QK_L2NORM_IN_KERNEL=use_qk_l2norm_in_kernel,
         INPLACE_FINAL_STATE=inplace_final_state,
@@ -454,11 +528,11 @@ def fused_recurrent_kda(
         scale = k.shape[-1] ** -0.5
 
     o, final_state = fused_recurrent_kda_fwd(
-        q=q.contiguous(),
-        k=k.contiguous(),
-        v=v.contiguous(),
-        g=g.contiguous(),
-        beta=beta.contiguous(),
+        q=_glm53_kda_input(q),
+        k=_glm53_kda_input(k),
+        v=_glm53_kda_input(v),
+        g=_glm53_kda_input(g),
+        beta=_glm53_kda_input(beta),
         scale=scale,
         initial_state=initial_state,
         inplace_final_state=inplace_final_state,

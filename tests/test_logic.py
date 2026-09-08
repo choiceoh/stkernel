@@ -6153,13 +6153,59 @@ def test_torch_imports_are_guarded() -> None:
     print("  torch imports guarded ......... OK")
 
 
+def test_profile_declares_each_knob_once() -> None:
+    """A later duplicate wins on `source`, so a promotion can be silently undone.
+
+    32차 lost `VLLM_GLM53_MK_GEMM2` exactly this way: a main merge re-declared it
+    `=0` further down the profile and the promotion above it stopped existing.
+    That was caught by hand, once, for one key. This is the general form.
+    """
+    import glob as _glob
+    for path in sorted(_glob.glob("profiles/*.env")):
+        seen: dict[str, list[int]] = {}
+        for lineno, line in enumerate(open(path, encoding="utf-8"), 1):
+            m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)=", line)
+            if m:
+                seen.setdefault(m.group(1), []).append(lineno)
+        dupes = {k: v for k, v in seen.items() if len(v) > 1}
+        check(not dupes,
+              f"{path}: these knobs are declared more than once, so the last "
+              f"line silently wins: {dupes}")
+    print("  profile knobs declared once .... OK")
+
+
 def test_launcher_reject_method_gate() -> None:
     """REJECT_METHOD must reach the drafter config and refuse a typo."""
     text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
     check('"rejection_sample_method\\":\\"$REJECT_METHOD' in text,
           "the value must reach the speculative-config JSON")
-    check("ABORT: REJECT_METHOD must be standard or block" in text,
+    # "fly" joined the set with glm53_fly (vLLM #53987); the gate's job is
+    # unchanged -- anything not in the set aborts rather than reaching vLLM.
+    check("ABORT: REJECT_METHOD must be standard, block or fly" in text,
           "an unknown method must abort here, not reach vLLM as a typo")
+    for _m in ("standard", "block", "fly"):
+        check(f"{_m}|" in text or f"|{_m} )" in text,
+              f"REJECT_METHOD={_m} must be an accepted arm")
+    # SPEC_K_SEQLEN carries the same contract, and shape alone does not keep it:
+    # "[]" is valid JSON that leaves uses_dynamic_speculative_decoding() true
+    # with an empty schedule, which captures no decode CUDA graphs at all.
+    check("SPEC_K_SEQLEN is not a valid schedule" in text,
+          "SPEC_K_SEQLEN must be validated in the launcher, not by vLLM")
+    check("NON-EMPTY list of [start,end,k] triples" in text,
+          "an empty SPEC_K_SEQLEN schedule must abort, not silently disable "
+          "decode graph capture")
+    # FLY_WINDOW/FLY_ENTROPY land inside SPECCFG_VAL, which the worker lane
+    # splices into an unquoted ssh string the remote shell re-parses.
+    # Both dials go through json.loads, not a glob: a shape check accepts
+    # ".5", "5." and "00.5", every one of which json.loads rejects, so the
+    # value would still die inside the engine after a 4-node run.
+    for _pair in ("FLY_WINDOW:fly_window_size:int",
+                  "FLY_ENTROPY:fly_entropy_threshold:float"):
+        check(_pair in text,
+              f"{_pair.split(':')[0]} must be validated as JSON before it "
+              "reaches the config")
+    check("not a JSON number" in text,
+          "the FLy dials must be rejected by the same parser that will read them")
     names = _launcher_caller_passthrough(text)
     check({"DRAFT_SAMPLE", "REJECT_METHOD"} <= names,
           "both drafter knobs must be in the caller passthrough list -- a "
@@ -9791,10 +9837,24 @@ def test_glm53_prep_fused_contracts() -> None:
         {"os": os, "hashlib": hashlib, "logger": _CapturingLogger()},
     )
     pins = ns["PREIMAGES"]
-    check(len(pins) >= 15 and all(re.fullmatch(r"[0-9a-f]{64}", v) for v in pins.values()),
+    # A value may be one digest, or a tuple of the contents this module was read
+    # against when another overlay module legitimately owns the file (image +
+    # that module's output). A tuple is not a wildcard: an unexpected edit still
+    # matches nothing, and the alternative -- pinning one of the two -- makes
+    # prep-fused's arming depend on an unrelated feature module being loaded.
+    def _digests(value):
+        return value if isinstance(value, tuple) else (value,)
+    check(len(pins) >= 15
+          and all(re.fullmatch(r"[0-9a-f]{64}", d)
+                  for v in pins.values() for d in _digests(v)),
           "preimage table must pin full sha256 digests of the bypassed runner files")
+    check(all(len(set(_digests(v))) == len(_digests(v)) and len(_digests(v)) <= 2
+              for v in pins.values()),
+          "a pinned file may list at most two distinct contents: the image's and "
+          "the one overlay module that owns it")
     tail_idx = open(_overlay_source("overlay/glm53_kpool_indexer.py"), "rb").read()
-    check(pins["v1/attention/backends/mla/indexer.py"] == hashlib.sha256(tail_idx).hexdigest(),
+    check(hashlib.sha256(tail_idx).hexdigest()
+          in _digests(pins["v1/attention/backends/mla/indexer.py"]),
           "the pinned mla/indexer.py must be the mounted glm53_tail_slot_persistent copy")
     for rel in ("v1/worker/gpu/model_runner.py", "v1/worker/gpu/input_batch.py",
                 "v1/worker/gpu/block_table.py", "v1/worker/gpu/buffer_utils.py",
@@ -11759,6 +11819,7 @@ if __name__ == "__main__":
     test_dflash_aot_guard_stays_removed()
     test_hotpath_env_latches()
     test_launcher_load_format_gate()
+    test_profile_declares_each_knob_once()
     test_launcher_reject_method_gate()
     test_dflash2_prefix_cache_fail_closed()
     test_accept_profile_conditional_arithmetic()

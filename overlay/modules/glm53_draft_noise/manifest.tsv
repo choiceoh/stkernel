@@ -1,0 +1,6 @@
+# source	container_target(relative to the profile's TARGET_PREFIX, or absolute)	base_preimage_sha256_or_absent
+# -- glm53_draft_noise (vLLM #54282): the draft's Gumbel stream must not share the target's Philox offsets. draft_sample_method=probabilistic only -- which is what this profile serves.
+dflash2_speculator.py	vllm/v1/worker/gpu/spec_decode/dflash2/speculator.py	66aa43b74abfdaa9aa09e00e6511fab273e7c8a1c5da6c0d06e1daa07216ffd5
+dspark_speculator.py	vllm/v1/worker/gpu/spec_decode/dspark/speculator.py	a72c6d0dbf37ed41b901c0a2178de51aca2c74e6dffdffb89ce223bae2f64598
+gumbel.py	vllm/v1/worker/gpu/sample/gumbel.py	8d04f3068a8dc22de69ec7ec6ab4f4192b8d45b5c3e253dcb7817eaf6c1314cd
+spec_speculator.py	vllm/v1/worker/gpu/spec_decode/speculator.py	325dca3bb1aee7f3ce237f913e301f3008d765525ebf650ea4b88f195692471e

@@ -13,10 +13,12 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited at eb379b15: consumer weight notes, PDL/occupancy counts,
-# and the standalone MHC normalized-weight call contract differ from upstream.
-# The three audited helper tests and access graphs are unchanged.
-LOGIC_AUDIT = 'dd7382695cb15635b1d04f844b11872421bd7c9452dea53b96df9a4336f75f5d'
+# Re-audited after merging origin/main into the 40차 upstream-adoption branch:
+# both sides edited tests/test_logic.py (main's consumer/PDL/MHC notes, this
+# branch's REJECT_METHOD/SPEC_K_SEQLEN/FLy gates, the per-profile duplicate
+# check and the preimage-tuple contract). None of the three audited helpers,
+# their tests, or the access graphs in DEPENDENCY_AUDITS are touched by either.
+LOGIC_AUDIT = 'ca479a374e55524b99abc2f435ec8c7d71210660cbc3411795f4eb3224ef9a44'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

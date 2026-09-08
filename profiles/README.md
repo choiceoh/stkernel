@@ -94,8 +94,8 @@ restore the previous geometry.
 | 상태 | production | 커널 캠페인 대상 · 매일 부팅 | bring-up |
 | 이미지 | `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` | `glm53:v13-b12x`(서빙은 `-it` 태그, 4노드 ID 일치 요구) | 미고정 |
 | 패키지 루트 | `site-packages` | `dist-packages` | 기본값 |
-| 모듈 수 | 18 | **9**(34차 묶음 8 + 39차 프리픽스 캐시; 접기 전 25) | 1 |
-| 오버레이 파일 | 23 | **54** | 2 |
+| 모듈 수 | 18 | **14**(34차 묶음 8 + 39차 프리픽스 캐시 + 40차 spec-state·router-gemm·draft-noise·dynamic-k·fly; 접기 전 25) | 1 |
+| 오버레이 파일 | 23 | **77** | 2 |
 | 기본 노브 | 노브 전부 off 가 기준선 | **메가커널 세트**(`MEGAKERNEL`·`MK_MHC`·`MK_GEMM`·`MK_MLA`=1, `MK_KDA`=0) + 드래프터 W4 (28차 §8) + `MK_PDL`(27차 프로브, PR #290 — 종단 수치는 아직 없다) | — |
 
 `glm53` 의 기본값이 곧 브래킷된 cand 구성이다 — 그래서 A/B 의 base 팔은
@@ -125,11 +125,16 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `spec_fp8_head` | 드래프터 일반 — **기각** | 1 | ✓ | ○ | · | · |
 | | | | | | | |
 | `glm53_model` | **묶음(34차)**: 모델·어텐션·KDA·MLA 파일 접수 + 밀집 GEMM fp8/W4 패스 + KDA 원패스 + 순수 프리필 SP/NVFP4 후보 + 영상 자리표시 수정(39차) + FP8·랭크별 부팅 캐시 | 14 | 일부 | · | ● | · |
-| `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·tail-select 융합, tail 슬롯, MHC TileLang 프리필 big_fuse 오버라이드 + MK 훅 (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_mhc_tilelang`; 34차 §8 일몰: radix top-k 확장, SM121 MLA 프리필, MHC SMALLM/ONEPASS; KDA 프리필 버킷(`kda.py`·`chunk_delta_h.py`)은 #368 이 direct-out 을 얹어 유지) | 6 | 일부 | · | ● | · |
+| `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·tail-select 융합, tail 슬롯, MHC TileLang 프리필 big_fuse 오버라이드 + MK 훅 (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_mhc_tilelang`; 34차 §8 일몰: radix top-k 확장, SM121 MLA 프리필, MHC SMALLM/ONEPASS; KDA 프리필 버킷(`kda.py`·`chunk_delta_h.py`)은 #368 이 direct-out 을 얹어 유지) | 7 | 일부 | · | ● | · |
 | `glm53_drafter` | **묶음(34차)**: DFlash2 드래프터 접수, fp8 로더, 워밍업, early-fc, 준비 캐시, fp8 lm_head (옛 `glm53_dflash2_fp8_head`·`glm53_dflash_loader_fp8`·`glm53_dflash_warmup`·`glm53_dflash_early_fc`·`glm53_drafter_prep`·`fp8_lm_head`) | 6 | 일부 | · | ● | · |
 | `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) + 정적(디코드) MoE 커널 v4(35·38차, `moe_static_kernel_v4.py` + 공유 헬퍼 `moe_static_common.py`, 프로필 기본값 `u`; v2/v3 은 34차 §8 일몰) + 순수 프리필 dynamic 재사용 후보(#368) + v5 `moe_static_kernel_v5.py`(타일 우선 가중치, 셀 `t`, 39차; `z`·`h` 는 39차 §3g/§3h 일몰) + 그 배치를 읽는 gated 프리필 커널 서브클래스 `moe_dynamic_gated_tiled.py` + NVFP4 블록 스케일 6-bit 패커 `moe_sf_pack.py`(39차 §4c) | 11 | — | · | ● | · |
 | `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 및 순수 프리필 collectives, 디코드 우선 스케줄러(39차, 기본값 `DECODE_FIRST=1` v3.2 순차 모드(디코더 뒤 대기 ≤20 s, 그 뒤 번갈아)), 채팅 옵션 검증 및 GLM 본문 보존 | 16 | 일부 | · | ● | · |
 | `glm53_prefix_cache` | 하이브리드 KV 프리픽스 캐시 조정자 수정(39차; 스톡은 이 레이아웃에서 히트 0). 기본값 `PREFIX_CACHE=1`(같은 접두사 재질문 92~99.6% 재사용, warm 수용률 = cold) | 1 | — | · | ● | · |
+| `glm53_spec_state` | 폐기된 async 스텝이 `num_accepted_tokens=0` 을 써서 상태 슬롯이 `-1` 로 인덱싱되는 것 차단(vLLM #51508). 빌더가 stale 행 슬롯을 `NULL_BLOCK_ID` 로 null + count clamp, 커널 3곳은 인덱스 clamp. 노브 없음 — 실패 형태가 조용한 출력 오염이라 기본 on | 3 | 일부 | · | ● | · |
+| `glm53_router_gemm` | family-120 이 배제된 cuBLAS out_dtype 라우터 티어 복원(vLLM #54048). `VLLM_GLM53_ROUTER_CUBLAS_F120=1` 로만 무장 — 켜면 `moe_gate_sm121` 의 M≤32 융합 게이트가 스스로 무장을 거부한다. 이미지별 `gate_linear.py` 가 달라 `moe_gate_sm121` 과 한 모듈이 될 수 없다 | 1 | — | · | ● | · |
+| `glm53_draft_noise` | 드래프트의 Gumbel 노이즈 스트림을 타깃의 Philox 오프셋에서 분리(vLLM #54282). 기각된 제안을 재샘플하는 노이즈가 그 제안을 만든 것과 바이트 동일이라 잔여 분포가 draft 상위 토큰을 과소가중 → 출력이 타깃 분포가 아님. `draft_sample_method=probabilistic` 전용이고 이 프로필이 그것 = 해당됨. 노브 없음 | 4 | 일부 | · | ● | · |
+| `glm53_dynamic_k` | 시퀀스 길이별 드래프트 예산 스케줄(vLLM #54801). 배치 최장 시퀀스가 어느 구간이냐로 K 를 고른다 — 검증 비용이 L 에 비례하므로 장문에서 K 를 0 까지 내릴 수 있다. `SPEC_K_SEQLEN` 미설정이면 경로 전체가 무동작 | 5 | ● | · | ● | · |
+| `glm53_fly` | 엔트로피 게이트 지연 검증(vLLM #53987, arXiv 2511.22972). 첫 기각에서 창을 통째로 버리는 대신, 뒤가 다 맞는 모호한 위치에서는 draft 에 양보한다. `block` 의 근사판이라 **품질이 관문** — `REJECT_METHOD=fly` 로만 무장, 기본은 `block` | 4 | ● | · | ● | · |
 | `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |
 | `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · |
 | `dspark_drafter` | 모델 전용 | 3 | — | ● | · | · |

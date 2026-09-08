@@ -295,6 +295,8 @@ class Sampler:
                 self.sampling_states.seeds.gpu,
                 pos,
                 apply_temperature=False,
+                # deneb fork (vLLM #54282): the target's own draw, not a draft's.
+                is_drafting=False,
                 use_fp64=self.use_fp64_gumbel,
             )
         return sampled, processed_logits

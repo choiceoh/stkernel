@@ -1,0 +1,3 @@
+# source	container_target(relative to the profile's TARGET_PREFIX, or absolute)	base_preimage_sha256_or_absent
+# -- glm53_router_gemm (vLLM #54048): the cuBLAS out_dtype router tier family-120 is excluded from. Its own module, not moe_gate_sm121's, because that module is shared with the dsv4 profile and the two images ship different gate_linear.py (glm53 6fca8c7f..., prod-hybrid-1.6 b9cfa27c...), which one preimage row cannot serve.
+gate_linear.py	vllm/model_executor/layers/fused_moe/router/gate_linear.py	6fca8c7fba361ac79418dd56d6d3c281ef04f34ebfdd2044cb1d12e1fa9e70d7

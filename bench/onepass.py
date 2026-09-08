@@ -189,6 +189,12 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
                 if line.startswith("VLLM_") and "=" in line:
                     k, v = line.split("=", 1)
                     declared[k] = v.strip().strip('"')
+                elif line.startswith("REJECT_METHOD="):
+                    # Same alias trick as SPEC_K below: the launcher exports the
+                    # verification policy under a VLLM name so the served-knob
+                    # scan can see it at all.
+                    declared["VLLM_GLM53_REJECT_METHOD"] = (
+                        line.split("=", 1)[1].strip().strip('"'))
                 elif line.startswith("SPEC_K="):
                     # The launcher exports this profile setting under a
                     # VLLM alias for the compile-cache key. Matching values

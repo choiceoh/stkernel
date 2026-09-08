@@ -100,7 +100,7 @@ _SPECULATORS = ("DFlashSpeculator", "DSparkSpeculator", "DFlash2Speculator")
 # glm53:v13-b12x. mla/indexer.py is the glm53_tail_slot_persistent copy that
 # is mounted over the image's. Drift anywhere -> stay stock (the fast path
 # was read against exactly these files).
-PREIMAGES: dict[str, str] = {
+PREIMAGES: dict[str, str | tuple[str, ...]] = {
     "v1/worker/gpu/model_runner.py":
         "f84255d75435e84f44972d3fd25e53447f9d4d2edd8bff4f8c19dfb793448415",
     "v1/worker/gpu/input_batch.py":
@@ -111,8 +111,14 @@ PREIMAGES: dict[str, str] = {
         "1dd3dd2826a2cc73005e7baecb71c26de8d56285b35d780716ab11ffe0f8495b",
     "v1/worker/gpu/buffer_utils.py":
         "51d37bde4f2f17d5aa9354faf35269ca1adde0eb16e73ae0d8b9860353ce57b7",
-    "v1/worker/gpu/cudagraph_utils.py":
+    # glm53_dynamic_k may overlay this file (vLLM #54801): the
+    # decode-query-length union then also reads the sequence-length draft
+    # schedule. prep-fused does not build that union, so either content is one
+    # it was read against.
+    "v1/worker/gpu/cudagraph_utils.py": (
         "c183937e6eb5b9c28c79d98fb4c64f562e7649d5f6d65743e6640b2f378ecf9f",
+        "cd7bc832145c168f80c1cc30db227e8f529a569c1f6e3f4ae908414ea97b7d06",
+    ),
     "v1/worker/gpu/dp_utils.py":
         "3c882f85109ba47e473953351d166c4377ceb995205e91cbf128ca5075775a5d",
     "v1/worker/gpu/states.py":
@@ -125,8 +131,15 @@ PREIMAGES: dict[str, str] = {
         "3dcd6ad34ee1d1db2875f7f7dd51d90ee0e64041ab282180687770a38b26acb1",
     "v1/attention/backend.py":
         "301c76c90d5f26cdecfedfb385f8f17453154106d2decf763a31cb978f1a5d99",
-    "v1/attention/backends/gdn_attn.py":
+    # glm53_spec_state may overlay this file (vLLM #51508). Both contents are
+    # ones this module was read against -- its own kernels re-apply the same
+    # staleness rule either way (nacc_stale in the fused kernel and in
+    # _glm53_regather_nacc_kernel) -- so neither presence nor absence of that
+    # module should decide whether prep-fused arms.
+    "v1/attention/backends/gdn_attn.py": (
         "f27f887e71a7d092b79f7de55044a303456cfbd1e5eaf3461b394da9b3f21eba",
+        "d3fb32a2c2f15a70d53f5b7af00c9176d9cfb0595496a5523680f0facbb381c7",
+    ),
     "v1/attention/backends/utils.py":
         "cb9a34eb45a94847c8c9862952fe9ca5df4e7c7510425a5280afcbb48d941890",
     "v1/attention/backends/mla/compressor_utils.py":
@@ -212,7 +225,16 @@ _CUDA_DTYPES = (  # (attribute path, dtype) the CUDA kernel hard-codes
 
 
 def check_preimages(root: str) -> list[str]:
-    """Return the relative paths whose sha256 differs from PREIMAGES."""
+    """Return the relative paths whose sha256 is not one this module read.
+
+    A value may be a single hash or a tuple of them. The tuple exists because a
+    file this module reasons about can be legitimately owned by another overlay
+    module: pinning only that module's output would make prep-fused's arming
+    depend on that feature being loaded, and pinning only the image's would
+    disarm the moment it is. Listing both keeps the drift check while leaving
+    the modules independent -- so this is not a weakening: an unexpected edit
+    still matches nothing.
+    """
     bad = []
     for rel, want in PREIMAGES.items():
         path = os.path.join(root, rel)
@@ -221,8 +243,9 @@ def check_preimages(root: str) -> list[str]:
                 got = hashlib.sha256(f.read()).hexdigest()
         except OSError:
             got = "absent"
-        if got != want:
-            bad.append(f"{rel}: {got[:12]} != {want[:12]}")
+        allowed = want if isinstance(want, tuple) else (want,)
+        if got not in allowed:
+            bad.append(f"{rel}: {got[:12]} != {'/'.join(w[:12] for w in allowed)}")
     return bad
 
 
@@ -303,6 +326,7 @@ def _glm53_prep_fused_kernel(
     NS: tl.constexpr,
     NS_P2: tl.constexpr,
     G: tl.constexpr,
+    NULL_STALE_SLOTS: tl.constexpr,
     N_GDN: tl.constexpr,
     ATTN_G: tl.constexpr,
     FACTOR: tl.constexpr,
@@ -396,13 +420,31 @@ def _glm53_prep_fused_kernel(
     # caching) walks the columns as the sequence crosses 2304-token blocks.
     soffs = tl.arange(0, NS_P2)
     smask = soffs < NS
-    nacc = tl.load(num_accepted_ptr + rs)
+    # deneb fork (vLLM #51508): a row whose sampled tokens were discarded
+    # reports 0 accepted while its drafts were still scheduled. Every consumer
+    # indexes the request's state slots with num_accepted_tokens - 1, so a 0
+    # becomes -1. This is the fused-path copy of the rule
+    # GDNAttentionMetadataBuilder.build applies on the stock path: null the
+    # row's state slots (NULL_BLOCK_ID == 0) so the kernels skip both the
+    # initial-state read and the final-state write, and clamp the count.
+    nacc_raw = tl.load(num_accepted_ptr + rs)
+    # In align mode the stock pre-copy runs AFTER this kernel and can raise a
+    # migrated request's count from 0 to 1, so the staleness decision made here
+    # would be wrong and _glm53_regather_nacc_kernel -- which can only null,
+    # never restore -- could not undo it. There, leave the true slots in place
+    # and let the regather decide from the post-copy count. Everywhere else no
+    # regather follows, so this kernel is the only place the rule can be
+    # applied.
+    nacc_stale = nacc_raw == 0
+    nacc = tl.maximum(nacc_raw, 1)
     start_col = tl.maximum((seq_len - 1) // mamba_block, 0)
     for k in tl.static_range(N_GDN):
         gm = tl.load(gdn_group_idx_ptr + k)
         dst = _load_ptr(dst_bt_ptrs + gm, tl.int32)
         stride = tl.load(bt_strides + gm)
         st = tl.load(dst + r * stride + start_col + soffs, mask=smask, other=0)
+        if NULL_STALE_SLOTS:
+            st = tl.where(nacc_stale, 0, st)  # NULL_BLOCK_ID
         sp = _load_ptr(gdn_state_ptrs + k, tl.int32)
         ss = tl.load(gdn_state_strides + k)
         tl.store(sp + r * ss + soffs, st, mask=smask)
@@ -464,18 +506,38 @@ def _ptrs(tensors: list[torch.Tensor], device) -> torch.Tensor:
 
 
 @triton.jit(do_not_specialize=["num_reqs"])
-def _glm53_regather_nacc_kernel(idx_mapping_ptr, num_accepted_ptr, gdn_nacc_ptrs, num_reqs,
+def _glm53_regather_nacc_kernel(idx_mapping_ptr, num_accepted_ptr, gdn_nacc_ptrs,
+                                gdn_state_ptrs, gdn_state_strides, num_reqs,
+                                NS: tl.constexpr, NS_P2: tl.constexpr,
                                 N_GDN: tl.constexpr, BLOCK: tl.constexpr):
     """Mamba 'align' mode: gdn_nacc[k][row] = num_accepted[idx_mapping[row]],
     the gather stock performs in model_state.prepare_attn -- after the align
-    pre-copy kernel may have reset a migrated request's count to 1."""
+    pre-copy kernel may have reset a migrated request's count to 1.
+
+    deneb fork (vLLM #51508): the re-gathered count can be 0 for a row whose
+    sampled tokens were discarded. In align mode the main kernel deliberately
+    leaves the true slots in place (NULL_STALE_SLOTS=False) because the pre-copy
+    between the two kernels can still raise a 0 to 1, so this is the only place
+    the rule is applied -- and because the slots it reads are the real ones,
+    nulling here is reversible in the sense that matters: a live row keeps its
+    slots instead of inheriting a null this kernel could not undo."""
     offs = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < num_reqs
     slots = tl.load(idx_mapping_ptr + offs, mask=mask, other=0)
-    nacc = tl.load(num_accepted_ptr + slots, mask=mask, other=1)
+    nacc_raw = tl.load(num_accepted_ptr + slots, mask=mask, other=1)
+    nacc_stale = nacc_raw == 0
+    nacc = tl.maximum(nacc_raw, 1)
+    soffs = tl.arange(0, NS_P2)
+    smask = soffs < NS
     for k in tl.static_range(N_GDN):
         ap = _load_ptr(gdn_nacc_ptrs + k, tl.int32)
         tl.store(ap + offs, nacc, mask=mask)
+        sp = _load_ptr(gdn_state_ptrs + k, tl.int32)
+        ss = tl.load(gdn_state_strides + k)
+        st_ptr = sp + offs[:, None] * ss + soffs[None, :]
+        st_mask = mask[:, None] & smask[None, :]
+        st = tl.load(st_ptr, mask=st_mask, other=0)
+        tl.store(st_ptr, tl.where(nacc_stale[:, None], 0, st), mask=st_mask)
 
 
 @dataclass
@@ -633,7 +695,8 @@ class PrepPlan:
     def _consts(self) -> dict[str, int]:
         return dict(
             Q=self.q, Q_P2=self.q_p2, NUM_SPEC=self.num_spec, NS=self.num_spec + 1, NS_P2=self.ns_p2,
-            G=self.G, N_GDN=len(self.gdn_groups), ATTN_G=self.attn_g,
+            G=self.G, NULL_STALE_SLOTS=not self.align_mode,
+            N_GDN=len(self.gdn_groups), ATTN_G=self.attn_g,
             FACTOR=self.factor, RATIO=self.ratio, SBS=self.sbs,
             PAD_ID=PAD_SLOT_ID, BLOCK=_BLOCK,
         )
@@ -669,8 +732,10 @@ class PrepPlan:
         if n == 0 or num_reqs == 0:
             return
         _glm53_regather_nacc_kernel[(triton.cdiv(num_reqs, 128),)](
-            idx_mapping, self.num_accepted, self.owned["gdn_nacc_ptrs"], num_reqs,
-            N_GDN=n, BLOCK=128)
+            idx_mapping, self.num_accepted, self.owned["gdn_nacc_ptrs"],
+            self.owned["gdn_state_ptrs"], self.owned["gdn_state_strides"],
+            num_reqs,
+            NS=self.num_spec + 1, NS_P2=self.ns_p2, N_GDN=n, BLOCK=128)
 
     def launch(self, idx_mapping_np: np.ndarray, num_reqs: int) -> torch.Tensor:
         """Stage idx_mapping, run the kernel, build the deep_gemm schedule.

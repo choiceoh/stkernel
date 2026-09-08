@@ -39,7 +39,11 @@ bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
 # The megakernel driver and everything its arm touches, plus the served MoE
 # path (vLLM's b12x experts, flashinfer's wrapper and its sm12x dispatch).
 sources=(glm53_megakernel.py glm53_megakernel.cu
-         glm5next_kda.py kda.py chunk_delta_h.py
+         # fused_recurrent.py owns the recurrent kernel kda.py launches; mounting
+         # one without the other gives a patched caller a stock kernel, which
+         # is how the 40차 arming-gate run died with
+         # "Keyword argument stride_q_token was specified but unrecognised".
+         glm5next_kda.py kda.py chunk_delta_h.py fused_recurrent.py
          tilelang.py tilelang_kernels.py glm53_fp8_dense.py glm53_nvfp4_scale.py
          glm53_nvfp4_bproj.py
          flashinfer_b12x_moe.py b12x_moe.py moe_dispatch.py moe_micro_kernel.py
