@@ -57,6 +57,9 @@ def _resolve_maxel() -> int:
 
 
 _MAXEL = _resolve_maxel()
+_CONSUMER_PDL = (os.environ.get("VLLM_GLM53_AR_CONSUMER_PDL") == "1"
+                 and os.environ.get("VLLM_GLM53_MK_PDL") == "1")
+_CONSUMER_CAPTURED = False
 # No rank->IP table here. Which node holds which rank is the launcher's choice,
 # not a property of the fleet: hy4 orders its workers 10.10.10.3, 10.10.10.1,
 # 10.10.10.4 and the glm53 launcher orders them 10.10.10.1, 10.10.10.3,
@@ -323,6 +326,11 @@ def _self_test(comm, rank):
         got = _ext.oneshot_ar(x.clone())        # one-shot, lockstep via barrier
         torch.cuda.synchronize()
         div = (ref.float() - got.float()).abs().max().item()
+        if _CONSUMER_PDL:
+            dist.barrier(group=g)
+            early = _ext.oneshot_ar_consumer(x.clone())
+            torch.cuda.synchronize()
+            div = max(div, (ref.float() - early.float()).abs().max().item())
         local_ok = int(div <= 0.5)
     except Exception as e:
         error = e
@@ -346,6 +354,8 @@ def _self_test(comm, rank):
         _selftest_ok = True
         logger.warning("[osar] self-test PASS div=%.4g (real=%s)", div,
                        not _SHADOW)
+        if _CONSUMER_PDL:
+            logger.warning("[osar] consumer PDL self-test PASS")
         return
 
     _disabled = True
@@ -501,7 +511,7 @@ def maybe_all_reduce(comm, input_, orig):
     One-shot only ever serves in REAL mode (shadow=0), where it replaces NCCL
     at exactly the AR call sites — 4-rank lockstep is automatic. shadow=1 runs
     the boot self-test then stays permanently on NCCL (observe-only)."""
-    global _disabled, _ordinal
+    global _disabled, _ordinal, _CONSUMER_CAPTURED
     if _in_forward:
         # every collective of the forward counts, whichever path serves it:
         # the ordinal is the key the learned hints are filed under
@@ -522,6 +532,12 @@ def maybe_all_reduce(comm, input_, orig):
             "rank-local NCCL fallback"
         )
     try:
+        if _CONSUMER_PDL and input_.numel() <= 8 * 4096:
+            import torch
+            if not _CONSUMER_CAPTURED and torch.cuda.is_current_stream_capturing():
+                _CONSUMER_CAPTURED = True
+                logger.warning("[osar] consumer PDL CAPTURED numel=%d", input_.numel())
+            return _ext.oneshot_ar_consumer(input_)
         hint = _tables.get(_scope, {}).get(_ordinal) if _in_forward else None
         if hint:
             return _ext.oneshot_ar_hint(  # real path + L2 hints, graph + eager

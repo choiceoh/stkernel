@@ -163,6 +163,10 @@ def _spec_k_value() -> str:
 
 
 _register_compile_factor("VLLM_GLM53_SPEC_K", _spec_k_value)
+_register_compile_factor(
+    "VLLM_GLM53_AR_CONSUMER_PDL",
+    lambda: "1" if os.environ.get("VLLM_GLM53_AR_CONSUMER_PDL") == "1" else "0",
+)
 
 
 def _include_patterns(env: str = "VLLM_GLM53_FP8_DENSE") -> tuple:
