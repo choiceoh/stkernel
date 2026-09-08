@@ -45,3 +45,4 @@ VLLM_GLM53_EARLY_MM_WARMUP	-	-
 VLLM_GLM53_MK_MHC_BF16	[megakernel] mhc-bf16 CAPTURED	[megakernel] mhc-bf16 CAPTURED
 VLLM_GLM53_MK_INPUT_REUSE	[megakernel] input-reuse CAPTURED	[megakernel] input-reuse CAPTURED
 VLLM_GLM53_MK_INPUT_CTA	[megakernel] input-cta CAPTURED	[megakernel] input-cta CAPTURED
+VLLM_GLM53_SCHED_CHUNK_FILE	[decode-first] scheduler armed	VLLM_GLM53_SCHED_CHUNK_FILE

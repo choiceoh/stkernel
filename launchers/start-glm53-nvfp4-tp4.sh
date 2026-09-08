@@ -30,7 +30,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
   EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER MM_LIMIT \
-  PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE
+  PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE INDEX_CACHE_FREQ
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
 IMAGE="${IMAGE:-glm53:v13-b12x}"
@@ -592,6 +592,24 @@ ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
 # a running answer for a whole 8192-token chunk. Pure prefill is untouched.
 # Requires the async scheduler (the subclass is one); refuse the contradiction.
 SCHED_CLS_FLAG=""
+# IndexCache (40차, arXiv 2603.12201): an indexer layer can reuse the previous
+# indexer layer's top-k selection instead of scoring the prefix again. The
+# frequency counts INDEXER layers -- GLM-5.3 runs one on 11 of its 45 layers
+# (3, 7, ... 43) -- so 1 = every one of the 11 computes (off), 2 = 6 of 11
+# compute, 6 = 2 of 11. The saving is paid per prefill CHUNK and scales with the
+# prefix each chunk re-scores, which is the term that makes a small chunk
+# inefficient (39차 DF3: a 1,152 chunk costs 0.64 s at 32K but 1.3 s at 100K).
+# It is an approximation, so a promotion needs onepass retrieval and the Korean
+# corruption scan intact, not just a prefill number.
+# Single quotes around the JSON on purpose: the serve command crosses a base64
+# hop into a fresh remote shell, where an unquoted {"a":1,"b":2} is BRACE
+# EXPANSION (2026-09-04 lost a boot to exactly that with COMPILE_CFG).
+case "${INDEX_CACHE_FREQ:-0}" in
+  ""|0) HF_OVERRIDES_FLAG="" ;;
+  *[!0-9]*) echo "ABORT: INDEX_CACHE_FREQ must be a non-negative integer (got $INDEX_CACHE_FREQ)" >&2; exit 2 ;;
+  *) HF_OVERRIDES_FLAG="--hf-overrides '{\"use_index_cache\":true,\"index_topk_freq\":$INDEX_CACHE_FREQ}'"
+     echo "  IndexCache ON: index_topk_freq=$INDEX_CACHE_FREQ (indexer layers; ordinal 0 always computes)" ;;
+esac
 case "${DECODE_FIRST:-0}" in
   0) ;;
   1) [ "${ASYNC_SCHED:-1}" = 0 ] && { echo "ABORT: DECODE_FIRST=1 needs ASYNC_SCHED=1 (the scheduler subclasses AsyncScheduler)" >&2; exit 2; }
@@ -842,6 +860,7 @@ ${ATTN_BACKEND:+--attention-backend $ATTN_BACKEND }\
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
 $PREFIX_CACHE_FLAG \
+${HF_OVERRIDES_FLAG:+$HF_OVERRIDES_FLAG }\
 --load-format $LOAD_FORMAT \
 ${EP_FLAG:+$EP_FLAG }\
 $SPECCFG_VAL \

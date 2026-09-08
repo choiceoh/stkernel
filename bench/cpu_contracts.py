@@ -13,11 +13,11 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited against 16834a4 (40차 dev instrument): the only added AST nodes are
-# inside test_decode_first_scheduler_contracts (the chunk-file cases and one env
-# key) plus two launcher/profile checks after it. None of the three audited
-# helpers, their tests or the access graphs in DEPENDENCY_AUDITS are touched.
-LOGIC_AUDIT = '17d05a4e0ab9fcf3d293c8f2149cb0945bf25f4ae563d25c7a4b4ec91c5ab7c9'
+# Re-audited against 0f8bcf6 + the 40차 IndexCache fix: the added AST nodes are
+# test_glm53_index_cache_layer_rule, its call, and the chunk-file cases inside
+# test_decode_first_scheduler_contracts. None of the three audited helpers,
+# their tests or the access graphs in DEPENDENCY_AUDITS are touched.
+LOGIC_AUDIT = 'e5a79d23774129c2caba475f9375e81c1aea8ba3e1d61e4489aa1dfd372ccc7b'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
