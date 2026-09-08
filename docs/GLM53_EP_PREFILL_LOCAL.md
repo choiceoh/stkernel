@@ -38,8 +38,19 @@ forecast. Global useful FLOPs remain unchanged by TP-to-EP repartitioning;
 75% fewer experts per rank is not a 75% speedup. The 1.40x direct prefill
 throughput objective remains open.
 
-CPU admission/cache/SP/wrapper tests are implemented, as is an immutable-image,
-no-device CuTe compiler runner. GPU correctness and sanitizer checks must
+CPU admission/cache/SP/wrapper tests pass (six focused tests), and both actual
+E72/I2048 compiler arms passed in the immutable-image no-device runner.
+[Compilation evidence](../measurements/glm53_ep_local_20260908/cpu3/README.md)
+records the larger candidate stack as an unresolved runtime concern. Rebase
+onto main 926239e preserved every compiled overlay source hash.
+
+The isolated GPU runner uses the actual legacy compact wrapper as its control
+with the profile's 8192-token pair-slice capacity. Eight fixtures cover balanced,
+concentrated, empty-local, duplicate, zero-weight and odd-tail routes, plus
+16384 rows. It changes input/routes at fixed addresses, poisons output, checks
+nondefault streams and includes memcheck/racecheck cells. A tested normal-fleet
+lifecycle stops and restores exact incoming containers around these checks.
+GPU correctness and sanitizer checks must
 compare full-token output with the existing E72 compact path using identical
 weights, balanced/concentrated/empty-local routes, odd tails and changed
 inputs. TP4 wire numerics and current-capacity fresh 2K/32K/128K TTFT, output

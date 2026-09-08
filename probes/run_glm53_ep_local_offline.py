@@ -42,7 +42,8 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=False)
-    result = dict(started=time.time(), exit_code=1, performance_acceptance=False, cells=[])
+    result = dict(started=time.time(), source_revision=args.revision,
+                  exit_code=1, performance_acceptance=False, cells=[])
     owned = set()
 
     def save(name, data):
