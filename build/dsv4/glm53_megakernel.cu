@@ -1688,6 +1688,17 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
   __syncthreads();  // sqred reuse
 }
 
+__device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
+  // BF16 -> FP32 appends sixteen zero bits. Keep this bit expansion at the
+  // current multiply: ordinary conversions are loop-invariant and nvcc
+  // hoists all 96 floats, defeating the packed register representation.
+  uint32_t low, high;
+  asm volatile("shl.b32 %0, %2, 16;\n\t"
+               "and.b32 %1, %2, 0xffff0000;"
+               : "=&r"(low), "=r"(high) : "r"(packed));
+  return make_float2(__uint_as_float(low), __uint_as_float(high));
+}
+
 template <bool BF16_FN, bool AR_CONSUMER = false>
 __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
   // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
@@ -1736,21 +1747,20 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
     if constexpr (!AR_CONSUMER)
       if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
     float fnr[NOUT][HC];
+    uint2 fnv[NOUT];
     if constexpr (BF16_FN && AR_CONSUMER) {
       // Candidate packs [output, hidden, stream]. Four exact BF16 values
       // for one h share an aligned 64-bit load; adjacent lanes remain
       // contiguous. This cuts 96 scalar loads to 24 vector loads without
       // changing the FP32 conversion or subsequent accumulation order.
+      // Keep these coefficients packed while waiting and processing tokens.
+      // Expand only the current output's four values at the multiply: the
+      // live weight state then needs 48 registers instead of 96 floats.
 #pragma unroll
       for (int m = 0; m < NOUT; ++m) {
-        union { uint2 words; __nv_bfloat162 pairs[2]; } bits;
         // An ordinary vector load participates in the memory clobber below.
         // __ldg is a read-only intrinsic that nvcc can sink past that wait.
-        bits.words = ((const uint2*)a.fn)[(size_t)m * HIDDEN + h];
-        const float2 lo = __bfloat1622float2(bits.pairs[0]);
-        const float2 hi = __bfloat1622float2(bits.pairs[1]);
-        fnr[m][0] = lo.x; fnr[m][1] = lo.y;
-        fnr[m][2] = hi.x; fnr[m][3] = hi.y;
+        fnv[m] = ((const uint2*)a.fn)[(size_t)m * HIDDEN + h];
       }
     } else {
 #pragma unroll
@@ -1792,8 +1802,17 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
 #pragma unroll
       for (int m = 0; m < NOUT; ++m) {
         float v = 0.0f;
+        if constexpr (BF16_FN && AR_CONSUMER) {
+          const float2 lo = mk_mhc_unpack_bf16_late(fnv[m].x);
+          const float2 hi = mk_mhc_unpack_bf16_late(fnv[m].y);
+          v += lo.x * r[0];
+          v += lo.y * r[1];
+          v += hi.x * r[2];
+          v += hi.y * r[3];
+        } else {
 #pragma unroll
-        for (int j = 0; j < HC; ++j) v += fnr[m][j] * r[j];
+          for (int j = 0; j < HC; ++j) v += fnr[m][j] * r[j];
+        }
         part[threadIdx.x][m] = v;
       }
       part[threadIdx.x][NOUT] = sqr;

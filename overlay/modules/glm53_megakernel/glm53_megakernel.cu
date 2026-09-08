@@ -1688,6 +1688,17 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
   __syncthreads();  // sqred reuse
 }
 
+__device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
+  // BF16 -> FP32 appends sixteen zero bits. Keep this bit expansion at the
+  // current multiply: ordinary conversions are loop-invariant and nvcc
+  // hoists all 96 floats, defeating the packed register representation.
+  uint32_t low, high;
+  asm volatile("shl.b32 %0, %2, 16;\n\t"
+               "and.b32 %1, %2, 0xffff0000;"
+               : "=&r"(low), "=r"(high) : "r"(packed));
+  return make_float2(__uint_as_float(low), __uint_as_float(high));
+}
+
 template <bool BF16_FN, bool AR_CONSUMER = false>
 __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
   // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
@@ -1792,10 +1803,8 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
       for (int m = 0; m < NOUT; ++m) {
         float v = 0.0f;
         if constexpr (BF16_FN && AR_CONSUMER) {
-          union { uint2 words; __nv_bfloat162 pairs[2]; } bits;
-          bits.words = fnv[m];
-          const float2 lo = __bfloat1622float2(bits.pairs[0]);
-          const float2 hi = __bfloat1622float2(bits.pairs[1]);
+          const float2 lo = mk_mhc_unpack_bf16_late(fnv[m].x);
+          const float2 hi = mk_mhc_unpack_bf16_late(fnv[m].y);
           v += lo.x * r[0];
           v += lo.y * r[1];
           v += hi.x * r[2];
