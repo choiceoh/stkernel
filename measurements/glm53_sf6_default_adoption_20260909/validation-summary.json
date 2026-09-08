@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "cpu_only": true,
+  "core_assertions": 71159,
+  "megakernel_regressions": 50,
+  "sensitivity_cases": 7,
+  "targeted_tests": 54,
+  "skipped": 0,
+  "python": "/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+  "torch": "2.14.0",
+  "composed_profiles": {
+    "glm53": 63,
+    "dsv4": 24
+  },
+  "composed_source_changed": false,
+  "logic_audit_sha256": "8591e9bd8a88cee01d4a1dd901f12ec9df5a1a079c8583e082000e3dc8999019"
+}

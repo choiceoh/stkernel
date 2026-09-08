@@ -13,10 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited for sf6: existing MoE control assertions changed, and proof-marker
-# discovery includes CUDA/header sources within the existing overlay closure.
-# The three audited helper tests and access graphs are unchanged.
-LOGIC_AUDIT = '7e56aa86d6f8f1c9ac9cba2a132e806e54d67e1124984c1b197fd927a5cfcc2c'
+# Re-audited for SF6 default adoption: only the profile-default assertion and
+# its explanation changed in test_logic.py. The three audited helper tests,
+# access graphs and source closure are unchanged.
+LOGIC_AUDIT = '8591e9bd8a88cee01d4a1dd901f12ec9df5a1a079c8583e082000e3dc8999019'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

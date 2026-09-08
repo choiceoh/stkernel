@@ -3820,9 +3820,9 @@ def test_b12x_static_v2_controls() -> None:
           "(absent preimage) in the module manifest; v2/v3 rows are gone")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     check([line.partition('=')[2] for line in profile.splitlines()
-           if line.startswith('VLLM_GLM53_B12X_STATIC_V2=')] == ['t,r'],
-          "the profile ships exactly one t,r default after the corrected C=1 "
-          "MoE bundle promotion; explicit t remains the previous geometry")
+           if line.startswith('VLLM_GLM53_B12X_STATIC_V2=')] == ['t,r,sf6'],
+          "the profile ships exactly one t,r,sf6 default after operator adoption "
+          "of direct scale reads and raw-owner release; explicit t,r retains raw scales")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v4.py" in runner and "moe_static_common.py" in runner
           and "moe_static_kernel_v5.py" in runner and "moe_dynamic_gated_tiled.py" in runner

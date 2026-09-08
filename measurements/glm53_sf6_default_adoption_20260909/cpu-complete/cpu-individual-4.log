@@ -1,0 +1,20 @@
+[b12x sf6] prepared FC1+FC2; packed bytes=18624
+[b12x sf6] prepared FC1+FC2; packed bytes=18624
+test_all_byte_codes_and_packing_boundaries (test_moe_reform_sf_pack.ByteContract.test_all_byte_codes_and_packing_boundaries) ... ok
+test_byte_map_matches_nvfp4_row_and_k_coordinates (test_moe_reform_sf_pack.ByteContract.test_byte_map_matches_nvfp4_row_and_k_coordinates) ... ok
+test_fc2_real_cute_layout_anchor (test_moe_reform_sf_pack.ByteContract.test_fc2_real_cute_layout_anchor) ... ok
+test_full_code_range_falls_back_without_clipping (test_moe_reform_sf_pack.ByteContract.test_full_code_range_falls_back_without_clipping) ... ok
+test_rejects_invalid_encodings_and_geometry (test_moe_reform_sf_pack.ByteContract.test_rejects_invalid_encodings_and_geometry) ... ok
+test_defaults_stay_off_and_q_stays_probe_only (test_moe_reform_sf_pack.DispatchContract.test_defaults_stay_off_and_q_stays_probe_only) ... ok
+test_nonfinite_or_negative_reference_cannot_relax_numeric_gate (test_moe_reform_sf_pack.ProbeEvidenceContract.test_nonfinite_or_negative_reference_cannot_relax_numeric_gate) ... ok
+test_observed_lane_distinguishes_active_fallback_and_prefill (test_moe_reform_sf_pack.ProbeEvidenceContract.test_observed_lane_distinguishes_active_fallback_and_prefill) ... ok
+test_stock_and_capture_evidence_fail_closed (test_moe_reform_sf_pack.ProbeEvidenceContract.test_stock_and_capture_evidence_fail_closed) ... ok
+test_actual_packer_rejects_bad_storage (test_moe_reform_sf_pack.TensorContract.test_actual_packer_rejects_bad_storage) ... ok
+test_actual_torch_packer_both_planes_and_source_retention (test_moe_reform_sf_pack.TensorContract.test_actual_torch_packer_both_planes_and_source_retention) ... ok
+test_chunk_edges_and_both_plane_admission (test_moe_reform_sf_pack.TensorContract.test_chunk_edges_and_both_plane_admission) ... ok
+test_serving_cache_generation_and_owner_lifetime (test_moe_reform_sf_pack.TensorContract.test_serving_cache_generation_and_owner_lifetime) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.462s
+
+OK

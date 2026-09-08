@@ -1,7 +1,7 @@
 # SF6 direct prefill
 
-This branch extends the opt-in `VLLM_GLM53_B12X_STATIC_V2=t,r,sf6`
-from decode-only compressed loads to every prefill consumption path. The
+The default `VLLM_GLM53_B12X_STATIC_V2=t,r,sf6` uses compressed scales in
+decode and every prefill consumption path (operator adoption, 2026-09-09). The
 prior PR #498 v5 campaign remains frozen at 932b3fc4 in its own checkout.
 Its measurements cannot validate this implementation.
 
@@ -30,12 +30,21 @@ cache aliases. Incompatible backends and unrepresentable layers retain both
 original planes. Packed owners cannot dispatch into raw-scale kernels;
 changing sealed weights requires loading a fresh model.
 
-The opt-in remains off by default. For the 42 eligible layers observed in
-the earlier boot, storage arithmetic is 4.42969 GiB raw + 3.35687 GiB packed
-per rank before this change, and 3.35687 GiB packed afterward. Thus 4.42969
-GiB/rank is potentially released versus the previous SF6 candidate, or
-1.07281 GiB/rank versus raw-only scales. These are tensor-size calculations,
-not a new device-memory or speed measurement.
+For the 42 eligible layers observed in the SF6-direct boot, each rank logged
+4,756,340,736 raw scale bytes released and 3,604,414,464 packed bytes retained.
+Compared with raw-only scales, storage changes from 4.42969 GiB to 3.35687 GiB,
+or 1.07281 GiB less per rank. The larger 4.42969 GiB release is the original
+allocation removed after packing; it is not the net saving over raw-only.
+These are tensor-size calculations, not matched host-memory measurements.
+Restart with `VLLM_GLM53_B12X_STATIC_V2=t,r` to use raw scales again; changing
+the flag on a live packed-only model cannot restore released Parameters.
+
+The operator chose this default after reviewing the completed onepass and
+isolated baseline retry. Raw decode was 20.281702 vs 20.206613 step/s, but
+MHC consumer activation differed between runs; no SF6-only speedup is claimed.
+The original A/B INVALID verdict is preserved. See the
+[adoption record](../measurements/glm53_sf6_default_adoption_20260909/README.md)
+for the decision, memory accounting and validation.
 
 ## Validation
 

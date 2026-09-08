@@ -76,8 +76,17 @@ same-build CTA2/CTA4/CTA2 bracket had pooled step/s 21.752/21.962/21.892, so
 the candidate's +0.627% lies inside the baselines' own 0.641% spread.
 [Kernel, sanitizer and serving evidence](../measurements/glm53_input_cta_next_20260908/README.md).
 
-GLM53 MoE defaults to `VLLM_GLM53_B12X_STATIC_V2=t,r` (operator promotion,
-2026-09-08, PR #461). For M<=8 this combines M16 padding, FC1 N128/K256 and
+GLM53 MoE defaults to `VLLM_GLM53_B12X_STATIC_V2=t,r,sf6` (operator adoption,
+2026-09-09). SF6 losslessly packs scales for direct decode and prefill reads,
+then releases eligible raw scale Parameters and their aliases before profiling.
+Observed scale storage is 4.42969 GiB raw -> 3.35687 GiB packed per rank;
+this 1.07281 GiB difference is tensor accounting, not a matched memory benchmark.
+Restart with `t,r` to retain original scales. The SF6 comparison has a different
+MHC activation outcome and is not a matched speedup verdict.
+[Adoption and retained results](../measurements/glm53_sf6_default_adoption_20260909/README.md).
+
+The underlying `t,r` geometry was promoted on 2026-09-08 in PR #461.
+For M<=8 this combines M16 padding, FC1 N128/K256 and
 FC2 N256; larger M retains the existing `t` geometry and weight storage.
 The corrected bundle passed 13 GPU shapes and 130 numerical/graph comparisons.
 The same-build C=1 A-B measured pooled step/s 21.727898 -> 22.076208 (+1.603%)

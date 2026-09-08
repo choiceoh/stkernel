@@ -1,13 +1,16 @@
 # glm53_moe
 
-`t,r,sf6` is an optional lossless FC1/FC2 scale-storage lane for M<=8.
+`t,r,sf6` is the GLM53 profile default after operator adoption on 2026-09-09.
 It gathers each actual MMA scale stage, packs 2048 bytes into 1552 bytes,
 and expands with volatile reads and barriers before MMA consumption.
-The default remains `t,r`. Original scales stay live for prefill; unsupported
-byte spans use the uncompressed layer path. Both packed planes add about
-3.44 GiB/rank across 43 eligible layers in the E288/N512/H4096 geometry.
-Implementation and CPU/device evidence boundaries are in
-[`decode_transport_sf_README.md`](../../../probes/decode_transport_sf_README.md).
+Decode and static/dynamic prefill read packed storage directly. Eligible layers
+release raw scale Parameters, quantization descriptors and MMA/cache aliases
+before profiling; unsupported byte spans retain both original planes.
+The measured 42-layer owner lifecycle retained 3.35687 GiB packed scales per
+rank after releasing 4.42969 GiB raw scales, a 1.07281 GiB tensor-storage
+reduction from raw-only. This is not a matched host-memory or speed result.
+Restart with `t,r` to use raw scales. Implementation, adoption and validation
+limits are in [`sf6_direct_prefill_README.md`](../../../probes/sf6_direct_prefill_README.md).
 
 GLM-5.3 MoE — b12x 공유 워크스페이스, EP 마이크로커널 레인, 직접 출력.
 
@@ -208,7 +211,8 @@ b12x_shared_workspace).
 
 **34차 §8 (2026-09-06, 운영자 "전부 지워")**: `moe_static_kernel_v2.py`(레인 `1`/`m..`/`d`)와 `moe_static_kernel_v3.py`(레인 `w`/`e`/`k`)는 삭제됐다 — v4 `u`(38차 부록 +2%)가 두 세대 앞선다. 둘이 공유하던 스탬프 슬롯·PTX 헬퍼는 `moe_static_common.py` 로 옮겨 v4 가 거기서 import 한다. 파서는 옛 토큰을 조용히 재매핑하지 않고 거부한다(`u`/`v` 만 유효). 아래 v2/v3 서술은 기록이다.
 
-`VLLM_GLM53_B12X_STATIC_V2` (profile default `u` = v4 since 38차; `w` = v3 was the 35차 default, `""` = stock) routes the exact
+`VLLM_GLM53_B12X_STATIC_V2` (current profile default `t,r,sf6`; historical
+`u` = v4, `w` = v3, `""` = stock) routes the exact
 GLM-5.3 TP geometry's static (decode) MoE launches to `MoEStaticKernelV2`, a
 rework of flashinfer's `MoEStaticKernel` with the same workspace, weight
 views, routing frontend and arithmetic (FC1 accumulation order, fp4 quant of

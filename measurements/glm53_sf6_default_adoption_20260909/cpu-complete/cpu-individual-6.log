@@ -1,0 +1,15 @@
+[b12x sf6] prepared FC1+FC2; packed bytes=37248
+[b12x sf6] prepared FC1+FC2; packed bytes=37248
+[b12x sf6] prepared FC1+FC2; packed bytes=37248
+[b12x sf6] raw fallback: fc2 stage spans 256 byte codes (limit 64); packed bytes=0
+test_dead_pointer_slots_use_packed_addresses_and_reject_raw_launch (test_moe_sf6_dispatch.PackedViews.test_dead_pointer_slots_use_packed_addresses_and_reject_raw_launch) ... ok
+test_dynamic_prefill_launch_passes_compressed_planes_without_raw_tensors (test_moe_sf6_dispatch.PackedViews.test_dynamic_prefill_launch_passes_compressed_planes_without_raw_tensors) ... ok
+test_final_owner_releases_raw_aliases_and_only_its_cache (test_moe_sf6_dispatch.PackedViews.test_final_owner_releases_raw_aliases_and_only_its_cache) ... ok
+test_ineligible_paths_decline_before_packing (test_moe_sf6_dispatch.PackedViews.test_ineligible_paths_decline_before_packing) ... ok
+test_sf6_workspace_uses_supported_gated_tile_for_prefill_tails (test_moe_sf6_dispatch.PackedViews.test_sf6_workspace_uses_supported_gated_tile_for_prefill_tails) ... ok
+test_unrepresentable_layer_retains_both_raw_planes (test_moe_sf6_dispatch.PackedViews.test_unrepresentable_layer_retains_both_raw_planes) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.107s
+
+OK
