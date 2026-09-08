@@ -58,13 +58,36 @@ def compile_candidate(output, result):
     md.build_and_load_cute_dsl_kernel = lambda module, name, build, **kw: build()
     result['phase'] = 'micro-cute-compile'
     md._MICRO_KERNEL_CACHE.clear()
+    result['micro_passes'] = []
     for sentinel, tile in ((72, (32,128)), (None, (64,128))):
+        assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin')), 'stale root CuTe artifacts'
         md._get_micro_kernel(72,72,8,4096,2048,8,64,
             activation='swigluoai_uninterleave',swiglu_alpha=1.0,
             swiglu_beta=0.0,swiglu_limit=10.0,quant_mode='nvfp4',
             skip_zero_weight_expert_id=sentinel,mac_override=48)
         keys=[key for key in md._MICRO_KERNEL_CACHE if key[17]==sentinel]
         assert len(keys)==1 and keys[0][10]==tile,keys
+        # Both specializations use the same DSL dump basename. Preserve this
+        # pass before the next compile overwrites it; the initialized dump
+        # directory remains unchanged throughout the process.
+        fresh = {suffix: sorted(output.glob('*'+suffix)) for suffix in ('.ptx', '.cubin')}
+        assert all(fresh.values()), 'each fresh micro pass must emit root PTX and cubin'
+        arm = 'm'+str(tile[0])
+        folder = output/'micro'/arm
+        folder.mkdir(parents=True, exist_ok=False)
+        preserved = []
+        for paths in fresh.values():
+            for path in paths:
+                content = path.read_bytes()
+                assert content, 'empty CuTe artifact: '+path.name
+                digest = hashlib.sha256(content).hexdigest()
+                destination = folder/path.name
+                assert not destination.exists(), str(destination)
+                path.rename(destination)
+                assert hashlib.sha256(destination.read_bytes()).hexdigest() == digest
+                preserved.append(dict(original_name=path.name,
+                    path=str(destination.relative_to(output)), sha256=digest))
+        result['micro_passes'].append(dict(arm=arm, cache_key=keys[0], artifacts=preserved))
     result['micro_keys']=list(md._MICRO_KERNEL_CACHE)
     assert len(result['micro_keys'])==2
     artifacts=[]
