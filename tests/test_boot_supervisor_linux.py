@@ -21,7 +21,7 @@ class LinuxSupervisorTests(unittest.TestCase):
         self.repo, self.logs, self.bin = [self.root/p for p in ('repo', 'logs', 'bin')]
         for path in (self.repo/'bench', self.repo/'profiles', self.logs/'fleet', self.bin):
             path.mkdir(parents=True)
-        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'experiment_metrics.py'):
+        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'experiment_metrics.py'):
             shutil.copy(ROOT/'bench'/name, self.repo/'bench'/name)
         (self.repo/'profiles/glm53.env').write_text('VLLM_TEST=0\n')
         (self.repo/'bench/fleet_restore.sh').write_text('''#!/bin/bash
@@ -166,6 +166,93 @@ test ! -e "$LOGD/fail-restore"
         self.assertEqual((self.logs/'restores').read_text().splitlines(), ['receiver'])
         self.assertFalse((self.logs/'fleet/restore-debt.json').exists())
         self.assertFalse(self.held('receiver'))
+
+    def edit(self, name, *args):
+        return subprocess.run(['bash', str(self.repo/'bench/fleet.sh'), 'edit', name, *args],
+                              env=self.env, capture_output=True, text=True, timeout=10)
+
+    def test_edit_actual_waiter_executes_only_replacement_in_updated_cwd(self):
+        gate = self.logs/'continue'
+        first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        second = self.launch('second', 'raise SystemExit(99)')
+        self.until(lambda:self.ready('second'))
+        third = self.launch('third', 'pass')
+        self.until(lambda:self.ready('third'))
+        original = (self.logs/'fleet/queue').read_text().splitlines()
+        command = [sys.executable, '-c', "import os,json; from pathlib import Path; Path('accepted.json').write_text(json.dumps(dict(cwd=os.getcwd(),holder=Path(os.environ['FLEET_DIR'],'holder').read_text(),literal=__import__('sys').argv[1:])))", 'a b', '$literal', '한글']
+        result = self.edit('second', '--est', '7', '--note', 'updated queued command', '--cwd', str(self.logs), '--', *command)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        current = (self.logs/'fleet/queue').read_text().splitlines()
+        self.assertEqual([r.split('|')[:3] for r in current], [r.split('|')[:3] for r in original])
+        self.assertEqual(value['revision'], 2)
+        # Changing the common controller still cannot change the pinned waiter.
+        (self.repo/'bench/fleet.sh').write_text('exit 99\n')
+        gate.touch()
+        self.assertEqual(self.wait(first), 0); self.assertEqual(self.wait(second), 0)
+        self.assertEqual(self.wait(third), 0)
+        accepted = json.loads((self.logs/'accepted.json').read_text())
+        self.assertEqual(accepted['cwd'], str(self.logs))
+        self.assertEqual(accepted['literal'], ['a b', '$literal', '한글'])
+        self.assertEqual(accepted['holder'].split('|')[4:6], ['7', 'updated queued command'])
+        self.assertEqual(len((self.logs/'restores').read_text().splitlines()), 1)
+
+    def test_failed_edit_keeps_original_then_active_edit_is_refused(self):
+        gate = self.logs/'continue'
+        first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        second = self.launch('second', "import os; from pathlib import Path; Path(os.environ['LOGD'],'original-ran').touch()")
+        self.until(lambda:self.ready('second'))
+        bad = self.logs/'invalid.sh'; bad.write_text('if then\n')
+        result = self.edit('second', '--', 'bash', str(bad))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('preflight failed', result.stderr)
+        self.assertEqual(json.loads(self.edit('second').stdout)['revision'], 1)
+        self.assertEqual(self.edit('first', '--note', 'too late').returncode, 2)
+        gate.touch(); self.assertEqual(self.wait(first), 0); self.assertEqual(self.wait(second), 0)
+        self.assertTrue((self.logs/'original-ran').exists())
+
+    def test_probe_edit_preserves_probe_admission_and_never_restores(self):
+        gate = self.logs/'continue'
+        first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        probe = self.launch('probe', 'raise SystemExit(99)', '--probe')
+        from fleet_pending import path
+        self.until(lambda:path(self.logs/'fleet', 'probe').exists())
+        self.assertEqual(self.edit('probe', '--', sys.executable, '-c', 'pass').returncode, 0)
+        gate.touch(); self.assertEqual(self.wait(first), 0); self.assertEqual(self.wait(probe), 0)
+        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['first'])
+
+    def test_go_during_edit_preflight_runs_original_and_rejects_late_commit(self):
+        gate = self.logs/'continue'
+        first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        second = self.launch('second', "import os; from pathlib import Path; Path(os.environ['LOGD'],'original-ran').touch()")
+        self.until(lambda:self.ready('second'))
+        # Pause only the editor's profile fetch; no admission lock is held.
+        (self.bin/'git').write_text('#!/bin/sh\ntouch "$LOGD/edit-checking"\nwhile [ ! -e "$LOGD/edit-continue" ]; do sleep .02; done\nexit 1\n')
+        with (self.logs/'edit.log').open('w') as output:
+            editor = subprocess.Popen(['bash', str(self.repo/'bench/fleet.sh'), 'edit', 'second', '--',
+                                       sys.executable, '-c', 'raise SystemExit(99)'], env=self.env,
+                                      stdout=output, stderr=subprocess.STDOUT)
+            self.children.append(editor)
+            self.until(lambda:(self.logs/'edit-checking').exists())
+            gate.touch(); self.assertEqual(self.wait(first), 0); self.assertEqual(self.wait(second), 0)
+            (self.logs/'edit-continue').touch()
+            self.assertEqual(self.wait(editor), 2)
+        self.assertTrue((self.logs/'original-ran').exists())
+        self.assertIn('no longer queued', (self.logs/'edit.log').read_text())
+
+    def test_damaged_pending_record_cannot_skip_restore_or_leave_hold(self):
+        gate = self.logs/'continue'
+        first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        from fleet_pending import path
+        path(self.logs/'fleet', 'first').unlink()
+        gate.touch(); self.assertEqual(self.wait(first), 1)
+        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['first'])
+        self.assertFalse(self.held('first'))
 
 
 if __name__ == '__main__':
