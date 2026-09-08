@@ -24,8 +24,9 @@ unchanged. Pointers without 16-byte alignment and other slice contracts
 retain the inherited scalar publication path.
 
 The selected-scale cache uses at most eight slots for the exact top8 contract.
-Scale equality is folded into the existing scale-load loop, avoiding repeated
-checks for each quantization block. After histogram publication, each CTA
+Lane 0 decides scale equality while copying each selected expert scale,
+using the already-loaded raw word. It publishes this decision with the route
+count, removing the consumer scale-scan loop. After histogram publication, each CTA
 prepares the 72 expert scales once in the histogram's now-idle 288 shared
 bytes. The existing Q0 initialization barrier publishes those stores. This
 removes token/route-level global scale loads and reciprocal work without
@@ -144,13 +145,51 @@ all 24 remap PTX hashes match CPU11. This establishes compilation and CPU
 address equivalence, not GPU performance. Initial head and worker checks
 refused insufficient available RAM before compilation. The unchanged normal
 4 GiB/two-CPU runner started after a later boot transition freed 92.02 GiB on
-head; no serving memory was reclaimed. The offline runner now selects CPU12.
+head; no serving memory was reclaimed. That revision selected the CPU12 receipt.
 The receipt-bound PTX inspection shows 41 to nine address arithmetic
 instructions at each of ten equal/varied compiler copies: 320 static
 instructions removed. All 500 before/after instruction lines and shared-load/
 scale-store endpoints were verified. These counts exclude input SF setup,
 physical-row loads, payload stores and pointer widening; they are not SASS,
 executed work or measured prefill improvement.
+
+Source `18148116a7abb242741d5b112c8d735353d9fc71` moves selected-scale
+equality into lane 0's existing route-allocation loop. It compares the
+already-loaded transformed Float32 scales while the input copy is in flight,
+and stores the original raw bits unchanged. The first route is not compared
+with itself: one NaN retains the original equal-scale behavior, repeated NaNs
+remain unequal, and signed-zero equality still selects the first scale bits.
+
+Per-warp slot 31 now carries the count in bits 0–3 and equality in bit 4,
+using the same single shared store/load and existing warp barrier. Consumers
+decode the count before checking for an empty route list: state 16 is an empty
+count with equality set, so it must not read a stale scale. Each positive
+consumer reloads the first scale once and decodes the published flag, avoiding
+the old serial scale scan. The inherited pinned kernel does not read these
+route slots after this override returns; the same following CTA/grid barriers
+protect their lifetime before sA is reused for compute. No shared slot,
+allocation, store, atomic or barrier is added. Varied-scale quantization still
+reads each selected scale at its original quantizer site.
+
+[CPU13](../measurements/glm53_ep_local_20260908/cpu13/README.md) passes actual
+E72/I2048 CuTe and all 24 Triton compilations, plus 68 pinned CPU tests without
+failures, errors, skips or CUDA initialization. The actual-source oracle
+executes the complete lane-0 filter/allocation/publication and isolated
+consumer namespaces for all four active warps and 32 lanes. It covers counts
+0–8, raw NaN and signed-zero bits, invalid/remote/zero-weight holes, stale
+state transitions and unchanged surrounding slots. REG168/STACK112/SHARED1024
+remain unchanged; CuTe PTX/cubin sizes change from 942077/300864 to
+941539/298456 bytes. All 24 remap PTX hashes match CPU12. The current offline
+runner selects CPU13; GPU numerics, sanitizer and performance remain pending.
+
+The receipt-bound [scale-state PTX inspection](../measurements/glm53_ep_local_20260908/cpu13/scale-state-inspection.md)
+confirms consumer selected-scale load sites fall from seven to one, while
+the seven static Float32 comparisons move into the existing producer loop.
+The count/state word still has one shared load and one store. For C valid
+local routes, the consumer reads C scales before this change and one after
+it when C is positive; empty routes read none. These accesses are warp
+broadcasts. This is an instruction-level observation, not a transaction or
+speedup claim; moving comparisons into lane 0 can change runtime scheduling.
 
 The preceding source `7254422f044ab3c5d042f32ee7f33add7baf5e00` passed actual
 E72/I2048 CuTe compilation and 48 focused
@@ -257,7 +296,7 @@ frozen `8dc665b0` with its matching CPU11 63-test receipt and PR484 lifecycle.
 The [v5 snapshot](../measurements/glm53_ep_local_20260908/binding_gpu_submission/v5queued/README.md)
 records submission, not GPU execution or successful recovery by this job.
 This API-only diagnostic deliberately keeps its already-compiled source;
-it neither executes nor validates the later CPU12 Q0 arithmetic. GO-time
+it neither executes nor validates the later CPU12/13 Q0 changes. GO-time
 incoming-state, idle, identity and recovery checks remain enforced.
 
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
@@ -305,8 +344,9 @@ run had 31 passes and four existing host-Torch numerics skips, with no errors
 or failures. At that revision the 13 mounted MoE sources matched CPU9; six
 runner/test contract files had changed. Its output and hashes remain in
 serving_metadata. CPU10 subsequently supplied fresh pinned evidence for that
-lifecycle. CPU11 covers the earlier row-address kernel, and CPU12 covers
-the current Q0 scale-address kernel and all 18 probe contract files without skips.
+lifecycle. CPU11 covers the earlier row-address kernel; CPU12 covers Q0
+scale addressing. CPU13 covers the current packed scale-state producer and
+all 18 probe contract files without skips.
 GPU correctness and sanitizer checks must
 compare full-token output with the existing E72 compact path using identical
 weights, balanced/concentrated/empty-local routes, odd tails and changed

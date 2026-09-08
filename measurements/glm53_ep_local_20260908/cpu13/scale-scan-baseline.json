@@ -1,0 +1,376 @@
+{
+  "ptx": {
+    "file": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+    "bytes": 942077,
+    "sha256": "55a8b0c48de4629874c1ee042adb05254657472db2795c3873248c04b4a4c1f4"
+  },
+  "scale_state_store_line": 934,
+  "publication_warp_barrier_line": 937,
+  "state_load_line": 951,
+  "scan_range": [
+    955,
+    1031
+  ],
+  "scan_selected_scale_load_lines": [
+    972,
+    981,
+    986,
+    991,
+    1009,
+    1020,
+    1028
+  ],
+  "scan_unordered_float_compare_lines": [
+    976,
+    983,
+    988,
+    993,
+    1013,
+    1022,
+    1030
+  ],
+  "static_scan_selected_scale_loads": 7,
+  "static_scan_float_comparisons": 7,
+  "loop_clones": 4,
+  "tail_clones": 3,
+  "scale_scan_excerpt": [
+    {
+      "line": 951,
+      "text": "\tld.shared.s32 %r998, [%r999];"
+    },
+    {
+      "line": 952,
+      "text": "\t// end inline asm"
+    },
+    {
+      "line": 953,
+      "text": "\tsetp.lt.s32 \t%p107, %r998, 1;"
+    },
+    {
+      "line": 954,
+      "text": "\t@%p107 bra \t$L__BB0_128;"
+    },
+    {
+      "line": 955,
+      "text": "\tand.b32 \t%r28, %r998, 3;"
+    },
+    {
+      "line": 956,
+      "text": "\tsetp.lt.u32 \t%p108, %r998, 4;"
+    },
+    {
+      "line": 957,
+      "text": "\tmov.b32 \t%r16819, 0f00000000;"
+    },
+    {
+      "line": 958,
+      "text": "\tmov.b32 \t%r16821, 1;"
+    },
+    {
+      "line": 959,
+      "text": "\tmov.b32 \t%r16818, 0;"
+    },
+    {
+      "line": 960,
+      "text": "\t@%p108 bra \t$L__BB0_98;"
+    },
+    {
+      "line": 961,
+      "text": "\tand.b32 \t%r29, %r998, 2147483644;"
+    },
+    {
+      "line": 962,
+      "text": "\tmov.b32 \t%r16819, 0f00000000;"
+    },
+    {
+      "line": 963,
+      "text": "\tmov.b32 \t%r16821, 1;"
+    },
+    {
+      "line": 964,
+      "text": "\tmov.b32 \t%r16818, 0;"
+    },
+    {
+      "line": 965,
+      "text": "\tmov.b32 \t%r16817, %r16818;"
+    },
+    {
+      "line": 966,
+      "text": "$L__BB0_96:"
+    },
+    {
+      "line": 967,
+      "text": "\tmov.b32 \t%r30, %r16819;"
+    },
+    {
+      "line": 968,
+      "text": "\tadd.s32 \t%r1008, %r13, %r16818;"
+    },
+    {
+      "line": 969,
+      "text": "\tshl.b32 \t%r1009, %r1008, 2;"
+    },
+    {
+      "line": 970,
+      "text": "\tadd.s32 \t%r1001, %r1009, %r6;"
+    },
+    {
+      "line": 971,
+      "text": "\t// begin inline asm"
+    },
+    {
+      "line": 972,
+      "text": "\tld.shared.s32 %r1000, [%r1001];"
+    },
+    {
+      "line": 973,
+      "text": "\t// end inline asm"
+    },
+    {
+      "line": 974,
+      "text": "\tsetp.eq.b32 \t%p109, %r16818, 0;"
+    },
+    {
+      "line": 975,
+      "text": "\tselp.f32 \t%r16819, %r1000, %r30, %p109;"
+    },
+    {
+      "line": 976,
+      "text": "\tsetp.neu.f32 \t%p110, %r30, %r1000;"
+    },
+    {
+      "line": 977,
+      "text": "\tselp.b32 \t%r1010, 0, %r16821, %p110;"
+    },
+    {
+      "line": 978,
+      "text": "\tselp.b32 \t%r1011, %r16821, %r1010, %p109;"
+    },
+    {
+      "line": 979,
+      "text": "\tadd.s32 \t%r1003, %r1001, 4;"
+    },
+    {
+      "line": 980,
+      "text": "\t// begin inline asm"
+    },
+    {
+      "line": 981,
+      "text": "\tld.shared.s32 %r1002, [%r1003];"
+    },
+    {
+      "line": 982,
+      "text": "\t// end inline asm"
+    },
+    {
+      "line": 983,
+      "text": "\tsetp.neu.f32 \t%p111, %r16819, %r1002;"
+    },
+    {
+      "line": 984,
+      "text": "\tadd.s32 \t%r1005, %r1001, 8;"
+    },
+    {
+      "line": 985,
+      "text": "\t// begin inline asm"
+    },
+    {
+      "line": 986,
+      "text": "\tld.shared.s32 %r1004, [%r1005];"
+    },
+    {
+      "line": 987,
+      "text": "\t// end inline asm"
+    },
+    {
+      "line": 988,
+      "text": "\tsetp.neu.f32 \t%p112, %r16819, %r1004;"
+    },
+    {
+      "line": 989,
+      "text": "\tadd.s32 \t%r1007, %r1001, 12;"
+    },
+    {
+      "line": 990,
+      "text": "\t// begin inline asm"
+    },
+    {
+      "line": 991,
+      "text": "\tld.shared.s32 %r1006, [%r1007];"
+    },
+    {
+      "line": 992,
+      "text": "\t// end inline asm"
+    },
+    {
+      "line": 993,
+      "text": "\tsetp.neu.f32 \t%p113, %r16819, %r1006;"
+    },
+    {
+      "line": 994,
+      "text": "\tselp.b32 \t%r1012, 0, %r1011, %p111;"
+    },
+    {
+      "line": 995,
+      "text": "\tselp.b32 \t%r1013, 0, %r1012, %p112;"
+    },
+    {
+      "line": 996,
+      "text": "\tselp.b32 \t%r16821, 0, %r1013, %p113;"
+    },
+    {
+      "line": 997,
+      "text": "\tadd.s32 \t%r16818, %r16818, 4;"
+    },
+    {
+      "line": 998,
+      "text": "\tadd.s32 \t%r16817, %r16817, 4;"
+    },
+    {
+      "line": 999,
+      "text": "\tsetp.ne.b32 \t%p114, %r16817, %r29;"
+    },
+    {
+      "line": 1000,
+      "text": "\t@%p114 bra \t$L__BB0_96;"
+    },
+    {
+      "line": 1001,
+      "text": "\tsetp.eq.b32 \t%p115, %r28, 0;"
+    },
+    {
+      "line": 1002,
+      "text": "\tmov.b32 \t%r16820, %r16819;"
+    },
+    {
+      "line": 1003,
+      "text": "\t@%p115 bra \t$L__BB0_101;"
+    },
+    {
+      "line": 1004,
+      "text": "$L__BB0_98:"
+    },
+    {
+      "line": 1005,
+      "text": "\tadd.s32 \t%r1016, %r13, %r16818;"
+    },
+    {
+      "line": 1006,
+      "text": "\tshl.b32 \t%r1017, %r1016, 2;"
+    },
+    {
+      "line": 1007,
+      "text": "\tadd.s32 \t%r1015, %r1017, %r6;"
+    },
+    {
+      "line": 1008,
+      "text": "\t// begin inline asm"
+    },
+    {
+      "line": 1009,
+      "text": "\tld.shared.s32 %r1014, [%r1015];"
+    },
+    {
+      "line": 1010,
+      "text": "\t// end inline asm"
+    },
+    {
+      "line": 1011,
+      "text": "\tsetp.eq.b32 \t%p116, %r16818, 0;"
+    },
+    {
+      "line": 1012,
+      "text": "\tselp.f32 \t%r16820, %r1014, %r16819, %p116;"
+    },
+    {
+      "line": 1013,
+      "text": "\tsetp.neu.f32 \t%p117, %r16819, %r1014;"
+    },
+    {
+      "line": 1014,
+      "text": "\tselp.b32 \t%r1018, 0, %r16821, %p117;"
+    },
+    {
+      "line": 1015,
+      "text": "\tselp.b32 \t%r16821, %r16821, %r1018, %p116;"
+    },
+    {
+      "line": 1016,
+      "text": "\tsetp.eq.b32 \t%p118, %r28, 1;"
+    },
+    {
+      "line": 1017,
+      "text": "\t@%p118 bra \t$L__BB0_101;"
+    },
+    {
+      "line": 1018,
+      "text": "\tadd.s32 \t%r1020, %r1015, 4;"
+    },
+    {
+      "line": 1019,
+      "text": "\t// begin inline asm"
+    },
+    {
+      "line": 1020,
+      "text": "\tld.shared.s32 %r1019, [%r1020];"
+    },
+    {
+      "line": 1021,
+      "text": "\t// end inline asm"
+    },
+    {
+      "line": 1022,
+      "text": "\tsetp.neu.f32 \t%p119, %r16820, %r1019;"
+    },
+    {
+      "line": 1023,
+      "text": "\tselp.b32 \t%r16821, 0, %r16821, %p119;"
+    },
+    {
+      "line": 1024,
+      "text": "\tsetp.eq.b32 \t%p120, %r28, 2;"
+    },
+    {
+      "line": 1025,
+      "text": "\t@%p120 bra \t$L__BB0_101;"
+    },
+    {
+      "line": 1026,
+      "text": "\tadd.s32 \t%r1022, %r1015, 8;"
+    },
+    {
+      "line": 1027,
+      "text": "\t// begin inline asm"
+    },
+    {
+      "line": 1028,
+      "text": "\tld.shared.s32 %r1021, [%r1022];"
+    },
+    {
+      "line": 1029,
+      "text": "\t// end inline asm"
+    },
+    {
+      "line": 1030,
+      "text": "\tsetp.neu.f32 \t%p121, %r16820, %r1021;"
+    },
+    {
+      "line": 1031,
+      "text": "\tselp.b32 \t%r16821, 0, %r16821, %p121;"
+    },
+    {
+      "line": 1032,
+      "text": "$L__BB0_101:"
+    }
+  ],
+  "comparison_plan": [
+    "Verify CPU13 PTX SHA against receipt before inspection.",
+    "Locate unchanged Q0 warp barrier and state word load; prove low four-bit count mask dominates empty-count branch.",
+    "Trace first selected-scale shared load and equality bit decode; verify prior count-dependent selected-scale scan/backedge disappeared.",
+    "Identify lane0 expert-scale raw loads/stores and subsequent unordered Float32 first/later comparison; check first-selected guard preserves one NaN equal case.",
+    "Count whole-producer and consumer static loads/comparisons separately; do not report relocated comparisons as eliminated globally.",
+    "Report dynamic selected-scale scan savings as C-1 shared broadcast instructions for C>0 only if emitted branch structure confirms one first-scale load; C=1 saves no scale loads and C=0 reads none.",
+    "Check REG/STACK/SHARED and PTX/cubin sizes; flag changed unroll structure or new local spills."
+  ],
+  "runtime_caveat": "Seven static clones do not mean seven selected scales per token. Old scan executes C shared warp broadcasts for C local routes, not32*C memory transactions. Comparisons move to producer; overall performance remains unmeasured."
+}

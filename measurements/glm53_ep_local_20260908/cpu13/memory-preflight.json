@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-08T19:25:38.570857+09:00",
+  "read_only": true,
+  "head_ssh": "choiceoh@srv2",
+  "minimum_host_available_kib": 12582912,
+  "nodes": {
+    "head": {"exit_code": 0, "memory_kib": {"MemAvailable": 30258064, "MemFree": 33588892, "Cached": 9950168, "SwapFree": 16720340}},
+    "10.10.10.1": {"exit_code": 0, "memory_kib": {"MemAvailable": 48562732, "MemFree": 56518488, "Cached": 6360884, "SwapFree": 16487932}},
+    "10.10.10.3": {"exit_code": 0, "memory_kib": {"MemAvailable": 30368868, "MemFree": 33501548, "Cached": 10132652, "SwapFree": 16737088}},
+    "10.10.10.4": {"exit_code": 0, "memory_kib": {"MemAvailable": 34271632, "MemFree": 27770564, "Cached": 11116184, "SwapFree": 16777212}}
+  }
+}
