@@ -74,3 +74,6 @@ cudagraph_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cu
 dynamic_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/spec_decode/dynamic/utils.py	7179869a6d8e97634efe8bd3a9b07608c6393cfc50acdbc4cf11594872c087c1
 sched_scheduler.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/scheduler.py	4c38a32c7405eb95eb9dd3b3d04cbfe5d0cb4ebc0b18efbaa4adc68c7a9bca5a
 speculative.py	/usr/local/lib/python3.12/dist-packages/vllm/config/speculative.py	eaf52a03351398f72d3e85f0d1ce3bf80d1f92e0fddc8f28bdb11738aeab7875
+fly.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/spec_decode/fly.py	absent
+llm_base_proposer.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/spec_decode/llm_base_proposer.py	b9c26acf8b77cb56f062213aa6b9eebab58dc69980e78430da027493fc757237
+gpu_rejection_sampler.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/rejection_sampler.py	308d4171f892f27231655289ceb03cd4566533c7d26b8f98bd62ef0a34f986f0

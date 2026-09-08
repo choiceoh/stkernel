@@ -6158,8 +6158,13 @@ def test_launcher_reject_method_gate() -> None:
     text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
     check('"rejection_sample_method\\":\\"$REJECT_METHOD' in text,
           "the value must reach the speculative-config JSON")
-    check("ABORT: REJECT_METHOD must be standard or block" in text,
+    # "fly" joined the set with glm53_fly (vLLM #53987); the gate's job is
+    # unchanged -- anything not in the set aborts rather than reaching vLLM.
+    check("ABORT: REJECT_METHOD must be standard, block or fly" in text,
           "an unknown method must abort here, not reach vLLM as a typo")
+    for _m in ("standard", "block", "fly"):
+        check(f"{_m}|" in text or f"|{_m} )" in text,
+              f"REJECT_METHOD={_m} must be an accepted arm")
     names = _launcher_caller_passthrough(text)
     check({"DRAFT_SAMPLE", "REJECT_METHOD"} <= names,
           "both drafter knobs must be in the caller passthrough list -- a "

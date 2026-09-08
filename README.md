@@ -99,7 +99,7 @@ sentinel은 row append 전에 버리지만 GPU 수치/E2E 이득은 아직 미�
 **매니페스트가 파일 목록·컨테이너 마운트 목적지·베이스 preimage의 유일한 원본**이다.
 모듈마다 `overlay/modules/<name>/manifest.tsv` 를 갖고, `compose-overlays.sh <profile>`
 가 프로필의 `MODULES=` 를 합쳐 `build/<profile>/manifest.tsv` 하나로 렌더한다(dsv4 23행 ·
-glm53 76행). 배포기·런처·검증이 보는 것은 그 합성본이다 — 루트에 `overlay/manifest.tsv`
+glm53 79행). 배포기·런처·검증이 보는 것은 그 합성본이다 — 루트에 `overlay/manifest.tsv`
 는 더 이상 없다. 세 번째 열은 교체 대상의 production-hybrid-1.6 SHA-256 또는 새 파일의
 `absent` 계약이다.
 배포기는 manifest와 그 안의 모든 파일을 4노드에 복사하고 SHA-256을 대조하며,

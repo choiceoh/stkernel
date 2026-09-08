@@ -17,7 +17,7 @@ import __future__
 # test_glm53_index_cache_layer_rule, its call, and the chunk-file cases inside
 # test_decode_first_scheduler_contracts. None of the three audited helpers,
 # their tests or the access graphs in DEPENDENCY_AUDITS are touched.
-LOGIC_AUDIT = 'e5a79d23774129c2caba475f9375e81c1aea8ba3e1d61e4489aa1dfd372ccc7b'
+LOGIC_AUDIT = '5ad8931bbac6a16175e7fd9145cfcb6f7dd25f10e6d35b55b438892362d85e96'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

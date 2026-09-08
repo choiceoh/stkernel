@@ -29,7 +29,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD SPEC_K_SEQLEN PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER MM_LIMIT \
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD FLY_WINDOW FLY_ENTROPY SPEC_K_SEQLEN PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER MM_LIMIT \
   PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE INDEX_CACHE_FREQ
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
@@ -558,6 +558,12 @@ elif [ "$DFLASH2" = 1 ]; then
   # distributions. The kernel only takes that branch when temp > 0 -- our
   # bench runs at 0.95 -- and it reads the cached draft logits, which exist
   # because DRAFT_SAMPLE defaults to probabilistic.
+  # "fly" is block verification's entropy-gated cousin (vLLM #53987, glm53_fly,
+  # arXiv 2511.22972): instead of truncating the whole window at the first
+  # rejection, a high-entropy -- genuinely ambiguous -- position defers to the
+  # draft token when the next FLY_WINDOW draft tokens would be
+  # accepted natively. It is an approximation, so quality is a gate, not an
+  # assumption.
   # num_speculative_tokens_per_seq_len (vLLM #54801, glm53_dynamic_k): wind the
   # draft budget down as the context grows -- draft verification cost scales
   # with L, so a long input can pay more for the draft than the draft saves.
@@ -574,9 +580,15 @@ elif [ "$DFLASH2" = 1 ]; then
   esac
   case "${REJECT_METHOD:-}" in
     "" ) ;;
-    standard|block )
-      _spec_extra="$_spec_extra,\"rejection_sample_method\":\"$REJECT_METHOD\"" ;;
-    * ) echo "ABORT: REJECT_METHOD must be standard or block, got '$REJECT_METHOD'"; exit 1 ;;
+    standard|block|fly )
+      _spec_extra="$_spec_extra,\"rejection_sample_method\":\"$REJECT_METHOD\""
+      # FLy's two dials, both optional: window (default min(6, K-1)) and the
+      # entropy threshold above which a rejection is treated as ambiguous
+      # (default 0.3). Bracket surface, not a default change.
+      [ -n "${FLY_WINDOW:-}" ] && _spec_extra="$_spec_extra,\"fly_window_size\":$FLY_WINDOW"
+      [ -n "${FLY_ENTROPY:-}" ] && _spec_extra="$_spec_extra,\"fly_entropy_threshold\":$FLY_ENTROPY"
+      : ;;
+    * ) echo "ABORT: REJECT_METHOD must be standard, block or fly, got '$REJECT_METHOD'"; exit 1 ;;
   esac
   SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_speculative_tokens\":$SPEC_K,\"draft_sample_method\":\"$DRAFT_SAMPLE\"$_spec_extra}'"
 else
