@@ -36,15 +36,26 @@ def _vote_worker(rank, rendezvous, output):
                             world_size=4, timeout=timedelta(seconds=20))
     try:
         common = import_file("startup_cache_vote", "glm53_startup_cache.py")
-        world = types.SimpleNamespace(world_size=4, device_group=dist.group.WORLD)
+        cpu_group = dist.new_group(backend="gloo", timeout=timedelta(seconds=20))
+        world = types.SimpleNamespace(world_size=4, device_group=dist.group.WORLD,
+                                      cpu_group=cpu_group)
         with patch.dict(sys.modules, {
             "vllm.model_executor.layers.glm53_startup_cache": common,
             "vllm.distributed": types.SimpleNamespace(get_world_group=lambda: world),
         }):
             cache = import_file("rank_cache_vote", "glm53_rank_cache.py")
-            votes = [cache._all_ranks_ready(True), cache._all_ranks_ready(rank != 2),
-                     cache._all_ranks_ready(False)]
+            votes = {}
+            for policy in ("0", "1"):
+                # Distinct real groups, plus a poisoned device-group reference:
+                # the CPU policy must not accidentally fall back to WORLD.
+                world.device_group = dist.group.WORLD if policy == "0" else object()
+                with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_CPU_VOTE": policy}), \
+                        patch.object(torch.cuda, "current_device", side_effect=AssertionError("CUDA touched")):
+                    votes[policy] = [cache._all_ranks_ready(True),
+                                     cache._all_ranks_ready(rank != 2),
+                                     cache._all_ranks_ready(False)]
             Path(output, str(rank)).write_text(json.dumps(votes))
+        dist.destroy_process_group(cpu_group)
     finally:
         dist.destroy_process_group()
 
@@ -89,12 +100,42 @@ class RankConsensusTests(unittest.TestCase):
                     self.assertEqual(worker.exitcode, 0, "readiness vote failed or hung")
                 for rank in range(4):
                     self.assertEqual(json.loads(Path(root, str(rank)).read_text()),
-                                     [True, False, False])
+                                     {"0": [True, False, False], "1": [True, False, False]})
             finally:
                 for worker in workers:
                     if worker.is_alive():
                         worker.terminate()
                     worker.join(2)
+
+    def test_cpu_vote_rejects_invalid_group_without_collective_or_cuda(self):
+        common = import_file("startup_cache_vote_invalid", "glm53_startup_cache.py")
+        world = types.SimpleNamespace(world_size=4, device_group=object(), cpu_group=None)
+        with patch.dict(sys.modules, {
+            "vllm.model_executor.layers.glm53_startup_cache": common,
+            "vllm.distributed": types.SimpleNamespace(get_world_group=lambda: world),
+        }), patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_CPU_VOTE": "1"}):
+            cache = import_file("rank_cache_vote_invalid", "glm53_rank_cache.py")
+            with patch.object(torch.distributed, "all_reduce") as reduce, \
+                    patch.object(torch.cuda, "current_device", side_effect=AssertionError("CUDA touched")), \
+                    patch.object(torch.distributed, "get_backend", return_value="nccl"):
+                for group in (None, object()):
+                    world.cpu_group = group
+                    with self.assertRaisesRegex(RuntimeError, "existing WORLD Gloo group"):
+                        cache._all_ranks_ready(True)
+                reduce.assert_not_called()
+
+    def test_single_rank_needs_no_collective_or_process_group(self):
+        common = import_file("startup_cache_vote_single", "glm53_startup_cache.py")
+        world = types.SimpleNamespace(world_size=1)
+        with patch.dict(sys.modules, {
+            "vllm.model_executor.layers.glm53_startup_cache": common,
+            "vllm.distributed": types.SimpleNamespace(get_world_group=lambda: world),
+        }):
+            cache = import_file("rank_cache_vote_single", "glm53_rank_cache.py")
+            for policy in ("0", "1"):
+                with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_CPU_VOTE": policy}):
+                    self.assertIs(cache._all_ranks_ready(True), True)
+                    self.assertIs(cache._all_ranks_ready(False), False)
 
 
 @unittest.skipIf(torch is None, "CPU torch required")
@@ -350,6 +391,25 @@ class RankArtifactTests(unittest.TestCase):
         with patch.dict(os.environ, {"VLLM_GLM53_FP8_DENSE": "new"}):
             self.load(self.model())
         self.assertEqual(self.loader.call_count, 4)
+
+    def test_vote_transport_reuses_exact_artifact_but_source_change_invalidates(self):
+        expected = None
+        for policy in ("0", "1", "0"):
+            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_CPU_VOTE": policy}):
+                model = self.model()
+                self.load(model)
+                if expected is None:
+                    expected = model.weight.clone()
+                self.assertTrue(torch.equal(model.weight, expected))
+        self.assertEqual(self.loader.call_count, 1)
+        source = Path(self.rank.__file__)
+        read_bytes = Path.read_bytes
+        def changed_source(path):
+            data = read_bytes(path)
+            return data + b"\n# changed implementation\n" if path == source else data
+        with patch.object(Path, "read_bytes", changed_source):
+            self.load(self.model())
+        self.assertEqual(self.loader.call_count, 2)
 
     def test_transformers_label_keys_and_tuples_survive_json_identity(self):
         def configured():

@@ -115,6 +115,7 @@ def environment_identity():
               # Transport/key and warmup scheduling preserve model bytes.
               # Keep rank/FP8 artifacts usable across their matched boot brackets.
               and k not in ("VLLM_GLM53_RANK_CACHE", "VLLM_GLM53_FP8_CACHE",
+                            "VLLM_GLM53_RANK_CACHE_CPU_VOTE",
                             "VLLM_GLM53_MK_PACK_FAST_IO", "VLLM_GLM53_MK_PACK_SHA256",
                             "VLLM_GLM53_EARLY_MM_WARMUP",
                             "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE")
