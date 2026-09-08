@@ -1736,21 +1736,20 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
     if constexpr (!AR_CONSUMER)
       if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
     float fnr[NOUT][HC];
+    uint2 fnv[NOUT];
     if constexpr (BF16_FN && AR_CONSUMER) {
       // Candidate packs [output, hidden, stream]. Four exact BF16 values
       // for one h share an aligned 64-bit load; adjacent lanes remain
       // contiguous. This cuts 96 scalar loads to 24 vector loads without
       // changing the FP32 conversion or subsequent accumulation order.
+      // Keep these coefficients packed while waiting and processing tokens.
+      // Expand only the current output's four values at the multiply: the
+      // live weight state then needs 48 registers instead of 96 floats.
 #pragma unroll
       for (int m = 0; m < NOUT; ++m) {
-        union { uint2 words; __nv_bfloat162 pairs[2]; } bits;
         // An ordinary vector load participates in the memory clobber below.
         // __ldg is a read-only intrinsic that nvcc can sink past that wait.
-        bits.words = ((const uint2*)a.fn)[(size_t)m * HIDDEN + h];
-        const float2 lo = __bfloat1622float2(bits.pairs[0]);
-        const float2 hi = __bfloat1622float2(bits.pairs[1]);
-        fnr[m][0] = lo.x; fnr[m][1] = lo.y;
-        fnr[m][2] = hi.x; fnr[m][3] = hi.y;
+        fnv[m] = ((const uint2*)a.fn)[(size_t)m * HIDDEN + h];
       }
     } else {
 #pragma unroll
@@ -1792,8 +1791,19 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
 #pragma unroll
       for (int m = 0; m < NOUT; ++m) {
         float v = 0.0f;
+        if constexpr (BF16_FN && AR_CONSUMER) {
+          union { uint2 words; __nv_bfloat162 pairs[2]; } bits;
+          bits.words = fnv[m];
+          const float2 lo = __bfloat1622float2(bits.pairs[0]);
+          const float2 hi = __bfloat1622float2(bits.pairs[1]);
+          v += lo.x * r[0];
+          v += lo.y * r[1];
+          v += hi.x * r[2];
+          v += hi.y * r[3];
+        } else {
 #pragma unroll
-        for (int j = 0; j < HC; ++j) v += fnr[m][j] * r[j];
+          for (int j = 0; j < HC; ++j) v += fnr[m][j] * r[j];
+        }
         part[threadIdx.x][m] = v;
       }
       part[threadIdx.x][NOUT] = sqr;
