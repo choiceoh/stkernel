@@ -200,7 +200,11 @@ def _patch():
         )),
         ("vllm.v1.worker.gpu.model_runner", (
             ("GPUModelRunner", "profile_run", "profile-run"),
+            ("GPUModelRunner", "profile_cudagraph_memory", "cudagraph-memory-profile"),
             ("GPUModelRunner", "capture_model", "cudagraph-capture"),
+        )),
+        ("vllm.v1.worker.gpu.mm.encoder_runner", (
+            ("EncoderRunner", "profile_encoder_cache", "encoder-profile"),
         )),
     ):
         want += len(pairs)
@@ -240,6 +244,7 @@ class _PostImport:
 
     TARGETS = ("vllm.distributed.parallel_state",
                "vllm.v1.worker.gpu_worker", "vllm.v1.worker.gpu.model_runner",
+               "vllm.v1.worker.gpu.mm.encoder_runner",
                "vllm.model_executor.model_loader.default_loader")
 
     def find_spec(self, name, path=None, target=None):

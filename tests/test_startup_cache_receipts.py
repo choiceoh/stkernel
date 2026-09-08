@@ -4,12 +4,28 @@ import io
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 
 class BootReceiptTests(unittest.TestCase):
+    def test_failed_snapshot_does_not_prevent_restore_or_nonzero_exit_receipt(self):
+        source = (Path(__file__).resolve().parents[1] / "bench/startup_cache_boots.sh").read_text()
+        handler = 'failed() {' + source.split('failed() {', 1)[1].split('\ntrap failed EXIT', 1)[0]
+        with tempfile.TemporaryDirectory() as root:
+            script = '\n'.join([
+                'set -euo pipefail', 'EVIDENCE=$1', 'monitor_pid=', 'PREFIX=TEST',
+                'restore_knobs=', 'FLEET_RESTORE_MANAGED=0',
+                'snapshot() { return 9; }',
+                'bash() { printf "restored\\n" > "$EVIDENCE/restored"; }',
+                handler, 'trap failed EXIT', 'false'])
+            result = subprocess.run(['bash', '-c', script, 'test', root], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(Path(root, 'exit-code').read_text().strip(), '1')
+            self.assertEqual(Path(root, 'restored').read_text().strip(), 'restored')
+
     def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix="", mode="pack-io", key_fields="", packs="", campaign_knobs=None, observed_knobs=None):
         script = (Path(__file__).resolve().parents[1] / "bench/startup_cache_boots.sh").read_text()
         gate = script.split('"$stage" "$MODE" <<\'PY\'\n', 1)[1].split('\nPY\n', 1)[0]
@@ -70,6 +86,19 @@ class BootReceiptTests(unittest.TestCase):
                     "[boot-stamp] load-model took 80.0s\n" + suffix):
             with self.assertRaises(AssertionError):
                 self.check_receipts("FAST1", 1, 254, 0, mode="renderer-warmup", packs=packs, suffix=bad)
+
+    def test_graph_profile_requires_real_warmup_on_every_arm(self):
+        packs = "packs: rtn=0 gptq=0 gptq_failed=0 cached=255\n"
+        warmup = "".join(f"[boot-stamp] {p} took 1.0s\n" for p in
+                         ("encoder-profile", "profile-run", "cudagraph-capture", "compile+warmup"))
+        for stage, marker in (("BASE1", "[boot-stamp] cudagraph-memory-profile took 3.0s\n"),
+                              ("FAST1", "[glm53-graph-profile] skipped unused estimate rank=0\n")):
+            args = dict(mode="graph-profile", packs=packs)
+            self.check_receipts(stage, 1, 255, 0, suffix=warmup + marker, **args)
+            for bad in (warmup, marker, warmup.replace("encoder-profile", "skipped-encoder") + marker,
+                        warmup + marker + "Traceback (most recent call last)"):
+                with self.assertRaises(AssertionError):
+                    self.check_receipts(stage, 1, 255, 0, suffix=bad, **args)
 
     def test_prime_still_rejects_wrong_path_and_restore_errors(self):
         for fast, hits, suffix in ((1, 0, ""), (0, 1, ""),

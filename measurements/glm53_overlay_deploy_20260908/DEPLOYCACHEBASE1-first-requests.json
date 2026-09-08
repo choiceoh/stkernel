@@ -1,0 +1,34 @@
+{
+  "video_sha256": "c0529c4d65be8a574fcc13fc1a73bab7f93d22a53c59c35b0a61e2b360cc6080",
+  "image_sha256": "4841f224ef5995560c97783f941f9c2e37d1961a8fe4109ec6ce40e7abb3d877",
+  "requests": [
+    {
+      "kind": "text",
+      "started": 1788829564.2853463,
+      "ttft_s": 1.1753251552581787,
+      "total_s": 1.3378806114196777,
+      "content": "1, 2, 3, 4, 5",
+      "reasoning": "",
+      "ok": true
+    },
+    {
+      "kind": "image",
+      "started": 1788829565.655262,
+      "ttft_s": 0.6285099983215332,
+      "total_s": 1.4173245429992676,
+      "content": "빨간색 사각형은 왼쪽 위에 있고, 파란색 사각형은 아래쪽에 가로로 길게 놓여 있습니다.",
+      "reasoning": "",
+      "ok": true
+    },
+    {
+      "kind": "video",
+      "started": 1788829567.0743196,
+      "ttft_s": 0.42403578758239746,
+      "total_s": 0.9020431041717529,
+      "content": "영상의 색상은 처음에 빨간색으로 시작하여 파란색으로 변합니다.",
+      "reasoning": "",
+      "ok": true
+    }
+  ],
+  "ok": true
+}

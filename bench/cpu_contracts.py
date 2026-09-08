@@ -13,9 +13,9 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited against current main: only static-v2 controls differ.
-# All upstream loaders, math/layout/dispatch contracts and launch tests are retained.
-LOGIC_AUDIT = 'cd90ac1a1ad43f4e71fcfa345abe55c08caacfb9ffb2f83018bf499869480d85'
+# Re-audited against b1afa41: only a full-runner graph regression wrapper
+# and its invocation are added. All other upstream AST nodes are identical.
+LOGIC_AUDIT = 'bca5684f02ba4e84eb54420b5a145cbd63a14f21ed3b2d97d6b363e3a1c8812a'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

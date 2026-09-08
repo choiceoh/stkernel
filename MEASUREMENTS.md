@@ -7543,6 +7543,22 @@ CPU 검사: 로직 71,014, 메가커널 30, 플릿 107, 렌더러 9, 수집 증�
 획득했다. 기본값은 다음 배포부터 적용된다.
 [조건·한계·원본 식별자·재현 절차](measurements/glm53_early_mm_20260908/README.md).
 
+### GLM startup unused graph profile (2026-09-08, PR #460)
+
+`VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE` remains **0**. Fleet `graphmem0908`, same source `b945723`, four nodes, warm B/A/A/B: health **205 / 212 / 202 / 205 s** (baseline 205, candidate 207). Head memory profile + subsequent warmup fell **46.85 -> 44.25 s**, but total readiness did not improve. All boots: first text/image/video outputs passed; quality 6/6, corruption 0/4. Timed ranks: 976 FP8 hits, four rank hits, W4 255/rank, no cache errors. FAST2 had two non-loopback POST completions, so its request timings are contaminated. [Evidence](measurements/glm53_graph_profile_20260908/README.md).
+
+The cold PRIME also exposed redundant CUDA extension compilation after deploying unchanged `.cu` bytes: deploy rewrites file mtimes while Ninja consumes those bind-mounted timestamps. The subsequent identical-source deployment bracket below confirms a full-readiness improvement.
+
+### GLM identical-source redeploy — 121 s faster readiness (2026-09-08, PR #460)
+
+Fleet `deploycache0908v6` completed with exit **0** on four nodes, pinned runtime `f1814b2e676d12d0ceac8cd6843934e8da8b7fdb`. Warm B/A/A/B health walls were **341 / 211 / 215 / 327 s**: baseline mean **334 s**, candidate **213 s**, **121 s / 36.2% faster**. The 387-second cache-creation PRIME is excluded. Health wall starts after overlay publication and ends at the new container's first successful health response; this is identical-source redeployment with populated caches, not an empty-cache first-install result.
+
+`DEPLOY_PRESERVE_IDENTICAL` now defaults to **1 for GLM**. The production helper compares contents with rsync, retains identical files' inode/mtime and normalizes permissions. Actual edits receive fresh destination timestamps even from older checkouts. Canonical head SHA256 verification and full worker parity remain; `DEPLOY_PRESERVE_IDENTICAL=0` restores legacy install/scp. In both FAST boots, all **60 files on all four nodes** retained SHA256, inode and mtime, with **zero Ninja log changes**. Both controls rewrote all 60 identical files and rebuilt both OSAR and megakernel extensions on every node.
+
+PRIME passed official clean-checkout/current-main admission. Timed arms replayed publication only after the existing source revision, manifest and every deployed file matched the pinned canonical build on all four nodes; the replay cannot admit a new revision. All arms used identical runtime environment/image, `PREFILL_WARMUP=0` for the separate background prefill benchmark, graph-profile skip **0**, and retained required model/MM profiling, actual graph capture and kernel warmup. Nested head timers: model **134.75 -> 79.30 s**, memory profile **103.85 -> 36.15 s**. Do not sum nested phase timers.
+
+Every boot passed first text/image/video responses and Korean onepass **6/6**, corruption **0/4**. Every timed boot had four rank hits, **976 FP8 hits / zero misses/errors**, and **258 W4 hits per rank** under CTA4. All five boot logs contain exactly seven loopback POST completions and no external or pre-health POST completions. Swap usage did not increase. The supervisor accepted handoff to the next fleet holder at **10:23:42 KST**. This establishes startup savings; it does not establish general throughput or bit-exact generation equivalence. [Report and reproducible raw evidence](measurements/glm53_overlay_deploy_20260908/README.md).
+
 
 ## GLM53 C=1 MoE 타일 묶음과 FP4 주소 수정 (2026-09-08, PR #461)
 
