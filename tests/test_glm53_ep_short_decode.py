@@ -81,7 +81,7 @@ class Harness:
                                   *constants, *functions], type_ignores=[])
         exec(compile(ast.fix_missing_locations(module), str(SOURCE), "exec"), ns)
         self.ns = ns
-        self.owner = SimpleNamespace(
+        self.owner = SimpleNamespace(_sf6_weight_views=None,
             _ep_zero_weight_micro=True, _kernel_num_experts=72,
             _ep_zero_weight_workspace=object(), _activation_str="swigluoai_uninterleave",
             _swiglu_alpha=1., _swiglu_beta=0., _swiglu_limit=10.,
