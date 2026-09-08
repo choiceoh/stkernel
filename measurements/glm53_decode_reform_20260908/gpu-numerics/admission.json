@@ -1,0 +1,230 @@
+{
+  "checked_utc": "2026-09-07T23:19:30.422155+00:00",
+  "source_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "before": null,
+  "after": null,
+  "traffic_samples": [
+    {
+      "traffic": null,
+      "available_bytes": 103291604992
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103154925568
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103116529664
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103109545984
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103065550848
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103047548928
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103027253248
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103010091008
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102980620288
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102951141376
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102933426176
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102932889600
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102924750848
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102916034560
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102875627520
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102752219136
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102627201024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102508412928
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102390177792
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101585223680
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101571284992
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101310341120
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100544749568
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100544503808
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100544507904
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100543373312
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100543389696
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100521648128
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99609292800
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99602325504
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99602501632
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99602042880
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99607044096
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99607044096
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99600007168
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99570163712
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99553902592
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99423895552
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99366514688
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99362566144
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99362566144
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99345399808
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99346186240
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99363352576
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99363266560
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99349852160
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99349852160
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99352547328
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99353571328
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99353616384
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103308177408
+    }
+  ],
+  "issues": [
+    "('probe', 1)"
+  ],
+  "server_before": {
+    "boot_id": "f7d8d6d3b9608f1592535d038ecdae1cab003e298b74040e631c7416bc93ca03",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false
+  },
+  "server_after": {
+    "boot_id": "f7d8d6d3b9608f1592535d038ecdae1cab003e298b74040e631c7416bc93ca03",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false
+  },
+  "returncode": 1,
+  "admission_min_bytes": 17179869184,
+  "continuous_min_bytes": 12884901888,
+  "maintenance": true
+}

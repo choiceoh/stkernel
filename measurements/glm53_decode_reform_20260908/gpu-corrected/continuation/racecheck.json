@@ -1,0 +1,111 @@
+{
+  "status": "PASS",
+  "candidate": {
+    "variant": "t,r",
+    "source_sha256": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+    "files": [
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py"
+    ],
+    "tile_m": 16,
+    "fc1_n": 128,
+    "fc1_k": 256,
+    "fc2_n": 256
+  },
+  "device": "NVIDIA GB10",
+  "torch": "2.13.0+cu130",
+  "gates": [
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.0625,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.4375,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 1.125,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    }
+  ],
+  "samples_us": {},
+  "median_us": {},
+  "scope": "synthetic C=1 static MoE only; M1/2 correctness uses forced static"
+}

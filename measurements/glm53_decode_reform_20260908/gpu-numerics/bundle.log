@@ -1,0 +1,27 @@
+2026-09-07 23:19:16,313 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static_m1_k4096_n512_t8_r512_083af78cbc25f02f
+2026-09-07 23:19:18,978 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static_m1_k4096_n512_t8_r512_083af78cbc25f02f.o
+2026-09-07 23:19:19,034 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r512_tm32f2g2a32wut_52e4e69d6353f5c3
+2026-09-07 23:19:21,980 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r512_tm32f2g2a32wut_52e4e69d6353f5c3.o
+[b12x static v2] lane serving: static2_m1_k4096_n512_t8_r512_tm32f2g2a32wut (mac=48, m=1, routed=8, smem=101376 B)
+2026-09-07 23:19:21,982 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256_direct_f9db08bfea32_9bb327c38e50adee
+DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-07 23:19:23,379 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256_direct_f9db08bfea32_9bb327c38e50adee.o
+[b12x static v2] lane serving: static2_m1_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256 (mac=48, m=1, routed=8, smem=98304 B)
+GATE M1 U8: stock differential, mutated graph and exact-zero PASS
+2026-09-07 23:19:23,449 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static_m2_k4096_n512_t8_r512_3b75534f588cf943
+2026-09-07 23:19:24,585 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static_m2_k4096_n512_t8_r512_3b75534f588cf943.o
+2026-09-07 23:19:24,589 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r512_tm32f2g2a32wut_6f947dc5beed5e10
+2026-09-07 23:19:25,902 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r512_tm32f2g2a32wut_6f947dc5beed5e10.o
+[b12x static v2] lane serving: static2_m2_k4096_n512_t8_r512_tm32f2g2a32wut (mac=48, m=2, routed=16, smem=101376 B)
+2026-09-07 23:19:25,905 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256_direct_f9db08bfea32_b6b0806d896c01b7
+DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-07 23:19:29,163 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256_direct_f9db08bfea32_b6b0806d896c01b7.o
+[b12x static v2] lane serving: static2_m2_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256 (mac=48, m=2, routed=16, smem=98304 B)
+Traceback (most recent call last):
+  File "/repo/probes/moe_reform_ab.py", line 144, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/repo/probes/moe_reform_ab.py", line 102, in main
+    assert diff <= limit, (tokens,unique,arm,replay,diff,limit)
+           ^^^^^^^^^^^^^
+AssertionError: (2, 8, 'candidate', 0, 3.5, 0.1875)

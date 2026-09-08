@@ -1,0 +1,46 @@
+preflight moereform0908 [boot]:
+  SYNC /home/choiceoh/glm53-logs/ab-lever2.sh <- repo (was stale)
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /home/choiceoh/stkernel-moe-reform-0908/probes/run_moe_reform_onepass.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_B12X_STATIC_V2=t,r
+  NOTE checkout is 3 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  this arm (VLLM_GLM53_B12X_STATIC_V2) has no record on build 347cac3de4d0
+  baseline: GRAPHMEMBASE1 on build 347cac3de4d0 -- 21.82 step/s, 3.24 tok/step, 44.8% acc, 2026-09-08 07:52:27 -- skip a defaults arm and compare against it
+  -> PASS
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_07:55:35
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs) 2026-09-08_07:56:50
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore) 2026-09-08_07:57:21
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (0 procs, 1 reqs) 2026-09-08_07:57:36
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (2 procs, 0 reqs) 2026-09-08_07:58:21
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_07:58:36
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs) 2026-09-08_07:59:36
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_08:00:36
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs) 2026-09-08_08:01:52
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (0 procs, 1 reqs) 2026-09-08_08:02:22
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_08:03:07
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_08:03:22
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs) 2026-09-08_08:04:22
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_08:05:23
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (1 procs, 0 reqs) 2026-09-08_08:06:38
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore) 2026-09-08_08:06:53
+waiting: pos 2/2, held by graphmem0908 [boot] (pid 2360609@srv2, since 07:37, est 35m, GLM unused graph profiling B-A-A-B with first text image video and approved control restore), legacy busy (0 procs, 1 reqs) 2026-09-08_08:07:08
+waiting: pos 1/1, held by moem64reuse30908 [boot] (pid 2398493@srv2, since 08:07, est 40m, PR455 completed-fixture release and driver/host memory observations; unchanged reuse criteria and exact recovery) 2026-09-08_08:07:53
+waiting: pos 1/1, held by moem64reuse30908 [boot] (pid 2398493@srv2, since 08:07, est 40m, PR455 completed-fixture release and driver/host memory observations; unchanged reuse criteria and exact recovery), legacy busy (0 procs, 0 reqs, booting) 2026-09-08_08:12:24
+waiting: pos 1/2, held by moem64reuse30908 [boot] (pid 2398493@srv2, since 08:07, est 40m, PR455 completed-fixture release and driver/host memory observations; unchanged reuse criteria and exact recovery), legacy busy (0 procs, 0 reqs, booting) 2026-09-08_08:12:54
+waiting: pos 1/2, held by moem64reuse30908 [boot] (pid 2398493@srv2, since 08:07, est 40m, PR455 completed-fixture release and driver/host memory observations; unchanged reuse criteria and exact recovery) 2026-09-08_08:13:09
+waiting: pos 1/2, held by moem64reuse30908 [boot] (pid 2398493@srv2, since 08:07, est 40m, PR455 completed-fixture release and driver/host memory observations; unchanged reuse criteria and exact recovery), legacy busy (0 procs, 0 reqs, booting) 2026-09-08_08:14:10
+waiting: pos 1/1, held by moem64reuse30908 [boot] (pid 2398493@srv2, since 08:07, est 40m, PR455 completed-fixture release and driver/host memory observations; unchanged reuse criteria and exact recovery), legacy busy (0 procs, 0 reqs, booting) 2026-09-08_08:14:40
+GO moereform0908 2026-09-08_08:14:55
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=15G path=ok
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=11G path=ok
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok
+  (warnings only; FLEET_NODES=strict refuses)
+From https://github.com/choiceoh/stkernel
+ * [new branch]      codex/fleet-handoff-campaign -> origin/codex/fleet-handoff-campaign
+   4e9907a..f876a83  codex/glm53-decode-fc2-0908 -> origin/codex/glm53-decode-fc2-0908
+   4b0f1d1..59784d7  main       -> origin/main
+   b945723..b4c9dd6  work/glm53-startup-profile-20260908 -> origin/work/glm53-startup-profile-20260908
+ABORT: candidate needs current main
+NOTE: queue empty and production: NOT defaults: VLLM_GLM53_EARLY_MM_WARMUP=1,VLLM_GLM53_MK_INPUT_CTA=2,VLLM_GLM53_MK_PACK_SHA256=1 (health 200) -- restore with: LEGS=none bash /home/choiceoh/glm53-logs/ab-lever2.sh PRODRESTORE "" (FLEET_AUTO_RESTORE=1 does it)
