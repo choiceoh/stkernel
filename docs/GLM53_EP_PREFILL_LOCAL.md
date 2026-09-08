@@ -17,6 +17,12 @@ publishes four tasks retaining four slices each; it never enlarges inherited
 Q1 storage or uses the stock variable-task policy at T4096. Workspace capacity
 already includes the four slice groups.
 
+The register-memory scale cache has eight slots for the exact top8 contract.
+Scale equality is folded into the existing scale-load loop, avoiding repeated
+checks for each quantization block. Disabled flags and ineligible short calls
+return before querying CUDA capture state; the query is lazy and only runs
+after the exact shape/activation gate.
+
 This removes the existing EP prefill path's GPU nonzero/host count boundary,
 expanded pair_x/pair_out, pair-list chunking and external index_add. It does
 not remove the model's arithmetic, TP communication or the router remap.
@@ -38,17 +44,29 @@ forecast. Global useful FLOPs remain unchanged by TP-to-EP repartitioning;
 75% fewer experts per rank is not a 75% speedup. The 1.40x direct prefill
 throughput objective remains open.
 
-CPU admission/cache/SP/wrapper tests pass (six focused tests), and both actual
-E72/I2048 compiler arms passed in the immutable-image no-device runner.
-[Compilation evidence](../measurements/glm53_ep_local_20260908/cpu3/README.md)
-records the larger candidate stack as an unresolved runtime concern. Rebase
-onto main 926239e preserved every compiled overlay source hash.
+The final candidate passed actual E72/I2048 CuTe compilation and 23 focused
+CPU tests without skips in the immutable-image no-device runner. CUDA remained
+uninitialized. [Final compilation evidence](../measurements/glm53_ep_local_20260908/cpu5/README.md)
+records 168 registers and 1040 stack bytes, compared with 168/1520 for the
+original candidate. This 480-byte (31.6%) stack reduction is a compiler
+resource result, not a GPU latency result. The unchanged stock generic
+E72/I2048 arm last compiled at 255 registers and 432 stack bytes in
+[cpu4](../measurements/glm53_ep_local_20260908/cpu4/README.md).
 
 The isolated GPU runner uses the actual legacy compact wrapper as its control
 with the profile's 8192-token pair-slice capacity. Eight fixtures cover balanced,
 concentrated, empty-local, duplicate, zero-weight and odd-tail routes, plus
 16384 rows. It changes input/routes at fixed addresses, poisons output, checks
-nondefault streams and includes memcheck/racecheck cells. A tested normal-fleet
+nondefault streams and includes memcheck/racecheck cells. Three stock repeats
+must first agree within fixed per-row relative-L2 0.02 / normalized-peak 0.04
+bounds; unstable stock cannot inflate the candidate tolerance. Candidate
+bounds remain the larger of those floors and three times the bounded stock
+noise. Failed runs retain the phase and partial measurements in JSON.
+
+Before any service inventory or pause, the runner verifies that every mounted
+MoE source and probe/test contract matches the passing no-device compilation
+receipt. Missing or stale proof fails closed. The GPU container checks the
+installed source hashes again. A tested normal-fleet
 lifecycle stops and restores exact incoming containers around these checks.
 GPU correctness and sanitizer checks must
 compare full-token output with the existing E72 compact path using identical

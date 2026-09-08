@@ -1,0 +1,26 @@
+{
+  "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+    "sha256": "5c64e1f89c99d04850410b0ae521bd248b8abbbf38ff96fe82f4b6e21c6261b1",
+    "bytes": 1206641
+  },
+  "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+    "sha256": "b23d5dbc172ee552e68e2fa3167e8add116f8e3d11b2e1e10c466b24cae2a403",
+    "bytes": 326
+  },
+  "local/result.json": {
+    "sha256": "ad55ff2f78a1ce51d86d16570c400d1c25b343993add3ca030e37cd74d63ec6a",
+    "bytes": 7830
+  },
+  "stock/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+    "sha256": "1a901c29b5241f295709b333820b6f1a6e0ea0d817583e501c86af16212d77a2",
+    "bytes": 602419
+  },
+  "stock/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+    "sha256": "35c094be5831d03c0c8b37a7fb26f002c252863a018a92eec6ee52948661bf27",
+    "bytes": 325
+  },
+  "stock/result.json": {
+    "sha256": "107004af5c02d18f3884e95ab0bb033c73cc8388d591e8122f963b2bd4b2698a",
+    "bytes": 7795
+  }
+}
