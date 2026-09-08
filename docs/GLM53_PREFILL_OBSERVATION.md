@@ -56,6 +56,12 @@ distinguish active bytes from total pinned blocks; glibc's
 heap pages. The installed PyTorch header confirms only freeable host pools are
 released. These mechanisms do not prove that this serving process has free pages.
 
+The source `37db5eb1fb17b1ed03d5116f02e317fc64ffee4c` passed 34 pinned CPU-only
+tests and was frozen on all four hosts. Session `glm53observemem0908v1` passed
+normal preflight and started at 11:36:19 KST, using the reclaim option. Its
+admission evidence is in `submission-memory1/`; reclamation, request execution
+and completion are pending. The prior failures are not being rerun unchanged.
+
 ## Implemented pieces
 
 `probes/glm53_prefill_observer.py` is a diagnostic mount, not a production overlay.
