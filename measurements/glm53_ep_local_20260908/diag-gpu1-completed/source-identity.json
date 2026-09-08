@@ -1,0 +1,478 @@
+{
+  "revision": "69f5b8330bf63534f950e36cb2c40e844e7806f1",
+  "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1",
+  "job": "/tmp/glm53-ep-local-diag-gpu-0908-1",
+  "cpu17_revision": "123fbb01211eaf8cec46fd0965dd9320d02a375b",
+  "source_clean": true,
+  "captured_epoch": 1788882191.8736079,
+  "files": {
+    "job/capture/before.json": {
+      "bytes": 41729,
+      "sha256": "3517fe66fceeecc23d9dd7860c0d0e58de5acc117fb440b28b370fe6fb6d1676",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/before.json",
+      "mtime_ns": 1788881345819331161
+    },
+    "job/capture/completion.json": {
+      "bytes": 8407,
+      "sha256": "7e357be95d52d98776e70622392beefa26e88e67f4f100df1b68654b4ee56ccb",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/completion.json",
+      "mtime_ns": 1788881575076301481
+    },
+    "job/capture/concentrated6912.json": {
+      "bytes": 7372,
+      "sha256": "c7151df11aeccde3c8af6d279a9b6e8c3e716875d7be7ced18b60b25b5cc7334",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/concentrated6912.json",
+      "mtime_ns": 1788881425338394632
+    },
+    "job/capture/concentrated6912.log": {
+      "bytes": 7445,
+      "sha256": "7b9ec17efc83cbc921147ca43971b189365155a2e0ee6068932e41308247bcac",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/concentrated6912.log",
+      "mtime_ns": 1788881425338394632
+    },
+    "job/capture/progress.json": {
+      "bytes": 8347,
+      "sha256": "32315136c1bdcf30f1eab19c1e2a931cae80fb17399ea7fe6a693452306c0ce3",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/progress.json",
+      "mtime_ns": 1788881427117807216
+    },
+    "job/capture/resources-before.json": {
+      "bytes": 359,
+      "sha256": "da84dbd9164f0e5c6a7626626b842f7fa29bdd62522a260ab1daaa2e4de16c1e",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/resources-before.json",
+      "mtime_ns": 1788881345432489316
+    },
+    "job/capture/resources-concentrated6912.json": {
+      "bytes": 363,
+      "sha256": "4a6b90fe8defc675eb63e3dcfa371d60f875136bb1b21819a115d2fe5ef2247c",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/resources-concentrated6912.json",
+      "mtime_ns": 1788881396368538511
+    },
+    "job/capture/restarted.json": {
+      "bytes": 41730,
+      "sha256": "d61f966d4fecd417d6a19af609f8fef88f8464209034b3a6e675819054dbb30a",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/restarted.json",
+      "mtime_ns": 1788881428019024436
+    },
+    "job/capture/restored.json": {
+      "bytes": 41730,
+      "sha256": "c1e078ca415506ee3382d5c3f392bbff9218b079ba120a019f87ae3a687fcb4e",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/restored.json",
+      "mtime_ns": 1788881574797239588
+    },
+    "job/capture/sanitizer-preflight.json": {
+      "bytes": 1487,
+      "sha256": "a6928db8be315bc1770417db8673b2ebc3338f9d9a3df513cefb7b0b7ce813b6",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/sanitizer-preflight.json",
+      "mtime_ns": 1788881344302589039
+    },
+    "job/capture/stopped.json": {
+      "bytes": 41733,
+      "sha256": "ebc391d442044b8c048c645a9ab3def3d8575cd25dbbf0f52dd2adfa992683d7",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/capture/stopped.json",
+      "mtime_ns": 1788881395142460474
+    },
+    "job/cpu-evidence.json": {
+      "bytes": 28539,
+      "sha256": "1d8ee9b9657cd49240f2b1f6d5eee40a413e647dc8ee0743d911d69e0ac8eba7",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/cpu-evidence.json",
+      "mtime_ns": 1788880969930118286
+    },
+    "job/driver-start.json": {
+      "bytes": 5148,
+      "sha256": "24a81c6055a46fdd552ba3a2a839970edc19f32ec4a4a414a09bf55cde94397e",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/driver-start.json",
+      "mtime_ns": 1788880970699539217
+    },
+    "job/driver.pid": {
+      "bytes": 7,
+      "sha256": "9ebd83b04654e0e49d73025fe6b36f6ddf1a0f47ac6fa77a86d2039701865edc",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/driver.pid",
+      "mtime_ns": 1788880969931612704
+    },
+    "job/driver.py": {
+      "bytes": 9381,
+      "sha256": "c9778a40d5bf07e2e8a9dfb29c295c6882997c574cb39d3b0973beda06feb25c",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/driver.py",
+      "mtime_ns": 1788880969929538189
+    },
+    "job/exit.json": {
+      "bytes": 5178,
+      "sha256": "9ecc8e5288ec86f075cf4fd4237b7cb1e43e960fa0053f96b1ed2a5d2f23f2c5",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/exit.json",
+      "mtime_ns": 1788881575855135096
+    },
+    "job/fleet.log": {
+      "bytes": 10853,
+      "sha256": "267971f0cb9ebe04bb32806d0ef1280a2db470027186e32e886c9a63fc983a51",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/fleet.log",
+      "mtime_ns": 1788881575076301481
+    },
+    "job/submission.json": {
+      "bytes": 5025,
+      "sha256": "dbfde415f84e00d62f49b1257ec38027b6ed6cba1a6901d0779341259d74c0e6",
+      "source": "/tmp/glm53-ep-local-diag-gpu-0908-1/submission.json",
+      "mtime_ns": 1788880969931099775
+    },
+    "source/build/glm53/b12x_moe.py": {
+      "bytes": 31331,
+      "sha256": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/b12x_moe.py",
+      "mtime_ns": 1788880968445536207
+    },
+    "source/build/glm53/flashinfer_b12x_moe.py": {
+      "bytes": 99815,
+      "sha256": "5c7cdbc7d87129d3314725923a674728da113f7918b9c33dab164aa1c5cfc56d",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/flashinfer_b12x_moe.py",
+      "mtime_ns": 1788880968446536209
+    },
+    "source/build/glm53/glm53_ep_route_remap.py": {
+      "bytes": 5493,
+      "sha256": "9d83120fb20e4aae382e3971a86c1a3b6970e591dd31ee5d7fc3e1a2ca521339",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/glm53_ep_route_remap.py",
+      "mtime_ns": 1788880968446536209
+    },
+    "source/build/glm53/manifest.tsv": {
+      "bytes": 8618,
+      "sha256": "b37797125c0c5dd17963ace5635820749c90e5b1b486792aa737c2ec5ba29057",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/manifest.tsv",
+      "mtime_ns": 1788880968450536214
+    },
+    "source/build/glm53/moe_dispatch.py": {
+      "bytes": 175149,
+      "sha256": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dispatch.py",
+      "mtime_ns": 1788880968450536214
+    },
+    "source/build/glm53/moe_dynamic_ep_local.py": {
+      "bytes": 37063,
+      "sha256": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dynamic_ep_local.py",
+      "mtime_ns": 1788880968450536214
+    },
+    "source/build/glm53/moe_dynamic_gated_tiled.py": {
+      "bytes": 3840,
+      "sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dynamic_gated_tiled.py",
+      "mtime_ns": 1788880968450536214
+    },
+    "source/build/glm53/moe_dynamic_prefill.py": {
+      "bytes": 91792,
+      "sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dynamic_prefill.py",
+      "mtime_ns": 1788880968451536215
+    },
+    "source/build/glm53/moe_dynamic_prefill_n128.py": {
+      "bytes": 46473,
+      "sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dynamic_prefill_n128.py",
+      "mtime_ns": 1788880968451536215
+    },
+    "source/build/glm53/moe_micro_kernel.py": {
+      "bytes": 113270,
+      "sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_micro_kernel.py",
+      "mtime_ns": 1788880968451536215
+    },
+    "source/build/glm53/moe_sf_pack.py": {
+      "bytes": 7321,
+      "sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_sf_pack.py",
+      "mtime_ns": 1788880968451536215
+    },
+    "source/build/glm53/moe_static_common.py": {
+      "bytes": 9913,
+      "sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_static_common.py",
+      "mtime_ns": 1788880968451536215
+    },
+    "source/build/glm53/moe_static_kernel_v4.py": {
+      "bytes": 98224,
+      "sha256": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_static_kernel_v4.py",
+      "mtime_ns": 1788880968451536215
+    },
+    "source/build/glm53/moe_static_kernel_v5.py": {
+      "bytes": 9670,
+      "sha256": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_static_kernel_v5.py",
+      "mtime_ns": 1788880968452536217
+    },
+    "source/measurements/glm53_ep_local_20260908/cpu17/local/result.json": {
+      "bytes": 28539,
+      "sha256": "1d8ee9b9657cd49240f2b1f6d5eee40a413e647dc8ee0743d911d69e0ac8eba7",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/measurements/glm53_ep_local_20260908/cpu17/local/result.json",
+      "mtime_ns": 1788880968556094051
+    },
+    "source/probes/glm53_ep_binding_check.py": {
+      "bytes": 2199,
+      "sha256": "1d8027b4575bed172b4daeb2a19c10b44977afd34d3d483fb038b0cf4404463c",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_binding_check.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_ep_bindings_capsule.py": {
+      "bytes": 15356,
+      "sha256": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_bindings_capsule.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_ep_bindings_pair_check.py": {
+      "bytes": 6235,
+      "sha256": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_bindings_pair_check.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_ep_capsule_runtime.py": {
+      "bytes": 5679,
+      "sha256": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_capsule_runtime.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_ep_local_check.py": {
+      "bytes": 14998,
+      "sha256": "38478be52b8b645bb6b770709a308a7e0f099335cae5c6db8204255c8bcfcdec",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_local_check.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_ep_local_compile_check.py": {
+      "bytes": 7349,
+      "sha256": "4187c1150ce16bc12e33dec8d6136b108f36dc3792b2f45421fd44a3c6a082cf",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_local_compile_check.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_ep_local_evidence.py": {
+      "bytes": 4944,
+      "sha256": "f2377c14fc3343a3df2e26a62ec6f1309d814b65f329aa6a3e09535f52123872",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_local_evidence.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_ep_numerics_diagnostics.py": {
+      "bytes": 5602,
+      "sha256": "e41b5a39873dd8322f4ba40e5c3202c36bdc905a4a267554e1a2947fb31e0a1e",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_numerics_diagnostics.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_ep_route_remap_check.py": {
+      "bytes": 8063,
+      "sha256": "241c11de8db10b550f6a624e91ec729882d4993b1919abe7b187acec4252e568",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_route_remap_check.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_ep_sanitizer.py": {
+      "bytes": 6104,
+      "sha256": "7144f2b4c488e073257845dc65b028c220a06831ac9ce654d6fbaa2f01ca7e1a",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_ep_sanitizer.py",
+      "mtime_ns": 1788880968664536500
+    },
+    "source/probes/glm53_probe_lifecycle.py": {
+      "bytes": 10998,
+      "sha256": "ac981627094546373ffbee6970a23d9356f23642b628dd228168324c50b7cc16",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/glm53_probe_lifecycle.py",
+      "mtime_ns": 1788880968665536501
+    },
+    "source/probes/run_glm53_ep_binding_offline.py": {
+      "bytes": 6113,
+      "sha256": "357ce3de1b087135b4661aeea8fe7a6ea5ce978de024a9f1c9c83b4aba766514",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/run_glm53_ep_binding_offline.py",
+      "mtime_ns": 1788880968668536505
+    },
+    "source/probes/run_glm53_ep_bindings_pair_offline.py": {
+      "bytes": 11396,
+      "sha256": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/run_glm53_ep_bindings_pair_offline.py",
+      "mtime_ns": 1788880968668536505
+    },
+    "source/probes/run_glm53_ep_local_cpu_compile.py": {
+      "bytes": 6022,
+      "sha256": "2353825ca1bd395a122439402b2eac892518d52c99e52de1872d6dad70f18da8",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/run_glm53_ep_local_cpu_compile.py",
+      "mtime_ns": 1788880968668536505
+    },
+    "source/probes/run_glm53_ep_local_offline.py": {
+      "bytes": 11381,
+      "sha256": "5c5598a9e946419ce09ada141c6620d157c71c40cbd816be7b1d5ad35031f167",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/run_glm53_ep_local_offline.py",
+      "mtime_ns": 1788880968668536505
+    },
+    "source/tests/test_glm53_ep_binding_check.py": {
+      "bytes": 6567,
+      "sha256": "eedeca9b4bc0f01c4fa2a20518182dba6a5a6854b55c36c7c6af394541f5b26f",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_binding_check.py",
+      "mtime_ns": 1788880968671701437
+    },
+    "source/tests/test_glm53_ep_bindings_capsule.py": {
+      "bytes": 13743,
+      "sha256": "e24b1dae1a3bdc67ed41a33b44d25e4bb6274fafaa7781f30ac0cbc8c335b6fb",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_bindings_capsule.py",
+      "mtime_ns": 1788880968671701437
+    },
+    "source/tests/test_glm53_ep_bindings_pair.py": {
+      "bytes": 14769,
+      "sha256": "8dfedc98646a0580781cad5e14921d4ce277c8f899e1ec65fb26af496a5bff6a",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_bindings_pair.py",
+      "mtime_ns": 1788880968671701437
+    },
+    "source/tests/test_glm53_ep_capsule_inners.py": {
+      "bytes": 13136,
+      "sha256": "fccae5d3ff7a57d72e3c0d25355193ab4409ae2d2668c26ae362fe313efc599d",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_capsule_inners.py",
+      "mtime_ns": 1788880968671701437
+    },
+    "source/tests/test_glm53_ep_capsule_runtime.py": {
+      "bytes": 6145,
+      "sha256": "624a496cfa8a37be53c9625962e1119d89a8d87f1d9de5c8f20b9a34f8c6779f",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_capsule_runtime.py",
+      "mtime_ns": 1788880968671701437
+    },
+    "source/tests/test_glm53_ep_capsule_wrappers.py": {
+      "bytes": 23775,
+      "sha256": "4da051bb61dee36f61ea9ebb3973ec4462e21a1fc3a62e8fc6b580264ac3e9ca",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_capsule_wrappers.py",
+      "mtime_ns": 1788880968672536510
+    },
+    "source/tests/test_glm53_ep_local_probe.py": {
+      "bytes": 11920,
+      "sha256": "5a8fb78fd9dcc233fb02e1253bfd6247b24baaeb0c80387c6e381ccaafc0b325",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_local_probe.py",
+      "mtime_ns": 1788880968672536510
+    },
+    "source/tests/test_glm53_ep_numerics_diagnostics.py": {
+      "bytes": 11260,
+      "sha256": "893dc3bb917dc26153e9b074a829a319bb468c5c9391b2a25c70aa538ac7b206",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_numerics_diagnostics.py",
+      "mtime_ns": 1788880968672536510
+    },
+    "source/tests/test_glm53_ep_prefill_local.py": {
+      "bytes": 11388,
+      "sha256": "3f79ec33eaabff5521b898b6e72555116e8c1797b51f3b5871fb9c46a203130a",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_prefill_local.py",
+      "mtime_ns": 1788880968672536510
+    },
+    "source/tests/test_glm53_ep_route_remap.py": {
+      "bytes": 16234,
+      "sha256": "7f6a9ab88f1eaf219a662f4ffca41cb42aef941fb14bd3c0289f677f16e1da5c",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_route_remap.py",
+      "mtime_ns": 1788880968672536510
+    },
+    "source/tests/test_glm53_ep_route_scale_cache.py": {
+      "bytes": 26918,
+      "sha256": "b4c85443d81a69c0a1542f537b8947b119457ba7fed28c319240546ca329cc06",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_route_scale_cache.py",
+      "mtime_ns": 1788880968672536510
+    },
+    "source/tests/test_glm53_ep_sanitizer.py": {
+      "bytes": 9669,
+      "sha256": "61c269124cb37cbd02d6930a448a3b2422e625569e1061ca1637093f32b8705d",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_sanitizer.py",
+      "mtime_ns": 1788880968672536510
+    },
+    "source/tests/test_glm53_ep_task_publication.py": {
+      "bytes": 22046,
+      "sha256": "46e8094e17e16a2e3736737827a69f50cc731499f92858cf1fbb9137db4dbfef",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_ep_task_publication.py",
+      "mtime_ns": 1788880968672536510
+    },
+    "source/tests/test_glm53_probe_lifecycle.py": {
+      "bytes": 10674,
+      "sha256": "c35a83f6e3eb34adc6a77b240994a7ce1cdc86d4da3f2e9a81220de4bf3f2706",
+      "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1/tests/test_glm53_probe_lifecycle.py",
+      "mtime_ns": 1788880968672536510
+    },
+    "cpu17/submission.json": {
+      "bytes": 2066,
+      "sha256": "02c4799468b4313e4a1f4a39e828538d6f4e110ee72f4b541efe201f34810abb",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/submission.json",
+      "mtime_ns": 1788880343210739020
+    },
+    "cpu17/exit.json": {
+      "bytes": 2168,
+      "sha256": "853b8ec39c92d89af1e0fed1015c4a068ff55edccc09af913a4a2a75d20cb491",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/exit.json",
+      "mtime_ns": 1788880359082622900
+    },
+    "cpu17/local/result.json": {
+      "bytes": 28539,
+      "sha256": "1d8ee9b9657cd49240f2b1f6d5eee40a413e647dc8ee0743d911d69e0ac8eba7",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/result.json",
+      "mtime_ns": 1788880358083669994
+    },
+    "runtime/capsule-manifest.json": {
+      "bytes": 20559,
+      "sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+      "source": "/tmp/glm53-bindings-capsule-cpu0908-2/capsule/capsule-manifest.json",
+      "mtime_ns": 1788868220230051715
+    },
+    "fleet-session/log": {
+      "source": "/home/choiceoh/glm53-logs/fleet/log",
+      "snapshot_size": 121502,
+      "tail_start": 0,
+      "scope": "Selected exact lines from a bounded 2 MiB log tail; not a whole-file hash",
+      "bytes": 46,
+      "sha256": "b9214f3a5261cb87533a2bf73e8c3ef1700f0e561dad479ae1394787c8ab23f3"
+    },
+    "fleet-session/events.log": {
+      "source": "/home/choiceoh/glm53-logs/fleet/events.log",
+      "snapshot_size": 66329,
+      "tail_start": 0,
+      "scope": "Selected exact lines from a bounded 2 MiB log tail; not a whole-file hash",
+      "bytes": 47,
+      "sha256": "8a87fc12cc87ec4013ff0ffa193b777bb4952d4a769061bf6f5823b2ee8377ad"
+    },
+    "fleet-session/lifecycle.jsonl": {
+      "source": "/home/choiceoh/glm53-logs/fleet/lifecycle.jsonl",
+      "snapshot_size": 78746,
+      "tail_start": 0,
+      "scope": "Selected exact lines from a bounded 2 MiB log tail; not a whole-file hash",
+      "bytes": 1372,
+      "sha256": "ebe72dcadf5dc9f56ec923695472d57a1086c55d494a6b0158e3d040b2950ff1"
+    },
+    "fleet-session/absence.json": {
+      "bytes": 175,
+      "sha256": "6660f04012f26549e1df34f6c9b3866ebbdcb93f53c4022380b333f5944d0b20",
+      "scope": "Read-only namespace snapshot"
+    }
+  },
+  "lifecycle_events": [
+    {
+      "t": 1788881155.3818622,
+      "session": "eplocaldiag0908v1",
+      "event": "ready",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "protocol": 2,
+      "source_sha256": {
+        "fleet.sh": "654b6812b0b08655d74ed63a0519d211ecae1c787e014a4c7bdf0c71007884f7",
+        "fleet_boot.py": "dc01cffc16b8e06b98d93b834d8606149ca14809c7a086d2b48ac44f4f0605f5",
+        "fleet_handoff.py": "21e7d234702cbf746f55e83e10bbb60e22394bac9cab342ff8b67e2f73c856f9"
+      }
+    },
+    {
+      "t": 1788881341.8506336,
+      "session": "eplocaldiag0908v1",
+      "event": "accepted",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "revision": 1
+    },
+    {
+      "t": 1788881575.1983597,
+      "session": "eplocaldiag0908v1",
+      "event": "payload-finished",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "rc": 0
+    },
+    {
+      "t": 1788881575.2314253,
+      "session": "eplocaldiag0908v1",
+      "event": "handoff-offered",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "successor": "mb9216-0909"
+    },
+    {
+      "t": 1788881575.7140775,
+      "session": "eplocaldiag0908v1",
+      "event": "handoff-accepted",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "successor": "mb9216-0909"
+    }
+  ],
+  "scope": "Terminal diagnostic snapshot; no live public-service equality after handoff"
+}

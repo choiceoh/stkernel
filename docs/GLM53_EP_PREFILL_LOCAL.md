@@ -651,3 +651,30 @@ was submitted with frozen receipt source `69f5b833`. Approved scheduler source
 at00:25:55 KST. Its captured queue position is historical and does not prove
 GPU execution. The concentrated case includes paired component timing only
 after all original numerical comparisons pass.
+
+## Concentrated diagnostic result
+
+The [terminal diagnostic capture](../measurements/glm53_ep_local_20260908/diag-gpu1-completed/RESULTS.md)
+records an earlier-than-estimated GO at00:29:01 KST, cell completion at00:30:27
+and restored incoming containers plus accepted normal handoff/release at00:32:55.
+Source `69f5b833` used the matching CPU17 receipt and13.0.3 runtime. All six stock
+control comparisons and four candidate comparisons passed. There was no failed
+row to capture in this invocation. The original GPU5 numerical rejection remains.
+
+For the synthetic6912-row concentrated case, eight alternating-order paired
+rounds (three calls per arm per round) measured wall medians53.9281ms compact
+versus14.6132ms local:3.6904x, or72.90% lower component latency. Device medians
+were53.9244ms and14.6102ms. Each round favored local (3.52–3.83x wall ratio).
+This is EP remap plus MoE wrapper timing; it excludes shared expert, TP transport,
+attention and full-model TTFT. It does not establish the campaign's1.40x direct
+prefill target or an incremental CPU16-versus-CPU14 improvement.
+
+The changed-input peak error was0.0327869 (default stream) and0.0338983
+(nondefault stream), compared with GPU5's earlier failing0.0406977. The kernel,
+runtime and fixture-generation algorithms match, but input tensor hashes were
+not recorded across runs. The passing invocation has slightly higher maximum
+L2 error than the failing invocation, so this is not a general numerical-error
+improvement. It is consistent with execution variability and does not isolate
+its cause. A bounded repeatability diagnostic with fixed inputs and candidate
+self-comparisons is the next check; a passing repeat must not erase the first
+failure or authorize an unchanged full-suite rerun.
