@@ -33,6 +33,24 @@ def original():
 
 
 class CloneTests(unittest.TestCase):
+    def test_nullable_oom_default_is_equal_without_changing_policy(self):
+        before=dict(OomKillDisable=None,MemorySwappiness=None,Memory=4096)
+        after=dict(before,OomKillDisable=False)
+        self.assertEqual(host.host_config_differences(before,after),[])
+        self.assertEqual(host.digest(host.host_config_identity(before)),host.digest(host.host_config_identity(after)))
+        self.assertIsNone(before['OomKillDisable'])
+        self.assertIsNone(host.host_config_identity(before)['MemorySwappiness'])
+        self.assertEqual(host.host_config_differences(before,dict(after,OomKillDisable=True)),['OomKillDisable'])
+        self.assertEqual(host.host_config_differences(dict(before,OomKillDisable=True),after),['OomKillDisable'])
+        for value in (0,1,'false',[]):
+            with self.assertRaises(ValueError):host.host_config_identity(dict(before,OomKillDisable=value))
+
+    def test_host_resource_and_binding_changes_still_fail(self):
+        before=original()['HostConfig'];before['OomKillDisable']=None;before['MemorySwappiness']=None
+        for key,value in [('Memory',0),('MemorySwappiness',0),('DeviceRequests',[]),('Binds',[]),('IpcMode','private')]:
+            after=dict(before,OomKillDisable=False,**{key:value})
+            self.assertEqual(host.host_config_differences(before,after),[key])
+
     def test_clone_preserves_model_capacity_environment_and_original(self):
         before=original();saved=copy.deepcopy(before)
         result=host.clone_payload(before,directory='/out',source='/source',session='cpu')

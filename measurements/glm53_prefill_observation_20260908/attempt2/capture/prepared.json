@@ -1,0 +1,38 @@
+{
+  "local": {
+    "id": "e57c1d58b7f6ab0ec98c46127795b6601e77b3e2d2ed4ec999c3951536331a05",
+    "original_id": "a3ae2d7d793c834d080bf2c7a02a2c85e71c9574f12b483d3dc9a56bbf7da081",
+    "config": "1031099ec0ed51ee78ebad120926150570f4d4d757842be59ada44ad77425dd6",
+    "host_config": "73fcbd97dc9bbb49de99b0b73941eec32ec1781ff0efc41874e0d02c7675c2ad",
+    "host_config_raw": "73fcbd97dc9bbb49de99b0b73941eec32ec1781ff0efc41874e0d02c7675c2ad",
+    "oom_kill_disable_raw": false,
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211"
+  },
+  "10.10.10.1": {
+    "id": "74a09cb8d18bdbfcaf4a14a83e2aa6665a3d2b0f9dd6cd6144cfd3d72a00e00c",
+    "original_id": "d5bf0cae516a57fd22d62b94720cd4a3fef46db6413004d8cf1bffb49d7741ea",
+    "config": "098f329d49f7cab21b64c789bf429fdab520a17218b2136f02310977daa4116e",
+    "host_config": "3dd4268debecbd651110187e29979b7b6aab81035dec8fdcfe4cdbd86382ddd4",
+    "host_config_raw": "3dd4268debecbd651110187e29979b7b6aab81035dec8fdcfe4cdbd86382ddd4",
+    "oom_kill_disable_raw": false,
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211"
+  },
+  "10.10.10.3": {
+    "id": "2313f76e3da20431ebdb621a34b4b9a99b6138b7bedb1635dce6f37f2cae307b",
+    "original_id": "7cf0c3a10ff91a663ea719ecd87082e9ce2179003d6dbf57e1d678da169dbd62",
+    "config": "3cf85d9798e1c1c138be64ab2f3ee88395fa7775f08b4e631c910e61371996db",
+    "host_config": "6891a42550aafceeb83b0717b47c6976a10939a848e63d5a8e331f43b960c64c",
+    "host_config_raw": "6891a42550aafceeb83b0717b47c6976a10939a848e63d5a8e331f43b960c64c",
+    "oom_kill_disable_raw": false,
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211"
+  },
+  "10.10.10.4": {
+    "id": "3ceb905ae0d3990faf53ac627fad4e957b0d2e7c6b8b4bfef0ecaa564ab81467",
+    "original_id": "e3a4c334f464c69efc9f3201d225cf37dd7ee46f3c78828720e7139f5cddb2c2",
+    "config": "7436c40575ef77bc261493eff70076b6ebf0572063761486adfe18294d4ccbb3",
+    "host_config": "2dd04be6573828aa6091d3247234123713a033194af21bcaa0ee349c2747e314",
+    "host_config_raw": "2dd04be6573828aa6091d3247234123713a033194af21bcaa0ee349c2747e314",
+    "oom_kill_disable_raw": false,
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211"
+  }
+}

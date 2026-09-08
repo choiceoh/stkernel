@@ -18,6 +18,27 @@ def digest(value):
     return hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
 
 
+def host_config_identity(config):
+    """Docker serializes an unset OOM-disable flag as null or false.
+
+    Both leave the default OOM killer enabled. This changes only comparison,
+    never the submitted configuration. Explicit true remains distinct; no other
+    nullable resource field (notably MemorySwappiness) is normalized.
+    """
+    result=copy.deepcopy(config)
+    if 'OomKillDisable' in result:
+        value=result['OomKillDisable']
+        if value is not None and type(value) is not bool:
+            raise ValueError('invalid OomKillDisable representation')
+        if value is None:result['OomKillDisable']=False
+    return result
+
+
+def host_config_differences(requested, actual):
+    expected=host_config_identity(requested);observed=host_config_identity(actual)
+    return sorted(k for k,v in expected.items() if k not in observed or observed[k]!=v)
+
+
 def clone_payload(container, *, directory, source, session):
     payload = copy.deepcopy(container['Config'])
     host = copy.deepcopy(container['HostConfig'])
@@ -115,10 +136,13 @@ def dispatch(*,action,name,session,directory,source,original=None):
         # explicitly changed above must have its requested value.
         if any(actual['Config'].get(k)!=v for k,v in payload.items() if k!='HostConfig'):
             raise RuntimeError('Docker changed requested clone configuration')
-        if any(actual['HostConfig'].get(k)!=v for k,v in payload['HostConfig'].items()):
-            raise RuntimeError('Docker changed requested clone host configuration')
+        differences=host_config_differences(payload['HostConfig'],actual['HostConfig'])
+        if differences:
+            raise RuntimeError('Docker changed requested clone host configuration: '+', '.join(differences))
         return dict(id=cid,original_id=c['Id'],config=digest(actual['Config']),
-                    host_config=digest(actual['HostConfig']),image=actual['Image'])
+                    host_config=digest(host_config_identity(actual['HostConfig'])),
+                    host_config_raw=digest(actual['HostConfig']),
+                    oom_kill_disable_raw=actual['HostConfig'].get('OomKillDisable'),image=actual['Image'])
     c=owned(name,session)
     if action=='logs':
         path=directory/'glmlogs/glm53.log'
@@ -136,7 +160,9 @@ def dispatch(*,action,name,session,directory,source,original=None):
         c=owned(name,session)
     if action in ('start','state'):
         return dict(id=c['Id'],running=c['State']['Running'],started=c['State']['StartedAt'],
-                    config=digest(c['Config']),host_config=digest(c['HostConfig']),image=c['Image'])
+                    config=digest(c['Config']),host_config=digest(host_config_identity(c['HostConfig'])),
+                    host_config_raw=digest(c['HostConfig']),
+                    oom_kill_disable_raw=c['HostConfig'].get('OomKillDisable'),image=c['Image'])
     if action in ('traces','trace_hashes'):
         traces={}
         for p in (directory/'prof').rglob('*'):

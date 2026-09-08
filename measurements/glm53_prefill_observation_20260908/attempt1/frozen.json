@@ -1,0 +1,22 @@
+{
+  "local": {
+    "revision": "75686447d5cca72904b7050e333f8c319884a28d",
+    "clean": true,
+    "cpu_source_hashes": true
+  },
+  "10.10.10.1": {
+    "revision": "75686447d5cca72904b7050e333f8c319884a28d",
+    "clean": true,
+    "cpu_source_hashes": true
+  },
+  "10.10.10.3": {
+    "revision": "75686447d5cca72904b7050e333f8c319884a28d",
+    "clean": true,
+    "cpu_source_hashes": true
+  },
+  "10.10.10.4": {
+    "revision": "75686447d5cca72904b7050e333f8c319884a28d",
+    "clean": true,
+    "cpu_source_hashes": true
+  }
+}
