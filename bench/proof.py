@@ -23,11 +23,46 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MARKERS = os.path.join(HERE, "proof-markers.tsv")
 HEAD_LOG = os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log")
+
+
+def _startup_proof(knob: str, log: str) -> bool | None:
+    """Composite startup evidence; armed or partial progress is insufficient."""
+    if knob == "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE":
+        skipped = ("[glm53-graph-profile] skipped unused estimate rank=0; "
+                   "model/MM profile and real graph warmup retained")
+        position = log.find(skipped)
+        return (position >= 0 and "Profiling CUDA graph memory" not in log
+                and re.search(r"Graph capturing finished in [0-9]+ secs, took "
+                              r"[0-9]+(?:\.[0-9]+)? GiB", log[position + len(skipped):]) is not None)
+    if knob == "VLLM_B12X_EP_WARM_COMPACT":
+        prefix = "[b12x EP compact warmup]"
+        if any(prefix + " " + state in log for state in ("FAILED", "INCOMPLETE")):
+            return False
+        lines = [line.split(prefix, 1)[1].strip() for line in log.splitlines()
+                 if prefix + " COMPLETE" in line]
+        if not lines:
+            return False
+        for line in lines:
+            match = re.fullmatch(
+                r"COMPLETE device=cuda:[0-9]+ launch_rows=([0-9]+) specializations=([0-9]+) "
+                r"static=([0-9]+) dynamic=([0-9]+) required=([0-9]+) ready=([0-9]+) "
+                r"representatives=([0-9]+(?:,[0-9]+)*)", line)
+            if match is None:
+                return False
+            rows, total, static, dynamic, required, ready = map(int, match.groups()[:6])
+            representatives = list(map(int, match[7].split(",")))
+            if not (rows >= total > 0 and total == static + dynamic == required == ready
+                    and len(representatives) == len(set(representatives)) == total
+                    and min(representatives) > 0):
+                return False
+        return True
+    return None
 
 
 def markers(path: str = MARKERS) -> dict[str, tuple[str, str]]:
@@ -63,6 +98,10 @@ def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | N
         log = ""
     res = {}
     for k in knobs:
+        startup = _startup_proof(k, log)
+        if startup is not None:
+            res[k] = startup
+            continue
         if k not in table:
             res[k] = None                      # no marker known: cannot judge
             continue
@@ -94,7 +133,7 @@ def main() -> int:
         tag = "PASS" if v else ("----" if v is False else "no-marker")
         print(f"  {tag:<9} {k}")
     print(f"  -> {r['proof_ok']} lanes proved serving ({r['log_bytes']} bytes of {r['log']})")
-    return 0 if r["proof_ok"].split("/")[0] == r["proof_ok"].split("/")[1] else 1
+    return 0 if all(value is True for value in r["proof"].values()) else 1
 
 
 if __name__ == "__main__":

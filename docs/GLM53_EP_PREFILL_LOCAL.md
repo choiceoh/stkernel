@@ -482,8 +482,8 @@ effective capacity. The frozen input must reproduce the observed block count,
 which must then be checked against every arm's actual launch arguments.
 
 `ENABLE_EP` is a launcher input converted to `--enable-expert-parallel`; it
-is not itself passed into the container environment. Onepass now records a
-separate `parallelism` field from the known encoded container launch command,
+is not itself passed into the container environment. The earlier prototype
+recorded a separate `parallelism` field from the encoded container launch command,
 bound to its observed container ID. The pure parser reports EP, TP size,
 node count/rank and command hashes without executing the payload or storing
 raw arguments. Unsupported commands produce unknown topology with an issue,
@@ -493,12 +493,17 @@ generic head-log proof table. The SP arming marker alone is insufficient;
 the model also emits `MHC token shards selected` after its shape, metadata and
 all-layer reduction gates pass. Collect that selection marker from fresh logs
 on all four ranks; selection does not establish layer completion or numerics.
-Environment and command lookups both use the observed container ID to avoid
+That prototype's environment and command lookups used the observed container ID to avoid
 mixing settings if a container is replaced under the same name. The eight
 parser and three collector/proof tests passed, as did 6795 core checks and 38
 megakernel regressions. Real configured-launch inputs from all four current
 public containers also parsed successfully; this is compatibility evidence,
-not EP execution proof. See the
+not EP execution proof. Canonical `bench/onepass.py` was subsequently restored
+for the fleet onepass-only workflow and does not collect this field. The two
+prototype collector tests were retired; the pure parser and actual EP launch
+proof tests remain. Current serving evidence requires separate private
+four-node inspections bound to container IDs, as captured in onepass3.
+The historical archive and its source hashes remain unchanged. See the
 [metadata evidence](../measurements/glm53_ep_local_20260908/serving_metadata/README.md).
 
 `bench/glm53_ep_serving_contract.py` now provides pure configuration checks
@@ -536,9 +541,30 @@ launcher-added VLLM_B12X_EP_COMPACT setting also needs an explicit contract.
 The current generic comparator does not yet implement these EP rules; its
 baseline classification still reads environment knobs without rejecting
 EP-only launch changes through the new metadata.
-Existing normal chain hooks and fresh 2K/32K/128K collection can be reused
-after those gaps and the complete source-bound GPU/sanitizer gate are closed.
+Current fleet admission uses canonical onepass deployment and its standard
+2K/32K/128K requests. The earlier custom fresh-request wrapper and chain hooks
+are not part of this run. All-rank configuration/execution checks are retained
+as separate evidence; the unresolved GPU numerical gate still blocks acceptance.
 Short requests and decode use other EP paths and still need direct checks.
+
+The next canonical onepass enables `VLLM_B12X_EP_WARM_COMPACT=1` only on A.
+The default remains 0. Preparation enumerates reachable padded/sliced compact
+rows and uses the dispatcher's real backend, workspace and compiler keys to
+deduplicate them. At the current 8192-token capacity this covers 128 possible
+launch sizes with 14 calls: four dynamic specializations and ten static tails,
+including 128 and 192. Matching layers reuse completed preparation; any launch,
+synchronization or missing-key failure aborts required preparation. This moves
+compact compilation before readiness, without claiming unrelated JIT is gone.
+
+All arms retain the shared unused-graph-estimate skip and real graph capture.
+Its proof now requires both log events. `ONEPASS_BASELINE_KNOBS` declares the
+exact shared control for this session; production-default baseline semantics
+and strict active-knob proof remain unchanged. Same build, session, workload,
+endpoint and boot identity are required, with separate launch inspections for
+image/capacity because canonical rows omit that runtime metadata. A standard
+B1/A/B2 run supplies direct tok/s and TTFT; two baseline boots still do not
+satisfy the existing three-sample prefill noise gate. Previous rows and verdicts
+remain historical evidence, including the unresolved decode regression.
 
 A preceding two-stripe prototype was withdrawn before GPU submission after
 finding preserved failures on branch `codex/glm53-prefill-moe-overlap`

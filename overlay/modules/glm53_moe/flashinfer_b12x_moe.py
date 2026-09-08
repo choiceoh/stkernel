@@ -963,11 +963,10 @@ B12X_EP_COMPACT_PAIR_ALIGN = 64
 def b12x_ep_compact_pair_count(n_local, align=B12X_EP_COMPACT_PAIR_ALIGN):
     """Round a compacted pair count up to a launch-shape bucket.
 
-    b12x JIT-compiles per launch shape -- its cache key carries the row count
-    -- and compact's row count is the number of LOCAL pairs, which is data
-    dependent. One bench saw 33 distinct values (48, 83, 102, 103, 104, 119,
-    122, 130, ... 336) and each minted a kernel. Bucketing to 64 collapses
-    those to six.
+    Static kernel keys carry the exact row count; dynamic keys instead carry
+    the selected tile and cluster count. Compact's LOCAL pair count is data
+    dependent. Rounding bounds the small static variants and sliced tails
+    that startup warmup must prepare.
 
     The padding is bounded by `align - 1` rows, which at prefill scale
     (thousands of pairs) is under a percent, and for a small call is a few
@@ -981,36 +980,123 @@ def b12x_ep_compact_pair_count(n_local, align=B12X_EP_COMPACT_PAIR_ALIGN):
 
 def b12x_ep_compact_warmup_buckets(
     max_num_tokens, top_k, num_local_experts, global_num_experts,
-    align=B12X_EP_COMPACT_PAIR_ALIGN, floors=6,
+    align=B12X_EP_COMPACT_PAIR_ALIGN,
 ):
-    """Bucket sizes worth compiling at load instead of mid-request.
+    """Every possible compact launch size, including a sliced pair-list tail.
 
-    b12x JITs per launch shape and prefill's shape is the local-pair count, so
-    the first request at a new size stalls the engine for seconds -- the JIT
-    monitor says as much ("consider warmup to cover this shape/config"). #163
-    collapsed those to `align` buckets; this walks the ones a real prefill can
-    reach and pays for them once, at load.
-
-    The ladder halves from the largest chunk this engine can schedule down to
-    one bucket, so a handful of compiles covers every chunked-prefill size the
-    scheduler produces. Ordered largest-first: the big one dominates the cost
-    and is the one a first long prompt hits.
+    Routing may concentrate entirely on this rank: the average local/global
+    expert ratio is not a capacity bound. This mirrors pair padding followed
+    by `_apply_ep_compact`'s max_num_tokens slicing, without GPU allocations.
+    The dispatcher subsequently deduplicates dynamic sizes by their actual
+    compiler key; static keys still contain the exact launch row count.
     """
     tokens = int(max_num_tokens or 0)
     k = int(top_k or 0)
     local = int(num_local_experts or 0)
     total = int(global_num_experts or 0)
-    if tokens <= 0 or k <= 0 or local <= 0 or total < local:
+    if tokens <= 0 or k <= 0 or local <= 0 or total < local or align <= 0:
         return ()
-    # A rank only materialises the slots its own experts own.
-    peak = b12x_ep_compact_pair_count(max(1, tokens * k * local // total), align)
-    out, size = [], peak
-    while size >= align and len(out) < max(1, int(floors)):
-        out.append(size)
-        size = b12x_ep_compact_pair_count(size // 2, align)
-        if out and size == out[-1]:
-            break
-    return tuple(out)
+    if tokens > 16384 or k > 32:
+        raise ValueError("EP compact warmup supports at most 16384 tokens/top32")
+    out = set()
+    peak = b12x_ep_compact_pair_count(tokens * min(k, local), align)
+    for pairs in range(align, peak + 1, align):
+        full, tail = divmod(pairs, tokens)
+        if full:
+            out.add(tokens)
+        if tail:
+            out.add(tail)
+    return tuple(sorted(out, reverse=True))
+
+
+_B12X_EP_COMPACT_WARMED: set[tuple] = set()
+_B12X_EP_COMPACT_WARM_LOCK = Lock()
+
+
+def _b12x_ep_compact_warmup_plan(
+    dispatch, rows, *, device, kernel_e, hidden, intermediate,
+    activation, alpha, beta, limit, input_gs_shared,
+):
+    """Resolve real functional-workspace and compiler keys, largest first.
+
+    Static max_rows is the *cached capacity*, not necessarily the requested
+    rows. Priming the largest reachable workspace before smaller calls keeps
+    the warmed static keys valid when their real requests arrive. Dynamic
+    workspaces are already separated by M-tile in the dispatcher cache.
+    """
+    if not rows or any(r < 64 or r % 64 for r in rows):
+        raise RuntimeError("EP compact warmup requires 64-aligned slice capacity")
+    if hidden % 128 or intermediate % 128:
+        raise RuntimeError("EP compact warmup requires tile-aligned weights")
+    geometry = dict(
+        num_experts=kernel_e, num_local_experts=kernel_e,
+        hidden_size=hidden, intermediate_size=intermediate, num_topk=1,
+        quant_mode="nvfp4", activation=activation, swiglu_limit=limit,
+    )
+    if dispatch._static_v2_config_for(**geometry, activation_precision="fp4") is not None:
+        raise RuntimeError("EP compact warmup requires the row-major stock static lane")
+    base_mac = min(dispatch.get_max_active_clusters(1), dispatch.get_num_sm(device))
+    key_args = dict(
+        activation_precision="fp4", quant_mode="nvfp4", k=hidden,
+        n=intermediate, num_topk=1, topk_ids_dtype=torch.int32,
+        input_scales_are_reciprocal=False, fast_math=True,
+        activation=activation, swiglu_alpha=alpha, swiglu_beta=beta,
+        swiglu_limit=limit,
+    )
+    plan = {}
+    for count in sorted(set(rows), reverse=True):
+        backend = dispatch.select_sm120_moe_backend(
+            num_tokens=count, activation_precision="fp4", **geometry)
+        if backend not in ("static", "dynamic"):
+            raise RuntimeError(f"unsupported compact warmup backend: {backend}")
+        workspace = dispatch._get_cached_workspace(
+            backend=backend, state_E=kernel_e, weight_E=kernel_e,
+            routed_rows=count, k=hidden, n=intermediate, num_topk=1,
+            device=device, activation_precision="fp4", quant_mode="nvfp4",
+            activation=activation, swiglu_limit=limit,
+        )
+        ladder = getattr(dispatch, f"_{backend.upper()}_MAC_LADDER")
+        override = getattr(dispatch, f"_GLM53_B12X_{backend.upper()}_MAC_LADDER")
+        if override is not None:
+            ladder = dispatch._effective_glm53_mac_ladder(ladder, override, **geometry)
+        mac = min(dispatch._lookup_mac_ladder(ladder, count) or base_mac, base_mac)
+        if backend == "dynamic":
+            key = dispatch._dynamic_kernel_cache_key(
+                E=kernel_e, mac=mac,
+                mma_tiler_mn=(workspace.tile_m, dispatch._level_tile_n("fp4")),
+                share_input_across_experts=bool(input_gs_shared), tiled=False,
+                **key_args,
+            )
+        else:
+            key = dispatch._static_kernel_cache_key(
+                state_E=kernel_e, weight_E=kernel_e, m=count,
+                max_rows=workspace.max_rows, mac=mac, mma_tiler_mn=(128, 128),
+                **key_args,
+            )
+        plan.setdefault((backend, key), (count, backend, key))
+    if len(plan) > 64:
+        raise RuntimeError("EP compact warmup exceeds the 64-specialization startup bound")
+    return tuple(plan.values())
+
+
+def _b12x_ep_compact_warmup_ready(dispatch, plan):
+    return all(key in getattr(dispatch, f"_{backend.upper()}_KERNEL_CACHE")
+               for _, backend, key in plan)
+
+
+def _b12x_ep_compact_warmup_execute(dispatch, plan, launch, synchronize):
+    """Completion requires every planned call, device sync, and exact keys."""
+    for rows, _, _ in plan:
+        launch(rows)
+    synchronize()
+    if not _b12x_ep_compact_warmup_ready(dispatch, plan):
+        raise RuntimeError("EP compact warmup completed calls but compiler keys are missing")
+
+
+def _b12x_ep_warm_tensor_signature(tensor):
+    # Values and addresses are runtime inputs; dtype/shape/strides may change
+    # preparation behavior. Keep no tensor/weight references in this registry.
+    return (str(tensor.device), str(tensor.dtype), tuple(tensor.shape), tuple(tensor.stride()))
 
 
 
@@ -2007,17 +2093,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         return output
 
     def _warm_compact_shapes(self, layer) -> None:
-        """Compile the compact prefill shapes now, not mid-request. Opt-in.
+        """Opt-in, required preparation of this rank's compact compiler keys.
 
-        b12x JITs per launch shape, so the first prefill at a new size stalls
-        the engine for seconds -- vLLM's own JIT monitor says "consider warmup
-        to cover this shape/config". #163 collapsed prefill to `align` buckets;
-        this pays for the ladder of them once, here.
-
-        Off by default: it costs load time, and the gain is only real if
-        compiles actually dominate a first prefill. Arm with
-        VLLM_B12X_EP_WARM_COMPACT=1 and read it off TTFT for a cold long
-        prompt, not off steady-state throughput.
+        One real-weight call per distinct key runs before model readiness.
+        Matching layers reuse the completed preparation; decode's explicitly
+        pinned workspace is untouched. Failure propagates when requested,
+        and the completion marker proves compact coverage, not model numerics
+        or absence of unrelated attention/sampler JITs.
         """
         if os.environ.get("VLLM_B12X_EP_WARM_COMPACT", "0").strip() != "1":
             return
@@ -2026,50 +2108,65 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             self.num_local_experts, self.global_num_experts,
         )
         if not buckets:
-            return
-        try:
-            from flashinfer.fused_moe import b12x_fused_moe
+            raise RuntimeError("EP compact warmup was required with invalid geometry")
+        from flashinfer.fused_moe import b12x_fused_moe
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as dispatch
 
-            w1 = layer.w13_weight
-            w2 = layer.w2_weight
-            device = w1.device
-            hidden = self.hidden_dim
-            dtype = self._warm_activation_dtype()
-            kernel_e = self._kernel_num_experts
-            done = []
-            for rows in buckets:
-                x = torch.zeros((rows, hidden), dtype=dtype, device=device)
-                ids = torch.zeros((rows, 1), dtype=torch.int32, device=device)
-                sc = torch.zeros((rows, 1), dtype=torch.float32, device=device)
-                out = torch.zeros((rows, hidden), dtype=dtype, device=device)
+        w1, w2 = layer.w13_weight, layer.w2_weight
+        device, hidden = w1.device, self.hidden_dim
+        dtype = self._warm_activation_dtype()
+        if dtype != torch.bfloat16:
+            raise RuntimeError("EP compact warmup requires the BF16 compact input contract")
+        kernel_e = self._kernel_num_experts
+        with _B12X_EP_COMPACT_WARM_LOCK:
+            plan = _b12x_ep_compact_warmup_plan(
+                dispatch, buckets, device=device, kernel_e=kernel_e,
+                hidden=hidden, intermediate=self.intermediate_size_per_partition,
+                activation=self._activation_str, alpha=self._swiglu_alpha,
+                beta=self._swiglu_beta, limit=self._swiglu_limit,
+                input_gs_shared=self.g1_alphas.numel() == 1,
+            )
+            identity = (
+                str(device), str(dtype), buckets, plan,
+                tuple(_b12x_ep_warm_tensor_signature(t) for t in (
+                    w1, w2, self.w1_sf_mma, self.w2_sf_mma,
+                    self.g1_alphas, self.g2_alphas, self._fc2_input_scale,
+                )),
+            )
+            if identity in _B12X_EP_COMPACT_WARMED and _b12x_ep_compact_warmup_ready(dispatch, plan):
+                return
+            # Reuse one bounded activation/output allocation across all calls;
+            # weights and their existing MMA scale views are never copied.
+            capacity = max(buckets)
+            x = torch.zeros((capacity, hidden), dtype=dtype, device=device)
+            ids = torch.zeros((capacity, 1), dtype=torch.int32, device=device)
+            sc = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
+            out = torch.zeros((capacity, hidden), dtype=dtype, device=device)
+
+            def launch(rows):
                 b12x_fused_moe(
-                    x=x, w1_weight=w1, w1_weight_sf=self.w1_sf_mma,
+                    x=x[:rows], w1_weight=w1, w1_weight_sf=self.w1_sf_mma,
                     w2_weight=w2, w2_weight_sf=self.w2_sf_mma,
-                    token_selected_experts=ids, token_final_scales=sc,
+                    token_selected_experts=ids[:rows], token_final_scales=sc[:rows],
                     num_experts=kernel_e, top_k=1, num_local_experts=kernel_e,
                     w1_alpha=self.g1_alphas, w2_alpha=self.g2_alphas,
-                    fc2_input_scale=self._fc2_input_scale, output=out,
+                    fc2_input_scale=self._fc2_input_scale, output=out[:rows],
                     activation=self._activation_str,
                     swiglu_alpha=self._swiglu_alpha,
                     swiglu_beta=self._swiglu_beta,
                     swiglu_limit=self._swiglu_limit,
                 )
-                done.append(rows)
-            # info_once hashes its args to dedupe, so every one must be
-            # hashable -- a list here raised TypeError and the whole warmup
-            # was skipped. It said so out loud, which is the only reason this
-            # was caught instead of read as "warmed but no effect".
-            logger.info_once(
-                "b12x EP: warmed %d compact prefill shapes at load (%s) -- "
-                "a first long prompt no longer compiles mid-request",
-                len(done), ",".join(str(r) for r in done),
-            )
-        except Exception as exc:
-            # A warmup that fails must cost nothing but a line in the log.
-            logger.warning_once(
-                "b12x EP compact warmup skipped (%s: %s); shapes will compile "
-                "on first use as before",
-                type(exc).__name__, exc,
+
+            _b12x_ep_compact_warmup_execute(
+                dispatch, plan, launch, lambda: torch.cuda.synchronize(device))
+            _B12X_EP_COMPACT_WARMED.add(identity)
+            static = sum(backend == "static" for _, backend, _ in plan)
+            logger.info(
+                "[b12x EP compact warmup] COMPLETE device=%s launch_rows=%d "
+                "specializations=%d static=%d dynamic=%d required=%d ready=%d "
+                "representatives=%s",
+                device, len(buckets), len(plan), static, len(plan) - static,
+                len(plan), len(plan), ",".join(str(row) for row, _, _ in plan),
             )
 
     def _warm_activation_dtype(self):
@@ -2135,9 +2232,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             .reshape(-1)
             .index_select(0, sel)
         )
-        # Pad the pair list up to a launch-shape bucket. Without this the row
-        # count is the local-pair count -- data dependent -- and every value
-        # mints a fresh JIT kernel mid-inference.
+        # Bound exact-row static keys and sliced tails. Dynamic kernels reuse
+        # a key within each selected tile/cluster-count band.
         n_pad = b12x_ep_compact_pair_count(n)
         if n_pad > n:
             fill = torch.arange(n_pad, device=sel.device) % n

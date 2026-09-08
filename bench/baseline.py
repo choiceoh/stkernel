@@ -21,8 +21,10 @@ fields fall back to the git sha and a name heuristic, and say so.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
 import os
+import re
 
 JSONL = os.environ.get("ONEPASS_JSONL",
                        "/home/choiceoh/glm53-logs/bracket-onepass.jsonl")
@@ -98,6 +100,75 @@ def is_baseline(rec: dict) -> tuple[bool, str]:
     return (name.startswith(LEGACY_BASE_PREFIXES), "name")
 
 
+def comparison_scope(environ=None):
+    """An explicit invocation scope, never a rewrite of production defaults."""
+    env = os.environ if environ is None else environ
+    raw = env.get("ONEPASS_BASELINE_KNOBS")
+    if raw is None:
+        return None
+    def unique(pairs):
+        out = {}
+        for key, value in pairs:
+            if key in out:
+                raise ValueError("duplicate ONEPASS_BASELINE_KNOBS key")
+            out[key] = value
+        return out
+    try:
+        knobs = json.loads(raw, object_pairs_hook=unique)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("ONEPASS_BASELINE_KNOBS must be a JSON object") from exc
+    if (not isinstance(knobs, dict) or not knobs or len(knobs) > 32
+            or any(not re.fullmatch(r"VLLM_[A-Z0-9_]+", key)
+                   or type(value) is not str or not value or len(value) > 1024
+                   or any(ord(char) < 32 for char in value)
+                   for key, value in knobs.items())):
+        raise ValueError("ONEPASS_BASELINE_KNOBS requires exact nondefault knob strings")
+    session = env.get("FLEET_SESSION")
+    if not isinstance(session, str) or not session.strip():
+        raise ValueError("scoped baselines require FLEET_SESSION")
+    return {"knobs": knobs, "session": session}
+
+
+def comparison_baseline(rec, reference=None, *, scope=None, require_proof=True):
+    """Exact same-session configuration; normal defaults keep is_baseline().
+
+    Canonical non-experiment rows may omit runtime on both sides. Preserve
+    that limitation; one-sided or differing runtime metadata never matches.
+    Image/capacity/source launch attestation remains external to these rows.
+    """
+    if scope is None:
+        return is_baseline(rec)[0]
+    def identified(row):
+        boot = row.get("boot_id")
+        if (not isinstance(boot, str) or re.fullmatch(r"[a-f0-9]{64}\|[^|]+", boot) is None
+                or type(row.get("harness")) is not int or row["harness"] <= 0
+                or any(not isinstance(row.get(key), dict) or not row[key]
+                       for key in ("workload", "endpoint"))
+                or any(not isinstance(row.get(key), str) or not row[key]
+                       for key in ("overlay", "git", "doc_lang"))
+                or type(row.get("thinking")) is not bool):
+            return False
+        try:
+            return datetime.fromisoformat(boot.split("|", 1)[1].replace("Z", "+00:00")).tzinfo is not None
+        except ValueError:
+            return False
+    if (rec.get("rehearsal") or rec.get("knobs") != scope["knobs"]
+            or rec.get("session") != scope["session"]
+            or not identified(rec)):
+        return False
+    if require_proof and any((rec.get("proof") or {}).get(key) is not True
+                             for key, value in scope["knobs"].items()
+                             if value not in ("0", "", "off")):
+        return False
+    if reference is not None:
+        if (not identified(reference) or reference.get("session") != scope["session"]
+                or any(rec.get(key) != reference.get(key) for key in
+                       ("session", "overlay", "git", "harness", "workload", "endpoint",
+                        "doc_lang", "thinking", "runtime"))):
+            return False
+    return True
+
+
 def for_build(rows: list[dict], build: str | None, git: str | None = None) -> list[dict]:
     """Records of that build: by overlay stamp when they carry one, else by the
     checkout's git sha (rows written before the stamp field existed)."""
@@ -131,14 +202,18 @@ def main() -> int:
     ap.add_argument("--knobs", default=None,
                     help="K=V,K=V of the arm you are about to boot: report a record with the SAME set on this build")
     args = ap.parse_args()
+    try:
+        scope = comparison_scope()
+    except ValueError as exc:
+        ap.error(str(exc))
 
     if args.count_for:
-        from judge import baselines_on, record_errors
+        from judge import baselines_on, record_errors, unproved
         rows = load(args.jsonl)
         cand = next((r for r in reversed(rows) if r.get("name") == args.count_for and not r.get("rehearsal")), None)
         bases = baselines_on(rows, cand)[0] if cand else []
         # Repeated measurements of one boot cannot pad confirmation samples.
-        print(len({r['boot_id'] for r in bases if r.get('boot_id') and not record_errors(r)}))
+        print(len({r['boot_id'] for r in bases if r.get('boot_id') and not record_errors(r) and not unproved(r)}))
         return 0
 
     build = args.build or deployed_build()
@@ -146,7 +221,7 @@ def main() -> int:
     rows = load(args.jsonl)
     mine = for_build(rows, build, git)
     label = build if any(r.get("overlay") for r in mine) else (git or build)
-    bases = [r for r in mine if is_baseline(r)[0]]
+    bases = [r for r in mine if comparison_baseline(r, scope=scope)]
     guessed = bases and all(is_baseline(r)[1] == "name" for r in bases)
 
     if args.knobs:
@@ -165,7 +240,7 @@ def main() -> int:
         if not build and not git:
             print("baseline: unknown build (no overlay stamp and no checkout here)")
         elif not mine:
-            print(f"baseline: NONE for build {label} -- a defaults arm is worth its boot")
+            print(f"baseline: NONE for build {label} -- a {'scoped' if scope else 'defaults'} arm is worth its boot")
         elif not bases:
             print(f"baseline: none for build {label}; {len(mine)} candidate run(s) on it")
         else:
@@ -176,7 +251,7 @@ def main() -> int:
                   f"{d.get('windows_med') or 0:.2f} step/s, "
                   f"{d.get('tokens_per_step') or 0:.2f} tok/step, "
                   f"{100 * (d.get('acc_raw') or 0):.1f}% acc, {b.get('t','')}{how}"
-                  f" -- skip a defaults arm and compare against it")
+                  f" -- {'scoped comparison only' if scope else 'skip a defaults arm and compare against it'}")
         return 0
 
     sha = sha_of_stamp(build)
@@ -184,7 +259,7 @@ def main() -> int:
     if not mine:
         print("no measurement of this build yet: the first arm pays for its own baseline")
         return 0
-    print("\nbaselines (profile defaults):")
+    print("\nbaselines (explicit session scope):" if scope else "\nbaselines (profile defaults):")
     for r in bases or []:
         print("  " + line(r))
     if not bases:
