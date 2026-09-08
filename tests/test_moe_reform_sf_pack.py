@@ -61,8 +61,10 @@ class ByteContract(unittest.TestCase):
     def test_byte_map_matches_nvfp4_row_and_k_coordinates(self):
         # Derive the original and shared offsets from NVFP4's independent
         # ((32,4), row_blocks), ((16,4), k_blocks) scale layout.
-        def offset(row, col, rows, k):
-            return ((row // 128) * (128 * k // 16) + (col // 4) * 512
+        def offset(row, col, rows, k, *, shared=False):
+            row_stride = 512 if shared else 128 * k // 16
+            k_stride = (rows // 128) * 512 if shared else 512
+            return ((row // 128) * row_stride + (col // 4) * k_stride
                     + (row % 32) * 16 + ((row // 32) % 4) * 4 + col % 4)
         for kind, rows, k, rn, kn in [("fc1", 1024, 4096, 128, 256),
                                      ("fc2", 4096, 512, 256, 128)]:
@@ -73,13 +75,20 @@ class ByteContract(unittest.TestCase):
                         seen = set()
                         for row in range(rn):
                             for col in range(kn // 16):
-                                stage = offset(row, col, rn, kn)
+                                stage = offset(row, col, rn, kn, shared=True)
                                 seen.add(stage)
                                 source = expert*rows*k//16 + offset(
                                     rt*rn+row, kt*(kn//16)+col, rows, k)
                                 self.assertEqual(sf6.stage_source_offset(
                                     rows, k, kind, expert, rt, kt, stage), source)
                         self.assertEqual(seen, set(range(2048)))
+
+    def test_fc2_real_cute_layout_anchor(self):
+        # Production image CPU tracing caught this pair: scale(row=0,K=64)
+        # lives at shared byte 1024 but source byte 512. The row=128,K=0
+        # block sits between its two K64 groups, at shared byte 512.
+        self.assertEqual(sf6.stage_source_offset(4096, 512, "fc2", 0, 0, 0, 1024), 512)
+        self.assertEqual(sf6.stage_source_offset(4096, 512, "fc2", 0, 0, 0, 512), 4096)
 
 
 class TensorContract(unittest.TestCase):

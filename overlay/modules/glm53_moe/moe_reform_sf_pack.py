@@ -1,8 +1,9 @@
 """Lossless scale storage for the optional ``t,r,sf6`` decode lane.
 
 FC1 consumes 128 rows x K256, FC2 consumes 256 rows x K128: both scale
-stages contain 2048 bytes. FC2 joins two separated 128-row storage blocks;
-flattening its original tensor into 2048-byte rows is NOT the stage order.
+stages contain 2048 bytes. FC2 joins two separated 128-row storage blocks
+and interleaves their 512-byte K64 groups: [K64][row128][512 bytes].
+Flattening its original tensor into 2048-byte rows is NOT the stage order.
 Original scale storage is never modified and continues to serve prefill.
 
 A plane whose stage contains a byte span above 64 is returned as unsupported.
@@ -39,8 +40,10 @@ def stage_source_offset(rows: int, k: int, kind: str,
     base = expert * rows * (k // 16)
     if kind == "fc1":
         return base + (row_tile * nk + k_tile) * REFORM_SF_BLOCK + stage_byte
-    row_block, byte = divmod(stage_byte, 1024)
-    return base + ((row_tile * 2 + row_block) * nk + k_tile) * 1024 + byte
+    k64, rest = divmod(stage_byte, 1024)
+    row_block, byte = divmod(rest, 512)
+    return (base + ((row_tile * 2 + row_block) * nk + k_tile) * 1024
+            + k64 * 512 + byte)
 
 
 def pack_stage_bytes(raw: bytes) -> bytes | None:
@@ -91,9 +94,11 @@ def _stage_rows(sf, *, experts: int, rows: int, k: int, kind: str,
     idx = torch.arange(first, last, device=sf.device, dtype=torch.int64)
     expert = idx // (nr * nk)
     rt, kt = (idx // nk) % nr, idx % nk
-    src = sf.reshape(experts, nr * 2, nk, 1024)
+    src = sf.reshape(experts, nr * 2, nk, 2, 512)
+    # CuTe's FC2 shared scale layout interleaves the row blocks within
+    # each K64 group; global storage keeps the two row blocks separated.
     return torch.stack((src[expert, rt * 2, kt],
-                        src[expert, rt * 2 + 1, kt]), dim=1).reshape(-1, 2048)
+                        src[expert, rt * 2 + 1, kt]), dim=2).reshape(-1, 2048)
 
 
 def pack_plane(sf, *, experts: int, rows: int, k: int, kind: str):
