@@ -11,7 +11,11 @@ The new M128 producer consumes original [T,4096] activations and remapped
 expert-indexed address. Each warp compacts at most eight local routes into
 its existing shared cache. It reads/quantizes original token blocks and
 scatters to the original output rows. The inherited FC1/Q1/FC2 code and task
-publication protocol are pinned to the image's gated-source SHA-256.
+descriptor protocol are pinned to the image's gated-source SHA-256. A narrow
+entry-point override admits I2048 as sixteen N128 slices. The producer always
+publishes four tasks retaining four slices each; it never enlarges inherited
+Q1 storage or uses the stock variable-task policy at T4096. Workspace capacity
+already includes the four slice groups.
 
 This removes the existing EP prefill path's GPU nonzero/host count boundary,
 expanded pair_x/pair_out, pair-list chunking and external index_add. It does

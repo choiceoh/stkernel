@@ -1,7 +1,8 @@
 """Full-token E72 expert-local prefill: skip remote routes before row allocation.
 
-Pinned stock M128 FC1/Q1/FC2/scatter math and task protocol are inherited.
-Only route/Q0 preparation changes: histogram valid local pairs, compact a
+Pinned stock M128 FC1/Q1/FC2/scatter math and task descriptors are inherited.
+The entry point admits I2048 with uniformly bounded four-slice tasks.
+Route/Q0 preparation changes: histogram valid local pairs, compact a
 warp's <=8 local routes into its existing shared cache, and quantize the
 original token once per block/scale. No expanded pair_x/pair_out, nonzero,
 CPU route-count synchronization or external index_add is needed.
@@ -27,6 +28,7 @@ from flashinfer.cute_dsl.fp4_common import (
 from ._moe_dynamic import gated as _stock
 from ._moe_dynamic.gated import (
     DynamicLaunchParams, MoEGatedDynamicKernel, _TASK_SLICE_CHUNK,
+    blockscaled_utils, utils, cuda,
     _ld_shared_i32, _st_shared_i32, _threadfence, atomic_add_shared_i32,
     q0_bulk_barrier_init, q0_cp_async_bulk, q0_bulk_arrive_expect_tx, q0_bulk_try_wait,
     load_shared_bf16x16_to_f32x16, st_global_u64_adaptive_l2,
@@ -101,8 +103,6 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         num_k_tiles = (cols + Int32(63)) // Int32(64)
         route_gate_tile_cnt = launch_params.gate_tile_cnt
         task_slice_chunk = Int32(_TASK_SLICE_CHUNK)
-        if num_tokens <= Int32(2048):
-            task_slice_chunk = Int32(2)
 
         # Phase 0: cooperative init — zero routing state, queue state, and output.
         i = flat_tid
@@ -146,7 +146,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         )
 
         # Phase 1: aggregate routed rows per CTA before publishing the
-        # 256 expert subtotals globally.  The first 2304 bytes of sC
+        # local expert subtotals globally.  The first 2304 bytes of sC
         # hold route caches; the following aligned 1 KiB is idle here.
         route_hist_addr = route_expert_ids_addr + Int32(
             (self.num_mma_warps + 1) * 32 * 4
@@ -494,26 +494,9 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
             is_cta_leader,
         )
 
-        total_m_tiles = expert_tile_base[num_experts]
-        split_groups = (route_gate_tile_cnt + Int32(1)) // Int32(2)
-        extra_per_split = split_groups - Int32(1)
-        split_tile_count = Int32(0)
-        if extra_per_split > Int32(0):
-            if num_tokens > Int32(256):
-                if num_tokens <= Int32(4096):
-                    target_task_count = Int32(4) * Int32(gdim_z)
-                    if num_tokens > Int32(2048):
-                        target_task_count = (
-                            Int32(125) * Int32(gdim_z) + Int32(31)
-                        ) // Int32(32)
-                    missing_tasks = target_task_count - total_m_tiles
-                    if missing_tasks > Int32(0):
-                        split_tile_count = (
-                            missing_tasks + extra_per_split - Int32(1)
-                        ) // extra_per_split
-                        if split_tile_count > total_m_tiles:
-                            split_tile_count = total_m_tiles
-
+        # Every I2048 task retains at most four N128 slices. The stock
+        # variable-task policy can retain the whole intermediate at T4096,
+        # so this wide producer always uses the uniform four-slice policy.
         if is_cta_leader > Int32(0):
             expert_flush = Int32(bidz)
             while expert_flush < num_experts:
@@ -523,36 +506,10 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                     valid_rows = rows_remaining
                     if valid_rows > Int32(self.tile_shape_mnk[0]):
                         valid_rows = Int32(self.tile_shape_mnk[0])
-                    if num_tokens <= Int32(256):
-                        self.publish_uniform_deferred_tasks(
-                            task_expert,
-                            task_valid_rows,
-                            route_gate_tile_cnt,
-                            task_slice_chunk,
-                            expert_flush,
-                            expert_tile_base[expert_flush] + m_tile_offset,
-                            valid_rows,
-                        )
-                    elif num_tokens <= Int32(4096):
-                        self.publish_variable_deferred_tasks(
-                            task_expert,
-                            task_valid_rows,
-                            route_gate_tile_cnt,
-                            split_tile_count,
-                            expert_flush,
-                            expert_tile_base[expert_flush] + m_tile_offset,
-                            valid_rows,
-                        )
-                    else:
-                        self.publish_uniform_deferred_tasks(
-                            task_expert,
-                            task_valid_rows,
-                            route_gate_tile_cnt,
-                            task_slice_chunk,
-                            expert_flush,
-                            expert_tile_base[expert_flush] + m_tile_offset,
-                            valid_rows,
-                        )
+                    self.publish_uniform_deferred_tasks(
+                        task_expert, task_valid_rows, route_gate_tile_cnt,
+                        task_slice_chunk, expert_flush,
+                        expert_tile_base[expert_flush] + m_tile_offset, valid_rows)
                     rows_remaining -= Int32(self.tile_shape_mnk[0])
                     m_tile_offset += Int32(1)
                 expert_flush += Int32(gdim_z)
@@ -562,12 +519,6 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                 route_gate_tile_cnt + task_slice_chunk - Int32(1)
             ) // task_slice_chunk
             published_task_count = expert_tile_base[num_experts] * uniform_groups
-            if num_tokens > Int32(256):
-                if num_tokens <= Int32(4096):
-                    published_task_count = (
-                        expert_tile_base[num_experts]
-                        + split_tile_count * extra_per_split
-                    )
             st_global_i32(
                 get_ptr_as_int64(task_tail, Int32(0)),
                 published_task_count,
@@ -580,3 +531,188 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
             is_cta_leader,
         )
 
+
+    @cute.jit
+    def __call__(
+        self,
+        a_input: cute.Tensor,  # [num_tokens, K] bf16
+        topk_ids: cute.Tensor,  # [num_tokens * topk] int32
+        topk_weights: cute.Tensor,  # [num_tokens * topk] float32
+        packed_a: cute.Tensor,  # [rows_padded, K, 1] fp4x2 view for compute
+        sfa_ptr: cute.Pointer,
+        packed_a_storage: cute.Tensor,  # flat uint8 backing packed_a
+        scale_storage: cute.Tensor,  # flat uint8 backing sfa_ptr
+        barrier_count: cute.Tensor,  # [1] int32 (host-zeroed)
+        barrier_epoch: cute.Tensor,  # [1] int32 (host-zeroed)
+        pair_head: cute.Tensor,  # [1] int32
+        task_head: cute.Tensor,  # [1] int32
+        task_tail: cute.Tensor,  # [1] int32
+        task_expert: cute.Tensor,  # [max_tasks] int32
+        task_valid_rows: cute.Tensor,  # [max_tasks] int32
+        b_w13: cute.Tensor,  # [2*I_tp, K, E] (gated) or [I_tp, K, E] (relu2)
+        sfb_w13_ptr: cute.Pointer,  # scale factors for w13
+        b_down: cute.Tensor,  # [K, I_tp, E]
+        sfb_down_ptr: cute.Pointer,
+        row_counts: cute.Tensor,  # expert row histogram [E]
+        expert_write_rows: cute.Tensor,  # route/pack write cursors [E]
+        expert_tile_base: cute.Tensor,  # compact physical-tile prefix [E + 1]
+        input_global_scale: cute.Tensor,  # [E] per-expert FC1 input scale
+        alpha: cute.Tensor,
+        down_alpha: cute.Tensor,
+        global_scale: cute.Tensor,
+        scatter_output: cute.Tensor,  # [num_tokens, K]
+        token_map: cute.Tensor,
+        token_weights: cute.Tensor,
+        max_active_clusters: cutlass.Constexpr,
+        stream: cuda.CUstream,
+    ):
+        self.a_dtype = packed_a.element_type
+        self.b_dtype = b_w13.element_type
+        self.sf_dtype = sfa_ptr.dtype
+        self.a_layout = utils.LayoutEnum.from_tensor(packed_a)
+        self.b_layout = utils.LayoutEnum.from_tensor(b_w13)
+        # Dynamic never materializes the intermediate C tensor. Preserve the
+        # original row-major epilogue layout without carrying a dead memref.
+        self.c_layout = utils.LayoutEnum.ROW_MAJOR
+
+        hidden_size = a_input.shape[1]
+        if cutlass.const_expr(
+            hidden_size > self.tile_shape_mnk[0] * self.tile_shape_mnk[1]
+        ):
+            raise ValueError(
+                "the gated dynamic kernel requires one BF16 input row to fit "
+                "in its 16384-element Q0 staging buffer"
+            )
+        self._setup_attributes(hidden_size=hidden_size)
+
+        sfa_layout = blockscaled_utils.tile_atom_to_shape_SF(
+            packed_a.shape, self.sf_vec_size
+        )
+        sfa_tensor = cute.make_tensor(sfa_ptr, sfa_layout)
+
+        # SF tensor for w13 (gated: gate+up concatenated; relu2: single W1)
+        sfb_w13_layout = blockscaled_utils.tile_atom_to_shape_SF(
+            b_w13.shape, self.sf_vec_size
+        )
+        sfb_w13_tensor = cute.make_tensor(sfb_w13_ptr, sfb_w13_layout)
+
+        # TMA descriptors
+        tma_a, gA = self._dense_cls._make_tma_atoms_and_tensors(
+            packed_a,
+            self.a_smem_layout_staged,
+            (self.tile_shape_mnk[0], self.tile_shape_mnk[2]),
+            1,
+        )
+        tma_sfa, gSFA = self._dense_cls._make_tma_atoms_and_tensors(
+            sfa_tensor,
+            self.sfa_smem_layout_staged,
+            (self.tile_shape_mnk[0], self.tile_shape_mnk[2]),
+            1,
+            internal_type=cutlass.Int16,
+        )
+        # FC1 B uses a true N64 descriptor.  Each logical N128 slice is two
+        # consecutive native B tiles; Up precedes Gate in global w13 storage.
+        tma_b_w13, gB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
+            b_w13,
+            self.fc1_b_smem_layout_staged,
+            (self.fc1_tile_shape_mnk[1], self.fc1_tile_shape_mnk[2]),
+            1,
+        )
+        # SFB is different from B: the SM120 helper physically packs scale
+        # factors in N128 blocks.  Both N64 halves replay the same physical
+        # block and select half 0/1 from its shared-memory view.
+        tma_sfb_w13, gSFB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
+            sfb_w13_tensor,
+            self.fc1_sfb_smem_layout_staged,
+            self.fc1_sfb_tile_shape_nk,
+            1,
+            internal_type=cutlass.Int16,
+        )
+        # B_down TMA
+        sfb_down_layout = blockscaled_utils.tile_atom_to_shape_SF(
+            b_down.shape, self.sf_vec_size
+        )
+        sfb_down_tensor = cute.make_tensor(sfb_down_ptr, sfb_down_layout)
+        tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
+            b_down,
+            self.b_smem_layout_staged,
+            (self.tile_shape_mnk[1], self.tile_shape_mnk[2]),
+            1,
+        )
+        tma_sfb_down, gSFB_down = self._dense_cls._make_tma_atoms_and_tensors(
+            sfb_down_tensor,
+            self.sfb_smem_layout_staged,
+            (self.tile_shape_mnk[1], self.tile_shape_mnk[2]),
+            1,
+            internal_type=cutlass.Int16,
+        )
+
+        # W13 concatenates equally-sized Gate and Up branches along N.
+        gate_tile_cnt_static = b_w13.shape[0] // self.tile_shape_mnk[1] // 2
+        # I2048 is sixteen logical N128 slices, published as four tasks
+        # retaining four slices each. Never expand the inherited Q1 storage.
+        if cutlass.const_expr(
+            gate_tile_cnt_static != 16 or b_w13.shape[2] != 72
+            or b_down.shape[1] != 2048 or row_counts.shape[0] != 72
+        ):
+            raise ValueError("expert-local wide entry point requires E72/I2048")
+        gate_tile_cnt = Int32(gate_tile_cnt_static)
+        launch_params = DynamicLaunchParams(row_counts, gate_tile_cnt)
+        grid = (*self.cluster_shape_mn, max_active_clusters)
+        self.kernel(
+            a_input,
+            topk_ids,
+            topk_weights,
+            packed_a_storage,
+            scale_storage,
+            barrier_count,
+            barrier_epoch,
+            pair_head,
+            task_head,
+            task_tail,
+            task_expert,
+            task_valid_rows,
+            tma_a,
+            gA,
+            tma_sfa,
+            gSFA,
+            tma_b_w13,
+            gB_w13,
+            tma_sfb_w13,
+            gSFB_w13,
+            tma_b_down,
+            gB_down,
+            tma_sfb_down,
+            gSFB_down,
+            self.tiled_mma,
+            self.fc1_tiled_mma,
+            self.mma_atom,
+            self.mma_atom,
+            self.cta_layout_mnk,
+            self.a_smem_layout_staged,
+            self.b_smem_layout_staged,
+            self.phase2_b_smem_layout_staged,
+            self.fc1_b_smem_layout_staged,
+            self.sfa_smem_layout_staged,
+            self.sfb_smem_layout_staged,
+            self.phase2_sfb_smem_layout_staged,
+            self.fc1_sfb_smem_layout_staged,
+            self.fc1_sfb_smem_layout_storage,
+            self.epi_smem_layout_staged,
+            launch_params,
+            expert_write_rows,
+            expert_tile_base,
+            input_global_scale,
+            alpha,
+            down_alpha,
+            global_scale,
+            scatter_output,
+            token_map,
+            token_weights,
+        ).launch(
+            grid=grid,
+            block=[self.threads_per_cta, 1, 1],
+            cluster=[1, 1, 1],
+            cooperative=True,
+            stream=stream,
+        )
