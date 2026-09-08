@@ -335,15 +335,31 @@ production TP4/TTFT improvement. See `docs/GLM53_EP_PREFILL_LOCAL.md` and
 
 The admitted candidate uses a single Triton remap into existing scratch and
 prepares expert scales once per CTA in dead histogram storage. Its fallback
-retains the original Torch remap. The new source passed no-device CuTe and
-24-specialization Triton compilation plus 37 pinned CPU tests in cpu7; the
-earlier cpu6 receipt retains its 29-test result. CuTe resources remain
-REG168 STACK1040 SHARED1024. The head's pinned Compute Sanitizer 2025.3.1.0
-version check also passed without CUDA devices. This is a preflight, not a
-memcheck/racecheck result. The new source passed the 24-variant GPU remap oracle, eight MoE numerical
+retains the original Torch remap. Latest source `7254422f` also masks remote
+weight loads, removes input loads from empty-map variants and avoids two
+slice views when prefill exactly fills both output scratch buffers. Aligned
+four-task publication uses two vector stores instead of eight scalar stores;
+other alignments/contracts retain scalar publication. No map or view contents
+are assumed immutable.
+
+[CPU8 evidence](../../../measurements/glm53_ep_local_20260908/cpu8/README.md)
+records actual E72/I2048 CuTe and 24-specialization Triton compilation plus
+48 pinned CPU tests without skips. All six empty-map PTX variants have zero
+global loads; the other 18 mask weight loads with the route-keep predicate.
+CuTe resources remain REG168 STACK1040 SHARED1024. The static vector-store
+count changed from 1 to 33, which is not an executed count or speed claim.
+These latest optimizations have no GPU numerical or performance result yet.
+The historical CPU7/37-test and CPU6/29-test receipts remain unchanged.
+
+The earlier attempt4 source passed the 24-variant GPU remap oracle, eight MoE numerical
 fixtures and remap memcheck. Remap-inclusive MoE timing was 2.053x–3.495x
 versus existing EP compact. MoE memcheck failed on 34 CUDA API lookup errors
 in the initial compact hardware-info path; remaining sanitizers did not run.
 The instrumented numerical PASS does not override that failure. Attempt4
-retains the raw results and exact original recovery/release evidence. Full
-serving and direct TTFT remain unverified.
+retains the raw results and exact original recovery/release evidence, and
+cannot validate the later CPU8 changes. The reserved binding-reproducer v2
+was refused before its GPU payload because all four incoming containers were
+stopped. The normal supervisor restored all four public containers and
+health 200, then released at 16:49:14 KST. The CPU8-pinned v3 retry is waiting
+normally behind `attr0908`, with no diagnostic result yet. Full serving and
+direct TTFT remain unverified.

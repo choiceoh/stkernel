@@ -17,6 +17,12 @@ publishes four tasks retaining four slices each; it never enlarges inherited
 Q1 storage or uses the stock variable-task policy at T4096. Workspace capacity
 already includes the four slice groups.
 
+For this exact four-task contract, aligned task publication writes the two
+four-word descriptor arrays with two `st.global.v4.u32` stores instead of
+eight scalar stores. The publisher, slot order and synchronization are
+unchanged. Pointers without 16-byte alignment and other slice contracts
+retain the inherited scalar publication path.
+
 The register-memory scale cache has eight slots for the exact top8 contract.
 Scale equality is folded into the existing scale-load loop, avoiding repeated
 checks for each quantization block. After histogram publication, each CTA
@@ -34,6 +40,13 @@ Unsupported dtypes/layouts/devices retain the existing Torch remap. The
 integer map/offset conversion order is preserved, and weights are copied as
 bits so local NaN payloads and signed zero survive while remote weights
 become exact positive zero. Other EP, decode and TP paths keep their remap.
+The latest remap masks weight loads after determining which routes the
+legacy mapping keeps; remote weights need not be read. Empty-map
+specializations write only sentinel IDs and zero weights without input loads.
+When an admitted prefill exactly fills both output scratch buffers, the
+wrapper reuses the Tensor objects and avoids two redundant slice views.
+Smaller calls still take exact row views, with no cached view or map-content
+assumption.
 
 This removes the existing EP prefill path's GPU nonzero/host count boundary,
 expanded pair_x/pair_out, pair-list chunking and external index_add. It does
@@ -56,17 +69,26 @@ forecast. Global useful FLOPs remain unchanged by TP-to-EP repartitioning;
 75% fewer experts per rank is not a 75% speedup. The 1.40x direct prefill
 throughput objective remains open.
 
-The final candidate passed actual E72/I2048 CuTe compilation and 37 focused
+The latest source `7254422f044ab3c5d042f32ee7f33add7baf5e00` passed actual
+E72/I2048 CuTe compilation and 48 focused
 CPU tests without skips in the immutable-image no-device runner. CUDA remained
 uninitialized. All 24 admitted Triton dtype/branch specializations also
-compiled for explicit SM121 without a device. [Final compilation evidence](../measurements/glm53_ep_local_20260908/cpu7/README.md)
-for source `38aa70f239e1e5a5b9052ae7839438eccadf66dc` records 168 registers,
-1040 stack bytes and 1024 shared bytes, compared with 168/1520 registers/stack for the
-original candidate. This 480-byte (31.6%) stack reduction is a compiler
-resource result, not a GPU latency result. Its CuTe PTX and cubin hashes are
-unchanged from the historical [cpu6 compilation](../measurements/glm53_ep_local_20260908/cpu6/README.md),
-which passed 29 tests before the sanitizer preflight contracts were added.
-The unchanged stock generic
+compiled for explicit SM121 without a device. [CPU8 evidence](../measurements/glm53_ep_local_20260908/cpu8/README.md)
+confirms zero `ld.global` instructions in all six empty-map variants and
+route-predicated weight loads in the other 18 variants. CuTe resources remain
+168 registers, 1040 stack bytes and 1024 shared bytes. Its static PTX
+`st.global.v4.u32` count changed from 1 to 33 while scalar fallback code
+remains; this is not an executed-store count or a latency measurement.
+The latest load masking, Tensor reuse and vector publication have no GPU
+numerical or performance result yet.
+
+The historical [CPU7 evidence](../measurements/glm53_ep_local_20260908/cpu7/README.md)
+for source `38aa70f239e1e5a5b9052ae7839438eccadf66dc` passed 37 tests and
+had the same resource counts. Its CuTe PTX/cubin matched
+[CPU6](../measurements/glm53_ep_local_20260908/cpu6/README.md), which passed
+29 tests. The original candidate used 168 registers and 1520 stack bytes;
+the 480-byte (31.6%) stack reduction remains a compiler resource result,
+not a GPU latency result. The unchanged stock generic
 E72/I2048 arm last compiled at 255 registers and 432 stack bytes in
 [cpu4](../measurements/glm53_ep_local_20260908/cpu4/README.md).
 
@@ -91,6 +113,8 @@ fixtures, including changed scales at fixed addresses. The five timed fixtures
 showed 2.053x–3.495x versus the existing EP compact wrapper with each arm's
 remap included. These are single-GB10 component results and do not measure
 incremental improvement against v2, which used a different timing scope.
+Attempt4 predates the CPU8 load masking, full-scratch Tensor reuse and vector
+task publication, so it does not validate their incremental benefit.
 
 The mounted sanitizer preflight and remap memcheck passed; the latter reported
 zero errors. MoE memcheck then exited 86 with 34 CUDA_ERROR_INVALID_VALUE
@@ -108,6 +132,14 @@ API instrumentation in those no-device processes, so they neither reproduced
 nor cleared the 34 errors. A minimal reserved-GPU reproduction must open a
 Torch context before the first binding device-count call, matching the original
 ordering without importing or running MoE.
+The reserved binding-reproducer v2 attempt was refused before its GPU
+payload because all four incoming service containers were already stopped.
+The normal supervisor restored the four public containers and health 200,
+then released the reservation at 16:49:14 KST. No binding diagnosis follows
+from that refused attempt. The CPU8-pinned retry `epbindinggpu0908v3` is
+waiting normally behind `attr0908`; it has no diagnostic result yet.
+[Submission evidence](../measurements/glm53_ep_local_20260908/binding_gpu_submission/README.md)
+keeps the pre-GPU failures and retry separate.
 
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).

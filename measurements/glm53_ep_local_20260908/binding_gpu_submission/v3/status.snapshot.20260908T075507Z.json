@@ -1,0 +1,12 @@
+{
+  "captured_at_utc": "2026-09-08T07:55:07.920262+00:00",
+  "captured_at_kst": "2026-09-08T16:55:07.920262+09:00",
+  "job": "/tmp/glm53-ep-binding-gpu0908-3",
+  "driver_pid": 1808590,
+  "driver_proc_exists": true,
+  "exit_json_exists": false,
+  "capture_directory_exists": false,
+  "holder": "attr0908|1789800|srv2|1788853755|60|40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해|boot\n",
+  "queue": "17888538141808591|epbindinggpu0908v3|1788853814|6|Post-context CUDA binding only: CPU48 gates, same image and sanitizer, exact original restore|boot|1808591\n17888540361837187|vllmprs0908b|1788854036|45|40차 PR #477 2차: block 검증 승격 + gumbel salt + spec-state 커널 가드, prep-fused 무장 유지 확인, KDA strided 관문 재시도|boot|1840239\n",
+  "source_read_only": true
+}
