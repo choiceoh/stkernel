@@ -66,6 +66,7 @@ from .moe_static_common import (
     _ld_shared_f32,
     _ld_shared_i32,
     _ld_shared_i32_volatile,
+    _SF6_UNPACK_U8X4,
     _sf6_unpack_u8x4,
     _spin_wait_global_eq_i32,
     _st_global_i64,
@@ -114,6 +115,7 @@ class MoEStaticKernelV4:
         a_ring: bool = False,
         sf_pack: bool = False,
         reform_sf_pack: bool = False,
+        sf6_unpack_u8x4: bool | None = None,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -188,6 +190,8 @@ class MoEStaticKernelV4:
         # shadow, where the MMA warps are already waiting.
         self.sf_pack = bool(sf_pack)
         self.reform_sf_pack = bool(reform_sf_pack)
+        self.sf6_unpack_u8x4 = (_SF6_UNPACK_U8X4 if sf6_unpack_u8x4 is None
+                               else bool(sf6_unpack_u8x4))
         if self.reform_sf_pack and any(
             (self.sf_pack, self.skip_sf, self.skip_a, self.split, self.a_ring)
         ):
@@ -351,12 +355,23 @@ class MoEStaticKernelV4:
                     stage_addr + Int32(plane_a) + Int32(per_thread // 4) * tidx
                     + Int32(4 * w)))
         base = _ld_shared_i32_volatile(stage_addr + Int32(base_offset)) & Int32(0xFF)
-        base_word = base * Int32(0x01010101)
+        if self.sf6_unpack_u8x4:
+            base_word = base * Int32(0x01010101)
         self.sf_expand_barrier.arrive_and_wait()
         for j in range(per_thread // 4):
-            low4 = a[j >> 1] >> Int32(16 * (j & 1))
-            high4 = b[j >> 2] >> Int32(8 * (j & 3))
-            word = _sf6_unpack_u8x4(low4, high4, base_word)
+            if self.sf6_unpack_u8x4:
+                low4 = a[j >> 1] >> Int32(16 * (j & 1))
+                high4 = b[j >> 2] >> Int32(8 * (j & 3))
+                word = _sf6_unpack_u8x4(low4, high4, base_word)
+            else:
+                # Same-build baseline: original c24494aa scalar expansion.
+                word = Int32(0)
+                for m in range(4):
+                    i = 4 * j + m
+                    nib = (a[i >> 3] >> Int32(8 * ((i >> 1) & 3) + 4 * (i & 1))) & Int32(0xF)
+                    hi = (b[i >> 4] >> Int32(8 * ((i >> 2) & 3) + 2 * (i & 3))) & Int32(0x3)
+                    val = (base + nib + (hi << Int32(4))) & Int32(0xFF)
+                    word = word | (val << Int32(8 * m))
             _st_shared_i32(stage_addr + Int32(per_thread) * tidx + Int32(4 * j), word)
         self.sf_expand_barrier.arrive_and_wait()
 

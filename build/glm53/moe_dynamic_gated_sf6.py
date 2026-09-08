@@ -42,7 +42,7 @@ from ._moe_dynamic.gated import (
     _ld_shared_i32, _st_shared_i32,
 )
 from .moe_dynamic_gated_tiled import MoEGatedDynamicKernelTiled
-from .moe_static_common import _sf6_unpack_u8x4
+from .moe_static_common import _SF6_UNPACK_U8X4, _sf6_unpack_u8x4
 
 STOCK_GATED_SHA256 = "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445"
 SF6_STAGE_BYTES = 1552
@@ -92,7 +92,8 @@ def _sf6_ld_global_u32(addr: Int64, *, loc=None, ip=None):
 
 @cute.jit
 def _sf6_expand_dynamic_tile(stage_addr: Int64, destination: Int32,
-                              half: Int32, lane: Int32, fc2: cutlass.Constexpr):
+                              half: Int32, lane: Int32, fc2: cutlass.Constexpr,
+                              unpack_u8x4: cutlass.Constexpr = _SF6_UNPACK_U8X4):
     """One producer warp writes 1024 disjoint shared bytes; no global stores."""
     first = lane * Int32(32)
     decoded = first + half * Int32(1024)
@@ -106,20 +107,33 @@ def _sf6_expand_dynamic_tile(stage_addr: Int64, destination: Int32,
     for word in cutlass.range_constexpr(2):
         highs[word] = _sf6_ld_global_u32(stage_addr + Int64(1024) + Int64(decoded // Int32(4) + Int32(word * 4)))
     base = _sf6_ld_global_u32(stage_addr + Int64(1536)) & Int32(255)
-    base_word = base * Int32(0x01010101)
-    for word in cutlass.range_constexpr(8):
-        low4 = lows[word // 2] >> Int32((word % 2) * 16)
-        high4 = highs[word // 4] >> Int32((word % 4) * 8)
-        value = _sf6_unpack_u8x4(low4, high4, base_word)
-        _st_shared_i32(destination + first + Int32(word * 4), value)
+    if cutlass.const_expr(unpack_u8x4):
+        base_word = base * Int32(0x01010101)
+        for word in cutlass.range_constexpr(8):
+            low4 = lows[word // 2] >> Int32((word % 2) * 16)
+            high4 = highs[word // 4] >> Int32((word % 4) * 8)
+            value = _sf6_unpack_u8x4(low4, high4, base_word)
+            _st_shared_i32(destination + first + Int32(word * 4), value)
+    else:
+        for word in cutlass.range_constexpr(8):
+            value = Int32(0)
+            for byte in cutlass.range_constexpr(4):
+                index = word * 4 + byte
+                low = (lows[index // 8] >> Int32((index % 8) * 4)) & Int32(15)
+                high = (highs[index // 16] >> Int32((index % 16) * 2)) & Int32(3)
+                value = value | ((base + low + (high << Int32(4))) << Int32(byte * 8))
+            _st_shared_i32(destination + first + Int32(word * 4), value)
 
 
 class MoEGatedDynamicKernelSF6(MoEGatedDynamicKernelTiled):
     """Pinned stock dynamic arithmetic with optional direct SF6 scale storage."""
 
-    def __init__(self, *args, reform_sf_pack: bool = False, **kwargs):
+    def __init__(self, *args, reform_sf_pack: bool = False,
+                 sf6_unpack_u8x4: bool | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.reform_sf_pack = bool(reform_sf_pack)
+        self.sf6_unpack_u8x4 = (_SF6_UNPACK_U8X4 if sf6_unpack_u8x4 is None
+                               else bool(sf6_unpack_u8x4))
         if self.reform_sf_pack:
             if not stock_contract_matches():
                 raise RuntimeError("dynamic SF6 inherited gated source has drifted")
@@ -182,11 +196,11 @@ class MoEGatedDynamicKernelSF6(MoEGatedDynamicKernelTiled):
                 up_block = block + Int64(intermediate_slice) * k256_tiles
                 _sf6_expand_dynamic_tile(
                     packed_base + gate_block * Int64(1552), gate_addr,
-                    Int32(k_tile) & Int32(1), lane, False,
+                    Int32(k_tile) & Int32(1), lane, False, self.sf6_unpack_u8x4,
                 )
                 _sf6_expand_dynamic_tile(
                     packed_base + up_block * Int64(1552), up_addr,
-                    Int32(k_tile) & Int32(1), lane, False,
+                    Int32(k_tile) & Int32(1), lane, False, self.sf6_unpack_u8x4,
                 )
                 # Warp stores happen-before the elected producer's release
                 # arrival; consumer_wait acquires both those stores and DMA.
@@ -223,7 +237,7 @@ class MoEGatedDynamicKernelSF6(MoEGatedDynamicKernelTiled):
         destination = shared_ptr_to_u32(sSFB[None, None, phase2_prod_state.index].iterator)
         _sf6_expand_dynamic_tile(
             packed_base + block * Int64(1552), destination,
-            output_tile_idx & Int32(1), lane, True,
+            output_tile_idx & Int32(1), lane, True, self.sf6_unpack_u8x4,
         )
         cute.arch.sync_warp()
         phase2_pipeline.producer_acquire(phase2_prod_state, try_acquire_token=True)

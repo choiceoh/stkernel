@@ -57,6 +57,14 @@ class RunnerTests(unittest.TestCase):
             runner.validate_compile_log(payload, static + 'VERDICT: PASS\n')
         runner.validate_compile_log(payload, static + '[dynamic tiled=True] compiled in 1 s\nVERDICT: PASS\n')
 
+    def test_unpack_compile_requires_requested_latched_mode(self):
+        payload=['compile.py','--specs','t,r,sf6','--sf6-unpack','0']
+        compiled='[t,r,sf6] compiled in 1 s\nVERDICT: PASS\n'
+        for suffix in ('','SF6_UNPACK_U8X4: 1\n','SF6_UNPACK_U8X4: 0\nSF6_UNPACK_U8X4: 0\n'):
+            with self.assertRaises(AssertionError):
+                runner.validate_compile_log(payload,compiled+suffix)
+        runner.validate_compile_log(payload,compiled+'SF6_UNPACK_U8X4: 0\n')
+
     def test_payload_timeout_receipt_survives_both_cleanup_timeouts(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)

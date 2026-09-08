@@ -10,6 +10,7 @@ shared pieces live here and moe_static_kernel_v4 imports them from here.
 """
 from __future__ import annotations
 
+import os
 from typing import Tuple
 
 import cuda.bindings.driver as cuda
@@ -74,6 +75,18 @@ STAMP_MMA_END = 2 + 5 * STAMP_ITEMS
 STAMP_DMA_BASE = STAMP_MMA_END + 2
 STAMP_BARRIER1 = STAMP_DMA_BASE + 3 * STAMP_ITEMS   # after grid barrier 1
 STAMP_SLOTS = STAMP_BARRIER1 + 1
+
+
+def _parse_sf6_unpack_u8x4(value: str) -> bool:
+    if value not in ("0", "1"):
+        raise ValueError("VLLM_GLM53_SF6_UNPACK_U8X4 must be exactly 0 or 1")
+    return value == "1"
+
+
+# A process chooses one compiler specialization before any kernel or graph
+# is prepared. No environment reads occur in the launch/restore hot path.
+_SF6_UNPACK_U8X4 = _parse_sf6_unpack_u8x4(
+    os.environ.get("VLLM_GLM53_SF6_UNPACK_U8X4", "1"))
 
 
 @cute.jit

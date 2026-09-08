@@ -56,6 +56,10 @@ def stages():
         '--out', '/evidence/result.json'], '3g', True
     yield 'sf-unpack-codegen', ['probes/sf6_unpack_compile.py', '--cpu',
         '--out', '/evidence/result.json'], '3g', True
+    for unpack in ('0', '1'):
+        yield 'sf-unpack-'+unpack, ['probes/b12x_static_compile_check.py',
+            '--specs', 't,r,sf6|t,q', '--m', '6', '--max-rows', '640',
+            '--dynamic', 'sf6', '--tile-m', '128', '--sf6-unpack', unpack], '3g', True
     for tile_m in (128,):
         yield 'sf-direct-tm'+str(tile_m), ['probes/b12x_static_compile_check.py',
             '--specs', 't,r,sf6', '--m', '80', '--max-rows', '640',
@@ -80,6 +84,9 @@ def validate_compile_log(payload, text):
                  'sf6': ['dynamic tiled=True sf6=True tm='+option(payload,'--tile-m','128')]}[dynamic]
     assert sorted(actual) == sorted(expected), ('requested kernels did not all compile', expected, actual)
     assert re.search(r'^VERDICT: PASS\s*$', text, re.M), 'missing compiler verdict'
+    if '--sf6-unpack' in payload:
+        assert re.findall(r'^SF6_UNPACK_U8X4: ([01])\s*$', text, re.M) == [
+            option(payload, '--sf6-unpack')], 'requested SF6 unpack mode was not latched'
 
 
 def validate_stage(stage, payload, output):

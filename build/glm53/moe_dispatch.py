@@ -40,7 +40,7 @@ from .moe_dynamic_kernel import (
 )
 from .moe_micro_kernel import MoEMicroKernel
 from .moe_static_kernel import MoEStaticKernel
-from .moe_static_common import STAMP_SLOTS as _STATIC_V2_STAMP_SLOTS
+from .moe_static_common import STAMP_SLOTS as _STATIC_V2_STAMP_SLOTS, _SF6_UNPACK_U8X4
 from .moe_static_kernel_v4 import MoEStaticKernelV4
 from .moe_sf_pack import (
     SF_PACK_BLOCK,
@@ -1735,6 +1735,7 @@ def _dynamic_kernel_cache_key(
     prefill_fc1_n128: bool = False,
     tiled: bool = False,
     reform_sf_pack: bool = False,
+    sf6_unpack_u8x4: bool = True,
 ) -> Tuple:
     """The dynamic kernel's cache key (see :func:`_static_kernel_cache_key`).
 
@@ -1769,7 +1770,7 @@ def _dynamic_kernel_cache_key(
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
     if reform_sf_pack:
-        return key + ("sf6_direct_prefill_v1",)
+        return key + ("sf6_direct_prefill_v1", "sf6_unpack_u8x4", int(sf6_unpack_u8x4))
     return key + ("glm53_prefill_reuse_v1",) if prefill_reuse else key
 
 
@@ -2030,7 +2031,7 @@ def _get_static_kernel(
 _STATIC_V2_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
 
 
-def _static_v2_cache_key(config: dict, **fields) -> Tuple:
+def _static_v2_cache_key(config: dict, *, sf6_unpack_u8x4: bool = True, **fields) -> Tuple:
     """Cache key of a v2 static kernel: the stock static key plus its config."""
     cfg = (
         "static_v2",
@@ -2047,6 +2048,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("decode_reform", False)),
         bool(config.get("reform_sf_pack", False)),
     )
+    if config.get("sf_pack") or config.get("reform_sf_pack"):
+        cfg += ("sf6_unpack_u8x4", int(sf6_unpack_u8x4))
     return cfg + _static_kernel_cache_key(**fields)
 
 
@@ -2103,6 +2106,7 @@ def _get_static_kernel_v2(
     mma_tiler_mn = (16 if reform else int(config["tile_m"]), 128)
     cache_key = _static_v2_cache_key(
         config,
+        sf6_unpack_u8x4=_SF6_UNPACK_U8X4,
         activation_precision=activation_precision,
         quant_mode=quant_mode,
         state_E=state_E,
@@ -2139,6 +2143,7 @@ def _get_static_kernel_v2(
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
         reform_sf_pack=bool(config.get("reform_sf_pack", False)),
+        sf6_unpack_u8x4=_SF6_UNPACK_U8X4,
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -2293,9 +2298,10 @@ def _get_static_kernel_v2(
         f"{'sf6v1' if config.get('reform_sf_pack') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
+    artifact_name = _disk_kernel_name(name, cache_key)
     compiled = build_and_load_cute_dsl_kernel(
         _CUTE_DSL_MODULE,
-        _disk_kernel_name(name, cache_key),
+        artifact_name,
         lambda: cute.compile(
             kernel,
             a_input_fake,
@@ -2343,6 +2349,10 @@ def _get_static_kernel_v2(
         "[b12x static v2] lane serving: %s (mac=%d, m=%d, routed=%d, smem=%d B)",
         name, mac, m, m * num_topk, getattr(kernel, "smem_bytes", 0),
     )
+    if config.get("sf_pack") or config.get("reform_sf_pack"):
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x sf6 unpack] lane serving: backend=static u8x4=%d artifact=%s",
+            int(kernel.sf6_unpack_u8x4), artifact_name)
     return result
 
 
@@ -3666,6 +3676,7 @@ def _get_dynamic_kernel(
         prefill_reuse=prefill_reuse,
         prefill_fc1_n128=prefill_fc1_n128,
         reform_sf_pack=reform_sf_pack,
+        sf6_unpack_u8x4=_SF6_UNPACK_U8X4,
     )
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -3712,7 +3723,7 @@ def _get_dynamic_kernel(
         if reform_sf_pack:
             from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6
             tiled_cls = MoEGatedDynamicKernelSF6
-            tiled_kwargs = dict(reform_sf_pack=True)
+            tiled_kwargs = dict(reform_sf_pack=True, sf6_unpack_u8x4=_SF6_UNPACK_U8X4)
         kernel = tiled_cls(
             sf_vec_size=sf_vec_size,
             mma_tiler_mn=mma_tiler_mn,
@@ -3870,9 +3881,11 @@ def _get_dynamic_kernel(
     packed2_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Uint8, (E, (k // 256) * (n // 128), REFORM_SF_STAGE)
         if reform_sf_pack else (1, 1, 16), stride_order=(2, 1, 0), assumed_align=16)
+    artifact_name = _disk_kernel_name(
+        f"dynamic_e{E}_k{k}_n{n}_t{num_topk}{'_tiled' if tiled else ''}", cache_key)
     compiled = build_and_load_cute_dsl_kernel(
         _CUTE_DSL_MODULE,
-        _disk_kernel_name(f"dynamic_e{E}_k{k}_n{n}_t{num_topk}{'_tiled' if tiled else ''}", cache_key),
+        artifact_name,
         lambda: cute.compile(
             launch,
             a_input_fake,
@@ -3925,6 +3938,10 @@ def _get_dynamic_kernel(
         )
     result = (compiled, mac)
     _DYNAMIC_KERNEL_CACHE[cache_key] = result
+    if reform_sf_pack:
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x sf6 unpack] lane serving: backend=dynamic u8x4=%d artifact=%s",
+            int(kernel.sf6_unpack_u8x4), artifact_name)
     return result
 
 

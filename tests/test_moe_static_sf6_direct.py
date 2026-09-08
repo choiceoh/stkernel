@@ -108,11 +108,11 @@ def method(name, env, *, barriers=False):
     return env[name]
 
 
-def geometry(reform, stages=2):
+def geometry(reform, stages=2, *, unpack_u8x4=True):
     env = dict(cutlass=SimpleNamespace(Float32=object()), DenseGemmKernel=object(),
         utils=SimpleNamespace(get_smem_capacity_in_bytes=lambda _: 101376),
         pipeline=SimpleNamespace(NamedBarrier=lambda **kw: SimpleNamespace(**kw)),
-        is_gated_activation=lambda _: True)
+        is_gated_activation=lambda _: True, _SF6_UNPACK_U8X4=unpack_u8x4)
     for node in TREE.body:
         if isinstance(node, ast.Assign):
             try:
@@ -126,15 +126,27 @@ def geometry(reform, stages=2):
 
 
 class SharedMachine:
-    def __init__(self, size=16384):
+    def __init__(self, size=16384, *, unpack_u8x4=True):
         self.mem = bytearray([0xA5]) * size
         self.gmem = b""
+        self.unpack_u8x4 = unpack_u8x4
+        self.unpack_words = []
         self.loads, self.stores, self.copies = [], [], []
-        env = dict(Int32=int, Int64=int, _ld_shared_i32_volatile=self.load,
+        env = dict(Int32=self.int32, Int64=int, _ld_shared_i32_volatile=self.load,
                    _st_shared_i32=self.store, _bulk_g2s=self.bulk,
-                   _sf6_unpack_u8x4=unpack_u8x4)
+                   _sf6_unpack_u8x4=self.unpack)
         self.expand = method("_sf_expand_stage", env, barriers=True)
         self.copy_half = method("_sf6_copy_fc2_half", env)
+
+    def int32(self, value):
+        if value == 0x01010101:
+            assert self.unpack_u8x4, "scalar arm must not broadcast the base"
+        return int(value)
+
+    def unpack(self, low, high, base_word):
+        assert self.unpack_u8x4, "scalar arm must not call the vector helper"
+        self.unpack_words.append((low, high, base_word))
+        return unpack_u8x4(low, high, base_word)
 
     def load(self, addr):
         assert addr % 4 == 0 and 0 <= addr <= len(self.mem)-4
@@ -154,7 +166,8 @@ class SharedMachine:
 
     def expand_stage(self, addr, block_bytes, seed=13):
         rng = random.Random(seed)
-        workers = [self.expand(SimpleNamespace(), addr, t, block_bytes) for t in range(128)]
+        owner = SimpleNamespace(sf6_unpack_u8x4=self.unpack_u8x4)
+        workers = [self.expand(owner, addr, t, block_bytes) for t in range(128)]
         order = list(range(128))
         before_stores = len(self.stores)
         rng.shuffle(order)
@@ -183,6 +196,37 @@ def original_offset(row, col, rows, k, *, shared=False):
 
 
 class StaticDirectScales(unittest.TestCase):
+    def test_scalar_and_vector_match_for_every_stage_size_and_reused_ring(self):
+        rng = random.Random(6410)
+        for block in (1024, 2048, 4096):
+            machines = [SharedMachine(unpack_u8x4=mode) for mode in (False, True)]
+            for generation, base in enumerate((0, 127, 192, 255)):
+                raw = bytes(base + rng.randrange(min(64, 256-base)) for _ in range(block))
+                packed = bytearray(block * 3 // 4 + 16)
+                for i, byte in enumerate(raw):
+                    code = byte - base
+                    packed[i//2] |= (code & 15) << (4 * (i % 2))
+                    packed[block//2+i//4] |= (code >> 4) << (2 * (i % 4))
+                packed[block * 3 // 4] = base
+                addr = 256 + (generation % 3) * 4096
+                for machine in machines:
+                    machine.mem[addr:addr+len(packed)] = packed
+                    before = bytes(machine.mem)
+                    before_words = len(machine.unpack_words)
+                    machine.expand_stage(addr, block, generation)
+                    self.assertEqual(machine.mem[addr:addr+block], raw)
+                    self.assertEqual(machine.mem[:addr], before[:addr])
+                    self.assertEqual(machine.mem[addr+block:], before[addr+block:])
+                    self.assertEqual(len(machine.unpack_words)-before_words,
+                                     block//4 if machine.unpack_u8x4 else 0)
+                self.assertEqual(machines[0].loads, machines[1].loads)
+                self.assertEqual(machines[0].stores, machines[1].stores)
+
+    def test_constructor_snapshots_both_latched_modes(self):
+        for mode in (False, True):
+            for reform in (False, True):
+                self.assertIs(geometry(reform, unpack_u8x4=mode).sf6_unpack_u8x4, mode)
+
     def test_ordinary_and_reform_geometry_transaction_contract(self):
         for reform in (False, True):
             for stages in (1, 2, 3):
