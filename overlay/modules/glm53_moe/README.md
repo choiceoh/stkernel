@@ -340,5 +340,10 @@ retains the original Torch remap. The new source passed no-device CuTe and
 earlier cpu6 receipt retains its 29-test result. CuTe resources remain
 REG168 STACK1040 SHARED1024. The head's pinned Compute Sanitizer 2025.3.1.0
 version check also passed without CUDA devices. This is a preflight, not a
-memcheck/racecheck result. New-source GPU proof remains pending and must
-include remap and changed scales before attributing any speed gain.
+memcheck/racecheck result. The new source passed the 24-variant GPU remap oracle, eight MoE numerical
+fixtures and remap memcheck. Remap-inclusive MoE timing was 2.053x–3.495x
+versus existing EP compact. MoE memcheck failed on 34 CUDA API lookup errors
+in the initial compact hardware-info path; remaining sanitizers did not run.
+The instrumented numerical PASS does not override that failure. Attempt4
+retains the raw results and exact original recovery/release evidence. Full
+serving and direct TTFT remain unverified.

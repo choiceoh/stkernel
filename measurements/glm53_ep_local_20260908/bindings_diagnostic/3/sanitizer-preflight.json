@@ -1,0 +1,39 @@
+{
+  "started": 1788851900.9155636,
+  "verdict": "PASS",
+  "version": "2025.3.1.0",
+  "cuda_devices_exposed": false,
+  "identity": {
+    "directory": "/usr/local/cuda-13.0/compute-sanitizer",
+    "executable": "/usr/local/cuda-13.0/compute-sanitizer/compute-sanitizer",
+    "sha256": "7a7fcdefb67042731daf021478176f4919e1843d0b10cb697af28a7d8a3d108b"
+  },
+  "command": [
+    "docker",
+    "run",
+    "--rm",
+    "--name",
+    "ep-sanitizer-preflight-5740e4e16a98451a8a400a8bd769538f",
+    "--runtime=runc",
+    "--network=none",
+    "--memory=256m",
+    "--memory-swap=256m",
+    "--cpus=1",
+    "--pids-limit=64",
+    "--stop-timeout=5",
+    "-e",
+    "NVIDIA_VISIBLE_DEVICES=void",
+    "-e",
+    "CUDA_VISIBLE_DEVICES=",
+    "--entrypoint=python3",
+    "--mount",
+    "type=bind,source=/usr/local/cuda-13.0/compute-sanitizer,target=/opt/glm-ep-sanitizer,readonly",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "-c",
+    "from pathlib import Path; import subprocess; assert not list(Path('/dev').glob('nvidia*')), 'GPU device exposed'; p=subprocess.run(['/opt/glm-ep-sanitizer/compute-sanitizer','--version'], text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=15); print(p.stdout,end=''); raise SystemExit(p.returncode)"
+  ],
+  "exit_code": 0,
+  "stdout": "NVIDIA (R) Compute Sanitizer\nCopyright (c) 2020-2025 NVIDIA Corporation\nVersion 2025.3.1.0 (build 36400806) (public-release)\n",
+  "stderr": "",
+  "ended": 1788851901.212319
+}

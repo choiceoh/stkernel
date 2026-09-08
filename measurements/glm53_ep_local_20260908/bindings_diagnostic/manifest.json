@@ -1,0 +1,92 @@
+{
+  "1/inner.py": {
+    "raw_sha256": "e8fd419ad81cf86537f25d89ab20d030fc7e361a156dbaf08825b2d5e1cb236f",
+    "raw_bytes": 418,
+    "compressed": false
+  },
+  "1/result.json": {
+    "raw_sha256": "3b98d2bb1f7cc7a0d87cf5e689e45be79b3de6516e341ddff8a01e79e3662b27",
+    "raw_bytes": 1712,
+    "compressed": false
+  },
+  "1/sanitizer-preflight.json": {
+    "raw_sha256": "52e090ee7be268f467772ec6d716dd43b3ebbbaed4941e1f1f66c69596591b8c",
+    "raw_bytes": 1488,
+    "compressed": false
+  },
+  "1/memcheck.log.gz": {
+    "raw_sha256": "14eea6a1596be8ef92801054074155c1ba47edb992ce2308bf3df4737b456ea4",
+    "raw_bytes": 219,
+    "compressed": true
+  },
+  "1/collect.py": {
+    "raw_sha256": "ad8de000721912c58b845f731768aa7b985144fe706d5b4b11e65e7c24141340",
+    "raw_bytes": 2626,
+    "compressed": false
+  },
+  "1/fleet.log": {
+    "raw_sha256": "c1fe1ab8424e33360f3113d0cd403ab10640059b1b40bab47ea13b201549c26b",
+    "raw_bytes": 155,
+    "compressed": false
+  },
+  "2/inner.py": {
+    "raw_sha256": "11baea062820632362a546cf5e055b823b58d0223db555bbbd89a5b7344047bd",
+    "raw_bytes": 508,
+    "compressed": false
+  },
+  "2/result.json": {
+    "raw_sha256": "721dbb9fb3b6e0f662d03077ce4e11680aaf64ff7ce2303a513384179d0a6a8e",
+    "raw_bytes": 1749,
+    "compressed": false
+  },
+  "2/sanitizer-preflight.json": {
+    "raw_sha256": "b89d0e6c971a31a5deefb393bd2448d472e993235ebaf85e1e2958fdf071cede",
+    "raw_bytes": 1490,
+    "compressed": false
+  },
+  "2/memcheck.log.gz": {
+    "raw_sha256": "194e3faac68ecc4e64d66023b6625da85617e4f2b0838dec1d5132f1a386e142",
+    "raw_bytes": 700,
+    "compressed": true
+  },
+  "2/collect.py": {
+    "raw_sha256": "cda7f1759f2aa605d05efe1443a6b047fd0a4c1c7e9a0d36a0ab7952b3c03a18",
+    "raw_bytes": 2752,
+    "compressed": false
+  },
+  "2/fleet.log": {
+    "raw_sha256": "883bbfdebf6f94ad64dafca108aba80bf8903faf46a463a4f4aad5080fb4421c",
+    "raw_bytes": 191,
+    "compressed": false
+  },
+  "3/inner.py": {
+    "raw_sha256": "4abf1384204d51c8c5474a3f103fa0f573892cc64c56c943a820caa129011d0d",
+    "raw_bytes": 517,
+    "compressed": false
+  },
+  "3/result.json": {
+    "raw_sha256": "518d5798b2d324ecb26c8d17f7a9cd07f0950c42db741c9bc2e6d05ef65885aa",
+    "raw_bytes": 1749,
+    "compressed": false
+  },
+  "3/sanitizer-preflight.json": {
+    "raw_sha256": "75a59bccf5fd8d86fc6f0d4d6d152ce664ab6d225d1bfa604a5cefda4292ae5e",
+    "raw_bytes": 1489,
+    "compressed": false
+  },
+  "3/memcheck.log.gz": {
+    "raw_sha256": "bb8a88d7c670381b5a578d99bc3b776d6bac202458e84131811cecdb70b2a57d",
+    "raw_bytes": 253,
+    "compressed": true
+  },
+  "3/collect.py": {
+    "raw_sha256": "5a549e7aded4445be3ac9d46e16fa251901542d5bb55aaf8bfb16ed7f2a9b222",
+    "raw_bytes": 2761,
+    "compressed": false
+  },
+  "3/fleet.log": {
+    "raw_sha256": "2ae72a4a2c9db0568cce8ca69ce8db24489c6106c3fa7b0cac29c3ccbbc5d4e6",
+    "raw_bytes": 191,
+    "compressed": false
+  }
+}

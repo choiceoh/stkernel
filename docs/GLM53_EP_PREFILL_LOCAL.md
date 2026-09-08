@@ -84,15 +84,35 @@ at 15:30:44 KST. This result cannot validate the newer fused remap or CTA
 scale cache, or establish production TP4/TTFT improvement.
 
 The intervening v3 queue entry was cancelled normally before its payload ran.
-GPU proof for the newest source is still pending. The corrected normal fleet
-[submission v4](../measurements/glm53_ep_local_20260908/submission4/README.md)
-passed preflight and queued at 15:54:23 KST with frozen source
-`71e804e7aa6b29d6ddf4577809a5fa5e05a999e6`. Its archived admission snapshot
-shows first in queue, with no GPU payload started. The head's no-device
-sanitizer preflight now passes with Compute Sanitizer 2025.3.1.0, whose
-executable SHA-256 is pinned and recorded in
-[cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md). Running its
-version check does not provide device memcheck or racecheck evidence.
+The corrected v4 source `71e804e7aa6b29d6ddf4577809a5fa5e05a999e6`
+ran from 15:58:21 KST. [Attempt 4 evidence](../measurements/glm53_ep_local_20260908/attempt4/README.md)
+records a passing 24-variant GPU remap byte oracle and all eight MoE numerical
+fixtures, including changed scales at fixed addresses. The five timed fixtures
+showed 2.053x–3.495x versus the existing EP compact wrapper with each arm's
+remap included. These are single-GB10 component results and do not measure
+incremental improvement against v2, which used a different timing scope.
+
+The mounted sanitizer preflight and remap memcheck passed; the latter reported
+zero errors. MoE memcheck then exited 86 with 34 CUDA_ERROR_INVALID_VALUE
+reports on cuGetProcAddress_v2. Every reported stack was in the original
+compact arm's initial hardware-info/binding path, before the first kernel
+compile. No device-memory fault heading was reported, but the sanitizer gate
+failed; subsequent two memcheck and four racecheck cells did not run. The
+instrumented probe's numerical PASS does not override that failure. Exact
+original four-node recovery completed before normal fleet release at
+16:08:37 KST. Driver/binding compatibility needs a separate bounded diagnosis;
+the errors have not been suppressed or accepted as sanitizer success.
+[No-device diagnostics](../measurements/glm53_ep_local_20260908/bindings_diagnostic/README.md)
+confirmed cuda-bindings 13.3.1 with driver API 13000. Sanitizer did not begin
+API instrumentation in those no-device processes, so they neither reproduced
+nor cleared the 34 errors. A minimal reserved-GPU reproduction must open a
+Torch context before the first binding device-count call, matching the original
+ordering without importing or running MoE.
+
+Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
+no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).
+The v4 CPU proof, mounted sources, raw logs, recovery and release records are
+preserved in attempt4. Full-model and production TP4 improvement remain open.
 
 The isolated GPU runner uses the actual legacy compact wrapper as its control
 with the profile's 8192-token pair-slice capacity. Eight fixtures cover balanced,
@@ -122,6 +142,17 @@ compare full-token output with the existing E72 compact path using identical
 weights, balanced/concentrated/empty-local routes, odd tails and changed
 inputs. TP4 wire numerics and current-capacity fresh 2K/32K/128K TTFT, output
 quality, decode and memory checks follow before any default recommendation.
+
+The existing `bench/prefill_serving.py` bracket needs an EP-specific contract
+before serving validation: it currently admits only single-knob MoE/MLA
+candidates and forces max-length 262144 / KV blocks 415. The next bracket
+must snapshot and retain current capacity across B1/A/B2, record ENABLE_EP
+and the actual expert-parallel command flag, and require all-rank E72/I2048,
+EP-local launch and MHC token-shard proof. The current comparison rejects
+those intentional EP changes, and generic onepass metadata only captures
+VLLM variables. Existing normal chain hooks and fresh 2K/32K/128K collection
+can be reused after those evidence gaps are addressed. Short requests and
+decode use other EP paths and still need direct checks.
 
 A preceding two-stripe prototype was withdrawn before GPU submission after
 finding preserved failures on branch `codex/glm53-prefill-moe-overlap`

@@ -1,0 +1,146 @@
+{
+  "case": "zeros4097",
+  "sanitize": false,
+  "verdict": "PASS",
+  "phase": "complete",
+  "performance_acceptance": false,
+  "rows": 4097,
+  "routing": "zeros",
+  "legacy_max_num_tokens": 8192,
+  "remap_capacity_tokens": 4097,
+  "timing_scope": "EP remap plus MoE wrapper",
+  "provenance": {
+    "flashinfer_b12x_moe.py": "0680cae2a85bf275c2be51623020bdd672f20a905aab6d49bcd028d65e720150",
+    "moe_micro_kernel.py": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+    "moe_dispatch.py": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+    "b12x_moe.py": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68",
+    "moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+    "moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+    "moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+    "moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+    "moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+    "moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+    "moe_dynamic_ep_local.py": "2f04d32b101fc839fad1477b90c71247796d6b5e44a0a54b4977d674fd364343",
+    "glm53_ep_route_remap.py": "27ce85fbcac4d4a1f5375a8e5e251c63cf90e9a59eeef134aebca24fa7ff1672"
+  },
+  "controls": [
+    [
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007398101035505533,
+        "max_row_relative_abs": 0.023391813039779663
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007477066479623318,
+        "max_row_relative_abs": 0.02150537632405758
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007420096080750227,
+        "max_row_relative_abs": 0.02150537632405758
+      }
+    ],
+    [
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007489684969186783,
+        "max_row_relative_abs": 0.02010050229728222
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007315316237509251,
+        "max_row_relative_abs": 0.025316456332802773
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007360604126006365,
+        "max_row_relative_abs": 0.021739130839705467
+      }
+    ]
+  ],
+  "candidate": [
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.008630001917481422,
+      "max_row_relative_abs": 0.022727273404598236,
+      "stock_max_row_relative_l2": 0.007398101035505533,
+      "stock_max_row_relative_abs": 0.023391813039779663
+    },
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.008596155792474747,
+      "max_row_relative_abs": 0.027027027681469917,
+      "stock_max_row_relative_l2": 0.007398101035505533,
+      "stock_max_row_relative_abs": 0.023391813039779663
+    },
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.008426522836089134,
+      "max_row_relative_abs": 0.022346368059515953,
+      "stock_max_row_relative_l2": 0.007489684969186783,
+      "stock_max_row_relative_abs": 0.02010050229728222
+    },
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.008473601192235947,
+      "max_row_relative_abs": 0.02092050202190876,
+      "stock_max_row_relative_l2": 0.007489684969186783,
+      "stock_max_row_relative_abs": 0.02010050229728222
+    }
+  ],
+  "timing": {},
+  "cache_keys": [
+    [
+      "dynamic",
+      "fp4",
+      "nvfp4",
+      72,
+      4096,
+      2048,
+      1,
+      48,
+      [
+        128,
+        128
+      ],
+      "torch.int32",
+      false,
+      true,
+      "swigluoai_uninterleave",
+      1.0,
+      0.0,
+      10.0,
+      false,
+      false
+    ],
+    [
+      "dynamic",
+      "fp4",
+      "nvfp4",
+      72,
+      4096,
+      2048,
+      8,
+      48,
+      [
+        128,
+        128
+      ],
+      "torch.int32",
+      false,
+      true,
+      "swigluoai_uninterleave",
+      1.0,
+      0.0,
+      10.0,
+      false,
+      false,
+      "glm53_ep_prefill_local_v1"
+    ]
+  ],
+  "device": "NVIDIA GB10",
+  "max_allocated_bytes": 1639684096,
+  "max_reserved_bytes": 1671430144
+}

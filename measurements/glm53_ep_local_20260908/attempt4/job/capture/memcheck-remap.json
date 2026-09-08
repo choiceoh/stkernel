@@ -1,0 +1,129 @@
+{
+  "started": 1788851086.4709558,
+  "phase": "complete",
+  "verdict": "PASS",
+  "performance_acceptance": false,
+  "checks": [
+    {
+      "label": "mapped-i32-fp32-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i32-fp32-i64",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i32-fp16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i32-fp16-i64",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i32-bf16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i32-bf16-i64",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i64-fp32-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i64-fp32-i64",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i64-fp16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i64-fp16-i64",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i64-bf16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "mapped-i64-bf16-i64",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "empty-i32-fp32-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "empty-i32-fp16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "empty-i32-bf16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "empty-i64-fp32-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "empty-i64-fp16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "empty-i64-bf16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "offset-i32-fp32-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "offset-i32-fp16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "offset-i32-bf16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "offset-i64-fp32-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "offset-i64-fp16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    },
+    {
+      "label": "offset-i64-bf16-i32",
+      "rows": 4097,
+      "changed_storage": true
+    }
+  ],
+  "ended": 1788851105.763926
+}
