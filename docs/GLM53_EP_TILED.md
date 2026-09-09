@@ -19,18 +19,41 @@ decode was 17.88% below B1. A's engine throughput was 18.4447 step/s versus
 establish a stable optimization gain. The target does not waive quality
 gates or establish relative non-regression against TP.
 
-The next bounded configuration comparison is running from frozen source
+The bounded K3 configuration comparison completed from frozen source
 `6977199cf699f82696f925f77bc930d500135532` in fleet session
 `eptiledk30910v6`: TP + SF6 with DFlash K5 (B0 preparation, B1 comparison),
-then EP + SF6 with DFlash K3 (A). The kernel bytes are unchanged from the
-BF16-scatter run. K3 reduces C1 target verification from six to four rows,
-but also changes drafting and acceptance; no output-speed gain is assumed.
-Normal CPU admission passed 119 tests and nine real lowerings. The startup
-canary now adds M4/M8/M16, totaling 12 cases and 72 candidate plus 72 control
-comparisons per rank. The onepass proof binds actual DFlash argv and the same
-boot's whole-workload positional counter deltas; these are not fixed-window
-acceptance counts. Defaults remain K5/TP until direct results pass the
-absolute 67 tok/s target and the existing quality, proof and prefill checks.
+then EP + SF6 with DFlash K3 (A). A measured **60.85548 tok/s**, below the
+absolute 67 target, with 21.03647 engine step/s, facts 18/18, Korean 0/8 and
+proof 2/2. Its three requests measured 60.36829/60.31594/61.90889 tok/s.
+The kernel bytes were unchanged from the BF16-scatter run; K3 changed the
+complete drafting/verification configuration. Faster engine steps did not
+restore the required output throughput.
+
+B1 measured 73.73555 tok/s but failed Korean 1/8. Both B0 and B1 failed that
+gate, so the existing chain automatically added ABASE, which measured
+74.31471 tok/s with facts 18/18 and Korean 0/8. The original verdict remains
+incomplete/unresolved with only one eligible baseline and a -18.1% candidate
+delta. The preselected B1 failure is retained. A's 2K/32K/128K warm prefill
+observations were 2854.08/3271.27/3187.48 tok/s, but its first 2K request
+was slower than B1. These observations do not establish accepted improvement.
+
+Normal CPU admission passed 119 tests and nine real lowerings. All four
+candidate ranks passed 12 actual-weight cases, 72 candidate plus 72 control
+comparisons, graph replay and SF6 release. The onepass proof binds actual
+DFlash K3 argv to the same boot's whole-workload positional counter deltas;
+these are not fixed-window acceptance counts. Defaults remain K5/TP.
+[All four original arms and validation scope](../measurements/glm53_ep_tiled_20260909/k3_onepass6/README.md).
+
+Read-only follow-up found an independent default integration conflict:
+`VLLM_GLM53_PREP_FUSED=1` is configured, but all v5/v6 arms log DISARM because
+its whole-file guard expects the image's worker-utils SHA `3dcd6ad34ee1…`.
+The deliberately mounted KV-zero safety overlay has SHA `fd27b906f336…`.
+Removing exactly its KV-zero additions reconstructs the expected original
+SHA; other utilities are unchanged. Rearming still requires confirming that
+KV zeroing occurs outside the replaced runner methods, preserving that safety
+effect, and actual runner validation. No guard was weakened and this feature
+was not rearmed during the experiment. Its historical benefit is not a
+current performance result.
 
 Enable `ENABLE_EP=1 VLLM_GLM53_EP_TILED=1 VLLM_GLM53_TP_SF6_Q0=0` on the GLM
 profile, retaining its `t,r,sf6` scale-compression setting. The TP Q0 owner/canary does not apply to EP weights. Keep the old

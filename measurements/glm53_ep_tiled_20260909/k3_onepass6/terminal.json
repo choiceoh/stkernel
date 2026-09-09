@@ -1,0 +1,23 @@
+{
+  "original_sha256": "ccb51f939e6d932bc0c3e975e19cac88d2e3be4e8553f2bd4cbe9d8611248160",
+  "owned_holder_at_capture": false,
+  "record": {
+    "finished_at": 1788971640.6844974,
+    "outcome": "succeeded",
+    "payload_finished_at": 1788971640.324242,
+    "payload_returncode": 0,
+    "phase": "finished",
+    "pid": 3002933,
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 0,
+    "session": "eptiledk30910v6",
+    "start": "47214509",
+    "started_at": 1788969754.8994498,
+    "state": "finished",
+    "ticket": "17889697543002933"
+  },
+  "schema": 1,
+  "scope": "Allowlisted terminal fields; raw pending kept private",
+  "source_revision": "6977199cf699f82696f925f77bc930d500135532"
+}
