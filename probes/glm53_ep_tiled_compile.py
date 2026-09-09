@@ -31,6 +31,8 @@ CONTRACT_PATHS = (
     'profiles/glm53.env', 'bench/proof.py', 'bench/proof-markers.tsv',
     'overlay/modules/glm53_model/glm5next_model.py',
     'measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json',
 ) + tuple('tests/' + name for name in CPU_TESTS)
 
 
