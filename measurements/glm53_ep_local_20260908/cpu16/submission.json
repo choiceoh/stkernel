@@ -1,0 +1,42 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-0908-16",
+  "revision": "111fff02f66f3e07a8332da1117afb75b161f0d6",
+  "scheduler": "/home/choiceoh/stkernel",
+  "scheduler_revision": "c7401026315fbf4f82ee4c8592766f3bdf63d9b8",
+  "scheduler_approved_main": "c7401026315fbf4f82ee4c8592766f3bdf63d9b8",
+  "approved_scheduler_ancestor": true,
+  "approved_identical_directories": [
+    "bench",
+    "launchers",
+    "profiles",
+    "tests"
+  ],
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "eplocalcpu0908v16head",
+    "6",
+    "CPU16 cached SFA row bases and unsigned prefix; capsule13.0.3 no devices 4g2CPU",
+    "--",
+    "python3",
+    "-B",
+    "/home/choiceoh/stkernel-ep-local-0908-16/probes/run_glm53_ep_local_cpu_compile.py",
+    "--image",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "--arm",
+    "local",
+    "--output",
+    "/tmp/glm53-ep-local-compile0908-16-head/local",
+    "--capsule-root",
+    "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+    "--manifest-sha256",
+    "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "created": 1788872668.6989179,
+  "host_mem_available_kib": 28508636,
+  "existing_frozen_source_reused": false,
+  "serving_memory_reclaimed": false,
+  "reason": "CPU16 committed EP local kernel candidate, current CPU-only wrapper and source contracts; compare CPU15"
+}

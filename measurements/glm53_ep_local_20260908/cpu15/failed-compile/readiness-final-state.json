@@ -1,0 +1,29 @@
+{
+  "revision": "30608530f0c908bc5f81db6bdb69fd70ccee9a24",
+  "started": 1788871406.5875294,
+  "deadline": 1788875006.5875297,
+  "phase": "SUBMITTED",
+  "submitted": true,
+  "attempts": 30,
+  "checked": 1788871987.447001,
+  "last_inspection": {
+    "submitted": false,
+    "source": "/home/choiceoh/stkernel-ep-local-0908-15",
+    "job": "/tmp/glm53-ep-local-compile0908-15-head",
+    "revision": "30608530f0c908bc5f81db6bdb69fd70ccee9a24",
+    "source_exists": false,
+    "host_mem_available_kib": 15032716,
+    "bundle_sha256": "3edc1053293946cbf78e154b266155f6f93a0a553bf3a90e0fe05e961da17242",
+    "ready": true
+  },
+  "submission": {
+    "submitted": true,
+    "source": "/home/choiceoh/stkernel-ep-local-0908-15",
+    "job": "/tmp/glm53-ep-local-compile0908-15-head",
+    "revision": "30608530f0c908bc5f81db6bdb69fd70ccee9a24",
+    "pid": 4155536,
+    "host_mem_available_kib": 15083532,
+    "scheduler_revision": "22479c1fba77bfa6131af4982100d18c1b06187e"
+  },
+  "ended": 1788871987.858705
+}

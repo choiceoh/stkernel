@@ -1,0 +1,44 @@
+{
+  "verdict": "PASS",
+  "scope": "CPU13 archive integrity only; no new tests or GPU execution",
+  "original_verdict": "PASS",
+  "contracts": {
+    "tests_run": 82,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "original_files": 61,
+  "ptx": 28,
+  "cubin": 28,
+  "resource_logs": 4,
+  "source_revision": "a010504ee03842f30892a31d764b74cdbf3a5610",
+  "scatter_sites": {
+    "m32-topk8-fp32": {
+      "path": "micro/m32-topk8-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "ptx_sha256": "a3332b0ed5eac3d6ed158ff15654e21e55387c71bf153e15e7e814eeecc40598",
+      "static_instruction_sites": {
+        "fp32_v2": 4,
+        "bf16x2": 0
+      }
+    },
+    "m64-topk1-fp32": {
+      "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx",
+      "ptx_sha256": "af8ee944deabff26d5cbafcece9a69da2bc9e2fc36267d174c3bd6bd4eee15cf",
+      "static_instruction_sites": {
+        "fp32_v2": 4,
+        "bf16x2": 0
+      }
+    },
+    "m64-topk8-bf16": {
+      "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "ptx_sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+      "static_instruction_sites": {
+        "fp32_v2": 0,
+        "bf16x2": 4
+      }
+    }
+  },
+  "evidence_tar_sha256": "e85d45b2da461fc50a83735d9bde4c651fc7e38b345ac9d97cf743a6871a06c6",
+  "result_sha256": "e3ec24f8b8bfa65a1d83295fb8dbd7d6e49fb89a5cb1a48c8928106526e8cb2e"
+}

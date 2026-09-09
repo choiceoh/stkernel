@@ -1,0 +1,20 @@
+test_actual_import_paths_hashes_and_both_distribution_versions_are_bound (test_glm53_ep_bindings_pair.ImportIdentityTests.test_actual_import_paths_hashes_and_both_distribution_versions_are_bound) ... ok
+test_global_metapackage_cannot_masquerade_as_candidate (test_glm53_ep_bindings_pair.ImportIdentityTests.test_global_metapackage_cannot_masquerade_as_candidate) ... ok
+test_wrong_binary_hash_fails (test_glm53_ep_bindings_pair.ImportIdentityTests.test_wrong_binary_hash_fails) ... ok
+test_wrong_import_origin_fails (test_glm53_ep_bindings_pair.ImportIdentityTests.test_wrong_import_origin_fails) ... ok
+test_baseline_failure_candidate_runs_one_pause_exact_restore_and_failure_exit (test_glm53_ep_bindings_pair.PairLifecycleTests.test_baseline_failure_candidate_runs_one_pause_exact_restore_and_failure_exit) ... ok
+test_candidate_sanitizer_failure_cannot_observe_compatibility (test_glm53_ep_bindings_pair.PairLifecycleTests.test_candidate_sanitizer_failure_cannot_observe_compatibility) ... ok
+test_capsule_drift_after_pair_prevents_compatibility_verdict (test_glm53_ep_bindings_pair.PairLifecycleTests.test_capsule_drift_after_pair_prevents_compatibility_verdict) ... ok
+test_capsule_drift_at_candidate_go_aborts_and_restores (test_glm53_ep_bindings_pair.PairLifecycleTests.test_capsule_drift_at_candidate_go_aborts_and_restores) ... ok
+test_interruption_stops_pair_and_restores_original (test_glm53_ep_bindings_pair.PairLifecycleTests.test_interruption_stops_pair_and_restores_original) ... ok
+test_stopped_donor_is_restored_stopped_without_idle_or_boot (test_glm53_ep_bindings_pair.PairLifecycleTests.test_stopped_donor_is_restored_stopped_without_idle_or_boot) ... ok
+test_unmatched_baseline_error_cannot_be_waived (test_glm53_ep_bindings_pair.PairLifecycleTests.test_unmatched_baseline_error_cannot_be_waived) ... ok
+test_v5_reports_must_be_between_unique_count_markers_after_identity (test_glm53_ep_bindings_pair.PairLifecycleTests.test_v5_reports_must_be_between_unique_count_markers_after_identity) ... ok
+test_both_arms_keep_torch_then_identity_then_first_api (test_glm53_ep_bindings_pair.ProbeOrderTests.test_both_arms_keep_torch_then_identity_then_first_api) ... ok
+test_identity_failure_prevents_both_binding_calls (test_glm53_ep_bindings_pair.ProbeOrderTests.test_identity_failure_prevents_both_binding_calls) ... ok
+test_unexpected_count_or_driver_version_is_not_observed (test_glm53_ep_bindings_pair.ProbeOrderTests.test_unexpected_count_or_driver_version_is_not_observed) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.027s
+
+OK

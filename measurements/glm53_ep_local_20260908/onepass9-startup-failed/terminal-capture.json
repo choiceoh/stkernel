@@ -1,0 +1,53 @@
+{
+  "absent": [
+    "/tmp/glm53-ep-onepass-0909-9/verdicts.jsonl",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS9A.log"
+  ],
+  "captured_at": 1788912551.8422794,
+  "fleet_after": {
+    "finished_at": 1788911728.456118,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/ef55bca6dc0d47525783dc53e0db04238f9b6424f8dbc14efb1d0f2b4a393701.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788911727.3975434,
+    "payload_returncode": 1,
+    "payload_seconds": 911.1,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v9",
+    "started_at": 1788910816.2938352,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "17889108153442432"
+  },
+  "fleet_before": {
+    "finished_at": 1788911728.456118,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/ef55bca6dc0d47525783dc53e0db04238f9b6424f8dbc14efb1d0f2b4a393701.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788911727.3975434,
+    "payload_returncode": 1,
+    "payload_seconds": 911.1,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v9",
+    "started_at": 1788910816.2938352,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "17889108153442432"
+  },
+  "own_holder_after": false,
+  "own_holder_before": false,
+  "source_after": {
+    "head": "e4425b984e3455614744f0f3072916b1b296bd0f",
+    "shallow": "false",
+    "status": ""
+  },
+  "source_before": {
+    "head": "e4425b984e3455614744f0f3072916b1b296bd0f",
+    "shallow": "false",
+    "status": ""
+  }
+}

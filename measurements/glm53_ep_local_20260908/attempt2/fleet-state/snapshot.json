@@ -1,0 +1,36 @@
+{
+  "captured_at_unix": 1788849825.9589376,
+  "source": "/home/choiceoh/glm53-logs/fleet",
+  "records": [
+    {
+      "file": "log.gz",
+      "raw_sha256": "87979d6a5807014bc5efde92c88a6a81c0be400f9254f37e88da2526d0737e05",
+      "raw_bytes": 98432,
+      "stored_sha256": "45f02f801d80a7de1f50974856eab5dc05e473dbc5709ea4b27bb6a3991515f5"
+    },
+    {
+      "file": "events.log.gz",
+      "raw_sha256": "3a2e10094c579d27fe7b1eedeb290c5da8bfe3e2278a04f441ae60f93ad0f424",
+      "raw_bytes": 50052,
+      "stored_sha256": "f8684c4f9e41bd887917e9c76763500f1653e0357761ad3a59fe94bfd0e42c1b"
+    },
+    {
+      "file": "ledger.tsv.gz",
+      "raw_sha256": "97b8feb71e18618831b5428849287d7070d54b2948aa859967b258727a6a7349",
+      "raw_bytes": 34126,
+      "stored_sha256": "3613630b27628d3acfa9be2ec59b529f09ebb1d11f81e1fffb670765485b43c1"
+    },
+    {
+      "file": "holder.gz",
+      "raw_sha256": "1005de12cda23f262e34a2f78d6a032bdf9c0e96a94dc22f6d15506155fc5255",
+      "raw_bytes": 112,
+      "stored_sha256": "89ce2d290d2757979d80bf64b7c3d9d778f10f8b0141650f708a3eb3dde6219d"
+    },
+    {
+      "file": "queue.gz",
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0,
+      "stored_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    }
+  ]
+}

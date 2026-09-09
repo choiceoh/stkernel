@@ -1,0 +1,25 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-1",
+  "revision": "98ce2cf07794e9361c2fdbc9b11b6bc7ffaffb07",
+  "session": "eplocal0908v1",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-ep-local-gpu-0908-1/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "eplocal0908v1",
+    "45",
+    "E72 full-token fused prefill: actual compact control, numerics and memcheck/racecheck, exact restore",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-ep-local-gpu-0908-1/probes/run_glm53_ep_local_offline.py",
+    "--revision",
+    "98ce2cf07794e9361c2fdbc9b11b6bc7ffaffb07",
+    "--out",
+    "/tmp/glm53-ep-local-gpu-0908-1/capture"
+  ],
+  "created": 1788844830.912604,
+  "started": 1788844830.925334,
+  "ended": 1788847322.8867776,
+  "exit_code": 143
+}

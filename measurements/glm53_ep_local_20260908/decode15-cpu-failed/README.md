@@ -1,0 +1,11 @@
+# CPU15: first direct-scatter lowering failed
+
+Normal fleet CPU session `epdecodecpu0909v15` ran on srv1 through the srv2 scheduler, 2026-09-09 10:39:27–10:39:32 KST. Frozen source was `71c407bbab59004a9a865acc17f3d2b5c48013c8` at `/home/choiceoh/stkernel-ep-onepass-0909-15`. Payload and outer return codes were1; success-only evidence copy was not performed.
+
+The original result is **FAIL**, phase `micro-cute-compile`, with `micro_passes=[]`. The first M32 candidate did not finish lowering: `(Int32(?), Int32(?)) to integer conversion is not supported`. No PTX/cubin/resource files were produced. The planned94-test suite and remaining kernels were not reached. Final CUDA-initialization and runtime-recheck fields are absent; no final completion claim is inferred.
+
+The source used a flat `(32,128,1)` identity tensor in its host validator but `cute.shape(sC)` in runtime code. The latter carries nested layout modes; using that coordinate tuple as Int32 is the concrete source mismatch addressed by the subsequent flat-identity correction. This archive preserves the original failure, not success of that correction. The saved result/fleet stderr contain only the DSL error summary; no full traceback or source-line traceback was emitted.
+
+`evidence.tar.gz` preserves the worker's sole original `result.json`, duplicated byte-for-byte as local `result.json`. `head/` retains original submission, driver, exit, and full fleet stderr/log. Before/after collection verifies both frozen checkouts clean/full/no-alternates, source hashes matching the submission and runtime receipt, immutable image `sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`, and the strict116-file capsule at manifest `b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab`. Existing12GiB admission,4GiB/2CPU limits and no-device runtime are unchanged.
+
+`capture.json` retains original hashes and observations; `verify.py` reproduces local archive integrity checks, saved in `verification.json`. Its PASS concerns byte/provenance integrity only; the original CPU verdict remains FAIL. Collection did not execute tests, compile, use GPUs, alter frozen sources, or submit a new job. `SHA256SUMS` covers all archive files except itself.

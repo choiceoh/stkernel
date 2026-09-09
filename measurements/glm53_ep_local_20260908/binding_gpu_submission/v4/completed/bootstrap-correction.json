@@ -1,0 +1,7 @@
+{
+  "created": 1788857729.2710614,
+  "previous_pid": 2436535,
+  "previous_driver_bytes": 0,
+  "gpu_submitted": false,
+  "reason": "read-only SSH snapshot consumed preparation stdin before driver text was stored; transfer driver via base64 argv"
+}

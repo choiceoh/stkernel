@@ -1,0 +1,15 @@
+fleet: HELD by eplocalonepass0909v2b [boot] (pid 1269839@srv2, since 01:57, est 45m, Canonical onepass EP B1 A B2 2K32K128K tok/s TTFT)
+legacy: 2 bench/boot procs, 0 requests in flight, head booting
+queue (0):
+  marker 01:57 FLEET-held-by-eplocalonepass0909v2b.done
+  marker 11:08 FLEET-held-by-alignprod.done
+  decode-next-0909v3 [paused], ticket 17888853031122566: candidate must include relevant changes from origin/main: bench/ab-lever.sh, bench/chain.sh, bench/cpu_evidence.py, bench/experiment_retry.py, bench/experiments.py, bench/fleet.sh, bench/fleet_boot.py, bench/fleet_classify.py, bench/fleet_onepass.py, bench/fleet_pin.py, bench/fleet_prepare.py, bench/onepass_deploy.py
+log:
+  2026-09-09_01:56:05 preflight synced ab-lever2.sh from the repo
+  2026-09-09_01:56:06 preflight FAIL eplocalonepass0909v2a (not queued)
+  2026-09-09_01:57:08 request eplocalonepass0909v2b est=45m Canonical onepass EP B1 A B2 2K32K128K tok/s TTFT [boot]
+  2026-09-09_01:57:09 GO eplocalonepass0909v2b (pid 1269839)
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "06c26649e8fe464bbd10675c4db9f359", "phase": "waiting", "reason": "holder active", "since": 389154.350934031, "updated_at": 1788886761.4138467, "version": 1}
+production: defaults (health 000)
+deployed: 7c4c8ce88b69
+baseline: NONE for build cc2b7088 -- a defaults arm is worth its boot

@@ -1,0 +1,15 @@
+eplocalonepass0909v1: failed
+  phase: finished
+  ticket: 1788883625926754
+  revision: 4
+  note: EP-local actual onepass B1/A/B2 2K32K128K tok/s and TTFT
+  cwd: /home/choiceoh/stkernel-ep-local-scheduler-0909
+  wait_seconds: 1646.3
+  payload_seconds: 483.0
+  payload_returncode: 1
+  recovery_returncode: 0
+  returncode: 1
+  log_path: /home/choiceoh/glm53-logs/fleet/run-logs/a9ff1ea045510a5fad0f1237ab345c5b2b2d73108d6e3d232aeafb5de3c5c9a2.log
+  command: env REPO=/home/choiceoh/stkernel-ep-onepass-0909-1 python3 -B /tmp/glm53-ep-onepass-0909-1/payload-v2.py run
+  edit: editing closes at admission or supervisor exit
+  fleet.sh logs eplocalonepass0909v1

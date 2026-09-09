@@ -1,0 +1,8 @@
+{
+  "revision": "ebbe255100be7a00c293e8c4799ec403043c63c3",
+  "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-3",
+  "clean": true,
+  "cpu_source_match": true,
+  "cpu_tests": 29,
+  "triton_variants": 24
+}

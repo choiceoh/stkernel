@@ -1,0 +1,223 @@
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.049s
+
+OK
+[osar] VLLM_GLM53_AR_PREFETCH=40 MB is outside 1..20; off
+[osar] VLLM_GLM53_AR_PREFETCH='x' is not 0, 1 or an MB count; off
+[osar] prefetch hints learned (target): 2 collectives, 12.6 MB in total
+[osar] prefetch hints learned (drafter): 1 collectives, 0.0 MB in total
+not_change_payload) ... ok
+test_experiment_payload_cannot_bypass_snapshot_but_note_can_change (test_fleet_pending.PendingTests.test_experiment_payload_cannot_bypass_snapshot_but_note_can_change) ... ok
+test_failed_preflight_invalid_metadata_and_empty_command_keep_original (test_fleet_pending.PendingTests.test_failed_preflight_invalid_metadata_and_empty_command_keep_original) ... ok
+test_holder_metadata_reads_committed_record_after_interrupted_queue_write (test_fleet_pending.PendingTests.test_holder_metadata_reads_committed_record_after_interrupted_queue_write) ... ok
+test_audited_source_guard_accepts_docs_commit_but_rejects_code (test_fleet_prepare.PrepareTests.test_audited_source_guard_accepts_docs_commit_but_rejects_code) ... ok
+test_changed_command_spec_and_required_file_refuse_reuse (test_fleet_prepare.PrepareTests.test_changed_command_spec_and_required_file_refuse_reuse) ... ok
+test_clean_guard_is_literal_and_comments_not_executed (test_fleet_prepare.PrepareTests.test_clean_guard_is_literal_and_comments_not_executed) ... ok
+test_deployment_target_resolves_wrapper_checkout_and_exported_image (test_fleet_prepare.PrepareTests.test_deployment_target_resolves_wrapper_checkout_and_exported_image) ... ok
+test_direct_deploy_and_literal_private_wrapper_resolve_target (test_fleet_prepare.PrepareTests.test_direct_deploy_and_literal_private_wrapper_resolve_target) ... ok
+test_dynamic_wrapper_requires_explicit_signed_deployment_target (test_fleet_prepare.PrepareTests.test_dynamic_wrapper_requires_explicit_signed_deployment_target) ... ok
+test_external_campaign_guard_uses_execution_checkout (test_fleet_prepare.PrepareTests.test_external_campaign_guard_uses_execution_checkout) ... ok
+test_forged_and_tampered_receipts_are_refused_before_cpu (test_fleet_prepare.PrepareTests.test_forged_and_tampered_receipts_are_refused_before_cpu) ... ok
+test_go_cannot_downgrade_authenticated_receipt_to_legacy (test_fleet_prepare.PrepareTests.test_go_cannot_downgrade_authenticated_receipt_to_legacy) ... ok
+test_literal_env_prefix_resolves_sources_targets_and_unsets (test_fleet_prepare.PrepareTests.test_literal_env_prefix_resolves_sources_targets_and_unsets) ... ok
+test_missing_entrypoint_is_refused_but_inline_code_is_not_a_filename (test_fleet_prepare.PrepareTests.test_missing_entrypoint_is_refused_but_inline_code_is_not_a_filename) ... ok
+test_paused_check_cli_returns_editable_status_four (test_fleet_prepare.PrepareTests.test_paused_check_cli_returns_editable_status_four) ... ok
+test_quoted_clean_guard_is_recognized (test_fleet_prepare.PrepareTests.test_quoted_clean_guard_is_recognized) ... ok
+test_recovery_reclaim_does_not_reapply_payload_preparation (test_fleet_prepare.PrepareTests.test_recovery_reclaim_does_not_reapply_payload_preparation) ... ok
+test_reuse_binds_requested_gpu_environment_and_image_identity (test_fleet_prepare.PrepareTests.test_reuse_binds_requested_gpu_environment_and_image_identity) ... ok
+test_unaudited_and_unexecuted_cpu_commands_cannot_claim_reuse (test_fleet_prepare.PrepareTests.test_unaudited_and_unexecuted_cpu_commands_cannot_claim_reuse) ... ok
+test_unchanged_inputs_validate_without_reexecuting_cpu (test_fleet_prepare.PrepareTests.test_unchanged_inputs_validate_without_reexecuting_cpu) ... ok
+test_validate_targets_uses_cli_target_and_rejects_changed_candidate_source (test_fleet_prepare.PrepareTests.test_validate_targets_uses_cli_target_and_rejects_changed_candidate_source) ... ok
+test_admission_evidence_and_changed_checkout_cannot_be_recovery (test_fleet_recovery.RecoveryTests.test_admission_evidence_and_changed_checkout_cannot_be_recovery) ... ok
+test_default_reuses_approved_source_after_main_advances_and_fetches_once (test_fleet_recovery.RecoveryTests.test_default_reuses_approved_source_after_main_advances_and_fetches_once) ... ok
+test_delegated_verification_detects_receipt_change (test_fleet_recovery.RecoveryTests.test_delegated_verification_detects_receipt_change) ... ok
+test_refresh_updates_only_after_success_and_migration_selects_newest_release (test_fleet_recovery.RecoveryTests.test_refresh_updates_only_after_success_and_migration_selects_newest_release) ... ok
+test_controller_pin_roundtrip_covers_campaign_bytes (test_fleet_retry.RetryTests.test_controller_pin_roundtrip_covers_campaign_bytes) ... ok
+test_explicit_retry_does_not_inherit_its_failed_source_cpu_claim (test_fleet_retry.RetryTests.test_explicit_retry_does_not_inherit_its_failed_source_cpu_claim) ... ok
+test_fresh_attestation_and_concurrent_withdrawal_abort_before_publication (test_fleet_retry.RetryTests.test_fresh_attestation_and_concurrent_withdrawal_abort_before_publication) ... ok
+test_historical_controller_retry_runs_pinned_current_code_with_saved_source (test_fleet_retry.RetryTests.test_historical_controller_retry_runs_pinned_current_code_with_saved_source) ... ok
+test_valid_cpu_cache_is_reused_and_failed_cache_is_never_success (test_fleet_retry.RetryTests.test_valid_cpu_cache_is_reused_and_failed_cache_is_never_success) ... ok
+test_failed_transaction_restores_baseline_demand_and_queue (test_fleet_runtime.RuntimeTests.test_failed_transaction_restores_baseline_demand_and_queue) ... ok
+test_group_probe_filters_other_groups_and_fails_closed (test_fleet_runtime.RuntimeTests.test_group_probe_filters_other_groups_and_fails_closed) ... ok
+test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries (test_fleet_runtime.RuntimeTests.test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries) ... ok
+test_live_workers_admit_wide_request_before_later_small_request (test_fleet_runtime.RuntimeTests.test_live_workers_admit_wide_request_before_later_small_request) ... ok
+test_retirement_after_admission_releases_capacity_without_spawning (test_fleet_runtime.RuntimeTests.test_retirement_after_admission_releases_capacity_without_spawning) ... ERROR
+test_running_held_manual_and_incomplete_baseline_demand_is_preserved (test_fleet_runtime.RuntimeTests.test_running_held_manual_and_incomplete_baseline_demand_is_preserved) ... ok
+test_duration_assignment_balances_cost_and_keeps_exact_coverage (test_fleet_runtime.TimingTests.test_duration_assignment_balances_cost_and_keeps_exact_coverage) ... ok
+test_recorded_timings_are_reused_but_changed_test_files_are_not (test_fleet_runtime.TimingTests.test_recorded_timings_are_reused_but_changed_test_files_are_not) ... ok
+test_declared_measurement_input_and_environment_remain_bound (test_fleet_source.CpuSourceTests.test_declared_measurement_input_and_environment_remain_bound) ... ok
+test_logic_docs_reuse_reports_and_real_changes_invalidate (test_fleet_source.CpuSourceTests.test_logic_docs_reuse_reports_and_real_changes_invalidate) ... ok
+test_deploy_source_guard_cli_checks_the_requested_ref (test_fleet_source.SourceTests.test_deploy_source_guard_cli_checks_the_requested_ref) ... ok
+test_doc_and_measurement_commit_preserves_effective_source (test_fleet_source.SourceTests.test_doc_and_measurement_commit_preserves_effective_source) ... ok
+test_prior_evidence_environment_input_is_never_discarded (test_fleet_source.SourceTests.test_prior_evidence_environment_input_is_never_discarded) ... ok
+test_admission_does_not_run_release_gates_or_scan_ml_dependencies (test_fleet_validation.ValidationTests.test_admission_does_not_run_release_gates_or_scan_ml_dependencies) ... ok
+test_chat_tokenizer_change_blocks_hold_without_rerunning (test_fleet_validation.ValidationTests.test_chat_tokenizer_change_blocks_hold_without_rerunning) ... ok
+test_deploy_adopts_source_helper_when_old_runner_has_none (test_fleet_validation.ValidationTests.test_deploy_adopts_source_helper_when_old_runner_has_none) ... ok
+test_failed_and_incomplete_coverage_never_create_receipts (test_fleet_validation.ValidationTests.test_failed_and_incomplete_coverage_never_create_receipts) ... ok
+test_optional_fixed_checkpoint_is_bound_independently_of_selected_model (test_fleet_validation.ValidationTests.test_optional_fixed_checkpoint_is_bound_independently_of_selected_model) ... ok
+test_recovery_descriptor_change_and_checkout_change_fail_closed (test_fleet_validation.ValidationTests.test_recovery_descriptor_change_and_checkout_change_fail_closed) ... ok
+test_recovery_keeps_validated_approved_source_when_main_advances (test_fleet_validation.ValidationTests.test_recovery_keeps_validated_approved_source_when_main_advances) ... ok
+test_restore_shell_uses_receipt_without_fetch_and_isolates_candidate_environment (test_fleet_validation.ValidationTests.test_restore_shell_uses_receipt_without_fetch_and_isolates_candidate_environment) ... ok
+test_runtime_change_rejects_old_required_receipt (test_fleet_validation.ValidationTests.test_runtime_change_rejects_old_required_receipt) ... ok
+test_sanitized_runtime_keeps_user_site_dependencies_and_binds_customization (test_fleet_validation.ValidationTests.test_sanitized_runtime_keeps_user_site_dependencies_and_binds_customization) ... ok
+test_tampered_artifact_cannot_be_consumed_during_hold (test_fleet_validation.ValidationTests.test_tampered_artifact_cannot_be_consumed_during_hold) ... ok
+
+======================================================================
+ERROR: test_retirement_after_admission_releases_capacity_without_spawning (test_fleet_runtime.RuntimeTests.test_retirement_after_admission_releases_capacity_without_spawning)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_runtime.py", line 137, in test_retirement_after_admission_releases_capacity_without_spawning
+    resources.run_cpu(store,job,['true'],store.get(job)['payload'])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/experiment_resources.py", line 187, in run_cpu
+    while not acquire(store, job, resources):
+              ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_runtime.py", line 132, in acquire
+    answer=original(*args)
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/experiment_resources.py", line 115, in acquire
+    total = total_memory()
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/experiment_resources.py", line 42, in total_memory
+    return int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'], text=True)) // 1048576
+               ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 473, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+               **kwargs).stdout
+               ^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 557, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+    ^^^^^^^^^^^^^^
+ValueError: not enough values to unpack (expected 2, got 0)
+
+----------------------------------------------------------------------
+Ran 174 tests in 57.949s
+
+FAILED (errors=1)
+PREPARE PAUSED (reservation retained): input changed
+
+  skip_topk rule ................ OK
+  rank cache eviction contracts .. OK
+  nvfp4 static scale contracts .. OK
+  prefill chunker budgets ....... OK
+  indexer-SP shard coverage ..... OK
+  helper functions .............. OK
+  profile-step buckets/union .... OK
+  bench-dec acceptance parser ... OK
+  overlay manifests (85 files across dsv4, glm53) .... OK
+  composed snapshot sync (85 files) . OK
+  overlay symbol contracts (122, per composition incl. orphans) ... OK
+  profile env carried (109 knobs) ... OK
+  profile keys have readers (152) ... OK
+  bf16-release guards ........... OK
+  DSpark speed-path guards ...... OK
+  acceptance lever guards ....... OK
+  ngram-ceiling sim math ........ OK
+  UE8M0 scale repair ............. SKIP (no torch on this host)
+  EP stock top-k chunks .......... OK
+  EP fixed/stock output init ..... OK
+  b12x zero-weight micro ......... OK
+  GLM53 b12x tuning controls ..... OK
+  b12x static v2 controls ........ OK
+  b12x SF 6-bit pack ............ OK (skipped: no torch)
+  EP micro chunk width .......... OK
+  EP tail fixed shape ........... OK
+  EP compact shape align ........ OK
+  EP compact warmup ladder ...... OK
+  *_once args hashable .......... OK
+  dflash2 selector check ........ OK
+  dflash2 selector score precision  SKIP (no torch on this host)
+  overlay logger defined ........ OK
+  osar MAXEL rank agreement ..... OK
+  bench served-model resolve .... OK
+  extra-env comma guard ......... OK
+  torch imports guarded ......... OK
+  dflash2 conv mask buffer ....... OK
+  dflash AOT guard stays removed  OK
+  hot-path env latches ........... OK
+  launcher load-format gate ..... OK
+  launcher reject-method gate ... OK
+  dflash2 prefix-cache fail-closed  OK
+  accept profile arithmetic ..... OK
+  DSV4 launcher adoptions ....... OK
+  launcher nofile limit ......... OK
+  prefill ladder probe .......... OK
+  fp8 acceptance contracts ....... OK
+  glm53 V2/deploy contracts ...... OK
+  launcher head guard .......... OK
+  preflight applies GMU ......... OK
+  no hardcoded image paths ...... OK
+  b12x EP routing ................ OK (tensor remap skipped)
+  b12x EP preflight .............. OK
+  b12x EP launcher ............... OK
+  deploy refusal exits non-zero .. OK
+  fp8-dense nvfp4 scheme contract .. OK
+  benches ask the server for the model .. OK
+  korean gate notation vs damage .. OK
+  every module is mounted or explained .. OK
+  profile knobs are all readable .. OK
+  fp8-dense bf16 release contract .. OK
+  mhc probe contracts ............ OK
+  mhc bigfuse knob ............... OK
+  census KDA group ............... OK
+  census owner axis .............. OK
+  census streaming reader ....... OK
+  trace step tail cut ........... OK
+  profiles README module table .. OK
+  dflash warmup buckets .......... OK
+  DSV4 spec warmup contract ...... OK
+  DSV4 UE8M0 host guard ......... SKIP values (no torch)
+  glm53 kpool packed scratch contract ... SKIP (no torch on this host)
+  GLM53 KDA prefill regimes ....... OK
+  GLM53 KDA prefill direct out ... OK
+  GLM53 upstream prefill batch ..... OK
+  one-shot SM121 grid contract .... OK
+  cuda builds keep the sm_121a-specific target .. OK
+  self-built kernels persist their caches .. OK
+  boot stamps measure without changing the boot .. OK
+  cudagraph mem profiling off keeps kv size .. OK
+  kv cache is pinned in tokens ... OK
+  earlyoom fireable on UMA ...... OK
+  fp8-dense drafter patterns + opaque op .. OK
+  spec_k compile factor .. OK
+  dev lab contracts .. OK
+  mk head lane contracts .......... OK
+  ab runner measures both ....... OK
+  osar wait is split by message size .. OK
+  osar prefetch hints contract .. OK
+  glm53_dflash_early_fc contracts .. OK
+  glm53_drafter_prep contracts .... OK
+  indexer decode fused contracts .. OK
+  drafter ctx-KV W4 contracts ..... OK
+  trace step nodes tool ........... OK
+  micro-fusion bundle 2 contracts .. OK
+  glm53 megakernel contracts .. OK
+  prefill warmup contracts ... OK
+  w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)
+  megakernel core is shared ..... OK
+  glm53 prep fused contracts .. OK
+  launcher continued-string assignments carry no comments .. OK
+  launcher restores PREFILL_WARMUP from caller env .. OK
+  decode-first scheduler contracts .. OK
+  profile keys not via EXTRA_ENV .. OK
+  kv-zero guard ................ OK
+  glm53 IndexCache layer rule ... OK
+  glm53 indexer gate split-K contracts .. OK
+  bracket runner contracts .. OK
+  trace composition analyze .. OK
+  drafter fc probe contracts .. OK
+  fp8-dense build peak .......... OK
+  hy4 entry point parity ........ OK
+  common tp4 library ............ OK
+  worker envv not re-parsed ..... OK
+  supervisor relaunch pacing .... OK
+Ran 348 tests in 2 isolated shards: FAILED
+FAIL: fleet asynchronous submissions, prerequisites and evidence contracts

@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-09-08T22:50:25.382301+09:00",
+  "command": [
+    "python3",
+    "-B",
+    "/tmp/glm53_prepare_cpu17.py",
+    "--revision",
+    "81b8ef91cd72f3f20a3cdf8014a8b25a51b357c1"
+  ],
+  "returncode": 0,
+  "admission_file_sha256": "8f14752f6c7a1c5d6ff772089fd7e38c5b94bed35cc63e5c333857721eebf131",
+  "scope": "Preparer inspection refused below12GiB; no remote source, bundle transfer or job created; not compilation"
+}

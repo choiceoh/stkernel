@@ -1,0 +1,538 @@
+{
+  "verdict": "PASS",
+  "scope": "CPU19 archive integrity only; no new tests or GPU execution",
+  "original_verdict": "PASS",
+  "contracts": {
+    "tests_run": 112,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "original_files": 61,
+  "ptx": 28,
+  "cubin": 28,
+  "resource_logs": 4,
+  "source_revision": "cd293e19c146bd52c3419b064af209b57b2555d9",
+  "scatter_sites": {
+    "m32-topk8-shared-a-direct-fp32": {
+      "path": "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "ptx_sha256": "96c5c17e2f0d0e99c7ae0c540210451142be180ac1710f5a22fced0dc1fac2ad",
+      "static_instruction_sites": {
+        "fp32_v2": 64,
+        "bf16x2": 0
+      }
+    },
+    "m64-topk1-fp32": {
+      "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx",
+      "ptx_sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+      "static_instruction_sites": {
+        "fp32_v2": 4,
+        "bf16x2": 0
+      }
+    },
+    "m64-topk8-bf16": {
+      "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "ptx_sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+      "static_instruction_sites": {
+        "fp32_v2": 0,
+        "bf16x2": 4
+      }
+    }
+  },
+  "publication_sites": {
+    "m32-topk8-shared-a-direct-fp32": {
+      "ptx_sha256": "96c5c17e2f0d0e99c7ae0c540210451142be180ac1710f5a22fced0dc1fac2ad",
+      "sites": [
+        {
+          "line_range": [
+            2839,
+            3214
+          ],
+          "fp32_red_sites": [
+            3049,
+            3062,
+            3070,
+            3078,
+            3086,
+            3094,
+            3102,
+            3110,
+            3150,
+            3163,
+            3171,
+            3179,
+            3187,
+            3195,
+            3203,
+            3211
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 2,
+          "metadata_weight_loads": 2,
+          "row_guards": [
+            3016,
+            3117
+          ],
+          "id_load_lines": [
+            3018,
+            3119
+          ],
+          "pre_barriers": [],
+          "post_barrier": 3214,
+          "instructions": {
+            "3049": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r2665, %r2664; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd178], {v0,v1}; }",
+            "3214": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "line_range": [
+            3215,
+            3547
+          ],
+          "fp32_red_sites": [
+            3382,
+            3394,
+            3402,
+            3410,
+            3418,
+            3426,
+            3434,
+            3442,
+            3484,
+            3496,
+            3504,
+            3512,
+            3520,
+            3528,
+            3536,
+            3544
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 2,
+          "metadata_weight_loads": 2,
+          "row_guards": [
+            3344,
+            3446
+          ],
+          "id_load_lines": [
+            3346,
+            3448
+          ],
+          "pre_barriers": [],
+          "post_barrier": 3547,
+          "instructions": {
+            "3382": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r2855, %r2854; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd207], {v0,v1}; }",
+            "3547": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "line_range": [
+            3548,
+            3881
+          ],
+          "fp32_red_sites": [
+            3715,
+            3727,
+            3735,
+            3743,
+            3751,
+            3759,
+            3767,
+            3775,
+            3818,
+            3830,
+            3838,
+            3846,
+            3854,
+            3862,
+            3870,
+            3878
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 2,
+          "metadata_weight_loads": 2,
+          "row_guards": [
+            3675,
+            3779
+          ],
+          "id_load_lines": [
+            3677,
+            3781
+          ],
+          "pre_barriers": [],
+          "post_barrier": 3881,
+          "instructions": {
+            "3715": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r3047, %r3046; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd246], {v0,v1}; }",
+            "3881": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "line_range": [
+            3882,
+            4223
+          ],
+          "fp32_red_sites": [
+            4054,
+            4066,
+            4074,
+            4082,
+            4090,
+            4098,
+            4106,
+            4114,
+            4160,
+            4172,
+            4180,
+            4188,
+            4196,
+            4204,
+            4212,
+            4220
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 2,
+          "metadata_weight_loads": 2,
+          "row_guards": [
+            4009,
+            4119
+          ],
+          "id_load_lines": [
+            4016,
+            4122
+          ],
+          "pre_barriers": [],
+          "post_barrier": 4223,
+          "instructions": {
+            "4054": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r3249, %r3248; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd285], {v0,v1}; }",
+            "4223": "bar.sync \t1, 128;"
+          }
+        }
+      ],
+      "scope": "four FC2 output unroll blocks, 16 register pairs per block; static sites are not runtime traffic counts"
+    },
+    "m64-topk1-fp32": {
+      "ptx_sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+      "sites": [
+        {
+          "store_end": 4986,
+          "pre_barriers": [
+            4988
+          ],
+          "loads": [
+            5030,
+            5041
+          ],
+          "red": 5055,
+          "post_barrier": 5061,
+          "instructions": {
+            "4986": "st.shared.b32 \t[%r4449], %r4574;",
+            "4987": "fence.proxy.async.shared::cta;",
+            "4988": "bar.sync \t1, 128;",
+            "5030": "ld.shared.b16 \t%rs58, [%r4631];",
+            "5041": "ld.shared.b16 \t%rs59, [%r4641];",
+            "5055": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r4613, %r4612; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd205], {v0,v1}; }",
+            "5061": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5333,
+          "pre_barriers": [
+            5335
+          ],
+          "loads": [
+            5380,
+            5391
+          ],
+          "red": 5403,
+          "post_barrier": 5409,
+          "instructions": {
+            "5333": "st.shared.b32 \t[%r4449], %r4830;",
+            "5334": "fence.proxy.async.shared::cta;",
+            "5335": "bar.sync \t1, 128;",
+            "5380": "ld.shared.b16 \t%rs62, [%r4892];",
+            "5391": "ld.shared.b16 \t%rs63, [%r4902];",
+            "5403": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r4871, %r4870; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd208], {v0,v1}; }",
+            "5409": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5843,
+          "pre_barriers": [
+            5845
+          ],
+          "loads": [
+            5890,
+            5901
+          ],
+          "red": 5913,
+          "post_barrier": 5919,
+          "instructions": {
+            "5843": "st.shared.b32 \t[%r5126], %r5251;",
+            "5844": "fence.proxy.async.shared::cta;",
+            "5845": "bar.sync \t1, 128;",
+            "5890": "ld.shared.b16 \t%rs66, [%r5313];",
+            "5901": "ld.shared.b16 \t%rs67, [%r5323];",
+            "5913": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r5292, %r5291; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd211], {v0,v1}; }",
+            "5919": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 6191,
+          "pre_barriers": [
+            6193
+          ],
+          "loads": [
+            6238,
+            6249
+          ],
+          "red": 6261,
+          "post_barrier": 6267,
+          "instructions": {
+            "6191": "st.shared.b32 \t[%r5126], %r5530;",
+            "6192": "fence.proxy.async.shared::cta;",
+            "6193": "bar.sync \t1, 128;",
+            "6238": "ld.shared.b16 \t%rs70, [%r5592];",
+            "6249": "ld.shared.b16 \t%rs71, [%r5602];",
+            "6261": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r5571, %r5570; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd214], {v0,v1}; }",
+            "6267": "bar.sync \t1, 128;"
+          }
+        }
+      ],
+      "scope": "all four statically unrolled scatter copies; no runtime traffic count"
+    },
+    "m64-topk8-bf16": {
+      "ptx_sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+      "sites": [
+        {
+          "store_end": 4989,
+          "pre_barriers": [],
+          "loads": [
+            5032,
+            5043
+          ],
+          "red": 5057,
+          "post_barrier": 5063,
+          "instructions": {
+            "4989": "st.shared.b32 \t[%r4452], %r4577;",
+            "4990": "fence.proxy.async.shared::cta;",
+            "5032": "ld.shared.b16 \t%rs58, [%r4634];",
+            "5043": "ld.shared.b16 \t%rs59, [%r4644];",
+            "5057": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r4616, %r4615; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd205], packed; }",
+            "5063": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5335,
+          "pre_barriers": [],
+          "loads": [
+            5381,
+            5392
+          ],
+          "red": 5404,
+          "post_barrier": 5410,
+          "instructions": {
+            "5335": "st.shared.b32 \t[%r4452], %r4833;",
+            "5336": "fence.proxy.async.shared::cta;",
+            "5381": "ld.shared.b16 \t%rs62, [%r4895];",
+            "5392": "ld.shared.b16 \t%rs63, [%r4905];",
+            "5404": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r4874, %r4873; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd208], packed; }",
+            "5410": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5844,
+          "pre_barriers": [],
+          "loads": [
+            5890,
+            5901
+          ],
+          "red": 5913,
+          "post_barrier": 5919,
+          "instructions": {
+            "5844": "st.shared.b32 \t[%r5129], %r5254;",
+            "5845": "fence.proxy.async.shared::cta;",
+            "5890": "ld.shared.b16 \t%rs66, [%r5316];",
+            "5901": "ld.shared.b16 \t%rs67, [%r5326];",
+            "5913": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r5295, %r5294; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd211], packed; }",
+            "5919": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 6191,
+          "pre_barriers": [],
+          "loads": [
+            6237,
+            6248
+          ],
+          "red": 6260,
+          "post_barrier": 6266,
+          "instructions": {
+            "6191": "st.shared.b32 \t[%r5129], %r5533;",
+            "6192": "fence.proxy.async.shared::cta;",
+            "6237": "ld.shared.b16 \t%rs70, [%r5595];",
+            "6248": "ld.shared.b16 \t%rs71, [%r5605];",
+            "6260": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r5574, %r5573; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd214], packed; }",
+            "6266": "bar.sync \t1, 128;"
+          }
+        }
+      ],
+      "scope": "all four statically unrolled scatter copies; no runtime traffic count"
+    }
+  },
+  "shared_fc1": {
+    "ptx_sha256": "96c5c17e2f0d0e99c7ae0c540210451142be180ac1710f5a22fced0dc1fac2ad",
+    "stages": [
+      {
+        "line_range": [
+          4380,
+          4435
+        ],
+        "phase": 0,
+        "expected_bytes": 27648,
+        "destination_offsets": [
+          2048,
+          51200,
+          18432,
+          53248,
+          34816,
+          55296
+        ],
+        "barrier": "[%r235+16]",
+        "instructions": {
+          "4379": "mov.b32 \t%r367, 27648;",
+          "4380": "mbarrier.arrive.expect_tx.shared.b64 %rd73, [%r235+16], %r367;",
+          "4389": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+2048], [%rd74, {%r369, %r370, %r3373}], [%r235+16], %rd75;",
+          "4398": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+51200], [%rd76, {%r373, %r372, %r3373}], [%r235+16], %rd77;",
+          "4408": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+18432], [%rd78, {%r377, %r376, %r181}], [%r235+16], %rd79;",
+          "4418": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+53248], [%rd80, {%r381, %r379, %r380, %r181}], [%r235+16], %rd81;",
+          "4426": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+34816], [%rd82, {%r383, %r182, %r181}], [%r235+16], %rd83;",
+          "4435": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+55296], [%rd84, {%r386, %r385, %r3374, %r181}], [%r235+16], %rd85;"
+        }
+      },
+      {
+        "line_range": [
+          4453,
+          4514
+        ],
+        "phase": 1,
+        "expected_bytes": 27648,
+        "destination_offsets": [
+          10240,
+          52224,
+          26624,
+          54272,
+          43008,
+          56320
+        ],
+        "barrier": "[%r235+24]",
+        "instructions": {
+          "4452": "mov.b32 \t%r390, 27648;",
+          "4453": "mbarrier.arrive.expect_tx.shared.b64 %rd86, [%r235+24], %r390;",
+          "4463": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+10240], [%rd87, {%r393, %r394, %r3373}], [%r235+24], %rd88;",
+          "4473": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+52224], [%rd89, {%r398, %r397, %r3373}], [%r235+24], %rd90;",
+          "4484": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+26624], [%rd91, {%r403, %r401, %r181}], [%r235+24], %rd92;",
+          "4495": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+54272], [%rd93, {%r408, %r406, %r407, %r181}], [%r235+24], %rd94;",
+          "4504": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+43008], [%rd95, {%r411, %r182, %r181}], [%r235+24], %rd96;",
+          "4514": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+56320], [%rd97, {%r415, %r414, %r3374, %r181}], [%r235+24], %rd98;"
+        }
+      },
+      {
+        "line_range": [
+          4532,
+          4593
+        ],
+        "phase": 0,
+        "expected_bytes": 27648,
+        "destination_offsets": [
+          2048,
+          51200,
+          18432,
+          53248,
+          34816,
+          55296
+        ],
+        "barrier": "[%r235+16]",
+        "instructions": {
+          "4531": "mov.b32 \t%r419, 27648;",
+          "4532": "mbarrier.arrive.expect_tx.shared.b64 %rd99, [%r235+16], %r419;",
+          "4542": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+2048], [%rd100, {%r422, %r423, %r3373}], [%r235+16], %rd101;",
+          "4552": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+51200], [%rd102, {%r427, %r426, %r3373}], [%r235+16], %rd103;",
+          "4563": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+18432], [%rd104, {%r432, %r430, %r181}], [%r235+16], %rd105;",
+          "4574": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+53248], [%rd106, {%r437, %r435, %r436, %r181}], [%r235+16], %rd107;",
+          "4583": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+34816], [%rd108, {%r440, %r182, %r181}], [%r235+16], %rd109;",
+          "4593": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+55296], [%rd110, {%r444, %r443, %r3374, %r181}], [%r235+16], %rd111;"
+        }
+      },
+      {
+        "line_range": [
+          4611,
+          4672
+        ],
+        "phase": 1,
+        "expected_bytes": 27648,
+        "destination_offsets": [
+          10240,
+          52224,
+          26624,
+          54272,
+          43008,
+          56320
+        ],
+        "barrier": "[%r235+24]",
+        "instructions": {
+          "4610": "mov.b32 \t%r448, 27648;",
+          "4611": "mbarrier.arrive.expect_tx.shared.b64 %rd112, [%r235+24], %r448;",
+          "4621": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+10240], [%rd113, {%r451, %r452, %r3373}], [%r235+24], %rd114;",
+          "4631": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+52224], [%rd115, {%r456, %r455, %r3373}], [%r235+24], %rd116;",
+          "4642": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+26624], [%rd117, {%r461, %r459, %r181}], [%r235+24], %rd118;",
+          "4653": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+54272], [%rd119, {%r466, %r464, %r465, %r181}], [%r235+24], %rd120;",
+          "4662": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+43008], [%rd121, {%r469, %r182, %r181}], [%r235+24], %rd122;",
+          "4672": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r235+56320], [%rd123, {%r473, %r472, %r3374, %r181}], [%r235+24], %rd124;"
+        }
+      }
+    ],
+    "consumer_end_fc1_barrier": 1571,
+    "producer_end_fc1_barrier": 4677,
+    "first_fc2_tma": 4706,
+    "final_task_barriers": [
+      4227,
+      4827
+    ],
+    "static_tma_sites": 32,
+    "scope": "four statically unrolled combined FC1 stages plus four two-transfer FC2 stages; no DRAM traffic or speed measurement"
+  },
+  "micro_resources": [
+    {
+      "path": "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+      "sha256": "95ebb13ab6e2fb27d6f695df427ba967cb6922899ce2b94ec071f858f65b883c",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_ten_0:\n  REG:161 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.cubin",
+      "sha256": "5c91db90159b02bf4eda94e4d161c36e81320e976a8f9882b7d39973c9ffa094",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo81_tensorptrf32gmemo81_tenso_0:\n  REG:222 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+      "sha256": "f438c0674e92c9da22eee5e6eb5cb0e5e59ffde6447e63240a613077a8585b01",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_ten_0:\n  REG:220 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "controls_identical_to_cpu17": [
+    "m64-topk1-fp32",
+    "m64-topk8-bf16"
+  ],
+  "previous_result_sha256": "d1c418b3415ee7ea96071a084312e6e96782c994b34ae33f074f2641ef0635b2",
+  "previous_candidate_ptx_sha256": "8ef17781c819c9aa1f84b7f51d1ae52dd2bdaee83d274073c2f54f0386022c58",
+  "previous_static_tma_sites": 40,
+  "evidence_tar_sha256": "a720095a88674df0fa7ee37cfac2599ba51c283599e7767bbcbee8becb77fef4",
+  "result_sha256": "aacc91eb1106a77e2db6d8ef65a69a02f0464da4a482bdbc6be09f96b0af8499"
+}

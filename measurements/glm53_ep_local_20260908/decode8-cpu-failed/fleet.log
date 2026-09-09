@@ -1,0 +1,285 @@
+test_actual_compiler_receives_m32_and_fixed_fake_geometry (test_glm53_ep_micro_tile.EPMicroTileTests.test_actual_compiler_receives_m32_and_fixed_fake_geometry) ... ok
+test_existing_m64_cache_entry_cannot_satisfy_m32 (test_glm53_ep_micro_tile.EPMicroTileTests.test_existing_m64_cache_entry_cannot_satisfy_m32) ... ok
+test_existing_tp_and_non_sentinel_tiles_unchanged (test_glm53_ep_micro_tile.EPMicroTileTests.test_existing_tp_and_non_sentinel_tiles_unchanged) ... ok
+test_m32_retains_valid_mma_and_physical_scale_geometry (test_glm53_ep_micro_tile.EPMicroTileTests.test_m32_retains_valid_mma_and_physical_scale_geometry) ... ok
+test_nonmatching_call_still_constructs_m64 (test_glm53_ep_micro_tile.EPMicroTileTests.test_nonmatching_call_still_constructs_m64) ... ok
+test_only_exact_geometry_overrides_default (test_glm53_ep_micro_tile.EPMicroTileTests.test_only_exact_geometry_overrides_default) ... ok
+test_18_then_6_then_changed_6_keeps_exact_staging_and_workspace (test_glm53_ep_short_decode.FusedShortDecodeTests.test_18_then_6_then_changed_6_keeps_exact_staging_and_workspace) ... ERROR
+test_allocation_failure_falls_back_but_launch_errors_never_do (test_glm53_ep_short_decode.FusedShortDecodeTests.test_allocation_failure_falls_back_but_launch_errors_never_do) ... ERROR
+test_exact_six_rows_bypass_torch_remap_and_all_staging_copies (test_glm53_ep_short_decode.FusedShortDecodeTests.test_exact_six_rows_bypass_torch_remap_and_all_staging_copies) ... ERROR
+test_other_token_counts_geometry_or_disabled_flag_never_prepare (test_glm53_ep_short_decode.FusedShortDecodeTests.test_other_token_counts_geometry_or_disabled_flag_never_prepare) ... ERROR
+test_unsupported_or_prelaunch_decline_reuses_original_remap_and_padding (test_glm53_ep_short_decode.FusedShortDecodeTests.test_unsupported_or_prelaunch_decline_reuses_original_remap_and_padding) ... ERROR
+test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) ... 
+  test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=1) ... ERROR
+  test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=2) ... ERROR
+  test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=3) ... ERROR
+  test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=4) ... ERROR
+  test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=5) ... ERROR
+  test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=6) ... ERROR
+  test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=7) ... ERROR
+test_all_remote_rows_clear_previous_staging_output (test_glm53_ep_short_decode.ShortDecodeTests.test_all_remote_rows_clear_previous_staging_output) ... ERROR
+test_disabled_path_and_invalid_tail_geometry_retain_fallback (test_glm53_ep_short_decode.ShortDecodeTests.test_disabled_path_and_invalid_tail_geometry_retain_fallback) ... ERROR
+test_padding_allocation_failure_keeps_disjoint_fixed_fallback (test_glm53_ep_short_decode.ShortDecodeTests.test_padding_allocation_failure_keeps_disjoint_fixed_fallback) ... ERROR
+test_proof_requires_completed_coherent_call_counts (test_glm53_ep_short_decode.ShortDecodeTests.test_proof_requires_completed_coherent_call_counts) ... ok
+test_spec5_graph_shapes_reuse_staging_and_preserve_every_real_row (test_glm53_ep_short_decode.ShortDecodeTests.test_spec5_graph_shapes_reuse_staging_and_preserve_every_real_row) ... ERROR
+test_launch_failure_propagates_instead_of_requesting_fallback (test_glm53_ep_route_remap.AdmissionTests.test_launch_failure_propagates_instead_of_requesting_fallback) ... ok
+test_launch_sizes_are_validated_once_and_recomputed_for_reused_tensors (test_glm53_ep_route_remap.AdmissionTests.test_launch_sizes_are_validated_once_and_recomputed_for_reused_tensors) ... ok
+test_one_launch_reuses_scratch_and_preserves_dtype_for_each_arm (test_glm53_ep_route_remap.AdmissionTests.test_one_launch_reuses_scratch_and_preserves_dtype_for_each_arm) ... ok
+test_public_support_check_is_boolean_and_never_launches (test_glm53_ep_route_remap.AdmissionTests.test_public_support_check_is_boolean_and_never_launches) ... ok
+test_reused_tensor_metadata_is_revalidated_after_every_launch (test_glm53_ep_route_remap.AdmissionTests.test_reused_tensor_metadata_is_revalidated_after_every_launch) ... ok
+test_unsupported_metadata_returns_before_any_launch (test_glm53_ep_route_remap.AdmissionTests.test_unsupported_metadata_returns_before_any_launch) ... ok
+test_actual_remap_preserves_local_bits_and_zeros_remote_nonfinite_weights (test_glm53_ep_route_remap.ReferenceTests.test_actual_remap_preserves_local_bits_and_zeros_remote_nonfinite_weights) ... ok
+test_actual_tensor_remap_matches_scalar_conversion_and_range_oracle (test_glm53_ep_route_remap.ReferenceTests.test_actual_tensor_remap_matches_scalar_conversion_and_range_oracle) ... ok
+test_exact_types_and_map_variants_launch_once_with_owned_buffers (test_glm53_ep_route_remap.ShortPrepareAdmissionTests.test_exact_types_and_map_variants_launch_once_with_owned_buffers) ... ok
+test_metadata_is_fresh_and_launch_errors_propagate (test_glm53_ep_route_remap.ShortPrepareAdmissionTests.test_metadata_is_fresh_and_launch_errors_propagate) ... ok
+test_unsupported_metadata_or_partial_alias_never_launches (test_glm53_ep_route_remap.ShortPrepareAdmissionTests.test_unsupported_metadata_or_partial_alias_never_launches) ... ok
+test_real_kernel_matches_legacy_padding_bits_and_changed_inputs (test_glm53_ep_route_remap.ShortPrepareKernelTests.test_real_kernel_matches_legacy_padding_bits_and_changed_inputs) ... ok
+test_declined_candidate_and_disabled_path_keep_legacy_scratch (test_glm53_ep_route_remap.WrapperScratchTests.test_declined_candidate_and_disabled_path_keep_legacy_scratch) ... ok
+test_full_candidate_reuses_tensor_objects_without_any_scratch_views (test_glm53_ep_route_remap.WrapperScratchTests.test_full_candidate_reuses_tensor_objects_without_any_scratch_views) ... ok
+test_partial_candidate_uses_current_storage_and_exact_row_views (test_glm53_ep_route_remap.WrapperScratchTests.test_partial_candidate_uses_current_storage_and_exact_row_views) ... ok
+test_existing_numerical_and_failure_capture_contracts_are_exact (test_glm53_ep_local_selftest.ContractTests.test_existing_numerical_and_failure_capture_contracts_are_exact) ... ok
+test_fixed_coverage_and_rng_calls_do_not_mutate_global_rng (test_glm53_ep_local_selftest.ContractTests.test_fixed_coverage_and_rng_calls_do_not_mutate_global_rng) ... ok
+test_m32_candidate_and_m64_control_actual_keys_are_required (test_glm53_ep_local_selftest.ContractTests.test_m32_candidate_and_m64_control_actual_keys_are_required) ... ok
+test_run_is_fixed_order_and_first_failure_prevents_later_cases (test_glm53_ep_local_selftest.ContractTests.test_run_is_fixed_order_and_first_failure_prevents_later_cases) ... ok
+test_canonical_q0_ignores_allocation_order_and_unwritten_padding (test_glm53_ep_local_selftest.Q0Tests.test_canonical_q0_ignores_allocation_order_and_unwritten_padding) ... ok
+test_valid_packed_byte_drift_and_bad_route_fail_closed (test_glm53_ep_local_selftest.Q0Tests.test_valid_packed_byte_drift_and_bad_route_fail_closed) ... ok
+test_first_failure_and_secondary_cleanup_are_sticky (test_glm53_ep_local_selftest.StateTests.test_first_failure_and_secondary_cleanup_are_sticky) ... ok
+test_inference_tensor_descriptor_snapshot_is_read_only (test_glm53_ep_local_selftest.StateTests.test_inference_tensor_descriptor_snapshot_is_read_only) ... ok
+test_only_scratch_cache_changes_restored_compiles_retained (test_glm53_ep_local_selftest.StateTests.test_only_scratch_cache_changes_restored_compiles_retained) ... ok
+test_pass_is_once_and_sync_precedes_return (test_glm53_ep_local_selftest.StateTests.test_pass_is_once_and_sync_precedes_return) ... ok
+test_reentrant_call_fails_instead_of_arming_running_test (test_glm53_ep_local_selftest.StateTests.test_reentrant_call_fails_instead_of_arming_running_test) ... ok
+
+======================================================================
+ERROR: test_18_then_6_then_changed_6_keeps_exact_staging_and_workspace (test_glm53_ep_short_decode.FusedShortDecodeTests.test_18_then_6_then_changed_6_keeps_exact_staging_and_workspace)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 263, in test_18_then_6_then_changed_6_keeps_exact_staging_and_workspace
+    h.run(18, id_dtype="i64")
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_allocation_failure_falls_back_but_launch_errors_never_do (test_glm53_ep_short_decode.FusedShortDecodeTests.test_allocation_failure_falls_back_but_launch_errors_never_do)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 295, in test_allocation_failure_falls_back_but_launch_errors_never_do
+    h.run(6)
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_exact_six_rows_bypass_torch_remap_and_all_staging_copies (test_glm53_ep_short_decode.FusedShortDecodeTests.test_exact_six_rows_bypass_torch_remap_and_all_staging_copies)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 244, in test_exact_six_rows_bypass_torch_remap_and_all_staging_copies
+    x, ids, _, out = h.run(6, id_dtype="i64")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_other_token_counts_geometry_or_disabled_flag_never_prepare (test_glm53_ep_short_decode.FusedShortDecodeTests.test_other_token_counts_geometry_or_disabled_flag_never_prepare)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 322, in test_other_token_counts_geometry_or_disabled_flag_never_prepare
+    h.run(tokens)
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_unsupported_or_prelaunch_decline_reuses_original_remap_and_padding (test_glm53_ep_short_decode.FusedShortDecodeTests.test_unsupported_or_prelaunch_decline_reuses_original_remap_and_padding)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 284, in test_unsupported_or_prelaunch_decline_reuses_original_remap_and_padding
+    x, _, _, out = h.run(6, id_dtype="i64")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 173, in test_actual_apply_reaches_single_padded_call_for_all_short_batches
+    x, ids, weights, out = h.run(tokens)
+                           ^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 173, in test_actual_apply_reaches_single_padded_call_for_all_short_batches
+    x, ids, weights, out = h.run(tokens)
+                           ^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=3)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 173, in test_actual_apply_reaches_single_padded_call_for_all_short_batches
+    x, ids, weights, out = h.run(tokens)
+                           ^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 173, in test_actual_apply_reaches_single_padded_call_for_all_short_batches
+    x, ids, weights, out = h.run(tokens)
+                           ^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=5)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 173, in test_actual_apply_reaches_single_padded_call_for_all_short_batches
+    x, ids, weights, out = h.run(tokens)
+                           ^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=6)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 173, in test_actual_apply_reaches_single_padded_call_for_all_short_batches
+    x, ids, weights, out = h.run(tokens)
+                           ^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) (tokens=7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 173, in test_actual_apply_reaches_single_padded_call_for_all_short_batches
+    x, ids, weights, out = h.run(tokens)
+                           ^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_all_remote_rows_clear_previous_staging_output (test_glm53_ep_short_decode.ShortDecodeTests.test_all_remote_rows_clear_previous_staging_output)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 194, in test_all_remote_rows_clear_previous_staging_output
+    h.run(6)
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_disabled_path_and_invalid_tail_geometry_retain_fallback (test_glm53_ep_short_decode.ShortDecodeTests.test_disabled_path_and_invalid_tail_geometry_retain_fallback)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 212, in test_disabled_path_and_invalid_tail_geometry_retain_fallback
+    h.run(6)
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_padding_allocation_failure_keeps_disjoint_fixed_fallback (test_glm53_ep_short_decode.ShortDecodeTests.test_padding_allocation_failure_keeps_disjoint_fixed_fallback)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 203, in test_padding_allocation_failure_keeps_disjoint_fixed_fallback
+    x, _, _, out = h.run(tokens)
+                   ^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+======================================================================
+ERROR: test_spec5_graph_shapes_reuse_staging_and_preserve_every_real_row (test_glm53_ep_short_decode.ShortDecodeTests.test_spec5_graph_shapes_reuse_staging_and_preserve_every_real_row)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 186, in test_spec5_graph_shapes_reuse_staging_and_preserve_every_real_row
+    x, _, _, out = h.run(tokens, shift=tokens * 10)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_glm53_ep_short_decode.py", line 163, in run
+    self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
+  File "/repo/overlay/modules/glm53_moe/flashinfer_b12x_moe.py", line 2608, in apply
+    packed_views = self._sf6_weight_views
+                   ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute '_sf6_weight_views'
+
+----------------------------------------------------------------------
+Ran 43 tests in 1.909s
+
+FAILED (errors=16)
+{"verdict": "FAIL", "phase": "cpu-contracts", "error": "AssertionError({'tests_run': 43, 'failures': 0, 'errors': 16, 'skips': 0})", "contracts": {"tests_run": 43, "failures": 0, "errors": 16, "skips": 0}, "cuda_initialized": null}
+Traceback (most recent call last):
+  File "/repo/probes/glm53_ep_short_decode_compile.py", line 160, in <module>
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/repo/probes/glm53_ep_short_decode_compile.py", line 149, in main
+    compile_candidate(args.output,result)
+  File "/repo/probes/glm53_ep_short_decode_compile.py", line 130, in compile_candidate
+    assert checked.wasSuccessful() and not checked.skipped,result['contracts']
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'tests_run': 43, 'failures': 0, 'errors': 16, 'skips': 0}

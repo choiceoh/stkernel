@@ -1,0 +1,50 @@
+{
+  "captured": 1788861720.8099988,
+  "snapshot_only": true,
+  "job": "/tmp/glm53-ep-binding-gpu0908-5",
+  "exit_exists": false,
+  "payload_capture_exists": false,
+  "original_metadata_rechecked": 8,
+  "files": {
+    "driver.py": {
+      "bytes": 1935,
+      "sha256": "fd53c6e1dccee6ee195e8eb07226cd2fdc13e99020b2692d41a51ff4ee7e8bb8"
+    },
+    "submission.json": {
+      "bytes": 1288,
+      "sha256": "e0e7d1ff099dc9f105dcfa6d7b25d66225af3a8623329fc2afaa6b82026a032a"
+    },
+    "freeze.json": {
+      "bytes": 511,
+      "sha256": "de25c2c0d3833b6919539d9d4f8d988cc832f70f66db1930b6c4f115681b3ca4"
+    },
+    "cpu-evidence.json": {
+      "bytes": 25470,
+      "sha256": "49f34f59b0d51609ecced3a21d4c278977e93f3a64c9267a9a18baf61282b8f0"
+    },
+    "inventory-at-submission.json": {
+      "bytes": 42393,
+      "sha256": "f90e2a7b90a6795544e368ede584c51df5e2d9d93fd2ce8a907e1624da57f6fc"
+    },
+    "scheduler.json": {
+      "bytes": 883,
+      "sha256": "d926b863dce981329a9ec79aa9294b032f7bd597c52acee031e4c37ae09a6b0c"
+    },
+    "driver-start.json": {
+      "bytes": 1390,
+      "sha256": "65cc614f80d444f71ffb47d16bdfedbc00a4cd6cc51ff8fa0c7f9833b69d64df"
+    },
+    "driver.pid": {
+      "bytes": 8,
+      "sha256": "452d2c1e4f46cf51695f46db8ef810d66d799d65457968b88d3b3cfaa1c60c2f"
+    },
+    "fleet-at-capture.log": {
+      "bytes": 646,
+      "sha256": "bff15696336112863d38861a61b9120cabce2f9d7c316fc2bea24e2013134d88"
+    },
+    "status-at-capture.txt": {
+      "bytes": 1160,
+      "sha256": "e34b71dffe157bb075f3ca4543ed3b4c4ebdc8c95c0fea129ab19b9b0b5492ce"
+    }
+  }
+}

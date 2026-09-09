@@ -25,7 +25,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from baseline import JSONL, deployed_git, for_build, is_baseline, load  # noqa: E402
+from baseline import (JSONL, deployed_git, for_build, is_baseline, load,
+                      comparison_scope, comparison_baseline)  # noqa: E402
 
 VERDICTS = os.environ.get("ONEPASS_VERDICTS",
                           os.path.join(os.path.dirname(JSONL), "verdicts.jsonl"))
@@ -45,7 +46,10 @@ def baselines_on(rows, rec):
     b = build_of(rec)
     mine = [r for r in for_build(rows, rec.get("overlay"), rec.get("git")) if not r.get("rehearsal")
             and compatible(r, rec)]
-    return [r for r in mine if is_baseline(r)[0]], b
+    scope = comparison_scope()
+    # Include a matching but unproved record so judge reports its invalidity;
+    # counts, reuse and noise-floor consumers must still check its proof.
+    return [r for r in mine if comparison_baseline(r, rec, scope=scope, require_proof=False)], b
 
 
 def compatible(a, b):
@@ -67,6 +71,8 @@ def record_errors(rec):
         errors.append("no finite decode window")
     if "knobs" not in rec:
         errors.append("knobs not attested")
+    if unproved(rec):
+        errors.append("unproved active knobs")
     return errors
 
 
@@ -92,7 +98,7 @@ def floor_of(rows, rec, objective=None):
         return list(boots.values())
     wins = windows(bases)
     scope = "same build"
-    if len(wins) < 2:
+    if len(wins) < 2 and comparison_scope() is None:
         wins = windows([x for x in rows
                 if is_baseline(x)[0] and not x.get("rehearsal")
                 and x.get("harness") == rec.get("harness")
@@ -128,6 +134,11 @@ def judge(cand, base, rows, objective=None):
     out["gates"] = gates
     out["proof_ok"] = proof
     out['objective'] = objective
+    scope = comparison_scope()
+    if scope is not None:
+        out['baseline_scope'] = scope
+        out['runtime_attestation'] = ('recorded' if cand.get('runtime') is not None
+                                      else 'not recorded; launch identity requires external evidence')
     if unproved(cand):
         out.update(status="invalid", verdict=f"UNPROVED (proof {proof or 'none'}): the delta is not evidence")
         return out
@@ -137,7 +148,10 @@ def judge(cand, base, rows, objective=None):
     if base is None:
         out["verdict"] = "no baseline on this build"
         return out
-    if (not compatible(base, cand) or not is_baseline(base)[0] or record_errors(base)
+    if unproved(base):
+        out.update(status="invalid", verdict="UNPROVED BASELINE: active knob proof is missing or false")
+        return out
+    if (not compatible(base, cand) or not comparison_baseline(base, cand, scope=scope) or record_errors(base)
             or not metric_compatible(base, cand, objective)):
         out["verdict"] = "baseline is incompatible or failed its gates"
         return out
@@ -175,6 +189,10 @@ def main() -> int:
     ap.add_argument("--allow-rehearsal", action="store_true")
     ap.add_argument("--fail-invalid", action="store_true", help="stop dependent arms after a gate/proof failure")
     a = ap.parse_args()
+    try:
+        comparison_scope()
+    except ValueError as exc:
+        ap.error(str(exc))
     rows = load(a.jsonl)
     if a.allow_rehearsal:
         for r in rows:

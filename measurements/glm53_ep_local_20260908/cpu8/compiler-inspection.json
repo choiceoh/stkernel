@@ -1,0 +1,927 @@
+{
+  "source_revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00",
+  "receipt_sha256": "b88d759166a6c3e8b64e21b095763a0344a7e3867c101883a2cf4246cf62dc11",
+  "worker_hash_records_verified": 27,
+  "cpu_tests": {
+    "tests_run": 48,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "cuda_initialized": false,
+  "remap_specializations": [
+    {
+      "label": "mapped-i32-fp32-i32",
+      "kind": "mapped",
+      "ptx_sha256": "2f5e7f4c0033be95e1b339ebbf7dd8f03c494135feab5fbe78911b5a2b57eb0d",
+      "ptx_bytes": 7667,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r13, %r14;",
+        "setp.lt.s32 \t%p2, %r15, %r14;",
+        "@%p1 ld.global.b32 { %r1 }, [ %rd1 + 0 ];",
+        "@%p2 ld.global.b32 { %r2 }, [ %rd2 + 0 ];",
+        "setp.lt.u32 \t%p7, %r1, 288;",
+        "setp.lt.u32 \t%p8, %r2, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b32 { %r3 }, [ %rd3 + 0 ];",
+        "@%p4 ld.global.b32 { %r4 }, [ %rd4 + 0 ];",
+        "setp.gt.s32 \t%p9, %r3, -1;",
+        "setp.gt.s32 \t%p10, %r4, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b32 { %r7 }, [ %rd5 + 0 ];",
+        "@%p6 ld.global.b32 { %r8 }, [ %rd6 + 0 ];",
+        "selp.b32 \t%r5, %r3, 72, %p11;",
+        "selp.b32 \t%r6, %r4, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i32-fp32-i64",
+      "kind": "mapped",
+      "ptx_sha256": "8f702e3f7c6203b6a62f314614b0c6274a024d0122edf82800349859019489db",
+      "ptx_bytes": 7941,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r11, %r12;",
+        "setp.lt.s32 \t%p2, %r13, %r12;",
+        "@%p1 ld.global.b32 { %r1 }, [ %rd1 + 0 ];",
+        "@%p2 ld.global.b32 { %r2 }, [ %rd2 + 0 ];",
+        "setp.lt.u32 \t%p7, %r1, 288;",
+        "setp.lt.u32 \t%p8, %r2, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "@%p4 ld.global.b64 { %rd5 }, [ %rd6 + 0 ];",
+        "setp.gt.s64 \t%p9, %rd3, -1;",
+        "setp.gt.s64 \t%p10, %rd5, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b32 { %r5 }, [ %rd7 + 0 ];",
+        "@%p6 ld.global.b32 { %r6 }, [ %rd8 + 0 ];",
+        "selp.b32 \t%r3, %r14, 72, %p11;",
+        "selp.b32 \t%r4, %r15, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i32-fp16-i32",
+      "kind": "mapped",
+      "ptx_sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+      "ptx_bytes": 7720,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r11, %r12;",
+        "setp.lt.s32 \t%p2, %r13, %r12;",
+        "@%p1 ld.global.b32 { %r1 }, [ %rd1 + 0 ];",
+        "@%p2 ld.global.b32 { %r2 }, [ %rd2 + 0 ];",
+        "setp.lt.u32 \t%p7, %r1, 288;",
+        "setp.lt.u32 \t%p8, %r2, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b32 { %r3 }, [ %rd3 + 0 ];",
+        "@%p4 ld.global.b32 { %r4 }, [ %rd4 + 0 ];",
+        "setp.gt.s32 \t%p9, %r3, -1;",
+        "setp.gt.s32 \t%p10, %r4, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b16 { %rs1 }, [ %rd5 + 0 ];",
+        "@%p6 ld.global.b16 { %rs2 }, [ %rd6 + 0 ];",
+        "selp.b32 \t%r5, %r3, 72, %p11;",
+        "selp.b32 \t%r6, %r4, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i32-fp16-i64",
+      "kind": "mapped",
+      "ptx_sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+      "ptx_bytes": 7991,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r9, %r10;",
+        "setp.lt.s32 \t%p2, %r11, %r10;",
+        "@%p1 ld.global.b32 { %r1 }, [ %rd1 + 0 ];",
+        "@%p2 ld.global.b32 { %r2 }, [ %rd2 + 0 ];",
+        "setp.lt.u32 \t%p7, %r1, 288;",
+        "setp.lt.u32 \t%p8, %r2, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "@%p4 ld.global.b64 { %rd5 }, [ %rd6 + 0 ];",
+        "setp.gt.s64 \t%p9, %rd3, -1;",
+        "setp.gt.s64 \t%p10, %rd5, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b16 { %rs1 }, [ %rd7 + 0 ];",
+        "@%p6 ld.global.b16 { %rs2 }, [ %rd8 + 0 ];",
+        "selp.b32 \t%r3, %r12, 72, %p11;",
+        "selp.b32 \t%r4, %r13, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i32-bf16-i32",
+      "kind": "mapped",
+      "ptx_sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+      "ptx_bytes": 7720,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r11, %r12;",
+        "setp.lt.s32 \t%p2, %r13, %r12;",
+        "@%p1 ld.global.b32 { %r1 }, [ %rd1 + 0 ];",
+        "@%p2 ld.global.b32 { %r2 }, [ %rd2 + 0 ];",
+        "setp.lt.u32 \t%p7, %r1, 288;",
+        "setp.lt.u32 \t%p8, %r2, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b32 { %r3 }, [ %rd3 + 0 ];",
+        "@%p4 ld.global.b32 { %r4 }, [ %rd4 + 0 ];",
+        "setp.gt.s32 \t%p9, %r3, -1;",
+        "setp.gt.s32 \t%p10, %r4, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b16 { %rs1 }, [ %rd5 + 0 ];",
+        "@%p6 ld.global.b16 { %rs2 }, [ %rd6 + 0 ];",
+        "selp.b32 \t%r5, %r3, 72, %p11;",
+        "selp.b32 \t%r6, %r4, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i32-bf16-i64",
+      "kind": "mapped",
+      "ptx_sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+      "ptx_bytes": 7991,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r9, %r10;",
+        "setp.lt.s32 \t%p2, %r11, %r10;",
+        "@%p1 ld.global.b32 { %r1 }, [ %rd1 + 0 ];",
+        "@%p2 ld.global.b32 { %r2 }, [ %rd2 + 0 ];",
+        "setp.lt.u32 \t%p7, %r1, 288;",
+        "setp.lt.u32 \t%p8, %r2, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "@%p4 ld.global.b64 { %rd5 }, [ %rd6 + 0 ];",
+        "setp.gt.s64 \t%p9, %rd3, -1;",
+        "setp.gt.s64 \t%p10, %rd5, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b16 { %rs1 }, [ %rd7 + 0 ];",
+        "@%p6 ld.global.b16 { %rs2 }, [ %rd8 + 0 ];",
+        "selp.b32 \t%r3, %r12, 72, %p11;",
+        "selp.b32 \t%r4, %r13, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i64-fp32-i32",
+      "kind": "mapped",
+      "ptx_sha256": "8b5122b74204fdf9e6dcf24c6fc8853e42955682ff4a4548355c9bc4a1b8e1b9",
+      "ptx_bytes": 7722,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r11, %r12;",
+        "setp.lt.s32 \t%p2, %r13, %r12;",
+        "@%p1 ld.global.b64 { %rd1 }, [ %rd2 + 0 ];",
+        "@%p2 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "setp.lt.u64 \t%p7, %rd1, 288;",
+        "setp.lt.u64 \t%p8, %rd3, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b32 { %r1 }, [ %rd5 + 0 ];",
+        "@%p4 ld.global.b32 { %r2 }, [ %rd6 + 0 ];",
+        "setp.gt.s32 \t%p9, %r1, -1;",
+        "setp.gt.s32 \t%p10, %r2, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b32 { %r5 }, [ %rd7 + 0 ];",
+        "@%p6 ld.global.b32 { %r6 }, [ %rd8 + 0 ];",
+        "selp.b32 \t%r3, %r1, 72, %p11;",
+        "selp.b32 \t%r4, %r2, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i64-fp32-i64",
+      "kind": "mapped",
+      "ptx_sha256": "4825abab342c3ed078cfa33618cbb9484127586a9cbbc0029d1987aeba893738",
+      "ptx_bytes": 7993,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r9, %r10;",
+        "setp.lt.s32 \t%p2, %r11, %r10;",
+        "@%p1 ld.global.b64 { %rd1 }, [ %rd2 + 0 ];",
+        "@%p2 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "setp.lt.u64 \t%p7, %rd1, 288;",
+        "setp.lt.u64 \t%p8, %rd3, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b64 { %rd5 }, [ %rd6 + 0 ];",
+        "@%p4 ld.global.b64 { %rd7 }, [ %rd8 + 0 ];",
+        "setp.gt.s64 \t%p9, %rd5, -1;",
+        "setp.gt.s64 \t%p10, %rd7, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b32 { %r3 }, [ %rd9 + 0 ];",
+        "@%p6 ld.global.b32 { %r4 }, [ %rd10 + 0 ];",
+        "selp.b32 \t%r1, %r12, 72, %p11;",
+        "selp.b32 \t%r2, %r13, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i64-fp16-i32",
+      "kind": "mapped",
+      "ptx_sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+      "ptx_bytes": 7747,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r9, %r10;",
+        "setp.lt.s32 \t%p2, %r11, %r10;",
+        "@%p1 ld.global.b64 { %rd1 }, [ %rd2 + 0 ];",
+        "@%p2 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "setp.lt.u64 \t%p7, %rd1, 288;",
+        "setp.lt.u64 \t%p8, %rd3, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b32 { %r1 }, [ %rd5 + 0 ];",
+        "@%p4 ld.global.b32 { %r2 }, [ %rd6 + 0 ];",
+        "setp.gt.s32 \t%p9, %r1, -1;",
+        "setp.gt.s32 \t%p10, %r2, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b16 { %rs1 }, [ %rd7 + 0 ];",
+        "@%p6 ld.global.b16 { %rs2 }, [ %rd8 + 0 ];",
+        "selp.b32 \t%r3, %r1, 72, %p11;",
+        "selp.b32 \t%r4, %r2, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i64-fp16-i64",
+      "kind": "mapped",
+      "ptx_sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+      "ptx_bytes": 8020,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r7, %r8;",
+        "setp.lt.s32 \t%p2, %r9, %r8;",
+        "@%p1 ld.global.b64 { %rd1 }, [ %rd2 + 0 ];",
+        "@%p2 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "setp.lt.u64 \t%p7, %rd1, 288;",
+        "setp.lt.u64 \t%p8, %rd3, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b64 { %rd5 }, [ %rd6 + 0 ];",
+        "@%p4 ld.global.b64 { %rd7 }, [ %rd8 + 0 ];",
+        "setp.gt.s64 \t%p9, %rd5, -1;",
+        "setp.gt.s64 \t%p10, %rd7, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b16 { %rs1 }, [ %rd9 + 0 ];",
+        "@%p6 ld.global.b16 { %rs2 }, [ %rd10 + 0 ];",
+        "selp.b32 \t%r1, %r10, 72, %p11;",
+        "selp.b32 \t%r2, %r11, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i64-bf16-i32",
+      "kind": "mapped",
+      "ptx_sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+      "ptx_bytes": 7747,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r9, %r10;",
+        "setp.lt.s32 \t%p2, %r11, %r10;",
+        "@%p1 ld.global.b64 { %rd1 }, [ %rd2 + 0 ];",
+        "@%p2 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "setp.lt.u64 \t%p7, %rd1, 288;",
+        "setp.lt.u64 \t%p8, %rd3, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b32 { %r1 }, [ %rd5 + 0 ];",
+        "@%p4 ld.global.b32 { %r2 }, [ %rd6 + 0 ];",
+        "setp.gt.s32 \t%p9, %r1, -1;",
+        "setp.gt.s32 \t%p10, %r2, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b16 { %rs1 }, [ %rd7 + 0 ];",
+        "@%p6 ld.global.b16 { %rs2 }, [ %rd8 + 0 ];",
+        "selp.b32 \t%r3, %r1, 72, %p11;",
+        "selp.b32 \t%r4, %r2, 72, %p12;"
+      ]
+    },
+    {
+      "label": "mapped-i64-bf16-i64",
+      "kind": "mapped",
+      "ptx_sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+      "ptx_bytes": 8020,
+      "global_load_instruction_count": 6,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p5",
+        "%p6"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p11",
+        "%p12"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r7, %r8;",
+        "setp.lt.s32 \t%p2, %r9, %r8;",
+        "@%p1 ld.global.b64 { %rd1 }, [ %rd2 + 0 ];",
+        "@%p2 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "setp.lt.u64 \t%p7, %rd1, 288;",
+        "setp.lt.u64 \t%p8, %rd3, 288;",
+        "and.pred \t%p3, %p1, %p7;",
+        "and.pred \t%p4, %p2, %p8;",
+        "@%p3 ld.global.b64 { %rd5 }, [ %rd6 + 0 ];",
+        "@%p4 ld.global.b64 { %rd7 }, [ %rd8 + 0 ];",
+        "setp.gt.s64 \t%p9, %rd5, -1;",
+        "setp.gt.s64 \t%p10, %rd7, -1;",
+        "and.pred \t%p11, %p7, %p9;",
+        "and.pred \t%p12, %p8, %p10;",
+        "and.pred \t%p5, %p1, %p11;",
+        "and.pred \t%p6, %p2, %p12;",
+        "@%p5 ld.global.b16 { %rs1 }, [ %rd9 + 0 ];",
+        "@%p6 ld.global.b16 { %rs2 }, [ %rd10 + 0 ];",
+        "selp.b32 \t%r1, %r10, 72, %p11;",
+        "selp.b32 \t%r2, %r11, 72, %p12;"
+      ]
+    },
+    {
+      "label": "empty-i32-fp32-i32",
+      "kind": "empty",
+      "ptx_sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+      "ptx_bytes": 5241,
+      "global_load_instruction_count": 0,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "input_loads_eliminated": true
+    },
+    {
+      "label": "empty-i32-fp16-i32",
+      "kind": "empty",
+      "ptx_sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "ptx_bytes": 5248,
+      "global_load_instruction_count": 0,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "input_loads_eliminated": true
+    },
+    {
+      "label": "empty-i32-bf16-i32",
+      "kind": "empty",
+      "ptx_sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "ptx_bytes": 5248,
+      "global_load_instruction_count": 0,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "input_loads_eliminated": true
+    },
+    {
+      "label": "empty-i64-fp32-i32",
+      "kind": "empty",
+      "ptx_sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+      "ptx_bytes": 5241,
+      "global_load_instruction_count": 0,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "input_loads_eliminated": true
+    },
+    {
+      "label": "empty-i64-fp16-i32",
+      "kind": "empty",
+      "ptx_sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "ptx_bytes": 5248,
+      "global_load_instruction_count": 0,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "input_loads_eliminated": true
+    },
+    {
+      "label": "empty-i64-bf16-i32",
+      "kind": "empty",
+      "ptx_sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "ptx_bytes": 5248,
+      "global_load_instruction_count": 0,
+      "cpu7_global_load_instruction_count": 6,
+      "shared_bytes": 0,
+      "input_loads_eliminated": true
+    },
+    {
+      "label": "offset-i32-fp32-i32",
+      "kind": "offset",
+      "ptx_sha256": "a0cefa45eadba91362f0a98ae35d3bef8e35afa627ff1bda2dd4394749c9ed58",
+      "ptx_bytes": 7263,
+      "global_load_instruction_count": 4,
+      "cpu7_global_load_instruction_count": 4,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p3",
+        "%p4"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p9",
+        "%p10"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r11, %r12;",
+        "setp.lt.s32 \t%p2, %r13, %r12;",
+        "@%p1 ld.global.b32 { %r1 }, [ %rd1 + 0 ];",
+        "@%p2 ld.global.b32 { %r2 }, [ %rd2 + 0 ];",
+        "setp.gt.s32 \t%p5, %r17, -1;",
+        "setp.gt.s32 \t%p6, %r18, -1;",
+        "setp.lt.s32 \t%p7, %r15, 72;",
+        "setp.lt.s32 \t%p8, %r16, 72;",
+        "and.pred \t%p9, %p7, %p5;",
+        "and.pred \t%p10, %p8, %p6;",
+        "and.pred \t%p3, %p1, %p9;",
+        "and.pred \t%p4, %p2, %p10;",
+        "@%p3 ld.global.b32 { %r5 }, [ %rd3 + 0 ];",
+        "@%p4 ld.global.b32 { %r6 }, [ %rd4 + 0 ];",
+        "selp.b32 \t%r3, %r15, 72, %p9;",
+        "selp.b32 \t%r4, %r16, 72, %p10;"
+      ]
+    },
+    {
+      "label": "offset-i32-fp16-i32",
+      "kind": "offset",
+      "ptx_sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+      "ptx_bytes": 7313,
+      "global_load_instruction_count": 4,
+      "cpu7_global_load_instruction_count": 4,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p3",
+        "%p4"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p9",
+        "%p10"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r9, %r10;",
+        "setp.lt.s32 \t%p2, %r11, %r10;",
+        "@%p1 ld.global.b32 { %r1 }, [ %rd1 + 0 ];",
+        "@%p2 ld.global.b32 { %r2 }, [ %rd2 + 0 ];",
+        "setp.gt.s32 \t%p5, %r15, -1;",
+        "setp.gt.s32 \t%p6, %r16, -1;",
+        "setp.lt.s32 \t%p7, %r13, 72;",
+        "setp.lt.s32 \t%p8, %r14, 72;",
+        "and.pred \t%p9, %p7, %p5;",
+        "and.pred \t%p10, %p8, %p6;",
+        "and.pred \t%p3, %p1, %p9;",
+        "and.pred \t%p4, %p2, %p10;",
+        "@%p3 ld.global.b16 { %rs1 }, [ %rd3 + 0 ];",
+        "@%p4 ld.global.b16 { %rs2 }, [ %rd4 + 0 ];",
+        "selp.b32 \t%r3, %r13, 72, %p9;",
+        "selp.b32 \t%r4, %r14, 72, %p10;"
+      ]
+    },
+    {
+      "label": "offset-i32-bf16-i32",
+      "kind": "offset",
+      "ptx_sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+      "ptx_bytes": 7313,
+      "global_load_instruction_count": 4,
+      "cpu7_global_load_instruction_count": 4,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p3",
+        "%p4"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p9",
+        "%p10"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r9, %r10;",
+        "setp.lt.s32 \t%p2, %r11, %r10;",
+        "@%p1 ld.global.b32 { %r1 }, [ %rd1 + 0 ];",
+        "@%p2 ld.global.b32 { %r2 }, [ %rd2 + 0 ];",
+        "setp.gt.s32 \t%p5, %r15, -1;",
+        "setp.gt.s32 \t%p6, %r16, -1;",
+        "setp.lt.s32 \t%p7, %r13, 72;",
+        "setp.lt.s32 \t%p8, %r14, 72;",
+        "and.pred \t%p9, %p7, %p5;",
+        "and.pred \t%p10, %p8, %p6;",
+        "and.pred \t%p3, %p1, %p9;",
+        "and.pred \t%p4, %p2, %p10;",
+        "@%p3 ld.global.b16 { %rs1 }, [ %rd3 + 0 ];",
+        "@%p4 ld.global.b16 { %rs2 }, [ %rd4 + 0 ];",
+        "selp.b32 \t%r3, %r13, 72, %p9;",
+        "selp.b32 \t%r4, %r14, 72, %p10;"
+      ]
+    },
+    {
+      "label": "offset-i64-fp32-i32",
+      "kind": "offset",
+      "ptx_sha256": "630fe8b409dc6030aca83bbdb4c6864fafb5078753a995c871229186f4cba4a3",
+      "ptx_bytes": 7274,
+      "global_load_instruction_count": 4,
+      "cpu7_global_load_instruction_count": 4,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p3",
+        "%p4"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p8",
+        "%p10"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r9, %r10;",
+        "setp.lt.s32 \t%p2, %r11, %r10;",
+        "@%p1 ld.global.b64 { %rd1 }, [ %rd2 + 0 ];",
+        "@%p2 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "setp.gt.s64 \t%p5, %rd1, -1;",
+        "setp.gt.s64 \t%p6, %rd3, -1;",
+        "setp.lt.u32 \t%p7, %r15, 72;",
+        "and.pred \t%p8, %p5, %p7;",
+        "setp.lt.u32 \t%p9, %r16, 72;",
+        "and.pred \t%p10, %p6, %p9;",
+        "and.pred \t%p3, %p1, %p8;",
+        "and.pred \t%p4, %p2, %p10;",
+        "@%p3 ld.global.b32 { %r3 }, [ %rd5 + 0 ];",
+        "@%p4 ld.global.b32 { %r4 }, [ %rd6 + 0 ];",
+        "selp.b32 \t%r1, %r15, 72, %p8;",
+        "selp.b32 \t%r2, %r16, 72, %p10;"
+      ]
+    },
+    {
+      "label": "offset-i64-fp16-i32",
+      "kind": "offset",
+      "ptx_sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+      "ptx_bytes": 7301,
+      "global_load_instruction_count": 4,
+      "cpu7_global_load_instruction_count": 4,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p3",
+        "%p4"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p8",
+        "%p10"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r7, %r8;",
+        "setp.lt.s32 \t%p2, %r9, %r8;",
+        "@%p1 ld.global.b64 { %rd1 }, [ %rd2 + 0 ];",
+        "@%p2 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "setp.gt.s64 \t%p5, %rd1, -1;",
+        "setp.gt.s64 \t%p6, %rd3, -1;",
+        "setp.lt.u32 \t%p7, %r13, 72;",
+        "and.pred \t%p8, %p5, %p7;",
+        "setp.lt.u32 \t%p9, %r14, 72;",
+        "and.pred \t%p10, %p6, %p9;",
+        "and.pred \t%p3, %p1, %p8;",
+        "and.pred \t%p4, %p2, %p10;",
+        "@%p3 ld.global.b16 { %rs1 }, [ %rd5 + 0 ];",
+        "@%p4 ld.global.b16 { %rs2 }, [ %rd6 + 0 ];",
+        "selp.b32 \t%r1, %r13, 72, %p8;",
+        "selp.b32 \t%r2, %r14, 72, %p10;"
+      ]
+    },
+    {
+      "label": "offset-i64-bf16-i32",
+      "kind": "offset",
+      "ptx_sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+      "ptx_bytes": 7301,
+      "global_load_instruction_count": 4,
+      "cpu7_global_load_instruction_count": 4,
+      "shared_bytes": 0,
+      "weight_load_predicates": [
+        "%p3",
+        "%p4"
+      ],
+      "tail_predicates": [
+        "%p1",
+        "%p2"
+      ],
+      "route_valid_predicates": [
+        "%p8",
+        "%p10"
+      ],
+      "weight_predicate_includes_tail_and_route_valid": true,
+      "cpu7_weight_predicates_tail_only": true,
+      "predicate_evidence": [
+        "setp.lt.s32 \t%p1, %r7, %r8;",
+        "setp.lt.s32 \t%p2, %r9, %r8;",
+        "@%p1 ld.global.b64 { %rd1 }, [ %rd2 + 0 ];",
+        "@%p2 ld.global.b64 { %rd3 }, [ %rd4 + 0 ];",
+        "setp.gt.s64 \t%p5, %rd1, -1;",
+        "setp.gt.s64 \t%p6, %rd3, -1;",
+        "setp.lt.u32 \t%p7, %r13, 72;",
+        "and.pred \t%p8, %p5, %p7;",
+        "setp.lt.u32 \t%p9, %r14, 72;",
+        "and.pred \t%p10, %p6, %p9;",
+        "and.pred \t%p3, %p1, %p8;",
+        "and.pred \t%p4, %p2, %p10;",
+        "@%p3 ld.global.b16 { %rs1 }, [ %rd5 + 0 ];",
+        "@%p4 ld.global.b16 { %rs2 }, [ %rd6 + 0 ];",
+        "selp.b32 \t%r1, %r13, 72, %p8;",
+        "selp.b32 \t%r2, %r14, 72, %p10;"
+      ]
+    }
+  ],
+  "empty_map_variants_without_global_loads": 6,
+  "nonempty_variants_with_local_predicated_weight_loads": 18,
+  "cute_comparison": {
+    "cpu7": {
+      "ptx_sha256": "ff7f3770c1257b6fba977ec2a4f419c92bde860fb4fd743258c14f0b20c9dffe",
+      "ptx_bytes": 1203741,
+      "cubin_sha256": "5028101a096594263a0e99c3313b271d275c7ca312745df6dbee5a81342ff365",
+      "cubin_bytes": 439328,
+      "static_v4_u32_instruction_count": 1,
+      "static_store_mnemonic_counts": {
+        "st.global.b32": 29,
+        "st.global.v4.u32": 1,
+        "st.global.s32": 13,
+        "st.global.release.gpu.s32": 5,
+        "st.global.f32": 7,
+        "st.global.L2::cache_hint.u64": 80,
+        "st.global.b8": 80
+      },
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:1040 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    "cpu8": {
+      "ptx_sha256": "42c6e549c56971de1360cafc49037b29d0f117c8ad0cdbc3610d26635811a322",
+      "ptx_bytes": 1220058,
+      "cubin_sha256": "b8f8c3b8fafa1ecd5420a6bd0a886fc0ad07c0523feaaf79ad740bdd8938af9a",
+      "cubin_bytes": 445632,
+      "static_v4_u32_instruction_count": 33,
+      "static_store_mnemonic_counts": {
+        "st.global.b32": 29,
+        "st.global.v4.u32": 33,
+        "st.global.s32": 13,
+        "st.global.release.gpu.s32": 5,
+        "st.global.f32": 7,
+        "st.global.L2::cache_hint.u64": 80,
+        "st.global.b8": 80
+      },
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:1040 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  },
+  "core_log": {
+    "original_path": "/tmp/glm53-ep-extra-core0908.log",
+    "raw_sha256": "e4a75759298ccb723bda246bdcc533ca98b6c94a6b34eeee2b64c04390510e41",
+    "raw_bytes": 5195,
+    "stored_sha256": "989b411a8ff84a95ef92ed04420c37c38463684eb704377a57956426f5192da2",
+    "stored_bytes": 2003,
+    "summary": "core OK (6793 checks; 38 megakernel regressions; 0 fleet regressions)",
+    "checks": 6793,
+    "megakernel_regressions": 38,
+    "fleet_regressions": 0,
+    "skips_reported": [
+      "UE8M0 scale repair ............. SKIP (no torch on this host)",
+      "b12x SF 6-bit pack ............ OK (skipped: no torch)",
+      "dflash2 selector score precision  SKIP (no torch on this host)",
+      "b12x EP routing ................ OK (tensor remap skipped)",
+      "DSV4 UE8M0 host guard ......... SKIP values (no torch)",
+      "glm53 kpool packed scratch contract ... SKIP (no torch on this host)",
+      "w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)"
+    ],
+    "source_revision": "not recorded in the core log; CPU compile source is recorded separately",
+    "note": "Host tensor-dependent skips are not counted as test passes; this invocation ran zero fleet regressions."
+  },
+  "limitations": [
+    "PTX instruction counts are static text counts, not executed instruction counts or transaction measurements.",
+    "The 32 additional vector-store instructions coexist with scalar fallback code; this does not establish how often each branch runs.",
+    "Predicating remote weight loads reduces explicit reads for those lanes but adds an input-map dependency; throughput must be measured.",
+    "CuTe registers/stack/shared resources are unchanged; no runtime occupancy or GPU latency conclusion follows.",
+    "No new-source GPU benchmark, numerics, MoE sanitizer, full-model TTFT or production acceptance result is created by this CPU archive."
+  ]
+}

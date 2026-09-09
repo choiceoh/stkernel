@@ -1,0 +1,151 @@
+{
+  "captured_at_kst": "2026-09-09T02:57:49.617399+09:00",
+  "collection": "Read-only SSH named file reads, each original read twice on srv2; normal fleet show/status. No source/service/queue changes or requests. Live-A log/inspect hashes verified against capture identity. Source clean read is not historical mounted-content attestation.",
+  "files": {
+    "boot-A.log.gz": {
+      "encoding": "gzip mtime=0",
+      "original_bytes": 193904,
+      "original_sha256": "0e867a1f1a11232836ef9f849676ba78c4153f8c0f42cecf1d92360dd6a73b7f",
+      "source": "/home/choiceoh/glm53-logs/boot-EPONEPASS3A.log",
+      "stored_sha256": "b94ad2a597344a45a0b6a12b9d587544b05473fa96c7c2cb1c23220fd6ce6025"
+    },
+    "boot-B1.log.gz": {
+      "encoding": "gzip mtime=0",
+      "original_bytes": 211193,
+      "original_sha256": "3d678e7ccae3882ab362c143ae997186c69c8309191199338266d147546f2f6f",
+      "source": "/home/choiceoh/glm53-logs/boot-EPONEPASS3B1.log",
+      "stored_sha256": "30da6ed1b8c0d7c05535073640b1759acf34208ffda9efd72c323ef103b853bd"
+    },
+    "fleet-events.log": {
+      "original_sha256": "5c0c6081b666401000b36278ff87ccbea000c619ee7b9ff5a634fd4c5101ee42",
+      "path": "/home/choiceoh/glm53-logs/fleet/events.log",
+      "selection": "complete lines containing exact session",
+      "stored_sha256": "ecf46247f650226dd9e49040abce4b8ae41517553901eb0543b640e12be0b49d"
+    },
+    "fleet-lifecycle.jsonl": {
+      "original_sha256": "e1dfa8f978c01b69bf395cbde6b4dd5f2a70979e11b98354a2baec697fda0ae0",
+      "path": "/home/choiceoh/glm53-logs/fleet/lifecycle.jsonl",
+      "selection": "complete lines containing exact session",
+      "stored_sha256": "0179457a59910faed215eba3050d2334a12b48c8c53ef6fac0a903c8e0576921"
+    },
+    "fleet-release.txt": {
+      "original_sha256": "312c7f3261891eb6ca3ddfde71f176d3eb2ee1276db62fbdd8adbba67970c779",
+      "path": "/home/choiceoh/glm53-logs/fleet/log",
+      "selection": "complete lines containing exact session",
+      "stored_sha256": "1a3b1641040508685f812fce1ccc8a81c3b6d16b3063fbdf0d3ce0a954647f5d"
+    },
+    "fleet-show.json": {
+      "command": [
+        "bash",
+        "/home/choiceoh/stkernel-ep-onepass-0909-2/bench/fleet.sh",
+        "show",
+        "eplocalonepass0909v3a",
+        "--ticket",
+        "17888881731434836",
+        "--json"
+      ],
+      "stored_sha256": "7c1b2e98ad1e3cb74959e9423d3ba8662727c3a983d7b0ba8fee788eaf624607"
+    },
+    "fleet-status.txt": {
+      "command": [
+        "bash",
+        "/home/choiceoh/stkernel-ep-onepass-0909-2/bench/fleet.sh",
+        "status"
+      ],
+      "returncode": 0,
+      "stored_sha256": "7cf660c06cf90ae7cc36fe20d9cd81fb04ca70563573e803c85d37216624d7a5"
+    },
+    "launch.json": {
+      "encoding": "original bytes",
+      "original_bytes": 1956,
+      "original_sha256": "f5c3242ed249814eddee042dc4e7136c2261b250626da24eb87b3fa4b4fc70f0",
+      "source": "/home/choiceoh/glm53-logs/fleet/launches/d576710b863db1dec71842ab7a7a9c28c1f99d97bf961ff8e1cc3f639f1000a0.json",
+      "stored_sha256": "f5c3242ed249814eddee042dc4e7136c2261b250626da24eb87b3fa4b4fc70f0"
+    },
+    "launch.log.gz": {
+      "encoding": "gzip mtime=0",
+      "original_bytes": 11488,
+      "original_sha256": "12d692857d3bce8112ce4f9de8e6f27c44254aa80c0fa30c85f3272e10e8ab2c",
+      "source": "/home/choiceoh/glm53-logs/fleet/launches/d576710b863db1dec71842ab7a7a9c28c1f99d97bf961ff8e1cc3f639f1000a0.9bfd329021f649e58defda90ecf10ffc.log",
+      "stored_sha256": "2b2c46b7303eef905cad3f399bf446b5ce62aae3621551b265d24a76644af9e1"
+    },
+    "live-A/10.10.10.1.log.gz": {
+      "encoding": "gzip mtime=0",
+      "original_bytes": 99927,
+      "original_sha256": "9f6af812d553cafb72a2bccbbf6fb74356e60e6779d0259d47e10cadb710d975",
+      "source": "choiceoh@srv2:/tmp/glm53-ep-onepass-0909-3a/live-A/10.10.10.1.log",
+      "stored_sha256": "1b5e2865b1cc384e4194b07c51cd94a4430755ed1735bc5304f234cd52265fc6"
+    },
+    "live-A/10.10.10.3.log.gz": {
+      "encoding": "gzip mtime=0",
+      "original_bytes": 100749,
+      "original_sha256": "65c10a067a981a70edcd980229f919dd78ce3144b7081234433a2750a20d08ad",
+      "source": "choiceoh@srv2:/tmp/glm53-ep-onepass-0909-3a/live-A/10.10.10.3.log",
+      "stored_sha256": "438e604f93e34872b6b6062e76afcea820d6c70f0099295aadb5d2c08c5d3a16"
+    },
+    "live-A/10.10.10.4.log.gz": {
+      "encoding": "gzip mtime=0",
+      "original_bytes": 99821,
+      "original_sha256": "ea78be6fd52e157408e85d0a650e9204cc18bf7b16027b6e99218ade0b1ba767",
+      "source": "choiceoh@srv2:/tmp/glm53-ep-onepass-0909-3a/live-A/10.10.10.4.log",
+      "stored_sha256": "72879770ccb0ac8997694edba96b1c3e11d658f4d442d4e4a0242d44541cfde5"
+    },
+    "live-A/local.log.gz": {
+      "encoding": "gzip mtime=0",
+      "original_bytes": 138238,
+      "original_sha256": "efdaf9a2bccd2ab95af518b55a678bf0d2e0fee050dd61508eaf653d0000c52e",
+      "source": "choiceoh@srv2:/tmp/glm53-ep-onepass-0909-3a/live-A/local.log",
+      "stored_sha256": "cceb53f29dc9c9e58b9186ba9e105b3720c13ed42756ce21b76742e73def539c"
+    },
+    "onepass.jsonl": {
+      "encoding": "original bytes",
+      "original_bytes": 66027,
+      "original_sha256": "3ef7b948fef78a8cc0fe531f8236c002bd83b2e24e8ddaf0194504fa5bbeae18",
+      "source": "/tmp/glm53-ep-onepass-0909-3a/onepass.jsonl",
+      "stored_sha256": "3ef7b948fef78a8cc0fe531f8236c002bd83b2e24e8ddaf0194504fa5bbeae18"
+    },
+    "pending.json": {
+      "encoding": "original bytes",
+      "original_bytes": 2875,
+      "original_sha256": "ac2cda32e52bdbf61601b99005825824d1120a1878e4db0001d883274a72e1c1",
+      "source": "/home/choiceoh/glm53-logs/fleet/pending/d576710b863db1dec71842ab7a7a9c28c1f99d97bf961ff8e1cc3f639f1000a0.json",
+      "stored_sha256": "ac2cda32e52bdbf61601b99005825824d1120a1878e4db0001d883274a72e1c1"
+    },
+    "run.log.gz": {
+      "encoding": "gzip mtime=0",
+      "original_bytes": 9071,
+      "original_sha256": "22c927f77414d12a077620a88bfdc1bca0db0bd3fbe925d508d20f8974811d62",
+      "source": "/home/choiceoh/glm53-logs/fleet/run-logs/85b253b16f092c3aece942fb30c01f01c94d423ae905103d2f0cd4e15cf62b04.log",
+      "stored_sha256": "063d4c1cb9e0f8701bcbedac9d818daa7ca13aa79f9ecde069b0945f2a69b493"
+    },
+    "submission-output.txt": {
+      "encoding": "original bytes",
+      "original_bytes": 482,
+      "original_sha256": "4f3bf8695e1a3026cff4056ef11422f374a8a5fce1a6eef311f71e3c6fe16dfc",
+      "source": "/tmp/glm53-ep-onepass-0909-3a/submission-output.txt",
+      "stored_sha256": "4f3bf8695e1a3026cff4056ef11422f374a8a5fce1a6eef311f71e3c6fe16dfc"
+    },
+    "submission.json": {
+      "encoding": "original bytes",
+      "original_bytes": 2215,
+      "original_sha256": "b4c407e26858bdc1ffb1fad84cbb7dc1a283832e60fb18b01f3625b17d2a1511",
+      "source": "/tmp/glm53-ep-onepass-0909-3a/submission.json",
+      "stored_sha256": "b4c407e26858bdc1ffb1fad84cbb7dc1a283832e60fb18b01f3625b17d2a1511"
+    },
+    "verdicts.jsonl": {
+      "encoding": "original bytes",
+      "original_bytes": 298,
+      "original_sha256": "76855279ee66fcab5b84605314c350d5e74867b96a289d904f7c591a5f9bd58a",
+      "source": "/tmp/glm53-ep-onepass-0909-3a/verdicts.jsonl",
+      "stored_sha256": "76855279ee66fcab5b84605314c350d5e74867b96a289d904f7c591a5f9bd58a"
+    }
+  },
+  "live_A_scope": "Snapshot 02:51:35–36 KST during actual A requests, before completion; complete head boot log retained separately.",
+  "private_inspect": "Raw before/after Docker inspect stays outside repository: srv2 /tmp/glm53-ep-onepass-0909-3a/live-A and local /tmp/glm53-onepass3-live-A",
+  "source_after_run": {
+    "clean": true,
+    "path": "/home/choiceoh/stkernel-ep-onepass-0909-2",
+    "revision": "ac2f188392bc76f1194f8eee7be9b0dfbec346f5"
+  },
+  "source_object_hash_encoding": "UTF-8 JSON indent=2 sort_keys=True ensure_ascii=False allow_nan=False plus newline"
+}

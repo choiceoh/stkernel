@@ -1,0 +1,28 @@
+{
+  "phase": "before",
+  "head": "0ac504b7f50f11d8388b80b6f15d228d15b2ab7c",
+  "cwd": "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908",
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_fleet_pending.py",
+    "-v"
+  ],
+  "started": "2026-09-08T18:21:53.409636+09:00",
+  "ended": "2026-09-08T18:21:53.520040+09:00",
+  "returncode": 1,
+  "test_file_sha256": "c29786da65ddfd50417f084914d606223b712442b26951e9222c5c2ed1cf571f",
+  "injected_environment": {
+    "FLEET_PREPARE_MANIFEST": "/tmp/glm53-fleet-restore-test-env0908/parent-preparation.json"
+  },
+  "parent_manifest_sha256": "378367626970f652ab87b272f1755b4163e835b40df2d1394e89ab3d13abf1dd",
+  "parent_manifest_unchanged": true,
+  "stdout_sha256": "fb9d749e64e46167c1443112a3f75766cd74e5fd1d8f5ee106cc8fb7dcdfb00c",
+  "stdout_bytes": 5972,
+  "scope": "Local synthetic parent environment; no fleet hold, queue, remote or GPU execution."
+}

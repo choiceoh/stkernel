@@ -1,0 +1,8 @@
+{
+  "kind": "local serialized-AST diagnosis, no accelerator imports",
+  "python": "3.14.4 (main, Apr  7 2026, 13:13:20) [Clang 21.0.0 (clang-2100.0.123.102)]",
+  "stock_revision": "c7dec80a0f73d4a2b683ce2c4813978938694095",
+  "stock_source_sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+  "show_empty_false_sha256": "8525a206b8e020137fe5dcb86cb887214b0e0d51fe23468de927b2225a315eab",
+  "show_empty_true_sha256": "f34483318085eab19d9311695a5caed8c591e456227c102d97519dee293faf19"
+}

@@ -1,0 +1,11 @@
+  EP micro chunk width .......... OK
+test_b12x_micro_chunk_width PASS
+  EP tail fixed shape ........... OK
+test_ep_tail_fixed_shape PASS
+  b12x zero-weight micro ......... OK
+test_b12x_zero_weight_micro PASS
+.........................
+----------------------------------------------------------------------
+Ran 25 tests in 0.646s
+
+OK

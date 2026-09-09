@@ -1,0 +1,744 @@
+{
+  "README.md": {
+    "bytes": 2487,
+    "origin": "bounded evidence scope",
+    "sha256": "4a276258ff628a3a94db63168814771d6ff6d6e8416c7f52a95c2c8cb9f113fb"
+  },
+  "boot/boot-EPONEPASS23A0.log.gz": {
+    "bytes": 28878,
+    "origin": "/home/choiceoh/glm53-logs/boot-EPONEPASS23A0.log",
+    "original_bytes": 225259,
+    "original_sha256": "992e9b9398c02529bbf98d4d670a5841d92469f51fe51dd5f812f42f84c5ec8c",
+    "sha256": "9db54a94ecc84f97f86850703f813c87b4119a3e08eefff5affc2fc199852428"
+  },
+  "boot/boot-EPONEPASS23B1.log.gz": {
+    "bytes": 21389,
+    "origin": "/home/choiceoh/glm53-logs/boot-EPONEPASS23B1.log",
+    "original_bytes": 185166,
+    "original_sha256": "1a754039cd1c52de0a8592b960db9a8d6cb678d68a517f1062fdbecafaaed402",
+    "sha256": "684a026feb5c714b1276fd03473b266c63b9bedea8a9503115c2ffff71204eed"
+  },
+  "canary/A/10.10.10.1.json": {
+    "bytes": 30743,
+    "origin": "/tmp/glm53-onepass23-canary-A/10.10.10.1.json",
+    "raw_stream_match": {
+      "complete_receipts_seen": 2,
+      "json_sha256": "9b0f7226b57203dac9cd21a3a5f43a694a081c5c29d0c390754b58e08834e7c5",
+      "line_sha256": "e3b18a03c3840886dc25ad42ea58202a850d2d8e98cc58b405bbe9f898b93e44",
+      "occurrence": 1,
+      "prefix_sha256": "a43532da6bc2e90df7b0f0d4e9c743c07e75722935d904cde4c77751dfe7e604",
+      "raw_end": 387601,
+      "raw_offset": 356811,
+      "stream": "/tmp/glm53-onepass23-streams/10.10.10.1.stdout.raw",
+      "stream_device": 16777233,
+      "stream_inode": 98614329
+    },
+    "sha256": "0ef194c0a10f0716410d8f0d21a956a55529bc3c2c3563d03ba9d2a1e2d8b344"
+  },
+  "canary/A/10.10.10.1.receipt-line.raw": {
+    "bytes": 30790,
+    "origin": "/tmp/glm53-onepass23-canary-A/10.10.10.1.receipt-line.raw",
+    "sha256": "e3b18a03c3840886dc25ad42ea58202a850d2d8e98cc58b405bbe9f898b93e44"
+  },
+  "canary/A/10.10.10.3.json": {
+    "bytes": 30737,
+    "origin": "/tmp/glm53-onepass23-canary-A/10.10.10.3.json",
+    "raw_stream_match": {
+      "complete_receipts_seen": 2,
+      "json_sha256": "b6449abf0b83a75add80d919f908a861855881c9f0733020638c2156e801285e",
+      "line_sha256": "177fd41758ed8f93157f0ea4d8ea11fc7c59e59f5d7ee0b8c1847a00501e9db5",
+      "occurrence": 1,
+      "prefix_sha256": "2909f62fc7f211ceaa34acbe1562f933b69cc818a4875135035073ba7c15d239",
+      "raw_end": 386959,
+      "raw_offset": 356175,
+      "stream": "/tmp/glm53-onepass23-streams/10.10.10.3.stdout.raw",
+      "stream_device": 16777233,
+      "stream_inode": 98614330
+    },
+    "sha256": "4b0451f68f042ddd33aa1d2eb2e84f156b0544bf973d077269681f82edbcad33"
+  },
+  "canary/A/10.10.10.3.receipt-line.raw": {
+    "bytes": 30784,
+    "origin": "/tmp/glm53-onepass23-canary-A/10.10.10.3.receipt-line.raw",
+    "sha256": "177fd41758ed8f93157f0ea4d8ea11fc7c59e59f5d7ee0b8c1847a00501e9db5"
+  },
+  "canary/A/10.10.10.4.json": {
+    "bytes": 30804,
+    "origin": "/tmp/glm53-onepass23-canary-A/10.10.10.4.json",
+    "raw_stream_match": {
+      "complete_receipts_seen": 2,
+      "json_sha256": "fc80157bf2a12935bf72a248182459e078c2a166fc214a235fdab48f3ac03c40",
+      "line_sha256": "62670e21fcc7bcec90899bfd127cc90b65b3976676d1cad6eabc247bf81a0ac6",
+      "occurrence": 1,
+      "prefix_sha256": "9e7e6b68c9b2a1cfc367eb00c8791f1f6183153e3856f7d3c7b848caa38381b1",
+      "raw_end": 387147,
+      "raw_offset": 356296,
+      "stream": "/tmp/glm53-onepass23-streams/10.10.10.4.stdout.raw",
+      "stream_device": 16777233,
+      "stream_inode": 98614335
+    },
+    "sha256": "b1330c47dac2d195e64e0b73dde38337b4e4fbcff432963260c7ba89309531ee"
+  },
+  "canary/A/10.10.10.4.receipt-line.raw": {
+    "bytes": 30851,
+    "origin": "/tmp/glm53-onepass23-canary-A/10.10.10.4.receipt-line.raw",
+    "sha256": "62670e21fcc7bcec90899bfd127cc90b65b3976676d1cad6eabc247bf81a0ac6"
+  },
+  "canary/A/independent-identity-trim-verification.json": {
+    "bytes": 5716,
+    "origin": "/tmp/glm53-onepass23-A-verified.json",
+    "sha256": "3afc1f40ba2781776f8737870077957738292197888ea635914a969d306d7735"
+  },
+  "canary/A/local.json": {
+    "bytes": 30753,
+    "origin": "/tmp/glm53-onepass23-canary-A/local.json",
+    "raw_stream_match": {
+      "complete_receipts_seen": 2,
+      "json_sha256": "d7e1b3b867aa5660e51cb461fd8591cf8b952692eac857bdfacbed334dbc11e7",
+      "line_sha256": "0cb522aca295df1c1e387c6e1cd42718cc20215f7f0f9dcbe33c815b930fded1",
+      "occurrence": 1,
+      "prefix_sha256": "7b177b13e4c5c70c6f72f36456d764e9dbbe81c54150950433c6886a770bd4f3",
+      "raw_end": 481677,
+      "raw_offset": 450877,
+      "stream": "/tmp/glm53-onepass23-streams/local.stdout.raw",
+      "stream_device": 16777233,
+      "stream_inode": 98614334
+    },
+    "sha256": "a80cf31dab862148191504b9639416346283e10b10d6180d5a12a09277573a63"
+  },
+  "canary/A/local.receipt-line.raw": {
+    "bytes": 30800,
+    "origin": "/tmp/glm53-onepass23-canary-A/local.receipt-line.raw",
+    "sha256": "0cb522aca295df1c1e387c6e1cd42718cc20215f7f0f9dcbe33c815b930fded1"
+  },
+  "canary/A/validation-original.json": {
+    "bytes": 8350,
+    "origin": "/tmp/glm53-onepass23-canary-A/validation.json",
+    "sha256": "77e2b1402fcd420a62396f3738a6b4a593ae9ef860ca4a8afb1ffae9e10c9fde"
+  },
+  "canary/A0/10.10.10.1.json": {
+    "bytes": 30756,
+    "origin": "/tmp/glm53-onepass23-canary-A0/10.10.10.1.json",
+    "raw_stream_match": {
+      "complete_receipts_seen": 1,
+      "json_sha256": "e06b33d74857bb40b4123c72307177010f5d1593c1747eda4789a854636fc9fc",
+      "line_sha256": "251e25bf6fca4edc620fb8cac10dd1d6f73dadc2d2155e8785d4b48c955be1a9",
+      "occurrence": 0,
+      "prefix_sha256": "da00bdd5dac94a9efd37eb418a222a2fa2c374445a3b3ff6d4c6f69f264ea066",
+      "raw_end": 72654,
+      "raw_offset": 41851,
+      "stream": "/tmp/glm53-onepass23-streams/10.10.10.1.stdout.raw",
+      "stream_device": 16777233,
+      "stream_inode": 98614329
+    },
+    "sha256": "ede19969c2078a4d71338c6a22707fd7d95dd009a520ce79a46e9a49c5e816c2"
+  },
+  "canary/A0/10.10.10.1.receipt-line.raw": {
+    "bytes": 30803,
+    "origin": "/tmp/glm53-onepass23-canary-A0/10.10.10.1.receipt-line.raw",
+    "sha256": "251e25bf6fca4edc620fb8cac10dd1d6f73dadc2d2155e8785d4b48c955be1a9"
+  },
+  "canary/A0/10.10.10.3.json": {
+    "bytes": 30776,
+    "origin": "/tmp/glm53-onepass23-canary-A0/10.10.10.3.json",
+    "raw_stream_match": {
+      "complete_receipts_seen": 1,
+      "json_sha256": "dec43859f59dee737e270e810f7b67bac08ec54666f026e998650be34ad091d2",
+      "line_sha256": "a87b3099c86d11bd628651991153d93d5cac6314a6b8a2c07b25a8aefcd0d673",
+      "occurrence": 0,
+      "prefix_sha256": "c15f0a346e22fa3a36b0c57f2ce34751e647039ac643f83e6028878b578907a8",
+      "raw_end": 71505,
+      "raw_offset": 40682,
+      "stream": "/tmp/glm53-onepass23-streams/10.10.10.3.stdout.raw",
+      "stream_device": 16777233,
+      "stream_inode": 98614330
+    },
+    "sha256": "511e4504bed22a7e86019226b5b82ae7356139c3d1fe96ffc4d8e51add0759fb"
+  },
+  "canary/A0/10.10.10.3.receipt-line.raw": {
+    "bytes": 30823,
+    "origin": "/tmp/glm53-onepass23-canary-A0/10.10.10.3.receipt-line.raw",
+    "sha256": "a87b3099c86d11bd628651991153d93d5cac6314a6b8a2c07b25a8aefcd0d673"
+  },
+  "canary/A0/10.10.10.4.json": {
+    "bytes": 30786,
+    "origin": "/tmp/glm53-onepass23-canary-A0/10.10.10.4.json",
+    "raw_stream_match": {
+      "complete_receipts_seen": 1,
+      "json_sha256": "03c2445888bb16af7dd4c24a528338549c543b93400f4f693da0cc45353db2c6",
+      "line_sha256": "3a940450f0dd048e746ceba813e93e0a359252ff09214ff3d575841aa7453c4c",
+      "occurrence": 0,
+      "prefix_sha256": "8752f1015cbf019af7ea374e016837c98c52ae8321d497840e9d7f5350dacefb",
+      "raw_end": 71512,
+      "raw_offset": 40679,
+      "stream": "/tmp/glm53-onepass23-streams/10.10.10.4.stdout.raw",
+      "stream_device": 16777233,
+      "stream_inode": 98614335
+    },
+    "sha256": "c8a816ae9672f2da47fa786a29fcaeb21e1cccf390db8a56d5620cf940b8f101"
+  },
+  "canary/A0/10.10.10.4.receipt-line.raw": {
+    "bytes": 30833,
+    "origin": "/tmp/glm53-onepass23-canary-A0/10.10.10.4.receipt-line.raw",
+    "sha256": "3a940450f0dd048e746ceba813e93e0a359252ff09214ff3d575841aa7453c4c"
+  },
+  "canary/A0/local.json": {
+    "bytes": 30776,
+    "origin": "/tmp/glm53-onepass23-canary-A0/local.json",
+    "raw_stream_match": {
+      "complete_receipts_seen": 1,
+      "json_sha256": "98299c2a6aaba5071a83123e79238b23fabb881a031108114a842451320cbae7",
+      "line_sha256": "80ea69badf764b4973f6681e55dc4dd76de6f74421193a5a49dbb80969922790",
+      "occurrence": 0,
+      "prefix_sha256": "2cc4f38082ec76c3ff120a5a3466dde2049faf0f0769759ecc8dfd62af55bd5a",
+      "raw_end": 82588,
+      "raw_offset": 51765,
+      "stream": "/tmp/glm53-onepass23-streams/local.stdout.raw",
+      "stream_device": 16777233,
+      "stream_inode": 98614334
+    },
+    "sha256": "05af10f9ec4c3cc5d0f3cdedd433ae1613323deb9d3a1254b3caa2dd43364139"
+  },
+  "canary/A0/local.receipt-line.raw": {
+    "bytes": 30823,
+    "origin": "/tmp/glm53-onepass23-canary-A0/local.receipt-line.raw",
+    "sha256": "80ea69badf764b4973f6681e55dc4dd76de6f74421193a5a49dbb80969922790"
+  },
+  "canary/A0/validation-original.json": {
+    "bytes": 8149,
+    "origin": "/tmp/glm53-onepass23-canary-A0/validation.json",
+    "sha256": "a9d23a2be6d485d4af2478f52a4e80d56567797442644047740a56b6e246145a"
+  },
+  "canary/A0/versus21-TP-content-continuity.json": {
+    "bytes": 2659,
+    "origin": "/tmp/glm53-onepass23-A0-vs21-continuity.json",
+    "sha256": "8a72fea97a51ee3ed309b4ae49ef7027f9c9d14b36683526b510b860f5b1e6a6"
+  },
+  "canary/verified-summary.json": {
+    "bytes": 3184,
+    "origin": "8 TP PASS receipts source-bound and matched to strict A0/A logs and original streams",
+    "sha256": "a798cdbae5d3ab3003e27200e1f6dc583b35deeab7c1288a94ed067d5a5876bc"
+  },
+  "collect-evidence.py": {
+    "bytes": 21850,
+    "origin": "this collector",
+    "sha256": "c2a7a1be39c86aa7053cece1238cafa4f6bbe3d3041530de446bcbb7a1f4253b"
+  },
+  "failure/earlyoom.journal.raw.gz": {
+    "bytes": 546,
+    "origin": "head: sudo -n journalctl -u earlyoom --utc --since 2026-09-09 04:16:00 UTC --until 2026-09-09 04:24:10 UTC --no-pager -o short-iso",
+    "original_bytes": 1807,
+    "original_sha256": "d8371cb5ba50573da057bfdcfbcf77f9af5870dfa9b59e6a043c7c7d67ca8eb6",
+    "sha256": "db5c1e38121f78f983fd2e72815a40c881317fd748df9c909ee602f977c6a9de"
+  },
+  "failure/kernel.journal.raw.gz": {
+    "bytes": 490,
+    "origin": "head: sudo -n journalctl -k --utc --since 2026-09-09 04:16:00 UTC --until 2026-09-09 04:24:10 UTC --no-pager -o short-iso",
+    "original_bytes": 5642,
+    "original_sha256": "e943c42be086f8e3c347a9f6a794080660893f4d14c75bd7898e37faf0b55ea0",
+    "sha256": "9a5c9b623dd9e7a636f5eb3fe78850c6dbc68b25fbfce453224c7781f1f95272"
+  },
+  "failure/leg.357316.raw.gz": {
+    "bytes": 832,
+    "origin": "/tmp/leg.357316",
+    "original_bytes": 2032,
+    "original_sha256": "28e28d9b528d56398a8d57b922475e0c49f9c28455596c9fe97fc46ce136046f",
+    "sha256": "05862bfe3d0133e4ad050f2059824a92ce2d6171318069493a7ce8f9e4617744"
+  },
+  "failure/partial-leg-binding.json": {
+    "bytes": 516,
+    "origin": "parent supplied live lineage observation plus terminal raw file",
+    "sha256": "aa2aeca0603a5b4caa39432b65c41d5954a36be069992da8d74dc20c5a671192"
+  },
+  "fleet/terminal-run.log.gz": {
+    "bytes": 2954,
+    "origin": "/home/choiceoh/glm53-logs/fleet/run-logs/a6f6a9232220a5509b815e9cdc74886dd40a8cc81dcce4d4cb5c0e74dca438ce.log",
+    "original_bytes": 10114,
+    "original_sha256": "7a89b2bd9559ba2170c35de9bed31eac6c868bb0b7de33bc60b08d741379e41c",
+    "sha256": "d00ae2ce64c248dc3c357569bf3e7280168694ffe76605a9b6b4f015f13c5b5c"
+  },
+  "job/onepass.jsonl": {
+    "bytes": 109227,
+    "origin": "/tmp/glm53-ep-onepass-0909-23/onepass.jsonl",
+    "sha256": "63365915bd6e150c799b1e8c7d3f1d9837fd9f82efd3b430a6b2d22d20f0d6b0"
+  },
+  "job/submission.json": {
+    "bytes": 3224,
+    "origin": "/tmp/glm53-ep-onepass-0909-23/submission.json",
+    "sha256": "0945af53502886f5b13a8d44b0be0b2e6bc3bffe11ea8f2f2be69417abf3dcf3"
+  },
+  "job/submit.exit.json": {
+    "bytes": 43,
+    "origin": "/tmp/glm53-ep-onepass-0909-23/submit.exit.json",
+    "sha256": "0b28b782eaa3e96396485fcbdf70f1348a50f2199928a44e0c5b8c911ef55373"
+  },
+  "job/submit.stderr": {
+    "bytes": 0,
+    "origin": "/tmp/glm53-ep-onepass-0909-23/submit.stderr",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "job/submit.stdout": {
+    "bytes": 480,
+    "origin": "/tmp/glm53-ep-onepass-0909-23/submit.stdout",
+    "sha256": "aaf16f13d7a5d391308df89b93c1e1eda6d9e7dee9d02afd0879ae88c25bb37a"
+  },
+  "job/verdicts.jsonl": {
+    "bytes": 509,
+    "origin": "/tmp/glm53-ep-onepass-0909-23/verdicts.jsonl",
+    "sha256": "ab656051fd79d9e15424634b63886dd7603c927929e6beae4693e54817c1a5b5"
+  },
+  "result-summary.json": {
+    "bytes": 5290,
+    "origin": "A0/B1 completed records, exact partial warm A leg, earlyoom journal and source-bound TP canaries",
+    "sha256": "90880b9e0d4c9a4c53dcc8058f621c0acdf0fae7842332e0a63cf97099cc24d3"
+  },
+  "snapshot/A/10.10.10.1.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/10.10.10.1.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/A/10.10.10.1.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/10.10.10.1.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/A/10.10.10.1.serving.log.gz": {
+    "bytes": 17077,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/10.10.10.1.serving.log.gz",
+    "original_bytes": 121814,
+    "original_sha256": "dbac2e5b594b0b130ed5d2b0c0104108a0e2d1556abccd97558999dc7151aeb1",
+    "sha256": "2798d7b1399dc6c15d237273edcf30b5dbc1c207b6c2c59274cb2a0c15e3105f"
+  },
+  "snapshot/A/10.10.10.3.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/10.10.10.3.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/A/10.10.10.3.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/10.10.10.3.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/A/10.10.10.3.serving.log.gz": {
+    "bytes": 16900,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/10.10.10.3.serving.log.gz",
+    "original_bytes": 121698,
+    "original_sha256": "efc5d3458b0e0cacc7b4cec2e1b1702b4e1831c1058e607616c0c518d3ccf064",
+    "sha256": "48da36d2bd27a98bdc759f930e97ee7a4228a5fb343f376e17434ea9bd4d9af9"
+  },
+  "snapshot/A/10.10.10.4.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/10.10.10.4.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/A/10.10.10.4.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/10.10.10.4.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/A/10.10.10.4.serving.log.gz": {
+    "bytes": 17077,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/10.10.10.4.serving.log.gz",
+    "original_bytes": 122089,
+    "original_sha256": "7b93a4682f2ef2588864623bfa56062ab573e936ba935029e9c5a7692827fc53",
+    "sha256": "c3dd0660abc92f1320610a957eabfb585cd3b96e98658a5d1c57c7992e30e645"
+  },
+  "snapshot/A/allowlisted-identity.json": {
+    "bytes": 68828,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/identity.json",
+    "sha256": "6850ec6f47cf0e11ce2d8a497266eabd5925b4918acc38e06ba01db9ec50f340"
+  },
+  "snapshot/A/launch-parser.py": {
+    "bytes": 7359,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/launch-parser.py",
+    "sha256": "73f6f25a54733d69fb12c72f32795cb566c26c15204cd0f907d6cdf7b8504393"
+  },
+  "snapshot/A/local.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/local.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/A/local.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/local.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/A/local.serving.log.gz": {
+    "bytes": 21590,
+    "origin": "/tmp/glm53-onepass23-live-A-observer/local.serving.log.gz",
+    "original_bytes": 141495,
+    "original_sha256": "99e32ec24db667eed4ee2ac4a7dcdb39b3a48b816270c351cd7a94ba5cbed62c",
+    "sha256": "bb9b7a89fda4a262c3dea89b04490eb92fcb980b435b04a790a4519553321577"
+  },
+  "snapshot/A0/10.10.10.1.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/10.10.10.1.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/A0/10.10.10.1.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/10.10.10.1.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/A0/10.10.10.1.serving.log.gz": {
+    "bytes": 18556,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/10.10.10.1.serving.log.gz",
+    "original_bytes": 135942,
+    "original_sha256": "4bab99d10bf0f6cf5958d78182f303fcb7c4c5308f58a9a22b5058cf4c25e531",
+    "sha256": "b24555539bd8a48ae958d0de942519ac93293e761d21b2ad073c30d877f13b48"
+  },
+  "snapshot/A0/10.10.10.3.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/10.10.10.3.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/A0/10.10.10.3.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/10.10.10.3.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/A0/10.10.10.3.serving.log.gz": {
+    "bytes": 19175,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/10.10.10.3.serving.log.gz",
+    "original_bytes": 136566,
+    "original_sha256": "4bd5e9b11a1c24c8fcda09c5a6c28f326587fd6b92fe241c938cf79c256d218e",
+    "sha256": "4af76b4ff771dde7ed785b613d94474db7dfb10bab9a6fb564ac6e10f4a71cf6"
+  },
+  "snapshot/A0/10.10.10.4.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/10.10.10.4.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/A0/10.10.10.4.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/10.10.10.4.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/A0/10.10.10.4.serving.log.gz": {
+    "bytes": 19072,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/10.10.10.4.serving.log.gz",
+    "original_bytes": 136279,
+    "original_sha256": "3dd228d82dde676a2b005ea57bc43fa85000ad5d70f698561b8743456c609e33",
+    "sha256": "5a63d027c1fb4b4a56492e281c6a434c3dfa7ad2d2c34c541c69c8d0a75a3db6"
+  },
+  "snapshot/A0/allowlisted-identity.json": {
+    "bytes": 68830,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/identity.json",
+    "sha256": "ce8f4f9b6e8781bcf12edc977ba00ec7f2d97b8092da654ebde5220dc9dbb11d"
+  },
+  "snapshot/A0/launch-parser.py": {
+    "bytes": 7359,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/launch-parser.py",
+    "sha256": "73f6f25a54733d69fb12c72f32795cb566c26c15204cd0f907d6cdf7b8504393"
+  },
+  "snapshot/A0/local.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/local.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/A0/local.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/local.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/A0/local.serving.log.gz": {
+    "bytes": 25114,
+    "origin": "/tmp/glm53-onepass23-live-A0-observer/local.serving.log.gz",
+    "original_bytes": 160853,
+    "original_sha256": "ed14ff72e72c689002b881aba7f8cfa9a3f9eefd3a0be2399bc2e9f9680e73ee",
+    "sha256": "4f97fcfa2b7ba9c6852e8ab9a268657ca0bd6526381b1207960cd219d718e88b"
+  },
+  "snapshot/B1/10.10.10.1.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/10.10.10.1.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/B1/10.10.10.1.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/10.10.10.1.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/B1/10.10.10.1.serving.log.gz": {
+    "bytes": 11995,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/10.10.10.1.serving.log.gz",
+    "original_bytes": 96214,
+    "original_sha256": "38712c20f8516a1d44f708572c36dc6b78055887030f68514a2f52832dfa82c9",
+    "sha256": "37ff5acbd141d38c976b1774a8f8028601614f033bce81e380fa8f16cfff5423"
+  },
+  "snapshot/B1/10.10.10.3.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/10.10.10.3.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/B1/10.10.10.3.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/10.10.10.3.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/B1/10.10.10.3.serving.log.gz": {
+    "bytes": 12438,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/10.10.10.3.serving.log.gz",
+    "original_bytes": 96404,
+    "original_sha256": "cbe6ed17dbb4b55ee135674080009da2497ddebd0c3782c4d8a3f209b611ae1d",
+    "sha256": "65063d3023616a26aac16e4664f3a2067fe7bb7b91b7614125c457b8ebdc1b28"
+  },
+  "snapshot/B1/10.10.10.4.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/10.10.10.4.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/B1/10.10.10.4.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/10.10.10.4.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/B1/10.10.10.4.serving.log.gz": {
+    "bytes": 12469,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/10.10.10.4.serving.log.gz",
+    "original_bytes": 96482,
+    "original_sha256": "9f3372761b9d168a5bd559af3d4d4eadaba3ee971c9f61a7fe8a4a70850561d9",
+    "sha256": "963b119284579ba38b23e637f15e108e717dadd101f61a88baf8c44c2edfaa88"
+  },
+  "snapshot/B1/allowlisted-identity.json": {
+    "bytes": 67915,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/identity.json",
+    "sha256": "3a3639736f46de65f12030dd9b6d70fe37f8217fab03c9328900a80a09516af4"
+  },
+  "snapshot/B1/launch-parser.py": {
+    "bytes": 7359,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/launch-parser.py",
+    "sha256": "73f6f25a54733d69fb12c72f32795cb566c26c15204cd0f907d6cdf7b8504393"
+  },
+  "snapshot/B1/local.docker.log.gz": {
+    "bytes": 20,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/local.docker.log.gz",
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "snapshot/B1/local.manifest.tsv.gz": {
+    "bytes": 2291,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/local.manifest.tsv.gz",
+    "original_bytes": 9688,
+    "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+    "sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+  },
+  "snapshot/B1/local.serving.log.gz": {
+    "bytes": 17543,
+    "origin": "/tmp/glm53-onepass23-live-B1-observer/local.serving.log.gz",
+    "original_bytes": 120452,
+    "original_sha256": "899482fb83cad35b1a9cd41543106463129705cd41e77958323f99d27a894390",
+    "sha256": "d0ca4bdbbf0934749ea95f6ef791f4ed4d55f14715ec7140fe19d69c4c5d4123"
+  },
+  "source/cpu23-reference.json": {
+    "bytes": 252,
+    "origin": "existing original CPU23 archive",
+    "sha256": "617133241daa31532b944add7f8a13f06723a1eab78453b628e52f8bb7ef63f5"
+  },
+  "source/flashinfer_b12x_moe.py.gz": {
+    "bytes": 31162,
+    "origin": "git cbf1c7916247f946167c15ff74d92261588e8cea:build/glm53/flashinfer_b12x_moe.py",
+    "original_bytes": 119692,
+    "original_sha256": "51753ac14b3ecbea39a8b7147bd0b9a3bdc3ecdf52452589e1ba511d8de22ffa",
+    "sha256": "93e79796a017ed58e8bd004da154ea76fe62e6387d2a455a696d7bbeb74e2c36"
+  },
+  "source/frozen-manifest.tsv": {
+    "bytes": 9688,
+    "origin": "normal source_commit header + git cbf1c7916247f946167c15ff74d92261588e8cea",
+    "sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08"
+  },
+  "source/git-manifest.tsv": {
+    "bytes": 9631,
+    "origin": "git cbf1c7916247f946167c15ff74d92261588e8cea",
+    "sha256": "b0871d55362e0df9b9595f96a51a005bf5562636015eb0cb5f5621b7d7f72fc6"
+  },
+  "source/glm53_ep_local_selftest.py.gz": {
+    "bytes": 10668,
+    "origin": "git cbf1c7916247f946167c15ff74d92261588e8cea:build/glm53/glm53_ep_local_selftest.py",
+    "original_bytes": 35610,
+    "original_sha256": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+    "sha256": "5aa515bac04bc4aaf4899e96a9fbd760018c98f3ad947f7a69d538d5d0ece20b"
+  },
+  "source/glm53_tp_sf6_q0_selftest.py.gz": {
+    "bytes": 6412,
+    "origin": "git cbf1c7916247f946167c15ff74d92261588e8cea:build/glm53/glm53_tp_sf6_q0_selftest.py",
+    "original_bytes": 21351,
+    "original_sha256": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+    "sha256": "7113da1a9d25ef8d749b2d2ef16dc484cbdff5cacf3f08e9758258ee53b19b85"
+  },
+  "source/gpu_worker.py.gz": {
+    "bytes": 16353,
+    "origin": "git cbf1c7916247f946167c15ff74d92261588e8cea:build/glm53/gpu_worker.py",
+    "original_bytes": 64958,
+    "original_sha256": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8",
+    "sha256": "54e3c7b10ac21c31c3f1652ac8e739e508b4807a1b81b38c8eaa10eb3e9e8ed0"
+  },
+  "source/moe_dispatch.py.gz": {
+    "bytes": 42975,
+    "origin": "git cbf1c7916247f946167c15ff74d92261588e8cea:build/glm53/moe_dispatch.py",
+    "original_bytes": 204570,
+    "original_sha256": "cbad55b8d0b3e6f7607ef7bb78bc015622aa86774d37d409042231e8f671d77d",
+    "sha256": "3a1670b835b235e650fcb24b99f21ed481a2b4bc1201ca3472843f470d7d9bca"
+  },
+  "source/moe_dynamic_gated_sf6.py.gz": {
+    "bytes": 12791,
+    "origin": "git cbf1c7916247f946167c15ff74d92261588e8cea:build/glm53/moe_dynamic_gated_sf6.py",
+    "original_bytes": 62753,
+    "original_sha256": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "sha256": "988528409adb4a1b8ed4448e7d8cbf252d659e109fc25c0cca57494abaf792a8"
+  },
+  "source/moe_dynamic_gated_sf6_q0.py.gz": {
+    "bytes": 4747,
+    "origin": "git cbf1c7916247f946167c15ff74d92261588e8cea:build/glm53/moe_dynamic_gated_sf6_q0.py",
+    "original_bytes": 22783,
+    "original_sha256": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+    "sha256": "3411a3468fe88df711076b0e13dc471d5a73ed08b94f7b253c3f809081d92b76"
+  },
+  "source/mounted-hashes.json": {
+    "bytes": 11143,
+    "origin": "frozen build cbf1c7916247f946167c15ff74d92261588e8cea",
+    "sha256": "8f4f62018bc8a1aeb5f40df9b272e63cce27873c38dfbe451e685b0c9cb3e3ca"
+  },
+  "streams/10.10.10.1.stderr.raw.gz": {
+    "bytes": 76,
+    "origin": "/tmp/glm53-onepass23-streams/10.10.10.1.stderr.raw",
+    "original_bytes": 116,
+    "original_sha256": "71e6869331b498eaf99220a889ce2b1716ccf48876cc2ec4bf63d8de4ef73891",
+    "sha256": "34c83aaba8c91efe2f5e039d2ad0a52942acd5d9a3e3ec325e7d1f8479c77d59"
+  },
+  "streams/10.10.10.1.stdout.raw.gz": {
+    "bytes": 52949,
+    "origin": "/tmp/glm53-onepass23-streams/10.10.10.1.stdout.raw",
+    "original_bytes": 487187,
+    "original_sha256": "44e84fcd035b6ca382480c6bb765fe0db8cf58cdcd8e88230f477bf6d6f243ac",
+    "sha256": "a7998674f2df46dc6a61bfc6574c4f6cc6a6f2fe2fe25299d11baa69ad8c4e43"
+  },
+  "streams/10.10.10.3.stderr.raw.gz": {
+    "bytes": 76,
+    "origin": "/tmp/glm53-onepass23-streams/10.10.10.3.stderr.raw",
+    "original_bytes": 116,
+    "original_sha256": "71e6869331b498eaf99220a889ce2b1716ccf48876cc2ec4bf63d8de4ef73891",
+    "sha256": "34c83aaba8c91efe2f5e039d2ad0a52942acd5d9a3e3ec325e7d1f8479c77d59"
+  },
+  "streams/10.10.10.3.stdout.raw.gz": {
+    "bytes": 53230,
+    "origin": "/tmp/glm53-onepass23-streams/10.10.10.3.stdout.raw",
+    "original_bytes": 484174,
+    "original_sha256": "854c7f13e8db6508c8198435940ae262b81c7daa2a891038656a056ef8b95254",
+    "sha256": "2a3b4168ede77511144a3d4759917ff00ccee0b780ac5f19328ab2b35ef056dd"
+  },
+  "streams/10.10.10.4.stderr.raw.gz": {
+    "bytes": 76,
+    "origin": "/tmp/glm53-onepass23-streams/10.10.10.4.stderr.raw",
+    "original_bytes": 116,
+    "original_sha256": "71e6869331b498eaf99220a889ce2b1716ccf48876cc2ec4bf63d8de4ef73891",
+    "sha256": "34c83aaba8c91efe2f5e039d2ad0a52942acd5d9a3e3ec325e7d1f8479c77d59"
+  },
+  "streams/10.10.10.4.stdout.raw.gz": {
+    "bytes": 53328,
+    "origin": "/tmp/glm53-onepass23-streams/10.10.10.4.stdout.raw",
+    "original_bytes": 486685,
+    "original_sha256": "6187f89836574410a4556466c6a2bdfec0a8cd403869a2e83c49f1922efd953e",
+    "sha256": "50c1cd850b87d7831a50ef18ec94ea033eff9e91b5ce88d8d468f3cf89ed6eb8"
+  },
+  "streams/closure.json": {
+    "bytes": 615,
+    "origin": "closed passive observer",
+    "sha256": "6e41992a7b1acd864a91d54a84cbbf501f899864f17174d7081a654f789a29c6"
+  },
+  "streams/events.jsonl.gz": {
+    "bytes": 391774,
+    "origin": "/tmp/glm53-onepass23-streams/events.jsonl",
+    "original_bytes": 2346356,
+    "original_sha256": "54cc0f8ec6eea85113f54530ab60861c9cb8755b3258005875ab3dbcec3c7718",
+    "sha256": "041af5624f75907576df78b91fa6e7f490c0a76c0866bd1725be480ca878277e"
+  },
+  "streams/local.stderr.raw.gz": {
+    "bytes": 76,
+    "origin": "/tmp/glm53-onepass23-streams/local.stderr.raw",
+    "original_bytes": 116,
+    "original_sha256": "71e6869331b498eaf99220a889ce2b1716ccf48876cc2ec4bf63d8de4ef73891",
+    "sha256": "34c83aaba8c91efe2f5e039d2ad0a52942acd5d9a3e3ec325e7d1f8479c77d59"
+  },
+  "streams/local.stdout.raw.gz": {
+    "bytes": 76548,
+    "origin": "/tmp/glm53-onepass23-streams/local.stdout.raw",
+    "original_bytes": 609729,
+    "original_sha256": "29df3db6a5e7c93b7afbe61f3bfef1b48eef53e1b0cb0f2d1e5967126a98359c",
+    "sha256": "71275b825a34ea48543b971bd3483b13a3e6fff72af8adbbbf07ba0b8e1952a8"
+  },
+  "submission/receipt.json": {
+    "bytes": 480,
+    "origin": "/tmp/glm53-onepass23-submit-receipt.txt",
+    "sha256": "aaf16f13d7a5d391308df89b93c1e1eda6d9e7dee9d02afd0879ae88c25bb37a"
+  },
+  "submission/request.json": {
+    "bytes": 3319,
+    "origin": "/tmp/glm53-onepass23-submit.json",
+    "sha256": "bd87aae9710ce03a4d3738b87e668eb80e90aec90f2ac6b4da70a1954978ff11"
+  },
+  "terminal-capture.json": {
+    "bytes": 4684,
+    "origin": "read-only terminal fleet/source/own-holder and fixed-window journal capture",
+    "sha256": "bcfc57874041856b30e117b0bfae10864164512400cbef4d1cc708218c54ea48"
+  },
+  "tools/canary-extractor-validator.py": {
+    "bytes": 17243,
+    "origin": "/tmp/glm53_extract_onepass23_canary.py",
+    "sha256": "faf539dff9dfe3eb9dfff0046d7f5f74869a6c392b1cf59ade7217c4d82f557b"
+  },
+  "tools/passive-observer.py": {
+    "bytes": 19653,
+    "origin": "/tmp/glm53_onepass23_observer.py",
+    "sha256": "00fd67152731bb74fed07d25b778c9b3390a30b2c6fd3baf46130d61ded52b0e"
+  },
+  "tools/snapshot-helper.py": {
+    "bytes": 20923,
+    "origin": "/tmp/glm53_onepass23_snapshot.py",
+    "sha256": "8c25e1788b90d4b0966e74b8da1c10f25c96b5bc3dce91f33881557a7496ee30"
+  }
+}

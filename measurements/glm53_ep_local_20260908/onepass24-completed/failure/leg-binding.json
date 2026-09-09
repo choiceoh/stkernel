@@ -1,0 +1,12 @@
+{
+  "available_at_collection": false,
+  "lever_pid": 457771,
+  "onepass_child_pid": 494734,
+  "owner_pid": 449824,
+  "path": "/tmp/leg.457771",
+  "scope": "Parent supplied live process ancestry; completed temporary leg was absent at collection. Full canonical terminal log retains all three fixed decode lines and both failure excerpts. No reconstruction is called an original leg.",
+  "session": "eplocalonepass0909v24",
+  "sha256": null,
+  "source": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+  "ticket": "1788928530449824"
+}

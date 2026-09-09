@@ -1,0 +1,337 @@
+preflight epbindinggpu0908v2 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  SYNC /home/choiceoh/glm53-logs/fleet.sh <- repo (was stale)
+  PASS knobs declared in origin/main: 
+  NOTE checkout is 13 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  baseline: NONE for build 7254422 -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 1/1, held by arconsumer0908v9 [boot] (pid 1743299@srv2, since 16:40, est 70m, Packed-register MHC128: full numerics and sanitizers then C1 B/A/B), legacy busy (1 procs, 0 reqs) 2026-09-08_16:42:35
+GO epbindinggpu0908v2 2026-09-08_16:44:07
+  node 10.10.10.1: gpu=ok stray=3 ram=98G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=92G path=ok 
+  node 10.10.10.4: gpu=ok stray=15 ram=97G path=ok 
+{"started": 1788853448.6256526, "source_revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00", "exit_code": 1, "performance_acceptance": false, "diagnostic_only": true, "error": "RuntimeError('require four running, persistent, pinned-image containers or four absent containers')", "ended": 1788853450.7354636, "restored_original": false}
+From https://github.com/choiceoh/stkernel
+   4a55756..cb25c5f  codex/glm53-ar-consumer-0908 -> origin/codex/glm53-ar-consumer-0908
+   e3756fa..8daa0a7  ostcode/chunked-prefill-usage-b3b6bf -> origin/ostcode/chunked-prefill-usage-b3b6bf
+   79d6bc3..0488aa1  ostcode/vllm-glm-flash-prs-f0d377 -> origin/ostcode/vllm-glm-flash-prs-f0d377
+HEAD is now at fc6e430 Merge pull request #482 from choiceoh/ostcode/chunked-prefill-usage-b3b6bf
+/home/choiceoh/stkernel-fleet-production-boundary-20260908/build/glm53  (59 overlays from 9 modules)
+self-test: PASS
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.114s
+
+OK
+[osar] VLLM_GLM53_AR_PREFETCH=40 MB is outside 1..20; off
+[osar] VLLM_GLM53_AR_PREFETCH='x' is not 0, 1 or an MB count; off
+[osar] prefetch hints learned (target): 2 collectives, 12.6 MB in total
+[osar] prefetch hints learned (drafter): 1 collectives, 0.0 MB in total
+......................................
+----------------------------------------------------------------------
+Ran 38 tests in 0.675s
+
+OK
+  skip_topk rule ................ OK
+  rank cache eviction contracts .. OK
+  nvfp4 static scale contracts .. OK
+  prefill chunker budgets ....... OK
+  indexer-SP shard coverage ..... OK
+  helper functions .............. OK
+  profile-step buckets/union .... OK
+  bench-dec acceptance parser ... OK
+  overlay manifests (82 files across dsv4, glm53) .... OK
+  composed snapshot sync (82 files) . OK
+  overlay symbol contracts (120, per composition incl. orphans) ... OK
+  profile env carried (106 knobs) ... OK
+  profile keys have readers (149) ... OK
+  bf16-release guards ........... OK
+  DSpark speed-path guards ...... OK
+  acceptance lever guards ....... OK
+  ngram-ceiling sim math ........ OK
+  UE8M0 scale repair ............. SKIP (no torch on this host)
+  EP stock top-k chunks .......... OK
+  EP fixed/stock output init ..... OK
+  b12x zero-weight micro ......... OK
+  GLM53 b12x tuning controls ..... OK
+  b12x static v2 controls ........ OK
+  b12x SF 6-bit pack ............ OK (skipped: no torch)
+  EP micro chunk width .......... OK
+  EP tail fixed shape ........... OK
+  EP compact shape align ........ OK
+  EP compact warmup ladder ...... OK
+  *_once args hashable .......... OK
+  dflash2 selector check ........ OK
+  dflash2 selector score precision  SKIP (no torch on this host)
+  overlay logger defined ........ OK
+  osar MAXEL rank agreement ..... OK
+  bench served-model resolve .... OK
+  extra-env comma guard ......... OK
+  torch imports guarded ......... OK
+  dflash2 conv mask buffer ....... OK
+  dflash AOT guard stays removed  OK
+  hot-path env latches ........... OK
+  launcher load-format gate ..... OK
+  launcher reject-method gate ... OK
+  dflash2 prefix-cache fail-closed  OK
+  accept profile arithmetic ..... OK
+  DSV4 launcher adoptions ....... OK
+  launcher nofile limit ......... OK
+  prefill ladder probe .......... OK
+  fp8 acceptance contracts ....... OK
+  glm53 V2/deploy contracts ...... OK
+  launcher head guard .......... OK
+  preflight applies GMU ......... OK
+  no hardcoded image paths ...... OK
+  b12x EP routing ................ OK (tensor remap skipped)
+  b12x EP preflight .............. OK
+  b12x EP launcher ............... OK
+  deploy refusal exits non-zero .. OK
+  fp8-dense nvfp4 scheme contract .. OK
+  benches ask the server for the model .. OK
+  korean gate notation vs damage .. OK
+  every module is mounted or explained .. OK
+  profile knobs are all readable .. OK
+  fp8-dense bf16 release contract .. OK
+  mhc probe contracts ............ OK
+  mhc bigfuse knob ............... OK
+  census KDA group ............... OK
+  census owner axis .............. OK
+  census streaming reader ....... OK
+  trace step tail cut ........... OK
+  profiles README module table .. OK
+  dflash warmup buckets .......... OK
+  DSV4 spec warmup contract ...... OK
+  DSV4 UE8M0 host guard ......... SKIP values (no torch)
+  glm53 kpool packed scratch contract ... SKIP (no torch on this host)
+  GLM53 KDA prefill regimes ....... OK
+  GLM53 KDA prefill direct out ... OK
+  GLM53 upstream prefill batch ..... OK
+  one-shot SM121 grid contract .... OK
+  cuda builds keep the sm_121a-specific target .. OK
+  self-built kernels persist their caches .. OK
+  boot stamps measure without changing the boot .. OK
+  cudagraph mem profiling off keeps kv size .. OK
+  kv cache is pinned in tokens ... OK
+  earlyoom fireable on UMA ...... OK
+  fp8-dense drafter patterns + opaque op .. OK
+  spec_k compile factor .. OK
+  dev lab contracts .. OK
+  mk head lane contracts .......... OK
+  ab runner measures both ....... OK
+  osar wait is split by message size .. OK
+  osar prefetch hints contract .. OK
+  glm53_dflash_early_fc contracts .. OK
+  glm53_drafter_prep contracts .... OK
+  indexer decode fused contracts .. OK
+  drafter ctx-KV W4 contracts ..... OK
+  trace step nodes tool ........... OK
+  micro-fusion bundle 2 contracts .. OK
+  glm53 megakernel contracts .. OK
+  prefill warmup contracts ... OK
+  w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)
+  megakernel core is shared ..... OK
+  glm53 prep fused contracts .. OK
+  launcher continued-string assignments carry no comments .. OK
+  launcher restores PREFILL_WARMUP from caller env .. OK
+  decode-first scheduler contracts .. OK
+  profile keys not via EXTRA_ENV .. OK
+  glm53 IndexCache layer rule ... OK
+  glm53 indexer gate split-K contracts .. OK
+  bracket runner contracts .. OK
+  trace composition analyze .. OK
+  drafter fc probe contracts .. OK
+  fp8-dense build peak .......... OK
+  hy4 entry point parity ........ OK
+  common tp4 library ............ OK
+  worker envv not re-parsed ..... OK
+  supervisor relaunch pacing .... OK
+Ran 139 tests in 2 isolated shards: OK
+all OK (6792 checks; 38 megakernel regressions; 139 fleet regressions)
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.569s
+
+OK
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 2.268s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.001s
+
+OK
+INFO 09-08 07:45:17 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-08 07:45:17 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+W0908 07:45:18.072000 110 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+INFO 09-08 07:45:19 [parser_manager.py:37] "auto" tool choice has been enabled.
+PASS prefilled_think
+PASS explicit_think
+PASS empty_reason
+PASS unfinished
+PASS compat_off
+INFO 09-08 07:45:19 [hf.py:551] Detected the chat template content format to be 'openai'. You can set `--chat-template-content-format` to override this.
+PASS two_tools
+PASS tool_ends_reasoning
+PASS off_tools
+PASS none_literal_True
+PASS none_fenced_True
+PASS none_partial_True
+PASS surrounding_True
+PASS between_True
+PASS literal_think_True
+PASS whitespace_True
+PASS none_literal_False
+PASS none_fenced_False
+PASS none_partial_False
+PASS surrounding_False
+PASS between_False
+PASS literal_think_False
+PASS whitespace_False
+PASS required
+PASS named
+PASS none_implicit_end
+PASS none_no_tools
+PASS request_reuse
+{"vllm": "0.1.dev20051+g487ecf187", "tokenizer": "/models/glm", "cases": 26, "replays": 3765, "reuse_requests": 3, "sha256": {"/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d", "/checks/launchers/chat_template_mm_v2.jinja": "0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42"}}
+[overlay-deploy] preserve_identical=1 source=fc6e4307ae563d096315264df041eee0d9494ea5
+=== head (/home/choiceoh/overlays/glm53) ===
+  7f91349c7f3c43edd40a7915e737d1703b471dd348b03aab48bdbd7c0ce6f454  manifest.tsv
+  b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b  moe_gate_sm121.py
+  ef6fffb1474965f16702217f72b6e9e07a941f8528e617039561a8ac4cc1ca34  dsv4_oneshot_shim.py
+  7c75403c14142b70da2d87ff3d8906051539740f1b3ecea2107b040a323cd6cf  dsv4_oneshot_ar.cu
+  53a26fc2821b0b3e76a1ea0d12354a2eb35c538f55d8daa2fd03b000128da7fb  glm53_megakernel.py
+  f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c  glm53_megakernel.cu
+  200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d  sparse_attn_indexer_kpool.py
+  c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319  glm53_kpool_indexer.py
+  d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e  kda.py
+  fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739  chunk_delta_h.py
+  bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1  tilelang.py
+  432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12  tilelang_kernels.py
+  a3270c79dd91376401d5967f89921c98328e575100e82500e858967630ae745e  flashinfer_b12x_moe.py
+  70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655  moe_micro_kernel.py
+  d9b62d352233f32269e24f5e3012536044685873912bc19cbca5c7d47f91b343  moe_dispatch.py
+  352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68  b12x_moe.py
+  bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9  moe_static_common.py
+  f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a  moe_sf_pack.py
+  1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480  moe_static_kernel_v4.py
+  f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11  moe_static_kernel_v5.py
+  a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d  moe_dynamic_gated_tiled.py
+  6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5  moe_dynamic_prefill.py
+  da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4  moe_dynamic_prefill_n128.py
+  7bf7700235ed12819fcfb695ba27410fb8411db60f8150f79b8b2fbad0a595e0  glm5next_model.py
+  1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be  glm53_prefill_fastpath.py
+  a4f3ead934c2f20eb311a32d507d17edd8552d74bc6d507fbcdd0f37695dff53  glm5next_attention.py
+  e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28  glm53_indexer_gate.py
+  672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a  glm5next_kda.py
+  1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973  flashinfer_mla_sparse_sm90.py
+  cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee  glm53_kda_onepass.py
+  a2b7508eaa12a43212615869deac1c855c5441f540406f53703b7cd85c4e6046  glm53_fp8_dense.py
+  34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76  glm53_startup_cache.py
+  0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26  glm53_rank_cache.py
+  0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8  glm53_nvfp4_scale.py
+  43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20  glm53_nvfp4_bproj.py
+  78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade  mtp.py
+  8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568  glm5next_multimodal.py
+  4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee  qwen3_dflash2.py
+  6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98  dflash_utils.py
+  fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d  spec_decode_rejection_warmup.py
+  99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd  glm53_dflash_early_fc.py
+  70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce  glm53_drafter_prep.py
+  ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac  fp8_lm_head.py
+  ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e  glm53_prep_fused.py
+  c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb  sampler.py
+  cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67  deneb_boot_stamps.py
+  b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca  zz_deneb_boot_stamps.pth
+  356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335  glm53_dev_lab.py
+  a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd  glm53_lab_middleware.py
+  d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0  glm53_chat.py
+  d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d  glm47_moe.py
+  ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe  cuda_communicator.py
+  90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22  glm53_prefill_collectives.py
+  2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8  parallel_state.py
+  6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360  glm53_draft_dump.py
+  a248cab9a91c7d5c1c089d717ee3b01d0b329e7e429d69dd24dccc029f32731f  glm53_decode_first.py
+  25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0  async_llm.py
+  9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8  glm53_renderer_warmup.py
+  c85092ab70c42692ae8cb7ae4ba4d35d7fbe885cee767ea969990483929d2834  gpu_worker.py
+  1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d  kv_cache_coordinator.py
+=== 10.10.10.3 (/home/choiceoh/overlays/glm53) ===
+  verified
+=== 10.10.10.1 (/home/choiceoh/overlays/glm53) ===
+  verified
+=== 10.10.10.4 (/home/choiceoh/overlays/glm53) ===
+  verified
+59 overlays + manifest deployed and SHA-256 verified on head + 3 workers.
+restart to apply: launchers/start-glm53-nvfp4-tp4.sh   (expect a long
+recompile warmup on the first boot after an overlay-source change)
+== [epbindinggpu0908v2RESTORE] first boot on build 7f91349c7f3c: cold compile (cold prefill column not comparable) ==
+== [epbindinggpu0908v2RESTORE] boot 16:45:26 caller env:  (profile defaults otherwise) ==
+load-format: instanttensor (default is instanttensor)
+prefix-cache: enabled (hybrid-APC coordinator, mamba align mode)
+chat: chat_template_mm_v2.jinja -> chat_template.0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42.jinja (reasoning=glm45, tools=glm47)
+overlays: 59 base contracts verified against glm53:v13-b12x-it
+  KV pinned: 2000000 tokens -> 1056 blocks (2304/block + 187 hybrid)
+scheduler: decode-first v3 sequential (decode steps 6, chunk 1152, fair=1, floor 1000 tok/s)
+== 이전 컨테이너 회수·잔여 lock 정리 (노드 병렬) ==
+== memfree preflight ==
+# node          MemFree   AnonPages   (GiB, after reclaim)
+  10.10.10.2     105.8       0.4
+  10.10.10.1     110.3       0.7
+  10.10.10.3     102.1       4.3
+  10.10.10.4      97.7      11.6
+  ! 10.10.10.4 holds 11.6 GiB anon against 10.10.10.2's 0.4 -- an unexpected tenant
+  min=97.7  -boot=11  -margin=10  => usable 76.7 GiB => GMU 0.64
+  GMU 0.73 -> 0.64 (실측 채택)
+  cudagraph estimate not applied: GMU 0.64 -> 0.6329 (graph headroom retained; skip unused dry capture=0)
+[compile-cache] {"action": "reuse", "content_sha256": "7b9d171c2bfa9cfc87b57424c9d667c7435fd3f90aa0b5520e0a202875639043", "deployment_sha256": "7f91349c7f3c43edd40a7915e737d1703b471dd348b03aab48bdbd7c0ce6f454", "elapsed_s": 0.01863, "version": 1}
+21b4d4483730064883ea6b095c8e6305094695b418e2cba97ecc2fc84434a3ef
+32413ed438f9ce0dbd8eae7210958c2ac1e505a06c53fc57c7adac533dbb61a0
+b8ddfca358176850700a5ab9b34f0874ecc75ed211a7c5b4cf8f39a52051961f
+worker rank=1 @10.10.10.1 launched
+worker rank=2 @10.10.10.3 launched
+worker rank=3 @10.10.10.4 launched
+9d3644f6679206ddd6ea290704a2b98405f533a6826b0bfd16614ec5c324677a
+head rank=0 launched — poll :8000/v1/models (cold boot ~15min)
+prefill-warmup armed (log: /home/choiceoh/glm53-logs/prefill-warmup.log)
+== [epbindinggpu0908v2RESTORE] wait for health 16:45:39 ==
+up after 210s
+== [epbindinggpu0908v2RESTORE] fingerprint (head log) ==
+(APIServer pid=29) WARNING 09-08 07:46:01 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PDL
+(APIServer pid=29) WARNING 09-08 07:46:08 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-08 07:46:27 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=223) INFO 09-08 07:46:42 [moe_gate_sm121.py:280] DSV4 fused small-M router gate armed (triton split-K, fp32 out).
+(Worker_TP0 pid=223) WARNING 09-08 07:47:40 [glm53_megakernel.py:2719] [megakernel] selftest mla rel=2.67e-03 pair_prefill=False group=2 prefill32=False -> ARM
+(Worker_TP0 pid=223) WARNING 09-08 07:47:40 [glm53_megakernel.py:2404] [megakernel] armed={'mhc': True, 'mhc_pre': True, 'gemm': True, 'mla': True, 'smlp2': False}
+(Worker_TP0 pid=223) WARNING 09-08 07:47:48 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.565 mk=3.351 empty_cache=0.070 (includes existing syncs)
+(Worker_TP0 pid=223) WARNING 09-08 07:47:48 [glm53_fp8_dense.py:1330] [fp8-dense] Glm5NextForCausalLM (knob VLLM_GLM53_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 213 linears w8a8 (4.04 GB bf16), 0 kept bf16, 0 disarmed by the
+(Worker_TP0 pid=223) WARNING 09-08 07:47:48 [glm53_fp8_dense.py:1343] [fp8-dense] Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=223 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gpt
+(Worker_TP0 pid=223) WARNING 09-08 07:47:48 [glm53_fp8_dense.py:1353] [fp8-dense] Glm5NextForCausalLM shapes: [1024x4096]x42, [4096x512]x42, [6416x4096]x34, [4096x2048]x34, [4096x1536]x22, [2048x4096]x11, [8192x512]x11, [4096x4096
+(Worker_TP0 pid=223) WARNING 09-08 07:47:55 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.032 mk=0.545 empty_cache=0.106 (includes existing syncs)
+(Worker_TP0 pid=223) WARNING 09-08 07:47:55 [glm53_fp8_dense.py:1330] [fp8-dense] DFlash2Qwen3ForCausalLM (knob VLLM_DFLASH2_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 31 linears w8a8 (0.73 GB bf16), 0 kept bf16, 0 disarmed b
+(Worker_TP0 pid=223) WARNING 09-08 07:47:55 [glm53_fp8_dense.py:1343] [fp8-dense] DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=258 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1
+(Worker_TP0 pid=223) WARNING 09-08 07:47:55 [glm53_fp8_dense.py:1353] [fp8-dense] DFlash2Qwen3ForCausalLM shapes: [1024x4096]x10, [1536x4096]x5, [4096x1024]x5, [6144x4096]x5, [4096x3072]x5, [4096x20480]x1
+(Worker_TP0 pid=223) INFO 09-08 07:48:34 [glm53_indexer_gate.py:129] [indexer-gate] VLLM_GLM53_INDEXER_GATE_SPLITK=1: first split-K routing, e.g. x(12, 4096) torch.bfloat16 @ w(4096, 32) (M<=16 admitted)
+(Worker_TP0 pid=223) INFO 09-08 07:48:35 [gpu_worker.py:582] Available KV cache memory: 8.95 GiB
+(Worker_TP0 pid=223) Capturing dflash2 CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s](Worker_TP0 pid=223) WARNING 09-08 07:48:44 [glm53_fp8_dense.py:603] [fp8-dense] drafter lane serving: 30 of 31 opaque GEMM calls per
+(Worker_TP0 pid=223) WARNING 09-08 07:48:44 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=223) WARNING 09-08 07:48:44 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64
+(EngineCore pid=151) WARNING 09-08 07:48:49 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=223) WARNING 09-08 07:48:59 [flashinfer_mla_sparse_sm90.py:497] [megakernel] mla shadow timing (T=2048): mk=5584.0 us wrapper=13840.2 us
+(Worker_TP0 pid=223) WARNING 09-08 07:48:59 [flashinfer_mla_sparse_sm90.py:520] [megakernel] mla shadow vs wrapper rel=8.54e-04 (T=2048, rows<=2048, real KV) -> ARMED
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=223 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 16.2 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=258 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 1.4 s
+== [epbindinggpu0908v2RESTORE] head log kept: /home/choiceoh/glm53-logs/boot-epbindinggpu0908v2RESTORE.log ==
+== [epbindinggpu0908v2RESTORE] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [epbindinggpu0908v2RESTORE] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-08 07:46:08 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-08 07:46:27 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=223) WARNING 09-08 07:48:44 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=223) WARNING 09-08 07:48:44 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=151) WARNING 09-08 07:48:49 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [epbindinggpu0908v2RESTORE] done 16:49:14 ==

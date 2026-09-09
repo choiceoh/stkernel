@@ -1,0 +1,8 @@
+{
+  "capsule_root": "/tmp/glm53-bindings13003-local-capsule",
+  "manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "files": 116,
+  "expanded_bytes": 113268092,
+  "helper_sha256": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+  "scope": "Exact officialwheel files validated and unpacked locally; no Linuximports or GPU execution"
+}

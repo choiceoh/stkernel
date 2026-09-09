@@ -156,6 +156,22 @@ def finalize_packed_scale_owners(model) -> int:
             released += _b12x_release_raw_scales(experts, layer, views)
             layers += 1
         experts._sf6_finalized = True
+    if os.environ.get("VLLM_GLM53_TP_SF6_Q0") == "1":
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_tp_sf6_q0_selftest import (
+            ensure_tp_sf6_q0_selftest,
+            tp_sf6_q0_selftest_eligible,
+        )
+        # Every packed owner must be finalized before temporary validation
+        # scratch is allocated. A repeated finalization selects the same
+        # already finalized owner and reuses its completed receipt.
+        for layer in model.modules():
+            pending = _SF6_PENDING.get(layer)
+            experts = pending() if pending is not None else None
+            if experts is not None and tp_sf6_q0_selftest_eligible(experts, layer):
+                ensure_tp_sf6_q0_selftest(experts, layer=layer)
+                break
+        else:
+            raise RuntimeError("TP SF6 Q0 requires an eligible finalized model weight owner")
     if layers:
         logger.warning("[b12x sf6] packed-only owners finalised: layers=%d raw_bytes_released=%d; "
                        "decode and prefill read immutable packed scales", layers, released)
@@ -172,6 +188,19 @@ _VLLM_WEIGHT_ATTRS = (
     "pack_factor",
     "load_hint",
 )
+
+
+_EP_LOCAL_PREFILL_ENABLED = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
+
+
+def ep_local_prefill_eligible(*, enabled, use_ep, no_dummy, experts, hidden, intermediate,
+                              tokens, topk, activation, alpha, beta, limit, is_capturing):
+    """Query capture state only after the opt-in and metadata gates pass."""
+    return (enabled and use_ep and no_dummy
+            and (experts, hidden, intermediate, topk) == (72, 4096, 2048, 8)
+            and type(tokens) is int and 4096 <= tokens <= 16384
+            and (activation, alpha, beta, limit) == ("swigluoai_uninterleave", 1.0, 0.0, 10.0)
+            and not is_capturing())
 
 
 def b12x_ep_kernel_expert_count(
@@ -566,19 +595,23 @@ def b12x_ep_micro_tail(num_tokens, top_k, num_local_experts, *, enabled):
     prefill in the mix this lane saw 9, 36, 49, 52, 60 tokens and only 8/16/32
     were admitted -- everything else fell to the pair path at up to 60 calls
     per layer, which is what collapsed C>=2. Cover the aligned prefix with
-    micro calls and leave only the short tail to that fallback: 49 tokens
-    becomes 6 micro calls plus one tail, not 49 pair calls.
+    micro calls and pad the short tail with the existing staging path: 49
+    tokens becomes 6 micro calls plus one padded tail. A batch shorter than
+    eight tokens is entirely a tail, including SPEC_K=5's six-token verify.
 
     The split is a function of the token count alone, so a captured graph
     replays the same launches.
     """
-    chunks = b12x_ep_zero_weight_micro_chunks(
-        num_tokens, top_k, num_local_experts, enabled=enabled
-    )
-    if not chunks:
-        return None
-    covered = chunks[-1][1]
     tokens = int(num_tokens)
+    if not (
+        enabled
+        and 1 <= tokens <= B12X_EP_ZERO_WEIGHT_MICRO_MAX_TOKENS
+        and int(top_k) == B12X_EP_ZERO_WEIGHT_MICRO_TOPK
+        and int(num_local_experts) == B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS
+    ):
+        return None
+    chunk = B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
+    covered = (tokens // chunk) * chunk
     return (covered, tokens) if covered < tokens else None
 
 
@@ -1076,11 +1109,10 @@ B12X_EP_COMPACT_PAIR_ALIGN = 64
 def b12x_ep_compact_pair_count(n_local, align=B12X_EP_COMPACT_PAIR_ALIGN):
     """Round a compacted pair count up to a launch-shape bucket.
 
-    b12x JIT-compiles per launch shape -- its cache key carries the row count
-    -- and compact's row count is the number of LOCAL pairs, which is data
-    dependent. One bench saw 33 distinct values (48, 83, 102, 103, 104, 119,
-    122, 130, ... 336) and each minted a kernel. Bucketing to 64 collapses
-    those to six.
+    Static kernel keys carry the exact row count; dynamic keys instead carry
+    the selected tile and cluster count. Compact's LOCAL pair count is data
+    dependent. Rounding bounds the small static variants and sliced tails
+    that startup warmup must prepare.
 
     The padding is bounded by `align - 1` rows, which at prefill scale
     (thousands of pairs) is under a percent, and for a small call is a few
@@ -1094,36 +1126,123 @@ def b12x_ep_compact_pair_count(n_local, align=B12X_EP_COMPACT_PAIR_ALIGN):
 
 def b12x_ep_compact_warmup_buckets(
     max_num_tokens, top_k, num_local_experts, global_num_experts,
-    align=B12X_EP_COMPACT_PAIR_ALIGN, floors=6,
+    align=B12X_EP_COMPACT_PAIR_ALIGN,
 ):
-    """Bucket sizes worth compiling at load instead of mid-request.
+    """Every possible compact launch size, including a sliced pair-list tail.
 
-    b12x JITs per launch shape and prefill's shape is the local-pair count, so
-    the first request at a new size stalls the engine for seconds -- the JIT
-    monitor says as much ("consider warmup to cover this shape/config"). #163
-    collapsed those to `align` buckets; this walks the ones a real prefill can
-    reach and pays for them once, at load.
-
-    The ladder halves from the largest chunk this engine can schedule down to
-    one bucket, so a handful of compiles covers every chunked-prefill size the
-    scheduler produces. Ordered largest-first: the big one dominates the cost
-    and is the one a first long prompt hits.
+    Routing may concentrate entirely on this rank: the average local/global
+    expert ratio is not a capacity bound. This mirrors pair padding followed
+    by `_apply_ep_compact`'s max_num_tokens slicing, without GPU allocations.
+    The dispatcher subsequently deduplicates dynamic sizes by their actual
+    compiler key; static keys still contain the exact launch row count.
     """
     tokens = int(max_num_tokens or 0)
     k = int(top_k or 0)
     local = int(num_local_experts or 0)
     total = int(global_num_experts or 0)
-    if tokens <= 0 or k <= 0 or local <= 0 or total < local:
+    if tokens <= 0 or k <= 0 or local <= 0 or total < local or align <= 0:
         return ()
-    # A rank only materialises the slots its own experts own.
-    peak = b12x_ep_compact_pair_count(max(1, tokens * k * local // total), align)
-    out, size = [], peak
-    while size >= align and len(out) < max(1, int(floors)):
-        out.append(size)
-        size = b12x_ep_compact_pair_count(size // 2, align)
-        if out and size == out[-1]:
-            break
-    return tuple(out)
+    if tokens > 16384 or k > 32:
+        raise ValueError("EP compact warmup supports at most 16384 tokens/top32")
+    out = set()
+    peak = b12x_ep_compact_pair_count(tokens * min(k, local), align)
+    for pairs in range(align, peak + 1, align):
+        full, tail = divmod(pairs, tokens)
+        if full:
+            out.add(tokens)
+        if tail:
+            out.add(tail)
+    return tuple(sorted(out, reverse=True))
+
+
+_B12X_EP_COMPACT_WARMED: set[tuple] = set()
+_B12X_EP_COMPACT_WARM_LOCK = Lock()
+
+
+def _b12x_ep_compact_warmup_plan(
+    dispatch, rows, *, device, kernel_e, hidden, intermediate,
+    activation, alpha, beta, limit, input_gs_shared,
+):
+    """Resolve real functional-workspace and compiler keys, largest first.
+
+    Static max_rows is the *cached capacity*, not necessarily the requested
+    rows. Priming the largest reachable workspace before smaller calls keeps
+    the warmed static keys valid when their real requests arrive. Dynamic
+    workspaces are already separated by M-tile in the dispatcher cache.
+    """
+    if not rows or any(r < 64 or r % 64 for r in rows):
+        raise RuntimeError("EP compact warmup requires 64-aligned slice capacity")
+    if hidden % 128 or intermediate % 128:
+        raise RuntimeError("EP compact warmup requires tile-aligned weights")
+    geometry = dict(
+        num_experts=kernel_e, num_local_experts=kernel_e,
+        hidden_size=hidden, intermediate_size=intermediate, num_topk=1,
+        quant_mode="nvfp4", activation=activation, swiglu_limit=limit,
+    )
+    if dispatch._static_v2_config_for(**geometry, activation_precision="fp4") is not None:
+        raise RuntimeError("EP compact warmup requires the row-major stock static lane")
+    base_mac = min(dispatch.get_max_active_clusters(1), dispatch.get_num_sm(device))
+    key_args = dict(
+        activation_precision="fp4", quant_mode="nvfp4", k=hidden,
+        n=intermediate, num_topk=1, topk_ids_dtype=torch.int32,
+        input_scales_are_reciprocal=False, fast_math=True,
+        activation=activation, swiglu_alpha=alpha, swiglu_beta=beta,
+        swiglu_limit=limit,
+    )
+    plan = {}
+    for count in sorted(set(rows), reverse=True):
+        backend = dispatch.select_sm120_moe_backend(
+            num_tokens=count, activation_precision="fp4", **geometry)
+        if backend not in ("static", "dynamic"):
+            raise RuntimeError(f"unsupported compact warmup backend: {backend}")
+        workspace = dispatch._get_cached_workspace(
+            backend=backend, state_E=kernel_e, weight_E=kernel_e,
+            routed_rows=count, k=hidden, n=intermediate, num_topk=1,
+            device=device, activation_precision="fp4", quant_mode="nvfp4",
+            activation=activation, swiglu_limit=limit,
+        )
+        ladder = getattr(dispatch, f"_{backend.upper()}_MAC_LADDER")
+        override = getattr(dispatch, f"_GLM53_B12X_{backend.upper()}_MAC_LADDER")
+        if override is not None:
+            ladder = dispatch._effective_glm53_mac_ladder(ladder, override, **geometry)
+        mac = min(dispatch._lookup_mac_ladder(ladder, count) or base_mac, base_mac)
+        if backend == "dynamic":
+            key = dispatch._dynamic_kernel_cache_key(
+                E=kernel_e, mac=mac,
+                mma_tiler_mn=(workspace.tile_m, dispatch._level_tile_n("fp4")),
+                share_input_across_experts=bool(input_gs_shared), tiled=False,
+                **key_args,
+            )
+        else:
+            key = dispatch._static_kernel_cache_key(
+                state_E=kernel_e, weight_E=kernel_e, m=count,
+                max_rows=workspace.max_rows, mac=mac, mma_tiler_mn=(128, 128),
+                **key_args,
+            )
+        plan.setdefault((backend, key), (count, backend, key))
+    if len(plan) > 64:
+        raise RuntimeError("EP compact warmup exceeds the 64-specialization startup bound")
+    return tuple(plan.values())
+
+
+def _b12x_ep_compact_warmup_ready(dispatch, plan):
+    return all(key in getattr(dispatch, f"_{backend.upper()}_KERNEL_CACHE")
+               for _, backend, key in plan)
+
+
+def _b12x_ep_compact_warmup_execute(dispatch, plan, launch, synchronize):
+    """Completion requires every planned call, device sync, and exact keys."""
+    for rows, _, _ in plan:
+        launch(rows)
+    synchronize()
+    if not _b12x_ep_compact_warmup_ready(dispatch, plan):
+        raise RuntimeError("EP compact warmup completed calls but compiler keys are missing")
+
+
+def _b12x_ep_warm_tensor_signature(tensor):
+    # Values and addresses are runtime inputs; dtype/shape/strides may change
+    # preparation behavior. Keep no tensor/weight references in this registry.
+    return (str(tensor.device), str(tensor.dtype), tuple(tensor.shape), tuple(tensor.stride()))
 
 
 
@@ -1495,6 +1614,17 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                     device,
                 )
 
+        if (self._use_ep and self._ep_no_dummy and self._ep_zero_weight_micro
+                and _EP_LOCAL_PREFILL_ENABLED):
+            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_local_selftest import (
+                ensure_ep_local_selftest,
+            )
+            # Both pinned workspaces exist here. A failed startup canary must
+            # propagate before graph capture or serving readiness on any rank.
+            self._ep_local_selftest_receipt = ensure_ep_local_selftest(
+                self, device=layer.w13_weight.device,
+            )
+
         if not self._use_ep and _b12x_sf6_requested():
             _SF6_PENDING[layer] = ref(self)
 
@@ -1665,6 +1795,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         topk_ids: torch.Tensor,
         topk_weights: torch.Tensor,
         expert_map: torch.Tensor | None,
+        *,
+        fuse_local_prefill: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         tokens = topk_ids.size(0)
         if tokens > self._ep_ids.size(0):
@@ -1672,20 +1804,83 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 f"b12x EP remap: {tokens} tokens exceeds "
                 f"max_num_tokens={self._ep_ids.size(0)}"
             )
+        # A full prefill chunk already matches these buffers. Reuse their
+        # Tensor objects as well as their storage; smaller chunks still need
+        # views, and all fallback/decode calls retain their existing path.
+        full_prefill = (fuse_local_prefill and tokens == self._ep_ids.size(0)
+                        and tokens == self._ep_scales.size(0))
+        out_ids = self._ep_ids if full_prefill else self._ep_ids[:tokens]
+        out_scales = self._ep_scales if full_prefill else self._ep_scales[:tokens]
+        if fuse_local_prefill:
+            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap import (
+                try_remap_ep_local,
+            )
+            if try_remap_ep_local(
+                topk_ids, topk_weights, expert_map=expert_map,
+                num_local_experts=self.num_local_experts,
+                local_expert_offset=self.local_expert_offset,
+                out_ids=out_ids, out_scales=out_scales,
+            ):
+                return out_ids, out_scales
         return remap_b12x_ep_tensors(
             topk_ids,
             topk_weights,
             num_local_experts=self.num_local_experts,
             local_expert_offset=self.local_expert_offset,
             expert_map=expert_map,
-            out_ids=self._ep_ids[:tokens],
-            out_scales=self._ep_scales[:tokens],
+            out_ids=out_ids,
+            out_scales=out_scales,
             long_idx=self._ep_long[:tokens],
             mapped=self._ep_mapped[:tokens],
             remote=self._ep_remote[:tokens],
             tmp_a=self._ep_tmp_a[:tokens],
             tmp_b=self._ep_tmp_b[:tokens],
         )
+
+    def _try_apply_ep_fused_short_decode(
+        self, output, hidden_states, w1, w2, topk_ids, topk_weights, expert_map
+    ):
+        """Prepare the exact T6 padded lane before any Torch route remap."""
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap import (
+            ep_short_decode_prepare_supported, try_prepare_ep_short_decode,
+        )
+        if not ep_short_decode_prepare_supported(
+            hidden_states, topk_ids, topk_weights, expert_map=expert_map,
+            num_local_experts=self.num_local_experts,
+            local_expert_offset=self.local_expert_offset,
+        ):
+            return None
+        if self._ep_zero_weight_workspace is None:
+            raise RuntimeError("zero-weight micro workspace was not allocated before apply")
+        # The legacy remap produces int32 IDs even when the router uses int64.
+        # Keep its same staging key/addresses across 18/12/6-token captures.
+        buffers = self._ep_tail_buffers(
+            B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS,
+            hidden_states, topk_ids, topk_weights, ids_dtype=torch.int32,
+        )
+        if buffers is None:
+            return None
+        pad_x, pad_ids, pad_weights, _ = buffers
+        if not try_prepare_ep_short_decode(
+            hidden_states, topk_ids, topk_weights, expert_map=expert_map,
+            num_local_experts=self.num_local_experts,
+            local_expert_offset=self.local_expert_offset,
+            pad_x=pad_x, pad_ids=pad_ids, pad_weights=pad_weights,
+        ):
+            return None
+        # A preparation/compute launch failure propagates. Re-running Torch
+        # after a possibly submitted device operation is not a safe fallback.
+        if not self._ep_tail_padded_micro(
+            output, hidden_states, w1, w2, topk_ids, topk_weights, (0, 6),
+            prepared_buffers=buffers,
+        ):
+            raise RuntimeError("prepared six-token EP tail was not consumed")
+        logger.info_once(
+            "[ep-short-prepare fused=1] b12x EP zero-weight micro: "
+            "6 tokens -> 1 top-k=8 calls "
+            "(8 tokens / 64 routed pairs each; padded tail=1)"
+        )
+        return output
 
     def _apply_ep_zero_weight_micro(
         self, output, hidden_states, w1, w2, topk_ids, topk_weights
@@ -1704,7 +1899,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             self._kernel_num_experts,
             enabled=self._ep_zero_weight_micro,
         )
-        if not chunks:
+        tail = b12x_ep_micro_tail(
+            topk_ids.size(0),
+            topk_ids.size(1),
+            self._kernel_num_experts,
+            enabled=self._ep_zero_weight_micro,
+        )
+        if not chunks and tail is None:
             raise RuntimeError("zero-weight micro called outside its exact shape gate")
         if self._ep_zero_weight_workspace is None:
             raise RuntimeError(
@@ -1714,11 +1915,6 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             launch_sm120_moe,
         )
 
-        logger.info_once(
-            "b12x EP zero-weight micro: %d tokens -> %d top-k=8 calls "
-            "(8 tokens / 64 routed pairs each)",
-            topk_ids.size(0), len(chunks),
-        )
         for lo, hi in chunks:
             launch_sm120_moe(
                 a=hidden_states[lo:hi],
@@ -1745,17 +1941,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 source_format="modelopt",
                 _workspace=self._ep_zero_weight_workspace,
             )
-        tail = b12x_ep_micro_tail(
-            topk_ids.size(0),
-            topk_ids.size(1),
-            self._kernel_num_experts,
-            enabled=self._ep_zero_weight_micro,
-        )
-        if tail is not None and self._ep_tail_padded_micro(
+        if tail is not None and not self._ep_tail_padded_micro(
             output, hidden_states, w1, w2, topk_ids, topk_weights, tail
         ):
-            return output
-        if tail is not None:
             lo, hi = tail
             # The micro calls above wrote output[0:lo] and touched no other
             # row, so the fallback runs on a disjoint view: everything it does
@@ -1769,10 +1957,19 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 topk_ids[lo:hi],
                 topk_weights[lo:hi],
             )
+            return output
+        logger.info_once(
+            "[ep-short-prepare fused=0] b12x EP zero-weight micro: "
+            "%d tokens -> %d top-k=8 calls "
+            "(8 tokens / 64 routed pairs each; padded tail=%d)",
+            topk_ids.size(0), len(chunks) + int(tail is not None),
+            int(tail is not None),
+        )
         return output
 
     def _ep_tail_padded_micro(
-        self, output, hidden_states, w1, w2, topk_ids, topk_weights, tail
+        self, output, hidden_states, w1, w2, topk_ids, topk_weights, tail,
+        *, prepared_buffers=None,
     ):
         """Run the short tail as a FULL chunk, padded. Returns whether it ran.
 
@@ -1793,22 +1990,50 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         rem = hi - lo
         if rem <= 0 or rem >= chunk:
             return False
-        buf = self._ep_tail_buffers(chunk, hidden_states, topk_ids, topk_weights)
+        buf = prepared_buffers
+        if buf is None:
+            buf = self._ep_tail_buffers(chunk, hidden_states, topk_ids, topk_weights)
         if buf is None:
             return False
         pad_x, pad_ids, pad_w, pad_out = buf
-        pad_x[:rem].copy_(hidden_states[lo:hi])
-        pad_ids[:rem].copy_(topk_ids[lo:hi])
-        pad_w[:rem].copy_(topk_weights[lo:hi])
-        # Pad rows repeat the tail's first row at weight 0.
-        pad_x[rem:].copy_(hidden_states[lo:lo + 1].expand(chunk - rem, -1))
-        pad_ids[rem:].copy_(topk_ids[lo:lo + 1].expand(chunk - rem, -1))
-        pad_w[rem:].zero_()
+        if prepared_buffers is None:
+            pad_x[:rem].copy_(hidden_states[lo:hi])
+            pad_ids[:rem].copy_(topk_ids[lo:hi])
+            pad_w[:rem].copy_(topk_weights[lo:hi])
+            # Pad rows repeat the tail's first row at weight 0.
+            pad_x[rem:].copy_(hidden_states[lo:lo + 1].expand(chunk - rem, -1))
+            pad_ids[rem:].copy_(topk_ids[lo:lo + 1].expand(chunk - rem, -1))
+            pad_w[rem:].zero_()
         from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch import (
             launch_sm120_moe,
         )
 
-        launch_sm120_moe(
+        # The physical M8 result remains in the shared FP32 plane. Only the
+        # exact already-prepared T6 lane may publish six rows straight to its
+        # caller. Other tails preserve the established padded-output path.
+        direct_output = (
+            prepared_buffers is not None and (lo, hi) == (0, 6)
+            and tuple(hidden_states.shape) == (6, 4096)
+            and output.dtype == torch.bfloat16
+            and tuple(output.shape) == (6, 4096)
+            and output.device == pad_out.device and output.is_contiguous()
+        )
+        if direct_output:
+            start = output.data_ptr()
+            end = start + output.numel() * output.element_size()
+            for tensor in (*buf, self._ep_zero_weight_workspace.ep_micro_scatter_fp32):
+                if (tensor is None or tensor.device != output.device
+                        or not tensor.is_contiguous()):
+                    direct_output = False
+                    break
+                other = tensor.data_ptr()
+                if start < other + tensor.numel() * tensor.element_size() and other < end:
+                    # An unusual caller may view our padded storage. Preserve
+                    # its established two-copy path instead of rejecting it.
+                    direct_output = False
+                    break
+        short_output_kwargs = {"_ep_short_output": output} if direct_output else {}
+        result = launch_sm120_moe(
             a=pad_x,
             topk_ids=pad_ids,
             topk_weights=pad_w,
@@ -1832,18 +2057,28 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             quant_mode="nvfp4",
             source_format="modelopt",
             _workspace=self._ep_zero_weight_workspace,
+            **short_output_kwargs,
         )
-        output[lo:hi].copy_(pad_out[:rem])
+        if direct_output:
+            if result is not output:
+                raise RuntimeError("direct T6 output was not published")
+        else:
+            output[lo:hi].copy_(pad_out[:rem])
         return True
 
-    def _ep_tail_buffers(self, chunk, hidden_states, topk_ids, topk_weights):
+    def _ep_tail_buffers(self, chunk, hidden_states, topk_ids, topk_weights,
+                         *, ids_dtype=None):
         """Lazily pin the one-chunk staging tensors. None if shapes drift."""
+        # Token count is deliberately absent: an 18-token capture's two-row
+        # tail and a later six-token capture keep these same strong references.
+        # Each launch rewrites all eight staging rows before consuming them.
+        ids_dtype = topk_ids.dtype if ids_dtype is None else ids_dtype
         key = (
             chunk,
             hidden_states.size(1),
             topk_ids.size(1),
             hidden_states.dtype,
-            topk_ids.dtype,
+            ids_dtype,
             topk_weights.dtype,
             hidden_states.device,
         )
@@ -1854,7 +2089,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                     dtype=hidden_states.dtype, device=hidden_states.device)
                 self._ep_tail_ids = torch.zeros(
                     (chunk, topk_ids.size(1)),
-                    dtype=topk_ids.dtype, device=hidden_states.device)
+                    dtype=ids_dtype, device=hidden_states.device)
                 self._ep_tail_w = torch.zeros(
                     (chunk, topk_weights.size(1)),
                     dtype=topk_weights.dtype, device=hidden_states.device)
@@ -2115,17 +2350,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         return output
 
     def _warm_compact_shapes(self, layer) -> None:
-        """Compile the compact prefill shapes now, not mid-request. Opt-in.
+        """Opt-in, required preparation of this rank's compact compiler keys.
 
-        b12x JITs per launch shape, so the first prefill at a new size stalls
-        the engine for seconds -- vLLM's own JIT monitor says "consider warmup
-        to cover this shape/config". #163 collapsed prefill to `align` buckets;
-        this pays for the ladder of them once, here.
-
-        Off by default: it costs load time, and the gain is only real if
-        compiles actually dominate a first prefill. Arm with
-        VLLM_B12X_EP_WARM_COMPACT=1 and read it off TTFT for a cold long
-        prompt, not off steady-state throughput.
+        One real-weight call per distinct key runs before model readiness.
+        Matching layers reuse the completed preparation; decode's explicitly
+        pinned workspace is untouched. Failure propagates when requested,
+        and the completion marker proves compact coverage, not model numerics
+        or absence of unrelated attention/sampler JITs.
         """
         if os.environ.get("VLLM_B12X_EP_WARM_COMPACT", "0").strip() != "1":
             return
@@ -2134,50 +2365,65 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             self.num_local_experts, self.global_num_experts,
         )
         if not buckets:
-            return
-        try:
-            from flashinfer.fused_moe import b12x_fused_moe
+            raise RuntimeError("EP compact warmup was required with invalid geometry")
+        from flashinfer.fused_moe import b12x_fused_moe
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as dispatch
 
-            w1 = layer.w13_weight
-            w2 = layer.w2_weight
-            device = w1.device
-            hidden = self.hidden_dim
-            dtype = self._warm_activation_dtype()
-            kernel_e = self._kernel_num_experts
-            done = []
-            for rows in buckets:
-                x = torch.zeros((rows, hidden), dtype=dtype, device=device)
-                ids = torch.zeros((rows, 1), dtype=torch.int32, device=device)
-                sc = torch.zeros((rows, 1), dtype=torch.float32, device=device)
-                out = torch.zeros((rows, hidden), dtype=dtype, device=device)
+        w1, w2 = layer.w13_weight, layer.w2_weight
+        device, hidden = w1.device, self.hidden_dim
+        dtype = self._warm_activation_dtype()
+        if dtype != torch.bfloat16:
+            raise RuntimeError("EP compact warmup requires the BF16 compact input contract")
+        kernel_e = self._kernel_num_experts
+        with _B12X_EP_COMPACT_WARM_LOCK:
+            plan = _b12x_ep_compact_warmup_plan(
+                dispatch, buckets, device=device, kernel_e=kernel_e,
+                hidden=hidden, intermediate=self.intermediate_size_per_partition,
+                activation=self._activation_str, alpha=self._swiglu_alpha,
+                beta=self._swiglu_beta, limit=self._swiglu_limit,
+                input_gs_shared=self.g1_alphas.numel() == 1,
+            )
+            identity = (
+                str(device), str(dtype), buckets, plan,
+                tuple(_b12x_ep_warm_tensor_signature(t) for t in (
+                    w1, w2, self.w1_sf_mma, self.w2_sf_mma,
+                    self.g1_alphas, self.g2_alphas, self._fc2_input_scale,
+                )),
+            )
+            if identity in _B12X_EP_COMPACT_WARMED and _b12x_ep_compact_warmup_ready(dispatch, plan):
+                return
+            # Reuse one bounded activation/output allocation across all calls;
+            # weights and their existing MMA scale views are never copied.
+            capacity = max(buckets)
+            x = torch.zeros((capacity, hidden), dtype=dtype, device=device)
+            ids = torch.zeros((capacity, 1), dtype=torch.int32, device=device)
+            sc = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
+            out = torch.zeros((capacity, hidden), dtype=dtype, device=device)
+
+            def launch(rows):
                 b12x_fused_moe(
-                    x=x, w1_weight=w1, w1_weight_sf=self.w1_sf_mma,
+                    x=x[:rows], w1_weight=w1, w1_weight_sf=self.w1_sf_mma,
                     w2_weight=w2, w2_weight_sf=self.w2_sf_mma,
-                    token_selected_experts=ids, token_final_scales=sc,
+                    token_selected_experts=ids[:rows], token_final_scales=sc[:rows],
                     num_experts=kernel_e, top_k=1, num_local_experts=kernel_e,
                     w1_alpha=self.g1_alphas, w2_alpha=self.g2_alphas,
-                    fc2_input_scale=self._fc2_input_scale, output=out,
+                    fc2_input_scale=self._fc2_input_scale, output=out[:rows],
                     activation=self._activation_str,
                     swiglu_alpha=self._swiglu_alpha,
                     swiglu_beta=self._swiglu_beta,
                     swiglu_limit=self._swiglu_limit,
                 )
-                done.append(rows)
-            # info_once hashes its args to dedupe, so every one must be
-            # hashable -- a list here raised TypeError and the whole warmup
-            # was skipped. It said so out loud, which is the only reason this
-            # was caught instead of read as "warmed but no effect".
-            logger.info_once(
-                "b12x EP: warmed %d compact prefill shapes at load (%s) -- "
-                "a first long prompt no longer compiles mid-request",
-                len(done), ",".join(str(r) for r in done),
-            )
-        except Exception as exc:
-            # A warmup that fails must cost nothing but a line in the log.
-            logger.warning_once(
-                "b12x EP compact warmup skipped (%s: %s); shapes will compile "
-                "on first use as before",
-                type(exc).__name__, exc,
+
+            _b12x_ep_compact_warmup_execute(
+                dispatch, plan, launch, lambda: torch.cuda.synchronize(device))
+            _B12X_EP_COMPACT_WARMED.add(identity)
+            static = sum(backend == "static" for _, backend, _ in plan)
+            logger.info(
+                "[b12x EP compact warmup] COMPLETE device=%s launch_rows=%d "
+                "specializations=%d static=%d dynamic=%d required=%d ready=%d "
+                "representatives=%s",
+                device, len(buckets), len(plan), static, len(plan) - static,
+                len(plan), len(plan), ",".join(str(row) for row, _, _ in plan),
             )
 
     def _warm_activation_dtype(self):
@@ -2187,6 +2433,29 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             if isinstance(got, torch.dtype):
                 return got
         return torch.bfloat16
+
+    def _apply_ep_local_prefill(self, output, hidden_states, w1, w2, topk_ids, topk_weights):
+        """Keep full tokens and let the M128 producer discard remote slots."""
+        from flashinfer.fused_moe import b12x_fused_moe
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch
+        cls = moe_dispatch._ep_local_prefill_kernel(
+            E=72, m=hidden_states.shape[0], k=4096, n=2048, num_topk=8, tile_m=128,
+            activation=self._activation_str, swiglu_alpha=self._swiglu_alpha,
+            swiglu_beta=self._swiglu_beta, swiglu_limit=self._swiglu_limit,
+            quant_mode="nvfp4", tiled=bool(getattr(w1, "_b12x_tile_major", False)))
+        if cls is None:
+            raise RuntimeError("expert-local wrapper and dispatcher activation differ")
+        b12x_fused_moe(
+            x=hidden_states, w1_weight=w1, w1_weight_sf=self.w1_sf_mma,
+            w2_weight=w2, w2_weight_sf=self.w2_sf_mma,
+            token_selected_experts=topk_ids, token_final_scales=topk_weights,
+            num_experts=72, num_local_experts=72, top_k=8,
+            w1_alpha=self.g1_alphas, w2_alpha=self.g2_alphas,
+            fc2_input_scale=self._fc2_input_scale, output=output,
+            activation=self._activation_str, swiglu_alpha=self._swiglu_alpha,
+            swiglu_beta=self._swiglu_beta, swiglu_limit=self._swiglu_limit)
+        logger.info_once("[ep-prefill-local] LAUNCHED full-token E72/I2048/top8 T=%d", hidden_states.shape[0])
+        return output
 
     def _apply_ep_compact(
         self,
@@ -2220,9 +2489,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             .reshape(-1)
             .index_select(0, sel)
         )
-        # Pad the pair list up to a launch-shape bucket. Without this the row
-        # count is the local-pair count -- data dependent -- and every value
-        # mints a fresh JIT kernel mid-inference.
+        # Bound exact-row static keys and sliced tails. Dynamic kernels reuse
+        # a key within each selected tile/cluster-count band.
         n_pad = b12x_ep_compact_pair_count(n)
         if n_pad > n:
             fill = torch.arange(n_pad, device=sel.device) % n
@@ -2418,6 +2686,22 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                     f"(g1={tuple(self.g1_alphas.shape)} g2={tuple(self.g2_alphas.shape)} "
                     f"want {expect_e})"
                 )
+            if (self._ep_zero_weight_micro and self._ep_no_dummy
+                    and (expect_e, self.hidden_dim, self.intermediate_size_per_partition,
+                         hidden_states.shape[0], topk_ids.shape[1])
+                    == (72, 4096, 2048, 6, 8)):
+                prepared_output = self._try_apply_ep_fused_short_decode(
+                    output, hidden_states, w1, w2, topk_ids, topk_weights, expert_map
+                )
+                if prepared_output is not None:
+                    return prepared_output
+            local_prefill = ep_local_prefill_eligible(
+                enabled=_EP_LOCAL_PREFILL_ENABLED, use_ep=self._use_ep, no_dummy=self._ep_no_dummy,
+                experts=expect_e, hidden=self.hidden_dim,
+                intermediate=self.intermediate_size_per_partition, tokens=hidden_states.shape[0],
+                topk=topk_ids.shape[1], activation=self._activation_str,
+                alpha=self._swiglu_alpha, beta=self._swiglu_beta, limit=self._swiglu_limit,
+                is_capturing=torch.cuda.is_current_stream_capturing)
             map_dtype = (
                 expert_map.dtype if expert_map is not None else torch.int32
             )
@@ -2425,15 +2709,24 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 topk_ids.device, topk_weights.dtype, map_dtype
             )
             topk_ids, topk_weights = self._remap_ep_tensors(
-                topk_ids, topk_weights, expert_map
+                topk_ids, topk_weights, expert_map, fuse_local_prefill=local_prefill
             )
+            if local_prefill:
+                return self._apply_ep_local_prefill(
+                    output, hidden_states, w1, w2, topk_ids, topk_weights)
             zero_micro_chunks = b12x_ep_zero_weight_micro_chunks(
                 topk_ids.size(0),
                 topk_ids.size(1),
                 self._kernel_num_experts,
                 enabled=self._ep_zero_weight_micro,
             )
-            if zero_micro_chunks:
+            zero_micro_tail = b12x_ep_micro_tail(
+                topk_ids.size(0),
+                topk_ids.size(1),
+                self._kernel_num_experts,
+                enabled=self._ep_zero_weight_micro,
+            )
+            if zero_micro_chunks or zero_micro_tail is not None:
                 return self._apply_ep_zero_weight_micro(
                     output, hidden_states, w1, w2, topk_ids, topk_weights
                 )

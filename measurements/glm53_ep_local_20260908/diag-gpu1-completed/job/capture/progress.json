@@ -1,0 +1,165 @@
+{
+  "started": 1788881343.681635,
+  "source_revision": "69f5b8330bf63534f950e36cb2c40e844e7806f1",
+  "exit_code": 1,
+  "performance_acceptance": false,
+  "full_gpu_acceptance": false,
+  "mode": "diagnostic",
+  "diagnose_case": "concentrated6912",
+  "cells": [
+    {
+      "case": "concentrated6912",
+      "sanitizer": null,
+      "started": 1788881396.9100583,
+      "command": [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        "ep-local-eplocaldiag0908v1-concentrated6912",
+        "--label",
+        "glm53.ep-local.session=eplocaldiag0908v1",
+        "--gpus",
+        "all",
+        "--network=none",
+        "--memory=12g",
+        "--memory-swap=12g",
+        "--cpus=4",
+        "--pids-limit=256",
+        "-e",
+        "MAX_JOBS=1",
+        "--entrypoint=/usr/bin/env",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1:/repo:ro",
+        "-v",
+        "/tmp/glm53-ep-local-diag-gpu-0908-1/capture:/evidence",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/flashinfer_b12x_moe.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_micro_kernel.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dispatch.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/b12x_moe.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_static_common.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_sf_pack.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_static_kernel_v4.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_static_kernel_v5.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dynamic_gated_tiled.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dynamic_prefill.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dynamic_prefill_n128.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/moe_dynamic_ep_local.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py:ro",
+        "-v",
+        "/home/choiceoh/stkernel-ep-local-diag-0908-1/build/glm53/glm53_ep_route_remap.py:/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py:ro",
+        "--mount",
+        "type=bind,source=/tmp/glm53-bindings-capsule-cpu0908-2/capsule,target=/opt/glm53-bindings-capsule,readonly",
+        "-e",
+        "PYTHONPATH=/opt/glm53-bindings-capsule",
+        "-e",
+        "PYTHONNOUSERSITE=1",
+        "-e",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+        "python3",
+        "-B",
+        "/repo/probes/glm53_ep_local_check.py",
+        "--case",
+        "concentrated6912",
+        "--compile-evidence",
+        "/repo/measurements/glm53_ep_local_20260908/cpu17/local/result.json",
+        "--output",
+        "/evidence/concentrated6912.json",
+        "--capsule-root",
+        "/opt/glm53-bindings-capsule",
+        "--manifest-sha256",
+        "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+      ],
+      "exit_code": 0,
+      "binding_runtime": {
+        "schema": 1,
+        "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+        "binding_identity": {
+          "version": "13.0.3",
+          "root": "/opt/glm53-bindings-capsule",
+          "modules": {
+            "cuda.bindings.driver": {
+              "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+              "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+            },
+            "cuda.bindings._bindings.cydriver": {
+              "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+              "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+            }
+          },
+          "distributions": {
+            "cuda-bindings": {
+              "version": "13.0.3",
+              "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+              "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+            },
+            "cuda-python": {
+              "version": "13.0.3",
+              "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+              "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+            }
+          }
+        },
+        "pathfinder": {
+          "version": "1.7.0",
+          "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+          "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+          "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+          "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+        }
+      },
+      "ended": 1788881427.1175945
+    }
+  ],
+  "binding_runtime": {
+    "schema": 1,
+    "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+    "binding_identity": {
+      "version": "13.0.3",
+      "root": "/opt/glm53-bindings-capsule",
+      "modules": {
+        "cuda.bindings.driver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+        },
+        "cuda.bindings._bindings.cydriver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+        }
+      },
+      "distributions": {
+        "cuda-bindings": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+          "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+        },
+        "cuda-python": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+          "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+        }
+      }
+    },
+    "pathfinder": {
+      "version": "1.7.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+      "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+      "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+      "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+    }
+  },
+  "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "incoming_mode": "present"
+}

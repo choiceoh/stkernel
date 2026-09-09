@@ -1,0 +1,54 @@
+{
+  "before": {
+    "id": "ff7e2b840b408c524e35ae84bc67aa125f26fcf6dd61e2edb5e62b06b0bb652e",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false,
+    "merged_dir": "/var/lib/docker/overlay2/f6b3661248011466a30fe6685714aa41efedc4947ef4bdb063f7cd754edf3110/merged"
+  },
+  "started": 1788865656.500527,
+  "mode": "exact metadata docker cp fallback; full reverse inventory unavailable",
+  "merged_read_returncode": 0,
+  "path": "/var/lib/docker/overlay2/f6b3661248011466a30fe6685714aa41efedc4947ef4bdb063f7cd754edf3110/merged/usr/local/lib/python3.12/dist-packages",
+  "exists": false,
+  "inventory": [],
+  "fallback_errors": [],
+  "after": {
+    "id": "ff7e2b840b408c524e35ae84bc67aa125f26fcf6dd61e2edb5e62b06b0bb652e",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false,
+    "merged_dir": "/var/lib/docker/overlay2/f6b3661248011466a30fe6685714aa41efedc4947ef4bdb063f7cd754edf3110/merged"
+  },
+  "ended": 1788865656.583829,
+  "identity_stable": true,
+  "archived_originals": [
+    {
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+      "sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+      "bytes": 2498,
+      "name": "cuda-bindings",
+      "version": "13.3.1",
+      "requires": [
+        "cuda-pathfinder>=1.4.2",
+        "cuda-toolkit[nvfatbin,nvjitlink,nvrtc,nvvm]==13.*; extra == \"all\"",
+        "cuda-toolkit[cufile]==13.*; sys_platform == \"linux\" and extra == \"all\"",
+        "cuda-toolkit==13.*; extra == \"all\"",
+        "nvidia-cudla==13.*; (platform_system == \"Linux\" and platform_machine == \"aarch64\") and extra == \"all\""
+      ],
+      "archived": "cuda_bindings-13.3.1.dist-info/METADATA"
+    },
+    {
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda_python-13.3.1.dist-info/METADATA",
+      "sha256": "8bea0c1333aaef1205d3cdea2690d935b4127448c1ed78e55c179fe1658856fd",
+      "bytes": 7001,
+      "name": "cuda-python",
+      "version": "13.3.1",
+      "requires": [
+        "cuda-bindings~=13.3.1",
+        "cuda-core~=1.0.0",
+        "cuda-pathfinder~=1.1",
+        "cuda-bindings[all]~=13.3.1; extra == \"all\""
+      ],
+      "archived": "cuda_python-13.3.1.dist-info/METADATA"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "path": "/home/choiceoh/stkernel",
+  "revision": "cf405a7e03bd8ac95933d76f590fdfc4b0685e99",
+  "approved_fixes": [
+    "d95a2cdb46f2446bd4b58f7d5969b42c895f0b3d",
+    "4a2c960ad632596ca3224ead88da43160012d393"
+  ],
+  "approved_main_verified": true,
+  "captured": 1788868346.0346508,
+  "queue": "",
+  "holder": "arconsumer0908v14|3649879|srv2|1788867171|45|Candidate-first C1 step; reuse exact 15-stage GPU PASS and fresh deployment CPU gate|boot\n",
+  "restore_debt": "{\"acquired\": 1788867171.3915446, \"owner\": {\"host\": \"srv2\", \"pid\": 3649879, \"protocol\": 2, \"session\": \"arconsumer0908v14\", \"start\": \"36920814\"}}\n"
+}

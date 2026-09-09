@@ -1,0 +1,128 @@
+{
+  "adoption_acceptance": false,
+  "boot_only_arms": [
+    "B1"
+  ],
+  "canary_case_passes": 28,
+  "candidate_comparisons": 168,
+  "canonical_verdict": {
+    "base": null,
+    "baseline_scope": {
+      "knobs": {
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1"
+      },
+      "session": "eplocalonepass0909v19"
+    },
+    "build": "44a09c3f6add",
+    "cand": "EPONEPASS19A0",
+    "gates": [],
+    "harness": 40,
+    "objective": {
+      "metric": "decode_tokens"
+    },
+    "proof_ok": "4/4",
+    "runtime_attestation": "not recorded; launch identity requires external evidence",
+    "session": "eplocalonepass0909v19",
+    "status": "incomplete",
+    "t": "2026-09-09 11:31:23",
+    "verdict": "no baseline on this build"
+  },
+  "cold_compile": true,
+  "complete_request_hashes_available": true,
+  "completed_arms": [
+    "A0"
+  ],
+  "fixed_decode_tok_s": [
+    60.968135770253056,
+    68.61384544272954,
+    54.55241848822173
+  ],
+  "fixed_pooled_tok_s": 60.84289139596996,
+  "full_canary_pass_receipts": 4,
+  "full_sanitizer_acceptance": false,
+  "korean": {
+    "dirty": 0,
+    "hits": [],
+    "kinds": {
+      "cjk_mixed": 0,
+      "control": 0,
+      "lone_jamo": 0,
+      "replacement": 0
+    },
+    "n": 8
+  },
+  "matched_baseline": false,
+  "old_onepass9_weight_and_concentrated_input_identity": true,
+  "onepass_records": 1,
+  "own_holder_after": false,
+  "payload_returncode": 143,
+  "performance_acceptance": false,
+  "prefill": [
+    {
+      "cold_s": 2.3922553599695675,
+      "cold_tok_s": 889.5371437383135,
+      "combined": false,
+      "ctx": 2000,
+      "tok": 2128,
+      "ttft_samples_s": [
+        2.3922553599695675,
+        0.8820786700234748,
+        0.8924992289976217
+      ],
+      "warm_s": 0.8820786700234748,
+      "warm_tok_s": 2412.483231165047
+    },
+    {
+      "cold_s": 10.719195340003353,
+      "cold_tok_s": 3036.1420766859374,
+      "combined": true,
+      "ctx": 32000,
+      "tok": 32545,
+      "ttft_samples_s": [
+        10.719195340003353
+      ],
+      "warm_s": 10.719195340003353,
+      "warm_tok_s": 3036.1420766859374
+    },
+    {
+      "cold_s": 39.05959692405304,
+      "cold_tok_s": 3291.355009371152,
+      "combined": true,
+      "ctx": 128000,
+      "tok": 128559,
+      "ttft_samples_s": [
+        39.05959692405304
+      ],
+      "warm_s": 39.05959692405304,
+      "warm_tok_s": 3291.355009371152
+    }
+  ],
+  "proof": {
+    "VLLM_B12X_EP_WARM_COMPACT": true,
+    "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": true,
+    "VLLM_GLM53_EP_PREFILL_LOCAL": true,
+    "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": true
+  },
+  "proof_ok": "4/4",
+  "quality": {
+    "ok": 18,
+    "total": 18
+  },
+  "recovery_deferred": true,
+  "recovery_policy": "idle-controller",
+  "requests": 8,
+  "returncode": 143,
+  "revision": "cd293e19c146bd52c3419b064af209b57b2555d9",
+  "schema": 1,
+  "scope": "A0 completed the unchanged canonical workload with eight request records. B1 boot began but no baseline measurement was written; the comparison is incomplete.",
+  "session": "eplocalonepass0909v19",
+  "supervisor_pid": 4098992,
+  "ticket": "17889205364098992",
+  "unrun_arms": [
+    "A",
+    "B2",
+    "B3"
+  ],
+  "verdict": "A0_OBSERVED_CANCELLED_BEFORE_MATCHED_BASELINE",
+  "within_boot_concentrated_storage_reused": true
+}

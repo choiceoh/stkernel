@@ -1,0 +1,21 @@
+{
+  "cpu": "/tmp/glm53-bindings-capsule-cpu0908-2",
+  "sources": {
+    "probes/glm53_ep_bindings_capsule.py": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+    "probes/glm53_ep_bindings_capsule_check.py": "3242aaca56d1b0b22dd8bbfd92ce5382c29a43f8d81bc3de528e47eb594e0973",
+    "probes/run_glm53_ep_bindings_capsule_cpu.py": "897def54d5a280038973512a358275e89049fc97dd20c8e262e3d8541b1fc1a3"
+  },
+  "pair_sources": {
+    "probes/glm53_ep_bindings_pair_check.py": "6fcbc5efc61e45397f0e2a8ef67f533675d002cb3d5129e225db656f72c88ed0",
+    "probes/run_glm53_ep_bindings_pair_offline.py": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587"
+  },
+  "manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "artifacts": {
+    "capsule-cpu-receipt.json": "d85e9203ac41dbb265db57da0ee6793c7fa3372013bf276662b64a65ee6c42f8",
+    "capsule-cpu-result.json": "611cd509d98b9a8075a92c4d01e2a4ef0de9f50856d08430c568b34f788ef9cd",
+    "capsule-cpu-container.log": "35e598bf1215584657daf6dc174f832c92e3c5b5940d260fed8b4c5f3d7961b8",
+    "capsule-cpu-base-distributions.json": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1",
+    "capsule-cpu-distribution-resolution.json": "56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2"
+  },
+  "verified": 1788868345.3574088
+}

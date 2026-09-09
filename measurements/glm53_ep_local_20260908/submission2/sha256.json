@@ -1,0 +1,42 @@
+{
+  "previous-exit.json": {
+    "original_bytes": 763,
+    "original_sha256": "cb67dd8b2cae014678491e0331e0e5b6c0c93c31088e624dda44e261ee5df70e"
+  },
+  "previous-fleet.log.gz": {
+    "original_bytes": 28696,
+    "original_sha256": "e8adeb772b238f7b3f4f7f778374797bf540159f5a46703605d6f71bad8afe20"
+  },
+  "submission.json": {
+    "original_bytes": 727,
+    "original_sha256": "c2de881e66a7fd726123dd7aab12cd3d069a0917aa899d6ff079a4bc0fc3f9cd"
+  },
+  "status.txt": {
+    "original_bytes": 1246,
+    "original_sha256": "b610694a6282a5075c6c2404e21504e4f3e505caf96e95a97c068d90c84b9723"
+  },
+  "state.json": {
+    "original_bytes": 227,
+    "original_sha256": "1ff99b78f33b54fa37c4545031d85490c90d79824822b5c0eda45688f81ed451"
+  },
+  "freeze.json": {
+    "original_bytes": 172,
+    "original_sha256": "1e3a337bc8e98208d50a9121fda02a3d3be14b4dfcef7ccab940714680cc94af"
+  },
+  "launch.json": {
+    "original_bytes": 171,
+    "original_sha256": "b559b55a85a27cf8b6a5aef65027242f8d7bb68c445eb68a7044bdb575115c99"
+  },
+  "cancel.log": {
+    "original_bytes": 862,
+    "original_sha256": "6c2c3dbe833b48943771773e2416aa666abfe5c4e9af390be47514a62680939a"
+  },
+  "fleet.log.gz": {
+    "original_bytes": 1128,
+    "original_sha256": "c4c73641027d3a5a4d45fe773608e34abdada2f444431a48a159196e194801cf"
+  },
+  "preflight.log.gz": {
+    "original_bytes": 361,
+    "original_sha256": "d2207c61d4fb9184f43758bf1159b0474bcd821830db0d6c3abc4c857f8fa3df"
+  }
+}

@@ -1,0 +1,1 @@
+PASS: original 12 format checks; both actual stock/candidate repr keys; 10 attribute/call rejections; complete validation with actual cache keys. No live stream, CUDA, SSH, or HTTP.

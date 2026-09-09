@@ -1,0 +1,190 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_glm53_ep_short_decode.py",
+        "/tmp/glm53-ep-onepass-0909-5/cpu-report-individual-0.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.271,
+      "log": "/tmp/glm53-ep-onepass-0909-5/cpu-report-individual-0.log",
+      "skipped": [],
+      "tests_run": 6,
+      "counts": {
+        "tests_run": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches",
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_all_remote_rows_clear_previous_staging_output",
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_disabled_path_and_invalid_tail_geometry_retain_fallback",
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_padding_allocation_failure_keeps_disjoint_fixed_fallback",
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_proof_requires_completed_coherent_call_counts",
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_spec5_graph_shapes_reuse_staging_and_preserve_every_real_row"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches": 0.11107763997279108,
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_all_remote_rows_clear_previous_staging_output": 0.015484681993257254,
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_disabled_path_and_invalid_tail_geometry_retain_fallback": 0.016381403023842722,
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_padding_allocation_failure_keeps_disjoint_fixed_fallback": 0.031676243990659714,
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_proof_requires_completed_coherent_call_counts": 0.011161219037603587,
+          "test_glm53_ep_short_decode.ShortDecodeTests.test_spec5_graph_shapes_reuse_staging_and_preserve_every_real_row": 0.015870329982135445
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_glm53_ep_compact_warmup.py",
+        "/tmp/glm53-ep-onepass-0909-5/cpu-report-individual-1.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 1.071,
+      "log": "/tmp/glm53-ep-onepass-0909-5/cpu-report-individual-1.log",
+      "skipped": [],
+      "tests_run": 8,
+      "counts": {
+        "tests_run": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_glm53_ep_compact_warmup.CoverageTests.test_actual_cutover_ladders_scalar_scales_and_existing_capacity",
+          "test_glm53_ep_compact_warmup.CoverageTests.test_all_reachable_rows_match_real_compiler_prefix_keys",
+          "test_glm53_ep_compact_warmup.CoverageTests.test_every_padded_and_sliced_local_count_is_covered",
+          "test_glm53_ep_compact_warmup.CoverageTests.test_unbounded_or_unsupported_preparation_fails_closed",
+          "test_glm53_ep_compact_warmup.OrchestrationTests.test_all_calls_sync_and_cache_keys_precede_completion_then_deduplicate",
+          "test_glm53_ep_compact_warmup.OrchestrationTests.test_dedup_does_not_hide_evicted_key_or_new_scale_signature",
+          "test_glm53_ep_compact_warmup.OrchestrationTests.test_default_off_does_no_preparation",
+          "test_glm53_ep_compact_warmup.OrchestrationTests.test_launch_sync_or_missing_key_never_marks_complete"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_glm53_ep_compact_warmup.CoverageTests.test_actual_cutover_ladders_scalar_scales_and_existing_capacity": 0.09142037597484887,
+          "test_glm53_ep_compact_warmup.CoverageTests.test_all_reachable_rows_match_real_compiler_prefix_keys": 0.09072095004376024,
+          "test_glm53_ep_compact_warmup.CoverageTests.test_every_padded_and_sliced_local_count_is_covered": 0.16849690297385678,
+          "test_glm53_ep_compact_warmup.CoverageTests.test_unbounded_or_unsupported_preparation_fails_closed": 0.0883901150082238,
+          "test_glm53_ep_compact_warmup.OrchestrationTests.test_all_calls_sync_and_cache_keys_precede_completion_then_deduplicate": 0.08910074003506452,
+          "test_glm53_ep_compact_warmup.OrchestrationTests.test_dedup_does_not_hide_evicted_key_or_new_scale_signature": 0.09311717795208097,
+          "test_glm53_ep_compact_warmup.OrchestrationTests.test_default_off_does_no_preparation": 0.093752090993803,
+          "test_glm53_ep_compact_warmup.OrchestrationTests.test_launch_sync_or_missing_key_never_marks_complete": 0.2660673049977049
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_onepass_scoped_baseline.py",
+        "/tmp/glm53-ep-onepass-0909-5/cpu-report-individual-2.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.057,
+      "log": "/tmp/glm53-ep-onepass-0909-5/cpu-report-individual-2.log",
+      "skipped": [],
+      "tests_run": 11,
+      "counts": {
+        "tests_run": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_candidate_and_baseline_unproved_or_contradictory_proofs_are_invalid",
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_count_for_final_baseline_counts_distinct_proved_scoped_boots",
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_exact_knobs_no_silent_dropping_or_candidate_as_baseline",
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_invalid_json_values_duplicates_and_missing_session_fail",
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_scope_does_not_change_production_defaults_or_records",
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_scope_preserves_noise_gate_and_does_not_borrow_cross_session_floor",
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_unrelated_context_runtime_and_missing_identity_are_excluded",
+          "test_onepass_scoped_baseline.StartupProofTests.test_compact_requires_entire_coherent_completed_plan",
+          "test_onepass_scoped_baseline.StartupProofTests.test_real_onepass3_logs_recognize_shared_proof_without_rewriting_archives",
+          "test_onepass_scoped_baseline.StartupProofTests.test_skip_requires_skipped_estimate_and_completed_real_capture",
+          "test_onepass_scoped_baseline.StartupProofTests.test_unknown_marker_stays_unknown_and_cli_fails"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_candidate_and_baseline_unproved_or_contradictory_proofs_are_invalid": 0.001202865969389677,
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_count_for_final_baseline_counts_distinct_proved_scoped_boots": 0.00046116800513118505,
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_exact_knobs_no_silent_dropping_or_candidate_as_baseline": 9.934499394148588e-05,
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_invalid_json_values_duplicates_and_missing_session_fail": 0.00012185599189251661,
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_scope_does_not_change_production_defaults_or_records": 7.747201016172767e-05,
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_scope_preserves_noise_gate_and_does_not_borrow_cross_session_floor": 9.545596549287438e-05,
+          "test_onepass_scoped_baseline.ScopedBaselineTests.test_unrelated_context_runtime_and_missing_identity_are_excluded": 0.00024983996991068125,
+          "test_onepass_scoped_baseline.StartupProofTests.test_compact_requires_entire_coherent_completed_plan": 0.0017952829948626459,
+          "test_onepass_scoped_baseline.StartupProofTests.test_real_onepass3_logs_recognize_shared_proof_without_rewriting_archives": 0.0028699410031549633,
+          "test_onepass_scoped_baseline.StartupProofTests.test_skip_requires_skipped_estimate_and_completed_real_capture": 0.0005630090017803013,
+          "test_onepass_scoped_baseline.StartupProofTests.test_unknown_marker_stays_unknown_and_cli_fails": 0.00023430498549714684
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_glm53_overlay_sync.py",
+        "/tmp/glm53-ep-onepass-0909-5/cpu-report-individual-3.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.633,
+      "log": "/tmp/glm53-ep-onepass-0909-5/cpu-report-individual-3.log",
+      "skipped": [],
+      "tests_run": 6,
+      "counts": {
+        "tests_run": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_accepts_identical_sources",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_rejects_stale_or_missing_destination",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_identical_bytes_keep_inode_and_mtime_despite_new_source_time",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_manifest_revision_changes_without_touching_identical_kernel",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_permissions_are_normalized_and_missing_input_fails",
+          "test_glm53_overlay_sync.OverlaySyncTests.test_same_size_edit_with_older_source_timestamp_updates_content_and_time"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_accepts_identical_sources": 0.07990757300285622,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_rejects_stale_or_missing_destination": 0.07437711500097066,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_identical_bytes_keep_inode_and_mtime_despite_new_source_time": 0.08907337998971343,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_manifest_revision_changes_without_touching_identical_kernel": 0.08921869198093191,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_permissions_are_normalized_and_missing_input_fails": 0.133860828995239,
+          "test_glm53_overlay_sync.OverlaySyncTests.test_same_size_edit_with_older_source_timestamp_updates_content_and_time": 0.0993958130129613
+        },
+        "failure_details": []
+      }
+    }
+  ],
+  "passed": true,
+  "coverage_complete": true,
+  "tests_run": 31
+}

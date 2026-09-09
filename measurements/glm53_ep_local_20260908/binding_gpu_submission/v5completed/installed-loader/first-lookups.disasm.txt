@@ -1,0 +1,36 @@
+
+/tmp/glm53-cydriver-v5-static-0908/cydriver.cpython-312-aarch64-linux-gnu.so:     file format elf64-littleaarch64
+
+
+Disassembly of section .text:
+
+00000000000169a0 <PyInit_cydriver@@Base+0x45e8>:
+   169a0:	d2800004 	mov	x4, #0x0                   	// #0
+   169a4:	d2800003 	mov	x3, #0x0                   	// #0
+   169a8:	52865902 	mov	w2, #0x32c8                	// #13000
+   169ac:	d63f02e0 	blr	x23
+   169b0:	7107d01f 	cmp	w0, #0x1f4
+   169b4:	54042ae0 	b.eq	1ef10 <PyInit_cydriver@@Base+0xcb58>  // b.none
+   169b8:	912482c1 	add	x1, x22, #0x920
+   169bc:	91160320 	add	x0, x25, #0x580
+   169c0:	91118021 	add	x1, x1, #0x460
+   169c4:	913f4000 	add	x0, x0, #0xfd0
+   169c8:	d2800004 	mov	x4, #0x0                   	// #0
+   169cc:	d2800003 	mov	x3, #0x0                   	// #0
+   169d0:	52865b82 	mov	w2, #0x32dc                	// #13020
+   169d4:	d63f02e0 	blr	x23
+   169d8:	7107d01f 	cmp	w0, #0x1f4
+   169dc:	54042900 	b.eq	1eefc <PyInit_cydriver@@Base+0xcb44>  // b.none
+   169e0:	91160320 	add	x0, x25, #0x580
+   169e4:	912482c1 	add	x1, x22, #0x920
+   169e8:	913fc000 	add	x0, x0, #0xff0
+   169ec:	9111a021 	add	x1, x1, #0x468
+   169f0:	d2800004 	mov	x4, #0x0                   	// #0
+   169f4:	d2800003 	mov	x3, #0x0                   	// #0
+   169f8:	52865b82 	mov	w2, #0x32dc                	// #13020
+   169fc:	d63f02e0 	blr	x23
+   16a00:	7107d01f 	cmp	w0, #0x1f4
+   16a04:	540437e0 	b.eq	1f100 <PyInit_cydriver@@Base+0xcd48>  // b.none
+   16a08:	912482c1 	add	x1, x22, #0x920
+   16a0c:	d00002bb 	adrp	x27, 6c000 <_Z18getCUDALibraryPathPcb@@Base+0x104a0>
+   16a10:	911a0360 	add	x0, x27, #0x680

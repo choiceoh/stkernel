@@ -1,0 +1,13 @@
+fleet: HELD by arconsumer0908v11b [boot] (pid 2462311@srv2, since 17:57, est 70m, Retry v10 after main485 with immutable CPU proof and RDMA C1 B/A/B)
+legacy: 1 bench/boot procs, 0 requests in flight
+queue (0):
+  marker 17:57 FLEET-held-by-arconsumer0908v11b.done
+  marker 11:08 FLEET-held-by-alignprod.done
+log:
+  2026-09-08_17:56:37 ledger epbindinggpu0908v4 held=1m boots=1 records=0 wasted=1
+  2026-09-08_17:56:37 release epbindinggpu0908v4
+  2026-09-08_17:57:16 request arconsumer0908v11b est=70m Retry v10 after main485 with immutable CPU proof and RDMA C1 B/A/B [boot]
+  2026-09-08_17:57:16 GO arconsumer0908v11b (pid 2462311)
+production: no serving container
+deployed: 3c67b447eb27
+baseline: ATTRBASE on build 3c67b447eb27 -- 21.85 step/s, 3.43 tok/step, 48.5% acc, 2026-09-08 17:34:09 -- skip a defaults arm and compare against it

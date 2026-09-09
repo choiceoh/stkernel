@@ -1,0 +1,155 @@
+{
+  "README.md": {
+    "bytes": 2077,
+    "origin": "archive result explanation",
+    "sha256": "50c4886e1a64cb489a67e7503de5a03d814b77c414d2e0ef0d417ac2dea6ea7e"
+  },
+  "collect-evidence.py": {
+    "bytes": 14234,
+    "origin": "this read-only collector",
+    "sha256": "44365aa092f1783249cf40f83d4362814f16e8c21d5e753e25bd36bba281a8a8"
+  },
+  "continuity.json": {
+    "bytes": 3064,
+    "origin": "/tmp/glm53-onepass11-continuity.json",
+    "sha256": "f75212d285dc57c7d7aaeb95782490048eede3d0bd32aa78ab1e3df96276e699"
+  },
+  "failure-summary.json": {
+    "bytes": 4808,
+    "origin": "unchanged original receipts and closed normal fleet evidence",
+    "sha256": "d6bbd5d3697088a665a6b6dc03443498b2d8541429992a4936eb48f3c058d262"
+  },
+  "failures/10.10.10.1.json": {
+    "bytes": 58290,
+    "origin": "/tmp/glm53-onepass11-canary/10.10.10.1.json",
+    "raw_stream_match": {
+      "line_sha256": "d68ab156c01c0f164adf0b923100fc54a8f7fa3c643c7c0708dc99194d0dbd1f",
+      "stream_byte_offset": 44418
+    },
+    "sha256": "89bac473f980ff082a261fd13ed5f062d2a97ee344eba92daeb179659e660d54"
+  },
+  "failures/10.10.10.3.json": {
+    "bytes": 58249,
+    "origin": "/tmp/glm53-onepass11-canary/10.10.10.3.json",
+    "raw_stream_match": {
+      "line_sha256": "755a2d6922a5be2709d20abd00013eab26e2f6f23710fe3d6508e0f96f64d8a9",
+      "stream_byte_offset": 44527
+    },
+    "sha256": "6a7c59c7ac01277b7c4ffa84bf1151a0feaad5981457b285aad2678ced259368"
+  },
+  "failures/10.10.10.4.json": {
+    "bytes": 58253,
+    "origin": "/tmp/glm53-onepass11-canary/10.10.10.4.json",
+    "raw_stream_match": {
+      "line_sha256": "3fab233d1225b3d8e4db43aba82511d43be5384e80ce36a877b05cce105711c0",
+      "stream_byte_offset": 44221
+    },
+    "sha256": "e8a78813cb356cecf760499c9054171d88a5348d2105bd0d092ea714a217522c"
+  },
+  "failures/local.json": {
+    "bytes": 62903,
+    "origin": "/tmp/glm53-onepass11-canary/local.json",
+    "raw_stream_match": {
+      "line_sha256": "2ce26a9e40e539c6bcff2646ee6911930ceb927e1c2faea14ce9af6581199ee8",
+      "stream_byte_offset": 58662
+    },
+    "sha256": "8009a4bcb7f18f690cdf36812f021f13eec5460b29a5cf5a75bf18ad12fdf9a2"
+  },
+  "fleet/terminal-run.log.gz": {
+    "bytes": 2297,
+    "origin": "/home/choiceoh/glm53-logs/fleet/run-logs/42754a82ba632ea85f7ca1804f833f45fc3fd6bd1b10cdb06346c8b7171c22d0.log",
+    "original_bytes": 4611,
+    "original_sha256": "ec98610074a9d7d18dbf01fe2521d23734c0abeb2220306b35800bbaf46750f6",
+    "sha256": "c9e2a22b29014fb829eeb7a53bccaa7a60a08150a1dab67152717d77da2bcc32"
+  },
+  "source/continuity-input-mounted-hashes.json": {
+    "bytes": 2885,
+    "origin": "/tmp/glm53-onepass11-mounted-hashes.json",
+    "sha256": "86836676846d95da58a0691b3228bd176bb3f7c4d9c5551301bcdc6073f9ad4d"
+  },
+  "source/frozen-manifest.tsv": {
+    "bytes": 9333,
+    "origin": "git c7dec80a0f73d4a2b683ce2c4813978938694095",
+    "sha256": "d25b53ede7bff8deb2f7bad316befeb1a9a11863164ab603518d85e755e17bc9"
+  },
+  "source/mounted-hashes.json": {
+    "bytes": 10769,
+    "origin": "git c7dec80a0f73d4a2b683ce2c4813978938694095 build bytes",
+    "sha256": "19303ea2d5c6ff3d206db29f2240cb105ee360b8fe2466ea0c157d3e359a0164"
+  },
+  "streams/10.10.10.1.stdout.raw.gz": {
+    "bytes": 16803,
+    "origin": "/tmp/glm53-onepass11-streams/10.10.10.1.stdout.raw",
+    "original_bytes": 112592,
+    "original_sha256": "06ff39cbac0ee3587c581abe5fe9e436c6fa3ec0a993adb54c9e9144aafecd9d",
+    "sha256": "44c50dbefbe08cc66bba0109f3a2e191731779b525d9a9f53b1ba702d60e9578"
+  },
+  "streams/10.10.10.3.stdout.raw.gz": {
+    "bytes": 16766,
+    "origin": "/tmp/glm53-onepass11-streams/10.10.10.3.stdout.raw",
+    "original_bytes": 112700,
+    "original_sha256": "7299e74f3f682d94333cd8e471c9281964a05b032efd31489e5cfe913bc0ec74",
+    "sha256": "36a827c38bfd228bc765ba3ee654aa35930d59bd89ad4cbad1ef74a5fca67e44"
+  },
+  "streams/10.10.10.4.stdout.raw.gz": {
+    "bytes": 16644,
+    "origin": "/tmp/glm53-onepass11-streams/10.10.10.4.stdout.raw",
+    "original_bytes": 112397,
+    "original_sha256": "378aaf370ef9d8359f8ffa42b1cf0989d108b30c1a0de24f453c304bb55ed8d5",
+    "sha256": "4a559c9a52a0d4e3407aac2d2adba7b48cdb97d26edbccacfb7515a3ce8c118a"
+  },
+  "streams/closure.json": {
+    "bytes": 636,
+    "origin": "closed passive observer",
+    "sha256": "a166fd29dbe55a16fe8bf40a6c735020498563225b4691d8d98bff5a3cb70e39"
+  },
+  "streams/events.jsonl.gz": {
+    "bytes": 39027,
+    "origin": "/tmp/glm53-onepass11-streams/events.jsonl",
+    "original_bytes": 169287,
+    "original_sha256": "b90a5e274041ed0811b27b9b28f084d21d50dd89b9716567243530c4351444f9",
+    "sha256": "ce69133ca54f329c3827110299814a3b1c9c03ed0e45962225ca37890348f3fe"
+  },
+  "streams/local.stdout.raw.gz": {
+    "bytes": 21665,
+    "origin": "/tmp/glm53-onepass11-streams/local.stdout.raw",
+    "original_bytes": 141008,
+    "original_sha256": "68c974fc84ba5808e846e8fe12330107c0ad4b6aac698088fd98895a34e4d372",
+    "sha256": "3ae8da209a0d14e47060d2ccbaa13959e046593b1b6fd94824941e69c55474f0"
+  },
+  "submission/receipt.json": {
+    "bytes": 482,
+    "origin": "/tmp/glm53-onepass11-submit-receipt.txt",
+    "sha256": "8b701bb986dfcff41ec252d386ffcc1aa842d4d42a393ba99f25e77da8e728cd"
+  },
+  "submission/request.json": {
+    "bytes": 3325,
+    "origin": "/tmp/glm53-onepass11-submit.json",
+    "sha256": "bcf9e9396ee07581cd678c7030204258c81099c55f34802d8000dd501e1df960"
+  },
+  "terminal-capture.json": {
+    "bytes": 2196,
+    "origin": "read-only normal fleet/source/own-holder terminal checks",
+    "sha256": "d0ecacfcc6f5296db6fffe56de86ca8d957c1c9119dd33e9d3ca254f04766a1c"
+  },
+  "tools/compare-canary.py": {
+    "bytes": 11256,
+    "origin": "/tmp/glm53_onepass10_compare_canary.py",
+    "sha256": "e3f22f24a87b9327f96acbf97a57ad806b5b3293af4cff326644a3374c5a43b3"
+  },
+  "tools/extract-canary.py": {
+    "bytes": 1513,
+    "origin": "/tmp/glm53_extract_onepass11_canary.py",
+    "sha256": "5b0e51480bba773f5f3161376628988b51ab2b6a82fabb0d2cedb1dcb6230302"
+  },
+  "tools/passive-observer.py": {
+    "bytes": 16217,
+    "origin": "/tmp/glm53_onepass11_observer.py",
+    "sha256": "1d0542bd42e8f2da03091f78128f625aa89693c0f130875c3c3b11e14266e40d"
+  },
+  "tools/snapshot-helper.py": {
+    "bytes": 17842,
+    "origin": "/tmp/glm53_onepass11_snapshot.py",
+    "sha256": "6d2af91c15298795997eab2ee2fca89bac2ca794cfd8718becdabc233f6b67f7"
+  }
+}

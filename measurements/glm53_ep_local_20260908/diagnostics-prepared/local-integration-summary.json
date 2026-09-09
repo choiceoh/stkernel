@@ -1,0 +1,55 @@
+{
+  "tests_run": 146,
+  "failures": 0,
+  "errors": 0,
+  "skips": 11,
+  "skipped": [
+    {
+      "test": "test_corrupt_small_row_cannot_hide_behind_a_large_row (test_glm53_ep_local_probe.NumericalTests.test_corrupt_small_row_cannot_hide_behind_a_large_row)",
+      "reason": "requires torch; pinned CPU image covers this"
+    },
+    {
+      "test": "test_large_stock_noise_cannot_authorize_a_bad_candidate (test_glm53_ep_local_probe.NumericalTests.test_large_stock_noise_cannot_authorize_a_bad_candidate)",
+      "reason": "requires torch; pinned CPU image covers this"
+    },
+    {
+      "test": "test_nonfinite_and_broadcastable_shapes_are_rejected (test_glm53_ep_local_probe.NumericalTests.test_nonfinite_and_broadcastable_shapes_are_rejected)",
+      "reason": "requires torch; pinned CPU image covers this"
+    },
+    {
+      "test": "test_small_stock_noise_preserves_existing_candidate_floor (test_glm53_ep_local_probe.NumericalTests.test_small_stock_noise_preserves_existing_candidate_floor)",
+      "reason": "requires torch; pinned CPU image covers this"
+    },
+    {
+      "test": "test_actual_remap_preserves_local_bits_and_zeros_remote_nonfinite_weights (test_glm53_ep_route_remap.ReferenceTests.test_actual_remap_preserves_local_bits_and_zeros_remote_nonfinite_weights)",
+      "reason": "pinned CPU image supplies Torch"
+    },
+    {
+      "test": "test_actual_tensor_remap_matches_scalar_conversion_and_range_oracle (test_glm53_ep_route_remap.ReferenceTests.test_actual_tensor_remap_matches_scalar_conversion_and_range_oracle)",
+      "reason": "pinned CPU image supplies Torch"
+    },
+    {
+      "test": "test_binding_only_override_is_not_accepted_as_the_matched_pair (test_glm53_ep_bindings_capsule.DependencyTests.test_binding_only_override_is_not_accepted_as_the_matched_pair)",
+      "reason": "dependency metadata checks require packaging; staging does not"
+    },
+    {
+      "test": "test_duplicate_distribution_and_direct_url_identity_fail_closed (test_glm53_ep_bindings_capsule.DependencyTests.test_duplicate_distribution_and_direct_url_identity_fail_closed)",
+      "reason": "dependency metadata checks require packaging; staging does not"
+    },
+    {
+      "test": "test_matching_pair_satisfies_reverse_constraints_and_retains_unrelated_baseline_conflict (test_glm53_ep_bindings_capsule.DependencyTests.test_matching_pair_satisfies_reverse_constraints_and_retains_unrelated_baseline_conflict)",
+      "reason": "dependency metadata checks require packaging; staging does not"
+    },
+    {
+      "test": "test_reverse_dependency_pathfinder_and_missing_target_fail (test_glm53_ep_bindings_capsule.DependencyTests.test_reverse_dependency_pathfinder_and_missing_target_fail)",
+      "reason": "dependency metadata checks require packaging; staging does not"
+    },
+    {
+      "test": "test_target_markers_are_explicit_and_active_extras_cannot_hide_constraints (test_glm53_ep_bindings_capsule.DependencyTests.test_target_markers_are_explicit_and_active_extras_cannot_hide_constraints)",
+      "reason": "dependency metadata checks require packaging; staging does not"
+    }
+  ],
+  "test_modules": 14,
+  "contract_paths": 29,
+  "scope": "Local CPU integration; not pinned server compilation or GPU admission"
+}

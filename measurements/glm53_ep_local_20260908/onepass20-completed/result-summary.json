@@ -1,0 +1,43 @@
+{
+  "adoption_acceptance": false,
+  "boot_only_arms": [],
+  "canary_case_passes": 28,
+  "candidate_comparisons": 168,
+  "canonical_verdict": null,
+  "complete_request_hashes_available": false,
+  "completed_arms": [],
+  "fixed_decode_tok_s": [
+    53.1
+  ],
+  "fixed_pooled_tok_s": null,
+  "full_canary_pass_receipts": 4,
+  "full_sanitizer_acceptance": false,
+  "korean": null,
+  "matched_baseline": false,
+  "old_onepass9_weight_and_concentrated_input_identity": true,
+  "onepass_records": 0,
+  "own_holder_after": false,
+  "payload_returncode": 143,
+  "performance_acceptance": false,
+  "prefill": null,
+  "proof_ok": null,
+  "quality": null,
+  "recovery_deferred": true,
+  "recovery_policy": "idle-controller",
+  "requests": null,
+  "returncode": 143,
+  "revision": "82d81d65b6a74e09abd9be0a8f05508e4855f6f1",
+  "rounded_stdout_only": true,
+  "schema": 1,
+  "session": "eplocalonepass0909v20",
+  "supervisor_pid": 20953,
+  "ticket": "178892234520953",
+  "unrun_arms": [
+    "B1",
+    "A",
+    "B2",
+    "B3"
+  ],
+  "verdict": "A0_CANCELLED_AFTER_FIRST_FIXED_RESULT",
+  "within_boot_concentrated_storage_reused": true
+}

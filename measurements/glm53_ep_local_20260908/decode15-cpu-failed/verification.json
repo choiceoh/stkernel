@@ -1,0 +1,13 @@
+{
+  "verdict": "PASS",
+  "scope": "CPU15 archive integrity only; no new tests or GPU execution",
+  "original_verdict": "FAIL",
+  "contracts": null,
+  "original_files": 1,
+  "ptx": 0,
+  "cubin": 0,
+  "resource_logs": 0,
+  "source_revision": "71c407bbab59004a9a865acc17f3d2b5c48013c8",
+  "evidence_tar_sha256": "c50e873e1f4920ceb1ffd00d2f03390b7a1b5e04d8ac17d7e39a9b63a956a07d",
+  "result_sha256": "d2b617147cd3f6cfef87772aad66ed6f04adbd1bbbe76b6270c8a3702ea131e7"
+}

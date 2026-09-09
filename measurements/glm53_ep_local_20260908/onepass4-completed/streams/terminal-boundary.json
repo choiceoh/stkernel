@@ -1,0 +1,54 @@
+{
+  "closure_followup": "observer-closure.json records actual observer_finished after owner SIGTERM; the earlier outer_observer_end_at_capture field searched for observer_end and is not a closure authority.",
+  "files": {
+    "10.10.10.1.stderr.raw": {
+      "bytes": 174,
+      "chunks": 3,
+      "sha256": "71341f6eacc43d38f996305a17ed1f7ee82f22506c7789034b9f1b669e2773d7"
+    },
+    "10.10.10.1.stdout.raw": {
+      "bytes": 409471,
+      "chunks": 1954,
+      "sha256": "7e5fc4a1c6cef0d3050d63af25cf40cd6579a21b217e7b8535102f33731e12c0"
+    },
+    "10.10.10.3.stderr.raw": {
+      "bytes": 174,
+      "chunks": 3,
+      "sha256": "71341f6eacc43d38f996305a17ed1f7ee82f22506c7789034b9f1b669e2773d7"
+    },
+    "10.10.10.3.stdout.raw": {
+      "bytes": 408350,
+      "chunks": 1972,
+      "sha256": "31b6c9b02af23daba6ed5fa7e89e28633cbdb01ddc35fea9f71900de3c278a7b"
+    },
+    "10.10.10.4.stderr.raw": {
+      "bytes": 174,
+      "chunks": 3,
+      "sha256": "71341f6eacc43d38f996305a17ed1f7ee82f22506c7789034b9f1b669e2773d7"
+    },
+    "10.10.10.4.stdout.raw": {
+      "bytes": 407735,
+      "chunks": 1950,
+      "sha256": "77f326b2bc40b557e2084e6f9d57d43e3561863d88313cd8b1114266cc160f0d"
+    },
+    "local.stderr.raw": {
+      "bytes": 174,
+      "chunks": 3,
+      "sha256": "71341f6eacc43d38f996305a17ed1f7ee82f22506c7789034b9f1b669e2773d7"
+    },
+    "local.stdout.raw": {
+      "bytes": 526944,
+      "chunks": 2707,
+      "sha256": "d6b6b761153190f136718fa3a044549cb870d298ab49f74a2d68ae7a6934a441"
+    }
+  },
+  "outer_observer_end_at_capture": [],
+  "outer_observer_still_polling_at_capture": true,
+  "scope": "Full terminal data streams are UNASSIGNED across B1/A/B2. Arrival time alone is not strict per-arm identity. Outer status polling may continue after stream subprocess closes.",
+  "stream_end": {
+    "at": 1788902170.1983652,
+    "kind": "stream_end",
+    "local_at": 1788902170.108407,
+    "reason": "FileNotFoundError"
+  }
+}

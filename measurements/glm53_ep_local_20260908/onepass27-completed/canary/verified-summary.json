@@ -1,0 +1,54 @@
+{
+  "nodes": {
+    "10.10.10.1": {
+      "candidate_comparisons": 24,
+      "cases": 4,
+      "completed_at": 1788933670.95971,
+      "control_comparisons": 24,
+      "inputs_same_address": true,
+      "q0_comparisons": 24,
+      "source_matches_cpu24": true,
+      "started_at": 1788933655.9098432,
+      "strict_source_container_bound": true,
+      "weights_preserved": true
+    },
+    "10.10.10.3": {
+      "candidate_comparisons": 24,
+      "cases": 4,
+      "completed_at": 1788933670.8901987,
+      "control_comparisons": 24,
+      "inputs_same_address": true,
+      "q0_comparisons": 24,
+      "source_matches_cpu24": true,
+      "started_at": 1788933655.7883344,
+      "strict_source_container_bound": true,
+      "weights_preserved": true
+    },
+    "10.10.10.4": {
+      "candidate_comparisons": 24,
+      "cases": 4,
+      "completed_at": 1788933666.8432305,
+      "control_comparisons": 24,
+      "inputs_same_address": true,
+      "q0_comparisons": 24,
+      "source_matches_cpu24": true,
+      "started_at": 1788933653.4851618,
+      "strict_source_container_bound": true,
+      "weights_preserved": true
+    },
+    "local": {
+      "candidate_comparisons": 24,
+      "cases": 4,
+      "completed_at": 1788933671.4006605,
+      "control_comparisons": 24,
+      "inputs_same_address": true,
+      "q0_comparisons": 24,
+      "source_matches_cpu24": true,
+      "started_at": 1788933655.9737852,
+      "strict_source_container_bound": true,
+      "weights_preserved": true
+    }
+  },
+  "strict_source_container_bound": true,
+  "verdict": "RAW_CANARY_SOURCE_VALIDATED"
+}

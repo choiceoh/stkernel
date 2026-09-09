@@ -1,0 +1,234 @@
+{
+  "10.10.10.1": {
+    "candidate_comparisons": 42,
+    "case_pass_count": 7,
+    "cases": [
+      {
+        "case": "concentrated6912",
+        "duration_s": 15.990885734558105,
+        "max_row_relative_abs": 0.02238805964589119,
+        "max_row_relative_l2": 0.00825715996325016
+      },
+      {
+        "case": "balanced4096",
+        "duration_s": 3.9491734504699707,
+        "max_row_relative_abs": 0.02298850566148758,
+        "max_row_relative_l2": 0.00789528340101242
+      },
+      {
+        "case": "remote4096",
+        "duration_s": 2.7919962406158447,
+        "max_row_relative_abs": 0.022857142612338066,
+        "max_row_relative_l2": 0.007587469182908535
+      },
+      {
+        "case": "duplicate4096",
+        "duration_s": 7.457167863845825,
+        "max_row_relative_abs": 0.018518518656492233,
+        "max_row_relative_l2": 0.006249559111893177
+      },
+      {
+        "case": "zeros4097",
+        "duration_s": 3.2883543968200684,
+        "max_row_relative_abs": 0.021739130839705467,
+        "max_row_relative_l2": 0.007557250093668699
+      },
+      {
+        "case": "balanced8192",
+        "duration_s": 9.121465921401978,
+        "max_row_relative_abs": 0.021739130839705467,
+        "max_row_relative_l2": 0.007712721824645996
+      },
+      {
+        "case": "short6",
+        "duration_s": 3.001102924346924,
+        "max_row_relative_abs": 0.009852216579020023,
+        "max_row_relative_l2": 0.004337216727435589
+      }
+    ],
+    "old_onepass9_weight_and_concentrated_input_identity": true,
+    "pid": 163,
+    "raw_stream_match": {
+      "line_sha256": "31b88636fc2f9e6a41dd992e13227c0f0c0713521f168b2558c323043b6c56ca",
+      "stream_byte_offset": 32610
+    },
+    "short6_preparation_variants": 4,
+    "source_and_live_snapshot_bound": true,
+    "verdict": "PASS",
+    "within_boot_concentrated_storage_reused": true
+  },
+  "10.10.10.3": {
+    "candidate_comparisons": 42,
+    "case_pass_count": 7,
+    "cases": [
+      {
+        "case": "concentrated6912",
+        "duration_s": 25.807268381118774,
+        "max_row_relative_abs": 0.019999999552965164,
+        "max_row_relative_l2": 0.008275000378489494
+      },
+      {
+        "case": "balanced4096",
+        "duration_s": 4.858820676803589,
+        "max_row_relative_abs": 0.02298850566148758,
+        "max_row_relative_l2": 0.007861427962779999
+      },
+      {
+        "case": "remote4096",
+        "duration_s": 3.4465129375457764,
+        "max_row_relative_abs": 0.024242423474788666,
+        "max_row_relative_l2": 0.007635182701051235
+      },
+      {
+        "case": "duplicate4096",
+        "duration_s": 11.238335847854614,
+        "max_row_relative_abs": 0.01796407252550125,
+        "max_row_relative_l2": 0.006176087073981762
+      },
+      {
+        "case": "zeros4097",
+        "duration_s": 3.9231443405151367,
+        "max_row_relative_abs": 0.023255813866853714,
+        "max_row_relative_l2": 0.007577398791909218
+      },
+      {
+        "case": "balanced8192",
+        "duration_s": 11.765724897384644,
+        "max_row_relative_abs": 0.02222222276031971,
+        "max_row_relative_l2": 0.007680817507207394
+      },
+      {
+        "case": "short6",
+        "duration_s": 6.525024175643921,
+        "max_row_relative_abs": 0.007905138656497002,
+        "max_row_relative_l2": 0.004473742563277483
+      }
+    ],
+    "old_onepass9_weight_and_concentrated_input_identity": true,
+    "pid": 206,
+    "raw_stream_match": {
+      "line_sha256": "7ca4d12b5d257638faf93fd4fa5825a083aa52b501eb9c68f6204bc63741f607",
+      "stream_byte_offset": 33803
+    },
+    "short6_preparation_variants": 4,
+    "source_and_live_snapshot_bound": true,
+    "verdict": "PASS",
+    "within_boot_concentrated_storage_reused": true
+  },
+  "10.10.10.4": {
+    "candidate_comparisons": 42,
+    "case_pass_count": 7,
+    "cases": [
+      {
+        "case": "concentrated6912",
+        "duration_s": 25.860718727111816,
+        "max_row_relative_abs": 0.022900763899087906,
+        "max_row_relative_l2": 0.008294203318655491
+      },
+      {
+        "case": "balanced4096",
+        "duration_s": 4.739851474761963,
+        "max_row_relative_abs": 0.02298850566148758,
+        "max_row_relative_l2": 0.007724849972873926
+      },
+      {
+        "case": "remote4096",
+        "duration_s": 3.4252007007598877,
+        "max_row_relative_abs": 0.02068965509533882,
+        "max_row_relative_l2": 0.0076147811487317085
+      },
+      {
+        "case": "duplicate4096",
+        "duration_s": 11.237759113311768,
+        "max_row_relative_abs": 0.01764705963432789,
+        "max_row_relative_l2": 0.006292189471423626
+      },
+      {
+        "case": "zeros4097",
+        "duration_s": 3.6916050910949707,
+        "max_row_relative_abs": 0.027027027681469917,
+        "max_row_relative_l2": 0.007631196174770594
+      },
+      {
+        "case": "balanced8192",
+        "duration_s": 11.345428466796875,
+        "max_row_relative_abs": 0.02259887009859085,
+        "max_row_relative_l2": 0.007803834043443203
+      },
+      {
+        "case": "short6",
+        "duration_s": 6.649582862854004,
+        "max_row_relative_abs": 0.009852216579020023,
+        "max_row_relative_l2": 0.004318326245993376
+      }
+    ],
+    "old_onepass9_weight_and_concentrated_input_identity": true,
+    "pid": 207,
+    "raw_stream_match": {
+      "line_sha256": "d3057e89c7d821676b377c73e36ea589171a3633470d780c4b5b82650f1deca8",
+      "stream_byte_offset": 34826
+    },
+    "short6_preparation_variants": 4,
+    "source_and_live_snapshot_bound": true,
+    "verdict": "PASS",
+    "within_boot_concentrated_storage_reused": true
+  },
+  "local": {
+    "candidate_comparisons": 42,
+    "case_pass_count": 7,
+    "cases": [
+      {
+        "case": "concentrated6912",
+        "duration_s": 25.88921093940735,
+        "max_row_relative_abs": 0.020408162847161293,
+        "max_row_relative_l2": 0.008342336863279343
+      },
+      {
+        "case": "balanced4096",
+        "duration_s": 4.811294317245483,
+        "max_row_relative_abs": 0.023952096700668335,
+        "max_row_relative_l2": 0.007800476625561714
+      },
+      {
+        "case": "remote4096",
+        "duration_s": 3.4968159198760986,
+        "max_row_relative_abs": 0.019736841320991516,
+        "max_row_relative_l2": 0.007550455629825592
+      },
+      {
+        "case": "duplicate4096",
+        "duration_s": 11.280447959899902,
+        "max_row_relative_abs": 0.017142856493592262,
+        "max_row_relative_l2": 0.006209210492670536
+      },
+      {
+        "case": "zeros4097",
+        "duration_s": 3.8172497749328613,
+        "max_row_relative_abs": 0.021739130839705467,
+        "max_row_relative_l2": 0.007541849743574858
+      },
+      {
+        "case": "balanced8192",
+        "duration_s": 11.077134132385254,
+        "max_row_relative_abs": 0.024038461968302727,
+        "max_row_relative_l2": 0.007781927473843098
+      },
+      {
+        "case": "short6",
+        "duration_s": 6.486680746078491,
+        "max_row_relative_abs": 0.009852216579020023,
+        "max_row_relative_l2": 0.004365789238363504
+      }
+    ],
+    "old_onepass9_weight_and_concentrated_input_identity": true,
+    "pid": 223,
+    "raw_stream_match": {
+      "line_sha256": "6aefdf28ab1570a37294d30bb1deaa795a7969843b7c5498ae5224dea293a5ed",
+      "stream_byte_offset": 42301
+    },
+    "short6_preparation_variants": 4,
+    "source_and_live_snapshot_bound": true,
+    "verdict": "PASS",
+    "within_boot_concentrated_storage_reused": true
+  }
+}

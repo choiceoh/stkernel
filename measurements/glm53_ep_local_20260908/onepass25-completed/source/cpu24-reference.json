@@ -1,0 +1,9 @@
+{
+  "kernel_contract_sources_equal": true,
+  "new_cpu_compile": false,
+  "path": "measurements/glm53_ep_local_20260908/decode24-cpu/result.json",
+  "reuse_receipt_sha256": "8b27f9505d18724d295977b08a4a942e2b3bf203b5904bbcca8926b8a7b636a7",
+  "revision": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+  "scope": "Original CPU24 actual 165-test/30-kernel proof reused by exact source equality. CPU capsule13.0.3 versus serving image13.3.1; no CPU25 compile occurred.",
+  "sha256": "1d96612938f200bd86d078e1d8841cc92df808ba4ab802ca51306fe229b67506"
+}

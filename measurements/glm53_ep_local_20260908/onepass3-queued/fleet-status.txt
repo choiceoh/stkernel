@@ -1,0 +1,15 @@
+fleet: HELD by decode-next-0909v4 [boot] (pid 1317648@srv2, since 02:22, est 70m, PR498 canonical onepass compact+inline+SF6 A/default B; fixed 3x2048; migrated paused v3)
+legacy: 3 bench/boot procs, 0 requests in flight, head booting
+queue (1):
+  1. eplocalonepass0909v3a [boot] (since 02:22, est 45m, expect ~45m, ETA ~03:32) Canonical onepass EP B1 A B2 tok/s TTFT; common unused graph profile skip
+  marker 02:22 FLEET-held-by-decode-next-0909v4.done
+  marker 11:08 FLEET-held-by-alignprod.done
+log:
+  2026-09-09_02:22:17 release mb9216c-0909
+  2026-09-09_02:22:23 GO decode-next-0909v4 (pid 1317648)
+  2026-09-09_02:22:33 cancel eplocalonepass0909v3
+  2026-09-09_02:22:53 request eplocalonepass0909v3a est=45m Canonical onepass EP B1 A B2 tok/s TTFT; common unused graph profile skip [boot]
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "83b5a0da3bf94535818cdac82b773dc3", "phase": "waiting", "reason": "holder active", "since": 390674.352670661, "updated_at": 1788888281.4155831, "version": 1}
+production: NOT defaults: VLLM_GLM53_AR_COMPACT_CTA=1,VLLM_GLM53_AR_PROXY_INLINE=1,VLLM_GLM53_B12X_STATIC_V2=t,r,sf6 (health 000)
+deployed: 1adcb30258de
+baseline: NONE for build ac2f1883 -- a defaults arm is worth its boot

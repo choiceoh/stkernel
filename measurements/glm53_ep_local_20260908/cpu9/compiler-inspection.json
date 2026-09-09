@@ -1,0 +1,451 @@
+{
+  "source_revision": "cf1365b8fab6091833400efd7784071316eb9f6a",
+  "source_clean_at_fetch": true,
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "verification_scope": "No-device E72 CuTe compilation, 24 Triton remap specializations, CPU contracts, and static artifact comparison; no GPU execution.",
+  "cpu_job": {
+    "worker": "srv2/head",
+    "root": "/tmp/glm53-ep-local-compile0908-9-head",
+    "source": "/home/choiceoh/stkernel-ep-local-0908-9",
+    "normal_fleet_cpu_lane": true,
+    "started_kst": "2026-09-08T17:10:29.541+09:00",
+    "ended_kst": "2026-09-08T17:10:38.244+09:00",
+    "returncode": 0,
+    "mem_available_before_kib": 96937656,
+    "mem_available_before_gib": 92.44695281982422,
+    "minimum_available_gib": 12,
+    "container_memory_gib": 4,
+    "container_cpus": 2,
+    "runtime": "runc",
+    "network": "none",
+    "cuda_initialized": false,
+    "serving_memory_reclaimed": false
+  },
+  "prior_srv4_attempt": {
+    "root": "/tmp/glm53-ep-local-compile0908-9",
+    "returncode": 2,
+    "started_kst": "2026-09-08T17:08:49.350+09:00",
+    "ended_kst": "2026-09-08T17:08:49.692+09:00",
+    "reason": "12 GiB host MemAvailable preflight failed before container launch; no serving memory reclaimed",
+    "compiler_started": false
+  },
+  "tests": {
+    "tests_run": 55,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "original_job_file_checksums_verified": 37,
+  "source_binding": {
+    "mounted_files": 13,
+    "contract_files": 18,
+    "all_match_frozen_commit": true
+  },
+  "cute_comparison": {
+    "cpu8": {
+      "ptx_sha256": "42c6e549c56971de1360cafc49037b29d0f117c8ad0cdbc3610d26635811a322",
+      "ptx_bytes": 1220058,
+      "cubin_sha256": "b8f8c3b8fafa1ecd5420a6bd0a886fc0ad07c0523feaaf79ad740bdd8938af9a",
+      "cubin_bytes": 445632,
+      "resources": {
+        "REG": 168,
+        "STACK": 1040,
+        "SHARED": 1024,
+        "LOCAL": 0
+      },
+      "resource_receipt": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:1040 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "ptx_local_depot_bytes": [
+        96
+      ],
+      "static_local_load_instruction_count": 29,
+      "static_local_store_instruction_count": 12,
+      "static_instruction_counts": {
+        "ld.global.acquire.gpu.s32": 11,
+        "ld.global.b32": 59,
+        "ld.local.b32": 28,
+        "ld.local.v2.b32": 1,
+        "st.global.L2::cache_hint.u64": 80,
+        "st.global.b32": 29,
+        "st.global.b8": 80,
+        "st.global.f32": 7,
+        "st.global.release.gpu.s32": 5,
+        "st.global.s32": 13,
+        "st.global.u64": 80,
+        "st.global.v4.u32": 33,
+        "st.local.b32": 8,
+        "st.local.b64": 1,
+        "st.local.v2.b32": 1,
+        "st.local.v4.b32": 2
+      }
+    },
+    "cpu9": {
+      "ptx_sha256": "e9069f2712a21cec7ab6ef08b316794c2abfeff15dfb161296a774fb8c2f079c",
+      "ptx_bytes": 958390,
+      "cubin_sha256": "686ed711e7ff348166ce0e5cf660fdb01dd866df1a5a694dd995246e24551f08",
+      "cubin_bytes": 308384,
+      "resources": {
+        "REG": 168,
+        "STACK": 112,
+        "SHARED": 1024,
+        "LOCAL": 0
+      },
+      "resource_receipt": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "ptx_local_depot_bytes": [
+        64
+      ],
+      "static_local_load_instruction_count": 4,
+      "static_local_store_instruction_count": 5,
+      "static_instruction_counts": {
+        "ld.global.acquire.gpu.s32": 11,
+        "ld.global.b32": 59,
+        "ld.local.b32": 3,
+        "ld.local.v2.b32": 1,
+        "st.global.L2::cache_hint.u64": 10,
+        "st.global.b32": 29,
+        "st.global.b8": 10,
+        "st.global.f32": 7,
+        "st.global.release.gpu.s32": 5,
+        "st.global.s32": 13,
+        "st.global.u64": 10,
+        "st.global.v4.u32": 33,
+        "st.local.b32": 1,
+        "st.local.b64": 1,
+        "st.local.v2.b32": 1,
+        "st.local.v4.b32": 2
+      }
+    }
+  },
+  "remap_ptx_verified": 24,
+  "remap_ptx_equal_cpu8": 24,
+  "remap_triton_hash_equal_cpu8": 24,
+  "remap_cubin_equal_cpu8": 0,
+  "remap_cubin_section_comparison": {
+    "variants": 24,
+    "all_cubins_equal_outside_changed_section_payloads": true,
+    "all_text_sections_equal": true,
+    "differing_section_names": {
+      ".debug_line": 24,
+      ".nv.merc.debug_line": 24
+    },
+    "header_difference_sections": {}
+  },
+  "remap_variants": [
+    {
+      "label": "mapped-i32-fp32-i32",
+      "kind": "mapped",
+      "ptx_sha256": "2f5e7f4c0033be95e1b339ebbf7dd8f03c494135feab5fbe78911b5a2b57eb0d",
+      "ptx_bytes": 7667,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "2cd134bb7e93eb681fef14c50fa1bf6e6fbb19fca55934a5f0c45ce8b816e10c",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i32-fp32-i64",
+      "kind": "mapped",
+      "ptx_sha256": "8f702e3f7c6203b6a62f314614b0c6274a024d0122edf82800349859019489db",
+      "ptx_bytes": 7941,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "e4d9675a28df46e13aba92c8be04b9b693c40e5583f12f4a3fa08d9eb606c05b",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i32-fp16-i32",
+      "kind": "mapped",
+      "ptx_sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+      "ptx_bytes": 7720,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "73f4ba81d2509b120dbadad513aa8071ca2449d9ed09fc6b6cb42499eabd1175",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i32-fp16-i64",
+      "kind": "mapped",
+      "ptx_sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+      "ptx_bytes": 7991,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "f9c75beda51c5b07960101d7cf906cb95b663f70f9ff4613304174c43536e3e6",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i32-bf16-i32",
+      "kind": "mapped",
+      "ptx_sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+      "ptx_bytes": 7720,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "73f4ba81d2509b120dbadad513aa8071ca2449d9ed09fc6b6cb42499eabd1175",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i32-bf16-i64",
+      "kind": "mapped",
+      "ptx_sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+      "ptx_bytes": 7991,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "f9c75beda51c5b07960101d7cf906cb95b663f70f9ff4613304174c43536e3e6",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i64-fp32-i32",
+      "kind": "mapped",
+      "ptx_sha256": "8b5122b74204fdf9e6dcf24c6fc8853e42955682ff4a4548355c9bc4a1b8e1b9",
+      "ptx_bytes": 7722,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "d96355649e51dedde12c0965b800d3b9497d61380d92a2adae8dd443d1b8a4eb",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i64-fp32-i64",
+      "kind": "mapped",
+      "ptx_sha256": "4825abab342c3ed078cfa33618cbb9484127586a9cbbc0029d1987aeba893738",
+      "ptx_bytes": 7993,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "03767081d0d23a2ca7eaa5eb144201f7ff589880274ba2c3e6d0620053a1ecf5",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i64-fp16-i32",
+      "kind": "mapped",
+      "ptx_sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+      "ptx_bytes": 7747,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "afb1a8b4ce68a21594bdc9bf822d9285ed9020a9ec461b286000c88f9debb540",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i64-fp16-i64",
+      "kind": "mapped",
+      "ptx_sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+      "ptx_bytes": 8020,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "aa73854290ccd7741af326af07661e858c6a6d56e0b50cb6646efc248f38a65f",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i64-bf16-i32",
+      "kind": "mapped",
+      "ptx_sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+      "ptx_bytes": 7747,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "afb1a8b4ce68a21594bdc9bf822d9285ed9020a9ec461b286000c88f9debb540",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "mapped-i64-bf16-i64",
+      "kind": "mapped",
+      "ptx_sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+      "ptx_bytes": 8020,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "aa73854290ccd7741af326af07661e858c6a6d56e0b50cb6646efc248f38a65f",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 6,
+      "shared_bytes": 0
+    },
+    {
+      "label": "empty-i32-fp32-i32",
+      "kind": "empty",
+      "ptx_sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+      "ptx_bytes": 5241,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "168bf602927060a524c85a614a6924bfc8a0d382f309af7f16a41521906821b7",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 0,
+      "shared_bytes": 0
+    },
+    {
+      "label": "empty-i32-fp16-i32",
+      "kind": "empty",
+      "ptx_sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "ptx_bytes": 5248,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "b80749c666403bd681d09228a65ea7cbc87ee72190bd01e16a5c583e026e853f",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 0,
+      "shared_bytes": 0
+    },
+    {
+      "label": "empty-i32-bf16-i32",
+      "kind": "empty",
+      "ptx_sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "ptx_bytes": 5248,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "b80749c666403bd681d09228a65ea7cbc87ee72190bd01e16a5c583e026e853f",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 0,
+      "shared_bytes": 0
+    },
+    {
+      "label": "empty-i64-fp32-i32",
+      "kind": "empty",
+      "ptx_sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+      "ptx_bytes": 5241,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "168bf602927060a524c85a614a6924bfc8a0d382f309af7f16a41521906821b7",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 0,
+      "shared_bytes": 0
+    },
+    {
+      "label": "empty-i64-fp16-i32",
+      "kind": "empty",
+      "ptx_sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "ptx_bytes": 5248,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "b80749c666403bd681d09228a65ea7cbc87ee72190bd01e16a5c583e026e853f",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 0,
+      "shared_bytes": 0
+    },
+    {
+      "label": "empty-i64-bf16-i32",
+      "kind": "empty",
+      "ptx_sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "ptx_bytes": 5248,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "b80749c666403bd681d09228a65ea7cbc87ee72190bd01e16a5c583e026e853f",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 0,
+      "shared_bytes": 0
+    },
+    {
+      "label": "offset-i32-fp32-i32",
+      "kind": "offset",
+      "ptx_sha256": "a0cefa45eadba91362f0a98ae35d3bef8e35afa627ff1bda2dd4394749c9ed58",
+      "ptx_bytes": 7263,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "e06c7ac6a240e7603ce20235f8c89d19e45d7c420ebbc2050d5d4d681fb0a50b",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 4,
+      "shared_bytes": 0
+    },
+    {
+      "label": "offset-i32-fp16-i32",
+      "kind": "offset",
+      "ptx_sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+      "ptx_bytes": 7313,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "32eb50aa88e5f7253d69f11186c4688adb8f4715394ccef415f0f8099fee3661",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 4,
+      "shared_bytes": 0
+    },
+    {
+      "label": "offset-i32-bf16-i32",
+      "kind": "offset",
+      "ptx_sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+      "ptx_bytes": 7313,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "32eb50aa88e5f7253d69f11186c4688adb8f4715394ccef415f0f8099fee3661",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 4,
+      "shared_bytes": 0
+    },
+    {
+      "label": "offset-i64-fp32-i32",
+      "kind": "offset",
+      "ptx_sha256": "630fe8b409dc6030aca83bbdb4c6864fafb5078753a995c871229186f4cba4a3",
+      "ptx_bytes": 7274,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "c48419540e947c956a2caefaf418b92bf21549454d6c9cd7d83fb91a8e8d45a4",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 4,
+      "shared_bytes": 0
+    },
+    {
+      "label": "offset-i64-fp16-i32",
+      "kind": "offset",
+      "ptx_sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+      "ptx_bytes": 7301,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "e2d110c4fe9a3f2961782ff04153e5e7195c91d2414a9f7895e5fcb579da4d1c",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 4,
+      "shared_bytes": 0
+    },
+    {
+      "label": "offset-i64-bf16-i32",
+      "kind": "offset",
+      "ptx_sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+      "ptx_bytes": 7301,
+      "ptx_bytes_equal_cpu8": true,
+      "triton_hash_equal_cpu8": true,
+      "cubin_sha256": "e2d110c4fe9a3f2961782ff04153e5e7195c91d2414a9f7895e5fcb579da4d1c",
+      "cubin_sha256_equal_cpu8": false,
+      "global_load_instruction_count": 4,
+      "shared_bytes": 0
+    }
+  ],
+  "core_log": {
+    "original_path": "/tmp/glm53-ep-extra2-core0908.log",
+    "raw_sha256": "3ef7e4e2fbc511d5b86bf00e2436df1938a0133ee5d1e6f020bfbd99236550c1",
+    "raw_bytes": 5195,
+    "stored_sha256": "f14331e18327a33f20221d6c63676d1050bee8060dd19c84877da3e17b5e586f",
+    "stored_bytes": 2003,
+    "summary": "core OK (6793 checks; 38 megakernel regressions; 0 fleet regressions)",
+    "checks": 6793,
+    "megakernel_regressions": 38,
+    "fleet_regressions": 0,
+    "skips_reported": [
+      "skip_topk rule ................ OK",
+      "UE8M0 scale repair ............. SKIP (no torch on this host)",
+      "b12x SF 6-bit pack ............ OK (skipped: no torch)",
+      "dflash2 selector score precision  SKIP (no torch on this host)",
+      "b12x EP routing ................ OK (tensor remap skipped)",
+      "DSV4 UE8M0 host guard ......... SKIP values (no torch)",
+      "glm53 kpool packed scratch contract ... SKIP (no torch on this host)",
+      "w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)"
+    ],
+    "source_revision": "not recorded in this local core log; frozen CPU compile source is recorded independently",
+    "note": "Host tensor-dependent skips are not counted as test passes; zero fleet regressions is not a fleet-suite pass."
+  },
+  "limitations": [
+    "Static PTX instruction counts and local-depot declarations are not executed instructions, memory transactions or measured throughput.",
+    "The assembler-reported STACK reduction is compile evidence; register count and shared memory are unchanged, and no runtime occupancy or speedup is established.",
+    "The 24 remap cubin differences are confined to .debug_line and .nv.merc.debug_line. Their cause is not established; no GPU validation follows from equal executable sections.",
+    "No new-source GPU numerics, sanitizer, component timing, full-model TTFT or production acceptance is provided by this CPU archive."
+  ]
+}

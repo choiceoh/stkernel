@@ -1,0 +1,15 @@
+fleet: HELD by prodrec2-0909 [boot] (pid 604994@srv2, since 00:25, est 20m, 프로덕션 복구 부팅(기본값, 레그 없음) — 22:26 이후 서빙 정지 상태)
+legacy: 1 bench/boot procs, 0 requests in flight
+queue (2):
+  1. mb9216-0909 [boot] (since 00:25, est 45m, expect ~45m, ETA ~00:45) 40차: MAX_BATCHED=9216(=4x2304) — align 반올림 회수 예상 +1.9/2.4%. onepass + 청크 스윕으로 a·b 및 실제 청크 확인
+  2. eplocaldiag0908v1 [boot] (since 00:25, est 8m, expect ~8m, ETA ~01:30) CPU17-matched concentrated6912 failure diagnostics only; unchanged fixture and exact incoming restore
+  marker 00:25 FLEET-held-by-prodrec2-0909.done
+  marker 11:08 FLEET-held-by-alignprod.done
+log:
+  2026-09-09_00:25:08 GO prodrec2-0909 (pid 604994)
+  2026-09-09_00:25:21 cancel prodrec2-0909
+  2026-09-09_00:25:43 request mb9216-0909 est=45m 40차: MAX_BATCHED=9216(=4x2304) — align 반올림 회수 예상 +1.9/2.4%. onepass + 청크 스윕으로 a·b 및 실제 청크 확인 [boot]
+  2026-09-09_00:25:55 request eplocaldiag0908v1 est=8m CPU17-matched concentrated6912 failure diagnostics only; unchanged fixture and exact incoming restore [boot]
+production: defaults (health 000)
+deployed: 23dd4e91cdd7
+baseline: NONE for build c7401026 -- a defaults arm is worth its boot

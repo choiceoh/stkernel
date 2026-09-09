@@ -1,0 +1,15 @@
+{
+  "session": "eplocalonepass0909v14",
+  "ticket": "17889166573854513",
+  "pid": 3854513,
+  "start_tick": "41904553",
+  "requested_at": 1788917322.9831793,
+  "signal": "SIGTERM",
+  "reason": "Stop remaining arms on clearly insufficient direct decode throughput; no same-build performance verdict claimed.",
+  "fixed_decode_tok_s": [
+    54.42930702739281,
+    57.58632201835868,
+    64.23118289254406
+  ],
+  "records_sha256": "b9311641377a2e6c2b48718c6f5a490cbcf79a78727a92daf030d2048b44cb70"
+}

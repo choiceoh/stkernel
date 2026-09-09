@@ -1,0 +1,6 @@
+{
+  "receipt_hashes_verified": true,
+  "instruction_lines_verified": 500,
+  "shared_load_and_scale_store_endpoints_verified": 20,
+  "gpu_execution": false
+}

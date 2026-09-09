@@ -1,0 +1,24 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-binding-gpu0908-6",
+  "source_revision": "b4d4abecf3ca6430bd9c5c7bf27f4ebb5b9477c7",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "epbindingscapsule0908v1",
+    "3",
+    "Pinned13.0.3 capsule metadata and import check; no devices runc4g2CPU",
+    "--",
+    "python3",
+    "-B",
+    "/home/choiceoh/stkernel-ep-binding-gpu0908-6/probes/run_glm53_ep_bindings_capsule_cpu.py",
+    "--wheels",
+    "/tmp/glm53-bindings-capsule-prep0908/wheels",
+    "--output",
+    "/tmp/glm53-bindings-capsule-cpu0908-1"
+  ],
+  "scheduler_revision": "cf405a7e03bd8ac95933d76f590fdfc4b0685e99",
+  "expected_capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "started": 1788867448.0999362
+}

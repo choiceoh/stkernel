@@ -1,0 +1,20 @@
+# Preserved from the completed tool response; no test rerun.
+$ /Users/ost/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 -m unittest discover -s tests -p test_glm53_ep_bindings_capsule.py -v
+test_archive_traversal_extra_package_and_symlink_never_create_site (test_glm53_ep_bindings_capsule.CapsuleTests.test_archive_traversal_extra_package_and_symlink_never_create_site) ... ok
+test_complete_payload_and_licenses_validate_without_importing_cuda (test_glm53_ep_bindings_capsule.CapsuleTests.test_complete_payload_and_licenses_validate_without_importing_cuda) ... ok
+test_complete_record_metadata_license_and_unique_members_are_required (test_glm53_ep_bindings_capsule.CapsuleTests.test_complete_record_metadata_license_and_unique_members_are_required) ... ok
+test_extra_missing_mutated_files_and_empty_directories_are_rejected (test_glm53_ep_bindings_capsule.CapsuleTests.test_extra_missing_mutated_files_and_empty_directories_are_rejected) ... ok
+test_manifest_requires_an_external_digest_and_rejects_rehashed_mutation (test_glm53_ep_bindings_capsule.CapsuleTests.test_manifest_requires_an_external_digest_and_rejects_rehashed_mutation) ... ok
+test_symlinked_payload_directory_and_manifest_are_rejected (test_glm53_ep_bindings_capsule.CapsuleTests.test_symlinked_payload_directory_and_manifest_are_rejected) ... ok
+test_unpinned_wheel_bytes_one_package_and_existing_destination_are_refused (test_glm53_ep_bindings_capsule.CapsuleTests.test_unpinned_wheel_bytes_one_package_and_existing_destination_are_refused) ... ok
+test_binding_only_override_is_not_accepted_as_the_matched_pair (test_glm53_ep_bindings_capsule.DependencyTests.test_binding_only_override_is_not_accepted_as_the_matched_pair) ... ok
+test_duplicate_distribution_and_direct_url_identity_fail_closed (test_glm53_ep_bindings_capsule.DependencyTests.test_duplicate_distribution_and_direct_url_identity_fail_closed) ... ok
+test_matching_pair_satisfies_reverse_constraints_and_retains_unrelated_baseline_conflict (test_glm53_ep_bindings_capsule.DependencyTests.test_matching_pair_satisfies_reverse_constraints_and_retains_unrelated_baseline_conflict) ... ok
+test_reverse_dependency_pathfinder_and_missing_target_fail (test_glm53_ep_bindings_capsule.DependencyTests.test_reverse_dependency_pathfinder_and_missing_target_fail) ... ok
+test_target_markers_are_explicit_and_active_extras_cannot_hide_constraints (test_glm53_ep_bindings_capsule.DependencyTests.test_target_markers_are_explicit_and_active_extras_cannot_hide_constraints) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.053s
+
+OK
+exit_code=0

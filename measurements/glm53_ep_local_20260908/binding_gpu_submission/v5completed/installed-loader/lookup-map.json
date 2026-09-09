@@ -1,0 +1,807 @@
+{
+  "binary": "/tmp/glm53-cydriver-v5-static-0908/cydriver.cpython-312-aarch64-linux-gnu.so",
+  "sha256": "6ae437b694ad31accb9cd8745fa5dd9e52e11af045e0da683966be7b3341e67e",
+  "log_sha256": "52fc79a2ee507591adb6daec386dd155f8e8951f8ee529b477c0d093ff81ec40",
+  "mapping": "static AArch64 immediate/address dataflow at each recorded call site",
+  "observed_driver_api": 13000,
+  "lookups": [
+    {
+      "sanitizer_frame": "0x169d7",
+      "call_address": "0x169d4",
+      "call": "169d4:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuMemcpyWithAttributesAsync",
+      "symbol_address": "0x6c550",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "169c4:\t913f4000 \tadd\tx0, x0, #0xfd0",
+        "169bc:\t91160320 \tadd\tx0, x25, #0x580",
+        "165ac:\tf94043e0 \tldr\tx0, [sp, #128]",
+        "14ef4:\t3400b5c1 \tcbz\tw1, 165ac <PyInit_cydriver@@Base+0x41f4>",
+        "14ec4:\tf00002b9 \tadrp\tx25, 6b000 <_Z18getCUDALibraryPathPcb@@Base+0xf4a0>",
+        "169d0:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "169cc:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "169c8:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "169d8:\t7107d01f \tcmp\tw0, #0x1f4",
+        "169dc:\t54042900 \tb.eq\t1eefc <PyInit_cydriver@@Base+0xcb44>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x169ff",
+      "call_address": "0x169fc",
+      "call": "169fc:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuMemcpy3DWithAttributesAsync",
+      "symbol_address": "0x6c570",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "169e8:\t913fc000 \tadd\tx0, x0, #0xff0",
+        "169e0:\t91160320 \tadd\tx0, x25, #0x580",
+        "165ac:\tf94043e0 \tldr\tx0, [sp, #128]",
+        "14ef4:\t3400b5c1 \tcbz\tw1, 165ac <PyInit_cydriver@@Base+0x41f4>",
+        "14ec4:\tf00002b9 \tadrp\tx25, 6b000 <_Z18getCUDALibraryPathPcb@@Base+0xf4a0>",
+        "169f8:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "169f4:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "169f0:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "16a00:\t7107d01f \tcmp\tw0, #0x1f4",
+        "16a04:\t540437e0 \tb.eq\t1f100 <PyInit_cydriver@@Base+0xcd48>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x16d6f",
+      "call_address": "0x16d6c",
+      "call": "16d6c:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuStreamBeginCaptureToCig",
+      "symbol_address": "0x6c7b0",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "16d5c:\t9104c000 \tadd\tx0, x0, #0x130",
+        "16d54:\t911a0360 \tadd\tx0, x27, #0x680",
+        "16a0c:\td00002bb \tadrp\tx27, 6c000 <_Z18getCUDALibraryPathPcb@@Base+0x104a0>",
+        "16d68:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "16d64:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "16d60:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "16d70:\t7107d01f \tcmp\tw0, #0x1f4",
+        "16d74:\t54025360 \tb.eq\t1b7e0 <PyInit_cydriver@@Base+0x9428>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x16d97",
+      "call_address": "0x16d94",
+      "call": "16d94:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuStreamEndCaptureToCig",
+      "symbol_address": "0x6c7d0",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "16d84:\t91054000 \tadd\tx0, x0, #0x150",
+        "16d7c:\t911a0360 \tadd\tx0, x27, #0x680",
+        "16a0c:\td00002bb \tadrp\tx27, 6c000 <_Z18getCUDALibraryPathPcb@@Base+0x104a0>",
+        "16d90:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "16d8c:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "16d88:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "16d98:\t7107d01f \tcmp\tw0, #0x1f4",
+        "16d9c:\t54025a40 \tb.eq\t1b8e4 <PyInit_cydriver@@Base+0x952c>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x16f27",
+      "call_address": "0x16f24",
+      "call": "16f24:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuStreamBeginRecaptureToGraph",
+      "symbol_address": "0x6c8d0",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "16f14:\t91094000 \tadd\tx0, x0, #0x250",
+        "16f0c:\t911a0360 \tadd\tx0, x27, #0x680",
+        "16a0c:\td00002bb \tadrp\tx27, 6c000 <_Z18getCUDALibraryPathPcb@@Base+0x104a0>",
+        "16f20:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "16f1c:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "16f18:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "16f28:\t7107d01f \tcmp\tw0, #0x1f4",
+        "16f2c:\t54043800 \tb.eq\t1f62c <PyInit_cydriver@@Base+0xd274>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x1730f",
+      "call_address": "0x1730c",
+      "call": "1730c:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLaunchHostFunc",
+      "symbol_address": "0x6cbb0",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "172fc:\t9114c000 \tadd\tx0, x0, #0x530",
+        "172f4:\t911a0360 \tadd\tx0, x27, #0x680",
+        "16a0c:\td00002bb \tadrp\tx27, 6c000 <_Z18getCUDALibraryPathPcb@@Base+0x104a0>",
+        "17308:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "17304:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "17300:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "17310:\t7107d01f \tcmp\tw0, #0x1f4",
+        "17314:\t54044160 \tb.eq\t1fb40 <PyInit_cydriver@@Base+0xd788>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x173ff",
+      "call_address": "0x173fc",
+      "call": "173fc:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuStreamGetDevResource",
+      "symbol_address": "0x6cc50",
+      "requested_version": 13010,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "173ec:\t91174000 \tadd\tx0, x0, #0x5d0",
+        "173e4:\t911a0360 \tadd\tx0, x27, #0x680",
+        "16a0c:\td00002bb \tadrp\tx27, 6c000 <_Z18getCUDALibraryPathPcb@@Base+0x104a0>",
+        "173f8:\t52865a42 \tmov\tw2, #0x32d2                \t// #13010",
+        "173f4:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "173f0:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "17400:\t7107d01f \tcmp\tw0, #0x1f4",
+        "17404:\t54044840 \tb.eq\t1fd0c <PyInit_cydriver@@Base+0xd954>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x181bf",
+      "call_address": "0x181bc",
+      "call": "181bc:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuKernelGetParamCount",
+      "symbol_address": "0x6d550",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "181ac:\t913b4000 \tadd\tx0, x0, #0xed0",
+        "181a4:\t911a0360 \tadd\tx0, x27, #0x680",
+        "16a0c:\td00002bb \tadrp\tx27, 6c000 <_Z18getCUDALibraryPathPcb@@Base+0x104a0>",
+        "181b8:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "181b4:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "181b0:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "181c0:\t7107d01f \tcmp\tw0, #0x1f4",
+        "181c4:\t5403e6c0 \tb.eq\t1fe9c <PyInit_cydriver@@Base+0xdae4>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18c37",
+      "call_address": "0x18c34",
+      "call": "18c34:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuMulticastBindMem",
+      "symbol_address": "0x6dcb0",
+      "requested_version": 13010,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18c24:\t9114c000 \tadd\tx0, x0, #0x530",
+        "18c1c:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18c30:\t52865a42 \tmov\tw2, #0x32d2                \t// #13010",
+        "18c2c:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18c28:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18c38:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18c3c:\t5403d160 \tb.eq\t20668 <PyInit_cydriver@@Base+0xe2b0>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18c87",
+      "call_address": "0x18c84",
+      "call": "18c84:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuMulticastBindAddr",
+      "symbol_address": "0x6dcd0",
+      "requested_version": 13010,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18c74:\t91154000 \tadd\tx0, x0, #0x550",
+        "18c6c:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18c80:\t52865a42 \tmov\tw2, #0x32d2                \t// #13010",
+        "18c7c:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18c78:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18c88:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18c8c:\t5403cda0 \tb.eq\t20640 <PyInit_cydriver@@Base+0xe288>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18cff",
+      "call_address": "0x18cfc",
+      "call": "18cfc:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointIdReserve",
+      "symbol_address": "0x6dd30",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18cec:\t9116c000 \tadd\tx0, x0, #0x5b0",
+        "18ce4:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18cf8:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18cf4:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18cf0:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18d00:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18d04:\t5403c800 \tb.eq\t20604 <PyInit_cydriver@@Base+0xe24c>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18d27",
+      "call_address": "0x18d24",
+      "call": "18d24:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointIdRelease",
+      "symbol_address": "0x6dd50",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18d14:\t91174000 \tadd\tx0, x0, #0x5d0",
+        "18d0c:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18d20:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18d1c:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18d18:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18d28:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18d2c:\t5403c620 \tb.eq\t205f0 <PyInit_cydriver@@Base+0xe238>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18d4f",
+      "call_address": "0x18d4c",
+      "call": "18d4c:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointCreate",
+      "symbol_address": "0x6dd70",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18d3c:\t9117c000 \tadd\tx0, x0, #0x5f0",
+        "18d34:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18d48:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18d44:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18d40:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18d50:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18d54:\t5403c440 \tb.eq\t205dc <PyInit_cydriver@@Base+0xe224>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18d77",
+      "call_address": "0x18d74",
+      "call": "18d74:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointAddDevice",
+      "symbol_address": "0x6dd90",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18d64:\t91184000 \tadd\tx0, x0, #0x610",
+        "18d5c:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18d70:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18d6c:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18d68:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18d78:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18d7c:\t5403c260 \tb.eq\t205c8 <PyInit_cydriver@@Base+0xe210>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18d9f",
+      "call_address": "0x18d9c",
+      "call": "18d9c:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointDestroy",
+      "symbol_address": "0x6ddb0",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18d8c:\t9118c000 \tadd\tx0, x0, #0x630",
+        "18d84:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18d98:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18d94:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18d90:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18da0:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18da4:\t5403c080 \tb.eq\t205b4 <PyInit_cydriver@@Base+0xe1fc>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18dc7",
+      "call_address": "0x18dc4",
+      "call": "18dc4:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointBindAddr",
+      "symbol_address": "0x6ddd0",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18db4:\t91194000 \tadd\tx0, x0, #0x650",
+        "18dac:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18dc0:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18dbc:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18db8:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18dc8:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18dcc:\t5403bea0 \tb.eq\t205a0 <PyInit_cydriver@@Base+0xe1e8>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18def",
+      "call_address": "0x18dec",
+      "call": "18dec:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointBindMem",
+      "symbol_address": "0x6ddf0",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18ddc:\t9119c000 \tadd\tx0, x0, #0x670",
+        "18dd4:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18de8:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18de4:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18de0:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18df0:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18df4:\t5403bcc0 \tb.eq\t2058c <PyInit_cydriver@@Base+0xe1d4>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18e17",
+      "call_address": "0x18e14",
+      "call": "18e14:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointUnbind",
+      "symbol_address": "0x6de10",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18e04:\t911a4000 \tadd\tx0, x0, #0x690",
+        "18dfc:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18e10:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18e0c:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18e08:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18e18:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18e1c:\t5403bae0 \tb.eq\t20578 <PyInit_cydriver@@Base+0xe1c0>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18e3f",
+      "call_address": "0x18e3c",
+      "call": "18e3c:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointExport",
+      "symbol_address": "0x6de30",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18e2c:\t911ac000 \tadd\tx0, x0, #0x6b0",
+        "18e24:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18e38:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18e34:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18e30:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18e40:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18e44:\t5403b900 \tb.eq\t20564 <PyInit_cydriver@@Base+0xe1ac>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18e67",
+      "call_address": "0x18e64",
+      "call": "18e64:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointImport",
+      "symbol_address": "0x6de50",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18e54:\t911b4000 \tadd\tx0, x0, #0x6d0",
+        "18e4c:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18e60:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18e5c:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18e58:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18e68:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18e6c:\t5403b720 \tb.eq\t20550 <PyInit_cydriver@@Base+0xe198>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18e8f",
+      "call_address": "0x18e8c",
+      "call": "18e8c:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointGetLimits",
+      "symbol_address": "0x6de70",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18e7c:\t911bc000 \tadd\tx0, x0, #0x6f0",
+        "18e74:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18e88:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18e84:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18e80:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18e90:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18e94:\t5403b540 \tb.eq\t2053c <PyInit_cydriver@@Base+0xe184>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x18eb7",
+      "call_address": "0x18eb4",
+      "call": "18eb4:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuLogicalEndpointQuery",
+      "symbol_address": "0x6de90",
+      "requested_version": 13030,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "18ea4:\t911c4000 \tadd\tx0, x0, #0x710",
+        "18e9c:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "18eb0:\t52865cc2 \tmov\tw2, #0x32e6                \t// #13030",
+        "18eac:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "18ea8:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "18eb8:\t7107d01f \tcmp\tw0, #0x1f4",
+        "18ebc:\t5403b360 \tb.eq\t20528 <PyInit_cydriver@@Base+0xe170>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x19317",
+      "call_address": "0x19314",
+      "call": "19314:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuFuncGetParamCount",
+      "symbol_address": "0x6e1b0",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "19304:\t9128c000 \tadd\tx0, x0, #0xa30",
+        "192fc:\t911e02a0 \tadd\tx0, x21, #0x780",
+        "183ac:\tb00002b5 \tadrp\tx21, 6d000 <_Z18getCUDALibraryPathPcb@@Base+0x114a0>",
+        "19310:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "1930c:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "19308:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "19318:\t7107d01f \tcmp\tw0, #0x1f4",
+        "1931c:\t5403b080 \tb.eq\t2092c <PyInit_cydriver@@Base+0xe574>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x19c03",
+      "call_address": "0x19c00",
+      "call": "19c00:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuGraphNodeGetContainingGraph",
+      "symbol_address": "0x6e8b0",
+      "requested_version": 13010,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "19bf0:\t9100c000 \tadd\tx0, x0, #0x30",
+        "19be8:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "19bfc:\t52865a42 \tmov\tw2, #0x32d2                \t// #13010",
+        "19bf8:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "19bf4:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "19c04:\t7107d01f \tcmp\tw0, #0x1f4",
+        "19c08:\t54038220 \tb.eq\t20c4c <PyInit_cydriver@@Base+0xe894>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x19c2b",
+      "call_address": "0x19c28",
+      "call": "19c28:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuGraphNodeGetLocalId",
+      "symbol_address": "0x6e8d0",
+      "requested_version": 13010,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "19c18:\t91014000 \tadd\tx0, x0, #0x50",
+        "19c10:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "19c24:\t52865a42 \tmov\tw2, #0x32d2                \t// #13010",
+        "19c20:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "19c1c:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "19c2c:\t7107d01f \tcmp\tw0, #0x1f4",
+        "19c30:\t54038040 \tb.eq\t20c38 <PyInit_cydriver@@Base+0xe880>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x19c53",
+      "call_address": "0x19c50",
+      "call": "19c50:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuGraphNodeGetToolsId",
+      "symbol_address": "0x6e8f0",
+      "requested_version": 13010,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "19c40:\t9101c000 \tadd\tx0, x0, #0x70",
+        "19c38:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "19c4c:\t52865a42 \tmov\tw2, #0x32d2                \t// #13010",
+        "19c48:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "19c44:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "19c54:\t7107d01f \tcmp\tw0, #0x1f4",
+        "19c58:\t54037e60 \tb.eq\t20c24 <PyInit_cydriver@@Base+0xe86c>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x19c7b",
+      "call_address": "0x19c78",
+      "call": "19c78:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuGraphGetId",
+      "symbol_address": "0x6e908",
+      "requested_version": 13010,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "19c68:\t91022000 \tadd\tx0, x0, #0x88",
+        "19c60:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "19c74:\t52865a42 \tmov\tw2, #0x32d2                \t// #13010",
+        "19c70:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "19c6c:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "19c7c:\t7107d01f \tcmp\tw0, #0x1f4",
+        "19c80:\t54037c80 \tb.eq\t20c10 <PyInit_cydriver@@Base+0xe858>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x19ca3",
+      "call_address": "0x19ca0",
+      "call": "19ca0:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuGraphExecGetId",
+      "symbol_address": "0x6e920",
+      "requested_version": 13010,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "19c90:\t91028000 \tadd\tx0, x0, #0xa0",
+        "19c88:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "19c9c:\t52865a42 \tmov\tw2, #0x32d2                \t// #13010",
+        "19c98:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "19c94:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "19ca4:\t7107d01f \tcmp\tw0, #0x1f4",
+        "19ca8:\t54037aa0 \tb.eq\t20bfc <PyInit_cydriver@@Base+0xe844>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x1a243",
+      "call_address": "0x1a240",
+      "call": "1a240:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuGraphNodeGetParams",
+      "symbol_address": "0x6edc0",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "1a230:\t91150000 \tadd\tx0, x0, #0x540",
+        "1a228:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "1a23c:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "1a238:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "1a234:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "1a244:\t7107d01f \tcmp\tw0, #0x1f4",
+        "1a248:\t54037580 \tb.eq\t210f8 <PyInit_cydriver@@Base+0xed40>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x1ac93",
+      "call_address": "0x1ac90",
+      "call": "1ac90:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuCoredumpRegisterStartCallback",
+      "symbol_address": "0x6f690",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "1ac80:\t91384000 \tadd\tx0, x0, #0xe10",
+        "1ac78:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "1ac8c:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "1ac88:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "1ac84:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "1ac94:\t7107d01f \tcmp\tw0, #0x1f4",
+        "1ac98:\t54034ec0 \tb.eq\t21670 <PyInit_cydriver@@Base+0xf2b8>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x1acbb",
+      "call_address": "0x1acb8",
+      "call": "1acb8:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuCoredumpRegisterCompleteCallback",
+      "symbol_address": "0x6f6b0",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "1aca8:\t9138c000 \tadd\tx0, x0, #0xe30",
+        "1aca0:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "1acb4:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "1acb0:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "1acac:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "1acbc:\t7107d01f \tcmp\tw0, #0x1f4",
+        "1acc0:\t54034ce0 \tb.eq\t2165c <PyInit_cydriver@@Base+0xf2a4>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x1ace3",
+      "call_address": "0x1ace0",
+      "call": "1ace0:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuCoredumpDeregisterStartCallback",
+      "symbol_address": "0x6f6e0",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "1acd0:\t91398000 \tadd\tx0, x0, #0xe60",
+        "1acc8:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "1acdc:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "1acd8:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "1acd4:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "1ace4:\t7107d01f \tcmp\tw0, #0x1f4",
+        "1ace8:\t54034b00 \tb.eq\t21648 <PyInit_cydriver@@Base+0xf290>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x1ad0b",
+      "call_address": "0x1ad08",
+      "call": "1ad08:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuCoredumpDeregisterCompleteCallback",
+      "symbol_address": "0x6f710",
+      "requested_version": 13020,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "1acf8:\t913a4000 \tadd\tx0, x0, #0xe90",
+        "1acf0:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "1ad04:\t52865b82 \tmov\tw2, #0x32dc                \t// #13020",
+        "1ad00:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "1acfc:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "1ad0c:\t7107d01f \tcmp\tw0, #0x1f4",
+        "1ad10:\t54034920 \tb.eq\t21634 <PyInit_cydriver@@Base+0xf27c>  // b.none"
+      ]
+    },
+    {
+      "sanitizer_frame": "0x1ae73",
+      "call_address": "0x1ae70",
+      "call": "1ae70:\td63f02e0 \tblr\tx23",
+      "boundary": "sanitizer frame + 1 is the instruction after the 4-byte BLR",
+      "symbol": "cuDevSmResourceSplit",
+      "symbol_address": "0x6f840",
+      "requested_version": 13010,
+      "flags": 0,
+      "query_result_pointer": 0,
+      "argument_instructions": [
+        "1ae60:\t913f0000 \tadd\tx0, x0, #0xfc0",
+        "1ae58:\t912202a0 \tadd\tx0, x21, #0x880",
+        "19a54:\tb00002b5 \tadrp\tx21, 6e000 <_Z18getCUDALibraryPathPcb@@Base+0x124a0>",
+        "1ae6c:\t52865a42 \tmov\tw2, #0x32d2                \t// #13010",
+        "1ae68:\td2800003 \tmov\tx3, #0x0                   \t// #0",
+        "1ae64:\td2800004 \tmov\tx4, #0x0                   \t// #0"
+      ],
+      "return_check": [
+        "1ae74:\t7107d01f \tcmp\tw0, #0x1f4",
+        "1ae78:\t54033840 \tb.eq\t21580 <PyInit_cydriver@@Base+0xf1c8>  // b.none"
+      ]
+    }
+  ],
+  "branch_resolution": {
+    "branch": "14ef4:\t3400b5c1 \tcbz\tw1, 165ac <PyInit_cydriver@@Base+0x41f4>",
+    "target": "165ac:\tf94043e0 \tldr\tx0, [sp, #128]",
+    "fallthrough_predecessor": "165a8:\t17fff9dd \tb\t14d1c <PyInit_cydriver@@Base+0x2964>",
+    "unique_direct_predecessor": true,
+    "reason": "Avoid interpreting intervening stream/error blocks as linear predecessors of default-stream entry"
+  },
+  "limitations": [
+    "Raw sanitizer log does not record call arguments; these are read from the copied binary.",
+    "Image identity and container provenance are in copy.json; this does not identify every runtime-loaded library.",
+    "A request version above the observed driver API is a mismatch candidate, not an A/B-proven sole cause."
+  ]
+}

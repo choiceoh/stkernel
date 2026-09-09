@@ -1,0 +1,30 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "logic",
+      "command": [
+        "/usr/bin/python3",
+        "tests/test_logic.py"
+      ],
+      "returncode": 0,
+      "seconds": 74.146,
+      "log": "/tmp/glm53-ep-onepass-0909-4/cpu-report-logic-0.log",
+      "skipped": [
+        "OK (skipped=2)",
+        "UE8M0 scale repair ............. SKIP (no torch on this host)",
+        "b12x SF 6-bit pack ............ OK (skipped: no torch)",
+        "dflash2 selector score precision  SKIP (no torch on this host)",
+        "b12x EP routing ................ OK (tensor remap skipped)",
+        "DSV4 UE8M0 host guard ......... SKIP values (no torch)",
+        "glm53 kpool packed scratch contract ... SKIP (no torch on this host)",
+        "w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)"
+      ],
+      "tests_run": 6839,
+      "counts": null
+    }
+  ],
+  "passed": false,
+  "coverage_complete": false,
+  "tests_run": 6839
+}

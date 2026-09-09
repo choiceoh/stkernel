@@ -1,0 +1,42 @@
+{
+  "base-distributions.json": {
+    "source": "/tmp/glm53-bindings-capsule-cpu0908-1/base-distributions.json",
+    "size": 2965757,
+    "sha256": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1"
+  },
+  "container.log": {
+    "source": "/tmp/glm53-bindings-capsule-cpu0908-1/container.log",
+    "size": 889,
+    "sha256": "4abff146002706af0f34553ba4001b5c33f6d34cc0033b1eb5650d4e37911a8b"
+  },
+  "result.json": {
+    "source": "/tmp/glm53-bindings-capsule-cpu0908-1/result.json",
+    "size": 1864,
+    "sha256": "2645da6156e814fd26e91f1d54fb824e5f527099813032e20580fdc87525feae"
+  },
+  "receipt.json": {
+    "source": "/tmp/glm53-bindings-capsule-cpu0908-1/receipt.json",
+    "size": 2094,
+    "sha256": "81586ac8688961c4bdc8a6b8ff3ec4ce8ba76cf825697ad138b15120da0d803a"
+  },
+  "capsule-manifest.json": {
+    "source": "/tmp/glm53-bindings-capsule-cpu0908-1/capsule/capsule-manifest.json",
+    "size": 20559,
+    "sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  },
+  "cpu-submission.json": {
+    "source": "/tmp/glm53-bindings-capsule-prep0908/cpu-submission.json",
+    "size": 812,
+    "sha256": "47cad4681431fa34cf429d6387019680db5ef7a7437f91652d26f54767c3cf5a"
+  },
+  "cpu-exit.json": {
+    "source": "/tmp/glm53-bindings-capsule-prep0908/cpu-exit.json",
+    "size": 861,
+    "sha256": "4e49246d47cb0ee6042a19d34817bded1bee1f78490af69f031bd75f81c080a6"
+  },
+  "cpu-fleet.log": {
+    "source": "/tmp/glm53-bindings-capsule-prep0908/cpu-fleet.log",
+    "size": 629,
+    "sha256": "7bea28da7ff679f3978f1d026c488d0abd3b7132ee9c17737e344278234e42be"
+  }
+}

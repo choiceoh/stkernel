@@ -324,6 +324,105 @@ class ObservationTests(unittest.TestCase):
                     idle.node_idle('fixture')
 
 
+class LocalHeadObservationTests(unittest.TestCase):
+    def address_output(self, address='10.10.10.2'):
+        return json.dumps([{'addr_info': [{'family': 'inet', 'local': address}]}])
+
+    def test_canonical_head_uses_same_check_locally_only_with_owned_address(self):
+        result = subprocess.CompletedProcess([], 0, '{"idle": true}', '')
+        with patch.object(idle.subprocess, 'check_output', return_value=self.address_output()) as addresses, \
+                patch.object(idle.subprocess, 'run', return_value=result) as run:
+            idle.node_idle('10.10.10.2')
+        addresses.assert_called_once_with(
+            ['ip', '-j', '-4', 'address', 'show'], text=True, timeout=4)
+        self.assertEqual(run.call_args.args[0][:3], [sys.executable, '-B', '-c'])
+        self.assertEqual(run.call_args.kwargs['timeout'], 12)
+
+    def test_worker_transport_and_head_on_nonhead_host_stay_remote(self):
+        result = subprocess.CompletedProcess([], 0, '{"idle": true}', '')
+        for target in ('10.10.10.1', '10.10.10.3', '10.10.10.4', '10.10.10.2'):
+            with self.subTest(target=target), \
+                    patch.object(idle.subprocess, 'check_output', return_value=self.address_output('10.10.10.1')) as addresses, \
+                    patch.object(idle.subprocess, 'run', return_value=result) as run:
+                idle.node_idle(target)
+                self.assertEqual(run.call_args.args[0][0], 'ssh')
+                self.assertIn('choiceoh@' + target, run.call_args.args[0])
+                self.assertEqual(addresses.call_count, int(target == '10.10.10.2'))
+
+    def test_unknown_address_inventory_fails_before_ownership_probe(self):
+        values = ('not-json', '{}', '[null]', '[{}]', '[{"addr_info": [null]}]')
+        for value in values:
+            with self.subTest(value=value), \
+                    patch.object(idle.subprocess, 'check_output', return_value=value), \
+                    patch.object(idle.subprocess, 'run') as run:
+                with self.assertRaises(ValueError):
+                    idle.node_idle('10.10.10.2')
+                run.assert_not_called()
+        for error in (FileNotFoundError('ip absent'), subprocess.TimeoutExpired('ip', 4)):
+            with self.subTest(error=error), \
+                    patch.object(idle.subprocess, 'check_output', side_effect=error), \
+                    patch.object(idle.subprocess, 'run') as run:
+                with self.assertRaises(type(error)):
+                    idle.node_idle('10.10.10.2')
+                run.assert_not_called()
+
+    def test_local_failures_never_retry_ssh_or_become_idle(self):
+        results = (subprocess.CompletedProcess([], 1, '', 'error'),
+                   subprocess.CompletedProcess([], 0, '{"idle": false}', ''),
+                   subprocess.CompletedProcess([], 0, '{"idle": "true"}', ''),
+                   subprocess.CompletedProcess([], 0, 'not-json', ''))
+        for result in results:
+            with self.subTest(result=result), \
+                    patch.object(idle, '_local_head', return_value=True), \
+                    patch.object(idle.subprocess, 'run', return_value=result) as run:
+                with self.assertRaises(ValueError):
+                    idle.node_idle('10.10.10.2')
+                self.assertEqual(run.call_count, 1)
+                self.assertEqual(run.call_args.args[0][0], sys.executable)
+        with patch.object(idle, '_local_head', return_value=True), \
+                patch.object(idle.subprocess, 'run', side_effect=subprocess.TimeoutExpired('python', 12)) as run:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                idle.node_idle('10.10.10.2')
+            self.assertEqual(run.call_count, 1)
+
+    def test_local_and_remote_execute_identical_ownership_program(self):
+        import shlex
+        result = subprocess.CompletedProcess([], 0, '{"idle": true}', '')
+        with patch.object(idle, '_local_head', side_effect=[True, False]), \
+                patch.object(idle.subprocess, 'run', return_value=result) as run:
+            idle.node_idle('10.10.10.2')
+            idle.node_idle('10.10.10.1')
+        local, remote = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(local[-1], shlex.split(remote[-1])[-1])
+
+    def test_actual_program_still_rejects_unowned_gpu_process(self):
+        import contextlib
+        import io
+        import types
+        result = subprocess.CompletedProcess([], 0, '{"idle": true}', '')
+        with patch.object(idle, '_local_head', return_value=True), \
+                patch.object(idle.subprocess, 'run', return_value=result) as run:
+            idle.node_idle('10.10.10.2')
+        program = run.call_args.args[0][-1]
+        for gpu_pids, expected in (('', True), ('11\n12', True), ('11\n99', False)):
+            def output(args, **kwargs):
+                if args[0] == 'nvidia-smi':
+                    return gpu_pids
+                if args[:2] == ['docker', 'ps']:
+                    return 'glm53\nglm53-worker\nunrelated'
+                if args[:3] == ['docker', 'top', 'glm53']:
+                    return 'PID\n11'
+                if args[:3] == ['docker', 'top', 'glm53-worker']:
+                    return 'PID\n12'
+                raise AssertionError(args)
+            stream = io.StringIO()
+            fake = types.SimpleNamespace(check_output=output, DEVNULL=-3)
+            with self.subTest(gpu_pids=gpu_pids), patch.dict(sys.modules, subprocess=fake), \
+                    contextlib.redirect_stdout(stream):
+                exec(program, {})
+            self.assertIs(json.loads(stream.getvalue())['idle'], expected)
+
+
 class RestoreProcessTests(unittest.TestCase):
     def test_timeout_stops_process_group_before_return(self):
         import fleet_validation

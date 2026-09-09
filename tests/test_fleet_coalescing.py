@@ -279,16 +279,22 @@ class CoalescingTests(unittest.TestCase):
         judge.assert_not_called()
         self.assertEqual(store.get(second)['state'],'failed')
 
-    def test_managed_wait_exits_after_retirement_without_requeue(self):
+    def test_bare_wait_cannot_remove_retired_ticket_without_supervisor(self):
         store=ex.Store(self.jobs)
         old=self.manual_job(store,'owner')
         new=self.manual_job(store,'owner',command=['true','next'])
         retirement.retire(store,'owner',old,new,'obsolete')
         (self.fleet/'queue').write_text(f'1|exp-{old}|0|1|old|boot|{os.getpid()}\n')
-        env=dict(self.env,FLEET_EXPERIMENT_ID=old,FLEET_PID=str(os.getpid()))
+        # PR500 requires an authenticated supervisor before even entering the
+        # wait loop. A bare caller must not erase someone else's retired row.
+        env=dict(self.env,FLEET_EXPERIMENT_ID=old,FLEET_PID=str(os.getpid()),
+                 FLEET_RUNNER_REPO=str(ROOT))
         p=subprocess.run([fixtures.BASH,str(ROOT/'bench/fleet.sh'),'wait','exp-'+old,'1'],env=env,text=True,capture_output=True,timeout=5)
         self.assertNotEqual(p.returncode,0,p.stdout+p.stderr)
-        self.assertNotIn(old,(self.fleet/'queue').read_text())
+        self.assertEqual(p.returncode,2,p.stdout+p.stderr)
+        self.assertIn('bare request/wait is disabled',p.stdout+p.stderr)
+        self.assertEqual((self.fleet/'queue').read_text(),
+                         f'1|exp-{old}|0|1|old|boot|{os.getpid()}\n')
         self.assertFalse((self.fleet/'holder').exists())
 
     def contract_sources(self):

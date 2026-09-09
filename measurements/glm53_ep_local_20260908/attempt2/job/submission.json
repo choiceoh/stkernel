@@ -1,0 +1,23 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-2",
+  "revision": "36d4f006bdb0850011dccdbe2a5b8de64789e0b3",
+  "session": "eplocal0908v2",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-ep-local-gpu-0908-2/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "eplocal0908v2",
+    "45",
+    "Refined E72 full-token prefill: strict stock controls, CPU source binding, numerics and sanitizers, exact restore",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-ep-local-gpu-0908-2/probes/run_glm53_ep_local_offline.py",
+    "--revision",
+    "36d4f006bdb0850011dccdbe2a5b8de64789e0b3",
+    "--out",
+    "/tmp/glm53-ep-local-gpu-0908-2/capture"
+  ],
+  "created": 1788847370.3436787,
+  "supersedes": "eplocal0908v1"
+}

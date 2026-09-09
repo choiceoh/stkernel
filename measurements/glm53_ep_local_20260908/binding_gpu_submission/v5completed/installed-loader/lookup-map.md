@@ -1,0 +1,36 @@
+| Frame | Call | Symbol | Requested version | Flags | Query result |
+|---|---|---|---:|---:|---|
+| 0x169d7 | 0x169d4 | cuMemcpyWithAttributesAsync | 13020 | 0 | NULL |
+| 0x169ff | 0x169fc | cuMemcpy3DWithAttributesAsync | 13020 | 0 | NULL |
+| 0x16d6f | 0x16d6c | cuStreamBeginCaptureToCig | 13020 | 0 | NULL |
+| 0x16d97 | 0x16d94 | cuStreamEndCaptureToCig | 13020 | 0 | NULL |
+| 0x16f27 | 0x16f24 | cuStreamBeginRecaptureToGraph | 13030 | 0 | NULL |
+| 0x1730f | 0x1730c | cuLaunchHostFunc | 13020 | 0 | NULL |
+| 0x173ff | 0x173fc | cuStreamGetDevResource | 13010 | 0 | NULL |
+| 0x181bf | 0x181bc | cuKernelGetParamCount | 13020 | 0 | NULL |
+| 0x18c37 | 0x18c34 | cuMulticastBindMem | 13010 | 0 | NULL |
+| 0x18c87 | 0x18c84 | cuMulticastBindAddr | 13010 | 0 | NULL |
+| 0x18cff | 0x18cfc | cuLogicalEndpointIdReserve | 13030 | 0 | NULL |
+| 0x18d27 | 0x18d24 | cuLogicalEndpointIdRelease | 13030 | 0 | NULL |
+| 0x18d4f | 0x18d4c | cuLogicalEndpointCreate | 13030 | 0 | NULL |
+| 0x18d77 | 0x18d74 | cuLogicalEndpointAddDevice | 13030 | 0 | NULL |
+| 0x18d9f | 0x18d9c | cuLogicalEndpointDestroy | 13030 | 0 | NULL |
+| 0x18dc7 | 0x18dc4 | cuLogicalEndpointBindAddr | 13030 | 0 | NULL |
+| 0x18def | 0x18dec | cuLogicalEndpointBindMem | 13030 | 0 | NULL |
+| 0x18e17 | 0x18e14 | cuLogicalEndpointUnbind | 13030 | 0 | NULL |
+| 0x18e3f | 0x18e3c | cuLogicalEndpointExport | 13030 | 0 | NULL |
+| 0x18e67 | 0x18e64 | cuLogicalEndpointImport | 13030 | 0 | NULL |
+| 0x18e8f | 0x18e8c | cuLogicalEndpointGetLimits | 13030 | 0 | NULL |
+| 0x18eb7 | 0x18eb4 | cuLogicalEndpointQuery | 13030 | 0 | NULL |
+| 0x19317 | 0x19314 | cuFuncGetParamCount | 13020 | 0 | NULL |
+| 0x19c03 | 0x19c00 | cuGraphNodeGetContainingGraph | 13010 | 0 | NULL |
+| 0x19c2b | 0x19c28 | cuGraphNodeGetLocalId | 13010 | 0 | NULL |
+| 0x19c53 | 0x19c50 | cuGraphNodeGetToolsId | 13010 | 0 | NULL |
+| 0x19c7b | 0x19c78 | cuGraphGetId | 13010 | 0 | NULL |
+| 0x19ca3 | 0x19ca0 | cuGraphExecGetId | 13010 | 0 | NULL |
+| 0x1a243 | 0x1a240 | cuGraphNodeGetParams | 13020 | 0 | NULL |
+| 0x1ac93 | 0x1ac90 | cuCoredumpRegisterStartCallback | 13020 | 0 | NULL |
+| 0x1acbb | 0x1acb8 | cuCoredumpRegisterCompleteCallback | 13020 | 0 | NULL |
+| 0x1ace3 | 0x1ace0 | cuCoredumpDeregisterStartCallback | 13020 | 0 | NULL |
+| 0x1ad0b | 0x1ad08 | cuCoredumpDeregisterCompleteCallback | 13020 | 0 | NULL |
+| 0x1ae73 | 0x1ae70 | cuDevSmResourceSplit | 13010 | 0 | NULL |

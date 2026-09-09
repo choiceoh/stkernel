@@ -1,0 +1,18 @@
+{
+  "verdict": "PASS",
+  "scope": "CPU12 archive integrity only; no new tests or GPU execution",
+  "original_verdict": "FAIL",
+  "contracts": {
+    "tests_run": 82,
+    "failures": 1,
+    "errors": 0,
+    "skips": 0
+  },
+  "original_files": 61,
+  "ptx": 28,
+  "cubin": 28,
+  "resource_logs": 4,
+  "source_revision": "cb3f5c754a7c4a65a89affd0c436f4ea570014b0",
+  "evidence_tar_sha256": "8be5013dd7fc88014a2d59b50ec31188b055d52225959a3577a69999d311b385",
+  "result_sha256": "f5da556ca19b4adf0893f102c3914dc7a236f256a287937cd46281271aab823a"
+}

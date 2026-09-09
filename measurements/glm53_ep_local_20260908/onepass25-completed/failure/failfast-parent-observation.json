@@ -1,0 +1,18 @@
+{
+  "action": "REPORT_FIRST_RESULT_NOT_BELOW_THRESHOLD",
+  "arm": "A",
+  "exec_session": 60633,
+  "exit_code": 0,
+  "leg_path": "/tmp/leg.616221",
+  "owner_pid": 553638,
+  "owner_start_tick": "43250203",
+  "raw_stdout_archived": false,
+  "revision": "055914aeb719c1769e05cdb863e43a88b2ee47af",
+  "rounded_first_fixed_decode_tok_s": 69.22,
+  "schema": 1,
+  "scope": "Parent reported the tool write_stdin session60633 stdout. This is a derived observation, not an original saved stdout file, and does not exclude any later cancellation.",
+  "session": "eplocalonepass0909v25",
+  "signal_sent": false,
+  "threshold_tok_s": 65,
+  "ticket": "1788930114553638"
+}

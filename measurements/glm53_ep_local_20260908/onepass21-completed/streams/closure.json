@@ -1,0 +1,26 @@
+{
+  "alive": false,
+  "events": [
+    {
+      "at": 1788924670.2290483,
+      "kind": "stream_end",
+      "local_at": 1788924670.1378508,
+      "reason": "release"
+    },
+    {
+      "kind": "observer_stop",
+      "local_at": 1788924673.350789,
+      "reason": "terminal_or_release"
+    },
+    {
+      "attempted_arms": [
+        "A0"
+      ],
+      "kind": "observer_finished",
+      "local_at": 1788924673.351052,
+      "owned_go_seen": true
+    }
+  ],
+  "observer_pid": 37758,
+  "scope": "All original chunks/offsets/hashes verified; bytes unassigned by observer remain unassigned."
+}

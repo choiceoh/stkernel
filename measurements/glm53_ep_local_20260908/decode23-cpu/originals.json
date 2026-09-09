@@ -1,0 +1,98 @@
+{
+  "README.md": {
+    "compression": "none",
+    "origin": "bounded evidence scope",
+    "original_bytes": 1749,
+    "original_sha256": "ebe1eaa66a60e2521f32fb9e55af16bc136abd5ba648d2a756d447a7767bcf72",
+    "stored_bytes": 1749,
+    "stored_sha256": "ebe1eaa66a60e2521f32fb9e55af16bc136abd5ba648d2a756d447a7767bcf72"
+  },
+  "capture.json": {
+    "compression": "none",
+    "origin": "verified original snapshots",
+    "original_bytes": 48777,
+    "original_sha256": "915bee135965cc6283b92666a7e021ed3b83d419153133c68e99d270e181e7fc",
+    "stored_bytes": 48777,
+    "stored_sha256": "915bee135965cc6283b92666a7e021ed3b83d419153133c68e99d270e181e7fc"
+  },
+  "collect.py": {
+    "compression": "none",
+    "origin": "exact executed collector",
+    "original_bytes": 12276,
+    "original_sha256": "aa74c18ccca7bf8f099bd177980db7d867fc6d813131fb20a605de7a17adf23a",
+    "stored_bytes": 12276,
+    "stored_sha256": "aa74c18ccca7bf8f099bd177980db7d867fc6d813131fb20a605de7a17adf23a"
+  },
+  "comparison-to-cpu21b.json": {
+    "compression": "none",
+    "origin": "original CPU21b and CPU23 archive byte comparison",
+    "original_bytes": 27584,
+    "original_sha256": "6b072301704d42e165f3a9cec7cbc53528e94ee1a337803bb14a33e35b2ff1c6",
+    "stored_bytes": 27584,
+    "stored_sha256": "6b072301704d42e165f3a9cec7cbc53528e94ee1a337803bb14a33e35b2ff1c6"
+  },
+  "evidence.tar.gz": {
+    "compression": "none",
+    "origin": "read-only tar of /tmp/glm53-ep-decode-cpu-0909-23/evidence",
+    "original_bytes": 1165459,
+    "original_sha256": "320ecbeb5a5f5a3e2b19f491d493e66e16246c105404d9475018050a929d1a2e",
+    "stored_bytes": 1165459,
+    "stored_sha256": "320ecbeb5a5f5a3e2b19f491d493e66e16246c105404d9475018050a929d1a2e"
+  },
+  "frozen-runner.py.gz": {
+    "compression": "gzip-mtime0",
+    "origin": "git cbf1c7916247f946167c15ff74d92261588e8cea:probes/run_glm53_ep_short_decode_cpu.py",
+    "original_bytes": 6721,
+    "original_sha256": "19a5c2b5f5cee5c504f4714c03047cca9fc979e9e0dfc33ff225d30c2f334d4e",
+    "stored_bytes": 2369,
+    "stored_sha256": "e999937a56c6d0ee37efabdfb3568397dcde9013661483bd6c957e723cebde75"
+  },
+  "head/driver.pid": {
+    "compression": "none",
+    "origin": "/tmp/glm53-ep-decode-cpu-0909-23/driver.pid",
+    "original_bytes": 7,
+    "original_sha256": "87e3785f8cb8c9f05b80dd5ee40ec4352f9137330a51e673753ff4706d98f20a",
+    "stored_bytes": 7,
+    "stored_sha256": "87e3785f8cb8c9f05b80dd5ee40ec4352f9137330a51e673753ff4706d98f20a"
+  },
+  "head/driver.py.gz": {
+    "compression": "gzip-mtime0",
+    "origin": "/tmp/glm53-ep-decode-cpu-0909-23/driver.py",
+    "original_bytes": 459,
+    "original_sha256": "0cda567a84089ce4d71b4f707247ee4456c943e915e62d044c1b75395e43800d",
+    "stored_bytes": 309,
+    "stored_sha256": "a522341e1421baf962ed8d2f3fa5e2ed2145516a8b99764c01111743380118ac"
+  },
+  "head/exit.json": {
+    "compression": "none",
+    "origin": "/tmp/glm53-ep-decode-cpu-0909-23/exit.json",
+    "original_bytes": 77,
+    "original_sha256": "fe049926d736d5e243a326b569fbcc501c215e0a9471a400200ba5db1dc358c3",
+    "stored_bytes": 77,
+    "stored_sha256": "fe049926d736d5e243a326b569fbcc501c215e0a9471a400200ba5db1dc358c3"
+  },
+  "head/fleet.log.gz": {
+    "compression": "gzip-mtime0",
+    "origin": "/tmp/glm53-ep-decode-cpu-0909-23/fleet.log",
+    "original_bytes": 29869,
+    "original_sha256": "96aa0f4ef6ba2fb3bb71fbfc44d492018925004255ce19e80c2727995ca08d79",
+    "stored_bytes": 5574,
+    "stored_sha256": "2a92e15fd6c81bedde5b41f14837e60061bf6d4d449132d9deff2514a864719d"
+  },
+  "head/submission.json": {
+    "compression": "none",
+    "origin": "/tmp/glm53-ep-decode-cpu-0909-23/submission.json",
+    "original_bytes": 965,
+    "original_sha256": "3084fac8a238160bbf4c077ad1eefd3c9902cfae6ad0e224a5541eeed67a268b",
+    "stored_bytes": 965,
+    "stored_sha256": "3084fac8a238160bbf4c077ad1eefd3c9902cfae6ad0e224a5541eeed67a268b"
+  },
+  "result.json": {
+    "compression": "none",
+    "origin": "/tmp/glm53-ep-decode-cpu-0909-23/evidence/result.json",
+    "original_bytes": 40354,
+    "original_sha256": "947cca0a91857cd326cc08d1ac5d1f4dcf21185287733750b481ca5b2ed2af25",
+    "stored_bytes": 40354,
+    "stored_sha256": "947cca0a91857cd326cc08d1ac5d1f4dcf21185287733750b481ca5b2ed2af25"
+  }
+}

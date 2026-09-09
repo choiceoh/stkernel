@@ -1,0 +1,52 @@
+{
+  "files": [
+    {
+      "path": "base-distributions.json",
+      "sha256": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1",
+      "bytes": 2965757
+    },
+    {
+      "path": "container.log",
+      "sha256": "35e598bf1215584657daf6dc174f832c92e3c5b5940d260fed8b4c5f3d7961b8",
+      "bytes": 67
+    },
+    {
+      "path": "distribution-resolution.json",
+      "sha256": "56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2",
+      "bytes": 3064809
+    },
+    {
+      "path": "result.json",
+      "sha256": "611cd509d98b9a8075a92c4d01e2a4ef0de9f50856d08430c568b34f788ef9cd",
+      "bytes": 98041
+    },
+    {
+      "path": "receipt.json",
+      "sha256": "d85e9203ac41dbb265db57da0ee6793c7fa3372013bf276662b64a65ee6c42f8",
+      "bytes": 2218
+    },
+    {
+      "path": "capsule/capsule-manifest.json",
+      "sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+      "bytes": 20559
+    },
+    {
+      "path": "/tmp/glm53-bindings-capsule-prep0908/cpu2-submission.json",
+      "sha256": "9487af148e0b4f72d4c8c2c73f6c9511a4c4564fd4527daf36d27925305af842",
+      "bytes": 813
+    },
+    {
+      "path": "/tmp/glm53-bindings-capsule-prep0908/cpu2-exit.json",
+      "sha256": "22004ede57c59860eda7e5059f057c4dca7ee2ce2df7c34e3e47cdc0befc259a",
+      "bytes": 861
+    },
+    {
+      "path": "/tmp/glm53-bindings-capsule-prep0908/cpu2-fleet.log",
+      "sha256": "6460dbb95b889af33dd4043231d6f031ea63dbbe7b134ad43845a584a2afcbb5",
+      "bytes": 155
+    }
+  ],
+  "remote_root": "/tmp/glm53-bindings-capsule-cpu0908-2",
+  "source_revision": "63f56a54dbb91e994456b519a53b679963a93583",
+  "verified_remote_local": true
+}

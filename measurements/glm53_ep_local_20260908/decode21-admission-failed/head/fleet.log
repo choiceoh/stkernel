@@ -1,0 +1,4 @@
+usage: run_glm53_ep_short_decode_cpu.py [-h] --image IMAGE --output OUTPUT
+                                        --capsule-root CAPSULE_ROOT
+                                        --manifest-sha256 MANIFEST_SHA256
+run_glm53_ep_short_decode_cpu.py: error: CPU compile needs 12 GiB available; serving memory is not reclaimed

@@ -1,0 +1,14 @@
+fleet: HELD by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음))
+legacy: 1 bench/boot procs, 1 requests in flight
+queue (1):
+  1. eplocalonepass0909v1 [boot] (since 01:07, est 60m, expect ~60m, ETA ~01:54) EP-local actual onepass B1/A/B2 2K32K128K tok/s and TTFT
+  marker 01:14 FLEET-held-by-apc6912-0909.done
+  marker 11:08 FLEET-held-by-alignprod.done
+log:
+  2026-09-09_01:14:05   kept /home/choiceoh/glm53-logs/boot-PRS42.log
+  2026-09-09_01:14:05 release validate0909b
+  2026-09-09_01:14:05 GO apc6912-0909 (pid 897261)
+  2026-09-09_01:22:41 preflight synced fleet.sh from the repo
+production: defaults (health 200)
+deployed: 1bb94f0d362e
+baseline: PRS42 on build 1bb94f0d362e -- 21.85 step/s, 3.42 tok/step, 48.4% acc, 2026-09-09 01:03:37 -- skip a defaults arm and compare against it

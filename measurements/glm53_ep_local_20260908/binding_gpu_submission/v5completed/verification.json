@@ -1,0 +1,143 @@
+{
+  "status": "VERIFIED_FAILED_DIAGNOSTIC_WITH_EXACT_RESTORE",
+  "performance_acceptance": false,
+  "markers": {
+    "EP_BINDING_CONTEXT_BEGIN": 2,
+    "EP_BINDING_CONTEXT_READY": 3,
+    "EP_BINDING_DEVICE_COUNT_BEGIN": 4,
+    "EP_BINDING_DEVICE_COUNT_END": 719
+  },
+  "error_lines": [
+    5,
+    26,
+    47,
+    68,
+    89,
+    110,
+    131,
+    152,
+    173,
+    194,
+    215,
+    236,
+    257,
+    278,
+    299,
+    320,
+    341,
+    362,
+    383,
+    404,
+    425,
+    446,
+    467,
+    488,
+    509,
+    530,
+    551,
+    572,
+    593,
+    614,
+    635,
+    656,
+    677,
+    698
+  ],
+  "api_observation": {
+    "verdict": "OBSERVED",
+    "phase": "complete",
+    "performance_acceptance": false,
+    "scope": "Torch context then first binding device-count; no MoE or CuTe",
+    "cuda_initialized_before": false,
+    "cuda_initialized_after": true,
+    "cuda_bindings": "13.3.1",
+    "count_result": [
+      0,
+      1
+    ],
+    "version_result": [
+      0,
+      13000
+    ],
+    "tensor_numel": 1
+  },
+  "sanitizer_exit_code": 86,
+  "outer_exit_code": 1,
+  "original_nodes": {
+    "local": {
+      "id": "5fd1c41df2ebe83559030f62edb7b9082ae0535aeb18a99e14144a2ff49976e1",
+      "identity_fields": [
+        "auto_remove",
+        "config",
+        "host_config",
+        "id",
+        "image",
+        "manifest",
+        "mounts",
+        "overlays",
+        "port"
+      ],
+      "identity_equal": true,
+      "restored_running": true
+    },
+    "10.10.10.1": {
+      "id": "ce15433b2f33fb946a78d56ef007ecf2e11ecdfad0a4b216dad41b9ab7439a17",
+      "identity_fields": [
+        "auto_remove",
+        "config",
+        "host_config",
+        "id",
+        "image",
+        "manifest",
+        "mounts",
+        "overlays",
+        "port"
+      ],
+      "identity_equal": true,
+      "restored_running": true
+    },
+    "10.10.10.3": {
+      "id": "1e50d538bc0a39fa602c54243142c6a5d4fda223140a6b10fc4dcc6b08680bc2",
+      "identity_fields": [
+        "auto_remove",
+        "config",
+        "host_config",
+        "id",
+        "image",
+        "manifest",
+        "mounts",
+        "overlays",
+        "port"
+      ],
+      "identity_equal": true,
+      "restored_running": true
+    },
+    "10.10.10.4": {
+      "id": "91afb553965f794cf839a93144e1407e2775ab2e6e70f90e2572efeaaec4f9ce",
+      "identity_fields": [
+        "auto_remove",
+        "config",
+        "host_config",
+        "id",
+        "image",
+        "manifest",
+        "mounts",
+        "overlays",
+        "port"
+      ],
+      "identity_equal": true,
+      "restored_running": true
+    }
+  },
+  "restored_epoch": 1788864871.25964,
+  "payload_finished_epoch": 1788864871.3815606,
+  "handoff": {
+    "t": 1788864871.9023883,
+    "session": "epbindinggpu0908v5",
+    "event": "handoff-accepted",
+    "runner": "/home/choiceoh/glm53-logs/fleet/runners/e411cd65688e4543e9e637b0642e226a49e751445e319298b0dba511868644b1",
+    "successor": "attr3-0908"
+  },
+  "original_files_rechecked": 21,
+  "later_health_is_not_our_restoration_evidence": true
+}

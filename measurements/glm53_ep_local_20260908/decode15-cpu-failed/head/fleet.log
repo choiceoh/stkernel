@@ -1,0 +1,12 @@
+{"verdict": "FAIL", "phase": "micro-cute-compile", "error": "DSLRuntimeError('\\n\\x1b[91m\\x1b[1m[Internal Error] The compiler hit a problem it could not trace back to your code.\\x1b[0m\\nThis is a bug in the DSL, not a mistake in your kernel.\\n\\n\\x1b[94mDetail:\\x1b[0m (Int32(?), Int32(?)) to integer conversion is not supported\\n\\n\\x1b[92mWhat to do:\\x1b[0m\\n  \\x1b[92mPlease report this with the snippet above and your kernel.\\x1b[0m\\n  \\x1b[92mRe-run with CUTE_DSL_SHOW_STACKTRACE=1 to include the full technical detail.\\x1b[0m\\n\\n====================================================================================================')", "contracts": null, "cuda_initialized": null}
+
+[91m[1m[Internal Error] The compiler hit a problem it could not trace back to your code.[0m
+This is a bug in the DSL, not a mistake in your kernel.
+
+[94mDetail:[0m (Int32(?), Int32(?)) to integer conversion is not supported
+
+[92mWhat to do:[0m
+  [92mPlease report this with the snippet above and your kernel.[0m
+  [92mRe-run with CUTE_DSL_SHOW_STACKTRACE=1 to include the full technical detail.[0m
+
+====================================================================================================

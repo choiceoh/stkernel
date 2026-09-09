@@ -1,0 +1,125 @@
+{
+  "adoption_acceptance": false,
+  "boot_only_arms": [
+    "B1"
+  ],
+  "canonical_verdict": {
+    "base": null,
+    "baseline_scope": {
+      "knobs": {
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1"
+      },
+      "session": "eplocalonepass0909v14"
+    },
+    "build": "95f7add944bd",
+    "cand": "EPONEPASS14A0",
+    "gates": [],
+    "harness": 40,
+    "objective": {
+      "metric": "decode_tokens"
+    },
+    "proof_ok": "4/4",
+    "runtime_attestation": "not recorded; launch identity requires external evidence",
+    "session": "eplocalonepass0909v14",
+    "status": "incomplete",
+    "t": "2026-09-09 10:27:27",
+    "verdict": "no baseline on this build"
+  },
+  "case_input_hash_continuity_verified": false,
+  "cold_compile": true,
+  "completed_arms": [
+    "A0"
+  ],
+  "effective_logger_level_verified": false,
+  "fixed_decode_tok_s": [
+    54.42930702739281,
+    57.58632201835868,
+    64.23118289254406
+  ],
+  "full_canary_pass_receipts": 0,
+  "full_sanitizer_acceptance": false,
+  "korean": {
+    "dirty": 0,
+    "hits": [],
+    "kinds": {
+      "cjk_mixed": 0,
+      "control": 0,
+      "lone_jamo": 0,
+      "replacement": 0
+    },
+    "n": 8
+  },
+  "mandatory_canary_gate": "PASS inferred from mandatory fail-closed source and post-load graph progress on all four strictly attributed workers",
+  "matched_baseline": false,
+  "onepass_records": 1,
+  "own_holder_after": false,
+  "payload_returncode": 143,
+  "per_case_numeric_metrics_available": false,
+  "performance_acceptance": false,
+  "prefill": [
+    {
+      "cold_s": 2.3728720599901862,
+      "cold_tok_s": 896.8035132955297,
+      "combined": false,
+      "ctx": 2000,
+      "tok": 2128,
+      "ttft_samples_s": [
+        2.3728720599901862,
+        0.8336055009858683,
+        0.8319979310035706
+      ],
+      "warm_s": 0.8319979310035706,
+      "warm_tok_s": 2557.698668112274
+    },
+    {
+      "cold_s": 10.247818519012071,
+      "cold_tok_s": 3175.7978480611755,
+      "combined": true,
+      "ctx": 32000,
+      "tok": 32545,
+      "ttft_samples_s": [
+        10.247818519012071
+      ],
+      "warm_s": 10.247818519012071,
+      "warm_tok_s": 3175.7978480611755
+    },
+    {
+      "cold_s": 39.21676182898227,
+      "cold_tok_s": 3278.164590963024,
+      "combined": true,
+      "ctx": 128000,
+      "tok": 128559,
+      "ttft_samples_s": [
+        39.21676182898227
+      ],
+      "warm_s": 39.21676182898227,
+      "warm_tok_s": 3278.164590963024
+    }
+  ],
+  "proof": {
+    "VLLM_B12X_EP_WARM_COMPACT": true,
+    "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": true,
+    "VLLM_GLM53_EP_PREFILL_LOCAL": true,
+    "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": true
+  },
+  "proof_ok": "4/4",
+  "quality": {
+    "ok": 18,
+    "total": 18
+  },
+  "recovery_deferred": true,
+  "recovery_policy": "idle-controller",
+  "requests": 8,
+  "returncode": 143,
+  "revision": "c3696a76c6674ad38e01967fa587b8d31a6d121e",
+  "schema": 1,
+  "session": "eplocalonepass0909v14",
+  "supervisor_pid": 3854513,
+  "ticket": "17889166573854513",
+  "unrun_arms": [
+    "A",
+    "B2",
+    "B3"
+  ],
+  "verdict": "A0_OBSERVED_CANCELLED_BEFORE_MATCHED_BASELINE"
+}

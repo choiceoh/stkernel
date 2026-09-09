@@ -1,0 +1,54 @@
+{
+  "10.10.10.1": {
+    "candidate_first_failure": {
+      "bad_rows": 1,
+      "max_row_relative_abs": 0.04054053872823715,
+      "max_row_relative_l2": 0.011912372894585133,
+      "phase": "changed-C2",
+      "stock_max_row_relative_abs": 0.021621622145175934,
+      "stock_max_row_relative_l2": 0.008761654607951641,
+      "verdict": "CANDIDATE_NUMERICS_FAIL"
+    },
+    "case": "concentrated6912",
+    "error": "AssertionError({'verdict': 'CANDIDATE_NUMERICS_FAIL', 'bad_rows': 1, 'max_row_relative_l2': 0.011912372894585133, 'max_row_relative_abs': 0.04054053872823715, 'stock_max_row_relative_l2': 0.008761654607951641, 'stock_max_row_relative_abs': 0.021621622145175934})",
+    "phase": "changed-C2",
+    "raw_stream_match": {
+      "line_sha256": "420c704fbce5c192fe3035b2285bb571ceb7b51de92c43972990b4ff3af780e6",
+      "stream_byte_offset": 212744
+    },
+    "weights_dtype": "torch.bfloat16"
+  },
+  "10.10.10.3": {
+    "candidate_first_failure": null,
+    "case": "short6",
+    "error": "AssertionError({'verdict': 'T6_PREP_BYTES_FAIL', 'tensor': 'weights', 'byte': 16, 'actual': 42, 'reference': 0})",
+    "phase": "initial",
+    "raw_stream_match": {
+      "line_sha256": "82a1c270b04c2206a0aa68d051caaf81a936a4ecd6521ebbcd847d2a4452a18f",
+      "stream_byte_offset": 218468
+    },
+    "weights_dtype": "torch.bfloat16"
+  },
+  "10.10.10.4": {
+    "candidate_first_failure": null,
+    "case": "short6",
+    "error": "AssertionError({'verdict': 'T6_PREP_BYTES_FAIL', 'tensor': 'weights', 'byte': 16, 'actual': 42, 'reference': 0})",
+    "phase": "initial",
+    "raw_stream_match": {
+      "line_sha256": "4ba5ddd33502b0ab2397db668084995830626e2c8ef64a2233b206ccc0227d5a",
+      "stream_byte_offset": 219658
+    },
+    "weights_dtype": "torch.bfloat16"
+  },
+  "local": {
+    "candidate_first_failure": null,
+    "case": "short6",
+    "error": "AssertionError({'verdict': 'T6_PREP_BYTES_FAIL', 'tensor': 'weights', 'byte': 16, 'actual': 42, 'reference': 0})",
+    "phase": "initial",
+    "raw_stream_match": {
+      "line_sha256": "5f09d422145be2d634d70806055f9d4feb442c5a223077d78392dc3d89ff57cc",
+      "stream_byte_offset": 274862
+    },
+    "weights_dtype": "torch.bfloat16"
+  }
+}

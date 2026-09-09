@@ -1,0 +1,20 @@
+{
+  "absent": [
+    "/tmp/glm53-ep-onepass-0909-26/onepass.jsonl",
+    "/tmp/glm53-ep-onepass-0909-26/verdicts.jsonl"
+  ],
+  "accepted": false,
+  "accepted_ticket": null,
+  "canonical_records": 0,
+  "new_cpu_compile": false,
+  "reason": "PREPARE REFUSED (no GPU hold): candidate must include relevant changes from 396675e62d5734e07412624f2b1a53778adef167:",
+  "required_main_revision": "396675e62d5734e07412624f2b1a53778adef167",
+  "returncode": 3,
+  "revision": "055914aeb719c1769e05cdb863e43a88b2ee47af",
+  "schema": 1,
+  "scope": "No GPU hold is the explicit startup admission refusal. No GPU numerics, serving result, throughput, recovery, or candidate-regression verdict exists for26.",
+  "session": "eplocalonepass0909v26",
+  "source": "/home/choiceoh/stkernel-ep-onepass-0909-25",
+  "supervisor_pid": 713884,
+  "verdict": "PRE_HOLD_SOURCE_FRESHNESS_REFUSAL"
+}

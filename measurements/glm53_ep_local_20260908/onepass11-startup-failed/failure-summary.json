@@ -1,0 +1,135 @@
+{
+  "adoption_acceptance": false,
+  "arm": "A0",
+  "canary_failure_count": 4,
+  "canary_pass_count": 0,
+  "failures": {
+    "10.10.10.1": {
+      "candidate_first_failure": null,
+      "candidate_pass_count": 0,
+      "duration_s": 3.0139567852020264,
+      "error": "AssertionError({'verdict': 'UNSTABLE_STOCK_CONTROL', 'bad_rows': 1, 'max_row_relative_l2': 0.012705177068710327, 'max_row_relative_abs': 0.06496062874794006})",
+      "phase": "initial",
+      "prefill_pass_cases": [
+        "concentrated6912",
+        "balanced4096",
+        "remote4096",
+        "duplicate4096",
+        "zeros4097",
+        "balanced8192"
+      ],
+      "raw_stream_match": {
+        "line_sha256": "d68ab156c01c0f164adf0b923100fc54a8f7fa3c643c7c0708dc99194d0dbd1f",
+        "stream_byte_offset": 44418
+      },
+      "short6_changed_reached": false,
+      "short6_initial_preparation_dtypes": [
+        "torch.bfloat16",
+        "torch.float32",
+        "torch.float16"
+      ]
+    },
+    "10.10.10.3": {
+      "candidate_first_failure": null,
+      "candidate_pass_count": 0,
+      "duration_s": 2.8771779537200928,
+      "error": "AssertionError({'verdict': 'UNSTABLE_STOCK_CONTROL', 'bad_rows': 2, 'max_row_relative_l2': 0.009488528594374657, 'max_row_relative_abs': 0.054901961237192154})",
+      "phase": "initial",
+      "prefill_pass_cases": [
+        "concentrated6912",
+        "balanced4096",
+        "remote4096",
+        "duplicate4096",
+        "zeros4097",
+        "balanced8192"
+      ],
+      "raw_stream_match": {
+        "line_sha256": "755a2d6922a5be2709d20abd00013eab26e2f6f23710fe3d6508e0f96f64d8a9",
+        "stream_byte_offset": 44527
+      },
+      "short6_changed_reached": false,
+      "short6_initial_preparation_dtypes": [
+        "torch.bfloat16",
+        "torch.float32",
+        "torch.float16"
+      ]
+    },
+    "10.10.10.4": {
+      "candidate_first_failure": null,
+      "candidate_pass_count": 0,
+      "duration_s": 2.891927480697632,
+      "error": "AssertionError({'verdict': 'UNSTABLE_STOCK_CONTROL', 'bad_rows': 1, 'max_row_relative_l2': 0.025591108947992325, 'max_row_relative_abs': 0.11758892983198166})",
+      "phase": "initial",
+      "prefill_pass_cases": [
+        "concentrated6912",
+        "balanced4096",
+        "remote4096",
+        "duplicate4096",
+        "zeros4097",
+        "balanced8192"
+      ],
+      "raw_stream_match": {
+        "line_sha256": "3fab233d1225b3d8e4db43aba82511d43be5384e80ce36a877b05cce105711c0",
+        "stream_byte_offset": 44221
+      },
+      "short6_changed_reached": false,
+      "short6_initial_preparation_dtypes": [
+        "torch.bfloat16",
+        "torch.float32",
+        "torch.float16"
+      ]
+    },
+    "local": {
+      "candidate_first_failure": {
+        "bad_rows": 1,
+        "max_row_relative_abs": 0.04106280207633972,
+        "max_row_relative_l2": 0.014351801946759224,
+        "phase": "initial-C3",
+        "stock_max_row_relative_abs": 0.010273972526192665,
+        "stock_max_row_relative_l2": 0.008013932965695858,
+        "verdict": "CANDIDATE_NUMERICS_FAIL"
+      },
+      "candidate_pass_count": 2,
+      "duration_s": 4.899496555328369,
+      "error": "AssertionError({'verdict': 'CANDIDATE_NUMERICS_FAIL', 'bad_rows': 1, 'max_row_relative_l2': 0.014351801946759224, 'max_row_relative_abs': 0.04106280207633972, 'stock_max_row_relative_l2': 0.008013932965695858, 'stock_max_row_relative_abs': 0.010273972526192665})",
+      "phase": "initial-C3",
+      "prefill_pass_cases": [
+        "concentrated6912",
+        "balanced4096",
+        "remote4096",
+        "duplicate4096",
+        "zeros4097",
+        "balanced8192"
+      ],
+      "raw_stream_match": {
+        "line_sha256": "2ce26a9e40e539c6bcff2646ee6911930ceb927e1c2faea14ce9af6581199ee8",
+        "stream_byte_offset": 58662
+      },
+      "short6_changed_reached": false,
+      "short6_initial_preparation_dtypes": [
+        "torch.bfloat16",
+        "torch.float32",
+        "torch.float16"
+      ]
+    }
+  },
+  "full_sanitizer_acceptance": false,
+  "later_arms_started": [],
+  "onepass_request_records": 0,
+  "own_holder_after": false,
+  "payload_returncode": 1,
+  "performance_acceptance": false,
+  "prefill_case_pass_count": 24,
+  "returncode": 1,
+  "revision": "c7dec80a0f73d4a2b683ce2c4813978938694095",
+  "same_old_weight_and_concentrated_input_identity": true,
+  "schema": 1,
+  "scope": "A0 startup self-test only. Normal onepass HTTP workload did not start. Source bytes are independently bound to frozen Git revision; no running-container snapshot/image attribution was completed.",
+  "session": "eplocalonepass0909v11",
+  "short6_changed_reached": false,
+  "short6_initial_preparation_exact_variants": 12,
+  "strict_arm_snapshots": 0,
+  "supervisor_pid": 3671585,
+  "ticket": "17889136023671585",
+  "verdict": "STARTUP_CANARY_FAIL"
+}

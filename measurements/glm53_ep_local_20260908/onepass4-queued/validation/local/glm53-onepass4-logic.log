@@ -1,0 +1,365 @@
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.054s
+
+OK
+[osar] VLLM_GLM53_AR_PREFETCH=40 MB is outside 1..20; off
+[osar] VLLM_GLM53_AR_PREFETCH='x' is not 0, 1 or an MB count; off
+[osar] prefetch hints learned (target): 2 collectives, 12.6 MB in total
+[osar] prefetch hints learned (drafter): 1 collectives, 0.0 MB in total
+nd_required_file_refuse_reuse) ... ok
+test_clean_guard_is_literal_and_comments_not_executed (test_fleet_prepare.PrepareTests.test_clean_guard_is_literal_and_comments_not_executed) ... ok
+test_deployment_target_resolves_wrapper_checkout_and_exported_image (test_fleet_prepare.PrepareTests.test_deployment_target_resolves_wrapper_checkout_and_exported_image) ... ok
+test_direct_deploy_and_literal_private_wrapper_resolve_target (test_fleet_prepare.PrepareTests.test_direct_deploy_and_literal_private_wrapper_resolve_target) ... ok
+test_dynamic_wrapper_requires_explicit_signed_deployment_target (test_fleet_prepare.PrepareTests.test_dynamic_wrapper_requires_explicit_signed_deployment_target) ... ok
+test_external_campaign_guard_uses_execution_checkout (test_fleet_prepare.PrepareTests.test_external_campaign_guard_uses_execution_checkout) ... ok
+test_forged_and_tampered_receipts_are_refused_before_cpu (test_fleet_prepare.PrepareTests.test_forged_and_tampered_receipts_are_refused_before_cpu) ... ok
+test_go_cannot_downgrade_authenticated_receipt_to_legacy (test_fleet_prepare.PrepareTests.test_go_cannot_downgrade_authenticated_receipt_to_legacy) ... ERROR
+test_literal_env_prefix_resolves_sources_targets_and_unsets (test_fleet_prepare.PrepareTests.test_literal_env_prefix_resolves_sources_targets_and_unsets) ... ok
+test_missing_entrypoint_is_refused_but_inline_code_is_not_a_filename (test_fleet_prepare.PrepareTests.test_missing_entrypoint_is_refused_but_inline_code_is_not_a_filename) ... ok
+test_paused_check_cli_returns_editable_status_four (test_fleet_prepare.PrepareTests.test_paused_check_cli_returns_editable_status_four) ... ok
+test_quoted_clean_guard_is_recognized (test_fleet_prepare.PrepareTests.test_quoted_clean_guard_is_recognized) ... ok
+test_recovery_reclaim_does_not_reapply_payload_preparation (test_fleet_prepare.PrepareTests.test_recovery_reclaim_does_not_reapply_payload_preparation) ... ok
+test_reuse_binds_requested_gpu_environment_and_image_identity (test_fleet_prepare.PrepareTests.test_reuse_binds_requested_gpu_environment_and_image_identity) ... ok
+test_unaudited_and_unexecuted_cpu_commands_cannot_claim_reuse (test_fleet_prepare.PrepareTests.test_unaudited_and_unexecuted_cpu_commands_cannot_claim_reuse) ... ok
+test_unchanged_inputs_validate_without_reexecuting_cpu (test_fleet_prepare.PrepareTests.test_unchanged_inputs_validate_without_reexecuting_cpu) ... ok
+test_validate_targets_uses_cli_target_and_rejects_changed_candidate_source (test_fleet_prepare.PrepareTests.test_validate_targets_uses_cli_target_and_rejects_changed_candidate_source) ... ok
+test_default_reuses_approved_source_after_main_advances_and_fetches_once (test_fleet_recovery.RecoveryTests.test_default_reuses_approved_source_after_main_advances_and_fetches_once) ... ok
+test_hold_never_starts_preparation_and_missing_old_helper_fails_closed (test_fleet_recovery.RecoveryTests.test_hold_never_starts_preparation_and_missing_old_helper_fails_closed) ... ok
+test_refresh_updates_only_after_success_and_migration_selects_newest_release (test_fleet_recovery.RecoveryTests.test_refresh_updates_only_after_success_and_migration_selects_newest_release) ... ok
+test_setup_and_refresh_use_source_helper_after_controller_changes (test_fleet_recovery.RecoveryTests.test_setup_and_refresh_use_source_helper_after_controller_changes) ... ok
+test_controller_pin_roundtrip_covers_campaign_bytes (test_fleet_retry.RetryTests.test_controller_pin_roundtrip_covers_campaign_bytes) ... ok
+test_failed_prerequisite_stays_failed_and_is_not_silently_retried (test_fleet_retry.RetryTests.test_failed_prerequisite_stays_failed_and_is_not_silently_retried) ... ok
+test_historical_controller_retry_runs_pinned_current_code_with_saved_source (test_fleet_retry.RetryTests.test_historical_controller_retry_runs_pinned_current_code_with_saved_source) ... ok
+test_legacy_controller_pin_accepts_only_original_bench_files (test_fleet_retry.RetryTests.test_legacy_controller_pin_accepts_only_original_bench_files) ... ok
+test_missing_failed_baseline_retries_once_only_for_explicit_attempt (test_fleet_retry.RetryTests.test_missing_failed_baseline_retries_once_only_for_explicit_attempt) ... ok
+test_retry_still_blocks_on_a_different_failed_shared_cpu_owner (test_fleet_retry.RetryTests.test_retry_still_blocks_on_a_different_failed_shared_cpu_owner) ... ok
+test_valid_cpu_cache_is_reused_and_failed_cache_is_never_success (test_fleet_retry.RetryTests.test_valid_cpu_cache_is_reused_and_failed_cache_is_never_success) ... ok
+test_baseline_worker_reclaims_legacy_orphan_before_verification (test_fleet_runtime.RuntimeTests.test_baseline_worker_reclaims_legacy_orphan_before_verification) ... ok
+test_dead_retired_or_oversized_head_does_not_strand_followers (test_fleet_runtime.RuntimeTests.test_dead_retired_or_oversized_head_does_not_strand_followers) ... ok
+test_failed_transaction_restores_baseline_demand_and_queue (test_fleet_runtime.RuntimeTests.test_failed_transaction_restores_baseline_demand_and_queue) ... ok
+test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries (test_fleet_runtime.RuntimeTests.test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries) ... ok
+test_live_workers_admit_wide_request_before_later_small_request (test_fleet_runtime.RuntimeTests.test_live_workers_admit_wide_request_before_later_small_request) ... ok
+test_resource_timeout_cleans_only_its_waiter (test_fleet_runtime.RuntimeTests.test_resource_timeout_cleans_only_its_waiter) ... ok
+test_running_held_manual_and_incomplete_baseline_demand_is_preserved (test_fleet_runtime.RuntimeTests.test_running_held_manual_and_incomplete_baseline_demand_is_preserved) ... ok
+test_shared_baseline_survives_until_its_last_consumer_fails (test_fleet_runtime.RuntimeTests.test_shared_baseline_survives_until_its_last_consumer_fails) ... ok
+test_duration_assignment_balances_cost_and_keeps_exact_coverage (test_fleet_runtime.TimingTests.test_duration_assignment_balances_cost_and_keeps_exact_coverage) ... ok
+test_malformed_assignment_cannot_skip_or_duplicate_tests (test_fleet_runtime.TimingTests.test_malformed_assignment_cannot_skip_or_duplicate_tests) ... ok
+test_recorded_timings_are_reused_but_changed_test_files_are_not (test_fleet_runtime.TimingTests.test_recorded_timings_are_reused_but_changed_test_files_are_not) ... ok
+test_changed_audited_test_falls_back_and_docs_then_invalidate (test_fleet_source.CpuSourceTests.test_changed_audited_test_falls_back_and_docs_then_invalidate) ... ok
+test_logic_docs_reuse_reports_and_real_changes_invalidate (test_fleet_source.CpuSourceTests.test_logic_docs_reuse_reports_and_real_changes_invalidate) ... FAIL
+test_deploy_source_guard_cli_checks_the_requested_ref (test_fleet_source.SourceTests.test_deploy_source_guard_cli_checks_the_requested_ref) ... ok
+test_literal_wrapper_guard_runs_before_gpu_work (test_fleet_source.SourceTests.test_literal_wrapper_guard_runs_before_gpu_work) ... ok
+test_prior_evidence_environment_input_is_never_discarded (test_fleet_source.SourceTests.test_prior_evidence_environment_input_is_never_discarded) ... ok
+test_required_main_rejects_real_code_even_if_candidate_has_other_changes (test_fleet_source.SourceTests.test_required_main_rejects_real_code_even_if_candidate_has_other_changes) ... ok
+test_wrapper_audit_closes_when_execution_contract_changes (test_fleet_source.SourceTests.test_wrapper_audit_closes_when_execution_contract_changes) ... ok
+test_all_launcher_overrides_are_cleared_before_health_deploy_and_boot (test_fleet_validation.ValidationTests.test_all_launcher_overrides_are_cleared_before_health_deploy_and_boot) ... ok
+test_chat_default_recovery_ignores_candidate_paths_and_unknown_inputs_fail (test_fleet_validation.ValidationTests.test_chat_default_recovery_ignores_candidate_paths_and_unknown_inputs_fail) ... ok
+test_chat_tokenizer_change_blocks_hold_without_rerunning (test_fleet_validation.ValidationTests.test_chat_tokenizer_change_blocks_hold_without_rerunning) ... ok
+test_cli_selects_configured_interpreter_and_recovery_descriptor_store (test_fleet_validation.ValidationTests.test_cli_selects_configured_interpreter_and_recovery_descriptor_store) ... ok
+test_deploy_adopts_source_helper_when_old_runner_has_none (test_fleet_validation.ValidationTests.test_deploy_adopts_source_helper_when_old_runner_has_none) ... ok
+test_hold_miss_fails_without_running_and_hit_reuses (test_fleet_validation.ValidationTests.test_hold_miss_fails_without_running_and_hit_reuses) ... ok
+test_merge_metadata_preserves_preprimed_same_content_receipt (test_fleet_validation.ValidationTests.test_merge_metadata_preserves_preprimed_same_content_receipt) ... ok
+test_new_restore_requires_prepared_receipt (test_fleet_validation.ValidationTests.test_new_restore_requires_prepared_receipt) ... ok
+test_optional_fixed_checkpoint_is_bound_independently_of_selected_model (test_fleet_validation.ValidationTests.test_optional_fixed_checkpoint_is_bound_independently_of_selected_model) ... ok
+test_recovery_descriptor_change_and_checkout_change_fail_closed (test_fleet_validation.ValidationTests.test_recovery_descriptor_change_and_checkout_change_fail_closed) ... ok
+test_restore_shell_uses_receipt_without_fetch_and_isolates_candidate_environment (test_fleet_validation.ValidationTests.test_restore_shell_uses_receipt_without_fetch_and_isolates_candidate_environment) ... ok
+test_sanitized_runtime_keeps_user_site_dependencies_and_binds_customization (test_fleet_validation.ValidationTests.test_sanitized_runtime_keeps_user_site_dependencies_and_binds_customization) ... ok
+
+======================================================================
+ERROR: test_go_cannot_downgrade_authenticated_receipt_to_legacy (test_fleet_prepare.PrepareTests.test_go_cannot_downgrade_authenticated_receipt_to_legacy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_prepare.py", line 349, in test_go_cannot_downgrade_authenticated_receipt_to_legacy
+    prep.check_pending(self.directory,'fixture',external=False)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/fleet_prepare.py", line 661, in check_pending
+    controller = Path(record['fleet']).resolve().parent.parent
+                      ~~~~~~^^^^^^^^^
+KeyError: 'fleet'
+
+======================================================================
+FAIL: test_contract_cache_reuses_unrelated_changes_and_invalidates_inputs (test_fleet_coalescing.CoalescingTests.test_contract_cache_reuses_unrelated_changes_and_invalidates_inputs)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_coalescing.py", line 307, in test_contract_cache_reuses_unrelated_changes_and_invalidates_inputs
+    self.assertEqual(first['scope'],'audited-contracts')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'full-tree' != 'audited-contracts'
+- full-tree
++ audited-contracts
+
+
+======================================================================
+FAIL: test_logic_docs_reuse_reports_and_real_changes_invalidate (test_fleet_source.CpuSourceTests.test_logic_docs_reuse_reports_and_real_changes_invalidate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_source.py", line 199, in test_logic_docs_reuse_reports_and_real_changes_invalidate
+    self.assertEqual(before['scope'], 'audited-logic')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'full-tree' != 'audited-logic'
+- full-tree
++ audited-logic
+
+
+----------------------------------------------------------------------
+Ran 177 tests in 58.912s
+
+FAILED (failures=2, errors=1)
+PREPARE PAUSED (reservation retained): input changed
+
+is_included) ... ok
+test_doc_and_measurement_commit_preserves_effective_source (test_fleet_source.SourceTests.test_doc_and_measurement_commit_preserves_effective_source) ... ok
+test_measurement_runner_and_new_executable_are_required_main (test_fleet_source.SourceTests.test_measurement_runner_and_new_executable_are_required_main) ... ok
+test_required_main_allows_only_upstream_documentation (test_fleet_source.SourceTests.test_required_main_allows_only_upstream_documentation) ... ok
+test_script_mode_symlink_and_declared_docs_remain_dependencies (test_fleet_source.SourceTests.test_script_mode_symlink_and_declared_docs_remain_dependencies) ... ok
+test_admission_does_not_run_release_gates_or_scan_ml_dependencies (test_fleet_validation.ValidationTests.test_admission_does_not_run_release_gates_or_scan_ml_dependencies) ... ok
+test_changed_tests_never_silently_reuse (test_fleet_validation.ValidationTests.test_changed_tests_never_silently_reuse) ... ok
+test_chat_image_change_invalidates_and_executes_immutable_image (test_fleet_validation.ValidationTests.test_chat_image_change_invalidates_and_executes_immutable_image) ... ok
+test_cli_rejects_invalid_missing_and_symlink_interpreter_configuration (test_fleet_validation.ValidationTests.test_cli_rejects_invalid_missing_and_symlink_interpreter_configuration) ... ok
+test_concurrent_preparation_executes_fixed_gate_once (test_fleet_validation.ValidationTests.test_concurrent_preparation_executes_fixed_gate_once) ... ok
+test_failed_and_incomplete_coverage_never_create_receipts (test_fleet_validation.ValidationTests.test_failed_and_incomplete_coverage_never_create_receipts) ... ok
+test_identical_source_and_sanitized_environment_reuse (test_fleet_validation.ValidationTests.test_identical_source_and_sanitized_environment_reuse) ... ok
+test_missing_test_is_not_empty_success (test_fleet_validation.ValidationTests.test_missing_test_is_not_empty_success) ... ok
+test_only_new_managed_holders_default_to_admission (test_fleet_validation.ValidationTests.test_only_new_managed_holders_default_to_admission) ... ok
+test_recovery_cannot_certify_candidate_profile_or_runtime (test_fleet_validation.ValidationTests.test_recovery_cannot_certify_candidate_profile_or_runtime) ... ok
+test_recovery_keeps_validated_approved_source_when_main_advances (test_fleet_validation.ValidationTests.test_recovery_keeps_validated_approved_source_when_main_advances) ... ok
+test_runtime_change_rejects_old_required_receipt (test_fleet_validation.ValidationTests.test_runtime_change_rejects_old_required_receipt) ... ok
+test_tampered_artifact_cannot_be_consumed_during_hold (test_fleet_validation.ValidationTests.test_tampered_artifact_cannot_be_consumed_during_hold) ... ok
+
+======================================================================
+ERROR: test_failed_check_passes_exact_record_to_pause_callback (test_fleet_prepare.PrepareTests.test_failed_check_passes_exact_record_to_pause_callback)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_prepare.py", line 153, in test_failed_check_passes_exact_record_to_pause_callback
+    prep.check_pending(self.directory,'fixture',withdraw_failed=True)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/fleet_prepare.py", line 661, in check_pending
+    controller = Path(record['fleet']).resolve().parent.parent
+                      ~~~~~~^^^^^^^^^
+KeyError: 'fleet'
+
+======================================================================
+ERROR: test_go_checks_transitive_source_without_reexecuting_cpu (test_fleet_prepare.PrepareTests.test_go_checks_transitive_source_without_reexecuting_cpu)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_prepare.py", line 337, in test_go_checks_transitive_source_without_reexecuting_cpu
+    prep.check_pending(self.directory,'fixture',external=False)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/fleet_prepare.py", line 661, in check_pending
+    controller = Path(record['fleet']).resolve().parent.parent
+                      ~~~~~~^^^^^^^^^
+KeyError: 'fleet'
+
+======================================================================
+ERROR: test_manifest_matches_edited_command_and_is_private (test_fleet_prepare.PrepareTests.test_manifest_matches_edited_command_and_is_private)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_prepare.py", line 214, in test_manifest_matches_edited_command_and_is_private
+    with self.assertRaisesRegex(ValueError,'does not match'): prep.check_pending(self.directory,'fixture')
+                                                              ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/fleet_prepare.py", line 661, in check_pending
+    controller = Path(record['fleet']).resolve().parent.parent
+                      ~~~~~~^^^^^^^^^
+KeyError: 'fleet'
+
+======================================================================
+ERROR: test_release_evidence_drift_pauses_before_go_and_local_check_stays_pure (test_fleet_prepare.PrepareTests.test_release_evidence_drift_pauses_before_go_and_local_check_stays_pure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_prepare.py", line 545, in test_release_evidence_drift_pauses_before_go_and_local_check_stays_pure
+    prep.check_pending(self.directory,'fixture',external=False,withdraw_failed=True)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/fleet_prepare.py", line 661, in check_pending
+    controller = Path(record['fleet']).resolve().parent.parent
+                      ~~~~~~^^^^^^^^^
+KeyError: 'fleet'
+
+======================================================================
+ERROR: test_same_modern_record_or_missing_record_cannot_swallow_failed_pause (test_fleet_prepare.PrepareTests.test_same_modern_record_or_missing_record_cannot_swallow_failed_pause) (current={'state': 'queued', 'prepare_manifest': '/var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmpy8t0k975/fleet/preparations/aa0e36ece3b74ce3ba02f7a948c8f375.json', 'command': ['/opt/homebrew/opt/python@3.14/bin/python3.14', 'input.py'], 'cwd': '/private/var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmpy8t0k975/repo', 'ticket': '1', 'pid': 123, 'start': 'same', 'revision': 1, 'pause_protocol': 1})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_prepare.py", line 198, in test_same_modern_record_or_missing_record_cannot_swallow_failed_pause
+    prep.check_pending(self.directory,'fixture',withdraw_failed=True)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/fleet_prepare.py", line 661, in check_pending
+    controller = Path(record['fleet']).resolve().parent.parent
+                      ~~~~~~^^^^^^^^^
+KeyError: 'fleet'
+
+======================================================================
+ERROR: test_same_modern_record_or_missing_record_cannot_swallow_failed_pause (test_fleet_prepare.PrepareTests.test_same_modern_record_or_missing_record_cannot_swallow_failed_pause) (current=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_prepare.py", line 198, in test_same_modern_record_or_missing_record_cannot_swallow_failed_pause
+    prep.check_pending(self.directory,'fixture',withdraw_failed=True)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/fleet_prepare.py", line 661, in check_pending
+    controller = Path(record['fleet']).resolve().parent.parent
+                      ~~~~~~^^^^^^^^^
+KeyError: 'fleet'
+
+======================================================================
+ERROR: test_unsupported_legacy_pause_still_withdraws_failed_matching_ticket (test_fleet_prepare.PrepareTests.test_unsupported_legacy_pause_still_withdraws_failed_matching_ticket)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_prepare.py", line 179, in test_unsupported_legacy_pause_still_withdraws_failed_matching_ticket
+    prep.check_pending(self.directory,'fixture',withdraw_failed=True)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/bench/fleet_prepare.py", line 661, in check_pending
+    controller = Path(record['fleet']).resolve().parent.parent
+                      ~~~~~~^^^^^^^^^
+KeyError: 'fleet'
+
+======================================================================
+FAIL: test_auto_contract_plan_falls_back_for_unknown_changes_and_blocks_faults (test_fleet_coalescing.CoalescingTests.test_auto_contract_plan_falls_back_for_unknown_changes_and_blocks_faults)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_coalescing.py", line 322, in test_auto_contract_plan_falls_back_for_unknown_changes_and_blocks_faults
+    self.assertEqual(cpu_contracts.changed_contracts(self.repo,base),['math'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != ['math']
+
+======================================================================
+FAIL: test_managed_wait_exits_after_retirement_without_requeue (test_fleet_coalescing.CoalescingTests.test_managed_wait_exits_after_retirement_without_requeue)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_coalescing.py", line 291, in test_managed_wait_exits_after_retirement_without_requeue
+    self.assertNotIn(old,(self.fleet/'queue').read_text())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'cd737d28d1464f52a158' unexpectedly found in '1|exp-cd737d28d1464f52a158|0|1|old|boot|64671\n'
+
+======================================================================
+FAIL: test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits (test_fleet_feedback.FeedbackTests.test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908/tests/test_fleet_feedback.py", line 368, in test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits
+    self.assertEqual(one['scope'],'audited-fleet')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'full-tree' != 'audited-fleet'
+- full-tree
++ audited-fleet
+
+
+----------------------------------------------------------------------
+Ran 171 tests in 59.340s
+
+FAILED (failures=3, errors=7)
+
+  skip_topk rule ................ OK
+  rank cache eviction contracts .. OK
+  nvfp4 static scale contracts .. OK
+  prefill chunker budgets ....... OK
+  indexer-SP shard coverage ..... OK
+  helper functions .............. OK
+  profile-step buckets/union .... OK
+  bench-dec acceptance parser ... OK
+  overlay manifests (85 files across dsv4, glm53) .... OK
+  composed snapshot sync (85 files) . OK
+  overlay symbol contracts (122, per composition incl. orphans) ... OK
+  profile env carried (109 knobs) ... OK
+  profile keys have readers (152) ... OK
+  bf16-release guards ........... OK
+  DSpark speed-path guards ...... OK
+  acceptance lever guards ....... OK
+  ngram-ceiling sim math ........ OK
+  UE8M0 scale repair ............. SKIP (no torch on this host)
+  EP stock top-k chunks .......... OK
+  EP fixed/stock output init ..... OK
+  b12x zero-weight micro ......... OK
+  GLM53 b12x tuning controls ..... OK
+  b12x static v2 controls ........ OK
+  b12x SF 6-bit pack ............ OK (skipped: no torch)
+  EP micro chunk width .......... OK
+  EP tail fixed shape ........... OK
+  EP compact shape align ........ OK
+  EP compact warmup ladder ...... OK
+  *_once args hashable .......... OK
+  dflash2 selector check ........ OK
+  dflash2 selector score precision  SKIP (no torch on this host)
+  overlay logger defined ........ OK
+  osar MAXEL rank agreement ..... OK
+  bench served-model resolve .... OK
+  extra-env comma guard ......... OK
+  torch imports guarded ......... OK
+  dflash2 conv mask buffer ....... OK
+  dflash AOT guard stays removed  OK
+  hot-path env latches ........... OK
+  launcher load-format gate ..... OK
+  launcher reject-method gate ... OK
+  dflash2 prefix-cache fail-closed  OK
+  accept profile arithmetic ..... OK
+  DSV4 launcher adoptions ....... OK
+  launcher nofile limit ......... OK
+  prefill ladder probe .......... OK
+  fp8 acceptance contracts ....... OK
+  glm53 V2/deploy contracts ...... OK
+  launcher head guard .......... OK
+  preflight applies GMU ......... OK
+  no hardcoded image paths ...... OK
+  b12x EP routing ................ OK (tensor remap skipped)
+  b12x EP preflight .............. OK
+  b12x EP launcher ............... OK
+  deploy refusal exits non-zero .. OK
+  fp8-dense nvfp4 scheme contract .. OK
+  benches ask the server for the model .. OK
+  korean gate notation vs damage .. OK
+  every module is mounted or explained .. OK
+  profile knobs are all readable .. OK
+  fp8-dense bf16 release contract .. OK
+  mhc probe contracts ............ OK
+  mhc bigfuse knob ............... OK
+  census KDA group ............... OK
+  census owner axis .............. OK
+  census streaming reader ....... OK
+  trace step tail cut ........... OK
+  profiles README module table .. OK
+  dflash warmup buckets .......... OK
+  DSV4 spec warmup contract ...... OK
+  DSV4 UE8M0 host guard ......... SKIP values (no torch)
+  glm53 kpool packed scratch contract ... SKIP (no torch on this host)
+  GLM53 KDA prefill regimes ....... OK
+  GLM53 KDA prefill direct out ... OK
+  GLM53 upstream prefill batch ..... OK
+  one-shot SM121 grid contract .... OK
+  cuda builds keep the sm_121a-specific target .. OK
+  self-built kernels persist their caches .. OK
+  boot stamps measure without changing the boot .. OK
+  cudagraph mem profiling off keeps kv size .. OK
+  kv cache is pinned in tokens ... OK
+  earlyoom fireable on UMA ...... OK
+  fp8-dense drafter patterns + opaque op .. OK
+  spec_k compile factor .. OK
+  dev lab contracts .. OK
+  mk head lane contracts .......... OK
+  ab runner measures both ....... OK
+  osar wait is split by message size .. OK
+  osar prefetch hints contract .. OK
+  glm53_dflash_early_fc contracts .. OK
+  glm53_drafter_prep contracts .... OK
+  indexer decode fused contracts .. OK
+  drafter ctx-KV W4 contracts ..... OK
+  trace step nodes tool ........... OK
+  micro-fusion bundle 2 contracts .. OK
+  glm53 megakernel contracts .. OK
+  prefill warmup contracts ... OK
+  w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)
+  megakernel core is shared ..... OK
+  glm53 prep fused contracts .. OK
+  launcher continued-string assignments carry no comments .. OK
+  launcher restores PREFILL_WARMUP from caller env .. OK
+  decode-first scheduler contracts .. OK
+  profile keys not via EXTRA_ENV .. OK
+  kv-zero guard ................ OK
+  glm53 IndexCache layer rule ... OK
+  glm53 indexer gate split-K contracts .. OK
+  bracket runner contracts .. OK
+  trace composition analyze .. OK
+  drafter fc probe contracts .. OK
+  fp8-dense build peak .......... OK
+  hy4 entry point parity ........ OK
+  common tp4 library ............ OK
+  worker envv not re-parsed ..... OK
+  supervisor relaunch pacing .... OK
+Ran 348 tests in 2 isolated shards: FAILED
+FAIL: fleet asynchronous submissions, prerequisites and evidence contracts

@@ -1,0 +1,204 @@
+{
+  "adoption_acceptance": false,
+  "canary_cases": 32,
+  "candidate_comparisons": 192,
+  "canonical_verdicts": [
+    {
+      "base": null,
+      "baseline_scope": {
+        "knobs": {
+          "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+          "VLLM_GLM53_STARTUP_TRIM": "1"
+        },
+        "session": "eplocalonepass0909v23"
+      },
+      "build": "34a6dbe5551f",
+      "cand": "EPONEPASS23A0",
+      "gates": [],
+      "harness": 40,
+      "objective": {
+        "metric": "decode_tokens"
+      },
+      "proof_ok": "3/3",
+      "runtime_attestation": "not recorded; launch identity requires external evidence",
+      "session": "eplocalonepass0909v23",
+      "status": "incomplete",
+      "t": "2026-09-09 13:07:39",
+      "verdict": "no baseline on this build"
+    }
+  ],
+  "completed": [
+    {
+      "arm": "A0",
+      "fixed_decode_tok_s": [
+        68.62032850640038,
+        80.96723712205292,
+        69.53618721720129
+      ],
+      "fixed_pooled_tok_s": 72.6311057112274,
+      "korean": {
+        "dirty": 0,
+        "hits": [],
+        "kinds": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "n": 8
+      },
+      "onepass_record_sha256": "6572318bff769c14146f6a2dc72efdf2e14147a498d57dbbd2b2470aa987baf1",
+      "prefill": [
+        {
+          "cold_s": 2.3591788859921508,
+          "cold_tok_s": 902.008750856157,
+          "combined": false,
+          "ctx": 2000,
+          "tok": 2128,
+          "ttft_samples_s": [
+            2.3591788859921508,
+            0.8769756850088015,
+            0.871425035991706
+          ],
+          "warm_s": 0.871425035991706,
+          "warm_tok_s": 2441.977120359271
+        },
+        {
+          "cold_s": 10.723170173994731,
+          "cold_tok_s": 3035.016648241434,
+          "combined": true,
+          "ctx": 32000,
+          "tok": 32545,
+          "ttft_samples_s": [
+            10.723170173994731
+          ],
+          "warm_s": 10.723170173994731,
+          "warm_tok_s": 3035.016648241434
+        },
+        {
+          "cold_s": 40.94011882896302,
+          "cold_tok_s": 3140.17163792527,
+          "combined": true,
+          "ctx": 128000,
+          "tok": 128559,
+          "ttft_samples_s": [
+            40.94011882896302
+          ],
+          "warm_s": 40.94011882896302,
+          "warm_tok_s": 3140.17163792527
+        }
+      ],
+      "proof_ok": "3/3",
+      "quality": {
+        "ok": 18,
+        "total": 18
+      }
+    },
+    {
+      "arm": "B1",
+      "fixed_decode_tok_s": [
+        70.80532496274192,
+        71.04733140354858,
+        67.2567756658834
+      ],
+      "fixed_pooled_tok_s": 69.65931440146099,
+      "korean": {
+        "dirty": 0,
+        "hits": [],
+        "kinds": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "n": 8
+      },
+      "onepass_record_sha256": "4f57738f8c4b3a9f350ea78ac75f44688b905d301f48b1cdf816c59dd196836d",
+      "prefill": [
+        {
+          "cold_s": 1.9026444530463777,
+          "cold_tok_s": 1118.4433311188536,
+          "combined": false,
+          "ctx": 2000,
+          "tok": 2128,
+          "ttft_samples_s": [
+            1.9026444530463777,
+            0.8876233350019902,
+            0.8737710859859362
+          ],
+          "warm_s": 0.8737710859859362,
+          "warm_tok_s": 2435.420482698659
+        },
+        {
+          "cold_s": 10.786611409042962,
+          "cold_tok_s": 3017.1662597130253,
+          "combined": true,
+          "ctx": 32000,
+          "tok": 32545,
+          "ttft_samples_s": [
+            10.786611409042962
+          ],
+          "warm_s": 10.786611409042962,
+          "warm_tok_s": 3017.1662597130253
+        },
+        {
+          "cold_s": 41.600333757989574,
+          "cold_tok_s": 3090.3357830707196,
+          "combined": true,
+          "ctx": 128000,
+          "tok": 128559,
+          "ttft_samples_s": [
+            41.600333757989574
+          ],
+          "warm_s": 41.600333757989574,
+          "warm_tok_s": 3090.3357830707196
+        }
+      ],
+      "proof_ok": "2/2",
+      "quality": {
+        "ok": 18,
+        "total": 18
+      }
+    }
+  ],
+  "completed_arms": [
+    "A0",
+    "B1"
+  ],
+  "full_canary_pass_receipts": 8,
+  "full_sanitizer_acceptance": false,
+  "matched_warm_A_record": false,
+  "onepass_records": 2,
+  "own_holder_after": false,
+  "partial_arm": "A",
+  "payload_returncode": 1,
+  "performance_acceptance": false,
+  "q0_comparisons": 192,
+  "recovery_deferred": true,
+  "recovery_policy": "idle-controller",
+  "returncode": 1,
+  "revision": "cbf1c7916247f946167c15ff74d92261588e8cea",
+  "schema": 1,
+  "session": "eplocalonepass0909v23",
+  "stock_control_comparisons": 192,
+  "supervisor_pid": 262324,
+  "termination": {
+    "action": "SIGTERM",
+    "at_utc": "2026-09-09T04:23:49Z",
+    "available_memory_mib": 5858,
+    "available_percent": 4.78,
+    "source": "head earlyoom journal",
+    "worker_pid": 365084
+  },
+  "ticket": "1788926263262324",
+  "unrun_arms": [
+    "B2",
+    "B3"
+  ],
+  "verdict": "WARM_A_INFRASTRUCTURE_FAILURE_BEFORE_FIXED_DECODE",
+  "warm_A_fixed_decode_tok_s": [],
+  "warm_A_fixed_pooled_tok_s": null,
+  "warm_A_korean": null,
+  "warm_A_proof_ok": null,
+  "warm_A_quality": null
+}

@@ -1,0 +1,28 @@
+{
+  "command": "/Users/ost/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 -B -m unittest discover -s tests -p test_glm53_ep_numerics_diagnostics.py -v",
+  "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+  "tests_run": 8,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "seconds": 0.002,
+  "accelerator_used": false,
+  "log": {
+    "path": "/tmp/glm53-cpu17-numerics-diagnostics-tests.log",
+    "sha256": "d7ef2c7e259a6382d3f69c00a5a3025766664a0383da08aa3b03addc7506db8a"
+  },
+  "files": {
+    "probes/glm53_ep_local_check.py": {
+      "sha256": "38478be52b8b645bb6b770709a308a7e0f099335cae5c6db8204255c8bcfcdec",
+      "bytes": 14998
+    },
+    "probes/glm53_ep_numerics_diagnostics.py": {
+      "sha256": "e41b5a39873dd8322f4ba40e5c3202c36bdc905a4a267554e1a2947fb31e0a1e",
+      "bytes": 5602
+    },
+    "tests/test_glm53_ep_numerics_diagnostics.py": {
+      "sha256": "893dc3bb917dc26153e9b074a829a319bb468c5c9391b2a25c70aa538ac7b206",
+      "bytes": 11260
+    }
+  }
+}

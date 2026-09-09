@@ -1,0 +1,7 @@
+{
+  "source_revision": "cd293e19c146bd52c3419b064af209b57b2555d9",
+  "source_path": "overlay/modules/glm53_moe/moe_micro_kernel.py",
+  "source_sha256": "68760d0bbab7aa761d880d03c18314ad8adf18fc3a955a6f893e42cec96b0c68",
+  "gzip_sha256": "1acb27540113cf8a9447e531fe15a533af3944b1bf7a98b6dae731222b047481",
+  "scope": "Unmodified pre-M16 CPU19 source; same-runtime AST false-body oracle, not new execution"
+}

@@ -1,0 +1,8 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-binding-gpu0908-2",
+  "revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00",
+  "clean": true,
+  "cpu_tests": 48,
+  "cpu_proof_source_match": true,
+  "created": 1788853354.4001112
+}

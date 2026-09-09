@@ -1,0 +1,318 @@
+{
+  "adoption_acceptance": false,
+  "arm_order": [
+    "B",
+    "A"
+  ],
+  "bound_supervisor_alive": false,
+  "canary": {
+    "nodes": {
+      "10.10.10.1": {
+        "candidate_comparisons": 24,
+        "cases": 4,
+        "completed_at": 1788933670.95971,
+        "control_comparisons": 24,
+        "inputs_same_address": true,
+        "q0_comparisons": 24,
+        "source_matches_cpu24": true,
+        "started_at": 1788933655.9098432,
+        "strict_source_container_bound": true,
+        "weights_preserved": true
+      },
+      "10.10.10.3": {
+        "candidate_comparisons": 24,
+        "cases": 4,
+        "completed_at": 1788933670.8901987,
+        "control_comparisons": 24,
+        "inputs_same_address": true,
+        "q0_comparisons": 24,
+        "source_matches_cpu24": true,
+        "started_at": 1788933655.7883344,
+        "strict_source_container_bound": true,
+        "weights_preserved": true
+      },
+      "10.10.10.4": {
+        "candidate_comparisons": 24,
+        "cases": 4,
+        "completed_at": 1788933666.8432305,
+        "control_comparisons": 24,
+        "inputs_same_address": true,
+        "q0_comparisons": 24,
+        "source_matches_cpu24": true,
+        "started_at": 1788933653.4851618,
+        "strict_source_container_bound": true,
+        "weights_preserved": true
+      },
+      "local": {
+        "candidate_comparisons": 24,
+        "cases": 4,
+        "completed_at": 1788933671.4006605,
+        "control_comparisons": 24,
+        "inputs_same_address": true,
+        "q0_comparisons": 24,
+        "source_matches_cpu24": true,
+        "started_at": 1788933655.9737852,
+        "strict_source_container_bound": true,
+        "weights_preserved": true
+      }
+    },
+    "strict_source_container_bound": true,
+    "verdict": "RAW_CANARY_SOURCE_VALIDATED"
+  },
+  "cancellation_receipt_present": false,
+  "canonical_verdicts": [
+    {
+      "base": "EPONEPASS27B",
+      "baseline_scope": {
+        "knobs": {
+          "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+          "VLLM_GLM53_STARTUP_TRIM": "1"
+        },
+        "session": "eplocalonepass0909v27"
+      },
+      "baseline_value": 67.43982496349793,
+      "build": "d950ec0f6471",
+      "cand": "EPONEPASS27A",
+      "candidate_value": 69.23416453328194,
+      "decision": "unresolved",
+      "delta": 0.026606527682347947,
+      "floor": null,
+      "floor_n": 1,
+      "floor_scope": "same build",
+      "gates": [],
+      "harness": 40,
+      "objective": {
+        "metric": "decode_tokens"
+      },
+      "proof_ok": "3/3",
+      "runtime_attestation": "not recorded; launch identity requires external evidence",
+      "session": "eplocalonepass0909v27",
+      "status": "incomplete",
+      "t": "2026-09-09 15:05:10",
+      "verdict": "+2.7% with no floor yet (n=1): one more baseline sample"
+    },
+    {
+      "base": "EPONEPASS27B",
+      "baseline_scope": {
+        "knobs": {
+          "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+          "VLLM_GLM53_STARTUP_TRIM": "1"
+        },
+        "session": "eplocalonepass0909v27"
+      },
+      "baseline_value": 67.43982496349793,
+      "build": "d950ec0f6471",
+      "cand": "EPONEPASS27A",
+      "candidate_value": 69.23416453328194,
+      "decision": "unresolved",
+      "delta": 0.026606527682347947,
+      "floor": null,
+      "floor_n": 1,
+      "floor_scope": "same build",
+      "gates": [],
+      "harness": 40,
+      "objective": {
+        "metric": "decode_tokens"
+      },
+      "proof_ok": "3/3",
+      "runtime_attestation": "not recorded; launch identity requires external evidence",
+      "session": "eplocalonepass0909v27",
+      "status": "incomplete",
+      "t": "2026-09-09 15:05:10",
+      "verdict": "+2.7% with no floor yet (n=1): one more baseline sample"
+    }
+  ],
+  "completed": [
+    {
+      "arm": "B",
+      "channel_diagnostics_recorded": 8,
+      "fixed_decode_tok_s": [
+        68.54214500096191,
+        65.16505354240955,
+        68.73377076953395
+      ],
+      "fixed_pooled_tok_s": 67.43982496349793,
+      "korean": {
+        "dirty": 0,
+        "hits": [],
+        "kinds": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "n": 8
+      },
+      "onepass_record_canonical_json_sha256": "fac112915ea8bfd71dae45abcf4718b6485e2814b3b2468ddeed8fbaccb6df4b",
+      "prefill": [
+        {
+          "cold_s": 2.3672794359736145,
+          "cold_tok_s": 898.9221836942947,
+          "combined": false,
+          "ctx": 2000,
+          "tok": 2128,
+          "ttft_samples_s": [
+            2.3672794359736145,
+            0.8467799599748105,
+            0.8760743010207079
+          ],
+          "warm_s": 0.8467799599748105,
+          "warm_tok_s": 2513.049553113305
+        },
+        {
+          "cold_s": 10.76909859495936,
+          "cold_tok_s": 3022.072805168037,
+          "combined": true,
+          "ctx": 32000,
+          "tok": 32545,
+          "ttft_samples_s": [
+            10.76909859495936
+          ],
+          "warm_s": 10.76909859495936,
+          "warm_tok_s": 3022.072805168037
+        },
+        {
+          "cold_s": 41.28867417701986,
+          "cold_tok_s": 3113.6625857449403,
+          "combined": true,
+          "ctx": 128000,
+          "tok": 128559,
+          "ttft_samples_s": [
+            41.28867417701986
+          ],
+          "warm_s": 41.28867417701986,
+          "warm_tok_s": 3113.6625857449403
+        }
+      ],
+      "proof_ok": "2/2",
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "requests": 8,
+      "strict_identity": true
+    },
+    {
+      "arm": "A",
+      "channel_diagnostics_recorded": 8,
+      "fixed_decode_tok_s": [
+        79.66053226240837,
+        68.42612250167345,
+        61.86725788534301
+      ],
+      "fixed_pooled_tok_s": 69.23416453328194,
+      "korean": {
+        "dirty": 0,
+        "hits": [],
+        "kinds": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "n": 8
+      },
+      "onepass_record_canonical_json_sha256": "2fdc9c4bb8a4d7f39851dbdf2d5137a563658dd1ffc558fff06a4d6acfdb02a7",
+      "prefill": [
+        {
+          "cold_s": 1.9267281360225752,
+          "cold_tok_s": 1104.4630325443416,
+          "combined": false,
+          "ctx": 2000,
+          "tok": 2128,
+          "ttft_samples_s": [
+            1.9267281360225752,
+            0.8883259589783847,
+            0.8787752520292997
+          ],
+          "warm_s": 0.8787752520292997,
+          "warm_tok_s": 2421.552035160236
+        },
+        {
+          "cold_s": 10.616652443015482,
+          "cold_tok_s": 3065.467215271873,
+          "combined": true,
+          "ctx": 32000,
+          "tok": 32545,
+          "ttft_samples_s": [
+            10.616652443015482
+          ],
+          "warm_s": 10.616652443015482,
+          "warm_tok_s": 3065.467215271873
+        },
+        {
+          "cold_s": 40.93907273496734,
+          "cold_tok_s": 3140.251877033691,
+          "combined": true,
+          "ctx": 128000,
+          "tok": 128559,
+          "ttft_samples_s": [
+            40.93907273496734
+          ],
+          "warm_s": 40.93907273496734,
+          "warm_tok_s": 3140.251877033691
+        }
+      ],
+      "proof_ok": "3/3",
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "requests": 8,
+      "strict_identity": true
+    }
+  ],
+  "completed_arms": [
+    "B",
+    "A"
+  ],
+  "cpu": {
+    "new_cpu_compile": false,
+    "original_result_sha256": "1d96612938f200bd86d078e1d8841cc92df808ba4ab802ca51306fe229b67506",
+    "original_revision": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+    "reuse_receipt_sha256": "d04ae3cb91a3b49b952d90a2eb5c069169437be989c8093c2b67d417abf944e3"
+  },
+  "failfast_receipts": {},
+  "fleet": {
+    "finished_at": 1788933911.3696926,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/b92cd5d5e02bd4ae3c436e8026ffa9e6a8bc70e66df921cdb40ce26b86ad00bd.log",
+    "outcome": "succeeded",
+    "payload_finished_at": 1788933910.9660847,
+    "payload_returncode": 0,
+    "payload_seconds": 1169.4,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 0,
+    "session": "eplocalonepass0909v27",
+    "started_at": 1788932741.5626032,
+    "state": "succeeded",
+    "supervisor_alive": false,
+    "ticket": "1788932740730747"
+  },
+  "full_sanitizer_acceptance": false,
+  "missing_originals": [
+    "/tmp/glm53-ep-onepass-0909-27/cancel-request.json",
+    "/tmp/glm53-ep-onepass-0909-27/failfast-first-fixed-A/pre-signal.json",
+    "/tmp/glm53-ep-onepass-0909-27/failfast-first-fixed-A/result.json",
+    "/tmp/glm53-ep-onepass-0909-27/failfast-first-fixed-A/leg.raw",
+    "/tmp/leg.731417",
+    "/tmp/leg.766687"
+  ],
+  "own_holder_after": false,
+  "partial_or_no_record_arms": [],
+  "performance_acceptance": false,
+  "public_recovery_verified": false,
+  "revision": "ea413ac4c39ba3e6e4009c73587b0d536053b4bf",
+  "schema": 1,
+  "session": "eplocalonepass0909v27",
+  "started_arms": [
+    "B",
+    "A"
+  ],
+  "supervisor_pid": 730747,
+  "supervisor_start_tick": "43512869",
+  "ticket": "1788932740730747",
+  "unstarted_arms": [],
+  "verdict": "TERMINAL_EVIDENCE_ARCHIVED_NOT_ADOPTION_VERDICT"
+}

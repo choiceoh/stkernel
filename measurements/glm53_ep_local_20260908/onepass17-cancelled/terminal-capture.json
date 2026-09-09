@@ -1,0 +1,93 @@
+{
+  "absent": [
+    "/tmp/glm53-ep-onepass-0909-17/onepass.jsonl",
+    "/tmp/glm53-ep-onepass-0909-17/verdicts.jsonl",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS17A0.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS17B1.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS17A.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS17B2.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS17B3.log"
+  ],
+  "captured_at": 1788919674.708929,
+  "files": {
+    "/home/choiceoh/glm53-logs/fleet/run-logs/fe92acc1cce875fa8ffc9c09d8e6c6ee17860073fc75c093eb6100139a6f257b.log": {
+      "bytes": 996,
+      "mtime_ns": 1788919430913242581,
+      "sha256": "355277311657382b4a14aa208a1cc7a07a8fb3606efbcabede2de36048d26ec7"
+    },
+    "/tmp/glm53-ep-onepass-0909-17/cancel-request.json": {
+      "bytes": 625,
+      "mtime_ns": 1788919430664243663,
+      "sha256": "1941a84ed964b9e194937d9cd507992d63d223ff3828cda9bb76fba32af881af"
+    },
+    "/tmp/glm53-ep-onepass-0909-17/pre-cancel-leg.log": {
+      "bytes": 378,
+      "mtime_ns": 1788919430664158783,
+      "sha256": "e120f01022fbcacf243738e321860f5381384b49a3cda2f5b69ecad7edae8585"
+    },
+    "/tmp/glm53-ep-onepass-0909-17/submission.json": {
+      "bytes": 3341,
+      "mtime_ns": 1788918874578369320,
+      "sha256": "055dca09461508cc15808e3b4c4b64ced73a87f0f1e1f3b4d33c71eb83aa6f43"
+    },
+    "/tmp/glm53-ep-onepass-0909-17/submit.exit.json": {
+      "bytes": 43,
+      "mtime_ns": 1788918880297458813,
+      "sha256": "670d2180427d40b3c9738492423afdd649a304aeda81ba5607c8b1c871352d4f"
+    },
+    "/tmp/glm53-ep-onepass-0909-17/submit.stderr": {
+      "bytes": 0,
+      "mtime_ns": 1788918880297392493,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "/tmp/glm53-ep-onepass-0909-17/submit.stdout": {
+      "bytes": 482,
+      "mtime_ns": 1788918880297392493,
+      "sha256": "3485c20bb53c23d181776729304828433822202527e6563766ed8c9b4f7ef688"
+    }
+  },
+  "fleet_after": {
+    "finished_at": 1788919431.1177251,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/fe92acc1cce875fa8ffc9c09d8e6c6ee17860073fc75c093eb6100139a6f257b.log",
+    "outcome": "cancelled",
+    "payload_finished_at": 1788919430.7419171,
+    "payload_returncode": 143,
+    "payload_seconds": 550.0,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 143,
+    "session": "eplocalonepass0909v17",
+    "started_at": 1788918880.7289298,
+    "state": "cancelled",
+    "supervisor_alive": false,
+    "ticket": "17889188803995175"
+  },
+  "fleet_before": {
+    "finished_at": 1788919431.1177251,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/fe92acc1cce875fa8ffc9c09d8e6c6ee17860073fc75c093eb6100139a6f257b.log",
+    "outcome": "cancelled",
+    "payload_finished_at": 1788919430.7419171,
+    "payload_returncode": 143,
+    "payload_seconds": 550.0,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 143,
+    "session": "eplocalonepass0909v17",
+    "started_at": 1788918880.7289298,
+    "state": "cancelled",
+    "supervisor_alive": false,
+    "ticket": "17889188803995175"
+  },
+  "own_holder_after": false,
+  "own_holder_before": false,
+  "source_after": {
+    "head": "0331579f4b16b8b811f2ca7e5099f8f461507c67",
+    "status": ""
+  },
+  "source_before": {
+    "head": "0331579f4b16b8b811f2ca7e5099f8f461507c67",
+    "status": ""
+  }
+}

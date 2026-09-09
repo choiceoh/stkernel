@@ -1,0 +1,885 @@
+{
+  "remote_host": "choiceoh@srv2",
+  "records": [
+    {
+      "remote_archive_path": "job/capture/balanced16384.json",
+      "local_path": "job/capture/balanced16384.json",
+      "raw_bytes": 5158,
+      "raw_sha256": "efdebd53daddaad77be00df5fe70754aefc0429cf4b8c3faaa8fc4760bfba759",
+      "stored_sha256": "efdebd53daddaad77be00df5fe70754aefc0429cf4b8c3faaa8fc4760bfba759",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/balanced16384.log",
+      "local_path": "job/capture/balanced16384.log.gz",
+      "raw_bytes": 5262,
+      "raw_sha256": "22ca01a68633b0ec84d2e9ee374aed10448d608c1e775a974d24d3a1adc2a0bb",
+      "stored_sha256": "61c7b0c2b592da04fc7dced91fb79785cc60328f8710594a933784b29cae6966",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/capture/balanced4096.json",
+      "local_path": "job/capture/balanced4096.json",
+      "raw_bytes": 5144,
+      "raw_sha256": "2c317afe01a3943def894f920d97b6fb27532957dce94ccaa1aed30b060b61b2",
+      "stored_sha256": "2c317afe01a3943def894f920d97b6fb27532957dce94ccaa1aed30b060b61b2",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/balanced4096.log",
+      "local_path": "job/capture/balanced4096.log.gz",
+      "raw_bytes": 5651,
+      "raw_sha256": "2243acac7d31b6736f533705c7dde40ee3779fbbc276c5d181362962f4c3fce8",
+      "stored_sha256": "b84d7b38e94c72306c47fd9bcd3f420014098b09ab88d7fc1c8ca5a0a36d6cd3",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/capture/balanced6912.json",
+      "local_path": "job/capture/balanced6912.json",
+      "raw_bytes": 5437,
+      "raw_sha256": "42d704f1bc19dfe22b1caac10a26a77964b831ff3fbcd63c4bcc71483c18fc1c",
+      "stored_sha256": "42d704f1bc19dfe22b1caac10a26a77964b831ff3fbcd63c4bcc71483c18fc1c",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/balanced6912.log",
+      "local_path": "job/capture/balanced6912.log.gz",
+      "raw_bytes": 5796,
+      "raw_sha256": "5284e7cd8b333ee5c988fbb0fbed41483064b87549a9ebf02d41d440426d2da7",
+      "stored_sha256": "a91ed6dbf74bdbb726ba4dcd8e7695aa0c32feeb4541c168309cf19e6b51a86a",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/capture/balanced8192.json",
+      "local_path": "job/capture/balanced8192.json",
+      "raw_bytes": 5140,
+      "raw_sha256": "ac3c062248f9acffeb109c95a796db3e1cb073b502d0bd8dbfd8b50d9a7c1871",
+      "stored_sha256": "ac3c062248f9acffeb109c95a796db3e1cb073b502d0bd8dbfd8b50d9a7c1871",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/balanced8192.log",
+      "local_path": "job/capture/balanced8192.log.gz",
+      "raw_bytes": 5779,
+      "raw_sha256": "e2f2a374c1e0ba3a65241b40847a686f384e7b8b9300d88928951216340b0c8a",
+      "stored_sha256": "41d53b5fd3fb475d2ff6e342bdff344388d4cb301daf9944b51ee190ef2051e9",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/capture/before.json",
+      "local_path": "job/capture/before.json",
+      "raw_bytes": 41730,
+      "raw_sha256": "698d65a6edee4ea8d63d923efec58885283d79031c29e8d7aa0f0b4b2a7710ea",
+      "stored_sha256": "698d65a6edee4ea8d63d923efec58885283d79031c29e8d7aa0f0b4b2a7710ea",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/completion.json",
+      "local_path": "job/capture/completion.json",
+      "raw_bytes": 33320,
+      "raw_sha256": "76923e227d7fcb772ef478b6487354d4c9b309f630ab55d238ca5c0a1328c688",
+      "stored_sha256": "76923e227d7fcb772ef478b6487354d4c9b309f630ab55d238ca5c0a1328c688",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/concentrated6912.json",
+      "local_path": "job/capture/concentrated6912.json",
+      "raw_bytes": 5448,
+      "raw_sha256": "02b8492c70aababa6280c20036b336aac6a3d4feccd3e8b556d777ed5c4b64ee",
+      "stored_sha256": "02b8492c70aababa6280c20036b336aac6a3d4feccd3e8b556d777ed5c4b64ee",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/concentrated6912.log",
+      "local_path": "job/capture/concentrated6912.log.gz",
+      "raw_bytes": 5807,
+      "raw_sha256": "52766f3187ed24a0d9be170e2a1fbb2b377b7bb1af4100ee10b71af7d102b4f2",
+      "stored_sha256": "b96bf8f1d7d1b770522a0fbb816476c624cfdec094b7a0b30a9e9543dbebb693",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/capture/duplicate4096.json",
+      "local_path": "job/capture/duplicate4096.json",
+      "raw_bytes": 4065,
+      "raw_sha256": "eef64dc8e15a843f50f1544a4d327b2fd4b66ed623719c68e1262ebc98bf5527",
+      "stored_sha256": "eef64dc8e15a843f50f1544a4d327b2fd4b66ed623719c68e1262ebc98bf5527",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/duplicate4096.log",
+      "local_path": "job/capture/duplicate4096.log.gz",
+      "raw_bytes": 4508,
+      "raw_sha256": "eecb016220d074af41389e5f8f6fcc48adada1d9de6f8c708bdd3999c350f63c",
+      "stored_sha256": "cc1122e2e1acdfe7b30eda203994e728b56521ffc1d6da0bbc507fc67d103ad9",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/capture/memcheck-balanced4096.log",
+      "local_path": "job/capture/memcheck-balanced4096.log.gz",
+      "raw_bytes": 81,
+      "raw_sha256": "b9b26758238347d117b9036c7beb2f61aa12e1f9bc3455cc02ea460d7752a549",
+      "stored_sha256": "7178526dbe3bfc8255505ecd2e06d0feeab9fa67f9824654bd581c368f8ad900",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/capture/progress.json",
+      "local_path": "job/capture/progress.json",
+      "raw_bytes": 33178,
+      "raw_sha256": "62b2518b04105f1759d471b1828ec69c1e283c1825163babfa2d21bfd08a71d1",
+      "stored_sha256": "62b2518b04105f1759d471b1828ec69c1e283c1825163babfa2d21bfd08a71d1",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/remote4096.json",
+      "local_path": "job/capture/remote4096.json",
+      "raw_bytes": 3838,
+      "raw_sha256": "ab859cecc47c3c50d49e67ca21661361f70f53c0fb86f351a975651109603289",
+      "stored_sha256": "ab859cecc47c3c50d49e67ca21661361f70f53c0fb86f351a975651109603289",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/remote4096.log",
+      "local_path": "job/capture/remote4096.log.gz",
+      "raw_bytes": 4685,
+      "raw_sha256": "e20535b325d5e6787c69f406284d06729f5191fc8da76c7f047a138581e084db",
+      "stored_sha256": "cc3155f2de99ac0a8dd6b1846563986ab64804bad11db9ff20d742ddfed8888e",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/capture/resources-balanced16384.json",
+      "local_path": "job/capture/resources-balanced16384.json",
+      "raw_bytes": 363,
+      "raw_sha256": "16a09f2455212e5652832e7047b8ebb9af2ef9b05ab8520cb7ba4607ca0660c1",
+      "stored_sha256": "16a09f2455212e5652832e7047b8ebb9af2ef9b05ab8520cb7ba4607ca0660c1",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/resources-balanced4096.json",
+      "local_path": "job/capture/resources-balanced4096.json",
+      "raw_bytes": 363,
+      "raw_sha256": "7d342a36d7d7ea2a0eabfaa855950fa2e05f60b71c2a63b3b451223ef1c0eb2e",
+      "stored_sha256": "7d342a36d7d7ea2a0eabfaa855950fa2e05f60b71c2a63b3b451223ef1c0eb2e",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/resources-balanced6912.json",
+      "local_path": "job/capture/resources-balanced6912.json",
+      "raw_bytes": 363,
+      "raw_sha256": "1c7935358fc911863fb14ea386381068f56b9713ecbbd60d455924f606eb163b",
+      "stored_sha256": "1c7935358fc911863fb14ea386381068f56b9713ecbbd60d455924f606eb163b",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/resources-balanced8192.json",
+      "local_path": "job/capture/resources-balanced8192.json",
+      "raw_bytes": 363,
+      "raw_sha256": "3d192f10036c27d00cda837e948a0ebbe23dcd74955c2b3766c21a8eed0d40e0",
+      "stored_sha256": "3d192f10036c27d00cda837e948a0ebbe23dcd74955c2b3766c21a8eed0d40e0",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/resources-before.json",
+      "local_path": "job/capture/resources-before.json",
+      "raw_bytes": 359,
+      "raw_sha256": "dcef3fb7ef58fbea222cd891fa484f8eea2e8f0281cd6121068fc5e1aa101d96",
+      "stored_sha256": "dcef3fb7ef58fbea222cd891fa484f8eea2e8f0281cd6121068fc5e1aa101d96",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/resources-concentrated6912.json",
+      "local_path": "job/capture/resources-concentrated6912.json",
+      "raw_bytes": 363,
+      "raw_sha256": "c23abbe51f1fe05c2d6413b071417d3f6aa3bba48313ac3dbdbfe57703ca6cf3",
+      "stored_sha256": "c23abbe51f1fe05c2d6413b071417d3f6aa3bba48313ac3dbdbfe57703ca6cf3",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/resources-duplicate4096.json",
+      "local_path": "job/capture/resources-duplicate4096.json",
+      "raw_bytes": 363,
+      "raw_sha256": "129bdaed7eff6bce2368ed4d5e8fcb6d01cf87d356f48846e05894064923edd0",
+      "stored_sha256": "129bdaed7eff6bce2368ed4d5e8fcb6d01cf87d356f48846e05894064923edd0",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/resources-memcheck-balanced4096.json",
+      "local_path": "job/capture/resources-memcheck-balanced4096.json",
+      "raw_bytes": 363,
+      "raw_sha256": "0254a7334400e1962e4d92b474338c397dbfe96df5004c30074e0b5b3a052e3c",
+      "stored_sha256": "0254a7334400e1962e4d92b474338c397dbfe96df5004c30074e0b5b3a052e3c",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/resources-remote4096.json",
+      "local_path": "job/capture/resources-remote4096.json",
+      "raw_bytes": 363,
+      "raw_sha256": "bcb241e7ef01895858acff7dd8260cf256e1325d298becf77d4ef8ab96b81676",
+      "stored_sha256": "bcb241e7ef01895858acff7dd8260cf256e1325d298becf77d4ef8ab96b81676",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/resources-zeros4097.json",
+      "local_path": "job/capture/resources-zeros4097.json",
+      "raw_bytes": 363,
+      "raw_sha256": "2338526cd63f169c1ea65173c391af157a26ef68a9cd6c56c2e5b47f3cb04f42",
+      "stored_sha256": "2338526cd63f169c1ea65173c391af157a26ef68a9cd6c56c2e5b47f3cb04f42",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/restarted.json",
+      "local_path": "job/capture/restarted.json",
+      "raw_bytes": 41728,
+      "raw_sha256": "ddc578ed3b4ba78fbdd762f89d86c93fcc437e88f23f7bc50b94c6886bdb2ea3",
+      "stored_sha256": "ddc578ed3b4ba78fbdd762f89d86c93fcc437e88f23f7bc50b94c6886bdb2ea3",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/restored.json",
+      "local_path": "job/capture/restored.json",
+      "raw_bytes": 41728,
+      "raw_sha256": "db4b8ca08ad8006d7aacb8e3d58d52566bdad5d050a7f8439a3d5f0d62606848",
+      "stored_sha256": "db4b8ca08ad8006d7aacb8e3d58d52566bdad5d050a7f8439a3d5f0d62606848",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/stopped.json",
+      "local_path": "job/capture/stopped.json",
+      "raw_bytes": 41734,
+      "raw_sha256": "8b4768df1790932da694fa68229e2bbcd08bdd7a5f89d4179e545195de47e6d8",
+      "stored_sha256": "8b4768df1790932da694fa68229e2bbcd08bdd7a5f89d4179e545195de47e6d8",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/zeros4097.json",
+      "local_path": "job/capture/zeros4097.json",
+      "raw_bytes": 4072,
+      "raw_sha256": "a88288e1398fe11be402d0fe5dff8c13cb93408c460b80186b12cb100556ed5b",
+      "stored_sha256": "a88288e1398fe11be402d0fe5dff8c13cb93408c460b80186b12cb100556ed5b",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/capture/zeros4097.log",
+      "local_path": "job/capture/zeros4097.log.gz",
+      "raw_bytes": 4919,
+      "raw_sha256": "33169e69b7285274276ec8ebd34fba2317adde7837c1317aa6460597536776ef",
+      "stored_sha256": "c718c043b5557d78a7298a06dece59de5c37a12094345a61ecdc8496df11934f",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/driver.pid",
+      "local_path": "job/driver.pid",
+      "raw_bytes": 8,
+      "raw_sha256": "2ba9e29028ef82c4baa4d595416d783e6c257bcfe20c6e7ecdaae1854853f20e",
+      "stored_sha256": "2ba9e29028ef82c4baa4d595416d783e6c257bcfe20c6e7ecdaae1854853f20e",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/driver.py",
+      "local_path": "job/driver.py",
+      "raw_bytes": 388,
+      "raw_sha256": "f7c75076e5b648440d333442b6c8f82ee41c7a723f1a7eb159459bcdc1999184",
+      "stored_sha256": "f7c75076e5b648440d333442b6c8f82ee41c7a723f1a7eb159459bcdc1999184",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/exit.json",
+      "local_path": "job/exit.json",
+      "raw_bytes": 809,
+      "raw_sha256": "425930e30f40c89bfcb24e89624a0cacd9a520b0ec07892849160c5184b9b850",
+      "stored_sha256": "425930e30f40c89bfcb24e89624a0cacd9a520b0ec07892849160c5184b9b850",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "job/fleet.log",
+      "local_path": "job/fleet.log.gz",
+      "raw_bytes": 45175,
+      "raw_sha256": "a487831277bc9ab4172a924244ff7e3607b096f0a5e55af2e11bcff1120fc92f",
+      "stored_sha256": "6e6867594ac7cec401836cd0cadfa432ebb1fba5c41b6bd3909a5acb1468e945",
+      "compressed": true
+    },
+    {
+      "remote_archive_path": "job/submission.json",
+      "local_path": "job/submission.json",
+      "raw_bytes": 727,
+      "raw_sha256": "c2de881e66a7fd726123dd7aab12cd3d069a0917aa899d6ff079a4bc0fc3f9cd",
+      "stored_sha256": "c2de881e66a7fd726123dd7aab12cd3d069a0917aa899d6ff079a4bc0fc3f9cd",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/async_llm.py",
+      "local_path": "source/build/glm53/async_llm.py",
+      "raw_bytes": 47513,
+      "raw_sha256": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0",
+      "stored_sha256": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/b12x_moe.py",
+      "local_path": "source/build/glm53/b12x_moe.py",
+      "raw_bytes": 31331,
+      "raw_sha256": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68",
+      "stored_sha256": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/chunk_delta_h.py",
+      "local_path": "source/build/glm53/chunk_delta_h.py",
+      "raw_bytes": 13349,
+      "raw_sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+      "stored_sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/cuda_communicator.py",
+      "local_path": "source/build/glm53/cuda_communicator.py",
+      "raw_bytes": 32391,
+      "raw_sha256": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe",
+      "stored_sha256": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/deneb_boot_stamps.py",
+      "local_path": "source/build/glm53/deneb_boot_stamps.py",
+      "raw_bytes": 11173,
+      "raw_sha256": "cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67",
+      "stored_sha256": "cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/dflash_utils.py",
+      "local_path": "source/build/glm53/dflash_utils.py",
+      "raw_bytes": 5518,
+      "raw_sha256": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98",
+      "stored_sha256": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/dsv4_oneshot_ar.cu",
+      "local_path": "source/build/glm53/dsv4_oneshot_ar.cu",
+      "raw_bytes": 36138,
+      "raw_sha256": "7c75403c14142b70da2d87ff3d8906051539740f1b3ecea2107b040a323cd6cf",
+      "stored_sha256": "7c75403c14142b70da2d87ff3d8906051539740f1b3ecea2107b040a323cd6cf",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/dsv4_oneshot_shim.py",
+      "local_path": "source/build/glm53/dsv4_oneshot_shim.py",
+      "raw_bytes": 21380,
+      "raw_sha256": "ef6fffb1474965f16702217f72b6e9e07a941f8528e617039561a8ac4cc1ca34",
+      "stored_sha256": "ef6fffb1474965f16702217f72b6e9e07a941f8528e617039561a8ac4cc1ca34",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/flashinfer_b12x_moe.py",
+      "local_path": "source/build/glm53/flashinfer_b12x_moe.py",
+      "raw_bytes": 98700,
+      "raw_sha256": "781061fd2280352631e82fdbc2dded83614f1d780558608047ea0270e129075a",
+      "stored_sha256": "781061fd2280352631e82fdbc2dded83614f1d780558608047ea0270e129075a",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/flashinfer_mla_sparse_sm90.py",
+      "local_path": "source/build/glm53/flashinfer_mla_sparse_sm90.py",
+      "raw_bytes": 28100,
+      "raw_sha256": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973",
+      "stored_sha256": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/fp8_lm_head.py",
+      "local_path": "source/build/glm53/fp8_lm_head.py",
+      "raw_bytes": 19647,
+      "raw_sha256": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac",
+      "stored_sha256": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm47_moe.py",
+      "local_path": "source/build/glm53/glm47_moe.py",
+      "raw_bytes": 9881,
+      "raw_sha256": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+      "stored_sha256": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_chat.py",
+      "local_path": "source/build/glm53/glm53_chat.py",
+      "raw_bytes": 6456,
+      "raw_sha256": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+      "stored_sha256": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_decode_first.py",
+      "local_path": "source/build/glm53/glm53_decode_first.py",
+      "raw_bytes": 18281,
+      "raw_sha256": "220c91024677afa63622c8d169ff901b24353f02af81d2f4873af2b363fc2836",
+      "stored_sha256": "220c91024677afa63622c8d169ff901b24353f02af81d2f4873af2b363fc2836",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_dev_lab.py",
+      "local_path": "source/build/glm53/glm53_dev_lab.py",
+      "raw_bytes": 5605,
+      "raw_sha256": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335",
+      "stored_sha256": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_dflash_early_fc.py",
+      "local_path": "source/build/glm53/glm53_dflash_early_fc.py",
+      "raw_bytes": 6376,
+      "raw_sha256": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd",
+      "stored_sha256": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_draft_dump.py",
+      "local_path": "source/build/glm53/glm53_draft_dump.py",
+      "raw_bytes": 5782,
+      "raw_sha256": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360",
+      "stored_sha256": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_drafter_prep.py",
+      "local_path": "source/build/glm53/glm53_drafter_prep.py",
+      "raw_bytes": 13603,
+      "raw_sha256": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce",
+      "stored_sha256": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_fp8_dense.py",
+      "local_path": "source/build/glm53/glm53_fp8_dense.py",
+      "raw_bytes": 63156,
+      "raw_sha256": "a2b7508eaa12a43212615869deac1c855c5441f540406f53703b7cd85c4e6046",
+      "stored_sha256": "a2b7508eaa12a43212615869deac1c855c5441f540406f53703b7cd85c4e6046",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_indexer_gate.py",
+      "local_path": "source/build/glm53/glm53_indexer_gate.py",
+      "raw_bytes": 6273,
+      "raw_sha256": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28",
+      "stored_sha256": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_kda_onepass.py",
+      "local_path": "source/build/glm53/glm53_kda_onepass.py",
+      "raw_bytes": 41197,
+      "raw_sha256": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee",
+      "stored_sha256": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_kpool_indexer.py",
+      "local_path": "source/build/glm53/glm53_kpool_indexer.py",
+      "raw_bytes": 66372,
+      "raw_sha256": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319",
+      "stored_sha256": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_lab_middleware.py",
+      "local_path": "source/build/glm53/glm53_lab_middleware.py",
+      "raw_bytes": 1013,
+      "raw_sha256": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd",
+      "stored_sha256": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_megakernel.cu",
+      "local_path": "source/build/glm53/glm53_megakernel.cu",
+      "raw_bytes": 177496,
+      "raw_sha256": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c",
+      "stored_sha256": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_megakernel.py",
+      "local_path": "source/build/glm53/glm53_megakernel.py",
+      "raw_bytes": 125258,
+      "raw_sha256": "53a26fc2821b0b3e76a1ea0d12354a2eb35c538f55d8daa2fd03b000128da7fb",
+      "stored_sha256": "53a26fc2821b0b3e76a1ea0d12354a2eb35c538f55d8daa2fd03b000128da7fb",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_nvfp4_bproj.py",
+      "local_path": "source/build/glm53/glm53_nvfp4_bproj.py",
+      "raw_bytes": 8093,
+      "raw_sha256": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20",
+      "stored_sha256": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_nvfp4_scale.py",
+      "local_path": "source/build/glm53/glm53_nvfp4_scale.py",
+      "raw_bytes": 2577,
+      "raw_sha256": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8",
+      "stored_sha256": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_prefill_collectives.py",
+      "local_path": "source/build/glm53/glm53_prefill_collectives.py",
+      "raw_bytes": 28425,
+      "raw_sha256": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+      "stored_sha256": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_prefill_fastpath.py",
+      "local_path": "source/build/glm53/glm53_prefill_fastpath.py",
+      "raw_bytes": 3530,
+      "raw_sha256": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be",
+      "stored_sha256": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_prep_fused.py",
+      "local_path": "source/build/glm53/glm53_prep_fused.py",
+      "raw_bytes": 62614,
+      "raw_sha256": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e",
+      "stored_sha256": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_rank_cache.py",
+      "local_path": "source/build/glm53/glm53_rank_cache.py",
+      "raw_bytes": 19200,
+      "raw_sha256": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26",
+      "stored_sha256": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_renderer_warmup.py",
+      "local_path": "source/build/glm53/glm53_renderer_warmup.py",
+      "raw_bytes": 5006,
+      "raw_sha256": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8",
+      "stored_sha256": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm53_startup_cache.py",
+      "local_path": "source/build/glm53/glm53_startup_cache.py",
+      "raw_bytes": 13495,
+      "raw_sha256": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76",
+      "stored_sha256": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm5next_attention.py",
+      "local_path": "source/build/glm53/glm5next_attention.py",
+      "raw_bytes": 27202,
+      "raw_sha256": "4bed9915da4c2f45e17cec2995f61963528dccc3f5832a9ae50db19e0faeada9",
+      "stored_sha256": "4bed9915da4c2f45e17cec2995f61963528dccc3f5832a9ae50db19e0faeada9",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm5next_kda.py",
+      "local_path": "source/build/glm53/glm5next_kda.py",
+      "raw_bytes": 35295,
+      "raw_sha256": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a",
+      "stored_sha256": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm5next_model.py",
+      "local_path": "source/build/glm53/glm5next_model.py",
+      "raw_bytes": 74950,
+      "raw_sha256": "1b2fe00fadac5db22ce01e35f6be23e3e6e7b75e92b6d09af434175f811f96d7",
+      "stored_sha256": "1b2fe00fadac5db22ce01e35f6be23e3e6e7b75e92b6d09af434175f811f96d7",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/glm5next_multimodal.py",
+      "local_path": "source/build/glm53/glm5next_multimodal.py",
+      "raw_bytes": 31356,
+      "raw_sha256": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568",
+      "stored_sha256": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/gpu_worker.py",
+      "local_path": "source/build/glm53/gpu_worker.py",
+      "raw_bytes": 60529,
+      "raw_sha256": "c85092ab70c42692ae8cb7ae4ba4d35d7fbe885cee767ea969990483929d2834",
+      "stored_sha256": "c85092ab70c42692ae8cb7ae4ba4d35d7fbe885cee767ea969990483929d2834",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/kda.py",
+      "local_path": "source/build/glm53/kda.py",
+      "raw_bytes": 65164,
+      "raw_sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+      "stored_sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/kv_cache_coordinator.py",
+      "local_path": "source/build/glm53/kv_cache_coordinator.py",
+      "raw_bytes": 40664,
+      "raw_sha256": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d",
+      "stored_sha256": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/manifest.tsv",
+      "local_path": "source/build/glm53/manifest.tsv",
+      "raw_bytes": 8477,
+      "raw_sha256": "b0aea4e0f9b8f9781585e374784686410634ef778164bf7915373065fd018dd0",
+      "stored_sha256": "b0aea4e0f9b8f9781585e374784686410634ef778164bf7915373065fd018dd0",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_dispatch.py",
+      "local_path": "source/build/glm53/moe_dispatch.py",
+      "raw_bytes": 175149,
+      "raw_sha256": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+      "stored_sha256": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_dynamic_ep_local.py",
+      "local_path": "source/build/glm53/moe_dynamic_ep_local.py",
+      "raw_bytes": 32771,
+      "raw_sha256": "872e0ba3a23e4002cfcb2a4c8e30b1c394ee334983900c8e4f062acfa9c5722e",
+      "stored_sha256": "872e0ba3a23e4002cfcb2a4c8e30b1c394ee334983900c8e4f062acfa9c5722e",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_dynamic_gated_tiled.py",
+      "local_path": "source/build/glm53/moe_dynamic_gated_tiled.py",
+      "raw_bytes": 3840,
+      "raw_sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+      "stored_sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_dynamic_prefill.py",
+      "local_path": "source/build/glm53/moe_dynamic_prefill.py",
+      "raw_bytes": 91792,
+      "raw_sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+      "stored_sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_dynamic_prefill_n128.py",
+      "local_path": "source/build/glm53/moe_dynamic_prefill_n128.py",
+      "raw_bytes": 46473,
+      "raw_sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+      "stored_sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_gate_sm121.py",
+      "local_path": "source/build/glm53/moe_gate_sm121.py",
+      "raw_bytes": 12724,
+      "raw_sha256": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b",
+      "stored_sha256": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_micro_kernel.py",
+      "local_path": "source/build/glm53/moe_micro_kernel.py",
+      "raw_bytes": 113270,
+      "raw_sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+      "stored_sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_sf_pack.py",
+      "local_path": "source/build/glm53/moe_sf_pack.py",
+      "raw_bytes": 7321,
+      "raw_sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+      "stored_sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_static_common.py",
+      "local_path": "source/build/glm53/moe_static_common.py",
+      "raw_bytes": 9913,
+      "raw_sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+      "stored_sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_static_kernel_v4.py",
+      "local_path": "source/build/glm53/moe_static_kernel_v4.py",
+      "raw_bytes": 98224,
+      "raw_sha256": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+      "stored_sha256": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/moe_static_kernel_v5.py",
+      "local_path": "source/build/glm53/moe_static_kernel_v5.py",
+      "raw_bytes": 9670,
+      "raw_sha256": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+      "stored_sha256": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/mtp.py",
+      "local_path": "source/build/glm53/mtp.py",
+      "raw_bytes": 19541,
+      "raw_sha256": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade",
+      "stored_sha256": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/parallel_state.py",
+      "local_path": "source/build/glm53/parallel_state.py",
+      "raw_bytes": 86872,
+      "raw_sha256": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8",
+      "stored_sha256": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/qwen3_dflash2.py",
+      "local_path": "source/build/glm53/qwen3_dflash2.py",
+      "raw_bytes": 23042,
+      "raw_sha256": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee",
+      "stored_sha256": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/sampler.py",
+      "local_path": "source/build/glm53/sampler.py",
+      "raw_bytes": 11843,
+      "raw_sha256": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb",
+      "stored_sha256": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/sparse_attn_indexer_kpool.py",
+      "local_path": "source/build/glm53/sparse_attn_indexer_kpool.py",
+      "raw_bytes": 69400,
+      "raw_sha256": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d",
+      "stored_sha256": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/spec_decode_rejection_warmup.py",
+      "local_path": "source/build/glm53/spec_decode_rejection_warmup.py",
+      "raw_bytes": 10760,
+      "raw_sha256": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d",
+      "stored_sha256": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/tilelang.py",
+      "local_path": "source/build/glm53/tilelang.py",
+      "raw_bytes": 37391,
+      "raw_sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+      "stored_sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/tilelang_kernels.py",
+      "local_path": "source/build/glm53/tilelang_kernels.py",
+      "raw_bytes": 44789,
+      "raw_sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+      "stored_sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/build/glm53/zz_deneb_boot_stamps.pth",
+      "local_path": "source/build/glm53/zz_deneb_boot_stamps.pth",
+      "raw_bytes": 54,
+      "raw_sha256": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca",
+      "stored_sha256": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/measurements/glm53_ep_local_20260908/cpu5/local/result.json",
+      "local_path": "source/measurements/glm53_ep_local_20260908/cpu5/local/result.json",
+      "raw_bytes": 7831,
+      "raw_sha256": "6eb83e32a85f9bdeb6cd8a4721af8bf351e3afb6c5c1cf715b152589c7afecb8",
+      "stored_sha256": "6eb83e32a85f9bdeb6cd8a4721af8bf351e3afb6c5c1cf715b152589c7afecb8",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/probes/glm53_ep_local_check.py",
+      "local_path": "source/probes/glm53_ep_local_check.py",
+      "raw_bytes": 10499,
+      "raw_sha256": "a9bde76a3a64b459b778a780eb1b854aa03f37789c85561e3d4e32d954e52050",
+      "stored_sha256": "a9bde76a3a64b459b778a780eb1b854aa03f37789c85561e3d4e32d954e52050",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/probes/glm53_ep_local_compile_check.py",
+      "local_path": "source/probes/glm53_ep_local_compile_check.py",
+      "raw_bytes": 5189,
+      "raw_sha256": "304bd989c094e43be3ffbe3e96fd3c867770eac003bf354b637eedc304ed9d18",
+      "stored_sha256": "304bd989c094e43be3ffbe3e96fd3c867770eac003bf354b637eedc304ed9d18",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/probes/glm53_ep_local_evidence.py",
+      "local_path": "source/probes/glm53_ep_local_evidence.py",
+      "raw_bytes": 3060,
+      "raw_sha256": "6444bdbf60b14337ffbbced3db380418bf4f4a2072941662f3e2e7fe702ae0bc",
+      "stored_sha256": "6444bdbf60b14337ffbbced3db380418bf4f4a2072941662f3e2e7fe702ae0bc",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/probes/glm53_probe_lifecycle.py",
+      "local_path": "source/probes/glm53_probe_lifecycle.py",
+      "raw_bytes": 9770,
+      "raw_sha256": "3e79ec24429f516826dfcd378b3da48a4c0525663e3ef999bb53fbe81cc6324e",
+      "stored_sha256": "3e79ec24429f516826dfcd378b3da48a4c0525663e3ef999bb53fbe81cc6324e",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/probes/run_glm53_ep_local_cpu_compile.py",
+      "local_path": "source/probes/run_glm53_ep_local_cpu_compile.py",
+      "raw_bytes": 2120,
+      "raw_sha256": "0284a1bd41040f5f8a8172490aebec5463ac5794496d6d321aa62a7b56d9f373",
+      "stored_sha256": "0284a1bd41040f5f8a8172490aebec5463ac5794496d6d321aa62a7b56d9f373",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/probes/run_glm53_ep_local_offline.py",
+      "local_path": "source/probes/run_glm53_ep_local_offline.py",
+      "raw_bytes": 7878,
+      "raw_sha256": "6c40460cb9596b5a922ae02ebaeee86b72c4f83ffa8215c3145225634fb15902",
+      "stored_sha256": "6c40460cb9596b5a922ae02ebaeee86b72c4f83ffa8215c3145225634fb15902",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/tests/test_glm53_ep_local_probe.py",
+      "local_path": "source/tests/test_glm53_ep_local_probe.py",
+      "raw_bytes": 6700,
+      "raw_sha256": "3b7a2f7ec79458867baa63e8861cd48111792916138e5214dbd176cb27376612",
+      "stored_sha256": "3b7a2f7ec79458867baa63e8861cd48111792916138e5214dbd176cb27376612",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/tests/test_glm53_ep_prefill_local.py",
+      "local_path": "source/tests/test_glm53_ep_prefill_local.py",
+      "raw_bytes": 11246,
+      "raw_sha256": "5cf7ac19e31f9e2dbc8e3cbc5bdd4cb161c19d468c8c9b91674c7d57aeab543d",
+      "stored_sha256": "5cf7ac19e31f9e2dbc8e3cbc5bdd4cb161c19d468c8c9b91674c7d57aeab543d",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source/tests/test_glm53_probe_lifecycle.py",
+      "local_path": "source/tests/test_glm53_probe_lifecycle.py",
+      "raw_bytes": 6658,
+      "raw_sha256": "f2a7c88b474f08d736d43beaa283f081351595750f87fa6926886f9a34b3f7b4",
+      "stored_sha256": "f2a7c88b474f08d736d43beaa283f081351595750f87fa6926886f9a34b3f7b4",
+      "compressed": false
+    },
+    {
+      "remote_archive_path": "source_identity.json",
+      "local_path": "source_identity.json",
+      "raw_bytes": 17346,
+      "raw_sha256": "5244e0ea70f7aeb162f27525f6c9ce3d4a66f2cfb2fc3a75ec90ebe27fccadbf",
+      "stored_sha256": "5244e0ea70f7aeb162f27525f6c9ce3d4a66f2cfb2fc3a75ec90ebe27fccadbf",
+      "compressed": false
+    }
+  ]
+}

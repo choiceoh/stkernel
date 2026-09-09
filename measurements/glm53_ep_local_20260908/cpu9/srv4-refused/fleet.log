@@ -1,0 +1,3 @@
+usage: run_glm53_ep_local_cpu_compile.py [-h] --image IMAGE --arm
+                                         {stock,local} --output OUTPUT
+run_glm53_ep_local_cpu_compile.py: error: CPU compile needs at least 12 GiB available; no serving memory is reclaimed

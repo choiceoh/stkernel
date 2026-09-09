@@ -1,0 +1,630 @@
+{
+  "arm": "local",
+  "m": 6912,
+  "elapsed_s": 11.745294663007371,
+  "cache_key": [
+    "dynamic",
+    "fp4",
+    "nvfp4",
+    72,
+    4096,
+    2048,
+    8,
+    48,
+    [
+      128,
+      128
+    ],
+    "torch.int32",
+    false,
+    true,
+    "swigluoai_uninterleave",
+    1.0,
+    0.0,
+    10.0,
+    false,
+    false,
+    "glm53_ep_prefill_local_v1"
+  ],
+  "cuda_initialized": false,
+  "artifacts": [
+    {
+      "file": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+      "bytes": 1203741,
+      "sha256": "ff7f3770c1257b6fba977ec2a4f419c92bde860fb4fd743258c14f0b20c9dffe"
+    }
+  ],
+  "resources": [
+    {
+      "file": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+      "bytes": 439328,
+      "sha256": "5028101a096594263a0e99c3313b271d275c7ca312745df6dbee5a81342ff365",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:1040 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "contracts": {
+    "tests_run": 37,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "files": {
+      "tests/test_glm53_ep_prefill_local.py": "3f79ec33eaabff5521b898b6e72555116e8c1797b51f3b5871fb9c46a203130a",
+      "tests/test_glm53_ep_local_probe.py": "794d6d27de968dce5bc47f1a78f2f397d57eea86cbca2a43601cdfb2889417f5",
+      "tests/test_glm53_probe_lifecycle.py": "f2a7c88b474f08d736d43beaa283f081351595750f87fa6926886f9a34b3f7b4",
+      "tests/test_glm53_ep_route_remap.py": "c98817c3022fcf1a0efc0430dad5a81008e0cb027aacc9abdd6e3cd415d67753",
+      "tests/test_glm53_ep_sanitizer.py": "c5ec424b9631dc4a498fbf4f8497b2c063afcadef7b2a633d4b15ad85a558279",
+      "probes/glm53_ep_local_check.py": "2d40ece456cdda4d3a3d3cdd9cc58e0d77e44ffb0608585d9adc0f2550a54540",
+      "probes/glm53_ep_local_evidence.py": "085c5a03300a1ff25b3c836c7866ed38056911de173fa892f1f8cd63450a5024",
+      "probes/run_glm53_ep_local_offline.py": "138c18723ae3e02a9ecc0ce25480afb34a425e021a901a4e36b379d7631dfa94",
+      "probes/glm53_probe_lifecycle.py": "3e79ec24429f516826dfcd378b3da48a4c0525663e3ef999bb53fbe81cc6324e",
+      "probes/glm53_ep_local_compile_check.py": "1c65fcc3646247e4339dfdd74a09c9e0f4e4d31190feae7f050d3c248590f36c",
+      "probes/run_glm53_ep_local_cpu_compile.py": "0284a1bd41040f5f8a8172490aebec5463ac5794496d6d321aa62a7b56d9f373",
+      "probes/glm53_ep_route_remap_check.py": "1adea2879f76502eecfcdb94b955effc9b1153a6136de59ef5ebb3169c8154e1",
+      "probes/glm53_ep_sanitizer.py": "7144f2b4c488e073257845dc65b028c220a06831ac9ce654d6fbaa2f01ca7e1a"
+    }
+  },
+  "mounted_sources": {
+    "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "0680cae2a85bf275c2be51623020bdd672f20a905aab6d49bcd028d65e720150",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "2f04d32b101fc839fad1477b90c71247796d6b5e44a0a54b4977d674fd364343",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "27ce85fbcac4d4a1f5375a8e5e251c63cf90e9a59eeef134aebca24fa7ff1672"
+  },
+  "remap_compilation": [
+    {
+      "label": "mapped-i32-fp32-i32",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp32",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "91731f6550e753f2d6045c3e896a5870821b0c60da1943e249aebd40b2bcdbc2",
+      "shared_bytes": 0,
+      "ptx_sha256": "0c0eedfa3574d0e627afb07872c8daa05f4e184b4237b1dc8172fb522505d82b",
+      "cubin_sha256": "0437ac800c9b2f0797b8e0911d8fe553167b4c5a284d0bfefb730fd21abbaeae"
+    },
+    {
+      "label": "mapped-i32-fp32-i64",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i64",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp32",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "b14e9b498749245707ed874d0e6da309d141cbd47c343800f237b94e62d471f5",
+      "shared_bytes": 0,
+      "ptx_sha256": "2579a1cb85905e73001a1454825ca38311f604881907d1ad89072e951100160d",
+      "cubin_sha256": "3657678d6bae994a6d00f346c92706172a9d70967fdbd060982ce3128debd1e7"
+    },
+    {
+      "label": "mapped-i32-fp16-i32",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "28dceae108bf1459d13754a98dd6b78d66b3af72f6a570347a179bf01a7424d7",
+      "shared_bytes": 0,
+      "ptx_sha256": "173a136fe63ec1a0fb6109cdc091a77d04f3dbfeda97e13c0bf13a079a237ecc",
+      "cubin_sha256": "2e275adab29d6151d0d089167b086fc56822a19f9c917e59b1e406003c13b253"
+    },
+    {
+      "label": "mapped-i32-fp16-i64",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i64",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "a0dcb961545c428db840516efa172e9a236531a43a13f9d7377491442ee6decf",
+      "shared_bytes": 0,
+      "ptx_sha256": "0bdbac8119e0e0d5f6c4351d109973e60134362d247b79ca1811fa80f1fbe2ce",
+      "cubin_sha256": "bbd455f937bd814e1771acbf4de3934e3ff1e50f1f1be946925f1db07e3e51ca"
+    },
+    {
+      "label": "mapped-i32-bf16-i32",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*bf16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "6132d45958df90ca5860a1b55589ad972dee0a60948ce3336c2437ac84d9fa63",
+      "shared_bytes": 0,
+      "ptx_sha256": "173a136fe63ec1a0fb6109cdc091a77d04f3dbfeda97e13c0bf13a079a237ecc",
+      "cubin_sha256": "2e275adab29d6151d0d089167b086fc56822a19f9c917e59b1e406003c13b253"
+    },
+    {
+      "label": "mapped-i32-bf16-i64",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i64",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*bf16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "d0f612f6999ebc4f8ad781d3d674175b7d8d1d6373ae4cf85315b147a73edc3e",
+      "shared_bytes": 0,
+      "ptx_sha256": "0bdbac8119e0e0d5f6c4351d109973e60134362d247b79ca1811fa80f1fbe2ce",
+      "cubin_sha256": "bbd455f937bd814e1771acbf4de3934e3ff1e50f1f1be946925f1db07e3e51ca"
+    },
+    {
+      "label": "mapped-i64-fp32-i32",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp32",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "bc25e5384782058dda100e7e32f665bbcedbd06f0d291819905c424af23aeea7",
+      "shared_bytes": 0,
+      "ptx_sha256": "1f3d7a7549a80e7737fcb45eab9c05303762637ceeb266d0534446224b00fe62",
+      "cubin_sha256": "ffa92a9f64e158edd8439ec01f562f8b379a9f71004ade9bbb6e7608aaec07e1"
+    },
+    {
+      "label": "mapped-i64-fp32-i64",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i64",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp32",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "48ad073652d9d305adeea542ada280b98369e11ccf0d6f8bfcbe26dec7b43ab8",
+      "shared_bytes": 0,
+      "ptx_sha256": "fa987c654777b83df526760d2ad8d62beef2a7e2f14d9469cc6925adfcefdeae",
+      "cubin_sha256": "e4a1ec5b1dfd2d21e8639358cc27d7d644ee99ae3986c2ba93dce1a339ebdc96"
+    },
+    {
+      "label": "mapped-i64-fp16-i32",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "f065dc17d1c8c1bc31561f4b8194ceb01fc530f6ad0ddf4a202fdcac8b59bbd9",
+      "shared_bytes": 0,
+      "ptx_sha256": "6bd794a5d1b626d5da22f6cf657f8e083b6ab194495ab528eade529a8d126af9",
+      "cubin_sha256": "36f59c72ef79aec855aea141efe52ad58d32c95fc74c5f40b8dd237b74655197"
+    },
+    {
+      "label": "mapped-i64-fp16-i64",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i64",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "d226220e16239cb3d686374596c7609878ece56441bdaa3286ec504a7cc11168",
+      "shared_bytes": 0,
+      "ptx_sha256": "4b19940617fe519b9854f4c2e36811463faef45550b7c50d006e9ba246b08cd2",
+      "cubin_sha256": "c4dd8829e71f7f37041a9fdbbe8d8c4a5f04054bf0fa90525ce653440751afd5"
+    },
+    {
+      "label": "mapped-i64-bf16-i32",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*bf16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "9c8ebc6136565f52779319370800116a172393063bc7260a9fa62958c7c499ea",
+      "shared_bytes": 0,
+      "ptx_sha256": "6bd794a5d1b626d5da22f6cf657f8e083b6ab194495ab528eade529a8d126af9",
+      "cubin_sha256": "36f59c72ef79aec855aea141efe52ad58d32c95fc74c5f40b8dd237b74655197"
+    },
+    {
+      "label": "mapped-i64-bf16-i64",
+      "kind": "mapped",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i64",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*bf16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "4a59230838446c0442fadacf036b44cc09ebe0c420be354c1a4e484598ac7da8",
+      "shared_bytes": 0,
+      "ptx_sha256": "4b19940617fe519b9854f4c2e36811463faef45550b7c50d006e9ba246b08cd2",
+      "cubin_sha256": "c4dd8829e71f7f37041a9fdbbe8d8c4a5f04054bf0fa90525ce653440751afd5"
+    },
+    {
+      "label": "empty-i32-fp32-i32",
+      "kind": "empty",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp32",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "39644a204ea0dc3155097bae0b11b84244051269fd24cafc46f07b84e24d970d",
+      "shared_bytes": 0,
+      "ptx_sha256": "9772eabd5333bfe6efba0db01786398d171808af99526d974420bee78c1a2806",
+      "cubin_sha256": "d16e13116515080c059be838588350ca44680f08e380746ae6d065a97a7d1f23"
+    },
+    {
+      "label": "empty-i32-fp16-i32",
+      "kind": "empty",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "0085d7e9ffea03e26246377837167740c7b2ab9acaac0b915c3357eadc48570e",
+      "shared_bytes": 0,
+      "ptx_sha256": "ccbb24584fd7b9ae7e5046a068154d7ffbb5f457a010007e804e9dca27fbda5a",
+      "cubin_sha256": "cc86d12a67f437ce6796155450bbcc2b4ecd939217b7a72b6aaaaf490b25e2a5"
+    },
+    {
+      "label": "empty-i32-bf16-i32",
+      "kind": "empty",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*bf16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "a9631f7c3770b08057035e0682965c41796b3e587ec09b82ec3d4150bf885bb0",
+      "shared_bytes": 0,
+      "ptx_sha256": "ccbb24584fd7b9ae7e5046a068154d7ffbb5f457a010007e804e9dca27fbda5a",
+      "cubin_sha256": "cc86d12a67f437ce6796155450bbcc2b4ecd939217b7a72b6aaaaf490b25e2a5"
+    },
+    {
+      "label": "empty-i64-fp32-i32",
+      "kind": "empty",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp32",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "efd279f286e36fee5b708d03022af575faa12bed270b9ebdbacccc949b4f2dc8",
+      "shared_bytes": 0,
+      "ptx_sha256": "abee863808f6c0a5bf83d51091063d79092406fd7a71c49c28c41b3dfa7d292c",
+      "cubin_sha256": "745dc1d3db02b1b13bd469ccf8a0492542bf32a1de5c876836baed1ecec4b49d"
+    },
+    {
+      "label": "empty-i64-fp16-i32",
+      "kind": "empty",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "f61f85436a03df249f973a07320fc951d7b1382d309a625f22f118fac5d9c108",
+      "shared_bytes": 0,
+      "ptx_sha256": "7141aaeed1ebb31dad699bc86a211f4b7d5bfc9356c037f706a241d1a5f92347",
+      "cubin_sha256": "e89a1aa08dbec05d25d96787e35db40326f41872c755664441f147d057d92256"
+    },
+    {
+      "label": "empty-i64-bf16-i32",
+      "kind": "empty",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*bf16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true,
+        "BLOCK": 256
+      },
+      "hash": "3f665f399d4164f67b8084982d604d4a0f01f572b7cd0b49f3dc2c178595cfd8",
+      "shared_bytes": 0,
+      "ptx_sha256": "7141aaeed1ebb31dad699bc86a211f4b7d5bfc9356c037f706a241d1a5f92347",
+      "cubin_sha256": "e89a1aa08dbec05d25d96787e35db40326f41872c755664441f147d057d92256"
+    },
+    {
+      "label": "offset-i32-fp32-i32",
+      "kind": "offset",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp32",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false,
+        "BLOCK": 256
+      },
+      "hash": "9c84a6beaa32b5e631e7eb68c645ca5ebfca6e033b441f9f5f9aac3a3ce6c22c",
+      "shared_bytes": 0,
+      "ptx_sha256": "b10182b8ca97d3b6319249564b92752fbf5ac0334e0dde0bbc8d2f3fafef8dc7",
+      "cubin_sha256": "8df465c56e2cc96b4d89207e4b4d515ab3f31add205ed09071271ac8501b4eb8"
+    },
+    {
+      "label": "offset-i32-fp16-i32",
+      "kind": "offset",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false,
+        "BLOCK": 256
+      },
+      "hash": "192d24882f14b5d7791b30f8882abfaecb7b27a842e46bd35666f31a92f7360a",
+      "shared_bytes": 0,
+      "ptx_sha256": "3007b34fcf241be2367431a010b6f98503c0f94ff59c370ac4e8182c9146759e",
+      "cubin_sha256": "f6f6f13fb8af45f0fd330961046b8a5d904e55e5e0a529fb27c0643885638f0f"
+    },
+    {
+      "label": "offset-i32-bf16-i32",
+      "kind": "offset",
+      "signature": {
+        "IDS": "*i32",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*bf16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false,
+        "BLOCK": 256
+      },
+      "hash": "4b067f531707a6b8994d7e27a4910f4d4c0595f7c18793ca8cc98f1972cb0faf",
+      "shared_bytes": 0,
+      "ptx_sha256": "3007b34fcf241be2367431a010b6f98503c0f94ff59c370ac4e8182c9146759e",
+      "cubin_sha256": "f6f6f13fb8af45f0fd330961046b8a5d904e55e5e0a529fb27c0643885638f0f"
+    },
+    {
+      "label": "offset-i64-fp32-i32",
+      "kind": "offset",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp32",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false,
+        "BLOCK": 256
+      },
+      "hash": "b1fbeb2a97f4275f18c27e7c92328ddfdb85a99164012b968e4b4330bde3b912",
+      "shared_bytes": 0,
+      "ptx_sha256": "7db7a8ab3820920479903d53899791976a063b236254f8ecf29d2eb605c6525c",
+      "cubin_sha256": "9be090c3b84521f3f1e185820d36322af5ec5b7c5c0497559b238f95e56a488c"
+    },
+    {
+      "label": "offset-i64-fp16-i32",
+      "kind": "offset",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*fp16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false,
+        "BLOCK": 256
+      },
+      "hash": "836b153c2fcd183405aedfd61e1541b84708b3d48d450ecde5684250ae0d741a",
+      "shared_bytes": 0,
+      "ptx_sha256": "865a0fd446c65adf8e693a1955c9255a430cb55ccd798308ffef589ab165662c",
+      "cubin_sha256": "95bf19c11fdba5f2abf7f35342c84af3354d75655e9c08944da0816f8f167a31"
+    },
+    {
+      "label": "offset-i64-bf16-i32",
+      "kind": "offset",
+      "signature": {
+        "IDS": "*i64",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "OUT_IDS": "*i32",
+        "OUT_WEIGHTS": "*bf16",
+        "N_PAIRS": "i32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false,
+        "BLOCK": 256
+      },
+      "hash": "582518968e9706ca633f1fb2e928633e31d45b96d358436b5ff535ea56a27e7a",
+      "shared_bytes": 0,
+      "ptx_sha256": "865a0fd446c65adf8e693a1955c9255a430cb55ccd798308ffef589ab165662c",
+      "cubin_sha256": "95bf19c11fdba5f2abf7f35342c84af3354d75655e9c08944da0816f8f167a31"
+    }
+  ],
+  "sources": {
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_activation.py": "ce4c28f512c7d8cff08e7dfe8a2717713bde112752a137ef09acddd77f420b2b",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py": "b87e2b80f706e1db91b95c8a619806af37f7be25021b33a1da7f117ff4d87610",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py": "7532e1338df8e80c4b8f0bd6473c2ffeda9a5028018c77775c4e9fe2fa47b072",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py": "38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/utils.py": "8cc8cd27082a19868d72effff860aa6a3d8b35b56a12d8098d1384aaf989a398",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_blockscaled_gemm_sm120_b12x.py": "e364a769a64c35424d76e039d55daddd1b0715b5048504ff0afa48fa22351b69",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "2f04d32b101fc839fad1477b90c71247796d6b5e44a0a54b4977d674fd364343"
+  }
+}

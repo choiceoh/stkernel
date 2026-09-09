@@ -1,0 +1,1175 @@
+{
+  "schema": 1,
+  "scope": "read-only archive of completed CPU19",
+  "source": "/home/choiceoh/stkernel-ep-onepass-0909-19",
+  "revision": "cd293e19c146bd52c3419b064af209b57b2555d9",
+  "head_job": "/tmp/glm53-ep-decode-cpu-0909-19",
+  "worker": "choiceoh@10.10.10.1",
+  "worker_evidence": "/home/choiceoh/glm53-ep-cpu-0909-19/evidence",
+  "before": {
+    "time": 1788920631.3727572,
+    "revision": "cd293e19c146bd52c3419b064af209b57b2555d9",
+    "status": "",
+    "shallow": "false",
+    "alternates": false,
+    "head_evidence": {
+      "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin": {
+        "sha256": "95ebb13ab6e2fb27d6f695df427ba967cb6922899ce2b94ec071f858f65b883c",
+        "size": 86952
+      },
+      "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx": {
+        "sha256": "96c5c17e2f0d0e99c7ae0c540210451142be180ac1710f5a22fced0dc1fac2ad",
+        "size": 217006
+      },
+      "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.resources.log": {
+        "sha256": "eecfe0cda2a5bd6df41305bae332a454d45480e1ef6533b8addfe92f1fedb23f",
+        "size": 323
+      },
+      "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.cubin": {
+        "sha256": "5c91db90159b02bf4eda94e4d161c36e81320e976a8f9882b7d39973c9ffa094",
+        "size": 116656
+      },
+      "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx": {
+        "sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+        "size": 333468
+      },
+      "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.resources.log": {
+        "sha256": "277071578bcb7201a38cc7ad02ab525add7ab18a8e98690606a6b724fabefbde",
+        "size": 323
+      },
+      "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin": {
+        "sha256": "f438c0674e92c9da22eee5e6eb5cb0e5e59ffde6447e63240a613077a8585b01",
+        "size": 116600
+      },
+      "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx": {
+        "sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+        "size": 333122
+      },
+      "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.resources.log": {
+        "sha256": "a0cd9b6f4472bbb5b8d34ef2451b88ba1640b98df1cf91665c1b53c48b744157",
+        "size": 323
+      },
+      "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+        "sha256": "b534467b43b7702ac252f7aa967acd9b5bee9f74156ed17fcd364dc4340f760a",
+        "size": 304536
+      },
+      "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+        "sha256": "a1de7c7d7494008676920834d0aef1a99a520c80aeaa9fae6a2397a5ba0fd2ee",
+        "size": 969057
+      },
+      "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+        "sha256": "792e298351a987a48eb76f5d7ff6d7094a9f9d2895a1e553c15832cc3eea38e2",
+        "size": 325
+      },
+      "prepare/empty-i32-bf16-i32/kernel.cubin": {
+        "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+        "size": 18864
+      },
+      "prepare/empty-i32-bf16-i32/kernel.ptx": {
+        "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+        "size": 14273
+      },
+      "prepare/empty-i32-fp16-i32/kernel.cubin": {
+        "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+        "size": 18864
+      },
+      "prepare/empty-i32-fp16-i32/kernel.ptx": {
+        "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+        "size": 14273
+      },
+      "prepare/empty-i32-fp32-i32/kernel.cubin": {
+        "sha256": "80af8d7c0a7ff2a10f32147f702c5966e166af22d134eb83013d4d8ee43c0ba4",
+        "size": 18864
+      },
+      "prepare/empty-i32-fp32-i32/kernel.ptx": {
+        "sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+        "size": 14289
+      },
+      "prepare/empty-i64-bf16-i32/kernel.cubin": {
+        "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+        "size": 18864
+      },
+      "prepare/empty-i64-bf16-i32/kernel.ptx": {
+        "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+        "size": 14273
+      },
+      "prepare/empty-i64-fp16-i32/kernel.cubin": {
+        "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+        "size": 18864
+      },
+      "prepare/empty-i64-fp16-i32/kernel.ptx": {
+        "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+        "size": 14273
+      },
+      "prepare/empty-i64-fp32-i32/kernel.cubin": {
+        "sha256": "80af8d7c0a7ff2a10f32147f702c5966e166af22d134eb83013d4d8ee43c0ba4",
+        "size": 18864
+      },
+      "prepare/empty-i64-fp32-i32/kernel.ptx": {
+        "sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+        "size": 14289
+      },
+      "prepare/mapped-i32-bf16-i32/kernel.cubin": {
+        "sha256": "25b2a349c9e72241f0fb53c13c2cece1c802ce0cd77d158e8fbb56d2d918e07d",
+        "size": 20312
+      },
+      "prepare/mapped-i32-bf16-i32/kernel.ptx": {
+        "sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+        "size": 16093
+      },
+      "prepare/mapped-i32-bf16-i64/kernel.cubin": {
+        "sha256": "9d8a3ddd8f32a13ba4303eaf1a7c4292a05d3163576d315ac9c7a15abf66bd8f",
+        "size": 20344
+      },
+      "prepare/mapped-i32-bf16-i64/kernel.ptx": {
+        "sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+        "size": 16197
+      },
+      "prepare/mapped-i32-fp16-i32/kernel.cubin": {
+        "sha256": "25b2a349c9e72241f0fb53c13c2cece1c802ce0cd77d158e8fbb56d2d918e07d",
+        "size": 20312
+      },
+      "prepare/mapped-i32-fp16-i32/kernel.ptx": {
+        "sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+        "size": 16093
+      },
+      "prepare/mapped-i32-fp16-i64/kernel.cubin": {
+        "sha256": "9d8a3ddd8f32a13ba4303eaf1a7c4292a05d3163576d315ac9c7a15abf66bd8f",
+        "size": 20344
+      },
+      "prepare/mapped-i32-fp16-i64/kernel.ptx": {
+        "sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+        "size": 16197
+      },
+      "prepare/mapped-i32-fp32-i32/kernel.cubin": {
+        "sha256": "a9011993c5e4dc32e60d1043b15dd2dbba7eaadecda56e29346cbda307d90f03",
+        "size": 20096
+      },
+      "prepare/mapped-i32-fp32-i32/kernel.ptx": {
+        "sha256": "746422754a5ff76833b083b1f73a971b1316563604302a51ec7e40bb704fdcc7",
+        "size": 16123
+      },
+      "prepare/mapped-i32-fp32-i64/kernel.cubin": {
+        "sha256": "c76cdd7833c0fb0a20ceeba173860ccd793184cc39193727a96c9836c4d2c1ae",
+        "size": 20136
+      },
+      "prepare/mapped-i32-fp32-i64/kernel.ptx": {
+        "sha256": "5857ecaf097242c06edeafa7a7a2208861f9ed97f8f4cc18fc0a8fcd8c7bd469",
+        "size": 16227
+      },
+      "prepare/mapped-i64-bf16-i32/kernel.cubin": {
+        "sha256": "e533f2997876c12d3e9a800c08fdc26268c8214baf5892cec575d6a90bbabc55",
+        "size": 20344
+      },
+      "prepare/mapped-i64-bf16-i32/kernel.ptx": {
+        "sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+        "size": 16118
+      },
+      "prepare/mapped-i64-bf16-i64/kernel.cubin": {
+        "sha256": "8d6db8758088de9994d6536d13de5ebe8ea9532a7fbec80226a56972d16f1756",
+        "size": 20520
+      },
+      "prepare/mapped-i64-bf16-i64/kernel.ptx": {
+        "sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+        "size": 16222
+      },
+      "prepare/mapped-i64-fp16-i32/kernel.cubin": {
+        "sha256": "e533f2997876c12d3e9a800c08fdc26268c8214baf5892cec575d6a90bbabc55",
+        "size": 20344
+      },
+      "prepare/mapped-i64-fp16-i32/kernel.ptx": {
+        "sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+        "size": 16118
+      },
+      "prepare/mapped-i64-fp16-i64/kernel.cubin": {
+        "sha256": "8d6db8758088de9994d6536d13de5ebe8ea9532a7fbec80226a56972d16f1756",
+        "size": 20520
+      },
+      "prepare/mapped-i64-fp16-i64/kernel.ptx": {
+        "sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+        "size": 16222
+      },
+      "prepare/mapped-i64-fp32-i32/kernel.cubin": {
+        "sha256": "a9208841e1bb7cf2c8645b1205a48eb5b94457045db7e118d9e4bdbeb741c552",
+        "size": 20456
+      },
+      "prepare/mapped-i64-fp32-i32/kernel.ptx": {
+        "sha256": "bbf8e42c13f84f1594bc23d0a64050cc3b40ea98f5e89972e27125a11f9e5f68",
+        "size": 16131
+      },
+      "prepare/mapped-i64-fp32-i64/kernel.cubin": {
+        "sha256": "b2ede9655df8b3a3df555a82c86ccdeaf46ae4d03fc7360c73feaf7905c527dc",
+        "size": 20328
+      },
+      "prepare/mapped-i64-fp32-i64/kernel.ptx": {
+        "sha256": "b8d19190e3b72475807397c90847a0d482e43e5f3f170abafa3c69d2b17fdd98",
+        "size": 16235
+      },
+      "prepare/offset-i32-bf16-i32/kernel.cubin": {
+        "sha256": "0e36256a8b6573ab353931ef57b21a3b0aa163336a94045d6f39e0b277052199",
+        "size": 20144
+      },
+      "prepare/offset-i32-bf16-i32/kernel.ptx": {
+        "sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+        "size": 15918
+      },
+      "prepare/offset-i32-fp16-i32/kernel.cubin": {
+        "sha256": "0e36256a8b6573ab353931ef57b21a3b0aa163336a94045d6f39e0b277052199",
+        "size": 20144
+      },
+      "prepare/offset-i32-fp16-i32/kernel.ptx": {
+        "sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+        "size": 15918
+      },
+      "prepare/offset-i32-fp32-i32/kernel.cubin": {
+        "sha256": "91409279745708d62c14c05dbcf4e88693b577b785283b1c1c63dd2c3875ba82",
+        "size": 19944
+      },
+      "prepare/offset-i32-fp32-i32/kernel.ptx": {
+        "sha256": "f6a0e9aecade9b7cbebbcfd17208ba17f53336f2f675f7bb1f9ce127e9251426",
+        "size": 15948
+      },
+      "prepare/offset-i64-bf16-i32/kernel.cubin": {
+        "sha256": "a7c61d984e1acee51c66c3ab34eb02daf6d85809b7cd97986153835139cc5d91",
+        "size": 20288
+      },
+      "prepare/offset-i64-bf16-i32/kernel.ptx": {
+        "sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+        "size": 15995
+      },
+      "prepare/offset-i64-fp16-i32/kernel.cubin": {
+        "sha256": "a7c61d984e1acee51c66c3ab34eb02daf6d85809b7cd97986153835139cc5d91",
+        "size": 20288
+      },
+      "prepare/offset-i64-fp16-i32/kernel.ptx": {
+        "sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+        "size": 15995
+      },
+      "prepare/offset-i64-fp32-i32/kernel.cubin": {
+        "sha256": "b86b5a3f38f59b9b2e0c710e75e48f2518427e7af74237ad7e0bbe959a6d7583",
+        "size": 20120
+      },
+      "prepare/offset-i64-fp32-i32/kernel.ptx": {
+        "sha256": "c2c967d10ea1ceb1c31ff533158b077fe6438e436d7d8c7fdd565fc076ee1266",
+        "size": 16008
+      },
+      "result.json": {
+        "sha256": "aacc91eb1106a77e2db6d8ef65a69a02f0464da4a482bdbc6be09f96b0af8499",
+        "size": 35066
+      }
+    },
+    "files": {
+      "submission.json": {
+        "sha256": "330b2fc0a3407bd829937b2e493b4d7d83376e9bd443a6ea5a662806d81479f6",
+        "size": 7556
+      },
+      "exit.json": {
+        "sha256": "369c3bf8a18352ec1be2107d86ef11a60210b7d06dd457c1d7488cdeb9551cac",
+        "size": 124
+      },
+      "fleet.log": {
+        "sha256": "2f5e8eccff09e2602e11cdc9cedc342a6509c7993860466f88adc84ccea25473",
+        "size": 20039
+      },
+      "driver.py": {
+        "sha256": "5180e108311f1e7380b3c89df36ad03de5034b481ec069f5e2eeda3e859ec629",
+        "size": 716
+      },
+      "driver.pid": {
+        "sha256": "1125a1d496f65b501c05772f83f1959ac36f58d30fe77f3003d9569df3fe47f5",
+        "size": 8
+      }
+    },
+    "worker": {
+      "time": 1788920631.3007512,
+      "revision": "cd293e19c146bd52c3419b064af209b57b2555d9",
+      "status": "",
+      "image_id": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "capsule": {
+        "root": "/home/choiceoh/glm53-ep-cpu-0909-19/capsule",
+        "manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+        "files": 116,
+        "strict_validation": "PASS"
+      },
+      "source_receipts": {
+        "contract_sources": {
+          "tests/test_glm53_ep_micro_tile.py": "2094b4da1f9bb28ad5453bc78749660ac8b906dafe5c5ddeb199e4b710f1b0b3",
+          "tests/test_glm53_ep_short_decode.py": "da979727d4c0b84899b9c93a05baf5bef4413fabe33a580d4d780714d542c4d1",
+          "tests/test_glm53_ep_route_remap.py": "87010db07a616e830f0efe5e1febc4362eec933369df016f5d6ef5ccea20858e",
+          "tests/test_glm53_ep_local_selftest.py": "f72d1c9680a9f9a2210ac2808e3dc42ee463904c422ac5ebfe959583164e04ad",
+          "tests/test_glm53_ep_scatter_fp32.py": "0c237183b1be64c70748a1f073a3286a25da5d22c03136561886e105052905c9",
+          "tests/test_glm53_ep_prefill_local.py": "74dc4f7f38095d516fc894e16f60fd5bf22731d8aa0c5b742998af1f0b2c04a3",
+          "tests/test_glm53_ep_local_probe.py": "d1f7e4975a9e7f77c0a4dbb9576a880ae42656d7c2de3279fafa60e9a214206c",
+          "tests/test_glm53_ep_micro_scatter.py": "64a419d186c9842f924414700f76e67be35a9b3b91b568699edffa26952f97a9",
+          "tests/test_glm53_ep_micro_scatter_fp32.py": "9fae6f76e344f7d9e8b96178610377274b9837bc89e8a082d5c6aa3c2a302113",
+          "tests/test_glm53_ep_micro_direct_scatter.py": "ccc71fcde83085644b3caeeb387569a0b6826fb442c50e8496529d71b68d80c7",
+          "tests/test_glm53_ep_micro_shared_fc1_a.py": "d4d591c7b477098fb91b163815bb4f1e9ade995dcab13fc053ef8793eb31f90e",
+          "tests/test_glm53_ep_t6_direct_output.py": "7b288fbe51429a738826720ed4335facee22ffcda68c0c1a1a32f04ec2a36d91",
+          "probes/glm53_ep_short_decode_compile.py": "f8754412ffb300396a0a2e1b87e63c5881b682ab253337500620bbb3a66e4d6a",
+          "probes/run_glm53_ep_short_decode_cpu.py": "6b2cfeb345765a8f95ff4ef04bd7492f319d82896493b5053033dc9c7b28f900",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz": "4df575b8bc6d8d71b7e364fc89913ef5fa151a170179d994dc8bf83788bf89fb",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json": "8b23e618d5cf16281a535a6769515a542bfb79bf9aa70a503c90138679c3f775",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu11.py.gz": "8832063329dc9cc8c0b6365c13769668fa19fdf36e4805f923163e4745e69ca3",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu11-identity.json": "8050181f7cd8d933a15fdf8d3b4f5170e739cbd43026e9a6fbce78acf8abe091",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu17.py.gz": "cd99fc59d4b8889bfbc32c7bd5dc6c2f4514cd6d546b268723d7ba1ab1cd6862",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu17-identity.json": "3654977685f7d05fd1f338f17dd44bd30a81037b03b3576ccb85e680ce57bdb3",
+          "measurements/glm53_ep_local_20260908/micro-scatter-ownership/verify.py": "311bfbaf25b0d25c38d47e637a9221d17dc348bb82dc4abbb178610890e59708",
+          "measurements/glm53_ep_local_20260908/micro-scatter-ownership/identity.json": "5141c6bbc3d42d5eba945e2072ac660da247468f69d9c8e21f91316f3606da1f",
+          "measurements/glm53_ep_local_20260908/micro-scatter-ownership/m32-topk8-fp32.ptx.gz": "defc1b546f4169227bfcae1af5059b9597cdeee0859438e0f1f3d5876102baf5",
+          "measurements/glm53_ep_local_20260908/micro-scatter-ownership/m64-topk1-fp32.ptx.gz": "b6e9d0d66d90051ca2ad9447f478878f319c4cf1fbcfb3d88281f0d4abef803b"
+        },
+        "mounted_sources": {
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "bf5919280f2af32398f45d956855d2930e6e6696cc9d3f69bd3940486d218434",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "68760d0bbab7aa761d880d03c18314ad8adf18fc3a955a6f893e42cec96b0c68",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "bfe8f04938dfebdc635c169b8e3e7b448dba57cd177c6f0259004b9de2479e51",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "7aed5c96d4e8785641fc8af234f335735715b4373da518edb00d9e188ae272bc",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "37862eb433b3e4255645bd7a103b530d558408209f3741b87c5b3292f6d8fbad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "ad8bffc0420ede020c7df152470d65fd0801a40d877a779a499bf62f69b00a26"
+        }
+      },
+      "shallow": "false",
+      "alternates": false,
+      "files": {
+        "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin": {
+          "sha256": "95ebb13ab6e2fb27d6f695df427ba967cb6922899ce2b94ec071f858f65b883c",
+          "size": 86952
+        },
+        "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx": {
+          "sha256": "96c5c17e2f0d0e99c7ae0c540210451142be180ac1710f5a22fced0dc1fac2ad",
+          "size": 217006
+        },
+        "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.resources.log": {
+          "sha256": "eecfe0cda2a5bd6df41305bae332a454d45480e1ef6533b8addfe92f1fedb23f",
+          "size": 323
+        },
+        "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.cubin": {
+          "sha256": "5c91db90159b02bf4eda94e4d161c36e81320e976a8f9882b7d39973c9ffa094",
+          "size": 116656
+        },
+        "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx": {
+          "sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+          "size": 333468
+        },
+        "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.resources.log": {
+          "sha256": "277071578bcb7201a38cc7ad02ab525add7ab18a8e98690606a6b724fabefbde",
+          "size": 323
+        },
+        "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin": {
+          "sha256": "f438c0674e92c9da22eee5e6eb5cb0e5e59ffde6447e63240a613077a8585b01",
+          "size": 116600
+        },
+        "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx": {
+          "sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+          "size": 333122
+        },
+        "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.resources.log": {
+          "sha256": "a0cd9b6f4472bbb5b8d34ef2451b88ba1640b98df1cf91665c1b53c48b744157",
+          "size": 323
+        },
+        "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+          "sha256": "b534467b43b7702ac252f7aa967acd9b5bee9f74156ed17fcd364dc4340f760a",
+          "size": 304536
+        },
+        "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+          "sha256": "a1de7c7d7494008676920834d0aef1a99a520c80aeaa9fae6a2397a5ba0fd2ee",
+          "size": 969057
+        },
+        "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+          "sha256": "792e298351a987a48eb76f5d7ff6d7094a9f9d2895a1e553c15832cc3eea38e2",
+          "size": 325
+        },
+        "prepare/empty-i32-bf16-i32/kernel.cubin": {
+          "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+          "size": 18864
+        },
+        "prepare/empty-i32-bf16-i32/kernel.ptx": {
+          "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+          "size": 14273
+        },
+        "prepare/empty-i32-fp16-i32/kernel.cubin": {
+          "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+          "size": 18864
+        },
+        "prepare/empty-i32-fp16-i32/kernel.ptx": {
+          "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+          "size": 14273
+        },
+        "prepare/empty-i32-fp32-i32/kernel.cubin": {
+          "sha256": "80af8d7c0a7ff2a10f32147f702c5966e166af22d134eb83013d4d8ee43c0ba4",
+          "size": 18864
+        },
+        "prepare/empty-i32-fp32-i32/kernel.ptx": {
+          "sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+          "size": 14289
+        },
+        "prepare/empty-i64-bf16-i32/kernel.cubin": {
+          "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+          "size": 18864
+        },
+        "prepare/empty-i64-bf16-i32/kernel.ptx": {
+          "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+          "size": 14273
+        },
+        "prepare/empty-i64-fp16-i32/kernel.cubin": {
+          "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+          "size": 18864
+        },
+        "prepare/empty-i64-fp16-i32/kernel.ptx": {
+          "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+          "size": 14273
+        },
+        "prepare/empty-i64-fp32-i32/kernel.cubin": {
+          "sha256": "80af8d7c0a7ff2a10f32147f702c5966e166af22d134eb83013d4d8ee43c0ba4",
+          "size": 18864
+        },
+        "prepare/empty-i64-fp32-i32/kernel.ptx": {
+          "sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+          "size": 14289
+        },
+        "prepare/mapped-i32-bf16-i32/kernel.cubin": {
+          "sha256": "25b2a349c9e72241f0fb53c13c2cece1c802ce0cd77d158e8fbb56d2d918e07d",
+          "size": 20312
+        },
+        "prepare/mapped-i32-bf16-i32/kernel.ptx": {
+          "sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+          "size": 16093
+        },
+        "prepare/mapped-i32-bf16-i64/kernel.cubin": {
+          "sha256": "9d8a3ddd8f32a13ba4303eaf1a7c4292a05d3163576d315ac9c7a15abf66bd8f",
+          "size": 20344
+        },
+        "prepare/mapped-i32-bf16-i64/kernel.ptx": {
+          "sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+          "size": 16197
+        },
+        "prepare/mapped-i32-fp16-i32/kernel.cubin": {
+          "sha256": "25b2a349c9e72241f0fb53c13c2cece1c802ce0cd77d158e8fbb56d2d918e07d",
+          "size": 20312
+        },
+        "prepare/mapped-i32-fp16-i32/kernel.ptx": {
+          "sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+          "size": 16093
+        },
+        "prepare/mapped-i32-fp16-i64/kernel.cubin": {
+          "sha256": "9d8a3ddd8f32a13ba4303eaf1a7c4292a05d3163576d315ac9c7a15abf66bd8f",
+          "size": 20344
+        },
+        "prepare/mapped-i32-fp16-i64/kernel.ptx": {
+          "sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+          "size": 16197
+        },
+        "prepare/mapped-i32-fp32-i32/kernel.cubin": {
+          "sha256": "a9011993c5e4dc32e60d1043b15dd2dbba7eaadecda56e29346cbda307d90f03",
+          "size": 20096
+        },
+        "prepare/mapped-i32-fp32-i32/kernel.ptx": {
+          "sha256": "746422754a5ff76833b083b1f73a971b1316563604302a51ec7e40bb704fdcc7",
+          "size": 16123
+        },
+        "prepare/mapped-i32-fp32-i64/kernel.cubin": {
+          "sha256": "c76cdd7833c0fb0a20ceeba173860ccd793184cc39193727a96c9836c4d2c1ae",
+          "size": 20136
+        },
+        "prepare/mapped-i32-fp32-i64/kernel.ptx": {
+          "sha256": "5857ecaf097242c06edeafa7a7a2208861f9ed97f8f4cc18fc0a8fcd8c7bd469",
+          "size": 16227
+        },
+        "prepare/mapped-i64-bf16-i32/kernel.cubin": {
+          "sha256": "e533f2997876c12d3e9a800c08fdc26268c8214baf5892cec575d6a90bbabc55",
+          "size": 20344
+        },
+        "prepare/mapped-i64-bf16-i32/kernel.ptx": {
+          "sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+          "size": 16118
+        },
+        "prepare/mapped-i64-bf16-i64/kernel.cubin": {
+          "sha256": "8d6db8758088de9994d6536d13de5ebe8ea9532a7fbec80226a56972d16f1756",
+          "size": 20520
+        },
+        "prepare/mapped-i64-bf16-i64/kernel.ptx": {
+          "sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+          "size": 16222
+        },
+        "prepare/mapped-i64-fp16-i32/kernel.cubin": {
+          "sha256": "e533f2997876c12d3e9a800c08fdc26268c8214baf5892cec575d6a90bbabc55",
+          "size": 20344
+        },
+        "prepare/mapped-i64-fp16-i32/kernel.ptx": {
+          "sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+          "size": 16118
+        },
+        "prepare/mapped-i64-fp16-i64/kernel.cubin": {
+          "sha256": "8d6db8758088de9994d6536d13de5ebe8ea9532a7fbec80226a56972d16f1756",
+          "size": 20520
+        },
+        "prepare/mapped-i64-fp16-i64/kernel.ptx": {
+          "sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+          "size": 16222
+        },
+        "prepare/mapped-i64-fp32-i32/kernel.cubin": {
+          "sha256": "a9208841e1bb7cf2c8645b1205a48eb5b94457045db7e118d9e4bdbeb741c552",
+          "size": 20456
+        },
+        "prepare/mapped-i64-fp32-i32/kernel.ptx": {
+          "sha256": "bbf8e42c13f84f1594bc23d0a64050cc3b40ea98f5e89972e27125a11f9e5f68",
+          "size": 16131
+        },
+        "prepare/mapped-i64-fp32-i64/kernel.cubin": {
+          "sha256": "b2ede9655df8b3a3df555a82c86ccdeaf46ae4d03fc7360c73feaf7905c527dc",
+          "size": 20328
+        },
+        "prepare/mapped-i64-fp32-i64/kernel.ptx": {
+          "sha256": "b8d19190e3b72475807397c90847a0d482e43e5f3f170abafa3c69d2b17fdd98",
+          "size": 16235
+        },
+        "prepare/offset-i32-bf16-i32/kernel.cubin": {
+          "sha256": "0e36256a8b6573ab353931ef57b21a3b0aa163336a94045d6f39e0b277052199",
+          "size": 20144
+        },
+        "prepare/offset-i32-bf16-i32/kernel.ptx": {
+          "sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+          "size": 15918
+        },
+        "prepare/offset-i32-fp16-i32/kernel.cubin": {
+          "sha256": "0e36256a8b6573ab353931ef57b21a3b0aa163336a94045d6f39e0b277052199",
+          "size": 20144
+        },
+        "prepare/offset-i32-fp16-i32/kernel.ptx": {
+          "sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+          "size": 15918
+        },
+        "prepare/offset-i32-fp32-i32/kernel.cubin": {
+          "sha256": "91409279745708d62c14c05dbcf4e88693b577b785283b1c1c63dd2c3875ba82",
+          "size": 19944
+        },
+        "prepare/offset-i32-fp32-i32/kernel.ptx": {
+          "sha256": "f6a0e9aecade9b7cbebbcfd17208ba17f53336f2f675f7bb1f9ce127e9251426",
+          "size": 15948
+        },
+        "prepare/offset-i64-bf16-i32/kernel.cubin": {
+          "sha256": "a7c61d984e1acee51c66c3ab34eb02daf6d85809b7cd97986153835139cc5d91",
+          "size": 20288
+        },
+        "prepare/offset-i64-bf16-i32/kernel.ptx": {
+          "sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+          "size": 15995
+        },
+        "prepare/offset-i64-fp16-i32/kernel.cubin": {
+          "sha256": "a7c61d984e1acee51c66c3ab34eb02daf6d85809b7cd97986153835139cc5d91",
+          "size": 20288
+        },
+        "prepare/offset-i64-fp16-i32/kernel.ptx": {
+          "sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+          "size": 15995
+        },
+        "prepare/offset-i64-fp32-i32/kernel.cubin": {
+          "sha256": "b86b5a3f38f59b9b2e0c710e75e48f2518427e7af74237ad7e0bbe959a6d7583",
+          "size": 20120
+        },
+        "prepare/offset-i64-fp32-i32/kernel.ptx": {
+          "sha256": "c2c967d10ea1ceb1c31ff533158b077fe6438e436d7d8c7fdd565fc076ee1266",
+          "size": 16008
+        },
+        "result.json": {
+          "sha256": "aacc91eb1106a77e2db6d8ef65a69a02f0464da4a482bdbc6be09f96b0af8499",
+          "size": 35066
+        }
+      }
+    }
+  },
+  "after": {
+    "time": 1788920632.6742284,
+    "revision": "cd293e19c146bd52c3419b064af209b57b2555d9",
+    "status": "",
+    "shallow": "false",
+    "alternates": false,
+    "head_evidence": {
+      "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin": {
+        "sha256": "95ebb13ab6e2fb27d6f695df427ba967cb6922899ce2b94ec071f858f65b883c",
+        "size": 86952
+      },
+      "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx": {
+        "sha256": "96c5c17e2f0d0e99c7ae0c540210451142be180ac1710f5a22fced0dc1fac2ad",
+        "size": 217006
+      },
+      "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.resources.log": {
+        "sha256": "eecfe0cda2a5bd6df41305bae332a454d45480e1ef6533b8addfe92f1fedb23f",
+        "size": 323
+      },
+      "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.cubin": {
+        "sha256": "5c91db90159b02bf4eda94e4d161c36e81320e976a8f9882b7d39973c9ffa094",
+        "size": 116656
+      },
+      "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx": {
+        "sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+        "size": 333468
+      },
+      "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.resources.log": {
+        "sha256": "277071578bcb7201a38cc7ad02ab525add7ab18a8e98690606a6b724fabefbde",
+        "size": 323
+      },
+      "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin": {
+        "sha256": "f438c0674e92c9da22eee5e6eb5cb0e5e59ffde6447e63240a613077a8585b01",
+        "size": 116600
+      },
+      "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx": {
+        "sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+        "size": 333122
+      },
+      "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.resources.log": {
+        "sha256": "a0cd9b6f4472bbb5b8d34ef2451b88ba1640b98df1cf91665c1b53c48b744157",
+        "size": 323
+      },
+      "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+        "sha256": "b534467b43b7702ac252f7aa967acd9b5bee9f74156ed17fcd364dc4340f760a",
+        "size": 304536
+      },
+      "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+        "sha256": "a1de7c7d7494008676920834d0aef1a99a520c80aeaa9fae6a2397a5ba0fd2ee",
+        "size": 969057
+      },
+      "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+        "sha256": "792e298351a987a48eb76f5d7ff6d7094a9f9d2895a1e553c15832cc3eea38e2",
+        "size": 325
+      },
+      "prepare/empty-i32-bf16-i32/kernel.cubin": {
+        "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+        "size": 18864
+      },
+      "prepare/empty-i32-bf16-i32/kernel.ptx": {
+        "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+        "size": 14273
+      },
+      "prepare/empty-i32-fp16-i32/kernel.cubin": {
+        "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+        "size": 18864
+      },
+      "prepare/empty-i32-fp16-i32/kernel.ptx": {
+        "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+        "size": 14273
+      },
+      "prepare/empty-i32-fp32-i32/kernel.cubin": {
+        "sha256": "80af8d7c0a7ff2a10f32147f702c5966e166af22d134eb83013d4d8ee43c0ba4",
+        "size": 18864
+      },
+      "prepare/empty-i32-fp32-i32/kernel.ptx": {
+        "sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+        "size": 14289
+      },
+      "prepare/empty-i64-bf16-i32/kernel.cubin": {
+        "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+        "size": 18864
+      },
+      "prepare/empty-i64-bf16-i32/kernel.ptx": {
+        "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+        "size": 14273
+      },
+      "prepare/empty-i64-fp16-i32/kernel.cubin": {
+        "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+        "size": 18864
+      },
+      "prepare/empty-i64-fp16-i32/kernel.ptx": {
+        "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+        "size": 14273
+      },
+      "prepare/empty-i64-fp32-i32/kernel.cubin": {
+        "sha256": "80af8d7c0a7ff2a10f32147f702c5966e166af22d134eb83013d4d8ee43c0ba4",
+        "size": 18864
+      },
+      "prepare/empty-i64-fp32-i32/kernel.ptx": {
+        "sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+        "size": 14289
+      },
+      "prepare/mapped-i32-bf16-i32/kernel.cubin": {
+        "sha256": "25b2a349c9e72241f0fb53c13c2cece1c802ce0cd77d158e8fbb56d2d918e07d",
+        "size": 20312
+      },
+      "prepare/mapped-i32-bf16-i32/kernel.ptx": {
+        "sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+        "size": 16093
+      },
+      "prepare/mapped-i32-bf16-i64/kernel.cubin": {
+        "sha256": "9d8a3ddd8f32a13ba4303eaf1a7c4292a05d3163576d315ac9c7a15abf66bd8f",
+        "size": 20344
+      },
+      "prepare/mapped-i32-bf16-i64/kernel.ptx": {
+        "sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+        "size": 16197
+      },
+      "prepare/mapped-i32-fp16-i32/kernel.cubin": {
+        "sha256": "25b2a349c9e72241f0fb53c13c2cece1c802ce0cd77d158e8fbb56d2d918e07d",
+        "size": 20312
+      },
+      "prepare/mapped-i32-fp16-i32/kernel.ptx": {
+        "sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+        "size": 16093
+      },
+      "prepare/mapped-i32-fp16-i64/kernel.cubin": {
+        "sha256": "9d8a3ddd8f32a13ba4303eaf1a7c4292a05d3163576d315ac9c7a15abf66bd8f",
+        "size": 20344
+      },
+      "prepare/mapped-i32-fp16-i64/kernel.ptx": {
+        "sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+        "size": 16197
+      },
+      "prepare/mapped-i32-fp32-i32/kernel.cubin": {
+        "sha256": "a9011993c5e4dc32e60d1043b15dd2dbba7eaadecda56e29346cbda307d90f03",
+        "size": 20096
+      },
+      "prepare/mapped-i32-fp32-i32/kernel.ptx": {
+        "sha256": "746422754a5ff76833b083b1f73a971b1316563604302a51ec7e40bb704fdcc7",
+        "size": 16123
+      },
+      "prepare/mapped-i32-fp32-i64/kernel.cubin": {
+        "sha256": "c76cdd7833c0fb0a20ceeba173860ccd793184cc39193727a96c9836c4d2c1ae",
+        "size": 20136
+      },
+      "prepare/mapped-i32-fp32-i64/kernel.ptx": {
+        "sha256": "5857ecaf097242c06edeafa7a7a2208861f9ed97f8f4cc18fc0a8fcd8c7bd469",
+        "size": 16227
+      },
+      "prepare/mapped-i64-bf16-i32/kernel.cubin": {
+        "sha256": "e533f2997876c12d3e9a800c08fdc26268c8214baf5892cec575d6a90bbabc55",
+        "size": 20344
+      },
+      "prepare/mapped-i64-bf16-i32/kernel.ptx": {
+        "sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+        "size": 16118
+      },
+      "prepare/mapped-i64-bf16-i64/kernel.cubin": {
+        "sha256": "8d6db8758088de9994d6536d13de5ebe8ea9532a7fbec80226a56972d16f1756",
+        "size": 20520
+      },
+      "prepare/mapped-i64-bf16-i64/kernel.ptx": {
+        "sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+        "size": 16222
+      },
+      "prepare/mapped-i64-fp16-i32/kernel.cubin": {
+        "sha256": "e533f2997876c12d3e9a800c08fdc26268c8214baf5892cec575d6a90bbabc55",
+        "size": 20344
+      },
+      "prepare/mapped-i64-fp16-i32/kernel.ptx": {
+        "sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+        "size": 16118
+      },
+      "prepare/mapped-i64-fp16-i64/kernel.cubin": {
+        "sha256": "8d6db8758088de9994d6536d13de5ebe8ea9532a7fbec80226a56972d16f1756",
+        "size": 20520
+      },
+      "prepare/mapped-i64-fp16-i64/kernel.ptx": {
+        "sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+        "size": 16222
+      },
+      "prepare/mapped-i64-fp32-i32/kernel.cubin": {
+        "sha256": "a9208841e1bb7cf2c8645b1205a48eb5b94457045db7e118d9e4bdbeb741c552",
+        "size": 20456
+      },
+      "prepare/mapped-i64-fp32-i32/kernel.ptx": {
+        "sha256": "bbf8e42c13f84f1594bc23d0a64050cc3b40ea98f5e89972e27125a11f9e5f68",
+        "size": 16131
+      },
+      "prepare/mapped-i64-fp32-i64/kernel.cubin": {
+        "sha256": "b2ede9655df8b3a3df555a82c86ccdeaf46ae4d03fc7360c73feaf7905c527dc",
+        "size": 20328
+      },
+      "prepare/mapped-i64-fp32-i64/kernel.ptx": {
+        "sha256": "b8d19190e3b72475807397c90847a0d482e43e5f3f170abafa3c69d2b17fdd98",
+        "size": 16235
+      },
+      "prepare/offset-i32-bf16-i32/kernel.cubin": {
+        "sha256": "0e36256a8b6573ab353931ef57b21a3b0aa163336a94045d6f39e0b277052199",
+        "size": 20144
+      },
+      "prepare/offset-i32-bf16-i32/kernel.ptx": {
+        "sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+        "size": 15918
+      },
+      "prepare/offset-i32-fp16-i32/kernel.cubin": {
+        "sha256": "0e36256a8b6573ab353931ef57b21a3b0aa163336a94045d6f39e0b277052199",
+        "size": 20144
+      },
+      "prepare/offset-i32-fp16-i32/kernel.ptx": {
+        "sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+        "size": 15918
+      },
+      "prepare/offset-i32-fp32-i32/kernel.cubin": {
+        "sha256": "91409279745708d62c14c05dbcf4e88693b577b785283b1c1c63dd2c3875ba82",
+        "size": 19944
+      },
+      "prepare/offset-i32-fp32-i32/kernel.ptx": {
+        "sha256": "f6a0e9aecade9b7cbebbcfd17208ba17f53336f2f675f7bb1f9ce127e9251426",
+        "size": 15948
+      },
+      "prepare/offset-i64-bf16-i32/kernel.cubin": {
+        "sha256": "a7c61d984e1acee51c66c3ab34eb02daf6d85809b7cd97986153835139cc5d91",
+        "size": 20288
+      },
+      "prepare/offset-i64-bf16-i32/kernel.ptx": {
+        "sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+        "size": 15995
+      },
+      "prepare/offset-i64-fp16-i32/kernel.cubin": {
+        "sha256": "a7c61d984e1acee51c66c3ab34eb02daf6d85809b7cd97986153835139cc5d91",
+        "size": 20288
+      },
+      "prepare/offset-i64-fp16-i32/kernel.ptx": {
+        "sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+        "size": 15995
+      },
+      "prepare/offset-i64-fp32-i32/kernel.cubin": {
+        "sha256": "b86b5a3f38f59b9b2e0c710e75e48f2518427e7af74237ad7e0bbe959a6d7583",
+        "size": 20120
+      },
+      "prepare/offset-i64-fp32-i32/kernel.ptx": {
+        "sha256": "c2c967d10ea1ceb1c31ff533158b077fe6438e436d7d8c7fdd565fc076ee1266",
+        "size": 16008
+      },
+      "result.json": {
+        "sha256": "aacc91eb1106a77e2db6d8ef65a69a02f0464da4a482bdbc6be09f96b0af8499",
+        "size": 35066
+      }
+    },
+    "files": {
+      "submission.json": {
+        "sha256": "330b2fc0a3407bd829937b2e493b4d7d83376e9bd443a6ea5a662806d81479f6",
+        "size": 7556
+      },
+      "exit.json": {
+        "sha256": "369c3bf8a18352ec1be2107d86ef11a60210b7d06dd457c1d7488cdeb9551cac",
+        "size": 124
+      },
+      "fleet.log": {
+        "sha256": "2f5e8eccff09e2602e11cdc9cedc342a6509c7993860466f88adc84ccea25473",
+        "size": 20039
+      },
+      "driver.py": {
+        "sha256": "5180e108311f1e7380b3c89df36ad03de5034b481ec069f5e2eeda3e859ec629",
+        "size": 716
+      },
+      "driver.pid": {
+        "sha256": "1125a1d496f65b501c05772f83f1959ac36f58d30fe77f3003d9569df3fe47f5",
+        "size": 8
+      }
+    },
+    "worker": {
+      "time": 1788920632.6473813,
+      "revision": "cd293e19c146bd52c3419b064af209b57b2555d9",
+      "status": "",
+      "image_id": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "capsule": {
+        "root": "/home/choiceoh/glm53-ep-cpu-0909-19/capsule",
+        "manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+        "files": 116,
+        "strict_validation": "PASS"
+      },
+      "source_receipts": {
+        "contract_sources": {
+          "tests/test_glm53_ep_micro_tile.py": "2094b4da1f9bb28ad5453bc78749660ac8b906dafe5c5ddeb199e4b710f1b0b3",
+          "tests/test_glm53_ep_short_decode.py": "da979727d4c0b84899b9c93a05baf5bef4413fabe33a580d4d780714d542c4d1",
+          "tests/test_glm53_ep_route_remap.py": "87010db07a616e830f0efe5e1febc4362eec933369df016f5d6ef5ccea20858e",
+          "tests/test_glm53_ep_local_selftest.py": "f72d1c9680a9f9a2210ac2808e3dc42ee463904c422ac5ebfe959583164e04ad",
+          "tests/test_glm53_ep_scatter_fp32.py": "0c237183b1be64c70748a1f073a3286a25da5d22c03136561886e105052905c9",
+          "tests/test_glm53_ep_prefill_local.py": "74dc4f7f38095d516fc894e16f60fd5bf22731d8aa0c5b742998af1f0b2c04a3",
+          "tests/test_glm53_ep_local_probe.py": "d1f7e4975a9e7f77c0a4dbb9576a880ae42656d7c2de3279fafa60e9a214206c",
+          "tests/test_glm53_ep_micro_scatter.py": "64a419d186c9842f924414700f76e67be35a9b3b91b568699edffa26952f97a9",
+          "tests/test_glm53_ep_micro_scatter_fp32.py": "9fae6f76e344f7d9e8b96178610377274b9837bc89e8a082d5c6aa3c2a302113",
+          "tests/test_glm53_ep_micro_direct_scatter.py": "ccc71fcde83085644b3caeeb387569a0b6826fb442c50e8496529d71b68d80c7",
+          "tests/test_glm53_ep_micro_shared_fc1_a.py": "d4d591c7b477098fb91b163815bb4f1e9ade995dcab13fc053ef8793eb31f90e",
+          "tests/test_glm53_ep_t6_direct_output.py": "7b288fbe51429a738826720ed4335facee22ffcda68c0c1a1a32f04ec2a36d91",
+          "probes/glm53_ep_short_decode_compile.py": "f8754412ffb300396a0a2e1b87e63c5881b682ab253337500620bbb3a66e4d6a",
+          "probes/run_glm53_ep_short_decode_cpu.py": "6b2cfeb345765a8f95ff4ef04bd7492f319d82896493b5053033dc9c7b28f900",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz": "4df575b8bc6d8d71b7e364fc89913ef5fa151a170179d994dc8bf83788bf89fb",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json": "8b23e618d5cf16281a535a6769515a542bfb79bf9aa70a503c90138679c3f775",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu11.py.gz": "8832063329dc9cc8c0b6365c13769668fa19fdf36e4805f923163e4745e69ca3",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu11-identity.json": "8050181f7cd8d933a15fdf8d3b4f5170e739cbd43026e9a6fbce78acf8abe091",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu17.py.gz": "cd99fc59d4b8889bfbc32c7bd5dc6c2f4514cd6d546b268723d7ba1ab1cd6862",
+          "measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu17-identity.json": "3654977685f7d05fd1f338f17dd44bd30a81037b03b3576ccb85e680ce57bdb3",
+          "measurements/glm53_ep_local_20260908/micro-scatter-ownership/verify.py": "311bfbaf25b0d25c38d47e637a9221d17dc348bb82dc4abbb178610890e59708",
+          "measurements/glm53_ep_local_20260908/micro-scatter-ownership/identity.json": "5141c6bbc3d42d5eba945e2072ac660da247468f69d9c8e21f91316f3606da1f",
+          "measurements/glm53_ep_local_20260908/micro-scatter-ownership/m32-topk8-fp32.ptx.gz": "defc1b546f4169227bfcae1af5059b9597cdeee0859438e0f1f3d5876102baf5",
+          "measurements/glm53_ep_local_20260908/micro-scatter-ownership/m64-topk1-fp32.ptx.gz": "b6e9d0d66d90051ca2ad9447f478878f319c4cf1fbcfb3d88281f0d4abef803b"
+        },
+        "mounted_sources": {
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "bf5919280f2af32398f45d956855d2930e6e6696cc9d3f69bd3940486d218434",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "68760d0bbab7aa761d880d03c18314ad8adf18fc3a955a6f893e42cec96b0c68",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "bfe8f04938dfebdc635c169b8e3e7b448dba57cd177c6f0259004b9de2479e51",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "7aed5c96d4e8785641fc8af234f335735715b4373da518edb00d9e188ae272bc",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "37862eb433b3e4255645bd7a103b530d558408209f3741b87c5b3292f6d8fbad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "ad8bffc0420ede020c7df152470d65fd0801a40d877a779a499bf62f69b00a26"
+        }
+      },
+      "shallow": "false",
+      "alternates": false,
+      "files": {
+        "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin": {
+          "sha256": "95ebb13ab6e2fb27d6f695df427ba967cb6922899ce2b94ec071f858f65b883c",
+          "size": 86952
+        },
+        "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx": {
+          "sha256": "96c5c17e2f0d0e99c7ae0c540210451142be180ac1710f5a22fced0dc1fac2ad",
+          "size": 217006
+        },
+        "micro/m32-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.resources.log": {
+          "sha256": "eecfe0cda2a5bd6df41305bae332a454d45480e1ef6533b8addfe92f1fedb23f",
+          "size": 323
+        },
+        "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.cubin": {
+          "sha256": "5c91db90159b02bf4eda94e4d161c36e81320e976a8f9882b7d39973c9ffa094",
+          "size": 116656
+        },
+        "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx": {
+          "sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+          "size": 333468
+        },
+        "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.resources.log": {
+          "sha256": "277071578bcb7201a38cc7ad02ab525add7ab18a8e98690606a6b724fabefbde",
+          "size": 323
+        },
+        "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin": {
+          "sha256": "f438c0674e92c9da22eee5e6eb5cb0e5e59ffde6447e63240a613077a8585b01",
+          "size": 116600
+        },
+        "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx": {
+          "sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+          "size": 333122
+        },
+        "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.resources.log": {
+          "sha256": "a0cd9b6f4472bbb5b8d34ef2451b88ba1640b98df1cf91665c1b53c48b744157",
+          "size": 323
+        },
+        "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+          "sha256": "b534467b43b7702ac252f7aa967acd9b5bee9f74156ed17fcd364dc4340f760a",
+          "size": 304536
+        },
+        "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+          "sha256": "a1de7c7d7494008676920834d0aef1a99a520c80aeaa9fae6a2397a5ba0fd2ee",
+          "size": 969057
+        },
+        "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+          "sha256": "792e298351a987a48eb76f5d7ff6d7094a9f9d2895a1e553c15832cc3eea38e2",
+          "size": 325
+        },
+        "prepare/empty-i32-bf16-i32/kernel.cubin": {
+          "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+          "size": 18864
+        },
+        "prepare/empty-i32-bf16-i32/kernel.ptx": {
+          "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+          "size": 14273
+        },
+        "prepare/empty-i32-fp16-i32/kernel.cubin": {
+          "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+          "size": 18864
+        },
+        "prepare/empty-i32-fp16-i32/kernel.ptx": {
+          "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+          "size": 14273
+        },
+        "prepare/empty-i32-fp32-i32/kernel.cubin": {
+          "sha256": "80af8d7c0a7ff2a10f32147f702c5966e166af22d134eb83013d4d8ee43c0ba4",
+          "size": 18864
+        },
+        "prepare/empty-i32-fp32-i32/kernel.ptx": {
+          "sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+          "size": 14289
+        },
+        "prepare/empty-i64-bf16-i32/kernel.cubin": {
+          "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+          "size": 18864
+        },
+        "prepare/empty-i64-bf16-i32/kernel.ptx": {
+          "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+          "size": 14273
+        },
+        "prepare/empty-i64-fp16-i32/kernel.cubin": {
+          "sha256": "29add32fda2072e75e5ac1464c169bd7a42bda13e4143a70cf3a7c8e08f27dab",
+          "size": 18864
+        },
+        "prepare/empty-i64-fp16-i32/kernel.ptx": {
+          "sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+          "size": 14273
+        },
+        "prepare/empty-i64-fp32-i32/kernel.cubin": {
+          "sha256": "80af8d7c0a7ff2a10f32147f702c5966e166af22d134eb83013d4d8ee43c0ba4",
+          "size": 18864
+        },
+        "prepare/empty-i64-fp32-i32/kernel.ptx": {
+          "sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+          "size": 14289
+        },
+        "prepare/mapped-i32-bf16-i32/kernel.cubin": {
+          "sha256": "25b2a349c9e72241f0fb53c13c2cece1c802ce0cd77d158e8fbb56d2d918e07d",
+          "size": 20312
+        },
+        "prepare/mapped-i32-bf16-i32/kernel.ptx": {
+          "sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+          "size": 16093
+        },
+        "prepare/mapped-i32-bf16-i64/kernel.cubin": {
+          "sha256": "9d8a3ddd8f32a13ba4303eaf1a7c4292a05d3163576d315ac9c7a15abf66bd8f",
+          "size": 20344
+        },
+        "prepare/mapped-i32-bf16-i64/kernel.ptx": {
+          "sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+          "size": 16197
+        },
+        "prepare/mapped-i32-fp16-i32/kernel.cubin": {
+          "sha256": "25b2a349c9e72241f0fb53c13c2cece1c802ce0cd77d158e8fbb56d2d918e07d",
+          "size": 20312
+        },
+        "prepare/mapped-i32-fp16-i32/kernel.ptx": {
+          "sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+          "size": 16093
+        },
+        "prepare/mapped-i32-fp16-i64/kernel.cubin": {
+          "sha256": "9d8a3ddd8f32a13ba4303eaf1a7c4292a05d3163576d315ac9c7a15abf66bd8f",
+          "size": 20344
+        },
+        "prepare/mapped-i32-fp16-i64/kernel.ptx": {
+          "sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+          "size": 16197
+        },
+        "prepare/mapped-i32-fp32-i32/kernel.cubin": {
+          "sha256": "a9011993c5e4dc32e60d1043b15dd2dbba7eaadecda56e29346cbda307d90f03",
+          "size": 20096
+        },
+        "prepare/mapped-i32-fp32-i32/kernel.ptx": {
+          "sha256": "746422754a5ff76833b083b1f73a971b1316563604302a51ec7e40bb704fdcc7",
+          "size": 16123
+        },
+        "prepare/mapped-i32-fp32-i64/kernel.cubin": {
+          "sha256": "c76cdd7833c0fb0a20ceeba173860ccd793184cc39193727a96c9836c4d2c1ae",
+          "size": 20136
+        },
+        "prepare/mapped-i32-fp32-i64/kernel.ptx": {
+          "sha256": "5857ecaf097242c06edeafa7a7a2208861f9ed97f8f4cc18fc0a8fcd8c7bd469",
+          "size": 16227
+        },
+        "prepare/mapped-i64-bf16-i32/kernel.cubin": {
+          "sha256": "e533f2997876c12d3e9a800c08fdc26268c8214baf5892cec575d6a90bbabc55",
+          "size": 20344
+        },
+        "prepare/mapped-i64-bf16-i32/kernel.ptx": {
+          "sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+          "size": 16118
+        },
+        "prepare/mapped-i64-bf16-i64/kernel.cubin": {
+          "sha256": "8d6db8758088de9994d6536d13de5ebe8ea9532a7fbec80226a56972d16f1756",
+          "size": 20520
+        },
+        "prepare/mapped-i64-bf16-i64/kernel.ptx": {
+          "sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+          "size": 16222
+        },
+        "prepare/mapped-i64-fp16-i32/kernel.cubin": {
+          "sha256": "e533f2997876c12d3e9a800c08fdc26268c8214baf5892cec575d6a90bbabc55",
+          "size": 20344
+        },
+        "prepare/mapped-i64-fp16-i32/kernel.ptx": {
+          "sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+          "size": 16118
+        },
+        "prepare/mapped-i64-fp16-i64/kernel.cubin": {
+          "sha256": "8d6db8758088de9994d6536d13de5ebe8ea9532a7fbec80226a56972d16f1756",
+          "size": 20520
+        },
+        "prepare/mapped-i64-fp16-i64/kernel.ptx": {
+          "sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+          "size": 16222
+        },
+        "prepare/mapped-i64-fp32-i32/kernel.cubin": {
+          "sha256": "a9208841e1bb7cf2c8645b1205a48eb5b94457045db7e118d9e4bdbeb741c552",
+          "size": 20456
+        },
+        "prepare/mapped-i64-fp32-i32/kernel.ptx": {
+          "sha256": "bbf8e42c13f84f1594bc23d0a64050cc3b40ea98f5e89972e27125a11f9e5f68",
+          "size": 16131
+        },
+        "prepare/mapped-i64-fp32-i64/kernel.cubin": {
+          "sha256": "b2ede9655df8b3a3df555a82c86ccdeaf46ae4d03fc7360c73feaf7905c527dc",
+          "size": 20328
+        },
+        "prepare/mapped-i64-fp32-i64/kernel.ptx": {
+          "sha256": "b8d19190e3b72475807397c90847a0d482e43e5f3f170abafa3c69d2b17fdd98",
+          "size": 16235
+        },
+        "prepare/offset-i32-bf16-i32/kernel.cubin": {
+          "sha256": "0e36256a8b6573ab353931ef57b21a3b0aa163336a94045d6f39e0b277052199",
+          "size": 20144
+        },
+        "prepare/offset-i32-bf16-i32/kernel.ptx": {
+          "sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+          "size": 15918
+        },
+        "prepare/offset-i32-fp16-i32/kernel.cubin": {
+          "sha256": "0e36256a8b6573ab353931ef57b21a3b0aa163336a94045d6f39e0b277052199",
+          "size": 20144
+        },
+        "prepare/offset-i32-fp16-i32/kernel.ptx": {
+          "sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+          "size": 15918
+        },
+        "prepare/offset-i32-fp32-i32/kernel.cubin": {
+          "sha256": "91409279745708d62c14c05dbcf4e88693b577b785283b1c1c63dd2c3875ba82",
+          "size": 19944
+        },
+        "prepare/offset-i32-fp32-i32/kernel.ptx": {
+          "sha256": "f6a0e9aecade9b7cbebbcfd17208ba17f53336f2f675f7bb1f9ce127e9251426",
+          "size": 15948
+        },
+        "prepare/offset-i64-bf16-i32/kernel.cubin": {
+          "sha256": "a7c61d984e1acee51c66c3ab34eb02daf6d85809b7cd97986153835139cc5d91",
+          "size": 20288
+        },
+        "prepare/offset-i64-bf16-i32/kernel.ptx": {
+          "sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+          "size": 15995
+        },
+        "prepare/offset-i64-fp16-i32/kernel.cubin": {
+          "sha256": "a7c61d984e1acee51c66c3ab34eb02daf6d85809b7cd97986153835139cc5d91",
+          "size": 20288
+        },
+        "prepare/offset-i64-fp16-i32/kernel.ptx": {
+          "sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+          "size": 15995
+        },
+        "prepare/offset-i64-fp32-i32/kernel.cubin": {
+          "sha256": "b86b5a3f38f59b9b2e0c710e75e48f2518427e7af74237ad7e0bbe959a6d7583",
+          "size": 20120
+        },
+        "prepare/offset-i64-fp32-i32/kernel.ptx": {
+          "sha256": "c2c967d10ea1ceb1c31ff533158b077fe6438e436d7d8c7fdd565fc076ee1266",
+          "size": 16008
+        },
+        "result.json": {
+          "sha256": "aacc91eb1106a77e2db6d8ef65a69a02f0464da4a482bdbc6be09f96b0af8499",
+          "size": 35066
+        }
+      }
+    }
+  },
+  "evidence_tar_sha256": "a720095a88674df0fa7ee37cfac2599ba51c283599e7767bbcbee8becb77fef4",
+  "original_files": 61,
+  "original_bytes": 3367353,
+  "archive_bytes": 602163
+}

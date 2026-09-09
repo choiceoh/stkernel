@@ -1,0 +1,10 @@
+{
+  "started": 1788853448.6256526,
+  "source_revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00",
+  "exit_code": 1,
+  "performance_acceptance": false,
+  "diagnostic_only": true,
+  "error": "RuntimeError('require four running, persistent, pinned-image containers or four absent containers')",
+  "ended": 1788853450.7354636,
+  "restored_original": false
+}

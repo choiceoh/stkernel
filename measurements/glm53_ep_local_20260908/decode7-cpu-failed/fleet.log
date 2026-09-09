@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/repo/probes/glm53_ep_short_decode_compile.py", line 137, in <module>
+{"verdict": "FAIL", "phase": "micro-cute-compile", "error": "AssertionError('Both fresh CuTe kernels must produce PTX/cubin')", "contracts": null, "cuda_initialized": null}
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/repo/probes/glm53_ep_short_decode_compile.py", line 126, in main
+    compile_candidate(args.output,result)
+  File "/repo/probes/glm53_ep_short_decode_compile.py", line 78, in compile_candidate
+    assert len(artifacts)>=2 and len(resources)>=2,'Both fresh CuTe kernels must produce PTX/cubin'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Both fresh CuTe kernels must produce PTX/cubin

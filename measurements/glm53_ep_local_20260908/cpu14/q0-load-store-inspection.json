@@ -1,0 +1,1038 @@
+{
+  "schema": 1,
+  "verdict": "VERIFIED_STATIC_COMPILER_OUTPUT",
+  "performance_acceptance": false,
+  "gpu_acceptance": false,
+  "verifier_sha256": "839599936b8a49e718546da1128b46ef9b32afdc106c508fc5d61b2c7ab4b436",
+  "artifacts": {
+    "13": {
+      "revision": "18148116a7abb242741d5b112c8d735353d9fc71",
+      "receipt_sha256": "b68bcead10b78d19c3df09f0d765cf485dffd79b0ce3377ca379921d1c4ee7c2",
+      "submission_sha256": "8f8cfdafa4ee341b18404c29c9d79534128aa3dfe9384b5e6d14e1d5a42fb75f",
+      "kernel_source_sha256": "c52757d150f890f302593aa936a015ed2e6f1a6f0bf0211db5c9dd02c0cc32f1",
+      "ptx": {
+        "path": "cpu13/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz",
+        "bytes": 941539,
+        "sha256": "21a5c860b7f02aa887dd1cd8e90a5953094842b83ee24b118697c2f4d334d2de",
+        "gzip_sha256": "7752482506cd7fb85d42d179a84b0410c18f7349a974b1059514b0a912a340a6"
+      },
+      "cubin": {
+        "path": "cpu13/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin.gz",
+        "bytes": 298456,
+        "sha256": "397eaf35853780c85b37ea3a9c8491f4e4fd9f0c3c9380e1ca298b419fe0f4a3",
+        "gzip_sha256": "dc3b832e581eba0d631e25aadde585b5c64988b40dceb0bab0efe9c4256b10b1"
+      },
+      "resources": {
+        "REG": 168,
+        "STACK": 112,
+        "SHARED": 1024
+      }
+    },
+    "14": {
+      "revision": "881456a1f43fcf61de1bb5822b883dd2fd32e693",
+      "receipt_sha256": "5ee89ff895b3f99076732c25d465a6e6fe318afa28e2319ac376eec401a2052f",
+      "submission_sha256": "bc86c2075227ede68ef4d4110ca4d3a695b5a2c7c30ec95765bfba334bbf31ee",
+      "kernel_source_sha256": "664a2481b9f2065a4e8f08842a30e7840b83c78b79bcebbb6187f9a085acba55",
+      "ptx": {
+        "path": "cpu14/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz",
+        "bytes": 939211,
+        "sha256": "7c4bdc1d65f84314089dc399c39e91c90b12c699b34257de697c9fda151d1cc8",
+        "gzip_sha256": "facc20fd19b5b567f52f25db99c3b6947dbe9f205cd7f7327e405b927ff9ce63"
+      },
+      "cubin": {
+        "path": "cpu14/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin.gz",
+        "bytes": 288664,
+        "sha256": "a657728bfb29e02e032b0fa43b69cf169fa5ac63b0cb74bf3954100211720dd4",
+        "gzip_sha256": "ed52098893cf0810d521afa8064787402867f7e96a6501ba96a5bb5dc462c075"
+      },
+      "resources": {
+        "REG": 168,
+        "STACK": 112,
+        "SHARED": 1024
+      }
+    }
+  },
+  "stock_parameter_reference": {
+    "path": "cpu13/stock-gated.py.gz",
+    "sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "kernel_definition_line": 3851,
+    "parameter_order": [
+      "a_input",
+      "topk_ids",
+      "topk_weights",
+      "packed_a_storage"
+    ]
+  },
+  "changed_compiler_source": [
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py"
+  ],
+  "instruction_evidence": {
+    "13": {
+      "parameter_origins": {
+        "1": {
+          "first_line": 67,
+          "last_line": 67,
+          "text": "\tld.param.b64 \t%rd27, [kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0_param_1];"
+        },
+        "2": {
+          "first_line": 68,
+          "last_line": 68,
+          "text": "\tld.param.b64 \t%rd28, [kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0_param_2];"
+        },
+        "3": {
+          "first_line": 69,
+          "last_line": 69,
+          "text": "\tld.param.b64 \t%rd9, [kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0_param_3];"
+        }
+      },
+      "weight_loads": [
+        {
+          "role": "histogram",
+          "static_copy": 0,
+          "id_load": {
+            "first_line": 290,
+            "last_line": 290,
+            "text": "\tld.global.b32 \t%r11, [%rd51];"
+          },
+          "weight_load": {
+            "first_line": 292,
+            "last_line": 292,
+            "text": "\tld.global.b32 \t%r792, [%rd52];"
+          },
+          "id_check": {
+            "first_line": 293,
+            "last_line": 293,
+            "text": "\tsetp.gt.u32 \t%p30, %r11, 71;"
+          },
+          "skip_branch": {
+            "first_line": 296,
+            "last_line": 296,
+            "text": "\t@%p32 bra \t$L__BB0_39;"
+          },
+          "skip_target": {
+            "first_line": 303,
+            "last_line": 303,
+            "text": "$L__BB0_39:"
+          },
+          "zero_check": {
+            "first_line": 294,
+            "last_line": 294,
+            "text": "\tsetp.eq.f32 \t%p31, %r792, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 290,
+            "last_line": 296,
+            "text": "\tld.global.b32 \t%r11, [%rd51];\n\tadd.s64 \t%rd52, %rd28, %rd50;\n\tld.global.b32 \t%r792, [%rd52];\n\tsetp.gt.u32 \t%p30, %r11, 71;\n\tsetp.eq.f32 \t%p31, %r792, 0f00000000;\n\tor.pred \t%p32, %p30, %p31;\n\t@%p32 bra \t$L__BB0_39;"
+          },
+          "weight_load_guarded_by_valid_id": false
+        },
+        {
+          "role": "producer",
+          "static_copy": 1,
+          "id_load": {
+            "first_line": 621,
+            "last_line": 621,
+            "text": "\tld.global.b32 \t%r20, [%rd17];"
+          },
+          "weight_load": {
+            "first_line": 623,
+            "last_line": 623,
+            "text": "\tld.global.b32 \t%r908, [%rd18];"
+          },
+          "id_check": {
+            "first_line": 624,
+            "last_line": 624,
+            "text": "\tsetp.gt.u32 \t%p80, %r20, 71;"
+          },
+          "skip_branch": {
+            "first_line": 627,
+            "last_line": 627,
+            "text": "\t@%p82 bra \t$L__BB0_74;"
+          },
+          "skip_target": {
+            "first_line": 669,
+            "last_line": 669,
+            "text": "$L__BB0_74:"
+          },
+          "zero_check": {
+            "first_line": 625,
+            "last_line": 625,
+            "text": "\tsetp.eq.f32 \t%p81, %r908, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 621,
+            "last_line": 627,
+            "text": "\tld.global.b32 \t%r20, [%rd17];\n\tadd.s64 \t%rd18, %rd28, %rd63;\n\tld.global.b32 \t%r908, [%rd18];\n\tsetp.gt.u32 \t%p80, %r20, 71;\n\tsetp.eq.f32 \t%p81, %r908, 0f00000000;\n\tor.pred \t%p82, %p80, %p81;\n\t@%p82 bra \t$L__BB0_74;"
+          },
+          "weight_load_guarded_by_valid_id": false
+        },
+        {
+          "role": "producer",
+          "static_copy": 2,
+          "id_load": {
+            "first_line": 670,
+            "last_line": 670,
+            "text": "\tld.global.b32 \t%r22, [%rd17+4];"
+          },
+          "weight_load": {
+            "first_line": 671,
+            "last_line": 671,
+            "text": "\tld.global.b32 \t%r922, [%rd18+4];"
+          },
+          "id_check": {
+            "first_line": 672,
+            "last_line": 672,
+            "text": "\tsetp.gt.u32 \t%p85, %r22, 71;"
+          },
+          "skip_branch": {
+            "first_line": 675,
+            "last_line": 675,
+            "text": "\t@%p87 bra \t$L__BB0_76;"
+          },
+          "skip_target": {
+            "first_line": 717,
+            "last_line": 717,
+            "text": "$L__BB0_76:"
+          },
+          "zero_check": {
+            "first_line": 673,
+            "last_line": 673,
+            "text": "\tsetp.eq.f32 \t%p86, %r922, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 670,
+            "last_line": 675,
+            "text": "\tld.global.b32 \t%r22, [%rd17+4];\n\tld.global.b32 \t%r922, [%rd18+4];\n\tsetp.gt.u32 \t%p85, %r22, 71;\n\tsetp.eq.f32 \t%p86, %r922, 0f00000000;\n\tor.pred \t%p87, %p85, %p86;\n\t@%p87 bra \t$L__BB0_76;"
+          },
+          "weight_load_guarded_by_valid_id": false
+        },
+        {
+          "role": "producer",
+          "static_copy": 3,
+          "id_load": {
+            "first_line": 718,
+            "last_line": 718,
+            "text": "\tld.global.b32 \t%r24, [%rd17+8];"
+          },
+          "weight_load": {
+            "first_line": 719,
+            "last_line": 719,
+            "text": "\tld.global.b32 \t%r936, [%rd18+8];"
+          },
+          "id_check": {
+            "first_line": 720,
+            "last_line": 720,
+            "text": "\tsetp.gt.u32 \t%p90, %r24, 71;"
+          },
+          "skip_branch": {
+            "first_line": 723,
+            "last_line": 723,
+            "text": "\t@%p92 bra \t$L__BB0_78;"
+          },
+          "skip_target": {
+            "first_line": 765,
+            "last_line": 765,
+            "text": "$L__BB0_78:"
+          },
+          "zero_check": {
+            "first_line": 721,
+            "last_line": 721,
+            "text": "\tsetp.eq.f32 \t%p91, %r936, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 718,
+            "last_line": 723,
+            "text": "\tld.global.b32 \t%r24, [%rd17+8];\n\tld.global.b32 \t%r936, [%rd18+8];\n\tsetp.gt.u32 \t%p90, %r24, 71;\n\tsetp.eq.f32 \t%p91, %r936, 0f00000000;\n\tor.pred \t%p92, %p90, %p91;\n\t@%p92 bra \t$L__BB0_78;"
+          },
+          "weight_load_guarded_by_valid_id": false
+        },
+        {
+          "role": "producer",
+          "static_copy": 4,
+          "id_load": {
+            "first_line": 766,
+            "last_line": 766,
+            "text": "\tld.global.b32 \t%r26, [%rd17+12];"
+          },
+          "weight_load": {
+            "first_line": 767,
+            "last_line": 767,
+            "text": "\tld.global.b32 \t%r950, [%rd18+12];"
+          },
+          "id_check": {
+            "first_line": 768,
+            "last_line": 768,
+            "text": "\tsetp.gt.u32 \t%p95, %r26, 71;"
+          },
+          "skip_branch": {
+            "first_line": 771,
+            "last_line": 771,
+            "text": "\t@%p97 bra \t$L__BB0_80;"
+          },
+          "skip_target": {
+            "first_line": 813,
+            "last_line": 813,
+            "text": "$L__BB0_80:"
+          },
+          "zero_check": {
+            "first_line": 769,
+            "last_line": 769,
+            "text": "\tsetp.eq.f32 \t%p96, %r950, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 766,
+            "last_line": 771,
+            "text": "\tld.global.b32 \t%r26, [%rd17+12];\n\tld.global.b32 \t%r950, [%rd18+12];\n\tsetp.gt.u32 \t%p95, %r26, 71;\n\tsetp.eq.f32 \t%p96, %r950, 0f00000000;\n\tor.pred \t%p97, %p95, %p96;\n\t@%p97 bra \t$L__BB0_80;"
+          },
+          "weight_load_guarded_by_valid_id": false
+        },
+        {
+          "role": "producer",
+          "static_copy": 5,
+          "id_load": {
+            "first_line": 826,
+            "last_line": 826,
+            "text": "\tld.global.b32 \t%r28, [%rd19];"
+          },
+          "weight_load": {
+            "first_line": 828,
+            "last_line": 828,
+            "text": "\tld.global.b32 \t%r965, [%rd20];"
+          },
+          "id_check": {
+            "first_line": 829,
+            "last_line": 829,
+            "text": "\tsetp.gt.u32 \t%p103, %r28, 71;"
+          },
+          "skip_branch": {
+            "first_line": 832,
+            "last_line": 832,
+            "text": "\t@%p105 bra \t$L__BB0_85;"
+          },
+          "skip_target": {
+            "first_line": 874,
+            "last_line": 874,
+            "text": "$L__BB0_85:"
+          },
+          "zero_check": {
+            "first_line": 830,
+            "last_line": 830,
+            "text": "\tsetp.eq.f32 \t%p104, %r965, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 826,
+            "last_line": 832,
+            "text": "\tld.global.b32 \t%r28, [%rd19];\n\tadd.s64 \t%rd20, %rd28, %rd88;\n\tld.global.b32 \t%r965, [%rd20];\n\tsetp.gt.u32 \t%p103, %r28, 71;\n\tsetp.eq.f32 \t%p104, %r965, 0f00000000;\n\tor.pred \t%p105, %p103, %p104;\n\t@%p105 bra \t$L__BB0_85;"
+          },
+          "weight_load_guarded_by_valid_id": false
+        },
+        {
+          "role": "producer",
+          "static_copy": 6,
+          "id_load": {
+            "first_line": 875,
+            "last_line": 875,
+            "text": "\tld.global.b32 \t%r30, [%rd19+4];"
+          },
+          "weight_load": {
+            "first_line": 876,
+            "last_line": 876,
+            "text": "\tld.global.b32 \t%r979, [%rd20+4];"
+          },
+          "id_check": {
+            "first_line": 877,
+            "last_line": 877,
+            "text": "\tsetp.gt.u32 \t%p108, %r30, 71;"
+          },
+          "skip_branch": {
+            "first_line": 880,
+            "last_line": 880,
+            "text": "\t@%p110 bra \t$L__BB0_87;"
+          },
+          "skip_target": {
+            "first_line": 922,
+            "last_line": 922,
+            "text": "$L__BB0_87:"
+          },
+          "zero_check": {
+            "first_line": 878,
+            "last_line": 878,
+            "text": "\tsetp.eq.f32 \t%p109, %r979, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 875,
+            "last_line": 880,
+            "text": "\tld.global.b32 \t%r30, [%rd19+4];\n\tld.global.b32 \t%r979, [%rd20+4];\n\tsetp.gt.u32 \t%p108, %r30, 71;\n\tsetp.eq.f32 \t%p109, %r979, 0f00000000;\n\tor.pred \t%p110, %p108, %p109;\n\t@%p110 bra \t$L__BB0_87;"
+          },
+          "weight_load_guarded_by_valid_id": false
+        },
+        {
+          "role": "producer",
+          "static_copy": 7,
+          "id_load": {
+            "first_line": 930,
+            "last_line": 930,
+            "text": "\tld.global.b32 \t%r32, [%rd102];"
+          },
+          "weight_load": {
+            "first_line": 932,
+            "last_line": 932,
+            "text": "\tld.global.b32 \t%r995, [%rd103];"
+          },
+          "id_check": {
+            "first_line": 933,
+            "last_line": 933,
+            "text": "\tsetp.gt.u32 \t%p114, %r32, 71;"
+          },
+          "skip_branch": {
+            "first_line": 936,
+            "last_line": 936,
+            "text": "\t@%p116 bra \t$L__BB0_90;"
+          },
+          "skip_target": {
+            "first_line": 976,
+            "last_line": 976,
+            "text": "$L__BB0_90:"
+          },
+          "zero_check": {
+            "first_line": 934,
+            "last_line": 934,
+            "text": "\tsetp.eq.f32 \t%p115, %r995, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 930,
+            "last_line": 936,
+            "text": "\tld.global.b32 \t%r32, [%rd102];\n\tadd.s64 \t%rd103, %rd28, %rd101;\n\tld.global.b32 \t%r995, [%rd103];\n\tsetp.gt.u32 \t%p114, %r32, 71;\n\tsetp.eq.f32 \t%p115, %r995, 0f00000000;\n\tor.pred \t%p116, %p114, %p115;\n\t@%p116 bra \t$L__BB0_90;"
+          },
+          "weight_load_guarded_by_valid_id": false
+        }
+      ],
+      "q0_stores": [
+        {
+          "line": 1266,
+          "payload": "%rd655",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1266,
+            "last_line": 1266,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd134], %rd655, cp; @!persist st.global.u64 [%rd134], %rd655; }"
+          },
+          "role": "equal-scales",
+          "static_copy": 0
+        },
+        {
+          "line": 1289,
+          "payload": "%rd655",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1289,
+            "last_line": 1289,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd135], %rd655, cp; @!persist st.global.u64 [%rd135], %rd655; }"
+          },
+          "role": "equal-scales",
+          "static_copy": 1
+        },
+        {
+          "line": 1312,
+          "payload": "%rd655",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1312,
+            "last_line": 1312,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd136], %rd655, cp; @!persist st.global.u64 [%rd136], %rd655; }"
+          },
+          "role": "equal-scales",
+          "static_copy": 2
+        },
+        {
+          "line": 1335,
+          "payload": "%rd655",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1335,
+            "last_line": 1335,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd137], %rd655, cp; @!persist st.global.u64 [%rd137], %rd655; }"
+          },
+          "role": "equal-scales",
+          "static_copy": 3
+        },
+        {
+          "line": 1372,
+          "payload": "%rd655",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1372,
+            "last_line": 1372,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd150], %rd655, cp; @!persist st.global.u64 [%rd150], %rd655; }"
+          },
+          "role": "equal-scales",
+          "static_copy": 4
+        },
+        {
+          "line": 1395,
+          "payload": "%rd655",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1395,
+            "last_line": 1395,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd151], %rd655, cp; @!persist st.global.u64 [%rd151], %rd655; }"
+          },
+          "role": "equal-scales",
+          "static_copy": 5
+        },
+        {
+          "line": 1423,
+          "payload": "%rd655",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1423,
+            "last_line": 1423,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd158], %rd655, cp; @!persist st.global.u64 [%rd158], %rd655; }"
+          },
+          "role": "equal-scales",
+          "static_copy": 6
+        },
+        {
+          "line": 1559,
+          "payload": "%rd656",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1559,
+            "last_line": 1559,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd113], %rd656, cp; @!persist st.global.u64 [%rd113], %rd656; }"
+          },
+          "role": "varied-scales",
+          "static_copy": 7
+        },
+        {
+          "line": 1682,
+          "payload": "%rd657",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1682,
+            "last_line": 1682,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd120], %rd657, cp; @!persist st.global.u64 [%rd120], %rd657; }"
+          },
+          "role": "varied-scales",
+          "static_copy": 8
+        },
+        {
+          "line": 1816,
+          "payload": "%rd658",
+          "kind": "adaptive",
+          "instruction": {
+            "first_line": 1816,
+            "last_line": 1816,
+            "text": "\t{ .reg .pred persist; .reg .b64 cp; setp.le.s32 persist, %r1314, 2048; @persist createpolicy.fractional.L2::evict_last.b64 cp, 1.0; @persist st.global.L2::cache_hint.u64 [%rd127], %rd658, cp; @!persist st.global.u64 [%rd127], %rd658; }"
+          },
+          "role": "varied-scales",
+          "static_copy": 9
+        }
+      ]
+    },
+    "14": {
+      "parameter_origins": {
+        "1": {
+          "first_line": 67,
+          "last_line": 67,
+          "text": "\tld.param.b64 \t%rd27, [kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0_param_1];"
+        },
+        "2": {
+          "first_line": 68,
+          "last_line": 68,
+          "text": "\tld.param.b64 \t%rd28, [kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0_param_2];"
+        },
+        "3": {
+          "first_line": 69,
+          "last_line": 69,
+          "text": "\tld.param.b64 \t%rd9, [kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0_param_3];"
+        }
+      },
+      "weight_loads": [
+        {
+          "role": "histogram",
+          "static_copy": 0,
+          "id_load": {
+            "first_line": 290,
+            "last_line": 290,
+            "text": "\tld.global.b32 \t%r11, [%rd51];"
+          },
+          "weight_load": {
+            "first_line": 294,
+            "last_line": 294,
+            "text": "\tld.global.b32 \t%r792, [%rd52];"
+          },
+          "id_check": {
+            "first_line": 291,
+            "last_line": 291,
+            "text": "\tsetp.gt.u32 \t%p30, %r11, 71;"
+          },
+          "skip_branch": {
+            "first_line": 292,
+            "last_line": 292,
+            "text": "\t@%p30 bra \t$L__BB0_40;"
+          },
+          "skip_target": {
+            "first_line": 303,
+            "last_line": 303,
+            "text": "$L__BB0_40:"
+          },
+          "zero_check": {
+            "first_line": 295,
+            "last_line": 295,
+            "text": "\tsetp.eq.f32 \t%p31, %r792, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 290,
+            "last_line": 296,
+            "text": "\tld.global.b32 \t%r11, [%rd51];\n\tsetp.gt.u32 \t%p30, %r11, 71;\n\t@%p30 bra \t$L__BB0_40;\n\tadd.s64 \t%rd52, %rd28, %rd50;\n\tld.global.b32 \t%r792, [%rd52];\n\tsetp.eq.f32 \t%p31, %r792, 0f00000000;\n\t@%p31 bra \t$L__BB0_40;"
+          },
+          "weight_load_guarded_by_valid_id": true
+        },
+        {
+          "role": "producer",
+          "static_copy": 1,
+          "id_load": {
+            "first_line": 619,
+            "last_line": 619,
+            "text": "\tld.global.b32 \t%r19, [%rd17];"
+          },
+          "weight_load": {
+            "first_line": 623,
+            "last_line": 623,
+            "text": "\tld.global.b32 \t%r908, [%rd18];"
+          },
+          "id_check": {
+            "first_line": 620,
+            "last_line": 620,
+            "text": "\tsetp.gt.u32 \t%p79, %r19, 71;"
+          },
+          "skip_branch": {
+            "first_line": 622,
+            "last_line": 622,
+            "text": "\t@%p79 bra \t$L__BB0_76;"
+          },
+          "skip_target": {
+            "first_line": 667,
+            "last_line": 667,
+            "text": "$L__BB0_76:"
+          },
+          "zero_check": {
+            "first_line": 624,
+            "last_line": 624,
+            "text": "\tsetp.eq.f32 \t%p80, %r908, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 619,
+            "last_line": 625,
+            "text": "\tld.global.b32 \t%r19, [%rd17];\n\tsetp.gt.u32 \t%p79, %r19, 71;\n\tadd.s64 \t%rd18, %rd28, %rd63;\n\t@%p79 bra \t$L__BB0_76;\n\tld.global.b32 \t%r908, [%rd18];\n\tsetp.eq.f32 \t%p80, %r908, 0f00000000;\n\t@%p80 bra \t$L__BB0_76;"
+          },
+          "weight_load_guarded_by_valid_id": true
+        },
+        {
+          "role": "producer",
+          "static_copy": 2,
+          "id_load": {
+            "first_line": 668,
+            "last_line": 668,
+            "text": "\tld.global.b32 \t%r21, [%rd17+4];"
+          },
+          "weight_load": {
+            "first_line": 671,
+            "last_line": 671,
+            "text": "\tld.global.b32 \t%r922, [%rd18+4];"
+          },
+          "id_check": {
+            "first_line": 669,
+            "last_line": 669,
+            "text": "\tsetp.gt.u32 \t%p83, %r21, 71;"
+          },
+          "skip_branch": {
+            "first_line": 670,
+            "last_line": 670,
+            "text": "\t@%p83 bra \t$L__BB0_79;"
+          },
+          "skip_target": {
+            "first_line": 715,
+            "last_line": 715,
+            "text": "$L__BB0_79:"
+          },
+          "zero_check": {
+            "first_line": 672,
+            "last_line": 672,
+            "text": "\tsetp.eq.f32 \t%p84, %r922, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 668,
+            "last_line": 673,
+            "text": "\tld.global.b32 \t%r21, [%rd17+4];\n\tsetp.gt.u32 \t%p83, %r21, 71;\n\t@%p83 bra \t$L__BB0_79;\n\tld.global.b32 \t%r922, [%rd18+4];\n\tsetp.eq.f32 \t%p84, %r922, 0f00000000;\n\t@%p84 bra \t$L__BB0_79;"
+          },
+          "weight_load_guarded_by_valid_id": true
+        },
+        {
+          "role": "producer",
+          "static_copy": 3,
+          "id_load": {
+            "first_line": 716,
+            "last_line": 716,
+            "text": "\tld.global.b32 \t%r23, [%rd17+8];"
+          },
+          "weight_load": {
+            "first_line": 719,
+            "last_line": 719,
+            "text": "\tld.global.b32 \t%r936, [%rd18+8];"
+          },
+          "id_check": {
+            "first_line": 717,
+            "last_line": 717,
+            "text": "\tsetp.gt.u32 \t%p87, %r23, 71;"
+          },
+          "skip_branch": {
+            "first_line": 718,
+            "last_line": 718,
+            "text": "\t@%p87 bra \t$L__BB0_82;"
+          },
+          "skip_target": {
+            "first_line": 763,
+            "last_line": 763,
+            "text": "$L__BB0_82:"
+          },
+          "zero_check": {
+            "first_line": 720,
+            "last_line": 720,
+            "text": "\tsetp.eq.f32 \t%p88, %r936, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 716,
+            "last_line": 721,
+            "text": "\tld.global.b32 \t%r23, [%rd17+8];\n\tsetp.gt.u32 \t%p87, %r23, 71;\n\t@%p87 bra \t$L__BB0_82;\n\tld.global.b32 \t%r936, [%rd18+8];\n\tsetp.eq.f32 \t%p88, %r936, 0f00000000;\n\t@%p88 bra \t$L__BB0_82;"
+          },
+          "weight_load_guarded_by_valid_id": true
+        },
+        {
+          "role": "producer",
+          "static_copy": 4,
+          "id_load": {
+            "first_line": 764,
+            "last_line": 764,
+            "text": "\tld.global.b32 \t%r25, [%rd17+12];"
+          },
+          "weight_load": {
+            "first_line": 767,
+            "last_line": 767,
+            "text": "\tld.global.b32 \t%r950, [%rd18+12];"
+          },
+          "id_check": {
+            "first_line": 765,
+            "last_line": 765,
+            "text": "\tsetp.gt.u32 \t%p91, %r25, 71;"
+          },
+          "skip_branch": {
+            "first_line": 766,
+            "last_line": 766,
+            "text": "\t@%p91 bra \t$L__BB0_85;"
+          },
+          "skip_target": {
+            "first_line": 811,
+            "last_line": 811,
+            "text": "$L__BB0_85:"
+          },
+          "zero_check": {
+            "first_line": 768,
+            "last_line": 768,
+            "text": "\tsetp.eq.f32 \t%p92, %r950, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 764,
+            "last_line": 769,
+            "text": "\tld.global.b32 \t%r25, [%rd17+12];\n\tsetp.gt.u32 \t%p91, %r25, 71;\n\t@%p91 bra \t$L__BB0_85;\n\tld.global.b32 \t%r950, [%rd18+12];\n\tsetp.eq.f32 \t%p92, %r950, 0f00000000;\n\t@%p92 bra \t$L__BB0_85;"
+          },
+          "weight_load_guarded_by_valid_id": true
+        },
+        {
+          "role": "producer",
+          "static_copy": 5,
+          "id_load": {
+            "first_line": 822,
+            "last_line": 822,
+            "text": "\tld.global.b32 \t%r27, [%rd19];"
+          },
+          "weight_load": {
+            "first_line": 826,
+            "last_line": 826,
+            "text": "\tld.global.b32 \t%r965, [%rd20];"
+          },
+          "id_check": {
+            "first_line": 823,
+            "last_line": 823,
+            "text": "\tsetp.gt.u32 \t%p97, %r27, 71;"
+          },
+          "skip_branch": {
+            "first_line": 825,
+            "last_line": 825,
+            "text": "\t@%p97 bra \t$L__BB0_90;"
+          },
+          "skip_target": {
+            "first_line": 870,
+            "last_line": 870,
+            "text": "$L__BB0_90:"
+          },
+          "zero_check": {
+            "first_line": 827,
+            "last_line": 827,
+            "text": "\tsetp.eq.f32 \t%p98, %r965, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 822,
+            "last_line": 828,
+            "text": "\tld.global.b32 \t%r27, [%rd19];\n\tsetp.gt.u32 \t%p97, %r27, 71;\n\tadd.s64 \t%rd20, %rd28, %rd88;\n\t@%p97 bra \t$L__BB0_90;\n\tld.global.b32 \t%r965, [%rd20];\n\tsetp.eq.f32 \t%p98, %r965, 0f00000000;\n\t@%p98 bra \t$L__BB0_90;"
+          },
+          "weight_load_guarded_by_valid_id": true
+        },
+        {
+          "role": "producer",
+          "static_copy": 6,
+          "id_load": {
+            "first_line": 873,
+            "last_line": 873,
+            "text": "\tld.global.b32 \t%r29, [%rd19+4];"
+          },
+          "weight_load": {
+            "first_line": 876,
+            "last_line": 876,
+            "text": "\tld.global.b32 \t%r979, [%rd20+4];"
+          },
+          "id_check": {
+            "first_line": 874,
+            "last_line": 874,
+            "text": "\tsetp.gt.u32 \t%p102, %r29, 71;"
+          },
+          "skip_branch": {
+            "first_line": 875,
+            "last_line": 875,
+            "text": "\t@%p102 bra \t$L__BB0_94;"
+          },
+          "skip_target": {
+            "first_line": 920,
+            "last_line": 920,
+            "text": "$L__BB0_94:"
+          },
+          "zero_check": {
+            "first_line": 877,
+            "last_line": 877,
+            "text": "\tsetp.eq.f32 \t%p103, %r979, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 873,
+            "last_line": 878,
+            "text": "\tld.global.b32 \t%r29, [%rd19+4];\n\tsetp.gt.u32 \t%p102, %r29, 71;\n\t@%p102 bra \t$L__BB0_94;\n\tld.global.b32 \t%r979, [%rd20+4];\n\tsetp.eq.f32 \t%p103, %r979, 0f00000000;\n\t@%p103 bra \t$L__BB0_94;"
+          },
+          "weight_load_guarded_by_valid_id": true
+        },
+        {
+          "role": "producer",
+          "static_copy": 7,
+          "id_load": {
+            "first_line": 923,
+            "last_line": 923,
+            "text": "\tld.global.b32 \t%r31, [%rd19+8];"
+          },
+          "weight_load": {
+            "first_line": 926,
+            "last_line": 926,
+            "text": "\tld.global.b32 \t%r994, [%rd20+8];"
+          },
+          "id_check": {
+            "first_line": 924,
+            "last_line": 924,
+            "text": "\tsetp.gt.u32 \t%p107, %r31, 71;"
+          },
+          "skip_branch": {
+            "first_line": 925,
+            "last_line": 925,
+            "text": "\t@%p107 bra \t$L__BB0_98;"
+          },
+          "skip_target": {
+            "first_line": 968,
+            "last_line": 968,
+            "text": "$L__BB0_98:"
+          },
+          "zero_check": {
+            "first_line": 927,
+            "last_line": 927,
+            "text": "\tsetp.eq.f32 \t%p108, %r994, 0f00000000;"
+          },
+          "instruction_window": {
+            "first_line": 923,
+            "last_line": 928,
+            "text": "\tld.global.b32 \t%r31, [%rd19+8];\n\tsetp.gt.u32 \t%p107, %r31, 71;\n\t@%p107 bra \t$L__BB0_98;\n\tld.global.b32 \t%r994, [%rd20+8];\n\tsetp.eq.f32 \t%p108, %r994, 0f00000000;\n\t@%p108 bra \t$L__BB0_98;"
+          },
+          "weight_load_guarded_by_valid_id": true
+        }
+      ],
+      "q0_stores": [
+        {
+          "line": 1258,
+          "payload": "%rd652",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1258,
+            "last_line": 1258,
+            "text": "\tst.global.u64 [%rd131], %rd652;"
+          },
+          "role": "equal-scales",
+          "static_copy": 0
+        },
+        {
+          "line": 1281,
+          "payload": "%rd652",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1281,
+            "last_line": 1281,
+            "text": "\tst.global.u64 [%rd132], %rd652;"
+          },
+          "role": "equal-scales",
+          "static_copy": 1
+        },
+        {
+          "line": 1304,
+          "payload": "%rd652",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1304,
+            "last_line": 1304,
+            "text": "\tst.global.u64 [%rd133], %rd652;"
+          },
+          "role": "equal-scales",
+          "static_copy": 2
+        },
+        {
+          "line": 1327,
+          "payload": "%rd652",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1327,
+            "last_line": 1327,
+            "text": "\tst.global.u64 [%rd134], %rd652;"
+          },
+          "role": "equal-scales",
+          "static_copy": 3
+        },
+        {
+          "line": 1364,
+          "payload": "%rd652",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1364,
+            "last_line": 1364,
+            "text": "\tst.global.u64 [%rd147], %rd652;"
+          },
+          "role": "equal-scales",
+          "static_copy": 4
+        },
+        {
+          "line": 1387,
+          "payload": "%rd652",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1387,
+            "last_line": 1387,
+            "text": "\tst.global.u64 [%rd148], %rd652;"
+          },
+          "role": "equal-scales",
+          "static_copy": 5
+        },
+        {
+          "line": 1415,
+          "payload": "%rd652",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1415,
+            "last_line": 1415,
+            "text": "\tst.global.u64 [%rd155], %rd652;"
+          },
+          "role": "equal-scales",
+          "static_copy": 6
+        },
+        {
+          "line": 1551,
+          "payload": "%rd653",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1551,
+            "last_line": 1551,
+            "text": "\tst.global.u64 [%rd110], %rd653;"
+          },
+          "role": "varied-scales",
+          "static_copy": 7
+        },
+        {
+          "line": 1674,
+          "payload": "%rd654",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1674,
+            "last_line": 1674,
+            "text": "\tst.global.u64 [%rd117], %rd654;"
+          },
+          "role": "varied-scales",
+          "static_copy": 8
+        },
+        {
+          "line": 1808,
+          "payload": "%rd655",
+          "kind": "plain",
+          "instruction": {
+            "first_line": 1808,
+            "last_line": 1808,
+            "text": "\tst.global.u64 [%rd124], %rd655;"
+          },
+          "role": "varied-scales",
+          "static_copy": 9
+        }
+      ]
+    }
+  },
+  "counts": {
+    "histogram_weight_load_sites": [
+      1,
+      1
+    ],
+    "producer_weight_load_sites": [
+      7,
+      7
+    ],
+    "valid_id_guarded_weight_load_sites": [
+      0,
+      8
+    ],
+    "q0_adaptive_store_sites": [
+      10,
+      0
+    ],
+    "q0_plain_store_sites": [
+      0,
+      10
+    ],
+    "equal_scale_store_sites": [
+      7,
+      7
+    ],
+    "varied_scale_store_sites": [
+      3,
+      3
+    ]
+  },
+  "artifact_byte_deltas": {
+    "ptx": -2328,
+    "cubin": -9792
+  },
+  "limitations": [
+    "Counts are static instruction sites, not executed instructions, transactions or bytes saved.",
+    "Invalid signed Int32 IDs compare above 71 under unsigned comparison and bypass the CPU14 weight load; valid NaNs remain unequal to zero and signed zeros compare equal.",
+    "The dynamic quantization loops and all ten payload store sites remain. Seven equal-scale and three varied-scale sites are compiler unroll copies, not route-count limits.",
+    "Plain Q0 stores match the old executed arm only for the admitted T4096..16384 range; no defaults or admission range were changed.",
+    "Resource and cubin-byte facts come from archived CPU compilation. No GPU numerics, race freedom, memory-traffic reduction, throughput or TTFT claim is established."
+  ]
+}

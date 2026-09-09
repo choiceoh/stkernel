@@ -1,0 +1,1 @@
+{"verdict": "VERIFIED_STATIC_COMPILER_OUTPUT", "counts": {"histogram_weight_load_sites": [1, 1], "producer_weight_load_sites": [7, 7], "valid_id_guarded_weight_load_sites": [0, 8], "q0_adaptive_store_sites": [10, 0], "q0_plain_store_sites": [0, 10], "equal_scale_store_sites": [7, 7], "varied_scale_store_sites": [3, 3]}, "artifact_byte_deltas": {"ptx": -2328, "cubin": -9792}}

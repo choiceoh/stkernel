@@ -1,0 +1,12 @@
+test_expected_identity_matches_preserved_cpu2_imports_and_v6_gpu_candidate (test_glm53_ep_capsule_runtime.CapsuleRuntimeTests.test_expected_identity_matches_preserved_cpu2_imports_and_v6_gpu_candidate) ... ok
+test_host_requires_fixed_manifest_before_touching_files (test_glm53_ep_capsule_runtime.CapsuleRuntimeTests.test_host_requires_fixed_manifest_before_touching_files) ... ok
+test_mount_has_exact_read_only_origin_and_python_environment (test_glm53_ep_capsule_runtime.CapsuleRuntimeTests.test_mount_has_exact_read_only_origin_and_python_environment) ... ok
+test_pathfinder_rejects_wrong_module_or_selected_metadata_before_hash_acceptance (test_glm53_ep_capsule_runtime.CapsuleRuntimeTests.test_pathfinder_rejects_wrong_module_or_selected_metadata_before_hash_acceptance) ... ok
+test_receipt_rejects_missing_old_version_hash_origin_and_extra_fields (test_glm53_ep_capsule_runtime.CapsuleRuntimeTests.test_receipt_rejects_missing_old_version_hash_origin_and_extra_fields) ... ok
+test_runtime_rejects_environment_before_imports_and_requires_exact_identities (test_glm53_ep_capsule_runtime.CapsuleRuntimeTests.test_runtime_rejects_environment_before_imports_and_requires_exact_identities) ... ok
+test_runtime_rejects_other_mount_and_bytecode_before_imports (test_glm53_ep_capsule_runtime.CapsuleRuntimeTests.test_runtime_rejects_other_mount_and_bytecode_before_imports) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.003s
+
+OK

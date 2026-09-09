@@ -1,0 +1,918 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-0908-17",
+  "job": "/tmp/glm53-ep-local-compile0908-17-head",
+  "revision": "123fbb01211eaf8cec46fd0965dd9320d02a375b",
+  "clean": true,
+  "captured_epoch": 1788880379.3621433,
+  "compile_receipt_validated": true,
+  "tests": 146,
+  "mounted_files": 13,
+  "contract_files": 29,
+  "remap_compilations": 24,
+  "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "capsule_files_checked": 116,
+  "original_job_files": 58,
+  "files": {
+    "driver.pid": {
+      "bytes": 7,
+      "sha256": "2993a4153d6ea1a9d8f56de1e12347ce01e54f69f88365206c1d82f856b3c613",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/driver.pid",
+      "mtime_ns": 1788880343211194269
+    },
+    "driver.py": {
+      "bytes": 782,
+      "sha256": "7145a403cec8c2bf4e5ad04a984003accd80d17ae478db14a0a124266cc49492",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/driver.py",
+      "mtime_ns": 1788880343210803164
+    },
+    "exit.json": {
+      "bytes": 2168,
+      "sha256": "853b8ec39c92d89af1e0fed1015c4a068ff55edccc09af913a4a2a75d20cb491",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/exit.json",
+      "mtime_ns": 1788880359082622900
+    },
+    "fleet.log": {
+      "bytes": 50504,
+      "sha256": "cefaa3e99d87c5e279a5d2cf666f7b951ac8d756d2fe7c93839e4b55135b1ad4",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/fleet.log",
+      "mtime_ns": 1788880358083669994
+    },
+    "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+      "bytes": 300032,
+      "sha256": "0dc09f29c66e4625c71519d101a1708f321613db7b5eb686750f37de98d9faa5",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+      "mtime_ns": 1788880349682116910
+    },
+    "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+      "bytes": 964424,
+      "sha256": "aa04b5bd7ed9209c7d9826361439e4e3c331b0e160152deed3074332b57b65ab",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+      "mtime_ns": 1788880348923606847
+    },
+    "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+      "bytes": 325,
+      "sha256": "792e298351a987a48eb76f5d7ff6d7094a9f9d2895a1e553c15832cc3eea38e2",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log",
+      "mtime_ns": 1788880349890478183
+    },
+    "local/remap/empty-i32-bf16-i32/kernel.cubin": {
+      "bytes": 10032,
+      "sha256": "a2a6b3d97dc5e815a38c42733b2f18cea503d11d43f8f551f772ec8d6b92f2e9",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i32-bf16-i32/kernel.cubin",
+      "mtime_ns": 1788880350962703622
+    },
+    "local/remap/empty-i32-bf16-i32/kernel.ptx": {
+      "bytes": 5248,
+      "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i32-bf16-i32/kernel.ptx",
+      "mtime_ns": 1788880350962650806
+    },
+    "local/remap/empty-i32-fp16-i32/kernel.cubin": {
+      "bytes": 10032,
+      "sha256": "a2a6b3d97dc5e815a38c42733b2f18cea503d11d43f8f551f772ec8d6b92f2e9",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i32-fp16-i32/kernel.cubin",
+      "mtime_ns": 1788880350930426099
+    },
+    "local/remap/empty-i32-fp16-i32/kernel.ptx": {
+      "bytes": 5248,
+      "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i32-fp16-i32/kernel.ptx",
+      "mtime_ns": 1788880350930372227
+    },
+    "local/remap/empty-i32-fp32-i32/kernel.cubin": {
+      "bytes": 9736,
+      "sha256": "6250206a0b0e8bac3560dc4486c19fb0b95e8f48d950aab793e95693de92b6c8",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i32-fp32-i32/kernel.cubin",
+      "mtime_ns": 1788880350897952687
+    },
+    "local/remap/empty-i32-fp32-i32/kernel.ptx": {
+      "bytes": 5241,
+      "sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i32-fp32-i32/kernel.ptx",
+      "mtime_ns": 1788880350897886543
+    },
+    "local/remap/empty-i64-bf16-i32/kernel.cubin": {
+      "bytes": 10032,
+      "sha256": "a2a6b3d97dc5e815a38c42733b2f18cea503d11d43f8f551f772ec8d6b92f2e9",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i64-bf16-i32/kernel.cubin",
+      "mtime_ns": 1788880351067486907
+    },
+    "local/remap/empty-i64-bf16-i32/kernel.ptx": {
+      "bytes": 5248,
+      "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i64-bf16-i32/kernel.ptx",
+      "mtime_ns": 1788880351067431979
+    },
+    "local/remap/empty-i64-fp16-i32/kernel.cubin": {
+      "bytes": 10032,
+      "sha256": "a2a6b3d97dc5e815a38c42733b2f18cea503d11d43f8f551f772ec8d6b92f2e9",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i64-fp16-i32/kernel.cubin",
+      "mtime_ns": 1788880351036470250
+    },
+    "local/remap/empty-i64-fp16-i32/kernel.ptx": {
+      "bytes": 5248,
+      "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i64-fp16-i32/kernel.ptx",
+      "mtime_ns": 1788880351036414890
+    },
+    "local/remap/empty-i64-fp32-i32/kernel.cubin": {
+      "bytes": 9736,
+      "sha256": "6250206a0b0e8bac3560dc4486c19fb0b95e8f48d950aab793e95693de92b6c8",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i64-fp32-i32/kernel.cubin",
+      "mtime_ns": 1788880350994669112
+    },
+    "local/remap/empty-i64-fp32-i32/kernel.ptx": {
+      "bytes": 5241,
+      "sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/empty-i64-fp32-i32/kernel.ptx",
+      "mtime_ns": 1788880350994617128
+    },
+    "local/remap/mapped-i32-bf16-i32/kernel.cubin": {
+      "bytes": 11808,
+      "sha256": "dc5430753f769bec11bc95762b422e1ba73ec7204f434ca40866226d6884dbae",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-bf16-i32/kernel.cubin",
+      "mtime_ns": 1788880350524306321
+    },
+    "local/remap/mapped-i32-bf16-i32/kernel.ptx": {
+      "bytes": 7720,
+      "sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-bf16-i32/kernel.ptx",
+      "mtime_ns": 1788880350524252001
+    },
+    "local/remap/mapped-i32-bf16-i64/kernel.cubin": {
+      "bytes": 12016,
+      "sha256": "283c08b0b2aca5f27db2eae4ca092e95c21aaa0737b9a4624421c9bffc74ad60",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-bf16-i64/kernel.cubin",
+      "mtime_ns": 1788880350579032839
+    },
+    "local/remap/mapped-i32-bf16-i64/kernel.ptx": {
+      "bytes": 7991,
+      "sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-bf16-i64/kernel.ptx",
+      "mtime_ns": 1788880350578976247
+    },
+    "local/remap/mapped-i32-fp16-i32/kernel.cubin": {
+      "bytes": 11808,
+      "sha256": "dc5430753f769bec11bc95762b422e1ba73ec7204f434ca40866226d6884dbae",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-fp16-i32/kernel.cubin",
+      "mtime_ns": 1788880350434613747
+    },
+    "local/remap/mapped-i32-fp16-i32/kernel.ptx": {
+      "bytes": 7720,
+      "sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-fp16-i32/kernel.ptx",
+      "mtime_ns": 1788880350434553507
+    },
+    "local/remap/mapped-i32-fp16-i64/kernel.cubin": {
+      "bytes": 12016,
+      "sha256": "283c08b0b2aca5f27db2eae4ca092e95c21aaa0737b9a4624421c9bffc74ad60",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-fp16-i64/kernel.cubin",
+      "mtime_ns": 1788880350479753899
+    },
+    "local/remap/mapped-i32-fp16-i64/kernel.ptx": {
+      "bytes": 7991,
+      "sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-fp16-i64/kernel.ptx",
+      "mtime_ns": 1788880350479690730
+    },
+    "local/remap/mapped-i32-fp32-i32/kernel.cubin": {
+      "bytes": 11808,
+      "sha256": "7342a47318fe1bd38469da5321b74401f5118b048aebcfee38251e0720483951",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-fp32-i32/kernel.cubin",
+      "mtime_ns": 1788880350338187707
+    },
+    "local/remap/mapped-i32-fp32-i32/kernel.ptx": {
+      "bytes": 7667,
+      "sha256": "2f5e7f4c0033be95e1b339ebbf7dd8f03c494135feab5fbe78911b5a2b57eb0d",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-fp32-i32/kernel.ptx",
+      "mtime_ns": 1788880350338133355
+    },
+    "local/remap/mapped-i32-fp32-i64/kernel.cubin": {
+      "bytes": 11888,
+      "sha256": "0143b223d6cb629edb0018ce71e7e8138d72a9647f2ddadbc90f8d1cc9264316",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-fp32-i64/kernel.cubin",
+      "mtime_ns": 1788880350386021014
+    },
+    "local/remap/mapped-i32-fp32-i64/kernel.ptx": {
+      "bytes": 7941,
+      "sha256": "8f702e3f7c6203b6a62f314614b0c6274a024d0122edf82800349859019489db",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i32-fp32-i64/kernel.ptx",
+      "mtime_ns": 1788880350385965286
+    },
+    "local/remap/mapped-i64-bf16-i32/kernel.cubin": {
+      "bytes": 12240,
+      "sha256": "585c7139fa29de64c359d0e1e49c8affad9a3a151477d7d5b5afd460f7e2666d",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-bf16-i32/kernel.cubin",
+      "mtime_ns": 1788880350819591300
+    },
+    "local/remap/mapped-i64-bf16-i32/kernel.ptx": {
+      "bytes": 7747,
+      "sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-bf16-i32/kernel.ptx",
+      "mtime_ns": 1788880350819537059
+    },
+    "local/remap/mapped-i64-bf16-i64/kernel.cubin": {
+      "bytes": 12432,
+      "sha256": "4e919623a6b953a81bedee4959c7aeb8e12e1cf68f15d4f409ebdc94a4bdfc90",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-bf16-i64/kernel.cubin",
+      "mtime_ns": 1788880350864129466
+    },
+    "local/remap/mapped-i64-bf16-i64/kernel.ptx": {
+      "bytes": 8020,
+      "sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-bf16-i64/kernel.ptx",
+      "mtime_ns": 1788880350864076058
+    },
+    "local/remap/mapped-i64-fp16-i32/kernel.cubin": {
+      "bytes": 12240,
+      "sha256": "585c7139fa29de64c359d0e1e49c8affad9a3a151477d7d5b5afd460f7e2666d",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-fp16-i32/kernel.cubin",
+      "mtime_ns": 1788880350725822655
+    },
+    "local/remap/mapped-i64-fp16-i32/kernel.ptx": {
+      "bytes": 7747,
+      "sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-fp16-i32/kernel.ptx",
+      "mtime_ns": 1788880350725764895
+    },
+    "local/remap/mapped-i64-fp16-i64/kernel.cubin": {
+      "bytes": 12432,
+      "sha256": "4e919623a6b953a81bedee4959c7aeb8e12e1cf68f15d4f409ebdc94a4bdfc90",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-fp16-i64/kernel.cubin",
+      "mtime_ns": 1788880350774592252
+    },
+    "local/remap/mapped-i64-fp16-i64/kernel.ptx": {
+      "bytes": 8020,
+      "sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-fp16-i64/kernel.ptx",
+      "mtime_ns": 1788880350774533036
+    },
+    "local/remap/mapped-i64-fp32-i32/kernel.cubin": {
+      "bytes": 12208,
+      "sha256": "16cce7cf61e4870a6ae0d69a8718eb68a9705ee7f4f218cec3933cf3197334cd",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-fp32-i32/kernel.cubin",
+      "mtime_ns": 1788880350629340679
+    },
+    "local/remap/mapped-i64-fp32-i32/kernel.ptx": {
+      "bytes": 7722,
+      "sha256": "8b5122b74204fdf9e6dcf24c6fc8853e42955682ff4a4548355c9bc4a1b8e1b9",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-fp32-i32/kernel.ptx",
+      "mtime_ns": 1788880350629272167
+    },
+    "local/remap/mapped-i64-fp32-i64/kernel.cubin": {
+      "bytes": 12272,
+      "sha256": "6042823dc298d1e8fe704ae428e9e40c3ff5c648a87cf48f04d41f06c3004515",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-fp32-i64/kernel.cubin",
+      "mtime_ns": 1788880350677715443
+    },
+    "local/remap/mapped-i64-fp32-i64/kernel.ptx": {
+      "bytes": 7993,
+      "sha256": "4825abab342c3ed078cfa33618cbb9484127586a9cbbc0029d1987aeba893738",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/mapped-i64-fp32-i64/kernel.ptx",
+      "mtime_ns": 1788880350677659955
+    },
+    "local/remap/offset-i32-bf16-i32/kernel.cubin": {
+      "bytes": 11504,
+      "sha256": "e2001da11f9fdaaaa63e2ac67b954b463ce676b7d7195ad0bcffe65b4658d97b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i32-bf16-i32/kernel.cubin",
+      "mtime_ns": 1788880351216728871
+    },
+    "local/remap/offset-i32-bf16-i32/kernel.ptx": {
+      "bytes": 7313,
+      "sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i32-bf16-i32/kernel.ptx",
+      "mtime_ns": 1788880351216672503
+    },
+    "local/remap/offset-i32-fp16-i32/kernel.cubin": {
+      "bytes": 11504,
+      "sha256": "e2001da11f9fdaaaa63e2ac67b954b463ce676b7d7195ad0bcffe65b4658d97b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i32-fp16-i32/kernel.cubin",
+      "mtime_ns": 1788880351161056527
+    },
+    "local/remap/offset-i32-fp16-i32/kernel.ptx": {
+      "bytes": 7313,
+      "sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i32-fp16-i32/kernel.ptx",
+      "mtime_ns": 1788880351161001231
+    },
+    "local/remap/offset-i32-fp32-i32/kernel.cubin": {
+      "bytes": 11368,
+      "sha256": "59cba0be8986402435dd68276119b8e8fb266ea6c93d5212523018ad0e8cf11b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i32-fp32-i32/kernel.cubin",
+      "mtime_ns": 1788880351117715035
+    },
+    "local/remap/offset-i32-fp32-i32/kernel.ptx": {
+      "bytes": 7263,
+      "sha256": "a0cefa45eadba91362f0a98ae35d3bef8e35afa627ff1bda2dd4394749c9ed58",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i32-fp32-i32/kernel.ptx",
+      "mtime_ns": 1788880351117657755
+    },
+    "local/remap/offset-i64-bf16-i32/kernel.cubin": {
+      "bytes": 11640,
+      "sha256": "81b26a7c77a18fecb390866231cd56747157e628e4ea5e23ae07e5967a645197",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i64-bf16-i32/kernel.cubin",
+      "mtime_ns": 1788880351351589452
+    },
+    "local/remap/offset-i64-bf16-i32/kernel.ptx": {
+      "bytes": 7301,
+      "sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i64-bf16-i32/kernel.ptx",
+      "mtime_ns": 1788880351351535132
+    },
+    "local/remap/offset-i64-fp16-i32/kernel.cubin": {
+      "bytes": 11640,
+      "sha256": "81b26a7c77a18fecb390866231cd56747157e628e4ea5e23ae07e5967a645197",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i64-fp16-i32/kernel.cubin",
+      "mtime_ns": 1788880351307695031
+    },
+    "local/remap/offset-i64-fp16-i32/kernel.ptx": {
+      "bytes": 7301,
+      "sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i64-fp16-i32/kernel.ptx",
+      "mtime_ns": 1788880351307640727
+    },
+    "local/remap/offset-i64-fp32-i32/kernel.cubin": {
+      "bytes": 11624,
+      "sha256": "f0f966fe970f18204b1af19b272742bf0a65ebe70bf75e1c5ec1e64b9dc0fd2a",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i64-fp32-i32/kernel.cubin",
+      "mtime_ns": 1788880351262157935
+    },
+    "local/remap/offset-i64-fp32-i32/kernel.ptx": {
+      "bytes": 7274,
+      "sha256": "630fe8b409dc6030aca83bbdb4c6864fafb5078753a995c871229186f4cba4a3",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/remap/offset-i64-fp32-i32/kernel.ptx",
+      "mtime_ns": 1788880351262103263
+    },
+    "local/result.json": {
+      "bytes": 28539,
+      "sha256": "1d8ee9b9657cd49240f2b1f6d5eee40a413e647dc8ee0743d911d69e0ac8eba7",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/local/result.json",
+      "mtime_ns": 1788880358083669994
+    },
+    "started.json": {
+      "bytes": 47,
+      "sha256": "553f36c3216bfb7236af0c2fcca3d21c222451d6a02d6da751a6825a8a40be7b",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/started.json",
+      "mtime_ns": 1788880343223641441
+    },
+    "submission.json": {
+      "bytes": 2066,
+      "sha256": "02c4799468b4313e4a1f4a39e828538d6f4e110ee72f4b541efe201f34810abb",
+      "source": "/tmp/glm53-ep-local-compile0908-17-head/submission.json",
+      "mtime_ns": 1788880343210739020
+    },
+    "frozen-source/build/glm53/async_llm.py": {
+      "bytes": 47513,
+      "sha256": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/async_llm.py",
+      "mtime_ns": 1788880342291596367
+    },
+    "frozen-source/build/glm53/b12x_moe.py": {
+      "bytes": 31331,
+      "sha256": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/b12x_moe.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/chunk_delta_h.py": {
+      "bytes": 13349,
+      "sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/chunk_delta_h.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/cuda_communicator.py": {
+      "bytes": 32391,
+      "sha256": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/cuda_communicator.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/deneb_boot_stamps.py": {
+      "bytes": 11173,
+      "sha256": "cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/deneb_boot_stamps.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/dflash_utils.py": {
+      "bytes": 5518,
+      "sha256": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/dflash_utils.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/dsv4_oneshot_ar.cu": {
+      "bytes": 36138,
+      "sha256": "7c75403c14142b70da2d87ff3d8906051539740f1b3ecea2107b040a323cd6cf",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/dsv4_oneshot_ar.cu",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/dsv4_oneshot_shim.py": {
+      "bytes": 21380,
+      "sha256": "ef6fffb1474965f16702217f72b6e9e07a941f8528e617039561a8ac4cc1ca34",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/dsv4_oneshot_shim.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/flashinfer_b12x_moe.py": {
+      "bytes": 99815,
+      "sha256": "5c7cdbc7d87129d3314725923a674728da113f7918b9c33dab164aa1c5cfc56d",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/flashinfer_b12x_moe.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/flashinfer_mla_sparse_sm90.py": {
+      "bytes": 28100,
+      "sha256": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/flashinfer_mla_sparse_sm90.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/fp8_lm_head.py": {
+      "bytes": 19647,
+      "sha256": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/fp8_lm_head.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm47_moe.py": {
+      "bytes": 9881,
+      "sha256": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm47_moe.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_chat.py": {
+      "bytes": 6456,
+      "sha256": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_chat.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_decode_first.py": {
+      "bytes": 18281,
+      "sha256": "220c91024677afa63622c8d169ff901b24353f02af81d2f4873af2b363fc2836",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_decode_first.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_dev_lab.py": {
+      "bytes": 5605,
+      "sha256": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_dev_lab.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_dflash_early_fc.py": {
+      "bytes": 6376,
+      "sha256": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_dflash_early_fc.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_draft_dump.py": {
+      "bytes": 5782,
+      "sha256": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_draft_dump.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_drafter_prep.py": {
+      "bytes": 13603,
+      "sha256": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_drafter_prep.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_ep_route_remap.py": {
+      "bytes": 5493,
+      "sha256": "9d83120fb20e4aae382e3971a86c1a3b6970e591dd31ee5d7fc3e1a2ca521339",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_ep_route_remap.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_fp8_dense.py": {
+      "bytes": 63156,
+      "sha256": "a2b7508eaa12a43212615869deac1c855c5441f540406f53703b7cd85c4e6046",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_fp8_dense.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_indexer_gate.py": {
+      "bytes": 6273,
+      "sha256": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_indexer_gate.py",
+      "mtime_ns": 1788880342292681361
+    },
+    "frozen-source/build/glm53/glm53_kda_onepass.py": {
+      "bytes": 41197,
+      "sha256": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_kda_onepass.py",
+      "mtime_ns": 1788880342293596370
+    },
+    "frozen-source/build/glm53/glm53_kpool_indexer.py": {
+      "bytes": 66372,
+      "sha256": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_kpool_indexer.py",
+      "mtime_ns": 1788880342293596370
+    },
+    "frozen-source/build/glm53/glm53_lab_middleware.py": {
+      "bytes": 1013,
+      "sha256": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_lab_middleware.py",
+      "mtime_ns": 1788880342293596370
+    },
+    "frozen-source/build/glm53/glm53_megakernel.cu": {
+      "bytes": 177496,
+      "sha256": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_megakernel.cu",
+      "mtime_ns": 1788880342293596370
+    },
+    "frozen-source/build/glm53/glm53_megakernel.py": {
+      "bytes": 125258,
+      "sha256": "53a26fc2821b0b3e76a1ea0d12354a2eb35c538f55d8daa2fd03b000128da7fb",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_megakernel.py",
+      "mtime_ns": 1788880342293596370
+    },
+    "frozen-source/build/glm53/glm53_nvfp4_bproj.py": {
+      "bytes": 8093,
+      "sha256": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_nvfp4_bproj.py",
+      "mtime_ns": 1788880342293596370
+    },
+    "frozen-source/build/glm53/glm53_nvfp4_scale.py": {
+      "bytes": 2577,
+      "sha256": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_nvfp4_scale.py",
+      "mtime_ns": 1788880342293596370
+    },
+    "frozen-source/build/glm53/glm53_prefill_collectives.py": {
+      "bytes": 28425,
+      "sha256": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_prefill_collectives.py",
+      "mtime_ns": 1788880342293596370
+    },
+    "frozen-source/build/glm53/glm53_prefill_fastpath.py": {
+      "bytes": 3530,
+      "sha256": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_prefill_fastpath.py",
+      "mtime_ns": 1788880342293596370
+    },
+    "frozen-source/build/glm53/glm53_prep_fused.py": {
+      "bytes": 62614,
+      "sha256": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_prep_fused.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/glm53_rank_cache.py": {
+      "bytes": 19200,
+      "sha256": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_rank_cache.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/glm53_renderer_warmup.py": {
+      "bytes": 5006,
+      "sha256": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_renderer_warmup.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/glm53_startup_cache.py": {
+      "bytes": 13495,
+      "sha256": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm53_startup_cache.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/glm5next_attention.py": {
+      "bytes": 27202,
+      "sha256": "4bed9915da4c2f45e17cec2995f61963528dccc3f5832a9ae50db19e0faeada9",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm5next_attention.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/glm5next_kda.py": {
+      "bytes": 35295,
+      "sha256": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm5next_kda.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/glm5next_model.py": {
+      "bytes": 74950,
+      "sha256": "1b2fe00fadac5db22ce01e35f6be23e3e6e7b75e92b6d09af434175f811f96d7",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm5next_model.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/glm5next_multimodal.py": {
+      "bytes": 31356,
+      "sha256": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/glm5next_multimodal.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/gpu_worker.py": {
+      "bytes": 60529,
+      "sha256": "c85092ab70c42692ae8cb7ae4ba4d35d7fbe885cee767ea969990483929d2834",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/gpu_worker.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/kda.py": {
+      "bytes": 65164,
+      "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/kda.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/kv_cache_coordinator.py": {
+      "bytes": 40664,
+      "sha256": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/kv_cache_coordinator.py",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/manifest.tsv": {
+      "bytes": 8618,
+      "sha256": "b37797125c0c5dd17963ace5635820749c90e5b1b486792aa737c2ec5ba29057",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/manifest.tsv",
+      "mtime_ns": 1788880342294596372
+    },
+    "frozen-source/build/glm53/moe_dispatch.py": {
+      "bytes": 175149,
+      "sha256": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_dispatch.py",
+      "mtime_ns": 1788880342295596374
+    },
+    "frozen-source/build/glm53/moe_dynamic_ep_local.py": {
+      "bytes": 37063,
+      "sha256": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_dynamic_ep_local.py",
+      "mtime_ns": 1788880342295596374
+    },
+    "frozen-source/build/glm53/moe_dynamic_gated_tiled.py": {
+      "bytes": 3840,
+      "sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_dynamic_gated_tiled.py",
+      "mtime_ns": 1788880342295596374
+    },
+    "frozen-source/build/glm53/moe_dynamic_prefill.py": {
+      "bytes": 91792,
+      "sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_dynamic_prefill.py",
+      "mtime_ns": 1788880342295596374
+    },
+    "frozen-source/build/glm53/moe_dynamic_prefill_n128.py": {
+      "bytes": 46473,
+      "sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_dynamic_prefill_n128.py",
+      "mtime_ns": 1788880342295596374
+    },
+    "frozen-source/build/glm53/moe_gate_sm121.py": {
+      "bytes": 12724,
+      "sha256": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_gate_sm121.py",
+      "mtime_ns": 1788880342295596374
+    },
+    "frozen-source/build/glm53/moe_micro_kernel.py": {
+      "bytes": 113270,
+      "sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_micro_kernel.py",
+      "mtime_ns": 1788880342295596374
+    },
+    "frozen-source/build/glm53/moe_sf_pack.py": {
+      "bytes": 7321,
+      "sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_sf_pack.py",
+      "mtime_ns": 1788880342295596374
+    },
+    "frozen-source/build/glm53/moe_static_common.py": {
+      "bytes": 9913,
+      "sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_static_common.py",
+      "mtime_ns": 1788880342295596374
+    },
+    "frozen-source/build/glm53/moe_static_kernel_v4.py": {
+      "bytes": 98224,
+      "sha256": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_static_kernel_v4.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/moe_static_kernel_v5.py": {
+      "bytes": 9670,
+      "sha256": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/moe_static_kernel_v5.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/mtp.py": {
+      "bytes": 19541,
+      "sha256": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/mtp.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/parallel_state.py": {
+      "bytes": 86872,
+      "sha256": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/parallel_state.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/qwen3_dflash2.py": {
+      "bytes": 23042,
+      "sha256": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/qwen3_dflash2.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/sampler.py": {
+      "bytes": 11843,
+      "sha256": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/sampler.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/sparse_attn_indexer_kpool.py": {
+      "bytes": 69400,
+      "sha256": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/sparse_attn_indexer_kpool.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/spec_decode_rejection_warmup.py": {
+      "bytes": 10760,
+      "sha256": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/spec_decode_rejection_warmup.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/tilelang.py": {
+      "bytes": 37391,
+      "sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/tilelang.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/tilelang_kernels.py": {
+      "bytes": 44789,
+      "sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/tilelang_kernels.py",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/build/glm53/zz_deneb_boot_stamps.pth": {
+      "bytes": 54,
+      "sha256": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/build/glm53/zz_deneb_boot_stamps.pth",
+      "mtime_ns": 1788880342296596375
+    },
+    "frozen-source/probes/glm53_ep_binding_check.py": {
+      "bytes": 2199,
+      "sha256": "1d8027b4575bed172b4daeb2a19c10b44977afd34d3d483fb038b0cf4404463c",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_binding_check.py",
+      "mtime_ns": 1788880342422804223
+    },
+    "frozen-source/probes/glm53_ep_bindings_capsule.py": {
+      "bytes": 15356,
+      "sha256": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_bindings_capsule.py",
+      "mtime_ns": 1788880342422804223
+    },
+    "frozen-source/probes/glm53_ep_bindings_pair_check.py": {
+      "bytes": 6235,
+      "sha256": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_bindings_pair_check.py",
+      "mtime_ns": 1788880342422804223
+    },
+    "frozen-source/probes/glm53_ep_capsule_runtime.py": {
+      "bytes": 5679,
+      "sha256": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_capsule_runtime.py",
+      "mtime_ns": 1788880342422804223
+    },
+    "frozen-source/probes/glm53_ep_local_check.py": {
+      "bytes": 14998,
+      "sha256": "38478be52b8b645bb6b770709a308a7e0f099335cae5c6db8204255c8bcfcdec",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_local_check.py",
+      "mtime_ns": 1788880342422804223
+    },
+    "frozen-source/probes/glm53_ep_local_compile_check.py": {
+      "bytes": 7349,
+      "sha256": "4187c1150ce16bc12e33dec8d6136b108f36dc3792b2f45421fd44a3c6a082cf",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_local_compile_check.py",
+      "mtime_ns": 1788880342422804223
+    },
+    "frozen-source/probes/glm53_ep_local_evidence.py": {
+      "bytes": 4944,
+      "sha256": "f2377c14fc3343a3df2e26a62ec6f1309d814b65f329aa6a3e09535f52123872",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_local_evidence.py",
+      "mtime_ns": 1788880342423596576
+    },
+    "frozen-source/probes/glm53_ep_numerics_diagnostics.py": {
+      "bytes": 5602,
+      "sha256": "e41b5a39873dd8322f4ba40e5c3202c36bdc905a4a267554e1a2947fb31e0a1e",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_numerics_diagnostics.py",
+      "mtime_ns": 1788880342423596576
+    },
+    "frozen-source/probes/glm53_ep_route_remap_check.py": {
+      "bytes": 8063,
+      "sha256": "241c11de8db10b550f6a624e91ec729882d4993b1919abe7b187acec4252e568",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_route_remap_check.py",
+      "mtime_ns": 1788880342423596576
+    },
+    "frozen-source/probes/glm53_ep_sanitizer.py": {
+      "bytes": 6104,
+      "sha256": "7144f2b4c488e073257845dc65b028c220a06831ac9ce654d6fbaa2f01ca7e1a",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_ep_sanitizer.py",
+      "mtime_ns": 1788880342423596576
+    },
+    "frozen-source/probes/glm53_probe_lifecycle.py": {
+      "bytes": 10998,
+      "sha256": "ac981627094546373ffbee6970a23d9356f23642b628dd228168324c50b7cc16",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/glm53_probe_lifecycle.py",
+      "mtime_ns": 1788880342423596576
+    },
+    "frozen-source/probes/run_glm53_ep_binding_offline.py": {
+      "bytes": 6113,
+      "sha256": "357ce3de1b087135b4661aeea8fe7a6ea5ce978de024a9f1c9c83b4aba766514",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/run_glm53_ep_binding_offline.py",
+      "mtime_ns": 1788880342425596579
+    },
+    "frozen-source/probes/run_glm53_ep_bindings_pair_offline.py": {
+      "bytes": 11396,
+      "sha256": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/run_glm53_ep_bindings_pair_offline.py",
+      "mtime_ns": 1788880342425596579
+    },
+    "frozen-source/probes/run_glm53_ep_local_cpu_compile.py": {
+      "bytes": 6022,
+      "sha256": "2353825ca1bd395a122439402b2eac892518d52c99e52de1872d6dad70f18da8",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/run_glm53_ep_local_cpu_compile.py",
+      "mtime_ns": 1788880342425596579
+    },
+    "frozen-source/probes/run_glm53_ep_local_offline.py": {
+      "bytes": 11381,
+      "sha256": "5c5598a9e946419ce09ada141c6620d157c71c40cbd816be7b1d5ad35031f167",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/probes/run_glm53_ep_local_offline.py",
+      "mtime_ns": 1788880342425596579
+    },
+    "frozen-source/tests/test_glm53_ep_binding_check.py": {
+      "bytes": 6567,
+      "sha256": "eedeca9b4bc0f01c4fa2a20518182dba6a5a6854b55c36c7c6af394541f5b26f",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_binding_check.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_bindings_capsule.py": {
+      "bytes": 13743,
+      "sha256": "e24b1dae1a3bdc67ed41a33b44d25e4bb6274fafaa7781f30ac0cbc8c335b6fb",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_bindings_capsule.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_bindings_pair.py": {
+      "bytes": 14769,
+      "sha256": "8dfedc98646a0580781cad5e14921d4ce277c8f899e1ec65fb26af496a5bff6a",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_bindings_pair.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_capsule_inners.py": {
+      "bytes": 13136,
+      "sha256": "fccae5d3ff7a57d72e3c0d25355193ab4409ae2d2668c26ae362fe313efc599d",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_capsule_inners.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_capsule_runtime.py": {
+      "bytes": 6145,
+      "sha256": "624a496cfa8a37be53c9625962e1119d89a8d87f1d9de5c8f20b9a34f8c6779f",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_capsule_runtime.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_capsule_wrappers.py": {
+      "bytes": 23775,
+      "sha256": "4da051bb61dee36f61ea9ebb3973ec4462e21a1fc3a62e8fc6b580264ac3e9ca",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_capsule_wrappers.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_local_probe.py": {
+      "bytes": 11920,
+      "sha256": "5a8fb78fd9dcc233fb02e1253bfd6247b24baaeb0c80387c6e381ccaafc0b325",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_local_probe.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_numerics_diagnostics.py": {
+      "bytes": 11260,
+      "sha256": "893dc3bb917dc26153e9b074a829a319bb468c5c9391b2a25c70aa538ac7b206",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_numerics_diagnostics.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_prefill_local.py": {
+      "bytes": 11388,
+      "sha256": "3f79ec33eaabff5521b898b6e72555116e8c1797b51f3b5871fb9c46a203130a",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_prefill_local.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_route_remap.py": {
+      "bytes": 16234,
+      "sha256": "7f6a9ab88f1eaf219a662f4ffca41cb42aef941fb14bd3c0289f677f16e1da5c",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_route_remap.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_route_scale_cache.py": {
+      "bytes": 26918,
+      "sha256": "b4c85443d81a69c0a1542f537b8947b119457ba7fed28c319240546ca329cc06",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_route_scale_cache.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_sanitizer.py": {
+      "bytes": 9669,
+      "sha256": "61c269124cb37cbd02d6930a448a3b2422e625569e1061ca1637093f32b8705d",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_sanitizer.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_ep_task_publication.py": {
+      "bytes": 22046,
+      "sha256": "46e8094e17e16a2e3736737827a69f50cc731499f92858cf1fbb9137db4dbfef",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_ep_task_publication.py",
+      "mtime_ns": 1788880342427605926
+    },
+    "frozen-source/tests/test_glm53_probe_lifecycle.py": {
+      "bytes": 10674,
+      "sha256": "c35a83f6e3eb34adc6a77b240994a7ce1cdc86d4da3f2e9a81220de4bf3f2706",
+      "source": "/home/choiceoh/stkernel-ep-local-0908-17/tests/test_glm53_probe_lifecycle.py",
+      "mtime_ns": 1788880342428596584
+    },
+    "runtime/capsule-manifest.json": {
+      "bytes": 20559,
+      "sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+      "source": "/tmp/glm53-bindings-capsule-cpu0908-2/capsule/capsule-manifest.json",
+      "mtime_ns": 1788868220230051715
+    }
+  },
+  "scope": "Read-only archive validation; no device or compiler execution"
+}

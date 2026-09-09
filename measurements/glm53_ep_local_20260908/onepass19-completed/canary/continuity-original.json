@@ -1,0 +1,56 @@
+{
+  "adoption_acceptance": false,
+  "all_four_new_canaries_pass": true,
+  "full_sanitizer_acceptance": false,
+  "host_binding": "caller-provided receipt filenames",
+  "identity_match": true,
+  "new_source_manifest_sha256": "39cbb74ca1f19c5d6ce019d45fffbe15629efd9c72c751328b3d010e9f801a34",
+  "nodes": {
+    "10.10.10.1": {
+      "difference_count": 0,
+      "differences": [],
+      "identity_match": true,
+      "new_receipt_sha256": "b2733b1eb925076905e46ad1ad71aed0d33256990e5ba573f2d1e578f4b2200a",
+      "new_verdict": "PASS",
+      "old_receipt_sha256": "88d8da775c9fc6ea64bcefe43d92ac1b22056cc21f741859b4fc2773370c87d8",
+      "old_verdict": "FAIL",
+      "within_boot_storage_reused": true
+    },
+    "10.10.10.3": {
+      "difference_count": 0,
+      "differences": [],
+      "identity_match": true,
+      "new_receipt_sha256": "642400b93a6a02a347f820cb8c77abcf639835ac7015977e12c94b00c0917156",
+      "new_verdict": "PASS",
+      "old_receipt_sha256": "2f662ebba1df44e385ed92257e8269bf6073b003c6ade33fdbb72602b481cfb2",
+      "old_verdict": "FAIL",
+      "within_boot_storage_reused": true
+    },
+    "10.10.10.4": {
+      "difference_count": 0,
+      "differences": [],
+      "identity_match": true,
+      "new_receipt_sha256": "5f558877c42ed041b07fef01a99f5ba791c0a59f6c9327287fd6de6bf063fe53",
+      "new_verdict": "PASS",
+      "old_receipt_sha256": "8984002c092d8a4db1c34425703868d0410df1117dca49bbf5b7350184b9705a",
+      "old_verdict": "FAIL",
+      "within_boot_storage_reused": true
+    },
+    "local": {
+      "difference_count": 0,
+      "differences": [],
+      "identity_match": true,
+      "new_receipt_sha256": "f6c73346fd1740ac1fbe702deb0e6c7b03f3a7d62190f0f22c663ddb8e43f180",
+      "new_verdict": "PASS",
+      "old_receipt_sha256": "023930ffdfcf2e24609ad086e9b3c634c71c61cc26b7af858e17bc3ba45a5339",
+      "old_verdict": "FAIL",
+      "within_boot_storage_reused": true
+    }
+  },
+  "old_source_manifest_sha256": "71183492eaf3cbb8c3d80bebdece79f2f27f9906b1e058542d82b02c9dea0910",
+  "performance_acceptance": false,
+  "schema": 1,
+  "scope": "same-input bounded startup canary; no performance/sanitizer/adoption acceptance",
+  "source_revisions_verified": false,
+  "verdict": "MATCH_AND_CANARY_PASS"
+}

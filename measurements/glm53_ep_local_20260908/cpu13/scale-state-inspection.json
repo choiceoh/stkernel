@@ -1,0 +1,1047 @@
+{
+  "scope": "Receipt-bound static CPU12/CPU13 PTX inspection of selected-scale state publication and consumption",
+  "source_revision": "18148116a7abb242741d5b112c8d735353d9fc71",
+  "before": {
+    "ptx": {
+      "file": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+      "bytes": 942077,
+      "sha256": "55a8b0c48de4629874c1ee042adb05254657472db2795c3873248c04b4a4c1f4"
+    },
+    "cubin": {
+      "file": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+      "bytes": 300864,
+      "sha256": "20d99e2a98327ddd8599703326568d6815282cfa0518c0f44bb83187221af193",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    "producer_raw_scale_load_lines": [
+      653,
+      695,
+      737,
+      779,
+      834,
+      876,
+      926
+    ],
+    "consumer_scale_load_lines": [
+      972,
+      981,
+      986,
+      991,
+      1009,
+      1020,
+      1028
+    ],
+    "consumer_float_compare_lines": [
+      976,
+      983,
+      988,
+      993,
+      1013,
+      1022,
+      1030
+    ],
+    "state_store_line": 934,
+    "publication_barrier_line": 937,
+    "state_load_line": 951,
+    "scan_excerpt": [
+      {
+        "line": 951,
+        "text": "ld.shared.s32 %r998, [%r999];"
+      },
+      {
+        "line": 952,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 953,
+        "text": "setp.lt.s32 %p107, %r998, 1;"
+      },
+      {
+        "line": 954,
+        "text": "@%p107 bra $L__BB0_128;"
+      },
+      {
+        "line": 955,
+        "text": "and.b32 %r28, %r998, 3;"
+      },
+      {
+        "line": 956,
+        "text": "setp.lt.u32 %p108, %r998, 4;"
+      },
+      {
+        "line": 957,
+        "text": "mov.b32 %r16819, 0f00000000;"
+      },
+      {
+        "line": 958,
+        "text": "mov.b32 %r16821, 1;"
+      },
+      {
+        "line": 959,
+        "text": "mov.b32 %r16818, 0;"
+      },
+      {
+        "line": 960,
+        "text": "@%p108 bra $L__BB0_98;"
+      },
+      {
+        "line": 961,
+        "text": "and.b32 %r29, %r998, 2147483644;"
+      },
+      {
+        "line": 962,
+        "text": "mov.b32 %r16819, 0f00000000;"
+      },
+      {
+        "line": 963,
+        "text": "mov.b32 %r16821, 1;"
+      },
+      {
+        "line": 964,
+        "text": "mov.b32 %r16818, 0;"
+      },
+      {
+        "line": 965,
+        "text": "mov.b32 %r16817, %r16818;"
+      },
+      {
+        "line": 966,
+        "text": "$L__BB0_96:"
+      },
+      {
+        "line": 967,
+        "text": "mov.b32 %r30, %r16819;"
+      },
+      {
+        "line": 968,
+        "text": "add.s32 %r1008, %r13, %r16818;"
+      },
+      {
+        "line": 969,
+        "text": "shl.b32 %r1009, %r1008, 2;"
+      },
+      {
+        "line": 970,
+        "text": "add.s32 %r1001, %r1009, %r6;"
+      },
+      {
+        "line": 971,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 972,
+        "text": "ld.shared.s32 %r1000, [%r1001];"
+      },
+      {
+        "line": 973,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 974,
+        "text": "setp.eq.b32 %p109, %r16818, 0;"
+      },
+      {
+        "line": 975,
+        "text": "selp.f32 %r16819, %r1000, %r30, %p109;"
+      },
+      {
+        "line": 976,
+        "text": "setp.neu.f32 %p110, %r30, %r1000;"
+      },
+      {
+        "line": 977,
+        "text": "selp.b32 %r1010, 0, %r16821, %p110;"
+      },
+      {
+        "line": 978,
+        "text": "selp.b32 %r1011, %r16821, %r1010, %p109;"
+      },
+      {
+        "line": 979,
+        "text": "add.s32 %r1003, %r1001, 4;"
+      },
+      {
+        "line": 980,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 981,
+        "text": "ld.shared.s32 %r1002, [%r1003];"
+      },
+      {
+        "line": 982,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 983,
+        "text": "setp.neu.f32 %p111, %r16819, %r1002;"
+      },
+      {
+        "line": 984,
+        "text": "add.s32 %r1005, %r1001, 8;"
+      },
+      {
+        "line": 985,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 986,
+        "text": "ld.shared.s32 %r1004, [%r1005];"
+      },
+      {
+        "line": 987,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 988,
+        "text": "setp.neu.f32 %p112, %r16819, %r1004;"
+      },
+      {
+        "line": 989,
+        "text": "add.s32 %r1007, %r1001, 12;"
+      },
+      {
+        "line": 990,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 991,
+        "text": "ld.shared.s32 %r1006, [%r1007];"
+      },
+      {
+        "line": 992,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 993,
+        "text": "setp.neu.f32 %p113, %r16819, %r1006;"
+      },
+      {
+        "line": 994,
+        "text": "selp.b32 %r1012, 0, %r1011, %p111;"
+      },
+      {
+        "line": 995,
+        "text": "selp.b32 %r1013, 0, %r1012, %p112;"
+      },
+      {
+        "line": 996,
+        "text": "selp.b32 %r16821, 0, %r1013, %p113;"
+      },
+      {
+        "line": 997,
+        "text": "add.s32 %r16818, %r16818, 4;"
+      },
+      {
+        "line": 998,
+        "text": "add.s32 %r16817, %r16817, 4;"
+      },
+      {
+        "line": 999,
+        "text": "setp.ne.b32 %p114, %r16817, %r29;"
+      },
+      {
+        "line": 1000,
+        "text": "@%p114 bra $L__BB0_96;"
+      },
+      {
+        "line": 1001,
+        "text": "setp.eq.b32 %p115, %r28, 0;"
+      },
+      {
+        "line": 1002,
+        "text": "mov.b32 %r16820, %r16819;"
+      },
+      {
+        "line": 1003,
+        "text": "@%p115 bra $L__BB0_101;"
+      },
+      {
+        "line": 1004,
+        "text": "$L__BB0_98:"
+      },
+      {
+        "line": 1005,
+        "text": "add.s32 %r1016, %r13, %r16818;"
+      },
+      {
+        "line": 1006,
+        "text": "shl.b32 %r1017, %r1016, 2;"
+      },
+      {
+        "line": 1007,
+        "text": "add.s32 %r1015, %r1017, %r6;"
+      },
+      {
+        "line": 1008,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 1009,
+        "text": "ld.shared.s32 %r1014, [%r1015];"
+      },
+      {
+        "line": 1010,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 1011,
+        "text": "setp.eq.b32 %p116, %r16818, 0;"
+      },
+      {
+        "line": 1012,
+        "text": "selp.f32 %r16820, %r1014, %r16819, %p116;"
+      },
+      {
+        "line": 1013,
+        "text": "setp.neu.f32 %p117, %r16819, %r1014;"
+      },
+      {
+        "line": 1014,
+        "text": "selp.b32 %r1018, 0, %r16821, %p117;"
+      },
+      {
+        "line": 1015,
+        "text": "selp.b32 %r16821, %r16821, %r1018, %p116;"
+      },
+      {
+        "line": 1016,
+        "text": "setp.eq.b32 %p118, %r28, 1;"
+      },
+      {
+        "line": 1017,
+        "text": "@%p118 bra $L__BB0_101;"
+      },
+      {
+        "line": 1018,
+        "text": "add.s32 %r1020, %r1015, 4;"
+      },
+      {
+        "line": 1019,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 1020,
+        "text": "ld.shared.s32 %r1019, [%r1020];"
+      },
+      {
+        "line": 1021,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 1022,
+        "text": "setp.neu.f32 %p119, %r16820, %r1019;"
+      },
+      {
+        "line": 1023,
+        "text": "selp.b32 %r16821, 0, %r16821, %p119;"
+      },
+      {
+        "line": 1024,
+        "text": "setp.eq.b32 %p120, %r28, 2;"
+      },
+      {
+        "line": 1025,
+        "text": "@%p120 bra $L__BB0_101;"
+      },
+      {
+        "line": 1026,
+        "text": "add.s32 %r1022, %r1015, 8;"
+      },
+      {
+        "line": 1027,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 1028,
+        "text": "ld.shared.s32 %r1021, [%r1022];"
+      },
+      {
+        "line": 1029,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 1030,
+        "text": "setp.neu.f32 %p121, %r16820, %r1021;"
+      },
+      {
+        "line": 1031,
+        "text": "selp.b32 %r16821, 0, %r16821, %p121;"
+      },
+      {
+        "line": 1032,
+        "text": "$L__BB0_101:"
+      }
+    ]
+  },
+  "after": {
+    "ptx": {
+      "file": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+      "bytes": 941539,
+      "sha256": "21a5c860b7f02aa887dd1cd8e90a5953094842b83ee24b118697c2f4d334d2de"
+    },
+    "cubin": {
+      "file": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+      "bytes": 298456,
+      "sha256": "397eaf35853780c85b37ea3a9c8491f4e4fd9f0c3c9380e1ca298b419fe0f4a3",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    "producer_sites": [
+      {
+        "raw_scale_load_line": 656,
+        "raw_scale_store_line": 660,
+        "first_count_predicate_line": 662,
+        "unordered_float_compare_line": 664,
+        "first_count_masks_compare_line": 666,
+        "raw_word_register": "%r913",
+        "first_scale_register": "%r16806",
+        "equal_register": "%r16809",
+        "excerpt": [
+          {
+            "line": 656,
+            "text": "ld.shared.s32 %r913, [%r911];"
+          },
+          {
+            "line": 657,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 658,
+            "text": "add.s32 %r912, %r909, 1152;"
+          },
+          {
+            "line": 659,
+            "text": "// begin inline asm"
+          },
+          {
+            "line": 660,
+            "text": "st.shared.s32 [%r912], %r913;"
+          },
+          {
+            "line": 661,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 662,
+            "text": "setp.eq.b32 %p83, %r16808, 0;"
+          },
+          {
+            "line": 663,
+            "text": "selp.f32 %r21, %r913, %r16806, %p83;"
+          },
+          {
+            "line": 664,
+            "text": "setp.neu.f32 %p84, %r16806, %r913;"
+          },
+          {
+            "line": 665,
+            "text": "selp.b32 %r919, 0, %r16809, %p84;"
+          },
+          {
+            "line": 666,
+            "text": "selp.b32 %r16809, %r16809, %r919, %p83;"
+          }
+        ]
+      },
+      {
+        "raw_scale_load_line": 704,
+        "raw_scale_store_line": 708,
+        "first_count_predicate_line": 710,
+        "unordered_float_compare_line": 712,
+        "first_count_masks_compare_line": 714,
+        "raw_word_register": "%r927",
+        "first_scale_register": "%r16806",
+        "equal_register": "%r16809",
+        "excerpt": [
+          {
+            "line": 704,
+            "text": "ld.shared.s32 %r927, [%r925];"
+          },
+          {
+            "line": 705,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 706,
+            "text": "add.s32 %r926, %r923, 1152;"
+          },
+          {
+            "line": 707,
+            "text": "// begin inline asm"
+          },
+          {
+            "line": 708,
+            "text": "st.shared.s32 [%r926], %r927;"
+          },
+          {
+            "line": 709,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 710,
+            "text": "setp.eq.b32 %p88, %r16808, 0;"
+          },
+          {
+            "line": 711,
+            "text": "selp.f32 %r23, %r927, %r16806, %p88;"
+          },
+          {
+            "line": 712,
+            "text": "setp.neu.f32 %p89, %r16806, %r927;"
+          },
+          {
+            "line": 713,
+            "text": "selp.b32 %r933, 0, %r16809, %p89;"
+          },
+          {
+            "line": 714,
+            "text": "selp.b32 %r16809, %r16809, %r933, %p88;"
+          }
+        ]
+      },
+      {
+        "raw_scale_load_line": 752,
+        "raw_scale_store_line": 756,
+        "first_count_predicate_line": 758,
+        "unordered_float_compare_line": 760,
+        "first_count_masks_compare_line": 762,
+        "raw_word_register": "%r941",
+        "first_scale_register": "%r16806",
+        "equal_register": "%r16809",
+        "excerpt": [
+          {
+            "line": 752,
+            "text": "ld.shared.s32 %r941, [%r939];"
+          },
+          {
+            "line": 753,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 754,
+            "text": "add.s32 %r940, %r937, 1152;"
+          },
+          {
+            "line": 755,
+            "text": "// begin inline asm"
+          },
+          {
+            "line": 756,
+            "text": "st.shared.s32 [%r940], %r941;"
+          },
+          {
+            "line": 757,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 758,
+            "text": "setp.eq.b32 %p93, %r16808, 0;"
+          },
+          {
+            "line": 759,
+            "text": "selp.f32 %r25, %r941, %r16806, %p93;"
+          },
+          {
+            "line": 760,
+            "text": "setp.neu.f32 %p94, %r16806, %r941;"
+          },
+          {
+            "line": 761,
+            "text": "selp.b32 %r947, 0, %r16809, %p94;"
+          },
+          {
+            "line": 762,
+            "text": "selp.b32 %r16809, %r16809, %r947, %p93;"
+          }
+        ]
+      },
+      {
+        "raw_scale_load_line": 800,
+        "raw_scale_store_line": 804,
+        "first_count_predicate_line": 806,
+        "unordered_float_compare_line": 808,
+        "first_count_masks_compare_line": 810,
+        "raw_word_register": "%r955",
+        "first_scale_register": "%r16806",
+        "equal_register": "%r16809",
+        "excerpt": [
+          {
+            "line": 800,
+            "text": "ld.shared.s32 %r955, [%r953];"
+          },
+          {
+            "line": 801,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 802,
+            "text": "add.s32 %r954, %r951, 1152;"
+          },
+          {
+            "line": 803,
+            "text": "// begin inline asm"
+          },
+          {
+            "line": 804,
+            "text": "st.shared.s32 [%r954], %r955;"
+          },
+          {
+            "line": 805,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 806,
+            "text": "setp.eq.b32 %p98, %r16808, 0;"
+          },
+          {
+            "line": 807,
+            "text": "selp.f32 %r27, %r955, %r16806, %p98;"
+          },
+          {
+            "line": 808,
+            "text": "setp.neu.f32 %p99, %r16806, %r955;"
+          },
+          {
+            "line": 809,
+            "text": "selp.b32 %r961, 0, %r16809, %p99;"
+          },
+          {
+            "line": 810,
+            "text": "selp.b32 %r16809, %r16809, %r961, %p98;"
+          }
+        ]
+      },
+      {
+        "raw_scale_load_line": 861,
+        "raw_scale_store_line": 865,
+        "first_count_predicate_line": 867,
+        "unordered_float_compare_line": 869,
+        "first_count_masks_compare_line": 871,
+        "raw_word_register": "%r970",
+        "first_scale_register": "%r16806",
+        "equal_register": "%r16809",
+        "excerpt": [
+          {
+            "line": 861,
+            "text": "ld.shared.s32 %r970, [%r968];"
+          },
+          {
+            "line": 862,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 863,
+            "text": "add.s32 %r969, %r966, 1152;"
+          },
+          {
+            "line": 864,
+            "text": "// begin inline asm"
+          },
+          {
+            "line": 865,
+            "text": "st.shared.s32 [%r969], %r970;"
+          },
+          {
+            "line": 866,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 867,
+            "text": "setp.eq.b32 %p106, %r16808, 0;"
+          },
+          {
+            "line": 868,
+            "text": "selp.f32 %r29, %r970, %r16806, %p106;"
+          },
+          {
+            "line": 869,
+            "text": "setp.neu.f32 %p107, %r16806, %r970;"
+          },
+          {
+            "line": 870,
+            "text": "selp.b32 %r976, 0, %r16809, %p107;"
+          },
+          {
+            "line": 871,
+            "text": "selp.b32 %r16809, %r16809, %r976, %p106;"
+          }
+        ]
+      },
+      {
+        "raw_scale_load_line": 909,
+        "raw_scale_store_line": 913,
+        "first_count_predicate_line": 915,
+        "unordered_float_compare_line": 917,
+        "first_count_masks_compare_line": 919,
+        "raw_word_register": "%r984",
+        "first_scale_register": "%r16806",
+        "equal_register": "%r16809",
+        "excerpt": [
+          {
+            "line": 909,
+            "text": "ld.shared.s32 %r984, [%r982];"
+          },
+          {
+            "line": 910,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 911,
+            "text": "add.s32 %r983, %r980, 1152;"
+          },
+          {
+            "line": 912,
+            "text": "// begin inline asm"
+          },
+          {
+            "line": 913,
+            "text": "st.shared.s32 [%r983], %r984;"
+          },
+          {
+            "line": 914,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 915,
+            "text": "setp.eq.b32 %p111, %r16808, 0;"
+          },
+          {
+            "line": 916,
+            "text": "selp.f32 %r31, %r984, %r16806, %p111;"
+          },
+          {
+            "line": 917,
+            "text": "setp.neu.f32 %p112, %r16806, %r984;"
+          },
+          {
+            "line": 918,
+            "text": "selp.b32 %r990, 0, %r16809, %p112;"
+          },
+          {
+            "line": 919,
+            "text": "selp.b32 %r16809, %r16809, %r990, %p111;"
+          }
+        ]
+      },
+      {
+        "raw_scale_load_line": 965,
+        "raw_scale_store_line": 969,
+        "first_count_predicate_line": 971,
+        "unordered_float_compare_line": 972,
+        "first_count_masks_compare_line": 974,
+        "raw_word_register": "%r1000",
+        "first_scale_register": "%r16806",
+        "equal_register": "%r16809",
+        "excerpt": [
+          {
+            "line": 965,
+            "text": "ld.shared.s32 %r1000, [%r998];"
+          },
+          {
+            "line": 966,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 967,
+            "text": "add.s32 %r999, %r996, 1152;"
+          },
+          {
+            "line": 968,
+            "text": "// begin inline asm"
+          },
+          {
+            "line": 969,
+            "text": "st.shared.s32 [%r999], %r1000;"
+          },
+          {
+            "line": 970,
+            "text": "// end inline asm"
+          },
+          {
+            "line": 971,
+            "text": "setp.eq.b32 %p117, %r16808, 0;"
+          },
+          {
+            "line": 972,
+            "text": "setp.neu.f32 %p118, %r16806, %r1000;"
+          },
+          {
+            "line": 973,
+            "text": "selp.b32 %r1006, 0, %r16809, %p118;"
+          },
+          {
+            "line": 974,
+            "text": "selp.b32 %r16809, %r16809, %r1006, %p117;"
+          }
+        ]
+      }
+    ],
+    "state_word_address_setup": [
+      {
+        "line": 549,
+        "text": "shl.b32 %r12, %r3, 5;"
+      },
+      {
+        "line": 550,
+        "text": "shl.b32 %r896, %r3, 7;"
+      },
+      {
+        "line": 551,
+        "text": "add.s32 %r897, %r9, %r896;"
+      },
+      {
+        "line": 552,
+        "text": "add.s32 %r1008, %r897, 1276;"
+      },
+      {
+        "line": 553,
+        "text": "add.s32 %r1012, %r897, 1152;"
+      }
+    ],
+    "producer_pack_and_publication": [
+      {
+        "line": 971,
+        "text": "setp.eq.b32 %p117, %r16808, 0;"
+      },
+      {
+        "line": 972,
+        "text": "setp.neu.f32 %p118, %r16806, %r1000;"
+      },
+      {
+        "line": 973,
+        "text": "selp.b32 %r1006, 0, %r16809, %p118;"
+      },
+      {
+        "line": 974,
+        "text": "selp.b32 %r16809, %r16809, %r1006, %p117;"
+      },
+      {
+        "line": 975,
+        "text": "add.s32 %r16808, %r16808, 1;"
+      },
+      {
+        "line": 976,
+        "text": "$L__BB0_90:"
+      },
+      {
+        "line": 977,
+        "text": "shl.b32 %r1007, %r16809, 4;"
+      },
+      {
+        "line": 978,
+        "text": "or.b32 %r16810, %r16808, %r1007;"
+      },
+      {
+        "line": 979,
+        "text": "$L__BB0_91:"
+      },
+      {
+        "line": 980,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 981,
+        "text": "st.shared.s32 [%r1008], %r16810;"
+      },
+      {
+        "line": 982,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 983,
+        "text": "$L__BB0_92:"
+      },
+      {
+        "line": 984,
+        "text": "bar.warp.sync -1;"
+      }
+    ],
+    "consumer_decode_and_first_scale": [
+      {
+        "line": 996,
+        "text": "$L__BB0_94:"
+      },
+      {
+        "line": 997,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 998,
+        "text": "ld.shared.s32 %r1011, [%r1008];"
+      },
+      {
+        "line": 999,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 1000,
+        "text": "and.b32 %r33, %r1011, 15;"
+      },
+      {
+        "line": 1001,
+        "text": "setp.eq.b32 %p121, %r33, 0;"
+      },
+      {
+        "line": 1002,
+        "text": "@%p121 bra $L__BB0_122;"
+      },
+      {
+        "line": 1003,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 1004,
+        "text": "ld.shared.s32 %r1202, [%r1012];"
+      },
+      {
+        "line": 1005,
+        "text": "// end inline asm"
+      },
+      {
+        "line": 1006,
+        "text": "and.b32 %r34, %r1011, 3;"
+      },
+      {
+        "line": 1007,
+        "text": "and.b32 %r35, %r1011, 1;"
+      },
+      {
+        "line": 1008,
+        "text": "and.b32 %r36, %r1011, 14;"
+      },
+      {
+        "line": 1009,
+        "text": "and.b32 %r37, %r1011, 12;"
+      },
+      {
+        "line": 1010,
+        "text": "mov.b32 %r16811, %r4;"
+      },
+      {
+        "line": 1011,
+        "text": "$L__BB0_96:"
+      },
+      {
+        "line": 1012,
+        "text": "mov.b32 %r38, %r16811;"
+      },
+      {
+        "line": 1013,
+        "text": "setp.lt.s32 %p122, %r1011, 16;"
+      },
+      {
+        "line": 1014,
+        "text": "shl.b32 %r1063, %r38, 5;"
+      },
+      {
+        "line": 1015,
+        "text": "add.s32 %r1029, %r13, %r1063;"
+      }
+    ],
+    "empty_branch_target": [
+      {
+        "line": 1830,
+        "text": "$L__BB0_121:"
+      },
+      {
+        "line": 1831,
+        "text": "add.s32 %r16811, %r38, 32;"
+      },
+      {
+        "line": 1832,
+        "text": "setp.lt.u32 %p139, %r38, 224;"
+      },
+      {
+        "line": 1833,
+        "text": "@%p139 bra $L__BB0_96;"
+      },
+      {
+        "line": 1834,
+        "text": "$L__BB0_122:"
+      },
+      {
+        "line": 1835,
+        "text": "xor.b32 %r16816, %r16816, 1;"
+      },
+      {
+        "line": 1836,
+        "text": "$L__BB0_123:"
+      },
+      {
+        "line": 1837,
+        "text": "setp.gt.s32 %p140, %r1314, %r901;"
+      },
+      {
+        "line": 1838,
+        "text": "@%p140 bra $L__BB0_60;"
+      },
+      {
+        "line": 1839,
+        "text": "setp.ne.b32 %p141, %r1, 0;"
+      },
+      {
+        "line": 1840,
+        "text": "bar.sync 0;"
+      },
+      {
+        "line": 1841,
+        "text": "// begin inline asm"
+      },
+      {
+        "line": 1842,
+        "text": "membar.gl;"
+      }
+    ],
+    "compiler_equality_decode": "Instead of materializing state >>4, the compiler tests state <16 before the varied branch. Given valid state=count|equal<<4 with count0..8, this is exactly equal==0."
+  },
+  "summary": {
+    "producer_raw_scale_shared_load_sites": [
+      7,
+      7
+    ],
+    "consumer_selected_scale_shared_load_sites": [
+      7,
+      1
+    ],
+    "consumer_state_shared_load_sites": [
+      1,
+      1
+    ],
+    "producer_state_shared_store_sites": [
+      1,
+      1
+    ],
+    "producer_unordered_float_comparison_sites": [
+      0,
+      7
+    ],
+    "consumer_unordered_float_comparison_sites": [
+      7,
+      0
+    ],
+    "combined_unordered_float_comparison_sites": [
+      7,
+      7
+    ],
+    "old_scale_scan_backedge_line": 1000,
+    "new_scale_scan_backedge_present": false,
+    "packed_count_mask_dominates_empty_branch": true,
+    "first_selected_comparison_masked_at_all_7_producer_sites": true,
+    "existing_slot31_state_word_only": true
+  },
+  "dynamic_selected_scale_reads": {
+    "C_definition": "Number of selected valid local routes for a token,0..8",
+    "before": "C shared warp-broadcast scale loads during consumer selection for C>0;0 for C=0",
+    "after": "One shared warp-broadcast first-scale load for C>0;0 for C=0",
+    "saved": "C-1 selected-scale consumer load instructions for C>0;0 for C=0",
+    "C1_effect": "No selected-scale load saving;existing state-word load/store count remains one each,with added integer pack/decode and removed scan control.",
+    "unchanged": "Producer raw expert-scale loads and varied-scale per-SF quantizer loads remain;no added shared slot/store/read for equality state."
+  },
+  "limitations": [
+    "Static sites are compiler loop/tail copies,not per-token counts or physical memory transactions.",
+    "Shared loads at the same address across lanes are warp broadcasts;this is not32times memory traffic savings.",
+    "Float comparisons moved from consumer to lane0 producer;combined static unordered comparison sites stay7,so they were not globally eliminated.",
+    "REG168 STACK112 SHARED1024 unchanged;PTX/cubin shrink is compiler evidence,not GPU throughput,occupancy,or TTFT.",
+    "No GPU numerical,racecheck,or full-model acceptance follows from this inspection."
+  ]
+}

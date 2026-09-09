@@ -1,0 +1,259 @@
+{
+  "13.0.3": {
+    "default_lookups": 470,
+    "max_abi": 13000,
+    "above_driver": 0,
+    "above_by_version": {},
+    "entries": []
+  },
+  "13.3.1": {
+    "default_lookups": 504,
+    "max_abi": 13030,
+    "above_driver": 34,
+    "above_by_version": {
+      "13020": 12,
+      "13030": 13,
+      "13010": 9
+    },
+    "entries": [
+      {
+        "line": 1050,
+        "symbol": "cuMemcpyWithAttributesAsync",
+        "destination": "__cuMemcpyWithAttributesAsync",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1054,
+        "symbol": "cuMemcpy3DWithAttributesAsync",
+        "destination": "__cuMemcpy3DWithAttributesAsync",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1142,
+        "symbol": "cuStreamBeginCaptureToCig",
+        "destination": "__cuStreamBeginCaptureToCig",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1146,
+        "symbol": "cuStreamEndCaptureToCig",
+        "destination": "__cuStreamEndCaptureToCig",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1186,
+        "symbol": "cuStreamBeginRecaptureToGraph",
+        "destination": "__cuStreamBeginRecaptureToGraph",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1286,
+        "symbol": "cuLaunchHostFunc",
+        "destination": "__cuLaunchHostFunc_v2",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1310,
+        "symbol": "cuStreamGetDevResource",
+        "destination": "__cuStreamGetDevResource",
+        "abi_version": 13010,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1663,
+        "symbol": "cuKernelGetParamCount",
+        "destination": "__cuKernelGetParamCount",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1931,
+        "symbol": "cuMulticastBindMem",
+        "destination": "__cuMulticastBindMem_v2",
+        "abi_version": 13010,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1939,
+        "symbol": "cuMulticastBindAddr",
+        "destination": "__cuMulticastBindAddr_v2",
+        "abi_version": 13010,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1951,
+        "symbol": "cuLogicalEndpointIdReserve",
+        "destination": "__cuLogicalEndpointIdReserve",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1955,
+        "symbol": "cuLogicalEndpointIdRelease",
+        "destination": "__cuLogicalEndpointIdRelease",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1959,
+        "symbol": "cuLogicalEndpointCreate",
+        "destination": "__cuLogicalEndpointCreate",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1963,
+        "symbol": "cuLogicalEndpointAddDevice",
+        "destination": "__cuLogicalEndpointAddDevice",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1967,
+        "symbol": "cuLogicalEndpointDestroy",
+        "destination": "__cuLogicalEndpointDestroy",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1971,
+        "symbol": "cuLogicalEndpointBindAddr",
+        "destination": "__cuLogicalEndpointBindAddr",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1975,
+        "symbol": "cuLogicalEndpointBindMem",
+        "destination": "__cuLogicalEndpointBindMem",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1979,
+        "symbol": "cuLogicalEndpointUnbind",
+        "destination": "__cuLogicalEndpointUnbind",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1983,
+        "symbol": "cuLogicalEndpointExport",
+        "destination": "__cuLogicalEndpointExport",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1987,
+        "symbol": "cuLogicalEndpointImport",
+        "destination": "__cuLogicalEndpointImport",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1991,
+        "symbol": "cuLogicalEndpointGetLimits",
+        "destination": "__cuLogicalEndpointGetLimits",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 1995,
+        "symbol": "cuLogicalEndpointQuery",
+        "destination": "__cuLogicalEndpointQuery",
+        "abi_version": 13030,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2107,
+        "symbol": "cuFuncGetParamCount",
+        "destination": "__cuFuncGetParamCount",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2335,
+        "symbol": "cuGraphNodeGetContainingGraph",
+        "destination": "__cuGraphNodeGetContainingGraph",
+        "abi_version": 13010,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2339,
+        "symbol": "cuGraphNodeGetLocalId",
+        "destination": "__cuGraphNodeGetLocalId",
+        "abi_version": 13010,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2343,
+        "symbol": "cuGraphNodeGetToolsId",
+        "destination": "__cuGraphNodeGetToolsId",
+        "abi_version": 13010,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2347,
+        "symbol": "cuGraphGetId",
+        "destination": "__cuGraphGetId",
+        "abi_version": 13010,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2351,
+        "symbol": "cuGraphExecGetId",
+        "destination": "__cuGraphExecGetId",
+        "abi_version": 13010,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2495,
+        "symbol": "cuGraphNodeGetParams",
+        "destination": "__cuGraphNodeGetParams",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2759,
+        "symbol": "cuCoredumpRegisterStartCallback",
+        "destination": "__cuCoredumpRegisterStartCallback",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2763,
+        "symbol": "cuCoredumpRegisterCompleteCallback",
+        "destination": "__cuCoredumpRegisterCompleteCallback",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2767,
+        "symbol": "cuCoredumpDeregisterStartCallback",
+        "destination": "__cuCoredumpDeregisterStartCallback",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2771,
+        "symbol": "cuCoredumpDeregisterCompleteCallback",
+        "destination": "__cuCoredumpDeregisterCompleteCallback",
+        "abi_version": 13020,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      },
+      {
+        "line": 2807,
+        "symbol": "cuDevSmResourceSplit",
+        "destination": "__cuDevSmResourceSplit",
+        "abi_version": 13010,
+        "flags": "CU_GET_PROC_ADDRESS_DEFAULT"
+      }
+    ]
+  }
+}

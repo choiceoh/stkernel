@@ -1,0 +1,5 @@
+The approved scheduler now has a separate independent checkout at `/home/choiceoh/stkernel-ep-local-scheduler-0909`, revision `6e33221dffe9f0e2b16d5b8cdd9adf08952eb608`. The original operational checkout remained clean at `c7401026315fbf4f82ee4c8592766f3bdf63d9b8` during preparation. Normal shared fleet coordination and production restoration policy are retained.
+
+The three scripts only substitute this scheduler path; the CPU preparer also uses a fresh local launch-report filename. Source, capsule, memory, test-count, duplicate-job and receipt-parent checks are unchanged. Outer and embedded syntax checks plus independent read-only review passed. Original preparation scripts remain under diagnostics-prepared.
+
+CPU17 was submitted once on source `123fbb01211eaf8cec46fd0965dd9320d02a375b` with 99919020 KiB available and completed normally. Its first collector rejected exact remap-cubin equality; cpu17.collecting preserves that result. See the subsequent CPU17 archive adjudication for the binary comparison. No kernel or numerical tolerance changed in this preparation.

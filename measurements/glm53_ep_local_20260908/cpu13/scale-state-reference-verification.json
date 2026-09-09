@@ -1,0 +1,21 @@
+{
+  "source_revision": "18148116a7abb242741d5b112c8d735353d9fc71",
+  "receipts": {
+    "before": {
+      "sha256": {
+        "ptx": "55a8b0c48de4629874c1ee042adb05254657472db2795c3873248c04b4a4c1f4",
+        "cubin": "20d99e2a98327ddd8599703326568d6815282cfa0518c0f44bb83187221af193"
+      },
+      "verified_excerpt_references": 82
+    },
+    "after": {
+      "sha256": {
+        "ptx": "21a5c860b7f02aa887dd1cd8e90a5953094842b83ee24b118697c2f4d334d2de",
+        "cubin": "397eaf35853780c85b37ea3a9c8491f4e4fd9f0c3c9380e1ca298b419fe0f4a3"
+      },
+      "verified_excerpt_references": 128
+    }
+  },
+  "status": "PASS",
+  "scope": "Original PTX/cubin bytes and excerpt references; not GPU execution."
+}
