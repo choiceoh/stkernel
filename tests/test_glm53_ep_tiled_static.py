@@ -439,9 +439,16 @@ class EPTiledStaticTests(unittest.TestCase):
         ns=dict(cutlass=types.SimpleNamespace(const_expr=bool,Int32='i32',Int64='i64'),
                 MoEStaticKernelV5=types.SimpleNamespace(__call__=inherited))
         entry=extract('__call__',ns)
+        map_check=extract('_check_ep_route_map',ns)
+        self.assertEqual(function('_check_ep_route_map').decorator_list,[])
+        self.assertFalse(any(isinstance(n,ast.Raise) for n in ast.walk(function('__call__'))))
+        global_branch=next(n for n in ast.walk(function('__call__')) if isinstance(n,ast.If)
+            and ast.unparse(n.test)=="cutlass.const_expr(self.ep_route_mode == 'global')")
+        self.assertEqual(ast.unparse(global_branch.body[0]),'self._check_ep_route_map(expert_map)')
         owner=types.SimpleNamespace(ep_route_mode='local',ep_route_map_len=None,
             _check_ep_call=lambda *a:events.append(('check',a)),
             _call_global=lambda *a:events.append(('global',a)))
+        owner._check_ep_route_map=types.MethodType(map_check,owner)
         operands=[object() for _ in range(30)]
         entry(owner,*operands)
         self.assertEqual([e[0] for e in events],['check','local'])

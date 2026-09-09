@@ -313,10 +313,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         self._check_ep_call(a_input, topk_ids, topk_weights, b_w13, b_down,
                             row_counts, token_map, scatter_output)
         if cutlass.const_expr(self.ep_route_mode == "global"):
-            expected_map_len = self.ep_route_map_len or 1
-            if (expert_map is None or tuple(expert_map.shape) != (expected_map_len,)
-                    or expert_map.element_type not in (cutlass.Int32, cutlass.Int64)):
-                raise ValueError("EP tiled global map operand disagrees with declared bounds")
+            self._check_ep_route_map(expert_map)
             return self._call_global(
                 a_input,
                 topk_ids,
@@ -568,6 +565,15 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                 or output.element_type != (cutlass.BFloat16 if self.scatter_bf16
                                            else cutlass.Float32)):
             raise ValueError("EP tiled static kernel ABI/geometry mismatch")
+
+    def _check_ep_route_map(self, expert_map):
+        # Like _check_ep_call, this runs in Python during host setup. A raise
+        # inside a staged plain-if is rejected by the CuTe frontend even when
+        # the surrounding route-mode branch is compile-time selected.
+        expected_map_len = self.ep_route_map_len or 1
+        if (expert_map is None or tuple(expert_map.shape) != (expected_map_len,)
+                or expert_map.element_type not in (cutlass.Int32, cutlass.Int64)):
+            raise ValueError("EP tiled global map operand disagrees with declared bounds")
 
     @cute.jit
     def _global_route_id(self, topk_ids, pair_idx, expert_map):
