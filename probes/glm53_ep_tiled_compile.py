@@ -21,9 +21,9 @@ CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_glm53_ep_tiled_owner.py", "test_glm53_ep_tiled_selftest.py",
              "test_glm53_ep_tiled_proof.py", "test_moe_sf6_owner.py",
              "test_moe_static_sf6_direct.py", "test_moe_dynamic_sf6.py",
-             "test_moe_sf6_dispatch.py")
-CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (10, 12, 19, 12, 12, 12, 6, 7, 6)))
-EXPECTED_CPU_TESTS = 96
+             "test_moe_sf6_dispatch.py", "test_glm53_ep_tiled_a_ring.py")
+CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (10, 12, 19, 12, 12, 12, 6, 7, 6, 5)))
+EXPECTED_CPU_TESTS = 101
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',
@@ -77,6 +77,20 @@ def preserve_pass(output, arm, cache_key):
     return result
 
 
+def static_specialization(rows, key, a_ring):
+    """Bind actual constructor selection and its persisted cache namespace."""
+    assert rows in STATIC_ROWS and type(a_ring) is bool
+    assert tuple(key[:4]) == ('glm53_ep_static_tiled_fp32_v1', rows, 256, 48), key
+    assert key[10] == 'sf6_v1', key
+    expected_ring = rows <= 8
+    assert a_ring is expected_ring, (rows, a_ring)
+    if expected_ring:
+        assert len(key) == 17 and tuple(key[-2:]) == ('fp32_scatter', 'glm53_ep_static_sf6_a_ring_v1'), key
+    else:
+        assert len(key) == 16 and key[-1] == 'fp32_scatter', key
+    return dict(a_ring=a_ring, scale_mode=key[10], cache_tag=key[-1])
+
+
 def compile_candidate(output, result):
     os.environ.update(CUTE_DSL_ARCH='sm_121a',CUTE_DSL_KEEP='ptx,cubin',
         CUTE_DSL_DUMP_DIR=str(output),CUTE_DSL_CACHE_DIR=str(output/'cache'),
@@ -96,10 +110,12 @@ def compile_candidate(output, result):
         assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
         kernel,args,key = ep.ep_tiled_compile_spec(num_tokens=rows,max_rows=256,
             max_active_clusters=48,topk_ids_dtype=torch.int32,reform_sf_pack=True)
-        assert key[0] == 'glm53_ep_static_tiled_fp32_v1'
-        assert key[10] == 'sf6_v1',key
+        specialization = static_specialization(rows, key, kernel.a_ring)
         cute.compile(kernel,*args,options='--opt-level 2 --enable-tvm-ffi')
-        result['static_passes'].append(preserve_pass(output,'static/M'+str(rows),key))
+        assert static_specialization(rows, key, kernel.a_ring) == specialization
+        passed = preserve_pass(output,'static/M'+str(rows),key)
+        passed['specialization'] = specialization
+        result['static_passes'].append(passed)
         assert not torch.cuda.is_initialized()
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
     md.get_num_sm = lambda *a: 48

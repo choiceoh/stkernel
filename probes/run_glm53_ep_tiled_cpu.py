@@ -8,7 +8,7 @@ import re
 import subprocess
 import glm53_ep_capsule_runtime as capsule_runtime
 from glm53_ep_tiled_compile import (source_receipt, STATIC_ROWS, DYNAMIC_ROWS,
-                                   CPU_TEST_COUNTS, EXPECTED_CPU_TESTS)
+                                   CPU_TEST_COUNTS, EXPECTED_CPU_TESTS, static_specialization)
 
 
 def validate_artifacts(output,result):
@@ -17,7 +17,10 @@ def validate_artifacts(output,result):
     for kind,rows in (('static',STATIC_ROWS),('dynamic',DYNAMIC_ROWS)):
         passes=result[kind+'_passes']
         assert [p['arm'] for p in passes]==[kind+'/M'+str(m) for m in rows]
-        for passed in passes:
+        for rows_count,passed in zip(rows,passes):
+            if kind == 'static':
+                selected = passed['specialization']
+                assert selected == static_specialization(rows_count,passed['cache_key'],selected['a_ring'])
             for name,suffix in (('artifacts','.ptx'),('resources','.cubin')):
                 assert len(passed[name])==1
                 for row in passed[name]:

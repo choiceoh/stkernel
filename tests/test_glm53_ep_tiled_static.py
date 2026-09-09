@@ -176,6 +176,7 @@ class EPTiledStaticTests(unittest.TestCase):
         fu=types.ModuleType('flashinfer.cute_dsl.utils');fu.make_ptr=lambda *a,**kw:('ptr',a,kw)
         ns={'cutlass':cutlass,'cute':cute,'STAMP_SLOTS':71,'REFORM_SF_STAGE':1552,
             'EP_TILED_CACHE_TAG':constants()['EP_TILED_CACHE_TAG'],
+            'EP_TILED_A_RING_CACHE_TAG':constants()['EP_TILED_A_RING_CACHE_TAG'],
             'MoEStaticEPTiledKernel':lambda **kw:kw}
         extract('ep_tiled_geometry',ns);extract('ep_tiled_scale_mode',ns)
         factory=extract('ep_tiled_compile_spec',ns)
@@ -198,6 +199,9 @@ class EPTiledStaticTests(unittest.TestCase):
                         self.assertEqual(kernel['num_tokens'],m)
                         self.assertIs(kernel['reform_sf_pack'],sf6)
                         self.assertEqual(key[10],'sf6_v1' if sf6 else 'raw_mma_scales')
+                        self.assertEqual(len(key),17 if sf6 and m<=8 else 16)
+                        self.assertEqual(key[-1], constants()['EP_TILED_A_RING_CACHE_TAG']
+                                         if sf6 and m<=8 else 'fp32_scatter')
                         self.assertEqual(args[26].shape,(72,512,1552) if sf6 else (1,1,16))
                         self.assertEqual(args[27].shape,(72,256,1552) if sf6 else (1,1,16))
                         self.assertEqual(args[26].dtype,'Uint8')
