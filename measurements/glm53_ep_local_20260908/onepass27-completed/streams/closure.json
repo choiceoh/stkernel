@@ -1,0 +1,31 @@
+{
+  "alive": false,
+  "attempted_arms": [
+    "A",
+    "B"
+  ],
+  "events": [
+    {
+      "at": 1788933911.6793067,
+      "kind": "stream_end",
+      "local_at": 1788933911.6966348,
+      "reason": "release_or_terminal"
+    },
+    {
+      "kind": "observer_stop",
+      "local_at": 1788933923.85549,
+      "reason": "terminal_or_release"
+    },
+    {
+      "attempted_arms": [
+        "A",
+        "B"
+      ],
+      "kind": "observer_finished",
+      "local_at": 1788933923.855607,
+      "owned_go_seen": true
+    }
+  ],
+  "observer_pid": 73593,
+  "scope": "All original chunk hashes/offsets verified. Reservation-window bytes remain unassigned until matched with a strict snapshot."
+}

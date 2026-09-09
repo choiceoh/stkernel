@@ -1,0 +1,79 @@
+{
+  "README.md": {
+    "bytes": 738,
+    "origin": "bounded refusal scope",
+    "sha256": "36bd6eeb782bb05ec57e7e9f53c475600530f422316b5dd419e51e07e48a39cf",
+    "stored_bytes": 738,
+    "stored_sha256": "36bd6eeb782bb05ec57e7e9f53c475600530f422316b5dd419e51e07e48a39cf"
+  },
+  "collect-evidence.py": {
+    "bytes": 6052,
+    "origin": "this optional collector",
+    "sha256": "637184f0ca4eb5bc1c4ffa51bed4d0db5fca559e33b24de168c9ae939503ade4",
+    "stored_bytes": 6052,
+    "stored_sha256": "637184f0ca4eb5bc1c4ffa51bed4d0db5fca559e33b24de168c9ae939503ade4"
+  },
+  "job/cpu24-reuse.json": {
+    "bytes": 851,
+    "origin": "/tmp/glm53-ep-onepass-0909-26/cpu24-reuse.json",
+    "sha256": "8b27f9505d18724d295977b08a4a942e2b3bf203b5904bbcca8926b8a7b636a7",
+    "stored_bytes": 851,
+    "stored_sha256": "8b27f9505d18724d295977b08a4a942e2b3bf203b5904bbcca8926b8a7b636a7"
+  },
+  "job/submission.json": {
+    "bytes": 4019,
+    "origin": "/tmp/glm53-ep-onepass-0909-26/submission.json",
+    "sha256": "0ceb9ed4292039f64b024e3a0a23f77b5245c27f1752cbd8364f0328b9b1f778",
+    "stored_bytes": 4019,
+    "stored_sha256": "0ceb9ed4292039f64b024e3a0a23f77b5245c27f1752cbd8364f0328b9b1f778"
+  },
+  "job/submit.exit.json": {
+    "bytes": 44,
+    "origin": "/tmp/glm53-ep-onepass-0909-26/submit.exit.json",
+    "sha256": "c16aa74d8e64cb34c9dd430f7ade5e3edbb9e9526e2939dbadb26f00a0877dec",
+    "stored_bytes": 44,
+    "stored_sha256": "c16aa74d8e64cb34c9dd430f7ade5e3edbb9e9526e2939dbadb26f00a0877dec"
+  },
+  "job/submit.stderr": {
+    "bytes": 0,
+    "origin": "/tmp/glm53-ep-onepass-0909-26/submit.stderr",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stored_bytes": 0,
+    "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "job/submit.stdout": {
+    "bytes": 880,
+    "origin": "/tmp/glm53-ep-onepass-0909-26/submit.stdout",
+    "sha256": "148497d17dfcd651a4a0d846859ecf4e37ec35adfec051c31c4e81a33104d749",
+    "stored_bytes": 880,
+    "stored_sha256": "148497d17dfcd651a4a0d846859ecf4e37ec35adfec051c31c4e81a33104d749"
+  },
+  "result-summary.json": {
+    "bytes": 867,
+    "origin": "original admission receipt and exact startup log",
+    "sha256": "4361412cf4db44f490bada8a6d54124f9a54d7ab88b17e57db867dbf12ab3fc6",
+    "stored_bytes": 867,
+    "stored_sha256": "4361412cf4db44f490bada8a6d54124f9a54d7ab88b17e57db867dbf12ab3fc6"
+  },
+  "startup-refusal.log.gz": {
+    "bytes": 341,
+    "origin": "/home/choiceoh/glm53-logs/fleet/launches/fa96764ce2a3164798f8492c334bcd8f6d232bf90fa809333b9dd547f0897778.ce29b8fa4eb24a3085c73af39a8ef7b1.log",
+    "sha256": "b5dfe882610ba0bf59aee1dbf1eb8689aa7a6bb2a5540c100877a0e06adc3f0c",
+    "stored_bytes": 261,
+    "stored_sha256": "13d34802a1423a803e073612850f656644107b16e686a0c21e735edce9e89a9f"
+  },
+  "submission/receipt.json": {
+    "bytes": 880,
+    "origin": "/tmp/glm53-onepass26-submit-receipt.txt",
+    "sha256": "148497d17dfcd651a4a0d846859ecf4e37ec35adfec051c31c4e81a33104d749",
+    "stored_bytes": 880,
+    "stored_sha256": "148497d17dfcd651a4a0d846859ecf4e37ec35adfec051c31c4e81a33104d749"
+  },
+  "submission/request.json": {
+    "bytes": 4019,
+    "origin": "/tmp/glm53-onepass26-submit.json",
+    "sha256": "0ceb9ed4292039f64b024e3a0a23f77b5245c27f1752cbd8364f0328b9b1f778",
+    "stored_bytes": 4019,
+    "stored_sha256": "0ceb9ed4292039f64b024e3a0a23f77b5245c27f1752cbd8364f0328b9b1f778"
+  }
+}

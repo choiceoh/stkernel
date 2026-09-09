@@ -1,6 +1,111 @@
-# Full-token expert-local prefill
+# TP SF6 Q0 prefill and historical EP experiments
 
-## Decode regression follow-up
+## Final implementation and default decision
+
+The selected implementation keeps TP4, 288 I512 expert shards per GPU and the
+existing packed SF6 weights and static TP decode kernels. It changes only the
+SF6 dynamic Q0 producer for eligible **executed chunks of 4096..8192 tokens**,
+reusing routing/scale metadata within the call. BF16 output, task publication,
+communication and weight ownership remain unchanged; there is no duplicate
+model weight copy. Request context length is not the executed chunk size.
+See [TP SF6 Q0 prefill](GLM53_TP_SF6_Q0.md) for the precise gate and rollback.
+
+The requested default change selects this bounded TP prefill path, startup
+trim and skipped unused graph profiling; EP/local/compact-warmup/zero-weight
+micro remain off. This removes the EP decode architecture responsible for the
+large earlier regressions. It is a default decision with **unresolved
+performance uncertainty**, not statistical proof of no decode loss or a
+canonical benchmark win. The latest pair showed no large aggregate loss;
+the previous negative TP result remains part of the evidence. The original
+40% prefill improvement goal has not been demonstrated.
+
+## Direct serving evidence
+
+[Onepass27](../measurements/glm53_ep_local_20260908/onepass27-completed/README.md)
+ran B → A on frozen source `ea413ac4c39ba3e6e4009c73587b0d536053b4bf`.
+Only A enables TP Q0. Both arms passed quality 18/18 and Korean 0/8 with no
+traffic issues; proof was B 2/2 and A 3/3. Payload and supervisor returned 0,
+and the owned holder was released. This is not public-service adoption proof.
+
+| Onepass27 metric | B | A | A relative to B |
+|---|---:|---:|---:|
+| Fixed-1024 decode, pooled output tok/s | 67.4398 | 69.2342 | +2.66% |
+| 2K best warm input tok/s | 2513.05 | 2421.55 | −3.64% |
+| 32K input tok/s | 3022.07 | 3065.47 | +1.44% |
+| 128K input tok/s | 3113.66 | 3140.25 | +0.85% |
+
+Fixed-output repetitions were B **68.54 / 65.17 / 68.73** and A
+**79.66 / 68.43 / 61.87** tok/s. Pooled decode is
+`sum(completion_tokens - 1) / sum(decode_s)`; all three repetitions are kept.
+The [original judge](../measurements/glm53_ep_local_20260908/onepass27-completed/job/verdicts.jsonl)
+reports `incomplete`, `decision=unresolved`, `floor_n=1`, `floor=null`:
++2.7% with no noise floor yet. Three requests are not three baseline boots.
+This result does not establish statistical noninferiority.
+
+The prefill rows are **descriptive, not accepted prefill wins**. B has
+`cold_compile=true` and A does not, so the canonical `prefill_ttft` comparison
+rejects the baseline as incompatible; `decode_tokens` permits this pairing.
+2K warm chooses the faster of two warm requests: TTFT B 0.84678 s, A 0.87878 s.
+First-request TTFT was B 2.36728 s and A 1.92673 s, retained separately.
+32K TTFT was 10.76910 → 10.61665 s; 128K was 41.28867 → 40.93907 s,
+one request per arm. The 2K calls remain below the Q0 gate.
+
+In [onepass25](../measurements/glm53_ep_local_20260908/onepass25-completed/README.md),
+A was **67.1018** versus **71.9144** pooled tok/s across quality-valid
+B0/B1/B3, or **−6.69%**. B2 is excluded because its Korean gate failed;
+compile-cold B0 remains valid for decode. This pooled descriptive comparison
+is separate from the original judge's latest-baseline result: A versus B3
+was −8.0%, within the ±10.7% floor (`n=3`), `inconclusive/unresolved`.
+That is not proof of no regression. Runs25 and27 have different full sources
+and are not pooled together to manufacture a positive verdict.
+
+## Validation and deployment boundaries
+
+The original [CPU24 receipt](../measurements/glm53_ep_local_20260908/decode24-cpu/README.md)
+has 165 CPU tests and 30 compiled kernels. Exact kernel/contract bytes were
+bound to GPU27 before reuse; no CPU27 compile is claimed. The final profile
+changes leave all 19 CPU-mounted sources and 36 of 37 contract files unchanged;
+the changed profile has two separate real-loader tests, including explicit
+zero opt-out. Those tests do not relabel the original CPU receipt or test the
+final default commit on GPUs.
+
+The four-rank canary checks the **first eligible actual-weight layer per
+rank**, using four fixtures, changed values at reused addresses and
+route/Q0/output comparisons in eager and two graph-stream contexts. It is
+not all-layer coverage or a sanitizer pass. Strict B/A snapshots independently
+bind image/source/capacity/flags and real graph/trim evidence. The production
+launch marker may occur during model profiling and is not an HTTP receipt.
+CPU bindings13.0.3 and serving bindings13.3.1 remain distinct recorded runtimes.
+
+Startup trim and skipped unused graph profiling are common to every arm.
+Real graph capture, live weights/KV/workspaces and capacity are retained.
+Prior onepass24 trim receipts showed only 6–8 MiB less GPU reserved memory and
+about33 MiB less process RSS per rank, not multi-GiB reclamation. Common
+`MM_LIMIT` image4/video0 already comes from approved main PR #508. PR #509
+startup instrumentation is included in the frozen GPU27 source.
+
+Native channel diagnostics preserve the existing requests, text precedence,
+timings, Korean classifier and gates. Earlier failures remain failures:
+onepass24's Korean2/8 result is not waived by later channel attribution.
+Onepass25 B2 (Q0 off) contained `Halvorsen博士` in `reasoning` only, with
+two mixed-CJK characters and no replacement, lone-jamo or control characters.
+Its final-content channels had no flagged characters. The combined-text gate
+correctly retained its original failure under the existing policy; the new
+diagnostics explain the channel without changing that policy. This baseline
+example supports ordinary language mixing rather than candidate-specific
+character corruption. The channel of the older onepass24 examples is unknown.
+Repository defaults and live public recovery/adoption are separate; the latter
+requires its own release and runtime proof.
+
+## Historical EP implementation and evidence — not an adoption plan
+
+The remainder preserves the earlier EP work and its original verdicts.
+Onepass6's descriptive fixed-output decode fell 76.899 → 62.489 tok/s;
+onepass20 stopped after53.1 tok/s without a matched baseline. These rejected
+EP results are not performance evidence for TP Q0. Future-tense plans and
+unmeasured-status statements below belong to those historical revisions.
+
+### Decode regression follow-up
 
 Default adoption is conditional on removing the recorded decode regression.
 The proposed profile promotion was withdrawn before commit, merge or deploy;
@@ -600,7 +705,7 @@ finding preserved failures on branch `codex/glm53-prefill-moe-overlap`
 (`021131d`). It is saved only on local branch
 `codex/glm53-prefill-moe-pipeline` at `15b7bd0`. Do not queue it.
 
-## CPU16 full GPU admission
+### CPU16 full GPU admission
 
 [Full GPU v5](../measurements/glm53_ep_local_20260908/gpu5-queued/README.md)
 entered the normal queue at 22:12:31 KST using frozen source `d53fd44f` and
@@ -616,7 +721,7 @@ The compiler also fully unrolled the 72-expert prefix and increased varied
 Q0 static copies from three to seven. These explain code-shape changes,
 not executed store counts or a measured improvement.
 
-## Full GPU v5 numerical rejection
+### Full GPU v5 numerical rejection
 
 The [closed offline capture](../measurements/glm53_ep_local_20260908/gpu5-result-pending-restore/README.md)
 records GO at22:17:24 and wrapper completion at22:20:32 KST. Remap24 and
@@ -642,7 +747,7 @@ No current-container equality after release is inferred from those snapshots.
 The next step is to identify the failing row/element and repeatability before
 changing kernel arithmetic or running another full GPU suite.
 
-## Bounded numerical diagnostics
+### Bounded numerical diagnostics
 
 The candidate comparison now retains its first failure and records up to eight
 bad rows with their actual per-row L2/peak errors, reference noise, limits and
@@ -675,7 +780,7 @@ GPU preparer requires the successful CPU17 receipt commit to be the immediate
 single child of the actual CPU17 source revision; no unrelated commit may be
 inserted between that source and its receipt for this prepared depth2 path.
 
-## CPU17 completion and binary provenance
+### CPU17 completion and binary provenance
 
 CPU17 ran through the normal CPU lane on September9 at00:12:23–00:12:39 KST,
 using frozen source `123fbb01211eaf8cec46fd0965dd9320d02a375b`. All146 pinned
@@ -707,7 +812,7 @@ at00:25:55 KST. Its captured queue position is historical and does not prove
 GPU execution. The concentrated case includes paired component timing only
 after all original numerical comparisons pass.
 
-## Concentrated diagnostic result
+### Concentrated diagnostic result
 
 The [terminal diagnostic capture](../measurements/glm53_ep_local_20260908/diag-gpu1-completed/RESULTS.md)
 records an earlier-than-estimated GO at00:29:01 KST, cell completion at00:30:27
@@ -734,7 +839,7 @@ its cause. A bounded repeatability diagnostic with fixed inputs and candidate
 self-comparisons is the next check; a passing repeat must not erase the first
 failure or authorize an unchanged full-suite rerun.
 
-### Short EP decode follow-up: measured regression remains
+#### Short EP decode follow-up: measured regression remains
 
 The repaired short-only micro path completed canonical onepass B1/A on source
 `e2a54cff881465c2bb7dbbd3f5ec39ca240c7f74`. Fixed 1024-token decode (three requests

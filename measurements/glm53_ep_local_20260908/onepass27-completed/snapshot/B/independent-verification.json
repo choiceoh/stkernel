@@ -1,0 +1,337 @@
+{
+  "arm": "B",
+  "cpu24_binding": {
+    "cpu_origin": {
+      "archive_result": "measurements/glm53_ep_local_20260908/decode24-cpu/result.json",
+      "exit_sha256": "ca36e7af240ffd23f4117192b13e4a6310ca53ffd5c3e9a4d695fde531c5ee56",
+      "job": "/tmp/glm53-ep-decode-cpu-0909-24",
+      "result_sha256": "1d96612938f200bd86d078e1d8841cc92df808ba4ab802ca51306fe229b67506",
+      "revision": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+      "source": "/home/choiceoh/stkernel-ep-onepass-0909-24",
+      "submission_sha256": "b99461061122fb83a7beb4106fa1733e5fbf21a06bae45b92ff83b625474ed6c"
+    },
+    "mode": "ORIGINAL_CPU24_EXACT_SOURCE_REUSE",
+    "mounted_and_contract_sources_equal": true,
+    "new_cpu_compile": false,
+    "new_revision": "ea413ac4c39ba3e6e4009c73587b0d536053b4bf",
+    "new_source": "/home/choiceoh/stkernel-ep-onepass-0909-27",
+    "reuse_path": "/tmp/glm53-ep-onepass-0909-27/cpu24-reuse.json",
+    "reuse_sha256": "d04ae3cb91a3b49b952d90a2eb5c069169437be989c8093c2b67d417abf944e3",
+    "scope": "Read-only original CPU24 bytes and current frozen mounted/contract source equality; no new compile or GPU acceptance"
+  },
+  "cpu24_counts": {
+    "contract_sources": 37,
+    "mounted_sources": 19
+  },
+  "nodes": {
+    "10.10.10.1": {
+      "baseline_pair": null,
+      "canary": null,
+      "container_id": "f14d31ac71c35fdf7c0ee8b91370d973d7e3be15682e04ef57e663fea5f674b8",
+      "created_at": "2026-09-09T05:46:02.955022145Z",
+      "flags": {
+        "VLLM_B12X_EP_WARM_COMPACT": "0",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "0",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+        "VLLM_GLM53_STARTUP_TRIM": "1",
+        "VLLM_GLM53_TP_SF6_Q0": "0"
+      },
+      "graph_then_trim": true,
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "mm_limit": {
+        "image": 4,
+        "video": 0
+      },
+      "private_before_after_equal": true,
+      "source_match": true,
+      "started_at": "2026-09-09T05:46:03.009841579Z",
+      "topology": {
+        "command_sha256": "1901aee982ac9a27139b605c5cdafa0bfec23359bd4528e3f3472cd16911c58d",
+        "enabled": false,
+        "nnodes": 4,
+        "node_rank": 1,
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "schema": 1,
+        "serve_argv_sha256": "fe2accd52ca87e123d0c395b5221adc175e8c8efddb5f3d0ccb04686cfe71400",
+        "serve_argv_without_ep_sha256": "fe2accd52ca87e123d0c395b5221adc175e8c8efddb5f3d0ccb04686cfe71400",
+        "source": "container-launch-script",
+        "tensor_parallel_size": 4
+      },
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 17898790912,
+          "reserved": 75283562496,
+          "vm_rss": 8791019520
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 17892827136,
+          "reserved": 75289853952,
+          "vm_rss": 8796463104
+        },
+        "completed_at": 1788933059.9757164,
+        "measurement_errors": [],
+        "rank": 1,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 1418,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788933059.5325093,
+        "verdict": "COMPLETE"
+      }
+    },
+    "10.10.10.3": {
+      "baseline_pair": null,
+      "canary": null,
+      "container_id": "dca65669813a849c6dbf818d2568155b9c17d2131fae69c1ca8a883e4f87cbf3",
+      "created_at": "2026-09-09T05:46:02.925981192Z",
+      "flags": {
+        "VLLM_B12X_EP_WARM_COMPACT": "0",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "0",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+        "VLLM_GLM53_STARTUP_TRIM": "1",
+        "VLLM_GLM53_TP_SF6_Q0": "0"
+      },
+      "graph_then_trim": true,
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "mm_limit": {
+        "image": 4,
+        "video": 0
+      },
+      "private_before_after_equal": true,
+      "source_match": true,
+      "started_at": "2026-09-09T05:46:02.970007455Z",
+      "topology": {
+        "command_sha256": "0c2fa3e46d6ed12343b3a8201bb665dd872c5dfaf3be0b4b632a895a1cccd920",
+        "enabled": false,
+        "nnodes": 4,
+        "node_rank": 2,
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "schema": 1,
+        "serve_argv_sha256": "ae87ab0c833ca3c9c3eb81c2392d524cc699572ec156596c84a4af12373789a7",
+        "serve_argv_without_ep_sha256": "ae87ab0c833ca3c9c3eb81c2392d524cc699572ec156596c84a4af12373789a7",
+        "source": "container-launch-script",
+        "tensor_parallel_size": 4
+      },
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 13272571904,
+          "reserved": 75283562496,
+          "vm_rss": 8823828480
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 13266587648,
+          "reserved": 75289853952,
+          "vm_rss": 8824610816
+        },
+        "completed_at": 1788933059.9917796,
+        "measurement_errors": [],
+        "rank": 2,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 1418,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788933059.526453,
+        "verdict": "COMPLETE"
+      }
+    },
+    "10.10.10.4": {
+      "baseline_pair": null,
+      "canary": null,
+      "container_id": "32017e9bdbd51e90772786f7f3fd5de62e1ad64729c508575dda929af2b91ff6",
+      "created_at": "2026-09-09T05:46:02.898407838Z",
+      "flags": {
+        "VLLM_B12X_EP_WARM_COMPACT": "0",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "0",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+        "VLLM_GLM53_STARTUP_TRIM": "1",
+        "VLLM_GLM53_TP_SF6_Q0": "0"
+      },
+      "graph_then_trim": true,
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "mm_limit": {
+        "image": 4,
+        "video": 0
+      },
+      "private_before_after_equal": true,
+      "source_match": true,
+      "started_at": "2026-09-09T05:46:02.948547007Z",
+      "topology": {
+        "command_sha256": "408fa45213e1c27febefc91c2d6b91312d99618672e7cf6a635cbfb12e9019de",
+        "enabled": false,
+        "nnodes": 4,
+        "node_rank": 3,
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "schema": 1,
+        "serve_argv_sha256": "d2d338eae09be265492006606945baaf43f791ae8bff5ae17f6ca5bcce7e0194",
+        "serve_argv_without_ep_sha256": "d2d338eae09be265492006606945baaf43f791ae8bff5ae17f6ca5bcce7e0194",
+        "source": "container-launch-script",
+        "tensor_parallel_size": 4
+      },
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 18643062784,
+          "reserved": 75281465344,
+          "vm_rss": 8836042752
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 18633396224,
+          "reserved": 75289853952,
+          "vm_rss": 8836788224
+        },
+        "completed_at": 1788933059.9793994,
+        "measurement_errors": [],
+        "rank": 3,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 1421,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788933059.5288508,
+        "verdict": "COMPLETE"
+      }
+    },
+    "local": {
+      "baseline_pair": null,
+      "canary": null,
+      "container_id": "e7d108d65485ef784c2517a5e4b90073b8f3c8619facc9a2bc5fb9ed57713bdc",
+      "created_at": "2026-09-09T05:46:03.404438068Z",
+      "flags": {
+        "VLLM_B12X_EP_WARM_COMPACT": "0",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "0",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+        "VLLM_GLM53_STARTUP_TRIM": "1",
+        "VLLM_GLM53_TP_SF6_Q0": "0"
+      },
+      "graph_then_trim": true,
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "mm_limit": {
+        "image": 4,
+        "video": 0
+      },
+      "private_before_after_equal": true,
+      "source_match": true,
+      "started_at": "2026-09-09T05:46:03.470884573Z",
+      "topology": {
+        "command_sha256": "c6d29445d7f65ab703cdaef1374d6fa73280d718d677350fa731ee5d4cc3f6aa",
+        "enabled": false,
+        "nnodes": 4,
+        "node_rank": 0,
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "schema": 1,
+        "serve_argv_sha256": "05c42f255d7c005f61d08f0bef8bbba8cda8ff15167eef21927d43c34d07bea6",
+        "serve_argv_without_ep_sha256": "05c42f255d7c005f61d08f0bef8bbba8cda8ff15167eef21927d43c34d07bea6",
+        "source": "container-launch-script",
+        "tensor_parallel_size": 4
+      },
+      "trim": {
+        "after": {
+          "allocated": 72150850048,
+          "mem_available": 14299586560,
+          "reserved": 75302436864,
+          "vm_rss": 8850399232
+        },
+        "before": {
+          "allocated": 72150850048,
+          "mem_available": 14295695360,
+          "reserved": 75310825472,
+          "vm_rss": 8851361792
+        },
+        "completed_at": 1788933060.0767841,
+        "measurement_errors": [],
+        "rank": 0,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 3573,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788933059.5272026,
+        "verdict": "COMPLETE"
+      }
+    }
+  },
+  "owner_pid": "730747",
+  "owner_start_tick": "43512869",
+  "performance_acceptance": false,
+  "quality_acceptance": false,
+  "revision": "ea413ac4c39ba3e6e4009c73587b0d536053b4bf",
+  "scope": "Read-only validation of existing strict observer snapshots; raw Env/Cmd/inspect remain private",
+  "snapshot_sha256": "0100f2021ab9c4e321c5fc2d2d89ceabc8245bf748b671df3475e8a880c0a3d6",
+  "ticket": "1788932740730747",
+  "verdict": "STRICT_ARM_SOURCE_MM_TRIM_CANARY_VERIFIED"
+}

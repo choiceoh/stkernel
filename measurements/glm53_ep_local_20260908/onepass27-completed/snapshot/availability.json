@@ -1,0 +1,10 @@
+{
+  "A": {
+    "complete_record": true,
+    "verdict": "STRICT_IDENTITY_VERIFIED"
+  },
+  "B": {
+    "complete_record": true,
+    "verdict": "STRICT_IDENTITY_VERIFIED"
+  }
+}
