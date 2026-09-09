@@ -1797,6 +1797,9 @@ class MoEMicroKernel:
                 if cutlass.const_expr(self.shared_fc1_a):
                     # A stage stays owned until both independent accumulators finish
                     # reading it. Reuse B/SFB registers, keeping A/SFA in registers.
+                    # The legacy FC1 branch leaves this constexpr int live at
+                    # the common FC2 loop; give the shared branch the same type.
+                    k_next = 0
                     fz_crSFA = cute.filter_zeros(crSFA_tile)
                     fz_crSFB = cute.filter_zeros(crSFB_tile)
                     gate_acc.fill(0.0)

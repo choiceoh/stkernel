@@ -1,0 +1,13 @@
+{"verdict": "FAIL", "phase": "micro-cute-compile", "error": "DSLUserCodeError('\\n\\x1b[91m\\x1b[1merror[TYPE_UNSTABLE_JOIN]:\\x1b[0m `k_next` has type `None` on one path and `int` on another. Where the paths come back together, both versions must be the same type.\\n    \\x1b[94m-->\\x1b[0m /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py:2310\\n     |\\n2308 | \\n2309 |                 phase2_cons_state.reset_count()\\n2310 |                 for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]\\n     |                 \\x1b[91m^\\x1b[0m\\n  \\x1b[92msuggestion:\\x1b[0m Make every assignment to `k_next` produce the same type.\\n  \\x1b[92msuggestion:\\x1b[0m If you need a conversion, convert it explicitly inside the branch so the result is\\n              consistently one type.\\n')", "contracts": null, "cuda_initialized": null}
+
+[91m[1merror[TYPE_UNSTABLE_JOIN]:[0m `k_next` has type `None` on one path and `int` on another. Where the paths come back together, both versions must be the same type.
+    [94m-->[0m /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py:2310
+     |
+2308 | 
+2309 |                 phase2_cons_state.reset_count()
+2310 |                 for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
+     |                 [91m^[0m
+  [92msuggestion:[0m Make every assignment to `k_next` produce the same type.
+  [92msuggestion:[0m If you need a conversion, convert it explicitly inside the branch so the result is
+              consistently one type.
+

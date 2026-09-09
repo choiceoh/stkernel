@@ -159,6 +159,9 @@ def consumer_trace(stages, tiles=32):
               self=SimpleNamespace(num_m_tiles=1,num_n_tiles=8,pass_sync_barrier=SimpleNamespace(
                   arrive_and_wait=lambda:events.append(('end_fc1',state.count)))))
     exec(code(block('_k_tile').body),ns)
+    # CuTe merges this name with the legacy FC1 branch before the common FC2
+    # loop. Both paths must supply an int, including the shared path.
+    assert type(ns['k_next']) is int and ns['k_next'] == 0
     return events
 
 
@@ -227,6 +230,12 @@ class SharedFC1Tests(unittest.TestCase):
         self.assertEqual(32*(2*18432+9216),1474560)
 
     def test_actual_consumer_keeps_every_accumulator_k_order_and_reads_A_once(self):
+        shared = block('_k_tile').body
+        initialization = next(n for n in shared if isinstance(n,ast.Assign)
+                              and ast.unparse(n.targets[0]) == 'k_next')
+        self.assertEqual(ast.dump(initialization.value),ast.dump(ast.Constant(0)))
+        self.assertLess(shared.index(initialization),
+                        next(i for i,n in enumerate(shared) if isinstance(n,ast.For)))
         for stages in (1,2):
             events=consumer_trace(stages)
             self.assertEqual(events[-1],('end_fc1',32))
