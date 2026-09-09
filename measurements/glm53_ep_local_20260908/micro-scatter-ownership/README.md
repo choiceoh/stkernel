@@ -1,0 +1,11 @@
+# EP micro scatter publication correction
+
+The original CPU13 M32 top8 and M64 top1 PTX both read shared FC2 output produced by a different warp without a preceding MMA-group barrier. For the first eight valid rows of the first output tile, 384 of 512 BF16x2 reads cross warp ownership. A concrete witness is reader tid8 (warp0), row0/column16: its two shared offsets 57376/57378 have the unique producer tid64 (warp2). Offsets are relative to the aligned CTA shared-memory base.
+
+M32 stores at PTX3448–3463 precede fence3464, then loads3506/3517; the barrier is only at3532 after the scatter. M64 stores4957–4988 precede fence4989, loads5031/5042, and post-scatter barrier5062. The generic/async proxy fence does not synchronize different warps. The correction adds the existing128-thread epilog barrier before scalar scatter only for the selected EP FP32 variants and retains the post-scatter barrier.
+
+Separately, the M32 scatter formerly used unclamped expert rows even though sC and metadata cover only the current32-row tile. Counts33–64 could read beyond the current tile and reprocess later routes. The selected EP branch now uses existing valid_tile_rows; tests cover0/1/8/31/32/33/48/63/64 routes for both M32 and M64 with exact once-only row/column coverage. Initial short6 has at most10 routes per expert, so this bound defect is not presented as its observed failure cause.
+
+`identity.json` binds the unchanged original CPU13 source, receipt, archive member names, and compressed/raw PTX hashes. `result.json` records a local byte comparison against the archived CPU13 tar and verifies both PTX hashes occur in its original result receipt. `verify.py` independently interprets only the bounded PTX integer address instructions and checks raw/compressed hashes and publication boundaries; it does not reopen the large CPU13 archive. Run it with Python3 and no accelerator dependencies.
+
+This is static proof of an unsynchronized cross-warp dependency, not a device race trace or proof that it explains every observed numerical failure. No GPU execution, threshold change, fixture change, performance claim, or default promotion is included. Focused tests9/9 passed; the actual CuTe lowering and unchanged canonical startup numerical gate remain required.

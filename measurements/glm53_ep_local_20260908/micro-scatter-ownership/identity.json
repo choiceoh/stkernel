@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "source_revision": "a010504ee03842f30892a31d764b74cdbf3a5610",
+  "source_kernel_sha256": "70cd818ae8669850e4986468d89c03980335468e42043766fd4e8a02b8c1598b",
+  "receipt_path": "../decode13-cpu/result.json",
+  "receipt_sha256": "e3ec24f8b8bfa65a1d83295fb8dbd7d6e49fb89a5cb1a48c8928106526e8cb2e",
+  "artifact_tar_sha256": "e85d45b2da461fc50a83735d9bde4c651fc7e38b345ac9d97cf743a6871a06c6",
+  "variants": {
+    "m32-topk8-fp32": {
+      "producer_ranges": [
+        [
+          3223,
+          3231
+        ],
+        [
+          3302,
+          3374
+        ]
+      ],
+      "store_range": [
+        3448,
+        3463
+      ],
+      "reader_ranges": [
+        [
+          3223,
+          3231
+        ],
+        [
+          3467,
+          3468
+        ],
+        [
+          3473,
+          3517
+        ]
+      ],
+      "reader_seed": "%r3683",
+      "base_register": "%r320",
+      "tid_register": "%r784",
+      "read_registers": [
+        "%r3038",
+        "%r3048"
+      ],
+      "fence_line": 3464,
+      "post_barrier_line": 3532,
+      "ptx_sha256": "a3332b0ed5eac3d6ed158ff15654e21e55387c71bf153e15e7e814eeecc40598",
+      "compressed_sha256": "defc1b546f4169227bfcae1af5059b9597cdeee0859438e0f1f3d5876102baf5",
+      "archive_member": "evidence/micro/m32-topk8-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "ptx_bytes": 219932
+    },
+    "m64-topk1-fp32": {
+      "producer_ranges": [
+        [
+          4570,
+          4580
+        ],
+        [
+          4675,
+          4811
+        ]
+      ],
+      "store_range": [
+        4957,
+        4988
+      ],
+      "reader_ranges": [
+        [
+          4991,
+          4992
+        ],
+        [
+          4995,
+          5042
+        ]
+      ],
+      "reader_seed": "%r5720",
+      "base_register": "%r430",
+      "tid_register": "%r4261",
+      "read_registers": [
+        "%r4633",
+        "%r4643"
+      ],
+      "fence_line": 4989,
+      "post_barrier_line": 5062,
+      "ptx_sha256": "af8ee944deabff26d5cbafcece9a69da2bc9e2fc36267d174c3bd6bd4eee15cf",
+      "compressed_sha256": "b6e9d0d66d90051ca2ad9447f478878f319c4cf1fbcfb3d88281f0d4abef803b",
+      "archive_member": "evidence/micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx",
+      "ptx_bytes": 333451
+    }
+  },
+  "scope": "Original CPU13 PTX shared-memory address ownership, not an observed GPU race trace. CTA shared base normalized to zero (1024-byte aligned). First output tile, first eight valid rows; both BF16 words per pair."
+}

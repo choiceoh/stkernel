@@ -1,0 +1,42 @@
+# CPU13: complete CPU gate passed
+
+Normal fleet session `epdecodecpu0909v13` completed on 2026-09-09 at
+09:58:07–09:58:31 KST. Payload, evidence copy, and outer return codes were 0.
+The srv2 fleet ran its no-device CPU payload on srv1 using frozen source
+`a010504ee03842f30892a31d764b74cdbf3a5610` at
+`/home/choiceoh/stkernel-ep-onepass-0909-13`.
+
+**82 tests passed with zero failures, errors, or skips.** The original result
+records `verdict=PASS`, `phase=complete`, `cuda_initialized=false`, and
+`binding_runtime_rechecked=true`. All 28 kernels compiled: three micro CuTe
+variants, one dynamic-prefill CuTe variant, and 24 Triton preparation variants.
+CPU12's original test failure remains preserved in `../decode12-cpu-failed/`.
+
+The compiled micro variants are M32/top8/FP32, M64/top1/FP32, and unchanged
+M64/top8/BF16. Each FP32 variant's receipt-bound PTX contains four static
+`red.relaxed.gpu.global.add.v2.f32` sites and no BF16 reduction sites. The BF16
+variant contains four `red.relaxed.gpu.global.add.noftz.bf16x2` sites and no
+FP32 vector reduction sites. These are static instruction counts, not executed
+operations, traffic, numerical correctness, or performance measurements.
+
+`evidence.tar.gz` preserves **61 original files**: 28 PTX, 28 cubin,
+4 resource logs, and the result. `result.json` is byte-identical to its original.
+`head/` preserves the submitted command, driver, exit receipt, and complete log.
+The runner retained its 12 GiB host admission gate, 4 GiB memory / 2 CPU limits,
+runc runtime, and no-device configuration.
+
+Before and after collection, all original worker, copied head, and archived
+file hashes matched. Both frozen checkouts were clean at the exact revision,
+with full history and no alternates; actual worker source hashes matched the
+submission and compiled receipts. The immutable image remained
+`sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`.
+The worker's 116-file bindings capsule passed strict validation against
+manifest `b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab`.
+
+`capture.json` retains those observations and original hashes. `verify.py`
+reproduces the exact artifact-set, source-receipt, completion, and static PTX
+checks from local evidence; its output is `verification.json`. Collection
+only read/copied existing results after GPU13 submission was confirmed. It did
+not submit tests, touch GPU ownership, or modify frozen sources. This archive
+establishes CPU evidence only; GPU numerical and serving acceptance remain
+separate. `SHA256SUMS` covers every archive file except itself.

@@ -23,7 +23,11 @@ CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu11.py.gz',
-    'measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu11-identity.json')
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu11-identity.json',
+    'measurements/glm53_ep_local_20260908/micro-scatter-ownership/verify.py',
+    'measurements/glm53_ep_local_20260908/micro-scatter-ownership/identity.json',
+    'measurements/glm53_ep_local_20260908/micro-scatter-ownership/m32-topk8-fp32.ptx.gz',
+    'measurements/glm53_ep_local_20260908/micro-scatter-ownership/m64-topk1-fp32.ptx.gz')
 
 
 def source_receipt(root, *, verify_mounted=False):

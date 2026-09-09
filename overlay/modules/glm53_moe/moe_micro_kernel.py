@@ -2243,18 +2243,26 @@ class MoEMicroKernel:
                             tRS_sD[(None, None, None, epi_buffer)],
                         )
                         cute.arch.fence_proxy("async.shared", space="cta")
-                        # No cross-warp barrier needed before scatter:
-                        # StMatrix is warp-local, and each warp only reads
-                        # its own 64x64 quadrant of sC below.
+                        if cutlass.const_expr(self.scatter_fp32):
+                            # The EP M32/M64 r2s layout interleaves producer
+                            # warps across the scalar scatter's quadrants.
+                            # Publish every sC store before any warp reads it.
+                            self.epilog_sync_barrier.arrive_and_wait()
 
                         rows_offset = Int32(epi_m) * Int32(self.epi_tile[0])
 
-                        # Per-warp scatter: each warp scatters its own quadrant
-                        # of sC (64 M-rows x 64 N-cols). No cross-warp read
-                        # dependencies, so no pre-scatter barrier is needed.
-                        warp_epi_rows = (
-                            valid_rows - tile_m_base - rows_offset - warp_m_base
-                        )
+                        # Each scatter warp covers a 64x64 logical quadrant;
+                        # this does not imply ownership of its sC producers.
+                        if cutlass.const_expr(self.scatter_fp32):
+                            # M32 may have another tile for the same expert.
+                            # Never read this tile's sC/metadata beyond its rows.
+                            warp_epi_rows = (
+                                valid_tile_rows - rows_offset - warp_m_base
+                            )
+                        else:
+                            warp_epi_rows = (
+                                valid_rows - tile_m_base - rows_offset - warp_m_base
+                            )
                         if warp_epi_rows > Int32(64):
                             warp_epi_rows = Int32(64)
                         if warp_epi_rows < Int32(0):

@@ -1,0 +1,24 @@
+{
+  "alive": false,
+  "events": [
+    {
+      "at": 1788915840.8110876,
+      "kind": "stream_end",
+      "local_at": 1788915840.794018,
+      "reason": "release_or_terminal"
+    },
+    {
+      "kind": "observer_stop",
+      "local_at": 1788915852.7491572,
+      "reason": "terminal_or_release"
+    },
+    {
+      "attempted_arms": [],
+      "kind": "observer_finished",
+      "local_at": 1788915852.749414,
+      "owned_go_seen": true
+    }
+  ],
+  "observer_pid": 89347,
+  "scope": "All chunk hashes/offsets checked. Streams started after owned GO; unassigned bytes retain original attribution, no strict container snapshot exists."
+}

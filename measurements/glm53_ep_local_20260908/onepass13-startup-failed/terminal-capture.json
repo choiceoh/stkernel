@@ -1,0 +1,63 @@
+{
+  "absent": [
+    "/tmp/glm53-ep-onepass-0909-13/onepass.jsonl",
+    "/tmp/glm53-ep-onepass-0909-13/verdicts.jsonl",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS13A0.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS13B1.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS13A.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS13B2.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS13B3.log"
+  ],
+  "captured_at": 1788916150.436747,
+  "files": {
+    "/home/choiceoh/glm53-logs/fleet/run-logs/f65aef228e9dbbed9cba05d3dd7d73d5dda4e5455f4caa098e6f61f1806fca6e.log": {
+      "bytes": 4611,
+      "mtime_ns": 1788915840697771981,
+      "sha256": "a5bff1d720aa97ddf70f0bf780ab8b91f3b408c1742bd6e98eb161831abddb26"
+    }
+  },
+  "fleet_after": {
+    "finished_at": 1788915840.9043627,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/f65aef228e9dbbed9cba05d3dd7d73d5dda4e5455f4caa098e6f61f1806fca6e.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788915840.5241365,
+    "payload_returncode": 1,
+    "payload_seconds": 307.0,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v13",
+    "started_at": 1788915533.5607395,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "17889155333785782"
+  },
+  "fleet_before": {
+    "finished_at": 1788915840.9043627,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/f65aef228e9dbbed9cba05d3dd7d73d5dda4e5455f4caa098e6f61f1806fca6e.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788915840.5241365,
+    "payload_returncode": 1,
+    "payload_seconds": 307.0,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v13",
+    "started_at": 1788915533.5607395,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "17889155333785782"
+  },
+  "own_holder_after": false,
+  "own_holder_before": false,
+  "source_after": {
+    "head": "a010504ee03842f30892a31d764b74cdbf3a5610",
+    "status": ""
+  },
+  "source_before": {
+    "head": "a010504ee03842f30892a31d764b74cdbf3a5610",
+    "status": ""
+  }
+}

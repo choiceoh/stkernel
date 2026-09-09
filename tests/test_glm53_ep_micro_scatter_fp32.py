@@ -10,6 +10,7 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
+import runpy
 import struct
 from types import SimpleNamespace
 import unittest
@@ -18,6 +19,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MICRO = ROOT/'overlay/modules/glm53_moe/moe_micro_kernel.py'
 ORACLE = ROOT/'measurements/glm53_ep_local_20260908/micro-stock-oracle'
+OWNERSHIP = ROOT/'measurements/glm53_ep_local_20260908/micro-scatter-ownership'
 STOCK_SOURCE_SHA256 = 'a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1'
 # Frozen CPU11/onepass11 source, parsed under the same Python as the candidate.
 # ast.dump's empty-field representation differs between Python 3.12 and 3.14.
@@ -41,6 +43,20 @@ def extract(fn, namespace):
 def inline_asm(fn):
     return next(n for n in ast.walk(fn) if isinstance(n, ast.Call)
                 and ast.unparse(n.func) == 'llvm.inline_asm')
+
+
+def scatter_block(fn):
+    return next(n for n in ast.walk(fn) if isinstance(n, ast.For)
+                and any(isinstance(child, ast.While)
+                        and ast.unparse(child.test) == 'pair_idx < warp_epi_rows * Int32(32)'
+                        for child in n.body))
+
+
+def publication_if(block):
+    return next(n for n in block.body if isinstance(n, ast.If)
+                and ast.unparse(n.test) == 'cutlass.const_expr(self.scatter_fp32)'
+                and len(n.body) == 1 and isinstance(n.body[0], ast.Expr)
+                and ast.unparse(n.body[0]) == 'self.epilog_sync_barrier.arrive_and_wait()')
 
 
 class DType:
@@ -149,7 +165,94 @@ class ScatterTests(unittest.TestCase):
             self.assertEqual(set(writes), set(range(0,8*4096*width,width)))
             self.assertEqual(set(writes.values()), {('f32' if enabled else 'bf16',0.0)})
 
-    def test_entire_kernel_math_routing_and_barriers_are_unchanged(self):
+    def test_original_ptx_proves_cross_warp_reads_need_publication(self):
+        proof = runpy.run_path(str(OWNERSHIP/'verify.py'))['verify'](OWNERSHIP)
+        self.assertEqual(proof['verdict'], 'PASS')
+        self.assertEqual(set(proof['variants']), {'m32-topk8-fp32', 'm64-topk1-fp32'})
+        for result in proof['variants'].values():
+            self.assertEqual(result['pair_reads'], 512)
+            self.assertEqual(result['cross_warp_pair_reads'], 384)
+            self.assertEqual(result['witnesses'][0],
+                             dict(reader_tid=8, producer_tid=64, row=0, column=16,
+                                  shared_offsets=[57376, 57378]))
+
+    def test_ep_publication_precedes_every_scatter_and_retains_post_barrier(self):
+        block = scatter_block(function('kernel'))
+        guard = publication_if(block)
+        idx = block.body.index(guard)
+        self.assertEqual(ast.unparse(block.body[idx-1]),
+                         "cute.arch.fence_proxy('async.shared', space='cta')")
+        self.assertTrue(ast.unparse(block.body[idx-2]).startswith('cute.copy('))
+        self.assertEqual(ast.unparse(block.body[idx+1]),
+                         'rows_offset = Int32(epi_m) * Int32(self.epi_tile[0])')
+        self.assertFalse(guard.orelse)
+        self.assertEqual(ast.unparse(block.body[-1]),
+                         'self.epilog_sync_barrier.arrive_and_wait()')
+        # Simulate a delayed producer warp. The generic/async fence alone does
+        # not release its pending stores; the actual selected barrier must.
+        prefix = compile(ast.Module(body=block.body[idx-2:idx+1], type_ignores=[]),
+                         str(MICRO), 'exec')
+        post = compile(ast.Module(body=[block.body[-1]], type_ignores=[]), str(MICRO), 'exec')
+        class Slice:
+            def __getitem__(self, key): return key
+        for enabled in (False, True):
+            events, pending, shared = [], {}, {}
+            def store(*args):
+                events.append('store'); pending[57376] = 'producer-warp2'
+            def fence(*args, **kwargs): events.append('fence')
+            def barrier():
+                events.append('barrier'); shared.update(pending); pending.clear()
+            ns = dict(cute=SimpleNamespace(copy=store, arch=SimpleNamespace(fence_proxy=fence)),
+                      cutlass=SimpleNamespace(const_expr=lambda x:x),
+                      self=SimpleNamespace(scatter_fp32=enabled,
+                                           epilog_sync_barrier=SimpleNamespace(arrive_and_wait=barrier)),
+                      tiled_copy_r2s=None, tRS_rD_out=None, tRS_sD=Slice(), epi_buffer=0)
+            exec(prefix, ns)
+            self.assertEqual(57376 in shared, enabled)
+            self.assertEqual(events, ['store', 'fence'] + (['barrier'] if enabled else []))
+            events.append('scatter')
+            exec(post, ns)
+            self.assertEqual(events[-2:], ['scatter', 'barrier'])
+
+    def test_ep_scatter_bounds_cover_every_route_exactly_once(self):
+        fn = function('kernel')
+        parent = next(n for n in ast.walk(fn) if isinstance(n, ast.While)
+                      and any(isinstance(x, ast.Assign)
+                              and ast.unparse(x.targets[0]) == 'valid_tile_rows'
+                              for x in n.body))
+        idx = next(i for i,n in enumerate(parent.body) if isinstance(n, ast.Assign)
+                   and ast.unparse(n.targets[0]) == 'valid_tile_rows')
+        valid_code = compile(ast.Module(body=parent.body[idx:idx+3], type_ignores=[]),
+                             str(MICRO), 'exec')
+        block = scatter_block(fn)
+        row_guard = next(n for n in block.body if isinstance(n, ast.If)
+                         and ast.unparse(n.test) == 'cutlass.const_expr(self.scatter_fp32)'
+                         and isinstance(n.body[0], ast.Assign))
+        row_idx = block.body.index(row_guard)
+        row_code = compile(ast.Module(body=block.body[row_idx:row_idx+3], type_ignores=[]),
+                           str(MICRO), 'exec')
+        for tile_m in (32, 64):
+            for count in (0, 1, 8, 31, 32, 33, 48, 63, 64):
+                observed = []
+                for tile in range((count+tile_m-1)//tile_m):
+                    tile_base = tile*tile_m
+                    for warp in range(4):
+                        ns = dict(valid_rows=count, tile_m_base=tile_base, rows_offset=0,
+                                  warp_m_base=(warp//2)*64, Int32=int,
+                                  self=SimpleNamespace(scatter_fp32=True,
+                                                       tile_shape_mnk=(tile_m,128,128)),
+                                  cutlass=SimpleNamespace(const_expr=lambda x:x))
+                        exec(valid_code, ns); exec(row_code, ns)
+                        for row in range(ns['warp_epi_rows']):
+                            logical_row = ns['warp_m_base']+row
+                            self.assertLess(logical_row, tile_m)
+                            self.assertLess(logical_row, ns['valid_tile_rows'])
+                            for col in range((warp%2)*64, (warp%2+1)*64):
+                                observed.append((tile_base+logical_row, col))
+                self.assertEqual(len(observed), count*128)
+                self.assertEqual(set(observed), {(r,c) for r in range(count) for c in range(128)})
+
+    def test_entire_kernel_preserves_stock_except_exact_ep_scatter_changes(self):
         raw = gzip.decompress((ORACLE/'moe_micro_kernel_cpu11.py.gz').read_bytes())
         self.assertEqual(hashlib.sha256(raw).hexdigest(), STOCK_KERNEL_SOURCE_SHA256)
         identity = json.loads((ORACLE/'micro-kernel-cpu11-identity.json').read_text())
@@ -158,9 +261,23 @@ class ScatterTests(unittest.TestCase):
         stock = next(n for n in ast.walk(ast.parse(raw)) if isinstance(n, ast.FunctionDef)
                      and n.name == 'kernel')
         expected = hashlib.sha256(ast.dump(stock, include_attributes=False).encode()).hexdigest()
+        current = function('kernel')
+        block = scatter_block(current)
+        pre = publication_if(block)
+        bounded = next(n for n in block.body if isinstance(n, ast.If)
+                       and ast.unparse(n.test) == 'cutlass.const_expr(self.scatter_fp32)'
+                       and isinstance(n.body[0], ast.Assign))
+        self.assertEqual(ast.unparse(bounded.body[0]),
+                         'warp_epi_rows = valid_tile_rows - rows_offset - warp_m_base')
+        self.assertEqual(ast.unparse(bounded.orelse[0]),
+                         'warp_epi_rows = valid_rows - tile_m_base - rows_offset - warp_m_base')
         class SelectScatter(ast.NodeTransformer):
             def __init__(self, enabled): self.enabled=enabled
             def visit_If(self, node):
+                if node.lineno == pre.lineno:
+                    return []  # Only the exact, separately verified publication.
+                if node.lineno == bounded.lineno:
+                    return [self.visit(n) for n in node.orelse]
                 if ast.unparse(node.test) == 'cutlass.const_expr(self.scatter_fp32)':
                     return [self.visit(n) for n in (node.body if self.enabled else node.orelse)]
                 return self.generic_visit(node)
@@ -175,7 +292,7 @@ class ScatterTests(unittest.TestCase):
                     node.value.func.attr='BFloat16'
                 return self.generic_visit(node)
         for enabled in (False,True):
-            normalized=SelectScatter(enabled).visit(copy.deepcopy(function('kernel')))
+            normalized=SelectScatter(enabled).visit(copy.deepcopy(current))
             digest=hashlib.sha256(ast.dump(normalized,include_attributes=False).encode()).hexdigest()
             self.assertEqual(digest, expected)
 
