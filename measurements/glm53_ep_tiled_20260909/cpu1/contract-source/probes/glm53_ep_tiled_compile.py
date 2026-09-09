@@ -10,23 +10,16 @@ import os
 from pathlib import Path
 import subprocess
 import time
-import unittest
 
 from glm53_ep_capsule_runtime import verify_runtime
 
 STATIC_ROWS = (6, 12, 24, 32)
 DYNAMIC_ROWS = (33, 8192)
-CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
-             "test_glm53_ep_tiled_owner.py", "test_glm53_ep_tiled_selftest.py",
-             "test_glm53_ep_tiled_proof.py")
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',
     'probes/glm53_ep_bindings_pair_check.py',
-    'profiles/glm53.env', 'bench/proof.py', 'bench/proof-markers.tsv',
-    'overlay/modules/glm53_model/glm5next_model.py',
-    'measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz',
-) + tuple('tests/' + name for name in CPU_TESTS)
+)
 
 
 def source_receipt(root, *, verify_mounted=False):
@@ -125,7 +118,7 @@ def main():
     args=p.parse_args()
     result=dict(verdict='FAIL',phase='no-device-guard',started=time.time(),compile_only=True,
                 gpu_numerics_acceptance=False,performance_acceptance=False,
-                scope='four static and two dynamic EP tiled compiler variants plus CPU ownership contracts; no GPU')
+                scope='four static and two dynamic EP tiled compiler variants; no GPU or CPU test suite')
     try:
         assert not list(Path('/dev').glob('nvidia*')),'CPU container exposes CUDA devices'
         runtime=verify_runtime(args.capsule_root,args.manifest_sha256)
@@ -134,16 +127,6 @@ def main():
         sources=source_receipt(root,verify_mounted=True)
         result.update(sources)
         compile_candidate(args.output,result)
-        result['phase'] = 'cpu-contracts'
-        suite = unittest.TestSuite()
-        for name in CPU_TESTS:
-            suite.addTests(unittest.defaultTestLoader.discover(str(root/'tests'), pattern=name))
-        checked = unittest.TextTestRunner(verbosity=2).run(suite)
-        result['contracts'] = dict(tests_run=checked.testsRun, failures=len(checked.failures),
-            errors=len(checked.errors), skips=len(checked.skipped))
-        assert checked.testsRun >= 48 and checked.wasSuccessful() and not checked.skipped
-        import torch
-        assert not torch.cuda.is_initialized()
         assert source_receipt(root,verify_mounted=True)==sources
         assert verify_runtime(args.capsule_root,args.manifest_sha256)==runtime
         result.update(verdict='PASS',phase='complete',binding_runtime_rechecked=True)

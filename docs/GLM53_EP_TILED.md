@@ -5,7 +5,8 @@ allocation between a dedicated static decode kernel and the EP-local prefill
 kernel. It is experimental and defaults off. Neither recovered decode speed
 nor retained prefill gains have been established for this implementation.
 
-Enable `ENABLE_EP=1 VLLM_GLM53_EP_TILED=1` on the GLM profile. Keep the old
+Enable `ENABLE_EP=1 VLLM_GLM53_EP_TILED=1 VLLM_GLM53_TP_SF6_Q0=0` on the GLM
+profile. The TP Q0 owner/canary does not apply to EP weights. Keep the old
 `VLLM_GLM53_EP_PREFILL_LOCAL`, `VLLM_B12X_EP_ZERO_WEIGHT_MICRO`, and
 `VLLM_B12X_EP_WARM_COMPACT` experiments off. The new flag also preserves the
 EP-compatible attention/MHC prefill SP configuration. Attention remains TP4.

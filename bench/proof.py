@@ -110,6 +110,8 @@ def _startup_proof(knob: str, log: str) -> bool | None:
             and not any(key in record for key in ("error", "cleanup_error"))
             and isinstance(record.get("cases"), list)
             and len(record["cases"]) == len(expected)
+            and all(isinstance(case, dict) and isinstance(case.get("case"), str)
+                    for case in record["cases"])
             and {case.get("case") for case in record["cases"] if isinstance(case, dict)} == expected
             and all(_ep_tiled_case_proof(case) for case in record["cases"])
             for record in records)

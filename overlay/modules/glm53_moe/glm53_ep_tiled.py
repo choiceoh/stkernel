@@ -25,6 +25,8 @@ _LAUNCH_PREFIXES = {
 
 
 def validate_configuration(owner):
+    if os.environ.get("VLLM_GLM53_TP_SF6_Q0", "0") == "1":
+        raise ValueError(f"{KNOB}=1 requires VLLM_GLM53_TP_SF6_Q0=0 for the EP owner")
     expected = (True, True, 288, 72, 4096, 2048, 8,
                 "swigluoai_uninterleave", 1., 0., 10.)
     actual = (owner._use_ep, owner._ep_no_dummy, owner.global_num_experts,

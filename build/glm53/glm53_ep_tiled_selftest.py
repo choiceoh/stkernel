@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import importlib.metadata
+import inspect
 import json
 import os
 from pathlib import Path
@@ -15,7 +17,7 @@ import time
 from types import SimpleNamespace
 
 from .glm53_ep_local_selftest import (
-    _cache_snapshot, _restore_scratch_caches, _runtime as _base_runtime,
+    _cache_snapshot, _restore_scratch_caches,
     _tensor_identity, _inputs, _memory, check_control, compare, row_errors,
     ROW_L2_FLOOR, ROW_PEAK_FLOOR,
 )
@@ -71,15 +73,52 @@ def _runtime(owner, layer):
             (owner.global_num_experts, owner.num_local_experts, owner.hidden_dim,
              owner.intermediate_size_per_partition, owner.topk) != (288, 72, 4096, 2048, 8)):
         raise RuntimeError("EP tiled self-test needs the exact unpadded actual owner")
-    torch, md, _, device, provenance = _base_runtime(owner, layer.w13_weight.device)
+    # This hook deliberately precedes allocation of the old micro workspaces.
+    # Its admission belongs to the tiled owner, independently of the old knob.
+    import torch
+    from . import moe_dispatch as md
+    from . import moe_dynamic_ep_local as local
+    from . import glm53_ep_local_selftest as numerical
+    device = layer.w13_weight.device
+    if (device.type != "cuda" or torch.cuda.get_device_capability(device) != (12, 1)
+            or torch.cuda.is_current_stream_capturing()):
+        raise RuntimeError("EP tiled self-test requires SM121 outside graph capture")
+    if not md._GLM53_EP_TILED or not local.stock_contract_matches():
+        raise RuntimeError("EP tiled self-test selection/source contract differs")
+    if (owner._kernel_num_experts != 72 or
+            (owner._activation_str, owner._swiglu_alpha, owner._swiglu_beta, owner._swiglu_limit)
+            != ("swigluoai_uninterleave", 1., 0., 10.)):
+        raise RuntimeError("EP tiled self-test requires the exact serving activation")
     prefix = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x."
     tiled = importlib.import_module(prefix + "glm53_ep_tiled")
     decode = importlib.import_module(prefix + "moe_static_ep_tiled")
-    for name, module in (("tiled_owner", tiled), ("tiled_decode", decode)):
-        path = Path(module.__file__)
-        provenance["source"][name] = dict(path=str(path), sha256=_sha(path.read_bytes()))
-    provenance["source"]["tiled_selftest"] = dict(path=__file__, sha256=_sha(Path(__file__).read_bytes()))
-    return dict(torch=torch, md=md, device=device, tiled=tiled, provenance=provenance)
+    decode.ep_tiled_source_contract()
+    files = dict(tiled_selftest=Path(__file__), numerical=Path(numerical.__file__),
+        wrapper=Path(inspect.getfile(type(owner))), dispatch=Path(md.__file__),
+        local=Path(local.__file__), stock=Path(local._stock.__file__),
+        tiled_owner=Path(tiled.__file__), tiled_decode=Path(decode.__file__))
+    for name in ("moe_static_kernel_v4", "moe_static_kernel_v5"):
+        files[name] = Path(importlib.import_module(prefix+name).__file__)
+    versions = {}
+    for name in ("torch", "cuda.bindings", "flashinfer"):
+        module = importlib.import_module(name)
+        filename = getattr(module, "__file__", None)
+        entry = dict(version=str(getattr(module, "__version__", "unknown")),
+                     path=filename, sha256=_sha(Path(filename).read_bytes()) if filename else None)
+        if name == "cuda.bindings":
+            distribution = importlib.metadata.distribution("cuda-bindings")
+            paths = [Path(distribution.locate_file(p)) for p in distribution.files or ()
+                     if p.name == "METADATA" and p.parent.name.startswith("cuda_bindings-")]
+            if len(paths) != 1:
+                raise RuntimeError("EP tiled cannot identify CUDA bindings metadata")
+            entry.update(version=distribution.version, metadata_path=str(paths[0]),
+                         metadata_sha256=_sha(paths[0].read_bytes()))
+        elif filename is None:
+            raise RuntimeError("EP tiled cannot identify imported runtime: " + name)
+        versions[name] = entry
+    provenance = dict(source={name:dict(path=str(path),sha256=_sha(path.read_bytes()))
+                             for name,path in files.items()}, versions=versions)
+    return dict(torch=torch, md=md, device=device, tiled=tiled, decode=decode, provenance=provenance)
 
 
 def _key(context):
@@ -153,6 +192,7 @@ def _capture_references(context, owner, layer, receipt):
     if getattr(layer.w13_weight, "_b12x_tile_major", False):
         raise RuntimeError("row-major reference requested after tiling")
     original = _identities(owner, layer)
+    receipt["weights_before"] = original
     rng = torch.get_rng_state().clone(), torch.cuda.get_rng_state(device).clone()
     cache = _cache_snapshot(md)
     refs, buffers = [], None
@@ -184,10 +224,10 @@ def _capture_references(context, owner, layer, receipt):
                         raise AssertionError("stock reference did not write its output")
                     torch.cuda.synchronize(device)
                     outputs.append(out.clone())
-                cell["controls"].append([check_control(outputs[0],outputs[1]),
-                    check_control(outputs[0],outputs[2]),check_control(outputs[1],outputs[2])])
                 cell["reference_outputs"].append({label:_tensor_identity(value)
                     for label,value in zip(("B1","B2","B3"),outputs)})
+                cell["controls"].append([check_control(outputs[0],outputs[1]),
+                    check_control(outputs[0],outputs[2]),check_control(outputs[1],outputs[2])])
                 if kind == "remote" and any(not bool((value == 0).all()) for value in outputs):
                     raise AssertionError("all-remote stock output is not exact zero")
                 phases.append((outputs[0].cpu(), outputs[1].cpu()))
@@ -198,7 +238,6 @@ def _capture_references(context, owner, layer, receipt):
             cell["phase"] = "references-complete"
         _same_weights_and_scales(original, _identities(owner,layer), relayout=False)
         _check_rng(context,rng)
-        receipt["weights_before"] = original
         receipt["reference_bytes"] = sum(t.numel()*t.element_size() for phases in refs for pair in phases for t in pair)
         return dict(buffers=buffers, references=refs, rng=rng, offset=offset, original=original)
     finally:
@@ -249,6 +288,30 @@ def _failure_rows(candidate, baseline, repeat, inputs):
             raw_bf16={name:value[row].view(torch.int16)[columns].cpu().tolist()
                       for name,value in (("B1",baseline),("B2",repeat),("C",candidate),("X",inputs))}))
     return dict(rows=result, max_rows=8, max_columns=8, B3_scope="hash and original controls only; output not retained")
+
+
+def _cache_evidence(context, owner, rows):
+    """Require the real launcher's isolated raw-scale artifact namespace."""
+    if rows <= 32:
+        ws = owner._ep_tiled_workspace
+        geometry = context["decode"].ep_tiled_geometry(
+            rows, ws.static.max_rows, ws.scratch.max_active_clusters)
+        expected = ("glm53_ep_static_tiled_fp32_v1", rows, ws.static.max_rows,
+            ws.scratch.max_active_clusters, "torch.int32", False, True,
+            geometry["fc1"], geometry["fc2"], "nvfp4", "raw_mma_scales",
+            "swigluoai_uninterleave", 1., 0., 10., "fp32_scatter")
+        if expected not in context["decode"]._EP_TILED_KERNEL_CACHE:
+            raise AssertionError("native EP tiled decode artifact was not selected/warmed")
+        return dict(scope="exact native shape cache key", keys=[repr(expected)])
+    keys = [key for key in context["md"]._DYNAMIC_KERNEL_CACHE
+            if len(key) == 19 and key[:7] == ("dynamic","fp4","nvfp4",72,4096,2048,8)
+            and str(key[9]) == "torch.int32" and key[10:16] ==
+                (False,True,"swigluoai_uninterleave",1.,0.,10.)
+            and key[17] is True and key[-1] == "glm53_ep_prefill_local_fp32_v2"]
+    if not keys:
+        raise AssertionError("tiled EP prefill artifact namespace is absent")
+    return dict(scope="matching runtime-shaped dynamic keys; source binds per-shape selection",
+                keys=sorted(map(repr,keys)))
 
 
 def _validate_candidate(context, owner, layer, handle):
@@ -303,6 +366,8 @@ def _validate_candidate(context, owner, layer, handle):
                             cell["diagnostic_error"] = repr(exc)
                         raise
                     cell["candidate"].append(dict(phase=cell["phase"],**result))
+                    if label == "C1-eager":
+                        cell["cache_evidence"] = _cache_evidence(context,owner,cell["rows"])
                     if cell["kind"] == "remote" and not bool((out == 0).all()):
                         raise AssertionError("all-remote tiled output is not exact zero")
                 if _inputs(x,ids,weights,_scales(owner)) != identity:
