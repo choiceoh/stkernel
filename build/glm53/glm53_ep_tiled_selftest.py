@@ -340,6 +340,8 @@ def _cache_evidence(context, owner, rows):
             ws.scratch.max_active_clusters, "torch.int32", False, True,
             geometry["fc1"], geometry["fc2"], "nvfp4", "sf6_v1",
             "swigluoai_uninterleave", 1., 0., 10., "fp32_scatter")
+        if geometry["reform"]:
+            expected += ("glm53_ep_static_sf6_a_ring_v1",)
         if expected not in context["decode"]._EP_TILED_KERNEL_CACHE:
             raise AssertionError("native EP tiled decode artifact was not selected/warmed")
         return dict(scope="exact native shape cache key", keys=[repr(expected)])

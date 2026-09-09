@@ -1,5 +1,6 @@
 """EP tiled canary CPU contracts; no Torch/CUDA imports or GPU work."""
 import ast
+import copy
 from contextlib import redirect_stdout
 import importlib.util
 import io
@@ -51,6 +52,33 @@ def packed_owner():
 
 def tensor_identity(value):
     return dict(shape=list(value.shape),dtype=value.dtype,data_ptr=value.address,sha256=value.digest)
+
+
+def native_cache_fixture():
+    """Execute the real compiler's pure key construction, without CuTe imports."""
+    path = SOURCE.with_name('moe_static_ep_tiled.py')
+    tree = ast.parse(path.read_text())
+    functions = {n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+    factory = functions['ep_tiled_compile_spec']
+    start = next(i for i,n in enumerate(factory.body) if isinstance(n,ast.Assign)
+                 and ast.unparse(n.targets[0]) == 'key')
+    end = next(i for i in range(start,len(factory.body)) if isinstance(factory.body[i],ast.Return))
+    key_fn = ast.parse('''def native_key(m, sf6=True):
+    max_rows, mac, topk_ids_dtype = 256, 48, "torch.int32"
+    input_scales_are_reciprocal, fast_math, reform_sf_pack = False, True, sf6
+    geometry = ep_tiled_geometry(m, max_rows, mac)
+    scale_mode = ep_tiled_scale_mode(reform_sf_pack)
+''').body[0]
+    key_fn.body += copy.deepcopy(factory.body[start:end]) + [ast.Return(ast.Name('key',ast.Load()))]
+    constants = [copy.deepcopy(n) for n in tree.body if isinstance(n,ast.Assign)
+                 and isinstance(n.targets[0],ast.Name)
+                 and n.targets[0].id in ('EP_TILED_CACHE_TAG','EP_TILED_A_RING_CACHE_TAG')]
+    module = ast.Module(body=constants + [copy.deepcopy(functions[name]) for name in
+        ('ep_tiled_geometry','ep_tiled_scale_mode')] + [key_fn], type_ignores=[])
+    ns = {}
+    exec(compile(ast.fix_missing_locations(module),str(path),'exec'),ns)
+    return SimpleNamespace(ep_tiled_geometry=ns['ep_tiled_geometry'],
+                           native_key=ns['native_key'],_EP_TILED_KERNEL_CACHE={})
 
 
 class LifecycleTests(unittest.TestCase):
@@ -248,16 +276,23 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaises(AssertionError):canary._same_weights_and_scales(before,after,relayout=False)
 
     def test_cache_namespace_and_native_shape_must_match(self):
-        geom=lambda m,r,c:dict(fc1=(16,128,256),fc2=(16,256,128))
-        decode=SimpleNamespace(ep_tiled_geometry=geom,_EP_TILED_KERNEL_CACHE={})
+        decode=native_cache_fixture()
         owner=SimpleNamespace(_ep_tiled_workspace=SimpleNamespace(static=SimpleNamespace(max_rows=256),scratch=SimpleNamespace(max_active_clusters=48)))
         context=dict(decode=decode,md=SimpleNamespace(_DYNAMIC_KERNEL_CACHE={}))
-        key=('glm53_ep_static_tiled_fp32_v1',6,256,48,'torch.int32',False,True,(16,128,256),(16,256,128),'nvfp4','sf6_v1','swigluoai_uninterleave',1.,0.,10.,'fp32_scatter')
-        decode._EP_TILED_KERNEL_CACHE[key]=object()
-        self.assertEqual(canary._cache_evidence(context,owner,6)['keys'],[repr(key)])
-        with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,7)
-        decode._EP_TILED_KERNEL_CACHE={key[:10]+('raw_mma_scales',)+key[11:]:object()}
-        with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,6)
+        for rows in range(1,33):
+            with self.subTest(rows=rows):
+                key=decode.native_key(rows)
+                self.assertEqual(len(key),17 if rows<=8 else 16)
+                self.assertEqual(key[-1],'glm53_ep_static_sf6_a_ring_v1' if rows<=8 else 'fp32_scatter')
+                decode._EP_TILED_KERNEL_CACHE={key:object()}
+                self.assertEqual(canary._cache_evidence(context,owner,rows)['keys'],[repr(key)])
+                wrong_ring=key[:-1] if rows<=8 else key+('glm53_ep_static_sf6_a_ring_v1',)
+                wrong_tag=key[:-1]+('glm53_ep_static_sf6_a_ring_v0',)
+                for mutation in (wrong_ring,wrong_tag,decode.native_key(rows,False),
+                                 key[:1]+(rows+1,)+key[2:],key[:4]+('torch.int64',)+key[5:],
+                                 key[:5]+(True,)+key[6:],key+('extra',)):
+                    decode._EP_TILED_KERNEL_CACHE={mutation:object()}
+                    with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,rows)
         dynamic=('dynamic','fp4','nvfp4',72,4096,2048,8,48,(128,128),'torch.int32',False,True,'swigluoai_uninterleave',1.,0.,10.,False,True,'glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1')
         context['md']._DYNAMIC_KERNEL_CACHE[dynamic]=object()
         self.assertEqual(canary._cache_evidence(context,owner,8192)['keys'],[repr(dynamic)])
