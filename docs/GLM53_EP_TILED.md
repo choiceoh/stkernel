@@ -43,6 +43,13 @@ EP-compatible attention/MHC prefill SP configuration. Attention remains TP4.
   Each 2048-byte scale stage occupies 1552 bytes (24.22% less scale storage,
   not total model memory). Existing on-device packing verifies every byte by
   roundtrip; an unrepresentable plane refuses this experimental owner.
+- SF6 M1..8 restores four scale bytes per integer word. Low-nibble and
+  high-two-bit fields are spread into separate byte lanes; the base addition
+  preserves modulo-256 output without carries between lanes. Volatile reads,
+  all 128 threads' byte ownership and both expansion barriers remain the same.
+  Raw scales and M9..32 retain the inherited restoration path. The selected
+  word-unpack specialization has its own 18-field cache key, required by the
+  startup canary and compiler receipt.
 - Original scale Parameters and loader aliases survive the startup canary.
   The final model hook releases them only after the full checkpoint walk and
   reseals the owner generation. Inference cannot start with an unfinished
