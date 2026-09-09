@@ -21,7 +21,9 @@ CPU_TEST_MODULES = ('test_glm53_ep_micro_tile.py', 'test_glm53_ep_short_decode.p
 CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
     'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
-    'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json')
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu11.py.gz',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu11-identity.json')
 
 
 def source_receipt(root, *, verify_mounted=False):

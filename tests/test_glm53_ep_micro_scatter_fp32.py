@@ -19,9 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 MICRO = ROOT/'overlay/modules/glm53_moe/moe_micro_kernel.py'
 ORACLE = ROOT/'measurements/glm53_ep_local_20260908/micro-stock-oracle'
 STOCK_SOURCE_SHA256 = 'a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1'
-# MoEMicroKernel.kernel at frozen CPU11/onepass11 c7dec80a0f73; ast.dump
-# without source locations, so formatting/comments do not affect this check.
-STOCK_KERNEL_AST_SHA256 = '8525a206b8e020137fe5dcb86cb887214b0e0d51fe23468de927b2225a315eab'
+# Frozen CPU11/onepass11 source, parsed under the same Python as the candidate.
+# ast.dump's empty-field representation differs between Python 3.12 and 3.14.
+STOCK_KERNEL_SOURCE_SHA256 = '70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655'
 
 
 def function(name):
@@ -150,6 +150,14 @@ class ScatterTests(unittest.TestCase):
             self.assertEqual(set(writes.values()), {('f32' if enabled else 'bf16',0.0)})
 
     def test_entire_kernel_math_routing_and_barriers_are_unchanged(self):
+        raw = gzip.decompress((ORACLE/'moe_micro_kernel_cpu11.py.gz').read_bytes())
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), STOCK_KERNEL_SOURCE_SHA256)
+        identity = json.loads((ORACLE/'micro-kernel-cpu11-identity.json').read_text())
+        self.assertEqual(identity['source_sha256'], STOCK_KERNEL_SOURCE_SHA256)
+        self.assertEqual(identity['revision'], 'c7dec80a0f73d4a2b683ce2c4813978938694095')
+        stock = next(n for n in ast.walk(ast.parse(raw)) if isinstance(n, ast.FunctionDef)
+                     and n.name == 'kernel')
+        expected = hashlib.sha256(ast.dump(stock, include_attributes=False).encode()).hexdigest()
         class SelectScatter(ast.NodeTransformer):
             def __init__(self, enabled): self.enabled=enabled
             def visit_If(self, node):
@@ -169,7 +177,7 @@ class ScatterTests(unittest.TestCase):
         for enabled in (False,True):
             normalized=SelectScatter(enabled).visit(copy.deepcopy(function('kernel')))
             digest=hashlib.sha256(ast.dump(normalized,include_attributes=False).encode()).hexdigest()
-            self.assertEqual(digest,STOCK_KERNEL_AST_SHA256)
+            self.assertEqual(digest, expected)
 
 
 if __name__ == '__main__':

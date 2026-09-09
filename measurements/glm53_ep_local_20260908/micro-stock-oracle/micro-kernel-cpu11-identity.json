@@ -1,0 +1,8 @@
+{
+  "revision": "c7dec80a0f73d4a2b683ce2c4813978938694095",
+  "source_path": "overlay/modules/glm53_moe/moe_micro_kernel.py",
+  "source_sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+  "source_bytes": 113270,
+  "gzip_sha256": "8832063329dc9cc8c0b6365c13769668fa19fdf36e4805f923163e4745e69ca3",
+  "comparison": "same-runtime AST of MoEMicroKernel.kernel; no Python-version-specific serialized AST hash"
+}
