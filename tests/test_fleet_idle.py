@@ -170,6 +170,17 @@ class IdleTests(unittest.TestCase):
         self.assertEqual(result['since'], self.now)
         self.restore.assert_not_called()
 
+    def test_node_becoming_unobservable_before_recovery_restarts_idle_window(self):
+        self.observe.side_effect = [dict(stopped=True, traffic='zero'),
+                                   ValueError('GPU observation failed on worker')]
+        result = self.elapsed(300)
+        self.assertEqual(result['phase'], 'waiting')
+        self.assertEqual(result['since'], self.now)
+        self.assertIn('GPU observation failed', result['reason'])
+        self.restore.assert_not_called()
+        self.assertFalse((self.directory / 'holder').exists())
+        self.assertFalse((self.directory / 'idle-recovery-owner.json').exists())
+
     def test_healthy_production_does_not_reboot(self):
         self.production.return_value = True
         self.assertEqual(self.elapsed(300)['phase'], 'healthy')
@@ -286,13 +297,21 @@ class IdleTests(unittest.TestCase):
 
 
 class ObservationTests(unittest.TestCase):
-    def test_stray_gpu_or_unknown_node_blocks_idle_observation(self):
+    def test_unknown_node_blocks_idle_observation(self):
         with patch.object(fleet_entry, 'inspect', return_value=None), \
                 patch.object(fleet_entry, 'idle', return_value='stopped'), \
                 patch.object(idle, 'legacy_work', return_value=False), \
-                patch.object(idle, 'node_idle', side_effect=ValueError('stray GPU process')):
-            with self.assertRaisesRegex(ValueError, 'stray GPU'):
+                patch.object(idle, 'node_idle', side_effect=ValueError('GPU observation failed')):
+            with self.assertRaisesRegex(ValueError, 'GPU observation failed'):
                 idle.observe()
+
+    def test_live_glm_requests_block_before_gpu_observation(self):
+        with patch.object(fleet_entry, 'inspect', return_value={}), \
+                patch.object(fleet_entry, 'idle', side_effect=ValueError('live request counters')), \
+                patch.object(idle, 'node_idle') as nodes:
+            with self.assertRaisesRegex(ValueError, 'live request'):
+                idle.observe()
+            nodes.assert_not_called()
 
     def test_unmanaged_boot_blocks_even_with_stopped_serving(self):
         with patch.object(fleet_entry, 'inspect', return_value=None), \
@@ -316,12 +335,22 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(before['traffic'], reordered['traffic'])
 
     def test_remote_gpu_errors_cannot_be_reported_as_idle(self):
-        for result in (subprocess.CompletedProcess([], 1, '', 'denied'),
-                       subprocess.CompletedProcess([], 0, '{"idle": false}', ''),
-                       subprocess.CompletedProcess([], 0, '{"idle": "true"}', '')):
+        results = [subprocess.CompletedProcess([], 1, '{"idle": true}', 'denied')]
+        results.extend(subprocess.CompletedProcess([], 0, value, '') for value in
+                       ('', 'not-json', 'null', '[]', '{}', '{"idle": false}',
+                        '{"idle": "true"}', '{"idle": 1}'))
+        for result in results:
             with self.subTest(result=result), patch.object(idle.subprocess, 'run', return_value=result):
                 with self.assertRaises(ValueError):
                     idle.node_idle('fixture')
+
+    def test_remote_probe_timeout_or_missing_transport_never_becomes_idle(self):
+        for error in (subprocess.TimeoutExpired('ssh', 12), FileNotFoundError('ssh')):
+            with self.subTest(error=error), \
+                    patch.object(idle.subprocess, 'run', side_effect=error) as run:
+                with self.assertRaises(type(error)):
+                    idle.node_idle('10.10.10.4')
+                self.assertEqual(run.call_count, 1)
 
 
 class LocalHeadObservationTests(unittest.TestCase):
@@ -385,7 +414,7 @@ class LocalHeadObservationTests(unittest.TestCase):
                 idle.node_idle('10.10.10.2')
             self.assertEqual(run.call_count, 1)
 
-    def test_local_and_remote_execute_identical_ownership_program(self):
+    def test_local_and_remote_execute_identical_observation_program(self):
         import shlex
         result = subprocess.CompletedProcess([], 0, '{"idle": true}', '')
         with patch.object(idle, '_local_head', side_effect=[True, False]), \
@@ -395,32 +424,52 @@ class LocalHeadObservationTests(unittest.TestCase):
         local, remote = [call.args[0] for call in run.call_args_list]
         self.assertEqual(local[-1], shlex.split(remote[-1])[-1])
 
-    def test_actual_program_still_rejects_unowned_gpu_process(self):
-        import contextlib
-        import io
-        import types
+    def observation_program(self):
         result = subprocess.CompletedProcess([], 0, '{"idle": true}', '')
         with patch.object(idle, '_local_head', return_value=True), \
                 patch.object(idle.subprocess, 'run', return_value=result) as run:
             idle.node_idle('10.10.10.2')
-        program = run.call_args.args[0][-1]
-        for gpu_pids, expected in (('', True), ('11\n12', True), ('11\n99', False)):
-            def output(args, **kwargs):
-                if args[0] == 'nvidia-smi':
-                    return gpu_pids
-                if args[:2] == ['docker', 'ps']:
-                    return 'glm53\nglm53-worker\nunrelated'
-                if args[:3] == ['docker', 'top', 'glm53']:
-                    return 'PID\n11'
-                if args[:3] == ['docker', 'top', 'glm53-worker']:
-                    return 'PID\n12'
-                raise AssertionError(args)
-            stream = io.StringIO()
-            fake = types.SimpleNamespace(check_output=output, DEVNULL=-3)
-            with self.subTest(gpu_pids=gpu_pids), patch.dict(sys.modules, subprocess=fake), \
-                    contextlib.redirect_stdout(stream):
-                exec(program, {})
-            self.assertIs(json.loads(stream.getvalue())['idle'], expected)
+        return run.call_args.args[0][-1]
+
+    def execute_observation_program(self, program, gpu_pids='', error=None):
+        import contextlib
+        import io
+        import types
+        def output(args, **kwargs):
+            self.assertEqual(args, ['nvidia-smi', '--query-compute-apps=pid',
+                                    '--format=csv,noheader,nounits'])
+            if error is not None:
+                raise error
+            return gpu_pids
+        stream = io.StringIO()
+        query = Mock(side_effect=output)
+        fake = types.SimpleNamespace(check_output=query, DEVNULL=-3)
+        with patch.dict(sys.modules, subprocess=fake), contextlib.redirect_stdout(stream):
+            exec(program, {})
+        query.assert_called_once()
+        return json.loads(stream.getvalue())
+
+    def test_actual_program_allows_resident_foreign_pids_without_ownership_lookup(self):
+        program = self.observation_program()
+        # These PIDs need not belong to a GLM container. Residency alone does
+        # not mean fleet work or GLM traffic, nor does it attest boot capacity.
+        for gpu_pids in ('', '11\n12', '11\n99', '99', ' 99 \n\n 11 '):
+            with self.subTest(gpu_pids=gpu_pids):
+                self.assertIs(self.execute_observation_program(program, gpu_pids)['idle'], True)
+
+    def test_actual_program_rejects_malformed_driver_pid_rows(self):
+        program = self.observation_program()
+        for gpu_pids in ('N/A', 'No running processes found', '-1', '0', '11\nunknown',
+                         '11, 256', '11.0', '1 2', '１２'):
+            with self.subTest(gpu_pids=gpu_pids):
+                self.assertIs(self.execute_observation_program(program, gpu_pids)['idle'], False)
+
+    def test_actual_program_driver_failure_does_not_emit_success(self):
+        program = self.observation_program()
+        for error in (subprocess.CalledProcessError(1, 'nvidia-smi'),
+                      FileNotFoundError('nvidia-smi')):
+            with self.subTest(error=error), self.assertRaises(type(error)):
+                self.execute_observation_program(program, error=error)
 
 
 class RestoreProcessTests(unittest.TestCase):

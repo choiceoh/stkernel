@@ -722,7 +722,11 @@ PBEOF
   rm -rf "$_pb_dir"
 fi
 
-PREFLIGHT=/home/choiceoh/stkernel/launchers/memfree-preflight.sh
+PREFLIGHT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/memfree-preflight.sh"
+if [ ! -x "$PREFLIGHT" ] && [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ "${DRY_RUN:-0}" != 1 ]; then
+  echo "ABORT: memory preflight helper is unavailable: $PREFLIGHT" >&2
+  exit 1
+fi
 if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ] && [ "${DRY_RUN:-0}" != 1 ]; then
   # 37차 (2026-09-06 13:18): a worker killed mid-build (docker rm -f under a
   # torn-down boot) leaves torch's FileBaton lock in the extension build dir;
@@ -812,7 +816,8 @@ RECLAIMEOF
   if GMU_SAFE=$("$PREFLIGHT" 10); then
     if [ "${_GMU_PINNED:-}" = 1 ]; then
       if awk "BEGIN{exit !($GMU > $GMU_SAFE)}" 2>/dev/null; then
-        echo "  ! GMU=$GMU 를 호출자가 지정했고 실측 상한($GMU_SAFE)을 넘습니다 — 그대로 진행"
+        echo "ABORT: pinned GMU=$GMU exceeds measured memory budget $GMU_SAFE" >&2
+        exit 1
       fi
     elif awk "BEGIN{exit !($GMU != $GMU_SAFE)}" 2>/dev/null; then
       # Both directions. Backing GMU off is the intuitive move and the wrong
@@ -823,7 +828,8 @@ RECLAIMEOF
       GMU=$GMU_SAFE
     fi
   else
-    echo "  preflight refused (a node was unreachable); continuing with GMU=$GMU"
+    echo "ABORT: memory preflight failed; GLM boot deferred" >&2
+    exit 1
   fi
 fi
 

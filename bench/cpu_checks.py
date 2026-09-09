@@ -23,7 +23,8 @@ SUITES = {
     "fleet": [[sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_fleet*.py", "-v"]],
     "startup": [[sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", name, "-v"]
                 for name in ("test_glm53_startup.py", "test_glm53_attestation.py",
-                             "test_glm53_reclaim.py", "test_memfree_preflight.py")],
+                             "test_glm53_reclaim.py", "test_memfree_preflight.py",
+                             "test_glm53_memory_preflight.py")],
     'sensitivity': [[sys.executable,'bench/cpu_contracts.py','--mutation-audit']],
 }
 
