@@ -692,9 +692,17 @@ class MoEMicroKernel:
         tiled_copy_C_Atom = cute.make_tiled_copy_C_atom(copy_atom_C, self.tiled_mma)
         tiled_copy_r2s = cute.make_tiled_copy_S(copy_atom_r2s, tiled_copy_C_Atom)
         identity = cute.make_identity_tensor((*self.epi_tile, 1))
+        # Mirror the actual sC tensor's nested shape for the buffer-count
+        # check only. Its coordinate values must not drive direct scatter.
+        staged_identity = cute.make_identity_tensor(
+            cute.shape(self.epi_smem_layout_staged.outer)
+        )
         seen = set()
         for tid in range(self.num_mma_warps * self.num_threads_per_warp):
             thread_copy = tiled_copy_r2s.get_slice(tid)
+            staged_destination = thread_copy.partition_D(staged_identity)
+            if cute.size(staged_destination, mode=[3]) != 1:
+                raise ValueError("direct scatter requires one epilogue buffer")
             coords = thread_copy.partition_D(identity)[None, None, None, 0]
             source_shape = cute.shape(thread_copy.partition_S(identity))[:3]
             if cute.size(coords) != cute.size(cute.make_layout(source_shape)):
@@ -1730,8 +1738,6 @@ class MoEMicroKernel:
                 if cutlass.const_expr(self.ep_direct_scatter):
                     # Use exactly the r2s destination coordinates for each
                     # contiguous BF16 register pair; no scalar-warp remapping.
-                    if cutlass.const_expr(cute.size(tRS_sD, mode=[3]) != 1):
-                        raise ValueError("direct scatter requires one epilogue buffer")
                     # sC has nested layout modes. Identity coordinates must
                     # use the same flat logical shape as the host validator.
                     ep_identity = cute.make_identity_tensor((*self.epi_tile, 1))

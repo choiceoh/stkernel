@@ -120,28 +120,36 @@ class DirectScatterTests(unittest.TestCase):
 
     def test_compile_time_identity_validator_rejects_missing_or_bad_pairs(self):
         class Partition:
-            def __init__(self, points): self.points = points
+            def __init__(self, points, stages=1): self.points,self.stages = points,stages
             def __getitem__(self, key):
                 return self if isinstance(key, tuple) else self.points[key]
         class Thread:
-            def __init__(self, tid, mutate): self.tid,self.mutate=tid,mutate
-            def partition_D(self, identity): return Partition(self.mutate(self.tid, coords(self.tid)))
+            def __init__(self, tid, mutate, stages): self.tid,self.mutate,self.stages=tid,mutate,stages
+            def partition_D(self, identity):
+                if identity == 'actual-nested-sC-shape':
+                    return Partition(coords(self.tid), self.stages)
+                return Partition(self.mutate(self.tid, coords(self.tid)))
             def partition_S(self, identity): return (32,1,1,1)
-        def run(mutate):
-            copy_op = SimpleNamespace(get_slice=lambda tid:Thread(tid,mutate))
+        def run(mutate, stages=1):
+            copy_op = SimpleNamespace(get_slice=lambda tid:Thread(tid,mutate,stages))
             cute = SimpleNamespace(
                 nvgpu=SimpleNamespace(CopyUniversalOp=lambda:None,
                                       warp=SimpleNamespace(StMatrix8x8x16bOp=lambda *a:None)),
                 make_copy_atom=lambda *a:None, make_tiled_copy_C_atom=lambda *a:None,
                 make_tiled_copy_S=lambda *a:copy_op, make_identity_tensor=lambda s:s,
                 shape=lambda x:x, make_layout=lambda x:x,
-                size=lambda x:len(x.points) if isinstance(x,Partition) else 32)
+                size=lambda x, mode=None: (x.stages if mode == [3]
+                                          else len(x.points) if isinstance(x,Partition) else 32))
             validate = extract(function('_validate_ep_direct_scatter_layout'),
                                dict(cute=cute,cutlass=SimpleNamespace(BFloat16='bf16')))
             validate(SimpleNamespace(c_layout=SimpleNamespace(is_m_major_c=lambda:False),
                                      tiled_mma=None,epi_tile=(32,128),num_mma_warps=4,
+                                     epi_smem_layout_staged=SimpleNamespace(outer='actual-nested-sC-shape'),
                                      num_threads_per_warp=32))
         run(lambda tid, points:points)
+        for stages in (0,2):
+            with self.assertRaisesRegex(ValueError, 'one epilogue buffer'):
+                run(lambda tid,points:points,stages=stages)
         for mutate in [lambda tid,p:p[:-2] if tid==0 else p,
                        lambda tid,p:[p[1],p[0],*p[2:]] if tid==0 else p,
                        lambda tid,p:[*p[:1],(1,1,0),*p[2:]] if tid==0 else p,
@@ -162,9 +170,13 @@ class DirectScatterTests(unittest.TestCase):
         self.assertEqual(ast.unparse(host_identity.args[0]), '(*self.epi_tile, 1)')
         setup=next(n for n in ast.walk(fn) if isinstance(n,ast.If)
                    and runtime_identity in n.body)
-        self.assertEqual(ast.unparse(setup.body[0].test),
-                         'cutlass.const_expr(cute.size(tRS_sD, mode=[3]) != 1)')
-        self.assertIsInstance(setup.body[0].body[0],ast.Raise)
+        self.assertFalse(any(isinstance(n,ast.Raise) for n in ast.walk(setup)))
+        host_guard=next(n for n in ast.walk(validator) if isinstance(n,ast.If)
+                        and ast.unparse(n.test)=='cute.size(staged_destination, mode=[3]) != 1')
+        self.assertIsInstance(host_guard.body[0],ast.Raise)
+        self.assertIn('cute.shape(self.epi_smem_layout_staged.outer)', ast.unparse(validator))
+        self.assertIn('staged_destination = thread_copy.partition_D(staged_identity)',
+                      ast.unparse(validator))
         parent = next(n for n in ast.walk(fn) if isinstance(n,ast.For) and guard in n.body)
         idx=parent.body.index(guard)
         prefix=[ast.unparse(n) for n in parent.body[idx-4:idx]]

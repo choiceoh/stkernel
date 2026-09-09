@@ -1,0 +1,11 @@
+# CPU16: staged kernel rejected the buffer guard
+
+Normal fleet CPU session `epdecodecpu0909v16` ran on srv1 through the srv2 scheduler, 2026-09-09 10:48:19–10:48:24 KST. Frozen source was `014ddde8919f24f94f0aee1730c09efb0b04088b` at `/home/choiceoh/stkernel-ep-onepass-0909-16`. Payload and outer return codes were1; success-only evidence copy was not performed.
+
+The original result is **FAIL**, phase `micro-cute-compile`, with `micro_passes=[]`. The first M32 candidate did not finish lowering. CuTe reported `UNSUP_EARLY_EXIT` at `moe_micro_kernel.py:1734`: the new one-epilogue-buffer `raise ValueError` was inside a staged GPU region. The saved error includes this exact source excerpt even though the surrounding check used `cutlass.const_expr`. No PTX/cubin/resource files were produced. The planned94-test suite and remaining kernels were not reached. Final CUDA-initialization and runtime-recheck fields are absent.
+
+The following correction moves the same buffer-count requirement to the existing host validator. That validator mirrors the actual sC nested layout shape, applies the same r2s partition and requires exactly one buffer for each thread. Runtime scatter coordinates remain flat. This archive does not establish success of that correction.
+
+`evidence.tar.gz` preserves the worker's sole original `result.json`, duplicated byte-for-byte locally. `head/` retains original submission, driver, exit, and full fleet stderr with the DSL source trace. Before/after collection verifies frozen source identities, clean/full/no-alternates checkouts, source hashes matching submission/receipt, immutable image `sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`, and the strict116-file bindings capsule at manifest `b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab`. Existing12GiB admission,4GiB/2CPU limits and no-device runtime are unchanged.
+
+`capture.json` retains observations/hashes. `verify.py` reproduces local archive-integrity checks in `verification.json`; its PASS concerns integrity only, while the original CPU result remains FAIL. Collection did not compile, run tests, use GPUs, alter frozen sources, or submit a job. `SHA256SUMS` covers every archive file except itself.
