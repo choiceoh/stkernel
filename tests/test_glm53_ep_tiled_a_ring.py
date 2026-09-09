@@ -10,7 +10,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-from test_glm53_ep_tiled_static import SOURCE, STOCK, constants, extract, fake_torch, function
+from test_glm53_ep_tiled_static import SOURCE, STOCK, constants, extract, fake_torch, function, route_helpers
 
 
 def compile_function(body, ns, name='run'):
@@ -170,7 +170,7 @@ class EPTiledARingTests(unittest.TestCase):
             utils=types.SimpleNamespace(get_smem_capacity_in_bytes=lambda _: 101376),
             pipeline=types.SimpleNamespace(NamedBarrier=lambda **kw: types.SimpleNamespace(**kw)),
             is_gated_activation=lambda _: True, ep_tiled_source_contract=lambda: None)
-        extract('ep_tiled_geometry', ns); extract('ep_tiled_scale_mode', ns)
+        extract('ep_tiled_geometry', ns); extract('ep_tiled_scale_mode', ns); route_helpers(ns)
         classes = [ast.ClassDef(name='MoEStaticKernelV5', bases=[], keywords=[], body=[base], decorator_list=[]),
                    ast.ClassDef(name='Candidate', bases=[ast.Name('MoEStaticKernelV5', ast.Load())],
                                 keywords=[], body=[ep], decorator_list=[])]
@@ -184,7 +184,9 @@ class EPTiledARingTests(unittest.TestCase):
                 self.assertEqual(actual.a_ring, sf6 and m<=8)
                 self.assertEqual(actual.word_unpack, sf6 and m<=8)
                 self.assertEqual(actual.scatter_bf16, sf6 and m<=8)
-                self.assertEqual({k:v for k,v in vars(actual).items() if k not in ('a_ring','word_unpack','scatter_bf16','ep_num_tokens','ep_max_rows')},
+                self.assertEqual((actual.ep_route_mode,actual.ep_route_map_len,actual.ep_local_expert_offset),
+                                 ('local',None,0))
+                self.assertEqual({k:v for k,v in vars(actual).items() if k not in ('a_ring','word_unpack','scatter_bf16','ep_num_tokens','ep_max_rows','ep_route_mode','ep_route_map_len','ep_local_expert_offset')},
                                  {k:v for k,v in vars(reference).items() if k != 'a_ring'})
         with self.assertRaises(ValueError): ns['MoEStaticKernelV5'](16, 16, reform_sf_pack=True, a_ring=True)
 
@@ -220,7 +222,7 @@ class EPTiledARingTests(unittest.TestCase):
 
     def test_runtime_hot_cache_key_matches_ring_admission_without_recompile(self):
         ns = constants(); ns['_EP_TILED_KERNEL_CACHE'] = {}
-        extract('ep_tiled_geometry', ns); extract('ep_tiled_scale_mode', ns)
+        extract('ep_tiled_geometry', ns); extract('ep_tiled_scale_mode', ns); route_helpers(ns)
         t = fake_torch()
         ns['ep_tiled_compile_spec'] = lambda **_: self.fail('hot specialization compiled again')
         core = types.ModuleType('flashinfer.jit.cute_dsl_core')

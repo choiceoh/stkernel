@@ -84,6 +84,7 @@ class Harness:
         self.md.launch_sm120_dynamic_moe = Mock(side_effect=lambda **kw: self.events.append(('dynamic', kw)))
         self.static = ModuleType(package + '.moe_static_ep_tiled')
         self.static.launch_ep_tiled_decode = Mock(side_effect=lambda **kw: self.events.append(('static', kw)))
+        self.static.warm_ep_tiled_decode = Mock()
         self.remap = ModuleType(package + '.glm53_ep_route_remap')
         self.remap.try_remap_ep_local = Mock(side_effect=self.remap_call)
         self.canary = ModuleType(package + '.glm53_ep_tiled_selftest')
@@ -105,10 +106,10 @@ class Harness:
             row_counts=((72,),'i32'),token_map=((72,256),'i32'),token_weights=((72,256),'f32'),
             barrier_count=((1,),'i32'),barrier_epoch=((1,),'i32'),active_expert_count=((1,),'i32'),
             weight_expert_ids=((72,),'i32'),global_to_local_expert=((72,),'i32'))
-        self.workspace = SimpleNamespace(static=SimpleNamespace(**{
+        self.workspace = SimpleNamespace(native_route_warmed=set(), static=SimpleNamespace(max_rows=256, **{
             name:Tensor(shape,dtype) for name,(shape,dtype) in static_fields.items()}),
             dynamic=SimpleNamespace(ep_tiled=True, ep_scatter_fp32=Tensor((capacity, 4096))),
-            scratch=SimpleNamespace(scatter_fp32=Tensor((32, 4096)),stamps=Tensor((48,71),'i64'),
+            scratch=SimpleNamespace(max_active_clusters=48, scatter_fp32=Tensor((32, 4096)),stamps=Tensor((48,71),'i64'),
                                     counter=Tensor((1,),'i32'),dummy_scales=Tensor((1,1,16),'u8')))
         self.module._shared_workspace = Mock(return_value=self.workspace)
         self.owner = SimpleNamespace(_use_ep=True, _ep_no_dummy=True, global_num_experts=288,
@@ -283,45 +284,192 @@ class OwnerTests(unittest.TestCase):
 
     def test_all_supported_tokens_dispatch_once_and_return_original_output_without_allocation(self):
         h = Harness(self, 16384).prepare()
+        # The actual eager dummy prefill prepares the served router metadata.
+        h.module.launch_ep_tiled(h.owner, **h.inputs(8192))
+        h.module._LAUNCHED.clear()
         h.torch.cuda.is_current_stream_capturing.return_value = True
         h.torch.empty.side_effect = AssertionError('inference allocation')
         h.owner._ensure_ep_scratch.side_effect = AssertionError('inference scratch replacement')
         scratch_ids, scratch_weights = h.owner._ep_ids, h.owner._ep_scales
-        for tokens in (1, 6, 12, 18, 24, 32, 33, 127, 4095, 4096, 8192, 16384):
+        for tokens in (*range(1, 33), 33, 127, 4095, 4096, 8192, 16384):
             with self.subTest(tokens=tokens):
                 h.events.clear()
                 args = h.inputs(tokens)
                 result = h.module.launch_ep_tiled(h.owner, **args)
                 self.assertIs(result, args['output'])
                 self.assertEqual([event[0] for event in h.events],
-                                 ['remap', 'static' if tokens <= 32 else 'dynamic'])
-                _, (_, _, remap) = h.events[0]
-                self.assertTrue(remap['_tiled_owner'])
-                self.assertEqual(remap['out_ids'].shape, (tokens, 8))
-                self.assertIs(remap['out_ids'].base, scratch_ids)
-                self.assertIs(remap['out_scales'].base, scratch_weights)
-                sent = h.events[1][1]
-                self.assertIs(sent['topk_ids'], remap['out_ids'])
-                self.assertIs(sent['topk_weights'], remap['out_scales'])
+                                 ['static'] if tokens <= 32 else ['remap', 'dynamic'])
+                sent = h.events[-1][1]
+                if tokens <= 32:
+                    self.assertIs(sent['topk_ids'], args['ids'])
+                    self.assertIs(sent['topk_weights'], args['scales'])
+                    self.assertEqual(sent['route_mode'], 'global')
+                    self.assertIs(sent['expert_map'], args['expert_map'])
+                    self.assertEqual(sent['local_expert_offset'], h.owner.local_expert_offset)
+                else:
+                    _, (_, _, remap) = h.events[0]
+                    self.assertTrue(remap['_tiled_owner'])
+                    self.assertEqual(remap['out_ids'].shape, (tokens, 8))
+                    self.assertIs(remap['out_ids'].base, scratch_ids)
+                    self.assertIs(remap['out_scales'].base, scratch_weights)
+                    self.assertIs(sent['topk_ids'], remap['out_ids'])
+                    self.assertIs(sent['topk_weights'], remap['out_scales'])
                 self.assertIs(sent['weights'], h.owner._ep_tiled_weight_views)
                 self.assertIs(sent['a'], args['x'])
         self.assertEqual(h.module._LAUNCHED, set())
         h.torch.empty.assert_not_called()
+        h.static.warm_ep_tiled_decode.assert_called_once_with(
+            max_rows=256, max_active_clusters=48, reform_sf_pack=True,
+            route_mode='global', topk_ids_dtype='i64', expert_map_len=None,
+            expert_map_dtype=None, local_expert_offset=72)
 
-    def test_unsupported_input_or_changed_weight_generation_never_reaches_remap(self):
+    def test_native_forwards_admitted_global_ids_map_and_offset_without_remap(self):
+        h = Harness(self).prepare()
+        h.remap.try_remap_ep_local.side_effect = AssertionError('separate native remap')
+        # Exercise the actual launcher's metadata ABI too: an empty map still
+        # needs an admitted int dtype even though its cache suffix drops dtype.
+        static_source = SOURCE.with_name('moe_static_ep_tiled.py')
+        namespace = dict(EP_TILED_ROUTE_CACHE_TAG='glm53_ep_static_fused_route_v1')
+        extract_function(static_source, 'ep_tiled_route_metadata', namespace)
+        route_key = extract_function(static_source, 'ep_tiled_route_key', namespace)
+        def validate_warm(**kwargs):
+            return route_key(**{name: kwargs[name] for name in (
+                'route_mode', 'expert_map_len', 'expert_map_dtype', 'local_expert_offset')})
+        h.static.warm_ep_tiled_decode.side_effect = validate_warm
+        for dtype in ('i32', 'i64'):
+            for mapping in (None, Tensor((0,), 'i32'), Tensor((0,), 'i64'),
+                            Tensor((288,), 'i32'), Tensor((288,), 'i64')):
+                for offset in (0, 72, (1 << 31) - 1):
+                    args = h.inputs(4)
+                    args['ids'] = Tensor((4, 8), dtype)
+                    args['expert_map'] = mapping
+                    h.owner.local_expert_offset = offset
+                    result = h.module.launch_ep_tiled(h.owner, **args)
+                    self.assertIs(result, args['output'])
+                    sent = h.static.launch_ep_tiled_decode.call_args.kwargs
+                    self.assertIs(sent['topk_ids'], args['ids'])
+                    self.assertIs(sent['topk_weights'], args['scales'])
+                    self.assertIs(sent['expert_map'], mapping)
+                    self.assertEqual(sent['local_expert_offset'], offset)
+                    self.assertEqual(sent['route_mode'], 'global')
+        h.remap.try_remap_ep_local.assert_not_called()
+        h.md.launch_sm120_dynamic_moe.assert_not_called()
+        # Per dtype: three offset variants; one empty and two typed nonempty
+        # map variants. A provided map ignores offset, with no tensor cached.
+        self.assertEqual(len(h.workspace.native_route_warmed), 12)
+        self.assertEqual(h.static.warm_ep_tiled_decode.call_count, 12)
+        self.assertFalse(any(isinstance(value, Tensor)
+                             for key in h.workspace.native_route_warmed for value in key))
+
+    def test_native_never_reads_or_slices_poisoned_local_remap_planes(self):
+        class PoisonedPlane(Tensor):
+            def __getitem__(self, index):
+                raise AssertionError('native read old local remap plane')
+        h = Harness(self).prepare()
+        h.owner._ep_ids = PoisonedPlane((8192, 8), 'i32')
+        h.owner._ep_scales = PoisonedPlane((8192, 8), 'f32')
+        h.remap.try_remap_ep_local.side_effect = AssertionError('native remap would overwrite poison')
+        args = h.inputs(6)
+        self.assertIs(h.module.launch_ep_tiled(h.owner, **args), args['output'])
+        self.assertIs(h.static.launch_ep_tiled_decode.call_args.kwargs['topk_ids'], args['ids'])
+        h.remap.try_remap_ep_local.assert_not_called()
+
+    def test_actual_map_values_and_storage_are_not_cached_or_rewarmed(self):
+        h = Harness(self).prepare()
+        args = h.inputs(6)
+        args['expert_map'] = Tensor((288,), 'i32')
+        h.module.launch_ep_tiled(h.owner, **args)
+        args['expert_map']._version += 1
+        h.torch.cuda.is_current_stream_capturing.return_value = True
+        h.module.launch_ep_tiled(h.owner, **args)
+        replacement = Tensor((288,), 'i32')
+        args['expert_map'] = replacement
+        h.module.launch_ep_tiled(h.owner, **args)
+        self.assertIs(h.static.launch_ep_tiled_decode.call_args.kwargs['expert_map'], replacement)
+        h.static.warm_ep_tiled_decode.assert_called_once()
+
+    def test_unwarmed_route_metadata_in_capture_fails_without_allocating_or_launching(self):
+        for tokens in (4, 33):
+            h = Harness(self).prepare()
+            h.torch.cuda.is_current_stream_capturing.return_value = True
+            with self.subTest(tokens=tokens), self.assertRaisesRegex(RuntimeError, 'not warmed'):
+                h.module.launch_ep_tiled(h.owner, **h.inputs(tokens))
+            h.static.warm_ep_tiled_decode.assert_not_called()
+            h.static.launch_ep_tiled_decode.assert_not_called()
+            h.remap.try_remap_ep_local.assert_not_called()
+            h.md.launch_sm120_dynamic_moe.assert_not_called()
+            h.torch.empty.assert_not_called()
+
+    def test_failed_actual_route_warm_cannot_mark_ready_or_launch(self):
+        h = Harness(self).prepare()
+        failure = RuntimeError('native route compile failure')
+        h.static.warm_ep_tiled_decode.side_effect = failure
+        with self.assertRaises(RuntimeError) as got:
+            h.module.launch_ep_tiled(h.owner, **h.inputs(6))
+        self.assertIs(got.exception, failure)
+        self.assertEqual(h.workspace.native_route_warmed, set())
+        h.static.launch_ep_tiled_decode.assert_not_called()
+        h.remap.try_remap_ep_local.assert_not_called()
+        h.md.launch_sm120_dynamic_moe.assert_not_called()
+
+    def test_unsupported_input_never_reaches_remap(self):
         cases = [dict(x=Tensor((6, 4096), 'bf16', contiguous=False)),
                  dict(output=Tensor((6, 4096), 'f32')),
                  dict(ids=Tensor((6, 8), 'f32')),
                  dict(scales=Tensor((6, 8), 'bf16')),
                  dict(expert_map=object())]
-        # expert_map is validated by the actual remapper, covered separately.
-        for override in cases[:-1]:
+        for override in cases:
             h = Harness(self).prepare()
             args = h.inputs(6)
             args.update(override)
             with self.assertRaises(ValueError):
                 h.module.launch_ep_tiled(h.owner, **args)
             h.remap.try_remap_ep_local.assert_not_called()
+
+    def test_native_map_metadata_and_offset_reject_before_any_launch(self):
+        bad_maps = (object(), Tensor((288,), 'f32'), Tensor((1, 288), 'i32'),
+                    Tensor((288,), 'i32', contiguous=False),
+                    Tensor((288,), 'i32', device='cuda:1'),
+                    Tensor((288,), 'i64', device='cpu'),
+                    Tensor((1 << 31,), 'i32'))
+        for expert_map in bad_maps:
+            h = Harness(self).prepare()
+            args = h.inputs(4)
+            args['expert_map'] = expert_map
+            with self.subTest(expert_map=expert_map), self.assertRaisesRegex(ValueError, 'expert map'):
+                h.module.launch_ep_tiled(h.owner, **args)
+            h.remap.try_remap_ep_local.assert_not_called()
+            h.static.launch_ep_tiled_decode.assert_not_called()
+            h.md.launch_sm120_dynamic_moe.assert_not_called()
+        for offset in (-1, 1 << 31, True, 72., None):
+            h = Harness(self).prepare()
+            h.owner.local_expert_offset = offset
+            with self.subTest(offset=offset), self.assertRaisesRegex(ValueError, 'offset'):
+                h.module.launch_ep_tiled(h.owner, **h.inputs(32))
+            h.remap.try_remap_ep_local.assert_not_called()
+            h.static.launch_ep_tiled_decode.assert_not_called()
+            h.md.launch_sm120_dynamic_moe.assert_not_called()
+
+    def test_native_routes_cannot_alias_workspace_reset_or_output(self):
+        names = ('packed_input', 'packed_input_scale', 'row_counts', 'token_map',
+                 'token_weights', 'barrier_count', 'barrier_epoch',
+                 'active_expert_count', 'weight_expert_ids', 'global_to_local_expert')
+        for field in ('ids', 'scales', 'expert_map'):
+            for name in names + ('output', 'scatter_fp32', 'stamps', 'counter'):
+                h = Harness(self).prepare()
+                args = h.inputs(6)
+                storage = args['output'] if name == 'output' else getattr(
+                    h.workspace.static if name in names else h.workspace.scratch, name)
+                args[field] = Tensor((288,) if field == 'expert_map' else (6, 8),
+                                     'f32' if field == 'scales' else 'i32',
+                                     pointer=storage.data_ptr())
+                with self.subTest(field=field, storage=name), self.assertRaisesRegex(ValueError, 'native routes'):
+                    h.module.launch_ep_tiled(h.owner, **args)
+                h.remap.try_remap_ep_local.assert_not_called()
+                h.static.launch_ep_tiled_decode.assert_not_called()
+                h.md.launch_sm120_dynamic_moe.assert_not_called()
+
+    def test_changed_weight_generation_never_reaches_native_launch(self):
         for mutation in ('version', 'storage', 'marker'):
             h = Harness(self).prepare()
             args = h.inputs(6)
@@ -331,17 +479,18 @@ class OwnerTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 h.module.launch_ep_tiled(h.owner, **args)
             h.remap.try_remap_ep_local.assert_not_called()
+            h.static.launch_ep_tiled_decode.assert_not_called()
 
     def test_remap_decline_or_launch_error_cannot_fall_back_to_row_major(self):
+        h = Harness(self).prepare()
+        h.remap.try_remap_ep_local.side_effect = None
+        h.remap.try_remap_ep_local.return_value = False
+        with self.assertRaisesRegex(ValueError, 'remap'):
+            h.module.launch_ep_tiled(h.owner, **h.inputs(33))
+        h.static.launch_ep_tiled_decode.assert_not_called()
+        h.md.launch_sm120_dynamic_moe.assert_not_called()
         for tokens in (6, 33):
             h = Harness(self).prepare()
-            h.remap.try_remap_ep_local.side_effect = None
-            h.remap.try_remap_ep_local.return_value = False
-            with self.assertRaisesRegex(ValueError, 'remap'):
-                h.module.launch_ep_tiled(h.owner, **h.inputs(tokens))
-            h.static.launch_ep_tiled_decode.assert_not_called()
-            h.md.launch_sm120_dynamic_moe.assert_not_called()
-            h.remap.try_remap_ep_local.side_effect = h.remap_call
             error = RuntimeError('device launch failure')
             target = h.static.launch_ep_tiled_decode if tokens <= 32 else h.md.launch_sm120_dynamic_moe
             target.side_effect = error

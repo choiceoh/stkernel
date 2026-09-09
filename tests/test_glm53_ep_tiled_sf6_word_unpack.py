@@ -9,7 +9,7 @@ import random
 import types
 import unittest
 
-from test_glm53_ep_tiled_static import SOURCE, STOCK, extract, function
+from test_glm53_ep_tiled_static import SOURCE, STOCK, extract, function, route_helpers
 
 
 def u32(value):
@@ -50,6 +50,7 @@ def expansion_class():
     ns = dict(Parent=Parent, ep_tiled_source_contract=lambda: None)
     extract('ep_tiled_geometry', ns)
     extract('ep_tiled_scale_mode', ns)
+    route_helpers(ns)
     cls = ast.ClassDef(name='Candidate', bases=[ast.Name('Parent', ast.Load())],
                       keywords=[], body=[function('__init__'),
                                          function('_sf_expand_stage')], decorator_list=[])
@@ -185,6 +186,8 @@ class EPTiledSF6WordUnpackTests(unittest.TestCase):
                              reform_sf_pack=sf6)
                 selected = sf6 and m <= 8
                 self.assertIs(kernel.word_unpack, selected)
+                self.assertEqual((kernel.ep_route_mode,kernel.ep_route_map_len,kernel.ep_local_expert_offset),
+                                 ('local',None,0))
                 self.assertEqual((kernel.reform_sf_pack, kernel.decode_reform), (sf6, m <= 8))
                 if not selected:
                     for size in (1024, 2048, 4096):

@@ -50,8 +50,9 @@ the same buffers, diffs every buffer above and the InputBatch index fields,
 and -- when clean -- hands the FUSED batch to the rest of the step, so the
 armed control flow (view-based InputBatch through sampler / rejection sampler
 / drafter, the metadata cache) is exercised under shadow too. Armed mode
-repeats that verification every VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY fused
-steps (default 64) and DISARMs on the first drift.
+verifies the first use of every new plan, then repeats every
+VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY fused steps (default 64) and DISARMs on
+the first drift. The first clean comparison is logged before periodic milestones.
 
 Guards: the install pins the sha256 of every runner/builder file whose
 control flow is bypassed (as shipped in glm53:v13-b12x, plus the mounted
@@ -97,9 +98,11 @@ _BLOCK = 1024
 _SPECULATORS = ("DFlashSpeculator", "DSparkSpeculator", "DFlash2Speculator")
 
 # sha256 of the files whose control flow this module bypasses, as shipped in
-# glm53:v13-b12x. mla/indexer.py is the glm53_tail_slot_persistent copy that
-# is mounted over the image's. Drift anywhere -> stay stock (the fast path
-# was read against exactly these files).
+# glm53:v13-b12x, except the reviewed mounted indexer and worker-utils
+# overlays. worker/utils.py adds only the KVBlockZeroer bounds/counter;
+# model_runner.update_requests still zeroes new blocks before prepare_inputs.
+# The manifest retains each original image preimage independently of these
+# installed-source pins. Drift anywhere -> stay stock.
 PREIMAGES: dict[str, str] = {
     "v1/worker/gpu/model_runner.py":
         "f84255d75435e84f44972d3fd25e53447f9d4d2edd8bff4f8c19dfb793448415",
@@ -122,7 +125,7 @@ PREIMAGES: dict[str, str] = {
     "v1/worker/gpu/spec_decode/dflash/speculator.py":
         "bd7f4c63d1196cb53bee0a81339aa5651e36938fc38b73c4ce89d978e0176a87",
     "v1/worker/utils.py":
-        "3dcd6ad34ee1d1db2875f7f7dd51d90ee0e64041ab282180687770a38b26acb1",
+        "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c",
     "v1/attention/backend.py":
         "301c76c90d5f26cdecfedfb385f8f17453154106d2decf763a31cb978f1a5d99",
     "v1/attention/backends/gdn_attn.py":
@@ -168,7 +171,7 @@ def shadow_every() -> int:
 
 
 def selfcheck_every() -> int:
-    """Armed-mode verification cadence in fused steps; 0 disables."""
+    """Periodic armed-mode cadence; 0 disables periodic, not first-use checks."""
     return _every(ENV_SELFCHECK_EVERY, 64)
 
 
@@ -774,6 +777,7 @@ class _State:
     selfcheck_every: int
     plan: PrepPlan | None = None
     plan_failed: bool = False
+    plan_verified: bool = False
     metadata_cache: dict[tuple[int, int], dict[str, Any]] = field(default_factory=dict)
     t_fused_host: float = 0.0
     t_stock_host: float = 0.0
@@ -786,6 +790,7 @@ class _State:
     def disarm(self, why: str) -> None:
         self.plan = None
         self.plan_failed = True
+        self.plan_verified = False
         self.metadata_cache.clear()
         logger.warning("[prep-fused] DISARM -> stock path for the rest of this boot: %s", why)
 
@@ -1010,6 +1015,7 @@ def _ensure_plan(runner, st: _State) -> bool:
         logger.exception("[prep-fused] plan build failed")
         return False
     st.plan = plan
+    st.plan_verified = False
     runner.model_state._glm53_prep = st
     logger.warning("[prep-fused] plan built: mode=%s kernel=%s groups=%d gdn=%s attn_g=%d factor=%d "
                    "ratio=%d sbs=%d q=%d shadow_every=%d selfcheck_every=%d", st.mode,
@@ -1182,10 +1188,12 @@ def _patched_prepare_inputs(self, scheduler_output, batch_req_state, batch_desc)
         logger.exception("[prep-fused] fused prepare failed")
         return _ORIG["prepare_inputs"](self, scheduler_output, batch_req_state, batch_desc)
     st.steps_fused += 1
+    first_plan_check = not st.plan_verified
     if st.mode == "shadow":
         check = st.steps_fused % st.shadow_every == 0
     else:
-        check = st.selfcheck_every > 0 and st.steps_fused % st.selfcheck_every == 0
+        check = first_plan_check or (st.selfcheck_every > 0
+                                     and st.steps_fused % st.selfcheck_every == 0)
     if not check:
         return fused
     stock, bad = _verify(self, st, fused, scheduler_output, batch_req_state, batch_desc)
@@ -1196,9 +1204,11 @@ def _patched_prepare_inputs(self, scheduler_output, batch_req_state, batch_desc)
             st.disarm("self-check drift")
         return stock
     st.checks_ok += 1
-    if st.checks_ok % 64 == 0 or st.mode == "shadow" and st.checks_ok % 16 == 0:
-        logger.warning("[prep-fused] %s: fused_steps=%d stock_steps=%d checks ok=%d drift=%d",
-                       st.mode, st.steps_fused, st.steps_stock, st.checks_ok, st.checks_drift)
+    st.plan_verified = True
+    if first_plan_check or st.checks_ok % 64 == 0 or st.mode == "shadow" and st.checks_ok % 16 == 0:
+        logger.warning("[prep-fused] %s: fused_steps=%d stock_steps=%d checks ok=%d drift=%d first_plan_check=%s",
+                       st.mode, st.steps_fused, st.steps_stock, st.checks_ok, st.checks_drift,
+                       first_plan_check)
     # the buffers hold bytes identical to the fused ones: let the fused batch
     # (persistent views) drive the rest of the step, as arming would
     return fused
@@ -1245,8 +1255,9 @@ def _patched_capture_model(self):
     if st is not None:
         # every capture re-creates the geometry the plan was read from
         st.plan = None
+        st.plan_verified = False
         st.metadata_cache.clear()
-        st.plan_failed = False
+        # A new capture must not clear a numerical/plan failure from this boot.
         _ensure_plan(self, st)
     return out
 
@@ -1258,8 +1269,9 @@ def _patched_post_kv_cache_wake_up(self):
         # the block-table pointer tensors were just re-made; the plan reads
         # them live, but the cached metadata dicts hold views -> rebuild
         st.plan = None
+        st.plan_verified = False
         st.metadata_cache.clear()
-        st.plan_failed = False
+        # Rebound storage invalidates views, not a prior DISARM decision.
     return out
 
 

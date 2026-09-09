@@ -349,9 +349,13 @@ def _cache_evidence(context, owner, rows):
             expected += ("glm53_ep_static_sf6_a_ring_v1",
                          "glm53_ep_static_sf6_word_unpack_v1",
                          "glm53_ep_static_bf16_scatter_v1")
+        # _validate_candidate passes the original int32 IDs and its real
+        # 288-entry int32 map through the production owner. A supplied map
+        # makes rank offset unused; the native compile namespace normalizes it.
+        expected += ("glm53_ep_static_fused_route_v1", 288, "torch.int32", 0)
         if expected not in context["decode"]._EP_TILED_KERNEL_CACHE:
             raise AssertionError("native EP tiled decode artifact was not selected/warmed")
-        return dict(scope="exact native shape cache key", keys=[repr(expected)])
+        return dict(scope="source-bound global-map fixture native shape cache key", keys=[repr(expected)])
     keys = [key for key in context["md"]._DYNAMIC_KERNEL_CACHE
             if len(key) == 20 and key[:7] == ("dynamic","fp4","nvfp4",72,4096,2048,8)
             and str(key[9]) == "torch.int32" and key[10:16] ==

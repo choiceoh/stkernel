@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normal CPU fleet payload: seven EP tiled static and two dynamic lowerings."""
+"""Normal CPU fleet payload: local/global-route EP tiled compiler witnesses."""
 import argparse
 import hashlib
 import json
@@ -8,21 +8,30 @@ import re
 import subprocess
 import glm53_ep_capsule_runtime as capsule_runtime
 from glm53_ep_tiled_compile import (source_receipt, STATIC_ROWS, DYNAMIC_ROWS,
-    CPU_TEST_COUNTS, EXPECTED_CPU_TESTS, static_specialization, validate_scatter_helper_receipt)
+    CPU_TEST_COUNTS, EXPECTED_CPU_TESTS, static_specialization, validate_scatter_helper_receipt,
+    GLOBAL_STATIC_CASES, global_static_specialization)
 
 
 def validate_artifacts(output,result):
     output=output.resolve(strict=True)
     expected=set()
-    for kind,rows in (('static',STATIC_ROWS),('dynamic',DYNAMIC_ROWS)):
+    groups=(('static',STATIC_ROWS),('global_static',GLOBAL_STATIC_CASES),('dynamic',DYNAMIC_ROWS))
+    for kind,rows in groups:
         passes=result[kind+'_passes']
-        assert [p['arm'] for p in passes]==[kind+'/M'+str(m) for m in rows]
+        arms = (['global-static/'+case[0] for case in rows] if kind=='global_static'
+                else [kind+'/M'+str(m) for m in rows])
+        assert [p['arm'] for p in passes]==arms
         for rows_count,passed in zip(rows,passes):
             if kind == 'static':
                 selected = passed['specialization']
                 assert selected == static_specialization(rows_count,passed['cache_key'],
                     selected['a_ring'],selected['word_unpack'],
                     selected['scatter_bf16'],selected['output_dtype'])
+            if kind == 'global_static':
+                selected = passed['specialization']
+                assert selected == global_static_specialization(rows_count,passed['cache_key'],
+                    selected['a_ring'],selected['word_unpack'],selected['scatter_bf16'],
+                    selected['output_dtype'],selected['route'])
             for name,suffix in (('artifacts','.ptx'),('resources','.cubin')):
                 assert len(passed[name])==1
                 for row in passed[name]:

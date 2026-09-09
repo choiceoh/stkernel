@@ -42,6 +42,44 @@ def constants():
             and isinstance(n.value, ast.Constant)}
 
 
+def route_helpers(ns):
+    """Load actual declaration/key helpers, not a fabricated local key stub."""
+    ns['EP_TILED_ROUTE_CACHE_TAG'] = constants()['EP_TILED_ROUTE_CACHE_TAG']
+    extract('ep_tiled_route_metadata', ns)
+    extract('ep_tiled_route_key', ns)
+    return ns
+
+
+def local_reference_function(name):
+    """Select exactly the declared local route branch; reject other changes."""
+    node = function(name)
+    expression = "cutlass.const_expr(self.ep_route_mode == 'global')"
+    branches = [n for n in ast.walk(node) if isinstance(n, ast.If)
+                and ast.unparse(n.test) == expression]
+    assert len(branches) == 1, 'missing or duplicated global route admission'
+    branch = branches[0]
+    if name == 'kernel':
+        assert [ast.unparse(n) for n in branch.body] == [
+            'expert_id = self._global_route_id(topk_ids, pair_idx, expert_map)']
+        assert [ast.unparse(n) for n in branch.orelse] == [
+            'expert_id = topk_ids[pair_idx].to(Int32)']
+    else:
+        assert name == '__call__' and not branch.orelse
+        assert isinstance(branch.body[-1], ast.Return)
+        assert ast.unparse(branch.body[-1].value.func) == 'self._call_global'
+    class LocalOnly(ast.NodeTransformer):
+        def visit_If(self, n):
+            if ast.unparse(n.test) == expression:
+                return n.orelse
+            return self.generic_visit(n)
+    node = LocalOnly().visit(node)
+    assert node.args.args[-1].arg == 'expert_map'
+    assert ast.unparse(node.args.args[-1].annotation) == 'cute.Tensor'
+    assert len(node.args.defaults) == 1 and ast.unparse(node.args.defaults[0]) == 'None'
+    node.args.args.pop(); node.args.defaults.pop()
+    return node
+
+
 class Tensor:
     next_pointer = 4096
     def __init__(self, shape, dtype, *, device=None, strides=None, events=None):
@@ -83,7 +121,7 @@ class EPTiledStaticTests(unittest.TestCase):
         c=constants()
         self.assertEqual(hashlib.sha256(STOCK.read_bytes()).hexdigest(), c['STOCK_V4_SHA256'])
         self.assertEqual(hashlib.sha256(V5.read_bytes()).hexdigest(), c['STOCK_V5_SHA256'])
-        actual = function('kernel'); expected=function('kernel',STOCK)
+        actual = local_reference_function('kernel'); expected=function('kernel',STOCK)
         routes=next(n for n in ast.walk(actual) if isinstance(n,ast.While)
                     and ast.unparse(n.test)=='pair_idx < total_pairs')
         guard=routes.body[1]
@@ -215,7 +253,7 @@ class EPTiledStaticTests(unittest.TestCase):
             'EP_TILED_SF6_WORD_CACHE_TAG':constants()['EP_TILED_SF6_WORD_CACHE_TAG'],
             'EP_TILED_BF16_SCATTER_CACHE_TAG':constants()['EP_TILED_BF16_SCATTER_CACHE_TAG'],
             'MoEStaticEPTiledKernel':lambda **kw:kw}
-        extract('ep_tiled_geometry',ns);extract('ep_tiled_scale_mode',ns)
+        extract('ep_tiled_geometry',ns);extract('ep_tiled_scale_mode',ns);route_helpers(ns)
         factory=extract('ep_tiled_compile_spec',ns)
         modules={'torch':t,'flashinfer':types.ModuleType('flashinfer'),
                  'flashinfer.cute_dsl':types.ModuleType('flashinfer.cute_dsl'),
@@ -277,7 +315,7 @@ class EPTiledStaticTests(unittest.TestCase):
         scratch=types.SimpleNamespace(scatter_fp32=tensor((32,4096),t.float32),
              stamps=tensor((48,71),t.int64),counter=tensor((1,),t.int32),
              dummy_scales=tensor((1,1,16),t.uint8),max_tokens=32,max_active_clusters=48)
-        ns={'STAMP_SLOTS':71,'REFORM_SF_STAGE':1552};extract('ep_tiled_geometry',ns)
+        ns={'STAMP_SLOTS':71,'REFORM_SF_STAGE':1552};extract('ep_tiled_geometry',ns);route_helpers(ns)
         def compiled(*args):events.append(('compiled',args))
         compile_options=[]
         def get(**kw):compile_options.append(kw);return compiled,48
@@ -360,7 +398,7 @@ class EPTiledStaticTests(unittest.TestCase):
         cls=ast.ClassDef(name='MoEStaticEPTiledKernel',bases=[ast.Name('Base',ast.Load())],
                         keywords=[],body=[init],decorator_list=[])
         ns={'Base':Base,'ep_tiled_source_contract':lambda:None}
-        extract('ep_tiled_geometry',ns);extract('ep_tiled_scale_mode',ns)
+        extract('ep_tiled_geometry',ns);extract('ep_tiled_scale_mode',ns);route_helpers(ns)
         exec(compile(ast.fix_missing_locations(ast.Module(body=[cls],type_ignores=[])),str(SOURCE),'exec'),ns)
         for m in range(1,33):
             for mode in (False,True):
@@ -369,6 +407,8 @@ class EPTiledStaticTests(unittest.TestCase):
                 self.assertIs(k.options['reform_sf_pack'],mode)
                 self.assertIs(k.options['decode_reform'],m<=8)
                 self.assertIs(k.scatter_bf16,mode and m<=8)
+                self.assertEqual((k.ep_route_mode,k.ep_route_map_len,k.ep_local_expert_offset),
+                                 ('local',None,0))
                 self.assertEqual(k.options['output_tile_count_n'],16)
                 self.assertEqual((k.options['fc1_stages'],k.options['fc2_stages']),(2,2))
         calls=[];ns['get_ep_tiled_decode_kernel']=lambda **kw:calls.append(kw)
@@ -390,8 +430,33 @@ class EPTiledStaticTests(unittest.TestCase):
             self.assertEqual(events,[])
 
     def test_entry_reuses_only_v5_tma_and_allocator_rejects_capture(self):
-        call=function('__call__');calls=[ast.unparse(n.func) for n in ast.walk(call) if isinstance(n,ast.Call)]
+        call=local_reference_function('__call__');calls=[ast.unparse(n.func) for n in ast.walk(call) if isinstance(n,ast.Call)]
         self.assertEqual(calls,['self._check_ep_call','MoEStaticKernelV5.__call__'])
+        # Execute the real host dispatch against inert callees. This also
+        # binds the extra map's exact position before any CuTe TMA setup runs.
+        events=[]
+        def inherited(*args):events.append(('local',args))
+        ns=dict(cutlass=types.SimpleNamespace(const_expr=bool,Int32='i32',Int64='i64'),
+                MoEStaticKernelV5=types.SimpleNamespace(__call__=inherited))
+        entry=extract('__call__',ns)
+        owner=types.SimpleNamespace(ep_route_mode='local',ep_route_map_len=None,
+            _check_ep_call=lambda *a:events.append(('check',a)),
+            _call_global=lambda *a:events.append(('global',a)))
+        operands=[object() for _ in range(30)]
+        entry(owner,*operands)
+        self.assertEqual([e[0] for e in events],['check','local'])
+        self.assertEqual(events[-1][1],(owner,*operands))
+        owner.ep_route_mode='global'
+        for length,dtype in ((None,'i32'),(0,'i32'),(288,'i32'),(288,'i64')):
+            events.clear();owner.ep_route_map_len=length
+            mapping=Tensor((length or 1,),dtype)
+            entry(owner,*operands,mapping)
+            self.assertEqual([e[0] for e in events],['check','global'])
+            self.assertEqual(events[-1][1],(*operands,mapping))
+        for mapping in (None,Tensor((1,),'i32'),Tensor((288,),'f32')):
+            events.clear()
+            with self.assertRaises(ValueError):entry(owner,*operands,mapping)
+            self.assertEqual([e[0] for e in events],['check'])
         body=function('allocate_ep_tiled_decode_scratch')
         t=fake_torch();t.cuda.is_current_stream_capturing=lambda:True
         ns={};extract('ep_tiled_geometry',ns)

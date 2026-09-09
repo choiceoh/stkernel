@@ -1,0 +1,31 @@
+{
+  "files": {
+    "model_runner.py.gz": {
+      "original_bytes": 91295,
+      "original_sha256": "f84255d75435e84f44972d3fd25e53447f9d4d2edd8bff4f8c19dfb793448415",
+      "stored_sha256": "8202b1e8e8672c03a1be4be6835f25fd321aaf4cca9f66684fc6bcb28a23db76"
+    },
+    "worker_utils.image.py.gz": {
+      "original_bytes": 29166,
+      "original_sha256": "3dcd6ad34ee1d1db2875f7f7dd51d90ee0e64041ab282180687770a38b26acb1",
+      "stored_sha256": "5fc24d0e5813cc441965b7adea980a22242baf81e59b2ad6f80b14db56fc3dbc"
+    }
+  },
+  "mounted_worker_sha256": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c",
+  "runner_read": {
+    "bytes": 91295,
+    "id": "2747cf058f70d1169df7c9a856bc8ec892865f343485a3af9161b507667174db",
+    "identity_equal": true,
+    "identity_sha256": "e8a550a8111f85dc75152413394ae8aa4eac23bd4f261df52e6c177e67a44d7f",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "path": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/model_runner.py",
+    "read_end": 1788995077.2886086,
+    "read_only": true,
+    "read_start": 1788995077.2032247,
+    "sha256": "f84255d75435e84f44972d3fd25e53447f9d4d2edd8bff4f8c19dfb793448415",
+    "started_at": "2026-09-09T16:39:35.167311002Z"
+  },
+  "schema": 1,
+  "scope": "Source fixtures only; no numerical or performance acceptance",
+  "worker_utils_origin": "Exact reconstruction of image preimage from reviewed fd27 mounted overlay; non-KV-zero bytes unchanged"
+}

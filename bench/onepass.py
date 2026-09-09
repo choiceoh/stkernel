@@ -287,7 +287,7 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
     return out
 
 
-def _served_speculation(boot_id):
+def _served_speculation(boot_id, *, preparation=False):
     """Read the identified head's actual command; no serving imports or requests."""
     import subprocess
     try:
@@ -311,8 +311,14 @@ def _served_speculation(boot_id):
             if key in env:
                 raise ValueError('duplicate serving environment')
             env[key] = value
-        return dict(launch_speculation(container['Config']['Cmd']), boot_id=boot_id,
-                    image=container['Image'], environment_spec_k=env.get('VLLM_GLM53_SPEC_K'))
+        result = dict(launch_speculation(container['Config']['Cmd']), boot_id=boot_id,
+                      image=container['Image'], environment_spec_k=env.get('VLLM_GLM53_SPEC_K'))
+        if preparation:
+            result.update(preparation_mode=env.get('VLLM_GLM53_PREP_FUSED'),
+                preparation_kernel=env.get('VLLM_GLM53_PREP_FUSED_KERNEL', 'cuda'),
+                shadow_every=env.get('VLLM_GLM53_PREP_FUSED_SHADOW_EVERY', '1'),
+                selfcheck_every=env.get('VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY', '64'))
+        return result
     except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError):
         return None  # Missing evidence never arms SPEC_K proof.
 
@@ -321,6 +327,15 @@ def build_record(args, revision):
     from measurement_contract import from_args, metadata
     return dict(name=args.name, t=time.strftime("%F %T"), git=revision,
                 prefill=[], quality={}, decode={}, korean={}, **metadata(from_args(args)))
+
+
+def _require_preparation(rec):
+    # Defaults stay knobs={}; execution must still be proved. Seed a rejection
+    # before collection so an exception cannot erase this requirement.
+    rec['required_proofs'] = ['VLLM_GLM53_PREP_FUSED']
+    rec['proof'] = {'VLLM_GLM53_PREP_FUSED': False}
+    rec['proof_ok'] = '0/1'
+    rec['preparation'] = dict(verdict='REJECTED', reason='preparation proof not completed')
 
 
 def main() -> int:
@@ -361,6 +376,15 @@ def main() -> int:
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     prove_spec = 'VLLM_GLM53_SPEC_K' in (rec.get('knobs') or {})
     spec_before = _served_speculation(rec.get('boot_id')) if prove_spec else None
+    prove_prep = os.environ.get('ONEPASS_REQUIRE_PREP_FUSED') == '1'
+    if prove_prep:
+        _require_preparation(rec)
+    prep_before = _served_speculation(rec.get('boot_id'), preparation=True) if prove_prep else None
+    prep_log_path = os.environ.get('MK_HEAD_LOG', '/home/choiceoh/glm53-logs/glm53.log')
+    prep_prefix = None
+    if prove_prep:
+        from glm53_prep_proof import log_prefix
+        prep_prefix = log_prefix(prep_log_path)
     if os.environ.get("FLEET_SESSION"):
         rec["session"] = os.environ["FLEET_SESSION"]          # who held the fleet (fleet.sh run)
     if os.environ.get("MK_COLD_COMPILE") == "1":
@@ -472,6 +496,7 @@ def main() -> int:
     wall = time.time() - t_dec0
     metrics_after = _metrics_text(bd.METRICS)
     spec_after = _served_speculation(rec.get('boot_id')) if prove_spec else None
+    prep_after = _served_speculation(rec.get('boot_id'), preparation=True) if prove_prep else None
     m1 = bd._parse_spec_metrics(metrics_after)
     traffic_issues = exclusive_errors(before_traffic, traffic_state(metrics_after),
                                       sw.traffic_samples, len(rec["requests"]))
@@ -569,14 +594,20 @@ def main() -> int:
     try:
         from proof import check as _proof_check
         _kn = [kk for kk, vv in (rec.get("knobs") or {}).items() if vv not in ("0", "", "off")]
+        if prove_prep and 'VLLM_GLM53_PREP_FUSED' not in _kn:
+            _kn.append('VLLM_GLM53_PREP_FUSED')
         if _kn:
             rec.update({kk: vv for kk, vv in _proof_check(
                 _kn, os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log"),
                 speculation=dict(expected_k=rec['knobs'].get('VLLM_GLM53_SPEC_K'),
                     boot_id=rec.get('boot_id'), launch_before=spec_before, launch_after=spec_after,
                     exclusive=args.require_exclusive and not traffic_issues,
-                    metrics_before=metrics_before, metrics_after=metrics_after)).items()
-                if kk in ("proof", "proof_ok", "speculation")})
+                    metrics_before=metrics_before, metrics_after=metrics_after),
+                preparation=dict(expected_mode=rec['knobs'].get('VLLM_GLM53_PREP_FUSED', '1'),
+                    boot_id=rec.get('boot_id'), launch_before=prep_before, launch_after=prep_after,
+                    exclusive=args.require_exclusive and not traffic_issues,
+                    log_prefix=prep_prefix) if prove_prep else None).items()
+                if kk in ("proof", "proof_ok", "speculation", "preparation")})
     except Exception:
         pass
 

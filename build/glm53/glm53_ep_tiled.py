@@ -7,7 +7,7 @@ Imports are inert so admission and lifetime contracts can be checked on CPU.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import RLock
 from weakref import WeakValueDictionary
 
@@ -116,7 +116,7 @@ def finalize_ep_tiled_scales(owner, layer, release_raw_scales):
     return released
 
 
-def _require_output_disjoint(output, tensors):
+def _require_output_disjoint(output, tensors, *, kind="output"):
     begin = output.data_ptr()
     end = begin + output.numel() * output.element_size()
     for tensor in tensors:
@@ -124,7 +124,21 @@ def _require_output_disjoint(output, tensors):
             continue
         other = tensor.data_ptr()
         if begin < other + tensor.numel() * tensor.element_size() and other < end:
-            raise ValueError("tiled EP output overlaps input, weights, or owned scratch")
+            raise ValueError(f"tiled EP {kind} overlaps input, weights, or owned scratch")
+
+
+def _require_native_route_metadata(expert_map, device, local_expert_offset):
+    """Keep the remapper's metadata domain without reading routing values."""
+    import torch
+    if (type(local_expert_offset) is not int
+            or not 0 <= local_expert_offset <= (1 << 31) - 1):
+        raise ValueError("tiled EP native route offset must be a nonnegative int32")
+    if expert_map is not None and (
+            not isinstance(expert_map, torch.Tensor) or expert_map.ndim != 1
+            or expert_map.dtype not in (torch.int32, torch.int64)
+            or expert_map.device != device or not expert_map.is_contiguous()
+            or expert_map.numel() > (1 << 31) - 1):
+        raise ValueError("tiled EP native expert map metadata differs")
 
 
 @dataclass
@@ -132,6 +146,30 @@ class _Workspace:
     static: object
     dynamic: object
     scratch: object
+    native_route_warmed: set = field(default_factory=set)
+
+
+def _warm_native_routes(workspace, ids_dtype, expert_map, local_expert_offset):
+    """Prepare only actual route metadata, before any later decode capture."""
+    import torch
+    from .moe_static_ep_tiled import warm_ep_tiled_decode
+
+    map_len = None if expert_map is None else expert_map.numel()
+    map_dtype = None if expert_map is None else expert_map.dtype
+    offset = local_expert_offset if expert_map is None else 0
+    key = (ids_dtype, map_len, map_dtype if map_len else None, offset)
+    with _LOCK:
+        if key in workspace.native_route_warmed:
+            return
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError("tiled EP native route metadata was not warmed before capture")
+        warm_ep_tiled_decode(
+            max_rows=workspace.static.max_rows,
+            max_active_clusters=workspace.scratch.max_active_clusters,
+            reform_sf_pack=True, route_mode="global", topk_ids_dtype=ids_dtype,
+            expert_map_len=map_len, expert_map_dtype=map_dtype,
+            local_expert_offset=offset)
+        workspace.native_route_warmed.add(key)
 
 
 def _shared_workspace(device, capacity):
@@ -204,8 +242,8 @@ def prepare_ep_tiled(owner, layer):
         raise RuntimeError("tiled EP must alias the single loaded weight storage")
     owner._ep_tiled_workspace = _shared_workspace(w1.device, owner.max_num_tokens)
     owner._ep_tiled_generation = weight_generation(w1, w2, owner)
-    # All serving remap planes are allocated before capture. int32 and FP32
-    # are the explicit ABI of both new kernels, independent of router dtype.
+    # Dynamic prefill and the local-ID oracle retain these preallocated planes.
+    # Native decode reads the original router storage without writing them.
     owner._ensure_ep_scratch(w1.device, torch.float32, torch.int32)
     owner._ep_tiled_canary_active = True
     try:
@@ -245,6 +283,23 @@ def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
         raise ValueError("tiled EP routes must be contiguous on the activation device")
     workspace = owner._ep_tiled_workspace
     _require_packed_views(owner._ep_tiled_weight_views)
+    _require_native_route_metadata(expert_map, x.device, owner.local_expert_offset)
+    if tokens <= STATIC_MAX_TOKENS:
+        # The native kernel now reads routes while initializing its workspace.
+        # Unlike the earlier separate remap, those reads must not alias memory
+        # the same launch resets or reuses. This is metadata-only during capture.
+        native_written = (
+            output, workspace.scratch.scatter_fp32,
+            workspace.static.packed_input, workspace.static.packed_input_scale,
+            workspace.static.row_counts, workspace.static.token_map,
+            workspace.static.token_weights, workspace.static.barrier_count,
+            workspace.static.barrier_epoch, workspace.static.active_expert_count,
+            workspace.static.weight_expert_ids, workspace.static.global_to_local_expert,
+            workspace.scratch.stamps, workspace.scratch.counter,
+        )
+        for tensor in (ids, scales, expert_map):
+            if tensor is not None:
+                _require_output_disjoint(tensor, native_written, kind="native routes")
     _require_output_disjoint(output, (
         x, ids, scales, expert_map, w1, w2, owner._ep_ids, owner._ep_scales,
         workspace.scratch.scatter_fp32, workspace.dynamic.ep_scatter_fp32,
@@ -259,21 +314,25 @@ def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
         owner._ep_tiled_weight_views.sfb1_packed,
         owner._ep_tiled_weight_views.sfb2_packed,
         owner._ep_tiled_weight_views.w1_alpha, owner._ep_tiled_weight_views.w2_alpha))
-    local_ids, local_scales = owner._ep_ids[:tokens], owner._ep_scales[:tokens]
-    if not try_remap_ep_local(
-            ids, scales, expert_map=expert_map, num_local_experts=72,
-            local_expert_offset=owner.local_expert_offset,
-            out_ids=local_ids, out_scales=local_scales, _tiled_owner=True):
-        raise ValueError("tiled EP requires its prepared one-launch remap contract")
+    # The model's first eager dummy prefill also supplies the actual router
+    # dtype/map, so warm its native variants before decode graphs are captured.
+    _warm_native_routes(workspace, ids.dtype, expert_map, owner.local_expert_offset)
     weights = owner._ep_tiled_weight_views
     if tokens <= STATIC_MAX_TOKENS:
         launch_ep_tiled_decode(
             workspace=workspace.static, weights=weights, a=x,
-            topk_ids=local_ids, topk_weights=local_scales,
+            topk_ids=ids, topk_weights=scales,
             input_gs=owner.g1_alphas, down_input_scale=owner._fc2_input_scale,
-            output=output, scratch=workspace.scratch)
+            output=output, scratch=workspace.scratch, route_mode="global",
+            expert_map=expert_map, local_expert_offset=owner.local_expert_offset)
         lane = "decode"
     else:
+        local_ids, local_scales = owner._ep_ids[:tokens], owner._ep_scales[:tokens]
+        if not try_remap_ep_local(
+                ids, scales, expert_map=expert_map, num_local_experts=72,
+                local_expert_offset=owner.local_expert_offset,
+                out_ids=local_ids, out_scales=local_scales, _tiled_owner=True):
+            raise ValueError("tiled EP requires its prepared one-launch remap contract")
         md.launch_sm120_dynamic_moe(
             workspace=workspace.dynamic, weights=weights, a=x,
             topk_ids=local_ids, topk_weights=local_scales,

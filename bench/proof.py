@@ -372,7 +372,7 @@ def spec_k_evidence(context):
 
 
 def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | None = None,
-          *, speculation=None) -> dict:
+          *, speculation=None, preparation=None) -> dict:
     table = table or markers()
     try:
         with open(log_path, "rb") as fh:
@@ -381,7 +381,13 @@ def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | N
         log = ""
     res = {}
     spec = None
+    prep = None
     for k in knobs:
+        if k == 'VLLM_GLM53_PREP_FUSED':
+            from glm53_prep_proof import evidence
+            prep = evidence(preparation, log_path)
+            res[k] = prep['verdict'] == 'PASS'
+            continue
         if k == 'VLLM_GLM53_SPEC_K':
             spec = spec_k_evidence(speculation)
             res[k] = spec['verdict'] == 'PASS'
@@ -399,6 +405,8 @@ def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | N
               "log": log_path, "log_bytes": len(log)}
     if spec is not None:
         result['speculation'] = spec
+    if prep is not None:
+        result['preparation'] = prep
     return result
 
 

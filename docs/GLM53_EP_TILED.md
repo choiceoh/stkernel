@@ -5,6 +5,28 @@ allocation between a dedicated static decode kernel and the EP-local prefill
 kernel. It is experimental and defaults off. Neither recovered decode speed
 nor retained prefill gains have been established for this implementation.
 
+The next combined candidate keeps DFlash K5 and SF6. Native M1..32 maps
+global expert IDs inside the existing route-publication kernel, removing the
+separate remap launch and its temporary-plane traffic. Dynamic prefill keeps
+the original remapper. The local-ID reference entry is retained; global
+entries use a distinct cache namespace with the actual map/ID metadata.
+No MMA, barrier, TMA layout or scatter arithmetic is changed by route fusion.
+
+The same candidate repairs PREP_FUSED's reviewed KV-zero overlay pin. The
+image's original preimage remains pinned separately. Captured runner source
+confirms that block zeroing runs in `update_requests`, before input/attention
+preparation. Every armed plan is compared with the original preparation
+chain on first use and then every 64 fused steps. DISARM remains sticky even
+after capture or wake. This is implemented, not yet a live performance result.
+
+The planned consolidated onepass reservation first runs EP with full shadow
+comparison, then same-source TP and EP with preparation armed. Every arm
+requires actual same-boot preparation execution proof; defaults keep
+`knobs={}` and carry an independent `required_proofs` declaration. Missing
+proof or drift rejects a row and excludes it from baseline reuse. Sparse log
+checkpoints are not fixed-request counters. The absolute goal remains pooled
+fixed-1024 x3 decode >=67 tok/s with existing quality and prefill gates.
+
 The first full-model SF6 run completed on 2026-09-09. Its actual-weight
 canaries and SF6 release passed on all four ranks, but every arm failed the
 existing Korean gate. The candidate also had lower observed fixed-decode
@@ -49,11 +71,10 @@ Read-only follow-up found an independent default integration conflict:
 its whole-file guard expects the image's worker-utils SHA `3dcd6ad34ee1…`.
 The deliberately mounted KV-zero safety overlay has SHA `fd27b906f336…`.
 Removing exactly its KV-zero additions reconstructs the expected original
-SHA; other utilities are unchanged. Rearming still requires confirming that
-KV zeroing occurs outside the replaced runner methods, preserving that safety
-effect, and actual runner validation. No guard was weakened and this feature
-was not rearmed during the experiment. Its historical benefit is not a
-current performance result.
+SHA; other utilities are unchanged. The new integration repair described
+above confirms the runner order and updates only the reviewed installed-source
+pin. This feature was not rearmed during v5/v6. Its historical benefit is not
+a current performance result.
 
 Enable `ENABLE_EP=1 VLLM_GLM53_EP_TILED=1 VLLM_GLM53_TP_SF6_Q0=0` on the GLM
 profile, retaining its `t,r,sf6` scale-compression setting. The TP Q0 owner/canary does not apply to EP weights. Keep the old

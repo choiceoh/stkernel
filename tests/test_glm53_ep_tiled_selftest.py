@@ -63,25 +63,42 @@ def native_cache_fixture():
     start = next(i for i,n in enumerate(factory.body) if isinstance(n,ast.Assign)
                  and ast.unparse(n.targets[0]) == 'key')
     end = next(i for i in range(start,len(factory.body)) if isinstance(factory.body[i],ast.Return))
-    key_fn = ast.parse('''def native_key(m, sf6=True):
+    key_fn = ast.parse('''def native_key(m, sf6=True, route_mode="local",
+                                    expert_map_len=None, expert_map_dtype=None,
+                                    local_expert_offset=0):
     max_rows, mac, topk_ids_dtype = 256, 48, "torch.int32"
     input_scales_are_reciprocal, fast_math, reform_sf_pack = False, True, sf6
     geometry = ep_tiled_geometry(m, max_rows, mac)
     scale_mode = ep_tiled_scale_mode(reform_sf_pack)
+    route_key = ep_tiled_route_key(route_mode=route_mode, expert_map_len=expert_map_len,
+        expert_map_dtype=expert_map_dtype, local_expert_offset=local_expert_offset)
 ''').body[0]
     selected = next(n for n in factory.body if isinstance(n,ast.Assign)
                     and ast.unparse(n.targets[0])=='scatter_bf16')
-    key_fn.body += [copy.deepcopy(selected)] + copy.deepcopy(factory.body[start:end]) + [ast.Return(ast.Name('key',ast.Load()))]
+    key_statements = factory.body[start:end]
+    # Only key construction executes here. The separate map fake operand
+    # belongs to real CuTe compilation, covered by the normal CPU probe.
+    key_statements = [n for n in key_statements if not (
+        isinstance(n, ast.If) and ast.unparse(n.test) == "route_mode == 'global'")]
+    result = factory.body[end].value
+    assert isinstance(result, ast.Tuple) and len(result.elts) == 3
+    key_fn.body += [copy.deepcopy(selected)] + copy.deepcopy(key_statements) + [
+        ast.Return(copy.deepcopy(result.elts[-1]))]
     constants = [copy.deepcopy(n) for n in tree.body if isinstance(n,ast.Assign)
                  and isinstance(n.targets[0],ast.Name)
                  and n.targets[0].id in ('EP_TILED_CACHE_TAG','EP_TILED_A_RING_CACHE_TAG',
-                                        'EP_TILED_SF6_WORD_CACHE_TAG','EP_TILED_BF16_SCATTER_CACHE_TAG')]
+                                        'EP_TILED_SF6_WORD_CACHE_TAG','EP_TILED_BF16_SCATTER_CACHE_TAG',
+                                        'EP_TILED_ROUTE_CACHE_TAG')]
     module = ast.Module(body=constants + [copy.deepcopy(functions[name]) for name in
-        ('ep_tiled_geometry','ep_tiled_scale_mode')] + [key_fn], type_ignores=[])
+        ('ep_tiled_geometry','ep_tiled_scale_mode','ep_tiled_route_metadata',
+         'ep_tiled_route_key')] + [key_fn], type_ignores=[])
     ns = {}
     exec(compile(ast.fix_missing_locations(module),str(path),'exec'),ns)
+    def native_key(*args, **kwargs):
+        with patch.dict(sys.modules, {'torch':SimpleNamespace(int32='torch.int32',int64='torch.int64')}):
+            return ns['native_key'](*args, **kwargs)
     return SimpleNamespace(ep_tiled_geometry=ns['ep_tiled_geometry'],
-                           native_key=ns['native_key'],_EP_TILED_KERNEL_CACHE={})
+                           native_key=native_key,_EP_TILED_KERNEL_CACHE={})
 
 
 class LifecycleTests(unittest.TestCase):
@@ -322,8 +339,13 @@ class AdmissionTests(unittest.TestCase):
                         'glm53_ep_static_sf6_word_unpack_v1','glm53_ep_static_bf16_scatter_v1'))
                 else:
                     self.assertEqual(key[-1],'fp32_scatter')
-                decode._EP_TILED_KERNEL_CACHE={key:object()}
-                self.assertEqual(canary._cache_evidence(context,owner,rows)['keys'],[repr(key)])
+                fused = decode.native_key(rows, route_mode='global', expert_map_len=288,
+                                         expert_map_dtype='torch.int32', local_expert_offset=216)
+                route_tail = ('glm53_ep_static_fused_route_v1', 288, 'torch.int32', 0)
+                self.assertEqual(fused, key + route_tail)
+                self.assertEqual(len(fused), 23 if rows <= 8 else 20)
+                decode._EP_TILED_KERNEL_CACHE={key:object(), fused:object()}
+                self.assertEqual(canary._cache_evidence(context,owner,rows)['keys'],[repr(fused)])
                 wrong_ring=key[:-3]+key[-2:] if rows<=8 else key+('glm53_ep_static_sf6_a_ring_v1',)
                 wrong_word=key[:-2]+key[-1:] if rows<=8 else key+('glm53_ep_static_sf6_word_unpack_v1',)
                 wrong_tag=key[:-1]+('glm53_ep_static_bf16_scatter_v0',)
@@ -333,7 +355,7 @@ class AdmissionTests(unittest.TestCase):
                                  key[:1]+(rows+1,)+key[2:],key[:4]+('torch.int64',)+key[5:],
                                  key[:5]+(True,)+key[6:],key+('extra',))
                 for mutation in mutations:
-                    decode._EP_TILED_KERNEL_CACHE={mutation:object()}
+                    decode._EP_TILED_KERNEL_CACHE={key:object(), mutation+route_tail:object()}
                     with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,rows)
                 if rows in probe['STATIC_ROWS']:
                     selected=rows<=8
@@ -358,6 +380,28 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,8192)
         context['md']._DYNAMIC_KERNEL_CACHE={dynamic[:-1]:object()}
         with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,8192)
+
+    def test_native_canary_rejects_local_only_or_wrong_global_map_namespace(self):
+        decode = native_cache_fixture()
+        owner = SimpleNamespace(_ep_tiled_workspace=SimpleNamespace(
+            static=SimpleNamespace(max_rows=256), scratch=SimpleNamespace(max_active_clusters=48)))
+        context = dict(decode=decode)
+        for rows in (4, 6, 8, 12, 16, 24, 32):
+            local = decode.native_key(rows)
+            fused = decode.native_key(rows, route_mode='global', expert_map_len=288,
+                                      expert_map_dtype='torch.int32')
+            wrong = (local, fused[:-4], fused[:-4] + ('glm53_ep_static_fused_route_v0',) + fused[-3:],
+                     fused[:-3] + (287,) + fused[-2:],
+                     fused[:-2] + ('torch.int64', 0), fused[:-1] + (72,),
+                     decode.native_key(rows, route_mode='global', local_expert_offset=216),
+                     decode.native_key(rows, route_mode='global', expert_map_len=0,
+                                       expert_map_dtype='torch.int32'))
+            for key in wrong:
+                decode._EP_TILED_KERNEL_CACHE = {key: object()}
+                with self.subTest(rows=rows, key=key), self.assertRaises(AssertionError):
+                    canary._cache_evidence(context, owner, rows)
+            decode._EP_TILED_KERNEL_CACHE = {fused: object()}
+            self.assertEqual(canary._cache_evidence(context, owner, rows)['keys'], [repr(fused)])
 
     def test_source_uses_established_numeric_contract_and_bounded_graph_flow(self):
         old=sys.modules[PACKAGE+'.glm53_ep_local_selftest']

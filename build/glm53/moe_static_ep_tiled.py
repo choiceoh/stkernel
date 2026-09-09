@@ -3,7 +3,8 @@
 One immutable tiled FP4 weight allocation is shared with EP tiled prefill.
 SF6 preserves the inherited lossless scale restoration for both native geometries;
 raw MMA scales remain a separate reference specialization. Inputs are
-already mapped to local IDs: [0,72) routes execute; sentinel72 and every other
+local IDs by default; a separate global-route specialization fuses map/offset
+admission into the existing route publication. Local [0,72) routes execute; sentinel72 and every other
 invalid ID are ignored before indexing any expert state, scales or weights.
 Signed-zero route weights are skipped; NaNs on valid routes remain selected.
 
@@ -111,6 +112,7 @@ EP_TILED_CACHE_TAG = "glm53_ep_static_tiled_fp32_v1"
 EP_TILED_A_RING_CACHE_TAG = "glm53_ep_static_sf6_a_ring_v1"
 EP_TILED_SF6_WORD_CACHE_TAG = "glm53_ep_static_sf6_word_unpack_v1"
 EP_TILED_BF16_SCATTER_CACHE_TAG = "glm53_ep_static_bf16_scatter_v1"
+EP_TILED_ROUTE_CACHE_TAG = "glm53_ep_static_fused_route_v1"
 
 
 def ep_tiled_scale_mode(reform_sf_pack):
@@ -135,6 +137,38 @@ def ep_tiled_geometry(num_tokens, max_rows, max_active_clusters):
     return dict(m=num_tokens, max_rows=max_rows, mac=max_active_clusters,
                 reform=reform, fc1=(16, 128, 256) if reform else (32, 64, 512),
                 fc2=(16, 256, 128) if reform else (32, 128, 128))
+
+
+def ep_tiled_route_metadata(route_mode, expert_map_len, local_expert_offset):
+    """Validate declared routing bounds; a supplied map makes offset unused."""
+    if route_mode not in ("local", "global"):
+        raise ValueError("EP tiled route_mode must be local or global")
+    if type(local_expert_offset) is not int or not 0 <= local_expert_offset <= 2147483647:
+        raise ValueError("EP tiled local expert offset must be a nonnegative int32")
+    if expert_map_len is not None and (
+            type(expert_map_len) is not int or not 0 <= expert_map_len <= 2147483647):
+        raise ValueError("EP tiled expert map length must fit a nonnegative int32")
+    if route_mode == "local" and (expert_map_len is not None or local_expert_offset != 0):
+        raise ValueError("EP tiled local routes cannot specify global map metadata")
+    return 0 if expert_map_len is not None else local_expert_offset
+
+
+def ep_tiled_route_key(*, route_mode="local", expert_map_len=None,
+                        expert_map_dtype=None, local_expert_offset=0):
+    import torch
+    offset = ep_tiled_route_metadata(route_mode, expert_map_len, local_expert_offset)
+    if expert_map_len is None:
+        if expert_map_dtype is not None:
+            raise ValueError("EP tiled map dtype requires an actual map")
+    elif expert_map_dtype not in (torch.int32, torch.int64) and not (
+            expert_map_len == 0 and expert_map_dtype is None):
+        raise TypeError("EP tiled expert map must be int32 or int64")
+    if route_mode == "local":
+        return ()
+    # Empty maps do not read IDs, weights or map storage; use one typed dummy
+    # operand and one specialization regardless of the empty owner's dtype.
+    return (EP_TILED_ROUTE_CACHE_TAG, expert_map_len,
+            str(expert_map_dtype) if expert_map_len else None, offset)
 
 
 def ep_tiled_source_contract():
@@ -190,7 +224,12 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
     """Same 160-thread TP producer/consumer geometry, EP-local routing only."""
     def __init__(self, *, num_tokens, max_rows, max_active_clusters,
                  input_scales_are_reciprocal=False, fast_math=True,
-                 reform_sf_pack=False):
+                 reform_sf_pack=False, route_mode="local", expert_map_len=None,
+                 local_expert_offset=0):
+        self.ep_local_expert_offset = ep_tiled_route_metadata(
+            route_mode, expert_map_len, local_expert_offset)
+        self.ep_route_mode = route_mode
+        self.ep_route_map_len = expert_map_len
         ep_tiled_source_contract()
         ep_tiled_scale_mode(reform_sf_pack)
         geometry = ep_tiled_geometry(num_tokens, max_rows, max_active_clusters)
@@ -269,9 +308,49 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         sfb2_packed: cute.Tensor,   # sf6 FC2 scales; dummy off lane
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
+        expert_map: cute.Tensor = None,
     ):
         self._check_ep_call(a_input, topk_ids, topk_weights, b_w13, b_down,
                             row_counts, token_map, scatter_output)
+        if cutlass.const_expr(self.ep_route_mode == "global"):
+            expected_map_len = self.ep_route_map_len or 1
+            if (expert_map is None or tuple(expert_map.shape) != (expected_map_len,)
+                    or expert_map.element_type not in (cutlass.Int32, cutlass.Int64)):
+                raise ValueError("EP tiled global map operand disagrees with declared bounds")
+            return self._call_global(
+                a_input,
+                topk_ids,
+                topk_weights,
+                packed_a,
+                sfa_ptr,
+                packed_a_storage,
+                scale_storage,
+                barrier_count,
+                barrier_epoch,
+                b_w13,
+                sfb_w13_ptr,
+                b_down,
+                sfb_down_ptr,
+                row_counts,
+                active_expert_count,
+                weight_expert_ids,
+                global_to_local_expert,
+                input_global_scale,
+                alpha,
+                down_alpha,
+                global_scale,
+                scatter_output,
+                token_map,
+                token_weights,
+                stamps,
+                next_item,
+                sfb1_packed,
+                sfb2_packed,
+                max_active_clusters,
+                stream,
+                expert_map,
+            )
+
         return MoEStaticKernelV5.__call__(self,
             a_input,
             topk_ids,
@@ -305,6 +384,173 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
             stream,
         )
 
+    # Pinned V5 host setup; only the extra map operand differs.
+    @cute.jit
+    def _call_global(
+        self,
+        a_input: cute.Tensor,
+        topk_ids: cute.Tensor,
+        topk_weights: cute.Tensor,
+        packed_a: cute.Tensor,
+        sfa_ptr: cute.Pointer,
+        packed_a_storage: cute.Tensor,
+        scale_storage: cute.Tensor,
+        barrier_count: cute.Tensor,
+        barrier_epoch: cute.Tensor,
+        b_w13: cute.Tensor,        # (N, K_in, K_tiles, E) fp4, tile-major
+        sfb_w13_ptr: cute.Pointer,
+        b_down: cute.Tensor,       # (H, K_in, K_tiles, E) fp4, tile-major
+        sfb_down_ptr: cute.Pointer,
+        row_counts: cute.Tensor,
+        active_expert_count: cute.Tensor,
+        weight_expert_ids: cute.Tensor,
+        global_to_local_expert: cute.Tensor,
+        input_global_scale: cute.Tensor,
+        alpha: cute.Tensor,
+        down_alpha: cute.Tensor,
+        global_scale: cute.Tensor,
+        scatter_output: cute.Tensor,
+        token_map: cute.Tensor,
+        token_weights: cute.Tensor,
+        stamps: cute.Tensor,
+        next_item: cute.Tensor,
+        sfb1_packed: cute.Tensor,   # packed FC1 scales; dummy off lane
+        sfb2_packed: cute.Tensor,   # sf6 FC2 scales; dummy off lane
+        max_active_clusters: cutlass.Constexpr,
+        stream: cuda.CUstream,
+        expert_map: cute.Tensor,
+    ):
+        self.a_dtype = packed_a.element_type
+        self.b_dtype = b_w13.element_type
+        self.sf_dtype = sfa_ptr.dtype
+        self.a_layout = utils.LayoutEnum.from_tensor(packed_a)
+        # K_in is the stride-1 mode of the 4-D tensor: K-major B, as v4's
+        self.b_layout = utils.LayoutEnum.from_tensor(b_w13)
+        self.c_layout = utils.LayoutEnum.ROW_MAJOR
+
+        hidden_size = a_input.shape[1]
+        self._setup_attributes(hidden_size=hidden_size)
+
+        # the scale tensors are laid out for the flat (rows, K, E) shape --
+        # their storage is the stock one -- so their layouts come from the
+        # flat shape, not from the tiled weight tensor's
+        w13_rows = b_w13.shape[0]
+        w13_k = b_w13.shape[1] * b_w13.shape[2]
+        w13_e = b_w13.shape[3]
+        down_rows = b_down.shape[0]
+        down_k = b_down.shape[1] * b_down.shape[2]
+        down_e = b_down.shape[3]
+        sfa_layout = blockscaled_utils.tile_atom_to_shape_SF(
+            packed_a.shape, self.sf_vec_size
+        )
+        sfa_tensor = cute.make_tensor(sfa_ptr, sfa_layout)
+        if cutlass.const_expr(not self.reform_sf_pack):
+            sfb_w13_layout = blockscaled_utils.tile_atom_to_shape_SF(
+                (w13_rows, w13_k, w13_e), self.sf_vec_size
+            )
+            sfb_w13_tensor = cute.make_tensor(sfb_w13_ptr, sfb_w13_layout)
+            sfb_down_layout = blockscaled_utils.tile_atom_to_shape_SF(
+                (down_rows, down_k, down_e), self.sf_vec_size
+            )
+            sfb_down_tensor = cute.make_tensor(sfb_down_ptr, sfb_down_layout)
+
+        # (N, K_in, K_tiles, E) -> (N, (K_in, K_tiles), E): one hierarchical
+        # K mode whose inner extent is the k tile, so the v4 tile shapes
+        # divide it and the TMA map's innermost box dim is the contiguous
+        # 256 B / 64 B chunk with the row stride right behind it
+        b_w13_h = cute.group_modes(b_w13, 1, 3)
+        b_down_h = cute.group_modes(b_down, 1, 3)
+
+        tma_a, gA = self._dense_cls._make_tma_atoms_and_tensors(
+            packed_a, self.a1_smem_layout_staged, self.sa1_tile_shape_mk, 1
+        )
+        tma_sfa, gSFA = self._dense_cls._make_tma_atoms_and_tensors(
+            sfa_tensor, self.sfa1_smem_layout_staged, self.sfa1_tile_shape_mk, 1,
+            internal_type=cutlass.Int16,
+        )
+        tma_b_w13, gB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
+            b_w13_h, self.b1_smem_layout_staged, (self.fc1_tile_n, self.fc1_tile_k), 1
+        )
+        if cutlass.const_expr(self.reform_sf_pack):
+            # Typed dead arguments; the SF6 kernel never builds or touches
+            # a descriptor over the released original scale allocation.
+            tma_sfb_w13, gSFB_w13 = tma_sfa, gSFA
+        else:
+            tma_sfb_w13, gSFB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
+                sfb_w13_tensor, self.sfb1_smem_layout_staged, self.sfb1_tile_shape_nk, 1,
+                internal_type=cutlass.Int16,
+            )
+        tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
+            b_down_h, self.b2_smem_layout_staged, (self.fc2_tile_n, self.fc2_tile_k), 1
+        )
+        if cutlass.const_expr(self.reform_sf_pack):
+            tma_sfb_down, gSFB_down = tma_sfa, gSFA
+        else:
+            tma_sfb_down, gSFB_down = self._dense_cls._make_tma_atoms_and_tensors(
+                sfb_down_tensor, self.sfb2_smem_layout_staged, self.sfb_tile_shape_nk, 1,
+                internal_type=cutlass.Int16,
+            )
+
+        grid = (*self.cluster_shape_mn, max_active_clusters)
+        self.kernel(
+            a_input,
+            topk_ids,
+            topk_weights,
+            packed_a_storage,
+            scale_storage,
+            barrier_count,
+            barrier_epoch,
+            tma_a,
+            gA,
+            tma_sfa,
+            gSFA,
+            tma_b_w13,
+            gB_w13,
+            tma_sfb_w13,
+            gSFB_w13,
+            tma_b_down,
+            gB_down,
+            tma_sfb_down,
+            gSFB_down,
+            self.tiled_mma1,
+            self.tiled_mma,
+            self.mma_atom,
+            self.cta_layout_mnk,
+            self.a1_smem_layout_staged,
+            self.b1_smem_layout_staged,
+            self.sfa1_smem_layout_staged,
+            self.sfb1_smem_layout_staged,
+            self.epi1_smem_layout_staged,
+            self.b2_smem_layout_staged,
+            self.sfb2_smem_layout_staged,
+            self.a2_smem_layout,
+            self.sfa2_smem_layout,
+            self.epi_smem_layout_staged,
+            row_counts,
+            active_expert_count,
+            weight_expert_ids,
+            global_to_local_expert,
+            input_global_scale,
+            alpha,
+            down_alpha,
+            global_scale,
+            scatter_output,
+            token_map,
+            token_weights,
+            stamps,
+            next_item,
+            sfb1_packed,
+            sfb2_packed,
+            expert_map,
+        ).launch(
+            grid=grid,
+            block=[self.threads_per_cta, 1, 1],
+            cluster=[1, 1, 1],
+            cooperative=True,
+            stream=stream,
+        )
+
+
     def _check_ep_call(self, a, ids, weights, w13, down, rows, token_map, output):
         if (tuple(a.shape) != (self.ep_num_tokens, 4096)
                 or a.element_type != cutlass.BFloat16
@@ -322,6 +568,28 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                 or output.element_type != (cutlass.BFloat16 if self.scatter_bf16
                                            else cutlass.Float32)):
             raise ValueError("EP tiled static kernel ABI/geometry mismatch")
+
+    @cute.jit
+    def _global_route_id(self, topk_ids, pair_idx, expert_map):
+        # The map branch bounds the original signed 64-bit ID before any
+        # address calculation. Mapping negatives are rejected before int32
+        # narrowing, exactly as the standalone remapper. The offset branch
+        # intentionally narrows before subtracting (including int32 wrap).
+        local = Int32(72)
+        if cutlass.const_expr(self.ep_route_map_len is None):
+            expert = topk_ids[pair_idx].to(Int64)
+            candidate = expert.to(Int32) - Int32(self.ep_local_expert_offset)
+            if expert >= Int64(0) and candidate >= Int32(0) and candidate < Int32(72):
+                local = candidate
+        elif cutlass.const_expr(self.ep_route_map_len > 0):
+            expert = topk_ids[pair_idx].to(Int64)
+            if expert >= Int64(0) and expert < Int64(self.ep_route_map_len):
+                mapped = expert_map[expert].to(Int64)
+                if mapped >= Int64(0):
+                    candidate = mapped.to(Int32)
+                    if candidate >= Int32(0) and candidate < Int32(72):
+                        local = candidate
+        return local
 
     @cute.kernel
     def kernel(
@@ -374,6 +642,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         next_item: cute.Tensor,
         sfb1_packed: cute.Tensor,   # (E, blocks/expert, stage bytes) u8
         sfb2_packed: cute.Tensor,
+        expert_map: cute.Tensor = None,
     ):
         """Kernel entry point."""
         from cutlass.cute.nvgpu.warp.mma import Field as WarpField
@@ -602,7 +871,10 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
 
         pair_idx = Int32(bidz)
         while pair_idx < total_pairs:
-            expert_id = topk_ids[pair_idx].to(Int32)
+            if cutlass.const_expr(self.ep_route_mode == "global"):
+                expert_id = self._global_route_id(topk_ids, pair_idx, expert_map)
+            else:
+                expert_id = topk_ids[pair_idx].to(Int32)
             # Never derive map/scale/weight addresses for a remote sentinel.
             if expert_id >= Int32(0) and expert_id < num_experts:
                 weight = topk_weights[pair_idx].to(cutlass.Float32)
@@ -1807,7 +2079,9 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
 
 def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
                           topk_ids_dtype=None, input_scales_are_reciprocal=False,
-                          fast_math=True, reform_sf_pack=False):
+                          fast_math=True, reform_sf_pack=False, route_mode="local",
+                          expert_map_len=None, expert_map_dtype=None,
+                          local_expert_offset=0):
     """Build real CuTe fake operands without querying/initializing CUDA.
 
     Return (kernel, compile_args, cache_key). compile_args include the constexpr
@@ -1822,6 +2096,8 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
         topk_ids_dtype = torch.int32
     if topk_ids_dtype not in (torch.int32, torch.int64):
         raise TypeError("EP tiled route IDs must be int32 or int64")
+    route_key = ep_tiled_route_key(route_mode=route_mode, expert_map_len=expert_map_len,
+        expert_map_dtype=expert_map_dtype, local_expert_offset=local_expert_offset)
     m, mac = num_tokens, max_active_clusters
     k, n, state_E, weight_E, num_topk = 4096, 2048, 72, 72, 8
     sf_vec_size, sf_dtype = 16, cutlass.Float8E4M3FN
@@ -1835,7 +2111,8 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     kernel = MoEStaticEPTiledKernel(
         num_tokens=m, max_rows=max_rows, max_active_clusters=mac,
         input_scales_are_reciprocal=input_scales_are_reciprocal,
-        fast_math=fast_math, reform_sf_pack=reform_sf_pack)
+        fast_math=fast_math, reform_sf_pack=reform_sf_pack, route_mode=route_mode,
+        expert_map_len=expert_map_len, local_expert_offset=local_expert_offset)
     w1_rows = 2 * n
     rows_pad_k = _align_up(max_rows, 128)
     cols_pad_k = _align_up(k // sf_vec_size, 4)
@@ -1984,7 +2261,12 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     if reform_sf_pack and geometry["reform"]:
         key += (EP_TILED_A_RING_CACHE_TAG, EP_TILED_SF6_WORD_CACHE_TAG,
                 EP_TILED_BF16_SCATTER_CACHE_TAG)
-    return kernel, args, key
+    if route_mode == "global":
+        map_dtype = cutlass.Int64 if expert_map_len and expert_map_dtype == torch.int64 else cutlass.Int32
+        map_fake = cute.runtime.make_fake_compact_tensor(
+            map_dtype, (expert_map_len or 1,), assumed_align=8 if map_dtype == cutlass.Int64 else 4)
+        args += (map_fake,)
+    return kernel, args, key + route_key
 
 
 _EP_TILED_KERNEL_CACHE = {}
@@ -2013,6 +2295,11 @@ def get_ep_tiled_decode_kernel(**kwargs):
     if kwargs.get("reform_sf_pack", False) and geometry["reform"]:
         key += (EP_TILED_A_RING_CACHE_TAG, EP_TILED_SF6_WORD_CACHE_TAG,
                 EP_TILED_BF16_SCATTER_CACHE_TAG)
+    key += ep_tiled_route_key(
+        route_mode=kwargs.get("route_mode", "local"),
+        expert_map_len=kwargs.get("expert_map_len"),
+        expert_map_dtype=kwargs.get("expert_map_dtype"),
+        local_expert_offset=kwargs.get("local_expert_offset", 0))
     if key in _EP_TILED_KERNEL_CACHE:
         return _EP_TILED_KERNEL_CACHE[key], mac
     if torch.cuda.is_current_stream_capturing():
@@ -2055,7 +2342,10 @@ def allocate_ep_tiled_decode_scratch(*, device, max_active_clusters=48, max_toke
 
 
 def warm_ep_tiled_decode(*, max_rows=256, max_active_clusters=48,
-                         token_counts=range(1, 33), reform_sf_pack=False):
+                         token_counts=range(1, 33), reform_sf_pack=False,
+                         route_mode="local", topk_ids_dtype=None,
+                         expert_map_len=None, expert_map_dtype=None,
+                         local_expert_offset=0):
     """Prepare every requested native M; no success marker or CUDA execution."""
     rows = tuple(token_counts)
     if not rows or len(set(rows)) != len(rows):
@@ -2063,17 +2353,21 @@ def warm_ep_tiled_decode(*, max_rows=256, max_active_clusters=48,
     for m in rows:
         get_ep_tiled_decode_kernel(num_tokens=m, max_rows=max_rows,
                                   max_active_clusters=max_active_clusters,
-                                  reform_sf_pack=reform_sf_pack)
+                                  reform_sf_pack=reform_sf_pack,
+                                  route_mode=route_mode, topk_ids_dtype=topk_ids_dtype,
+                                  expert_map_len=expert_map_len, expert_map_dtype=expert_map_dtype,
+                                  local_expert_offset=local_expert_offset)
     return rows
 
 
 def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
                            input_gs, down_input_scale, output, scratch,
-                           input_scales_are_reciprocal=False, fast_math=True):
-    """Launch tiled EP over pre-remapped routes into the admitted output ABI.
+                           input_scales_are_reciprocal=False, fast_math=True,
+                           route_mode="local", expert_map=None, local_expert_offset=0):
+    """Launch local reference routes or fuse global admission into one kernel.
 
-    No dummy expert exists in weights. Root's EP remapper applies expert_map
-    first; this entry accepts only its local IDs or sentinels. It never calls
+    No dummy expert exists in weights. The global specialization bounds its
+    real map before reading and leaves local reference semantics intact. It never calls
     the row-major micro fallback or creates/reorders expert weight storage.
     Workspace use is serialized as in the existing model-owned MoE workspace.
     Native M1..8 SF6 writes BF16 output directly; other modes copy FP32 scratch.
@@ -2094,7 +2388,18 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
             raise ValueError("EP tiled decode invalid " + name)
     require(a, (m, 4096), torch.bfloat16, "input")
     require(output, (m, 4096), torch.bfloat16, "output")
-    require(topk_ids, (m, 8), torch.int32, "local route IDs")
+    if route_mode == "global":
+        if topk_ids.dtype not in (torch.int32, torch.int64):
+            raise TypeError("EP tiled global IDs must be int32 or int64")
+        require(topk_ids, (m, 8), topk_ids.dtype, "global route IDs")
+    else:
+        require(topk_ids, (m, 8), torch.int32, "local route IDs")
+    expert_map_len = None if expert_map is None else expert_map.numel()
+    expert_map_dtype = None if expert_map is None else expert_map.dtype
+    ep_tiled_route_key(route_mode=route_mode, expert_map_len=expert_map_len,
+        expert_map_dtype=expert_map_dtype, local_expert_offset=local_expert_offset)
+    if expert_map is not None:
+        require(expert_map, (expert_map_len,), expert_map_dtype, "global expert map")
     require(topk_weights, (m, 8), torch.float32, "route weights")
     if not weights.tiled:
         raise ValueError("EP tiled decode requires tile-major weights")
@@ -2161,10 +2466,12 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
         max_active_clusters=scratch.max_active_clusters,
         topk_ids_dtype=topk_ids.dtype,
         input_scales_are_reciprocal=input_scales_are_reciprocal, fast_math=fast_math,
-        reform_sf_pack=reform_sf_pack)
+        reform_sf_pack=reform_sf_pack, route_mode=route_mode,
+        expert_map_len=expert_map_len, expert_map_dtype=expert_map_dtype,
+        local_expert_offset=local_expert_offset)
     accum = output if scatter_bf16 else scratch.scatter_fp32[:m]
     accum.record_stream(torch.cuda.current_stream(device))
-    compiled(
+    args = (
         a, topk_ids.view(-1), topk_weights.view(-1), workspace.packed_a_view,
         workspace.packed_input_scale.data_ptr(), workspace.packed_a_flat,
         workspace.scale_flat, workspace.barrier_count, workspace.barrier_epoch,
@@ -2176,6 +2483,9 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
         workspace.token_weights, scratch.stamps, scratch.counter,
         sfb1_packed, sfb2_packed,
     )
+    if route_mode == "global":
+        args += (expert_map if expert_map_len else scratch.counter,)
+    compiled(*args)
     if not scatter_bf16:
         output.copy_(accum)
     return output
