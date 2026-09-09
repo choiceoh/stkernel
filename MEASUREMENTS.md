@@ -2248,7 +2248,7 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 **DF4**(v3.1 alternate, K=6 / 청크 1,152 × pos/32K ≤ 4,608, `PREFIX_CACHE=0` 격리, 21:00) — 32K: DF3 와 동일(청크 1,152; 디코더 18.5 tok/s, ITL 47/695/1,363 ms, TTFT 27.0 s 1,192 tok/s). **100K: 디코더 10.0 tok/s(DF3 7.0), ITL 47/698/1,250 ms, TTFT 51.5 s(1,951 tok/s; DF3 1,379)** — 위치 비례 청크가 양쪽을 다 올렸다. onepass **NEUTRAL**(프리필 +0.1/−0.3%, 디코드 +2.3/−1.2%, tok/step −1.4%): 단독 경로 불변, 이번엔 128K 디코드 정상. 클럭 샘플 v2: SM 1,566~1,592 MHz, GPU ≤62 °C, CPU 2,808~3,019 MHz, SoC 최고 81 °C(srv2), 스로틀 없음.
 - **판정: `DECODE_FIRST=1` 기본값 승격**(운영자 항목 2). 스톡 혼합 대비 동시 디코더 4.2배(32K)/4배(100K), 중앙 ITL = 단독; 동시 프리필 −48%(32K)/−24%(100K). 롤백 `DECODE_FIRST=0`. 후속: 128K 디코드 이상(3/10 부팅) 원인, 프리필 스텝 고정 비용(~0.25 s@32K) 자체 절감.
 
-**VID**(이미지 1 + 영상 1, 인코더 data+SDPA, 템플릿 v2 + deepseek_r1 파서, 21:10) — **이미지 + 사고 off: 깨끗한 한국어 답**("빨간색 사각형이 왼쪽 위에 있고, 파란색 사각형이 아래쪽에…", TTFT 0.63 s, reasoning 0자) → 템플릿 v2 가 `thinking=false` 를 실제로 끈다. **영상은 엔진 사망**: `Attempted to assign 192 multimodal tokens to 384 placeholders` — 이 빌드의 GLM5Next 비디오 처리기가 자리표시 토큰을 인코더 출력(temporal_patch_size 2 로 병합)의 2배로 넣는다(체크포인트엔 preprocessor 설정 파일이 없고 처리기 설정이 코드에 내장). 우리 스택 문제가 아니며 필요도 없으니 `video: 0` 유지, 상류 결함으로 기록. 사고-on 검증은 엔진이 죽어 못 함 → TPL 팔(이미지만 + v2 + deepseek_r1, 사고 on/off 프로브 + onepass 새 참조).
+**[40차 정정 2026-09-09: 아래 VID 항목의 영상 판정은 낡았다. 운영자 확인 — 이 빌드에서 영상은 지원되며 동작한다. `video: 0` 은 고장 때문이 아니라 '거의 안 쓰는데 부팅에서 인코더 캐시 4.89 GiB 를 낸다'는 이유로 내린 결정이다(40차 §메모리).]** **VID**(이미지 1 + 영상 1, 인코더 data+SDPA, 템플릿 v2 + deepseek_r1 파서, 21:10) — **이미지 + 사고 off: 깨끗한 한국어 답**("빨간색 사각형이 왼쪽 위에 있고, 파란색 사각형이 아래쪽에…", TTFT 0.63 s, reasoning 0자) → 템플릿 v2 가 `thinking=false` 를 실제로 끈다. **영상은 엔진 사망**: `Attempted to assign 192 multimodal tokens to 384 placeholders` — 이 빌드의 GLM5Next 비디오 처리기가 자리표시 토큰을 인코더 출력(temporal_patch_size 2 로 병합)의 2배로 넣는다(체크포인트엔 preprocessor 설정 파일이 없고 처리기 설정이 코드에 내장). 우리 스택 문제가 아니며 필요도 없으니 `video: 0` 유지, 상류 결함으로 기록. 사고-on 검증은 엔진이 죽어 못 함 → TPL 팔(이미지만 + v2 + deepseek_r1, 사고 on/off 프로브 + onepass 새 참조).
 
 **VISB-A**(이미지 1, `MM_ENCODER_TP_MODE=data` 만, vit 어텐션은 기본 FLASH_ATTN, 21:17) — 부팅 375 s, 이미지 OK(TTFT 0.51 s), 텍스트 OK → **범인은 TP 분할 인코더(`weights` 모드)**, flash vit 어텐션은 무죄. 같은 부팅의 사고 프로브: `thinking=true` 요청은 glm45 파서가 reasoning 으로 분리(268자, content 0) — 유출은 **`thinking=false` 요청에서만** 난다: vLLM 이 그 요청의 파서를 건너뛰는데 템플릿은 `<think>` 를 강제해 모델이 사고를 content 로 쓴다. 따라서 파서 교체는 불필요, 템플릿 v2 만으로 해결(TPL 팔 = v2 + 기본 glm45).
 
@@ -7949,3 +7949,42 @@ M = 1,152 와 6,912 에서 재면 절편이 바로 나온다.
 **따라서 프리필 청크를 키우는 길은 `MAX_BATCHED` 가 아니다** — align 캡(3 블록) 자체이거나
 `PREFIX_CACHE=0`(그건 멀티턴 TTFT 를 포기하는 것) 뿐이다. 40차의 남은 상금(고정비 214.7 ms,
 그 중 MoE ~197)은 청크 상각이 아니라 **MoE 를 작은 M 에서 싸게** 만드는 쪽에만 있다.
+
+### ★40차 — 비-torch 13.1 GiB 의 정체: 부팅 단계별 디바이스 메모리 귀속 (2026-09-09, A9221 부팅)
+
+엔진 사망 4→6건이 전부 **earlyoom**(호스트 `MemAvailable` 5% 에서 워커에 SIGTERM)이고, GB10 은
+통합 메모리라 **엔진의 할당이 곧 earlyoom 이 세는 메모리**다. 그래서 무엇을 줄일 수 있는지
+알려면 `weights + non-torch 63.52 GiB` 를 갈라야 했다. 부팅 단계마다 free device memory 를
+찍게 하자(PR #504) 바로 나왔다:
+
+| 단계 | 이 단계가 쓴 양 | 이후 free |
+|---|---|---|
+| dist-group ep | +1.00 GiB | 95.49 |
+| dist-model-parallel | +2.25 | 95.49 |
+| init-device | +2.29 | 95.36 |
+| **load-model** | **+59.17** | 36.18 |
+| **encoder-profile** | **+4.89** | 27.94 |
+| profile-run | +9.17 | 27.02 |
+| profile/determine-memory | +8.56 | 27.62 |
+| **kv-cache-alloc** | **+14.76** | 12.86 |
+| cudagraph-capture | −0.95 | 10.99 |
+| compile+warmup | +2.28 | 10.58 |
+
+**읽는 법 셋:**
+
+1. **`load-model` 이 59.17 GiB 를 쓴다** — vLLM 이 보고하는 "Model loading took **50.4 GiB**"
+   보다 **8.8 GiB 많다.** 가중치 외에 로딩 단계에서 붙는 것(팩/양자화 스크래치, 드래프터,
+   cuBLAS 초기화)이 그만큼 있다는 뜻이고, 비-torch 13.1 GiB 의 최대 조각이다. 더 잘게
+   쪼개려면 로딩 내부에 스탬프를 더 박아야 한다.
+2. **`encoder-profile` 이 4.89 GiB** — 인코더 캐시는 **가장 큰 프로파일 항목**이 크기를 정하고,
+   부팅 로그가 그대로 말한다: `Encoder cache will be initialized with a budget of 32242 tokens,
+   and profiled with 1 video items`. 즉 **영상 슬롯은 아무도 영상을 안 보내도 부팅에서 값을 낸다.**
+   운영자 판단(2026-09-09, "잘 안 쓰긴 하니까 꺼둬도 돼")으로 `MM_LIMIT` 의 `video` 를 0 으로
+   돌린다. 이미지 4 는 유지. **영상이 고장나서가 아니다** — 운영자 확인상 이 빌드에서 영상은
+   동작하며, 39차 VID 의 "영상은 엔진 사망" 판정은 **낡았다(정정 표기함)**.
+3. **`init-device` + `dist-*` = 5.5 GiB** 가 CUDA 컨텍스트·NCCL 바닥이다. 채널 16 개 설정
+   (`NCCL_MIN/MAX_NCHANNELS=16`)이 여기 들어 있으므로 통신 튜닝의 메모리 대가가 여기서 보인다.
+
+**계측 자체는 공짜다** — `is_initialized()` 뒤에서만 표본을 뜨므로 CUDA 가 없으면 줄이 바이트
+동일이고, 부팅마다 두 번의 `cudaMemGetInfo` 뿐이다. 내 부팅이든 피어 부팅이든 다음 부팅이
+그대로 갱신한다.
