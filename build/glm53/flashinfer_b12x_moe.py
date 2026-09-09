@@ -156,6 +156,22 @@ def finalize_packed_scale_owners(model) -> int:
             released += _b12x_release_raw_scales(experts, layer, views)
             layers += 1
         experts._sf6_finalized = True
+    if os.environ.get("VLLM_GLM53_TP_SF6_Q0") == "1":
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_tp_sf6_q0_selftest import (
+            ensure_tp_sf6_q0_selftest,
+            tp_sf6_q0_selftest_eligible,
+        )
+        # Every packed owner must be finalized before temporary validation
+        # scratch is allocated. A repeated finalization selects the same
+        # already finalized owner and reuses its completed receipt.
+        for layer in model.modules():
+            pending = _SF6_PENDING.get(layer)
+            experts = pending() if pending is not None else None
+            if experts is not None and tp_sf6_q0_selftest_eligible(experts, layer):
+                ensure_tp_sf6_q0_selftest(experts, layer=layer)
+                break
+        else:
+            raise RuntimeError("TP SF6 Q0 requires an eligible finalized model weight owner")
     if layers:
         logger.warning("[b12x sf6] packed-only owners finalised: layers=%d raw_bytes_released=%d; "
                        "decode and prefill read immutable packed scales", layers, released)

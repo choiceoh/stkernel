@@ -43,6 +43,19 @@ def validate_artifacts(output, result):
             path = check(row['path'], row['sha256'], suffix)
             if name == 'resources':
                 assert path.with_suffix('.resources.log').read_text() == row['resources'], row['path']
+    tp_passes = result['tp_sf6_passes']
+    assert [(row['arm'], row['enabled']) for row in tp_passes] == [('stock', False), ('q0-cache', True)]
+    assert tp_passes[0]['cache_key'][-1] == 'sf6_direct_prefill_v1'
+    assert tp_passes[1]['cache_key'][-1] == 'glm53_tp_sf6_q0_v1'
+    assert tp_passes[1]['cache_key'][:-1] == tp_passes[0]['cache_key']
+    for passed in tp_passes:
+        for name, suffix in (('artifacts', '.ptx'), ('resources', '.cubin')):
+            assert len(passed[name]) == 1, 'each TP SF6 pass needs fresh PTX/cubin'
+            for row in passed[name]:
+                assert row['path'].startswith('tp-sf6/'+passed['arm']+'/'), row['path']
+                path = check(row['path'], row['sha256'], suffix)
+                if name == 'resources':
+                    assert path.with_suffix('.resources.log').read_text() == row['resources'], row['path']
     expected_labels = {
         '-'.join((kind, ids, weight, mapping))
         for kind in ('mapped', 'empty', 'offset')

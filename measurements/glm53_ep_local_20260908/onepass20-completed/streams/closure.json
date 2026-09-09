@@ -1,0 +1,26 @@
+{
+  "alive": false,
+  "events": [
+    {
+      "at": 1788922863.9024825,
+      "kind": "stream_end",
+      "local_at": 1788922863.83125,
+      "reason": "release_or_terminal"
+    },
+    {
+      "kind": "observer_stop",
+      "local_at": 1788922882.678887,
+      "reason": "terminal_or_release"
+    },
+    {
+      "attempted_arms": [
+        "A0"
+      ],
+      "kind": "observer_finished",
+      "local_at": 1788922882.679143,
+      "owned_go_seen": true
+    }
+  ],
+  "observer_pid": 9556,
+  "scope": "All original chunks/offsets/hashes verified; unassigned attribution retained. A0 was strictly captured; bytes without strict attribution remain explicitly unassigned."
+}

@@ -21,9 +21,14 @@ CPU_TEST_MODULES = ('test_glm53_ep_micro_tile.py', 'test_glm53_ep_short_decode.p
                     'test_glm53_ep_micro_direct_scatter.py',
                     'test_glm53_ep_micro_shared_fc1_a.py',
                     'test_glm53_ep_t6_direct_output.py',
-                    'test_glm53_ep_micro_m16.py')
+                    'test_glm53_ep_micro_m16.py',
+                    'test_glm53_tp_sf6_q0.py',
+                    'test_moe_sf6_owner.py',
+                    'test_glm53_tp_sf6_q0_selftest.py')
 CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
     'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py',
+    'tests/test_glm53_ep_route_scale_cache.py',
+    'measurements/glm53_ep_local_20260908/cpu13/stock-gated.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu11.py.gz',
@@ -161,6 +166,40 @@ def compile_candidate(output, result):
             rows.append(row)
     assert artifacts and resources, 'fresh FP32 prefill compilation needs PTX and cubin'
     result['prefill_pass'] = dict(cache_key=keys[0], artifacts=artifacts, resources=resources)
+    result['phase'] = 'tp-sf6-q0-cute-compile'
+    md._DYNAMIC_KERNEL_CACHE.clear()
+    result['tp_sf6_passes'] = []
+    for enabled, arm in ((False, 'stock'), (True, 'q0-cache')):
+        assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
+        md._get_dynamic_kernel(288, 8192, 4096, 512, 8, 65536,
+            activation='swigluoai_uninterleave', swiglu_alpha=1.0,
+            swiglu_beta=0.0, swiglu_limit=10.0, tiled=True,
+            reform_sf_pack=True, _tp_sf6_q0_override=enabled)
+        keys = [key for key in md._DYNAMIC_KERNEL_CACHE
+                if (key[-1] == 'glm53_tp_sf6_q0_v1') is enabled]
+        assert len(keys) == 1 and 'sf6_direct_prefill_v1' in keys[0], keys
+        if enabled:
+            assert keys[0][:-1] == tuple(result['tp_sf6_passes'][0]['cache_key'])
+        folder = output/'tp-sf6'/arm
+        folder.mkdir(parents=True, exist_ok=False)
+        artifacts, resources = [], []
+        for suffix, rows in (('.ptx', artifacts), ('.cubin', resources)):
+            for path in sorted(output.glob('*'+suffix)):
+                destination = folder/path.name
+                assert path.stat().st_size > 0
+                path.rename(destination)
+                row = dict(path=str(destination.relative_to(output)),
+                    sha256=hashlib.sha256(destination.read_bytes()).hexdigest())
+                if suffix == '.cubin':
+                    inspected = subprocess.run(['/usr/local/cuda/bin/cuobjdump',
+                        '--dump-resource-usage', str(destination)], text=True, capture_output=True)
+                    inspected.check_returncode()
+                    row['resources'] = inspected.stdout+inspected.stderr
+                    destination.with_suffix('.resources.log').write_text(row['resources'])
+                rows.append(row)
+        assert len(artifacts) == len(resources) == 1, 'TP SF6 pass needs one fresh PTX/cubin'
+        result['tp_sf6_passes'].append(dict(arm=arm, enabled=enabled,
+            cache_key=keys[0], artifacts=artifacts, resources=resources))
     result['phase']='fused-prepare-triton-compile'
     import triton
     from triton.compiler import ASTSource

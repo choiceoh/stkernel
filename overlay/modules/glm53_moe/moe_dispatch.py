@@ -99,6 +99,21 @@ _GLM53_B12X_PREFILL_FC1_N128 = (
 _GLM53_EP_PREFILL_LOCAL = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
 
 
+_TP_SF6_Q0_ENABLED = os.environ.get("VLLM_GLM53_TP_SF6_Q0") == "1"
+
+
+def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
+                         quant_mode, tiled, reform_sf_pack, activation,
+                         swiglu_alpha, swiglu_beta, swiglu_limit,
+                         share_input_across_experts):
+    return (enabled and type(m) is int and 4096 <= m <= 8192
+            and (E,k,n,num_topk,tile_m) == (288,4096,512,8,128)
+            and quant_mode == "nvfp4" and tiled and reform_sf_pack
+            and not share_input_across_experts
+            and (activation,swiglu_alpha,swiglu_beta,swiglu_limit)
+                == ("swigluoai_uninterleave",1.,0.,10.))
+
+
 def _ep_local_prefill_kernel(*, E, m, k, n, num_topk, tile_m, activation,
                              swiglu_alpha, swiglu_beta, swiglu_limit, quant_mode, tiled):
     if not _GLM53_EP_PREFILL_LOCAL or not 4096 <= m <= 16384:
@@ -1816,6 +1831,7 @@ def _dynamic_kernel_cache_key(
     ep_local_prefill: bool = False,
     tiled: bool = False,
     reform_sf_pack: bool = False,
+    tp_sf6_q0: bool = False,
 ) -> Tuple:
     """The dynamic kernel's cache key (see :func:`_static_kernel_cache_key`).
 
@@ -1852,7 +1868,10 @@ def _dynamic_kernel_cache_key(
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
     if reform_sf_pack:
-        return key + ("sf6_direct_prefill_v1",)
+        suffix = ("sf6_direct_prefill_v1",)
+        if tp_sf6_q0:
+            suffix += ("glm53_tp_sf6_q0_v1",)
+        return key + suffix
     return key + ("glm53_prefill_reuse_v1",) if prefill_reuse else key
 
 
@@ -3808,6 +3827,7 @@ def _get_dynamic_kernel(
     quant_mode: str = "nvfp4",
     tiled: bool = False,
     reform_sf_pack: bool = False,
+    _tp_sf6_q0_override: bool | None = None,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -3895,6 +3915,24 @@ def _get_dynamic_kernel(
             activation_precision, quant_mode, mma_tiler_mn, activation,
             swiglu_alpha, swiglu_beta, swiglu_limit, prefill_fc1_n128)
 
+    # A private exact selector lets startup compare actual packed SF6 weights
+    # through two cache-isolated handles without mutating process-wide flags.
+    if _tp_sf6_q0_override is not None and type(_tp_sf6_q0_override) is not bool:
+        raise TypeError("TP SF6 Q0 override must be bool or None")
+    tp_sf6_q0_enabled = (_TP_SF6_Q0_ENABLED if _tp_sf6_q0_override is None
+                        else _tp_sf6_q0_override)
+    tp_sf6_q0 = _tp_sf6_q0_eligible(
+        enabled=tp_sf6_q0_enabled,E=E,m=m,k=k,n=n,num_topk=num_topk,tile_m=tile_m,
+        quant_mode=quant_mode,tiled=tiled,reform_sf_pack=reform_sf_pack,
+        activation=activation,swiglu_alpha=swiglu_alpha,swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit,share_input_across_experts=share_input_across_experts)
+    if _tp_sf6_q0_override is True and not tp_sf6_q0:
+        raise ValueError("explicit TP SF6 Q0 selection is outside exact eligibility")
+    if tp_sf6_q0:
+        from .moe_dynamic_gated_sf6_q0 import MoEGatedDynamicKernelSF6Q0, stock_contract_matches
+        if torch.cuda.get_device_capability() != (12,1) or not stock_contract_matches():
+            raise RuntimeError("TP SF6 Q0 requires pinned SM121 source")
+
     cache_key = _dynamic_kernel_cache_key(
         activation_precision=activation_precision,
         quant_mode=quant_mode,
@@ -3917,6 +3955,7 @@ def _get_dynamic_kernel(
         prefill_fc1_n128=prefill_fc1_n128,
         ep_local_prefill=ep_local_cls is not None,
         reform_sf_pack=reform_sf_pack,
+        tp_sf6_q0=tp_sf6_q0,
     )
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -3962,7 +4001,7 @@ def _get_dynamic_kernel(
         tiled_kwargs = {}
         if reform_sf_pack:
             from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6
-            tiled_cls = MoEGatedDynamicKernelSF6
+            tiled_cls = MoEGatedDynamicKernelSF6Q0 if tp_sf6_q0 else MoEGatedDynamicKernelSF6
             tiled_kwargs = dict(reform_sf_pack=True)
         kernel = tiled_cls(
             sf_vec_size=sf_vec_size,
@@ -4173,6 +4212,8 @@ def _get_dynamic_kernel(
             options="--opt-level 2 --enable-tvm-ffi",
         ),
         extra_key_files=_kernel_source_files() + (
+            (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6_q0.py"),)
+            if tp_sf6_q0 else ()) + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_ep_local.py"),)
             if ep_local_cls is not None else ()),
     )
@@ -4234,6 +4275,7 @@ def launch_sm120_dynamic_moe(
     swiglu_limit: float | None = None,
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
+    _tp_sf6_q0_override: bool | None = None,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     activation_precision = _normalize_activation_precision(activation_precision)
@@ -4283,6 +4325,7 @@ def launch_sm120_dynamic_moe(
         quant_mode=quant_mode,
         tiled=bool(getattr(weights, "tiled", False)),
         reform_sf_pack=direct_sf6,
+        _tp_sf6_q0_override=_tp_sf6_q0_override,
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),

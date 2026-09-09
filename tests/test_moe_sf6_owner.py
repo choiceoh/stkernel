@@ -129,6 +129,43 @@ class ModelOwnership(unittest.TestCase):
     def register(self, layer, expert):
         self.ns['_SF6_PENDING'][layer] = weakref.ref(expert)
 
+    def test_q0_canary_waits_for_all_owners_and_reuses_first_finalized_owner(self):
+        pairs = [model_layer(), model_layer()]
+        for layer, expert in pairs:
+            self.register(layer, expert)
+        model = torch.nn.Sequential(*(layer for layer, _ in pairs))
+        name = 'flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_tp_sf6_q0_selftest'
+        canary = types.ModuleType(name)
+        canary.tp_sf6_q0_selftest_eligible = lambda expert, layer: expert._sf6_finalized
+        def ensure(expert, *, layer):
+            self.assertIs(expert, pairs[0][1])
+            self.assertIs(layer, pairs[0][0])
+            for owner_layer, owner in pairs:
+                self.assertTrue(owner._sf6_finalized)
+                self.assertIsNone(owner_layer.w13_weight_scale)
+                self.assertIsNone(owner_layer.w2_weight_scale)
+                self.assertIsNone(owner._wrapper)
+        canary.ensure_tp_sf6_q0_selftest = Mock(side_effect=ensure)
+        with patch.dict(sys.modules, {name: canary}), patch.dict(os.environ, {'VLLM_GLM53_TP_SF6_Q0': '1'}):
+            self.assertEqual(self.ns['finalize_packed_scale_owners'](model), 49152)
+            self.dispatch.prepare_packed_only_weight_views.side_effect = AssertionError('repacked sealed owner')
+            self.assertEqual(self.ns['finalize_packed_scale_owners'](model), 0)
+        self.assertEqual(canary.ensure_tp_sf6_q0_selftest.call_count, 2)
+        self.assertFalse(torch.cuda.is_initialized())
+
+    def test_q0_enabled_without_eligible_owner_refuses_readiness(self):
+        layer, expert = model_layer()
+        self.register(layer, expert)
+        name = 'flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_tp_sf6_q0_selftest'
+        canary = types.ModuleType(name)
+        canary.tp_sf6_q0_selftest_eligible = lambda expert, layer: False
+        canary.ensure_tp_sf6_q0_selftest = Mock()
+        with patch.dict(sys.modules, {name: canary}), patch.dict(os.environ, {'VLLM_GLM53_TP_SF6_Q0': '1'}):
+            with self.assertRaisesRegex(RuntimeError, 'eligible finalized model weight owner'):
+                self.ns['finalize_packed_scale_owners'](torch.nn.Sequential(layer))
+        canary.ensure_tp_sf6_q0_selftest.assert_not_called()
+        self.assertFalse(torch.cuda.is_initialized())
+
     def test_real_lossless_owner_releases_all_raw_aliases_and_survives(self):
         layer, expert = model_layer()
         self.register(layer, expert)
