@@ -1730,7 +1730,11 @@ class MoEMicroKernel:
                 if cutlass.const_expr(self.ep_direct_scatter):
                     # Use exactly the r2s destination coordinates for each
                     # contiguous BF16 register pair; no scalar-warp remapping.
-                    ep_identity = cute.make_identity_tensor(cute.shape(sC))
+                    if cutlass.const_expr(cute.size(tRS_sD, mode=[3]) != 1):
+                        raise ValueError("direct scatter requires one epilogue buffer")
+                    # sC has nested layout modes. Identity coordinates must
+                    # use the same flat logical shape as the host validator.
+                    ep_identity = cute.make_identity_tensor((*self.epi_tile, 1))
                     ep_tRS_coords = thr_copy_r2s.partition_D(ep_identity)
                 tRS_rGate = tiled_copy_r2s.retile(gate_acc)
                 tRS_rUp = tiled_copy_r2s.retile(up_acc)

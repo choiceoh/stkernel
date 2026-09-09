@@ -152,6 +152,19 @@ class DirectScatterTests(unittest.TestCase):
 
     def test_direct_source_keeps_rounding_and_common_post_barrier(self):
         fn = function('kernel'); guard=direct_guard(fn)
+        validator=function('_validate_ep_direct_scatter_layout')
+        host_identity=next(n for n in ast.walk(validator) if isinstance(n,ast.Call)
+                           and ast.unparse(n.func)=='cute.make_identity_tensor')
+        runtime_identity=next(n for n in ast.walk(fn) if isinstance(n,ast.Assign)
+                              and ast.unparse(n.targets[0])=='ep_identity')
+        self.assertEqual(ast.dump(host_identity.args[0]),
+                         ast.dump(runtime_identity.value.args[0]))
+        self.assertEqual(ast.unparse(host_identity.args[0]), '(*self.epi_tile, 1)')
+        setup=next(n for n in ast.walk(fn) if isinstance(n,ast.If)
+                   and runtime_identity in n.body)
+        self.assertEqual(ast.unparse(setup.body[0].test),
+                         'cutlass.const_expr(cute.size(tRS_sD, mode=[3]) != 1)')
+        self.assertIsInstance(setup.body[0].body[0],ast.Raise)
         parent = next(n for n in ast.walk(fn) if isinstance(n,ast.For) and guard in n.body)
         idx=parent.body.index(guard)
         prefix=[ast.unparse(n) for n in parent.body[idx-4:idx]]
