@@ -1,0 +1,61 @@
+waiting: pos 1/1, held by eplocalonepass0909v9 [boot] (pid 3442432@srv2, since 08:40, est 55m, Canonical onepass B1 A B2 B3; measure fused six-token EP preparation and micro-kernel decode with unchanged capacity), legacy busy (3 procs, 0 reqs, booting) 2026-09-09_08:50:43
+waiting: pos 1/1, held by eplocalonepass0909v9 [boot] (pid 3442432@srv2, since 08:40, est 55m, Canonical onepass B1 A B2 B3; measure fused six-token EP preparation and micro-kernel decode with unchanged capacity), legacy busy (3 procs, 0 reqs) 2026-09-09_08:50:50
+waiting: pos 1/1, held by eplocalonepass0909v9 [boot] (pid 3442432@srv2, since 08:40, est 55m, Canonical onepass B1 A B2 B3; measure fused six-token EP preparation and micro-kernel decode with unchanged capacity), legacy busy (2 procs, 0 reqs) 2026-09-09_08:50:56
+waiting: pos 1/1, held by eplocalonepass0909v9 [boot] (pid 3442432@srv2, since 08:40, est 55m, Canonical onepass B1 A B2 B3; measure fused six-token EP preparation and micro-kernel decode with unchanged capacity), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_08:50:57
+waiting: pos 1/1, held by eplocalonepass0909v9 [boot] (pid 3442432@srv2, since 08:40, est 55m, Canonical onepass B1 A B2 B3; measure fused six-token EP preparation and micro-kernel decode with unchanged capacity), legacy busy (2 procs, 0 reqs) 2026-09-09_08:51:55
+waiting: pos 1/1, held by eplocalonepass0909v9 [boot] (pid 3442432@srv2, since 08:40, est 55m, Canonical onepass B1 A B2 B3; measure fused six-token EP preparation and micro-kernel decode with unchanged capacity), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_08:52:55
+waiting: pos 1/1, held by eplocalonepass0909v9 [boot] (pid 3442432@srv2, since 08:40, est 55m, Canonical onepass B1 A B2 B3; measure fused six-token EP preparation and micro-kernel decode with unchanged capacity), legacy busy (2 procs, 0 reqs) 2026-09-09_08:55:24
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "69062b2cb2c447a5bd8e0224e1f1bdf2", "phase": "waiting", "reason": "dequeue", "since": 414121.283460204, "updated_at": 1788911728.3463724, "version": 1}
+GO sf6-unpack-0909v1 2026-09-09_08:55:28
+  node 10.10.10.1: gpu=ok stray=3 ram=98G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=94G path=ok 
+  node 10.10.10.4: gpu=ok stray=15 ram=98G path=ok 
+== chain sf6-unpack-0909v1A sf6-unpack-0909v1B 08:55:29 session=sf6-unpack-0909v1 rehearse=0
+   baseline: NONE for build c85a1e7 -- a defaults arm is worth its boot
+== 08:55:29 arm sf6-unpack-0909v1A: VLLM_GLM53_SF6_UNPACK_U8X4=1
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=223 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 21.6 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=258 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 3.6 s
+== [sf6-unpack-0909v1A] onepass 09:05:07 ctx=2000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         880        2431      2.42s      0.88s  o o o
+  32000   32545        3017     (1 req)     10.79s          -  o o o
+ 128000  128559        3111     (1 req)     41.32s          -  o o o
+fixed2K rep=0 tokens=2048/2048 decode=66.04 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=60.34 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=67.71 tok/s
+  warm 처리량: 2431 -> 3111 tok/s (over 2128 -> 128559 tokens)
+=> 18/18 correct
+decode: windows n=88 med 19.9 [17.9, 20.9] step/s (inside the answers only; per context: 2K: n=100 med 19.9  32K: n=16 med 19.9  128K: n=14 med 19.9), raw acc 45.8%, tokens/step 3.292 (k=5.0), generated 9744 tokens over 206s
+응답 8개 · 문자 24,474
+  깨진 응답: 1/8 (12%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        2    81.7/백만자
+  control          0     0.0/백만자
+  [fixed2K rep2] cjk_mixed=2
+    …'tics, Francis Crick biography, Halvorsen博士 signing tundra survey report, Jimmy Ca'…
+== onepass sf6-unpack-0909v1A: 206s total
+== [sf6-unpack-0909v1A] acceptance counters ==
+vllm:spec_decode_num_drafts_total 2963.0
+vllm:spec_decode_num_draft_tokens_total 14815.0
+vllm:spec_decode_num_accepted_tokens_total 6790.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2262.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1625.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1232.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 933.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 738.0
+== [sf6-unpack-0909v1A] head log kept: /home/choiceoh/glm53-logs/boot-sf6-unpack-0909v1A.log ==
+== [sf6-unpack-0909v1A] serving proof (bench/proof.py) ==
+  PASS      VLLM_GLM53_SF6_UNPACK_U8X4
+  -> 1/1 lanes proved serving (226859 bytes of /home/choiceoh/glm53-logs/boot-sf6-unpack-0909v1A.log)
+== [sf6-unpack-0909v1A] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-08 23:56:26 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+WARNING 09-08 23:56:43 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+(EngineCore pid=245) WARNING 09-09 00:04:42 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+== [sf6-unpack-0909v1A] done 09:08:34 ==
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> sf6-unpack-0909v1A  19.87    3.29   45.8%  18/18  1/8      3017  1/1   cold 09-09 09:05
+judge> verdict: GATE FAIL: korean 1/8
+judge> written to /home/choiceoh/glm53-logs/SF6-UNPACK-sf6-unpack-0909v1/verdicts.jsonl
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "3fbe0f1f0f9548a081d83da7460e01ad", "phase": "waiting", "reason": "release", "since": 414907.56924434, "updated_at": 1788912514.6321568, "version": 1}

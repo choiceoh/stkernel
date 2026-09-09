@@ -1,0 +1,34 @@
+{
+  "schema": "decode-next-onepass-v1",
+  "status": "INVALID",
+  "valid": false,
+  "errors": [
+    {
+      "stage": "campaign records",
+      "error": "exactly two named onepass records required"
+    },
+    {
+      "stage": "campaign exit/cleanup",
+      "error": "campaign exited 4"
+    }
+  ],
+  "per_boot": [],
+  "candidate": "sf6-unpack-0909v1A",
+  "baseline": "sf6-unpack-0909v1B",
+  "comparison": null,
+  "gpu": {},
+  "sf6_direct": false,
+  "sf6_unpack": true,
+  "mode": "canonical",
+  "pending": [],
+  "note": "One boot per arm. Observed differences only; no statistical significance claim. Within-boot windows are correlated and do not estimate boot drift. Request/output hashes come from onepass itself; there is no independent SSE recording. Startup self-tests and onepass quality do not replace dedicated GPU numerical or race testing.",
+  "independent_stream_hashes_verified": false,
+  "dedicated_gpu_correctness": "not run under onepass-only policy",
+  "coverage": {
+    "measured_onepass_valid": false,
+    "startup_selftests_verified": false,
+    "independent_stream_hashes_verified": false,
+    "dedicated_gpu_correctness_verified": false
+  },
+  "campaign_cleanup": "complete"
+}

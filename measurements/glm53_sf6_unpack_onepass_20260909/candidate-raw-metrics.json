@@ -1,0 +1,86 @@
+{
+  "candidate": "sf6-unpack-0909v1A",
+  "source_commit": "c85a1e75a7187ad69baefb30ef143f92f13430e8",
+  "status": "INVALID",
+  "comparison": null,
+  "candidate_raw": {
+    "pooled_step_s": 20.21523095264694,
+    "ms_per_step": 49.46765151199334,
+    "window_median_step_s": 19.873153536169117,
+    "window_count": 88,
+    "steps": 1791.0,
+    "window_seconds": 88.59656385798007,
+    "fixed_decode_pooled_tok_s": 64.56809422462972,
+    "quality": {
+      "ok": 18,
+      "total": 18
+    },
+    "korean": {
+      "dirty": 1,
+      "n": 8,
+      "kinds": {
+        "replacement": 0,
+        "lone_jamo": 0,
+        "cjk_mixed": 2,
+        "control": 0
+      },
+      "hits": [
+        [
+          "fixed2K rep2",
+          {
+            "cjk_mixed": 2
+          }
+        ]
+      ]
+    },
+    "prefill": [
+      {
+        "ctx": 2000,
+        "tok": 2128,
+        "cold_s": 2.4183028449770063,
+        "warm_s": 0.8752242519985884,
+        "cold_tok_s": 879.9559593704375,
+        "warm_tok_s": 2431.3768672893584,
+        "ttft_samples_s": [
+          2.4183028449770063,
+          0.8752242519985884,
+          0.8837261860026047
+        ],
+        "combined": false
+      },
+      {
+        "ctx": 32000,
+        "tok": 32545,
+        "cold_s": 10.787132012017537,
+        "warm_s": 10.787132012017537,
+        "cold_tok_s": 3017.0206467986895,
+        "warm_tok_s": 3017.0206467986895,
+        "ttft_samples_s": [
+          10.787132012017537
+        ],
+        "combined": true
+      },
+      {
+        "ctx": 128000,
+        "tok": 128559,
+        "cold_s": 41.32135222200304,
+        "warm_s": 41.32135222200304,
+        "cold_tok_s": 3111.200217004131,
+        "warm_tok_s": 3111.200217004131,
+        "ttft_samples_s": [
+          41.32135222200304
+        ],
+        "combined": true
+      }
+    ],
+    "requests": 8,
+    "fixed_decode_completions": [
+      2048,
+      2048,
+      2048
+    ]
+  },
+  "campaign_exit": 4,
+  "baseline_ran": false,
+  "reason": "Canonical quality gate rejected candidate Korean 1/8; chain stopped before baseline."
+}

@@ -273,6 +273,8 @@ class CampaignTests(unittest.TestCase):
         result = self.summary()
         self.assertFalse(result["valid"])
         self.assertIn("exactly two", result["errors"][0]["error"])
+        self.assertEqual([row["name"] for row in result["per_boot"]], ["A"])
+        self.assertIsNone(result["comparison"])
 
     def test_runtime_mode_drift_or_memory_failure_is_invalid(self):
         path = self.out / "runtime-B-srv3.json"
@@ -632,6 +634,66 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(row["unvalidated_decode"], self.records[0]["decode"])
         self.assertEqual(row["unvalidated_prefill"], self.records[0]["prefill"])
         self.assertEqual(row["unvalidated_quality"], {"ok": 17, "total": 18})
+
+    def test_unpack_first_arm_korean_failure_and_exit4_retain_metrics_and_runtime_checks(self):
+        self.canonical_evidence(sf6_unpack=True)
+        self.records.pop()
+        self.records[0]["korean"].update(dirty=1, hits=["Halvorsen博士"])
+        self.records[0]["korean"]["kinds"]["cjk_mixed"] = 2
+        self.write_records()
+        (self.out / "campaign.exit").write_text("4\n")
+        observer = analyze.read_json(self.out / "observer.json")
+        observer.update(status="FAIL", errors=["campaign exited before baseline"])
+        observer["arms"].pop("B")
+        write(self.out / "observer.json", observer)
+        for path in self.out.iterdir():
+            if path.name.startswith(("prepared-B-", "runtime-B-", "observed-prepared-B", "observed-runtime-B")):
+                path.unlink()
+        result = self.canonical_summary(sf6_unpack=True)
+        self.assertEqual(result["status"], "INVALID")
+        self.assertFalse(result["valid"])
+        self.assertIsNone(result["comparison"])
+        self.assertEqual([row["name"] for row in result["per_boot"]], ["A"])
+        row = result["per_boot"][0]
+        self.assertFalse(row["valid"])
+        self.assertEqual(row["boot_id"], self.records[0]["boot_id"])
+        for field in ("decode", "prefill", "quality", "korean"):
+            self.assertEqual(row["unvalidated_" + field], self.records[0][field])
+        stages = {error["stage"] for error in result["errors"]}
+        self.assertTrue({"campaign records", "campaign exit/cleanup", "A onepass",
+                         "passive observer completion"} <= stages)
+        self.assertFalse(any(stage.startswith("A srv") for stage in stages), result["errors"])
+        self.assertEqual(set(result["runtime_conditions"]["mhc_by_arm"]["candidate"]), set(analyze.HOSTS))
+        self.assertFalse(result["coverage"]["measured_onepass_valid"])
+        self.assertFalse(result["coverage"]["startup_selftests_verified"])
+        # An incomplete campaign must still audit the retained arm's actual logs.
+        with (self.out / "runtime-A-srv3.log").open("ab") as log:
+            log.write(b"changed after receipt\n")
+        changed = self.canonical_summary(sf6_unpack=True)
+        self.assertTrue(any(error["stage"] == "A srv3 runtime" for error in changed["errors"]))
+        self.assertEqual(changed["per_boot"], result["per_boot"])
+
+    def test_duplicate_or_unexpected_records_stay_invalid_without_losing_expected_rows(self):
+        self.canonical_evidence(sf6_unpack=True)
+        original = deepcopy(self.records)
+        for records, expected_names in (([original[0], original[0]], ["A", "A"]),
+                                        (original + [original[0]], ["A", "A", "B"]),
+                                        ([original[0], dict(original[1], name="foreign")], ["A"]),
+                                        ([], [])):
+            with self.subTest(names=[record["name"] for record in records]):
+                self.records = deepcopy(records)
+                self.write_records()
+                result = self.canonical_summary(sf6_unpack=True)
+                self.assertEqual(result["status"], "INVALID")
+                self.assertIsNone(result["comparison"])
+                self.assertEqual([row["name"] for row in result["per_boot"]], expected_names)
+                self.assertTrue(any(error["stage"] == "campaign records" and "exactly two" in error["error"]
+                                    for error in result["errors"]))
+                if expected_names.count("A") == 2:
+                    for row in result["per_boot"][:2]:
+                        self.assertFalse(row["valid"])
+                        self.assertEqual(row["unvalidated_decode"], original[0]["decode"])
+                    self.assertEqual(result["runtime_conditions"]["mhc_by_arm"]["candidate"], {})
 
     def test_unpack_options_require_canonical_and_cannot_mix_variants(self):
         for kwargs in (dict(sf6_unpack=True), dict(canonical=True, sf6_unpack=True, sf6_direct=True),

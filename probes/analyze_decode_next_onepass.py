@@ -366,13 +366,15 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False, s
         revision = (root / "source.commit").read_text().strip()
         require(re.fullmatch(r"[0-9a-f]{40}", revision), "full source commit required")
         records = read_jsonl(root / "records.raw.jsonl")
+        return revision, records
+
+    def validate_campaign_records(revision, records):
         require(len(records) == 2 and {r["name"] for r in records} == {candidate, baseline}, "exactly two named onepass records required")
         require(len({r["boot_id"] for r in records}) == 2, "two distinct serving boots required")
         require(len({r["overlay"] for r in records}) == 1 and all(re.fullmatch(r"[0-9a-f]{12}", r["overlay"]) for r in records),
                 "matched nonempty served overlay stamp required")
         require(len({r["git"] for r in records}) == 1 and all(re.fullmatch(r"[0-9a-f]{7,40}", r["git"])
                 and revision.startswith(r["git"]) for r in records), "onepass/campaign source differs")
-        return revision, {r["name"]: r for r in records}
 
     campaign = check("campaign records", load_campaign)
     exit_path = root / "campaign.exit"
@@ -383,13 +385,28 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False, s
         result["pending"].append("supervisor final exit receipt is not available")
     if campaign is None:
         return result
-    revision, records = campaign
+    revision, raw_records = campaign
     result["source_commit"] = revision
+    check("campaign records", lambda: validate_campaign_records(revision, raw_records))
+    # Retain expected arms even when the chain stops before its second boot.
+    # Duplicate names remain invalid and cannot select a record for proof binding.
+    records, retained_rows = {}, {}
+    for name in (candidate, baseline):
+        matching = [record for record in raw_records if record.get("name") == name]
+        for record in matching:
+            retained_rows[name] = len(result["per_boot"])
+            result["per_boot"].append(dict(name=name, boot_id=record.get("boot_id"), valid=False,
+                unvalidated_decode=record.get("decode", {}), unvalidated_prefill=record.get("prefill", []),
+                unvalidated_quality=record.get("quality", {}), unvalidated_korean=record.get("korean", {})))
+        if len(matching) == 1:
+            records[name] = matching[0]
     if canonical:
         result["observer"] = check("passive observer completion", lambda: validate_observer(
             root, candidate, baseline, revision, records, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack))
     snapshots, manifests, rows = {}, {}, {}
     for mode, name in (("candidate", candidate), ("baseline", baseline)):
+        if name not in records:
+            continue
         if not canonical:
             check(name + " arm exit", lambda name=name: require((root / ("arm-" + name + ".exit")).read_text().strip() == "0", "serving arm failed"))
         record = records[name]
@@ -397,11 +414,7 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False, s
             record, None if canonical else read_jsonl(root / ("channels-" + name + ".jsonl")), canonical=canonical))
         if row is not None:
             rows[name] = row
-            result["per_boot"].append(row)
-        else:
-            result["per_boot"].append(dict(name=name, valid=False, unvalidated_decode=record.get("decode", {}),
-                unvalidated_prefill=record.get("prefill", []), unvalidated_quality=record.get("quality", {}),
-                unvalidated_korean=record.get("korean", {})))
+            result["per_boot"][retained_rows[name]] = row
         memory_path = name + ".memory.jsonl" if canonical else "memory-" + name + ".jsonl"
         memory = check(name + " memory", lambda: validate_memory(read_jsonl(root / memory_path)))
         if row is not None:
@@ -442,9 +455,10 @@ def summarize(root, candidate, baseline, *, canonical=False, sf6_direct=False, s
     check("matched runtime arms", lambda: require(not (issues := runtime_proof.compare_arms(
         snapshots.get("baseline"), snapshots.get("candidate"), sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)), "; ".join(issues)))
     identity_keys = ("request_sha256", "prompt_tokens", "seed", "min_tokens", "max_tokens")
-    check("matched ordered requests", lambda: require(
-        [[q[key] for key in identity_keys] for q in records[candidate]["requests"]]
-        == [[q[key] for key in identity_keys] for q in records[baseline]["requests"]], "ordered requests differ between arms"))
+    if candidate in records and baseline in records:
+        check("matched ordered requests", lambda: require(
+            [[q[key] for key in identity_keys] for q in records[candidate]["requests"]]
+            == [[q[key] for key in identity_keys] for q in records[baseline]["requests"]], "ordered requests differ between arms"))
     if candidate in manifests and baseline in manifests:
         check("matched source manifests", lambda: require(manifests[candidate] == manifests[baseline], "candidate/baseline source manifests differ"))
         if not canonical:
