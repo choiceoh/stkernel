@@ -10,14 +10,14 @@ canaries and SF6 release passed on all four ranks, but every arm failed the
 existing Korean gate. The candidate also had lower observed fixed-decode
 throughput than the second baseline. It is not ready for default adoption.
 
-The latest word-unpack follow-up also missed the user-selected absolute
-decode target of 67 tok/s: TP B measured 69.8109 tok/s and EP A measured
-66.3037 tok/s over three complete fixed-1024 requests. B passed Korean 0/8;
-A failed 1/8. Both passed facts 18/18. A's engine throughput was 18.2126
-step/s, versus 18.2028 in the preceding A-ring run and 18.2190 in the first
-EP run. Neither refinement has established an engine throughput gain.
-The target does not waive quality gates or establish relative
-non-regression against TP.
+The latest BF16-scatter follow-up missed the user-selected absolute decode
+target of 67 tok/s: warm TP B1 measured 72.9244 tok/s and EP A measured
+59.8872 tok/s over three complete fixed-1024 requests. Both passed facts
+18/18 and Korean 0/8. The matched warm prefill observations favored A, but
+decode was 17.88% below B1. A's engine throughput was 18.4447 step/s versus
+18.2126 in the preceding EP run; that 1.27% cross-run difference does not
+establish a stable optimization gain. The target does not waive quality
+gates or establish relative non-regression against TP.
 
 Enable `ENABLE_EP=1 VLLM_GLM53_EP_TILED=1 VLLM_GLM53_TP_SF6_Q0=0` on the GLM
 profile, retaining its `t,r,sf6` scale-compression setting. The TP Q0 owner/canary does not apply to EP weights. Keep the old
@@ -217,7 +217,7 @@ preserve the source identity, full measurements and failed gates.
 
 ## Native BF16 scatter candidate (2026-09-10)
 
-The next unmeasured candidate limits direct BF16 output to SF6 M1..8.
+The BF16-scatter candidate limits direct BF16 output to SF6 M1..8.
 It uses the stock `scatter_add_v4_bf16x2` helper and keeps each contribution's
 existing `satfinite` BF16 rounding. It removes the subsequent eight BF16-to-FP32
 conversions, the extra FP32 vector reduction and the final output copy.
@@ -229,5 +229,43 @@ retain their existing FP32 accumulation path.
 The numerical contract is unchanged. Stock compact references produce BF16
 pair outputs and then sum tokens; direct scatter changes summation order
 and repeatedly rounds atomic additions. It therefore cannot claim bitwise
-equivalence, preserved model quality, or a speedup before the existing
-actual-weight canary and direct consumer run pass.
+equivalence from the code change alone.
+
+Frozen source `e88f5fd368ef8c895000496101fc7fcf8e7fb344` passed 109 CPU
+contracts and six actual lowerings, including the installed stock helper's
+complete source SHA and M6's actual BF16 output ABI. Normal fleet session
+`eptiledbf160910v5` then ran B0, B1 and A. B0 was the preselected compile
+preparation arm; B1 and A both had no `cold_compile` field. All arms retained
+the same image, capacity and fixed-1024 x3 workload. B1/A is the comparison.
+
+| Metric | TP + SF6 B1 | EP + SF6 BF16-scatter A |
+|---|---:|---:|
+| 2K best-warm prefill tok/s / TTFT | 2429.39 / 0.876 s | 3013.56 / 0.706 s |
+| 32K prefill tok/s / TTFT | 3075.14 / 10.583 s | 3133.60 / 10.386 s |
+| 128K prefill tok/s / TTFT | 3142.21 / 40.914 s | 3246.81 / 39.595 s |
+| Fixed-1024 pooled decode tok/s | 72.9244 | 59.8872 |
+| Fixed-window pooled engine step/s | 20.5276 | 18.4447 |
+| Fact checks | 18/18 | 18/18 |
+| Korean-dirty responses | 0/8 | 0/8 |
+
+B1 repetitions were 70.5244/78.9832/69.9394 tok/s; A repetitions were
+59.9839/59.9423/59.7361. All six responses completed 1024 tokens, with the
+pooled rate using all 3069 timed output tokens. B0 measured 79.0671 tok/s
+with the same quality results; it remains preparation rather than a selected
+comparison. There is no fixed-window per-position speculative-acceptance
+counter, so its whole-onepass counters cannot explain the fixed-window rates.
+
+All four A ranks passed nine actual-weight cases and 54 candidate plus 54
+stock-control comparisons, with zero bad rows, the exact BF16 key19 for M6,
+FP32 key16 for M12/24/32, packed-scale identity, graph replay and SF6 finalization
+of 42 layers. This covers the first numerical layer per rank, not every model
+layer. The onepass and supervisor exited 0 and released the holder at
+00:36:25.811 KST. Successful execution and quality do not imply the absolute
+67 tok/s objective passed: **it failed, and defaults remain TP**.
+
+The measured prefill input-rate differences were +24.05% / +1.90% / +3.33%
+at 2K / 32K / 128K; the corresponding TTFT reductions were 19.38% / 1.87% /
+3.22%. These are this matched warm pair's observations, not a stable 40%
+campaign improvement. [CPU evidence](../measurements/glm53_ep_tiled_20260909/bf16_cpu5/README.md)
+and [original onepass evidence](../measurements/glm53_ep_tiled_20260909/bf16_onepass5/README.md)
+preserve the checks and failed performance target.

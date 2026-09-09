@@ -1,0 +1,84 @@
+{
+  "all_four_rank_sources_equal": true,
+  "captured_frozen_source_hashes_matched": [
+    "tiled_selftest",
+    "tiled_decode"
+  ],
+  "schema": 1,
+  "scope": "One bounded first eligible actual-weight layer per rank; not all model layers or full sanitizer acceptance",
+  "source": {
+    "source": {
+      "dispatch": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py",
+        "sha256": "40bdc0e9c38c3e406fd7dd7350e14077b80b5edf8b5e9fc31d323753b9bfbadf"
+      },
+      "local": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py",
+        "sha256": "89bab8e22514d4ce036e4cc6755a5dcfaeb8b12277766394dcdd101db8751595"
+      },
+      "moe_dynamic_gated_sf6": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py",
+        "sha256": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e"
+      },
+      "moe_reform_sf_pack": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py",
+        "sha256": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631"
+      },
+      "moe_sf_pack": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py",
+        "sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a"
+      },
+      "moe_static_kernel_v4": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py",
+        "sha256": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c"
+      },
+      "moe_static_kernel_v5": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py",
+        "sha256": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"
+      },
+      "numerical": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py",
+        "sha256": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad"
+      },
+      "stock": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py",
+        "sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445"
+      },
+      "tiled_decode": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_ep_tiled.py",
+        "sha256": "ff1c32c76f7ec193700248fc83d208251b186e30958e284d87e38fb15a35c87a"
+      },
+      "tiled_owner": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled.py",
+        "sha256": "bc4e2bfa2734e6a26e1766b125e0ec89f599f47ab54b4430f67c3618abf1ccb3"
+      },
+      "tiled_selftest": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled_selftest.py",
+        "sha256": "e3c30806aecf7d50e36b9983b98b2ebc5c47d50d136f24d7360ed5a45c5df7c4"
+      },
+      "wrapper": {
+        "path": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py",
+        "sha256": "cfed03b8dfbd8fff466d143c0bee4e66f6f76f703a508461ffa8e301205a8204"
+      }
+    },
+    "versions": {
+      "cuda.bindings": {
+        "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+        "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+        "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/__init__.py",
+        "sha256": "3306a21b3b278d04708edc053064b7e929ee6849589850e1fd5393e6f02fce12",
+        "version": "13.3.1"
+      },
+      "flashinfer": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/__init__.py",
+        "sha256": "c0762de404eb0c9f903fe1b8a107300a3d3bd06d1a3692560a38b0647333f751",
+        "version": "0.6.18.dev20260819"
+      },
+      "torch": {
+        "path": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py",
+        "sha256": "cf40c075c95864036e835795756d69b8cccfafa76f3bcde5eba9d06065ccd3d1",
+        "version": "2.13.0+cu130"
+      }
+    }
+  }
+}

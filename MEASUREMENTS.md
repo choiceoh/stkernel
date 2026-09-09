@@ -31,6 +31,32 @@
 8. **그리디 텍스트 diff 로는 판정하지 않는다** — 같은 구성의 두 부팅에서도 온도 0 응답이
    갈린다(28차 §8). 판정은 게이트와 브래킷이다.
 
+## GLM53 EP BF16 scatter: 품질 통과, 67 tok/s 목표 미달 (2026-09-10, PR #511)
+
+고정 소스 `e88f5fd3`, 정상 fleet `eptiledbf160910v5`에서 준비용 TP B0 뒤
+사전 지정한 warm TP B1 → EP A를 측정했다. B1/A 모두 초기 컴파일 표식이
+없고 같은 이미지·용량·fixed1024 ×3 요청을 사용한다. SF6 M1..8만 stock
+BF16 atomic으로 직접 출력하며, 큰 native batch와 프리필은 FP32를 유지한다.
+
+| 지표 | TP + SF6 B1 | EP + SF6 BF16 scatter A |
+|---|---:|---:|
+| 2K best-warm 입력 tok/s / TTFT | 2429.39 / 0.876s | 3013.56 / 0.706s |
+| 32K 입력 tok/s / TTFT | 3075.14 / 10.583s | 3133.60 / 10.386s |
+| 128K 입력 tok/s / TTFT | 3142.21 / 40.914s | 3246.81 / 39.595s |
+| fixed1024 ×3 합산 출력 tok/s | 72.9244 | 59.8872 |
+| fixed 구간 합산 engine step/s | 20.5276 | 18.4447 |
+| 사실 검사 / 한국어 dirty | 18/18 / 0/8 | 18/18 / 0/8 |
+
+A 세 번은59.9839/59.9423/59.7361 tok/s였다. 사용자 지정 절대 목표67에
+못 미쳐 기본값을 바꾸지 않는다. TP 대비 출력 속도는17.88% 낮고, 이전 EP
+word-unpack 대비 engine step/s의1.27% 차이도 안정적인 커널 이득의 증거는
+아니다. fixed 구간별 수용률 카운터가 없어 전체 원패스 수용률과 혼합하지 않는다.
+109 CPU 검사·6개 lowering,4개 랭크 각각9사례/54개 candidate+54개 control
+수치 비교와 graph/SF6 검증이 통과했다. payload/outer rc0은 실험·품질 검사가
+완료됐다는 뜻이며67 목표 통과가 아니다. 프리필 입력 속도 차이 +24.05% /
++1.90% / +3.33%도 이 warm pair의 관측값이며40% 캠페인 목표 증명이 아니다.
+[상세 범위](docs/GLM53_EP_TILED.md), [원본 증거](measurements/glm53_ep_tiled_20260909/bf16_onepass5/README.md).
+
 ## GLM53 EP tiled + SF6 원패스: 기본값 보류 (2026-09-09, PR #511)
 
 동일 소스 `f6b0934e`, 정상 fleet `eptiledsf60909v1`의 B0→B1→A를
