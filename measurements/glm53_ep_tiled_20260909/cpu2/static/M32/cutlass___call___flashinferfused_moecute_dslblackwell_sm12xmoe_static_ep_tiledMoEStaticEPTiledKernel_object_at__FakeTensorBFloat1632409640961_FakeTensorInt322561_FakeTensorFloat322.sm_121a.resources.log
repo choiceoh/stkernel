@@ -1,0 +1,6 @@
+
+Resource usage:
+ Common:
+  GLOBAL:0 CONSTANT[4]:8
+ Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o32409640961_tensorptri32gmemo2561_tensorptrf3_0:
+  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0
