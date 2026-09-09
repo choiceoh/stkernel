@@ -20,7 +20,8 @@ def validate_artifacts(output,result):
         for rows_count,passed in zip(rows,passes):
             if kind == 'static':
                 selected = passed['specialization']
-                assert selected == static_specialization(rows_count,passed['cache_key'],selected['a_ring'])
+                assert selected == static_specialization(rows_count,passed['cache_key'],
+                                                         selected['a_ring'],selected['word_unpack'])
             for name,suffix in (('artifacts','.ptx'),('resources','.cubin')):
                 assert len(passed[name])==1
                 for row in passed[name]:

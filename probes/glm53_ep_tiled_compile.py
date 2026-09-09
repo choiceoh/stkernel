@@ -21,9 +21,10 @@ CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_glm53_ep_tiled_owner.py", "test_glm53_ep_tiled_selftest.py",
              "test_glm53_ep_tiled_proof.py", "test_moe_sf6_owner.py",
              "test_moe_static_sf6_direct.py", "test_moe_dynamic_sf6.py",
-             "test_moe_sf6_dispatch.py", "test_glm53_ep_tiled_a_ring.py")
-CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (10, 12, 19, 12, 12, 12, 6, 7, 6, 5)))
-EXPECTED_CPU_TESTS = 101
+             "test_moe_sf6_dispatch.py", "test_glm53_ep_tiled_a_ring.py",
+             "test_glm53_ep_tiled_sf6_word_unpack.py")
+CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (10, 12, 19, 12, 12, 12, 6, 7, 6, 5, 6)))
+EXPECTED_CPU_TESTS = 107
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',
@@ -77,18 +78,22 @@ def preserve_pass(output, arm, cache_key):
     return result
 
 
-def static_specialization(rows, key, a_ring):
+def static_specialization(rows, key, a_ring, word_unpack):
     """Bind actual constructor selection and its persisted cache namespace."""
-    assert rows in STATIC_ROWS and type(a_ring) is bool
+    assert rows in STATIC_ROWS and type(a_ring) is bool and type(word_unpack) is bool
     assert tuple(key[:4]) == ('glm53_ep_static_tiled_fp32_v1', rows, 256, 48), key
     assert key[10] == 'sf6_v1', key
     expected_ring = rows <= 8
     assert a_ring is expected_ring, (rows, a_ring)
+    assert word_unpack is expected_ring, (rows, word_unpack)
     if expected_ring:
-        assert len(key) == 17 and tuple(key[-2:]) == ('fp32_scatter', 'glm53_ep_static_sf6_a_ring_v1'), key
+        assert len(key) == 18 and tuple(key[-3:]) == (
+            'fp32_scatter', 'glm53_ep_static_sf6_a_ring_v1',
+            'glm53_ep_static_sf6_word_unpack_v1'), key
     else:
         assert len(key) == 16 and key[-1] == 'fp32_scatter', key
-    return dict(a_ring=a_ring, scale_mode=key[10], cache_tag=key[-1])
+    return dict(a_ring=a_ring, word_unpack=word_unpack,
+                scale_mode=key[10], cache_tag=key[-1])
 
 
 def compile_candidate(output, result):
@@ -110,9 +115,9 @@ def compile_candidate(output, result):
         assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
         kernel,args,key = ep.ep_tiled_compile_spec(num_tokens=rows,max_rows=256,
             max_active_clusters=48,topk_ids_dtype=torch.int32,reform_sf_pack=True)
-        specialization = static_specialization(rows, key, kernel.a_ring)
+        specialization = static_specialization(rows, key, kernel.a_ring, kernel.word_unpack)
         cute.compile(kernel,*args,options='--opt-level 2 --enable-tvm-ffi')
-        assert static_specialization(rows, key, kernel.a_ring) == specialization
+        assert static_specialization(rows, key, kernel.a_ring, kernel.word_unpack) == specialization
         passed = preserve_pass(output,'static/M'+str(rows),key)
         passed['specialization'] = specialization
         result['static_passes'].append(passed)

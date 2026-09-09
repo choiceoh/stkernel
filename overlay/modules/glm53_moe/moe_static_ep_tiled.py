@@ -1,7 +1,7 @@
 """Opt-in E72 tile-major EP decode, with the TP v5 TMA/compute pipeline.
 
 One immutable tiled FP4 weight allocation is shared with EP tiled prefill.
-SF6 uses the inherited lossless scale restoration for both native geometries;
+SF6 preserves the inherited lossless scale restoration for both native geometries;
 raw MMA scales remain a separate reference specialization. Inputs are
 already mapped to local IDs: [0,72) routes execute; sentinel72 and every other
 invalid ID are ignored before indexing any expert state, scales or weights.
@@ -14,6 +14,8 @@ remain in the same order. FP32 global RED follows its hardware FTZ semantics;
 this is a new accumulation ABI and still requires the normal numerical gate.
 SF6 native M1..8 shares the existing FC1 A/SFA ring between gate and up;
 their independent weight/SF6 stages and the I128 rounding boundary stay intact.
+That geometry restores four SF6 bytes per integer word, with the original
+volatile reads, in-place ownership and both expansion barriers unchanged.
 """
 
 from __future__ import annotations
@@ -105,6 +107,7 @@ STOCK_V4_SHA256 = "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e
 STOCK_V5_SHA256 = "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"
 EP_TILED_CACHE_TAG = "glm53_ep_static_tiled_fp32_v1"
 EP_TILED_A_RING_CACHE_TAG = "glm53_ep_static_sf6_a_ring_v1"
+EP_TILED_SF6_WORD_CACHE_TAG = "glm53_ep_static_sf6_word_unpack_v1"
 
 
 def ep_tiled_scale_mode(reform_sf_pack):
@@ -136,6 +139,21 @@ def ep_tiled_source_contract():
                            ("moe_static_kernel_v5.py", STOCK_V5_SHA256)):
         if hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() != expected:
             raise RuntimeError("EP tiled inherited source changed: " + name)
+
+
+def _sf6_unpack_word(low, high, base_lo, base_hi):
+    """Restore four byte lanes, including the stock modulo-256 base add."""
+    low = cutlass.Uint32(low) & cutlass.Uint32(0xFFFF)
+    low = (low | (low << cutlass.Uint32(8))) & cutlass.Uint32(0x00FF00FF)
+    low = (low | (low << cutlass.Uint32(4))) & cutlass.Uint32(0x0F0F0F0F)
+    high = cutlass.Uint32(high) & cutlass.Uint32(0xFF)
+    high = (high | (high << cutlass.Uint32(12))) & cutlass.Uint32(0x000F000F)
+    high = (high | (high << cutlass.Uint32(6))) & cutlass.Uint32(0x03030303)
+    delta = low | (high << cutlass.Uint32(4))
+    # Each delta byte <=63 and each base_lo byte <=127: no byte can carry
+    # into its neighbour. XOR toggles the original base's high bit and is
+    # exactly (base + delta) modulo 256, even for overflowing byte codes.
+    return (delta + base_lo) ^ base_hi
 
 
 @dsl_user_op
@@ -188,6 +206,31 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         # then release. B/SFB keep their original two stages and barriers.
         # No storage/layout is conditional on a_ring in the inherited init.
         self.a_ring = bool(reform_sf_pack and geometry["reform"])
+        self.word_unpack = bool(reform_sf_pack and geometry["reform"])
+
+    def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096):
+        if not self.word_unpack:
+            return super()._sf_expand_stage(stage_addr, tidx, block_bytes)
+        if block_bytes != 2048:
+            raise ValueError("EP native M1..8 SF6 requires a 2048-byte expansion stage")
+        # Exact stock 128-thread ownership: each thread first holds its
+        # compressed 16-byte result in registers before any in-place write.
+        a = []
+        for w in range(2):
+            a.append(_ld_shared_i32_volatile(
+                stage_addr + Int32(8) * tidx + Int32(4 * w)))
+        b = _ld_shared_i32_volatile(stage_addr + Int32(1024) + Int32(4) * tidx)
+        base = cutlass.Uint32(_ld_shared_i32_volatile(
+            stage_addr + Int32(1536))) & cutlass.Uint32(0xFF)
+        self.sf_expand_barrier.arrive_and_wait()
+        base_lo = (base & cutlass.Uint32(127)) * cutlass.Uint32(0x01010101)
+        base_hi = (base & cutlass.Uint32(128)) * cutlass.Uint32(0x01010101)
+        for j in range(4):
+            word = _sf6_unpack_word(
+                cutlass.Uint32(a[j // 2]) >> cutlass.Uint32(16 * (j % 2)),
+                cutlass.Uint32(b) >> cutlass.Uint32(8 * j), base_lo, base_hi)
+            _st_shared_i32(stage_addr + Int32(16) * tidx + Int32(4 * j), Int32(word))
+        self.sf_expand_barrier.arrive_and_wait()
 
     @cute.jit
     def __call__(
@@ -1919,7 +1962,7 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
            geometry["fc1"], geometry["fc2"], "nvfp4", scale_mode,
            "swigluoai_uninterleave", 1.0, 0.0, 10.0, "fp32_scatter")
     if reform_sf_pack and geometry["reform"]:
-        key += (EP_TILED_A_RING_CACHE_TAG,)
+        key += (EP_TILED_A_RING_CACHE_TAG, EP_TILED_SF6_WORD_CACHE_TAG)
     return kernel, args, key
 
 
@@ -1946,7 +1989,7 @@ def get_ep_tiled_decode_kernel(**kwargs):
            "nvfp4", scale_mode, "swigluoai_uninterleave", 1.0, 0.0, 10.0,
            "fp32_scatter")
     if kwargs.get("reform_sf_pack", False) and geometry["reform"]:
-        key += (EP_TILED_A_RING_CACHE_TAG,)
+        key += (EP_TILED_A_RING_CACHE_TAG, EP_TILED_SF6_WORD_CACHE_TAG)
     if key in _EP_TILED_KERNEL_CACHE:
         return _EP_TILED_KERNEL_CACHE[key], mac
     if torch.cuda.is_current_stream_capturing():

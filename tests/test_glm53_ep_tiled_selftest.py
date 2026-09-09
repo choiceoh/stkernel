@@ -72,7 +72,8 @@ def native_cache_fixture():
     key_fn.body += copy.deepcopy(factory.body[start:end]) + [ast.Return(ast.Name('key',ast.Load()))]
     constants = [copy.deepcopy(n) for n in tree.body if isinstance(n,ast.Assign)
                  and isinstance(n.targets[0],ast.Name)
-                 and n.targets[0].id in ('EP_TILED_CACHE_TAG','EP_TILED_A_RING_CACHE_TAG')]
+                 and n.targets[0].id in ('EP_TILED_CACHE_TAG','EP_TILED_A_RING_CACHE_TAG',
+                                        'EP_TILED_SF6_WORD_CACHE_TAG')]
     module = ast.Module(body=constants + [copy.deepcopy(functions[name]) for name in
         ('ep_tiled_geometry','ep_tiled_scale_mode')] + [key_fn], type_ignores=[])
     ns = {}
@@ -277,22 +278,49 @@ class AdmissionTests(unittest.TestCase):
 
     def test_cache_namespace_and_native_shape_must_match(self):
         decode=native_cache_fixture()
+        # Execute the receipt's pure admission too: a matching key cannot
+        # stand in for the actual constructor's selected implementation.
+        probe_path=ROOT/'probes/glm53_ep_tiled_compile.py'
+        probe_tree=ast.parse(probe_path.read_text())
+        probe_nodes=[copy.deepcopy(n) for n in probe_tree.body
+                     if (isinstance(n,ast.FunctionDef) and n.name=='static_specialization')
+                     or (isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)
+                         and n.targets[0].id=='STATIC_ROWS')]
+        probe={}
+        exec(compile(ast.fix_missing_locations(ast.Module(body=probe_nodes,type_ignores=[])),
+                     str(probe_path),'exec'),probe)
         owner=SimpleNamespace(_ep_tiled_workspace=SimpleNamespace(static=SimpleNamespace(max_rows=256),scratch=SimpleNamespace(max_active_clusters=48)))
         context=dict(decode=decode,md=SimpleNamespace(_DYNAMIC_KERNEL_CACHE={}))
         for rows in range(1,33):
             with self.subTest(rows=rows):
                 key=decode.native_key(rows)
-                self.assertEqual(len(key),17 if rows<=8 else 16)
-                self.assertEqual(key[-1],'glm53_ep_static_sf6_a_ring_v1' if rows<=8 else 'fp32_scatter')
+                self.assertEqual(len(key),18 if rows<=8 else 16)
+                if rows<=8:
+                    self.assertEqual(key[-2:],('glm53_ep_static_sf6_a_ring_v1',
+                                              'glm53_ep_static_sf6_word_unpack_v1'))
+                else:
+                    self.assertEqual(key[-1],'fp32_scatter')
                 decode._EP_TILED_KERNEL_CACHE={key:object()}
                 self.assertEqual(canary._cache_evidence(context,owner,rows)['keys'],[repr(key)])
-                wrong_ring=key[:-1] if rows<=8 else key+('glm53_ep_static_sf6_a_ring_v1',)
-                wrong_tag=key[:-1]+('glm53_ep_static_sf6_a_ring_v0',)
-                for mutation in (wrong_ring,wrong_tag,decode.native_key(rows,False),
+                wrong_ring=key[:-2]+key[-1:] if rows<=8 else key+('glm53_ep_static_sf6_a_ring_v1',)
+                wrong_word=key[:-1] if rows<=8 else key+('glm53_ep_static_sf6_word_unpack_v1',)
+                wrong_tag=key[:-1]+('glm53_ep_static_sf6_word_unpack_v0',)
+                mutations=(wrong_ring,wrong_word,wrong_tag,decode.native_key(rows,False),
                                  key[:1]+(rows+1,)+key[2:],key[:4]+('torch.int64',)+key[5:],
-                                 key[:5]+(True,)+key[6:],key+('extra',)):
+                                 key[:5]+(True,)+key[6:],key+('extra',))
+                for mutation in mutations:
                     decode._EP_TILED_KERNEL_CACHE={mutation:object()}
                     with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,rows)
+                if rows in probe['STATIC_ROWS']:
+                    selected=rows<=8
+                    check=probe['static_specialization']
+                    self.assertEqual(check(rows,key,selected,selected),dict(a_ring=selected,
+                        word_unpack=selected,scale_mode='sf6_v1',cache_tag=key[-1]))
+                    for ring,word in ((selected,not selected),(not selected,selected),
+                                      (selected,int(selected)),(int(selected),selected)):
+                        with self.assertRaises(AssertionError):check(rows,key,ring,word)
+                    for mutation in mutations[:4]+mutations[-1:]:
+                        with self.assertRaises(AssertionError):check(rows,mutation,selected,selected)
         dynamic=('dynamic','fp4','nvfp4',72,4096,2048,8,48,(128,128),'torch.int32',False,True,'swigluoai_uninterleave',1.,0.,10.,False,True,'glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1')
         context['md']._DYNAMIC_KERNEL_CACHE[dynamic]=object()
         self.assertEqual(canary._cache_evidence(context,owner,8192)['keys'],[repr(dynamic)])
