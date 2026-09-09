@@ -1,0 +1,5 @@
+{
+  "path": "measurements/glm53_ep_local_20260908/decode24-cpu/result.json",
+  "scope": "CPU capsule13.0.3 versus serving image13.3.1; matching kernel/source bytes only",
+  "sha256": "1d96612938f200bd86d078e1d8841cc92df808ba4ab802ca51306fe229b67506"
+}

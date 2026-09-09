@@ -1,0 +1,234 @@
+{
+  "arm": "A0",
+  "canary_validation_sha256": "ca86b78680e0471d4f270a3652929117df209060045d5081c47853c1646a91b2",
+  "head_post_trim_memory_comparison": {
+    "baseline_arm": "A0",
+    "baseline_bytes": 10283593728,
+    "baseline_snapshot_sha256": "ce8f4f9b6e8781bcf12edc977ba00ec7f2d97b8092da654ebde5220dc9dbb11d",
+    "baseline_video_limit": 1,
+    "candidate_bytes": 14643499008,
+    "candidate_video_limit": 0,
+    "causality": "descriptive cross-boot post-trim available RAM only, not isolated video-memory attribution",
+    "cpu_source_diff": true,
+    "delta_bytes": 4359905280
+  },
+  "nodes": {
+    "10.10.10.1": {
+      "canary_cases": 4,
+      "candidate_comparisons": 24,
+      "config_before_after_equal": true,
+      "container_id": "d3d89b3d63bc145560cbdd382c7367b1500ee70985eeb603676f1a11a6053629",
+      "graph_then_trim": true,
+      "mm_limit": {
+        "image": 4,
+        "video": 0
+      },
+      "rank": 1,
+      "source_image_flags_match": true,
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 17829851136,
+          "reserved": 75136761856,
+          "vm_rss": 8971264000
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 17823883264,
+          "reserved": 75143053312,
+          "vm_rss": 9005666304
+        },
+        "completed_at": 1788929067.405024,
+        "measurement_errors": [],
+        "rank": 1,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 2693,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788929066.9548993,
+        "verdict": "COMPLETE"
+      }
+    },
+    "10.10.10.3": {
+      "canary_cases": 4,
+      "candidate_comparisons": 24,
+      "config_before_after_equal": true,
+      "container_id": "634477970cd2f583ee1f9d4dac6eccecee5d667c521c6b0471531feb31db228e",
+      "graph_then_trim": true,
+      "mm_limit": {
+        "image": 4,
+        "video": 0
+      },
+      "rank": 2,
+      "source_image_flags_match": true,
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 13244162048,
+          "reserved": 75136761856,
+          "vm_rss": 8991608832
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 13238198272,
+          "reserved": 75143053312,
+          "vm_rss": 9025994752
+        },
+        "completed_at": 1788929067.4243503,
+        "measurement_errors": [],
+        "rank": 2,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 2693,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788929066.9546573,
+        "verdict": "COMPLETE"
+      }
+    },
+    "10.10.10.4": {
+      "canary_cases": 4,
+      "candidate_comparisons": 24,
+      "config_before_after_equal": true,
+      "container_id": "047d44246281f81f2779dbf52c7b6ced1ea1288fc28c4d9a9fa0b8da0cafb4f2",
+      "graph_then_trim": true,
+      "mm_limit": {
+        "image": 4,
+        "video": 0
+      },
+      "rank": 3,
+      "source_image_flags_match": true,
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 17350754304,
+          "reserved": 75136761856,
+          "vm_rss": 9006161920
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 17344790528,
+          "reserved": 75143053312,
+          "vm_rss": 9041252352
+        },
+        "completed_at": 1788929067.4013684,
+        "measurement_errors": [],
+        "rank": 3,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 2693,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788929066.946323,
+        "verdict": "COMPLETE"
+      }
+    },
+    "local": {
+      "canary_cases": 4,
+      "candidate_comparisons": 24,
+      "config_before_after_equal": true,
+      "container_id": "c0a02df5d01af98ad4f872df4d4dde8552a150cb1831b5bac542d6eeb8fe0a1f",
+      "graph_then_trim": true,
+      "mm_limit": {
+        "image": 4,
+        "video": 0
+      },
+      "rank": 0,
+      "source_image_flags_match": true,
+      "trim": {
+        "after": {
+          "allocated": 72150850048,
+          "mem_available": 14643499008,
+          "reserved": 75134664704,
+          "vm_rss": 9022504960
+        },
+        "before": {
+          "allocated": 72150850048,
+          "mem_available": 14635241472,
+          "reserved": 75143053312,
+          "vm_rss": 9056727040
+        },
+        "completed_at": 1788929067.4862053,
+        "measurement_errors": [],
+        "rank": 0,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 4070,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788929066.9544837,
+        "verdict": "COMPLETE"
+      }
+    }
+  },
+  "performance_acceptance": false,
+  "revision": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+  "same_rank_A0_content": null,
+  "snapshot_sha256": "dc8fc263971814ec3e0685eab89695bd2cdc91d2d1eb18a2a28b6c136caee337",
+  "verdict": "STRICT_A0_IDENTITY_NUMERICS_TRIM_MM_VERIFIED"
+}

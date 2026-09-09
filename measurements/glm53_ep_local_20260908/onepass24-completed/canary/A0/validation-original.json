@@ -1,0 +1,192 @@
+{
+  "arm_container_proof": false,
+  "cpu24_result_sha256": "1d96612938f200bd86d078e1d8841cc92df808ba4ab802ca51306fe229b67506",
+  "full_sanitizer_acceptance": false,
+  "nodes": {
+    "10.10.10.1": {
+      "candidate_comparisons": 24,
+      "cases": 4,
+      "completed_at": 1788928990.0786064,
+      "control_comparisons": 24,
+      "inputs_same_address": true,
+      "provenance": {
+        "complete_receipts_seen": 1,
+        "json_sha256": "2945fbb5a94c768de99b5f791490e411e2d3af899f04b454f8d6712b611320f9",
+        "line_sha256": "addf45185ff4ae04e000ff85c28bab3e2be0a695d5d3406838ebb5d6e79542bc",
+        "occurrence": 0,
+        "prefix_sha256": "157bca8d44facd67f46613e65cd8021cbd174266897b77531b6a3977aad8984f",
+        "raw_end": 84750,
+        "raw_offset": 53921,
+        "stream": "/tmp/glm53-onepass24-streams/10.10.10.1.stdout.raw",
+        "stream_device": 16777233,
+        "stream_inode": 98627585
+      },
+      "q0_comparisons": 24,
+      "receipt_verdict": "PASS",
+      "source_matches_cpu24": true,
+      "started_at": 1788928966.2492247,
+      "versions": {
+        "cuda.bindings": {
+          "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+          "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+          "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/__init__.py",
+          "sha256": "3306a21b3b278d04708edc053064b7e929ee6849589850e1fd5393e6f02fce12",
+          "version": "13.3.1"
+        },
+        "flashinfer": {
+          "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/__init__.py",
+          "sha256": "c0762de404eb0c9f903fe1b8a107300a3d3bd06d1a3692560a38b0647333f751",
+          "version": "0.6.18.dev20260819"
+        },
+        "torch": {
+          "path": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py",
+          "sha256": "cf40c075c95864036e835795756d69b8cccfafa76f3bcde5eba9d06065ccd3d1",
+          "version": "2.13.0+cu130"
+        }
+      },
+      "weights_preserved": true
+    },
+    "10.10.10.3": {
+      "candidate_comparisons": 24,
+      "cases": 4,
+      "completed_at": 1788928990.3416066,
+      "control_comparisons": 24,
+      "inputs_same_address": true,
+      "provenance": {
+        "complete_receipts_seen": 1,
+        "json_sha256": "e204ccea4323be5972ea0a44948c2c7ae332154459488d7c36e3766d67cb808e",
+        "line_sha256": "68e96747d7ad9bb15c4ae1b9ea0eb3ea9ba0abe3ff9116e0ab1d8a52f95b00b3",
+        "occurrence": 0,
+        "prefix_sha256": "2f7650b646690b4ac1f1fe0879012406cea2d859d42823feffe2f60f51a961e4",
+        "raw_end": 85351,
+        "raw_offset": 54571,
+        "stream": "/tmp/glm53-onepass24-streams/10.10.10.3.stdout.raw",
+        "stream_device": 16777233,
+        "stream_inode": 98627586
+      },
+      "q0_comparisons": 24,
+      "receipt_verdict": "PASS",
+      "source_matches_cpu24": true,
+      "started_at": 1788928966.4945574,
+      "versions": {
+        "cuda.bindings": {
+          "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+          "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+          "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/__init__.py",
+          "sha256": "3306a21b3b278d04708edc053064b7e929ee6849589850e1fd5393e6f02fce12",
+          "version": "13.3.1"
+        },
+        "flashinfer": {
+          "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/__init__.py",
+          "sha256": "c0762de404eb0c9f903fe1b8a107300a3d3bd06d1a3692560a38b0647333f751",
+          "version": "0.6.18.dev20260819"
+        },
+        "torch": {
+          "path": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py",
+          "sha256": "cf40c075c95864036e835795756d69b8cccfafa76f3bcde5eba9d06065ccd3d1",
+          "version": "2.13.0+cu130"
+        }
+      },
+      "weights_preserved": true
+    },
+    "10.10.10.4": {
+      "candidate_comparisons": 24,
+      "cases": 4,
+      "completed_at": 1788928985.8421955,
+      "control_comparisons": 24,
+      "inputs_same_address": true,
+      "provenance": {
+        "complete_receipts_seen": 1,
+        "json_sha256": "78fc6307f5b9bb1610b35a72991c2496e9a6d0d938f9a18d4a8d28cfaff55fae",
+        "line_sha256": "73b150ab442af082167dc9758cab9afcf9868d745ce8dd9297946dfd11580256",
+        "occurrence": 0,
+        "prefix_sha256": "d3a9adbc81a75563485aa3d7a78f79aa37dfe92392842c46f2954f1e94fd7bd5",
+        "raw_end": 85285,
+        "raw_offset": 54509,
+        "stream": "/tmp/glm53-onepass24-streams/10.10.10.4.stdout.raw",
+        "stream_device": 16777233,
+        "stream_inode": 98627589
+      },
+      "q0_comparisons": 24,
+      "receipt_verdict": "PASS",
+      "source_matches_cpu24": true,
+      "started_at": 1788928963.8620963,
+      "versions": {
+        "cuda.bindings": {
+          "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+          "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+          "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/__init__.py",
+          "sha256": "3306a21b3b278d04708edc053064b7e929ee6849589850e1fd5393e6f02fce12",
+          "version": "13.3.1"
+        },
+        "flashinfer": {
+          "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/__init__.py",
+          "sha256": "c0762de404eb0c9f903fe1b8a107300a3d3bd06d1a3692560a38b0647333f751",
+          "version": "0.6.18.dev20260819"
+        },
+        "torch": {
+          "path": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py",
+          "sha256": "cf40c075c95864036e835795756d69b8cccfafa76f3bcde5eba9d06065ccd3d1",
+          "version": "2.13.0+cu130"
+        }
+      },
+      "weights_preserved": true
+    },
+    "local": {
+      "candidate_comparisons": 24,
+      "cases": 4,
+      "completed_at": 1788928990.4796402,
+      "control_comparisons": 24,
+      "inputs_same_address": true,
+      "provenance": {
+        "complete_receipts_seen": 1,
+        "json_sha256": "c894f9e19cb75d050224c8a7407cd8495f56f700e0a5529cb0503296dc421c70",
+        "line_sha256": "a0ddd54fe5f903d17d698fcf63a9126d33232c4fa64985a920f7b9c586e5db38",
+        "occurrence": 0,
+        "prefix_sha256": "11fb3360cb2acc7f46cbae18a8aeb1563af116378f0064ff554c6263c3d3745e",
+        "raw_end": 100305,
+        "raw_offset": 69453,
+        "stream": "/tmp/glm53-onepass24-streams/local.stdout.raw",
+        "stream_device": 16777233,
+        "stream_inode": 98627608
+      },
+      "q0_comparisons": 24,
+      "receipt_verdict": "PASS",
+      "source_matches_cpu24": true,
+      "started_at": 1788928966.510205,
+      "versions": {
+        "cuda.bindings": {
+          "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+          "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+          "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/__init__.py",
+          "sha256": "3306a21b3b278d04708edc053064b7e929ee6849589850e1fd5393e6f02fce12",
+          "version": "13.3.1"
+        },
+        "flashinfer": {
+          "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/__init__.py",
+          "sha256": "c0762de404eb0c9f903fe1b8a107300a3d3bd06d1a3692560a38b0647333f751",
+          "version": "0.6.18.dev20260819"
+        },
+        "torch": {
+          "path": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py",
+          "sha256": "cf40c075c95864036e835795756d69b8cccfafa76f3bcde5eba9d06065ccd3d1",
+          "version": "2.13.0+cu130"
+        }
+      },
+      "weights_preserved": true
+    }
+  },
+  "occurrence": 0,
+  "performance_acceptance": false,
+  "revision": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+  "runtime_scope": {
+    "cpu_bindings": "13.0.3",
+    "cpu_serving_runtime_equal": false,
+    "cuda_python_paired_metadata_recorded": false,
+    "serving_bindings": "13.3.1",
+    "serving_runtime_four_rank_comparison": true
+  },
+  "schema": 1,
+  "strict_snapshot_required_separately": true,
+  "verdict": "RAW_CANARY_SOURCE_VALIDATED"
+}

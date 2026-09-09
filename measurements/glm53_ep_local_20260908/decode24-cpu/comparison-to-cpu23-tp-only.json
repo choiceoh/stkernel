@@ -1,0 +1,55 @@
+{
+  "all_six_equal": true,
+  "baseline_result_sha256": "947cca0a91857cd326cc08d1ac5d1f4dcf21185287733750b481ca5b2ed2af25",
+  "baseline_source": "cbf1c7916247f946167c15ff74d92261588e8cea",
+  "candidate_result_sha256": "1d96612938f200bd86d078e1d8841cc92df808ba4ab802ca51306fe229b67506",
+  "candidate_source": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+  "files": {
+    "tp-sf6/q0-cache/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+      "byte_equal": true,
+      "cpu23_bytes": 316344,
+      "cpu23_sha256": "bcc84005f6fd083075564294b98b59bbaf2cd2a680aee36b21367c84bc29eb74",
+      "cpu24_bytes": 316344,
+      "cpu24_sha256": "bcc84005f6fd083075564294b98b59bbaf2cd2a680aee36b21367c84bc29eb74"
+    },
+    "tp-sf6/q0-cache/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+      "byte_equal": true,
+      "cpu23_bytes": 1074676,
+      "cpu23_sha256": "9a8e4ed1695a29169b940b7f072af6fc4aac9fe4976a754b93d94df51f4dbf89",
+      "cpu24_bytes": 1074676,
+      "cpu24_sha256": "9a8e4ed1695a29169b940b7f072af6fc4aac9fe4976a754b93d94df51f4dbf89"
+    },
+    "tp-sf6/q0-cache/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+      "byte_equal": true,
+      "cpu23_bytes": 325,
+      "cpu23_sha256": "266b85a2a6f78ce7fdd407ec53bd855d630a998d883e636bf13d154e009233a0",
+      "cpu24_bytes": 325,
+      "cpu24_sha256": "266b85a2a6f78ce7fdd407ec53bd855d630a998d883e636bf13d154e009233a0"
+    },
+    "tp-sf6/stock/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+      "byte_equal": true,
+      "cpu23_bytes": 502000,
+      "cpu23_sha256": "54e2117adf7b28131f89bde3dba708e6e2f3d89d9871d373176da25ebae6844a",
+      "cpu24_bytes": 502000,
+      "cpu24_sha256": "54e2117adf7b28131f89bde3dba708e6e2f3d89d9871d373176da25ebae6844a"
+    },
+    "tp-sf6/stock/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+      "byte_equal": true,
+      "cpu23_bytes": 1370394,
+      "cpu23_sha256": "cb3feea87b7814e9c725b9fbc0a2e0a61c6a1b6a4cad03a381fd7b9afd616695",
+      "cpu24_bytes": 1370394,
+      "cpu24_sha256": "cb3feea87b7814e9c725b9fbc0a2e0a61c6a1b6a4cad03a381fd7b9afd616695"
+    },
+    "tp-sf6/stock/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+      "byte_equal": true,
+      "cpu23_bytes": 326,
+      "cpu23_sha256": "a551abe74bbd25a4ef5fdac04f398794ef0ba1a865e5e05980b6f9abea7193c5",
+      "cpu24_bytes": 326,
+      "cpu24_sha256": "a551abe74bbd25a4ef5fdac04f398794ef0ba1a865e5e05980b6f9abea7193c5"
+    }
+  },
+  "kernel_cache_descriptors_equal": true,
+  "performance_acceptance": false,
+  "schema": 1,
+  "scope": "Only TP stock/candidate original PTX, cubin and resource bytes; no ELF inference or GPU/performance claim"
+}

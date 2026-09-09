@@ -1,0 +1,6 @@
+{
+  "collector_sha256": "6382fee61ea1b38ceeecf001de4a234e69f4f6a959b5a2c70c2b2c28ad23dc31",
+  "reason": "required temporary leg absent",
+  "runtime_source_changed": false,
+  "verdict": "REFUSED_BEFORE_ARCHIVE_WRITE"
+}

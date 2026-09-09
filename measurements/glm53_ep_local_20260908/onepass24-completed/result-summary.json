@@ -1,0 +1,161 @@
+{
+  "adoption_acceptance": false,
+  "affected_output_channel": "UNKNOWN",
+  "canary_cases": 16,
+  "candidate_comparisons": 96,
+  "canonical_verdicts": [
+    {
+      "base": null,
+      "baseline_scope": {
+        "knobs": {
+          "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+          "VLLM_GLM53_STARTUP_TRIM": "1"
+        },
+        "session": "eplocalonepass0909v24"
+      },
+      "build": "6b65ad3aca79",
+      "cand": "EPONEPASS24A0",
+      "gates": [
+        "korean 2/8"
+      ],
+      "harness": 40,
+      "objective": {
+        "metric": "decode_tokens"
+      },
+      "proof_ok": "3/3",
+      "runtime_attestation": "not recorded; launch identity requires external evidence",
+      "session": "eplocalonepass0909v24",
+      "status": "invalid",
+      "t": "2026-09-09 13:47:30",
+      "verdict": "GATE FAIL: korean 2/8"
+    }
+  ],
+  "completed": [
+    {
+      "arm": "A0",
+      "fixed_decode_tok_s": [
+        81.28801123650489,
+        69.2740101212827,
+        65.46611542382978
+      ],
+      "fixed_pooled_tok_s": 71.4074161332513,
+      "korean": {
+        "dirty": 2,
+        "hits": [
+          [
+            "fixed2K rep0",
+            {
+              "cjk_mixed": 2
+            }
+          ],
+          [
+            "fixed2K rep2",
+            {
+              "cjk_mixed": 2
+            }
+          ]
+        ],
+        "kinds": {
+          "cjk_mixed": 4,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "n": 8
+      },
+      "onepass_record_sha256": "800b3b4a3aade16d6b497b08f8d170aa9c76ed50b492ace236bf04626ee78188",
+      "prefill": [
+        {
+          "cold_s": 2.5494137390051037,
+          "cold_tok_s": 834.7017070796996,
+          "combined": false,
+          "ctx": 2000,
+          "tok": 2128,
+          "ttft_samples_s": [
+            2.5494137390051037,
+            0.8752038520178758,
+            0.8761904939892702
+          ],
+          "warm_s": 0.8752038520178758,
+          "warm_tok_s": 2431.43353984751
+        },
+        {
+          "cold_s": 10.722147250024136,
+          "cold_tok_s": 3035.3061976393524,
+          "combined": true,
+          "ctx": 32000,
+          "tok": 32545,
+          "ttft_samples_s": [
+            10.722147250024136
+          ],
+          "warm_s": 10.722147250024136,
+          "warm_tok_s": 3035.3061976393524
+        },
+        {
+          "cold_s": 41.10960365500068,
+          "cold_tok_s": 3127.2254794497817,
+          "combined": true,
+          "ctx": 128000,
+          "tok": 128559,
+          "ttft_samples_s": [
+            41.10960365500068
+          ],
+          "warm_s": 41.10960365500068,
+          "warm_tok_s": 3127.2254794497817
+        }
+      ],
+      "proof_ok": "3/3",
+      "quality": {
+        "ok": 18,
+        "total": 18
+      }
+    }
+  ],
+  "completed_arms": [
+    "A0"
+  ],
+  "full_canary_pass_receipts": 4,
+  "full_sanitizer_acceptance": false,
+  "head_post_trim_memory_comparison": {
+    "baseline_arm": "A0",
+    "baseline_bytes": 10283593728,
+    "baseline_snapshot_sha256": "ce8f4f9b6e8781bcf12edc977ba00ec7f2d97b8092da654ebde5220dc9dbb11d",
+    "baseline_video_limit": 1,
+    "candidate_bytes": 14643499008,
+    "candidate_video_limit": 0,
+    "causality": "descriptive cross-boot post-trim available RAM only, not isolated video-memory attribution",
+    "cpu_source_diff": true,
+    "delta_bytes": 4359905280
+  },
+  "historical_similarity_scope": "Same literal CJK mixed-token gate failure documented in MEASUREMENTS input-reuse campaign; no causal attribution",
+  "literal_korean_hits": "Halvorsen\u535a\u58eb",
+  "matched_baseline_record": false,
+  "onepass_records": 1,
+  "own_holder_after": false,
+  "partial_arm": null,
+  "payload_returncode": 4,
+  "performance_acceptance": false,
+  "q0_comparisons": 96,
+  "recovery_deferred": true,
+  "recovery_policy": "idle-controller",
+  "returncode": 4,
+  "revision": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+  "schema": 1,
+  "session": "eplocalonepass0909v24",
+  "stock_control_comparisons": 96,
+  "supervisor_pid": 449824,
+  "termination": {
+    "failfast_scope": "Parent observed report-only result; terminal cancel-request and all failfast signal-evidence paths absent",
+    "failfast_signal": false,
+    "reason": "GATE FAIL: korean 2/8",
+    "source": "canonical judge"
+  },
+  "ticket": "1788928530449824",
+  "unrun_arms": [
+    "B1",
+    "A",
+    "B2",
+    "B3"
+  ],
+  "verdict": "A0_KOREAN_GATE_FAILURE_CHANNEL_UNKNOWN"
+}
