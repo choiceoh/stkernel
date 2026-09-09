@@ -1,0 +1,159 @@
+{
+  "captured_at_KST": "2026-09-09T23:46:44.859484+09:00",
+  "files_verified": 20,
+  "identity_sha256": "f7af20462b048da6a800c37c9c03fe3cc4eb596c8c2917921222891d11deb28e",
+  "nodes": {
+    "10.10.10.1": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B": "1"
+        }
+      },
+      "finalized": 1,
+      "graph": true,
+      "id": "df114fcf6c755e9abb7f71632762a49a1bd03b5b2201d663ec5d6e83b4baf96e",
+      "mixed6_last_tags": [
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1"
+      ],
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B_source_image": true,
+      "started_at": "2026-09-09T14:39:41.518391272Z",
+      "static_key_lengths": {
+        "6": 18,
+        "12": 16,
+        "24": 16,
+        "32": 16
+      },
+      "trim": 1
+    },
+    "10.10.10.3": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B": "1"
+        }
+      },
+      "finalized": 1,
+      "graph": true,
+      "id": "89c736fb9d7b9fc4a0095667ea9640e58c86c11978c3d67583e6f05ab23a5a92",
+      "mixed6_last_tags": [
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1"
+      ],
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B_source_image": true,
+      "started_at": "2026-09-09T14:39:41.48569656Z",
+      "static_key_lengths": {
+        "6": 18,
+        "12": 16,
+        "24": 16,
+        "32": 16
+      },
+      "trim": 1
+    },
+    "10.10.10.4": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B": "1"
+        }
+      },
+      "finalized": 1,
+      "graph": true,
+      "id": "842a4420e70e522b3425ed152dc0ff40c1d6070e849807ba32168bc89033730c",
+      "mixed6_last_tags": [
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1"
+      ],
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B_source_image": true,
+      "started_at": "2026-09-09T14:39:41.524385628Z",
+      "static_key_lengths": {
+        "6": 18,
+        "12": 16,
+        "24": 16,
+        "32": 16
+      },
+      "trim": 1
+    },
+    "local": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B": "1"
+        }
+      },
+      "finalized": 1,
+      "graph": true,
+      "id": "2b0e11027ab04dd9b5d9d5bce3dcedd084b4d18b7a85b4ec368d8179924c6f52",
+      "mixed6_last_tags": [
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1"
+      ],
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B_source_image": true,
+      "started_at": "2026-09-09T14:39:42.085746878Z",
+      "static_key_lengths": {
+        "6": 18,
+        "12": 16,
+        "24": 16,
+        "32": 16
+      },
+      "trim": 1
+    }
+  }
+}
