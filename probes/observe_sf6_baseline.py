@@ -21,6 +21,18 @@ import time
 SCHEMA = 'sf6-baseline-observation-v1'
 
 
+def variant(args):
+    """Keep the original frozen API calls unchanged unless explicitly selected."""
+    unpack = getattr(args, 'sf6_unpack', False)
+    if type(unpack) is not bool:
+        raise ValueError('sf6_unpack must be a boolean')
+    if unpack:
+        if args.port != 18000:
+            raise ValueError('SF6 unpack baseline requires loopback port 18000')
+        return dict(sf6_direct=False, sf6_unpack=True)
+    return dict(sf6_direct=True)
+
+
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -86,12 +98,13 @@ def boot_time(head):
 def capture(args, module, reader, expected, go, phase, directory, before=None):
     """Keep validation errors without using them to suppress same-boot reads."""
     proof = module.proof
+    selected = variant(args)
     ledger = args.out / 'records.raw.jsonl'
     entry_before = module.read_records(ledger, {args.name}).get(args.name)
     head_before = reader.head()
     owned_before = reservation(args)['state'] == 'GO'
     collection, validation, artifacts = [], [], {}
-    if (not head_before or module.mode_from_metadata(head_before, sf6_direct=True) != 'baseline'
+    if (not head_before or module.mode_from_metadata(head_before, **selected) != 'baseline'
             or head_before.get('image') != proof.IMAGE):
         collection.append('head is not the requested running baseline/image')
     elif boot_time(head_before) < go['reservation']['started_at']:
@@ -127,18 +140,21 @@ def capture(args, module, reader, expected, go, phase, directory, before=None):
         reports[host] = report
         retain(host + '.json', encode(report))
         try:
-            errors = proof.validate_report(report, expected, sf6_direct=True)
+            errors = proof.validate_report(report, expected, **selected)
             validation.extend(host + ': ' + error for error in errors)
             if report.get('errors') != errors or rank.get('error', '') != '; '.join(errors):
                 collection.append(host + ': collector failed or rank changed during snapshot: '
                                   + str(rank.get('error', report.get('errors'))))
             raw = base64.b64decode(rank['log_b64'], validate=True)
             retain(host + '.log', raw)
-            if report.get('log_sha256') != sha(raw) or report.get('markers') != proof.parse_markers(raw.decode(errors='replace')):
+            parsed = (proof.parse_markers(raw.decode(errors='replace'), sf6_unpack=True)
+                      if selected.get('sf6_unpack') else proof.parse_markers(raw.decode(errors='replace')))
+            if report.get('log_sha256') != sha(raw) or report.get('markers') != parsed:
                 collection.append(host + ': original log SHA/parser mismatch')
-            wanted = proof.expected_knobs('baseline', sf6_direct=True)
+            wanted = proof.expected_knobs('baseline', **selected)
             if (report.get('source_sha256') != expected or report.get('image') != proof.IMAGE
-                    or report.get('mode') != 'baseline' or report.get('sf6_direct') is not True
+                    or report.get('mode') != 'baseline'
+                    or any(report.get(key) is not value for key, value in selected.items())
                     or report.get('running') is not True or report.get('oom_killed') is not False
                     or any(report.get('knobs', {}).get(k) != v for k, v in wanted.items())
                     or any(key not in report for key in proof._IMMUTABLE)):
@@ -157,7 +173,7 @@ def capture(args, module, reader, expected, go, phase, directory, before=None):
             if before:
                 original = before['reports'][host]
                 validation.extend(host + ' comparison: ' + error for error in
-                                  proof.compare_snapshots(original, report, sf6_direct=True))
+                                  proof.compare_snapshots(original, report, **selected))
                 if any(proof._identity(original, k) != proof._identity(report, k) for k in proof._IMMUTABLE):
                     collection.append(host + ': within-arm runtime identity changed')
         except (KeyError, TypeError, ValueError) as exc:
@@ -171,7 +187,7 @@ def capture(args, module, reader, expected, go, phase, directory, before=None):
             collection.append('original completed record bytes unavailable or duplicated')
         else:
             retain('record.raw.json', matches[0])
-    receipt = dict(schema=SCHEMA, phase=phase, name=args.name, mode='baseline', sf6_direct=True,
+    receipt = dict(schema=SCHEMA, phase=phase, name=args.name, mode='baseline', **selected,
         source_commit=args.revision, collection_status='FAILED' if collection else 'COMPLETE',
         runtime_validation='FAIL' if validation else 'PASS', collection_errors=collection,
         validation_errors=validation, head_before=head_before, head_after=head_after,
@@ -184,11 +200,12 @@ def capture(args, module, reader, expected, go, phase, directory, before=None):
 
 
 def observe(args):
+    selected = variant(args)
     args.out.mkdir(parents=True, exist_ok=True)
     state_path = args.out / 'baseline-observer.json'
     if state_path.exists():
         raise ValueError('fresh baseline observation directory required')
-    state = dict(schema=SCHEMA, name=args.name, mode='baseline', sf6_direct=True,
+    state = dict(schema=SCHEMA, name=args.name, mode='baseline', **selected,
         source_commit=args.revision, session=args.session, ticket=args.ticket,
         pid=args.pid, start=args.start, collection_status='WAITING', runtime_validation='NOT_COLLECTED',
         errors=[], phases={}, attempts=[], helper_sha256=sha(Path(__file__).read_bytes()))
@@ -215,7 +232,7 @@ def observe(args):
         module, revision, expected = load_frozen(args.repo, args.revision)
         (args.out / 'baseline-source.commit').write_text(revision + '\n')
         (args.out / 'baseline-expected.json').write_bytes(encode(expected))
-        reader = module.Reader(args.repo, args.port, args.session, args.fleet_dir, sf6_direct=True)
+        reader = module.Reader(args.repo, args.port, args.session, args.fleet_dir, **selected)
         before, attempts = None, 0
         while time.monotonic() < deadline:
             record = module.read_records(args.out / 'records.raw.jsonl', {args.name}).get(args.name)
@@ -229,7 +246,7 @@ def observe(args):
                 raise ValueError('reservation ended without completed onepass record')
             if before is None and current['state'] == 'GO':
                 head = reader.head()
-                if (head and module.mode_from_metadata(head, sf6_direct=True) == 'baseline'
+                if (head and module.mode_from_metadata(head, **selected) == 'baseline'
                         and boot_time(head) >= go['reservation']['started_at'] and reader.healthy()):
                     attempts += 1
                     attempt = capture(args, module, reader, expected, go, 'prepared',
@@ -269,9 +286,13 @@ def main(argv=None):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--pid', type=int, required=True)
     parser.add_argument('--port', type=int, default=18000)
+    parser.add_argument('--sf6-unpack', action='store_true',
+                        help='observe packed SF6 with scalar unpack=0 using the frozen unpack proof API')
     parser.add_argument('--fleet-dir', type=Path, default=Path('/home/choiceoh/glm53-logs/fleet'))
     parser.add_argument('--timeout', type=float, default=10800)
     args = parser.parse_args(argv)
+    if args.sf6_unpack and args.port != 18000:
+        parser.error('SF6 unpack baseline requires --port 18000')
     if (not re.fullmatch(r'[0-9a-f]{40}', args.revision)
             or args.pid <= 0 or not args.start.isdigit() or not 1 <= args.port <= 65535
             or not 0 < args.timeout <= 43200 or not args.repo.is_absolute() or not args.out.is_absolute()
