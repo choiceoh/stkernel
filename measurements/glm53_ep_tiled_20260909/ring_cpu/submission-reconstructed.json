@@ -1,0 +1,30 @@
+{
+  "scope": "reconstructed from parent execution-tool record; not original submission stdout",
+  "command": [
+    "env",
+    "REPO=/home/choiceoh/stkernel-ep-tiled-0909-ring",
+    "bash",
+    "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "eptiledcpu0909ring2",
+    "5",
+    "EP SF6 A-ring 6 real lowerings and 101 CPU contracts; no GPU devices",
+    "--",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "choiceoh@10.10.10.4",
+    "nice -n19 python3 -B /home/choiceoh/stkernel-ep-tiled-0909-ring/probes/run_glm53_ep_tiled_cpu.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --output /home/choiceoh/glm53-ep-tiled-ring-cpu-evidence --capsule-root /home/choiceoh/glm53-ep-cpu-0909-21/capsule --manifest-sha256 b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "returncode": 0,
+  "returncode_scope": "parent execution-tool report",
+  "first_attempt": {
+    "session": "eptiledcpu0909ring",
+    "returncode": 2,
+    "reason": "worker source directory missing; no compilation or GPU execution",
+    "scope": "parent execution-tool report; original failed log preserved separately"
+  }
+}
