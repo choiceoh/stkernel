@@ -30,8 +30,10 @@ FLEET_AUDIT = {'tests/test_fleet_admission.py': 'd452bec3a6ae34be36547174f956d27
 # runbook, all retained by fleet_source. Merged SF6, boot-memory, EP warmup
 # and structured proof assertions retain the same source closure. PR #508
 # adds one profiles/glm53.env assertion and its explicit test invocation.
+# PR #509 only parses the already-read boot-stamp source to compare its phase
+# table with TARGETS; it introduces no file, import or execution dependency.
 # Changed test or runner disables pruning.
-LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': '42f8c301d04caee39f17296f6cc49d020ce4916523f55abd1ff0d5d48f1db4cb', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'd3211e628d73f4219df681ea7fa89347d4e757c0de62e105850e0923262f14b1', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
+LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': '5b24656f11ff0b9aa56ddeb0ee2c2649e134854eb3de5dde8be94c9a16ebc574', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'd3211e628d73f4219df681ea7fa89347d4e757c0de62e105850e0923262f14b1', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
 
 
 def sha(path):

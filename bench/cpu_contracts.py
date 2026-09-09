@@ -15,9 +15,10 @@ import __future__
 
 # Re-audited after merging SF6/boot-memory assertions with EP short-decode,
 # compact warmup and structured proof assertions. The three audited helper
-# tests and load_defs AST match main; PR #508 adds only a profile-reading
-# video-slot assertion. Dependency access graphs are unchanged.
-LOGIC_AUDIT = '42f8c301d04caee39f17296f6cc49d020ce4916523f55abd1ff0d5d48f1db4cb'
+# tests and load_defs AST match main. PR #508 adds the video-slot assertion;
+# PR #509 parses the already-read boot-stamp phase table and TARGETS strings.
+# Dependency access graphs and source closure are unchanged.
+LOGIC_AUDIT = '5b24656f11ff0b9aa56ddeb0ee2c2649e134854eb3de5dde8be94c9a16ebc574'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

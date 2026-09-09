@@ -8041,6 +8041,15 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
           "the memory stamp asks whether CUDA is up BEFORE touching mem_get_info")
     check("GiB used this phase" in src and "dev free" in src,
           "each phase reports free device memory and its own delta")
+    # 40차 trap, hit while splitting load-model: the meta-path finder is the
+    # ONLY thing that runs _patch after install(), and it matches a hardcoded
+    # TARGETS tuple. A phase added to the table but not to TARGETS is never
+    # wrapped and says nothing -- silently, which is the worst kind.
+    table = set(re.findall(r'^\s*\("(vllm[.\w]+)",\s*\(', src, re.M))
+    targets_block = src[src.index("TARGETS = ("):]
+    targets = set(re.findall(r'"(vllm[.\w]+)"', targets_block[:targets_block.index(")\n")+2]))
+    check(table and table <= targets,
+          f"every module the phase table patches is in TARGETS: missing {sorted(table - targets)}")
     check("class _PostImport:" in src
           and all(m in src for m in ('"vllm.v1.worker.gpu_worker"',
                                      '"vllm.v1.worker.gpu.model_runner"',
