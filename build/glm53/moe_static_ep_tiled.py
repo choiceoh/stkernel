@@ -12,6 +12,8 @@ width, and BF16-rounded contributions widened to FP32 RED differ. FC1/FC2,
 activation, both BF16 rounding sites and every publication/pipeline barrier
 remain in the same order. FP32 global RED follows its hardware FTZ semantics;
 this is a new accumulation ABI and still requires the normal numerical gate.
+SF6 native M1..8 shares the existing FC1 A/SFA ring between gate and up;
+their independent weight/SF6 stages and the I128 rounding boundary stay intact.
 """
 
 from __future__ import annotations
@@ -102,6 +104,7 @@ from .moe_reform_sf_pack import REFORM_SF_STAGE
 STOCK_V4_SHA256 = "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c"
 STOCK_V5_SHA256 = "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"
 EP_TILED_CACHE_TAG = "glm53_ep_static_tiled_fp32_v1"
+EP_TILED_A_RING_CACHE_TAG = "glm53_ep_static_sf6_a_ring_v1"
 
 
 def ep_tiled_scale_mode(reform_sf_pack):
@@ -178,6 +181,13 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
             input_scales_are_reciprocal=input_scales_are_reciprocal,
             fast_math=fast_math, activation="swigluoai_uninterleave",
             swiglu_alpha=1.0, swiglu_beta=0.0, swiglu_limit=10.0)
+        # V4 intentionally rejects arbitrary SF6 + experimental combinations.
+        # Its initialization above establishes every SF6 layout/expansion
+        # attribute first. This EP-only M16/K256 geometry reuses the existing
+        # independent A ring: one A/SFA transfer, then both gate/up consumers,
+        # then release. B/SFB keep their original two stages and barriers.
+        # No storage/layout is conditional on a_ring in the inherited init.
+        self.a_ring = bool(reform_sf_pack and geometry["reform"])
 
     @cute.jit
     def __call__(
@@ -1908,6 +1918,8 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
            bool(input_scales_are_reciprocal), bool(fast_math),
            geometry["fc1"], geometry["fc2"], "nvfp4", scale_mode,
            "swigluoai_uninterleave", 1.0, 0.0, 10.0, "fp32_scatter")
+    if reform_sf_pack and geometry["reform"]:
+        key += (EP_TILED_A_RING_CACHE_TAG,)
     return kernel, args, key
 
 
@@ -1933,6 +1945,8 @@ def get_ep_tiled_decode_kernel(**kwargs):
            bool(kwargs.get("fast_math", True)), geometry["fc1"], geometry["fc2"],
            "nvfp4", scale_mode, "swigluoai_uninterleave", 1.0, 0.0, 10.0,
            "fp32_scatter")
+    if kwargs.get("reform_sf_pack", False) and geometry["reform"]:
+        key += (EP_TILED_A_RING_CACHE_TAG,)
     if key in _EP_TILED_KERNEL_CACHE:
         return _EP_TILED_KERNEL_CACHE[key], mac
     if torch.cuda.is_current_stream_capturing():
