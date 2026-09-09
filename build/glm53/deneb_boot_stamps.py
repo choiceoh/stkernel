@@ -229,12 +229,25 @@ def _patch():
             ("Worker", "compile_or_warm_up_model", "compile+warmup"),
         )),
         ("vllm.v1.worker.gpu.model_runner", (
+            ("GPUModelRunner", "load_model", "load-model/runner"),
             ("GPUModelRunner", "profile_run", "profile-run"),
             ("GPUModelRunner", "profile_cudagraph_memory", "cudagraph-memory-profile"),
             ("GPUModelRunner", "capture_model", "cudagraph-capture"),
         )),
         ("vllm.v1.worker.gpu.mm.encoder_runner", (
             ("EncoderRunner", "profile_encoder_cache", "encoder-profile"),
+        )),
+        # 40차: load-model is the biggest device-memory phase and it uses 8.8
+        # GiB MORE than the weights vLLM reports for it ("Model loading took
+        # 50.4 GiB" against a +59.17 GiB stamp). These three split it: the
+        # runner's own load, the post-loading quantization/packing (this lane's
+        # fp8-dense and megakernel packs run there), and the drafter, which
+        # loads a second model inside the same phase.
+        ("vllm.model_executor.model_loader.utils", (
+            (None, "process_weights_after_loading", "load-model/post-quant"),
+        )),
+        ("vllm.v1.spec_decode.llm_base_proposer", (
+            ("SpecDecodeBaseProposer", "load_model", "load-model/drafter"),
         )),
     ):
         want += len(pairs)
@@ -275,7 +288,12 @@ class _PostImport:
     TARGETS = ("vllm.distributed.parallel_state",
                "vllm.v1.worker.gpu_worker", "vllm.v1.worker.gpu.model_runner",
                "vllm.v1.worker.gpu.mm.encoder_runner",
-               "vllm.model_executor.model_loader.default_loader")
+               "vllm.model_executor.model_loader.default_loader",
+               # 40차 load-model split. A phase whose module is not listed here
+               # is never patched: the finder is the only thing that runs
+               # _patch after install(), and it matches on this tuple.
+               "vllm.model_executor.model_loader.utils",
+               "vllm.v1.spec_decode.llm_base_proposer")
 
     def find_spec(self, name, path=None, target=None):
         if _DONE or name not in self.TARGETS:
