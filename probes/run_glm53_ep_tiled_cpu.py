@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normal CPU fleet payload: four EP tiled static and two dynamic lowerings."""
+"""Normal CPU fleet payload: seven EP tiled static and two dynamic lowerings."""
 import argparse
 import hashlib
 import json

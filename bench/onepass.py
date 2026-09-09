@@ -287,6 +287,36 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
     return out
 
 
+def _served_speculation(boot_id):
+    """Read the identified head's actual command; no serving imports or requests."""
+    import subprocess
+    try:
+        from glm53_launch_metadata import launch_speculation
+        if not isinstance(boot_id, str) or re.fullmatch(r'[0-9a-f]{64}\|[^|]+', boot_id) is None:
+            raise ValueError('missing identified serving boot')
+        container_id, started = boot_id.split('|', 1)
+        raw = subprocess.check_output(['docker', 'inspect', container_id], text=True,
+                                      stderr=subprocess.DEVNULL, timeout=10)
+        containers = json.loads(raw)
+        if not isinstance(containers, list) or len(containers) != 1:
+            raise ValueError('ambiguous serving container')
+        container = containers[0]
+        state = container['State']
+        if (container['Id'] != container_id or state['StartedAt'] != started
+                or state['Running'] is not True or state['Paused'] or state['Restarting']):
+            raise ValueError('serving boot changed or stopped')
+        env = {}
+        for item in container['Config']['Env']:
+            key, value = item.split('=', 1)
+            if key in env:
+                raise ValueError('duplicate serving environment')
+            env[key] = value
+        return dict(launch_speculation(container['Config']['Cmd']), boot_id=boot_id,
+                    image=container['Image'], environment_spec_k=env.get('VLLM_GLM53_SPEC_K'))
+    except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError):
+        return None  # Missing evidence never arms SPEC_K proof.
+
+
 def build_record(args, revision):
     from measurement_contract import from_args, metadata
     return dict(name=args.name, t=time.strftime("%F %T"), git=revision,
@@ -329,6 +359,8 @@ def main() -> int:
         rec["runtime"] = json.loads(os.environ.get("FLEET_CONTEXT", "{}"))
     rec["endpoint"] = {"completion": bd.URL, "metrics": bd.METRICS}
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    prove_spec = 'VLLM_GLM53_SPEC_K' in (rec.get('knobs') or {})
+    spec_before = _served_speculation(rec.get('boot_id')) if prove_spec else None
     if os.environ.get("FLEET_SESSION"):
         rec["session"] = os.environ["FLEET_SESSION"]          # who held the fleet (fleet.sh run)
     if os.environ.get("MK_COLD_COMPILE") == "1":
@@ -439,6 +471,7 @@ def main() -> int:
                       f"decode={timing['decode_tok_s']:.2f} tok/s", flush=True)
     wall = time.time() - t_dec0
     metrics_after = _metrics_text(bd.METRICS)
+    spec_after = _served_speculation(rec.get('boot_id')) if prove_spec else None
     m1 = bd._parse_spec_metrics(metrics_after)
     traffic_issues = exclusive_errors(before_traffic, traffic_state(metrics_after),
                                       sw.traffic_samples, len(rec["requests"]))
@@ -538,8 +571,12 @@ def main() -> int:
         _kn = [kk for kk, vv in (rec.get("knobs") or {}).items() if vv not in ("0", "", "off")]
         if _kn:
             rec.update({kk: vv for kk, vv in _proof_check(
-                _kn, os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log")).items()
-                if kk in ("proof", "proof_ok")})
+                _kn, os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log"),
+                speculation=dict(expected_k=rec['knobs'].get('VLLM_GLM53_SPEC_K'),
+                    boot_id=rec.get('boot_id'), launch_before=spec_before, launch_after=spec_after,
+                    exclusive=args.require_exclusive and not traffic_issues,
+                    metrics_before=metrics_before, metrics_after=metrics_after)).items()
+                if kk in ("proof", "proof_ok", "speculation")})
     except Exception:
         pass
 

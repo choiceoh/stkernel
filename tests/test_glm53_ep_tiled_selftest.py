@@ -1,7 +1,7 @@
 """EP tiled canary CPU contracts; no Torch/CUDA imports or GPU work."""
 import ast
 import copy
-from contextlib import redirect_stdout
+from contextlib import nullcontext, redirect_stdout
 import importlib.util
 import io
 import json
@@ -256,7 +256,15 @@ class AdmissionTests(unittest.TestCase):
         decode.ep_tiled_source_contract.assert_called_once()
 
     def test_routes_all_ranks_remote_changed_bounds_duplicates_and_full_cases(self):
-        self.assertEqual([c[1] for c in canary.CASES],[6,12,24,32,33,2128,4096,6912,8192])
+        original=(("mixed6",6,"mixed"),("balanced12",12,"balanced"),
+                  ("concentrated24",24,"concentrated"),("zeros32",32,"zeros"),
+                  ("remote33",33,"remote"),("balanced2128",2128,"balanced"),
+                  ("balanced4096",4096,"balanced"),("concentrated6912",6912,"concentrated"),
+                  ("balanced8192",8192,"balanced"))
+        self.assertEqual(canary.CASES[:9],original)  # Original RNG indices stay fixed.
+        self.assertEqual(canary.CASES[9:],(("mixed4",4,"mixed"),("balanced8",8,"balanced"),
+                                        ("concentrated16",16,"concentrated")))
+        self.assertEqual(canary.SEED,905329)
         for offset in (0,72,144,216):
             for changed in (False,True):
                 remote=canary.route_rows(33,'remote',offset,changed)
@@ -265,6 +273,18 @@ class AdmissionTests(unittest.TestCase):
                 self.assertTrue(all(offset<=e<offset+72 for r in concentrated for e in r))
                 mixed=canary.route_rows(6,'mixed',offset,changed)[0]
                 self.assertEqual(mixed[-1],mixed[-2]);self.assertIn(-1,mixed);self.assertIn(288,mixed)
+                for _,rows,kind in canary.CASES[9:]:
+                    routes=canary.route_rows(rows,kind,offset,changed)
+                    self.assertEqual(len(routes),rows)
+                    self.assertTrue(all(len(row)==8 for row in routes))
+                    self.assertNotEqual(routes,canary.route_rows(rows,kind,offset,not changed))
+                    if kind=='mixed':
+                        self.assertEqual(routes[0][-1],routes[0][-2])
+                        self.assertIn(-1,routes[0]);self.assertIn(288,routes[0])
+                    elif kind=='concentrated':
+                        self.assertTrue(all(offset<=expert<offset+72 for row in routes for expert in row))
+                    else:
+                        self.assertTrue(all(0<=expert<288 for row in routes for expert in row))
         with self.assertRaises(ValueError):canary.route_rows(6,'unknown',0)
 
     def test_only_weight_byte_permutation_allowed_without_storage_replacement(self):
@@ -355,6 +375,68 @@ class AdmissionTests(unittest.TestCase):
         self.assertNotIn('from probes',text)
         self.assertIn('graph.replay() if graph is not None else call()',text)
         self.assertIn('identity != cell["inputs"][int(changed)]',text)
+        # Run the actual candidate scheduler with CPU fakes: appended shapes
+        # must receive both phases and all three comparisons, including replay
+        # of the original graph after the input bytes change.
+        class Tensor:
+            def fill_(self,value):return self
+            def to(self,device):return self
+            def __setitem__(self,key,value):pass
+            def __eq__(self,value):return self
+            def all(self):return True
+        class Stream:
+            def wait_stream(self,other):pass
+        class Graph:
+            def __init__(self):self.replays=0
+            def replay(self):self.replays+=1
+        graphs=[]
+        def graph_factory():
+            graph=Graph();graphs.append(graph);return graph
+        cuda=SimpleNamespace(Stream=lambda **kw:Stream(),CUDAGraph=graph_factory,
+            current_stream=lambda device:Stream(),graph=lambda *a,**kw:nullcontext(),
+            stream=lambda side:nullcontext(),synchronize=Mock())
+        tensors=tuple(Tensor() for _ in range(4))
+        owner=SimpleNamespace(_ep_tiled_weight_views=object(),_ep_tiled_workspace=object())
+        layer=SimpleNamespace(w13_weight=object(),w2_weight=object())
+        launch=Mock(side_effect=lambda owner,out,*args:out)
+        context=dict(torch=SimpleNamespace(cuda=cuda,full=lambda *a,**kw:Tensor(),
+                     arange=lambda *a,**kw:Tensor(),int32='i32'),device='cpu-fake',
+                     tiled=SimpleNamespace(launch_ep_tiled=launch))
+        # Evaluate the actual reference-side cell expression, including its
+        # graph admission, rather than hardcoding a second scheduler.
+        capture=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_capture_references')
+        cell_expr=next(n.value for n in ast.walk(capture) if isinstance(n,ast.Assign)
+                      and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='cell')
+        cell_code=compile(ast.Expression(cell_expr),str(SOURCE),'eval')
+        cells=[]
+        for name,rows,kind in canary.CASES:
+            cell=eval(cell_code,dict(name=name,rows=rows,kind=kind,time=SimpleNamespace(time=lambda:0)))
+            cell['inputs']=[{'phase':False},{'phase':True}];cells.append(cell)
+        current={}
+        def fill(context,buffers,index,changed,offset):
+            current.update(index=index,changed=changed);return tensors
+        handle=dict(receipt={'cases':cells},original={},offset=0,rng=None,buffers=tensors,
+                    references=[[(Tensor(),Tensor()),(Tensor(),Tensor())] for _ in cells])
+        with patch.object(canary,'_identities',return_value={}),patch.object(
+                canary,'_packed_identity',return_value={}),patch.object(canary,'_fill',side_effect=fill),patch.object(
+                canary,'_inputs',side_effect=lambda *a:{'phase':current['changed']}),patch.object(
+                canary,'_scales',return_value={}),patch.object(canary,'compare',return_value={'bad_rows':0}) as compare,patch.object(
+                canary,'_cache_evidence',return_value={}),patch.object(canary,'_check_rng'):
+            canary._validate_candidate(context,owner,layer,handle)
+        self.assertEqual(compare.call_count,72)
+        self.assertEqual(len(graphs),9)
+        self.assertTrue(all(graph.replays==4 for graph in graphs))
+        for cell in cells:
+            self.assertEqual((cell['verdict'],len(cell['candidate'])),('PASS',6))
+        for cell in cells[9:]:
+            self.assertTrue(cell['graph_replay'])
+            self.assertEqual([r['phase'] for r in cell['candidate']],
+                [phase+'-'+label for phase in ('initial','changed')
+                 for label in ('C1-eager','C2-graph-current','C3-graph-side')])
+        labels=next(n.iter for n in ast.walk(capture) if isinstance(n,ast.For)
+                    and isinstance(n.target,ast.Name) and n.target.id=='label')
+        self.assertEqual(ast.literal_eval(labels),('B1','B2','B3'))
+        self.assertEqual(len(cells)*2*len(ast.literal_eval(labels)),72)
 
 
 if __name__=='__main__':unittest.main()

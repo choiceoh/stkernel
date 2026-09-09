@@ -71,7 +71,8 @@ def _ep_tiled_case_proof(case):
             or case.get("phase") != "complete"
             or any(key in case for key in ("error", "cleanup_error", "diagnostic_error", "first_failure_rows"))):
         return False
-    graph = case.get("case") in {"mixed6", "balanced12", "concentrated24", "zeros32", "remote33", "balanced8192"}
+    graph = case.get("case") in {"mixed6", "balanced12", "concentrated24", "zeros32", "remote33", "balanced8192",
+                                 "mixed4", "balanced8", "concentrated16"}
     if case.get("graph_replay") is not graph:
         return False
     labels = ("C1-eager", "C2-graph-current" if graph else "C2-eager",
@@ -141,7 +142,8 @@ def _startup_proof(knob: str, log: str) -> bool | None:
                 return False
         records = _json_marker_receipts(log, "[ep-tiled-selftest] PASS ")
         expected = {"mixed6", "balanced12", "concentrated24", "zeros32", "remote33",
-                    "balanced2128", "balanced4096", "concentrated6912", "balanced8192"}
+                    "balanced2128", "balanced4096", "concentrated6912", "balanced8192",
+                    "mixed4", "balanced8", "concentrated16"}
         return bool(records) and all(
             record.get("verdict") == "PASS" and record.get("phase") == "complete"
             and record.get("caller_preserved") is True
@@ -274,7 +276,103 @@ def served_knobs(repo: str | None = None) -> dict[str, str]:
     return (_served_build(repo) or {}).get("knobs") or {}
 
 
-def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | None = None) -> dict:
+def _spec_counters(text):
+    """Keep one actual metric series and each acceptance position, not label sums."""
+    import math
+    pattern = re.compile(r'(vllm:spec_decode_num_(?:drafts|draft_tokens|accepted_tokens|accepted_tokens_per_pos)_total)'
+                         r'(?:\{(.*)\})?\s+([^\s]+)\s*')
+    label = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)=("(?:[^"\\]|\\.)*")(?:,|$)')
+    scalars, positions, groups = {}, {}, set()
+    for line in text.splitlines():
+        if not line.startswith('vllm:spec_decode_num_'):
+            continue
+        if re.match(r'vllm:spec_decode_num_(?:drafts|draft_tokens|accepted_tokens|accepted_tokens_per_pos)_created(?:\{|\s)', line):
+            continue  # Prometheus Counter metadata is not a token counter.
+        match = pattern.fullmatch(line)
+        if match is None:
+            raise ValueError('unsupported speculative counter')
+        labels, cursor = {}, 0
+        raw_labels = match[2] or ''
+        while cursor < len(raw_labels):
+            item = label.match(raw_labels, cursor)
+            if item is None or item[1] in labels:
+                raise ValueError('ambiguous speculative labels')
+            labels[item[1]] = json.loads(item[2])
+            cursor = item.end()
+        value = float(match[3])
+        if not math.isfinite(value) or value < 0 or not value.is_integer():
+            raise ValueError('invalid speculative counter')
+        name = match[1].removeprefix('vllm:spec_decode_num_').removesuffix('_total')
+        if name == 'accepted_tokens_per_pos':
+            position = labels.pop('position', None)
+            if not isinstance(position, str) or re.fullmatch(r'0|[1-9][0-9]*', position) is None:
+                raise ValueError('missing acceptance position')
+            target, key = positions, int(position)
+        else:
+            target, key = scalars, name
+        if key in target:
+            raise ValueError('multiple speculative metric series')
+        target[key] = int(value)
+        groups.add(tuple(sorted(labels.items())))
+    if set(scalars) != {'drafts', 'draft_tokens', 'accepted_tokens'} or len(groups) != 1:
+        raise ValueError('missing or mixed speculative counters')
+    return scalars, positions, next(iter(groups))
+
+
+def spec_k_evidence(context):
+    """Prove K from the same boot's actual argv and whole-onepass counter delta.
+
+    This is not fixed-request acceptance or a performance verdict. A log marker
+    or an echoed environment setting cannot supply the context.
+    """
+    import hashlib
+    result = dict(verdict='REJECTED', scope='whole onepass metrics window; not fixed-request accepted counts')
+    try:
+        if not isinstance(context, dict) or context.get('exclusive') is not True:
+            raise ValueError('exclusive onepass evidence missing')
+        expected = context['expected_k']
+        if not isinstance(expected, str) or re.fullmatch(r'[1-7]', expected) is None:
+            raise ValueError('invalid declared speculative K')
+        k = int(expected)
+        before, after = context['launch_before'], context['launch_after']
+        if (not isinstance(before, dict) or before != after or before.get('boot_id') != context['boot_id']
+                or not isinstance(before.get('boot_id'), str)
+                or re.fullmatch(r'[0-9a-f]{64}\|[^|]+', before['boot_id']) is None
+                or before.get('method') != 'dflash' or type(before.get('node_rank')) is not int
+                or before['node_rank'] != 0
+                or re.fullmatch(r'sha256:[0-9a-f]{64}', str(before.get('image'))) is None
+                or type(before.get('num_speculative_tokens')) is not int
+                or before['num_speculative_tokens'] != k or before.get('environment_spec_k') != expected
+                or any(re.fullmatch(r'[0-9a-f]{64}', str(before.get(key))) is None
+                       for key in ('command_sha256', 'config_sha256'))):
+            raise ValueError('actual speculative launch or boot differs')
+        a, pa, ga = _spec_counters(context['metrics_before'])
+        b, pb, gb = _spec_counters(context['metrics_after'])
+        if ga != gb or set(pa) != set(pb) or set(pa) != set(range(k)):
+            raise ValueError('speculative series or position count differs')
+        delta = {key:b[key]-a[key] for key in a}
+        positions = [pb[i]-pa[i] for i in range(k)]
+        if (any(v < 0 for v in (*delta.values(), *positions)) or delta['drafts'] <= 0
+                or not 0 < delta['draft_tokens'] <= k*delta['drafts']
+                or not 0 < delta['accepted_tokens'] <= delta['draft_tokens']
+                or sum(positions) != delta['accepted_tokens']
+                or positions[0] > delta['drafts'] or positions[-1] <= 0
+                or any(right > left for left, right in zip(positions, positions[1:]))):
+            raise ValueError('speculative counters reset, idle, or disagree with K')
+        result.update(verdict='PASS', num_speculative_tokens=k, launch=before,
+                      counter_delta=delta, accepted_tokens_per_position_delta=positions,
+                      highest_position_observed=True,
+                      metrics_before_sha256=hashlib.sha256(context['metrics_before'].encode()).hexdigest(),
+                      metrics_after_sha256=hashlib.sha256(context['metrics_after'].encode()).hexdigest(),
+                      metric_series_sha256=hashlib.sha256(json.dumps(ga).encode()).hexdigest())
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        # Only local fixed messages are recorded, never metric payloads or argv.
+        result['reason'] = type(exc).__name__
+    return result
+
+
+def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | None = None,
+          *, speculation=None) -> dict:
     table = table or markers()
     try:
         with open(log_path, "rb") as fh:
@@ -282,7 +380,12 @@ def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | N
     except Exception:
         log = ""
     res = {}
+    spec = None
     for k in knobs:
+        if k == 'VLLM_GLM53_SPEC_K':
+            spec = spec_k_evidence(speculation)
+            res[k] = spec['verdict'] == 'PASS'
+            continue
         startup = _startup_proof(k, log)
         if startup is not None:
             res[k] = startup
@@ -292,8 +395,11 @@ def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | N
             continue
         res[k] = table[k][0] in log            # fixed string, never a regex
     judged = [v for v in res.values() if v is not None]
-    return {"proof": res, "proof_ok": f"{sum(judged)}/{len(judged)}",
-            "log": log_path, "log_bytes": len(log)}
+    result = {"proof": res, "proof_ok": f"{sum(judged)}/{len(judged)}",
+              "log": log_path, "log_bytes": len(log)}
+    if spec is not None:
+        result['speculation'] = spec
+    return result
 
 
 def main() -> int:

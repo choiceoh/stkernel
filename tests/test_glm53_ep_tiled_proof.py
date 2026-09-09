@@ -20,7 +20,8 @@ proof = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(proof)
 CASES = (('mixed6', 6), ('balanced12', 12), ('concentrated24', 24), ('zeros32', 32),
          ('remote33', 33), ('balanced2128', 2128), ('balanced4096', 4096),
-         ('concentrated6912', 6912), ('balanced8192', 8192))
+         ('concentrated6912', 6912), ('balanced8192', 8192),
+         ('mixed4', 4), ('balanced8', 8), ('concentrated16', 16))
 
 
 def receipt():

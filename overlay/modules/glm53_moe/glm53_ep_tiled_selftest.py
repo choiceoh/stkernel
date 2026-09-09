@@ -28,7 +28,11 @@ CASES = (("mixed6", 6, "mixed"), ("balanced12", 12, "balanced"),
          ("remote33", 33, "remote"), ("balanced2128", 2128, "balanced"),
          ("balanced4096", 4096, "balanced"),
          ("concentrated6912", 6912, "concentrated"),
-         ("balanced8192", 8192, "balanced"))
+         ("balanced8192", 8192, "balanced"),
+         # Append so the original cases keep their SEED + case_index inputs.
+         # SPEC_K=3 verifies 4 rows/request: batches 1..4 use M4/8/12/16.
+         ("mixed4", 4, "mixed"), ("balanced8", 8, "balanced"),
+         ("concentrated16", 16, "concentrated"))
 _LOCK = RLock()
 _STATES = {}
 

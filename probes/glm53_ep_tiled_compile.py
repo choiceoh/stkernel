@@ -15,21 +15,23 @@ import unittest
 
 from glm53_ep_capsule_runtime import verify_runtime
 
-STATIC_ROWS = (6, 12, 24, 32)
+STATIC_ROWS = (4, 6, 8, 12, 16, 24, 32)
 DYNAMIC_ROWS = (33, 8192)
 CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_glm53_ep_tiled_owner.py", "test_glm53_ep_tiled_selftest.py",
              "test_glm53_ep_tiled_proof.py", "test_moe_sf6_owner.py",
              "test_moe_static_sf6_direct.py", "test_moe_dynamic_sf6.py",
              "test_moe_sf6_dispatch.py", "test_glm53_ep_tiled_a_ring.py",
-             "test_glm53_ep_tiled_sf6_word_unpack.py")
-CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (12, 12, 19, 12, 12, 12, 6, 7, 6, 5, 6)))
-EXPECTED_CPU_TESTS = 109
+             "test_glm53_ep_tiled_sf6_word_unpack.py",
+             "test_onepass_speculation_proof.py")
+CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (12, 12, 19, 12, 12, 12, 6, 7, 6, 5, 6, 10)))
+EXPECTED_CPU_TESTS = 119
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',
     'probes/glm53_ep_bindings_pair_check.py',
     'profiles/glm53.env', 'bench/proof.py', 'bench/proof-markers.tsv',
+    'bench/onepass.py', 'bench/glm53_launch_metadata.py',
     'overlay/modules/glm53_model/glm5next_model.py',
     'measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
@@ -203,7 +205,7 @@ def main():
     args=p.parse_args()
     result=dict(verdict='FAIL',phase='no-device-guard',started=time.time(),compile_only=True,
                 gpu_numerics_acceptance=False,performance_acceptance=False,
-                scope='four static and two dynamic EP tiled compiler variants plus CPU ownership contracts; no GPU')
+                scope='seven static and two dynamic EP tiled compiler variants plus CPU ownership contracts; no GPU')
     try:
         assert not list(Path('/dev').glob('nvidia*')),'CPU container exposes CUDA devices'
         runtime=verify_runtime(args.capsule_root,args.manifest_sha256)
