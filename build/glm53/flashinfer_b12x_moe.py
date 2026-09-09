@@ -1387,8 +1387,23 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._sf6_weight_views: Any | None = None
         self._sf6_generation: tuple | None = None
         self._sf6_finalized = False
+        self._ep_tiled = read_b12x_ep_exact_bool("VLLM_GLM53_EP_TILED")
+        if self._ep_tiled:
+            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_tiled import (
+                validate_configuration,
+            )
+            validate_configuration(self)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        if getattr(self, "_ep_tiled_generation", None) is not None:
+            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_tiled import (
+                weight_generation,
+            )
+            if not getattr(self, "_ep_tiled_ready", False):
+                raise RuntimeError("tiled EP startup validation did not complete")
+            if self._ep_tiled_generation == weight_generation(layer.w13_weight, layer.w2_weight, self):
+                return
+            raise RuntimeError("tiled EP weights changed after finalisation; load a fresh model")
         if self._sf6_weight_views is not None:
             if (layer.w13_weight_scale is None and layer.w2_weight_scale is None
                     and self.w1_scale is None and self.w2_scale is None
@@ -1476,6 +1491,12 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             k=k2,
             num_groups=num_experts_w2,
         )
+        if getattr(self, "_ep_tiled", False):
+            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_tiled import (
+                prepare_ep_tiled,
+            )
+            prepare_ep_tiled(self, layer)
+            return
         # 39차: the v5 static lane (VLLM_GLM53_B12X_STATIC_V2 cell t) reads
         # tile-major expert weights -- re-lay the layer's packed bytes out in
         # place once here, so the dispatcher's views need no copy (38 GB of
@@ -2652,6 +2673,12 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         apply_router_weight_on_input: bool | None,
     ):
         packed_views = self._sf6_weight_views
+        if getattr(self, "_ep_tiled", False):
+            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_tiled import (
+                launch_ep_tiled,
+            )
+            return launch_ep_tiled(
+                self, output, hidden_states, w1, w2, topk_ids, topk_weights, expert_map)
         if packed_views is None:
             assert self.w1_scale is not None and self.w2_scale is not None, (
                 "w1_scale and w2_scale must not be None for FlashInferB12xExperts"

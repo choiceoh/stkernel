@@ -66,8 +66,53 @@ def _json_marker_receipts(log: str, prefix: str) -> list[dict] | None:
     return records
 
 
+def _ep_tiled_case_proof(case):
+    if (not isinstance(case, dict) or case.get("verdict") != "PASS"
+            or case.get("phase") != "complete"
+            or any(key in case for key in ("error", "cleanup_error", "diagnostic_error", "first_failure_rows"))):
+        return False
+    graph = case.get("case") in {"mixed6", "balanced12", "concentrated24", "zeros32", "remote33", "balanced8192"}
+    if case.get("graph_replay") is not graph:
+        return False
+    labels = ("C1-eager", "C2-graph-current" if graph else "C2-eager",
+              "C3-graph-side" if graph else "C3-side")
+    phases = [phase + "-" + label for phase in ("initial", "changed") for label in labels]
+    items = case.get("candidate")
+    if not isinstance(items, list) or len(items) != 6:
+        return False
+    metrics = ("max_row_relative_l2", "max_row_relative_abs",
+               "stock_max_row_relative_l2", "stock_max_row_relative_abs")
+    return all(isinstance(item, dict) and item.get("phase") == phase
+               and type(item.get("bad_rows")) is int and item["bad_rows"] == 0
+               and all(type(item.get(key)) in (int, float) and item[key] >= 0 for key in metrics)
+               and not any(key in item for key in ("error", "cleanup_error", "diagnostic_error"))
+               for item, phase in zip(items, phases))
+
+
 def _startup_proof(knob: str, log: str) -> bool | None:
     """Composite execution evidence; armed or partial progress is insufficient."""
+    if knob == "VLLM_GLM53_EP_TILED":
+        if "[ep-tiled-selftest] FAIL" in log:
+            return False
+        for lane, low, high in (("decode", 1, 32), ("prefill", 33, 16384)):
+            prefix = "[ep-tiled] LAUNCHED " + lane + " E72/H4096/I2048/top8 T="
+            values = [line.split(prefix, 1)[1].strip() for line in log.splitlines()
+                      if prefix in line]
+            if not values or any(re.fullmatch(r"[0-9]+", value) is None
+                                 or not low <= int(value) <= high for value in values):
+                return False
+        records = _json_marker_receipts(log, "[ep-tiled-selftest] PASS ")
+        expected = {"mixed6", "balanced12", "concentrated24", "zeros32", "remote33",
+                    "balanced2128", "balanced4096", "concentrated6912", "balanced8192"}
+        return bool(records) and all(
+            record.get("verdict") == "PASS" and record.get("phase") == "complete"
+            and record.get("caller_preserved") is True
+            and not any(key in record for key in ("error", "cleanup_error"))
+            and isinstance(record.get("cases"), list)
+            and len(record["cases"]) == len(expected)
+            and {case.get("case") for case in record["cases"] if isinstance(case, dict)} == expected
+            and all(_ep_tiled_case_proof(case) for case in record["cases"])
+            for record in records)
     if knob == "VLLM_GLM53_STARTUP_TRIM":
         records = _json_marker_receipts(log, "[glm53-startup-trim] ")
         if records is None or len(records) != 1:

@@ -3,6 +3,8 @@
 Pinned stock M128 FC1/Q1/FC2 math and task descriptors are inherited.
 Weighted BF16 contributions accumulate in FP32 before one BF16 output cast.
 The entry point admits I2048 with uniformly bounded four-slice tasks.
+Row-major and in-place tile-major weights share the same compute body;
+tile-major changes only the weight TMA views, not raw MMA scale storage.
 Route/Q0 preparation changes: histogram valid local pairs, compact a
 warp's <=8 local routes into its existing shared cache, and quantize the
 original token once per block/scale. No expanded pair_x/pair_out, nonzero,
@@ -790,9 +792,9 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         task_tail: cute.Tensor,  # [1] int32
         task_expert: cute.Tensor,  # [max_tasks] int32
         task_valid_rows: cute.Tensor,  # [max_tasks] int32
-        b_w13: cute.Tensor,  # [2*I_tp, K, E] (gated) or [I_tp, K, E] (relu2)
+        b_w13: cute.Tensor,  # [4096,4096,72] or tiled [4096,512,8,72]
         sfb_w13_ptr: cute.Pointer,  # scale factors for w13
-        b_down: cute.Tensor,  # [K, I_tp, E]
+        b_down: cute.Tensor,  # [4096,2048,72] or tiled [4096,128,16,72]
         sfb_down_ptr: cute.Pointer,
         row_counts: cute.Tensor,  # expert row histogram [E]
         expert_write_rows: cute.Tensor,  # route/pack write cursors [E]
@@ -809,6 +811,22 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
     ):
         if cutlass.const_expr(scatter_output.element_type != cutlass.Float32):
             raise ValueError("expert-local v2 scatter requires FP32 accumulation storage")
+        # Match the stock tiled dynamic adapter: grouping is a view, retaining
+        # each packed tensor's pointer and strides. Both native K128 TMA boxes
+        # divide the inner K512/K128 modes, so no tile crosses a storage chunk.
+        # Reject mixed or different 4-D layouts before any TMA descriptor exists.
+        if cutlass.const_expr(len(b_w13.shape) == 4 or len(b_down.shape) == 4):
+            if cutlass.const_expr(
+                b_w13.shape != (4096, 512, 8, 72)
+                or b_down.shape != (4096, 128, 16, 72)
+            ):
+                raise ValueError("expert-local tiled weights require E72/H4096/I2048 v5 views")
+            b_w13 = cute.group_modes(b_w13, 1, 3)
+            b_down = cute.group_modes(b_down, 1, 3)
+        # Raw MMA scales keep their original logical shape, independent of the
+        # hierarchical weight K. In particular, do not tile or repack SFB here.
+        w13_logical_shape = (b_w13.shape[0], cute.size(b_w13.shape[1]), b_w13.shape[2])
+        down_logical_shape = (b_down.shape[0], cute.size(b_down.shape[1]), b_down.shape[2])
         self.a_dtype = packed_a.element_type
         self.b_dtype = b_w13.element_type
         self.sf_dtype = sfa_ptr.dtype
@@ -835,7 +853,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
 
         # SF tensor for w13 (gated: gate+up concatenated; relu2: single W1)
         sfb_w13_layout = blockscaled_utils.tile_atom_to_shape_SF(
-            b_w13.shape, self.sf_vec_size
+            w13_logical_shape, self.sf_vec_size
         )
         sfb_w13_tensor = cute.make_tensor(sfb_w13_ptr, sfb_w13_layout)
 
@@ -873,7 +891,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         )
         # B_down TMA
         sfb_down_layout = blockscaled_utils.tile_atom_to_shape_SF(
-            b_down.shape, self.sf_vec_size
+            down_logical_shape, self.sf_vec_size
         )
         sfb_down_tensor = cute.make_tensor(sfb_down_ptr, sfb_down_layout)
         tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
@@ -896,7 +914,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         # retaining four slices each. Never expand the inherited Q1 storage.
         if cutlass.const_expr(
             gate_tile_cnt_static != 16 or b_w13.shape[2] != 72
-            or b_down.shape[1] != 2048 or row_counts.shape[0] != 72
+            or down_logical_shape[1] != 2048 or row_counts.shape[0] != 72
         ):
             raise ValueError("expert-local wide entry point requires E72/I2048")
         gate_tile_cnt = Int32(gate_tile_cnt_static)

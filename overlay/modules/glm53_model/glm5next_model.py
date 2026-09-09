@@ -109,7 +109,8 @@ from .multimodal import (
 logger = init_logger(__name__)
 
 _PREFILL_SP_ENABLED = os.environ.get("VLLM_GLM53_PREFILL_SP") == "1"
-_EP_PREFILL_LOCAL = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
+_EP_PREFILL_LOCAL = (os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
+                     or os.environ.get("VLLM_GLM53_EP_TILED") == "1")
 if _PREFILL_SP_ENABLED:
     from vllm.distributed.device_communicators.glm53_prefill_collectives import (
         partial_tp_output,

@@ -101,6 +101,7 @@ _GLM53_EP_PREFILL_LOCAL = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
 
 _TP_SF6_Q0_ENABLED = os.environ.get("VLLM_GLM53_TP_SF6_Q0") == "1"
 _TP_SF6_Q0_LAUNCH_LOGGED = False
+_GLM53_EP_TILED = os.environ.get("VLLM_GLM53_EP_TILED") == "1"
 
 
 def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
@@ -117,7 +118,12 @@ def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
 
 def _ep_local_prefill_kernel(*, E, m, k, n, num_topk, tile_m, activation,
                              swiglu_alpha, swiglu_beta, swiglu_limit, quant_mode, tiled):
-    if not _GLM53_EP_PREFILL_LOCAL or not 4096 <= m <= 16384:
+    tiled_ep = (tiled and globals().get("_GLM53_EP_TILED", False)
+                and (E, k, n, num_topk) == (72, 4096, 2048, 8))
+    if tiled_ep:
+        if type(m) is not int or not 1 <= m <= 16384:
+            raise ValueError("tiled EP prefill requires 1..16384 tokens")
+    elif not _GLM53_EP_PREFILL_LOCAL or not 4096 <= m <= 16384:
         return None
     if ((E, k, n, num_topk) != (72, 4096, 2048, 8)
             or (activation, swiglu_alpha, swiglu_beta, swiglu_limit, quant_mode)
@@ -128,13 +134,13 @@ def _ep_local_prefill_kernel(*, E, m, k, n, num_topk, tile_m, activation,
     if (_FORCED_BACKEND not in (None, "dynamic")
             or os.environ.get(_FORCE_MOE_W4A16_ENV, "0") == "1"):
         raise ValueError("expert-local prefill cannot use a forced incompatible backend")
-    if tiled or tile_m != 128 or torch.cuda.get_device_capability() != (12, 1):
+    if (tiled and not tiled_ep) or tile_m != 128 or torch.cuda.get_device_capability() != (12, 1):
         raise ValueError("expert-local prefill requires row-major SM121 M128")
     selected = select_sm120_moe_backend(
         num_tokens=m, num_topk=num_topk, quant_mode=quant_mode,
         num_experts=E, num_local_experts=E, hidden_size=k,
         intermediate_size=n, activation=activation, swiglu_limit=swiglu_limit)
-    if selected != "dynamic":
+    if selected != "dynamic" and not tiled_ep:
         raise ValueError("expert-local prefill requires dynamic backend selection")
     from .moe_dynamic_ep_local import MoEGatedEPLocalKernel, stock_contract_matches
     if not stock_contract_matches():
@@ -3984,7 +3990,7 @@ def _get_dynamic_kernel(
         intermediate_size=n,
         num_topk=num_topk,
     )
-    if tiled:
+    if tiled and ep_local_cls is None:
         # the tiled layout is read by the gated kernel's subclass only; the
         # #368 prefill-reuse lane subclasses the stock kernel and would read
         # the 4-D tensors as row-major -- the two cannot combine yet
@@ -4034,6 +4040,8 @@ def _get_dynamic_kernel(
             share_input_across_experts=share_input_across_experts,
         )
     if ep_local_cls is not None:
+        if reform_sf_pack:
+            raise ValueError("tiled EP currently requires raw MMA scale planes")
         kernel = ep_local_cls(
             sf_vec_size=sf_vec_size, mma_tiler_mn=mma_tiler_mn,
             input_scales_are_reciprocal=input_scales_are_reciprocal,
@@ -4238,13 +4246,16 @@ def _ep_local_scatter_buffer(workspace, output, num_tokens, k):
     """Get this shared workspace's FP32 sum while preserving the BF16 ABI."""
     if (output.dtype != torch.bfloat16 or tuple(output.shape) != (num_tokens, k)
             or not output.is_contiguous() or output.device != workspace.device
-            or k != 4096 or not 4096 <= num_tokens <= 16384):
+            or k != 4096
+            or not (1 if getattr(workspace, "ep_tiled", False) else 4096) <= num_tokens <= 16384):
         raise ValueError("expert-local FP32 scatter requires contiguous CUDA BF16 [T,4096]")
     current = workspace.ep_scatter_fp32
     if current is not None and (current.dtype != torch.float32 or current.device != output.device
             or current.ndim != 2 or current.shape[1] != k or not current.is_contiguous()):
         raise ValueError("expert-local FP32 scatter workspace has incompatible storage")
     if current is None or current.shape[0] < num_tokens:
+        if getattr(workspace, "ep_tiled", False):
+            raise RuntimeError("tiled EP scatter must be allocated before inference")
         current = torch.empty((num_tokens, k), dtype=torch.float32, device=output.device)
         workspace.ep_scatter_fp32 = current
     # Launch arguments use data_ptr(), so the custom kernel cannot tell the

@@ -50,7 +50,7 @@ def _remap_ep_local_kernel(
 
 def _ep_route_remap_metadata(
     topk_ids, topk_weights, *, expert_map, num_local_experts,
-    local_expert_offset, out_ids, out_scales,
+    local_expert_offset, out_ids, out_scales, min_tokens=4096,
 ):
     """Validate one call and return its launch sizes without caching tensors."""
     if (num_local_experts != 72 or type(local_expert_offset) is not int
@@ -60,7 +60,8 @@ def _ep_route_remap_metadata(
     if not all(isinstance(t, torch.Tensor) for t in tensors):
         return None
     shape = topk_ids.shape
-    if len(shape) != 2 or not 4096 <= shape[0] <= 16384 or shape[1] != 8:
+    if (min_tokens not in (1, 4096) or len(shape) != 2
+            or not min_tokens <= shape[0] <= 16384 or shape[1] != 8):
         return None
     weight_dtype = topk_weights.dtype
     if (topk_ids.dtype not in (torch.int32, torch.int64)
@@ -99,13 +100,14 @@ def ep_route_remap_supported(
 
 def try_remap_ep_local(
     topk_ids, topk_weights, *, expert_map, num_local_experts,
-    local_expert_offset, out_ids, out_scales,
+    local_expert_offset, out_ids, out_scales, _tiled_owner=False,
 ):
     """Write existing route scratch in one launch; False requests Torch fallback."""
     metadata = _ep_route_remap_metadata(
         topk_ids, topk_weights, expert_map=expert_map,
         num_local_experts=num_local_experts, local_expert_offset=local_expert_offset,
         out_ids=out_ids, out_scales=out_scales,
+        min_tokens=1 if _tiled_owner else 4096,
     )
     if metadata is None:
         return False
