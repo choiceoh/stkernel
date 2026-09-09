@@ -76,19 +76,89 @@ class AdmissionTests(unittest.TestCase):
         h = Harness(); load('_ep_micro_scatter_fp32', h.ns)
         h.get(); kernel, args, _ = h.compiles[-1]
         self.assertTrue(kernel.scatter_fp32); self.assertEqual(args[21].dtype, 'Float32')
+        self.assertTrue(kernel.ep_direct_scatter)
         key = next(reversed(h.ns['_MICRO_KERNEL_CACHE']))
         self.assertEqual(key[17], 72)
-        self.assertEqual(key[-1], 'glm53_ep_micro_scatter_fp32_v1')
+        self.assertEqual(key[22:], ('glm53_ep_micro_scatter_fp32_v1',
+                                    'glm53_ep_micro_direct_scatter_v1'))
         h.get(num_topk=1, max_rows=8, skip_zero_weight_expert_id=None)
         kernel, args, _ = h.compiles[-1]
         self.assertTrue(kernel.scatter_fp32); self.assertEqual(args[21].dtype, 'Float32')
-        self.assertIsNone(next(reversed(h.ns['_MICRO_KERNEL_CACHE']))[17])
+        self.assertFalse(kernel.ep_direct_scatter)
+        fixed_key = next(reversed(h.ns['_MICRO_KERNEL_CACHE']))
+        self.assertIsNone(fixed_key[17])
+        self.assertEqual(fixed_key[22:], ('glm53_ep_micro_scatter_fp32_v1',))
         h.get(skip_zero_weight_expert_id=None)
         kernel, args, _ = h.compiles[-1]
         self.assertFalse(kernel.scatter_fp32); self.assertEqual(args[21].dtype, 'BFloat16')
+        self.assertFalse(kernel.ep_direct_scatter)
         self.assertEqual(len(next(reversed(h.ns['_MICRO_KERNEL_CACHE']))), 22)
         count = len(h.compiles); h.get()
         self.assertEqual(len(h.compiles), count)
+
+    def test_direct_scatter_rejects_every_geometry_and_execution_mode_mismatch(self):
+        ns = {}; load('_ep_micro_scatter_fp32', ns)
+        gate = load('_ep_micro_direct_scatter', ns)
+        exact = EXACT | dict(mma_tiler_mn=(32,128), share_input_across_experts=False,
+                             share_expert_scales=False, single_token=False)
+        self.assertTrue(gate(**exact))
+        changes = dict(state_E=(71,73,288), weight_E=(71,73,288), m=(1,6,7,9),
+            k=(2048,4095,4097), n=(1024,2047,2049), num_topk=(1,7,9),
+            max_rows=(8,63,65,128), skip_zero_weight_expert_id=(None,-1,71,73),
+            quant_mode=('mxfp4',), activation=('silu','relu2'),
+            swiglu_alpha=(1.702,float('nan')), swiglu_beta=(1.,float('nan')),
+            swiglu_limit=(None,9.,11.,float('nan')), mma_tiler_mn=((64,128),(32,256)),
+            share_input_across_experts=(True,), share_expert_scales=(True,),
+            single_token=(True,))
+        for field, values in changes.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    self.assertFalse(gate(**(exact | {field:value})))
+        # The independent six-call top1 control still uses FP32 but must keep
+        # its buffered scatter and its existing kernel/cache identity.
+        fixed = exact | dict(num_topk=1,max_rows=8,skip_zero_weight_expert_id=None,
+                             mma_tiler_mn=(64,128))
+        self.assertFalse(gate(**fixed))
+
+    def test_buffered_fp32_cache_cannot_satisfy_direct_scatter(self):
+        from test_glm53_ep_micro_tile import Harness
+        h = Harness(); h.get()
+        direct_key = next(iter(h.ns['_MICRO_KERNEL_CACHE']))
+        # Explicit old ABI/order oracle, including the sentinel at index17.
+        buffered_key = ('micro','nvfp4',72,72,8,4096,2048,8,64,48,(32,128),
+                        'int32',False,True,False,False,False,72,
+                        'swigluoai_uninterleave',1.,0.,10.,
+                        'glm53_ep_micro_scatter_fp32_v1')
+        self.assertEqual(direct_key[:-1], buffered_key)
+        stale = (object(),48)
+        h.ns['_MICRO_KERNEL_CACHE'] = {buffered_key:stale}
+        result = h.get()
+        self.assertNotEqual(result,stale)
+        self.assertEqual(len(h.compiles),2)
+        self.assertEqual(set(h.ns['_MICRO_KERNEL_CACHE']),{buffered_key,direct_key})
+        self.assertEqual(h.get(),result)
+        self.assertEqual(len(h.compiles),2)
+
+    def test_compile_execution_modes_keep_existing_rejection_or_buffered_fp32(self):
+        from test_glm53_ep_micro_tile import Harness
+        for flag in ('share_input_across_experts','share_expert_scales','single_token',None):
+            with self.subTest(flag=flag):
+                h = Harness()
+                if flag is None:
+                    h.ns['_select_micro_mma_tiler_mn'] = lambda **kw:(64,128)
+                if flag in ('share_input_across_experts','single_token'):
+                    with self.assertRaisesRegex(ValueError,'zero-weight expert skip'):
+                        h.get(**{flag:True})
+                    self.assertEqual(h.compiles,[])
+                    self.assertEqual(h.ns['_MICRO_KERNEL_CACHE'],{})
+                    continue
+                h.get(**({flag:True} if flag else {}))
+                kernel,args,_ = h.compiles[-1]
+                self.assertFalse(kernel.ep_direct_scatter)
+                self.assertTrue(kernel.scatter_fp32)
+                self.assertEqual((args[21].dtype,args[21].shape),('Float32',(8,4096)))
+                self.assertEqual(next(iter(h.ns['_MICRO_KERNEL_CACHE']))[22:],
+                                 ('glm53_ep_micro_scatter_fp32_v1',))
 
     def test_actual_allocator_pins_only_matching_capacity_before_any_launch(self):
         events, allocations = [], []

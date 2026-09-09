@@ -1746,6 +1746,7 @@ def _micro_kernel_cache_key(
     swiglu_beta: float,
     swiglu_limit: float | None,
     scatter_fp32: bool = False,
+    ep_direct_scatter: bool = False,
 ) -> Tuple:
     """The micro kernel's cache key (see :func:`_static_kernel_cache_key`)."""
     key = (
@@ -1772,7 +1773,11 @@ def _micro_kernel_cache_key(
         swiglu_beta,
         swiglu_limit,
     )
-    return key + ("glm53_ep_micro_scatter_fp32_v1",) if scatter_fp32 else key
+    if scatter_fp32:
+        key += ("glm53_ep_micro_scatter_fp32_v1",)
+    if ep_direct_scatter:
+        key += ("glm53_ep_micro_direct_scatter_v1",)
+    return key
 
 
 def _dynamic_kernel_cache_key(
@@ -2425,6 +2430,25 @@ def _ep_micro_scatter_fp32(*, state_E, weight_E, m, k, n, num_topk,
             in ((1, 8, None), (8, 64, 72)))
 
 
+def _ep_micro_direct_scatter(*, state_E, weight_E, m, k, n, num_topk,
+                             max_rows, skip_zero_weight_expert_id, quant_mode,
+                             activation, swiglu_alpha, swiglu_beta, swiglu_limit,
+                             mma_tiler_mn, share_input_across_experts,
+                             share_expert_scales, single_token):
+    """Only the padded GLM EP top8 call scatters directly from FC2 registers."""
+    return (_ep_micro_scatter_fp32(
+                state_E=state_E, weight_E=weight_E, m=m, k=k, n=n,
+                num_topk=num_topk, max_rows=max_rows,
+                skip_zero_weight_expert_id=skip_zero_weight_expert_id,
+                quant_mode=quant_mode, activation=activation,
+                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit)
+            and (num_topk, max_rows, skip_zero_weight_expert_id) == (8, 64, 72)
+            and mma_tiler_mn == (32, 128)
+            and not share_input_across_experts and not share_expert_scales
+            and not single_token)
+
+
 def _ep_micro_scatter_buffer(workspace, output):
     """Use the preallocated plane; capture can never replace its storage."""
     current = workspace.ep_micro_scatter_fp32
@@ -2488,6 +2512,16 @@ def _get_micro_kernel(
         swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
     )
+    ep_direct_scatter = _ep_micro_direct_scatter(
+        state_E=state_E, weight_E=weight_E, m=m, k=k, n=n,
+        num_topk=num_topk, max_rows=max_rows,
+        skip_zero_weight_expert_id=skip_zero_weight_expert_id,
+        quant_mode=quant_mode, activation=activation,
+        swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit, mma_tiler_mn=mma_tiler_mn,
+        share_input_across_experts=share_input_across_experts,
+        share_expert_scales=share_expert_scales, single_token=single_token,
+    )
 
     cache_key = _micro_kernel_cache_key(
         quant_mode=quant_mode,
@@ -2512,6 +2546,7 @@ def _get_micro_kernel(
         swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
         scatter_fp32=scatter_fp32,
+        ep_direct_scatter=ep_direct_scatter,
     )
     cached = _MICRO_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -2536,6 +2571,7 @@ def _get_micro_kernel(
         single_token=single_token,
         skip_zero_weight_expert_id=skip_zero_weight_expert_id,
         scatter_fp32=scatter_fp32,
+        ep_direct_scatter=ep_direct_scatter,
     )
 
     is_gated = is_gated_activation(activation)

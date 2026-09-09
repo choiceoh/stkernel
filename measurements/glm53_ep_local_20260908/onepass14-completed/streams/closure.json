@@ -1,0 +1,26 @@
+{
+  "alive": false,
+  "events": [
+    {
+      "at": 1788917323.4314604,
+      "kind": "stream_end",
+      "local_at": 1788917323.431648,
+      "reason": "release"
+    },
+    {
+      "kind": "observer_stop",
+      "local_at": 1788917339.704597,
+      "reason": "terminal_or_release"
+    },
+    {
+      "attempted_arms": [
+        "A0"
+      ],
+      "kind": "observer_finished",
+      "local_at": 1788917339.704857,
+      "owned_go_seen": true
+    }
+  ],
+  "observer_pid": 10285,
+  "scope": "All original chunks/offsets/hashes verified; unassigned attribution retained. A0 was strictly captured; later B1 boot bytes are not candidate traffic."
+}

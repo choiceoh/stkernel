@@ -1,7 +1,10 @@
 """CPU startup-canary contracts; no Torch/CUDA imports or GPU execution."""
 import ast
+from contextlib import redirect_stdout
 import importlib.util
+import io
 import json
+import logging
 from pathlib import Path
 import struct
 from types import SimpleNamespace
@@ -35,24 +38,38 @@ class StateTests(unittest.TestCase):
         self.rt = runtime()
         self.wrapper = SimpleNamespace()
 
-    def test_pass_is_once_and_sync_precedes_return(self):
+    def test_warning_logger_still_publishes_complete_pass_once_after_sync(self):
         events = []
+        output = io.StringIO()
+        previous_level = canary._LOG.level
+        self.addCleanup(canary._LOG.setLevel, previous_level)
+        canary._LOG.setLevel(logging.WARNING)
+        self.assertFalse(canary._LOG.isEnabledFor(logging.INFO))
         self.rt[0].cuda.synchronize.side_effect = lambda _: events.append("sync")
-        with patch.object(canary, "_runtime", return_value=self.rt), patch.object(
+        with redirect_stdout(output), patch("builtins.print", wraps=print) as publish, patch.object(
+                canary, "_runtime", return_value=self.rt), patch.object(
                 canary, "_run", side_effect=lambda *args: events.append("run")) as run:
             first = canary.ensure_ep_local_selftest(self.wrapper, device="cuda:0")
+            first_output = output.getvalue()
             second = canary.ensure_ep_local_selftest(self.wrapper, device="cuda:0")
+            self.assertEqual(output.getvalue(), first_output)
         self.assertIs(first, second)
         self.assertEqual(events, ["run", "sync"])
         self.assertEqual(run.call_count, 1)
         self.assertEqual(first["verdict"], "PASS")
         self.assertFalse(first["performance_acceptance"])
+        marker = "[ep-local-selftest] PASS "
+        self.assertEqual(len(output.getvalue().splitlines()), 1)
+        self.assertTrue(first_output.startswith(marker))
+        self.assertEqual(json.loads(first_output[len(marker):]), first)
+        publish.assert_called_once_with(marker + json.dumps(first, sort_keys=True), flush=True)
 
     def test_first_failure_and_secondary_cleanup_are_sticky(self):
         error = AssertionError("CANDIDATE_NUMERICS_FAIL original")
+        output = io.StringIO()
         self.rt[0].cuda.synchronize.side_effect = RuntimeError("cleanup failed")
-        with patch.object(canary, "_runtime", return_value=self.rt), patch.object(
-                canary, "_run", side_effect=error) as run, patch.object(canary._LOG, "error"):
+        with redirect_stdout(output), patch.object(canary, "_runtime", return_value=self.rt), patch.object(
+                canary, "_run", side_effect=error) as run, patch.object(canary._LOG, "error") as log_error:
             with self.assertRaisesRegex(RuntimeError, "readiness refused") as caught:
                 canary.ensure_ep_local_selftest(self.wrapper, device="cuda:0")
             with self.assertRaisesRegex(RuntimeError, "previously failed"):
@@ -62,6 +79,9 @@ class StateTests(unittest.TestCase):
         receipt = next(iter(canary._STATES.values()))
         self.assertIn("CANDIDATE_NUMERICS_FAIL original", receipt["error"])
         self.assertIn("cleanup failed", receipt["cleanup_error"])
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual(receipt["verdict"], "FAIL")
+        log_error.assert_called_once_with("[ep-local-selftest] FAIL %s", json.dumps(receipt, sort_keys=True))
 
     def test_reentrant_call_fails_instead_of_arming_running_test(self):
         with patch.object(canary, "_runtime", return_value=self.rt), patch.object(
@@ -143,18 +163,25 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(all("duration_s" in case for case in receipt["cases"]))
 
     def test_m32_candidate_and_m64_control_actual_keys_are_required(self):
-        def key(topk, capacity, tile, sentinel):
+        fp32 = "glm53_ep_micro_scatter_fp32_v1"
+        direct = "glm53_ep_micro_direct_scatter_v1"
+        def key(topk, capacity, tile, sentinel, tags):
             result = ["fp4", "nvfp4", 72, 72, 8, 4096, 2048, topk, capacity, 48,
                       tile, "int32", False, True, "swigluoai_uninterleave", 1., 0., sentinel]
-            return tuple(result)
-        good = key(8, 64, (32, 128), 72)
-        control = key(1, 8, (64, 128), None)
+            return tuple(result) + tags
+        good = key(8, 64, (32, 128), 72, (fp32, direct))
+        control = key(1, 8, (64, 128), None, (fp32,))
         md = SimpleNamespace(_MICRO_KERNEL_CACHE={good: object(), control: object()})
         result = canary._micro_keys(md)
         self.assertEqual(result["candidate"], [repr(good)])
         self.assertEqual(json.loads(json.dumps(result))["control"], [repr(control)])
         for bad in ({control: object()}, {good: object()},
-                    {key(8, 64, (64, 128), 72): object(), control: object()}):
+                    {key(8, 64, (64, 128), 72, (fp32, direct)): object(), control: object()},
+                    {good[:-1]: object(), control: object()},
+                    {good[:-2] + (direct, fp32): object(), control: object()},
+                    {good[:-2] + (direct,): object(), control: object()},
+                    {good: object(), control[:-1]: object()},
+                    {good: object(), control + (direct,): object()}):
             md._MICRO_KERNEL_CACHE = bad
             with self.assertRaises(AssertionError):
                 canary._micro_keys(md)

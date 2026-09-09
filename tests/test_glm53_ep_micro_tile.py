@@ -88,7 +88,7 @@ class Harness:
         )
         load_actual_constructor(self.ns)
         load_actual_functions(DISPATCH, {"_select_moe_mma_tiler_mn", "_select_micro_mma_tiler_mn",
-                                         "_ep_micro_scatter_fp32", "_micro_kernel_cache_key",
+                                         "_ep_micro_scatter_fp32", "_ep_micro_direct_scatter", "_micro_kernel_cache_key",
                                          "_get_micro_kernel"}, self.ns)
 
     def compile(self, kernel, *args, **kwargs):

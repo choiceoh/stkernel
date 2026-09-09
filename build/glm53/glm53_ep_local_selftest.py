@@ -577,12 +577,14 @@ def _micro_keys(md):
         if len(key) <= 17:
             continue
         if key[2:9] == (72, 72, 8, 4096, 2048, 8, 64):
-            if key[10] != (32, 128) or key[17] != 72:
-                raise AssertionError("T6 padded candidate did not select exact M32 sentinel micro")
+            if (key[10] != (32, 128) or key[17] != 72 or
+                    key[-2:] != ("glm53_ep_micro_scatter_fp32_v1", "glm53_ep_micro_direct_scatter_v1")):
+                raise AssertionError("T6 padded candidate did not select exact M32 sentinel direct FP32 micro")
             candidate.append(key)
         if key[2:9] == (72, 72, 8, 4096, 2048, 1, 8):
-            if key[10] != (64, 128) or key[17] is not None:
-                raise AssertionError("T6 fixed control did not retain stock M64 micro")
+            if (key[10] != (64, 128) or key[17] is not None or
+                    key[-1] != "glm53_ep_micro_scatter_fp32_v1"):
+                raise AssertionError("T6 fixed control did not retain M64 shared FP32 micro")
             control.append(key)
     if not candidate or not control:
         raise AssertionError("missing compiled T6 M32/M64 keys")
@@ -665,5 +667,7 @@ def ensure_ep_local_selftest(wrapper, *, device):
             _LOG.error("[ep-local-selftest] FAIL %s", json.dumps(receipt, sort_keys=True))
             raise RuntimeError("EP startup self-test failed; serving readiness refused") from primary
         receipt["verdict"] = "PASS"
-        _LOG.info("[ep-local-selftest] PASS %s", json.dumps(receipt, sort_keys=True))
+        # Required evidence must survive third-party logger thresholds. Cached
+        # PASS returns above, so each process/source/device publishes only once.
+        print("[ep-local-selftest] PASS " + json.dumps(receipt, sort_keys=True), flush=True)
         return receipt

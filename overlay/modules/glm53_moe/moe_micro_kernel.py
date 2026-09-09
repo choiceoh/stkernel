@@ -406,6 +406,7 @@ class MoEMicroKernel:
         single_token: bool = False,
         skip_zero_weight_expert_id: int | None = None,
         scatter_fp32: bool = False,
+        ep_direct_scatter: bool = False,
     ):
         if activation not in {"silu", "relu2", "gelu_tanh", "swigluoai_uninterleave"}:
             raise ValueError(f"unsupported activation {activation!r}")
@@ -428,6 +429,22 @@ class MoEMicroKernel:
         self.share_expert_scales = share_expert_scales
         self.single_token = single_token
         self.scatter_fp32 = bool(scatter_fp32)
+        self.ep_direct_scatter = bool(ep_direct_scatter)
+        if self.ep_direct_scatter and not (
+            self.scatter_fp32
+            and sf_vec_size == 16
+            and tuple(mma_tiler_mn) == (32, 128)
+            and output_tile_count_n == 16
+            and activation == "swigluoai_uninterleave"
+            and self.swiglu_alpha == 1.0
+            and self.swiglu_beta == 0.0
+            and self.swiglu_limit == 10.0
+            and not single_token
+            and not share_input_across_experts
+            and not share_expert_scales
+            and skip_zero_weight_expert_id == 72
+        ):
+            raise ValueError("direct scatter requires the exact EP M32 FP32 variant")
         if skip_zero_weight_expert_id is not None and (
             single_token or share_input_across_experts
         ):
@@ -658,6 +675,46 @@ class MoEMicroKernel:
             while self.ab_stage > 1 and 32 % self.ab_stage != 0:
                 self.ab_stage -= 1
 
+    def _validate_ep_direct_scatter_layout(self):
+        """Fail compilation if adjacent register values cease to be an output pair.
+
+        These are the exact copy atoms used by the kernel's r2s path. Enumerating
+        static thread slices uses no device and binds the direct path to CuTe's
+        coordinate partition, including its ordering within the register tensor.
+        """
+        copy_atom_r2s = cute.make_copy_atom(
+            cute.nvgpu.CopyUniversalOp(), cutlass.BFloat16
+        )
+        copy_atom_C = cute.make_copy_atom(
+            cute.nvgpu.warp.StMatrix8x8x16bOp(self.c_layout.is_m_major_c(), 2),
+            cutlass.BFloat16,
+        )
+        tiled_copy_C_Atom = cute.make_tiled_copy_C_atom(copy_atom_C, self.tiled_mma)
+        tiled_copy_r2s = cute.make_tiled_copy_S(copy_atom_r2s, tiled_copy_C_Atom)
+        identity = cute.make_identity_tensor((*self.epi_tile, 1))
+        seen = set()
+        for tid in range(self.num_mma_warps * self.num_threads_per_warp):
+            thread_copy = tiled_copy_r2s.get_slice(tid)
+            coords = thread_copy.partition_D(identity)[None, None, None, 0]
+            source_shape = cute.shape(thread_copy.partition_S(identity))[:3]
+            if cute.size(coords) != cute.size(cute.make_layout(source_shape)):
+                raise ValueError("direct scatter coordinate/register size mismatch")
+            if cute.size(coords) % 2:
+                raise ValueError("direct scatter requires register pairs")
+            for pair in range(cute.size(coords) // 2):
+                first, second = tuple(coords[2 * pair]), tuple(coords[2 * pair + 1])
+                if not (first[0] == second[0] and first[1] % 2 == 0
+                        and second[1] == first[1] + 1 and first[2] == second[2] == 0):
+                    raise ValueError("direct scatter coordinates are not adjacent BF16 pairs")
+                for point in (first, second):
+                    if point in seen:
+                        raise ValueError("direct scatter has duplicate output coordinates")
+                    seen.add(point)
+        expected = {(row, col, 0) for row in range(self.epi_tile[0])
+                    for col in range(self.epi_tile[1])}
+        if seen != expected:
+            raise ValueError("direct scatter coordinate coverage mismatch")
+
     @cute.jit
     def _resident_grid_barrier(
         self,
@@ -724,7 +781,19 @@ class MoEMicroKernel:
         self.c_layout = utils.LayoutEnum.ROW_MAJOR
 
         hidden_size = a_input.shape[1]
+        if cutlass.const_expr(self.ep_direct_scatter):
+            if cutlass.const_expr(
+                a_input.shape != (8, 4096)
+                or topk_ids.shape != (64,)
+                or topk_weights.shape != (64,)
+                or b_w13.shape != (4096, 4096, 72)
+                or b_down.shape != (4096, 2048, 72)
+                or token_map.shape[1] != 64
+            ):
+                raise ValueError("direct scatter requires exact EP M8 top8 weight geometry")
         self._setup_attributes(hidden_size=hidden_size)
+        if cutlass.const_expr(self.ep_direct_scatter):
+            self._validate_ep_direct_scatter_layout()
 
         sfa_layout = blockscaled_utils.tile_atom_to_shape_SF(
             packed_a.shape, self.sf_vec_size
@@ -1658,6 +1727,11 @@ class MoEMicroKernel:
 
                 thr_copy_r2s = tiled_copy_r2s.get_slice(tidx)
                 tRS_sD = thr_copy_r2s.partition_D(sC)
+                if cutlass.const_expr(self.ep_direct_scatter):
+                    # Use exactly the r2s destination coordinates for each
+                    # contiguous BF16 register pair; no scalar-warp remapping.
+                    ep_identity = cute.make_identity_tensor(cute.shape(sC))
+                    ep_tRS_coords = thr_copy_r2s.partition_D(ep_identity)
                 tRS_rGate = tiled_copy_r2s.retile(gate_acc)
                 tRS_rUp = tiled_copy_r2s.retile(up_acc)
 
@@ -2237,94 +2311,120 @@ class MoEMicroKernel:
                         acc_vec = acc_vec.to(cutlass.BFloat16)
                         tRS_rD_out.store(acc_vec)
                         epi_buffer = Int32(epi_m) % cute.size(tRS_sD, mode=[3])
-                        cute.copy(
-                            tiled_copy_r2s,
-                            tRS_rD_out,
-                            tRS_sD[(None, None, None, epi_buffer)],
-                        )
-                        cute.arch.fence_proxy("async.shared", space="cta")
-                        if cutlass.const_expr(self.scatter_fp32):
-                            # The EP M32/M64 r2s layout interleaves producer
-                            # warps across the scalar scatter's quadrants.
-                            # Publish every sC store before any warp reads it.
-                            self.epilog_sync_barrier.arrive_and_wait()
-
-                        rows_offset = Int32(epi_m) * Int32(self.epi_tile[0])
-
-                        # Each scatter warp covers a 64x64 logical quadrant;
-                        # this does not imply ownership of its sC producers.
-                        if cutlass.const_expr(self.scatter_fp32):
-                            # M32 may have another tile for the same expert.
-                            # Never read this tile's sC/metadata beyond its rows.
-                            warp_epi_rows = (
-                                valid_tile_rows - rows_offset - warp_m_base
-                            )
+                        if cutlass.const_expr(self.ep_direct_scatter):
+                            ep_coords = ep_tRS_coords[None, None, None, epi_buffer]
+                            for ep_pair in cutlass.range_constexpr(cute.size(tRS_rD_out) // 2):
+                                ep_coord = ep_coords[2 * ep_pair]
+                                ep_row = Int32(epi_m) * Int32(self.epi_tile[0]) + Int32(ep_coord[0])
+                                if ep_row < valid_tile_rows:
+                                    # Producer lanes have different rows. Load
+                                    # each lane's metadata; a warp-wide lane-0
+                                    # broadcast would mix routed tokens/weights.
+                                    ep_tok = _ld_shared_i32(
+                                        scatter_tok_base_addr + ep_row * Int32(4)
+                                    )
+                                    ep_weight = _ld_shared_f32(
+                                        scatter_weight_base_addr + ep_row * Int32(4)
+                                    )
+                                    ep_v0 = cutlass.Float32(tRS_rD_out[2 * ep_pair])
+                                    ep_v1 = cutlass.Float32(tRS_rD_out[2 * ep_pair + 1])
+                                    scatter_add_bf16x2_to_f32(
+                                        get_ptr_as_int64(
+                                            scatter_output,
+                                            ep_tok * scatter_N + tile_n_base_cur + Int32(ep_coord[1]),
+                                        ),
+                                        ep_weight * ep_v0,
+                                        ep_weight * ep_v1,
+                                    )
                         else:
-                            warp_epi_rows = (
-                                valid_rows - tile_m_base - rows_offset - warp_m_base
+                            cute.copy(
+                                tiled_copy_r2s,
+                                tRS_rD_out,
+                                tRS_sD[(None, None, None, epi_buffer)],
                             )
-                        if warp_epi_rows > Int32(64):
-                            warp_epi_rows = Int32(64)
-                        if warp_epi_rows < Int32(0):
-                            warp_epi_rows = Int32(0)
-
-                        pair_idx = lane_id
-                        while pair_idx < warp_epi_rows * Int32(32):
-                            local_row = pair_idx >> Int32(5)  # / 32
-                            local_pair_col = pair_idx & Int32(31)  # % 32
-                            global_col = (
-                                tile_n_base_cur
-                                + warp_n_base
-                                + local_pair_col * Int32(2)
-                            )
-                            cached_row = rows_offset + warp_m_base + local_row
-                            tok = Int32(0)
-                            wv = cutlass.Float32(0.0)
-                            if cutlass.const_expr(self.single_token):
-                                tok = unique_tok
-                                wv = unique_wv
-                            else:
-                                # Only lane 0 loads tok/wv from smem; broadcast via shuffle.
-                                if lane_id == Int32(0):
-                                    tok = _ld_shared_i32(
-                                        scatter_tok_base_addr + cached_row * Int32(4)
-                                    )
-                                    wv = _ld_shared_f32(
-                                        scatter_weight_base_addr + cached_row * Int32(4)
-                                    )
-                                tok = cute.arch.shuffle_sync(tok, Int32(0))
-                                wv = cute.arch.shuffle_sync(wv, Int32(0))
-                            sc_v0 = cutlass.Float32(
-                                sC[
-                                    warp_m_base + local_row,
-                                    warp_n_base + local_pair_col * Int32(2),
-                                    epi_buffer,
-                                ]
-                            )
-                            sc_v1 = cutlass.Float32(
-                                sC[
-                                    warp_m_base + local_row,
-                                    warp_n_base + local_pair_col * Int32(2) + Int32(1),
-                                    epi_buffer,
-                                ]
-                            )
+                            cute.arch.fence_proxy("async.shared", space="cta")
                             if cutlass.const_expr(self.scatter_fp32):
-                                scatter_add_bf16x2_to_f32(
-                                    get_ptr_as_int64(
-                                        scatter_output, tok * scatter_N + global_col
-                                    ),
-                                    wv * sc_v0,
-                                    wv * sc_v1,
+                                # The EP M32/M64 r2s layout interleaves producer
+                                # warps across the scalar scatter's quadrants.
+                                # Publish every sC store before any warp reads it.
+                                self.epilog_sync_barrier.arrive_and_wait()
+
+                            rows_offset = Int32(epi_m) * Int32(self.epi_tile[0])
+
+                            # Each scatter warp covers a 64x64 logical quadrant;
+                            # this does not imply ownership of its sC producers.
+                            if cutlass.const_expr(self.scatter_fp32):
+                                # M32 may have another tile for the same expert.
+                                # Never read this tile's sC/metadata beyond its rows.
+                                warp_epi_rows = (
+                                    valid_tile_rows - rows_offset - warp_m_base
                                 )
                             else:
-                                scatter_add_bf16x2(
-                                    get_ptr_as_int64(
-                                        scatter_output, tok * scatter_N + global_col
-                                    ),
-                                    wv * sc_v0,
-                                    wv * sc_v1,
+                                warp_epi_rows = (
+                                    valid_rows - tile_m_base - rows_offset - warp_m_base
                                 )
-                            pair_idx += Int32(self.num_threads_per_warp)
+                            if warp_epi_rows > Int32(64):
+                                warp_epi_rows = Int32(64)
+                            if warp_epi_rows < Int32(0):
+                                warp_epi_rows = Int32(0)
+
+                            pair_idx = lane_id
+                            while pair_idx < warp_epi_rows * Int32(32):
+                                local_row = pair_idx >> Int32(5)  # / 32
+                                local_pair_col = pair_idx & Int32(31)  # % 32
+                                global_col = (
+                                    tile_n_base_cur
+                                    + warp_n_base
+                                    + local_pair_col * Int32(2)
+                                )
+                                cached_row = rows_offset + warp_m_base + local_row
+                                tok = Int32(0)
+                                wv = cutlass.Float32(0.0)
+                                if cutlass.const_expr(self.single_token):
+                                    tok = unique_tok
+                                    wv = unique_wv
+                                else:
+                                    # Only lane 0 loads tok/wv from smem; broadcast via shuffle.
+                                    if lane_id == Int32(0):
+                                        tok = _ld_shared_i32(
+                                            scatter_tok_base_addr + cached_row * Int32(4)
+                                        )
+                                        wv = _ld_shared_f32(
+                                            scatter_weight_base_addr + cached_row * Int32(4)
+                                        )
+                                    tok = cute.arch.shuffle_sync(tok, Int32(0))
+                                    wv = cute.arch.shuffle_sync(wv, Int32(0))
+                                sc_v0 = cutlass.Float32(
+                                    sC[
+                                        warp_m_base + local_row,
+                                        warp_n_base + local_pair_col * Int32(2),
+                                        epi_buffer,
+                                    ]
+                                )
+                                sc_v1 = cutlass.Float32(
+                                    sC[
+                                        warp_m_base + local_row,
+                                        warp_n_base + local_pair_col * Int32(2) + Int32(1),
+                                        epi_buffer,
+                                    ]
+                                )
+                                if cutlass.const_expr(self.scatter_fp32):
+                                    scatter_add_bf16x2_to_f32(
+                                        get_ptr_as_int64(
+                                            scatter_output, tok * scatter_N + global_col
+                                        ),
+                                        wv * sc_v0,
+                                        wv * sc_v1,
+                                    )
+                                else:
+                                    scatter_add_bf16x2(
+                                        get_ptr_as_int64(
+                                            scatter_output, tok * scatter_N + global_col
+                                        ),
+                                        wv * sc_v0,
+                                        wv * sc_v1,
+                                    )
+                                pair_idx += Int32(self.num_threads_per_warp)
 
                         # Post-scatter barrier: needed to ensure all warps
                         # finish scatter before next output tile's pipeline ops

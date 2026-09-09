@@ -17,7 +17,8 @@ CPU_TEST_MODULES = ('test_glm53_ep_micro_tile.py', 'test_glm53_ep_short_decode.p
                     'test_glm53_ep_route_remap.py', 'test_glm53_ep_local_selftest.py',
                     'test_glm53_ep_scatter_fp32.py', 'test_glm53_ep_prefill_local.py',
                     'test_glm53_ep_local_probe.py', 'test_glm53_ep_micro_scatter.py',
-                    'test_glm53_ep_micro_scatter_fp32.py')
+                    'test_glm53_ep_micro_scatter_fp32.py',
+                    'test_glm53_ep_micro_direct_scatter.py')
 CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
     'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
@@ -71,10 +72,10 @@ def compile_candidate(output, result):
     result['phase'] = 'micro-cute-compile'
     md._MICRO_KERNEL_CACHE.clear()
     result['micro_passes'] = []
-    variants = ((72, 8, 64, (32,128), True, 'm32-topk8-fp32'),
-                (None, 1, 8, (64,128), True, 'm64-topk1-fp32'),
-                (None, 8, 64, (64,128), False, 'm64-topk8-bf16'))
-    for sentinel, topk, max_rows, tile, fp32, arm in variants:
+    variants = ((72, 8, 64, (32,128), True, True, 'm32-topk8-direct-fp32'),
+                (None, 1, 8, (64,128), True, False, 'm64-topk1-fp32'),
+                (None, 8, 64, (64,128), False, False, 'm64-topk8-bf16'))
+    for sentinel, topk, max_rows, tile, fp32, direct, arm in variants:
         assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin')), 'stale root CuTe artifacts'
         md._get_micro_kernel(72,72,8,4096,2048,topk,max_rows,
             activation='swigluoai_uninterleave',swiglu_alpha=1.0,
@@ -82,7 +83,11 @@ def compile_candidate(output, result):
             skip_zero_weight_expert_id=sentinel,mac_override=48)
         keys=[key for key in md._MICRO_KERNEL_CACHE if key[17]==sentinel and key[7]==topk]
         assert len(keys)==1 and keys[0][10]==tile,keys
-        assert (keys[0][-1]=='glm53_ep_micro_scatter_fp32_v1') is fp32, keys
+        assert ('glm53_ep_micro_scatter_fp32_v1' in keys[0][22:]) is fp32, keys
+        assert (keys[0][-1]=='glm53_ep_micro_direct_scatter_v1') is direct, keys
+        if direct:
+            assert keys[0][-2:] == ('glm53_ep_micro_scatter_fp32_v1',
+                                  'glm53_ep_micro_direct_scatter_v1'), keys
         # Both specializations use the same DSL dump basename. Preserve this
         # pass before the next compile overwrites it; the initialized dump
         # directory remains unchanged throughout the process.
@@ -102,7 +107,8 @@ def compile_candidate(output, result):
                 assert hashlib.sha256(destination.read_bytes()).hexdigest() == digest
                 preserved.append(dict(original_name=path.name,
                     path=str(destination.relative_to(output)), sha256=digest))
-        result['micro_passes'].append(dict(arm=arm, cache_key=keys[0], artifacts=preserved))
+        result['micro_passes'].append(dict(arm=arm, cache_key=keys[0],
+            scatter_fp32=fp32, ep_direct_scatter=direct, artifacts=preserved))
     result['micro_keys']=list(md._MICRO_KERNEL_CACHE)
     assert len(result['micro_keys'])==3
     artifacts=[]

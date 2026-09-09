@@ -27,8 +27,18 @@ STOCK_KERNEL_SOURCE_SHA256 = '70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994
 
 
 def function(name):
-    return next(n for n in ast.walk(ast.parse(MICRO.read_text()))
+    node = next(n for n in ast.walk(ast.parse(MICRO.read_text()))
                 if isinstance(n, ast.FunctionDef) and n.name == name)
+    if name == 'kernel':
+        # This module preserves the independent barrier-based FP32 control and
+        # the original BF16 path. Direct-register behavior has its own tests.
+        class SelectBarrierPath(ast.NodeTransformer):
+            def visit_If(self, item):
+                if ast.unparse(item.test) == 'cutlass.const_expr(self.ep_direct_scatter)':
+                    return [self.visit(n) for n in item.orelse]
+                return self.generic_visit(item)
+        node = SelectBarrierPath().visit(node)
+    return node
 
 
 def extract(fn, namespace):
