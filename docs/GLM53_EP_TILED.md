@@ -19,6 +19,19 @@ decode was 17.88% below B1. A's engine throughput was 18.4447 step/s versus
 establish a stable optimization gain. The target does not waive quality
 gates or establish relative non-regression against TP.
 
+The next bounded configuration comparison is running from frozen source
+`6977199cf699f82696f925f77bc930d500135532` in fleet session
+`eptiledk30910v6`: TP + SF6 with DFlash K5 (B0 preparation, B1 comparison),
+then EP + SF6 with DFlash K3 (A). The kernel bytes are unchanged from the
+BF16-scatter run. K3 reduces C1 target verification from six to four rows,
+but also changes drafting and acceptance; no output-speed gain is assumed.
+Normal CPU admission passed 119 tests and nine real lowerings. The startup
+canary now adds M4/M8/M16, totaling 12 cases and 72 candidate plus 72 control
+comparisons per rank. The onepass proof binds actual DFlash argv and the same
+boot's whole-workload positional counter deltas; these are not fixed-window
+acceptance counts. Defaults remain K5/TP until direct results pass the
+absolute 67 tok/s target and the existing quality, proof and prefill checks.
+
 Enable `ENABLE_EP=1 VLLM_GLM53_EP_TILED=1 VLLM_GLM53_TP_SF6_Q0=0` on the GLM
 profile, retaining its `t,r,sf6` scale-compression setting. The TP Q0 owner/canary does not apply to EP weights. Keep the old
 `VLLM_GLM53_EP_PREFILL_LOCAL`, `VLLM_B12X_EP_ZERO_WEIGHT_MICRO`, and
