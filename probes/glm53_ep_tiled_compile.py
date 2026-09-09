@@ -263,7 +263,8 @@ def check_cpu_contracts(root, result):
         counts[name] = selected.countTestCases()
         suite.addTests(selected)
     result['selected_test_counts'] = counts
-    assert counts == CPU_TEST_COUNTS and suite.countTestCases() == EXPECTED_CPU_TESTS
+    assert counts == CPU_TEST_COUNTS and suite.countTestCases() == EXPECTED_CPU_TESTS, (
+        counts, unittest.defaultTestLoader.errors)
     checked = unittest.TextTestRunner(verbosity=2).run(suite)
     result['contracts'] = dict(tests_run=checked.testsRun, failures=len(checked.failures),
         errors=len(checked.errors), skips=len(checked.skipped))

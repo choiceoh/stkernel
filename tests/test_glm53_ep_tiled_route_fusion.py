@@ -10,8 +10,9 @@ import types
 import unittest
 from unittest.mock import patch
 
-from tests import test_glm53_ep_tiled_static as static_tests
-from tests.test_glm53_ep_tiled_static import (
+sys.path.insert(0, str(Path(__file__).parent))
+import test_glm53_ep_tiled_static as static_tests
+from test_glm53_ep_tiled_static import (
     Tensor, constants, extract, fake_torch, function,
 )
 
