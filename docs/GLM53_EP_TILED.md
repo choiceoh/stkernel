@@ -6,7 +6,7 @@ kernel. It is experimental and defaults off. Neither recovered decode speed
 nor retained prefill gains have been established for this implementation.
 
 Enable `ENABLE_EP=1 VLLM_GLM53_EP_TILED=1 VLLM_GLM53_TP_SF6_Q0=0` on the GLM
-profile. The TP Q0 owner/canary does not apply to EP weights. Keep the old
+profile, retaining its `t,r,sf6` scale-compression setting. The TP Q0 owner/canary does not apply to EP weights. Keep the old
 `VLLM_GLM53_EP_PREFILL_LOCAL`, `VLLM_B12X_EP_ZERO_WEIGHT_MICRO`, and
 `VLLM_B12X_EP_WARM_COMPACT` experiments off. The new flag also preserves the
 EP-compatible attention/MHC prefill SP configuration. Attention remains TP4.
@@ -23,11 +23,17 @@ EP-compatible attention/MHC prefill SP configuration. Attention remains TP4.
   discarded before expert indexing. BF16-rounded contributions accumulate
   in FP32 and are converted once to the caller's BF16 output.
 - M33..capacity uses EP-local M128 prefill with the existing route/Q0/task
-  publication and FP32 scatter. Only its weight descriptors change.
+  publication and FP32 scatter. Its tile-major weights and direct SF6 scale loaders share the existing compute body.
 - All M1..32 static compiler keys and the runtime-shaped prefill kernel are
   prepared before inference. One-launch remapping handles both ranges.
-- Raw scales are retained for this first experiment. SF6 storage savings are
-  not part of its proposed performance mechanism.
+- Both decode geometries and prefill read the same lossless SF6 scale owner.
+  Each 2048-byte scale stage occupies 1552 bytes (24.22% less scale storage,
+  not total model memory). Existing on-device packing verifies every byte by
+  roundtrip; an unrepresentable plane refuses this experimental owner.
+- Original scale Parameters and loader aliases survive the startup canary.
+  The final model hook releases them only after the full checkpoint walk and
+  reseals the owner generation. Inference cannot start with an unfinished
+  release, and no full-size scale decompression buffer is retained.
 - Prepared owners reject changed weights/scales, unsupported geometry,
   overlapping output storage, and conflicting forced backends. They cannot
   fall back to a row-major kernel after relayout.
@@ -43,7 +49,10 @@ actual layer before relayout, then checks the new owner on the same inputs.
 It retains the existing numerical limits and stock-repeat control checks.
 It includes short decode, small/large prefill, concentrated and remote routes,
 changed input contents at fixed addresses, and current/side-stream graph
-replay. Failure prevents readiness and cannot be cleared by calling weight
+replay. It additionally binds both actual packed plane hashes/addresses and
+requires the SF6 kernel cache keys. The final release receipt records actual
+raw and packed byte counts separately from numerical acceptance.
+Failure prevents readiness and cannot be cleared by calling weight
 finalization again. The canary covers one actual layer per rank, not all model
 layers or sanitizer acceptance.
 

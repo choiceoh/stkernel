@@ -36,6 +36,7 @@ class Tensor:
         self.record_stream = Mock()
 
     def data_ptr(self): return self._pointer
+    def untyped_storage(self): return self
     def numel(self): return math.prod(self.shape)
     def element_size(self): return {'f32': 4, 'bf16': 2, 'u8': 1, 'i32': 4, 'i64': 8}[self.dtype]
     def is_contiguous(self): return self._contiguous
@@ -58,10 +59,15 @@ def extract_function(path, name, namespace):
 class Harness:
     def __init__(self, test, capacity=8192):
         self.test, self.events = test, []
+        environment = patch.dict(os.environ, {'VLLM_GLM53_B12X_STATIC_V2': 't,r,sf6',
+                                               'VLLM_GLM53_TP_SF6_Q0': '0'})
+        environment.start()
+        test.addCleanup(environment.stop)
         package = '_glm53_ep_tiled_owner_test'
         self.package = package
         self.torch = ModuleType('torch')
         self.torch.Tensor = Tensor
+        self.torch.nn = SimpleNamespace(Parameter=Tensor)
         for key, value in dict(float32='f32', bfloat16='bf16', uint8='u8', int32='i32', int64='i64').items():
             setattr(self.torch, key, value)
         self.torch.cuda = SimpleNamespace(get_device_capability=Mock(return_value=(12, 1)),
@@ -82,7 +88,7 @@ class Harness:
         self.remap.try_remap_ep_local = Mock(side_effect=self.remap_call)
         self.canary = ModuleType(package + '.glm53_ep_tiled_selftest')
         self.canary.before_relayout = Mock(side_effect=lambda *a: self.events.append(('before', a)))
-        self.canary.after_relayout = Mock(side_effect=lambda *a: self.events.append(('after', a)))
+        self.canary.after_relayout = Mock(side_effect=lambda *a: (self.events.append(('after', a)), {'verdict':'PASS'})[1])
         self.modules = {'torch': self.torch, package: ModuleType(package),
             self.md.__name__: self.md, self.static.__name__: self.static,
             self.remap.__name__: self.remap, self.canary.__name__: self.canary}
@@ -105,12 +111,29 @@ class Harness:
             _swiglu_beta=0., _swiglu_limit=10., max_num_tokens=capacity,
             _ep_stock_topk_micro=False, _ep_disable_micro=False, out_dtype='bf16',
             local_expert_offset=72, _ep_tiled=True, _sf6_weight_views=None,
+            _sf6_finalized=False, _wrapper=None,
             w1_sf_mma=Tensor((72, 4096, 256), 'u8'), w2_sf_mma=Tensor((72, 4096, 128), 'u8'),
             w1_scale=Tensor((72, 4096, 256), 'u8'), w2_scale=Tensor((72, 4096, 128), 'u8'),
             g1_alphas=Tensor((72,)), g2_alphas=Tensor((72,)), _fc2_input_scale=Tensor((72,)))
         self.owner._ensure_ep_scratch = Mock(side_effect=self.scratch)
         self.layer = SimpleNamespace(w13_weight=Tensor((72, 4096, 2048), 'u8'),
                                      w2_weight=Tensor((72, 4096, 1024), 'u8'))
+        self.owner.w1_sf_mma = self.owner.w1_scale
+        self.owner.w2_sf_mma = self.owner.w2_scale
+        self.owner.quant_config = SimpleNamespace(_w1=SimpleNamespace(scale=self.owner.w1_scale),
+                                                 _w2=SimpleNamespace(scale=self.owner.w2_scale))
+        self.layer.w13_weight_scale = self.owner.w1_scale
+        self.layer.w2_weight_scale = self.owner.w2_scale
+        self.layer._parameters = dict(w13_weight_scale=self.layer.w13_weight_scale,
+                                      w2_weight_scale=self.layer.w2_weight_scale)
+        def register(name, value):
+            self.layer._parameters[name] = value
+            setattr(self.layer, name, value)
+        self.layer.register_parameter = register
+        ns = {'torch': self.torch}
+        for name in ('_b12x_sf6_generation', '_b12x_require_packed_owner', '_b12x_release_raw_scales'):
+            extract_function(WRAPPER, name, ns)
+        self.release = ns['_b12x_release_raw_scales']
 
     def relayout(self, w1, w2):
         self.events.append(('relayout', (w1, w2)))
@@ -120,12 +143,13 @@ class Harness:
 
     def views(self, w1, s1, w2, s2, a1, a2, **kwargs):
         self.events.append(('views', kwargs))
-        converted1, converted2 = Tensor(s1.shape, 'u8'), Tensor(s2.shape, 'u8')
-        return SimpleNamespace(tiled=True, packed_only=False,
+        packed1, packed2 = Tensor((72,512,1552), 'u8'), Tensor((72,256,1552), 'u8')
+        return SimpleNamespace(tiled=True, packed_only=True, w1_storage=w1, w2_storage=w2,
             w13_tiled_storage=w1, w2_tiled_storage=w2,
-            w13_fp4=w1, down_fp4=w2, w1_scale_storage=converted1, w2_scale_storage=converted2,
-            _w13_sf_storage=converted1, _down_sf_storage=converted2, w1_alpha=a1, w2_alpha=a2,
-            sfb_w13_ptr=converted1, sfb_down_ptr=converted2)
+            w13_fp4=w1, down_fp4=w2, w1_scale_storage=None, w2_scale_storage=None,
+            _w13_sf_storage=None, _down_sf_storage=None, w1_alpha=a1, w2_alpha=a2,
+            sfb_w13_ptr=None, sfb_down_ptr=None, sfb1_packed=packed1, sfb2_packed=packed2,
+            reform_scales=SimpleNamespace(enabled=True, fc1=packed1, fc2=packed2))
 
     def scratch(self, device, scale_dtype, map_dtype):
         self.events.append(('scratch', (device, scale_dtype, map_dtype)))
@@ -136,8 +160,10 @@ class Harness:
         self.events.append(('remap', (ids, scales, kwargs)))
         return True
 
-    def prepare(self):
+    def prepare(self, finalize=True):
         self.module.prepare_ep_tiled(self.owner, self.layer)
+        if finalize:
+            self.module.finalize_ep_tiled_scales(self.owner, self.layer, self.release)
         return self
 
     def inputs(self, tokens):
@@ -147,8 +173,88 @@ class Harness:
 
 
 class OwnerTests(unittest.TestCase):
-    def test_prepare_preserves_single_weight_storage_and_raw_scale_owners(self):
+    def test_final_hook_releases_actual_parameter_descriptor_and_mma_aliases_once(self):
+        h = Harness(self).prepare(finalize=False)
+        packed = h.owner._ep_tiled_weight_views
+        before = h.owner._ep_tiled_generation
+        with self.assertRaisesRegex(RuntimeError, 'startup validation'):
+            h.module.launch_ep_tiled(h.owner, **h.inputs(6))
+        released = h.module.finalize_ep_tiled_scales(h.owner, h.layer, h.release)
+        self.assertEqual(released, 72 * 4096 * (256 + 128))
+        for field in ('w1_scale', 'w2_scale', 'w1_sf_mma', 'w2_sf_mma'):
+            self.assertIsNone(getattr(h.owner, field))
+        self.assertIsNone(h.layer.w13_weight_scale)
+        self.assertIsNone(h.layer.w2_weight_scale)
+        self.assertEqual(h.layer._parameters, dict(w13_weight_scale=None, w2_weight_scale=None))
+        self.assertIsNone(h.owner.quant_config._w1.scale)
+        self.assertIsNone(h.owner.quant_config._w2.scale)
+        self.assertIs(h.owner._sf6_weight_views, packed)
+        self.assertIs(h.owner._ep_tiled_weight_views, packed)
+        self.assertNotEqual(before, h.owner._ep_tiled_generation)
+        self.assertTrue(h.owner._ep_tiled_ready)
+        receipt = h.owner._ep_tiled_scale_receipt
+        self.assertEqual(receipt['packed_bytes'], 72 * (512 + 256) * 1552)
+        self.assertEqual(receipt['storage_bytes_saved'], released - receipt['packed_bytes'])
+        again = Mock(side_effect=AssertionError('second raw release'))
+        self.assertEqual(h.module.finalize_ep_tiled_scales(h.owner, h.layer, again), 0)
+        again.assert_not_called()
+
+    def test_final_hook_rejects_changed_packed_owner_incomplete_canary_and_capture(self):
+        for mutation in ('packed', 'canary', 'capture', 'raw-wrapper'):
+            h = Harness(self).prepare(finalize=False)
+            if mutation == 'packed': h.owner._ep_tiled_weight_views.sfb1_packed._version += 1
+            if mutation == 'canary': h.owner._ep_tiled_selftest_receipt = {'verdict':'FAIL'}
+            if mutation == 'capture': h.torch.cuda.is_current_stream_capturing.return_value = True
+            if mutation == 'raw-wrapper': h.owner._wrapper = object()
+            release = Mock(side_effect=AssertionError('unsafe release'))
+            with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
+                h.module.finalize_ep_tiled_scales(h.owner, h.layer, release)
+            release.assert_not_called()
+            self.assertFalse(h.owner._ep_tiled_ready)
+            self.assertIsNotNone(h.layer.w13_weight_scale)
+
+    def test_unrepresentable_sf6_or_partial_release_cannot_resume_a_raw_fallback(self):
+        h = Harness(self)
+        def unrepresentable(*args, **kwargs):
+            views = h.views(*args, **kwargs)
+            views.packed_only = False
+            views.reform_scales.enabled = False
+            return views
+        h.md._get_weight_views.side_effect = unrepresentable
+        with self.assertRaisesRegex(RuntimeError, 'packed-only'):
+            h.prepare()
+        with patch.dict(sys.modules, {FULL_OWNER_MODULE: h.module}):
+            with self.assertRaisesRegex(RuntimeError, 'startup validation'):
+                wrapper_method('process_weights_after_loading')(h.owner, h.layer)
+        h.md.tile_expert_weights_inplace.assert_called_once()
+        self.assertIsNotNone(h.layer.w13_weight_scale)
+        h = Harness(self).prepare(finalize=False)
+        with self.assertRaisesRegex(RuntimeError, 'incomplete'):
+            h.module.finalize_ep_tiled_scales(h.owner, h.layer, lambda *args: 1)
+        self.assertFalse(h.owner._ep_tiled_ready)
+
+    def test_reintroduced_raw_scales_or_split_packed_planes_decline_before_remap(self):
+        for field in ('w1_scale', 'w2_scale', 'w1_sf_mma', 'w2_sf_mma'):
+            h = Harness(self).prepare()
+            setattr(h.owner, field, Tensor((72,4096,256), 'u8'))
+            with self.assertRaises(RuntimeError):
+                h.module.launch_ep_tiled(h.owner, **h.inputs(6))
+            h.remap.try_remap_ep_local.assert_not_called()
         h = Harness(self).prepare()
+        h.owner._ep_tiled_weight_views.reform_scales.fc1 = Tensor((72,512,1552), 'u8')
+        with self.assertRaisesRegex(RuntimeError, 'packed-only'):
+            h.module.launch_ep_tiled(h.owner, **h.inputs(6))
+        h.remap.try_remap_ep_local.assert_not_called()
+
+    def test_sf6_profile_and_tp_q0_incompatibility_are_explicit(self):
+        h = Harness(self)
+        for overrides in ({'VLLM_GLM53_B12X_STATIC_V2': 't,r'},
+                          {'VLLM_GLM53_TP_SF6_Q0': '1'}):
+            with patch.dict(os.environ, overrides), self.assertRaises(ValueError):
+                h.module.validate_configuration(h.owner)
+
+    def test_prepare_keeps_original_raw_scales_until_final_hook_and_uses_packed_views(self):
+        h = Harness(self).prepare(finalize=False)
         names = [name for name, _ in h.events]
         self.assertLess(names.index('before'), names.index('relayout'))
         self.assertLess(names.index('relayout'), names.index('views'))
@@ -158,8 +264,12 @@ class OwnerTests(unittest.TestCase):
         self.assertIs(views.w2_tiled_storage, h.layer.w2_weight)
         self.assertIs(views._w13_sf_storage, views.w1_scale_storage)
         self.assertIs(views._down_sf_storage, views.w2_scale_storage)
-        self.assertIsNot(views._w13_sf_storage, h.owner.w1_sf_mma)
-        self.assertIsNot(views._down_sf_storage, h.owner.w2_sf_mma)
+        self.assertIsNone(views._w13_sf_storage)
+        self.assertIsNone(views._down_sf_storage)
+        self.assertIs(views.sfb1_packed, views.reform_scales.fc1)
+        self.assertIs(views.sfb2_packed, views.reform_scales.fc2)
+        self.assertTrue(views.packed_only)
+        self.assertFalse(h.owner._ep_tiled_ready)
         self.assertIsNotNone(h.owner.w1_scale)
         self.assertIsNotNone(h.owner.w2_scale)
         h.owner._ensure_ep_scratch.assert_called_once_with('cuda:0', 'f32', 'i32')
@@ -278,6 +388,7 @@ class OwnerTests(unittest.TestCase):
             self.assertTrue(h.owner._ep_tiled_canary_active)
             inputs = h.inputs(6)
             self.assertIs(h.module.launch_ep_tiled(h.owner, **inputs), inputs['output'])
+            return {'verdict':'PASS'}
         h.canary.after_relayout.side_effect = after
         with patch('builtins.print') as printed:
             h.prepare()
@@ -286,9 +397,8 @@ class OwnerTests(unittest.TestCase):
         self.assertEqual(h.module._LAUNCHED, set())
 
     def test_scale_source_view_and_alpha_generation_changes_refuse_before_remap(self):
-        fields = ('w1_scale', 'w2_scale', 'w1_sf_mma', 'w2_sf_mma',
-                  'g1_alphas', 'g2_alphas', '_fc2_input_scale',
-                  '_w13_sf_storage', '_down_sf_storage', 'w1_alpha', 'w2_alpha')
+        fields = ('g1_alphas', 'g2_alphas', '_fc2_input_scale',
+                  'sfb1_packed', 'sfb2_packed', 'w1_alpha', 'w2_alpha')
         for field in fields:
             for mode in ('mutate', 'replace'):
                 with self.subTest(field=field, mode=mode):
@@ -302,12 +412,12 @@ class OwnerTests(unittest.TestCase):
                     h.remap.try_remap_ep_local.assert_not_called()
 
     def test_output_aliases_decline_including_partial_byte_overlap_and_scale_planes(self):
-        for name in ('x', 'ids', 'scales', 'w1', 'w2', 'remap', 'scatter', 'raw_scale', 'converted_scale'):
+        for name in ('x', 'ids', 'scales', 'w1', 'w2', 'remap', 'scatter', 'packed_fc1', 'packed_fc2'):
             h = Harness(self).prepare()
             args = h.inputs(6)
             tensor = dict(remap=h.owner._ep_ids, scatter=h.workspace.scratch.scatter_fp32,
-                          raw_scale=h.owner.w1_scale,
-                          converted_scale=h.owner._ep_tiled_weight_views._w13_sf_storage).get(name, args.get(name))
+                          packed_fc1=h.owner._ep_tiled_weight_views.sfb1_packed,
+                          packed_fc2=h.owner._ep_tiled_weight_views.sfb2_packed).get(name, args.get(name))
             args['output'] = Tensor((6, 4096), 'bf16', pointer=tensor.data_ptr() + 2)
             with self.subTest(name=name), self.assertRaises(ValueError):
                 h.module.launch_ep_tiled(h.owner, **args)
@@ -376,9 +486,10 @@ class OwnerTests(unittest.TestCase):
         self.assertIs(first.dynamic.ep_scatter_fp32, second.dynamic.ep_scatter_fp32)
         h.md.allocate_sm120_static_workspace.assert_called_once()
         h.md.allocate_sm120_dynamic_workspace.assert_called_once()
-        h.static.warm_ep_tiled_decode.assert_called_once_with()
+        h.static.warm_ep_tiled_decode.assert_called_once_with(reform_sf_pack=True)
         h.md._get_dynamic_kernel.assert_called_once()
         self.assertTrue(h.md._get_dynamic_kernel.call_args.kwargs['tiled'])
+        self.assertTrue(h.md._get_dynamic_kernel.call_args.kwargs['reform_sf_pack'])
         self.assertEqual(first.dynamic.ep_scatter_fp32.shape, (8192, 4096))
         self.assertTrue(first.dynamic.ep_tiled)
         owner = SimpleNamespace(workspace=first)

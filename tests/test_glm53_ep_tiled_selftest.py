@@ -29,6 +29,30 @@ def runtime():
         device='cuda:0', provenance=dict(source='fixed'))
 
 
+def packed_owner():
+    class Tensor:
+        dtype='torch.uint8'
+        device='cuda:0'
+        def __init__(self,shape,address):self.shape,self.address,self.digest=shape,address,'original'
+        def is_contiguous(self):return True
+        def untyped_storage(self):return self
+        def data_ptr(self):return self.address
+    first,second=Tensor((72,512,1552),100),Tensor((72,256,1552),200)
+    scales=SimpleNamespace(enabled=True,fc1=first,fc2=second)
+    views=SimpleNamespace(tiled=True,packed_only=True,reform_scales=scales,
+                          sfb1_packed=first,sfb2_packed=second)
+    raw1,raw2=Tensor((75497472,),10),Tensor((37748736,),20)
+    owner=SimpleNamespace(_ep_tiled_weight_views=views,_ep_tiled_workspace=object(),
+        w1_scale=raw1,w2_scale=raw2,w1_sf_mma=raw1,w2_sf_mma=raw2)
+    layer=SimpleNamespace(w13_weight=SimpleNamespace(device='cuda:0'),
+                          w13_weight_scale=raw1,w2_weight_scale=raw2)
+    return owner,layer
+
+
+def tensor_identity(value):
+    return dict(shape=list(value.shape),dtype=value.dtype,data_ptr=value.address,sha256=value.digest)
+
+
 class LifecycleTests(unittest.TestCase):
     def setUp(self):
         canary._STATES.clear()
@@ -102,6 +126,71 @@ class LifecycleTests(unittest.TestCase):
 
 
 class AdmissionTests(unittest.TestCase):
+    def test_packed_planes_are_complete_separate_and_raw_release_not_claimed(self):
+        owner,layer=packed_owner()
+        with patch.object(canary,'_tensor_identity',side_effect=tensor_identity):
+            receipt=canary._packed_identity(owner,layer)
+        self.assertTrue(receipt['raw_sources_retained'])
+        self.assertFalse(receipt['raw_release_acceptance'])
+        coverage=receipt['preparation_contract']
+        self.assertEqual((coverage['fc1_stages'],coverage['fc2_stages']),(36864,18432))
+        self.assertEqual((coverage['raw_bytes'],coverage['packed_bytes']),(113246208,85819392))
+        self.assertIn('not an additional canary roundtrip',coverage['scope'])
+        mutations=(lambda o,l:setattr(o._ep_tiled_weight_views,'packed_only',False),
+                   lambda o,l:setattr(o._ep_tiled_weight_views.reform_scales,'enabled',False),
+                   lambda o,l:setattr(o._ep_tiled_weight_views,'sfb1_packed',object()),
+                   lambda o,l:setattr(o._ep_tiled_weight_views.sfb1_packed,'shape',(72,256,1552)),
+                   lambda o,l:setattr(o._ep_tiled_weight_views.sfb1_packed,'address',10),
+                   lambda o,l:setattr(o,'w1_sf_mma',None))
+        for mutation in mutations:
+            owner,layer=packed_owner();mutation(owner,layer)
+            with self.subTest(mutation=mutation),patch.object(canary,'_tensor_identity',side_effect=tensor_identity):
+                with self.assertRaises(AssertionError):canary._packed_identity(owner,layer)
+        for name in ('w1_scale_storage','w2_scale_storage','_w13_sf_storage','_down_sf_storage','sfb_w13_ptr','sfb_down_ptr'):
+            owner,layer=packed_owner();setattr(owner._ep_tiled_weight_views,name,object())
+            with self.subTest(raw_alias=name),patch.object(canary,'_tensor_identity',side_effect=tensor_identity):
+                with self.assertRaisesRegex(AssertionError,'retains raw'):canary._packed_identity(owner,layer)
+
+    def test_candidate_completion_rejects_mutated_packed_bytes(self):
+        owner,layer=packed_owner()
+        class Mapping:
+            def __setitem__(self,key,value):pass
+        context=dict(torch=SimpleNamespace(full=lambda *a,**k:Mapping(),arange=lambda *a,**k:[],int32='i32'),
+                     device='cuda:0',tiled=object())
+        handle=dict(original={},offset=0,rng=None,receipt={'cases':[]})
+        calls=[]
+        def observe(value):
+            result=tensor_identity(value)
+            calls.append(value)
+            if len(calls)==3:result['sha256']='mutated packed bytes'
+            return result
+        with patch.object(canary,'_identities',return_value={}),patch.object(
+                canary,'_tensor_identity',side_effect=observe),patch.object(canary,'_check_rng'):
+            with self.assertRaisesRegex(AssertionError,'changed its actual packed SF6'):
+                canary._validate_candidate(context,owner,layer,handle)
+        self.assertNotIn('actual_packed_owner',handle['receipt'])
+
+    def test_source_bound_roundtrip_contract_checks_both_whole_planes(self):
+        spec=importlib.util.spec_from_file_location(PACKAGE+'.moe_reform_sf_pack',SOURCE.with_name('moe_reform_sf_pack.py'))
+        packing=importlib.util.module_from_spec(spec);sys.modules[spec.name]=packing;spec.loader.exec_module(packing)
+        self.assertEqual((packing.REFORM_SF_BLOCK,packing.REFORM_SF_STAGE),(2048,1552))
+        raw1,raw2,packed1,packed2=object(),object(),object(),object()
+        with patch.object(packing,'pack_plane',side_effect=[(packed1,None),(packed2,None)]) as pack:
+            owner=packing.prepare_reform_scales(raw1,raw2,experts=72,n=2048,k=4096)
+        self.assertTrue(owner.enabled)
+        self.assertEqual([(c.kwargs['rows'],c.kwargs['k'],c.kwargs['kind']) for c in pack.call_args_list],
+                         [(4096,4096,'fc1'),(4096,2048,'fc2')])
+        with patch.object(packing,'pack_plane',side_effect=[(packed1,None),(None,'unrepresentable')]):
+            rejected=packing.prepare_reform_scales(raw1,raw2,experts=72,n=2048,k=4096)
+        self.assertFalse(rejected.enabled);self.assertIsNone(rejected.fc1)
+        tree=ast.parse(SOURCE.with_name('moe_reform_sf_pack.py').read_text())
+        body=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='pack_plane')
+        text=ast.unparse(body)
+        self.assertIn('for first in range(0, count, REFORM_SF_CHUNK):',text)
+        self.assertIn('back = unpack_sf_inline(target[first:last], REFORM_SF_BLOCK).view_as(raw)',text)
+        self.assertIn('valid &= (back == raw).all()',text)
+        self.assertIn('if not bool(valid.item()):',text)
+
     def test_runtime_accepts_new_owner_without_old_micro_workspaces_or_old_knob(self):
         owner=SimpleNamespace(_use_ep=True,_ep_no_dummy=True,global_num_experts=288,
             num_local_experts=72,hidden_dim=4096,intermediate_size_per_partition=2048,
@@ -114,7 +203,8 @@ class AdmissionTests(unittest.TestCase):
         decode=SimpleNamespace(__file__=str(SOURCE),ep_tiled_source_contract=Mock())
         prefix='flashinfer.fused_moe.cute_dsl.blackwell_sm12x.'
         modules={prefix+name:SimpleNamespace(__file__=str(SOURCE)) for name in
-                 ('glm53_ep_tiled','moe_static_kernel_v4','moe_static_kernel_v5')}
+                 ('glm53_ep_tiled','moe_static_kernel_v4','moe_static_kernel_v5',
+                  'moe_reform_sf_pack','moe_sf_pack','moe_dynamic_gated_sf6')}
         modules.update({prefix+'moe_static_ep_tiled':decode,'torch':torch,
             'flashinfer':SimpleNamespace(__file__=str(SOURCE),__version__='test'),
             'cuda.bindings':SimpleNamespace(__file__=None)})
@@ -128,7 +218,7 @@ class AdmissionTests(unittest.TestCase):
                 context=canary._runtime(owner,SimpleNamespace(w13_weight=SimpleNamespace(device=SimpleNamespace(type='cuda'))))
                 self.assertEqual(context['provenance']['versions']['cuda.bindings']['version'],'13.3.1')
                 self.assertIsNone(context['provenance']['versions']['cuda.bindings']['path'])
-                self.assertEqual(len(context['provenance']['source']),10)
+                self.assertEqual(len(context['provenance']['source']),13)
                 md._GLM53_EP_TILED=False
                 with self.assertRaisesRegex(RuntimeError,'selection/source'):
                     canary._runtime(owner,SimpleNamespace(w13_weight=SimpleNamespace(device=SimpleNamespace(type='cuda'))))
@@ -162,14 +252,18 @@ class AdmissionTests(unittest.TestCase):
         decode=SimpleNamespace(ep_tiled_geometry=geom,_EP_TILED_KERNEL_CACHE={})
         owner=SimpleNamespace(_ep_tiled_workspace=SimpleNamespace(static=SimpleNamespace(max_rows=256),scratch=SimpleNamespace(max_active_clusters=48)))
         context=dict(decode=decode,md=SimpleNamespace(_DYNAMIC_KERNEL_CACHE={}))
-        key=('glm53_ep_static_tiled_fp32_v1',6,256,48,'torch.int32',False,True,(16,128,256),(16,256,128),'nvfp4','raw_mma_scales','swigluoai_uninterleave',1.,0.,10.,'fp32_scatter')
+        key=('glm53_ep_static_tiled_fp32_v1',6,256,48,'torch.int32',False,True,(16,128,256),(16,256,128),'nvfp4','sf6_v1','swigluoai_uninterleave',1.,0.,10.,'fp32_scatter')
         decode._EP_TILED_KERNEL_CACHE[key]=object()
         self.assertEqual(canary._cache_evidence(context,owner,6)['keys'],[repr(key)])
         with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,7)
-        dynamic=('dynamic','fp4','nvfp4',72,4096,2048,8,48,(128,128),'torch.int32',False,True,'swigluoai_uninterleave',1.,0.,10.,False,True,'glm53_ep_prefill_local_fp32_v2')
+        decode._EP_TILED_KERNEL_CACHE={key[:10]+('raw_mma_scales',)+key[11:]:object()}
+        with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,6)
+        dynamic=('dynamic','fp4','nvfp4',72,4096,2048,8,48,(128,128),'torch.int32',False,True,'swigluoai_uninterleave',1.,0.,10.,False,True,'glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1')
         context['md']._DYNAMIC_KERNEL_CACHE[dynamic]=object()
         self.assertEqual(canary._cache_evidence(context,owner,8192)['keys'],[repr(dynamic)])
-        context['md']._DYNAMIC_KERNEL_CACHE={dynamic[:-2]+(False,dynamic[-1]):object()}
+        context['md']._DYNAMIC_KERNEL_CACHE={dynamic[:17]+(False,)+dynamic[18:]:object()}
+        with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,8192)
+        context['md']._DYNAMIC_KERNEL_CACHE={dynamic[:-1]:object()}
         with self.assertRaises(AssertionError):canary._cache_evidence(context,owner,8192)
 
     def test_source_uses_established_numeric_contract_and_bounded_graph_flow(self):

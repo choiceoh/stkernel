@@ -26,6 +26,11 @@ CASES = (('mixed6', 6), ('balanced12', 12), ('concentrated24', 24), ('zeros32', 
 def receipt():
     result = dict(schema=1, verdict='PASS', phase='complete', caller_preserved=True,
                   actual_weight_owner=True, geometry=dict(E=72, K=4096, I=2048, top8=8), cases=[])
+    result['actual_packed_owner'] = True
+    result['packed_before'] = dict(raw_sources_retained=True, raw_release_acceptance=False,
+        planes={name:dict(shape=[72,blocks,1552], dtype='torch.uint8', data_ptr=ptr, sha256='a'*64)
+                for name,blocks,ptr in (('fc1',512,4096),('fc2',256,8192))})
+    result['packed_after'] = copy.deepcopy(result['packed_before'])
     for name, rows in CASES:
         graph = rows <= 33 or rows == 8192
         labels = ('C1-eager', 'C2-graph-current' if graph else 'C2-eager',
@@ -41,10 +46,27 @@ def receipt():
 def log(record=None, *, decode=6, prefill=8192):
     return '\n'.join((PREFIX + json.dumps(receipt() if record is None else record),
         f'[ep-tiled] LAUNCHED decode E72/H4096/I2048/top8 T={decode}',
-        f'[ep-tiled] LAUNCHED prefill E72/H4096/I2048/top8 T={prefill}'))
+        f'[ep-tiled] LAUNCHED prefill E72/H4096/I2048/top8 T={prefill}',
+        '[ep-tiled-sf6] FINALIZED ' + json.dumps(dict(format='sf6_v1', packed_only=True, layers=1,
+            raw_bytes_released=72*768*2048, packed_bytes=72*768*1552,
+            storage_bytes_saved=72*768*(2048-1552)))))
 
 
 class CompositeProofTests(unittest.TestCase):
+    def test_raw_prototype_or_unreleased_scales_do_not_prove_sf6_candidate(self):
+        mutations = [lambda r: r.pop('actual_packed_owner'),
+                     lambda r: r.pop('packed_before'),
+                     lambda r: r['packed_after']['planes']['fc1'].update(sha256='b'*64),
+                     lambda r: r['packed_before'].update(raw_sources_retained=False)]
+        for mutate in mutations:
+            record = receipt(); mutate(record)
+            self.assertFalse(proof._startup_proof(KNOB, log(record)))
+        for old, new in (('FINALIZED', 'PREPARED'), ('"layers": 1', '"layers": true'),
+                         ('"packed_only": true', '"packed_only": false'),
+                         ('"raw_bytes_released": 113246208', '"raw_bytes_released": 0')):
+            self.assertFalse(proof._startup_proof(KNOB, log().replace(old, new)))
+        self.assertFalse(proof._startup_proof(KNOB, '\n'.join(log().splitlines()[:-1])))
+
     def test_complete_actual_weight_canary_and_both_lanes_prove_at_boundaries(self):
         for decode in (1, 6, 32):
             for prefill in (33, 2128, 8192, 16384):

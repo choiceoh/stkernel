@@ -174,10 +174,11 @@ class EPTiledStaticTests(unittest.TestCase):
             make_fake_compact_tensor=lambda dtype,shape,**kw:Tensor(shape,dtype),
             make_fake_stream=lambda **kw:('fake-stream',kw)),AddressSpace=types.SimpleNamespace(gmem='global'))
         fu=types.ModuleType('flashinfer.cute_dsl.utils');fu.make_ptr=lambda *a,**kw:('ptr',a,kw)
-        ns={'cutlass':cutlass,'cute':cute,'STAMP_SLOTS':71,
+        ns={'cutlass':cutlass,'cute':cute,'STAMP_SLOTS':71,'REFORM_SF_STAGE':1552,
             'EP_TILED_CACHE_TAG':constants()['EP_TILED_CACHE_TAG'],
             'MoEStaticEPTiledKernel':lambda **kw:kw}
-        extract('ep_tiled_geometry',ns);factory=extract('ep_tiled_compile_spec',ns)
+        extract('ep_tiled_geometry',ns);extract('ep_tiled_scale_mode',ns)
+        factory=extract('ep_tiled_compile_spec',ns)
         modules={'torch':t,'flashinfer':types.ModuleType('flashinfer'),
                  'flashinfer.cute_dsl':types.ModuleType('flashinfer.cute_dsl'),
                  'flashinfer.cute_dsl.utils':fu}
@@ -185,18 +186,27 @@ class EPTiledStaticTests(unittest.TestCase):
             keys=set()
             for m in range(1,33):
                 for dtype in (t.int32,t.int64):
-                    kernel,args,key=factory(num_tokens=m,topk_ids_dtype=dtype)
-                    self.assertEqual(len(args),30)
-                    self.assertEqual((args[9].shape,args[11].shape),((4096,512,8,72),(4096,128,16,72)))
-                    self.assertEqual((args[21].dtype,args[21].shape),('Float32',(m,4096)))
-                    self.assertEqual(args[3].shape,(256,4096,72))
-                    self.assertEqual(args[13].shape,(72,))
-                    self.assertEqual(args[22].shape,(72,256))
-                    self.assertEqual(args[-2],48)
-                    self.assertEqual(kernel['num_tokens'],m)
-                    keys.add(key)
-            self.assertEqual(len(keys),64)
+                    for sf6 in (False,True):
+                        kernel,args,key=factory(num_tokens=m,topk_ids_dtype=dtype,reform_sf_pack=sf6)
+                        self.assertEqual(len(args),30)
+                        self.assertEqual((args[9].shape,args[11].shape),((4096,512,8,72),(4096,128,16,72)))
+                        self.assertEqual((args[21].dtype,args[21].shape),('Float32',(m,4096)))
+                        self.assertEqual(args[3].shape,(256,4096,72))
+                        self.assertEqual(args[13].shape,(72,))
+                        self.assertEqual(args[22].shape,(72,256))
+                        self.assertEqual(args[-2],48)
+                        self.assertEqual(kernel['num_tokens'],m)
+                        self.assertIs(kernel['reform_sf_pack'],sf6)
+                        self.assertEqual(key[10],'sf6_v1' if sf6 else 'raw_mma_scales')
+                        self.assertEqual(args[26].shape,(72,512,1552) if sf6 else (1,1,16))
+                        self.assertEqual(args[27].shape,(72,256,1552) if sf6 else (1,1,16))
+                        self.assertEqual(args[26].dtype,'Uint8')
+                        self.assertEqual(args[27].dtype,'Uint8')
+                        keys.add(key)
+            self.assertEqual(len(keys),128)
             with self.assertRaises(TypeError):factory(num_tokens=6,topk_ids_dtype=t.float32)
+            for invalid in (None,0,1,'sf6'):
+                with self.assertRaises(TypeError):factory(num_tokens=6,reform_sf_pack=invalid)
 
     def _launch_fixture(self,m=6):
         events=[];t=fake_torch(events);dev=types.SimpleNamespace(type='cuda')
@@ -220,10 +230,13 @@ class EPTiledStaticTests(unittest.TestCase):
         scratch=types.SimpleNamespace(scatter_fp32=tensor((32,4096),t.float32),
              stamps=tensor((48,71),t.int64),counter=tensor((1,),t.int32),
              dummy_scales=tensor((1,1,16),t.uint8),max_tokens=32,max_active_clusters=48)
-        ns={'STAMP_SLOTS':71};extract('ep_tiled_geometry',ns)
+        ns={'STAMP_SLOTS':71,'REFORM_SF_STAGE':1552};extract('ep_tiled_geometry',ns)
         def compiled(*args):events.append(('compiled',args))
-        ns['get_ep_tiled_decode_kernel']=lambda **kw:(compiled,48)
+        compile_options=[]
+        def get(**kw):compile_options.append(kw);return compiled,48
+        ns['get_ep_tiled_decode_kernel']=get
         launch=extract('launch_ep_tiled_decode',ns)
+        launch.compile_options=compile_options
         kwargs=dict(workspace=ws,weights=weights,a=tensor((m,4096),t.bfloat16),
             topk_ids=tensor((m,8),t.int32),topk_weights=tensor((m,8),t.float32),
             input_gs=tensor((72,),t.float32),down_input_scale=tensor((72,),t.float32),
@@ -244,6 +257,67 @@ class EPTiledStaticTests(unittest.TestCase):
             self.assertEqual(args[21].dtype,t.float32)
             self.assertEqual(args[10],kw['weights']._w13_sf_storage.pointer)
         self.assertEqual(events[2][1],events[5][1])
+        self.assertTrue(all(not kw['reform_sf_pack'] for kw in launch.compile_options))
+
+    def _sf6_fixture(self,m=6):
+        t,events,launch,kw=self._launch_fixture(m)
+        weights=kw['weights'];weights.packed_only=True
+        weights._w13_sf_storage=weights._down_sf_storage=None
+        weights.sfb1_packed=Tensor((72,512,1552),t.uint8,device=kw['a'].device)
+        weights.sfb2_packed=Tensor((72,256,1552),t.uint8,device=kw['a'].device)
+        weights.reform_scales=types.SimpleNamespace(enabled=True,
+            fc1=weights.sfb1_packed,fc2=weights.sfb2_packed)
+        return t,events,launch,kw
+
+    def test_sf6_launch_uses_only_shared_packed_owner_for_both_native_geometries(self):
+        for m in (1,6,8,9,12,24,32):
+            t,events,launch,kw=self._sf6_fixture(m)
+            with patch.dict(sys.modules,{'torch':t}):
+                self.assertIs(launch(**kw),kw['output'])
+            self.assertEqual([e[0] for e in events],['record','compiled','copy'])
+            args=events[1][1];owner=kw['weights'].reform_scales
+            self.assertIs(args[26],owner.fc1);self.assertIs(args[27],owner.fc2)
+            self.assertEqual(args[10],owner.fc1.data_ptr())
+            self.assertEqual(args[12],owner.fc2.data_ptr())
+            self.assertIs(args[9],kw['weights'].w13_fp4)
+            self.assertIs(args[11],kw['weights'].down_fp4)
+            self.assertEqual(args[21].pointer,kw['scratch'].scatter_fp32.pointer)
+            self.assertIs(launch.compile_options[0]['reform_sf_pack'],True)
+        for mutation in ('disabled','retainedraw','rawowner','fc1shape','fc2shape','dtype','alias'):
+            t,events,launch,kw=self._sf6_fixture()
+            w=kw['weights']
+            if mutation=='disabled':w.reform_scales.enabled=False
+            if mutation=='retainedraw':w._w13_sf_storage=object()
+            if mutation=='rawowner':w.packed_only=False
+            if mutation=='fc1shape':w.reform_scales.fc1.shape=(72,128,1552)
+            if mutation=='fc2shape':w.reform_scales.fc2.shape=(72,64,1552)
+            if mutation=='dtype':w.reform_scales.fc1.dtype=t.float32
+            if mutation=='alias':w.sfb2_packed=object()
+            with patch.dict(sys.modules,{'torch':t}),self.assertRaises(ValueError):launch(**kw)
+            self.assertEqual(events,[]);self.assertEqual(launch.compile_options,[])
+
+    def test_sf6_constructor_preserves_t_and_tr_geometry_and_warmup_mode(self):
+        class Base:
+            def __init__(self,**kwargs):self.options=kwargs
+        init=function('__init__');init.decorator_list=[]
+        cls=ast.ClassDef(name='MoEStaticEPTiledKernel',bases=[ast.Name('Base',ast.Load())],
+                        keywords=[],body=[init],decorator_list=[])
+        ns={'Base':Base,'ep_tiled_source_contract':lambda:None}
+        extract('ep_tiled_geometry',ns);extract('ep_tiled_scale_mode',ns)
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[cls],type_ignores=[])),str(SOURCE),'exec'),ns)
+        for m in range(1,33):
+            for mode in (False,True):
+                k=ns['MoEStaticEPTiledKernel'](num_tokens=m,max_rows=256,
+                    max_active_clusters=48,reform_sf_pack=mode)
+                self.assertIs(k.options['reform_sf_pack'],mode)
+                self.assertIs(k.options['decode_reform'],m<=8)
+                self.assertEqual(k.options['output_tile_count_n'],16)
+                self.assertEqual((k.options['fc1_stages'],k.options['fc2_stages']),(2,2))
+        calls=[];ns['get_ep_tiled_decode_kernel']=lambda **kw:calls.append(kw)
+        warm=extract('warm_ep_tiled_decode',ns)
+        self.assertEqual(warm(reform_sf_pack=True),tuple(range(1,33)))
+        self.assertEqual(len(calls),32)
+        self.assertTrue(all(call['reform_sf_pack'] is True for call in calls))
 
     def test_bad_layout_scale_or_scratch_fails_before_any_kernel(self):
         for mutation in ('row-major','sf6','badstrides','rawscale','smalloutput','routeweight'):

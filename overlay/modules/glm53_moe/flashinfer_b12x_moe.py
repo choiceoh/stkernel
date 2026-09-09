@@ -130,11 +130,26 @@ def finalize_packed_scale_owners(model) -> int:
     """
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch
 
-    released, layers = 0, 0
+    released, layers, ep_layers, ep_released, ep_packed = 0, 0, 0, 0, 0
     for layer in model.modules():
         pending = _SF6_PENDING.get(layer)
         experts = pending() if pending is not None else None
-        if experts is None or experts._use_ep or experts._sf6_finalized:
+        if experts is None:
+            continue
+        if experts._use_ep:
+            if getattr(experts, "_ep_tiled", False):
+                from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_tiled import (
+                    finalize_ep_tiled_scales,
+                )
+                amount = finalize_ep_tiled_scales(experts, layer, _b12x_release_raw_scales)
+                if amount:
+                    released += amount
+                    layers += 1
+                    ep_layers += 1
+                    ep_released += amount
+                    ep_packed += experts._ep_tiled_scale_receipt["packed_bytes"]
+            continue
+        if experts._sf6_finalized:
             continue
         if layer.w13_weight.device.type == "cuda" and torch.cuda.is_current_stream_capturing():
             raise RuntimeError("SF6 model ownership must be finalised before graph capture")
@@ -175,6 +190,12 @@ def finalize_packed_scale_owners(model) -> int:
     if layers:
         logger.warning("[b12x sf6] packed-only owners finalised: layers=%d raw_bytes_released=%d; "
                        "decode and prefill read immutable packed scales", layers, released)
+    if ep_layers:
+        import json
+        logger.warning("[ep-tiled-sf6] FINALIZED %s", json.dumps(dict(
+            format="sf6_v1", packed_only=True, layers=ep_layers,
+            raw_bytes_released=ep_released, packed_bytes=ep_packed,
+            storage_bytes_saved=ep_released-ep_packed), sort_keys=True))
     return released
 
 
@@ -1395,11 +1416,14 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             validate_configuration(self)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        if (getattr(self, "_ep_tiled_prepare_started", False)
+                and not getattr(self, "_ep_tiled_prepared", False)):
+            raise RuntimeError("tiled EP startup validation did not complete; load a fresh model")
         if getattr(self, "_ep_tiled_generation", None) is not None:
             from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_tiled import (
                 weight_generation,
             )
-            if not getattr(self, "_ep_tiled_ready", False):
+            if not getattr(self, "_ep_tiled_prepared", False):
                 raise RuntimeError("tiled EP startup validation did not complete")
             if self._ep_tiled_generation == weight_generation(layer.w13_weight, layer.w2_weight, self):
                 return
@@ -1496,6 +1520,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 prepare_ep_tiled,
             )
             prepare_ep_tiled(self, layer)
+            _SF6_PENDING[layer] = ref(self)
             return
         # 39차: the v5 static lane (VLLM_GLM53_B12X_STATIC_V2 cell t) reads
         # tile-major expert weights -- re-lay the layer's packed bytes out in

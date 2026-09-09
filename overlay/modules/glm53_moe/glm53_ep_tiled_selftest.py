@@ -97,7 +97,8 @@ def _runtime(owner, layer):
         wrapper=Path(inspect.getfile(type(owner))), dispatch=Path(md.__file__),
         local=Path(local.__file__), stock=Path(local._stock.__file__),
         tiled_owner=Path(tiled.__file__), tiled_decode=Path(decode.__file__))
-    for name in ("moe_static_kernel_v4", "moe_static_kernel_v5"):
+    for name in ("moe_static_kernel_v4", "moe_static_kernel_v5",
+                 "moe_reform_sf_pack", "moe_sf_pack", "moe_dynamic_gated_sf6"):
         files[name] = Path(importlib.import_module(prefix+name).__file__)
     versions = {}
     for name in ("torch", "cuda.bindings", "flashinfer"):
@@ -290,24 +291,64 @@ def _failure_rows(candidate, baseline, repeat, inputs):
     return dict(rows=result, max_rows=8, max_columns=8, B3_scope="hash and original controls only; output not retained")
 
 
+def _packed_identity(owner, layer):
+    """Bind the admitted SF6 owner while original loader aliases still exist.
+
+    enabled is published by prepare_reform_scales only after both complete
+    device roundtrips. This records that source-bound preparation contract;
+    it does not run another pack/unpack or claim raw sources are released.
+    """
+    views = owner._ep_tiled_weight_views
+    scales = getattr(views, "reform_scales", None)
+    if (not getattr(views, "tiled", False) or not getattr(views, "packed_only", False)
+            or not getattr(scales, "enabled", False)):
+        raise AssertionError("EP tiled canary requires both admitted packed-only SF6 planes")
+    for name in ("w1_scale_storage", "w2_scale_storage", "_w13_sf_storage",
+                 "_down_sf_storage", "sfb_w13_ptr", "sfb_down_ptr"):
+        if getattr(views, name, None) is not None:
+            raise AssertionError("EP tiled SF6 view retains raw scale field: " + name)
+    if views.sfb1_packed is not scales.fc1 or views.sfb2_packed is not scales.fc2:
+        raise AssertionError("EP tiled view does not own its admitted SF6 planes")
+    raw = (owner.w1_scale, owner.w2_scale, owner.w1_sf_mma, owner.w2_sf_mma,
+           layer.w13_weight_scale, layer.w2_weight_scale)
+    if any(value is None for value in raw):
+        raise AssertionError("EP tiled canary must precede final model raw-scale release")
+    raw_addresses = {value.untyped_storage().data_ptr() for value in raw}
+    planes = {}
+    for name, value, blocks in (("fc1", scales.fc1, 512), ("fc2", scales.fc2, 256)):
+        if (tuple(value.shape) != (72,blocks,1552) or str(value.dtype) != "torch.uint8"
+                or value.device != layer.w13_weight.device or not value.is_contiguous()
+                or value.untyped_storage().data_ptr() in raw_addresses):
+            raise AssertionError("EP tiled SF6 plane geometry/device/source alias mismatch: " + name)
+        planes[name] = _tensor_identity(value)
+    return dict(owner_id=id(views), scales_id=id(scales), planes=planes,
+        raw_sources_retained=True, raw_release_acceptance=False,
+        preparation_contract=dict(
+            scope="source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
+            both_planes_enabled=True, stage_raw_bytes=2048, stage_packed_bytes=1552,
+            fc1_stages=72*512, fc2_stages=72*256,
+            raw_bytes=72*768*2048, packed_bytes=72*768*1552))
+
+
 def _cache_evidence(context, owner, rows):
-    """Require the real launcher's isolated raw-scale artifact namespace."""
+    """Require the real launcher's isolated direct SF6 artifact namespace."""
     if rows <= 32:
         ws = owner._ep_tiled_workspace
         geometry = context["decode"].ep_tiled_geometry(
             rows, ws.static.max_rows, ws.scratch.max_active_clusters)
         expected = ("glm53_ep_static_tiled_fp32_v1", rows, ws.static.max_rows,
             ws.scratch.max_active_clusters, "torch.int32", False, True,
-            geometry["fc1"], geometry["fc2"], "nvfp4", "raw_mma_scales",
+            geometry["fc1"], geometry["fc2"], "nvfp4", "sf6_v1",
             "swigluoai_uninterleave", 1., 0., 10., "fp32_scatter")
         if expected not in context["decode"]._EP_TILED_KERNEL_CACHE:
             raise AssertionError("native EP tiled decode artifact was not selected/warmed")
         return dict(scope="exact native shape cache key", keys=[repr(expected)])
     keys = [key for key in context["md"]._DYNAMIC_KERNEL_CACHE
-            if len(key) == 19 and key[:7] == ("dynamic","fp4","nvfp4",72,4096,2048,8)
+            if len(key) == 20 and key[:7] == ("dynamic","fp4","nvfp4",72,4096,2048,8)
             and str(key[9]) == "torch.int32" and key[10:16] ==
                 (False,True,"swigluoai_uninterleave",1.,0.,10.)
-            and key[17] is True and key[-1] == "glm53_ep_prefill_local_fp32_v2"]
+            and key[17] is True and key[-2:] ==
+                ("glm53_ep_prefill_local_fp32_v2","glm53_ep_tiled_sf6_v1")]
     if not keys:
         raise AssertionError("tiled EP prefill artifact namespace is absent")
     return dict(scope="matching runtime-shaped dynamic keys; source binds per-shape selection",
@@ -322,6 +363,7 @@ def _validate_candidate(context, owner, layer, handle):
     after = _identities(owner,layer)
     _same_weights_and_scales(handle["original"],after,relayout=True)
     receipt["weights_after_relayout"] = after
+    receipt["packed_before"] = _packed_identity(owner,layer)
     mapping = torch.full((288,),-1,dtype=torch.int32,device=device)
     mapping[handle["offset"]:handle["offset"]+72] = torch.arange(72,dtype=torch.int32,device=device)
     for index, cell in enumerate(receipt["cases"]):
@@ -377,6 +419,11 @@ def _validate_candidate(context, owner, layer, handle):
             torch.cuda.synchronize(device)
             graph = None
     _same_weights_and_scales(after,_identities(owner,layer),relayout=False)
+    receipt["packed_after"] = _packed_identity(owner,layer)
+    if receipt["packed_before"] != receipt["packed_after"]:
+        raise AssertionError("EP tiled canary changed its actual packed SF6 owner/bytes")
+    receipt["actual_packed_owner"] = True
+    receipt["raw_release_acceptance"] = False
     _check_rng(context,handle["rng"])
     receipt["caller_preserved"] = True
 

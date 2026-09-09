@@ -7,7 +7,8 @@ from pathlib import Path
 import re
 import subprocess
 import glm53_ep_capsule_runtime as capsule_runtime
-from glm53_ep_tiled_compile import source_receipt, STATIC_ROWS, DYNAMIC_ROWS
+from glm53_ep_tiled_compile import (source_receipt, STATIC_ROWS, DYNAMIC_ROWS,
+                                   CPU_TEST_COUNTS, EXPECTED_CPU_TESTS)
 
 
 def validate_artifacts(output,result):
@@ -71,8 +72,16 @@ def main():
     assert result['verdict']=='PASS' and result['phase']=='complete' and result['cuda_initialized'] is False
     assert result['binding_runtime_rechecked'] is True and result['compile_only'] is True
     assert not any(k in result for k in ('error','cleanup_error','recheck_error'))
-    assert result['contracts']['tests_run'] >= 48
+    assert result['contracts']['tests_run'] == EXPECTED_CPU_TESTS
     assert all(result['contracts'][key] == 0 for key in ('failures','errors','skips'))
+    assert result['selected_test_counts'] == CPU_TEST_COUNTS
+    assert result['contracts_process_isolated'] is True
+    contracts=json.loads((output/'contracts.json').read_text())
+    assert contracts['verdict']=='PASS' and contracts['phase']=='complete'
+    assert contracts['cuda_initialized'] is False and contracts['binding_runtime_rechecked'] is True
+    assert not any(k in contracts for k in ('error','cleanup_error','recheck_error'))
+    for key in ('contracts','selected_test_counts','binding_runtime','mounted_sources','contract_sources'):
+        assert contracts[key]==result[key]
     capsule_runtime.validate_runtime_receipt(result['binding_runtime'])
     assert source_receipt(root)==sources
     for key,value in sources.items():assert result[key]==value

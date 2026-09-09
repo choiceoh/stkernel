@@ -89,10 +89,48 @@ def _ep_tiled_case_proof(case):
                for item, phase in zip(items, phases))
 
 
+def _ep_tiled_sf6_proof(record):
+    before, after = record.get("packed_before"), record.get("packed_after")
+    if (record.get("actual_packed_owner") is not True or not isinstance(before, dict)
+            or before != after or before.get("raw_sources_retained") is not True
+            or before.get("raw_release_acceptance") is not False):
+        return False
+    planes = before.get("planes")
+    if not isinstance(planes, dict) or set(planes) != {"fc1", "fc2"}:
+        return False
+    for name, blocks in (("fc1", 512), ("fc2", 256)):
+        plane = planes[name]
+        if (not isinstance(plane, dict) or plane.get("shape") != [72, blocks, 1552]
+                or plane.get("dtype") != "torch.uint8"
+                or type(plane.get("data_ptr")) is not int or plane["data_ptr"] <= 0
+                or re.fullmatch(r"[0-9a-f]{64}", str(plane.get("sha256"))) is None):
+            return False
+    return planes["fc1"]["data_ptr"] != planes["fc2"]["data_ptr"]
+
+
+def _ep_tiled_sf6_release_proof(log):
+    records = _json_marker_receipts(log, "[ep-tiled-sf6] FINALIZED ")
+    if not records:
+        return False
+    for record in records:
+        layers = record.get("layers")
+        if (record.get("format") != "sf6_v1" or record.get("packed_only") is not True
+                or type(layers) is not int or layers <= 0
+                or any(key.endswith("error") for key in record)):
+            return False
+        expected = dict(raw_bytes_released=layers*72*768*2048,
+                        packed_bytes=layers*72*768*1552,
+                        storage_bytes_saved=layers*72*768*(2048-1552))
+        if any(type(record.get(key)) is not int or record[key] != value
+               for key, value in expected.items()):
+            return False
+    return True
+
+
 def _startup_proof(knob: str, log: str) -> bool | None:
     """Composite execution evidence; armed or partial progress is insufficient."""
     if knob == "VLLM_GLM53_EP_TILED":
-        if "[ep-tiled-selftest] FAIL" in log:
+        if "[ep-tiled-selftest] FAIL" in log or not _ep_tiled_sf6_release_proof(log):
             return False
         for lane, low, high in (("decode", 1, 32), ("prefill", 33, 16384)):
             prefix = "[ep-tiled] LAUNCHED " + lane + " E72/H4096/I2048/top8 T="
@@ -107,6 +145,9 @@ def _startup_proof(knob: str, log: str) -> bool | None:
         return bool(records) and all(
             record.get("verdict") == "PASS" and record.get("phase") == "complete"
             and record.get("caller_preserved") is True
+            and record.get("actual_weight_owner") is True
+            and record.get("geometry") == dict(E=72, K=4096, I=2048, top8=8)
+            and _ep_tiled_sf6_proof(record)
             and not any(key in record for key in ("error", "cleanup_error"))
             and isinstance(record.get("cases"), list)
             and len(record["cases"]) == len(expected)

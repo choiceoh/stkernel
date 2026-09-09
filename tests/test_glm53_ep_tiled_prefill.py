@@ -10,6 +10,8 @@ import math
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
+import test_moe_dynamic_sf6 as sf6_oracle
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,9 +19,9 @@ SOURCE = ROOT / 'overlay/modules/glm53_moe/moe_dynamic_ep_local.py'
 ORACLE = ROOT / 'measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz'
 
 
-def method(name, text=None):
+def method(name, text=None, class_name='MoEGatedEPLocalKernel'):
     tree = ast.parse(SOURCE.read_text() if text is None else text)
-    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == class_name)
     return next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == name)
 
 
@@ -48,10 +50,12 @@ class Tensor:
 
 
 class Entry:
-    def __init__(self):
+    def __init__(self, *, sf6=False):
         self.groups, self.scales, self.descriptors = [], [], []
         self.launch = None
-        self.fn = compile_method(method('__call__'), dict(
+        self.sf6 = sf6
+        self.entry = method('__call__', class_name='MoEGatedEPLocalKernelSF6' if sf6 else 'MoEGatedEPLocalKernel')
+        self.fn = compile_method(self.entry, dict(
             cutlass=SimpleNamespace(const_expr=bool, Float32='f32', Int16='i16'),
             cute=SimpleNamespace(group_modes=self.group, size=size, make_tensor=self.scale_tensor),
             blockscaled_utils=SimpleNamespace(tile_atom_to_shape_SF=lambda shape, sf: (shape, sf)),
@@ -93,7 +97,10 @@ class Entry:
                      'phase2_b_smem_layout_staged', 'phase2_sfb_smem_layout_staged',
                      'fc1_sfb_smem_layout_storage', 'epi_smem_layout_staged'):
             attrs[name] = name
-        signature = method('__call__').args.args
+        if self.sf6:
+            checker = sf6_oracle.functions({'_check_sf6_shapes'})['_check_sf6_shapes']
+            attrs['_check_sf6_shapes'] = lambda *args: checker(SimpleNamespace(**attrs), *args)
+        signature = self.entry.args.args
         args = {arg.arg: object() for arg in signature if arg.arg != 'self'}
         args.update(a_input=Tensor((tokens, 4096), dtype='bf16'),
                     topk_ids=Tensor((tokens * 8,), dtype='i32'),
@@ -108,6 +115,9 @@ class Entry:
             else:
                 args[key] = Tensor((rows, inner * tiles, 72),
                     strides=(inner * tiles, 1, rows * inner * tiles))
+        if self.sf6:
+            args.update(sfb1_packed=Tensor((72, 512, 1552), dtype='uint8'),
+                        sfb2_packed=Tensor((72, 256, 1552), dtype='uint8'))
         args.update(overrides or {})
         self.args = args
         self.fn(SimpleNamespace(**attrs), **args)
@@ -247,6 +257,154 @@ class TiledEntryTests(unittest.TestCase):
                         self.assertEqual((word & 0xffff, word >> 16), (expert, tile))
                         self.assertEqual((valid & 255, (valid >> 8) & 0xfff, valid >> 20),
                                          (rows, group * 4, 4))
+
+
+class SF6EntryTests(unittest.TestCase):
+    def test_packed_entry_has_no_raw_scale_descriptors_and_preserves_ep_launch(self):
+        entry_node = method('__call__', class_name='MoEGatedEPLocalKernelSF6')
+        reads = {n.id for n in ast.walk(entry_node) if isinstance(n, ast.Name)}
+        self.assertFalse(reads & {'sfb_w13_ptr', 'sfb_down_ptr'})
+        for tokens in (1, 6, 32, 33, 127, 4096, 8192, 16384):
+            with self.subTest(tokens=tokens):
+                old = Entry().call(tiled=True, tokens=tokens)
+                new = Entry(sf6=True).call(tiled=True, tokens=tokens)
+                self.assertEqual(len(new.scales), 1)  # Only activation SFA.
+                self.assertEqual(len(new.descriptors), 4)
+                for actual, original in zip(new.descriptors, [old.descriptors[i] for i in (0, 1, 2, 4)]):
+                    self.assertEqual(actual[0].shape if isinstance(actual[0], Tensor) else actual[0].layout,
+                                     original[0].shape if isinstance(original[0], Tensor) else original[0].layout)
+                    self.assertEqual(actual[1:], original[1:])
+                self.assertIn(new.args['sfb1_packed'], new.kernel_args)
+                self.assertIn(new.args['sfb2_packed'], new.kernel_args)
+                self.assertIn(new.args['scatter_output'], new.kernel_args)
+                self.assertIn((new.args['row_counts'], 16), new.kernel_args)
+                self.assertEqual(new.launch['grid'], (1, 1, 48))
+                self.assertEqual(new.launch['block'], [288, 1, 1])
+                self.assertTrue(new.launch['cooperative'])
+                self.assertIs(new.launch['stream'], new.args['stream'])
+
+    def test_wrong_packed_type_shape_geometry_or_output_rejected_before_tma(self):
+        for override in (
+            {'sfb1_packed': Tensor((72, 128, 1552), dtype='uint8')},
+            {'sfb2_packed': Tensor((72, 256, 2048), dtype='uint8')},
+            {'sfb1_packed': Tensor((72, 512, 1552), dtype='fp8')},
+            {'sfb2_packed': Tensor((288, 256, 1552), dtype='uint8')},
+            {'b_w13': Tensor((4096, 4096, 72))},
+            {'b_down': Tensor((4096, 128, 4, 72))},
+            {'row_counts': Tensor((288,), dtype='i32')},
+            {'scatter_output': Tensor((33, 4096), dtype='bf16')},
+        ):
+            with self.subTest(override=override):
+                entry = Entry(sf6=True)
+                with self.assertRaises(ValueError):
+                    entry.call(tiled=True, overrides=override)
+                self.assertEqual(entry.descriptors, [])
+                self.assertIsNone(entry.launch)
+
+    def test_actual_mro_selects_ep_producer_scatter_and_sf6_pipeline_without_raw_fallback(self):
+        class Stock:
+            def __init__(self, *args, **kwargs):
+                self.tile_shape_mnk = (128, 128, 128)
+                self.share_input_across_experts = False
+            def _setup_attributes(self, hidden_size): self.hidden = hidden_size
+        class Tiled(Stock): pass
+        sf6_class = copy.deepcopy(sf6_oracle.CLASS)
+        ep_classes = [copy.deepcopy(n) for n in ast.parse(SOURCE.read_text()).body if isinstance(n, ast.ClassDef)]
+        ns = dict(MoEGatedDynamicKernel=Stock, MoEGatedDynamicKernelTiled=Tiled,
+                  stock_contract_matches=lambda: True,
+                  cute=SimpleNamespace(jit=lambda fn: fn, kernel=lambda fn: fn))
+        module = ast.Module(body=[ast.parse('from __future__ import annotations').body[0], sf6_class, *ep_classes], type_ignores=[])
+        exec(compile(ast.fix_missing_locations(module), str(SOURCE), 'exec'), ns)
+        cls, ep, sf6 = (ns[n] for n in ('MoEGatedEPLocalKernelSF6', 'MoEGatedEPLocalKernel', 'MoEGatedDynamicKernelSF6'))
+        instance = cls(reform_sf_pack=True)
+        self.assertEqual(instance.load_register_requirement, 64)
+        instance._setup_attributes(4096)
+        self.assertEqual(instance.hidden, 4096)
+        for name in ('initialize_route_q0_and_publish', 'publish_ep_local_uniform_tasks', 'scatter_sC_to_gmem'):
+            self.assertIs(getattr(cls, name), getattr(ep, name))
+        for name in ('kernel', 'load_fc1_tma_slice', 'load_fc2_tma_tile', '_check_sf6_shapes'):
+            self.assertIs(getattr(cls, name), getattr(sf6, name))
+        for value in (False, None, 1, '1'):
+            with self.subTest(value=value), self.assertRaises(ValueError): cls(reform_sf_pack=value)
+
+    def test_existing_sf6_loaders_cover_all_sixteen_ep_slices_and_last_expert(self):
+        harness = sf6_oracle.ProducerTests()
+        ns, kernel, events = harness.namespace()
+        T, State, Pipe = sf6_oracle.Tensor, sf6_oracle.State, sf6_oracle.FakePipeline
+        base = 1 << 35
+        smem = tuple(T(name, address) for name, address in
+                     (('a', 10000), ('sfa', 20000), ('gate_b', 30000), ('up_b', 40000),
+                      ('gate_sf', 50000), ('up_sf', 60000), ('up_extra', 70000)))
+        for expert in (0, 71):
+            for intermediate in range(16):
+                events.clear()
+                state, up, pipe = State(), State(), Pipe(events)
+                ns['load_fc1_tma_slice'](kernel, intermediate, 1, expert, 16, 32,
+                    state, pipe, up, pipe, ('a', 'b', 'sfa'),
+                    (T('a'), T('sfa'), T('b'), T('packed', base, (72, 512, 1552))), smem)
+                expansions = [e for e in events if e[0] == 'expand']
+                self.assertEqual(len(expansions), 128)
+                for native_half in range(2):
+                    for kt in range(32):
+                        gate, up = expansions[(native_half * 32 + kt) * 2:][:2]
+                        for event, row in ((gate, intermediate + 16), (up, intermediate)):
+                            self.assertEqual(event[1], base + (expert * 512 + row * 16 + kt // 2) * 1552)
+                            self.assertTrue(base <= event[1] <= base + (72 * 512 - 1) * 1552)
+                            self.assertEqual(event[3:], (kt % 2, 0, False))
+                harness.check_publication(events, scale_copies=2, dma_copies=4)
+                events.clear()
+                for output in range(32):
+                    ns['load_fc2_tma_tile'](kernel, intermediate, output, expert, state, pipe,
+                        ('b',), (T('b'), T('packed', base, (72, 256, 1552))),
+                        (T('b_smem'), T('b_extra'), T('sf_smem', 80000)))
+                    expansion = next(e for e in reversed(events) if e[0] == 'expand')
+                    self.assertEqual(expansion[1], base + (expert * 256 + (output // 2) * 16 + intermediate) * 1552)
+                    self.assertTrue(base <= expansion[1] <= base + (72 * 256 - 1) * 1552)
+                    self.assertEqual(expansion[3:], (output % 2, 0, True))
+                harness.check_publication(events, scale_copies=1, dma_copies=1)
+
+    def test_sf6_cache_suffix_cannot_alias_raw_ep_or_tp_and_old_keys_are_unchanged(self):
+        source = ROOT / 'overlay/modules/glm53_moe/moe_dispatch.py'
+        node = next(n for n in ast.parse(source.read_text()).body if isinstance(n, ast.FunctionDef)
+                    and n.name == '_dynamic_kernel_cache_key')
+        key = compile_method(node, {})
+        args = dict(activation_precision='fp4', quant_mode='nvfp4', E=72, k=4096, n=2048,
+                    num_topk=8, mac=48, mma_tiler_mn=(128,128), topk_ids_dtype='i32',
+                    input_scales_are_reciprocal=False, fast_math=True,
+                    activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0.,
+                    swiglu_limit=10., share_input_across_experts=False, tiled=True)
+        raw = key(**args, ep_local_prefill=True)
+        packed = key(**args, ep_local_prefill=True, reform_sf_pack=True)
+        self.assertEqual(raw[-1], 'glm53_ep_prefill_local_fp32_v2')
+        self.assertEqual(packed, raw + ('glm53_ep_tiled_sf6_v1',))
+        stock = key(**args)
+        tp = key(**(args | dict(E=288, n=512)), reform_sf_pack=True)
+        self.assertEqual(stock, raw[:-1])
+        self.assertEqual(tp[-1], 'sf6_direct_prefill_v1')
+        self.assertNotEqual(tp, packed)
+        self.assertEqual(key(**(args | dict(E=288, n=512)), reform_sf_pack=True, tp_sf6_q0=True),
+                         tp + ('glm53_tp_sf6_q0_v1',))
+
+    def test_dispatcher_selects_packed_ep_class_and_passes_sf6_constructor_flag(self):
+        source = ROOT / 'overlay/modules/glm53_moe/moe_dispatch.py'
+        tree = ast.parse(source.read_text())
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_get_dynamic_kernel')
+        select = next(n for n in fn.body if isinstance(n, ast.If) and ast.unparse(n.test) == 'ep_local_cls is not None'
+                      and any(isinstance(child, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'ep_kwargs'
+                          for t in child.targets) for child in n.body))
+        calls = []
+        def raw(**kwargs): calls.append(('raw', kwargs)); return object()
+        def packed(**kwargs): calls.append(('sf6', kwargs)); return object()
+        ns = dict(ep_local_cls=raw, sf_vec_size=16, mma_tiler_mn=(128,128),
+                  input_scales_are_reciprocal=False, fast_math=True, activation='swigluoai_uninterleave',
+                  swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10., __package__='_ep_test')
+        for enabled in (False, True):
+            with patch.dict('sys.modules', {'_ep_test.moe_dynamic_ep_local': SimpleNamespace(MoEGatedEPLocalKernelSF6=packed)}):
+                actual = dict(ns, reform_sf_pack=enabled)
+                exec(compile(ast.Module(body=[select], type_ignores=[]), str(source), 'exec'), actual)
+            self.assertEqual(calls[-1][0], 'sf6' if enabled else 'raw')
+            self.assertIs(calls[-1][1]['share_input_across_experts'], False)
+            self.assertEqual(calls[-1][1].get('reform_sf_pack', False), enabled)
 
 
 if __name__ == '__main__':

@@ -41,6 +41,7 @@ def namespace():
         make_ptr=lambda *a, **k: (a,k), cute=types.SimpleNamespace(AddressSpace=types.SimpleNamespace(gmem=1)),
         convert_sf_from_mma_layout=lambda sf,**kw:sf,
         _FORCED_BACKEND=None, _GLM53_B12X_FORCE_BACKEND=None,
+        _ep_local_prefill_kernel=lambda **kw: None, _TP_SF6_Q0_ENABLED=False,
         _GLM53_B12X_PREFILL_REUSE=False, _GLM53_B12X_PREFILL_FC1_N128=False,
         _static_v2_config_for=lambda **kw:dict(tiled=True,reform_sf_pack=True),
         _select_dynamic_tile_m=lambda rows,experts,activation:16,

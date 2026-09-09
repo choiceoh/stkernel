@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 import unittest
 
@@ -18,7 +19,11 @@ STATIC_ROWS = (6, 12, 24, 32)
 DYNAMIC_ROWS = (33, 8192)
 CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_glm53_ep_tiled_owner.py", "test_glm53_ep_tiled_selftest.py",
-             "test_glm53_ep_tiled_proof.py")
+             "test_glm53_ep_tiled_proof.py", "test_moe_sf6_owner.py",
+             "test_moe_static_sf6_direct.py", "test_moe_dynamic_sf6.py",
+             "test_moe_sf6_dispatch.py")
+CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (10, 12, 19, 12, 12, 12, 6, 7, 6)))
+EXPECTED_CPU_TESTS = 96
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',
@@ -88,8 +93,9 @@ def compile_candidate(output, result):
         result['phase'] = 'static-M'+str(rows)
         assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
         kernel,args,key = ep.ep_tiled_compile_spec(num_tokens=rows,max_rows=256,
-            max_active_clusters=48,topk_ids_dtype=torch.int32)
+            max_active_clusters=48,topk_ids_dtype=torch.int32,reform_sf_pack=True)
         assert key[0] == 'glm53_ep_static_tiled_fp32_v1'
+        assert key[10] == 'sf6_v1',key
         cute.compile(kernel,*args,options='--opt-level 2 --enable-tvm-ffi')
         result['static_passes'].append(preserve_pass(output,'static/M'+str(rows),key))
         assert not torch.cuda.is_initialized()
@@ -106,15 +112,35 @@ def compile_candidate(output, result):
         assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
         md._get_dynamic_kernel(72,rows,4096,2048,8,8192,
             activation='swigluoai_uninterleave',swiglu_alpha=1.,swiglu_beta=0.,
-            swiglu_limit=10.,tiled=True,reform_sf_pack=False)
+            swiglu_limit=10.,tiled=True,reform_sf_pack=True)
         keys = set(md._DYNAMIC_KERNEL_CACHE)
         assert len(keys)==1, 'each fresh dynamic lowering must publish one key'
         key = next(iter(keys))
         assert key[3:7] == (72,4096,2048,8) and key[17] is True,key
-        assert key[-1] == 'glm53_ep_prefill_local_fp32_v2',key
+        assert key[-2:] == ('glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1'),key
         result['dynamic_passes'].append(preserve_pass(output,'dynamic/M'+str(rows),key))
         assert not torch.cuda.is_initialized()
     result['cuda_initialized'] = torch.cuda.is_initialized()
+
+
+def check_cpu_contracts(root, result):
+    """Runs in a fresh process with the original pre-compiler environment."""
+    import torch
+    assert not torch.cuda.is_initialized()
+    suite = unittest.TestSuite()
+    counts = {}
+    for name in CPU_TESTS:
+        selected = unittest.defaultTestLoader.discover(str(root/'tests'), pattern=name)
+        counts[name] = selected.countTestCases()
+        suite.addTests(selected)
+    result['selected_test_counts'] = counts
+    assert counts == CPU_TEST_COUNTS and suite.countTestCases() == EXPECTED_CPU_TESTS
+    checked = unittest.TextTestRunner(verbosity=2).run(suite)
+    result['contracts'] = dict(tests_run=checked.testsRun, failures=len(checked.failures),
+        errors=len(checked.errors), skips=len(checked.skipped))
+    result['cuda_initialized'] = torch.cuda.is_initialized()
+    assert checked.testsRun == EXPECTED_CPU_TESTS and checked.wasSuccessful() and not checked.skipped
+    assert result['cuda_initialized'] is False
 
 
 def main():
@@ -122,6 +148,7 @@ def main():
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--capsule-root',type=Path,required=True)
     p.add_argument('--manifest-sha256',required=True)
+    p.add_argument('--contracts-only',action='store_true')
     args=p.parse_args()
     result=dict(verdict='FAIL',phase='no-device-guard',started=time.time(),compile_only=True,
                 gpu_numerics_acceptance=False,performance_acceptance=False,
@@ -133,15 +160,31 @@ def main():
         root=Path(__file__).resolve().parents[1]
         sources=source_receipt(root,verify_mounted=True)
         result.update(sources)
-        compile_candidate(args.output,result)
-        result['phase'] = 'cpu-contracts'
-        suite = unittest.TestSuite()
-        for name in CPU_TESTS:
-            suite.addTests(unittest.defaultTestLoader.discover(str(root/'tests'), pattern=name))
-        checked = unittest.TextTestRunner(verbosity=2).run(suite)
-        result['contracts'] = dict(tests_run=checked.testsRun, failures=len(checked.failures),
-            errors=len(checked.errors), skips=len(checked.skipped))
-        assert checked.testsRun >= 48 and checked.wasSuccessful() and not checked.skipped
+        if args.contracts_only:
+            result['phase'] = 'cpu-contracts'
+            result['scope'] = 'fresh-process CPU ownership and SF6 regression contracts; no compilation or GPU'
+            check_cpu_contracts(root,result)
+        else:
+            # torch.cuda/device/SM compiler shims must never leak into the
+            # regression suites. The child also receives the original env.
+            contracts_env = dict(os.environ)
+            compile_candidate(args.output,result)
+            result['phase'] = 'cpu-contracts'
+            completed = subprocess.run([sys.executable,'-B',str(Path(__file__).resolve()),
+                '--output',str(args.output),'--capsule-root',str(args.capsule_root),
+                '--manifest-sha256',args.manifest_sha256,'--contracts-only'],env=contracts_env)
+            report = json.loads((args.output/'contracts.json').read_text())
+            result['contracts'] = report.get('contracts')
+            result['selected_test_counts'] = report.get('selected_test_counts')
+            completed.check_returncode()
+            assert report['verdict'] == 'PASS' and report['phase'] == 'complete'
+            assert report['cuda_initialized'] is False and report['binding_runtime_rechecked'] is True
+            assert report['binding_runtime'] == runtime
+            for key,value in sources.items():assert report[key] == value
+            assert not any(k in report for k in ('error','cleanup_error','recheck_error'))
+            assert result['selected_test_counts'] == CPU_TEST_COUNTS
+            assert result['contracts'] == dict(tests_run=EXPECTED_CPU_TESTS,failures=0,errors=0,skips=0)
+            result['contracts_process_isolated'] = True
         import torch
         assert not torch.cuda.is_initialized()
         assert source_receipt(root,verify_mounted=True)==sources
@@ -152,7 +195,8 @@ def main():
         raise
     finally:
         result['finished']=time.time()
-        (args.output/'result.json').write_text(json.dumps(result,indent=2,default=str)+'\n')
+        filename = 'contracts.json' if args.contracts_only else 'result.json'
+        (args.output/filename).write_text(json.dumps(result,indent=2,default=str)+'\n')
         print(json.dumps({k:result.get(k) for k in ('verdict','phase','error','cuda_initialized','compile_only')}),flush=True)
 
 

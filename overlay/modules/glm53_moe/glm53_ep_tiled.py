@@ -27,6 +27,9 @@ _LAUNCH_PREFIXES = {
 def validate_configuration(owner):
     if os.environ.get("VLLM_GLM53_TP_SF6_Q0", "0") == "1":
         raise ValueError(f"{KNOB}=1 requires VLLM_GLM53_TP_SF6_Q0=0 for the EP owner")
+    if "sf6" not in {part.strip() for part in os.environ.get(
+            "VLLM_GLM53_B12X_STATIC_V2", "").split(",")}:
+        raise ValueError(f"{KNOB}=1 requires lossless sf6 in VLLM_GLM53_B12X_STATIC_V2")
     expected = (True, True, 288, 72, 4096, 2048, 8,
                 "swigluoai_uninterleave", 1., 0., 10.)
     actual = (owner._use_ep, owner._ep_no_dummy, owner.global_num_experts,
@@ -48,10 +51,13 @@ def weight_generation(w1, w2, owner):
                owner.g2_alphas, owner._fc2_input_scale]
     views = getattr(owner, "_ep_tiled_weight_views", None)
     if views is not None:
-        tensors.extend((views._w13_sf_storage, views._down_sf_storage,
+        tensors.extend((views.sfb1_packed, views.sfb2_packed,
                         views.w1_alpha, views.w2_alpha))
     result = []
     for tensor in tensors:
+        if tensor is None:
+            result.append(None)
+            continue
         try:
             version = tensor._version
         except RuntimeError:
@@ -59,6 +65,55 @@ def weight_generation(w1, w2, owner):
         result.append((tensor.data_ptr(), version, tuple(tensor.shape),
                        tuple(tensor.stride()), tensor.dtype, tensor.device))
     return tuple(result)
+
+
+def _require_packed_views(views):
+    """Both consumers read the same admitted lossless planes, never raw aliases."""
+    scales = getattr(views, "reform_scales", None)
+    if (not views.tiled or not views.packed_only or not getattr(scales, "enabled", False)
+            or views.sfb1_packed is not scales.fc1 or views.sfb2_packed is not scales.fc2):
+        raise RuntimeError("tiled EP SF6 requires both immutable packed-only scale planes")
+    for name in ("w1_scale_storage", "w2_scale_storage", "_w13_sf_storage",
+                 "_down_sf_storage", "sfb_w13_ptr", "sfb_down_ptr"):
+        if getattr(views, name) is not None:
+            raise RuntimeError("tiled EP SF6 view retained a raw scale alias: " + name)
+    for tensor, shape in ((scales.fc1, (72, 512, 1552)), (scales.fc2, (72, 256, 1552))):
+        if (tuple(tensor.shape) != shape or tensor.element_size() != 1
+                or not tensor.is_contiguous() or tensor.device != views.w1_storage.device):
+            raise RuntimeError("tiled EP SF6 packed scale geometry/device differs")
+
+
+def finalize_ep_tiled_scales(owner, layer, release_raw_scales):
+    """Commit scale ownership only after the checkpoint walk and startup canary."""
+    import torch
+    validate_configuration(owner)
+    if not getattr(owner, "_ep_tiled_prepared", False):
+        raise RuntimeError("tiled EP SF6 startup validation has not completed")
+    views = owner._ep_tiled_weight_views
+    _require_packed_views(views)
+    if (getattr(owner, "_ep_tiled_selftest_receipt", {}).get("verdict") != "PASS"
+            or weight_generation(layer.w13_weight, layer.w2_weight, owner) != owner._ep_tiled_generation
+            or owner._wrapper is not None or torch.cuda.is_current_stream_capturing()):
+        raise RuntimeError("tiled EP SF6 cannot finalize an unvalidated or changed owner")
+    if owner._sf6_finalized:
+        if not owner._ep_tiled_ready or any(value is not None for value in (
+                layer.w13_weight_scale, layer.w2_weight_scale, owner.w1_scale,
+                owner.w2_scale, owner.w1_sf_mma, owner.w2_sf_mma)):
+            raise RuntimeError("tiled EP SF6 finalized owner retained raw scales")
+        return 0
+    owner._ep_tiled_ready = False
+    released = release_raw_scales(owner, layer, views)
+    if any(value is not None for value in (layer.w13_weight_scale, layer.w2_weight_scale,
+            owner.w1_scale, owner.w2_scale, owner.w1_sf_mma, owner.w2_sf_mma)):
+        raise RuntimeError("tiled EP SF6 raw scale release was incomplete")
+    owner._ep_tiled_generation = weight_generation(layer.w13_weight, layer.w2_weight, owner)
+    owner._sf6_finalized = True
+    owner._ep_tiled_ready = True
+    packed_bytes = sum(t.numel() * t.element_size() for t in (views.sfb1_packed, views.sfb2_packed))
+    owner._ep_tiled_scale_receipt = dict(format="sf6_v1", packed_only=True,
+        raw_bytes_released=released, packed_bytes=packed_bytes,
+        storage_bytes_saved=released-packed_bytes)
+    return released
 
 
 def _require_output_disjoint(output, tensors):
@@ -84,7 +139,7 @@ def _shared_workspace(device, capacity):
     from . import moe_dispatch as md
     from .moe_static_ep_tiled import allocate_ep_tiled_decode_scratch, warm_ep_tiled_decode
 
-    key = (str(device), capacity)
+    key = (str(device), capacity, "sf6_v1")
     with _LOCK:
         workspace = _WORKSPACES.get(key)
         if workspace is None:
@@ -99,11 +154,12 @@ def _shared_workspace(device, capacity):
             dynamic.ep_scatter_fp32 = torch.empty(
                 (capacity, 4096), dtype=torch.float32, device=device)
             scratch = allocate_ep_tiled_decode_scratch(device=device)
-            warm_ep_tiled_decode()
+            warm_ep_tiled_decode(reform_sf_pack=True)
             md._get_dynamic_kernel(
                 72, capacity, 4096, 2048, 8, dynamic.max_rows,
                 activation="swigluoai_uninterleave", swiglu_alpha=1.,
-                swiglu_beta=0., swiglu_limit=10., tile_m=128, tiled=True)
+                swiglu_beta=0., swiglu_limit=10., tile_m=128, tiled=True,
+                reform_sf_pack=True)
             workspace = _Workspace(static, dynamic, scratch)
             _WORKSPACES[key] = workspace
         return workspace
@@ -116,7 +172,11 @@ def prepare_ep_tiled(owner, layer):
     from .glm53_ep_tiled_selftest import before_relayout, after_relayout
 
     validate_configuration(owner)
+    if getattr(owner, "_ep_tiled_prepare_started", False):
+        raise RuntimeError("tiled EP startup validation already started; load a fresh model")
+    owner._ep_tiled_prepare_started = True
     owner._ep_tiled_ready = False
+    owner._ep_tiled_prepared = False
     w1, w2 = layer.w13_weight, layer.w2_weight
     if (torch.cuda.get_device_capability(w1.device) != (12, 1)
             or owner.out_dtype != torch.bfloat16):
@@ -136,8 +196,9 @@ def prepare_ep_tiled(owner, layer):
     owner._ep_tiled_weight_views = md._get_weight_views(
         w1, owner.w1_sf_mma, w2, owner.w2_sf_mma,
         owner.g1_alphas, owner.g2_alphas, n=2048, k=4096,
-        tiled=True, reform_sf_pack=False)
+        tiled=True, reform_sf_pack=True, packed_only=True)
     views = owner._ep_tiled_weight_views
+    _require_packed_views(views)
     if (views.w13_tiled_storage.data_ptr() != w1.data_ptr()
             or views.w2_tiled_storage.data_ptr() != w2.data_ptr()):
         raise RuntimeError("tiled EP must alias the single loaded weight storage")
@@ -148,10 +209,12 @@ def prepare_ep_tiled(owner, layer):
     owner._ensure_ep_scratch(w1.device, torch.float32, torch.int32)
     owner._ep_tiled_canary_active = True
     try:
-        after_relayout(owner, layer, reference)
+        owner._ep_tiled_selftest_receipt = after_relayout(owner, layer, reference)
     finally:
         owner._ep_tiled_canary_active = False
-    owner._ep_tiled_ready = True
+    if owner._ep_tiled_selftest_receipt.get("verdict") != "PASS":
+        raise RuntimeError("tiled EP startup validation did not return PASS")
+    owner._ep_tiled_prepared = True
 
 
 def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
@@ -181,13 +244,14 @@ def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
             or not ids.is_contiguous() or not scales.is_contiguous()):
         raise ValueError("tiled EP routes must be contiguous on the activation device")
     workspace = owner._ep_tiled_workspace
+    _require_packed_views(owner._ep_tiled_weight_views)
     _require_output_disjoint(output, (
         x, ids, scales, expert_map, w1, w2, owner._ep_ids, owner._ep_scales,
         workspace.scratch.scatter_fp32, workspace.dynamic.ep_scatter_fp32,
         owner.w1_scale, owner.w2_scale, owner.w1_sf_mma, owner.w2_sf_mma,
         owner.g1_alphas, owner.g2_alphas, owner._fc2_input_scale,
-        owner._ep_tiled_weight_views._w13_sf_storage,
-        owner._ep_tiled_weight_views._down_sf_storage,
+        owner._ep_tiled_weight_views.sfb1_packed,
+        owner._ep_tiled_weight_views.sfb2_packed,
         owner._ep_tiled_weight_views.w1_alpha, owner._ep_tiled_weight_views.w2_alpha))
     local_ids, local_scales = owner._ep_ids[:tokens], owner._ep_scales[:tokens]
     if not try_remap_ep_local(

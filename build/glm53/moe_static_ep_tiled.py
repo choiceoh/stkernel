@@ -1,7 +1,8 @@
 """Opt-in E72 tile-major EP decode, with the TP v5 TMA/compute pipeline.
 
 One immutable tiled FP4 weight allocation is shared with EP tiled prefill.
-This initial version deliberately reads raw MMA scales (not SF6). Inputs are
+SF6 uses the inherited lossless scale restoration for both native geometries;
+raw MMA scales remain a separate reference specialization. Inputs are
 already mapped to local IDs: [0,72) routes execute; sentinel72 and every other
 invalid ID are ignored before indexing any expert state, scales or weights.
 Signed-zero route weights are skipped; NaNs on valid routes remain selected.
@@ -96,10 +97,17 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from .moe_static_kernel_v5 import MoEStaticKernelV5
+from .moe_reform_sf_pack import REFORM_SF_STAGE
 
 STOCK_V4_SHA256 = "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c"
 STOCK_V5_SHA256 = "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"
 EP_TILED_CACHE_TAG = "glm53_ep_static_tiled_fp32_v1"
+
+
+def ep_tiled_scale_mode(reform_sf_pack):
+    if type(reform_sf_pack) is not bool:
+        raise TypeError("EP tiled reform_sf_pack must be bool")
+    return "sf6_v1" if reform_sf_pack else "raw_mma_scales"
 
 
 def ep_tiled_geometry(num_tokens, max_rows, max_active_clusters):
@@ -157,13 +165,16 @@ def scatter_add_v4_bf16x2_to_f32(addr, v0, v1, v2, v3, v4, v5, v6, v7,
 class MoEStaticEPTiledKernel(MoEStaticKernelV5):
     """Same 160-thread TP producer/consumer geometry, EP-local routing only."""
     def __init__(self, *, num_tokens, max_rows, max_active_clusters,
-                 input_scales_are_reciprocal=False, fast_math=True):
+                 input_scales_are_reciprocal=False, fast_math=True,
+                 reform_sf_pack=False):
         ep_tiled_source_contract()
+        ep_tiled_scale_mode(reform_sf_pack)
         geometry = ep_tiled_geometry(num_tokens, max_rows, max_active_clusters)
         self.ep_num_tokens = num_tokens
         self.ep_max_rows = max_rows
         super().__init__(sf_vec_size=16, output_tile_count_n=16,
             fc1_stages=2, fc2_stages=2, decode_reform=geometry["reform"],
+            reform_sf_pack=reform_sf_pack,
             input_scales_are_reciprocal=input_scales_are_reciprocal,
             fast_math=fast_math, activation="swigluoai_uninterleave",
             swiglu_alpha=1.0, swiglu_beta=0.0, swiglu_limit=10.0)
@@ -1726,7 +1737,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
 
 def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
                           topk_ids_dtype=None, input_scales_are_reciprocal=False,
-                          fast_math=True):
+                          fast_math=True, reform_sf_pack=False):
     """Build real CuTe fake operands without querying/initializing CUDA.
 
     Return (kernel, compile_args, cache_key). compile_args include the constexpr
@@ -1736,6 +1747,7 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     import torch
     from flashinfer.cute_dsl.utils import make_ptr
     geometry = ep_tiled_geometry(num_tokens, max_rows, max_active_clusters)
+    scale_mode = ep_tiled_scale_mode(reform_sf_pack)
     if topk_ids_dtype is None:
         topk_ids_dtype = torch.int32
     if topk_ids_dtype not in (torch.int32, torch.int64):
@@ -1746,14 +1758,14 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     a_dtype, ab_dtype = cutlass.BFloat16, cutlass.Float4E2M1FN
     weight_dtype, alpha_dtype = cutlass.Float4E2M1FN, cutlass.Float32
     tiled = True
-    config = {"sf_pack": False, "reform_sf_pack": False}
+    config = {"sf_pack": False, "reform_sf_pack": reform_sf_pack}
     TILED_W13_K_IN, TILED_W2_K_IN = 512, 128
     _STATIC_V2_STAMP_SLOTS = STAMP_SLOTS
     _align_up = lambda v, a: (v + a - 1) // a * a
     kernel = MoEStaticEPTiledKernel(
         num_tokens=m, max_rows=max_rows, max_active_clusters=mac,
         input_scales_are_reciprocal=input_scales_are_reciprocal,
-        fast_math=fast_math)
+        fast_math=fast_math, reform_sf_pack=reform_sf_pack)
     w1_rows = 2 * n
     rows_pad_k = _align_up(max_rows, 128)
     cols_pad_k = _align_up(k // sf_vec_size, 4)
@@ -1894,7 +1906,7 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     )
     key = (EP_TILED_CACHE_TAG, m, max_rows, mac, str(topk_ids_dtype),
            bool(input_scales_are_reciprocal), bool(fast_math),
-           geometry["fc1"], geometry["fc2"], "nvfp4", "raw_mma_scales",
+           geometry["fc1"], geometry["fc2"], "nvfp4", scale_mode,
            "swigluoai_uninterleave", 1.0, 0.0, 10.0, "fp32_scatter")
     return kernel, args, key
 
@@ -1912,13 +1924,14 @@ def get_ep_tiled_decode_kernel(**kwargs):
     max_rows = kwargs.get("max_rows", 256)
     mac = kwargs.get("max_active_clusters", 48)
     geometry = ep_tiled_geometry(m, max_rows, mac)
+    scale_mode = ep_tiled_scale_mode(kwargs.get("reform_sf_pack", False))
     dtype = kwargs.get("topk_ids_dtype") or torch.int32
     if dtype not in (torch.int32, torch.int64):
         raise TypeError("EP tiled route IDs must be int32 or int64")
     key = (EP_TILED_CACHE_TAG, m, max_rows, mac, str(dtype),
            bool(kwargs.get("input_scales_are_reciprocal", False)),
            bool(kwargs.get("fast_math", True)), geometry["fc1"], geometry["fc2"],
-           "nvfp4", "raw_mma_scales", "swigluoai_uninterleave", 1.0, 0.0, 10.0,
+           "nvfp4", scale_mode, "swigluoai_uninterleave", 1.0, 0.0, 10.0,
            "fp32_scatter")
     if key in _EP_TILED_KERNEL_CACHE:
         return _EP_TILED_KERNEL_CACHE[key], mac
@@ -1962,14 +1975,15 @@ def allocate_ep_tiled_decode_scratch(*, device, max_active_clusters=48, max_toke
 
 
 def warm_ep_tiled_decode(*, max_rows=256, max_active_clusters=48,
-                         token_counts=range(1, 33)):
+                         token_counts=range(1, 33), reform_sf_pack=False):
     """Prepare every requested native M; no success marker or CUDA execution."""
     rows = tuple(token_counts)
     if not rows or len(set(rows)) != len(rows):
         raise ValueError("EP tiled warmup needs distinct token counts")
     for m in rows:
         get_ep_tiled_decode_kernel(num_tokens=m, max_rows=max_rows,
-                                  max_active_clusters=max_active_clusters)
+                                  max_active_clusters=max_active_clusters,
+                                  reform_sf_pack=reform_sf_pack)
     return rows
 
 
@@ -2001,15 +2015,35 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
     require(output, (m, 4096), torch.bfloat16, "output")
     require(topk_ids, (m, 8), torch.int32, "local route IDs")
     require(topk_weights, (m, 8), torch.float32, "route weights")
-    if not weights.tiled or weights.packed_only or weights.reform_scales is not None:
-        raise ValueError("EP tiled decode requires tiled weights with raw MMA scales")
-    if weights._w13_sf_storage is None or weights._down_sf_storage is None:
-        raise ValueError("EP tiled decode raw weight scale owner is missing")
-    for name, value, count in (("FC1 scales", weights._w13_sf_storage, 72*4096*256),
-                               ("FC2 scales", weights._down_sf_storage, 72*4096*128)):
-        if (value.numel() != count or value.element_size() != 1
-                or value.device != device or not value.is_contiguous()):
-            raise ValueError("EP tiled decode invalid raw " + name)
+    if not weights.tiled:
+        raise ValueError("EP tiled decode requires tile-major weights")
+    reform_sf_pack = weights.reform_scales is not None
+    if reform_sf_pack:
+        owner = weights.reform_scales
+        if (not weights.packed_only or not owner.enabled
+                or weights._w13_sf_storage is not None or weights._down_sf_storage is not None):
+            raise ValueError("EP tiled SF6 requires a complete packed-only scale owner")
+        require(owner.fc1, (72, 512, REFORM_SF_STAGE), torch.uint8, "SF6 FC1 plane")
+        require(owner.fc2, (72, 256, REFORM_SF_STAGE), torch.uint8, "SF6 FC2 plane")
+        if weights.sfb1_packed is not owner.fc1 or weights.sfb2_packed is not owner.fc2:
+            raise ValueError("EP tiled SF6 scale arguments do not alias their owner")
+        sfb1_packed, sfb2_packed = owner.fc1, owner.fc2
+        # V5's SF6 branch never creates raw-scale descriptors. Keep the dead
+        # pointer arguments backed by the same live packed planes, not raw memory.
+        sfb1_address, sfb2_address = sfb1_packed.data_ptr(), sfb2_packed.data_ptr()
+    else:
+        if weights.packed_only:
+            raise ValueError("EP tiled packed-only weights have no SF6 owner")
+        if weights._w13_sf_storage is None or weights._down_sf_storage is None:
+            raise ValueError("EP tiled decode raw weight scale owner is missing")
+        for name, value, count in (("FC1 scales", weights._w13_sf_storage, 72*4096*256),
+                                   ("FC2 scales", weights._down_sf_storage, 72*4096*128)):
+            if (value.numel() != count or value.element_size() != 1
+                    or value.device != device or not value.is_contiguous()):
+                raise ValueError("EP tiled decode invalid raw " + name)
+        sfb1_packed = sfb2_packed = scratch.dummy_scales
+        sfb1_address = weights._w13_sf_storage.data_ptr()
+        sfb2_address = weights._down_sf_storage.data_ptr()
     for name, shape, dtype in (
             ("row_counts", (72,), torch.int32),
             ("token_map", (72, workspace.max_rows), torch.int32),
@@ -2042,20 +2076,21 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
         num_tokens=m, max_rows=workspace.max_rows,
         max_active_clusters=scratch.max_active_clusters,
         topk_ids_dtype=topk_ids.dtype,
-        input_scales_are_reciprocal=input_scales_are_reciprocal, fast_math=fast_math)
+        input_scales_are_reciprocal=input_scales_are_reciprocal, fast_math=fast_math,
+        reform_sf_pack=reform_sf_pack)
     accum = scratch.scatter_fp32[:m]
     accum.record_stream(torch.cuda.current_stream(device))
     compiled(
         a, topk_ids.view(-1), topk_weights.view(-1), workspace.packed_a_view,
         workspace.packed_input_scale.data_ptr(), workspace.packed_a_flat,
         workspace.scale_flat, workspace.barrier_count, workspace.barrier_epoch,
-        weights.w13_fp4, weights._w13_sf_storage.data_ptr(), weights.down_fp4,
-        weights._down_sf_storage.data_ptr(), workspace.row_counts,
+        weights.w13_fp4, sfb1_address, weights.down_fp4,
+        sfb2_address, workspace.row_counts,
         workspace.active_expert_count, workspace.weight_expert_ids,
         workspace.global_to_local_expert, input_gs, weights.w1_alpha,
         weights.w2_alpha, down_input_scale, accum, workspace.token_map,
         workspace.token_weights, scratch.stamps, scratch.counter,
-        scratch.dummy_scales, scratch.dummy_scales,
+        sfb1_packed, sfb2_packed,
     )
     output.copy_(accum)
     return output

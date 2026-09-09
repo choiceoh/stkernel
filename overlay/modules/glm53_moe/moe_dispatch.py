@@ -1871,7 +1871,10 @@ def _dynamic_kernel_cache_key(
     # on-disk artifacts once (a one-time recompile) -- the suffixes below
     # keep the reuse lanes separately keyed on top of it.
     if ep_local_prefill:
-        return key + ("glm53_ep_prefill_local_fp32_v2",)
+        suffix = ("glm53_ep_prefill_local_fp32_v2",)
+        if reform_sf_pack:
+            suffix += ("glm53_ep_tiled_sf6_v1",)
+        return key + suffix
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
     if reform_sf_pack:
@@ -4040,14 +4043,17 @@ def _get_dynamic_kernel(
             share_input_across_experts=share_input_across_experts,
         )
     if ep_local_cls is not None:
+        ep_kwargs = {}
         if reform_sf_pack:
-            raise ValueError("tiled EP currently requires raw MMA scale planes")
+            from .moe_dynamic_ep_local import MoEGatedEPLocalKernelSF6
+            ep_local_cls = MoEGatedEPLocalKernelSF6
+            ep_kwargs = dict(reform_sf_pack=True)
         kernel = ep_local_cls(
             sf_vec_size=sf_vec_size, mma_tiler_mn=mma_tiler_mn,
             input_scales_are_reciprocal=input_scales_are_reciprocal,
             fast_math=fast_math, activation=activation, swiglu_alpha=swiglu_alpha,
             swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit,
-            share_input_across_experts=False)
+            share_input_across_experts=False, **ep_kwargs)
     launch = _DynamicMoELaunch(
         kernel,
         k=k,
