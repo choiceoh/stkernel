@@ -1,0 +1,65 @@
+{
+  "verdict": "ORIGINAL_CPU_EVIDENCE_VERIFIED",
+  "source": "57914a3f8bb01a76a20099b9c2605be3ea15b7f4",
+  "result_sha256": "247e41c1a72974886b0098e14892f1af53860575184c4bee235e271f423fd4b6",
+  "original_worker_files": 20,
+  "original_worker_bytes": 4412510,
+  "execution_sha256": "0d67c335c251b710fceea376b2cc14832867c3b57fc40138f549fbf253c1cb3f",
+  "mounted_sources": 22,
+  "contract_sources": 22,
+  "contracts": {
+    "tests_run": 101,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "resources": [
+    {
+      "arm": "static/M6",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M12",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M24",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M33",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M8192",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    }
+  ],
+  "compile_only": true,
+  "cuda_initialized": false,
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false,
+  "source_rebind_required": false
+}
