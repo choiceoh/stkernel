@@ -10,6 +10,14 @@ canaries and SF6 release passed on all four ranks, but every arm failed the
 existing Korean gate. The candidate also had lower observed fixed-decode
 throughput than the second baseline. It is not ready for default adoption.
 
+The later A-ring follow-up also missed the user-selected absolute decode
+target of 67 tok/s: TP B measured 71.3369 tok/s and EP A measured 61.3553
+tok/s over three complete fixed-1024 requests. B passed Korean 0/8; A failed
+1/8. Both passed facts 18/18. A's engine throughput was 18.2028 step/s,
+versus 18.2190 in the earlier EP run, so sharing FC1 activation transfers
+did not demonstrate a decode gain. The target does not waive quality gates
+or establish relative non-regression against TP.
+
 Enable `ENABLE_EP=1 VLLM_GLM53_EP_TILED=1 VLLM_GLM53_TP_SF6_Q0=0` on the GLM
 profile, retaining its `t,r,sf6` scale-compression setting. The TP Q0 owner/canary does not apply to EP weights. Keep the old
 `VLLM_GLM53_EP_PREFILL_LOCAL`, `VLLM_B12X_EP_ZERO_WEIGHT_MICRO`, and
@@ -123,3 +131,37 @@ EP packing versus its own uncompressed scales, not extra savings over TP.
 preserve the failed gates and distinguish payload completion from service
 recovery. The remaining decode cost requires another bounded implementation
 and same-runtime consumer validation before this path can become a default.
+
+## A-ring follow-up (2026-09-09)
+
+Session `eptiledring0909v2` first failed before A readiness because its
+startup canary still required a 16-field cache key while SF6 M1..8 selected
+the new 17-field A-ring artifact. Each rank passed its first eager numerical
+comparison before the exact-key check stopped startup. The correction keeps
+the numerical gates and uses the real compiler key construction in the CPU
+regression fixture across M1..32. The failed attempt and its B record remain
+in [ring_onepass2](../measurements/glm53_ep_tiled_20260909/ring_onepass2/README.md).
+
+The corrected frozen source `57914a3f8bb01a76a20099b9c2605be3ea15b7f4`
+passed 101 CPU tests and six actual no-device lowerings, then ran the normal
+B-to-A onepass `eptiledring0909v3`. The new cache key, all nine actual-weight
+cases and 54 candidate comparisons per rank, graph replay and SF6 finalization
+passed on all four ranks. These checks cover the first actual layer per rank;
+every layer separately completes SF6 roundtrip and finalization.
+
+| Metric | TP + SF6 B | EP + SF6 A-ring A |
+|---|---:|---:|
+| 2K best-warm prefill tok/s / TTFT | 2426.78 / 0.877 s | 2983.94 / 0.713 s |
+| 32K prefill tok/s / TTFT | 3059.88 / 10.636 s | 3241.81 / 10.039 s |
+| 128K prefill tok/s / TTFT | 3137.83 / 40.971 s | 3259.17 / 39.445 s |
+| Fixed-1024 pooled decode tok/s | 71.3369 | 61.3553 |
+| Fixed-window pooled engine step/s | 20.4551 | 18.2028 |
+| Fact checks | 18/18 | 18/18 |
+| Korean-dirty responses | 0/8 | 1/8 |
+
+Decode repetitions were B 70.1128/71.6497/72.2834 and A
+60.0517/63.4765/60.6452 tok/s. Pooled decode uses all 3069 timed output tokens
+divided by all three decode durations. B carries `cold_compile=true`; A does
+not. Prefill values are descriptive and do not establish a matched warm
+full-model speedup. The chain retained the Korean failure and exited 4.
+The 67 tok/s target was not achieved; defaults remain TP.

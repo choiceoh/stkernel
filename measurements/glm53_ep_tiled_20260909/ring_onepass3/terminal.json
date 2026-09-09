@@ -1,0 +1,23 @@
+{
+  "original_sha256": "1673dacd00a6f3f4d294df251b405d7826dce2a338c33f590d55b306e8c78372",
+  "owned_holder_at_capture": false,
+  "record": {
+    "finished_at": 1788963567.5242965,
+    "outcome": "failed",
+    "payload_finished_at": 1788963567.1728349,
+    "payload_returncode": 4,
+    "phase": "finished",
+    "pid": 2530022,
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 4,
+    "session": "eptiledring0909v3",
+    "start": "46487531",
+    "started_at": 1788962627.2904074,
+    "state": "finished",
+    "ticket": "17889624842530022"
+  },
+  "schema": 1,
+  "scope": "Allowlisted terminal fields; raw pending kept private",
+  "source_revision": "57914a3f8bb01a76a20099b9c2605be3ea15b7f4"
+}
