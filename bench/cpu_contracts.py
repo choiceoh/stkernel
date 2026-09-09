@@ -16,7 +16,7 @@ import __future__
 # Re-audited for SF6 default adoption plus main PR #504 boot-memory checks.
 # Only the existing default and boot-stamp assertions changed; the three
 # audited helper tests, access graphs and source closure are unchanged.
-LOGIC_AUDIT = 'b9f63b1e3004e6c8650f4c877436d6a8e92f0c9c50162a15fad82d965066c98e'
+LOGIC_AUDIT = 'ad35be30dfebd81d009ff85fe63f7204d5bcf58bf582d26c7c139a693b75761f'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
