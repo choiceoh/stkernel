@@ -165,21 +165,24 @@ class ContractTests(unittest.TestCase):
     def test_m32_candidate_and_m64_control_actual_keys_are_required(self):
         fp32 = "glm53_ep_micro_scatter_fp32_v1"
         direct = "glm53_ep_micro_direct_scatter_v1"
+        shared = "glm53_ep_micro_shared_fc1_a_v1"
         def key(topk, capacity, tile, sentinel, tags):
             result = ["fp4", "nvfp4", 72, 72, 8, 4096, 2048, topk, capacity, 48,
                       tile, "int32", False, True, "swigluoai_uninterleave", 1., 0., sentinel]
             return tuple(result) + tags
-        good = key(8, 64, (32, 128), 72, (fp32, direct))
+        good = key(8, 64, (32, 128), 72, (fp32, direct, shared))
         control = key(1, 8, (64, 128), None, (fp32,))
         md = SimpleNamespace(_MICRO_KERNEL_CACHE={good: object(), control: object()})
         result = canary._micro_keys(md)
         self.assertEqual(result["candidate"], [repr(good)])
         self.assertEqual(json.loads(json.dumps(result))["control"], [repr(control)])
         for bad in ({control: object()}, {good: object()},
-                    {key(8, 64, (64, 128), 72, (fp32, direct)): object(), control: object()},
+                    {key(8, 64, (64, 128), 72, (fp32, direct, shared)): object(), control: object()},
                     {good[:-1]: object(), control: object()},
-                    {good[:-2] + (direct, fp32): object(), control: object()},
-                    {good[:-2] + (direct,): object(), control: object()},
+                    {good[:-3] + (direct, fp32, shared): object(), control: object()},
+                    {good[:-3] + (direct, shared): object(), control: object()},
+                    {good[:-3] + (fp32, shared): object(), control: object()},
+                    {good[:-1] + (shared + "_wrong",): object(), control: object()},
                     {good: object(), control[:-1]: object()},
                     {good: object(), control + (direct,): object()}):
             md._MICRO_KERNEL_CACHE = bad

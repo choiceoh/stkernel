@@ -17,8 +17,25 @@ PROOF = ROOT/'measurements/glm53_ep_local_20260908/micro-scatter-ownership'
 
 
 def function(name):
-    return next(n for n in ast.walk(ast.parse(MICRO.read_text()))
+    node = next(n for n in ast.walk(ast.parse(MICRO.read_text()))
                 if isinstance(n, ast.FunctionDef) and n.name == name)
+    if name == 'kernel':
+        # Preserve this oracle for the independent direct-scatter path.
+        # The shared-FC1-A tests cover its grouped metadata specialization.
+        class SelectSeparateFC1(ast.NodeTransformer):
+            def visit_If(self, item):
+                value = ast.unparse(item.test)
+                if value in ('cutlass.const_expr(self.shared_fc1_a)',
+                             'cutlass.const_expr(not self.shared_fc1_a)'):
+                    statements = item.body if 'not ' in value else item.orelse
+                    result = []
+                    for statement in statements:
+                        chosen = self.visit(statement)
+                        result.extend(chosen if isinstance(chosen, list) else [chosen])
+                    return result
+                return self.generic_visit(item)
+        node = SelectSeparateFC1().visit(node)
+    return node
 
 
 def extract(fn, namespace):
@@ -144,6 +161,7 @@ class DirectScatterTests(unittest.TestCase):
                                dict(cute=cute,cutlass=SimpleNamespace(BFloat16='bf16')))
             validate(SimpleNamespace(c_layout=SimpleNamespace(is_m_major_c=lambda:False),
                                      tiled_mma=None,epi_tile=(32,128),num_mma_warps=4,
+                                     shared_fc1_a=False,
                                      epi_smem_layout_staged=SimpleNamespace(outer='actual-nested-sC-shape'),
                                      num_threads_per_warp=32))
         run(lambda tid, points:points)

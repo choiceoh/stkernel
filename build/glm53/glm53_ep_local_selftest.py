@@ -578,8 +578,9 @@ def _micro_keys(md):
             continue
         if key[2:9] == (72, 72, 8, 4096, 2048, 8, 64):
             if (key[10] != (32, 128) or key[17] != 72 or
-                    key[-2:] != ("glm53_ep_micro_scatter_fp32_v1", "glm53_ep_micro_direct_scatter_v1")):
-                raise AssertionError("T6 padded candidate did not select exact M32 sentinel direct FP32 micro")
+                    key[-3:] != ("glm53_ep_micro_scatter_fp32_v1", "glm53_ep_micro_direct_scatter_v1",
+                                 "glm53_ep_micro_shared_fc1_a_v1")):
+                raise AssertionError("T6 padded candidate did not select exact M32 sentinel shared-A direct FP32 micro")
             candidate.append(key)
         if key[2:9] == (72, 72, 8, 4096, 2048, 1, 8):
             if (key[10] != (64, 128) or key[17] is not None or

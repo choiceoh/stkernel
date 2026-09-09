@@ -1,0 +1,86 @@
+{
+  "scope": "Static source/PTX-derived resident-block upper bound; no runtime occupancy API or performance measurement",
+  "source_revision": "0331579f4b16b8b811f2ca7e5099f8f461507c67",
+  "source_path": "overlay/modules/glm53_moe/moe_micro_kernel.py",
+  "source_sha256": "fbf64e979f313b5f460094be5158055992f44607542c4209d73b4108c69ced07",
+  "ptx_sha256": "8ef17781c819c9aa1f84b7f51d1ae52dd2bdaee83d274073c2f54f0386022c58",
+  "cubin_sha256": "9050f07f00b677f4954c8ebf8bf99ee277672a209964cc0c7bc4de310e8d7f23",
+  "previous_ptx_sha256": "53ca7696b847f753343c05f99905ba10fd9231fb6cae304c704b1990a411290a",
+  "previous_cubin_sha256": "4d0d8802a0039b2f9f9f1a9a1d469995821a265e36f683220f21bcc0145523d8",
+  "previous_resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_ten_0:\n  REG:128 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+  "current_resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_ten_0:\n  REG:161 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+  "block": [
+    160,
+    1,
+    1
+  ],
+  "compile_grid": [
+    1,
+    1,
+    48
+  ],
+  "compile_grid_source": "cache key mac_override=48 and __call__ grid=(*cluster_shape_mn,max_active_clusters)",
+  "pipeline_ab_stages": 2,
+  "epi_stages": 1,
+  "dynamic_shared_layout_derived": {
+    "header_and_alignment": 2048,
+    "a": 16384,
+    "b_down": 16384,
+    "b_up": 16384,
+    "sfa": 2048,
+    "sfb": 2048,
+    "sfb_up": 2048,
+    "sC": 8192,
+    "total": 65536
+  },
+  "dynamic_shared_layout_evidence": {
+    "source_constructor_lines": [
+      460,
+      478
+    ],
+    "storage_size_lines": [
+      551,
+      588
+    ],
+    "actual_storage_lines": [
+      996,
+      1036
+    ],
+    "ptx_sC_base_line": 2019,
+    "ptx_sC_base_bytes": 57344,
+    "note": "sC remains for Q1; direct FC2 does not remove its allocation. Exact runtime launch dynamic-smem argument is not captured."
+  },
+  "registers": {
+    "cubin_old": 128,
+    "cubin_new": 161,
+    "ptx_setmaxnreg_mma": 232,
+    "ptx_setmaxnreg_dma": 32,
+    "setmaxnreg_unchanged": true,
+    "stack_bytes": 0,
+    "local_bytes": 0
+  },
+  "architecture": {
+    "source": "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html#features-and-technical-specifications",
+    "tables": [
+      30,
+      31,
+      32
+    ],
+    "compute_capability": "12.x",
+    "shared_per_SM_bytes": 102400,
+    "registers32_per_SM": 65536,
+    "warps_per_SM": 48
+  },
+  "derived_resident_CTA_upper_bound": 1,
+  "reason": "Two dynamic 64KiB allocations already exceed the documented 100KiB/SM capacity, even without the cubin SHARED1024 overhead.",
+  "limitations": [
+    "This is not a measured achieved occupancy or a performance result.",
+    "Register allocation and instruction scheduling can still affect performance within one CTA.",
+    "Compiler SHARED1024 is not the complete dynamic shared-memory footprint.",
+    "The no-device compile grid48 is not independent live GPU launch attestation."
+  ],
+  "unchanged_controls": [
+    "m64-topk1-fp32 PTX and cubin exactly CPU14",
+    "m64-topk8-bf16 PTX and cubin exactly CPU14"
+  ]
+}

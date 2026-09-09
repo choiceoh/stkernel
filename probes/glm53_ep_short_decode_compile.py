@@ -18,13 +18,17 @@ CPU_TEST_MODULES = ('test_glm53_ep_micro_tile.py', 'test_glm53_ep_short_decode.p
                     'test_glm53_ep_scatter_fp32.py', 'test_glm53_ep_prefill_local.py',
                     'test_glm53_ep_local_probe.py', 'test_glm53_ep_micro_scatter.py',
                     'test_glm53_ep_micro_scatter_fp32.py',
-                    'test_glm53_ep_micro_direct_scatter.py')
+                    'test_glm53_ep_micro_direct_scatter.py',
+                    'test_glm53_ep_micro_shared_fc1_a.py',
+                    'test_glm53_ep_t6_direct_output.py')
 CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
     'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu11.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu11-identity.json',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu17.py.gz',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu17-identity.json',
     'measurements/glm53_ep_local_20260908/micro-scatter-ownership/verify.py',
     'measurements/glm53_ep_local_20260908/micro-scatter-ownership/identity.json',
     'measurements/glm53_ep_local_20260908/micro-scatter-ownership/m32-topk8-fp32.ptx.gz',
@@ -72,10 +76,10 @@ def compile_candidate(output, result):
     result['phase'] = 'micro-cute-compile'
     md._MICRO_KERNEL_CACHE.clear()
     result['micro_passes'] = []
-    variants = ((72, 8, 64, (32,128), True, True, 'm32-topk8-direct-fp32'),
-                (None, 1, 8, (64,128), True, False, 'm64-topk1-fp32'),
-                (None, 8, 64, (64,128), False, False, 'm64-topk8-bf16'))
-    for sentinel, topk, max_rows, tile, fp32, direct, arm in variants:
+    variants = ((72, 8, 64, (32,128), True, True, True, 'm32-topk8-shared-a-direct-fp32'),
+                (None, 1, 8, (64,128), True, False, False, 'm64-topk1-fp32'),
+                (None, 8, 64, (64,128), False, False, False, 'm64-topk8-bf16'))
+    for sentinel, topk, max_rows, tile, fp32, direct, shared_a, arm in variants:
         assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin')), 'stale root CuTe artifacts'
         md._get_micro_kernel(72,72,8,4096,2048,topk,max_rows,
             activation='swigluoai_uninterleave',swiglu_alpha=1.0,
@@ -84,10 +88,12 @@ def compile_candidate(output, result):
         keys=[key for key in md._MICRO_KERNEL_CACHE if key[17]==sentinel and key[7]==topk]
         assert len(keys)==1 and keys[0][10]==tile,keys
         assert ('glm53_ep_micro_scatter_fp32_v1' in keys[0][22:]) is fp32, keys
-        assert (keys[0][-1]=='glm53_ep_micro_direct_scatter_v1') is direct, keys
+        assert ('glm53_ep_micro_direct_scatter_v1' in keys[0][22:]) is direct, keys
+        assert (keys[0][-1]=='glm53_ep_micro_shared_fc1_a_v1') is shared_a, keys
         if direct:
-            assert keys[0][-2:] == ('glm53_ep_micro_scatter_fp32_v1',
-                                  'glm53_ep_micro_direct_scatter_v1'), keys
+            assert keys[0][-3:] == ('glm53_ep_micro_scatter_fp32_v1',
+                                  'glm53_ep_micro_direct_scatter_v1',
+                                  'glm53_ep_micro_shared_fc1_a_v1'), keys
         # Both specializations use the same DSL dump basename. Preserve this
         # pass before the next compile overwrites it; the initialized dump
         # directory remains unchanged throughout the process.
@@ -108,7 +114,8 @@ def compile_candidate(output, result):
                 preserved.append(dict(original_name=path.name,
                     path=str(destination.relative_to(output)), sha256=digest))
         result['micro_passes'].append(dict(arm=arm, cache_key=keys[0],
-            scatter_fp32=fp32, ep_direct_scatter=direct, artifacts=preserved))
+            scatter_fp32=fp32, ep_direct_scatter=direct, shared_fc1_a=shared_a,
+            artifacts=preserved))
     result['micro_keys']=list(md._MICRO_KERNEL_CACHE)
     assert len(result['micro_keys'])==3
     artifacts=[]

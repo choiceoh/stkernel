@@ -18,9 +18,14 @@ import proof
 
 class Tensor:
     """Small row-view storage model for copy/broadcast/lifetime assertions."""
+    next_pointer = 0x100000
+
     def __init__(self, rows, dtype="bf16", device="cuda:0", operations=None):
         self.rows, self.dtype, self.device = rows, dtype, device
         self.operations = operations
+        self.pointer = Tensor.next_pointer
+        Tensor.next_pointer += 0x100000
+        self.contiguous = True
 
     def size(self, dim):
         return len(self.rows) if dim == 0 else len(self.rows[0])
@@ -32,8 +37,21 @@ class Tensor:
     def numel(self):
         return self.size(0) * self.size(1)
 
+    def element_size(self):
+        return {"bf16": 2, "fp16": 2, "fp32": 4, "i32": 4, "i64": 8}.get(self.dtype, 1)
+
+    def data_ptr(self):
+        return self.pointer
+
+    def is_contiguous(self):
+        return self.contiguous
+
     def __getitem__(self, index):
-        return Tensor(self.rows[index], self.dtype, self.device, self.operations)
+        view = Tensor(self.rows[index], self.dtype, self.device, self.operations)
+        start, _, step = index.indices(self.size(0))
+        view.pointer = self.pointer + start * self.size(1) * self.element_size()
+        view.contiguous = self.contiguous and step == 1
+        return view
 
     def copy_(self, other):
         if self.operations is not None:
@@ -58,6 +76,7 @@ class Tensor:
 class Harness:
     def __init__(self):
         self.calls, self.fallbacks, self.logs, self.allocations = [], [], [], []
+        self.launch_kwargs = []
         self.remaps, self.operations, self.prepares = [], [], []
         self.fail_allocate = False
         names = {"b12x_ep_zero_weight_micro_chunks", "b12x_ep_micro_tail",
@@ -84,7 +103,11 @@ class Harness:
         self.ns = ns
         self.owner = SimpleNamespace(_sf6_weight_views=None,
             _ep_zero_weight_micro=True, _kernel_num_experts=72,
-            _ep_zero_weight_workspace=object(), _activation_str="swigluoai_uninterleave",
+            _ep_zero_weight_workspace=SimpleNamespace(
+                ep_micro_scatter_fp32=Tensor([[0] * 4096 for _ in range(8)], "fp32")),
+            _ep_fixed_workspace=SimpleNamespace(
+                ep_micro_scatter_fp32=Tensor([[0] * 4096 for _ in range(8)], "fp32")),
+            _activation_str="swigluoai_uninterleave",
             _swiglu_alpha=1., _swiglu_beta=0., _swiglu_limit=10.,
             _use_ep=True, _ep_no_dummy=True, _ep_stock_topk_micro=False,
             _ep_compact_enabled=False, hidden_dim=3, intermediate_size_per_partition=2048,
@@ -102,6 +125,7 @@ class Harness:
         ns["torch"].int32 = "i32"
         ns["torch"].int64 = "i64"
         ns["torch"].bool = "bool"
+        ns["torch"].bfloat16 = "bf16"
         for name in names - {"b12x_ep_zero_weight_micro_chunks", "b12x_ep_micro_tail"}:
             setattr(self.owner, name, MethodType(ns[name], self.owner))
         self.dispatch = ModuleType(DISPATCH)
@@ -160,7 +184,13 @@ class Harness:
         assert kw["_workspace"] is self.owner._ep_zero_weight_workspace
         self.calls.append({key: copy.deepcopy(kw[key].rows)
                            for key in ("a", "topk_ids", "topk_weights")})
+        self.launch_kwargs.append(kw)
+        if "_ep_short_output" in kw:
+            plane = kw["_workspace"].ep_micro_scatter_fp32
+            self.write_rows(plane, kw["a"], kw["topk_ids"], kw["topk_weights"])
+            return kw["_ep_short_output"].copy_(plane[:6])
         self.write_rows(kw["scatter_output"], kw["a"], kw["topk_ids"], kw["topk_weights"])
+        return kw["scatter_output"]
 
     def fixed(self, output, x, w1, w2, ids, weights):
         self.fallbacks.append(x.size(0))
@@ -168,14 +198,15 @@ class Harness:
         return output
 
     def run(self, tokens, *, all_remote=False, shift=0, id_dtype="i32",
-            weights_dtype="fp32"):
+            weights_dtype="fp32", output=None):
         width = self.owner.hidden_dim
         x = Tensor([[shift + r + 1, 2, -3] + [0] * (width - 3) for r in range(tokens)])
         ids = Tensor([[72] * 8 if all_remote else [1, 3] + [72] * 6
                       for _ in range(tokens)], id_dtype)
         weights = Tensor([[0] * 8 if all_remote else [.25, .5] + [0] * 6
                           for _ in range(tokens)], weights_dtype)
-        out = Tensor([[999] * width for _ in range(tokens)], operations=self.operations)
+        out = output if output is not None else Tensor(
+            [[999] * width for _ in range(tokens)], operations=self.operations)
         with patch.dict(sys.modules, {DISPATCH: self.dispatch, PREPARE: self.prepare}):
             self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
                              None, 288, None, None, None, None, None, None, None)
@@ -262,7 +293,9 @@ class FusedShortDecodeTests(unittest.TestCase):
         self.assertEqual(h.remaps, [])
         self.assertEqual(len(h.prepares), 1)
         self.assertEqual(len(h.calls), 1)
-        self.assertEqual(h.operations, ["copy"])  # only the original output copyback
+        self.assertEqual(h.operations, ["copy"])  # one direct final FP32 -> BF16 cast
+        self.assertIs(h.launch_kwargs[-1]["_ep_short_output"], out)
+        self.assertEqual(h.owner._ep_tail_out.rows, [[0] * 4096] * 8)
         self.assertEqual(h.owner._ep_tail_ids.dtype, "i32")
         self.assertEqual(h.owner._ep_tail_w.dtype, "bf16")
         self.assertEqual(ids.dtype, "i64")
@@ -283,9 +316,11 @@ class FusedShortDecodeTests(unittest.TestCase):
     def test_same_weight_dtype_preserves_staging_in_both_capture_orders(self):
         names = ("_ep_tail_x", "_ep_tail_ids", "_ep_tail_w", "_ep_tail_out")
         for weights_dtype in ("bf16", "fp16", "fp32"):
-            for order in ((18, 6, 6), (6, 18, 6)):
+            for order in ((18, 6, 12, 6), (6, 18, 12, 6)):
                 with self.subTest(weights_dtype=weights_dtype, order=order):
                     h = self.harness()
+                    planes = (h.owner._ep_zero_weight_workspace.ep_micro_scatter_fp32,
+                              h.owner._ep_fixed_workspace.ep_micro_scatter_fp32)
                     buffers = None
                     for index, tokens in enumerate(order):
                         h.operations.clear()
@@ -293,6 +328,10 @@ class FusedShortDecodeTests(unittest.TestCase):
                             tokens, all_remote=index == 2, shift=123 * index,
                             id_dtype="i64", weights_dtype=weights_dtype)
                         current = tuple(getattr(h.owner, name) for name in names)
+                        self.assertIs(h.owner._ep_zero_weight_workspace.ep_micro_scatter_fp32,
+                                      planes[0])
+                        self.assertIs(h.owner._ep_fixed_workspace.ep_micro_scatter_fp32,
+                                      planes[1])
                         if buffers is None:
                             buffers = current
                         for before, after in zip(buffers, current):
@@ -304,12 +343,43 @@ class FusedShortDecodeTests(unittest.TestCase):
                             self.assertIs(h.prepares[-1][1], ids)
                             self.assertIs(h.prepares[-1][2], weights)
                             self.assertEqual(h.operations, ["copy"])
+                            self.assertIs(h.launch_kwargs[-1]["_ep_short_output"], out)
                         else:
                             self.assertEqual(h.owner._ep_scales.dtype, weights_dtype)
                         scale = 0 if index == 2 else .75
                         self.assertEqual(out.rows, [[v * scale for v in row] for row in x.rows])
                     self.assertEqual(len(h.allocations), 4)
-                    self.assertEqual(len(h.remaps), 1)  # only T18
+                    self.assertEqual(len(h.remaps), 2)  # only T18 and T12
+
+    def test_direct_output_declines_each_staging_or_plane_alias_and_bad_layout(self):
+        for name in ("_ep_tail_x", "_ep_tail_ids", "_ep_tail_w", "_ep_tail_out",
+                     "plane", "noncontiguous", "dtype"):
+            with self.subTest(name=name):
+                h = self.harness()
+                h.run(6)
+                out = Tensor([[999] * 4096 for _ in range(6)], operations=h.operations)
+                if name == "noncontiguous":
+                    out.contiguous = False
+                elif name == "dtype":
+                    out.dtype = "fp32"
+                else:
+                    buf = (h.owner._ep_zero_weight_workspace.ep_micro_scatter_fp32
+                           if name == "plane" else getattr(h.owner, name))
+                    out.pointer = buf.data_ptr() + buf.element_size()
+                h.operations.clear()
+                x, _, _, actual = h.run(6, output=out)
+                self.assertIs(actual, out)
+                self.assertNotIn("_ep_short_output", h.launch_kwargs[-1])
+                self.assertEqual(h.operations, ["copy"])
+                self.assertEqual(out.rows, [[v * .75 for v in row] for row in x.rows])
+
+    def test_direct_output_failure_does_not_publish_completion_or_copy_again(self):
+        h = self.harness()
+        h.dispatch.launch_sm120_moe = lambda **kw: kw["scatter_output"]
+        with self.assertRaisesRegex(RuntimeError, "direct T6 output was not published"):
+            h.run(6)
+        self.assertEqual(h.operations, [])
+        self.assertFalse(any("[ep-short-prepare fused=1]" in line for line in h.logs))
 
     def test_unsupported_or_prelaunch_decline_reuses_original_remap_and_padding(self):
         for decline_at in ("admission", "preparation"):
@@ -320,6 +390,7 @@ class FusedShortDecodeTests(unittest.TestCase):
                 h.prepare.try_prepare_ep_short_decode = lambda *args, **kw: False
             x, _, _, out = h.run(6, id_dtype="i64")
             self.assertEqual(len(h.remaps), 1)
+            self.assertNotIn("_ep_short_output", h.launch_kwargs[-1])
             self.assertEqual(h.operations.count("copy"), 6)
             self.assertEqual(h.operations.count("zero"), 1)
             self.assertEqual(len(h.allocations), 4)

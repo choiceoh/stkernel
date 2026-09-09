@@ -1,0 +1,39 @@
+{
+  "adoption_acceptance": false,
+  "canary_case_passes": 28,
+  "candidate_comparisons": 168,
+  "complete_request_hashes_available": false,
+  "completed_arms": [],
+  "completed_fixed_requests_observed": 2,
+  "fixed_decode_tok_s_rounded": [
+    56.49,
+    62.46
+  ],
+  "full_canary_pass_receipts": 4,
+  "full_sanitizer_acceptance": false,
+  "korean_acceptance": false,
+  "matched_baseline": false,
+  "old_onepass9_weight_and_concentrated_input_identity": true,
+  "onepass_records": 0,
+  "own_holder_after": false,
+  "payload_returncode": 143,
+  "performance_acceptance": false,
+  "quality_acceptance": false,
+  "recovery_deferred": true,
+  "recovery_policy": "idle-controller",
+  "returncode": 143,
+  "revision": "0331579f4b16b8b811f2ca7e5099f8f461507c67",
+  "schema": 1,
+  "scope": "The original leg contains rounded prefill observations and two completed fixed1024 results. No final onepass record or aggregate quality, Korean, request/output hashes or acceptance counters were written.",
+  "session": "eplocalonepass0909v17",
+  "supervisor_pid": 3995175,
+  "ticket": "17889188803995175",
+  "unrun_arms": [
+    "B1",
+    "A",
+    "B2",
+    "B3"
+  ],
+  "verdict": "A0_CANCELLED_DURING_CANONICAL_ONEPASS",
+  "within_boot_concentrated_storage_reused": true
+}

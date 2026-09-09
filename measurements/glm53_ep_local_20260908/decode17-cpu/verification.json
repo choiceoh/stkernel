@@ -1,0 +1,360 @@
+{
+  "verdict": "PASS",
+  "scope": "CPU17 archive integrity only; no new tests or GPU execution",
+  "original_verdict": "PASS",
+  "contracts": {
+    "tests_run": 94,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "original_files": 61,
+  "ptx": 28,
+  "cubin": 28,
+  "resource_logs": 4,
+  "source_revision": "0331579f4b16b8b811f2ca7e5099f8f461507c67",
+  "scatter_sites": {
+    "m32-topk8-direct-fp32": {
+      "path": "micro/m32-topk8-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "ptx_sha256": "8ef17781c819c9aa1f84b7f51d1ae52dd2bdaee83d274073c2f54f0386022c58",
+      "static_instruction_sites": {
+        "fp32_v2": 64,
+        "bf16x2": 0
+      }
+    },
+    "m64-topk1-fp32": {
+      "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx",
+      "ptx_sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+      "static_instruction_sites": {
+        "fp32_v2": 4,
+        "bf16x2": 0
+      }
+    },
+    "m64-topk8-bf16": {
+      "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "ptx_sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+      "static_instruction_sites": {
+        "fp32_v2": 0,
+        "bf16x2": 4
+      }
+    }
+  },
+  "publication_sites": {
+    "m32-topk8-direct-fp32": {
+      "ptx_sha256": "8ef17781c819c9aa1f84b7f51d1ae52dd2bdaee83d274073c2f54f0386022c58",
+      "sites": [
+        {
+          "line_range": [
+            3215,
+            3761
+          ],
+          "fp32_red_sites": [
+            3370,
+            3394,
+            3421,
+            3448,
+            3475,
+            3502,
+            3529,
+            3556,
+            3583,
+            3610,
+            3637,
+            3664,
+            3688,
+            3711,
+            3735,
+            3758
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 16,
+          "metadata_weight_loads": 16,
+          "pre_barriers": [],
+          "post_barrier": 3761,
+          "instructions": {
+            "3370": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r2908, %r2907; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd204], {v0,v1}; }",
+            "3761": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "line_range": [
+            3762,
+            4311
+          ],
+          "fp32_red_sites": [
+            3914,
+            3941,
+            3969,
+            3996,
+            4024,
+            4051,
+            4079,
+            4106,
+            4134,
+            4161,
+            4189,
+            4216,
+            4239,
+            4262,
+            4285,
+            4308
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 16,
+          "metadata_weight_loads": 16,
+          "pre_barriers": [],
+          "post_barrier": 4311,
+          "instructions": {
+            "3914": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r3147, %r3146; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd297], {v0,v1}; }",
+            "4311": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "line_range": [
+            4312,
+            4855
+          ],
+          "fp32_red_sites": [
+            4463,
+            4490,
+            4517,
+            4544,
+            4571,
+            4598,
+            4625,
+            4652,
+            4679,
+            4706,
+            4733,
+            4760,
+            4783,
+            4806,
+            4829,
+            4852
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 16,
+          "metadata_weight_loads": 16,
+          "pre_barriers": [],
+          "post_barrier": 4855,
+          "instructions": {
+            "4463": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r3383, %r3382; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd402], {v0,v1}; }",
+            "4855": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "line_range": [
+            4856,
+            5402
+          ],
+          "fp32_red_sites": [
+            5006,
+            5033,
+            5060,
+            5087,
+            5114,
+            5141,
+            5168,
+            5195,
+            5222,
+            5249,
+            5276,
+            5303,
+            5327,
+            5351,
+            5375,
+            5399
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 16,
+          "metadata_weight_loads": 16,
+          "pre_barriers": [],
+          "post_barrier": 5402,
+          "instructions": {
+            "5006": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r3630, %r3629; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd507], {v0,v1}; }",
+            "5402": "bar.sync \t1, 128;"
+          }
+        }
+      ],
+      "scope": "four FC2 output unroll blocks, 16 register pairs per block; static sites are not runtime traffic counts"
+    },
+    "m64-topk1-fp32": {
+      "ptx_sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+      "sites": [
+        {
+          "store_end": 4986,
+          "pre_barriers": [
+            4988
+          ],
+          "loads": [
+            5030,
+            5041
+          ],
+          "red": 5055,
+          "post_barrier": 5061,
+          "instructions": {
+            "4986": "st.shared.b32 \t[%r4449], %r4574;",
+            "4987": "fence.proxy.async.shared::cta;",
+            "4988": "bar.sync \t1, 128;",
+            "5030": "ld.shared.b16 \t%rs58, [%r4631];",
+            "5041": "ld.shared.b16 \t%rs59, [%r4641];",
+            "5055": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r4613, %r4612; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd205], {v0,v1}; }",
+            "5061": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5333,
+          "pre_barriers": [
+            5335
+          ],
+          "loads": [
+            5380,
+            5391
+          ],
+          "red": 5403,
+          "post_barrier": 5409,
+          "instructions": {
+            "5333": "st.shared.b32 \t[%r4449], %r4830;",
+            "5334": "fence.proxy.async.shared::cta;",
+            "5335": "bar.sync \t1, 128;",
+            "5380": "ld.shared.b16 \t%rs62, [%r4892];",
+            "5391": "ld.shared.b16 \t%rs63, [%r4902];",
+            "5403": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r4871, %r4870; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd208], {v0,v1}; }",
+            "5409": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5843,
+          "pre_barriers": [
+            5845
+          ],
+          "loads": [
+            5890,
+            5901
+          ],
+          "red": 5913,
+          "post_barrier": 5919,
+          "instructions": {
+            "5843": "st.shared.b32 \t[%r5126], %r5251;",
+            "5844": "fence.proxy.async.shared::cta;",
+            "5845": "bar.sync \t1, 128;",
+            "5890": "ld.shared.b16 \t%rs66, [%r5313];",
+            "5901": "ld.shared.b16 \t%rs67, [%r5323];",
+            "5913": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r5292, %r5291; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd211], {v0,v1}; }",
+            "5919": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 6191,
+          "pre_barriers": [
+            6193
+          ],
+          "loads": [
+            6238,
+            6249
+          ],
+          "red": 6261,
+          "post_barrier": 6267,
+          "instructions": {
+            "6191": "st.shared.b32 \t[%r5126], %r5530;",
+            "6192": "fence.proxy.async.shared::cta;",
+            "6193": "bar.sync \t1, 128;",
+            "6238": "ld.shared.b16 \t%rs70, [%r5592];",
+            "6249": "ld.shared.b16 \t%rs71, [%r5602];",
+            "6261": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r5571, %r5570; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd214], {v0,v1}; }",
+            "6267": "bar.sync \t1, 128;"
+          }
+        }
+      ],
+      "scope": "all four statically unrolled scatter copies; no runtime traffic count"
+    },
+    "m64-topk8-bf16": {
+      "ptx_sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+      "sites": [
+        {
+          "store_end": 4989,
+          "pre_barriers": [],
+          "loads": [
+            5032,
+            5043
+          ],
+          "red": 5057,
+          "post_barrier": 5063,
+          "instructions": {
+            "4989": "st.shared.b32 \t[%r4452], %r4577;",
+            "4990": "fence.proxy.async.shared::cta;",
+            "5032": "ld.shared.b16 \t%rs58, [%r4634];",
+            "5043": "ld.shared.b16 \t%rs59, [%r4644];",
+            "5057": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r4616, %r4615; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd205], packed; }",
+            "5063": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5335,
+          "pre_barriers": [],
+          "loads": [
+            5381,
+            5392
+          ],
+          "red": 5404,
+          "post_barrier": 5410,
+          "instructions": {
+            "5335": "st.shared.b32 \t[%r4452], %r4833;",
+            "5336": "fence.proxy.async.shared::cta;",
+            "5381": "ld.shared.b16 \t%rs62, [%r4895];",
+            "5392": "ld.shared.b16 \t%rs63, [%r4905];",
+            "5404": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r4874, %r4873; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd208], packed; }",
+            "5410": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5844,
+          "pre_barriers": [],
+          "loads": [
+            5890,
+            5901
+          ],
+          "red": 5913,
+          "post_barrier": 5919,
+          "instructions": {
+            "5844": "st.shared.b32 \t[%r5129], %r5254;",
+            "5845": "fence.proxy.async.shared::cta;",
+            "5890": "ld.shared.b16 \t%rs66, [%r5316];",
+            "5901": "ld.shared.b16 \t%rs67, [%r5326];",
+            "5913": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r5295, %r5294; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd211], packed; }",
+            "5919": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 6191,
+          "pre_barriers": [],
+          "loads": [
+            6237,
+            6248
+          ],
+          "red": 6260,
+          "post_barrier": 6266,
+          "instructions": {
+            "6191": "st.shared.b32 \t[%r5129], %r5533;",
+            "6192": "fence.proxy.async.shared::cta;",
+            "6237": "ld.shared.b16 \t%rs70, [%r5595];",
+            "6248": "ld.shared.b16 \t%rs71, [%r5605];",
+            "6260": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r5574, %r5573; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd214], packed; }",
+            "6266": "bar.sync \t1, 128;"
+          }
+        }
+      ],
+      "scope": "all four statically unrolled scatter copies; no runtime traffic count"
+    }
+  },
+  "evidence_tar_sha256": "7bedde045b808b5f947fb2fa87f4bc23dbf6b215f3a670908a00d5883bde7fef",
+  "result_sha256": "d1c418b3415ee7ea96071a084312e6e96782c994b34ae33f074f2641ef0635b2"
+}

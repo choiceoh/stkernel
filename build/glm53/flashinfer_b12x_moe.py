@@ -1992,7 +1992,32 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             launch_sm120_moe,
         )
 
-        launch_sm120_moe(
+        # The physical M8 result remains in the shared FP32 plane. Only the
+        # exact already-prepared T6 lane may publish six rows straight to its
+        # caller. Other tails preserve the established padded-output path.
+        direct_output = (
+            prepared_buffers is not None and (lo, hi) == (0, 6)
+            and tuple(hidden_states.shape) == (6, 4096)
+            and output.dtype == torch.bfloat16
+            and tuple(output.shape) == (6, 4096)
+            and output.device == pad_out.device and output.is_contiguous()
+        )
+        if direct_output:
+            start = output.data_ptr()
+            end = start + output.numel() * output.element_size()
+            for tensor in (*buf, self._ep_zero_weight_workspace.ep_micro_scatter_fp32):
+                if (tensor is None or tensor.device != output.device
+                        or not tensor.is_contiguous()):
+                    direct_output = False
+                    break
+                other = tensor.data_ptr()
+                if start < other + tensor.numel() * tensor.element_size() and other < end:
+                    # An unusual caller may view our padded storage. Preserve
+                    # its established two-copy path instead of rejecting it.
+                    direct_output = False
+                    break
+        short_output_kwargs = {"_ep_short_output": output} if direct_output else {}
+        result = launch_sm120_moe(
             a=pad_x,
             topk_ids=pad_ids,
             topk_weights=pad_w,
@@ -2016,8 +2041,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             quant_mode="nvfp4",
             source_format="modelopt",
             _workspace=self._ep_zero_weight_workspace,
+            **short_output_kwargs,
         )
-        output[lo:hi].copy_(pad_out[:rem])
+        if direct_output:
+            if result is not output:
+                raise RuntimeError("direct T6 output was not published")
+        else:
+            output[lo:hi].copy_(pad_out[:rem])
         return True
 
     def _ep_tail_buffers(self, chunk, hidden_states, topk_ids, topk_weights,

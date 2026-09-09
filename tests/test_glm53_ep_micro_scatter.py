@@ -77,14 +77,17 @@ class AdmissionTests(unittest.TestCase):
         h.get(); kernel, args, _ = h.compiles[-1]
         self.assertTrue(kernel.scatter_fp32); self.assertEqual(args[21].dtype, 'Float32')
         self.assertTrue(kernel.ep_direct_scatter)
+        self.assertTrue(kernel.shared_fc1_a)
         key = next(reversed(h.ns['_MICRO_KERNEL_CACHE']))
         self.assertEqual(key[17], 72)
         self.assertEqual(key[22:], ('glm53_ep_micro_scatter_fp32_v1',
-                                    'glm53_ep_micro_direct_scatter_v1'))
+                                    'glm53_ep_micro_direct_scatter_v1',
+                                    'glm53_ep_micro_shared_fc1_a_v1'))
         h.get(num_topk=1, max_rows=8, skip_zero_weight_expert_id=None)
         kernel, args, _ = h.compiles[-1]
         self.assertTrue(kernel.scatter_fp32); self.assertEqual(args[21].dtype, 'Float32')
         self.assertFalse(kernel.ep_direct_scatter)
+        self.assertFalse(kernel.shared_fc1_a)
         fixed_key = next(reversed(h.ns['_MICRO_KERNEL_CACHE']))
         self.assertIsNone(fixed_key[17])
         self.assertEqual(fixed_key[22:], ('glm53_ep_micro_scatter_fp32_v1',))
@@ -92,6 +95,7 @@ class AdmissionTests(unittest.TestCase):
         kernel, args, _ = h.compiles[-1]
         self.assertFalse(kernel.scatter_fp32); self.assertEqual(args[21].dtype, 'BFloat16')
         self.assertFalse(kernel.ep_direct_scatter)
+        self.assertFalse(kernel.shared_fc1_a)
         self.assertEqual(len(next(reversed(h.ns['_MICRO_KERNEL_CACHE']))), 22)
         count = len(h.compiles); h.get()
         self.assertEqual(len(h.compiles), count)
@@ -129,13 +133,15 @@ class AdmissionTests(unittest.TestCase):
                         'int32',False,True,False,False,False,72,
                         'swigluoai_uninterleave',1.,0.,10.,
                         'glm53_ep_micro_scatter_fp32_v1')
-        self.assertEqual(direct_key[:-1], buffered_key)
+        self.assertEqual(direct_key[:-2], buffered_key)
         stale = (object(),48)
-        h.ns['_MICRO_KERNEL_CACHE'] = {buffered_key:stale}
+        previous_direct = buffered_key + ('glm53_ep_micro_direct_scatter_v1',)
+        h.ns['_MICRO_KERNEL_CACHE'] = {buffered_key:stale,previous_direct:stale}
         result = h.get()
         self.assertNotEqual(result,stale)
         self.assertEqual(len(h.compiles),2)
-        self.assertEqual(set(h.ns['_MICRO_KERNEL_CACHE']),{buffered_key,direct_key})
+        self.assertEqual(set(h.ns['_MICRO_KERNEL_CACHE']),
+                         {buffered_key,previous_direct,direct_key})
         self.assertEqual(h.get(),result)
         self.assertEqual(len(h.compiles),2)
 
@@ -155,6 +161,7 @@ class AdmissionTests(unittest.TestCase):
                 h.get(**({flag:True} if flag else {}))
                 kernel,args,_ = h.compiles[-1]
                 self.assertFalse(kernel.ep_direct_scatter)
+                self.assertFalse(kernel.shared_fc1_a)
                 self.assertTrue(kernel.scatter_fp32)
                 self.assertEqual((args[21].dtype,args[21].shape),('Float32',(8,4096)))
                 self.assertEqual(next(iter(h.ns['_MICRO_KERNEL_CACHE']))[22:],

@@ -33,9 +33,37 @@ def function(name):
         # This module preserves the independent barrier-based FP32 control and
         # the original BF16 path. Direct-register behavior has its own tests.
         class SelectBarrierPath(ast.NodeTransformer):
+            def selected(self, test):
+                value = ast.unparse(test)
+                if value in ('self.shared_fc1_a',
+                             'cutlass.const_expr(self.shared_fc1_a)',
+                             'cutlass.const_expr(self.ep_direct_scatter)'):
+                    return False
+                if value in ('not self.shared_fc1_a',
+                             'cutlass.const_expr(not self.shared_fc1_a)'):
+                    return True
+                return None
+
+            def body(self, statements):
+                result = []
+                for statement in statements:
+                    selected = self.visit(statement)
+                    if isinstance(selected, list):
+                        result.extend(selected)
+                    elif selected is not None:
+                        result.append(selected)
+                return result
+
             def visit_If(self, item):
-                if ast.unparse(item.test) == 'cutlass.const_expr(self.ep_direct_scatter)':
-                    return [self.visit(n) for n in item.orelse]
+                enabled = self.selected(item.test)
+                if enabled is not None:
+                    return self.body(item.body if enabled else item.orelse)
+                return self.generic_visit(item)
+
+            def visit_IfExp(self, item):
+                enabled = self.selected(item.test)
+                if enabled is not None:
+                    return self.visit(item.body if enabled else item.orelse)
                 return self.generic_visit(item)
         node = SelectBarrierPath().visit(node)
     return node

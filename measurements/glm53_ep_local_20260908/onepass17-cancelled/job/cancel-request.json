@@ -1,0 +1,16 @@
+{
+  "session": "eplocalonepass0909v17",
+  "ticket": "17889188803995175",
+  "owner_pid": 3995175,
+  "owner_start_tick": "42126757",
+  "lever_pid": 3996184,
+  "onepass_pid": 4024289,
+  "reason": "User requested fail fast on a clear large decode shortfall; first canonical fixed1024 result 56.49 tok/s remains well below historical workload baseline 74-77, not a matched regression percentage.",
+  "fixed_decode_tok_s": [
+    56.49,
+    62.46
+  ],
+  "leg_sha256": "e120f01022fbcacf243738e321860f5381384b49a3cda2f5b69ecad7edae8585",
+  "requested_at": 1788919430.6641808,
+  "method": "SIGTERM exact owned fleet_boot supervisor"
+}

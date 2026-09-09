@@ -1747,6 +1747,7 @@ def _micro_kernel_cache_key(
     swiglu_limit: float | None,
     scatter_fp32: bool = False,
     ep_direct_scatter: bool = False,
+    shared_fc1_a: bool = False,
 ) -> Tuple:
     """The micro kernel's cache key (see :func:`_static_kernel_cache_key`)."""
     key = (
@@ -1777,6 +1778,8 @@ def _micro_kernel_cache_key(
         key += ("glm53_ep_micro_scatter_fp32_v1",)
     if ep_direct_scatter:
         key += ("glm53_ep_micro_direct_scatter_v1",)
+    if shared_fc1_a:
+        key += ("glm53_ep_micro_shared_fc1_a_v1",)
     return key
 
 
@@ -2465,6 +2468,48 @@ def _ep_micro_scatter_buffer(workspace, output):
     return current
 
 
+def _validate_ep_micro_short_output(
+    *, workspace, weights, a, topk_ids, topk_weights, physical_output,
+    target, num_experts, num_tokens, k, n, top_k, quant_mode,
+    activation, swiglu_alpha, swiglu_beta, swiglu_limit, forced_backend,
+):
+    """Admit a host-only six-row final cast; the kernel still writes eight rows."""
+    if (not _B12X_EP_ZERO_WEIGHT_MICRO or forced_backend is not None
+            or bool(getattr(weights, "tiled", False)) or top_k != 8
+            or not _ep_micro_scatter_fp32(
+                state_E=workspace.state_E, weight_E=num_experts,
+                m=num_tokens, k=k, n=n, num_topk=top_k,
+                max_rows=workspace.max_rows, skip_zero_weight_expert_id=72,
+                quant_mode=quant_mode, activation=activation,
+                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit)
+            or tuple(a.shape) != (8, 4096)
+            or tuple(topk_ids.shape) != (8, 8)
+            or tuple(topk_weights.shape) != (8, 8)):
+        raise ValueError("direct T6 output requires the exact padded EP top8 micro lane")
+    plane = workspace.ep_micro_scatter_fp32
+    if (plane is None or plane.dtype != torch.float32
+            or tuple(plane.shape) != (8, 4096) or not plane.is_contiguous()):
+        raise ValueError("direct T6 output requires the pinned FP32 M8 plane")
+    if (target.dtype != torch.bfloat16 or tuple(target.shape) != (6, 4096)
+            or not target.is_contiguous() or target.device.type != "cuda"
+            or target.device != workspace.device
+            or physical_output.dtype != torch.bfloat16
+            or tuple(physical_output.shape) != (8, 4096)
+            or not physical_output.is_contiguous()):
+        raise ValueError("direct T6 output requires contiguous BF16 [6,4096]")
+    start = target.data_ptr()
+    end = start + target.numel() * target.element_size()
+    # A destination cannot share any prepared input, legacy output or FP32
+    # plane. No allocation, data read, stream switch or persistent tensor cache.
+    for tensor in (a, topk_ids, topk_weights, physical_output, plane):
+        if tensor.device != target.device or not tensor.is_contiguous():
+            raise ValueError("direct T6 output device/layout differs")
+        other = tensor.data_ptr()
+        if start < other + tensor.numel() * tensor.element_size() and other < end:
+            raise ValueError("direct T6 output aliases prepared or scatter storage")
+
+
 def _get_micro_kernel(
     state_E: int,
     weight_E: int,
@@ -2522,6 +2567,8 @@ def _get_micro_kernel(
         share_input_across_experts=share_input_across_experts,
         share_expert_scales=share_expert_scales, single_token=single_token,
     )
+    # Reuse gate/up input loads only in this exact direct-scatter EP lane.
+    shared_fc1_a = ep_direct_scatter
 
     cache_key = _micro_kernel_cache_key(
         quant_mode=quant_mode,
@@ -2547,6 +2594,7 @@ def _get_micro_kernel(
         swiglu_limit=swiglu_limit,
         scatter_fp32=scatter_fp32,
         ep_direct_scatter=ep_direct_scatter,
+        shared_fc1_a=shared_fc1_a,
     )
     cached = _MICRO_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -2572,6 +2620,7 @@ def _get_micro_kernel(
         skip_zero_weight_expert_id=skip_zero_weight_expert_id,
         scatter_fp32=scatter_fp32,
         ep_direct_scatter=ep_direct_scatter,
+        shared_fc1_a=shared_fc1_a,
     )
 
     is_gated = is_gated_activation(activation)
@@ -2866,6 +2915,7 @@ def launch_sm120_static_moe(
     swiglu_limit: float | None = None,
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
+    _ep_short_output: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Launch the SM120 static, micro, or direct micro MoE kernel.
 
@@ -2894,6 +2944,17 @@ def launch_sm120_static_moe(
             quant_mode=quant_mode,
             activation=activation,
             swiglu_limit=swiglu_limit,
+        )
+
+    if _ep_short_output is not None:
+        _validate_ep_micro_short_output(
+            workspace=workspace, weights=weights, a=a,
+            topk_ids=topk_ids, topk_weights=topk_weights,
+            physical_output=scatter_output, target=_ep_short_output,
+            num_experts=num_experts, num_tokens=num_tokens, k=k, n=n, top_k=top_k,
+            quant_mode=quant_mode, activation=activation,
+            swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+            swiglu_limit=swiglu_limit, forced_backend=forced_backend,
         )
 
     # Flatten routing tensors
@@ -3301,7 +3362,16 @@ def launch_sm120_static_moe(
             weights.sfb2_packed if static_v2_config.get("reform_sf_pack")
             and weights.sfb2_packed is not None else _sf_pack_dummy(a.device),
         )
+    if (_ep_short_output is not None
+            and kernel_scatter_output is not workspace.ep_micro_scatter_fp32):
+        raise RuntimeError("direct T6 output lost its FP32 kernel target")
     compiled(*runtime_args)
+    if _ep_short_output is not None:
+        # Keep the physical M8 kernel, zeroing, source address and stream.
+        # BF16(FP32[:6]) is exactly the previous BF16(FP32)[:6]; the omitted
+        # padded BF16 tensor was only copied, never used in arithmetic.
+        _ep_short_output.copy_(kernel_scatter_output[:6])
+        return _ep_short_output
     if kernel_scatter_output is not scatter_output:
         # All rounded per-route partials are accumulated before this single
         # conversion. The copy follows the kernel on the caller's stream and
@@ -5025,6 +5095,7 @@ def launch_sm120_moe(
     _workspace=None,
     _weight_views=None,
     _prepared_weights=None,
+    _ep_short_output: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Unified SM120 MoE dispatch — selects static or dynamic by token count.
 
@@ -5040,6 +5111,12 @@ def launch_sm120_moe(
     quant_mode = _normalize_quant_mode(quant_mode, activation_precision)
     source_format = _normalize_source_format_for_quant_mode(source_format, quant_mode)
     activation_precision = _activation_precision_from_quant_mode(quant_mode)
+
+    if _ep_short_output is not None and (
+        not isinstance(_workspace, Sm120StaticMoEWorkspace)
+        or quant_mode != "nvfp4" or source_format != "modelopt"
+    ):
+        raise ValueError("direct T6 output requires an explicit NVFP4 static workspace")
 
     num_tokens = topk_ids.size(0)
     k = a.size(1)  # hidden_size
@@ -5290,4 +5367,5 @@ def launch_sm120_moe(
             swiglu_limit=swiglu_limit,
             activation_precision=activation_precision,
             quant_mode=quant_mode,
+            _ep_short_output=_ep_short_output,
         )
