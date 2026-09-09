@@ -20,7 +20,8 @@ CPU_TEST_MODULES = ('test_glm53_ep_micro_tile.py', 'test_glm53_ep_short_decode.p
                     'test_glm53_ep_micro_scatter_fp32.py',
                     'test_glm53_ep_micro_direct_scatter.py',
                     'test_glm53_ep_micro_shared_fc1_a.py',
-                    'test_glm53_ep_t6_direct_output.py')
+                    'test_glm53_ep_t6_direct_output.py',
+                    'test_glm53_ep_micro_m16.py')
 CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
     'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
@@ -29,6 +30,8 @@ CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu11-identity.json',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu17.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu17-identity.json',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu19.py.gz',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu19-identity.json',
     'measurements/glm53_ep_local_20260908/micro-scatter-ownership/verify.py',
     'measurements/glm53_ep_local_20260908/micro-scatter-ownership/identity.json',
     'measurements/glm53_ep_local_20260908/micro-scatter-ownership/m32-topk8-fp32.ptx.gz',
@@ -76,7 +79,7 @@ def compile_candidate(output, result):
     result['phase'] = 'micro-cute-compile'
     md._MICRO_KERNEL_CACHE.clear()
     result['micro_passes'] = []
-    variants = ((72, 8, 64, (32,128), True, True, True, 'm32-topk8-shared-a-direct-fp32'),
+    variants = ((72, 8, 64, (16,128), True, True, True, 'm16-topk8-shared-a-direct-fp32'),
                 (None, 1, 8, (64,128), True, False, False, 'm64-topk1-fp32'),
                 (None, 8, 64, (64,128), False, False, False, 'm64-topk8-bf16'))
     for sentinel, topk, max_rows, tile, fp32, direct, shared_a, arm in variants:
@@ -89,11 +92,13 @@ def compile_candidate(output, result):
         assert len(keys)==1 and keys[0][10]==tile,keys
         assert ('glm53_ep_micro_scatter_fp32_v1' in keys[0][22:]) is fp32, keys
         assert ('glm53_ep_micro_direct_scatter_v1' in keys[0][22:]) is direct, keys
-        assert (keys[0][-1]=='glm53_ep_micro_shared_fc1_a_v1') is shared_a, keys
+        assert ('glm53_ep_micro_shared_fc1_a_v1' in keys[0][22:]) is shared_a, keys
+        assert (keys[0][-1]=='glm53_ep_micro_m16_v1') is (tile == (16,128)), keys
         if direct:
-            assert keys[0][-3:] == ('glm53_ep_micro_scatter_fp32_v1',
+            assert keys[0][-4:] == ('glm53_ep_micro_scatter_fp32_v1',
                                   'glm53_ep_micro_direct_scatter_v1',
-                                  'glm53_ep_micro_shared_fc1_a_v1'), keys
+                                  'glm53_ep_micro_shared_fc1_a_v1',
+                                  'glm53_ep_micro_m16_v1'), keys
         # Both specializations use the same DSL dump basename. Preserve this
         # pass before the next compile overwrites it; the initialized dump
         # directory remains unchanged throughout the process.
@@ -115,6 +120,7 @@ def compile_candidate(output, result):
                     path=str(destination.relative_to(output)), sha256=digest))
         result['micro_passes'].append(dict(arm=arm, cache_key=keys[0],
             scatter_fp32=fp32, ep_direct_scatter=direct, shared_fc1_a=shared_a,
+            ep_m16=(tile == (16,128)),
             artifacts=preserved))
     result['micro_keys']=list(md._MICRO_KERNEL_CACHE)
     assert len(result['micro_keys'])==3

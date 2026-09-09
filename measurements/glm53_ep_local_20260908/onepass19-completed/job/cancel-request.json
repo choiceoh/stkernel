@@ -1,0 +1,17 @@
+{
+  "session": "eplocalonepass0909v19",
+  "ticket": "17889205364098992",
+  "owner_pid": 4098992,
+  "owner_start_tick": "42292395",
+  "arm": "B1",
+  "fixed_decode_tok_s": [
+    60.968135770253056,
+    68.61384544272954,
+    54.55241848822173
+  ],
+  "fixed_pooled_tok_s": 60.84289139596996,
+  "records_sha256": "0cbdf601445641c0d5db073421e2dd02869a332110bd5e0dd921c69c2f083a2b",
+  "requested_at": 1788921207.7176974,
+  "method": "SIGTERM exact owned fleet_boot supervisor",
+  "reason": "User requested stopping remaining repetitions on clear large decode shortfall. Candidate completed while first-result notification was delivered; no B1 onepass result exists. Pooled fixed1024 remains below65tok/s versus historical74-77, not a matched regression percentage."
+}

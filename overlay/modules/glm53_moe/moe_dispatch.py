@@ -895,16 +895,23 @@ def _select_micro_mma_tiler_mn(
     skip_zero_weight_expert_id: int | None, quant_mode: str,
     activation: str, swiglu_alpha: float, swiglu_beta: float,
     swiglu_limit: float | None,
+    max_rows: int | None = None,
+    share_input_across_experts: bool = False,
+    share_expert_scales: bool = False,
+    single_token: bool = False,
 ) -> Tuple[int, int]:
-    # The padded EP decode lane has at most 64 routed rows. M32 reduces
-    # padded MMA work while retaining the micro kernel's (2, 2, 1) warp
-    # layout and physical M128 A/SFA loads. Other lanes keep their selector.
+    # Only the shared/direct EP candidate uses M16 with two MMA warps.
+    # Missing or different execution metadata retains the prior M32 choice;
+    # every other geometry keeps the original selector.
     if (
         (state_E, weight_E, m, k, n, num_topk, skip_zero_weight_expert_id)
         == (72, 72, 8, 4096, 2048, 8, 72)
         and (quant_mode, activation, swiglu_alpha, swiglu_beta, swiglu_limit)
         == ("nvfp4", "swigluoai_uninterleave", 1.0, 0.0, 10.0)
     ):
+        if (max_rows == 64 and not share_input_across_experts
+                and not share_expert_scales and not single_token):
+            return (16, 128)
         return (32, 128)
     return _select_moe_mma_tiler_mn(m * num_topk, n)
 
@@ -1748,6 +1755,7 @@ def _micro_kernel_cache_key(
     scatter_fp32: bool = False,
     ep_direct_scatter: bool = False,
     shared_fc1_a: bool = False,
+    ep_m16: bool = False,
 ) -> Tuple:
     """The micro kernel's cache key (see :func:`_static_kernel_cache_key`)."""
     key = (
@@ -1780,6 +1788,8 @@ def _micro_kernel_cache_key(
         key += ("glm53_ep_micro_direct_scatter_v1",)
     if shared_fc1_a:
         key += ("glm53_ep_micro_shared_fc1_a_v1",)
+    if ep_m16:
+        key += ("glm53_ep_micro_m16_v1",)
     return key
 
 
@@ -2447,7 +2457,7 @@ def _ep_micro_direct_scatter(*, state_E, weight_E, m, k, n, num_topk,
                 swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
                 swiglu_limit=swiglu_limit)
             and (num_topk, max_rows, skip_zero_weight_expert_id) == (8, 64, 72)
-            and mma_tiler_mn == (32, 128)
+            and mma_tiler_mn in ((16, 128), (32, 128))
             and not share_input_across_experts and not share_expert_scales
             and not single_token)
 
@@ -2548,6 +2558,8 @@ def _get_micro_kernel(
         num_topk=num_topk, skip_zero_weight_expert_id=skip_zero_weight_expert_id,
         quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit,
+        max_rows=max_rows, share_input_across_experts=share_input_across_experts,
+        share_expert_scales=share_expert_scales, single_token=single_token,
     )
     scatter_fp32 = _ep_micro_scatter_fp32(
         state_E=state_E, weight_E=weight_E, m=m, k=k, n=n,
@@ -2569,6 +2581,7 @@ def _get_micro_kernel(
     )
     # Reuse gate/up input loads only in this exact direct-scatter EP lane.
     shared_fc1_a = ep_direct_scatter
+    ep_m16 = ep_direct_scatter and mma_tiler_mn == (16, 128)
 
     cache_key = _micro_kernel_cache_key(
         quant_mode=quant_mode,
@@ -2595,6 +2608,7 @@ def _get_micro_kernel(
         scatter_fp32=scatter_fp32,
         ep_direct_scatter=ep_direct_scatter,
         shared_fc1_a=shared_fc1_a,
+        ep_m16=ep_m16,
     )
     cached = _MICRO_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -2621,6 +2635,7 @@ def _get_micro_kernel(
         scatter_fp32=scatter_fp32,
         ep_direct_scatter=ep_direct_scatter,
         shared_fc1_a=shared_fc1_a,
+        ep_m16=ep_m16,
     )
 
     is_gated = is_gated_activation(activation)

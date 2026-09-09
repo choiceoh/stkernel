@@ -37,10 +37,12 @@ def function(name):
                 value = ast.unparse(test)
                 if value in ('self.shared_fc1_a',
                              'cutlass.const_expr(self.shared_fc1_a)',
+                             'self.ep_m16', 'cutlass.const_expr(self.ep_m16)',
                              'cutlass.const_expr(self.ep_direct_scatter)'):
                     return False
                 if value in ('not self.shared_fc1_a',
-                             'cutlass.const_expr(not self.shared_fc1_a)'):
+                             'cutlass.const_expr(not self.shared_fc1_a)',
+                             'not self.ep_m16', 'cutlass.const_expr(not self.ep_m16)'):
                     return True
                 return None
 

@@ -96,7 +96,7 @@ class Harness:
         return object()
 
     def select(self, **changes):
-        return self.ns["_select_micro_mma_tiler_mn"](**(EXACT | changes))
+        return self.ns["_select_micro_mma_tiler_mn"](**(EXACT | dict(max_rows=64) | changes))
 
     def get(self, **changes):
         return self.ns["_get_micro_kernel"](**(EXACT | dict(max_rows=64, mac_override=48) | changes))
@@ -110,7 +110,7 @@ class EPMicroTileTests(unittest.TestCase):
             fallback_calls.append((rows, n))
             return (128, 256)
         harness.ns["_select_moe_mma_tiler_mn"] = fallback
-        self.assertEqual(harness.select(), (32, 128))
+        self.assertEqual(harness.select(), (16, 128))
         self.assertEqual(fallback_calls, [])
         alternatives = {
             "state_E": (71, 73, 288), "weight_E": (71, 73, 288),
@@ -141,11 +141,14 @@ class EPMicroTileTests(unittest.TestCase):
                 self.assertEqual(harness.select(**changes), expected)
         self.assertEqual(harness.select(skip_zero_weight_expert_id=None), (64, 128))
 
-    def test_actual_compiler_receives_m32_and_fixed_fake_geometry(self):
+    def test_actual_compiler_receives_m16_and_fixed_fake_geometry(self):
         harness = Harness()
         result = harness.get()
         kernel, args, options = harness.compiles[0]
-        self.assertEqual(kernel.tile_shape_mnk, (32, 128, 128))
+        self.assertEqual(kernel.tile_shape_mnk, (16, 128, 128))
+        self.assertTrue(kernel.ep_m16)
+        self.assertTrue(kernel.ep_direct_scatter)
+        self.assertTrue(kernel.shared_fc1_a)
         self.assertEqual(kernel.output_tile_count_n, 16)
         self.assertEqual(kernel.skip_zero_weight_expert_id, 72)
         self.assertEqual((kernel.activation, kernel.swiglu_alpha, kernel.swiglu_beta, kernel.swiglu_limit),
@@ -159,52 +162,92 @@ class EPMicroTileTests(unittest.TestCase):
         self.assertEqual(options, dict(options="--opt-level 2 --enable-tvm-ffi"))
         key = next(iter(harness.ns["_MICRO_KERNEL_CACHE"]))
         self.assertEqual(key[2:10], (72, 72, 8, 4096, 2048, 8, 64, 48))
-        self.assertEqual(key[10], (32, 128))
+        self.assertEqual(key[10], (16, 128))
         self.assertEqual(key[17], 72)
+        self.assertEqual(key[22:], ("glm53_ep_micro_scatter_fp32_v1",
+            "glm53_ep_micro_direct_scatter_v1", "glm53_ep_micro_shared_fc1_a_v1",
+            "glm53_ep_micro_m16_v1"))
         self.assertEqual(harness.get(), result)
         self.assertEqual(len(harness.compiles), 1)
 
-    def test_existing_m64_cache_entry_cannot_satisfy_m32(self):
+    def test_previous_m32_and_m64_cache_entries_cannot_satisfy_m16(self):
         harness = Harness()
         harness.get()
         key = next(iter(harness.ns["_MICRO_KERNEL_CACHE"]))
-        old_key = key[:10] + ((64, 128),) + key[11:]
+        old_keys = {key[:10] + (tile,) + key[11:-1] for tile in ((32,128),(64,128))}
+        old_keys.add(key[:-1])  # same geometry without the M16 ABI tag also misses
         old_result = (object(), 48)
-        harness.ns["_MICRO_KERNEL_CACHE"] = {old_key: old_result}
+        harness.ns["_MICRO_KERNEL_CACHE"] = dict.fromkeys(old_keys, old_result)
         actual = harness.get()
         self.assertNotEqual(actual, old_result)
         self.assertEqual(len(harness.compiles), 2)
-        self.assertEqual(set(harness.ns["_MICRO_KERNEL_CACHE"]), {key, old_key})
+        self.assertEqual(set(harness.ns["_MICRO_KERNEL_CACHE"]), {key} | old_keys)
 
     def test_nonmatching_call_still_constructs_m64(self):
-        harness = Harness()
-        harness.get(skip_zero_weight_expert_id=None)
-        kernel = harness.compiles[0][0]
-        self.assertEqual(kernel.tile_shape_mnk, (64, 128, 128))
-        self.assertIsNone(kernel.skip_zero_weight_expert_id)
-        key = next(iter(harness.ns["_MICRO_KERNEL_CACHE"]))
-        self.assertEqual(key[10], (64, 128))
+        for experts,intermediate in ((72,2048),(288,512)):
+            harness = Harness()
+            harness.get(state_E=experts,weight_E=experts,n=intermediate,
+                        skip_zero_weight_expert_id=None)
+            kernel = harness.compiles[0][0]
+            self.assertEqual(kernel.tile_shape_mnk, (64, 128, 128))
+            self.assertIsNone(kernel.skip_zero_weight_expert_id)
+            self.assertFalse(kernel.ep_m16)
+            key = next(iter(harness.ns["_MICRO_KERNEL_CACHE"]))
+            self.assertEqual(key,('micro','nvfp4',experts,experts,8,4096,intermediate,
+                8,64,48,(64,128),'int32',False,True,False,False,False,None,
+                'swigluoai_uninterleave',1.,0.,10.))
 
-    def test_m32_retains_valid_mma_and_physical_scale_geometry(self):
+    def test_m16_retains_valid_two_warp_mma_and_physical_scale_geometry(self):
         harness = Harness()
         harness.get()
         kernel = harness.compiles[0][0]
         kernel.a_dtype, kernel.sf_dtype = "fp4", "e4m3"
         kernel._setup_attributes(4096)
         self.assertEqual((kernel.num_m_tiles, kernel.num_n_tiles, kernel.num_k_blocks), (1, 8, 2))
-        self.assertEqual(kernel.tiled_mma[1], (2, 2, 1))
+        self.assertEqual(kernel.tiled_mma[1], (1, 2, 1))
         self.assertEqual((kernel.sa_tile_shape_mk, kernel.sfa_tile_shape_mk), ((128, 128), (128, 128)))
-        self.assertEqual((kernel.sa_tiles_per_block, kernel.sfa_tiles_per_block), (4, 4))
-        self.assertEqual(kernel.epi_tile, (32, 128))
-        self.assertEqual(kernel.threads_per_cta, 160)
+        self.assertEqual((kernel.sa_tiles_per_block, kernel.sfa_tiles_per_block), (8, 8))
+        self.assertEqual(kernel.epi_tile, (16, 128))
+        self.assertEqual(kernel.num_mma_warps, 2)
+        self.assertEqual(kernel.threads_per_cta, 96)
         for rows in range(65):
             # Independent ceil reference: the new task count covers every
-            # admitted row exactly once, including 33..64 row boundary cases.
+            # admitted row exactly once, including 15/16/17 and 31/32/33.
             tiles = len(range(0, rows, kernel.tile_shape_mnk[0]))
-            self.assertEqual(tiles, rows // 32 + int(rows % 32 != 0))
-            covered = [tile * 32 + row for tile in range(tiles) for row in range(32)
-                       if tile * 32 + row < rows]
+            self.assertEqual(tiles, rows // 16 + int(rows % 16 != 0))
+            covered = [tile * 16 + row for tile in range(tiles) for row in range(16)
+                       if tile * 16 + row < rows]
             self.assertEqual(covered, list(range(rows)))
+
+    def test_m16_requires_actual_capacity_and_execution_flags_before_selection(self):
+        h = Harness()
+        # An old geometry-only caller keeps its original M32 result.
+        self.assertEqual(h.ns["_select_micro_mma_tiler_mn"](**EXACT),(32,128))
+        for change in ({"max_rows":None},{"max_rows":8},{"max_rows":63},
+                       {"max_rows":65},{"max_rows":128},
+                       {"share_input_across_experts":True},
+                       {"share_expert_scales":True},{"single_token":True}):
+            with self.subTest(change=change):
+                self.assertEqual(h.select(**change),(32,128))
+        for change in ({"max_rows":63},{"max_rows":65},{"max_rows":128},
+                       {"share_expert_scales":True}):
+            h = Harness(); h.get(**change)
+            kernel = h.compiles[-1][0]
+            self.assertEqual(kernel.tile_shape_mnk,(32,128,128))
+            self.assertFalse(kernel.ep_m16)
+            self.assertFalse(kernel.shared_fc1_a)
+            self.assertFalse(kernel.ep_direct_scatter)
+            self.assertNotIn("glm53_ep_micro_m16_v1",next(iter(h.ns["_MICRO_KERNEL_CACHE"])))
+        # A deliberately retained old M32 specialization still has its old
+        # constructor flags and exact pre-M16 cache namespace.
+        h = Harness();h.ns["_select_micro_mma_tiler_mn"] = lambda **kw:(32,128)
+        h.get();kernel = h.compiles[-1][0]
+        self.assertFalse(kernel.ep_m16)
+        self.assertTrue(kernel.shared_fc1_a)
+        self.assertTrue(kernel.ep_direct_scatter)
+        self.assertEqual(next(iter(h.ns["_MICRO_KERNEL_CACHE"]))[22:],
+            ("glm53_ep_micro_scatter_fp32_v1","glm53_ep_micro_direct_scatter_v1",
+             "glm53_ep_micro_shared_fc1_a_v1"))
 
 
 if __name__ == "__main__":

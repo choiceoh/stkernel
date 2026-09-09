@@ -78,24 +78,31 @@ class AdmissionTests(unittest.TestCase):
         self.assertTrue(kernel.scatter_fp32); self.assertEqual(args[21].dtype, 'Float32')
         self.assertTrue(kernel.ep_direct_scatter)
         self.assertTrue(kernel.shared_fc1_a)
+        self.assertTrue(kernel.ep_m16)
         key = next(reversed(h.ns['_MICRO_KERNEL_CACHE']))
         self.assertEqual(key[17], 72)
         self.assertEqual(key[22:], ('glm53_ep_micro_scatter_fp32_v1',
                                     'glm53_ep_micro_direct_scatter_v1',
-                                    'glm53_ep_micro_shared_fc1_a_v1'))
+                                    'glm53_ep_micro_shared_fc1_a_v1',
+                                    'glm53_ep_micro_m16_v1'))
         h.get(num_topk=1, max_rows=8, skip_zero_weight_expert_id=None)
         kernel, args, _ = h.compiles[-1]
         self.assertTrue(kernel.scatter_fp32); self.assertEqual(args[21].dtype, 'Float32')
         self.assertFalse(kernel.ep_direct_scatter)
         self.assertFalse(kernel.shared_fc1_a)
+        self.assertFalse(kernel.ep_m16)
         fixed_key = next(reversed(h.ns['_MICRO_KERNEL_CACHE']))
         self.assertIsNone(fixed_key[17])
         self.assertEqual(fixed_key[22:], ('glm53_ep_micro_scatter_fp32_v1',))
+        self.assertEqual(fixed_key,('micro','nvfp4',72,72,8,4096,2048,1,8,48,(64,128),
+            'int32',False,True,False,False,False,None,'swigluoai_uninterleave',1.,0.,10.,
+            'glm53_ep_micro_scatter_fp32_v1'))
         h.get(skip_zero_weight_expert_id=None)
         kernel, args, _ = h.compiles[-1]
         self.assertFalse(kernel.scatter_fp32); self.assertEqual(args[21].dtype, 'BFloat16')
         self.assertFalse(kernel.ep_direct_scatter)
         self.assertFalse(kernel.shared_fc1_a)
+        self.assertFalse(kernel.ep_m16)
         self.assertEqual(len(next(reversed(h.ns['_MICRO_KERNEL_CACHE']))), 22)
         count = len(h.compiles); h.get()
         self.assertEqual(len(h.compiles), count)
@@ -103,15 +110,17 @@ class AdmissionTests(unittest.TestCase):
     def test_direct_scatter_rejects_every_geometry_and_execution_mode_mismatch(self):
         ns = {}; load('_ep_micro_scatter_fp32', ns)
         gate = load('_ep_micro_direct_scatter', ns)
-        exact = EXACT | dict(mma_tiler_mn=(32,128), share_input_across_experts=False,
+        exact = EXACT | dict(mma_tiler_mn=(16,128), share_input_across_experts=False,
                              share_expert_scales=False, single_token=False)
         self.assertTrue(gate(**exact))
+        self.assertTrue(gate(**(exact | dict(mma_tiler_mn=(32,128)))))
         changes = dict(state_E=(71,73,288), weight_E=(71,73,288), m=(1,6,7,9),
             k=(2048,4095,4097), n=(1024,2047,2049), num_topk=(1,7,9),
             max_rows=(8,63,65,128), skip_zero_weight_expert_id=(None,-1,71,73),
             quant_mode=('mxfp4',), activation=('silu','relu2'),
             swiglu_alpha=(1.702,float('nan')), swiglu_beta=(1.,float('nan')),
-            swiglu_limit=(None,9.,11.,float('nan')), mma_tiler_mn=((64,128),(32,256)),
+            swiglu_limit=(None,9.,11.,float('nan')),
+            mma_tiler_mn=((8,128),(15,128),(17,128),(16,64),(16,256),(64,128),(32,256)),
             share_input_across_experts=(True,), share_expert_scales=(True,),
             single_token=(True,))
         for field, values in changes.items():
@@ -133,15 +142,17 @@ class AdmissionTests(unittest.TestCase):
                         'int32',False,True,False,False,False,72,
                         'swigluoai_uninterleave',1.,0.,10.,
                         'glm53_ep_micro_scatter_fp32_v1')
-        self.assertEqual(direct_key[:-2], buffered_key)
+        self.assertEqual(direct_key[:10]+((32,128),)+direct_key[11:-3],buffered_key)
         stale = (object(),48)
         previous_direct = buffered_key + ('glm53_ep_micro_direct_scatter_v1',)
-        h.ns['_MICRO_KERNEL_CACHE'] = {buffered_key:stale,previous_direct:stale}
+        previous_shared = previous_direct + ('glm53_ep_micro_shared_fc1_a_v1',)
+        h.ns['_MICRO_KERNEL_CACHE'] = {buffered_key:stale,previous_direct:stale,
+                                      previous_shared:stale}
         result = h.get()
         self.assertNotEqual(result,stale)
         self.assertEqual(len(h.compiles),2)
         self.assertEqual(set(h.ns['_MICRO_KERNEL_CACHE']),
-                         {buffered_key,previous_direct,direct_key})
+                         {buffered_key,previous_direct,previous_shared,direct_key})
         self.assertEqual(h.get(),result)
         self.assertEqual(len(h.compiles),2)
 
@@ -162,6 +173,7 @@ class AdmissionTests(unittest.TestCase):
                 kernel,args,_ = h.compiles[-1]
                 self.assertFalse(kernel.ep_direct_scatter)
                 self.assertFalse(kernel.shared_fc1_a)
+                self.assertFalse(kernel.ep_m16)
                 self.assertTrue(kernel.scatter_fp32)
                 self.assertEqual((args[21].dtype,args[21].shape),('Float32',(8,4096)))
                 self.assertEqual(next(iter(h.ns['_MICRO_KERNEL_CACHE']))[22:],

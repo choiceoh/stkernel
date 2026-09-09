@@ -27,6 +27,12 @@ class SelectShared(ast.NodeTransformer):
     def __init__(self, enabled=False): self.enabled = enabled
     def condition(self, n):
         text = ast.unparse(n)
+        # Keep this oracle bound to the original M32 geometry. M16 has a
+        # separate frozen-module and physical-row coverage oracle.
+        if text in ('self.ep_m16', 'cutlass.const_expr(self.ep_m16)'):
+            return False
+        if text in ('not self.ep_m16', 'cutlass.const_expr(not self.ep_m16)'):
+            return True
         if text in ('self.shared_fc1_a', 'cutlass.const_expr(self.shared_fc1_a)'):
             return self.enabled
         if text in ('not self.shared_fc1_a', 'cutlass.const_expr(not self.shared_fc1_a)'):

@@ -26,7 +26,9 @@ def function(name):
             def visit_If(self, item):
                 value = ast.unparse(item.test)
                 if value in ('cutlass.const_expr(self.shared_fc1_a)',
-                             'cutlass.const_expr(not self.shared_fc1_a)'):
+                             'cutlass.const_expr(not self.shared_fc1_a)',
+                             'cutlass.const_expr(self.ep_m16)',
+                             'cutlass.const_expr(not self.ep_m16)'):
                     statements = item.body if 'not ' in value else item.orelse
                     result = []
                     for statement in statements:

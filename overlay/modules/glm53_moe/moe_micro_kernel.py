@@ -408,6 +408,7 @@ class MoEMicroKernel:
         scatter_fp32: bool = False,
         ep_direct_scatter: bool = False,
         shared_fc1_a: bool = False,
+        ep_m16: bool = False,
     ):
         if activation not in {"silu", "relu2", "gelu_tanh", "swigluoai_uninterleave"}:
             raise ValueError(f"unsupported activation {activation!r}")
@@ -432,12 +433,16 @@ class MoEMicroKernel:
         self.scatter_fp32 = bool(scatter_fp32)
         self.ep_direct_scatter = bool(ep_direct_scatter)
         self.shared_fc1_a = bool(shared_fc1_a)
+        self.ep_m16 = bool(ep_m16)
+        if self.ep_m16:
+            if not (self.ep_direct_scatter and self.shared_fc1_a):
+                raise ValueError("EP M16 requires shared FC1 A and direct FP32 scatter")
         if self.shared_fc1_a and not self.ep_direct_scatter:
             raise ValueError("shared FC1 A requires the exact EP direct-scatter variant")
         if self.ep_direct_scatter and not (
             self.scatter_fp32
             and sf_vec_size == 16
-            and tuple(mma_tiler_mn) == (32, 128)
+            and tuple(mma_tiler_mn) == ((16, 128) if self.ep_m16 else (32, 128))
             and output_tile_count_n == 16
             and activation == "swigluoai_uninterleave"
             and self.swiglu_alpha == 1.0
@@ -473,7 +478,7 @@ class MoEMicroKernel:
         self.cluster_shape_mn = (1, 1)
         self.epi_tile = (mma_tiler_mn[0], mma_tiler_mn[1])
         self.occupancy = 1
-        self.num_mma_warps = 4
+        self.num_mma_warps = 2 if self.ep_m16 else 4
         self.tma_load_warp_id = self.num_mma_warps
         self.num_threads_per_warp = 32
         self.threads_per_cta = (self.num_mma_warps + 1) * self.num_threads_per_warp
@@ -604,7 +609,7 @@ class MoEMicroKernel:
                 self.acc_dtype,
                 self.sf_dtype,
             )
-        atom_shape = (2, 2, 1)
+        atom_shape = (1, 2, 1) if self.ep_m16 else (2, 2, 1)
         atom_layout = cute.make_layout(atom_shape)
         permutation_mnk = sm120_utils.get_permutation_mnk(
             self.tile_shape_mnk,
@@ -1551,7 +1556,10 @@ class MoEMicroKernel:
         # MMA WARP GROUP (warps 0-3)
         # ===================================================================
         if warp_idx < self.num_mma_warps:
-            cute.arch.setmaxregister_increase(self.mma_register_requirement)
+            # M16 has MMA and DMA roles in one warpgroup. setmaxnreg is
+            # warpgroup-collective, so that geometry uses static allocation.
+            if cutlass.const_expr(not self.ep_m16):
+                cute.arch.setmaxregister_increase(self.mma_register_requirement)
             num_k_blocks = cute.size(tCrA_full, mode=[2])
 
             atom_ld_A = cute.make_copy_atom(
@@ -2580,7 +2588,8 @@ class MoEMicroKernel:
         # DMA WARP (warp 4)
         # ===================================================================
         elif warp_idx == self.tma_load_warp_id:
-            cute.arch.setmaxregister_decrease(self.load_register_requirement)
+            if cutlass.const_expr(not self.ep_m16):
+                cute.arch.setmaxregister_decrease(self.load_register_requirement)
 
             num_persistent_clusters = Int32(gdim_z)
             cluster_shape_mn = (
@@ -2688,7 +2697,7 @@ class MoEMicroKernel:
                                   tma_bar_ptr=ml_pipeline.producer_get_barrier(prod_state))
                         ml_pipeline.producer_commit(prod_state)
                         prod_state.advance()
-                    # Same all-160-thread barrier as the combined consumer. No FC2
+                    # Same full-CTA barrier as the combined consumer. No FC2
                     # writes to the gate buffers can overtake either FC1 plane.
                     self.pass_sync_barrier.arrive_and_wait()
                 else:

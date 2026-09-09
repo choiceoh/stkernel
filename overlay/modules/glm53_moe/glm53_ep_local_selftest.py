@@ -577,10 +577,10 @@ def _micro_keys(md):
         if len(key) <= 17:
             continue
         if key[2:9] == (72, 72, 8, 4096, 2048, 8, 64):
-            if (key[10] != (32, 128) or key[17] != 72 or
-                    key[-3:] != ("glm53_ep_micro_scatter_fp32_v1", "glm53_ep_micro_direct_scatter_v1",
-                                 "glm53_ep_micro_shared_fc1_a_v1")):
-                raise AssertionError("T6 padded candidate did not select exact M32 sentinel shared-A direct FP32 micro")
+            if (key[10] != (16, 128) or key[17] != 72 or
+                    key[-4:] != ("glm53_ep_micro_scatter_fp32_v1", "glm53_ep_micro_direct_scatter_v1",
+                                 "glm53_ep_micro_shared_fc1_a_v1", "glm53_ep_micro_m16_v1")):
+                raise AssertionError("T6 padded candidate did not select exact M16 sentinel shared-A direct FP32 micro")
             candidate.append(key)
         if key[2:9] == (72, 72, 8, 4096, 2048, 1, 8):
             if (key[10] != (64, 128) or key[17] is not None or
@@ -588,7 +588,7 @@ def _micro_keys(md):
                 raise AssertionError("T6 fixed control did not retain M64 shared FP32 micro")
             control.append(key)
     if not candidate or not control:
-        raise AssertionError("missing compiled T6 M32/M64 keys")
+        raise AssertionError("missing compiled T6 M16/M64 keys")
     # Cache keys contain torch.dtype objects; preserve their exact repr without
     # making the mandatory startup receipt depend on a custom JSON encoder.
     return dict(candidate=[repr(key) for key in candidate], control=[repr(key) for key in control])
