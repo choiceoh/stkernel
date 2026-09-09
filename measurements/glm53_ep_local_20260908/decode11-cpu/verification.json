@@ -1,0 +1,18 @@
+{
+  "verdict": "PASS",
+  "scope": "CPU11 archive integrity only; no new tests or GPU execution",
+  "original_verdict": "PASS",
+  "contracts": {
+    "tests_run": 69,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "original_files": 58,
+  "ptx": 27,
+  "cubin": 27,
+  "resource_logs": 3,
+  "source_revision": "c7dec80a0f73d4a2b683ce2c4813978938694095",
+  "evidence_tar_sha256": "4946b9b6efca75ec10661ef6f9a7c3bffae308df3d009393634598eb5360f7ec",
+  "result_sha256": "f870483d65990a08c09458d99066c2c4ac69f23d0c24454fd4bcc92080799013"
+}

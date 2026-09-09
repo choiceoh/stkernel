@@ -358,6 +358,34 @@ def _atomic_cas_global_i32(addr, compare, value, *, loc=None, ip=None):
     )
 
 
+@dsl_user_op
+def scatter_add_bf16x2_to_f32(addr: Int64, val0_f32, val1_f32, *, loc=None, ip=None):
+    """Keep stock saturated BF16 contributions, widening only the sum.
+
+    FP32 global RED flushes FP32 subnormals, unlike BF16 RED's noftz.
+    Accumulation order remains unspecified; this is not a deterministic sum.
+    """
+    llvm.inline_asm(
+        None,
+        [
+            Int64(addr).ir_value(loc=loc, ip=ip),
+            val0_f32.ir_value(loc=loc, ip=ip),
+            val1_f32.ir_value(loc=loc, ip=ip),
+        ],
+        "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1;"
+        " cvt.rn.satfinite.bf16x2.f32 packed, $2, $1;"
+        " mov.b32 {h0,h1}, packed;"
+        " cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1;"
+        " red.relaxed.gpu.global.add.v2.f32 [$0], {v0,v1}; }",
+        "l,f,f",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
+
 class MoEMicroKernel:
     """Compact micro MoE kernel with precompacted routing ids for decode."""
 
@@ -377,6 +405,7 @@ class MoEMicroKernel:
         share_expert_scales: bool = False,
         single_token: bool = False,
         skip_zero_weight_expert_id: int | None = None,
+        scatter_fp32: bool = False,
     ):
         if activation not in {"silu", "relu2", "gelu_tanh", "swigluoai_uninterleave"}:
             raise ValueError(f"unsupported activation {activation!r}")
@@ -398,6 +427,7 @@ class MoEMicroKernel:
         self.share_input_across_experts = share_input_across_experts
         self.share_expert_scales = share_expert_scales
         self.single_token = single_token
+        self.scatter_fp32 = bool(scatter_fp32)
         if skip_zero_weight_expert_id is not None and (
             single_token or share_input_across_experts
         ):
@@ -680,6 +710,11 @@ class MoEMicroKernel:
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
     ):
+        expected_scatter_dtype = (
+            cutlass.Float32 if self.scatter_fp32 else cutlass.BFloat16
+        )
+        if cutlass.const_expr(scatter_output.element_type != expected_scatter_dtype):
+            raise ValueError("micro scatter output dtype does not match its compiled variant")
         self.a_dtype = packed_a.element_type
         self.b_dtype = b_w13.element_type
         self.sf_dtype = sfa_ptr.dtype
@@ -1052,7 +1087,10 @@ class MoEMicroKernel:
         scatter_total = num_tokens * cols
         j = flat_tid
         while j < scatter_total:
-            scatter_output[j // cols, j % cols] = cutlass.BFloat16(0.0)
+            if cutlass.const_expr(self.scatter_fp32):
+                scatter_output[j // cols, j % cols] = cutlass.Float32(0.0)
+            else:
+                scatter_output[j // cols, j % cols] = cutlass.BFloat16(0.0)
             j += flat_stride
         cute.arch.sync_threads()
         # When the quantized input is shared across experts, only pair 0
@@ -2262,13 +2300,22 @@ class MoEMicroKernel:
                                     epi_buffer,
                                 ]
                             )
-                            scatter_add_bf16x2(
-                                get_ptr_as_int64(
-                                    scatter_output, tok * scatter_N + global_col
-                                ),
-                                wv * sc_v0,
-                                wv * sc_v1,
-                            )
+                            if cutlass.const_expr(self.scatter_fp32):
+                                scatter_add_bf16x2_to_f32(
+                                    get_ptr_as_int64(
+                                        scatter_output, tok * scatter_N + global_col
+                                    ),
+                                    wv * sc_v0,
+                                    wv * sc_v1,
+                                )
+                            else:
+                                scatter_add_bf16x2(
+                                    get_ptr_as_int64(
+                                        scatter_output, tok * scatter_N + global_col
+                                    ),
+                                    wv * sc_v0,
+                                    wv * sc_v1,
+                                )
                             pair_idx += Int32(self.num_threads_per_warp)
 
                         # Post-scatter barrier: needed to ensure all warps

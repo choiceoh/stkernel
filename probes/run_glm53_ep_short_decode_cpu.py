@@ -28,7 +28,7 @@ def validate_artifacts(output, result):
         return absolute
 
     for name, suffix in (('micro_artifacts', '.ptx'), ('micro_resources', '.cubin')):
-        assert len(result[name]) >= 2, 'both micro kernels need artifacts'
+        assert len(result[name]) >= 3, 'all three micro kernels need artifacts'
         for row in result[name]:
             assert row['path'].startswith('micro/'), row['path']
             path = check(row['path'], row['sha256'], suffix)
@@ -94,7 +94,7 @@ def main():
     assert result['verdict']=='PASS' and result['phase']=='complete' and result['cuda_initialized'] is False
     assert result['binding_runtime_rechecked'] is True
     capsule_runtime.validate_runtime_receipt(result['binding_runtime'])
-    assert len(result['micro_keys'])==2 and len(result['prepare_variants'])==24
+    assert len(result['micro_keys'])==3 and len(result['prepare_variants'])==24
     assert result['contracts']['tests_run']>0 and not any(result['contracts'][k] for k in ('failures','errors','skips'))
     assert source_receipt(root)==expected_sources,'compile/test source changed'
     for name, expected in expected_sources.items():

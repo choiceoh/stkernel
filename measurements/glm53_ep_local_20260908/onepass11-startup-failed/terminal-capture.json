@@ -1,0 +1,63 @@
+{
+  "absent": [
+    "/tmp/glm53-ep-onepass-0909-11/onepass.jsonl",
+    "/tmp/glm53-ep-onepass-0909-11/verdicts.jsonl",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS11A0.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS11B1.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS11A.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS11B2.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS11B3.log"
+  ],
+  "captured_at": 1788914469.859651,
+  "files": {
+    "/home/choiceoh/glm53-logs/fleet/run-logs/42754a82ba632ea85f7ca1804f833f45fc3fd6bd1b10cdb06346c8b7171c22d0.log": {
+      "bytes": 4611,
+      "mtime_ns": 1788913927626867426,
+      "sha256": "ec98610074a9d7d18dbf01fe2521d23734c0abeb2220306b35800bbaf46750f6"
+    }
+  },
+  "fleet_after": {
+    "finished_at": 1788913927.829868,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/42754a82ba632ea85f7ca1804f833f45fc3fd6bd1b10cdb06346c8b7171c22d0.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788913927.4319825,
+    "payload_returncode": 1,
+    "payload_seconds": 324.8,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v11",
+    "started_at": 1788913602.6414156,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "17889136023671585"
+  },
+  "fleet_before": {
+    "finished_at": 1788913927.829868,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/42754a82ba632ea85f7ca1804f833f45fc3fd6bd1b10cdb06346c8b7171c22d0.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788913927.4319825,
+    "payload_returncode": 1,
+    "payload_seconds": 324.8,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v11",
+    "started_at": 1788913602.6414156,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "17889136023671585"
+  },
+  "own_holder_after": false,
+  "own_holder_before": false,
+  "source_after": {
+    "head": "c7dec80a0f73d4a2b683ce2c4813978938694095",
+    "status": ""
+  },
+  "source_before": {
+    "head": "c7dec80a0f73d4a2b683ce2c4813978938694095",
+    "status": ""
+  }
+}

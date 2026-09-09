@@ -1,0 +1,61 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-onepass-0909-11",
+  "revision": "c7dec80a0f73d4a2b683ce2c4813978938694095",
+  "worker": "choiceoh@10.10.10.1",
+  "worker_root": "/home/choiceoh/glm53-ep-cpu-0909-11",
+  "worker_identity": {
+    "mem_available_kib": 17420712,
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211"
+  },
+  "worker_sources": {
+    "contract_sources": {
+      "probes/glm53_ep_short_decode_compile.py": "1596e6d3b97f82baae61b45830eb6db475a20b2ff0c0c2b09dbfe9c54f7eb8f1",
+      "probes/run_glm53_ep_short_decode_cpu.py": "6bc247c8f23b9f31fe3cc832779598c9cec80b75204002e8dd68ce87089b1b5a",
+      "tests/test_glm53_ep_local_probe.py": "d1f7e4975a9e7f77c0a4dbb9576a880ae42656d7c2de3279fafa60e9a214206c",
+      "tests/test_glm53_ep_local_selftest.py": "88fcd40c1e30e111d85c2478d3254710d025e0e3328b91a4cf8946ecb74b50f7",
+      "tests/test_glm53_ep_micro_tile.py": "439e9e70c7a972083002d0c51442e2808a7552b03f7b274d218c7be5b7b4de13",
+      "tests/test_glm53_ep_prefill_local.py": "74dc4f7f38095d516fc894e16f60fd5bf22731d8aa0c5b742998af1f0b2c04a3",
+      "tests/test_glm53_ep_route_remap.py": "87010db07a616e830f0efe5e1febc4362eec933369df016f5d6ef5ccea20858e",
+      "tests/test_glm53_ep_scatter_fp32.py": "0c237183b1be64c70748a1f073a3286a25da5d22c03136561886e105052905c9",
+      "tests/test_glm53_ep_short_decode.py": "b4e8e3a4cc4291736e80e4adf30d90ba9f3e167aed1851fff90106703ca49f90"
+    },
+    "mounted_sources": {
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "9a3e880307f51dd5dfdf97a59c8e1d6f263fd55a93eb4330e016f729156d1ce9",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "37862eb433b3e4255645bd7a103b530d558408209f3741b87c5b3292f6d8fbad",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "f64117846cb3f969cea9fbaa408a15b6423856f1c6af4dc1fe902f1de557bbab",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "7aed5c96d4e8785641fc8af234f335735715b4373da518edb00d9e188ae272bc",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+      "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "b23aa556926c7d56e87bb48ef189374dce637dcb6368ed90c43cfeed37117d1b"
+    }
+  },
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-ep-onepass-0909-11/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "epdecodecpu0909v11",
+    "6",
+    "Exact EP lowering on srv1 with same source/image/capsule and unchanged no-device 12GiB/4GiB/2CPU gates",
+    "--",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "choiceoh@10.10.10.1",
+    "nice -n 19 python3 -B /home/choiceoh/stkernel-ep-onepass-0909-11/probes/run_glm53_ep_short_decode_cpu.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --output /home/choiceoh/glm53-ep-cpu-0909-11/evidence --capsule-root /home/choiceoh/glm53-ep-cpu-0909-11/capsule --manifest-sha256 b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "created": 1788913546.2812514,
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+}

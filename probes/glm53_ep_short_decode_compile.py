@@ -16,9 +16,12 @@ from glm53_ep_capsule_runtime import verify_runtime
 CPU_TEST_MODULES = ('test_glm53_ep_micro_tile.py', 'test_glm53_ep_short_decode.py',
                     'test_glm53_ep_route_remap.py', 'test_glm53_ep_local_selftest.py',
                     'test_glm53_ep_scatter_fp32.py', 'test_glm53_ep_prefill_local.py',
-                    'test_glm53_ep_local_probe.py')
+                    'test_glm53_ep_local_probe.py', 'test_glm53_ep_micro_scatter.py',
+                    'test_glm53_ep_micro_scatter_fp32.py')
 CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
-    'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py')
+    'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
+    'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json')
 
 
 def source_receipt(root, *, verify_mounted=False):
@@ -62,20 +65,23 @@ def compile_candidate(output, result):
     result['phase'] = 'micro-cute-compile'
     md._MICRO_KERNEL_CACHE.clear()
     result['micro_passes'] = []
-    for sentinel, tile in ((72, (32,128)), (None, (64,128))):
+    variants = ((72, 8, 64, (32,128), True, 'm32-topk8-fp32'),
+                (None, 1, 8, (64,128), True, 'm64-topk1-fp32'),
+                (None, 8, 64, (64,128), False, 'm64-topk8-bf16'))
+    for sentinel, topk, max_rows, tile, fp32, arm in variants:
         assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin')), 'stale root CuTe artifacts'
-        md._get_micro_kernel(72,72,8,4096,2048,8,64,
+        md._get_micro_kernel(72,72,8,4096,2048,topk,max_rows,
             activation='swigluoai_uninterleave',swiglu_alpha=1.0,
             swiglu_beta=0.0,swiglu_limit=10.0,quant_mode='nvfp4',
             skip_zero_weight_expert_id=sentinel,mac_override=48)
-        keys=[key for key in md._MICRO_KERNEL_CACHE if key[17]==sentinel]
+        keys=[key for key in md._MICRO_KERNEL_CACHE if key[17]==sentinel and key[7]==topk]
         assert len(keys)==1 and keys[0][10]==tile,keys
+        assert (keys[0][-1]=='glm53_ep_micro_scatter_fp32_v1') is fp32, keys
         # Both specializations use the same DSL dump basename. Preserve this
         # pass before the next compile overwrites it; the initialized dump
         # directory remains unchanged throughout the process.
         fresh = {suffix: sorted(output.glob('*'+suffix)) for suffix in ('.ptx', '.cubin')}
         assert all(fresh.values()), 'each fresh micro pass must emit root PTX and cubin'
-        arm = 'm'+str(tile[0])
         folder = output/'micro'/arm
         folder.mkdir(parents=True, exist_ok=False)
         preserved = []
@@ -92,7 +98,7 @@ def compile_candidate(output, result):
                     path=str(destination.relative_to(output)), sha256=digest))
         result['micro_passes'].append(dict(arm=arm, cache_key=keys[0], artifacts=preserved))
     result['micro_keys']=list(md._MICRO_KERNEL_CACHE)
-    assert len(result['micro_keys'])==2
+    assert len(result['micro_keys'])==3
     artifacts=[]
     for path in sorted(output.rglob('*.ptx')):
         artifacts.append({'path':str(path.relative_to(output)), 'sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
@@ -101,7 +107,7 @@ def compile_candidate(output, result):
         p=subprocess.run(['/usr/local/cuda/bin/cuobjdump','--dump-resource-usage',str(path)],text=True,capture_output=True)
         p.check_returncode();path.with_suffix('.resources.log').write_text(p.stdout+p.stderr)
         resources.append({'path':str(path.relative_to(output)),'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'resources':p.stdout+p.stderr})
-    assert len(artifacts)>=2 and len(resources)>=2,'Both fresh CuTe kernels must produce PTX/cubin'
+    assert len(artifacts)>=3 and len(resources)>=3,'All three fresh micro kernels must produce PTX/cubin'
     result.update(micro_artifacts=artifacts,micro_resources=resources)
     result['phase'] = 'fp32-prefill-cute-compile'
     md._DYNAMIC_KERNEL_CACHE.clear()

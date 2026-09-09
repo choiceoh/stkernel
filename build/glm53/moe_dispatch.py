@@ -965,6 +965,8 @@ class Sm120StaticMoEWorkspace:
     dm_intermediate: torch.Tensor | None = None
     dm_input_gs: torch.Tensor | None = None
     dm_down_input_scale: torch.Tensor | None = None
+    # Pinned once with the two E72 decode workspaces, before graph capture.
+    ep_micro_scatter_fp32: torch.Tensor | None = None
 
 
 def _direct_micro_candidate(k: int, n: int, num_topk: int, weight_E: int) -> bool:
@@ -1046,6 +1048,15 @@ def allocate_sm120_static_workspace(
         cute.AddressSpace.gmem,
         assumed_align=16,
     )
+
+    if (state_E == weight_E == 72 and k == 4096 and n == 2048
+            and quant_mode == "nvfp4"
+            and (num_topk, max_rows) in ((1, 8), (8, 64))):
+        # One 128 KiB plane per shared fixed workspace, never per layer or
+        # per call. Its address must not grow or change after graph capture.
+        workspace.ep_micro_scatter_fp32 = torch.empty(
+            (8, k), dtype=torch.float32, device=device
+        )
 
     # Direct micro reads weights by global expert id, so its planes are only
     # useful without EP remapping.
@@ -1734,9 +1745,10 @@ def _micro_kernel_cache_key(
     swiglu_alpha: float,
     swiglu_beta: float,
     swiglu_limit: float | None,
+    scatter_fp32: bool = False,
 ) -> Tuple:
     """The micro kernel's cache key (see :func:`_static_kernel_cache_key`)."""
-    return (
+    key = (
         "micro",
         quant_mode,
         state_E,
@@ -1760,6 +1772,7 @@ def _micro_kernel_cache_key(
         swiglu_beta,
         swiglu_limit,
     )
+    return key + ("glm53_ep_micro_scatter_fp32_v1",) if scatter_fp32 else key
 
 
 def _dynamic_kernel_cache_key(
@@ -2401,6 +2414,33 @@ def _get_static_kernel_v2(
 _MICRO_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
 
 
+def _ep_micro_scatter_fp32(*, state_E, weight_E, m, k, n, num_topk,
+                          max_rows, skip_zero_weight_expert_id, quant_mode,
+                          activation, swiglu_alpha, swiglu_beta, swiglu_limit):
+    """Only the two fixed GLM EP decode calls change their accumulation ABI."""
+    return (state_E == weight_E == 72 and (m, k, n) == (8, 4096, 2048)
+            and quant_mode == "nvfp4" and activation == "swigluoai_uninterleave"
+            and (swiglu_alpha, swiglu_beta, swiglu_limit) == (1., 0., 10.)
+            and (num_topk, max_rows, skip_zero_weight_expert_id)
+            in ((1, 8, None), (8, 64, 72)))
+
+
+def _ep_micro_scatter_buffer(workspace, output):
+    """Use the preallocated plane; capture can never replace its storage."""
+    current = workspace.ep_micro_scatter_fp32
+    if (output.dtype != torch.bfloat16 or tuple(output.shape) != (8, 4096)
+            or not output.is_contiguous() or output.device != workspace.device):
+        raise ValueError("EP micro FP32 scatter requires contiguous BF16 [8,4096]")
+    if (current is None or current.dtype != torch.float32
+            or tuple(current.shape) != (8, 4096) or not current.is_contiguous()
+            or current.device != output.device):
+        raise ValueError("EP micro FP32 scatter workspace was not pinned before launch")
+    # The same workspace is serialized across layers, including captured
+    # launches. Record side-stream use without allocating or changing its ptr.
+    current.record_stream(torch.cuda.current_stream(output.device))
+    return current
+
+
 def _get_micro_kernel(
     state_E: int,
     weight_E: int,
@@ -2440,6 +2480,14 @@ def _get_micro_kernel(
         quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit,
     )
+    scatter_fp32 = _ep_micro_scatter_fp32(
+        state_E=state_E, weight_E=weight_E, m=m, k=k, n=n,
+        num_topk=num_topk, max_rows=max_rows,
+        skip_zero_weight_expert_id=skip_zero_weight_expert_id,
+        quant_mode=quant_mode, activation=activation,
+        swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit,
+    )
 
     cache_key = _micro_kernel_cache_key(
         quant_mode=quant_mode,
@@ -2463,6 +2511,7 @@ def _get_micro_kernel(
         swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
+        scatter_fp32=scatter_fp32,
     )
     cached = _MICRO_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -2486,6 +2535,7 @@ def _get_micro_kernel(
         share_expert_scales=share_expert_scales,
         single_token=single_token,
         skip_zero_weight_expert_id=skip_zero_weight_expert_id,
+        scatter_fp32=scatter_fp32,
     )
 
     is_gated = is_gated_activation(activation)
@@ -2597,7 +2647,7 @@ def _get_micro_kernel(
         assumed_align=16,
     )
     scatter_fake = cute.runtime.make_fake_compact_tensor(
-        a_dtype,
+        cutlass.Float32 if scatter_fp32 else a_dtype,
         (m, k),
         stride_order=(1, 0),
         assumed_align=16,
@@ -3005,8 +3055,18 @@ def launch_sm120_static_moe(
     # set only when the v2 static kernel launches (it takes two extra tensors)
     static_v2_stamps = None
     static_v2_counter = None
+    kernel_scatter_output = scatter_output
 
     if use_micro:
+        if _ep_micro_scatter_fp32(
+            state_E=workspace.state_E, weight_E=num_experts, m=num_tokens,
+            k=k, n=n, num_topk=top_k, max_rows=workspace.max_rows,
+            skip_zero_weight_expert_id=skip_zero_weight_expert_id,
+            quant_mode=quant_mode, activation=activation,
+            swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+            swiglu_limit=swiglu_limit,
+        ):
+            kernel_scatter_output = _ep_micro_scatter_buffer(workspace, scatter_output)
         assert flat_ids.numel() <= workspace.compact_topk_ids.numel(), (
             f"compact_topk_ids buffer too small: "
             f"{workspace.compact_topk_ids.numel()} < {flat_ids.numel()}"
@@ -3191,7 +3251,7 @@ def launch_sm120_static_moe(
         weights.w1_alpha,
         weights.w2_alpha,
         down_input_scale,
-        scatter_output,
+        kernel_scatter_output,
         workspace.token_map,
         workspace.token_weights,
     )
@@ -3206,6 +3266,11 @@ def launch_sm120_static_moe(
             and weights.sfb2_packed is not None else _sf_pack_dummy(a.device),
         )
     compiled(*runtime_args)
+    if kernel_scatter_output is not scatter_output:
+        # All rounded per-route partials are accumulated before this single
+        # conversion. The copy follows the kernel on the caller's stream and
+        # is recorded with the same pinned source address during CUDA capture.
+        scatter_output.copy_(kernel_scatter_output)
 
     return scatter_output
 
