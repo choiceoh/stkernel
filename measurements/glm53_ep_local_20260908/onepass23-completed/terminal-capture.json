@@ -1,0 +1,145 @@
+{
+  "absent": [
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS23A.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS23B2.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS23B3.log"
+  ],
+  "captured_at": 1788928262.8508465,
+  "files": {
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS23A0.log": {
+      "bytes": 225259,
+      "mtime_ns": 1788926859318703150,
+      "sha256": "992e9b9398c02529bbf98d4d670a5841d92469f51fe51dd5f812f42f84c5ec8c"
+    },
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS23B1.log": {
+      "bytes": 185166,
+      "mtime_ns": 1788927451723362451,
+      "sha256": "1a754039cd1c52de0a8592b960db9a8d6cb678d68a517f1062fdbecafaaed402"
+    },
+    "/home/choiceoh/glm53-logs/fleet/run-logs/a6f6a9232220a5509b815e9cdc74886dd40a8cc81dcce4d4cb5c0e74dca438ce.log": {
+      "bytes": 10114,
+      "mtime_ns": 1788927840072032083,
+      "sha256": "7a89b2bd9559ba2170c35de9bed31eac6c868bb0b7de33bc60b08d741379e41c"
+    },
+    "/tmp/glm53-ep-onepass-0909-23/onepass.jsonl": {
+      "bytes": 109227,
+      "mtime_ns": 1788927451681160726,
+      "sha256": "63365915bd6e150c799b1e8c7d3f1d9837fd9f82efd3b430a6b2d22d20f0d6b0"
+    },
+    "/tmp/glm53-ep-onepass-0909-23/submission.json": {
+      "bytes": 3224,
+      "mtime_ns": 1788926258726637940,
+      "sha256": "0945af53502886f5b13a8d44b0be0b2e6bc3bffe11ea8f2f2be69417abf3dcf3"
+    },
+    "/tmp/glm53-ep-onepass-0909-23/submit.exit.json": {
+      "bytes": 43,
+      "mtime_ns": 1788926263322555011,
+      "sha256": "0b28b782eaa3e96396485fcbdf70f1348a50f2199928a44e0c5b8c911ef55373"
+    },
+    "/tmp/glm53-ep-onepass-0909-23/submit.stderr": {
+      "bytes": 0,
+      "mtime_ns": 1788926263322417042,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "/tmp/glm53-ep-onepass-0909-23/submit.stdout": {
+      "bytes": 480,
+      "mtime_ns": 1788926263322417042,
+      "sha256": "aaf16f13d7a5d391308df89b93c1e1eda6d9e7dee9d02afd0879ae88c25bb37a"
+    },
+    "/tmp/glm53-ep-onepass-0909-23/verdicts.jsonl": {
+      "bytes": 509,
+      "mtime_ns": 1788926859411870923,
+      "sha256": "ab656051fd79d9e15424634b63886dd7603c927929e6beae4693e54817c1a5b5"
+    },
+    "/tmp/leg.357316": {
+      "bytes": 2032,
+      "mtime_ns": 1788927838227726106,
+      "sha256": "28e28d9b528d56398a8d57b922475e0c49f9c28455596c9fe97fc46ce136046f"
+    }
+  },
+  "fleet_after": {
+    "finished_at": 1788927840.8033478,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/a6f6a9232220a5509b815e9cdc74886dd40a8cc81dcce4d4cb5c0e74dca438ce.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788927839.8927462,
+    "payload_returncode": 1,
+    "payload_seconds": 1576.1,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v23",
+    "started_at": 1788926263.8053377,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "1788926263262324"
+  },
+  "fleet_before": {
+    "finished_at": 1788927840.8033478,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/a6f6a9232220a5509b815e9cdc74886dd40a8cc81dcce4d4cb5c0e74dca438ce.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788927839.8927462,
+    "payload_returncode": 1,
+    "payload_seconds": 1576.1,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v23",
+    "started_at": 1788926263.8053377,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "1788926263262324"
+  },
+  "journal": {
+    "earlyoom": {
+      "argv": [
+        "sudo",
+        "-n",
+        "journalctl",
+        "-u",
+        "earlyoom",
+        "--utc",
+        "--since",
+        "2026-09-09 04:16:00 UTC",
+        "--until",
+        "2026-09-09 04:24:10 UTC",
+        "--no-pager",
+        "-o",
+        "short-iso"
+      ],
+      "bytes": 1807,
+      "returncode": 0,
+      "sha256": "d8371cb5ba50573da057bfdcfbcf77f9af5870dfa9b59e6a043c7c7d67ca8eb6"
+    },
+    "kernel": {
+      "argv": [
+        "sudo",
+        "-n",
+        "journalctl",
+        "-k",
+        "--utc",
+        "--since",
+        "2026-09-09 04:16:00 UTC",
+        "--until",
+        "2026-09-09 04:24:10 UTC",
+        "--no-pager",
+        "-o",
+        "short-iso"
+      ],
+      "bytes": 5642,
+      "returncode": 0,
+      "sha256": "e943c42be086f8e3c347a9f6a794080660893f4d14c75bd7898e37faf0b55ea0"
+    }
+  },
+  "own_holder_after": false,
+  "own_holder_before": false,
+  "source_after": {
+    "head": "cbf1c7916247f946167c15ff74d92261588e8cea",
+    "status": ""
+  },
+  "source_before": {
+    "head": "cbf1c7916247f946167c15ff74d92261588e8cea",
+    "status": ""
+  }
+}

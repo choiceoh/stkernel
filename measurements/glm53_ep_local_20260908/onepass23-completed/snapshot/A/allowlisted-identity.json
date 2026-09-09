@@ -1,0 +1,839 @@
+{
+  "arm": "A",
+  "arm_event": {
+    "arm": "A",
+    "device": 66306,
+    "inode": 170952723,
+    "key": "6fe2ff08f81e32da5760ad07236db33ca2c0576149f7f03c3a7af153a7fdf6f7",
+    "line": "== 13:17:31 arm EPONEPASS23A: VLLM_GLM53_TP_SF6_Q0=1",
+    "offset": 6754,
+    "path": "/home/choiceoh/glm53-logs/fleet/run-logs/a6f6a9232220a5509b815e9cdc74886dd40a8cc81dcce4d4cb5c0e74dca438ce.log",
+    "started_at": 1788927451.0,
+    "started_at_local": "2026-09-09T13:17:31+09:00"
+  },
+  "captured_at": 1788927718.2556727,
+  "files": {
+    "10.10.10.1.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "10.10.10.1.inspect.after.json.gz": {
+      "original_bytes": 67221,
+      "original_sha256": "edcfab0f72359a94abe2916d4baf9d08b78818d4944436cec2549c82c4ba27b6",
+      "stored_bytes": 13131,
+      "stored_sha256": "e08eb28e89d2232b67db90832587cb65076037168e063518b931ec82a81a858e"
+    },
+    "10.10.10.1.inspect.before.json.gz": {
+      "original_bytes": 67221,
+      "original_sha256": "e5ea76dd8704a940ebcc5c5ef58a72fac1668cb72e089c7057c309d1c8a34ff3",
+      "stored_bytes": 13127,
+      "stored_sha256": "bf4cca2ef276c6c1be4fb7133cb1e41da23dc7f6157b5dd9d3da4d49952e93ec"
+    },
+    "10.10.10.1.manifest.tsv.gz": {
+      "original_bytes": 9688,
+      "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+      "stored_bytes": 2291,
+      "stored_sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+    },
+    "10.10.10.1.serving.log.gz": {
+      "original_bytes": 121814,
+      "original_sha256": "dbac2e5b594b0b130ed5d2b0c0104108a0e2d1556abccd97558999dc7151aeb1",
+      "stored_bytes": 17077,
+      "stored_sha256": "2798d7b1399dc6c15d237273edcf30b5dbc1c207b6c2c59274cb2a0c15e3105f"
+    },
+    "10.10.10.3.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "10.10.10.3.inspect.after.json.gz": {
+      "original_bytes": 67089,
+      "original_sha256": "5667eff627f4c768566592d54cc151e512cbcbe8af98cd37a8dfb7baaa72de69",
+      "stored_bytes": 13116,
+      "stored_sha256": "1795f5915db9c1b4d2a491ba729b2b605aef9e520e485538d923c03a9513b2dc"
+    },
+    "10.10.10.3.inspect.before.json.gz": {
+      "original_bytes": 67089,
+      "original_sha256": "898dd864e60d0e6bb47ab9abf6d4a663e1e729471179781e3807bee76a91bbc0",
+      "stored_bytes": 13099,
+      "stored_sha256": "b92bcee34e0524ee620b252f6e5d83426dde5229bc9b6417783068b4156f102c"
+    },
+    "10.10.10.3.manifest.tsv.gz": {
+      "original_bytes": 9688,
+      "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+      "stored_bytes": 2291,
+      "stored_sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+    },
+    "10.10.10.3.serving.log.gz": {
+      "original_bytes": 121698,
+      "original_sha256": "efc5d3458b0e0cacc7b4cec2e1b1702b4e1831c1058e607616c0c518d3ccf064",
+      "stored_bytes": 16900,
+      "stored_sha256": "48da36d2bd27a98bdc759f930e97ee7a4228a5fb343f376e17434ea9bd4d9af9"
+    },
+    "10.10.10.4.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "10.10.10.4.inspect.after.json.gz": {
+      "original_bytes": 66387,
+      "original_sha256": "d2b3fce778237ef9751acac5e1408bc6f156b8d9506b4787464e3ed50b1f0aae",
+      "stored_bytes": 12726,
+      "stored_sha256": "fdc55b798c178e9bcd497e6e8b452909b466caaccbe82e610928affad830fa30"
+    },
+    "10.10.10.4.inspect.before.json.gz": {
+      "original_bytes": 66387,
+      "original_sha256": "d94a9b0b981896f4a961f344a26b05da0730ede6be56988d44b1ecb1da1d362c",
+      "stored_bytes": 12707,
+      "stored_sha256": "ddc445974dc3b6ae5443c3c99ac46f5f9e41941fc61dbb0016e632dc74e74ee4"
+    },
+    "10.10.10.4.manifest.tsv.gz": {
+      "original_bytes": 9688,
+      "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+      "stored_bytes": 2291,
+      "stored_sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+    },
+    "10.10.10.4.serving.log.gz": {
+      "original_bytes": 122089,
+      "original_sha256": "7b93a4682f2ef2588864623bfa56062ab573e936ba935029e9c5a7692827fc53",
+      "stored_bytes": 17077,
+      "stored_sha256": "c3dd0660abc92f1320610a957eabfb585cd3b96e98658a5d1c57c7992e30e645"
+    },
+    "local.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "local.inspect.after.json.gz": {
+      "original_bytes": 66776,
+      "original_sha256": "7a00dbf9b813857edbc93ff52a6e41408efe54de196a4f82f6a33184a51f9e22",
+      "stored_bytes": 12965,
+      "stored_sha256": "1edc9678c865a456b78f2f598ed73031161fd1fe1e9e6aab0d440e79d4cebb62"
+    },
+    "local.inspect.before.json.gz": {
+      "original_bytes": 66776,
+      "original_sha256": "d9b54260111a34121320545752e9b79a6a46724b76fd34b015ea54fdaab18ac1",
+      "stored_bytes": 12967,
+      "stored_sha256": "d41f0da26ea5a36a1a402ec66ed95747806775381aff0348eb73cbb346419baf"
+    },
+    "local.manifest.tsv.gz": {
+      "original_bytes": 9688,
+      "original_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+      "stored_bytes": 2291,
+      "stored_sha256": "6e171b95d7ee76775ebc2e263f7fcac33cac250b9d807b8976eb2d5306bc8d1d"
+    },
+    "local.serving.log.gz": {
+      "original_bytes": 141495,
+      "original_sha256": "99e32ec24db667eed4ee2ac4a7dcdb39b3a48b816270c351cd7a94ba5cbed62c",
+      "stored_bytes": 21590,
+      "stored_sha256": "bb9b7a89fda4a262c3dea89b04490eb92fcb980b435b04a790a4519553321577"
+    }
+  },
+  "label": "A-observer",
+  "nodes": {
+    "10.10.10.1": {
+      "capture_finished_at": 1788927718.2076216,
+      "capture_started_at": 1788927718.1408455,
+      "created_at": "2026-09-09T04:17:46.225527393Z",
+      "endpoint": {
+        "--host": "127.0.0.1",
+        "--port": "18000"
+      },
+      "environment_sha256": "9826c2985d880ea6663675493f8dc02e1f4b006f0f05ab4ee7f0656fa68cfabd",
+      "flags": {
+        "VLLM_B12X_EP_WARM_COMPACT": "0",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "0",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+        "VLLM_GLM53_STARTUP_TRIM": "1",
+        "VLLM_GLM53_TP_SF6_Q0": "1"
+      },
+      "id": "e0e9ccabae85e9cb5876559a4ec14c8fbd7b08aae764ec6ccf37bf095d36d06f",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "log_source": {
+        "captured_prefix_bytes": 121814,
+        "device": 66306,
+        "inode": 30574184,
+        "mtime_ns_after": 1788927715000210925,
+        "mtime_ns_before": 1788927715000210925,
+        "path": "/home/choiceoh/glm53-logs/glm53.log",
+        "size_after": 121814
+      },
+      "node": "10.10.10.1",
+      "readiness": {
+        "candidate": true,
+        "graph_finished": true,
+        "startup_trim_records": [
+          {
+            "line_sha256": "1af6d4dbfbdbd5a42f275d57d7d8ee04d3e886ce327fe988759bda9cd953aa7f",
+            "receipt": {
+              "after": {
+                "allocated": 72150681600,
+                "mem_available": 15654203392,
+                "reserved": 75134664704,
+                "vm_rss": 10859360256
+              },
+              "before": {
+                "allocated": 72150681600,
+                "mem_available": 15645945856,
+                "reserved": 75143053312,
+                "vm_rss": 10893139968
+              },
+              "completed_at": 1788927712.1994963,
+              "measurement_errors": [],
+              "rank": 1,
+              "schema": 1,
+              "stages": [
+                {
+                  "stage": "synchronize",
+                  "status": "COMPLETE"
+                },
+                {
+                  "collected": 2693,
+                  "stage": "gc_collect",
+                  "status": "COMPLETE"
+                },
+                {
+                  "stage": "empty_cache",
+                  "status": "COMPLETE"
+                },
+                {
+                  "returned": 1,
+                  "stage": "malloc_trim",
+                  "status": "COMPLETE"
+                }
+              ],
+              "started_at": 1788927711.7516596,
+              "verdict": "COMPLETE"
+            }
+          }
+        ],
+        "tp_sf6_q0_pass_records": [
+          {
+            "line_sha256": "9a1958ef35d2c0cedd8970eee0ab34f5a702ebb9ba5f98d262a87b4ebb39f3a6",
+            "receipt_sha256": "bb2097a31e3124b0c1381ca004a4c1ef617468c705556c1dad8066d9f443a21a"
+          }
+        ]
+      },
+      "running_start_config_stable": true,
+      "scope": "live prefix snapshot; traffic may still be in progress; no quality/performance acceptance",
+      "source": {
+        "manifest_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+        "mounts": {
+          "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py": "12c89a0406b9f7ea7607c15e56a37d30e2a2e8b14ff025ed9cd169dfa09f0109",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "37862eb433b3e4255645bd7a103b530d558408209f3741b87c5b3292f6d8fbad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_tp_sf6_q0_selftest.py": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "cbad55b8d0b3e6f7607ef7bb78bc015622aa86774d37d409042231e8f671d77d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "7aed5c96d4e8785641fc8af234f335735715b4373da518edb00d9e188ae272bc",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6_q0.py": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu": "9f0c0a88dea9fc7f70ba639cdc5f3f19e09e48037a4af4da82941632d0f0d0d3",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py": "ac12107a7aa0b8b10560b04d819525e8fccbb34869c3108eb4c1ab666c7e434a",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_transport.h": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+          "/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "51753ac14b3ecbea39a8b7147bd0b9a3bdc3ecdf52452589e1ba511d8de22ffa",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py": "c6d660e97dbb6a776cbb5e2b62bf3a7d4a31ef3b8dd0c8fd4896dc3d0851b7db",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "55dc409cdd04b97db16093779b3c2633c080d7fb3582b0e572f4b168fe307f4f",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py": "f8172c263ee4fa78990c28d362d742c9f6411bfa6eac6c7c54353f18d0cbccef",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py": "a4f3ead934c2f20eb311a32d507d17edd8552d74bc6d507fbcdd0f37695dff53",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_indexer_gate.py": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py": "6eaa127341b684e872fc0b45ca44a23abb067d361dcdbd819bb12d54e7d6e42e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/multimodal.py": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568",
+          "/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+          "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/kda.py": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py": "a248cab9a91c7d5c1c089d717ee3b01d0b329e7e429d69dd24dccc029f32731f",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/utils.py": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c",
+          "/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca"
+        }
+      },
+      "started_at": "2026-09-09T04:17:46.269898806Z",
+      "topology": {
+        "command_sha256": "0163a5c434833d0e869599aee5823e54104c6bce31268759919f3d8fbeab43a1",
+        "enabled": false,
+        "nnodes": 4,
+        "node_rank": 1,
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "schema": 1,
+        "serve_argv_sha256": "c43eacb7f6a5a80f8124a69a12621de7291151a140b462d6014f7c353ab55c65",
+        "serve_argv_without_ep_sha256": "c43eacb7f6a5a80f8124a69a12621de7291151a140b462d6014f7c353ab55c65",
+        "source": "container-launch-script",
+        "tensor_parallel_size": 4
+      }
+    },
+    "10.10.10.3": {
+      "capture_finished_at": 1788927717.9102876,
+      "capture_started_at": 1788927717.8501725,
+      "created_at": "2026-09-09T04:17:46.159181615Z",
+      "endpoint": {
+        "--host": "127.0.0.1",
+        "--port": "18000"
+      },
+      "environment_sha256": "ebaae6cab2f70dbcf1fe24c9e584f9079afbc0bbeb0880769bbefe54787d1d8c",
+      "flags": {
+        "VLLM_B12X_EP_WARM_COMPACT": "0",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "0",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+        "VLLM_GLM53_STARTUP_TRIM": "1",
+        "VLLM_GLM53_TP_SF6_Q0": "1"
+      },
+      "id": "875cfce3b7994eab00b41b3956f44846c7bf863417d712779b8fac076a9436d7",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "log_source": {
+        "captured_prefix_bytes": 121698,
+        "device": 66306,
+        "inode": 75662274,
+        "mtime_ns_after": 1788927715000172692,
+        "mtime_ns_before": 1788927715000172692,
+        "path": "/home/choiceoh/glm53-logs/glm53.log",
+        "size_after": 121698
+      },
+      "node": "10.10.10.3",
+      "readiness": {
+        "candidate": true,
+        "graph_finished": true,
+        "startup_trim_records": [
+          {
+            "line_sha256": "5e1c549de637d942eaf358f349237a91bb79806ad1a1410b1f2e7a34b360fe85",
+            "receipt": {
+              "after": {
+                "allocated": 72150681600,
+                "mem_available": 11513548800,
+                "reserved": 75136761856,
+                "vm_rss": 10916966400
+              },
+              "before": {
+                "allocated": 72150681600,
+                "mem_available": 11507585024,
+                "reserved": 75143053312,
+                "vm_rss": 10950651904
+              },
+              "completed_at": 1788927712.2155316,
+              "measurement_errors": [],
+              "rank": 2,
+              "schema": 1,
+              "stages": [
+                {
+                  "stage": "synchronize",
+                  "status": "COMPLETE"
+                },
+                {
+                  "collected": 2693,
+                  "stage": "gc_collect",
+                  "status": "COMPLETE"
+                },
+                {
+                  "stage": "empty_cache",
+                  "status": "COMPLETE"
+                },
+                {
+                  "returned": 1,
+                  "stage": "malloc_trim",
+                  "status": "COMPLETE"
+                }
+              ],
+              "started_at": 1788927711.7622197,
+              "verdict": "COMPLETE"
+            }
+          }
+        ],
+        "tp_sf6_q0_pass_records": [
+          {
+            "line_sha256": "d4d9b196dc2fed84f3225487a0caefc5711154a8e1a340215379336d1b7b00bc",
+            "receipt_sha256": "1173d7b439a6c5372005e7f2fa5a8c2c58dd0722a872de224567aab3d7f6c6d1"
+          }
+        ]
+      },
+      "running_start_config_stable": true,
+      "scope": "live prefix snapshot; traffic may still be in progress; no quality/performance acceptance",
+      "source": {
+        "manifest_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+        "mounts": {
+          "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py": "12c89a0406b9f7ea7607c15e56a37d30e2a2e8b14ff025ed9cd169dfa09f0109",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "37862eb433b3e4255645bd7a103b530d558408209f3741b87c5b3292f6d8fbad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_tp_sf6_q0_selftest.py": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "cbad55b8d0b3e6f7607ef7bb78bc015622aa86774d37d409042231e8f671d77d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "7aed5c96d4e8785641fc8af234f335735715b4373da518edb00d9e188ae272bc",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6_q0.py": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu": "9f0c0a88dea9fc7f70ba639cdc5f3f19e09e48037a4af4da82941632d0f0d0d3",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py": "ac12107a7aa0b8b10560b04d819525e8fccbb34869c3108eb4c1ab666c7e434a",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_transport.h": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+          "/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "51753ac14b3ecbea39a8b7147bd0b9a3bdc3ecdf52452589e1ba511d8de22ffa",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py": "c6d660e97dbb6a776cbb5e2b62bf3a7d4a31ef3b8dd0c8fd4896dc3d0851b7db",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "55dc409cdd04b97db16093779b3c2633c080d7fb3582b0e572f4b168fe307f4f",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py": "f8172c263ee4fa78990c28d362d742c9f6411bfa6eac6c7c54353f18d0cbccef",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py": "a4f3ead934c2f20eb311a32d507d17edd8552d74bc6d507fbcdd0f37695dff53",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_indexer_gate.py": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py": "6eaa127341b684e872fc0b45ca44a23abb067d361dcdbd819bb12d54e7d6e42e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/multimodal.py": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568",
+          "/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+          "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/kda.py": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py": "a248cab9a91c7d5c1c089d717ee3b01d0b329e7e429d69dd24dccc029f32731f",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/utils.py": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c",
+          "/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca"
+        }
+      },
+      "started_at": "2026-09-09T04:17:46.269319431Z",
+      "topology": {
+        "command_sha256": "3c9f16952a0fb086a4135830664001c1ae8610ca11f535c7214bed9b9e669423",
+        "enabled": false,
+        "nnodes": 4,
+        "node_rank": 2,
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "schema": 1,
+        "serve_argv_sha256": "7d8678ae55a06bd70e987fc68f623653b82f74ddeeec539fb3a53b276afbd02d",
+        "serve_argv_without_ep_sha256": "7d8678ae55a06bd70e987fc68f623653b82f74ddeeec539fb3a53b276afbd02d",
+        "source": "container-launch-script",
+        "tensor_parallel_size": 4
+      }
+    },
+    "10.10.10.4": {
+      "capture_finished_at": 1788927718.2296305,
+      "capture_started_at": 1788927718.16513,
+      "created_at": "2026-09-09T04:17:46.468032276Z",
+      "endpoint": {
+        "--host": "127.0.0.1",
+        "--port": "18000"
+      },
+      "environment_sha256": "b601428f190f08693b972404be5ec03067a29954752f10c02118ec5eec798085",
+      "flags": {
+        "VLLM_B12X_EP_WARM_COMPACT": "0",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "0",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+        "VLLM_GLM53_STARTUP_TRIM": "1",
+        "VLLM_GLM53_TP_SF6_Q0": "1"
+      },
+      "id": "880045fb62e7e243ea9ce7b2cb4daad21013e031bb44e726d26d43e20fd8ef00",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "log_source": {
+        "captured_prefix_bytes": 122089,
+        "device": 66306,
+        "inode": 150227321,
+        "mtime_ns_after": 1788927715000042080,
+        "mtime_ns_before": 1788927715000042080,
+        "path": "/home/choiceoh/glm53-logs/glm53.log",
+        "size_after": 122089
+      },
+      "node": "10.10.10.4",
+      "readiness": {
+        "candidate": true,
+        "graph_finished": true,
+        "startup_trim_records": [
+          {
+            "line_sha256": "5fd15512a626107c9b1e03c13fee767d655d530b268d172d064bf6b33ddcef9c",
+            "receipt": {
+              "after": {
+                "allocated": 72150681600,
+                "mem_available": 14536462336,
+                "reserved": 75136761856,
+                "vm_rss": 10927398912
+              },
+              "before": {
+                "allocated": 72150681600,
+                "mem_available": 14524973056,
+                "reserved": 75143053312,
+                "vm_rss": 10961018880
+              },
+              "completed_at": 1788927712.2125928,
+              "measurement_errors": [],
+              "rank": 3,
+              "schema": 1,
+              "stages": [
+                {
+                  "stage": "synchronize",
+                  "status": "COMPLETE"
+                },
+                {
+                  "collected": 2693,
+                  "stage": "gc_collect",
+                  "status": "COMPLETE"
+                },
+                {
+                  "stage": "empty_cache",
+                  "status": "COMPLETE"
+                },
+                {
+                  "returned": 1,
+                  "stage": "malloc_trim",
+                  "status": "COMPLETE"
+                }
+              ],
+              "started_at": 1788927711.7461755,
+              "verdict": "COMPLETE"
+            }
+          }
+        ],
+        "tp_sf6_q0_pass_records": [
+          {
+            "line_sha256": "27db4f55f1546f64fc53dc28378bab051292e5f94796459f521114021d18565b",
+            "receipt_sha256": "fa7adb6ef8cb5cd6f6e86e160cb6ac64d428ab6567ac750ef618efd387677b53"
+          }
+        ]
+      },
+      "running_start_config_stable": true,
+      "scope": "live prefix snapshot; traffic may still be in progress; no quality/performance acceptance",
+      "source": {
+        "manifest_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+        "mounts": {
+          "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py": "12c89a0406b9f7ea7607c15e56a37d30e2a2e8b14ff025ed9cd169dfa09f0109",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "37862eb433b3e4255645bd7a103b530d558408209f3741b87c5b3292f6d8fbad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_tp_sf6_q0_selftest.py": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "cbad55b8d0b3e6f7607ef7bb78bc015622aa86774d37d409042231e8f671d77d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "7aed5c96d4e8785641fc8af234f335735715b4373da518edb00d9e188ae272bc",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6_q0.py": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu": "9f0c0a88dea9fc7f70ba639cdc5f3f19e09e48037a4af4da82941632d0f0d0d3",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py": "ac12107a7aa0b8b10560b04d819525e8fccbb34869c3108eb4c1ab666c7e434a",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_transport.h": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+          "/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "51753ac14b3ecbea39a8b7147bd0b9a3bdc3ecdf52452589e1ba511d8de22ffa",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py": "c6d660e97dbb6a776cbb5e2b62bf3a7d4a31ef3b8dd0c8fd4896dc3d0851b7db",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "55dc409cdd04b97db16093779b3c2633c080d7fb3582b0e572f4b168fe307f4f",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py": "f8172c263ee4fa78990c28d362d742c9f6411bfa6eac6c7c54353f18d0cbccef",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py": "a4f3ead934c2f20eb311a32d507d17edd8552d74bc6d507fbcdd0f37695dff53",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_indexer_gate.py": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py": "6eaa127341b684e872fc0b45ca44a23abb067d361dcdbd819bb12d54e7d6e42e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/multimodal.py": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568",
+          "/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+          "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/kda.py": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py": "a248cab9a91c7d5c1c089d717ee3b01d0b329e7e429d69dd24dccc029f32731f",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/utils.py": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c",
+          "/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca"
+        }
+      },
+      "started_at": "2026-09-09T04:17:46.519394903Z",
+      "topology": {
+        "command_sha256": "bdfa0aca33851764e2f1cf87be95f6b135053cc117a240922f5ee087d8212844",
+        "enabled": false,
+        "nnodes": 4,
+        "node_rank": 3,
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "schema": 1,
+        "serve_argv_sha256": "bc81b3a2236cf9720b546100b3d5770154a3b3ccd3620d690a9f303a3c16284f",
+        "serve_argv_without_ep_sha256": "bc81b3a2236cf9720b546100b3d5770154a3b3ccd3620d690a9f303a3c16284f",
+        "source": "container-launch-script",
+        "tensor_parallel_size": 4
+      }
+    },
+    "local": {
+      "capture_finished_at": 1788927717.5957782,
+      "capture_started_at": 1788927717.5264668,
+      "created_at": "2026-09-09T04:17:46.872678417Z",
+      "endpoint": {
+        "--host": "127.0.0.1",
+        "--port": "18000"
+      },
+      "environment_sha256": "912ce3f137940d90a31751eb700a0afa3b45fd40a78a84a3f4d3b0f5a04bbce4",
+      "flags": {
+        "VLLM_B12X_EP_WARM_COMPACT": "0",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "0",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "1",
+        "VLLM_GLM53_STARTUP_TRIM": "1",
+        "VLLM_GLM53_TP_SF6_Q0": "1"
+      },
+      "id": "74a72e750ec495ffd48be2bc72da795a7b34e8e177ed4d813965706aa10001f3",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "log_source": {
+        "captured_prefix_bytes": 141495,
+        "device": 66306,
+        "inode": 163350222,
+        "mtime_ns_after": 1788927716932548696,
+        "mtime_ns_before": 1788927716932548696,
+        "path": "/home/choiceoh/glm53-logs/glm53.log",
+        "size_after": 141495
+      },
+      "node": "local",
+      "readiness": {
+        "candidate": true,
+        "graph_finished": true,
+        "startup_trim_records": [
+          {
+            "line_sha256": "fc2ac23499a46dfc24e735b8e60ed03ecbc56e0fbe5b01d7e8ae73b4d6ff4f95",
+            "receipt": {
+              "after": {
+                "allocated": 72150681600,
+                "mem_available": 9111961600,
+                "reserved": 75136761856,
+                "vm_rss": 10885562368
+              },
+              "before": {
+                "allocated": 72150681600,
+                "mem_available": 9105997824,
+                "reserved": 75143053312,
+                "vm_rss": 10919940096
+              },
+              "completed_at": 1788927712.1995063,
+              "measurement_errors": [],
+              "rank": 0,
+              "schema": 1,
+              "stages": [
+                {
+                  "stage": "synchronize",
+                  "status": "COMPLETE"
+                },
+                {
+                  "collected": 2693,
+                  "stage": "gc_collect",
+                  "status": "COMPLETE"
+                },
+                {
+                  "stage": "empty_cache",
+                  "status": "COMPLETE"
+                },
+                {
+                  "returned": 1,
+                  "stage": "malloc_trim",
+                  "status": "COMPLETE"
+                }
+              ],
+              "started_at": 1788927711.7527351,
+              "verdict": "COMPLETE"
+            }
+          }
+        ],
+        "tp_sf6_q0_pass_records": [
+          {
+            "line_sha256": "1d4b617248a24473dc7929032b84415d002d260a4cf5612b83bf12baaf2ab087",
+            "receipt_sha256": "4e3334b17fb619c89a0b2e0e40939b7940e9fd9634477845620e717597e0b3d9"
+          }
+        ]
+      },
+      "running_start_config_stable": true,
+      "scope": "live prefix snapshot; traffic may still be in progress; no quality/performance acceptance",
+      "source": {
+        "manifest_sha256": "34a6dbe5551f311a80b39d9f948847cf16665fa5af371f648d6d704076767f08",
+        "mounts": {
+          "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py": "12c89a0406b9f7ea7607c15e56a37d30e2a2e8b14ff025ed9cd169dfa09f0109",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "37862eb433b3e4255645bd7a103b530d558408209f3741b87c5b3292f6d8fbad",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_tp_sf6_q0_selftest.py": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "cbad55b8d0b3e6f7607ef7bb78bc015622aa86774d37d409042231e8f671d77d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "7aed5c96d4e8785641fc8af234f335735715b4373da518edb00d9e188ae272bc",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6_q0.py": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+          "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu": "9f0c0a88dea9fc7f70ba639cdc5f3f19e09e48037a4af4da82941632d0f0d0d3",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py": "ac12107a7aa0b8b10560b04d819525e8fccbb34869c3108eb4c1ab666c7e434a",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_transport.h": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+          "/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+          "/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "51753ac14b3ecbea39a8b7147bd0b9a3bdc3ecdf52452589e1ba511d8de22ffa",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py": "c6d660e97dbb6a776cbb5e2b62bf3a7d4a31ef3b8dd0c8fd4896dc3d0851b7db",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "55dc409cdd04b97db16093779b3c2633c080d7fb3582b0e572f4b168fe307f4f",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py": "f8172c263ee4fa78990c28d362d742c9f6411bfa6eac6c7c54353f18d0cbccef",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee",
+          "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py": "a4f3ead934c2f20eb311a32d507d17edd8552d74bc6d507fbcdd0f37695dff53",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_indexer_gate.py": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py": "6eaa127341b684e872fc0b45ca44a23abb067d361dcdbd819bb12d54e7d6e42e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade",
+          "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/multimodal.py": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568",
+          "/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+          "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/kda.py": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py": "a248cab9a91c7d5c1c089d717ee3b01d0b329e7e429d69dd24dccc029f32731f",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8",
+          "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/utils.py": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c",
+          "/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca"
+        }
+      },
+      "started_at": "2026-09-09T04:17:46.996375926Z",
+      "topology": {
+        "command_sha256": "137d7012cd91814f73f3f5ed5b3490fe1718bad7745e8fa8d79ced4b7a89a31f",
+        "enabled": false,
+        "nnodes": 4,
+        "node_rank": 0,
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "schema": 1,
+        "serve_argv_sha256": "a16da54d7e8510e767c11ad80b3638d113b9d90d766b92b9265ebad2c923e244",
+        "serve_argv_without_ep_sha256": "a16da54d7e8510e767c11ad80b3638d113b9d90d766b92b9265ebad2c923e244",
+        "source": "container-launch-script",
+        "tensor_parallel_size": 4
+      }
+    }
+  },
+  "owner_pid": "262324",
+  "parser_sha256": "73f6f25a54733d69fb12c72f32795cb566c26c15204cd0f907d6cdf7b8504393",
+  "revision": "cbf1c7916247f946167c15ff74d92261588e8cea",
+  "schema": 1,
+  "session": "eplocalonepass0909v23",
+  "source": "/home/choiceoh/stkernel-ep-onepass-0909-23",
+  "ticket": "1788926263262324"
+}

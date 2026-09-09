@@ -1,0 +1,30 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-onepass-0909-23",
+  "revision": "cbf1c7916247f946167c15ff74d92261588e8cea",
+  "shallow": false,
+  "alternates": false,
+  "mem_available_kib": 100269148,
+  "job": "/tmp/glm53-ep-decode-cpu-0909-23",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-ep-onepass-0909-23/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "epdecodecpu0909v23",
+    "6",
+    "TP SF6 Q0 stock and candidate actual lowering; no devices, 4GiB and 2CPU",
+    "--",
+    "python3",
+    "-B",
+    "/home/choiceoh/stkernel-ep-onepass-0909-23/probes/run_glm53_ep_short_decode_cpu.py",
+    "--image",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "--output",
+    "/tmp/glm53-ep-decode-cpu-0909-23/evidence",
+    "--capsule-root",
+    "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+    "--manifest-sha256",
+    "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "created": 1788926078.3417313
+}

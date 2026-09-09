@@ -1,0 +1,1006 @@
+{
+  "verdict": "PASS",
+  "phase": "complete",
+  "started": 1788926079.2115462,
+  "scope": "CPU lowering and contracts only; no GPU numerics or throughput",
+  "binding_runtime": {
+    "schema": 1,
+    "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+    "binding_identity": {
+      "version": "13.0.3",
+      "root": "/opt/glm53-bindings-capsule",
+      "modules": {
+        "cuda.bindings.driver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+        },
+        "cuda.bindings._bindings.cydriver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+        }
+      },
+      "distributions": {
+        "cuda-bindings": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+          "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+        },
+        "cuda-python": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+          "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+        }
+      }
+    },
+    "pathfinder": {
+      "version": "1.7.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+      "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+      "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+      "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+    }
+  },
+  "mounted_sources": {
+    "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "51753ac14b3ecbea39a8b7147bd0b9a3bdc3ecdf52452589e1ba511d8de22ffa",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "cbad55b8d0b3e6f7607ef7bb78bc015622aa86774d37d409042231e8f671d77d",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6_q0.py": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "7aed5c96d4e8785641fc8af234f335735715b4373da518edb00d9e188ae272bc",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "37862eb433b3e4255645bd7a103b530d558408209f3741b87c5b3292f6d8fbad",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_tp_sf6_q0_selftest.py": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+    "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8"
+  },
+  "contract_sources": {
+    "tests/test_glm53_ep_micro_tile.py": "8eeab66d080b0d5858984f646b339a74309473b75b3c5dfc71aa5e54e2c53295",
+    "tests/test_glm53_ep_short_decode.py": "da979727d4c0b84899b9c93a05baf5bef4413fabe33a580d4d780714d542c4d1",
+    "tests/test_glm53_ep_route_remap.py": "87010db07a616e830f0efe5e1febc4362eec933369df016f5d6ef5ccea20858e",
+    "tests/test_glm53_ep_local_selftest.py": "7b606c3da8ad23eba3747d26031622e3bc93f7c1a54851cc702e3f45a3dc2a8b",
+    "tests/test_glm53_ep_scatter_fp32.py": "6778b378c6b8f0b804865ec2f57b7582c82ca3320a6934cb7e3a0be4b569bc77",
+    "tests/test_glm53_ep_prefill_local.py": "74dc4f7f38095d516fc894e16f60fd5bf22731d8aa0c5b742998af1f0b2c04a3",
+    "tests/test_glm53_ep_local_probe.py": "d1f7e4975a9e7f77c0a4dbb9576a880ae42656d7c2de3279fafa60e9a214206c",
+    "tests/test_glm53_ep_micro_scatter.py": "8821d5f22aadab150ba9c804752faedaee3a965c7b8132f54495c9b59a9bab76",
+    "tests/test_glm53_ep_micro_scatter_fp32.py": "8ba0bc412fc8046df2d5f4e72e3de4e488f7f73a894c9e122fda3f135a968ba3",
+    "tests/test_glm53_ep_micro_direct_scatter.py": "80f26102fb6f5e158a7cd766b74fd41451ce01657a8e92eec3e694c146e198a6",
+    "tests/test_glm53_ep_micro_shared_fc1_a.py": "3a3a88f5568c91a60480853303f6da17db2a92748b91b5c57e2a3ca89a4f8d27",
+    "tests/test_glm53_ep_t6_direct_output.py": "7b288fbe51429a738826720ed4335facee22ffcda68c0c1a1a32f04ec2a36d91",
+    "tests/test_glm53_ep_micro_m16.py": "34b53a8fe0e45fe084d5ef2cc7c33d334bf817ff939ad663e3f5cf2ea622d1b4",
+    "tests/test_glm53_tp_sf6_q0.py": "c62e8740f9c921b1070c0634a0bd4efc85797bde41298a8c5fb76ab4d184a56e",
+    "tests/test_moe_sf6_owner.py": "221c13318d505cc2a1c66d79bc25da0419cf769f24a2568b6060db90826fed1f",
+    "tests/test_glm53_tp_sf6_q0_selftest.py": "0cfda8ae1d6a66e694b0b1799177153b491d8d90e4b66c2e285e8431fdcdb590",
+    "tests/test_glm53_startup_trim.py": "d33e8f55ca76dbd0e6a341a3195d375565267bd3e8e3289b43f65363e2a9007c",
+    "probes/glm53_ep_short_decode_compile.py": "214323a5f073c6eb36e66d68bb80076ce86b07ed0a8c1c2e622df7b398155c8b",
+    "probes/run_glm53_ep_short_decode_cpu.py": "19a5c2b5f5cee5c504f4714c03047cca9fc979e9e0dfc33ff225d30c2f334d4e",
+    "overlay/modules/glm53_runtime/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8",
+    "profiles/glm53.env": "48e47f2383257c816aa07c0ebc567a3ea0984f8809ea4b222df324b51cc10bcc",
+    "bench/proof.py": "8ac364784fe6eb184eadf795866fc264e752db81ae5c225f746a6e9bfb5b9c5b",
+    "bench/proof-markers.tsv": "781bfec5e203ac8204b941db8b35d6d7e0de904f9ead6569bcfe37533f36a639",
+    "tests/test_glm53_ep_route_scale_cache.py": "b4c85443d81a69c0a1542f537b8947b119457ba7fed28c319240546ca329cc06",
+    "measurements/glm53_ep_local_20260908/cpu13/stock-gated.py.gz": "745d514f81a649d08e220d82ad486cb513b44f3832fcc218d3b646cdc454dab3",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz": "4df575b8bc6d8d71b7e364fc89913ef5fa151a170179d994dc8bf83788bf89fb",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json": "8b23e618d5cf16281a535a6769515a542bfb79bf9aa70a503c90138679c3f775",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu11.py.gz": "8832063329dc9cc8c0b6365c13769668fa19fdf36e4805f923163e4745e69ca3",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu11-identity.json": "8050181f7cd8d933a15fdf8d3b4f5170e739cbd43026e9a6fbce78acf8abe091",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu17.py.gz": "cd99fc59d4b8889bfbc32c7bd5dc6c2f4514cd6d546b268723d7ba1ab1cd6862",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu17-identity.json": "3654977685f7d05fd1f338f17dd44bd30a81037b03b3576ccb85e680ce57bdb3",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/moe_micro_kernel_cpu19.py.gz": "1acb27540113cf8a9447e531fe15a533af3944b1bf7a98b6dae731222b047481",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/micro-kernel-cpu19-identity.json": "4051f3b01a602678750aa980870f4a31e2d28aa379bc83f3e50294a0db48f42e",
+    "measurements/glm53_ep_local_20260908/micro-scatter-ownership/verify.py": "311bfbaf25b0d25c38d47e637a9221d17dc348bb82dc4abbb178610890e59708",
+    "measurements/glm53_ep_local_20260908/micro-scatter-ownership/identity.json": "5141c6bbc3d42d5eba945e2072ac660da247468f69d9c8e21f91316f3606da1f",
+    "measurements/glm53_ep_local_20260908/micro-scatter-ownership/m32-topk8-fp32.ptx.gz": "defc1b546f4169227bfcae1af5059b9597cdeee0859438e0f1f3d5876102baf5",
+    "measurements/glm53_ep_local_20260908/micro-scatter-ownership/m64-topk1-fp32.ptx.gz": "b6e9d0d66d90051ca2ad9447f478878f319c4cf1fbcfb3d88281f0d4abef803b"
+  },
+  "micro_passes": [
+    {
+      "arm": "m16-topk8-shared-a-direct-fp32",
+      "cache_key": [
+        "micro",
+        "nvfp4",
+        72,
+        72,
+        8,
+        4096,
+        2048,
+        8,
+        64,
+        48,
+        [
+          16,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        false,
+        false,
+        false,
+        72,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "glm53_ep_micro_scatter_fp32_v1",
+        "glm53_ep_micro_direct_scatter_v1",
+        "glm53_ep_micro_shared_fc1_a_v1",
+        "glm53_ep_micro_m16_v1"
+      ],
+      "scatter_fp32": true,
+      "ep_direct_scatter": true,
+      "shared_fc1_a": true,
+      "ep_m16": true,
+      "artifacts": [
+        {
+          "original_name": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+          "path": "micro/m16-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+          "sha256": "48cfbfd07e1a20f899fd989184accd175d091296187966c20fd23a54cd67727e"
+        },
+        {
+          "original_name": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+          "path": "micro/m16-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+          "sha256": "aeb33ee388e31a03f7890cd9b6f0d09ef1c0a0496f5061505416782d9e9e45ff"
+        }
+      ]
+    },
+    {
+      "arm": "m64-topk1-fp32",
+      "cache_key": [
+        "micro",
+        "nvfp4",
+        72,
+        72,
+        8,
+        4096,
+        2048,
+        1,
+        8,
+        48,
+        [
+          64,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        false,
+        false,
+        false,
+        null,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "glm53_ep_micro_scatter_fp32_v1"
+      ],
+      "scatter_fp32": true,
+      "ep_direct_scatter": false,
+      "shared_fc1_a": false,
+      "ep_m16": false,
+      "artifacts": [
+        {
+          "original_name": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx",
+          "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx",
+          "sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83"
+        },
+        {
+          "original_name": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.cubin",
+          "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.cubin",
+          "sha256": "5c91db90159b02bf4eda94e4d161c36e81320e976a8f9882b7d39973c9ffa094"
+        }
+      ]
+    },
+    {
+      "arm": "m64-topk8-bf16",
+      "cache_key": [
+        "micro",
+        "nvfp4",
+        72,
+        72,
+        8,
+        4096,
+        2048,
+        8,
+        64,
+        48,
+        [
+          64,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        false,
+        false,
+        false,
+        null,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0
+      ],
+      "scatter_fp32": false,
+      "ep_direct_scatter": false,
+      "shared_fc1_a": false,
+      "ep_m16": false,
+      "artifacts": [
+        {
+          "original_name": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+          "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+          "sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3"
+        },
+        {
+          "original_name": "cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+          "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+          "sha256": "f438c0674e92c9da22eee5e6eb5cb0e5e59ffde6447e63240a613077a8585b01"
+        }
+      ]
+    }
+  ],
+  "micro_keys": [
+    [
+      "micro",
+      "nvfp4",
+      72,
+      72,
+      8,
+      4096,
+      2048,
+      8,
+      64,
+      48,
+      [
+        16,
+        128
+      ],
+      "torch.int32",
+      false,
+      true,
+      false,
+      false,
+      false,
+      72,
+      "swigluoai_uninterleave",
+      1.0,
+      0.0,
+      10.0,
+      "glm53_ep_micro_scatter_fp32_v1",
+      "glm53_ep_micro_direct_scatter_v1",
+      "glm53_ep_micro_shared_fc1_a_v1",
+      "glm53_ep_micro_m16_v1"
+    ],
+    [
+      "micro",
+      "nvfp4",
+      72,
+      72,
+      8,
+      4096,
+      2048,
+      1,
+      8,
+      48,
+      [
+        64,
+        128
+      ],
+      "torch.int32",
+      false,
+      true,
+      false,
+      false,
+      false,
+      null,
+      "swigluoai_uninterleave",
+      1.0,
+      0.0,
+      10.0,
+      "glm53_ep_micro_scatter_fp32_v1"
+    ],
+    [
+      "micro",
+      "nvfp4",
+      72,
+      72,
+      8,
+      4096,
+      2048,
+      8,
+      64,
+      48,
+      [
+        64,
+        128
+      ],
+      "torch.int32",
+      false,
+      true,
+      false,
+      false,
+      false,
+      null,
+      "swigluoai_uninterleave",
+      1.0,
+      0.0,
+      10.0
+    ]
+  ],
+  "micro_artifacts": [
+    {
+      "path": "micro/m16-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "sha256": "48cfbfd07e1a20f899fd989184accd175d091296187966c20fd23a54cd67727e"
+    },
+    {
+      "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx",
+      "sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83"
+    },
+    {
+      "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3"
+    }
+  ],
+  "micro_resources": [
+    {
+      "path": "micro/m16-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+      "sha256": "aeb33ee388e31a03f7890cd9b6f0d09ef1c0a0496f5061505416782d9e9e45ff",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_ten_0:\n  REG:157 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.cubin",
+      "sha256": "5c91db90159b02bf4eda94e4d161c36e81320e976a8f9882b7d39973c9ffa094",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo81_tensorptrf32gmemo81_tenso_0:\n  REG:222 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+      "sha256": "f438c0674e92c9da22eee5e6eb5cb0e5e59ffde6447e63240a613077a8585b01",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_ten_0:\n  REG:220 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "prefill_pass": {
+    "cache_key": [
+      "dynamic",
+      "fp4",
+      "nvfp4",
+      72,
+      4096,
+      2048,
+      8,
+      48,
+      [
+        128,
+        128
+      ],
+      "torch.int32",
+      false,
+      true,
+      "swigluoai_uninterleave",
+      1.0,
+      0.0,
+      10.0,
+      false,
+      false,
+      "glm53_ep_prefill_local_fp32_v2"
+    ],
+    "artifacts": [
+      {
+        "path": "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+        "sha256": "a1de7c7d7494008676920834d0aef1a99a520c80aeaa9fae6a2397a5ba0fd2ee"
+      }
+    ],
+    "resources": [
+      {
+        "path": "prefill/fp32-v2/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+        "sha256": "b534467b43b7702ac252f7aa967acd9b5bee9f74156ed17fcd364dc4340f760a",
+        "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+      }
+    ]
+  },
+  "tp_sf6_passes": [
+    {
+      "arm": "stock",
+      "enabled": false,
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        288,
+        4096,
+        512,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "sf6_direct_prefill_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "tp-sf6/stock/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "cb3feea87b7814e9c725b9fbc0a2e0a61c6a1b6a4cad03a381fd7b9afd616695"
+        }
+      ],
+      "resources": [
+        {
+          "path": "tp-sf6/stock/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "54e2117adf7b28131f89bde3dba708e6e2f3d89d9871d373176da25ebae6844a",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_gated_sf6MoEGatedDynamicKernelSF6_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32_0:\n  REG:168 STACK:1648 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ]
+    },
+    {
+      "arm": "q0-cache",
+      "enabled": true,
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        288,
+        4096,
+        512,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "sf6_direct_prefill_v1",
+        "glm53_tp_sf6_q0_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "tp-sf6/q0-cache/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "9a8e4ed1695a29169b940b7f072af6fc4aac9fe4976a754b93d94df51f4dbf89"
+        }
+      ],
+      "resources": [
+        {
+          "path": "tp-sf6/q0-cache/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "bcc84005f6fd083075564294b98b59bbaf2cd2a680aee36b21367c84bc29eb74",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_gated_sf6_q0MoEGatedDynamicKernelSF6Q0_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorp_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ]
+    }
+  ],
+  "prepare_variants": [
+    {
+      "label": "mapped-i32-fp32-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "6cffd33afe9f5df8b045f50d8d55af536380c36ba7ce60cdb28b81a01555ac5b",
+      "shared_bytes": 0,
+      "ptx_sha256": "746422754a5ff76833b083b1f73a971b1316563604302a51ec7e40bb704fdcc7",
+      "cubin_sha256": "88146d7c23e6beba8f56e6ab8f855b3988bf0f981d9858b9ae5f2b81e5533eff"
+    },
+    {
+      "label": "mapped-i32-fp32-i64",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i64",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "aa66ce68a26984f5d1ba61c9a05155364932a0c65634663b3829e82ecf15f13e",
+      "shared_bytes": 0,
+      "ptx_sha256": "5857ecaf097242c06edeafa7a7a2208861f9ed97f8f4cc18fc0a8fcd8c7bd469",
+      "cubin_sha256": "802bea5a8cd798eebd4c8b39ce24808c961869969f4dcd13c664d1de4c753573"
+    },
+    {
+      "label": "mapped-i32-fp16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "ebd452a17a8b4d3ed38089d12a9265617983070153161274c268eb666a7b9d3a",
+      "shared_bytes": 0,
+      "ptx_sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+      "cubin_sha256": "bfec8ddae3078b66a33512e4d00a1a864c5061bb652f7b00b692e2ea2b15a177"
+    },
+    {
+      "label": "mapped-i32-fp16-i64",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i64",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "f9b39f27a8f93172dc572df5c3dfa3727fceafed105fbc4ebfc7ada588b1231e",
+      "shared_bytes": 0,
+      "ptx_sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+      "cubin_sha256": "c266748c69e5210e2c43fd62235033a457f068a35b0bdc06debbdc00aeef4f81"
+    },
+    {
+      "label": "mapped-i32-bf16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*bf16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "b904a95255332ae5ed2924e77ed36dd688128946d2de189f99a052c20d23dc7d",
+      "shared_bytes": 0,
+      "ptx_sha256": "edc2ecf84b266634a860befe84a8f024df28137559c6fb0e079c6d9c0584382e",
+      "cubin_sha256": "bfec8ddae3078b66a33512e4d00a1a864c5061bb652f7b00b692e2ea2b15a177"
+    },
+    {
+      "label": "mapped-i32-bf16-i64",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i64",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*bf16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "883056db714e6277db49bb88e6f68204e9f219dcd39af5077ffd2024a57d44c1",
+      "shared_bytes": 0,
+      "ptx_sha256": "f3190dc19ea1495982106190ef366f35965d2e2883280e1a88341220de4a9180",
+      "cubin_sha256": "c266748c69e5210e2c43fd62235033a457f068a35b0bdc06debbdc00aeef4f81"
+    },
+    {
+      "label": "mapped-i64-fp32-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "249a5a7743e35db9cbb6a3ebf2dc2ef06ffbeaf7d120babba5e89a285c00b164",
+      "shared_bytes": 0,
+      "ptx_sha256": "bbf8e42c13f84f1594bc23d0a64050cc3b40ea98f5e89972e27125a11f9e5f68",
+      "cubin_sha256": "21b254bca3f1858efbaeefaf30c2a01de054bfa13696b5fdae7e33e114a5e034"
+    },
+    {
+      "label": "mapped-i64-fp32-i64",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i64",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "526e8ea41cc043ccf94e26315abe8c055f389d76482d657ceb20dcf4a92ac884",
+      "shared_bytes": 0,
+      "ptx_sha256": "b8d19190e3b72475807397c90847a0d482e43e5f3f170abafa3c69d2b17fdd98",
+      "cubin_sha256": "7cd27490b300e36530acef288a90e8e39752826997e52f337abb7052396edfba"
+    },
+    {
+      "label": "mapped-i64-fp16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "fdf31953acd502becf18fd9f28800d523242ea5dedec1961fdbd64e90628792c",
+      "shared_bytes": 0,
+      "ptx_sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+      "cubin_sha256": "9d2602cbd1b5b1946b4e10b5a6d4ca1b0b53380932d802e88a7d5396056fb1e7"
+    },
+    {
+      "label": "mapped-i64-fp16-i64",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i64",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "76575a8c4525e796b70dfdbdb4e53f015e82a14a9e591de5170eb3c8b0337251",
+      "shared_bytes": 0,
+      "ptx_sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+      "cubin_sha256": "9d7335289fd4b5723824251727faa05f1f28132262a659cbc393b66ef59885e9"
+    },
+    {
+      "label": "mapped-i64-bf16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*bf16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "dea65271a7f1441e8babb76887821b2b221303b71b417b22993006f58cc38c05",
+      "shared_bytes": 0,
+      "ptx_sha256": "39725adcaf00a67f9983a500e5f4b75b381692dbca84d1557fcb67bd4d993523",
+      "cubin_sha256": "9d2602cbd1b5b1946b4e10b5a6d4ca1b0b53380932d802e88a7d5396056fb1e7"
+    },
+    {
+      "label": "mapped-i64-bf16-i64",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i64",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*bf16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 288,
+        "HAS_MAP": true
+      },
+      "hash": "f5fffe57a78b83c0a76a620d8e48b6968e5be1f4da3db8bb437d463900279101",
+      "shared_bytes": 0,
+      "ptx_sha256": "66f9b6f96e9eb6c0c30bf9c701b56c01775946bf90b94ccfb0a831e861e665cd",
+      "cubin_sha256": "9d7335289fd4b5723824251727faa05f1f28132262a659cbc393b66ef59885e9"
+    },
+    {
+      "label": "empty-i32-fp32-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true
+      },
+      "hash": "1c8bc8ad585b1e98c23b5402a41d510954cdfcabaa9fef1787a532cf1b7f8100",
+      "shared_bytes": 0,
+      "ptx_sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+      "cubin_sha256": "76763ed14445fd9586e2f84d97d28795fbe08dc0f5f8d2c0d099633e28e562f6"
+    },
+    {
+      "label": "empty-i32-fp16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true
+      },
+      "hash": "03617d00106bd61485251da159c1f1984650d82e4897e21ad9bb9e73c7901c49",
+      "shared_bytes": 0,
+      "ptx_sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+      "cubin_sha256": "28eb85c99f652ee8919155f2a87224f16bc91cd02d0e5ff23d53aca4c8dccbbd"
+    },
+    {
+      "label": "empty-i32-bf16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*bf16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true
+      },
+      "hash": "d677051de85abdd0b8e5e17e48252f7bbe1d7c88fdd955bb8e5d7f6b56f71182",
+      "shared_bytes": 0,
+      "ptx_sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+      "cubin_sha256": "28eb85c99f652ee8919155f2a87224f16bc91cd02d0e5ff23d53aca4c8dccbbd"
+    },
+    {
+      "label": "empty-i64-fp32-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true
+      },
+      "hash": "c0fef9ad08980eb0e5b820d94a23d1be944ea7bf09edcdbdb21e4f920ea3788f",
+      "shared_bytes": 0,
+      "ptx_sha256": "b0ca0fcf9b7216566e9269dd45dd6582403e3d34af7c71d1bb6167d0ec2211fb",
+      "cubin_sha256": "76763ed14445fd9586e2f84d97d28795fbe08dc0f5f8d2c0d099633e28e562f6"
+    },
+    {
+      "label": "empty-i64-fp16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true
+      },
+      "hash": "d4040804285e0bcc7b258e49ffcfd2356a29d294d7e5c93521362dc7434e772c",
+      "shared_bytes": 0,
+      "ptx_sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+      "cubin_sha256": "28eb85c99f652ee8919155f2a87224f16bc91cd02d0e5ff23d53aca4c8dccbbd"
+    },
+    {
+      "label": "empty-i64-bf16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*bf16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": true
+      },
+      "hash": "66a2ef6388fb43f93a022ea475452f423ef4720c24ba492296907135e0315f23",
+      "shared_bytes": 0,
+      "ptx_sha256": "fa26f9577d32c0608dfecf62d4b7ad3fa597f3e610c5b74e0a77dad1e327e2d1",
+      "cubin_sha256": "28eb85c99f652ee8919155f2a87224f16bc91cd02d0e5ff23d53aca4c8dccbbd"
+    },
+    {
+      "label": "offset-i32-fp32-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false
+      },
+      "hash": "0de81f10b2c95ad2555ee408a569ca9532a970a1bf23efc2c873daa946f18f3e",
+      "shared_bytes": 0,
+      "ptx_sha256": "f6a0e9aecade9b7cbebbcfd17208ba17f53336f2f675f7bb1f9ce127e9251426",
+      "cubin_sha256": "0711eadd22366790a720478082939b0fd2dc12168fceb88be932edbb89de971b"
+    },
+    {
+      "label": "offset-i32-fp16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false
+      },
+      "hash": "912ed12cadf244be0bb911403487184f498df0215467f5d375e92e66a66085a0",
+      "shared_bytes": 0,
+      "ptx_sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+      "cubin_sha256": "148b1588945fb0b05acede9ff2d4e50d36a5b59e653ca05d017ead20b45a9ab5"
+    },
+    {
+      "label": "offset-i32-bf16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i32",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*bf16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false
+      },
+      "hash": "0a5ef7c287d0bf35662d9589be7d4bc52ad2f6441c023cefbc813dbfb1cb3f55",
+      "shared_bytes": 0,
+      "ptx_sha256": "3ded0d1996e45a3d206025e130fbfb71eb1335dcddbf5b69619cc2b07222dd10",
+      "cubin_sha256": "148b1588945fb0b05acede9ff2d4e50d36a5b59e653ca05d017ead20b45a9ab5"
+    },
+    {
+      "label": "offset-i64-fp32-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*fp32",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp32",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false
+      },
+      "hash": "37b4c89000e735341c7900fe45c9a6c05e774c12fcf5c6735808fba7c0b80834",
+      "shared_bytes": 0,
+      "ptx_sha256": "c2c967d10ea1ceb1c31ff533158b077fe6438e436d7d8c7fdd565fc076ee1266",
+      "cubin_sha256": "03257e4a69972c85cbe33729ea251f3dd1656b8eb96ed8dce0f1d3a941350742"
+    },
+    {
+      "label": "offset-i64-fp16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*fp16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*fp16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false
+      },
+      "hash": "75f11ef82a1fac302a812fefa4116e7b04fe795bba1ce00644f8af76aefead4b",
+      "shared_bytes": 0,
+      "ptx_sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+      "cubin_sha256": "cb5e86b7d5dcce82e430f7d1cd813693432aa7b746e14188721511e5bddffd36"
+    },
+    {
+      "label": "offset-i64-bf16-i32",
+      "signature": {
+        "X": "*bf16",
+        "IDS": "*i64",
+        "WEIGHTS": "*bf16",
+        "EXPERT_MAP": "*i32",
+        "PAD_X": "*bf16",
+        "PAD_IDS": "*i32",
+        "PAD_WEIGHTS": "*bf16",
+        "LOCAL_OFFSET": "i32"
+      },
+      "constants": {
+        "MAP_LEN": 0,
+        "HAS_MAP": false
+      },
+      "hash": "4a92c45f8d06c46efc7836011d57d839c234396dda0d4abb8c7edd5ef3e96e1d",
+      "shared_bytes": 0,
+      "ptx_sha256": "95f9883a7d44618f267d48fa92259f058050f998bc0de1999e3465bb72fe72cb",
+      "cubin_sha256": "cb5e86b7d5dcce82e430f7d1cd813693432aa7b746e14188721511e5bddffd36"
+    }
+  ],
+  "contracts": {
+    "tests_run": 165,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "cuda_initialized": false,
+  "binding_runtime_rechecked": true,
+  "finished": 1788926241.0866559
+}

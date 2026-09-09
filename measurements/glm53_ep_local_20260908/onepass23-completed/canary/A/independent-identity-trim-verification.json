@@ -1,0 +1,207 @@
+{
+  "arm": "A",
+  "canary_validation_sha256": "77e2b1402fcd420a62396f3738a6b4a593ae9ef860ca4a8afb1ffae9e10c9fde",
+  "nodes": {
+    "10.10.10.1": {
+      "canary_cases": 4,
+      "candidate_comparisons": 24,
+      "config_before_after_equal": true,
+      "container_id": "e0e9ccabae85e9cb5876559a4ec14c8fbd7b08aae764ec6ccf37bf095d36d06f",
+      "graph_then_trim": true,
+      "rank": 1,
+      "source_image_flags_match": true,
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 15654203392,
+          "reserved": 75134664704,
+          "vm_rss": 10859360256
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 15645945856,
+          "reserved": 75143053312,
+          "vm_rss": 10893139968
+        },
+        "completed_at": 1788927712.1994963,
+        "measurement_errors": [],
+        "rank": 1,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 2693,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788927711.7516596,
+        "verdict": "COMPLETE"
+      }
+    },
+    "10.10.10.3": {
+      "canary_cases": 4,
+      "candidate_comparisons": 24,
+      "config_before_after_equal": true,
+      "container_id": "875cfce3b7994eab00b41b3956f44846c7bf863417d712779b8fac076a9436d7",
+      "graph_then_trim": true,
+      "rank": 2,
+      "source_image_flags_match": true,
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 11513548800,
+          "reserved": 75136761856,
+          "vm_rss": 10916966400
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 11507585024,
+          "reserved": 75143053312,
+          "vm_rss": 10950651904
+        },
+        "completed_at": 1788927712.2155316,
+        "measurement_errors": [],
+        "rank": 2,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 2693,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788927711.7622197,
+        "verdict": "COMPLETE"
+      }
+    },
+    "10.10.10.4": {
+      "canary_cases": 4,
+      "candidate_comparisons": 24,
+      "config_before_after_equal": true,
+      "container_id": "880045fb62e7e243ea9ce7b2cb4daad21013e031bb44e726d26d43e20fd8ef00",
+      "graph_then_trim": true,
+      "rank": 3,
+      "source_image_flags_match": true,
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 14536462336,
+          "reserved": 75136761856,
+          "vm_rss": 10927398912
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 14524973056,
+          "reserved": 75143053312,
+          "vm_rss": 10961018880
+        },
+        "completed_at": 1788927712.2125928,
+        "measurement_errors": [],
+        "rank": 3,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 2693,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788927711.7461755,
+        "verdict": "COMPLETE"
+      }
+    },
+    "local": {
+      "canary_cases": 4,
+      "candidate_comparisons": 24,
+      "config_before_after_equal": true,
+      "container_id": "74a72e750ec495ffd48be2bc72da795a7b34e8e177ed4d813965706aa10001f3",
+      "graph_then_trim": true,
+      "rank": 0,
+      "source_image_flags_match": true,
+      "trim": {
+        "after": {
+          "allocated": 72150681600,
+          "mem_available": 9111961600,
+          "reserved": 75136761856,
+          "vm_rss": 10885562368
+        },
+        "before": {
+          "allocated": 72150681600,
+          "mem_available": 9105997824,
+          "reserved": 75143053312,
+          "vm_rss": 10919940096
+        },
+        "completed_at": 1788927712.1995063,
+        "measurement_errors": [],
+        "rank": 0,
+        "schema": 1,
+        "stages": [
+          {
+            "stage": "synchronize",
+            "status": "COMPLETE"
+          },
+          {
+            "collected": 2693,
+            "stage": "gc_collect",
+            "status": "COMPLETE"
+          },
+          {
+            "stage": "empty_cache",
+            "status": "COMPLETE"
+          },
+          {
+            "returned": 1,
+            "stage": "malloc_trim",
+            "status": "COMPLETE"
+          }
+        ],
+        "started_at": 1788927711.7527351,
+        "verdict": "COMPLETE"
+      }
+    }
+  },
+  "performance_acceptance": false,
+  "revision": "cbf1c7916247f946167c15ff74d92261588e8cea",
+  "same_rank_A0_content": true,
+  "snapshot_sha256": "6850ec6f47cf0e11ce2d8a497266eabd5925b4918acc38e06ba01db9ec50f340",
+  "verdict": "STRICT_A_IDENTITY_NUMERICS_TRIM_VERIFIED"
+}
