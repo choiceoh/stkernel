@@ -133,7 +133,7 @@ class AdmissionTests(unittest.TestCase):
                   fast_math=True,activation='swigluoai_uninterleave',swiglu_alpha=1.0,swiglu_beta=0.0,
                   swiglu_limit=10.0,share_input_across_experts=False)
         self.assertNotEqual(fn(**args),fn(**args,ep_local_prefill=True))
-        self.assertEqual(fn(**args,ep_local_prefill=True)[-1],'glm53_ep_prefill_local_v1')
+        self.assertEqual(fn(**args,ep_local_prefill=True)[-1],'glm53_ep_prefill_local_fp32_v2')
 
     def test_sp_reduction_gate_requires_opt_in_for_ep(self):
         ns=extract(MODEL,{'_prefill_sp_layer_reduction_ok'},dict(_EP_PREFILL_LOCAL=False))

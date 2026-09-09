@@ -14,7 +14,9 @@ from glm53_ep_capsule_runtime import verify_runtime
 
 
 CPU_TEST_MODULES = ('test_glm53_ep_micro_tile.py', 'test_glm53_ep_short_decode.py',
-                    'test_glm53_ep_route_remap.py', 'test_glm53_ep_local_selftest.py')
+                    'test_glm53_ep_route_remap.py', 'test_glm53_ep_local_selftest.py',
+                    'test_glm53_ep_scatter_fp32.py', 'test_glm53_ep_prefill_local.py',
+                    'test_glm53_ep_local_probe.py')
 CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
     'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py')
 
@@ -44,7 +46,8 @@ def compile_candidate(output, result):
                       CUTE_DSL_CACHE_DIR=str(output/'cache'),
                       CUTE_DSL_DISABLE_FILE_CACHING='1',
                       CUTE_DSL_COMPILER_OPT='ptx-options=-v',
-                      VLLM_B12X_EP_ZERO_WEIGHT_MICRO='1')
+                      VLLM_B12X_EP_ZERO_WEIGHT_MICRO='1',
+                      VLLM_GLM53_EP_PREFILL_LOCAL='1')
     import torch
     assert not torch.cuda.is_initialized()
     torch.cuda.is_available = lambda: True
@@ -100,6 +103,33 @@ def compile_candidate(output, result):
         resources.append({'path':str(path.relative_to(output)),'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'resources':p.stdout+p.stderr})
     assert len(artifacts)>=2 and len(resources)>=2,'Both fresh CuTe kernels must produce PTX/cubin'
     result.update(micro_artifacts=artifacts,micro_resources=resources)
+    result['phase'] = 'fp32-prefill-cute-compile'
+    md._DYNAMIC_KERNEL_CACHE.clear()
+    assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
+    md._get_dynamic_kernel(72, 8192, 4096, 2048, 8, 8192,
+        activation='swigluoai_uninterleave', swiglu_alpha=1.0,
+        swiglu_beta=0.0, swiglu_limit=10.0, tiled=False)
+    keys = list(md._DYNAMIC_KERNEL_CACHE)
+    assert len(keys) == 1 and keys[0][-1] == 'glm53_ep_prefill_local_fp32_v2', keys
+    folder = output/'prefill'/'fp32-v2'
+    folder.mkdir(parents=True, exist_ok=False)
+    artifacts, resources = [], []
+    for suffix, rows in (('.ptx', artifacts), ('.cubin', resources)):
+        for path in sorted(output.glob('*'+suffix)):
+            destination = folder/path.name
+            assert path.stat().st_size > 0
+            path.rename(destination)
+            row = dict(path=str(destination.relative_to(output)),
+                sha256=hashlib.sha256(destination.read_bytes()).hexdigest())
+            if suffix == '.cubin':
+                inspected = subprocess.run(['/usr/local/cuda/bin/cuobjdump',
+                    '--dump-resource-usage', str(destination)], text=True, capture_output=True)
+                inspected.check_returncode()
+                row['resources'] = inspected.stdout+inspected.stderr
+                destination.with_suffix('.resources.log').write_text(row['resources'])
+            rows.append(row)
+    assert artifacts and resources, 'fresh FP32 prefill compilation needs PTX and cubin'
+    result['prefill_pass'] = dict(cache_key=keys[0], artifacts=artifacts, resources=resources)
     result['phase']='fused-prepare-triton-compile'
     import triton
     from triton.compiler import ASTSource

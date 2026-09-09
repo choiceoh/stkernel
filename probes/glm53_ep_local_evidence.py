@@ -71,7 +71,7 @@ def validate_compile_evidence(root, path):
     evidence = json.loads(Path(path).read_text())
     if (evidence.get("arm") != "local" or evidence.get("cuda_initialized") is not False
             or not evidence.get("cache_key")
-            or evidence["cache_key"][-1] != "glm53_ep_prefill_local_v1"
+            or evidence["cache_key"][-1] != "glm53_ep_prefill_local_fp32_v2"
             or not evidence.get("artifacts") or not evidence.get("resources")):
         raise ValueError("actual no-device local CuTe compile proof required")
     validate_runtime_receipt(evidence.get("binding_runtime"))

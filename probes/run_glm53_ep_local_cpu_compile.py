@@ -28,7 +28,7 @@ def validate_result(root, path, arm):
     capsule_runtime.validate_runtime_receipt(evidence.get("binding_runtime"))
     if arm == "local":
         return validate_compile_evidence(root, path)
-    if "glm53_ep_prefill_local_v1" in evidence["cache_key"]:
+    if "glm53_ep_prefill_local_fp32_v2" in evidence["cache_key"]:
         raise ValueError("stock compile result contains the local dispatch tag")
     contracts = evidence.get("contracts", {})
     if (contracts.get("tests_run", 0) <= 0 or contracts.get("failures") != 0

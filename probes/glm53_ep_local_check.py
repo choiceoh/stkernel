@@ -268,7 +268,7 @@ def _run_case(args, result, provenance):
             assert bool((b == 0).all()), "empty-local control must be exactly zero"
             assert bool((out == 0).all()), "empty-local candidate must be exactly zero"
     keys = list(md._DYNAMIC_KERNEL_CACHE)
-    assert any(key[-1] == "glm53_ep_prefill_local_v1" for key in keys), keys
+    assert any(key[-1] == "glm53_ep_prefill_local_fp32_v2" for key in keys), keys
     result["cache_keys"] = keys
     if not args.sanitize and kind in ("balanced", "concentrated"):
         result["phase"] = "paired-timing"

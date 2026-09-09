@@ -30,9 +30,18 @@ def validate_artifacts(output, result):
     for name, suffix in (('micro_artifacts', '.ptx'), ('micro_resources', '.cubin')):
         assert len(result[name]) >= 2, 'both micro kernels need artifacts'
         for row in result[name]:
-            assert not row['path'].startswith('prepare/'), row['path']
+            assert row['path'].startswith('micro/'), row['path']
             path = check(row['path'], row['sha256'], suffix)
             if name == 'micro_resources':
+                assert path.with_suffix('.resources.log').read_text() == row['resources'], row['path']
+    prefill = result['prefill_pass']
+    assert prefill['cache_key'][-1] == 'glm53_ep_prefill_local_fp32_v2'
+    for name, suffix in (('artifacts', '.ptx'), ('resources', '.cubin')):
+        assert prefill[name], 'FP32 prefill needs fresh artifacts'
+        for row in prefill[name]:
+            assert row['path'].startswith('prefill/fp32-v2/'), row['path']
+            path = check(row['path'], row['sha256'], suffix)
+            if name == 'resources':
                 assert path.with_suffix('.resources.log').read_text() == row['resources'], row['path']
     expected_labels = {
         '-'.join((kind, ids, weight, mapping))

@@ -1817,7 +1817,7 @@ def _dynamic_kernel_cache_key(
     # on-disk artifacts once (a one-time recompile) -- the suffixes below
     # keep the reuse lanes separately keyed on top of it.
     if ep_local_prefill:
-        return key + ("glm53_ep_prefill_local_v1",)
+        return key + ("glm53_ep_prefill_local_fp32_v2",)
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
     if reform_sf_pack:
@@ -3325,6 +3325,9 @@ class Sm120DynamicMoEWorkspace:
     sfa_ptr: object = None
     packed_a_flat: torch.Tensor | None = None
     scale_flat: torch.Tensor | None = None
+    # One grow-only accumulator shared by layers using this cached workspace.
+    # The kernel zeroes it before routing; it must not be retained per layer.
+    ep_scatter_fp32: torch.Tensor | None = None
 
 
 def _dynamic_task_geometry(
@@ -3926,7 +3929,8 @@ def _get_dynamic_kernel(
     global_scale_fake = cute.runtime.make_fake_compact_tensor(
         alpha_dtype, (E,), assumed_align=16
     )
-    scatter_fake = make_ptr(a_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
+    scatter_dtype = cutlass.Float32 if ep_local_cls is not None else a_dtype
+    scatter_fake = make_ptr(scatter_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
     token_map_fake = make_ptr(cutlass.Int32, 4, cute.AddressSpace.gmem, assumed_align=4)
     token_weights_fake = make_ptr(
         alpha_dtype, 16, cute.AddressSpace.gmem, assumed_align=16
@@ -4002,6 +4006,25 @@ def _get_dynamic_kernel(
 # ---------------------------------------------------------------------------
 # Dynamic launch
 # ---------------------------------------------------------------------------
+def _ep_local_scatter_buffer(workspace, output, num_tokens, k):
+    """Get this shared workspace's FP32 sum while preserving the BF16 ABI."""
+    if (output.dtype != torch.bfloat16 or tuple(output.shape) != (num_tokens, k)
+            or not output.is_contiguous() or output.device != workspace.device
+            or k != 4096 or not 4096 <= num_tokens <= 16384):
+        raise ValueError("expert-local FP32 scatter requires contiguous CUDA BF16 [T,4096]")
+    current = workspace.ep_scatter_fp32
+    if current is not None and (current.dtype != torch.float32 or current.device != output.device
+            or current.ndim != 2 or current.shape[1] != k or not current.is_contiguous()):
+        raise ValueError("expert-local FP32 scatter workspace has incompatible storage")
+    if current is None or current.shape[0] < num_tokens:
+        current = torch.empty((num_tokens, k), dtype=torch.float32, device=output.device)
+        workspace.ep_scatter_fp32 = current
+    # Launch arguments use data_ptr(), so the custom kernel cannot tell the
+    # allocator about a later nondefault stream before this buffer grows.
+    current.record_stream(torch.cuda.current_stream(output.device))
+    return current[:num_tokens]
+
+
 def launch_sm120_dynamic_moe(
     *,
     workspace: Sm120DynamicMoEWorkspace,
@@ -4047,6 +4070,13 @@ def launch_sm120_dynamic_moe(
         from .moe_dynamic_gated_sf6 import stock_contract_matches
         direct_sf6 = bool(stock_contract_matches())
     sf1_address, sf2_address = _scale_runtime_addresses(weights, direct_sf6=direct_sf6)
+    ep_local = _ep_local_prefill_kernel(
+        E=num_experts, m=num_tokens, k=k, n=n, num_topk=top_k,
+        tile_m=workspace.tile_m, activation=activation, swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit, quant_mode=quant_mode,
+        tiled=bool(getattr(weights, "tiled", False))) is not None
+    accumulator = (_ep_local_scatter_buffer(workspace, scatter_output, num_tokens, k)
+                   if ep_local else scatter_output)
     compiled, mac = _get_dynamic_kernel(
         num_experts,
         num_tokens,
@@ -4098,7 +4128,7 @@ def launch_sm120_dynamic_moe(
         weights.w1_alpha,
         weights.w2_alpha,
         down_input_scale,
-        scatter_output.data_ptr(),
+        accumulator.data_ptr(),
         workspace.token_map.data_ptr(),
         workspace.token_weights.data_ptr(),
         weights.sfb1_packed if direct_sf6 else _sf_pack_dummy(a.device),
@@ -4109,7 +4139,10 @@ def launch_sm120_dynamic_moe(
         workspace.task_capacity,
     )
     compiled(*runtime_args)
-
+    if ep_local:
+        # CuTe and copy_ use the current PyTorch stream; completion of all
+        # atomic updates precedes this single FP32 -> BF16 conversion.
+        scatter_output.copy_(accumulator)
     return scatter_output
 
 

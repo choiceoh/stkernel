@@ -74,7 +74,7 @@ class EvidenceTests(unittest.TestCase):
         evidence = dict(arm="local", cuda_initialized=False,
                         verdict="PASS", phase="complete", binding_runtime_rechecked=True,
                         binding_runtime=runtime.expected_runtime_receipt(),
-                        cache_key=["glm53_ep_prefill_local_v1"], artifacts=["ptx"], resources=["cubin"],
+                        cache_key=["glm53_ep_prefill_local_fp32_v2"], artifacts=["ptx"], resources=["cubin"],
                         sources=sources, mounted_sources=sources.copy(),
                         remap_compilation=[dict(case, ptx_sha256="ptx", cubin_sha256="cubin")
                                            for case in binding.compile_cases()],

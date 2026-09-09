@@ -52,7 +52,7 @@ def compile_arm(args, evidence):
         swiglu_beta=0.0, swiglu_limit=10.0, tiled=False)
     keys = list(md._DYNAMIC_KERNEL_CACHE)
     assert len(keys) == 1, keys
-    tag = "glm53_ep_prefill_local_v1"
+    tag = "glm53_ep_prefill_local_fp32_v2"
     assert (keys[0][-1] == tag) if args.arm == "local" else tag not in keys[0]
     assert not torch.cuda.is_initialized(), "compile created a CUDA context"
     evidence["phase"] = "compiler-artifacts"

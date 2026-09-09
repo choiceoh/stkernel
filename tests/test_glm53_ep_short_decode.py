@@ -62,7 +62,8 @@ class Harness:
         self.fail_allocate = False
         names = {"b12x_ep_zero_weight_micro_chunks", "b12x_ep_micro_tail",
                  "_apply_ep_zero_weight_micro", "_ep_tail_padded_micro",
-                 "_ep_tail_buffers", "_try_apply_ep_fused_short_decode", "apply"}
+                 "_ep_tail_buffers", "_try_apply_ep_fused_short_decode",
+                 "_ensure_ep_scratch", "apply"}
         tree = ast.parse(SOURCE.read_text())
         constants = [n for n in tree.body if isinstance(n, ast.Assign)
                      and any(isinstance(t, ast.Name) and
@@ -71,7 +72,7 @@ class Harness:
         functions = [copy.deepcopy(n) for n in ast.walk(tree)
                      if isinstance(n, ast.FunctionDef) and n.name in names]
         assert {n.name for n in functions} == names
-        ns = dict(torch=SimpleNamespace(zeros=self.zeros),
+        ns = dict(torch=SimpleNamespace(zeros=self.zeros, empty=self.empty),
                   logger=SimpleNamespace(info_once=self.log, warning_once=self.log),
                   _EP_LOCAL_PREFILL_ENABLED=True,
                   ep_local_prefill_eligible=lambda **kw: False,
@@ -92,12 +93,15 @@ class Harness:
             w1_sf_mma=object(), w2_sf_mma=object(), _fc2_input_scale=object(),
             g1_alphas=Tensor([[1] for _ in range(72)]),
             g2_alphas=Tensor([[1] for _ in range(72)]),
-            _ensure_ep_scratch=lambda *args: None,
+            _ep_ids=None, _ep_scales=None, _ep_mapped=None, _ep_fill_ids=None,
+            max_num_tokens=80, topk=8,
             _remap_ep_tensors=self.remap,
             _apply_ep_fixed=self.fixed,
         )
         ns["torch"].cuda = SimpleNamespace(is_current_stream_capturing=lambda: True)
         ns["torch"].int32 = "i32"
+        ns["torch"].int64 = "i64"
+        ns["torch"].bool = "bool"
         for name in names - {"b12x_ep_zero_weight_micro_chunks", "b12x_ep_micro_tail"}:
             setattr(self.owner, name, MethodType(ns[name], self.owner))
         self.dispatch = ModuleType(DISPATCH)
@@ -113,12 +117,24 @@ class Harness:
         self.allocations.append(value)
         return value
 
+    @staticmethod
+    def empty(shape, *, dtype, device):
+        # Execute the actual scratch allocator's dtype/shape choices without
+        # counting those independent buffers as the four tail allocations.
+        return Tensor([[0] * shape[1] for _ in range(shape[0])], dtype, device)
+
     def log(self, message, *args):
         self.logs.append(message % args)
 
     def remap(self, ids, weights, *args, **kwargs):
         self.remaps.append(ids.dtype)
-        return Tensor(ids.rows, "i32", ids.device), weights
+        # The actual _ensure_ep_scratch, called by actual apply, chooses these
+        # dtypes. Do not assume FP32 or return the raw router tensor unchanged.
+        out_ids = self.owner._ep_ids[:ids.size(0)]
+        out_scales = self.owner._ep_scales[:weights.size(0)]
+        out_ids.copy_(ids)
+        out_scales.copy_(weights)
+        return out_ids, out_scales
 
     def prepare_rows(self, x, ids, weights, **kw):
         # Admission/kernel semantics are tested in test_glm53_ep_route_remap;
@@ -151,13 +167,14 @@ class Harness:
         self.write_rows(output, x, ids, weights)
         return output
 
-    def run(self, tokens, *, all_remote=False, shift=0, id_dtype="i32"):
+    def run(self, tokens, *, all_remote=False, shift=0, id_dtype="i32",
+            weights_dtype="fp32"):
         width = self.owner.hidden_dim
         x = Tensor([[shift + r + 1, 2, -3] + [0] * (width - 3) for r in range(tokens)])
         ids = Tensor([[72] * 8 if all_remote else [1, 3] + [72] * 6
                       for _ in range(tokens)], id_dtype)
         weights = Tensor([[0] * 8 if all_remote else [.25, .5] + [0] * 6
-                          for _ in range(tokens)], "fp32")
+                          for _ in range(tokens)], weights_dtype)
         out = Tensor([[999] * width for _ in range(tokens)], operations=self.operations)
         with patch.dict(sys.modules, {DISPATCH: self.dispatch, PREPARE: self.prepare}):
             self.owner.apply(out, x, Tensor([[0]] * 72), object(), weights, ids,
@@ -241,12 +258,17 @@ class FusedShortDecodeTests(unittest.TestCase):
 
     def test_exact_six_rows_bypass_torch_remap_and_all_staging_copies(self):
         h = self.harness()
-        x, ids, _, out = h.run(6, id_dtype="i64")
+        x, ids, weights, out = h.run(6, id_dtype="i64", weights_dtype="bf16")
         self.assertEqual(h.remaps, [])
         self.assertEqual(len(h.prepares), 1)
         self.assertEqual(len(h.calls), 1)
         self.assertEqual(h.operations, ["copy"])  # only the original output copyback
         self.assertEqual(h.owner._ep_tail_ids.dtype, "i32")
+        self.assertEqual(h.owner._ep_tail_w.dtype, "bf16")
+        self.assertEqual(ids.dtype, "i64")
+        self.assertEqual(weights.dtype, "bf16")
+        self.assertIs(h.prepares[0][1], ids)
+        self.assertIs(h.prepares[0][2], weights)
         self.assertEqual(out.rows, [[v * .75 for v in row] for row in x.rows])
         self.assertEqual(h.calls[0]["a"][6:], [x.rows[0]] * 2)
         self.assertEqual(h.calls[0]["topk_ids"][6:], [ids.rows[0]] * 2)
@@ -258,21 +280,36 @@ class FusedShortDecodeTests(unittest.TestCase):
             self.assertTrue(proof.check(["VLLM_B12X_EP_ZERO_WEIGHT_MICRO"], str(path))[
                 "proof"]["VLLM_B12X_EP_ZERO_WEIGHT_MICRO"])
 
-    def test_18_then_6_then_changed_6_keeps_exact_staging_and_workspace(self):
-        h = self.harness()
-        h.run(18, id_dtype="i64")
-        buffers = tuple(getattr(h.owner, name) for name in
-                        ("_ep_tail_x", "_ep_tail_ids", "_ep_tail_w", "_ep_tail_out"))
-        for all_remote, shift in ((False, 123), (True, 789)):
-            h.operations.clear()
-            x, _, _, out = h.run(6, all_remote=all_remote, shift=shift, id_dtype="i64")
-            for before, name in zip(buffers, ("_ep_tail_x", "_ep_tail_ids", "_ep_tail_w", "_ep_tail_out")):
-                self.assertIs(before, getattr(h.owner, name))
-            scale = 0 if all_remote else .75
-            self.assertEqual(out.rows, [[v * scale for v in row] for row in x.rows])
-            self.assertEqual(h.operations, ["copy"])
-        self.assertEqual(len(h.allocations), 4)
-        self.assertEqual(len(h.remaps), 1)  # only T18
+    def test_same_weight_dtype_preserves_staging_in_both_capture_orders(self):
+        names = ("_ep_tail_x", "_ep_tail_ids", "_ep_tail_w", "_ep_tail_out")
+        for weights_dtype in ("bf16", "fp16", "fp32"):
+            for order in ((18, 6, 6), (6, 18, 6)):
+                with self.subTest(weights_dtype=weights_dtype, order=order):
+                    h = self.harness()
+                    buffers = None
+                    for index, tokens in enumerate(order):
+                        h.operations.clear()
+                        x, ids, weights, out = h.run(
+                            tokens, all_remote=index == 2, shift=123 * index,
+                            id_dtype="i64", weights_dtype=weights_dtype)
+                        current = tuple(getattr(h.owner, name) for name in names)
+                        if buffers is None:
+                            buffers = current
+                        for before, after in zip(buffers, current):
+                            self.assertIs(before, after)
+                        self.assertEqual(current[1].dtype, "i32")
+                        self.assertEqual(current[2].dtype, weights_dtype)
+                        self.assertEqual((ids.dtype, weights.dtype), ("i64", weights_dtype))
+                        if tokens == 6:
+                            self.assertIs(h.prepares[-1][1], ids)
+                            self.assertIs(h.prepares[-1][2], weights)
+                            self.assertEqual(h.operations, ["copy"])
+                        else:
+                            self.assertEqual(h.owner._ep_scales.dtype, weights_dtype)
+                        scale = 0 if index == 2 else .75
+                        self.assertEqual(out.rows, [[v * scale for v in row] for row in x.rows])
+                    self.assertEqual(len(h.allocations), 4)
+                    self.assertEqual(len(h.remaps), 1)  # only T18
 
     def test_unsupported_or_prelaunch_decline_reuses_original_remap_and_padding(self):
         for decline_at in ("admission", "preparation"):

@@ -296,8 +296,10 @@ def _weights(torch, device):
     e, h, n = 72, 4096, 2048
     w13 = torch.randint(0, 256, (e, 2*n, h//2), dtype=torch.uint8, generator=gen).to(device)
     w2 = torch.randint(0, 256, (e, h, n//2), dtype=torch.uint8, generator=gen).to(device)
-    s13 = (torch.rand(e, 2*n, h//16, generator=gen)*.05+.01).to(torch.float8_e4m3fn).to(device)
-    s2 = (torch.rand(e, h, n//16, generator=gen)*.05+.01).to(torch.float8_e4m3fn).to(device)
+    # onepass9 ran inside vLLM's BF16 default-dtype context. Keep that exact
+    # failed fixture explicit; changing RNG dtype would change its input data.
+    s13 = (torch.rand(e, 2*n, h//16, dtype=torch.bfloat16, generator=gen)*.05+.01).to(torch.float8_e4m3fn).to(device)
+    s2 = (torch.rand(e, h, n//16, dtype=torch.bfloat16, generator=gen)*.05+.01).to(torch.float8_e4m3fn).to(device)
     sf13 = flashinfer_convert_sf_to_mma_layout(s13.reshape(e*2*n, h//16), m=2*n, k=h, num_groups=e)
     sf2 = flashinfer_convert_sf_to_mma_layout(s2.reshape(e*h, n//16), m=h, k=n, num_groups=e)
     return w13, sf13, w2, sf2
@@ -314,7 +316,7 @@ def _routing(torch, rows, kind, gen, device, changed=False):
         global_ids = torch.full((rows, 8), 6 if changed else 5, device=device)
     else:
         global_ids = (token*37 + slot*31 + (137 if changed else 0)) % 288
-    weights = torch.rand(rows, 8, device=device, generator=gen)
+    weights = torch.rand(rows, 8, dtype=torch.bfloat16, device=device, generator=gen)
     weights /= weights.sum(dim=1, keepdim=True)
     if kind == "zeros":
         weights[:, ::2] = 0
@@ -324,7 +326,7 @@ def _routing(torch, rows, kind, gen, device, changed=False):
 def _synthetic_wrapper(caller, torch, device, sf13, sf2):
     # The real wrapper's alpha/scale properties alias quant_config descriptors.
     # Bind methods to a fresh namespace, never copy or mutate that descriptor.
-    scales = torch.linspace(.8, 1.2, 72, device=device)
+    scales = torch.linspace(.8, 1.2, 72, dtype=torch.bfloat16, device=device)
     methods = ("_remap_ep_tensors", "_apply_ep_compact", "_apply_ep_local_prefill",
                "_apply_ep_fixed", "_apply_ep_zero_weight_micro", "_ep_tail_padded_micro",
                "_ep_tail_buffers", "_try_apply_ep_fused_short_decode")
@@ -342,8 +344,8 @@ def _synthetic_wrapper(caller, torch, device, sf13, sf2):
     return obj
 
 
-def _scratch(obj, torch, rows, device):
-    for name, dtype in (("_ep_ids", torch.int32), ("_ep_scales", torch.float32),
+def _scratch(obj, torch, rows, device, *, weights_dtype):
+    for name, dtype in (("_ep_ids", torch.int32), ("_ep_scales", weights_dtype),
             ("_ep_long", torch.int64), ("_ep_mapped", torch.int32), ("_ep_remote", torch.bool),
             ("_ep_tmp_a", torch.bool), ("_ep_tmp_b", torch.bool)):
         setattr(obj, name, torch.empty((rows, 8), dtype=dtype, device=device))
@@ -415,12 +417,16 @@ def _prepare_check(obj, torch, remap, x, ids, weights, expert_map):
     proof = {}
     for name, candidate, reference in (("X", px, expected_x), ("ids", pi, expected_ids),
                                         ("weights", pw, expected_w)):
+        if candidate.dtype != reference.dtype or tuple(candidate.shape) != tuple(reference.shape):
+            raise AssertionError(dict(verdict="T6_PREP_METADATA_FAIL", tensor=name,
+                actual_dtype=str(candidate.dtype), reference_dtype=str(reference.dtype),
+                actual_shape=tuple(candidate.shape), reference_shape=tuple(reference.shape)))
         a, b = _tensor_bytes(candidate), _tensor_bytes(reference)
         proof[name] = dict(actual_sha256=_sha(a), reference_sha256=_sha(b), exact=a == b)
         if a != b:
-            first = next(i for i, (aa, bb) in enumerate(zip(a, b)) if aa != bb)
+            first = next((i for i, (aa, bb) in enumerate(zip(a, b)) if aa != bb), min(len(a), len(b)))
             raise AssertionError(dict(verdict="T6_PREP_BYTES_FAIL", tensor=name, byte=first,
-                                      actual=a[first], reference=b[first]))
+                                      actual=a[first:first+1].hex(), reference=b[first:first+1].hex()))
     return proof
 
 
@@ -428,10 +434,10 @@ def _case(caller, torch, md, remap, device, tensors, case, sink):
     name, rows, kind = case
     w13, sf13, w2, sf2 = tensors
     obj = _synthetic_wrapper(caller, torch, device, sf13, sf2)
-    _scratch(obj, torch, rows, device)
     gen = torch.Generator(device=device).manual_seed(SEED)
     x = torch.randn(rows, 4096, dtype=torch.bfloat16, device=device, generator=gen)*.5
     ids, weights = _routing(torch, rows, kind, gen, device)
+    _scratch(obj, torch, rows, device, weights_dtype=weights.dtype)
     if kind == "short":
         ids.copy_(torch.tensor([[72+i for i in range(8)], list(range(8)),
             [0, 72, 1, 144, 2, -1, 287, 3], [71, 0, 288, -1, 72, 1, 2, 3],
@@ -486,6 +492,17 @@ def _case(caller, torch, md, remap, device, tensors, case, sink):
         sink["inputs"].append(identity)
         if kind == "short":
             sink["preparation"].append(_prepare_check(obj, torch, remap, x, ids, weights, expert_map))
+            if not changed:
+                # The full numerical fixture remains onepass9's BF16 one.
+                # These byte-only cases use the wrapper's actual same-dtype
+                # legacy-remap scratch without additional MoE executions.
+                try:
+                    for dtype in (torch.float32, torch.float16):
+                        _scratch(obj, torch, rows, device, weights_dtype=dtype)
+                        proof = _prepare_check(obj, torch, remap, x, ids, weights.to(dtype), expert_map)
+                        sink["preparation"].append(dict(input_weights_dtype=str(dtype), tensors=proof))
+                finally:
+                    _scratch(obj, torch, rows, device, weights_dtype=weights.dtype)
         b1, b2, b3 = eager(False), eager(False), eager(False)
         sink["controls"].append([check_control(b1, b2), check_control(b1, b3), check_control(b2, b3)])
         context = dict(result=sink, third=b3, inputs=x, route_ids=ids, route_weights=weights,

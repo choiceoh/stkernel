@@ -1,6 +1,7 @@
 """Full-token E72 expert-local prefill: skip remote routes before row allocation.
 
-Pinned stock M128 FC1/Q1/FC2/scatter math and task descriptors are inherited.
+Pinned stock M128 FC1/Q1/FC2 math and task descriptors are inherited.
+Weighted BF16 contributions accumulate in FP32 before one BF16 output cast.
 The entry point admits I2048 with uniformly bounded four-slice tasks.
 Route/Q0 preparation changes: histogram valid local pairs, compact a
 warp's <=8 local routes into its existing shared cache, and quantize the
@@ -18,9 +19,10 @@ from pathlib import Path
 
 import cutlass
 import cutlass.cute as cute
-from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint32, Uint64
+from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint32, Uint64, dsl_user_op
+from cutlass._mlir.dialects import llvm
 from flashinfer.cute_dsl.fp4_common import (
-    atomic_add_global_i32, fabs_f32, fmax_f32, rcp_approx_ftz,
+    atomic_add_global_i32, fabs_f32, fmax_f32, rcp_approx_ftz, get_smem_ptr_as_int32,
     quantize_block_fp4, quantize_block_fp4_fast, get_ptr_as_int64,
     ld_shared_i32_relaxed, st_global_f32, st_global_i32,
     st_shared_i32, st_shared_f32, st_global_v4_u32, st_global_u64,
@@ -31,7 +33,7 @@ from ._moe_dynamic.gated import (
     blockscaled_utils, utils, cuda,
     _ld_shared_i32, _st_shared_i32, _threadfence, atomic_add_shared_i32,
     q0_bulk_barrier_init, q0_cp_async_bulk, q0_bulk_arrive_expect_tx, q0_bulk_try_wait,
-    load_shared_bf16x16_to_f32x16,
+    load_shared_bf16x16_to_f32x16, load_shared_i32_f32_pair,
 )
 
 STOCK_GATED_SHA256 = "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445"
@@ -42,6 +44,46 @@ def stock_contract_matches():
     return hashlib.sha256(Path(_stock.__file__).read_bytes()).hexdigest() == STOCK_GATED_SHA256
 
 
+@dsl_user_op
+def scatter_add_weighted_bf16x8_to_f32(
+    addr, smem_addr, route_weight, down_alpha, *, loc=None, ip=None,
+):
+    """Preserve the stock BF16 contribution, widen only its atomic sum.
+
+    Global FP32 RED rounds to nearest even and flushes FP32 subnormals,
+    unlike stock BF16 RED's noftz. This does not promise deterministic sums.
+    """
+    llvm.inline_asm(
+        None,
+        [Int64(addr).ir_value(loc=loc, ip=ip),
+         Int32(smem_addr).ir_value(loc=loc, ip=ip),
+         route_weight.ir_value(loc=loc, ip=ip),
+         down_alpha.ir_value(loc=loc, ip=ip)],
+        "{ .reg .b32 p0,p1,p2,p3,w2; .reg .b16 w,h0,h1,h2,h3,h4,h5,h6,h7;"
+        " .reg .f32 combined_scale,f0,f1,f2,f3,f4,f5,f6,f7; .reg .b64 cp,next;"
+        " ld.shared.v4.u32 {p0,p1,p2,p3}, [$1];"
+        " mul.rn.f32 combined_scale, $2, $3;"
+        " cvt.rn.bf16.f32 w, combined_scale;"
+        " mov.b32 w2, {w,w};"
+        " mul.rn.bf16x2 p0, p0, w2;"
+        " mul.rn.bf16x2 p1, p1, w2;"
+        " mul.rn.bf16x2 p2, p2, w2;"
+        " mul.rn.bf16x2 p3, p3, w2;"
+        " mov.b32 {h0,h1}, p0; mov.b32 {h2,h3}, p1;"
+        " mov.b32 {h4,h5}, p2; mov.b32 {h6,h7}, p3;"
+        " cvt.f32.bf16 f0, h0; cvt.f32.bf16 f1, h1;"
+        " cvt.f32.bf16 f2, h2; cvt.f32.bf16 f3, h3;"
+        " cvt.f32.bf16 f4, h4; cvt.f32.bf16 f5, h5;"
+        " cvt.f32.bf16 f6, h6; cvt.f32.bf16 f7, h7;"
+        " createpolicy.fractional.L2::evict_last.b64 cp, 1.0;"
+        " red.global.add.L2::cache_hint.v4.f32 [$0], {f0,f1,f2,f3}, cp;"
+        " add.u64 next, $0, 16;"
+        " red.global.add.L2::cache_hint.v4.f32 [next], {f4,f5,f6,f7}, cp; }",
+        "l,r,f,f", has_side_effects=True, is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT, loc=loc, ip=ip,
+    )
+
+
 class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
     def _setup_attributes(self, hidden_size):
         if hidden_size != 4096 or self.tile_shape_mnk != (128, 128, 128):
@@ -49,6 +91,128 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         if self.share_input_across_experts or not stock_contract_matches():
             raise ValueError("expert-local prefill inherited source/scale contract differs")
         super()._setup_attributes(hidden_size)
+
+    @cute.jit
+    def scatter_sC_to_gmem(
+        self,
+        tidx,
+        output_tile_idx,
+        valid_rows: Int32,
+        sC: cute.Tensor,
+        tRS_sD: cute.Tensor,
+        scatter_output: cute.Tensor,
+        scatter_tok_base_addr: Int32,
+        scatter_weight_base_addr: Int32,
+        down_alpha_value,
+    ):
+        epi_rest_m = self.tile_shape_mnk[0] // self.epi_tile[0]
+        scatter_N = Int32(scatter_output.shape[1])
+        lane_id = Int32(tidx) & Int32(31)
+        warp_in_tile = Int32(tidx) >> Int32(5)
+        warp_m_base = (warp_in_tile >> Int32(1)) * Int32(32)
+        warp_n_base = (warp_in_tile & Int32(1)) * Int32(64)
+
+        # Scatter using precomputed metadata (no redundant gmem loads)
+        tile_n_base_cur = output_tile_idx * Int32(self.tile_shape_mnk[1])
+        for epi_m in cutlass.range_constexpr(epi_rest_m):
+            epi_buffer = Int32(epi_m) % cute.size(tRS_sD, mode=[3])
+            rows_offset = Int32(epi_m) * Int32(self.epi_tile[0])
+
+            # Per-warp scatter: all eight math warps cover one disjoint
+            # sC strip (32 M-rows x 64 N-cols).
+            warp_epi_rows = valid_rows - rows_offset - warp_m_base
+            if warp_epi_rows > Int32(32):
+                warp_epi_rows = Int32(32)
+            if warp_epi_rows < Int32(0):
+                warp_epi_rows = Int32(0)
+
+            if scatter_output.shape[0] <= Int32(2048):
+                # One work item owns two adjacent N8 vectors from the same
+                # M row.  Relative to the original 256-vector round-robin loop,
+                # this keeps all 32 lanes active while sharing one token/weight
+                # metadata load across two reductions.  Unlike row ownership, a
+                # lane never serializes all eight reductions of one row.
+                tile_pair_cols = Int32(64) // Int32(16)
+                pair_idx = lane_id
+                while pair_idx < warp_epi_rows * tile_pair_cols:
+                    local_row = pair_idx // tile_pair_cols
+                    local_pair_col = pair_idx - local_row * tile_pair_cols
+                    local_col_base = warp_n_base + local_pair_col * Int32(16)
+                    cached_row = rows_offset + warp_m_base + local_row
+                    tok, wv = load_shared_i32_f32_pair(
+                        scatter_tok_base_addr + cached_row * Int32(8)
+                    )
+                    for pair_half in cutlass.range_constexpr(2):
+                        local_col = local_col_base + Int32(pair_half) * Int32(8)
+                        global_col = tile_n_base_cur + local_col
+                        # Preserve the K_SW128 address transform independently
+                        # for both N8 reductions in the pair.
+                        sc_element_offset = Int32(
+                            sC.layout(
+                                (
+                                    warp_m_base + local_row,
+                                    local_col,
+                                    epi_buffer,
+                                )
+                            )
+                        )
+                        sc_element_offset = sc_element_offset ^ (
+                            (sc_element_offset & Int32(0x1C0)) >> Int32(3)
+                        )
+                        sc_smem_addr = get_smem_ptr_as_int32(
+                            sC,
+                            sc_element_offset,
+                        )
+                        scatter_add_weighted_bf16x8_to_f32(
+                            get_ptr_as_int64(
+                                scatter_output, tok * scatter_N + global_col
+                            ),
+                            sc_smem_addr,
+                            wv,
+                            down_alpha_value,
+                        )
+                    pair_idx += Int32(self.num_threads_per_warp)
+            else:
+                tile_vec_cols = Int32(64) // Int32(8)
+                vec_idx = lane_id
+                while vec_idx < warp_epi_rows * tile_vec_cols:
+                    local_row = vec_idx // tile_vec_cols
+                    local_vec_col = vec_idx - local_row * tile_vec_cols
+                    local_col = warp_n_base + local_vec_col * Int32(8)
+                    global_col = tile_n_base_cur + local_col
+                    cached_row = rows_offset + warp_m_base + local_row
+                    tok, wv = load_shared_i32_f32_pair(
+                        scatter_tok_base_addr + cached_row * Int32(8)
+                    )
+                    # Preserve the K_SW128 address transform: compute the
+                    # unswizzled outer offset through sC.layout, then explicitly
+                    # apply S<3,4,3> in BF16 element units before stripping the
+                    # SMEM pointer metadata.  A raw pointer does not retain CuTe's
+                    # swizzle transform.
+                    sc_element_offset = Int32(
+                        sC.layout(
+                            (
+                                warp_m_base + local_row,
+                                local_col,
+                                epi_buffer,
+                            )
+                        )
+                    )
+                    sc_element_offset = sc_element_offset ^ (
+                        (sc_element_offset & Int32(0x1C0)) >> Int32(3)
+                    )
+                    sc_smem_addr = get_smem_ptr_as_int32(
+                        sC,
+                        sc_element_offset,
+                    )
+                    scatter_add_weighted_bf16x8_to_f32(
+                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col),
+                        sc_smem_addr,
+                        wv,
+                        down_alpha_value,
+                    )
+                    vec_idx += Int32(self.num_threads_per_warp)
+
 
     @cute.jit
     def publish_ep_local_uniform_tasks(
@@ -137,7 +301,8 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         num_experts = Int32(row_counts.shape[0])
         sf_blocks_per_row = cols // Int32(16)
         output_bytes_per_row = cols // Int32(2)
-        cols_u32 = cols // Int32(2)
+        # The EP-only scatter pointer is FP32; packed Q0 rows remain FP4.
+        cols_u32 = cols
         scatter_output_u32 = cute.recast_tensor(scatter_output, cutlass.Uint32)
         total_pairs = Int32(topk_ids.shape[0])
         num_topk = total_pairs // num_tokens
@@ -642,6 +807,8 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
     ):
+        if cutlass.const_expr(scatter_output.element_type != cutlass.Float32):
+            raise ValueError("expert-local v2 scatter requires FP32 accumulation storage")
         self.a_dtype = packed_a.element_type
         self.b_dtype = b_w13.element_type
         self.sf_dtype = sfa_ptr.dtype
