@@ -71,7 +71,7 @@ class AdmissionTests(unittest.TestCase):
 
     def test_apply_defers_the_capture_query_until_candidate_admission(self):
         capture = Mock(return_value=False)
-        ns = extract(WR, {'ep_local_prefill_eligible'}, dict(
+        ns = extract(WR, {'ep_local_prefill_eligible', 'b12x_ep_micro_tail'}, dict(
             _EP_LOCAL_PREFILL_ENABLED=False,
             torch=SimpleNamespace(int32='i32', cuda=SimpleNamespace(is_current_stream_capturing=capture)),
             b12x_ep_zero_weight_micro_chunks=lambda *a, **kw: 0,
@@ -86,6 +86,7 @@ class AdmissionTests(unittest.TestCase):
                 weights = SimpleNamespace(dtype='f32')
                 alpha = SimpleNamespace(numel=lambda:72)
                 fake = SimpleNamespace(
+                    _sf6_weight_views=None,
                     w1_scale=object(), w2_scale=object(), g1_alphas=alpha, g2_alphas=alpha,
                     _fc2_input_scale=object(), w1_sf_mma=object(), w2_sf_mma=object(),
                     _use_ep=True, _kernel_num_experts=72, _ep_no_dummy=True,
