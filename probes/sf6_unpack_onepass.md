@@ -51,3 +51,22 @@ Report pooled step/s, ms/step, window median, output tok/s, prefill, quality,
 exclusive traffic and MHC admission together. One boot per arm cannot
 establish statistical significance or replace separate CUDA race checks.
 Serving recovery remains with the central idle controller.
+
+## Independent scalar follow-up
+
+After A completed but failed the Korean gate, the operator requested the
+missing scalar measurement. `sf6_unpack_baseline_onepass_v2.json` supplies
+one empty defaults arm on source `c03da265`, without another vector or recovery
+boot. Its explicit video capacity retains A's `image:4,video:1` condition after
+the required main merge changed the profile default. The original v1 payload
+and no-GPU-hold refusal are retained separately.
+
+`observe_sf6_baseline.py --sf6-unpack` waits using file-only reservation checks
+until the bound ticket and supervisor own the hold, then captures the four-rank
+scalar runtime before and after the completed record. It issues no inference.
+The defaults arm's supervisor exit is not itself a quality verdict; inspect
+the raw record's quality and Korean scanner results independently.
+
+Results and the offline diagnostic are under
+`measurements/glm53_sf6_unpack_baseline_20260909/`. The independent follow-up
+does not repair the original failed two-arm campaign or authorize adoption.

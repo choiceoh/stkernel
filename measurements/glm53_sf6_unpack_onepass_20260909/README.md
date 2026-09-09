@@ -1,5 +1,10 @@
 # SF6 unpack onepass, 2026-09-09
 
+The subsequently requested independent scalar baseline is retained in
+[`../glm53_sf6_unpack_baseline_20260909/README.md`](../glm53_sf6_unpack_baseline_20260909/README.md).
+It measured 20.19704 step/s versus this candidate's 20.21523, and passed the
+Korean gate. The original campaign and files described below remain unchanged.
+
 The vector candidate completed all eight canonical requests. The Korean gate
 failed on the last fixed-decode answer, so the chain stopped before the scalar
 baseline. This is an **INVALID A/B comparison**, not evidence of a speedup or

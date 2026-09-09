@@ -1,0 +1,596 @@
+{
+  "schema": "sf6-unpack-stamp-provenance-v1",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "sides": {
+    "candidate": {
+      "source_commit": "c85a1e75a7187ad69baefb30ef143f92f13430e8",
+      "record_name": "sf6-unpack-0909v1A",
+      "record_raw_line_sha256": "be9135b9640b0f79b130b41fdb9bc623895a9f3080ad37557c8ce3137e5c1b64",
+      "record_overlay": "bf371c1a59e6",
+      "source_file_count": 63,
+      "git_sources_match_retained_expected_manifest": true,
+      "expected_manifest_sha256": "bb5d3e9bf6b8be86768a0c15e0a3718a0a7e21e233465f09630124f783255668",
+      "source_commit_header": "# source_commit=c85a1e75a7187ad69baefb30ef143f92f13430e8\n",
+      "manifest_without_header_sha256": "8a311a73144821b26aad8c9753c4f0e96a07ca069019f4402588a2052856bb9e",
+      "deployment_manifest_sha256": "bf371c1a59e66235d7030e916b911a1c695e2d16a5719993bf6283e51ed63aca",
+      "reconstructed_stamp": "bf371c1a59e6",
+      "reconstructed_stamp_matches_record": true,
+      "compile_content_sha256": "80f4fe2fa05c6bbe71eb9c6fc07ce5c4d39f158821632c7f020f4b5c3e5bdd2a",
+      "workload": {
+        "ctx": [
+          2000,
+          32000,
+          128000
+        ],
+        "seed": 7,
+        "max_tokens": 400,
+        "combine_min_ctx": 32000,
+        "fixed_decode_tokens": 2048,
+        "fixed_decode_reps": 3,
+        "require_exclusive": true
+      },
+      "harness": 40,
+      "doc_lang": "ko",
+      "thinking": true,
+      "window_s": 1.0,
+      "cold_compile": true
+    },
+    "baseline": {
+      "source_commit": "c03da265a893c61e759eb56e2e43f77bac74a2cc",
+      "record_name": "sf6-unpack-base-0909v2B",
+      "record_raw_line_sha256": "15c587498854fa7f11d924fc99035e65758dfaaf6d51331a1f0a5431f2b540f9",
+      "record_overlay": "6bc0090c4d9c",
+      "source_file_count": 63,
+      "git_sources_match_retained_expected_manifest": true,
+      "expected_manifest_sha256": "bb5d3e9bf6b8be86768a0c15e0a3718a0a7e21e233465f09630124f783255668",
+      "source_commit_header": "# source_commit=c03da265a893c61e759eb56e2e43f77bac74a2cc\n",
+      "manifest_without_header_sha256": "8a311a73144821b26aad8c9753c4f0e96a07ca069019f4402588a2052856bb9e",
+      "deployment_manifest_sha256": "6bc0090c4d9c3f134b3eb52f352c88dbee766bd5cfa2e9c599e8bbd3f756ecbf",
+      "reconstructed_stamp": "6bc0090c4d9c",
+      "reconstructed_stamp_matches_record": true,
+      "compile_content_sha256": "80f4fe2fa05c6bbe71eb9c6fc07ce5c4d39f158821632c7f020f4b5c3e5bdd2a",
+      "workload": {
+        "ctx": [
+          2000,
+          32000,
+          128000
+        ],
+        "seed": 7,
+        "max_tokens": 400,
+        "combine_min_ctx": 32000,
+        "fixed_decode_tokens": 2048,
+        "fixed_decode_reps": 3,
+        "require_exclusive": true
+      },
+      "harness": 40,
+      "doc_lang": "ko",
+      "thinking": true,
+      "window_s": 1.0,
+      "cold_compile": true
+    }
+  },
+  "workload_equal": true,
+  "workload_metadata_equal": true,
+  "deployment_stamp_equal": false,
+  "stamp_difference_reason": "source_commit_header_only",
+  "manifest_rows_byte_identical": true,
+  "git_serving_sources_equal": true,
+  "compile_content_sha256_equal": true,
+  "source_files": [
+    {
+      "source": "async_llm.py",
+      "path": "overlay/modules/glm53_runtime/async_llm.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py",
+      "base_contract": "bceed0b3f5f0c834fef79525f2462a092f082390f0070526280abc95945837dd",
+      "sha256": "25f027a0c6fd58e4f5c889ba734eed8cb6a1983452273830e8824a4f63703cb0"
+    },
+    {
+      "source": "b12x_moe.py",
+      "path": "overlay/modules/glm53_moe/b12x_moe.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py",
+      "base_contract": "43a12178ad4f6923d1917a0fb47ea31491104c47496f553b5d73f6a286792576",
+      "sha256": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3"
+    },
+    {
+      "source": "chunk_delta_h.py",
+      "path": "overlay/modules/glm53_kernels/chunk_delta_h.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py",
+      "base_contract": "1b3ad391f939d9443c6b7adb19e57fe381bd5dccea064e8417a4f85b0e713b26",
+      "sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739"
+    },
+    {
+      "source": "cuda_communicator.py",
+      "path": "overlay/modules/glm53_runtime/cuda_communicator.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py",
+      "base_contract": "a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757",
+      "sha256": "ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe"
+    },
+    {
+      "source": "deneb_boot_stamps.py",
+      "path": "overlay/modules/glm53_runtime/deneb_boot_stamps.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py",
+      "base_contract": "absent",
+      "sha256": "12c89a0406b9f7ea7607c15e56a37d30e2a2e8b14ff025ed9cd169dfa09f0109"
+    },
+    {
+      "source": "dflash_utils.py",
+      "path": "overlay/modules/glm53_drafter/dflash_utils.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py",
+      "base_contract": "41a1f26c72f0f4c6150821a310632a09e0e76b252e24d4e1e0f47f62321f155d",
+      "sha256": "6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98"
+    },
+    {
+      "source": "dsv4_oneshot_ar.cu",
+      "path": "overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu",
+      "base_contract": "absent",
+      "sha256": "9f0c0a88dea9fc7f70ba639cdc5f3f19e09e48037a4af4da82941632d0f0d0d3"
+    },
+    {
+      "source": "dsv4_oneshot_shim.py",
+      "path": "overlay/modules/tp_oneshot_ar/dsv4_oneshot_shim.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py",
+      "base_contract": "absent",
+      "sha256": "ac12107a7aa0b8b10560b04d819525e8fccbb34869c3108eb4c1ab666c7e434a"
+    },
+    {
+      "source": "dsv4_oneshot_transport.h",
+      "path": "overlay/modules/tp_oneshot_ar/dsv4_oneshot_transport.h",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_transport.h",
+      "base_contract": "absent",
+      "sha256": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6"
+    },
+    {
+      "source": "flashinfer_b12x_moe.py",
+      "path": "overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py",
+      "base_contract": "86dfe87e1bc69651b3c969477946b348eeebdb8386aab3e51cf5d5253405047b",
+      "sha256": "fffad9c75ca329dc51cb9dea1be7be021a4126ad03d690fd5bcd7f0b4bb772f9"
+    },
+    {
+      "source": "flashinfer_mla_sparse_sm90.py",
+      "path": "overlay/modules/glm53_model/flashinfer_mla_sparse_sm90.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py",
+      "base_contract": "4449ea25921dcae1ec7988581ff26a6ff5a9e5d6d4a0ac4a68a0017ea108f136",
+      "sha256": "1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973"
+    },
+    {
+      "source": "fp8_lm_head.py",
+      "path": "overlay/modules/glm53_drafter/fp8_lm_head.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py",
+      "base_contract": "absent",
+      "sha256": "ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac"
+    },
+    {
+      "source": "glm47_moe.py",
+      "path": "overlay/modules/glm53_runtime/glm47_moe.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py",
+      "base_contract": "ce3629319e56e882d25cb75d62e3e7088a4eec1518885fc69fc696eafb4a97b2",
+      "sha256": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d"
+    },
+    {
+      "source": "glm53_chat.py",
+      "path": "overlay/modules/glm53_runtime/glm53_chat.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py",
+      "base_contract": "absent",
+      "sha256": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0"
+    },
+    {
+      "source": "glm53_decode_first.py",
+      "path": "overlay/modules/glm53_runtime/glm53_decode_first.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py",
+      "base_contract": "absent",
+      "sha256": "a248cab9a91c7d5c1c089d717ee3b01d0b329e7e429d69dd24dccc029f32731f"
+    },
+    {
+      "source": "glm53_dev_lab.py",
+      "path": "overlay/modules/glm53_runtime/glm53_dev_lab.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py",
+      "base_contract": "absent",
+      "sha256": "356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335"
+    },
+    {
+      "source": "glm53_dflash_early_fc.py",
+      "path": "overlay/modules/glm53_drafter/glm53_dflash_early_fc.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py",
+      "base_contract": "absent",
+      "sha256": "99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd"
+    },
+    {
+      "source": "glm53_draft_dump.py",
+      "path": "overlay/modules/glm53_runtime/glm53_draft_dump.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py",
+      "base_contract": "absent",
+      "sha256": "6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360"
+    },
+    {
+      "source": "glm53_drafter_prep.py",
+      "path": "overlay/modules/glm53_drafter/glm53_drafter_prep.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py",
+      "base_contract": "absent",
+      "sha256": "70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce"
+    },
+    {
+      "source": "glm53_fp8_dense.py",
+      "path": "overlay/modules/glm53_model/glm53_fp8_dense.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py",
+      "base_contract": "absent",
+      "sha256": "7da42b2a14354322e56c4e843dbe3227037888f7ba337e9959c6c0a780766d39"
+    },
+    {
+      "source": "glm53_indexer_gate.py",
+      "path": "overlay/modules/glm53_model/glm53_indexer_gate.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_indexer_gate.py",
+      "base_contract": "absent",
+      "sha256": "e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28"
+    },
+    {
+      "source": "glm53_kda_onepass.py",
+      "path": "overlay/modules/glm53_model/glm53_kda_onepass.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py",
+      "base_contract": "absent",
+      "sha256": "cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee"
+    },
+    {
+      "source": "glm53_kpool_indexer.py",
+      "path": "overlay/modules/glm53_kernels/glm53_kpool_indexer.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py",
+      "base_contract": "fe1b106466008c21d0194a59909b19832e127fad255965611c4c7f7a971422a2",
+      "sha256": "c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319"
+    },
+    {
+      "source": "glm53_lab_middleware.py",
+      "path": "overlay/modules/glm53_runtime/glm53_lab_middleware.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py",
+      "base_contract": "absent",
+      "sha256": "a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd"
+    },
+    {
+      "source": "glm53_megakernel.cu",
+      "path": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu",
+      "base_contract": "absent",
+      "sha256": "55dc409cdd04b97db16093779b3c2633c080d7fb3582b0e572f4b168fe307f4f"
+    },
+    {
+      "source": "glm53_megakernel.py",
+      "path": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py",
+      "base_contract": "absent",
+      "sha256": "f8172c263ee4fa78990c28d362d742c9f6411bfa6eac6c7c54353f18d0cbccef"
+    },
+    {
+      "source": "glm53_nvfp4_bproj.py",
+      "path": "overlay/modules/glm53_model/glm53_nvfp4_bproj.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py",
+      "base_contract": "absent",
+      "sha256": "43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20"
+    },
+    {
+      "source": "glm53_nvfp4_scale.py",
+      "path": "overlay/modules/glm53_model/glm53_nvfp4_scale.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py",
+      "base_contract": "absent",
+      "sha256": "0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8"
+    },
+    {
+      "source": "glm53_prefill_collectives.py",
+      "path": "overlay/modules/glm53_runtime/glm53_prefill_collectives.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py",
+      "base_contract": "absent",
+      "sha256": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22"
+    },
+    {
+      "source": "glm53_prefill_fastpath.py",
+      "path": "overlay/modules/glm53_model/glm53_prefill_fastpath.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py",
+      "base_contract": "absent",
+      "sha256": "1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be"
+    },
+    {
+      "source": "glm53_prep_fused.py",
+      "path": "overlay/modules/glm53_runtime/glm53_prep_fused.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py",
+      "base_contract": "absent",
+      "sha256": "ca7f30c0a40e127bd0da2f87c76fc11deb24dad7661fe04a79cd10997444971e"
+    },
+    {
+      "source": "glm53_rank_cache.py",
+      "path": "overlay/modules/glm53_model/glm53_rank_cache.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py",
+      "base_contract": "absent",
+      "sha256": "0f0220e1f932cb0d5ddcb29ddf9c0a2c8e8e7d2507a9f03d2b87815efaed2e26"
+    },
+    {
+      "source": "glm53_renderer_warmup.py",
+      "path": "overlay/modules/glm53_runtime/glm53_renderer_warmup.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py",
+      "base_contract": "absent",
+      "sha256": "9878a1034fb71c9d5655150c7dab912bef3113075074d1f421dbb5d55d4f8de8"
+    },
+    {
+      "source": "glm53_startup_cache.py",
+      "path": "overlay/modules/glm53_model/glm53_startup_cache.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py",
+      "base_contract": "absent",
+      "sha256": "34d351119c7cd41d51473514a0876c171e9567bf9f3da314aba268910947fc76"
+    },
+    {
+      "source": "glm5next_attention.py",
+      "path": "overlay/modules/glm53_model/glm5next_attention.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py",
+      "base_contract": "a0870c317287ab444a4639ad418964e981efafb5386592540f85eb38d534c369",
+      "sha256": "a4f3ead934c2f20eb311a32d507d17edd8552d74bc6d507fbcdd0f37695dff53"
+    },
+    {
+      "source": "glm5next_kda.py",
+      "path": "overlay/modules/glm53_model/glm5next_kda.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py",
+      "base_contract": "ec090aabecc1a63dacc9694ea677b195e95ce0c63648c418a6daaf34b8196125",
+      "sha256": "672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a"
+    },
+    {
+      "source": "glm5next_model.py",
+      "path": "overlay/modules/glm53_model/glm5next_model.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py",
+      "base_contract": "a13ebce1807328004c96146882f7c599d58d20fbb25819316ce90c2aa3e6cff1",
+      "sha256": "55bac92238139d67a5e83d610dafe657efa1419cdfd4d32570d441406887c10f"
+    },
+    {
+      "source": "glm5next_multimodal.py",
+      "path": "overlay/modules/glm53_model/glm5next_multimodal.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/multimodal.py",
+      "base_contract": "3c8df570fe46e98a04108fce16c46437591f5c0a4767b3364642dc144069b252",
+      "sha256": "8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568"
+    },
+    {
+      "source": "gpu_worker.py",
+      "path": "overlay/modules/glm53_runtime/gpu_worker.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py",
+      "base_contract": "b2e580d74e7259ff2cbc82dabf38a43409ea5584d143880436583d9fc1ceedf1",
+      "sha256": "c85092ab70c42692ae8cb7ae4ba4d35d7fbe885cee767ea969990483929d2834"
+    },
+    {
+      "source": "kda.py",
+      "path": "overlay/modules/glm53_kernels/kda.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/kda.py",
+      "base_contract": "ac2260c84a36936ad7d56ef63dbceb4618b2c499d7637e08b407f0cd706f9d02",
+      "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e"
+    },
+    {
+      "source": "kv_cache_coordinator.py",
+      "path": "overlay/modules/glm53_prefix_cache/kv_cache_coordinator.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py",
+      "base_contract": "f640b5c42f6bc718926329a8f8b48a0fd0c8c8f24368af4e4b9ec8d13f68432f",
+      "sha256": "1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d"
+    },
+    {
+      "source": "kv_zero_worker_utils.py",
+      "path": "overlay/modules/glm53_runtime/kv_zero_worker_utils.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/utils.py",
+      "base_contract": "3dcd6ad34ee1d1db2875f7f7dd51d90ee0e64041ab282180687770a38b26acb1",
+      "sha256": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c"
+    },
+    {
+      "source": "moe_dispatch.py",
+      "path": "overlay/modules/glm53_moe/moe_dispatch.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py",
+      "base_contract": "f6923850c710eb21cf7c3566b6ddcc39ddda0d7a3664c19dec0205895af31362",
+      "sha256": "44d4c0ca79060b8eeb8de437fa31ee8eafc9953c40ccc88dfcaf13c2c1a2d899"
+    },
+    {
+      "source": "moe_dynamic_gated_sf6.py",
+      "path": "overlay/modules/glm53_moe/moe_dynamic_gated_sf6.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py",
+      "base_contract": "absent",
+      "sha256": "b4b1d78cbafae58d6aea9565029716a3b8206fc762a12e3f1c3245b35ccddb82"
+    },
+    {
+      "source": "moe_dynamic_gated_tiled.py",
+      "path": "overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py",
+      "base_contract": "absent",
+      "sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d"
+    },
+    {
+      "source": "moe_dynamic_prefill.py",
+      "path": "overlay/modules/glm53_moe/moe_dynamic_prefill.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py",
+      "base_contract": "absent",
+      "sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5"
+    },
+    {
+      "source": "moe_dynamic_prefill_n128.py",
+      "path": "overlay/modules/glm53_moe/moe_dynamic_prefill_n128.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py",
+      "base_contract": "absent",
+      "sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4"
+    },
+    {
+      "source": "moe_gate_sm121.py",
+      "path": "overlay/modules/moe_gate_sm121/moe_gate_sm121.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py",
+      "base_contract": "absent",
+      "sha256": "b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b"
+    },
+    {
+      "source": "moe_micro_kernel.py",
+      "path": "overlay/modules/glm53_moe/moe_micro_kernel.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py",
+      "base_contract": "ccb6f65a22314961693493242f78f62ca58f79a319ecd0cb51bf6d7d8e7125c6",
+      "sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655"
+    },
+    {
+      "source": "moe_reform_sf_pack.py",
+      "path": "overlay/modules/glm53_moe/moe_reform_sf_pack.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py",
+      "base_contract": "absent",
+      "sha256": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631"
+    },
+    {
+      "source": "moe_sf_pack.py",
+      "path": "overlay/modules/glm53_moe/moe_sf_pack.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py",
+      "base_contract": "absent",
+      "sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a"
+    },
+    {
+      "source": "moe_static_common.py",
+      "path": "overlay/modules/glm53_moe/moe_static_common.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py",
+      "base_contract": "absent",
+      "sha256": "20358c27f04b8a26dda85a19f6c92357f71f1b64d6378905318f79866e537a86"
+    },
+    {
+      "source": "moe_static_kernel_v4.py",
+      "path": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py",
+      "base_contract": "absent",
+      "sha256": "fee9ee490015c4717539d29476fd21c2360653a642d709b984f9cb1a6ca23387"
+    },
+    {
+      "source": "moe_static_kernel_v5.py",
+      "path": "overlay/modules/glm53_moe/moe_static_kernel_v5.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py",
+      "base_contract": "absent",
+      "sha256": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"
+    },
+    {
+      "source": "mtp.py",
+      "path": "overlay/modules/glm53_model/mtp.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py",
+      "base_contract": "b183ed6e134e7126719b3c7208eef46039805d478916a5c876ec25d60be714ce",
+      "sha256": "78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade"
+    },
+    {
+      "source": "parallel_state.py",
+      "path": "overlay/modules/glm53_runtime/parallel_state.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py",
+      "base_contract": "c6d65b96a260ea0d779da1073d1799392813eee74c9ed44753dfa56f4e7a9e4c",
+      "sha256": "2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8"
+    },
+    {
+      "source": "qwen3_dflash2.py",
+      "path": "overlay/modules/glm53_drafter/qwen3_dflash2.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py",
+      "base_contract": "c141daa4b2059c0098224ac36471c2197b7052c100bef0a4dbc2ca79b627053f",
+      "sha256": "4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee"
+    },
+    {
+      "source": "sampler.py",
+      "path": "overlay/modules/glm53_runtime/sampler.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py",
+      "base_contract": "76070739447fc9f7563ef164ef80c0777208d1ea07dec3a6f6d2a0755188d7ae",
+      "sha256": "c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb"
+    },
+    {
+      "source": "sparse_attn_indexer_kpool.py",
+      "path": "overlay/modules/glm53_kernels/sparse_attn_indexer_kpool.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py",
+      "base_contract": "4772b45eb9b72daab77d8a7581f88508a5e30ed6440e1ed2637722977defaf1b",
+      "sha256": "200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d"
+    },
+    {
+      "source": "spec_decode_rejection_warmup.py",
+      "path": "overlay/modules/glm53_drafter/spec_decode_rejection_warmup.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py",
+      "base_contract": "cd3bce82d185b46fdb92b37292176c7d6ee9488e8bbed4cfde0fe079bf0b6f53",
+      "sha256": "fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d"
+    },
+    {
+      "source": "tilelang.py",
+      "path": "overlay/modules/glm53_kernels/tilelang.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py",
+      "base_contract": "c8ce81539c779436eb2b9fbba84738f3114bf3ac0a149f2b606f7d38bd1067ce",
+      "sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1"
+    },
+    {
+      "source": "tilelang_kernels.py",
+      "path": "overlay/modules/glm53_kernels/tilelang_kernels.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py",
+      "base_contract": "03aeb3f7c0eabfe8391006ff80f8d4cfedba7cf3d0a168e0dee2d678d3e3bd24",
+      "sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12"
+    },
+    {
+      "source": "zz_deneb_boot_stamps.pth",
+      "path": "overlay/modules/glm53_runtime/zz_deneb_boot_stamps.pth",
+      "target": "/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth",
+      "base_contract": "absent",
+      "sha256": "b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca"
+    }
+  ],
+  "conclusion": "The deployment stamps differ solely because deploy-overlays prepends different source_commit headers to otherwise byte-identical 63-row manifests. The workload and runtime content hashes are equal. This does not remove the strict different-stamp rejection or establish a valid A/B performance/adoption verdict.",
+  "code_evidence": [
+    {
+      "path": "launchers/compose-overlays.sh",
+      "lines": [
+        40,
+        70
+      ],
+      "explanation": "Read selected module rows in profile order, expand relative targets, and append tab-separated source/target/base-contract rows.",
+      "git_sha256_by_arm": {
+        "candidate": "e43ed3cce47ae4959419f2b667d7c7c6a8b9f632ce666da507d6fd7181ec3365",
+        "baseline": "e43ed3cce47ae4959419f2b667d7c7c6a8b9f632ce666da507d6fd7181ec3365"
+      },
+      "bytes_identical_across_revisions": true
+    },
+    {
+      "path": "launchers/deploy-overlays.sh",
+      "lines": [
+        80,
+        89
+      ],
+      "explanation": "Prepend exactly one source_commit comment and the composed manifest bytes to the deployed manifest.",
+      "git_sha256_by_arm": {
+        "candidate": "384acff1e4de9b3cfcb63c615aa3a4b28ad665e3788783670d467e092f667862",
+        "baseline": "384acff1e4de9b3cfcb63c615aa3a4b28ad665e3788783670d467e092f667862"
+      },
+      "bytes_identical_across_revisions": true
+    },
+    {
+      "path": "launchers/lib/glm53-compile-cache.py",
+      "lines": [
+        14,
+        38
+      ],
+      "explanation": "Deployment SHA covers complete manifest bytes. Compile content SHA covers immutable image and sorted source/target/base-contract/source-content digests, excluding comment rows.",
+      "git_sha256_by_arm": {
+        "candidate": "b9e398c31981249dd946956b1b671ed26ab1f6815cb9995a40ed38c8590e1540",
+        "baseline": "b9e398c31981249dd946956b1b671ed26ab1f6815cb9995a40ed38c8590e1540"
+      },
+      "bytes_identical_across_revisions": true
+    },
+    {
+      "path": "launchers/lib/glm53-compile-cache.py",
+      "lines": [
+        82,
+        86
+      ],
+      "explanation": "Publish the deployment manifest SHA to .overlay-sha.",
+      "git_sha256_by_arm": {
+        "candidate": "b9e398c31981249dd946956b1b671ed26ab1f6815cb9995a40ed38c8590e1540",
+        "baseline": "b9e398c31981249dd946956b1b671ed26ab1f6815cb9995a40ed38c8590e1540"
+      },
+      "bytes_identical_across_revisions": true
+    },
+    {
+      "path": "bench/onepass.py",
+      "lines": [
+        164,
+        167
+      ],
+      "explanation": "Read .overlay-sha and retain its first 12 characters as record.overlay.",
+      "git_sha256_by_arm": {
+        "candidate": "1f874174e80bb0f486c2fc1571981052e8bafee3ad3a50ce0d6466eee344be29",
+        "baseline": "1f874174e80bb0f486c2fc1571981052e8bafee3ad3a50ce0d6466eee344be29"
+      },
+      "bytes_identical_across_revisions": true
+    }
+  ],
+  "reproduction": {
+    "working_directory": "Repository root containing both local Git revisions and retained final directories.",
+    "method": "Read-only git show reconstruction; reads all 63 source blobs from each commit, never runs composer, deployer, Docker, GPU workloads or remote commands. Compare computed per-target hashes with each retained expected manifest, reconstruct exact deployment bytes and compile content JSON, and assert both observed 12-character stamps.",
+    "python": "import hashlib,json,re,shlex,subprocess\nfrom pathlib import Path\n\ndef sha(raw):\n    return hashlib.sha256(raw).hexdigest()\n\ndef reconstruct():\n    root=Path.cwd()\n    image=\"sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211\"\n    inputs=(\n        (\"candidate\",\"c85a1e75a7187ad69baefb30ef143f92f13430e8\",\"measurements/glm53_sf6_unpack_onepass_20260909/final\"),\n        (\"baseline\",\"c03da265a893c61e759eb56e2e43f77bac74a2cc\",\"measurements/glm53_sf6_unpack_baseline_20260909/final\"))\n    sides, bodies, datasets, records = {}, {}, {}, {}\n    for mode, revision, relative in inputs:\n        def blob(path):\n            return subprocess.check_output([\"git\",\"show\",revision+\":\"+path],cwd=root)\n        profile=blob(\"profiles/glm53.env\").decode()\n        modules=shlex.split(re.search(r\"^MODULES=(.+)$\",profile,re.M)[1])[0].split()\n        prefix=shlex.split(re.search(r\"^TARGET_PREFIX=(.+)$\",profile,re.M)[1])[0]\n        rows, content, files = [], [], {}\n        for module in modules:\n            for line in blob(\"overlay/modules/\"+module+\"/manifest.tsv\").decode().splitlines():\n                if not line or line.startswith(\"#\"):\n                    continue\n                source,target,contract=line.split(\"\\t\")\n                target=target if target.startswith(\"/\") else prefix+target\n                path=\"overlay/modules/\"+module+\"/\"+source\n                digest=sha(blob(path))\n                assert source not in files\n                files[source]=dict(path=path,target=target,base_contract=contract,sha256=digest)\n                rows.append([source,target,contract])\n                content.append([source,target,contract,digest])\n        body=\"\".join(\"\\t\".join(row)+\"\\n\" for row in rows).encode()\n        header=(\"# source_commit=\"+revision+\"\\n\").encode()\n        manifest=header+body\n        directory=root/relative\n        raw_record=(directory/\"records.raw.jsonl\").read_bytes()\n        lines=[line for line in raw_record.splitlines() if line.strip()]\n        assert len(lines)==1\n        record=json.loads(lines[0])\n        expected_path=directory/(\"expected-\"+record[\"name\"]+\".json\" if mode==\"candidate\" else \"baseline-expected.json\")\n        expected=json.loads(expected_path.read_bytes())\n        actual_sources={value[\"target\"]:value[\"sha256\"] for value in files.values()}\n        assert len(files)==len(expected)==63 and actual_sources==expected\n        content_bytes=json.dumps([\"glm53-compile-v1\",image,sorted(content)],separators=(\",\",\":\")).encode()\n        deployment_sha=sha(manifest)\n        assert deployment_sha[:12]==record[\"overlay\"]\n        sides[mode]=dict(source_commit=revision,record_name=record[\"name\"],\n            record_raw_line_sha256=sha(lines[0]),record_overlay=record[\"overlay\"],\n            source_file_count=len(files),git_sources_match_retained_expected_manifest=True,\n            expected_manifest_sha256=sha(expected_path.read_bytes()),\n            source_commit_header=header.decode(),manifest_without_header_sha256=sha(body),\n            deployment_manifest_sha256=deployment_sha,reconstructed_stamp=deployment_sha[:12],\n            reconstructed_stamp_matches_record=True,compile_content_sha256=sha(content_bytes),\n            workload=record[\"workload\"],harness=record[\"harness\"],doc_lang=record[\"doc_lang\"],\n            thinking=record[\"thinking\"],window_s=record[\"window_s\"],cold_compile=record.get(\"cold_compile\",False))\n        bodies[mode],datasets[mode],records[mode]=body,files,record\n    assert datasets[\"candidate\"]==datasets[\"baseline\"] and bodies[\"candidate\"]==bodies[\"baseline\"]\n    keys=(\"workload\",\"harness\",\"doc_lang\",\"thinking\",\"window_s\")\n    assert all(records[\"candidate\"][key]==records[\"baseline\"][key] for key in keys)\n    return dict(schema=\"sf6-unpack-stamp-provenance-v1\",image=image,sides=sides,\n        workload_equal=True,workload_metadata_equal=True,deployment_stamp_equal=False,\n        stamp_difference_reason=\"source_commit_header_only\",manifest_rows_byte_identical=True,\n        git_serving_sources_equal=True,compile_content_sha256_equal=True,\n        source_files=[dict(source=source,**value) for source,value in sorted(datasets[\"candidate\"].items())],\n        conclusion=\"The deployment stamps differ solely because deploy-overlays prepends different source_commit headers to otherwise byte-identical 63-row manifests. The workload and runtime content hashes are equal. This does not remove the strict different-stamp rejection or establish a valid A/B performance/adoption verdict.\")\n\nif __name__ == \"__main__\":\n    print(json.dumps(reconstruct(),indent=2))\n",
+    "command": "python3 -B -c 'import json; from pathlib import Path; p=Path(\"measurements/glm53_sf6_unpack_baseline_20260909/stamp-provenance.json\"); exec(json.loads(p.read_text())[\"reproduction\"][\"python\"])'"
+  }
+}
