@@ -160,6 +160,28 @@ def legacy_work():
     return any(re.search(pattern, line.strip()) for line in output.splitlines())
 
 
+def _local_head(host):
+    """Match the fixed fleet head against kernel-reported local addresses."""
+    if host != '10.10.10.2':
+        return False
+    # This is the same local-address requirement as the canonical launcher.
+    # Do not use DNS, environment overrides, or retry a failed SSH locally.
+    interfaces = json.loads(subprocess.check_output(
+        ['ip', '-j', '-4', 'address', 'show'], text=True, timeout=4))
+    if not isinstance(interfaces, list):
+        raise ValueError('cannot establish local fleet head identity')
+    local = False
+    for interface in interfaces:
+        if not isinstance(interface, dict) or not isinstance(interface.get('addr_info'), list):
+            raise ValueError('cannot establish local fleet head identity')
+        for address in interface['addr_info']:
+            if not isinstance(address, dict):
+                raise ValueError('cannot establish local fleet head identity')
+            if address.get('family') == 'inet' and address.get('local') == host:
+                local = True
+    return local
+
+
 def node_idle(host):
     code = '''import json,subprocess
 s=lambda a:subprocess.check_output(a,text=True,stderr=subprocess.DEVNULL).strip()
@@ -170,9 +192,10 @@ for name in s(['docker','ps','--format','{{.Names}}']).splitlines():
   allowed.update(s(['docker','top',name,'-eo','pid']).splitlines()[1:])
 allowed={p.strip() for p in allowed}
 print(json.dumps({'idle':pids<=allowed}))'''
-    result = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=4',
-                             'choiceoh@' + host, 'python3 -c ' + shlex.quote(code)],
-                            capture_output=True, text=True, timeout=12)
+    command = ([sys.executable, '-B', '-c', code] if _local_head(host) else
+               ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=4',
+                'choiceoh@' + host, 'python3 -c ' + shlex.quote(code)])
+    result = subprocess.run(command, capture_output=True, text=True, timeout=12)
     value = json.loads(result.stdout) if result.returncode == 0 else None
     if not isinstance(value, dict) or value.get('idle') is not True:
         raise ValueError('GPU ownership is not quiet on ' + host)
