@@ -19,11 +19,9 @@
 #    then. Measured three times at 101.6 -> 90.19, 102.6 -> 90.49, 113 -> 90.5.
 #    So the budget is (measured - BOOT_COST - margin), not (measured - margin).
 #
-# 2. Idle build daemons. Gradle keeps ~10 GiB of JVM heap on whichever node last
-#    built the Android client, and respawns after being killed. It is invisible
-#    to `docker stats` and to a container-only audit -- the tell is AnonPages,
-#    which read 22.6 GiB on that node against 2.2 GiB on its peers. This kills
-#    them and reports the spread so a new tenant is visible rather than absorbed.
+# 2. Other workloads retain anonymous memory on these shared nodes. Report
+#    AnonPages alongside MemFree and size against what remains; those workloads
+#    are not owned by this launcher and must remain running.
 #
 # Raising GMU is usually the fix, not lowering it. A model whose weights plus
 # activations need ~78 GiB per rank has no KV at 0.65 and less at 0.60 -- the
@@ -58,6 +56,16 @@ if [[ "${1:-}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
 else
   MARGIN=10
 fi
+for value in "$BOOT_COST" "$TOTAL_GIB" "$MARGIN"; do
+  [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
+    echo "invalid numeric boot cost, total memory or margin" >&2
+    exit 1
+  }
+done
+awk -v total="$TOTAL_GIB" 'BEGIN { exit !(total > 0) }' || {
+  echo "total memory must be positive" >&2
+  exit 1
+}
 NODES=("$@")
 [ ${#NODES[@]} -eq 0 ] && NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no"
@@ -65,14 +73,23 @@ IS_SELF=$(hostname -I 2>/dev/null | tr " " "\n" | grep -cx "10.10.10.2" || true)
 
 probe() {
   cat <<'RE'
-# Build daemons hold heap NVRM then cannot allocate around; they rebuild on the
-# next build, so reclaiming them costs a warm start and nothing else.
-pkill -9 -f '[j]ava.*gradle' 2>/dev/null
-pkill -9 -f '[j]ava.*add-opens' 2>/dev/null
-pkill -9 -f '[k]otlin-daemon' 2>/dev/null
-sync; sudo -n sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null
+set -eu
+# Reclaim file caches without terminating another workload. A failed reclaim
+# cannot produce a successful capacity measurement.
+sync
+sudo -n sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null
 sleep 2
-awk '/^MemFree:/{f=$2} /^AnonPages:/{a=$2} END{printf "%.1f %.1f\n", f/1048576, a/1048576}' /proc/meminfo
+awk '
+/^(MemFree|AnonPages):/ {
+  if (NF != 3 || $2 !~ /^[0-9]+$/ || $3 != "kB") bad = 1
+  if ($1 == "MemFree:") { nf++; f=$2 }
+  if ($1 == "AnonPages:") { na++; a=$2 }
+}
+END {
+  if (bad || nf != 1 || na != 1) exit 1
+  # Truncate, never round free memory up before computing its upper bound.
+  printf "%.6f %.6f\n", int(f/1048576*1000000)/1000000, int(a/1048576*1000000)/1000000
+}' /proc/meminfo
 RE
 }
 
@@ -120,25 +137,29 @@ done
 MIN=""; ANONS=()
 for probe_index in "${!NODES[@]}"; do
   n=${NODES[$probe_index]}
-  free=""; anon=""
-  read -r free anon < "$PROBE_DIR/$probe_index"
-  if [ "${PROBE_FAILED[$probe_index]}" = 1 ] || [ -z "$free" ]; then
-    echo "  $n  UNREACHABLE -- refusing to size against a node we cannot see" >&2
+  report=$(cat "$PROBE_DIR/$probe_index")
+  if [ "${PROBE_FAILED[$probe_index]}" = 1 ] || [ -z "$report" ]; then
+    echo "  $n  UNREACHABLE -- node probe/reclaim failed or returned no memory" >&2
     exit 1
   fi
+  if [[ ! "$report" =~ ^([0-9]+([.][0-9]+)?)[[:blank:]]([0-9]+([.][0-9]+)?)$ ]]; then
+    echo "  $n  INVALID MEMORY -- expected one numeric MemFree/AnonPages pair" >&2
+    exit 1
+  fi
+  free=${BASH_REMATCH[1]}; anon=${BASH_REMATCH[3]}
   printf "  %-12s %7s   %7s\n" "$n" "$free" "$anon" >&2
   ANONS+=("$anon:$n")
   if [ -z "$MIN" ] || awk "BEGIN{exit !($free < $MIN)}"; then MIN=$free; fi
 done
 
-# An outlier in AnonPages is a tenant nobody meant to leave running.
+# Report unequal anonymous memory without treating another workload as stale.
 HI=$(printf '%s\n' "${ANONS[@]}" | sort -t: -k1 -rn | head -1)
 LO=$(printf '%s\n' "${ANONS[@]}" | sort -t: -k1 -n  | head -1)
 if awk "BEGIN{exit !(${HI%%:*} - ${LO%%:*} > 5)}"; then
-  echo "  ! ${HI##*:} holds $(printf '%.1f' "${HI%%:*}") GiB anon against ${LO##*:}'s ${LO%%:*} -- an unexpected tenant" >&2
+  echo "  ! ${HI##*:} holds $(printf '%.1f' "${HI%%:*}") GiB anon against ${LO##*:}'s ${LO%%:*} -- shared workload memory remains reserved" >&2
 fi
 
-USABLE=$(awk "BEGIN{printf \"%.1f\", $MIN - $BOOT_COST - $MARGIN}")
+USABLE=$(awk "BEGIN{printf \"%.6f\", $MIN - $BOOT_COST - $MARGIN}")
 
 # This number is an UPPER BOUND from free memory, never a floor from what the
 # model needs -- weights and activations come out of the same budget, so KV is
@@ -148,11 +169,10 @@ USABLE=$(awk "BEGIN{printf \"%.1f\", $MIN - $BOOT_COST - $MARGIN}")
 # weights and activations per rank, i.e. KV about -30 GiB and a boot that dies
 # on "No available memory for the cache blocks".
 #
-# hy4 never adopts a lower value so the clamp was inert there, but glm53 adopts
-# in BOTH directions, so on a node with an unexpected tenant it would have
-# taken the fabricated 0.40. Refusing instead makes every caller fall back to
-# its configured value, which is what both already do on an unreachable node.
-GMU=$(awk "BEGIN{printf \"%.2f\", $USABLE/$TOTAL_GIB}")
+# Keep the original budget and reject values below 0.40. Compute from the
+# unrounded inputs and floor to two decimals: nearest rounding can exceed the
+# measured upper bound. Callers must handle a failed measurement explicitly.
+GMU=$(awk "BEGIN{printf \"%.2f\", int(($MIN - $BOOT_COST - $MARGIN)*100/$TOTAL_GIB)/100}")
 if awk "BEGIN{exit !($GMU < 0.40)}"; then
   echo "  ! usable $USABLE GiB gives GMU $GMU -- refusing to size this low." >&2
   echo "    This is an upper bound from free memory, not a floor from what the" >&2
