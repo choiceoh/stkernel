@@ -28,6 +28,7 @@ VLLM_GLM53_MK_MLA	'mla': True	[megakernel] armed=
 VLLM_GLM53_MK_MLA_PREFILL32	[megakernel] mla prefill32 LAUNCHED T=	[megakernel] mla prefill32 LAUNCHED T=
 VLLM_GLM53_PREFILL_SP	[prefill-sp] sequence-parallel prefill armed	[prefill-sp] sequence-parallel prefill armed
 VLLM_GLM53_EP_PREFILL_LOCAL	[ep-prefill-local] LAUNCHED full-token E72/I2048/top8 T=	[ep-prefill-local] LAUNCHED full-token E72/I2048/top8 T=
+VLLM_GLM53_TP_SF6_Q0	[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=	[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=
 # FP8=3 only: this marker is emitted after the packed exchange serves.
 VLLM_GLM53_PREFILL_SP_FP8	[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)	[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)
 VLLM_GLM53_PREFILL_SP_FUSE_MHC	[prefill-sp] FP8 unpack and MHC post fused	[prefill-sp] FP8 unpack and MHC post fused

@@ -95,7 +95,7 @@ def main():
     for line in (root/'build/glm53/manifest.tsv').read_text().splitlines():
         if not line or line.startswith('#'):continue
         name,target,*_=line.split('\t')
-        if '/flashinfer/' in target or name=='flashinfer_b12x_moe.py':
+        if '/flashinfer/' in target or name in ('flashinfer_b12x_moe.py', 'gpu_worker.py'):
             command+=['-v',f'{root / "build/glm53" / name}:{target}:ro']
     command+=capsule_runtime.docker_capsule_args(capsule,a.manifest_sha256)
     command += [a.image,'-B','/repo/probes/glm53_ep_short_decode_compile.py','--output','/evidence',

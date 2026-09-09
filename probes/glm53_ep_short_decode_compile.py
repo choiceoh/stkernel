@@ -24,9 +24,12 @@ CPU_TEST_MODULES = ('test_glm53_ep_micro_tile.py', 'test_glm53_ep_short_decode.p
                     'test_glm53_ep_micro_m16.py',
                     'test_glm53_tp_sf6_q0.py',
                     'test_moe_sf6_owner.py',
-                    'test_glm53_tp_sf6_q0_selftest.py')
+                    'test_glm53_tp_sf6_q0_selftest.py',
+                    'test_glm53_startup_trim.py')
 CONTRACT_PATHS = tuple('tests/'+name for name in CPU_TEST_MODULES) + (
     'probes/glm53_ep_short_decode_compile.py', 'probes/run_glm53_ep_short_decode_cpu.py',
+    'overlay/modules/glm53_runtime/gpu_worker.py', 'profiles/glm53.env',
+    'bench/proof.py', 'bench/proof-markers.tsv',
     'tests/test_glm53_ep_route_scale_cache.py',
     'measurements/glm53_ep_local_20260908/cpu13/stock-gated.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
@@ -50,7 +53,7 @@ def source_receipt(root, *, verify_mounted=False):
         if not line or line.startswith('#'):
             continue
         name, target, *_ = line.split('\t')
-        if '/flashinfer/' in target or name == 'flashinfer_b12x_moe.py':
+        if '/flashinfer/' in target or name in ('flashinfer_b12x_moe.py', 'gpu_worker.py'):
             assert target not in mounted, 'duplicate mounted source: '+target
             content = (root/'build/glm53'/name).read_bytes()
             if verify_mounted:

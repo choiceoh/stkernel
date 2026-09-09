@@ -1,0 +1,869 @@
+{
+  "verdict": "PASS",
+  "scope": "CPU21b archive integrity only; no new tests or GPU execution",
+  "original_verdict": "PASS",
+  "contracts": {
+    "tests_run": 151,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "original_files": 67,
+  "ptx": 30,
+  "cubin": 30,
+  "resource_logs": 6,
+  "source_revision": "028f98167376f0a0857c20c7ec89a3505c1a000f",
+  "scatter_sites": {
+    "m16-topk8-shared-a-direct-fp32": {
+      "path": "micro/m16-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "ptx_sha256": "48cfbfd07e1a20f899fd989184accd175d091296187966c20fd23a54cd67727e",
+      "static_instruction_sites": {
+        "fp32_v2": 64,
+        "bf16x2": 0
+      }
+    },
+    "m64-topk1-fp32": {
+      "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx",
+      "ptx_sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+      "static_instruction_sites": {
+        "fp32_v2": 4,
+        "bf16x2": 0
+      }
+    },
+    "m64-topk8-bf16": {
+      "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+      "ptx_sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+      "static_instruction_sites": {
+        "fp32_v2": 0,
+        "bf16x2": 4
+      }
+    }
+  },
+  "publication_sites": {
+    "m16-topk8-shared-a-direct-fp32": {
+      "ptx_sha256": "48cfbfd07e1a20f899fd989184accd175d091296187966c20fd23a54cd67727e",
+      "sites": [
+        {
+          "line_range": [
+            2934,
+            3287
+          ],
+          "fp32_red_sites": [
+            3122,
+            3135,
+            3143,
+            3151,
+            3159,
+            3167,
+            3175,
+            3183,
+            3223,
+            3236,
+            3244,
+            3252,
+            3260,
+            3268,
+            3276,
+            3284
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 2,
+          "metadata_weight_loads": 2,
+          "row_guards": [
+            3089,
+            3190
+          ],
+          "id_load_lines": [
+            3091,
+            3192
+          ],
+          "pre_barriers": [],
+          "post_barrier": 3287,
+          "instructions": {
+            "3122": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r2689, %r2688; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd179], {v0,v1}; }",
+            "3287": "bar.sync \t1, 64;"
+          }
+        },
+        {
+          "line_range": [
+            3288,
+            3621
+          ],
+          "fp32_red_sites": [
+            3456,
+            3468,
+            3476,
+            3484,
+            3492,
+            3500,
+            3508,
+            3516,
+            3558,
+            3570,
+            3578,
+            3586,
+            3594,
+            3602,
+            3610,
+            3618
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 2,
+          "metadata_weight_loads": 2,
+          "row_guards": [
+            3418,
+            3520
+          ],
+          "id_load_lines": [
+            3420,
+            3522
+          ],
+          "pre_barriers": [],
+          "post_barrier": 3621,
+          "instructions": {
+            "3456": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r2878, %r2877; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd208], {v0,v1}; }",
+            "3621": "bar.sync \t1, 64;"
+          }
+        },
+        {
+          "line_range": [
+            3622,
+            3953
+          ],
+          "fp32_red_sites": [
+            3788,
+            3800,
+            3808,
+            3816,
+            3824,
+            3832,
+            3840,
+            3848,
+            3890,
+            3902,
+            3910,
+            3918,
+            3926,
+            3934,
+            3942,
+            3950
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 2,
+          "metadata_weight_loads": 2,
+          "row_guards": [
+            3750,
+            3852
+          ],
+          "id_load_lines": [
+            3752,
+            3854
+          ],
+          "pre_barriers": [],
+          "post_barrier": 3953,
+          "instructions": {
+            "3788": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r3068, %r3067; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd247], {v0,v1}; }",
+            "3953": "bar.sync \t1, 64;"
+          }
+        },
+        {
+          "line_range": [
+            3954,
+            4300
+          ],
+          "fp32_red_sites": [
+            4131,
+            4143,
+            4151,
+            4159,
+            4167,
+            4175,
+            4183,
+            4191,
+            4237,
+            4249,
+            4257,
+            4265,
+            4273,
+            4281,
+            4289,
+            4297
+          ],
+          "shared_bf16_loads": 0,
+          "shared_stores": 0,
+          "proxy_fences": 0,
+          "metadata_id_loads": 2,
+          "metadata_weight_loads": 2,
+          "row_guards": [
+            4091,
+            4196
+          ],
+          "id_load_lines": [
+            4093,
+            4199
+          ],
+          "pre_barriers": [],
+          "post_barrier": 4300,
+          "instructions": {
+            "4131": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r3278, %r3277; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd286], {v0,v1}; }",
+            "4300": "bar.sync \t1, 64;"
+          }
+        }
+      ],
+      "scope": "four FC2 output unroll blocks, 16 register pairs per block; static sites are not runtime traffic counts"
+    },
+    "m64-topk1-fp32": {
+      "ptx_sha256": "21e3a6ab2efd1c38c10719df45acc64b6f41046e19152f80491efec4b75dab83",
+      "sites": [
+        {
+          "store_end": 4986,
+          "pre_barriers": [
+            4988
+          ],
+          "loads": [
+            5030,
+            5041
+          ],
+          "red": 5055,
+          "post_barrier": 5061,
+          "instructions": {
+            "4986": "st.shared.b32 \t[%r4449], %r4574;",
+            "4987": "fence.proxy.async.shared::cta;",
+            "4988": "bar.sync \t1, 128;",
+            "5030": "ld.shared.b16 \t%rs58, [%r4631];",
+            "5041": "ld.shared.b16 \t%rs59, [%r4641];",
+            "5055": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r4613, %r4612; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd205], {v0,v1}; }",
+            "5061": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5333,
+          "pre_barriers": [
+            5335
+          ],
+          "loads": [
+            5380,
+            5391
+          ],
+          "red": 5403,
+          "post_barrier": 5409,
+          "instructions": {
+            "5333": "st.shared.b32 \t[%r4449], %r4830;",
+            "5334": "fence.proxy.async.shared::cta;",
+            "5335": "bar.sync \t1, 128;",
+            "5380": "ld.shared.b16 \t%rs62, [%r4892];",
+            "5391": "ld.shared.b16 \t%rs63, [%r4902];",
+            "5403": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r4871, %r4870; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd208], {v0,v1}; }",
+            "5409": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5843,
+          "pre_barriers": [
+            5845
+          ],
+          "loads": [
+            5890,
+            5901
+          ],
+          "red": 5913,
+          "post_barrier": 5919,
+          "instructions": {
+            "5843": "st.shared.b32 \t[%r5126], %r5251;",
+            "5844": "fence.proxy.async.shared::cta;",
+            "5845": "bar.sync \t1, 128;",
+            "5890": "ld.shared.b16 \t%rs66, [%r5313];",
+            "5901": "ld.shared.b16 \t%rs67, [%r5323];",
+            "5913": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r5292, %r5291; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd211], {v0,v1}; }",
+            "5919": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 6191,
+          "pre_barriers": [
+            6193
+          ],
+          "loads": [
+            6238,
+            6249
+          ],
+          "red": 6261,
+          "post_barrier": 6267,
+          "instructions": {
+            "6191": "st.shared.b32 \t[%r5126], %r5530;",
+            "6192": "fence.proxy.async.shared::cta;",
+            "6193": "bar.sync \t1, 128;",
+            "6238": "ld.shared.b16 \t%rs70, [%r5592];",
+            "6249": "ld.shared.b16 \t%rs71, [%r5602];",
+            "6261": "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1; cvt.rn.satfinite.bf16x2.f32 packed, %r5571, %r5570; mov.b32 {h0,h1}, packed; cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1; red.relaxed.gpu.global.add.v2.f32 [%rd214], {v0,v1}; }",
+            "6267": "bar.sync \t1, 128;"
+          }
+        }
+      ],
+      "scope": "all four statically unrolled scatter copies; no runtime traffic count"
+    },
+    "m64-topk8-bf16": {
+      "ptx_sha256": "fb6cf34201731e4392b29957a3ef26a967510b7c06e444d2f51ee44e8f0d0fc3",
+      "sites": [
+        {
+          "store_end": 4989,
+          "pre_barriers": [],
+          "loads": [
+            5032,
+            5043
+          ],
+          "red": 5057,
+          "post_barrier": 5063,
+          "instructions": {
+            "4989": "st.shared.b32 \t[%r4452], %r4577;",
+            "4990": "fence.proxy.async.shared::cta;",
+            "5032": "ld.shared.b16 \t%rs58, [%r4634];",
+            "5043": "ld.shared.b16 \t%rs59, [%r4644];",
+            "5057": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r4616, %r4615; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd205], packed; }",
+            "5063": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5335,
+          "pre_barriers": [],
+          "loads": [
+            5381,
+            5392
+          ],
+          "red": 5404,
+          "post_barrier": 5410,
+          "instructions": {
+            "5335": "st.shared.b32 \t[%r4452], %r4833;",
+            "5336": "fence.proxy.async.shared::cta;",
+            "5381": "ld.shared.b16 \t%rs62, [%r4895];",
+            "5392": "ld.shared.b16 \t%rs63, [%r4905];",
+            "5404": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r4874, %r4873; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd208], packed; }",
+            "5410": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 5844,
+          "pre_barriers": [],
+          "loads": [
+            5890,
+            5901
+          ],
+          "red": 5913,
+          "post_barrier": 5919,
+          "instructions": {
+            "5844": "st.shared.b32 \t[%r5129], %r5254;",
+            "5845": "fence.proxy.async.shared::cta;",
+            "5890": "ld.shared.b16 \t%rs66, [%r5316];",
+            "5901": "ld.shared.b16 \t%rs67, [%r5326];",
+            "5913": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r5295, %r5294; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd211], packed; }",
+            "5919": "bar.sync \t1, 128;"
+          }
+        },
+        {
+          "store_end": 6191,
+          "pre_barriers": [],
+          "loads": [
+            6237,
+            6248
+          ],
+          "red": 6260,
+          "post_barrier": 6266,
+          "instructions": {
+            "6191": "st.shared.b32 \t[%r5129], %r5533;",
+            "6192": "fence.proxy.async.shared::cta;",
+            "6237": "ld.shared.b16 \t%rs70, [%r5595];",
+            "6248": "ld.shared.b16 \t%rs71, [%r5605];",
+            "6260": "{ .reg .b32 packed; cvt.rn.satfinite.bf16x2.f32 packed, %r5574, %r5573; red.relaxed.gpu.global.add.noftz.bf16x2 [%rd214], packed; }",
+            "6266": "bar.sync \t1, 128;"
+          }
+        }
+      ],
+      "scope": "all four statically unrolled scatter copies; no runtime traffic count"
+    }
+  },
+  "shared_fc1": {
+    "ptx_sha256": "48cfbfd07e1a20f899fd989184accd175d091296187966c20fd23a54cd67727e",
+    "stages": [
+      {
+        "line_range": [
+          4462,
+          4510
+        ],
+        "phase": 0,
+        "expected_bytes": 27648,
+        "destination_offsets": [
+          2048,
+          51200,
+          18432,
+          53248,
+          34816,
+          55296
+        ],
+        "barrier_offset": 16,
+        "instructions": {
+          "4461": "mov.b32 \t%r399, 27648;",
+          "4462": "mbarrier.arrive.expect_tx.shared.b64 %rd73, [%r4], %r399;",
+          "104": "add.s32 \t%r4, %r268, 16;",
+          "624": "add.s32 \t%r16, %r268, 51200;",
+          "4431": "add.s32 \t%r191, %r268, 2048;",
+          "4432": "add.s32 \t%r192, %r268, 18432;",
+          "4433": "add.s32 \t%r193, %r268, 34816;",
+          "4434": "add.s32 \t%r194, %r268, 53248;",
+          "4435": "add.s32 \t%r195, %r268, 55296;",
+          "4471": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r191], [%rd74, {%r200, %r401, %r3398}], [%r4], %rd75;",
+          "4480": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r16], [%rd76, {%r403, %r201, %r3398}], [%r4], %rd77;",
+          "4487": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r192], [%rd78, {%r200, %r199, %r196}], [%r4], %rd79;",
+          "4495": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r194], [%rd80, {%r406, %r201, %r198, %r196}], [%r4], %rd81;",
+          "4502": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r193], [%rd82, {%r200, %r197, %r196}], [%r4], %rd83;",
+          "4510": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r195], [%rd84, {%r409, %r201, %r3399, %r196}], [%r4], %rd85;"
+        }
+      },
+      {
+        "line_range": [
+          4529,
+          4578
+        ],
+        "phase": 1,
+        "expected_bytes": 27648,
+        "destination_offsets": [
+          10240,
+          52224,
+          26624,
+          54272,
+          43008,
+          56320
+        ],
+        "barrier_offset": 24,
+        "instructions": {
+          "4528": "mov.b32 \t%r412, 27648;",
+          "4529": "mbarrier.arrive.expect_tx.shared.b64 %rd86, [%r268+24], %r412;",
+          "4532": "add.s32 \t%r204, %r268, 24;",
+          "4539": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+10240], [%rd87, {%r203, %r414, %r3398}], [%r204], %rd88;",
+          "4548": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+52224], [%rd89, {%r416, %r205, %r3398}], [%r204], %rd90;",
+          "4555": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+26624], [%rd91, {%r203, %r199, %r196}], [%r204], %rd92;",
+          "4563": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+54272], [%rd93, {%r419, %r205, %r198, %r196}], [%r204], %rd94;",
+          "4570": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+43008], [%rd95, {%r203, %r197, %r196}], [%r204], %rd96;",
+          "4578": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+56320], [%rd97, {%r422, %r205, %r3399, %r196}], [%r204], %rd98;"
+        }
+      },
+      {
+        "line_range": [
+          4596,
+          4644
+        ],
+        "phase": 0,
+        "expected_bytes": 27648,
+        "destination_offsets": [
+          2048,
+          51200,
+          18432,
+          53248,
+          34816,
+          55296
+        ],
+        "barrier_offset": 16,
+        "instructions": {
+          "4595": "mov.b32 \t%r425, 27648;",
+          "4596": "mbarrier.arrive.expect_tx.shared.b64 %rd99, [%r4], %r425;",
+          "104": "add.s32 \t%r4, %r268, 16;",
+          "624": "add.s32 \t%r16, %r268, 51200;",
+          "4431": "add.s32 \t%r191, %r268, 2048;",
+          "4432": "add.s32 \t%r192, %r268, 18432;",
+          "4433": "add.s32 \t%r193, %r268, 34816;",
+          "4434": "add.s32 \t%r194, %r268, 53248;",
+          "4435": "add.s32 \t%r195, %r268, 55296;",
+          "4605": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r191], [%rd100, {%r207, %r427, %r3398}], [%r4], %rd101;",
+          "4614": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r16], [%rd102, {%r429, %r208, %r3398}], [%r4], %rd103;",
+          "4621": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r192], [%rd104, {%r207, %r199, %r196}], [%r4], %rd105;",
+          "4629": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r194], [%rd106, {%r432, %r208, %r198, %r196}], [%r4], %rd107;",
+          "4636": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r193], [%rd108, {%r207, %r197, %r196}], [%r4], %rd109;",
+          "4644": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r195], [%rd110, {%r435, %r208, %r3399, %r196}], [%r4], %rd111;"
+        }
+      },
+      {
+        "line_range": [
+          4662,
+          4710
+        ],
+        "phase": 1,
+        "expected_bytes": 27648,
+        "destination_offsets": [
+          10240,
+          52224,
+          26624,
+          54272,
+          43008,
+          56320
+        ],
+        "barrier_offset": 24,
+        "instructions": {
+          "4661": "mov.b32 \t%r439, 27648;",
+          "4662": "mbarrier.arrive.expect_tx.shared.b64 %rd112, [%r204], %r439;",
+          "4532": "add.s32 \t%r204, %r268, 24;",
+          "4671": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+10240], [%rd113, {%r210, %r441, %r3398}], [%r204], %rd114;",
+          "4680": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+52224], [%rd115, {%r443, %r211, %r3398}], [%r204], %rd116;",
+          "4687": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+26624], [%rd117, {%r210, %r199, %r196}], [%r204], %rd118;",
+          "4695": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+54272], [%rd119, {%r446, %r211, %r198, %r196}], [%r204], %rd120;",
+          "4702": "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+43008], [%rd121, {%r210, %r197, %r196}], [%r204], %rd122;",
+          "4710": "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r268+56320], [%rd123, {%r449, %r211, %r3399, %r196}], [%r204], %rd124;"
+        }
+      }
+    ],
+    "consumer_end_fc1_barrier": 1660,
+    "producer_end_fc1_barrier": 4715,
+    "first_fc2_tma": 4743,
+    "final_task_barriers": [
+      4304,
+      4860
+    ],
+    "static_tma_sites": 32,
+    "required_threads": 96,
+    "setmaxnreg_sites": 0,
+    "scope": "four statically unrolled combined FC1 stages plus four two-transfer FC2 stages; no DRAM traffic or speed measurement"
+  },
+  "micro_resources": [
+    {
+      "path": "micro/m16-topk8-shared-a-direct-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+      "sha256": "aeb33ee388e31a03f7890cd9b6f0d09ef1c0a0496f5061505416782d9e9e45ff",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_ten_0:\n  REG:157 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.cubin",
+      "sha256": "5c91db90159b02bf4eda94e4d161c36e81320e976a8f9882b7d39973c9ffa094",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo81_tensorptrf32gmemo81_tenso_0:\n  REG:222 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "micro/m64-topk8-bf16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.cubin",
+      "sha256": "f438c0674e92c9da22eee5e6eb5cb0e5e59ffde6447e63240a613077a8585b01",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_ten_0:\n  REG:220 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "micro_artifacts_identical_to_cpu20": [
+    "m16-topk8-shared-a-direct-fp32",
+    "m64-topk1-fp32",
+    "m64-topk8-bf16"
+  ],
+  "tp_sf6_observations": {
+    "stock": {
+      "ptx_sha256": "cb3feea87b7814e9c725b9fbc0a2e0a61c6a1b6a4cad03a381fd7b9afd616695",
+      "cubin_sha256": "54e2117adf7b28131f89bde3dba708e6e2f3d89d9871d373176da25ebae6844a",
+      "ptx_bytes": 1370394,
+      "cubin_bytes": 502000,
+      "resources": {
+        "REG": 168,
+        "STACK": 1648,
+        "SHARED": 1024,
+        "LOCAL": 0
+      },
+      "local_declarations": [
+        [
+          55,
+          ".local .align 32 .b8 \t__local_depot0[128];"
+        ]
+      ],
+      "whole_kernel_static_local_sites": {
+        "loads": 197,
+        "stores": 36
+      },
+      "before_first_mma_role_line": 11898,
+      "q0_static_local_sites": {
+        "loads": 193,
+        "stores": 31
+      },
+      "after_first_mma_role_static_local_sites": {
+        "loads": 4,
+        "stores": 5
+      },
+      "local_instruction_lines": {
+        "985": "st.local.b32 \t[%rd129], %r1113;",
+        "993": "st.local.b32 \t[%rd129+4], %r1114;",
+        "1001": "st.local.b32 \t[%rd129+8], %r1115;",
+        "1009": "st.local.b32 \t[%rd129+12], %r1116;",
+        "1017": "st.local.b32 \t[%rd129+16], %r1117;",
+        "1025": "st.local.b32 \t[%rd129+20], %r1118;",
+        "1033": "st.local.b32 \t[%rd129+24], %r1119;",
+        "1041": "st.local.b32 \t[%rd129+28], %r1120;",
+        "1049": "st.local.b32 \t[%rd129+32], %r1121;",
+        "1057": "st.local.b32 \t[%rd129+36], %r1122;",
+        "1065": "st.local.b32 \t[%rd129+40], %r1123;",
+        "1073": "st.local.b32 \t[%rd129+44], %r1124;",
+        "1081": "st.local.b32 \t[%rd129+48], %r1125;",
+        "1089": "st.local.b32 \t[%rd129+52], %r1126;",
+        "1097": "st.local.b32 \t[%rd129+56], %r1127;",
+        "1105": "st.local.b32 \t[%rd129+60], %r1128;",
+        "1127": "st.local.b32 \t[%rd163], %r1147;",
+        "1135": "st.local.b32 \t[%rd163+4], %r1148;",
+        "1143": "st.local.b32 \t[%rd163+8], %r1149;",
+        "1151": "st.local.b32 \t[%rd163+12], %r1150;",
+        "1159": "st.local.b32 \t[%rd163+16], %r1151;",
+        "1167": "st.local.b32 \t[%rd163+20], %r1152;",
+        "1175": "st.local.b32 \t[%rd163+24], %r1153;",
+        "1183": "st.local.b32 \t[%rd163+28], %r1154;",
+        "1201": "st.local.b32 \t[%rd181], %r1165;",
+        "1209": "st.local.b32 \t[%rd181+4], %r1166;",
+        "1217": "st.local.b32 \t[%rd181+8], %r1167;",
+        "1225": "st.local.b32 \t[%rd181+12], %r1168;",
+        "1241": "st.local.b32 \t[%rd12], %r1173;",
+        "1251": "st.local.b32 \t[%rd12+4], %r1176;",
+        "1260": "st.local.b32 \t[%rd12+8], %r1179;",
+        "1263": "ld.local.b32 \t%r5148, [%rd7];",
+        "1407": "ld.local.b32 \t%r1230, [%rd196];",
+        "1409": "ld.local.b64 \t%rd197, [%rd196+4];",
+        "1413": "ld.local.v2.b64 \t{%rd198, %rd199}, [%rd196+12];",
+        "1420": "ld.local.v2.b64 \t{%rd200, %rd201}, [%rd196+28];",
+        "1427": "ld.local.v2.b64 \t{%rd202, %rd203}, [%rd196+44];",
+        "1434": "ld.local.b32 \t%r1245, [%rd196+60];",
+        "1464": "ld.local.b32 \t%r1261, [%rd205];",
+        "1466": "ld.local.b32 \t%r1262, [%rd205+4];",
+        "1468": "ld.local.b32 \t%r1263, [%rd205+8];",
+        "1470": "ld.local.b32 \t%r1264, [%rd205+12];",
+        "1472": "ld.local.b32 \t%r1265, [%rd205+16];",
+        "1474": "ld.local.b32 \t%r1266, [%rd205+20];",
+        "1476": "ld.local.b32 \t%r1267, [%rd205+24];",
+        "1478": "ld.local.b32 \t%r1268, [%rd205+28];",
+        "1496": "ld.local.b32 \t%r1276, [%rd207];",
+        "1498": "ld.local.b32 \t%r1277, [%rd207+4];",
+        "1500": "ld.local.b32 \t%r1278, [%rd207+8];",
+        "1502": "ld.local.b32 \t%r1279, [%rd207+12];",
+        "1514": "ld.local.b32 \t%r1283, [%rd13];",
+        "1519": "ld.local.b32 \t%r1284, [%rd13+4];",
+        "1523": "ld.local.b32 \t%r1285, [%rd13+8];",
+        "2056": "ld.local.b32 \t%r1550, [%rd14];",
+        "2209": "ld.local.b32 \t%r1612, [%rd14+4];",
+        "2373": "ld.local.b32 \t%r1676, [%rd256];",
+        "2667": "ld.local.b32 \t%r1783, [%rd265];",
+        "2669": "ld.local.b64 \t%rd266, [%rd265+4];",
+        "2673": "ld.local.v2.b64 \t{%rd267, %rd268}, [%rd265+12];",
+        "2680": "ld.local.v2.b64 \t{%rd269, %rd270}, [%rd265+28];",
+        "2687": "ld.local.v2.b64 \t{%rd271, %rd272}, [%rd265+44];",
+        "2694": "ld.local.b32 \t%r1798, [%rd265+60];",
+        "2724": "ld.local.b32 \t%r1814, [%rd274];",
+        "2726": "ld.local.b32 \t%r1815, [%rd274+4];",
+        "2728": "ld.local.b32 \t%r1816, [%rd274+8];",
+        "2730": "ld.local.b32 \t%r1817, [%rd274+12];",
+        "2732": "ld.local.b32 \t%r1818, [%rd274+16];",
+        "2734": "ld.local.b32 \t%r1819, [%rd274+20];",
+        "2736": "ld.local.b32 \t%r1820, [%rd274+24];",
+        "2738": "ld.local.b32 \t%r1821, [%rd274+28];",
+        "2756": "ld.local.b32 \t%r1829, [%rd276];",
+        "2758": "ld.local.b32 \t%r1830, [%rd276+4];",
+        "2760": "ld.local.b32 \t%r1831, [%rd276+8];",
+        "2762": "ld.local.b32 \t%r1832, [%rd276+12];",
+        "2774": "ld.local.b32 \t%r1836, [%rd15];",
+        "2779": "ld.local.b32 \t%r1837, [%rd15+4];",
+        "2783": "ld.local.b32 \t%r1838, [%rd15+8];",
+        "3314": "ld.local.b32 \t%r2103, [%rd16];",
+        "3466": "ld.local.b32 \t%r2164, [%rd16+4];",
+        "3630": "ld.local.b32 \t%r2228, [%rd325];",
+        "3923": "ld.local.b32 \t%r2334, [%rd334];",
+        "3925": "ld.local.b64 \t%rd335, [%rd334+4];",
+        "3929": "ld.local.v2.b64 \t{%rd336, %rd337}, [%rd334+12];",
+        "3936": "ld.local.v2.b64 \t{%rd338, %rd339}, [%rd334+28];",
+        "3943": "ld.local.v2.b64 \t{%rd340, %rd341}, [%rd334+44];",
+        "3950": "ld.local.b32 \t%r2349, [%rd334+60];",
+        "3980": "ld.local.b32 \t%r2365, [%rd343];",
+        "3982": "ld.local.b32 \t%r2366, [%rd343+4];",
+        "3984": "ld.local.b32 \t%r2367, [%rd343+8];",
+        "3986": "ld.local.b32 \t%r2368, [%rd343+12];",
+        "3988": "ld.local.b32 \t%r2369, [%rd343+16];",
+        "3990": "ld.local.b32 \t%r2370, [%rd343+20];",
+        "3992": "ld.local.b32 \t%r2371, [%rd343+24];",
+        "3994": "ld.local.b32 \t%r2372, [%rd343+28];",
+        "4012": "ld.local.b32 \t%r2380, [%rd345];",
+        "4014": "ld.local.b32 \t%r2381, [%rd345+4];",
+        "4016": "ld.local.b32 \t%r2382, [%rd345+8];",
+        "4018": "ld.local.b32 \t%r2383, [%rd345+12];",
+        "4030": "ld.local.b32 \t%r2387, [%rd17];",
+        "4035": "ld.local.b32 \t%r2388, [%rd17+4];",
+        "4039": "ld.local.b32 \t%r2389, [%rd17+8];",
+        "4570": "ld.local.b32 \t%r2654, [%rd18];",
+        "4722": "ld.local.b32 \t%r2715, [%rd18+4];",
+        "4886": "ld.local.b32 \t%r2779, [%rd394];",
+        "5179": "ld.local.b32 \t%r2885, [%rd403];",
+        "5181": "ld.local.b64 \t%rd404, [%rd403+4];",
+        "5185": "ld.local.v2.b64 \t{%rd405, %rd406}, [%rd403+12];",
+        "5192": "ld.local.v2.b64 \t{%rd407, %rd408}, [%rd403+28];",
+        "5199": "ld.local.v2.b64 \t{%rd409, %rd410}, [%rd403+44];",
+        "5206": "ld.local.b32 \t%r2900, [%rd403+60];",
+        "5236": "ld.local.b32 \t%r2916, [%rd412];",
+        "5238": "ld.local.b32 \t%r2917, [%rd412+4];",
+        "5240": "ld.local.b32 \t%r2918, [%rd412+8];",
+        "5242": "ld.local.b32 \t%r2919, [%rd412+12];",
+        "5244": "ld.local.b32 \t%r2920, [%rd412+16];",
+        "5246": "ld.local.b32 \t%r2921, [%rd412+20];",
+        "5248": "ld.local.b32 \t%r2922, [%rd412+24];",
+        "5250": "ld.local.b32 \t%r2923, [%rd412+28];",
+        "5268": "ld.local.b32 \t%r2931, [%rd414];",
+        "5270": "ld.local.b32 \t%r2932, [%rd414+4];",
+        "5272": "ld.local.b32 \t%r2933, [%rd414+8];",
+        "5274": "ld.local.b32 \t%r2934, [%rd414+12];",
+        "5286": "ld.local.b32 \t%r2938, [%rd19];",
+        "5291": "ld.local.b32 \t%r2939, [%rd19+4];",
+        "5295": "ld.local.b32 \t%r2940, [%rd19+8];",
+        "5826": "ld.local.b32 \t%r3205, [%rd20];",
+        "5978": "ld.local.b32 \t%r3266, [%rd20+4];",
+        "6142": "ld.local.b32 \t%r3330, [%rd463];",
+        "6435": "ld.local.b32 \t%r3436, [%rd472];",
+        "6437": "ld.local.b64 \t%rd473, [%rd472+4];",
+        "6441": "ld.local.v2.b64 \t{%rd474, %rd475}, [%rd472+12];",
+        "6448": "ld.local.v2.b64 \t{%rd476, %rd477}, [%rd472+28];",
+        "6455": "ld.local.v2.b64 \t{%rd478, %rd479}, [%rd472+44];",
+        "6462": "ld.local.b32 \t%r3451, [%rd472+60];",
+        "6492": "ld.local.b32 \t%r3467, [%rd481];",
+        "6494": "ld.local.b32 \t%r3468, [%rd481+4];",
+        "6496": "ld.local.b32 \t%r3469, [%rd481+8];",
+        "6498": "ld.local.b32 \t%r3470, [%rd481+12];",
+        "6500": "ld.local.b32 \t%r3471, [%rd481+16];",
+        "6502": "ld.local.b32 \t%r3472, [%rd481+20];",
+        "6504": "ld.local.b32 \t%r3473, [%rd481+24];",
+        "6506": "ld.local.b32 \t%r3474, [%rd481+28];",
+        "6524": "ld.local.b32 \t%r3482, [%rd483];",
+        "6526": "ld.local.b32 \t%r3483, [%rd483+4];",
+        "6528": "ld.local.b32 \t%r3484, [%rd483+8];",
+        "6530": "ld.local.b32 \t%r3485, [%rd483+12];",
+        "6542": "ld.local.b32 \t%r3489, [%rd21];",
+        "6547": "ld.local.b32 \t%r3490, [%rd21+4];",
+        "6551": "ld.local.b32 \t%r3491, [%rd21+8];",
+        "7082": "ld.local.b32 \t%r3756, [%rd22];",
+        "7234": "ld.local.b32 \t%r3817, [%rd22+4];",
+        "7398": "ld.local.b32 \t%r3881, [%rd532];",
+        "7691": "ld.local.b32 \t%r3987, [%rd541];",
+        "7693": "ld.local.b64 \t%rd542, [%rd541+4];",
+        "7697": "ld.local.v2.b64 \t{%rd543, %rd544}, [%rd541+12];",
+        "7704": "ld.local.v2.b64 \t{%rd545, %rd546}, [%rd541+28];",
+        "7711": "ld.local.v2.b64 \t{%rd547, %rd548}, [%rd541+44];",
+        "7718": "ld.local.b32 \t%r4002, [%rd541+60];",
+        "7748": "ld.local.b32 \t%r4018, [%rd550];",
+        "7750": "ld.local.b32 \t%r4019, [%rd550+4];",
+        "7752": "ld.local.b32 \t%r4020, [%rd550+8];",
+        "7754": "ld.local.b32 \t%r4021, [%rd550+12];",
+        "7756": "ld.local.b32 \t%r4022, [%rd550+16];",
+        "7758": "ld.local.b32 \t%r4023, [%rd550+20];",
+        "7760": "ld.local.b32 \t%r4024, [%rd550+24];",
+        "7762": "ld.local.b32 \t%r4025, [%rd550+28];",
+        "7780": "ld.local.b32 \t%r4033, [%rd552];",
+        "7782": "ld.local.b32 \t%r4034, [%rd552+4];",
+        "7784": "ld.local.b32 \t%r4035, [%rd552+8];",
+        "7786": "ld.local.b32 \t%r4036, [%rd552+12];",
+        "7798": "ld.local.b32 \t%r4040, [%rd23];",
+        "7803": "ld.local.b32 \t%r4041, [%rd23+4];",
+        "7807": "ld.local.b32 \t%r4042, [%rd23+8];",
+        "8338": "ld.local.b32 \t%r4307, [%rd24];",
+        "8490": "ld.local.b32 \t%r4368, [%rd24+4];",
+        "8654": "ld.local.b32 \t%r4432, [%rd601];",
+        "8947": "ld.local.b32 \t%r4538, [%rd610];",
+        "8949": "ld.local.b64 \t%rd611, [%rd610+4];",
+        "8953": "ld.local.v2.b64 \t{%rd612, %rd613}, [%rd610+12];",
+        "8960": "ld.local.v2.b64 \t{%rd614, %rd615}, [%rd610+28];",
+        "8967": "ld.local.v2.b64 \t{%rd616, %rd617}, [%rd610+44];",
+        "8974": "ld.local.b32 \t%r4553, [%rd610+60];",
+        "9004": "ld.local.b32 \t%r4569, [%rd619];",
+        "9006": "ld.local.b32 \t%r4570, [%rd619+4];",
+        "9008": "ld.local.b32 \t%r4571, [%rd619+8];",
+        "9010": "ld.local.b32 \t%r4572, [%rd619+12];",
+        "9012": "ld.local.b32 \t%r4573, [%rd619+16];",
+        "9014": "ld.local.b32 \t%r4574, [%rd619+20];",
+        "9016": "ld.local.b32 \t%r4575, [%rd619+24];",
+        "9018": "ld.local.b32 \t%r4576, [%rd619+28];",
+        "9036": "ld.local.b32 \t%r4584, [%rd621];",
+        "9038": "ld.local.b32 \t%r4585, [%rd621+4];",
+        "9040": "ld.local.b32 \t%r4586, [%rd621+8];",
+        "9042": "ld.local.b32 \t%r4587, [%rd621+12];",
+        "9054": "ld.local.b32 \t%r4591, [%rd25];",
+        "9059": "ld.local.b32 \t%r4592, [%rd25+4];",
+        "9063": "ld.local.b32 \t%r4593, [%rd25+8];",
+        "9594": "ld.local.b32 \t%r4858, [%rd26];",
+        "9746": "ld.local.b32 \t%r4919, [%rd26+4];",
+        "9910": "ld.local.b32 \t%r4983, [%rd670];",
+        "10203": "ld.local.b32 \t%r5089, [%rd679];",
+        "10205": "ld.local.b64 \t%rd680, [%rd679+4];",
+        "10209": "ld.local.v2.b64 \t{%rd681, %rd682}, [%rd679+12];",
+        "10216": "ld.local.v2.b64 \t{%rd683, %rd684}, [%rd679+28];",
+        "10223": "ld.local.v2.b64 \t{%rd685, %rd686}, [%rd679+44];",
+        "10230": "ld.local.b32 \t%r5104, [%rd679+60];",
+        "10260": "ld.local.b32 \t%r5120, [%rd688];",
+        "10262": "ld.local.b32 \t%r5121, [%rd688+4];",
+        "10264": "ld.local.b32 \t%r5122, [%rd688+8];",
+        "10266": "ld.local.b32 \t%r5123, [%rd688+12];",
+        "10268": "ld.local.b32 \t%r5124, [%rd688+16];",
+        "10270": "ld.local.b32 \t%r5125, [%rd688+20];",
+        "10272": "ld.local.b32 \t%r5126, [%rd688+24];",
+        "10274": "ld.local.b32 \t%r5127, [%rd688+28];",
+        "10292": "ld.local.b32 \t%r5135, [%rd690];",
+        "10294": "ld.local.b32 \t%r5136, [%rd690+4];",
+        "10296": "ld.local.b32 \t%r5137, [%rd690+8];",
+        "10298": "ld.local.b32 \t%r5138, [%rd690+12];",
+        "10310": "ld.local.b32 \t%r5142, [%rd27];",
+        "10315": "ld.local.b32 \t%r5143, [%rd27+4];",
+        "10319": "ld.local.b32 \t%r5144, [%rd27+8];",
+        "10850": "ld.local.b32 \t%r5411, [%rd28];",
+        "11002": "ld.local.b32 \t%r5472, [%rd28+4];",
+        "11166": "ld.local.b32 \t%r5536, [%rd739];",
+        "12289": "st.local.v4.b32 \t[%rd6+16], {0, 0, 0, 0};",
+        "12290": "st.local.v4.b32 \t[%rd6], {0, 0, 0, 0};",
+        "12291": "st.local.v2.b32 \t[%rd5], {0, 0};",
+        "22509": "st.local.b64 \t[%rd1208], %rd1408;",
+        "22588": "ld.local.b32 \t%r20762, [%rd32];",
+        "22594": "st.local.b32 \t[%rd32], %r20767;",
+        "22644": "ld.local.v2.b32 \t{%r20788, %r20789}, [%rd1210];",
+        "22812": "ld.local.b32 \t%r423, [%rd5];",
+        "22871": "ld.local.b32 \t%r424, [%rd5+4];"
+      },
+      "scope": "static PTX local-address-space instruction sites; includes vector instructions, not dynamic traffic or spill attribution; LOCAL0 does not mean no local accesses"
+    },
+    "q0-cache": {
+      "ptx_sha256": "9a8e4ed1695a29169b940b7f072af6fc4aac9fe4976a754b93d94df51f4dbf89",
+      "cubin_sha256": "bcc84005f6fd083075564294b98b59bbaf2cd2a680aee36b21367c84bc29eb74",
+      "ptx_bytes": 1074676,
+      "cubin_bytes": 316344,
+      "resources": {
+        "REG": 168,
+        "STACK": 112,
+        "SHARED": 1024,
+        "LOCAL": 0
+      },
+      "local_declarations": [
+        [
+          55,
+          ".local .align 32 .b8 \t__local_depot0[64];"
+        ]
+      ],
+      "whole_kernel_static_local_sites": {
+        "loads": 4,
+        "stores": 5
+      },
+      "before_first_mma_role_line": 2848,
+      "q0_static_local_sites": {
+        "loads": 0,
+        "stores": 0
+      },
+      "after_first_mma_role_static_local_sites": {
+        "loads": 4,
+        "stores": 5
+      },
+      "local_instruction_lines": {
+        "3098": "st.local.v4.b32 \t[%rd6+16], {0, 0, 0, 0};",
+        "3099": "st.local.v4.b32 \t[%rd6], {0, 0, 0, 0};",
+        "3100": "st.local.v2.b32 \t[%rd5], {0, 0};",
+        "13543": "st.local.b64 \t[%rd651], %rd827;",
+        "13622": "ld.local.b32 \t%r16724, [%rd16];",
+        "13628": "st.local.b32 \t[%rd16], %r16729;",
+        "13678": "ld.local.v2.b32 \t{%r16750, %r16751}, [%rd653];",
+        "13846": "ld.local.b32 \t%r364, [%rd5];",
+        "13905": "ld.local.b32 \t%r365, [%rd5+4];"
+      },
+      "scope": "static PTX local-address-space instruction sites; includes vector instructions, not dynamic traffic or spill attribution; LOCAL0 does not mean no local accesses"
+    }
+  },
+  "previous_result_sha256": "905b23b6eab73a6f9765655552d005a1b91ffea6daf4a4f8d4e89d90507b0ed4",
+  "previous_candidate_ptx_sha256": "48cfbfd07e1a20f899fd989184accd175d091296187966c20fd23a54cd67727e",
+  "previous_static_tma_sites": 32,
+  "evidence_tar_sha256": "d33558e04ccfdd429f2d4c12673172114fdf651367f5af295114e1111159b693",
+  "result_sha256": "b4bfcb1c13885939553a1e5c56fb65595a5a5f78c6e73001d3c3eee24396a725"
+}

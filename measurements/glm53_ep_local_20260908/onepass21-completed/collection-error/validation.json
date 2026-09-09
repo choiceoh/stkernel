@@ -1,0 +1,32 @@
+{
+  "arm_container_proof": false,
+  "cpu21_result_sha256": "b4bfcb1c13885939553a1e5c56fb65595a5a5f78c6e73001d3c3eee24396a725",
+  "full_sanitizer_acceptance": false,
+  "nodes": {
+    "10.10.10.1": {
+      "validation_error": "malformed node or string on line 1: Attribute(value=Name(id='torch', ctx=Load()), attr='int32', ctx=Load())"
+    },
+    "10.10.10.3": {
+      "validation_error": "malformed node or string on line 1: Attribute(value=Name(id='torch', ctx=Load()), attr='int32', ctx=Load())"
+    },
+    "10.10.10.4": {
+      "validation_error": "malformed node or string on line 1: Attribute(value=Name(id='torch', ctx=Load()), attr='int32', ctx=Load())"
+    },
+    "local": {
+      "validation_error": "malformed node or string on line 1: Attribute(value=Name(id='torch', ctx=Load()), attr='int32', ctx=Load())"
+    }
+  },
+  "occurrence": 0,
+  "performance_acceptance": false,
+  "revision": "028f98167376f0a0857c20c7ec89a3505c1a000f",
+  "runtime_scope": {
+    "cpu_bindings": "13.0.3",
+    "cpu_serving_runtime_equal": false,
+    "cuda_python_paired_metadata_recorded": false,
+    "serving_bindings": "13.3.1",
+    "serving_runtime_four_rank_comparison": true
+  },
+  "schema": 1,
+  "strict_snapshot_required_separately": true,
+  "verdict": "INCOMPLETE_OR_REJECTED"
+}

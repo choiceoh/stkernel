@@ -100,6 +100,7 @@ _GLM53_EP_PREFILL_LOCAL = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
 
 
 _TP_SF6_Q0_ENABLED = os.environ.get("VLLM_GLM53_TP_SF6_Q0") == "1"
+_TP_SF6_Q0_LAUNCH_LOGGED = False
 
 
 def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
@@ -4278,6 +4279,7 @@ def launch_sm120_dynamic_moe(
     _tp_sf6_q0_override: bool | None = None,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
+    global _TP_SF6_Q0_LAUNCH_LOGGED
     activation_precision = _normalize_activation_precision(activation_precision)
     if activation_precision == "bf16":
         raise ValueError(
@@ -4368,6 +4370,19 @@ def launch_sm120_dynamic_moe(
         workspace.task_capacity,
     )
     compiled(*runtime_args)
+    # Canary overrides and graph capture are not a production launch witness.
+    # Keep this after the actual call and emit once without adding a GPU sync.
+    if (_TP_SF6_Q0_ENABLED and _tp_sf6_q0_override is None and not _TP_SF6_Q0_LAUNCH_LOGGED
+            and _tp_sf6_q0_eligible(
+                enabled=_TP_SF6_Q0_ENABLED, E=num_experts, m=num_tokens,
+                k=k, n=n, num_topk=top_k, tile_m=workspace.tile_m,
+                quant_mode=quant_mode, tiled=bool(getattr(weights, "tiled", False)),
+                reform_sf_pack=direct_sf6, activation=activation,
+                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
+            and not torch.cuda.is_current_stream_capturing()):
+        print("[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=" + str(num_tokens), flush=True)
+        _TP_SF6_Q0_LAUNCH_LOGGED = True
     if ep_local:
         # CuTe and copy_ use the current PyTorch stream; completion of all
         # atomic updates precedes this single FP32 -> BF16 conversion.

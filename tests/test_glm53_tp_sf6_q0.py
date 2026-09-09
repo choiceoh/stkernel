@@ -143,6 +143,54 @@ class SourceContracts(unittest.TestCase):
   self.assertEqual(key(**args),expected)
   self.assertEqual(key(**(args|dict(tp_sf6_q0=True))),expected+('glm53_tp_sf6_q0_v1',))
 
+ def test_marker_requires_successful_production_launch_not_canary_capture_or_fallback(self):
+  fn=function(DISPATCH,'launch_sm120_dynamic_moe')
+  start=next(i for i,n in enumerate(fn.body) if isinstance(n,ast.Expr)
+   and isinstance(n.value,ast.Call) and ast.unparse(n.value.func)=='compiled')
+  tail=copy.deepcopy(fn);tail.name='launch_tail';tail.args=ast.arguments(posonlyargs=[],args=[],kwonlyargs=[],kw_defaults=[],defaults=[])
+  tail.returns=None;tail.body=[n for n in fn.body if isinstance(n,ast.Global)]+fn.body[start:]
+  gate=load(DISPATCH,'_tp_sf6_q0_eligible',{})
+  def harness(**changes):
+   events=[]
+   def compiled(*args):
+    self.assertEqual(args,('unchanged',));events.append('compiled')
+    if changes.get('fail'):raise RuntimeError('launch failed')
+   def capture():events.append('capture-check');return changes.get('capture',False)
+   def emit(message,flush=False):
+    self.assertTrue(flush);events.append(message)
+   ns=dict(_TP_SF6_Q0_LAUNCH_LOGGED=False,_TP_SF6_Q0_ENABLED=True,
+    _tp_sf6_q0_override=None,_tp_sf6_q0_eligible=gate,compiled=compiled,
+    runtime_args=('unchanged',),torch=SimpleNamespace(cuda=SimpleNamespace(is_current_stream_capturing=capture)),
+    num_experts=288,num_tokens=6912,k=4096,n=512,top_k=8,workspace=SimpleNamespace(tile_m=128),
+    weights=SimpleNamespace(tiled=True),quant_mode='nvfp4',direct_sf6=True,
+    activation='swigluoai_uninterleave',swiglu_alpha=1.,swiglu_beta=0.,swiglu_limit=10.,
+    input_gs_is_shared=False,ep_local=False,scatter_output=object(),print=emit)
+   ns.update(changes);execute([tail],ns);return ns,events
+  for tokens in (4096,6912,8192):
+   ns,events=harness(num_tokens=tokens)
+   self.assertIs(ns['launch_tail'](),ns['scatter_output'])
+   self.assertEqual(events,['compiled','capture-check',f'[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T={tokens}'])
+   self.assertTrue(ns['_TP_SF6_Q0_LAUNCH_LOGGED'])
+   ns['launch_tail']();self.assertEqual(events[-1],'compiled');self.assertEqual(len(events),4)
+  for changes in ({'_tp_sf6_q0_override':True},{'_tp_sf6_q0_override':False},
+                  {'_TP_SF6_Q0_ENABLED':False},{'num_tokens':2048},{'num_tokens':8193},
+                  {'direct_sf6':False},{'weights':SimpleNamespace(tiled=False)},
+                  {'input_gs_is_shared':True},{'capture':True}):
+   with self.subTest(changes=changes):
+    ns,events=harness(**changes);ns['launch_tail']()
+    self.assertFalse(ns['_TP_SF6_Q0_LAUNCH_LOGGED'])
+    self.assertEqual(events,['compiled','capture-check'] if changes.get('capture') else ['compiled'])
+  ns,events=harness(fail=True)
+  with self.assertRaisesRegex(RuntimeError,'launch failed'):ns['launch_tail']()
+  self.assertEqual(events,['compiled']);self.assertFalse(ns['_TP_SF6_Q0_LAUNCH_LOGGED'])
+  ns,events=harness(_TP_SF6_Q0_ENABLED=False)
+  def forbidden_gate(**kwargs):raise AssertionError('disabled baseline must short-circuit eligibility')
+  ns['_tp_sf6_q0_eligible']=forbidden_gate
+  ns['launch_tail']();self.assertEqual(events,['compiled'])
+  marker=[line.split('\t') for line in (ROOT/'bench/proof-markers.tsv').read_text().splitlines()
+          if line.startswith('VLLM_GLM53_TP_SF6_Q0\t')]
+  self.assertEqual(marker,[['VLLM_GLM53_TP_SF6_Q0']+['[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=']*2])
+
 class ProducerContracts(unittest.TestCase):
  def test_all_eight_tp_routes_including_zero_weights_match_stock_global_allocation(self):
   stock=next(n for n in ast.walk(ast.parse(gzip.decompress(STOCK.read_bytes()))) if isinstance(n,ast.FunctionDef) and n.name=='initialize_route_q0_and_publish')
