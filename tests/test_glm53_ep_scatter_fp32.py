@@ -189,6 +189,7 @@ class RuntimeTests(unittest.TestCase):
             events.append(('launch',args[25]))
             if failure: raise RuntimeError('kernel failed')
         ns.update(_normalize_activation_precision=lambda x:x,_check_memref_limit=lambda *a:None,
+            _TP_SF6_Q0_ENABLED=False,
             _normalize_quant_mode=lambda q,a:q,_expand_to_experts=lambda x,n:x,
             _scale_runtime_addresses=lambda *a,**kw:(11,12),
             _ep_local_prefill_kernel=lambda **kw:object() if ep else None,
