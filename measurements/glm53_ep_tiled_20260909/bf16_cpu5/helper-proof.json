@@ -1,0 +1,11 @@
+{
+  "helper": {
+    "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py",
+    "sha256": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+    "size": 87909,
+    "helper": "scatter_add_v4_bf16x2"
+  },
+  "source": "e88f5fd368ef8c895000496101fc7fcf8e7fb344",
+  "result_sha256": "8c39170913365b171f39f257ab10f4bbe0192900767c3de373d6f9f31bddbff9",
+  "scope": "actual imported helper source path, complete file SHA and size from CPU result; source-bound probe also asserts imported helper object identity before lowering; not a host filesystem substitution"
+}
