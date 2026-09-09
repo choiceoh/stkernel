@@ -54,6 +54,12 @@ def stages():
         '--specs', 'u|v|t|t,q', '--m', '8', '--max-rows', '640'], '3g', True
     yield 'sf-expand', ['probes/moe_reform_sf6_check.py', '--cpu',
         '--out', '/evidence/result.json'], '3g', True
+    yield 'sf-unpack-codegen', ['probes/sf6_unpack_compile.py', '--cpu',
+        '--out', '/evidence/result.json'], '3g', True
+    for unpack in ('0', '1'):
+        yield 'sf-unpack-'+unpack, ['probes/b12x_static_compile_check.py',
+            '--specs', 't,r,sf6|t,q', '--m', '6', '--max-rows', '640',
+            '--dynamic', 'sf6', '--tile-m', '128', '--sf6-unpack', unpack], '3g', True
     for tile_m in (128,):
         yield 'sf-direct-tm'+str(tile_m), ['probes/b12x_static_compile_check.py',
             '--specs', 't,r,sf6', '--m', '80', '--max-rows', '640',
@@ -78,15 +84,30 @@ def validate_compile_log(payload, text):
                  'sf6': ['dynamic tiled=True sf6=True tm='+option(payload,'--tile-m','128')]}[dynamic]
     assert sorted(actual) == sorted(expected), ('requested kernels did not all compile', expected, actual)
     assert re.search(r'^VERDICT: PASS\s*$', text, re.M), 'missing compiler verdict'
+    if '--sf6-unpack' in payload:
+        assert re.findall(r'^SF6_UNPACK_U8X4: ([01])\s*$', text, re.M) == [
+            option(payload, '--sf6-unpack')], 'requested SF6 unpack mode was not latched'
 
 
 def validate_stage(stage, payload, output):
     if stage == 'contracts':
         result = json.loads((output/'result.json').read_text())
         assert result['passed'] is True and result['coverage_complete'] is True, result
-    elif stage.startswith('transport-') or stage in ('sf-expand', 'sf-wrapper'):
+    elif stage.startswith('transport-') or stage in ('sf-expand', 'sf-wrapper', 'sf-unpack-codegen'):
         result = json.loads((output/'result.json').read_text())
         assert result['status'] == 'PASS', result
+        if stage == 'sf-unpack-codegen':
+            assert result['mode'] == 'cpu' and result['cuda_initialized'] is False, result
+            assert result['evidence'] == 'isolated-unpack-compile-only', result
+            assert sorted((c['words'], c['arm']) for c in result['cases']) == [
+                (words, arm) for words in (1, 4, 8) for arm in ('scalar', 'u8x4')], result
+            for case in result['cases']:
+                assert set(case['artifacts']) == {'ptx', 'cubin', 'sass'}, case
+                for artifact in case['artifacts'].values():
+                    path = output / artifact['path']
+                    assert path.parent == output and path.is_file(), artifact
+                    contents = path.read_bytes()
+                    assert contents and hashlib.sha256(contents).hexdigest() == artifact['sha256'], artifact
         if stage.startswith('transport-'):
             assert result['evidence'] == 'compile-only', result
             assert result['modes'] == [int(option(payload, '--compact')),

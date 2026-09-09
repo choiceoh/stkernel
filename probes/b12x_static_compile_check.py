@@ -45,7 +45,11 @@ def main() -> int:
                          "'tiled' or 'both' (the tiled form reads cell t's 4-D weights)")
     ap.add_argument("--tile-m", type=int, default=128, choices=(16,32,64,128),
                     help="dynamic tile M; --dynamic sf6 compiles direct packed scales")
+    ap.add_argument("--sf6-unpack", choices=("0", "1"),
+                    help="latch scalar (0) or four-byte (1) SF6 restoration before import")
     args = ap.parse_args()
+    if args.sf6_unpack is not None:
+        os.environ["VLLM_GLM53_SF6_UNPACK_U8X4"] = args.sf6_unpack
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
 
     md.get_num_sm = lambda dev=None: 48  # type: ignore[assignment]
@@ -104,6 +108,11 @@ def main() -> int:
         ok = False
         print("no kernel was compiled (every spec parsed to stock and no "
               "--dynamic arm) -- PASS must mean the requested kernels built")
+    if args.sf6_unpack is not None:
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_static_common
+        assert int(moe_static_common._SF6_UNPACK_U8X4) == int(args.sf6_unpack)
+        print("SF6_UNPACK_U8X4:", args.sf6_unpack)
+    assert not torch.cuda.is_initialized(), "CPU compile initialized CUDA"
     print("VERDICT:", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 

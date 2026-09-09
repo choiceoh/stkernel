@@ -1,0 +1,16 @@
+test_every_low_and_high_plane_pattern_uses_independent_byte_positions (test_moe_static_sf6_direct.FourByteUnpack.test_every_low_and_high_plane_pattern_uses_independent_byte_positions) ... ok
+test_every_valid_base_code_and_lane_with_signed_inputs_and_output (test_moe_static_sf6_direct.FourByteUnpack.test_every_valid_base_code_and_lane_with_signed_inputs_and_output) ... ok
+test_mixed_codes_at_nibble_pair_byte_and_signed_boundaries (test_moe_static_sf6_direct.FourByteUnpack.test_mixed_codes_at_nibble_pair_byte_and_signed_boundaries) ... ok
+test_constructor_snapshots_both_latched_modes (test_moe_static_sf6_direct.StaticDirectScales.test_constructor_snapshots_both_latched_modes) ... ok
+test_fc1_two_independent_bases_expand_without_neighbor_or_ring_alias (test_moe_static_sf6_direct.StaticDirectScales.test_fc1_two_independent_bases_expand_without_neighbor_or_ring_alias) ... ok
+test_fc2_selective_bulk_and_actual_unpack_all_codes_halves_and_ring_slots (test_moe_static_sf6_direct.StaticDirectScales.test_fc2_selective_bulk_and_actual_unpack_all_codes_halves_and_ring_slots) ... ok
+test_legacy_q_4096_in_place_expansion_is_unchanged (test_moe_static_sf6_direct.StaticDirectScales.test_legacy_q_4096_in_place_expansion_is_unchanged) ... ok
+test_no_original_scale_tensor_is_created_outside_raw_only_branch (test_moe_static_sf6_direct.StaticDirectScales.test_no_original_scale_tensor_is_created_outside_raw_only_branch) ... ok
+test_ordinary_and_reform_geometry_transaction_contract (test_moe_static_sf6_direct.StaticDirectScales.test_ordinary_and_reform_geometry_transaction_contract) ... ok
+test_scalar_and_vector_match_for_every_stage_size_and_reused_ring (test_moe_static_sf6_direct.StaticDirectScales.test_scalar_and_vector_match_for_every_stage_size_and_reused_ring) ... ok
+test_source_map_matches_actual_mma_byte_positions_for_both_geometries (test_moe_static_sf6_direct.StaticDirectScales.test_source_map_matches_actual_mma_byte_positions_for_both_geometries) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.302s
+
+OK

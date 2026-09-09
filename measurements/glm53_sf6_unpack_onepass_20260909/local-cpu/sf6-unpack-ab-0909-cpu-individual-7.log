@@ -1,0 +1,7 @@
+test_exact_two_arm_canonical_workload_and_private_endpoint (test_sf6_unpack_onepass.UnpackOnepass.test_exact_two_arm_canonical_workload_and_private_endpoint) ... ok
+test_torch_compile_factor_distinguishes_both_modes (test_sf6_unpack_onepass.UnpackOnepass.test_torch_compile_factor_distinguishes_both_modes) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.004s
+
+OK

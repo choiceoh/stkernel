@@ -1,0 +1,29 @@
+{
+  "arms": {
+    "sf6-unpack-0909v1A": {
+      "after_receipt": "observed-runtime-sf6-unpack-0909v1A.json",
+      "before_receipt": "observed-prepared-sf6-unpack-0909v1A.json",
+      "errors": [],
+      "head_boot_id": "85c51c0f1cac7ee240d09c114cc9602f695b8bba5ab4c9a2a6db577ec4816cfc|2026-09-08T23:55:46.594137264Z",
+      "mode": "candidate",
+      "record_sha256": "be9135b9640b0f79b130b41fdb9bc623895a9f3080ad37557c8ce3137e5c1b64",
+      "status": "PASS"
+    },
+    "sf6-unpack-0909v1B": {
+      "errors": [],
+      "mode": "baseline",
+      "status": "WAITING"
+    }
+  },
+  "baseline": "sf6-unpack-0909v1B",
+  "candidate": "sf6-unpack-0909v1A",
+  "errors": [
+    "reservation terminated: failed"
+  ],
+  "schema": 1,
+  "sf6_direct": false,
+  "sf6_unpack": true,
+  "source_commit": "c85a1e75a7187ad69baefb30ef143f92f13430e8",
+  "status": "FAIL",
+  "updated_at": 1788912515.2089784
+}

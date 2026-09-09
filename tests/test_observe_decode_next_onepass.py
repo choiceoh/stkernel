@@ -23,9 +23,11 @@ REVISION = "a" * 40
 
 
 class FakeReader:
-    def __init__(self, mode="candidate", *, sf6_direct=False):
+    def __init__(self, mode="candidate", *, sf6_direct=False, sf6_unpack=False, mhc_active=False):
         self.mode, self.owner, self.rank_calls = mode, True, 0
         self.sf6_direct = sf6_direct
+        self.sf6_unpack = sf6_unpack
+        self.mhc_active = mhc_active
         self.suffix = ""
         self.on_ranks = None
 
@@ -36,7 +38,7 @@ class FakeReader:
         return True
 
     def head(self):
-        factory = fixtures.direct_report if self.sf6_direct else fixtures.report
+        factory = fixtures.unpack_report if self.sf6_unpack else fixtures.direct_report if self.sf6_direct else fixtures.report
         return dict(boot_id="srv2|" + self.mode + self.suffix, running=True,
                     image=observer.proof.IMAGE, knobs=factory(self.mode, "srv2")["knobs"])
 
@@ -46,11 +48,12 @@ class FakeReader:
             self.on_ranks()
         values = {}
         for host in observer.HOSTS:
-            factory = fixtures.direct_report if self.sf6_direct else fixtures.report
-            report = factory(mode, host)
+            factory = fixtures.unpack_report if self.sf6_unpack else fixtures.direct_report if self.sf6_direct else fixtures.report
+            report = factory(mode, host, mhc_active=self.mhc_active) if self.sf6_unpack else factory(mode, host)
             report["boot_id"] += self.suffix
             candidate_log = fixtures.SF6_DIRECT_LOG if self.sf6_direct else fixtures.CANDIDATE_LOG
-            log = (fixtures.COMMON_LOG + (candidate_log if mode == "candidate" else "")).encode()
+            log = (fixtures.unpack_log(mode, mhc_active=self.mhc_active) if self.sf6_unpack else
+                   fixtures.COMMON_LOG + (candidate_log if mode == "candidate" else "")).encode()
             report["log_sha256"] = observer.digest(log)
             values[host] = dict(report=report, log_b64=base64.b64encode(log).decode(), error="")
         return values
@@ -296,15 +299,18 @@ class ReaderTests(unittest.TestCase):
         get.assert_called_once_with("http://127.0.0.1:8000/health", timeout=2)
 
     def test_embedded_collector_binds_variant_for_collect_and_validation(self):
-        for direct in (False, True):
-            reader = observer.Reader(ROOT, 8000, "run", Path("/unavailable"), sf6_direct=direct)
+        for direct, unpack in ((False, False), (True, False), (False, True)):
+            reader = observer.Reader(ROOT, 18000 if unpack else 8000, "run", Path("/unavailable"),
+                                     sf6_direct=direct, sf6_unpack=unpack)
             result = subprocess.CompletedProcess([], 0, '{"report": {}, "error": "fixture"}', "")
             with patch.object(observer.subprocess, "run", return_value=result) as run:
                 reader.rank("srv1", "candidate", fixtures.MANIFEST)
             script = run.call_args.kwargs["input"]
             self.assertIn("\nSF6_DIRECT=" + repr(direct) + "\n", script)
-            self.assertIn('ns["collect_report"](MODE, EXPECTED, sf6_direct=SF6_DIRECT)', script)
-            self.assertIn('ns["validate_report"](report, EXPECTED, sf6_direct=SF6_DIRECT)', script)
+            self.assertIn("\nSF6_UNPACK=" + repr(unpack) + "\n", script)
+            self.assertIn('ns["collect_report"](MODE, EXPECTED, sf6_direct=SF6_DIRECT, sf6_unpack=SF6_UNPACK)', script)
+            self.assertIn('ns["validate_report"](report, EXPECTED, sf6_direct=SF6_DIRECT, sf6_unpack=SF6_UNPACK)', script)
+            self.assertIn('ns["parse_markers"](raw.decode(errors="replace"), sf6_unpack=SF6_UNPACK)', script)
 
 
 class DirectObserverTests(unittest.TestCase):
@@ -427,6 +433,96 @@ class DirectObserverTests(unittest.TestCase):
             self.assertIs(observer_class.call_args.kwargs["sf6_direct"], direct)
             ready = json.loads(output.getvalue().split("READY ", 1)[1])
             self.assertIs(ready["sf6_direct"], direct)
+
+
+class UnpackObserverTests(unittest.TestCase):
+    def make_observer(self, out, reader):
+        value = observer.Observer(out, "runA", "runB", REVISION, fixtures.MANIFEST,
+                                  reader, sf6_unpack=True, clock=lambda: 100.)
+        self.addCleanup(value.executor.shutdown, wait=True)
+        return value
+
+    def test_unpack_two_arms_keep_receipts_and_actual_state(self):
+        import analyze_decode_next_onepass as analysis
+        for active in (False, True):
+            with tempfile.TemporaryDirectory() as directory:
+                out = Path(directory)
+                reader = FakeReader(sf6_unpack=True, mhc_active=active)
+                agent = self.make_observer(out, reader)
+                for name, mode in (("runA", "candidate"), ("runB", "baseline")):
+                    reader.mode = mode
+                    self.assertEqual(observer.mode_from_metadata(reader.head(), sf6_unpack=True), mode)
+                    agent.snapshot(name, "prepared")
+                    row = dict(name=name, boot_id=reader.head()["boot_id"])
+                    with (out / "records.raw.jsonl").open("ab") as stream:
+                        stream.write(json.dumps(row).encode() + b"\n")
+                    if mode == "baseline":
+                        reader.owner = False
+                    agent.snapshot(name, "runtime")
+                    self.assertEqual(agent.state["arms"][name]["status"], "PASS")
+                    for phase in ("prepared", "runtime"):
+                        receipt = json.loads((out / f"observed-{phase}-{name}.json").read_text())
+                        self.assertIs(receipt["sf6_unpack"], True)
+                        self.assertIs(receipt["sf6_direct"], False)
+                self.assertTrue(agent.step())
+                self.assertEqual(agent.state["status"], "PASS")
+                records = {name: item["record"] for name, item in agent.records().items()}
+                self.assertEqual(analysis.validate_observer(out, "runA", "runB", REVISION,
+                    records, sf6_unpack=True)["status"], "PASS")
+                self.assertEqual(self.make_observer(out, reader).state["status"], "PASS")
+
+    def test_unpack_missing_variant_or_actual_state_never_becomes_prepared(self):
+        for field in ("sf6_unpack", "mhc_consumer_failures"):
+            with tempfile.TemporaryDirectory() as directory:
+                out = Path(directory)
+                reader = FakeReader(sf6_unpack=True)
+                original = reader.ranks
+                def missing(mode, expected):
+                    ranks = original(mode, expected)
+                    report = ranks["srv4"]["report"]
+                    if field == "sf6_unpack":
+                        report.pop(field)
+                    else:
+                        report["markers"][field] = []
+                    return ranks
+                reader.ranks = missing
+                agent = self.make_observer(out, reader)
+                agent.snapshot("runA", "prepared")
+                self.assertFalse((out / "observed-prepared-runA.json").exists())
+
+    def test_unpack_restart_refuses_missing_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            reader = FakeReader(sf6_unpack=True)
+            agent = self.make_observer(out, reader)
+            agent.snapshot("runA", "prepared")
+            path = out / "observed-prepared-runA.json"
+            receipt = json.loads(path.read_text())
+            receipt.pop("sf6_unpack")
+            path.write_text(json.dumps(receipt))
+            with self.assertRaisesRegex(ValueError, "different SF6 variant"):
+                self.make_observer(out, reader)
+
+    def test_unpack_cli_binds_reader_observer_ready_and_rejects_other_port(self):
+        import io
+        from unittest.mock import MagicMock
+        fake = MagicMock()
+        fake.step.return_value = True
+        fake.state = {"status": "PASS"}
+        output = io.StringIO()
+        argv = ["--out", "/unused", "--candidate", "runA", "--baseline", "runB",
+                "--session", "fixture-session", "--sf6-unpack", "--port", "18000"]
+        with patch.object(observer, "frozen_manifest", return_value=(REVISION, fixtures.MANIFEST)), \
+             patch.object(observer, "Reader") as reader_class, \
+             patch.object(observer, "Observer", return_value=fake) as observer_class, \
+             patch.object(observer.sys, "stdout", output):
+            self.assertEqual(observer.main(argv), 0)
+        self.assertIs(reader_class.call_args.kwargs["sf6_unpack"], True)
+        self.assertIs(observer_class.call_args.kwargs["sf6_unpack"], True)
+        self.assertIs(json.loads(output.getvalue().split("READY ", 1)[1])["sf6_unpack"], True)
+        for changed in (argv[:-1] + ["8000"], argv + ["--sf6-direct"]):
+            with self.assertRaises(SystemExit), patch.object(observer.sys, "stderr", io.StringIO()):
+                observer.main(changed)
 
 
 if __name__ == "__main__":

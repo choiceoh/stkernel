@@ -22,14 +22,18 @@ REVISION = 'a' * 40
 
 
 class FakeReader:
-    def __init__(self):
+    def __init__(self, *, sf6_unpack=False, mhc_active=False):
         self.calls, self.health_calls = 0, 0
+        self.sf6_unpack, self.mhc_active = sf6_unpack, mhc_active
         self.suffix = ''
         self.on_ranks = lambda: None
 
     def report(self, host):
-        value = fixtures.direct_report('baseline', host)
-        value['serving_argv'] += ['--host', '127.0.0.1', '--port', '18000']
+        value = (fixtures.unpack_report('baseline', host, mhc_active=self.mhc_active) if self.sf6_unpack
+                 else fixtures.direct_report('baseline', host))
+        value.setdefault('sf6_unpack', False)  # Current collector explicitly records legacy false.
+        if not self.sf6_unpack:
+            value['serving_argv'] += ['--host', '127.0.0.1', '--port', '18000']
         value['boot_id'] = host + self.suffix + '|' + BOOT
         return value
 
@@ -47,11 +51,14 @@ class FakeReader:
         values = {}
         raw = '\n'.join(line for line in fixtures.COMMON_LOG.splitlines()
                         if 'AR consumer MHC' not in line).encode()
+        if self.sf6_unpack:
+            raw = fixtures.unpack_log('baseline', mhc_active=self.mhc_active).encode()
         for host in frozen.HOSTS:
             value = self.report(host)
-            value['markers'] = frozen.proof.parse_markers(raw.decode())
+            value['markers'] = frozen.proof.parse_markers(raw.decode(), sf6_unpack=self.sf6_unpack)
             value['log_sha256'] = sidecar.sha(raw)
-            value['errors'] = frozen.proof.validate_report(value, expected, sf6_direct=True)
+            value['errors'] = frozen.proof.validate_report(value, expected, sf6_direct=not self.sf6_unpack,
+                                                         sf6_unpack=self.sf6_unpack)
             value['valid'] = not value['errors']
             values[host] = dict(report=value, log_b64=base64.b64encode(raw).decode(),
                                 error='; '.join(value['errors']))
@@ -82,18 +89,94 @@ class BaselineObservationTests(unittest.TestCase):
                 self.record()
                 self.terminal = True
         with patch.object(sidecar, 'load_frozen', return_value=(frozen, self.args.revision, fixtures.MANIFEST)), \
-             patch.object(frozen, 'Reader', return_value=self.reader), \
+             patch.object(frozen, 'Reader', return_value=self.reader) as factory, \
              patch.object(sidecar, 'reservation', side_effect=lambda args: dict(state='TERMINAL') if self.terminal else self.go), \
              patch.object(sidecar.time, 'sleep', side_effect=sleeper or default_sleep), \
              patch('builtins.print'):
             code = sidecar.observe(self.args)
+            self.reader_kwargs = factory.call_args.kwargs if factory.called else None
         return code, json.loads((self.args.out / 'baseline-observer.json').read_text())
+
+    def test_unpack_baseline_binds_frozen_api_artifacts_and_explicit_mhc_state(self):
+        for active in (False, True):
+            self.args.sf6_unpack = True
+            self.args.out = self.base / ('active' if active else 'fallback')
+            self.reader = FakeReader(sf6_unpack=True, mhc_active=active)
+            self.terminal = False
+            code, state = self.run_observer()
+            self.assertEqual(code, 0)
+            self.assertEqual(self.reader_kwargs, dict(sf6_direct=False, sf6_unpack=True))
+            self.assertEqual(state['collection_status'], 'COMPLETE')
+            self.assertEqual(state['runtime_validation'], 'PASS')
+            self.assertIs(state['sf6_unpack'], True)
+            self.assertIs(state['sf6_direct'], False)
+            self.assertEqual(self.reader.calls, 2)
+            for phase, entry in state['phases'].items():
+                folder = self.args.out / entry['path']
+                receipt = json.loads((folder / 'receipt.json').read_text())
+                self.assertIs(receipt['sf6_unpack'], True)
+                self.assertIs(receipt['sf6_direct'], False)
+                self.assertEqual(receipt['runtime_validation'], 'PASS')
+                self.assertEqual(sidecar.sha((folder / 'receipt.json').read_bytes()), entry['receipt_sha256'])
+                for host in frozen.HOSTS:
+                    report = json.loads((folder / (host + '.json')).read_text())
+                    self.assertEqual(report['knobs'][frozen.proof.SF6_UNPACK_KNOB], '0')
+                    self.assertEqual(frozen.proof.validate_report(report, fixtures.MANIFEST, sf6_unpack=True), [])
+                    self.assertEqual(frozen.proof.mhc_runtime_state(report['markers'])['consumer_active'], active)
+                    self.assertEqual(report['markers']['sf6_packed_only_layers'], 42)
+                    self.assertEqual(report['markers']['sf6_raw_bytes_released'], 4756340736)
+                if phase == 'runtime':
+                    self.assertFalse(receipt['owned_before'])
+                    self.assertEqual(receipt['record_sha256'], sidecar.sha((folder / 'record.raw.json').read_bytes()))
+
+    def test_unpack_missing_explicit_mhc_state_preserves_failure_and_original_log(self):
+        self.args.sf6_unpack = True
+        self.reader = FakeReader(sf6_unpack=True)
+        original = self.reader.ranks
+        def missing(mode, expected):
+            ranks = original(mode, expected)
+            row = ranks['srv3']
+            raw = '\n'.join(line for line in base64.b64decode(row['log_b64']).decode().splitlines()
+                            if 'AR consumer MHC mismatch' not in line).encode()
+            report = row['report']
+            report['markers'] = frozen.proof.parse_markers(raw.decode(), sf6_unpack=True)
+            report['log_sha256'] = sidecar.sha(raw)
+            report['errors'] = frozen.proof.validate_report(report, expected, sf6_unpack=True)
+            report['valid'] = not report['errors']
+            row.update(log_b64=base64.b64encode(raw).decode(), error='; '.join(report['errors']))
+            return ranks
+        self.reader.ranks = missing
+        code, state = self.run_observer()
+        self.assertEqual(code, 1)
+        self.assertEqual(state['collection_status'], 'COMPLETE')
+        self.assertEqual(state['runtime_validation'], 'FAIL')
+        receipt = json.loads((self.args.out / state['phases']['runtime']['path'] / 'receipt.json').read_text())
+        self.assertIn('explicit PASS', ' '.join(receipt['validation_errors']))
+
+    def test_unpack_candidate_flag_is_rejected_before_rank_reads(self):
+        self.args.sf6_unpack = True
+        self.reader = FakeReader(sf6_unpack=True)
+        original = self.reader.report
+        def candidate(host):
+            report = original(host)
+            report['knobs'][frozen.proof.SF6_UNPACK_KNOB] = '1'
+            return report
+        self.args.out.mkdir()
+        with patch.object(sidecar, 'reservation', return_value=self.go), \
+             patch.object(self.reader, 'report', side_effect=candidate):
+            result = sidecar.capture(self.args, frozen, self.reader, fixtures.MANIFEST,
+                self.go, 'prepared', self.args.out / 'attempt')
+        self.assertEqual(self.reader.calls, 0)
+        self.assertEqual(result['receipt']['collection_status'], 'FAILED')
+        self.assertIn('requested running baseline', ' '.join(result['receipt']['collection_errors']))
 
     def test_same_boot_after_release_collects_all_evidence_without_fake_pass(self):
         code, state = self.run_observer()
         self.assertEqual(code, 1)  # Strict MHC failure remains a failure.
         self.assertEqual(state['collection_status'], 'COMPLETE')
         self.assertEqual(state['runtime_validation'], 'FAIL')
+        self.assertEqual(self.reader_kwargs, dict(sf6_direct=True))
+        self.assertNotIn('sf6_unpack', state)
         self.assertEqual(state['source_commit'], self.args.revision)
         self.assertEqual((self.args.out / 'baseline-source.commit').read_text().strip(), self.args.revision)
         self.assertEqual(self.reader.calls, 2)
@@ -223,6 +306,23 @@ class BaselineObservationTests(unittest.TestCase):
         with patch.object(sidecar, 'observe', return_value=0) as run:
             self.assertEqual(sidecar.main(base + ['--revision', 'b' * 40]), 0)
         self.assertEqual(run.call_args.args[0].revision, 'b' * 40)
+        self.assertIs(run.call_args.args[0].sf6_unpack, False)
+        with patch.object(sidecar, 'observe', return_value=0) as run:
+            self.assertEqual(sidecar.main(base + ['--revision', 'b' * 40, '--sf6-unpack']), 0)
+        self.assertIs(run.call_args.args[0].sf6_unpack, True)
+        with patch.object(sidecar, 'observe') as run, patch.object(sys, 'stderr'):
+            with self.assertRaises(SystemExit):
+                sidecar.main(base + ['--revision', 'b' * 40, '--sf6-unpack', '--port', '8000'])
+            run.assert_not_called()
+
+    def test_unpack_queued_wait_preserves_file_only_go_gate(self):
+        self.args.sf6_unpack = True
+        with patch.object(sidecar, 'reservation', side_effect=[{'state': 'WAIT'}, {'state': 'TERMINAL'}]), \
+             patch.object(sidecar, 'load_frozen', side_effect=AssertionError('imported before GO')) as load, \
+             patch.object(sidecar.time, 'sleep') as sleep, patch('builtins.print'):
+            self.assertEqual(sidecar.observe(self.args), 1)
+        load.assert_not_called()
+        sleep.assert_called_once_with(1)
 
     def test_file_only_gate_requires_exact_process_reservation_and_holder(self):
         pending = self.args.fleet_dir / 'pending'

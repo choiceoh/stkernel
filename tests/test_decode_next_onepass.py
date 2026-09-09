@@ -175,7 +175,7 @@ class CampaignTests(unittest.TestCase):
     def summary(self):
         return analyze.summarize(self.out, "A", "B")
 
-    def canonical_evidence(self, *, sf6_direct=False):
+    def canonical_evidence(self, *, sf6_direct=False, sf6_unpack=False, mhc_active=False):
         for name in ("A", "B"):
             (self.out / ("channels-" + name + ".jsonl")).unlink()
             (self.out / ("arm-" + name + ".exit")).unlink()
@@ -191,30 +191,51 @@ class CampaignTests(unittest.TestCase):
                 for host in analyze.HOSTS:
                     stem = prefix + "-" + name + "-" + host
                     raw = b"observed startup log\n"
-                    if sf6_direct:
+                    if sf6_direct or sf6_unpack:
                         # Exact preserved bytes, including invalid UTF-8 outside markers.
                         # Reader and analyzer decode these bytes with errors="replace".
-                        raw = (runtime_fixture.COMMON_LOG + (runtime_fixture.SF6_DIRECT_LOG
-                               if mode == "candidate" else "")).encode() + b"diagnostic: \xff\n"
-                        report = runtime_fixture.direct_report(mode, host)
+                        if sf6_unpack:
+                            raw = runtime_fixture.unpack_log(mode, mhc_active=mhc_active).encode()
+                            report = runtime_fixture.unpack_report(mode, host, mhc_active=mhc_active)
+                        else:
+                            raw = (runtime_fixture.COMMON_LOG + (runtime_fixture.SF6_DIRECT_LOG
+                                   if mode == "candidate" else "")).encode()
+                            report = runtime_fixture.direct_report(mode, host)
+                        raw += b"diagnostic: \xff\n"
                         report.update(source_sha256=self.expected,
                                       log_sha256=hashlib.sha256(raw).hexdigest(),
-                                      markers=analyze.runtime_proof.parse_markers(raw.decode(errors="replace")))
+                                      markers=analyze.runtime_proof.parse_markers(
+                                          raw.decode(errors="replace"), sf6_unpack=sf6_unpack))
                         write(self.out / (stem + ".json"), report)
                     (self.out / (stem + ".log")).write_bytes(raw)
                     files.extend(stem + suffix for suffix in (".json", ".log"))
                 write(self.out / ("observed-" + prefix + "-" + name + ".json"), dict(
                     schema=1, status="PASS", phase=prefix, arm=name, mode=mode,
-                    source_commit=self.revision, sf6_direct=sf6_direct, errors=[],
+                    source_commit=self.revision, sf6_direct=sf6_direct, sf6_unpack=sf6_unpack, errors=[],
                     artifacts_sha256={filename: hashlib.sha256((self.out / filename).read_bytes()).hexdigest() for filename in files}))
         write(self.out / "observer.json", dict(schema=1, status="PASS", source_commit=self.revision,
-            candidate="A", baseline="B", sf6_direct=sf6_direct, errors=[], arms={name: dict(mode=mode, status="PASS",
+            candidate="A", baseline="B", sf6_direct=sf6_direct, sf6_unpack=sf6_unpack, errors=[], arms={name: dict(mode=mode, status="PASS",
                 head_boot_id="srv2|" + mode, errors=[], record_sha256=record_hashes[name],
                 before_receipt="observed-prepared-" + name + ".json", after_receipt="observed-runtime-" + name + ".json")
                 for name, mode in (("A", "candidate"), ("B", "baseline"))}))
 
-    def canonical_summary(self, *, sf6_direct=False):
-        return analyze.summarize(self.out, "A", "B", canonical=True, sf6_direct=sf6_direct)
+    def canonical_summary(self, *, sf6_direct=False, sf6_unpack=False):
+        return analyze.summarize(self.out, "A", "B", canonical=True,
+                                 sf6_direct=sf6_direct, sf6_unpack=sf6_unpack)
+
+    def replace_unpack_runtime(self, phase, arm, host, *, mhc_active=False, transform_log=None):
+        mode = "candidate" if arm == "A" else "baseline"
+        raw = runtime_fixture.unpack_log(mode, mhc_active=mhc_active)
+        if transform_log:
+            raw = transform_log(raw)
+        raw = raw.encode()
+        report = runtime_fixture.unpack_report(mode, host, mhc_active=mhc_active)
+        report.update(source_sha256=self.expected, log_sha256=hashlib.sha256(raw).hexdigest(),
+                      markers=analyze.runtime_proof.parse_markers(raw.decode(errors="replace"), sf6_unpack=True))
+        stem = f"{phase}-{arm}-{host}"
+        write(self.out / (stem + ".json"), report)
+        (self.out / (stem + ".log")).write_bytes(raw)
+        self.reseal_phase(phase, arm)
 
     def reseal_phase(self, prefix, name):
         path = self.out / ("observed-" + prefix + "-" + name + ".json")
@@ -252,6 +273,8 @@ class CampaignTests(unittest.TestCase):
         result = self.summary()
         self.assertFalse(result["valid"])
         self.assertIn("exactly two", result["errors"][0]["error"])
+        self.assertEqual([row["name"] for row in result["per_boot"]], ["A"])
+        self.assertIsNone(result["comparison"])
 
     def test_runtime_mode_drift_or_memory_failure_is_invalid(self):
         path = self.out / "runtime-B-srv3.json"
@@ -467,6 +490,232 @@ class CampaignTests(unittest.TestCase):
         self.assertTrue(result["valid"], result["errors"])
         self.assertFalse(result["sf6_direct"])
         self.assertFalse(self.canonical_summary(sf6_direct=True)["valid"])
+
+    def test_unpack_complete_retains_explicit_matched_mhc_fallback_condition(self):
+        self.canonical_evidence(sf6_unpack=True)
+        result = self.canonical_summary(sf6_unpack=True)
+        self.assertTrue(result["valid"], result["errors"])
+        self.assertTrue(result["sf6_unpack"])
+        self.assertFalse(result["sf6_direct"])
+        self.assertTrue(result["observer"]["sf6_unpack"])
+        self.assertTrue(result["runtime_conditions"]["conditional_on_matched_mhc_fallback"])
+        self.assertFalse(result["coverage"]["mhc_consumer_selftests_passed"])
+        self.assertIn("conditional", result["note"])
+        self.assertIn("do not establish performance with that consumer enabled", result["note"])
+        self.assertIsNotNone(result["comparison"])
+        for row in result["per_boot"]:
+            self.assertEqual(set(row["mhc_runtime"]), set(analyze.HOSTS))
+            self.assertTrue(all(state["status"] == "FAIL" and not state["consumer_active"]
+                                and state["captured_t"] == [] for state in row["mhc_runtime"].values()))
+        for mode in ("baseline", "candidate"):
+            report = analyze.read_json(self.out / ("runtime-" + ("A" if mode == "candidate" else "B") + "-srv2.json"))
+            self.assertEqual(report["knobs"]["VLLM_GLM53_B12X_STATIC_V2"], "t,r,sf6")
+            self.assertEqual(report["markers"]["sf6_packed_only_layers"], 42)
+            self.assertEqual(report["knobs"]["VLLM_GLM53_SF6_UNPACK_U8X4"], str(int(mode == "candidate")))
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = analyze.main([str(self.out), "--candidate", "A", "--baseline", "B",
+                                 "--canonical", "--sf6-unpack"])
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(output.getvalue())["sf6_unpack"])
+
+    def test_unpack_complete_active_mhc_is_reported_without_fallback_claim(self):
+        self.canonical_evidence(sf6_unpack=True, mhc_active=True)
+        result = self.canonical_summary(sf6_unpack=True)
+        self.assertTrue(result["valid"], result["errors"])
+        self.assertTrue(result["coverage"]["mhc_consumer_selftests_passed"])
+        self.assertFalse(result["runtime_conditions"]["conditional_on_matched_mhc_fallback"])
+        self.assertNotIn("conditional on", result["note"])
+        for row in result["per_boot"]:
+            self.assertTrue(all(state["status"] == "PASS" and state["consumer_active"]
+                                and 6 in state["captured_t"] for state in row["mhc_runtime"].values()))
+
+    def test_unpack_mhc_activation_drift_preserves_numbers_without_comparison(self):
+        self.canonical_evidence(sf6_unpack=True)
+        for phase in ("prepared", "runtime"):
+            for host in analyze.HOSTS:
+                self.replace_unpack_runtime(phase, "B", host, mhc_active=True)
+        result = self.canonical_summary(sf6_unpack=True)
+        self.assertFalse(result["valid"])
+        self.assertIsNone(result["comparison"])
+        self.assertTrue(any("across-arm drift: actual MHC state" in e["error"] for e in result["errors"]))
+        self.assertEqual(len(result["per_boot"]), 2)
+        self.assertTrue(all(row["fixed_pooled_step_s"] > 0 and len(row["prefill"]) == 3
+                            for row in result["per_boot"]))
+        self.assertFalse(result["runtime_conditions"]["conditional_on_matched_mhc_fallback"])
+
+    def test_unpack_missing_mhc_failure_is_not_inferred_from_no_capture(self):
+        self.canonical_evidence(sf6_unpack=True)
+        def without_failure(log):
+            return "\n".join(line for line in log.splitlines() if not line.startswith((
+                "[megakernel] AR consumer MHC mismatch T=",
+                "[megakernel] selftest ar_consumer_mhc raised -> DISARM"))) + "\n"
+        for phase in ("prepared", "runtime"):
+            self.replace_unpack_runtime(phase, "B", "srv4", transform_log=without_failure)
+        result = self.canonical_summary(sf6_unpack=True)
+        self.assertFalse(result["valid"])
+        self.assertIsNone(result["comparison"])
+        self.assertTrue(any(e["stage"] == "B srv4 runtime" and "MHC" in e["error"] for e in result["errors"]))
+
+    def test_unpack_variant_is_bound_at_every_receipt_and_runtime_layer(self):
+        self.canonical_evidence(sf6_unpack=True)
+        self.assertFalse(self.canonical_summary()["valid"])
+        self.assertFalse(self.canonical_summary(sf6_direct=True)["valid"])
+        targets = [("observer.json", None, None)]
+        targets += [(f"observed-{phase}-{arm}.json", None, None)
+                    for phase in ("prepared", "runtime") for arm in ("A", "B")]
+        targets += [(f"{phase}-{arm}-srv3.json", phase, arm)
+                    for phase in ("prepared", "runtime") for arm in ("A", "B")]
+        for filename, phase, arm in targets:
+            path = self.out / filename
+            original = analyze.read_json(path)
+            for value in (None, False, 1, "true"):
+                with self.subTest(file=filename, value=value):
+                    changed = deepcopy(original)
+                    if value is None:
+                        changed.pop("sf6_unpack")
+                    else:
+                        changed["sf6_unpack"] = value
+                    write(path, changed)
+                    if phase:
+                        self.reseal_phase(phase, arm)
+                    result = self.canonical_summary(sf6_unpack=True)
+                    self.assertFalse(result["valid"])
+                    self.assertIsNone(result["comparison"])
+            write(path, original)
+            if phase:
+                self.reseal_phase(phase, arm)
+        self.assertTrue(self.canonical_summary(sf6_unpack=True)["valid"])
+
+    def test_unpack_actual_marker_and_raw_release_must_match_sealed_rank_log(self):
+        self.canonical_evidence(sf6_unpack=True)
+        for arm in ("A", "B"):
+            for marker in (b"[b12x sf6 unpack]", b"packed-only owners finalised:"):
+                with self.subTest(arm=arm, marker=marker):
+                    log_path = self.out / f"runtime-{arm}-srv4.log"
+                    proof_path = self.out / f"runtime-{arm}-srv4.json"
+                    raw, report = log_path.read_bytes(), analyze.read_json(proof_path)
+                    reduced = b"\n".join(line for line in raw.split(b"\n") if marker not in line)
+                    self.assertNotEqual(raw, reduced)
+                    log_path.write_bytes(reduced)
+                    claimed = deepcopy(report)
+                    claimed["log_sha256"] = hashlib.sha256(reduced).hexdigest()
+                    write(proof_path, claimed)
+                    self.reseal_phase("runtime", arm)
+                    result = self.canonical_summary(sf6_unpack=True)
+                    self.assertFalse(result["valid"])
+                    self.assertTrue(any("markers differ from retained log" in e["error"] for e in result["errors"]))
+                    claimed["markers"] = analyze.runtime_proof.parse_markers(reduced.decode(errors="replace"), sf6_unpack=True)
+                    write(proof_path, claimed)
+                    self.reseal_phase("runtime", arm)
+                    result = self.canonical_summary(sf6_unpack=True)
+                    self.assertFalse(result["valid"])
+                    self.assertTrue(any(e["stage"] == f"{arm} srv4 runtime" for e in result["errors"]))
+                    self.assertIsNone(result["comparison"])
+                    log_path.write_bytes(raw)
+                    write(proof_path, report)
+                    self.reseal_phase("runtime", arm)
+        self.assertTrue(self.canonical_summary(sf6_unpack=True)["valid"])
+
+    def test_unpack_seals_and_quality_failure_retain_raw_tables(self):
+        self.canonical_evidence(sf6_unpack=True)
+        receipt_path = self.out / "observed-prepared-B.json"
+        receipt = analyze.read_json(receipt_path)
+        receipt["artifacts_sha256"].pop("prepared-B-srv1.log")
+        write(receipt_path, receipt)
+        self.records[0]["quality"]["ok"] = 17
+        self.write_records()
+        result = self.canonical_summary(sf6_unpack=True)
+        self.assertFalse(result["valid"])
+        self.assertIsNone(result["comparison"])
+        self.assertTrue(any(e["stage"] == "passive observer completion" for e in result["errors"]))
+        self.assertTrue(any("18/18" in e["error"] for e in result["errors"]))
+        row = next(row for row in result["per_boot"] if row["name"] == "A")
+        self.assertEqual(row["unvalidated_decode"], self.records[0]["decode"])
+        self.assertEqual(row["unvalidated_prefill"], self.records[0]["prefill"])
+        self.assertEqual(row["unvalidated_quality"], {"ok": 17, "total": 18})
+
+    def test_unpack_first_arm_korean_failure_and_exit4_retain_metrics_and_runtime_checks(self):
+        self.canonical_evidence(sf6_unpack=True)
+        self.records.pop()
+        self.records[0]["korean"].update(dirty=1, hits=["Halvorsen博士"])
+        self.records[0]["korean"]["kinds"]["cjk_mixed"] = 2
+        self.write_records()
+        (self.out / "campaign.exit").write_text("4\n")
+        observer = analyze.read_json(self.out / "observer.json")
+        observer.update(status="FAIL", errors=["campaign exited before baseline"])
+        observer["arms"].pop("B")
+        write(self.out / "observer.json", observer)
+        for path in self.out.iterdir():
+            if path.name.startswith(("prepared-B-", "runtime-B-", "observed-prepared-B", "observed-runtime-B")):
+                path.unlink()
+        result = self.canonical_summary(sf6_unpack=True)
+        self.assertEqual(result["status"], "INVALID")
+        self.assertFalse(result["valid"])
+        self.assertIsNone(result["comparison"])
+        self.assertEqual([row["name"] for row in result["per_boot"]], ["A"])
+        row = result["per_boot"][0]
+        self.assertFalse(row["valid"])
+        self.assertEqual(row["boot_id"], self.records[0]["boot_id"])
+        for field in ("decode", "prefill", "quality", "korean"):
+            self.assertEqual(row["unvalidated_" + field], self.records[0][field])
+        stages = {error["stage"] for error in result["errors"]}
+        self.assertTrue({"campaign records", "campaign exit/cleanup", "A onepass",
+                         "passive observer completion"} <= stages)
+        self.assertFalse(any(stage.startswith("A srv") for stage in stages), result["errors"])
+        self.assertEqual(set(result["runtime_conditions"]["mhc_by_arm"]["candidate"]), set(analyze.HOSTS))
+        self.assertFalse(result["coverage"]["measured_onepass_valid"])
+        self.assertFalse(result["coverage"]["startup_selftests_verified"])
+        # An incomplete campaign must still audit the retained arm's actual logs.
+        with (self.out / "runtime-A-srv3.log").open("ab") as log:
+            log.write(b"changed after receipt\n")
+        changed = self.canonical_summary(sf6_unpack=True)
+        self.assertTrue(any(error["stage"] == "A srv3 runtime" for error in changed["errors"]))
+        self.assertEqual(changed["per_boot"], result["per_boot"])
+
+    def test_duplicate_or_unexpected_records_stay_invalid_without_losing_expected_rows(self):
+        self.canonical_evidence(sf6_unpack=True)
+        original = deepcopy(self.records)
+        for records, expected_names in (([original[0], original[0]], ["A", "A"]),
+                                        (original + [original[0]], ["A", "A", "B"]),
+                                        ([original[0], dict(original[1], name="foreign")], ["A"]),
+                                        ([], [])):
+            with self.subTest(names=[record["name"] for record in records]):
+                self.records = deepcopy(records)
+                self.write_records()
+                result = self.canonical_summary(sf6_unpack=True)
+                self.assertEqual(result["status"], "INVALID")
+                self.assertIsNone(result["comparison"])
+                self.assertEqual([row["name"] for row in result["per_boot"]], expected_names)
+                self.assertTrue(any(error["stage"] == "campaign records" and "exactly two" in error["error"]
+                                    for error in result["errors"]))
+                if expected_names.count("A") == 2:
+                    for row in result["per_boot"][:2]:
+                        self.assertFalse(row["valid"])
+                        self.assertEqual(row["unvalidated_decode"], original[0]["decode"])
+                    self.assertEqual(result["runtime_conditions"]["mhc_by_arm"]["candidate"], {})
+
+    def test_unpack_options_require_canonical_and_cannot_mix_variants(self):
+        for kwargs in (dict(sf6_unpack=True), dict(canonical=True, sf6_unpack=True, sf6_direct=True),
+                       dict(canonical=True, sf6_unpack=1)):
+            result = analyze.summarize(self.out, "A", "B", **kwargs)
+            self.assertFalse(result["valid"])
+            self.assertIsNone(result["comparison"])
+            self.assertEqual(result["errors"][0]["stage"], "campaign records")
+        for flags in (("--sf6-unpack",), ("--canonical", "--sf6-unpack", "--sf6-direct")):
+            stderr = io.StringIO()
+            with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                analyze.main([str(self.out), "--candidate", "A", "--baseline", "B", *flags])
+            self.assertEqual(raised.exception.code, 2)
+        self.canonical_evidence()
+        for filename in ["observer.json", *(f"observed-{phase}-{arm}.json"
+                          for phase in ("prepared", "runtime") for arm in ("A", "B"))]:
+            path = self.out / filename
+            value = analyze.read_json(path)
+            value.pop("sf6_unpack")
+            write(path, value)
+        self.assertTrue(self.canonical_summary()["valid"])
+        self.assertFalse(self.canonical_summary(sf6_unpack=True)["valid"])
 
 
 if __name__ == "__main__":

@@ -48,9 +48,13 @@ def functions(names, namespace=None):
     parsed = ast.parse(TEXT)
     nodes = parsed.body + next(n for n in parsed.body if isinstance(n, ast.ClassDef)).body
     chosen = [n for n in nodes if isinstance(n, ast.FunctionDef) and n.name in names]
+    if "_sf6_expand_dynamic_tile" in names:
+        common = ast.parse((SOURCE.parent / "moe_static_common.py").read_text())
+        chosen.insert(0, next(n for n in common.body
+                              if isinstance(n, ast.FunctionDef) and n.name == "_sf6_unpack_u8x4"))
     module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *chosen], type_ignores=[])
     module = ast.fix_missing_locations(StripDSL().visit(module))
-    values = dict(Int32=int, Int64=int,
+    values = dict(Int32=int, Int64=int, _SF6_UNPACK_U8X4=True,
                   cutlass=SimpleNamespace(const_expr=bool, range_constexpr=range, Uint8="uint8"),
                   cute=SimpleNamespace(make_rmem_tensor=lambda shape, dtype: [0] * shape[0],
                                        size=lambda value: value if isinstance(value, int) else __import__("math").prod(value)))
@@ -64,33 +68,62 @@ class ByteMapTests(unittest.TestCase):
         rng = random.Random(932)
         for kind in ("fc1", "fc2"):
             for half in (0, 1):
-                for base in (0, 73, 192):
-                    raw = bytes(base + rng.randrange(64) for _ in range(2048))
-                    encoded = pack.pack_stage_bytes(raw)
-                    self.assertIsNotNone(encoded)
-                    start = 2**35 + 1552 * 713
-                    memory, reads, stores = bytearray(1024), [], set()
-                    def load(address):
-                        offset = address - start
-                        self.assertEqual(offset % 4, 0)
-                        self.assertTrue(0 <= offset <= 1548)
-                        reads.extend(range(offset, offset + 4))
-                        return int.from_bytes(encoded[offset:offset + 4], "little")
-                    def store(address, value):
-                        self.assertEqual(address % 4, 0)
-                        self.assertFalse(set(range(address, address + 4)) & stores)
-                        stores.update(range(address, address + 4))
-                        memory[address:address + 4] = (value & 0xFFFFFFFF).to_bytes(4, "little")
-                    ns = functions({"_sf6_expand_dynamic_tile", "dynamic_sf6_byte_index"},
-                                   dict(_sf6_ld_global_u32=load, _st_shared_i32=store))
-                    for lane in range(32):
-                        ns["_sf6_expand_dynamic_tile"](start, 0, half, lane, kind == "fc2")
-                    expected = bytes(raw[ns["dynamic_sf6_byte_index"](kind, half, i)] for i in range(1024))
-                    self.assertEqual(memory, expected)
-                    self.assertEqual(stores, set(range(1024)))
-                    # 512 low-plane bytes, 256 high-plane bytes, one u32 base.
-                    self.assertEqual(len(set(reads)), 772)
-                    self.assertTrue(set(reads) <= set(range(1536)) | set(range(1536, 1540)))
+                for base in (0, 73, 192, 255):
+                    # Include every six-bit code, mixed across every byte
+                    # position. Base=192 reaches 255; base=255 is a constant
+                    # stage whose broadcast word is signed -1 on the device.
+                    raw = bytearray(base + (i % 64 if base < 255 else 0) for i in range(2048))
+                    rng.shuffle(raw)
+                    for signed in (False, True):
+                        for u8x4 in (False, True):
+                            with self.subTest(kind=kind, half=half, base=base, signed=signed, u8x4=u8x4):
+                                self.check_tile(kind, half, bytes(raw), signed=signed, u8x4=u8x4)
+
+    def check_tile(self, kind, half, raw, *, signed, u8x4):
+        encoded = pack.pack_stage_bytes(raw)
+        self.assertIsNotNone(encoded)
+        start = 2**35 + 1552 * 713
+        memory, reads, stores, loaded, unpacked = bytearray(1024), [], set(), [], []
+        def load(address):
+            offset = address - start
+            self.assertEqual(offset % 4, 0)
+            self.assertTrue(0 <= offset <= 1548)
+            reads.extend(range(offset, offset + 4))
+            value = int.from_bytes(encoded[offset:offset + 4], "little", signed=signed)
+            loaded.append(value)
+            return value
+        def store(address, value):
+            self.assertEqual(address % 4, 0)
+            self.assertFalse(set(range(address, address + 4)) & stores)
+            stores.update(range(address, address + 4))
+            memory[address:address + 4] = (value & 0xFFFFFFFF).to_bytes(4, "little")
+        ns = functions({"_sf6_expand_dynamic_tile", "dynamic_sf6_byte_index"},
+                       dict(_sf6_ld_global_u32=load, _st_shared_i32=store, _SF6_UNPACK_U8X4=u8x4))
+        actual_helper = ns["_sf6_unpack_u8x4"]
+        def unpack_word(low4, high4, base_word):
+            # Model the device's signed i32 argument bit patterns. The actual
+            # shared helper AST performs every unpack operation below.
+            args = tuple((value & 0x7FFFFFFF) - (value & 0x80000000)
+                         for value in (low4, high4, base_word))
+            unpacked.append(args)
+            return actual_helper(*args)
+        ns["_sf6_unpack_u8x4"] = unpack_word
+        for lane in range(32):
+            ns["_sf6_expand_dynamic_tile"](start, 0, half, lane, kind == "fc2", u8x4)
+        expected = bytes(raw[ns["dynamic_sf6_byte_index"](kind, half, i)] for i in range(1024))
+        self.assertEqual(memory, expected)
+        self.assertEqual(stores, set(range(1024)))
+        self.assertEqual(len(unpacked), 32 * 8 if u8x4 else 0)
+        self.assertTrue(all(base == unpacked[0][2] for _, _, base in unpacked))
+        if u8x4 and min(raw) >= 128:
+            self.assertLess(unpacked[0][2], 0)
+        if signed and min(raw) < 255:
+            self.assertTrue(any(value < 0 for value in loaded))
+        # Still exactly seven u32 loads/lane: four low words, two high
+        # words and one base. Unique bytes are 512 + 256 + one u32 base.
+        self.assertEqual(len(reads), 32 * 7 * 4)
+        self.assertEqual(len(set(reads)), 772)
+        self.assertTrue(set(reads) <= set(range(1536)) | set(range(1536, 1540)))
 
     def test_dynamic_tiles_match_original_raw_layout_through_shared_sf6_format(self):
         ns = functions({"dynamic_sf6_stage_index", "dynamic_sf6_byte_index"})
@@ -170,7 +203,7 @@ class FakePipeline:
 class ProducerTests(unittest.TestCase):
     def namespace(self):
         events = []
-        kernel = SimpleNamespace(ab_storage_stage=2, _hidden_size=4096,
+        kernel = SimpleNamespace(ab_storage_stage=2, _hidden_size=4096, sf6_unpack_u8x4=True,
                                  pass_gate_barrier=SimpleNamespace(wait_unaligned=lambda: events.append(("alias_wait",))))
         cute = SimpleNamespace(arch=SimpleNamespace(thread_idx=lambda: (256, 0, 0),
                 sync_warp=lambda: events.append(("sync",))), size=lambda x: x,
@@ -203,8 +236,8 @@ class ProducerTests(unittest.TestCase):
                 gate, up = expand[(native_half * 32 + kt) * 2:(native_half * 32 + kt) * 2 + 2]
                 self.assertEqual(gate[1], base + (17 * 128 + (2 + 4) * 16 + kt // 2) * 1552)
                 self.assertEqual(up[1], base + (17 * 128 + 2 * 16 + kt // 2) * 1552)
-                self.assertEqual(gate[3:], (kt % 2, 0, False))
-                self.assertEqual(up[3:], (kt % 2, 0, False))
+                self.assertEqual(gate[3:], (kt % 2, 0, False, True))
+                self.assertEqual(up[3:], (kt % 2, 0, False, True))
                 stage = (native_half * 32 + kt) % 3
                 self.assertEqual(gate[2], 50000 + stage * 1024)
                 self.assertEqual(up[2], 60000 + stage * 1024 if stage < 2 else 70000)
@@ -213,6 +246,7 @@ class ProducerTests(unittest.TestCase):
 
     def test_fc2_stage_mapping_and_alias_publication(self):
         ns, kernel, events = self.namespace()
+        kernel.sf6_unpack_u8x4 = False
         state, pipe = State(), FakePipeline(events)
         base = 2**34
         packed = Tensor("packed", base, (288, 64, 1552))
@@ -223,7 +257,7 @@ class ProducerTests(unittest.TestCase):
                     (Tensor("b_shared"), Tensor("b_extra"), Tensor("sf_shared", 80000)))
                 expanded = next(event for event in reversed(events) if event[0] == "expand")
                 self.assertEqual(expanded[1], base + (287 * 64 + (output // 2) * 4 + intermediate) * 1552)
-                self.assertEqual(expanded[3:], (output % 2, 0, True))
+                self.assertEqual(expanded[3:], (output % 2, 0, True, False))
         self.check_publication(events, scale_copies=1, dma_copies=1)
 
     def check_publication(self, events, *, scale_copies, dma_copies):
@@ -234,6 +268,19 @@ class ProducerTests(unittest.TestCase):
 
 
 class ForkContractTests(unittest.TestCase):
+    def test_scalar_selection_has_no_broadcast_or_word_helper(self):
+        expansion = body("_sf6_expand_dynamic_tile")
+        branch = next(n for n in expansion.body if isinstance(n, ast.If)
+                      and "unpack_u8x4" in ast.unparse(n.test))
+        scalar_names = {n.id for statement in branch.orelse for n in ast.walk(statement)
+                        if isinstance(n, ast.Name)}
+        self.assertFalse(scalar_names & {"base_word", "_sf6_unpack_u8x4"})
+        outside = [n for n in expansion.body if n is not branch]
+        self.assertFalse(any(isinstance(n, ast.Name) and n.id == "base_word"
+                             for statement in outside for n in ast.walk(statement)))
+        loops = [n for statement in branch.orelse for n in ast.walk(statement) if isinstance(n, ast.For)]
+        self.assertEqual([ast.unparse(n.target) for n in loops], ["word", "byte"])
+
     def test_no_raw_expert_scale_descriptor_and_extended_abi_are_explicit(self):
         call = body("__call__")
         names = [arg.arg for arg in call.args.args]

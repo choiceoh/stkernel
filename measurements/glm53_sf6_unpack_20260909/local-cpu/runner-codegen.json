@@ -1,0 +1,54 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "individual",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "bench/cpu_unittest.py",
+        "tests/test_decode_next_cpu_runner.py",
+        "measurements/glm53_sf6_unpack_20260909/local-cpu/runner-codegen-individual-0.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.083,
+      "log": "measurements/glm53_sf6_unpack_20260909/local-cpu/runner-codegen-individual-0.log",
+      "skipped": [],
+      "tests_run": 8,
+      "counts": {
+        "tests_run": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_decode_next_cpu_runner.RunnerTests.test_absent_auto_removed_container_counts_as_clean",
+          "test_decode_next_cpu_runner.RunnerTests.test_missing_or_duplicate_spec_cannot_hide_behind_pass",
+          "test_decode_next_cpu_runner.RunnerTests.test_partial_stage_success_does_not_claim_complete_gate",
+          "test_decode_next_cpu_runner.RunnerTests.test_payload_timeout_receipt_survives_both_cleanup_timeouts",
+          "test_decode_next_cpu_runner.RunnerTests.test_requested_dynamic_arm_must_also_compile",
+          "test_decode_next_cpu_runner.RunnerTests.test_successful_compile_with_failed_cleanup_is_not_pass",
+          "test_decode_next_cpu_runner.RunnerTests.test_transport_receipt_requires_requested_modes_and_no_context",
+          "test_decode_next_cpu_runner.RunnerTests.test_unpack_codegen_requires_both_arms_and_intact_assembly"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_decode_next_cpu_runner.RunnerTests.test_absent_auto_removed_container_counts_as_clean": 0.00020525045692920685,
+          "test_decode_next_cpu_runner.RunnerTests.test_missing_or_duplicate_spec_cannot_hide_behind_pass": 0.00013316702097654343,
+          "test_decode_next_cpu_runner.RunnerTests.test_partial_stage_success_does_not_claim_complete_gate": 0.0009101247414946556,
+          "test_decode_next_cpu_runner.RunnerTests.test_payload_timeout_receipt_survives_both_cleanup_timeouts": 0.0010514575988054276,
+          "test_decode_next_cpu_runner.RunnerTests.test_requested_dynamic_arm_must_also_compile": 2.3458153009414673e-05,
+          "test_decode_next_cpu_runner.RunnerTests.test_successful_compile_with_failed_cleanup_is_not_pass": 0.0007815416902303696,
+          "test_decode_next_cpu_runner.RunnerTests.test_transport_receipt_requires_requested_modes_and_no_context": 0.0004282500594854355,
+          "test_decode_next_cpu_runner.RunnerTests.test_unpack_codegen_requires_both_arms_and_intact_assembly": 0.002799125388264656
+        },
+        "failure_details": []
+      }
+    }
+  ],
+  "passed": true,
+  "coverage_complete": true,
+  "tests_run": 8
+}

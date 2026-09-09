@@ -1,0 +1,14 @@
+test_absent_auto_removed_container_counts_as_clean (test_decode_next_cpu_runner.RunnerTests.test_absent_auto_removed_container_counts_as_clean) ... ok
+test_missing_or_duplicate_spec_cannot_hide_behind_pass (test_decode_next_cpu_runner.RunnerTests.test_missing_or_duplicate_spec_cannot_hide_behind_pass) ... ok
+test_partial_stage_success_does_not_claim_complete_gate (test_decode_next_cpu_runner.RunnerTests.test_partial_stage_success_does_not_claim_complete_gate) ... ok
+test_payload_timeout_receipt_survives_both_cleanup_timeouts (test_decode_next_cpu_runner.RunnerTests.test_payload_timeout_receipt_survives_both_cleanup_timeouts) ... ok
+test_requested_dynamic_arm_must_also_compile (test_decode_next_cpu_runner.RunnerTests.test_requested_dynamic_arm_must_also_compile) ... ok
+test_successful_compile_with_failed_cleanup_is_not_pass (test_decode_next_cpu_runner.RunnerTests.test_successful_compile_with_failed_cleanup_is_not_pass) ... ok
+test_transport_receipt_requires_requested_modes_and_no_context (test_decode_next_cpu_runner.RunnerTests.test_transport_receipt_requires_requested_modes_and_no_context) ... ok
+test_unpack_codegen_requires_both_arms_and_intact_assembly (test_decode_next_cpu_runner.RunnerTests.test_unpack_codegen_requires_both_arms_and_intact_assembly) ... ok
+test_unpack_compile_requires_requested_latched_mode (test_decode_next_cpu_runner.RunnerTests.test_unpack_compile_requires_requested_latched_mode) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.006s
+
+OK

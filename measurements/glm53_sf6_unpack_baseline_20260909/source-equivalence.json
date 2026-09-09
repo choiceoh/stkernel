@@ -1,0 +1,22 @@
+{
+  "candidate_source": "c85a1e75a7187ad69baefb30ef143f92f13430e8",
+  "baseline_source": "c03da265a893c61e759eb56e2e43f77bac74a2cc",
+  "identical_paths": [
+    "overlay/",
+    "launchers/",
+    "bench/chain.sh",
+    "bench/ab-lever.sh",
+    "bench/onepass.py",
+    "bench/measurement_contract.py",
+    "bench/onepass_memory.py",
+    "bench/onepass_deploy.py",
+    "bench/fleet_onepass.py",
+    "bench/korean-corruption.py"
+  ],
+  "changed_paths_in_compared_scope": [],
+  "profile_delta": "diff --git a/profiles/glm53.env b/profiles/glm53.env\nindex 207a371a..96661a1b 100644\n--- a/profiles/glm53.env\n+++ b/profiles/glm53.env\n@@ -686,7 +686,18 @@ CHAT_TEMPLATE=chat_template_mm_v2.jinja\n # overlay fixed the 2x placeholder count), text serving unchanged at 32K.\n # Boot cost: the encoder-cache profiling runs one max-size image per slot and\n # one max-size video (~32K encoder tokens). Rollback: '{\"image\":0,\"video\":0}'.\n-MM_LIMIT='{\"image\":4,\"video\":1}'\n+# 40차: video slot off (operator, 2026-09-09: \"잘 안 쓰긴 하니까 꺼둬도 돼\").\n+# NOT because it is broken -- the operator confirms video works on this build,\n+# which SUPERSEDES 39차 VID's \"영상은 엔진 사망\" entry. It is off because the\n+# slot is paid at boot whether or not anyone sends a video: the encoder cache is\n+# sized by the largest profiled item, and the boot says so -- \"Encoder cache\n+# will be initialized with a budget of 32242 tokens, and profiled with 1 video\n+# items\". The 40차 per-phase device stamps price that phase at\n+# `encoder-profile ... +4.89 GiB used this phase`, and on this unified-memory\n+# box those bytes are host RAM that earlyoom counts; it SIGTERMed the serving\n+# worker six times on 2026-09-08/09 at MemAvailable 5%.\n+# Images stay at 4. Rollback for a video workload: video 1.\n+MM_LIMIT='{\"image\":4,\"video\":0}'\n # 39차 item 2: decode-first prefill admission (overlay scheduler, v3).\n # Stock fills every step with up to MAX_BATCHED prefill tokens, so a decoder\n # sharing the step with a long prompt waits a whole chunk per token (P4 mixed\n",
+  "baseline_runtime_override": {
+    "MM_LIMIT": "{\"image\":4,\"video\":1}"
+  },
+  "reason": "Latest main disables video by default; the baseline experiment explicitly retains candidate video capacity. Runtime overlay and workload code are unchanged. Full Git commits and reservations differ."
+}

@@ -1,0 +1,64 @@
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_13:12:36
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (3 procs, 0 reqs, booting) 2026-09-09_13:15:02
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (4 procs, 0 reqs, booting) 2026-09-09_13:17:33
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (3 procs, 0 reqs, booting) 2026-09-09_13:17:35
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (3 procs, 0 reqs) 2026-09-09_13:17:43
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (2 procs, 0 reqs) 2026-09-09_13:17:48
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_13:17:49
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (2 procs, 0 reqs) 2026-09-09_13:18:47
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_13:19:47
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (3 procs, 0 reqs, booting) 2026-09-09_13:22:23
+waiting: pos 1/1, held by eplocalonepass0909v23 [boot] (pid 262324@srv2, since 12:57, est 65m, Canonical onepass A0 B1 A B2 B3; fail fast on candidate startup then measure matched warm prefill and decode), legacy busy (2 procs, 0 reqs) 2026-09-09_13:23:59
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "ecece21225844e8488971720545a18ae", "phase": "waiting", "reason": "dequeue", "since": 430233.62502972, "updated_at": 1788927840.6879478, "version": 1}
+GO sf6-unpack-base-0909v2 2026-09-09_13:24:00
+  node 10.10.10.1: gpu=ok stray=4 ram=12G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=8G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=12G path=ok 
+== chain sf6-unpack-base-0909v2B 13:24:02 session=sf6-unpack-base-0909v2 rehearse=0
+   baseline: NONE for build c03da26 -- a defaults arm is worth its boot
+== 13:24:02 arm sf6-unpack-base-0909v2B: (defaults)
+(Worker_TP0 pid=357) INFO 09-09 04:31:14 [gpu_worker.py:582] Available KV cache memory: 10.55 GiB
+(Worker_TP0 pid=357) Capturing dflash2 CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s](Worker_TP0 pid=357) WARNING 09-09 04:32:04 [glm53_fp8_dense.py:619] [fp8-dense] drafter lane serving: 30 of 31 opaque GEMM calls per
+(EngineCore pid=245) WARNING 09-09 04:32:30 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=223 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 20.0 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=258 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 4.9 s
+== [sf6-unpack-base-0909v2B] onepass 13:32:58 ctx=2000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         893        2498      2.38s      0.85s  o o o
+  32000   32545        3001     (1 req)     10.84s          -  o o o
+ 128000  128559        3105     (1 req)     41.40s          -  o o o
+fixed2K rep=0 tokens=2048/2048 decode=65.98 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=64.32 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=67.16 tok/s
+  warm 처리량: 2498 -> 3105 tok/s (over 2128 -> 128559 tokens)
+=> 18/18 correct
+decode: windows n=87 med 19.9 [18.8, 21.8] step/s (inside the answers only; per context: 2K: n=99 med 19.9  32K: n=15 med 19.9  128K: n=10 med 19.9), raw acc 45.6%, tokens/step 3.281 (k=5.0), generated 9320 tokens over 200s
+응답 8개 · 문자 22,813
+  깨진 응답: 0/8 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass sf6-unpack-base-0909v2B: 200s total
+== [sf6-unpack-base-0909v2B] acceptance counters ==
+vllm:spec_decode_num_drafts_total 2841.0
+vllm:spec_decode_num_draft_tokens_total 14205.0
+vllm:spec_decode_num_accepted_tokens_total 6481.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2191.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1561.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1174.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 872.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 683.0
+== [sf6-unpack-base-0909v2B] head log kept: /home/choiceoh/glm53-logs/boot-sf6-unpack-base-0909v2B.log ==
+== [sf6-unpack-base-0909v2B] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [sf6-unpack-base-0909v2B] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-09 04:25:00 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+WARNING 09-09 04:25:19 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+(EngineCore pid=245) WARNING 09-09 04:32:30 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+== [sf6-unpack-base-0909v2B] done 13:36:19 ==
+== 13:36:19 last measured arm remains available (sf6-unpack-base-0909v2B = defaults)
+== 13:36:19 judge
+== chain done 13:36:19
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "9cdd834bd69848ddb96b546421b93ff3", "phase": "waiting", "reason": "release", "since": 430972.373238543, "updated_at": 1788928579.4361513, "version": 1}

@@ -35,6 +35,7 @@ VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS	[prefill-sp] all-gather FP8 length gate 
 VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS	[prefill-sp] reduce-scatter FP8 length gate engaged	[prefill-sp] reduce-scatter FP8 length gate engaged
 VLLM_GLM53_KDA_PREFILL_DIRECT_OUT	[kda-prefill] direct output armed	[kda-prefill] direct output armed
 VLLM_GLM53_B12X_STATIC_V2	[b12x static v2] lane serving	[b12x static
+VLLM_GLM53_SF6_UNPACK_U8X4	[b12x sf6 unpack] lane serving: backend=static u8x4=1	[b12x sf6 unpack] lane serving:
 VLLM_GLM53_PREFILL_NVFP4_BPROJ	[nvfp4-bproj] serving	[nvfp4-bproj] serving
 VLLM_GLM53_DEV_LAB	[dev-lab] installed: POST /glm53/lab	[dev-lab] installed: POST /glm53/lab
 # "-" = this knob has no serving line of its own (a master switch); the generator stays quiet about it

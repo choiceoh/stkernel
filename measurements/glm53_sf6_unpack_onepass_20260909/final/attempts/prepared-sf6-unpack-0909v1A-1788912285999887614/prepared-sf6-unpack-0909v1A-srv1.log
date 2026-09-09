@@ -1,0 +1,887 @@
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_FP8_DENSE_FREE_BF16
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_MLA
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_M8_FASTPATH
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PACK_GPTQ
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_MIN_DECODERS
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_B12X_EP_STOCK_TOPK_MICRO
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SPEC_K
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_TARGET_LM_HEAD_FP8
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_MHC_BF16
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PACK_CACHE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_FAIR
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_NVFP4_STATIC_CHECK
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PACK_SHA256
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_B12X_EP_ZERO_WEIGHT_MICRO
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_FLOOR_GRACE_S
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREP_FUSED
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREFILL_METADATA_WARMUP
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_VOCAB_MASK_AUDIT
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_DRAFTER_CTX_KV_W4
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_DSV4_ONESHOT_SHADOW
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_SMLP2
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_DECODE_STEPS
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PACK_ROWSHIFT
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_AR_PREFETCH
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_KDA_ONEPASS
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SF6_UNPACK_U8X4
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_B12X_EP_NO_DUMMY
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_DFLASH2_FP8_DENSE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREFILL_SP_FP8
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_TORCH_PROFILER_DIR
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREFILL_SP
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_CHUNK_REF_CTX
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREFILL_SP_FUSE_MHC
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_PREFILL_EVERY
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_SPEC_FP8_LM_HEAD
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_NVFP4_STATIC_HEADROOM
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MEGAKERNEL
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MHC_PREFILL_POST_PRENORM
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_FP8_CACHE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_GEMM
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_CALIB
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_PREFILL_FLOOR
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_INPUT_CTA
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_B12X_DIRECT_OUT
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_KDA_PREFILL_DIRECT_OUT
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_AR_PROXY_INLINE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_MHC
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_CALIB_DIR
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_KDA_PREFILL_QK_NORM
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_CHUNK_MAX
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_DRAFTER_PREP
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_DEV_LAB
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_B12X_STATIC_V2
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_RANK_CACHE_CPU_VOTE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_DFLASH_EARLY_FC
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREFILL_SP_DIRECT_NCCL
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_HEAD_DRAFT
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_AR_CONSUMER_PDL
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_MLA_PREFILL_PAIR
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PDL
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_MODE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_INDEXER_GATE_SPLITK
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_FP8_PACK2
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_NVFP4_STATIC_SCALE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_MAX_WAIT_S
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_KDA_DUAL_GEMM
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_NVFP4_SCALE_FUSED
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_FP8_DENSE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_AR_COMPACT_CTA
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_FP8_DENSE_BPROJ
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_SCHED_MIXED_CHUNK
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_MLA_PREFILL32
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_INPUT_REUSE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_EARLY_MM_WARMUP
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_MLA_PREFILL_GROUP
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4_MIN_M
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_CALIB_TOKENS
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_KDA_PREFILL_REGIME
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_INDEXER_DECODE_FUSED
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_GEMM_TRANSPOSE_M8
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_B12X_PREFILL_FC1_N128
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PACK_FAST_IO
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_DSV4_ONESHOT_AR
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_RANK_CACHE_KEEP
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_HEAD_TARGET
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_MK_PACK_LORC
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_B12X_PREFILL_REUSE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_PREFILL_NVFP4_BPROJ
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_GLM53_RANK_CACHE
+WARNING 09-08 23:56:03 [envs.py:2187] Unknown vLLM environment variable detected: VLLM_MOE_GATE_FUSED
+INFO 09-08 23:56:18 [model.py:679] Resolved architecture: Glm5NextForConditionalGeneration
+INFO 09-08 23:56:18 [model.py:1972] Using max model len 1048576
+INFO 09-08 23:56:18 [import_utils.py:464] DeepEP v2 requires NCCL >= 2.30.4 but found 2.29.7. deepep_v2 backend will not be available.
+WARNING 09-08 23:56:21 [kda.py:67] [kda-prefill] direct output armed (pure prefill only)
+WARNING 09-08 23:56:21 [glm53_prefill_collectives.py:56] [prefill-sp] sequence-parallel prefill armed (fp8 transport=True v3: packed values+scales, one all-to-all + fp32 sum)
+WARNING 09-08 23:56:21 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+INFO 09-08 23:56:22 [cache.py:282] Using fp8_e4m3 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor
+INFO 09-08 23:56:22 [arg_utils.py:2168] Inferred data_parallel_rank 0 from node_rank 1
+INFO 09-08 23:56:22 [model.py:679] Resolved architecture: DFlash2DraftModel
+INFO 09-08 23:56:22 [model.py:1972] Using max model len 1048576
+INFO 09-08 23:56:22 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 09-08 23:56:22 [config.py:605] Mamba cache mode is set to 'align' for Glm5NextForConditionalGeneration by default when prefix caching is enabled
+INFO 09-08 23:56:22 [kernel.py:306] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+WARNING 09-08 23:56:22 [vllm.py:1462] Model hidden_size too small for the SP threshold heuristic, disabling. To force SP, set pass_config.sp_min_token_num manually.
+INFO 09-08 23:56:22 [compilation.py:329] Enabled custom fusions: norm_quant, act_quant, attn_quant, allreduce_rms, rope_kvcache_cat_mla
+INFO 09-08 23:56:22 [serve.py:216] Launching vLLM (v0.1.dev20051+g487ecf187) headless multiproc executor, with head node address 10.10.10.2:29521 for torch.distributed process group.
+INFO 09-08 23:56:27 [import_utils.py:464] DeepEP v2 requires NCCL >= 2.30.4 but found 2.29.7. deepep_v2 backend will not be available.
+[boot-stamp] installed, 13 phases wrapped
+WARNING 09-08 23:56:30 [kda.py:67] [kda-prefill] direct output armed (pure prefill only)
+WARNING 09-08 23:56:30 [glm53_prefill_collectives.py:56] [prefill-sp] sequence-parallel prefill armed (fp8 transport=True v3: packed values+scales, one all-to-all + fp32 sum)
+WARNING 09-08 23:56:30 [glm53_prep_fused.py:1302] [prep-fused] preimage drift -> DISARM (stock path): ['v1/worker/utils.py: fd27b906f336 != 3dcd6ad34ee1']
+(Worker pid=258) INFO 09-08 23:56:32 [parallel_state.py:1655] world_size=4 rank=1 local_rank=0 distributed_init_method=tcp://10.10.10.2:29521 backend=nccl
+(Worker pid=258) [boot-stamp] dist-world took 17.6s (at 27.3s since interpreter start) dev free 105.19 GiB (+0.01 GiB used this phase)
+(Worker pid=258) WARNING 09-08 23:56:51 [symm_mem.py:67] SymmMemCommunicator: Device capability 12.1 not supported, communicator is not available.
+(Worker pid=258) [boot-stamp] dist-group tp took 1.5s (at 28.9s since interpreter start) dev free 104.30 GiB (+0.89 GiB used this phase)
+(Worker pid=258) [boot-stamp] dist-group dcp took 0.0s (at 28.9s since interpreter start) dev free 104.30 GiB (+0.00 GiB used this phase)
+(Worker pid=258) [boot-stamp] dist-group pcp took 0.0s (at 28.9s since interpreter start) dev free 104.30 GiB (+0.00 GiB used this phase)
+(Worker pid=258) [boot-stamp] dist-group pp took 0.0s (at 28.9s since interpreter start) dev free 104.30 GiB (+0.00 GiB used this phase)
+(Worker pid=258) [boot-stamp] dist-group dp took 0.0s (at 28.9s since interpreter start) dev free 104.30 GiB (+0.00 GiB used this phase)
+(Worker pid=258) [boot-stamp] dist-group ep took 1.2s (at 30.1s since interpreter start) dev free 103.35 GiB (+0.95 GiB used this phase)
+(Worker pid=258) INFO 09-08 23:56:52 [parallel_state.py:1999] rank 1 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 1, EP rank 1, EPLB rank N/A
+(Worker pid=258) [boot-stamp] dist-model-parallel took 2.8s (at 30.1s since interpreter start) dev free 103.35 GiB (+1.84 GiB used this phase)
+(Worker pid=258) INFO 09-08 23:56:52 [gpu_worker.py:386] Using V2 Model Runner
+(Worker pid=258) [boot-stamp] init-device took 20.8s (at 30.3s since interpreter start) dev free 103.24 GiB (+1.95 GiB used this phase)
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [model_runner.py:353] Loading model from scratch...
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [cuda.py:592] Using backend AttentionBackendEnum.FLASH_ATTN for vit attention
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [mm_encoder_attention.py:375] Using AttentionBackendEnum.FLASH_ATTN for MMEncoderAttention.
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [kernel.py:306] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [cuda.py:533] Using FLASHINFER_MLA_SPARSE_SM90 attention backend out of potential backends: ['FLASHINFER_MLA_SPARSE_SM90', 'FLASHINFER_MLA_SPARSE_SM120'].
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [selector.py:217] Using HND KV cache layout for FLASHINFER_MLA_SPARSE_SM90 backend.
+(Worker_TP1 pid=258) WARNING 09-08 23:56:53 [mla_attention.py:567] No MLA prefill backend supports this model; sparse MLA will use the top-k MQA path only (no dense-MHA prefill).
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [deep_gemm.py:191] deep_gemm not found in site-packages, trying vendored vllm.third_party.deep_gemm
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [deep_gemm.py:136] DeepGEMM E8M0 enabled on current platform.
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [moe_gate_sm121.py:280] DSV4 fused small-M router gate armed (triton split-K, fp32 out).
+(Worker_TP1 pid=258) INFO 09-08 23:56:53 [nvfp4.py:245] Using 'FLASHINFER_B12X' NvFp4 MoE backend out of potential backends: ['FLASHINFER_TRTLLM', 'FLASHINFER_CUTEDSL', 'FLASHINFER_CUTLASS', 'VLLM_CUTLASS', 'MARLIN', 'HUMMING', 'EMULATION'].
+(Worker_TP1 pid=258) INFO 09-08 23:56:56 [model.py:1298] [vocab-mask] masking ids 154856..154879 (24 rows the tokenizer has no token for) out of 154880
+(Worker_TP1 pid=258) WARNING 09-08 23:56:56 [vllm.py:2645] `torch.compile` is turned on, but the model /models/glm-5.3-flash-nvfp4 does not support it. Please open an issue on GitHub if you want it to be supported.
+(Worker_TP1 pid=258) WARNING 09-08 23:56:56 [vllm.py:2645] `torch.compile` is turned on, but the model /models/glm-5.3-flash-nvfp4 does not support it. Please open an issue on GitHub if you want it to be supported.
+(Worker_TP1 pid=258) [boot-stamp] weights: 148498 tensors, 184.2 GiB | read 30.8s (5.97 GiB/s) | apply 20.1s
+(Worker_TP1 pid=258) [boot-stamp] load-model still running after 60s; its thread is at:
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/process.py", line 108, in run
+(Worker_TP1 pid=258)     self._target(*self._args, **self._kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 894, in worker_main
+(Worker_TP1 pid=258)     worker = WorkerProc(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 663, in __init__
+(Worker_TP1 pid=258)     self.worker.load_model()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py", line 187, in timed
+(Worker_TP1 pid=258)     return fn(*a, **kw)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py", line 443, in load_model
+(Worker_TP1 pid=258)     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/model_runner.py", line 355, in load_model
+(Worker_TP1 pid=258)     self.model = model_loader.load_model(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/base_loader.py", line 64, in load_model
+(Worker_TP1 pid=258)     self.load_weights(model, model_config)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/default_loader.py", line 427, in load_weights
+(Worker_TP1 pid=258)     loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py", line 1544, in load_weights
+(Worker_TP1 pid=258)     loaded = load_rank_cached(self, weights, super().load_weights)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py", line 384, in load_rank_cached
+(Worker_TP1 pid=258)     if _write(directory, identity, state, loaded):
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py", line 175, in _write
+(Worker_TP1 pid=258)     getattr(os, "fdatasync", os.fsync)(out.fileno())
+(Worker_TP1 pid=258) [boot-stamp] load-model still running after 120s; its thread is at:
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 894, in worker_main
+(Worker_TP1 pid=258)     worker = WorkerProc(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 663, in __init__
+(Worker_TP1 pid=258)     self.worker.load_model()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py", line 187, in timed
+(Worker_TP1 pid=258)     return fn(*a, **kw)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py", line 443, in load_model
+(Worker_TP1 pid=258)     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/model_runner.py", line 355, in load_model
+(Worker_TP1 pid=258)     self.model = model_loader.load_model(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/base_loader.py", line 64, in load_model
+(Worker_TP1 pid=258)     self.load_weights(model, model_config)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/default_loader.py", line 427, in load_weights
+(Worker_TP1 pid=258)     loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py", line 1544, in load_weights
+(Worker_TP1 pid=258)     loaded = load_rank_cached(self, weights, super().load_weights)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py", line 384, in load_rank_cached
+(Worker_TP1 pid=258)     if _write(directory, identity, state, loaded):
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py", line 176, in _write
+(Worker_TP1 pid=258)     _drop_file_pages(out.fileno(), offset, count)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py", line 39, in _drop_file_pages
+(Worker_TP1 pid=258)     os.posix_fadvise(fd, start, length, os.POSIX_FADV_DONTNEED)
+(Worker_TP1 pid=258) [boot-stamp] load-model still running after 180s; its thread is at:
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/process.py", line 108, in run
+(Worker_TP1 pid=258)     self._target(*self._args, **self._kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 894, in worker_main
+(Worker_TP1 pid=258)     worker = WorkerProc(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 663, in __init__
+(Worker_TP1 pid=258)     self.worker.load_model()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py", line 187, in timed
+(Worker_TP1 pid=258)     return fn(*a, **kw)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py", line 443, in load_model
+(Worker_TP1 pid=258)     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/model_runner.py", line 355, in load_model
+(Worker_TP1 pid=258)     self.model = model_loader.load_model(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/base_loader.py", line 64, in load_model
+(Worker_TP1 pid=258)     self.load_weights(model, model_config)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/default_loader.py", line 427, in load_weights
+(Worker_TP1 pid=258)     loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py", line 1544, in load_weights
+(Worker_TP1 pid=258)     loaded = load_rank_cached(self, weights, super().load_weights)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py", line 384, in load_rank_cached
+(Worker_TP1 pid=258)     if _write(directory, identity, state, loaded):
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py", line 175, in _write
+(Worker_TP1 pid=258)     getattr(os, "fdatasync", os.fsync)(out.fileno())
+(Worker_TP1 pid=258) [boot-stamp] load-model still running after 240s; its thread is at:
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/process.py", line 108, in run
+(Worker_TP1 pid=258)     self._target(*self._args, **self._kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 894, in worker_main
+(Worker_TP1 pid=258)     worker = WorkerProc(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 663, in __init__
+(Worker_TP1 pid=258)     self.worker.load_model()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py", line 187, in timed
+(Worker_TP1 pid=258)     return fn(*a, **kw)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py", line 443, in load_model
+(Worker_TP1 pid=258)     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/model_runner.py", line 355, in load_model
+(Worker_TP1 pid=258)     self.model = model_loader.load_model(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/base_loader.py", line 64, in load_model
+(Worker_TP1 pid=258)     self.load_weights(model, model_config)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/default_loader.py", line 427, in load_weights
+(Worker_TP1 pid=258)     loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py", line 1544, in load_weights
+(Worker_TP1 pid=258)     loaded = load_rank_cached(self, weights, super().load_weights)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py", line 384, in load_rank_cached
+(Worker_TP1 pid=258)     if _write(directory, identity, state, loaded):
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py", line 175, in _write
+(Worker_TP1 pid=258)     getattr(os, "fdatasync", os.fsync)(out.fileno())
+(Worker_TP1 pid=258) WARNING 09-09 00:01:20 [glm53_rank_cache.py:385] [rank-cache] saved rank=1 bytes=48092653608 in 209.656s; post-load hooks follow
+(Worker_TP1 pid=258) WARNING 09-09 00:01:20 [glm53_rank_cache.py:318] [rank-cache] evicted stale artifact /cache/glm53-ranks/891175a9ed1102c334f90259ddd077ccf26498764cc92617307abc6ae8b37156 (48.1 GB; keep=2)
+(Worker_TP1 pid=258) WARNING 09-09 00:01:24 [glm53_megakernel.py:227] [megakernel] source md5=dc03be88 kernels=15 (/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu)
+(Worker_TP1 pid=258) WARNING 09-09 00:01:24 [glm53_megakernel.py:2109] [megakernel] selftest mhc-bf16 all outputs bit equal -> ARM
+(Worker_TP1 pid=258) WARNING 09-09 00:01:25 [glm53_megakernel.py:2248] [megakernel] selftest mhc sinkhorn=20 rel_errs=['0.00e+00', '1.17e-07', '1.65e-07', '1.07e-08'] -> ARM
+(Worker_TP1 pid=258) WARNING 09-09 00:01:25 [glm53_megakernel.py:2183] [megakernel] AR consumer MHC mismatch T=16 fp32=False scale=1.0 early=False outputs=[{'output': 'residual', 'shape': [16, 4, 4096], 'ref_dtype': 'torch.bfloat16', 'got_dtype': 'torch.bfloat16', 'exact': True, 'different': 0, 'finite_max_abs': 0.0, 'ref_nonfinite': 0, 'got_nonfinite': 0, 'first_flat_index': None, 'first_ref': None, 'first_got': None, 'ref_ptr': 145023605248, 'got_ptr': 995358670848}, {'output': 'post_mix', 'shape': [16, 4], 'ref_dtype': 'torch.float32', 'got_dtype': 'torch.float32', 'exact': False, 'different': 19, 'finite_max_abs': 1.7881393432617188e-07, 'ref_nonfinite': 0, 'got_nonfinite': 0, 'first_flat_index': 32, 'first_ref': 0.3076680302619934, 'first_got': 0.30766788125038147, 'ref_ptr': 145022120448, 'got_ptr': 995359195136}, {'output': 'comb_mix', 'shape': [16, 16], 'ref_dtype': 'torch.float32', 'got_dtype': 'torch.float32', 'exact': False, 'different': 115, 'finite_max_abs': 2.384185791015625e-07, 'ref_nonfinite': 0, 'got_nonfinite': 0, 'first_flat_index': 128, 'first_ref': 0.47816869616508484, 'first_got': 0.47816866636276245, 'ref_ptr': 145022130176, 'got_ptr': 995359195648}, {'output': 'layer_input', 'shape': [16, 4096], 'ref_dtype': 'torch.bfloat16', 'got_dtype': 'torch.bfloat16', 'exact': True, 'different': 0, 'finite_max_abs': 0.0, 'ref_nonfinite': 0, 'got_nonfinite': 0, 'first_flat_index': None, 'first_ref': None, 'first_got': None, 'ref_ptr': 145024129536, 'got_ptr': 995359196672}]
+(Worker_TP1 pid=258) WARNING 09-09 00:01:25 [glm53_megakernel.py:2192] [megakernel] AR consumer MHC mismatch storage fn_version=0 cache=[{'ptr': 471451422720, 'shape': [24, 16384], 'stride': [16384, 1], 'dtype': 'torch.float32'}, {'ptr': 145032976896, 'shape': [24, 16384], 'stride': [16384, 1], 'dtype': 'torch.bfloat16'}, {'ptr': 145033763328, 'shape': [24, 4096, 4], 'stride': [16384, 4, 1], 'dtype': 'torch.bfloat16'}] inputs=[145024293376, 145032452608, 145022129152, 145022129664, 471451422720, 145022131200, 145022131712, 145022110720] workspace={'barrier': 145022120960, 'barrier_mhc': 145022121472, 'barrier_mla': 145022121984, 'yp': 145023293952, 'rp': 145022122496, 'sq': 145022124544, 'pmix': 145022126592, 'ol_stash': 145023343104}
+(Worker_TP1 pid=258) WARNING 09-09 00:01:25 [glm53_megakernel.py:2304] [megakernel] selftest mhc-pre T=[8, 6] identity=True rel=9.04e-06 -> ARM
+(Worker_TP1 pid=258) WARNING 09-09 00:01:25 [glm53_megakernel.py:2375] [megakernel] exact gemm m=8 n=1024: plan=[8, 64, 2] PASS
+(Worker_TP1 pid=258) WARNING 09-09 00:01:25 [glm53_megakernel.py:2375] [megakernel] exact gemm m=16 n=1024: plan=[8, 64, 2] PASS
+(Worker_TP1 pid=258) WARNING 09-09 00:01:25 [glm53_megakernel.py:2375] [megakernel] exact gemm m=32 n=1024: plan=[8, 64, 2] PASS
+(Worker_TP1 pid=258) WARNING 09-09 00:01:25 [glm53_megakernel.py:2375] [megakernel] exact gemm m=8 n=2048: plan=[3, 48, 2] PASS
+(Worker_TP1 pid=258) WARNING 09-09 00:01:27 [glm53_megakernel.py:2420] [megakernel] selftest gemm exact=2.01e-05 (m=8/16/32 + forced split) -> ARM (plans ksr/units/bps: [1024x4096]=[8, 64, 2], in_proj=[8, 408, 2])
+(Worker_TP1 pid=258) WARNING 09-09 00:01:27 [glm53_megakernel.py:2462] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+(Worker_TP1 pid=258) WARNING 09-09 00:01:27 [glm53_megakernel.py:2462] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+(Worker_TP1 pid=258) WARNING 09-09 00:01:28 [glm53_megakernel.py:2462] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+(Worker_TP1 pid=258) WARNING 09-09 00:01:28 [glm53_megakernel.py:2462] [megakernel] input-reuse exact graph M=6 N=4096 K=4096 PASS
+(Worker_TP1 pid=258) WARNING 09-09 00:01:28 [glm53_megakernel.py:2462] [megakernel] input-reuse exact graph M=6 N=6144 K=4096 PASS
+(Worker_TP1 pid=258) WARNING 09-09 00:01:28 [glm53_megakernel.py:2864] [megakernel] selftest mla rel=2.67e-03 pair_prefill=False group=2 prefill32=False -> ARM
+(Worker_TP1 pid=258) WARNING 09-09 00:01:28 [glm53_megakernel.py:2549] [megakernel] armed={'mhc': True, 'mhc_pre': True, 'gemm': True, 'mla': True, 'smlp2': False}
+(Worker_TP1 pid=258) WARNING 09-09 00:01:28 [glm53_fp8_dense.py:1013] [fp8-dense] nvfp4 alpha=1.0 backend=cutlass (resolved on model.layers.0.self_attn.in_proj_qkvbfg_a for the prefill pair, reused for the rest)
+(Worker_TP1 pid=258) WARNING 09-09 00:01:28 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #1 (model.layers.0.self_attn.in_proj_qkvbfg_a): cuda free 53.7/121.6 GiB, host MemAvailable 46.4 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:29 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #21 (model.layers.4.self_attn.o_proj): cuda free 52.9/121.6 GiB, host MemAvailable 45.8 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:30 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #41 (model.layers.8.mlp.shared_experts.gate_up_proj): cuda free 52.4/121.6 GiB, host MemAvailable 45.4 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:32 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #61 (model.layers.12.mlp.shared_experts.down_proj): cuda free 51.9/121.6 GiB, host MemAvailable 45.1 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:35 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #81 (model.layers.17.self_attn.in_proj_qkvbfg_a): cuda free 50.8/121.6 GiB, host MemAvailable 44.1 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:39 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #101 (model.layers.21.self_attn.o_proj): cuda free 50.5/121.6 GiB, host MemAvailable 44.0 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:43 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #121 (model.layers.25.mlp.shared_experts.gate_up_proj): cuda free 50.0/121.6 GiB, host MemAvailable 43.6 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:46 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #141 (model.layers.29.mlp.shared_experts.down_proj): cuda free 49.4/121.6 GiB, host MemAvailable 43.1 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:48 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #161 (model.layers.34.self_attn.in_proj_qkvbfg_a): cuda free 48.3/121.6 GiB, host MemAvailable 42.2 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:50 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #181 (model.layers.38.self_attn.o_proj): cuda free 48.0/121.6 GiB, host MemAvailable 42.0 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:51 [glm53_fp8_dense.py:1315] [fp8-dense] nvfp4 prefill pair #201 (model.layers.42.mlp.shared_experts.gate_up_proj): cuda free 47.3/121.6 GiB, host MemAvailable 41.5 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:01:51 [glm53_startup_cache.py:295] [fp8-cache] Glm5NextForCausalLM enabled=True hit=0 miss=213 errors=0 host-seconds=key=2.037 read=0.052 quantize=5.271 write=15.075
+(Worker_TP1 pid=258) WARNING 09-09 00:01:51 [glm53_fp8_dense.py:1343] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.661 mk=3.476 empty_cache=0.426 (includes existing syncs)
+(Worker_TP1 pid=258) WARNING 09-09 00:01:51 [glm53_fp8_dense.py:1346] [fp8-dense] Glm5NextForCausalLM (knob VLLM_GLM53_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 213 linears w8a8 (4.04 GB bf16), 0 kept bf16, 0 disarmed by the copy check, 213 MK W4 packs, 213 nvfp4 prefill pairs -- fingerprint for the boot log
+(Worker_TP1 pid=258) WARNING 09-09 00:01:51 [glm53_fp8_dense.py:1359] [fp8-dense] Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=223 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 31.1 s
+(Worker_TP1 pid=258) WARNING 09-09 00:01:51 [glm53_fp8_dense.py:1362] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.261 key_s=2.247 read_s=0.421 copy_s=0.671 fast_hits=223 legacy_hits=0 sha_hits=223 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=258) WARNING 09-09 00:01:51 [glm53_fp8_dense.py:1369] [fp8-dense] Glm5NextForCausalLM shapes: [1024x4096]x42, [4096x512]x42, [6416x4096]x34, [4096x2048]x34, [4096x1536]x22, [2048x4096]x11, [8192x512]x11, [4096x4096]x11, [6144x4096]x3, [4096x3072]x3
+(Worker_TP1 pid=258) INFO 09-09 00:01:51 [default_loader.py:430] Loading weights took 295.53 seconds
+(Worker_TP1 pid=258) INFO 09-09 00:01:51 [nvfp4.py:565] Using MoEPrepareAndFinalizeNoDPEPModular
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) [boot-stamp] load-model still running after 300s; its thread is at:
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/process.py", line 108, in run
+(Worker_TP1 pid=258)     self._target(*self._args, **self._kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 894, in worker_main
+(Worker_TP1 pid=258)     worker = WorkerProc(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 663, in __init__
+(Worker_TP1 pid=258)     self.worker.load_model()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py", line 187, in timed
+(Worker_TP1 pid=258)     return fn(*a, **kw)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py", line 443, in load_model
+(Worker_TP1 pid=258)     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/model_runner.py", line 355, in load_model
+(Worker_TP1 pid=258)     self.model = model_loader.load_model(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/base_loader.py", line 80, in load_model
+(Worker_TP1 pid=258)     process_weights_after_loading(model, model_config, target_device)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/utils.py", line 108, in process_weights_after_loading
+(Worker_TP1 pid=258)     quant_method.process_weights_after_loading(module)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe_w4a4_nvfp4.py", line 255, in process_weights_after_loading
+(Worker_TP1 pid=258)     self.moe_kernel.fused_experts.process_weights_after_loading(layer)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py", line 1391, in process_weights_after_loading
+(Worker_TP1 pid=258)     _b12x_dispatch.tile_expert_weights_inplace(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 1250, in tile_expert_weights_inplace
+(Worker_TP1 pid=258)     setattr(w1_fp4, _TILE_MAJOR_FP_ATTR, _tile_major_fingerprint(w1_fp4))
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 1174, in _tile_major_fingerprint
+(Worker_TP1 pid=258)     return hashlib.sha256(sample.cpu().numpy().tobytes()).hexdigest()
+(Worker_TP1 pid=258) WARNING 09-09 00:01:52 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:53 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:54 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) WARNING 09-09 00:01:54 [flashinfer_b12x_moe.py:1394] [b12x static v5] expert weights re-laid out tile-major in place (w13 (288, 1024, 2048), w2 (288, 4096, 256) bytes): the static lane reads 16 KB / 8 KB boxes
+(Worker_TP1 pid=258) INFO 09-09 00:01:54 [eagle3_utils.py:28] Using Eagle3 auxiliary layers from config: (6, 15, 25, 34, 43)
+(Worker_TP1 pid=258) INFO 09-09 00:01:54 [kernel.py:306] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(Worker_TP1 pid=258) INFO 09-09 00:01:54 [cuda.py:533] Using FLASHINFER attention backend out of potential backends: ['FLASHINFER', 'TRITON_ATTN'].
+(Worker_TP1 pid=258) [boot-stamp] weights: 81 tensors, 2.2 GiB | read 1.0s (2.21 GiB/s) | apply 0.0s
+(Worker_TP1 pid=258) INFO 09-09 00:01:55 [default_loader.py:430] Loading weights took 1.00 seconds
+(Worker_TP1 pid=258) WARNING 09-09 00:02:00 [glm53_startup_cache.py:295] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=0 miss=31 errors=0 host-seconds=key=0.396 read=0.009 quantize=3.060 write=0.714
+(Worker_TP1 pid=258) WARNING 09-09 00:02:00 [glm53_fp8_dense.py:1343] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.040 mk=0.562 empty_cache=0.147 (includes existing syncs)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:00 [glm53_fp8_dense.py:1346] [fp8-dense] DFlash2Qwen3ForCausalLM (knob VLLM_DFLASH2_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 31 linears w8a8 (0.73 GB bf16), 0 kept bf16, 0 disarmed by the copy check, 31 MK W4 packs, 0 nvfp4 prefill pairs -- fingerprint for the boot log
+(Worker_TP1 pid=258) WARNING 09-09 00:02:00 [glm53_fp8_dense.py:1359] [fp8-dense] DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=258 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 4.9 s
+(Worker_TP1 pid=258) WARNING 09-09 00:02:00 [glm53_fp8_dense.py:1362] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.295 key_s=2.619 read_s=0.467 copy_s=0.765 fast_hits=258 legacy_hits=0 sha_hits=258 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=258) WARNING 09-09 00:02:00 [glm53_fp8_dense.py:1369] [fp8-dense] DFlash2Qwen3ForCausalLM shapes: [1024x4096]x10, [1536x4096]x5, [4096x1024]x5, [6144x4096]x5, [4096x3072]x5, [4096x20480]x1
+(Worker_TP1 pid=258) WARNING 09-09 00:02:00 [glm53_fp8_dense.py:969] [fp8-dense] drafter: VLLM_GLM53_FP8_DENSE_FREE_BF16=1: released 0.73 GB of bf16 sources (0 linears kept theirs for a bias); the bias and error fallbacks through the base method are gone with them
+(Worker_TP1 pid=258) INFO 09-09 00:02:00 [fp8_lm_head.py:342] fp8 lm_head: quantized (38720, 4096).
+(Worker_TP1 pid=258) WARNING 09-09 00:02:00 [speculator.py:197] Draft model DFlash2Qwen3ForCausalLM does not support external multimodal embeddings. Embeddings from the target model will not be passed to the drafter; using text-only draft inputs instead.
+(Worker_TP1 pid=258) INFO 09-09 00:02:01 [model_runner.py:374] Model loading took 50.4 GiB and 308.369355 seconds
+(Worker_TP1 pid=258) [boot-stamp] load-model took 308.4s (at 338.7s since interpreter start) dev free 44.48 GiB (+58.76 GiB used this phase)
+(Worker_TP1 pid=258) INFO 09-09 00:02:01 [interface.py:950] Padding mamba page size by 2.86% to ensure that mamba page size and attention page size are exactly equal.
+INFO 09-09 00:02:01 [torch_utils.py:262] Reducing Torch threads from 20 to 1 for serving. Set OMP_NUM_THREADS in the external environment to override.
+(Worker_TP1 pid=258) INFO 09-09 00:02:03 [encoder_runner.py:119] Encoder cache will be initialized with a budget of 32242 tokens, and profiled with 1 video items of the maximum feature size.
+(Worker_TP1 pid=258) WARNING 09-09 00:02:19 [dsv4_oneshot_shim.py:175] [osar] source md5=a2d7bc9d kernels=3 maxel=131072 (/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:19 [dsv4_oneshot_shim.py:322] [osar] connected rank=1 world=4 shadow=False
+(Worker_TP1 pid=258) WARNING 09-09 00:02:19 [dsv4_oneshot_shim.py:423] [osar] self-test PASS div=0 (real=True)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:19 [dsv4_oneshot_shim.py:426] [osar] consumer PDL self-test PASS
+(Worker_TP1 pid=258) [boot-stamp] encoder-profile took 21.2s (at 362.5s since interpreter start) dev free 37.02 GiB (+3.94 GiB used this phase)
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+(Worker_TP1 pid=258) WARNING 09-09 00:02:26 [flashinfer_b12x_moe.py:160] [b12x sf6] packed-only owners finalised: layers=42 raw_bytes_released=4756340736; decode and prefill read immutable packed scales
+(Worker_TP1 pid=258) WARNING 09-09 00:02:26 [glm53_fp8_dense.py:969] [fp8-dense] VLLM_GLM53_FP8_DENSE_FREE_BF16=1: released 4.04 GB of bf16 sources (0 linears kept theirs for a bias); the bias and error fallbacks through the base method are gone with them
+(Worker_TP1 pid=258) WARNING 09-09 00:02:26 [model.py:936] [prefill-sp] NOT selected: metadata gate (T=8192: not a pure-prefill batch on every layer, or metadata names/kinds unknown)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:26 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:26 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+[osar] phase rank=1 us/collective (n=2): guard=2.2 copy=3.9 wait=311.3 reduce=2.2 | total=319.6  @1592 MHz assumed | wait by size: <=128KiB n=2 311.3, >128KiB n=0 0.0
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:29 [glm53_indexer_gate.py:129] [indexer-gate] VLLM_GLM53_INDEXER_GATE_SPLITK=1: first stock torch.mm routing, e.g. x(8192, 4096) torch.bfloat16 @ w(4096, 32) (M<=16 admitted)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:30 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:30 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:30 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) INFO 09-09 00:02:30 [flashinfer_b12x_moe.py:1002] b12x MoE wrapper shared across layers with matching geometry (288 experts, top_k 8, 4096/512)
+(Worker_TP1 pid=258) 2026-09-09 00:02:31,173 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module b12x_moe_sm121a_cute_dsl
+(Worker_TP1 pid=258) 2026-09-09 00:02:31,175 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_e0c4370075719b32
+(Worker_TP1 pid=258) 2026-09-09 00:02:35,241 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_e0c4370075719b32.o
+(Worker_TP1 pid=258) [b12x sf6 unpack] lane serving: backend=dynamic u8x4=1 artifact=dynamic_e288_k4096_n512_t8_tiled_e0c4370075719b32
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:35 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:40 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) WARNING 09-09 00:02:41 [glm53_fp8_dense.py:812] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+(Worker_TP1 pid=258) INFO 09-09 00:02:43 [backends.py:1094] Using cache directory: /cache/vllm/torch_compile_cache/2f644ac471/rank_1_0/dflash_head for vLLM's torch.compile
+(Worker_TP1 pid=258) INFO 09-09 00:02:43 [backends.py:1155] Dynamo bytecode transform time: 0.87 s
+(Worker_TP1 pid=258) WARNING 09-09 00:02:43 [allreduce_rms_fusion.py:1024] Flashinfer allreduce fusion is not supported for world size 4 or max size is not provided
+(Worker_TP1 pid=258) WARNING 09-09 00:02:46 [allreduce_rms_fusion.py:1138] AllReduce fusion pass is disabled.
+(Worker_TP1 pid=258) INFO 09-09 00:02:48 [backends.py:378] Cache the graph of compile range (1, 8192) for later use
+(Worker_TP1 pid=258) INFO 09-09 00:02:48 [backends.py:393] Compiling a graph for compile range (1, 8192) takes 4.35 s
+(Worker_TP1 pid=258) INFO 09-09 00:02:49 [decorators.py:708] saved AOT compiled function to /cache/vllm/torch_compile_cache/torch_aot_compile/8ad1ad616774ba53f10201d2bbc93b7641e9a2450276accb96d2a69277fdfb1c/rank_1_0/model
+(Worker_TP1 pid=258) INFO 09-09 00:02:49 [monitor.py:53] torch.compile took 6.34 s in total
+(Worker_TP1 pid=258) INFO 09-09 00:02:49 [monitor.py:81] Initial profiling/warmup run took 0.00 s
+(Worker_TP1 pid=258) INFO 09-09 00:02:57 [qwen3_dflash2.py:550] dflash2 path selector: loaded -- predecessor_codebook(finite=1.0000 |max|=9.25 |mean|=0.781) successor_codebook(finite=1.0000 |max|=0.77 |mean|=0.0547)
+(Worker_TP1 pid=258) INFO 09-09 00:02:58 [backends.py:1094] Using cache directory: /cache/vllm/torch_compile_cache/2f644ac471/rank_1_0/dflash2_candidate_selector for vLLM's torch.compile
+(Worker_TP1 pid=258) INFO 09-09 00:02:58 [backends.py:1155] Dynamo bytecode transform time: 0.33 s
+(Worker_TP1 pid=258) WARNING 09-09 00:02:58 [allreduce_rms_fusion.py:1024] Flashinfer allreduce fusion is not supported for world size 4 or max size is not provided
+[osar] phase rank=1 us/collective (n=11): guard=2.6 copy=4.0 wait=786013.9 reduce=4.5 | total=786025.0  @1592 MHz assumed | wait by size: <=128KiB n=0 0.0, >128KiB n=11 786013.9
+(Worker_TP1 pid=258) /usr/local/lib/python3.12/dist-packages/torch/_inductor/compile_fx.py:321: UserWarning: TensorFloat32 tensor cores for float32 matrix multiplication available but not enabled. Consider setting `torch.set_float32_matmul_precision('high')` for better performance.
+(Worker_TP1 pid=258)   warnings.warn(
+(Worker_TP1 pid=258) [rank1]:W0909 00:03:00.787000 258 torch/_inductor/utils.py:1953] Not enough SMs to use max_autotune_gemm mode
+(Worker_TP1 pid=258) INFO 09-09 00:03:01 [backends.py:393] Compiling a graph for compile range (1, 8192) takes 1.00 s
+(Worker_TP1 pid=258) INFO 09-09 00:03:01 [decorators.py:708] saved AOT compiled function to /cache/vllm/torch_compile_cache/torch_aot_compile/cc4341ea1c1449ef5964c0414956b698aca7c8d630a0ad5b9c25743f184bca13/rank_1_0/model
+(Worker_TP1 pid=258) INFO 09-09 00:03:01 [monitor.py:53] torch.compile took 3.22 s in total
+(Worker_TP1 pid=258) INFO 09-09 00:03:01 [monitor.py:81] Initial profiling/warmup run took 0.00 s
+(Worker_TP1 pid=258) [boot-stamp] profile/determine-memory still running after 60s; its thread is at:
+(Worker_TP1 pid=258)   File "<string>", line 1, in <module>
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+(Worker_TP1 pid=258)     exitcode = _main(fd, parent_sentinel)
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/spawn.py", line 135, in _main
+(Worker_TP1 pid=258)     return self._bootstrap(parent_sentinel)
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+(Worker_TP1 pid=258)     self.run()
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/process.py", line 108, in run
+(Worker_TP1 pid=258)     self._target(*self._args, **self._kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 918, in worker_main
+(Worker_TP1 pid=258)     worker.worker_busy_loop()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 1025, in worker_busy_loop
+(Worker_TP1 pid=258)     output = func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py", line 187, in timed
+(Worker_TP1 pid=258)     return fn(*a, **kw)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py", line 505, in determine_available_memory
+(Worker_TP1 pid=258)     self.model_runner.profile_run()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py", line 187, in timed
+(Worker_TP1 pid=258)     return fn(*a, **kw)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/model_runner.py", line 820, in profile_run
+(Worker_TP1 pid=258)     gc.collect()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/torch/_dynamo/utils.py", line 1090, in <lambda>
+(Worker_TP1 pid=258)     self.refs[idx] = weakref.ref(key, lambda ref: self._remove_id(idx))
+(Worker_TP1 pid=258) [boot-stamp] profile-run still running after 60s; its thread is at:
+(Worker_TP1 pid=258)   File "<string>", line 1, in <module>
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+(Worker_TP1 pid=258)     exitcode = _main(fd, parent_sentinel)
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/spawn.py", line 135, in _main
+(Worker_TP1 pid=258)     return self._bootstrap(parent_sentinel)
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+(Worker_TP1 pid=258)     self.run()
+(Worker_TP1 pid=258)   File "/usr/lib/python3.12/multiprocessing/process.py", line 108, in run
+(Worker_TP1 pid=258)     self._target(*self._args, **self._kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 918, in worker_main
+(Worker_TP1 pid=258)     worker.worker_busy_loop()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/executor/multiproc_executor.py", line 1025, in worker_busy_loop
+(Worker_TP1 pid=258)     output = func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py", line 187, in timed
+(Worker_TP1 pid=258)     return fn(*a, **kw)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py", line 505, in determine_available_memory
+(Worker_TP1 pid=258)     self.model_runner.profile_run()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py", line 187, in timed
+(Worker_TP1 pid=258)     return fn(*a, **kw)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(Worker_TP1 pid=258)     return func(*args, **kwargs)
+(Worker_TP1 pid=258) [boot-stamp] profile-run took 60.1s (at 399.3s since interpreter start) dev free 35.00 GiB (+9.48 GiB used this phase)
+(Worker_TP1 pid=258) INFO 09-09 00:03:02 [indexer.py:779] DSA indexer decode path: use_flattening=True supports_varlen=False (next_n=6, use_fp4_indexer_cache=False)
+(Worker_TP1 pid=258) INFO 09-09 00:03:02 [flashinfer.py:889] FlashInfer resolved query dtypes: prefill=torch.bfloat16, decode=torch.bfloat16, decode_backend=xqa, kv_cache_dtype=torch.float8_e4m3fn, arch=sm121
+(Worker_TP1 pid=258) INFO 09-09 00:03:02 [kernel.py:306] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(Worker_TP1 pid=258) 2026-09-09 00:03:03,411 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m24_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_61643ef2f8cacb73
+(Worker_TP1 pid=258) REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+(Worker_TP1 pid=258) 2026-09-09 00:03:08,330 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m24_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_61643ef2f8cacb73.o
+(Worker_TP1 pid=258) [b12x static v2] lane serving: static2_m24_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1 (mac=48, m=24, routed=192, smem=101376 B)
+(Worker_TP1 pid=258) [b12x sf6 unpack] lane serving: backend=static u8x4=1 artifact=static2_m24_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_61643ef2f8cacb73
+(Worker_TP1 pid=258) WARNING 09-09 00:03:08 [model.py:936] [prefill-sp] NOT selected: tensor/context gate (compiling=False capturing=True T=24)
+(Worker_TP1 pid=258) WARNING 09-09 00:03:08 [glm53_megakernel.py:1374] [megakernel] gemm lane CAPTURED into the decode graph: M=24 plan ksr=5 units=255 bps=2
+(Worker_TP1 pid=258) WARNING 09-09 00:03:08 [flashinfer_mla_sparse_sm90.py:470] [megakernel] mla lane CAPTURED into the decode graph: T=24 (every replay runs mk_mla_kernel)
+(Worker_TP1 pid=258) 2026-09-09 00:03:08,820 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m18_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_52703bb6d294500d
+[osar] phase rank=1 us/collective (n=97): guard=3.2 copy=3.6 wait=2761.0 reduce=4.4 | total=2772.2  @1592 MHz assumed | wait by size: <=128KiB n=0 0.0, >128KiB n=97 2761.0
+(Worker_TP1 pid=258) REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+(Worker_TP1 pid=258) 2026-09-09 00:03:13,631 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m18_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_52703bb6d294500d.o
+(Worker_TP1 pid=258) [b12x static v2] lane serving: static2_m18_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1 (mac=48, m=18, routed=144, smem=101376 B)
+(Worker_TP1 pid=258) [b12x sf6 unpack] lane serving: backend=static u8x4=1 artifact=static2_m18_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_52703bb6d294500d
+(Worker_TP1 pid=258) WARNING 09-09 00:03:13 [model.py:936] [prefill-sp] NOT selected: tensor/context gate (compiling=False capturing=True T=18)
+(Worker_TP1 pid=258) WARNING 09-09 00:03:13 [glm53_megakernel.py:2030] [megakernel] mhc-pre hook serving (T=12): layer 0's standalone pre-mix runs in the MHC segment; no deep_gemm in the decode step
+(Worker_TP1 pid=258) INFO 09-09 00:03:13 [glm53_indexer_gate.py:129] [indexer-gate] VLLM_GLM53_INDEXER_GATE_SPLITK=1: first split-K routing, e.g. x(12, 4096) torch.bfloat16 @ w(4096, 32) (M<=16 admitted)
+(Worker_TP1 pid=258) 2026-09-09 00:03:13,967 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_45eacdd3b86aeb08
+(Worker_TP1 pid=258) REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+(Worker_TP1 pid=258) 2026-09-09 00:03:18,785 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_45eacdd3b86aeb08.o
+(Worker_TP1 pid=258) [b12x static v2] lane serving: static2_m12_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1 (mac=48, m=12, routed=96, smem=101376 B)
+(Worker_TP1 pid=258) [b12x sf6 unpack] lane serving: backend=static u8x4=1 artifact=static2_m12_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_45eacdd3b86aeb08
+(Worker_TP1 pid=258) WARNING 09-09 00:03:18 [model.py:936] [prefill-sp] NOT selected: tensor/context gate (compiling=False capturing=True T=12)
+(Worker_TP1 pid=258) WARNING 09-09 00:03:18 [glm53_megakernel.py:1859] [megakernel] mhc-bf16 large fallback CAPTURED T=12 storage=fp32
+[osar] phase rank=1 us/collective (n=173): guard=4.3 copy=3.8 wait=78.1 reduce=1.9 | total=88.2  @1592 MHz assumed | wait by size: <=128KiB n=90 147.9, >128KiB n=83 2.3
+(Worker_TP1 pid=258) 2026-09-09 00:03:19,120 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_f0c54eb04301a8a6
+(Worker_TP1 pid=258) DECODE_REFORM_LAYOUT_PASS 1024
+(Worker_TP1 pid=258) REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+(Worker_TP1 pid=258) 2026-09-09 00:03:24,730 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_f0c54eb04301a8a6.o
+(Worker_TP1 pid=258) [b12x static v2] lane serving: static2_m6_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=98304 B)
+(Worker_TP1 pid=258) [b12x sf6 unpack] lane serving: backend=static u8x4=1 artifact=static2_m6_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_f0c54eb04301a8a6
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [model.py:936] [prefill-sp] NOT selected: tensor/context gate (compiling=False capturing=True T=6)
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1853] [megakernel] mhc-bf16 CAPTURED T=6 cached=98
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1305] [megakernel] input-reuse CAPTURED M=6 N=6416 K=4096 split=8 bps=3 scratch=33792
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1320] [megakernel] input-cta CAPTURED M=6 N=6416 K=4096 mode=4 split=8 bps=3 smem=22528
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1279] [megakernel] m8 shape CAPTURED M=6 N=4096 K=2048 plan=[4, 128, 3]
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1282] [megakernel] fp8-pack2 CAPTURED M=6 N=4096 K=2048
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1284] [megakernel] transpose-m8 CAPTURED M=6 N=4096 K=2048 compact=True
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1287] [megakernel] m8-fastpath CAPTURED M=6 N=4096 K=2048
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [dsv4_oneshot_shim.py:607] [osar] consumer PDL CAPTURED numel=24576
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1320] [megakernel] input-cta CAPTURED M=6 N=6144 K=4096 mode=4 split=3 bps=4 smem=17152
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1279] [megakernel] m8 shape CAPTURED M=6 N=4096 K=3072 plan=[3, 96, 2]
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1282] [megakernel] fp8-pack2 CAPTURED M=6 N=4096 K=3072
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1284] [megakernel] transpose-m8 CAPTURED M=6 N=4096 K=3072 compact=False
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1287] [megakernel] m8-fastpath CAPTURED M=6 N=4096 K=3072
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1279] [megakernel] m8 shape CAPTURED M=6 N=2048 K=4096 plan=[6, 96, 2]
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1282] [megakernel] fp8-pack2 CAPTURED M=6 N=2048 K=4096
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1284] [megakernel] transpose-m8 CAPTURED M=6 N=2048 K=4096 compact=False
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1287] [megakernel] m8-fastpath CAPTURED M=6 N=2048 K=4096
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1279] [megakernel] m8 shape CAPTURED M=6 N=4096 K=1536 plan=[3, 96, 2]
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1282] [megakernel] fp8-pack2 CAPTURED M=6 N=4096 K=1536
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1284] [megakernel] transpose-m8 CAPTURED M=6 N=4096 K=1536 compact=False
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1287] [megakernel] m8-fastpath CAPTURED M=6 N=4096 K=1536
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1320] [megakernel] input-cta CAPTURED M=6 N=4096 K=4096 mode=4 split=3 bps=4 smem=17152
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1279] [megakernel] m8 shape CAPTURED M=6 N=1024 K=4096 plan=[8, 64, 2]
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1282] [megakernel] fp8-pack2 CAPTURED M=6 N=1024 K=4096
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1284] [megakernel] transpose-m8 CAPTURED M=6 N=1024 K=4096 compact=False
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1287] [megakernel] m8-fastpath CAPTURED M=6 N=1024 K=4096
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1279] [megakernel] m8 shape CAPTURED M=6 N=4096 K=512 plan=[1, 32, 2]
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1282] [megakernel] fp8-pack2 CAPTURED M=6 N=4096 K=512
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1284] [megakernel] transpose-m8 CAPTURED M=6 N=4096 K=512 compact=False
+(Worker_TP1 pid=258) WARNING 09-09 00:03:24 [glm53_megakernel.py:1287] [megakernel] m8-fastpath CAPTURED M=6 N=4096 K=512
+(Worker_TP1 pid=258) INFO 09-09 00:03:25 [model_runner.py:952] Estimated CUDA graph memory: 1.04 GiB total
+(Worker_TP1 pid=258) [boot-stamp] cudagraph-memory-profile took 23.1s (at 422.9s since interpreter start) dev free 36.41 GiB (+1.22 GiB used this phase)
+(Worker_TP1 pid=258) INFO 09-09 00:03:25 [gpu_worker.py:582] Available KV cache memory: 11.64 GiB
+(Worker_TP1 pid=258) WARNING 09-09 00:03:25 [gpu_worker.py:614] CUDA graph memory profiling is disabled (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0). Without it, CUDA graph memory is not accounted for during KV cache allocation, which may require lowering --gpu-memory-utilization to avoid OOM. Consider re-enabling it (the default as of v0.21.0) and increasing --gpu-memory-utilization from 0.6429 to 0.6514.
+(Worker_TP1 pid=258) [boot-stamp] profile/determine-memory took 84.0s (at 422.9s since interpreter start) dev free 36.41 GiB (+8.07 GiB used this phase)
+(Worker_TP1 pid=258) INFO 09-09 00:03:25 [kernel.py:306] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(Worker_TP1 pid=258) [boot-stamp] kv-cache-alloc took 0.4s (at 423.4s since interpreter start) dev free 26.83 GiB (+9.58 GiB used this phase)
+(Worker_TP1 pid=258) INFO 09-09 00:03:26 [spec_decode_rejection_warmup.py:251] Warmed DFlash input-prep kernel over 6 BLOCK_SIZE buckets (num_query_per_req=6).
+(Worker_TP1 pid=258) INFO 09-09 00:03:26 [spec_decode_rejection_warmup.py:81] Warming up spec-decode rejection sampler kernels (vocab=154880, num_spec=5, dtype_pairs=[('torch.bfloat16', 'torch.float32'), ('torch.float32', 'torch.bfloat16'), ('torch.bfloat16', 'torch.bfloat16'), ('torch.float32', 'torch.float32')], block_verify=False).
+(Worker_TP1 pid=258) INFO 09-09 00:03:26 [kernel_warmup.py:95] Warming up ll_bf16 router GEMM kernels for shapes: ((4096, 288),).
+(Worker_TP1 pid=258) 2026-09-09 00:03:28,084 - INFO - autotuner.py:972 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1 pid=258) INFO 09-09 00:03:28 [model.py:980] [prefill-sp] MHC token shards selected (T=8192, TP=4, full-token attention/MoE)
+(Worker_TP1 pid=258) [AutoTuner]: Tuning fp4_gemm:   0%|          | 0/21 [00:00<?, ?profile/s][AutoTuner]: Tuning fp4_gemm:   5%|▍         | 1/21 [00:00<00:03,  5.13profile/s][AutoTuner]: Tuning fp4_gemm:  10%|▉         | 2/21 [00:00<00:03,  5.62profile/s][AutoTuner]: Tuning fp4_gemm:  14%|█▍        | 3/21 [00:00<00:03,  5.71profile/s][AutoTuner]: Tuning fp4_gemm:  19%|█▉        | 4/21 [00:00<00:02,  5.73profile/s][osar] phase rank=1 us/collective (n=90): guard=3.0 copy=3.4 wait=188.2 reduce=1.5 | total=196.1  @1592 MHz assumed | wait by size: <=128KiB n=90 188.2, >128KiB n=0 0.0
+[AutoTuner]: Tuning fp4_gemm:  24%|██▍       | 5/21 [00:00<00:02,  5.80profile/s][AutoTuner]: Tuning fp4_gemm:  29%|██▊       | 6/21 [00:01<00:02,  5.88profile/s][AutoTuner]: Tuning fp4_gemm:  33%|███▎      | 7/21 [00:01<00:02,  6.02profile/s][AutoTuner]: Tuning fp4_gemm:  38%|███▊      | 8/21 [00:01<00:02,  6.14profile/s][AutoTuner]: Tuning fp4_gemm:  43%|████▎     | 9/21 [00:01<00:02,  6.00profile/s][AutoTuner]: Tuning fp4_gemm:  48%|████▊     | 10/21 [00:01<00:01,  5.62profile/s][AutoTuner]: Tuning fp4_gemm:  52%|█████▏    | 11/21 [00:01<00:02,  4.95profile/s][AutoTuner]: Tuning fp4_gemm:  57%|█████▋    | 12/21 [00:02<00:02,  4.44profile/s][AutoTuner]: Tuning fp4_gemm:  62%|██████▏   | 13/21 [00:02<00:02,  3.93profile/s][AutoTuner]: Tuning fp4_gemm:  67%|██████▋   | 14/21 [00:02<00:01,  3.53profile/s][AutoTuner]: Tuning fp4_gemm:  71%|███████▏  | 15/21 [00:03<00:01,  3.22profile/s][AutoTuner]: Tuning fp4_gemm:  76%|███████▌  | 16/21 [00:03<00:01,  2.95profile/s][AutoTuner]: Tuning fp4_gemm:  81%|████████  | 17/21 [00:04<00:01,  2.65profile/s][AutoTuner]: Tuning fp4_gemm:  86%|████████▌ | 18/21 [00:04<00:01,  2.34profile/s][AutoTuner]: Tuning fp4_gemm:  90%|█████████ | 19/21 [00:05<00:00,  2.08profile/s][AutoTuner]: Tuning fp4_gemm:  95%|█████████▌| 20/21 [00:06<00:00,  1.84profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:07<00:00,  1.33profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:07<00:00,  2.89profile/s]
+(Worker_TP1 pid=258) WARNING 09-09 00:03:35 [kda.py:108] [kda-prefill] direct output engaged (tokens=8192)
+(Worker_TP1 pid=258) [AutoTuner]: Tuning fp4_gemm:   0%|          | 0/21 [00:00<?, ?profile/s][AutoTuner]: Tuning fp4_gemm:   5%|▍         | 1/21 [00:00<00:04,  4.33profile/s][AutoTuner]: Tuning fp4_gemm:  10%|▉         | 2/21 [00:00<00:03,  5.96profile/s][AutoTuner]: Tuning fp4_gemm:  14%|█▍        | 3/21 [00:00<00:02,  6.77profile/s][AutoTuner]: Tuning fp4_gemm:  19%|█▉        | 4/21 [00:00<00:02,  7.26profile/s][AutoTuner]: Tuning fp4_gemm:  24%|██▍       | 5/21 [00:00<00:02,  7.54profile/s][AutoTuner]: Tuning fp4_gemm:  29%|██▊       | 6/21 [00:00<00:01,  7.66profile/s][AutoTuner]: Tuning fp4_gemm:  33%|███▎      | 7/21 [00:00<00:01,  7.83profile/s][AutoTuner]: Tuning fp4_gemm:  38%|███▊      | 8/21 [00:01<00:01,  7.96profile/s][AutoTuner]: Tuning fp4_gemm:  43%|████▎     | 9/21 [00:01<00:01,  8.07profile/s][AutoTuner]: Tuning fp4_gemm:  48%|████▊     | 10/21 [00:01<00:01,  7.83profile/s][AutoTuner]: Tuning fp4_gemm:  52%|█████▏    | 11/21 [00:01<00:01,  7.48profile/s][AutoTuner]: Tuning fp4_gemm:  57%|█████▋    | 12/21 [00:01<00:01,  6.99profile/s][AutoTuner]: Tuning fp4_gemm:  62%|██████▏   | 13/21 [00:01<00:01,  6.53profile/s][AutoTuner]: Tuning fp4_gemm:  67%|██████▋   | 14/21 [00:02<00:01,  6.15profile/s][AutoTuner]: Tuning fp4_gemm:  71%|███████▏  | 15/21 [00:02<00:01,  5.72profile/s][AutoTuner]: Tuning fp4_gemm:  76%|███████▌  | 16/21 [00:02<00:00,  5.31profile/s][AutoTuner]: Tuning fp4_gemm:  81%|████████  | 17/21 [00:02<00:00,  4.89profile/s][AutoTuner]: Tuning fp4_gemm:  86%|████████▌ | 18/21 [00:02<00:00,  4.42profile/s][AutoTuner]: Tuning fp4_gemm:  90%|█████████ | 19/21 [00:03<00:00,  4.03profile/s][AutoTuner]: Tuning fp4_gemm:  95%|█████████▌| 20/21 [00:03<00:00,  3.69profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:04<00:00,  2.91profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:04<00:00,  5.12profile/s]
+(Worker_TP1 pid=258) INFO 09-09 00:03:41 [glm53_prefill_collectives.py:583] [prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)
+(Worker_TP1 pid=258) [AutoTuner]: Tuning fp4_gemm:   0%|          | 0/21 [00:00<?, ?profile/s][AutoTuner]: Tuning fp4_gemm:   5%|▍         | 1/21 [00:00<00:04,  4.83profile/s][AutoTuner]: Tuning fp4_gemm:  10%|▉         | 2/21 [00:00<00:03,  5.38profile/s][AutoTuner]: Tuning fp4_gemm:  14%|█▍        | 3/21 [00:00<00:03,  5.56profile/s][AutoTuner]: Tuning fp4_gemm:  19%|█▉        | 4/21 [00:00<00:02,  5.73profile/s][AutoTuner]: Tuning fp4_gemm:  24%|██▍       | 5/21 [00:00<00:02,  5.97profile/s][AutoTuner]: Tuning fp4_gemm:  29%|██▊       | 6/21 [00:01<00:02,  6.13profile/s][AutoTuner]: Tuning fp4_gemm:  33%|███▎      | 7/21 [00:01<00:02,  6.31profile/s][AutoTuner]: Tuning fp4_gemm:  38%|███▊      | 8/21 [00:01<00:01,  6.51profile/s][AutoTuner]: Tuning fp4_gemm:  43%|████▎     | 9/21 [00:01<00:01,  6.52profile/s][AutoTuner]: Tuning fp4_gemm:  48%|████▊     | 10/21 [00:01<00:01,  6.16profile/s][AutoTuner]: Tuning fp4_gemm:  52%|█████▏    | 11/21 [00:01<00:01,  5.59profile/s][AutoTuner]: Tuning fp4_gemm:  57%|█████▋    | 12/21 [00:02<00:01,  4.97profile/s][AutoTuner]: Tuning fp4_gemm:  62%|██████▏   | 13/21 [00:02<00:01,  4.37profile/s][AutoTuner]: Tuning fp4_gemm:  67%|██████▋   | 14/21 [00:02<00:01,  3.85profile/s][AutoTuner]: Tuning fp4_gemm:  71%|███████▏  | 15/21 [00:03<00:01,  3.45profile/s][AutoTuner]: Tuning fp4_gemm:  76%|███████▌  | 16/21 [00:03<00:01,  3.15profile/s][AutoTuner]: Tuning fp4_gemm:  81%|████████  | 17/21 [00:03<00:01,  2.81profile/s][AutoTuner]: Tuning fp4_gemm:  86%|████████▌ | 18/21 [00:04<00:01,  2.48profile/s][AutoTuner]: Tuning fp4_gemm:  90%|█████████ | 19/21 [00:05<00:00,  2.19profile/s][AutoTuner]: Tuning fp4_gemm:  95%|█████████▌| 20/21 [00:05<00:00,  1.95profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:06<00:00,  1.39profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:06<00:00,  3.06profile/s]
+(Worker_TP1 pid=258) [AutoTuner]: Tuning fp4_gemm:   0%|          | 0/21 [00:00<?, ?profile/s][AutoTuner]: Tuning fp4_gemm:   5%|▍         | 1/21 [00:00<00:02,  7.24profile/s][AutoTuner]: Tuning fp4_gemm:  10%|▉         | 2/21 [00:00<00:02,  6.64profile/s][AutoTuner]: Tuning fp4_gemm:  14%|█▍        | 3/21 [00:00<00:02,  7.17profile/s][AutoTuner]: Tuning fp4_gemm:  19%|█▉        | 4/21 [00:00<00:02,  6.90profile/s][AutoTuner]: Tuning fp4_gemm:  24%|██▍       | 5/21 [00:00<00:02,  6.98profile/s][AutoTuner]: Tuning fp4_gemm:  29%|██▊       | 6/21 [00:00<00:02,  7.06profile/s][AutoTuner]: Tuning fp4_gemm:  33%|███▎      | 7/21 [00:00<00:01,  7.18profile/s][AutoTuner]: Tuning fp4_gemm:  38%|███▊      | 8/21 [00:01<00:01,  7.27profile/s][AutoTuner]: Tuning fp4_gemm:  43%|████▎     | 9/21 [00:01<00:01,  7.21profile/s][AutoTuner]: Tuning fp4_gemm:  48%|████▊     | 10/21 [00:01<00:01,  6.82profile/s][AutoTuner]: Tuning fp4_gemm:  52%|█████▏    | 11/21 [00:01<00:01,  6.49profile/s][AutoTuner]: Tuning fp4_gemm:  57%|█████▋    | 12/21 [00:01<00:01,  5.99profile/s][AutoTuner]: Tuning fp4_gemm:  62%|██████▏   | 13/21 [00:02<00:01,  5.45profile/s][AutoTuner]: Tuning fp4_gemm:  67%|██████▋   | 14/21 [00:02<00:01,  5.05profile/s][AutoTuner]: Tuning fp4_gemm:  71%|███████▏  | 15/21 [00:02<00:01,  4.66profile/s][AutoTuner]: Tuning fp4_gemm:  76%|███████▌  | 16/21 [00:02<00:01,  4.33profile/s][AutoTuner]: Tuning fp4_gemm:  81%|████████  | 17/21 [00:03<00:01,  3.94profile/s][AutoTuner]: Tuning fp4_gemm:  86%|████████▌ | 18/21 [00:03<00:00,  3.57profile/s][AutoTuner]: Tuning fp4_gemm:  90%|█████████ | 19/21 [00:03<00:00,  3.25profile/s][AutoTuner]: Tuning fp4_gemm:  95%|█████████▌| 20/21 [00:04<00:00,  2.97profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:04<00:00,  2.29profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:04<00:00,  4.32profile/s]
+(Worker_TP1 pid=258) [AutoTuner]: Tuning fp4_gemm:   0%|          | 0/21 [00:00<?, ?profile/s][AutoTuner]: Tuning fp4_gemm:   5%|▍         | 1/21 [00:00<00:02,  7.14profile/s][AutoTuner]: Tuning fp4_gemm:  10%|▉         | 2/21 [00:00<00:02,  7.07profile/s][AutoTuner]: Tuning fp4_gemm:  14%|█▍        | 3/21 [00:00<00:02,  7.83profile/s][AutoTuner]: Tuning fp4_gemm:  19%|█▉        | 4/21 [00:00<00:02,  8.06profile/s][AutoTuner]: Tuning fp4_gemm:  24%|██▍       | 5/21 [00:00<00:02,  7.67profile/s][AutoTuner]: Tuning fp4_gemm:  29%|██▊       | 6/21 [00:00<00:01,  7.74profile/s][AutoTuner]: Tuning fp4_gemm:  33%|███▎      | 7/21 [00:00<00:01,  7.81profile/s][AutoTuner]: Tuning fp4_gemm:  38%|███▊      | 8/21 [00:01<00:01,  7.88profile/s][AutoTuner]: Tuning fp4_gemm:  43%|████▎     | 9/21 [00:01<00:01,  7.88profile/s][AutoTuner]: Tuning fp4_gemm:  48%|████▊     | 10/21 [00:01<00:01,  7.59profile/s][AutoTuner]: Tuning fp4_gemm:  52%|█████▏    | 11/21 [00:01<00:01,  7.39profile/s][AutoTuner]: Tuning fp4_gemm:  57%|█████▋    | 12/21 [00:01<00:01,  6.95profile/s][AutoTuner]: Tuning fp4_gemm:  62%|██████▏   | 13/21 [00:01<00:01,  6.57profile/s][AutoTuner]: Tuning fp4_gemm:  67%|██████▋   | 14/21 [00:01<00:01,  6.29profile/s][AutoTuner]: Tuning fp4_gemm:  71%|███████▏  | 15/21 [00:02<00:01,  5.91profile/s][AutoTuner]: Tuning fp4_gemm:  76%|███████▌  | 16/21 [00:02<00:00,  5.57profile/s][AutoTuner]: Tuning fp4_gemm:  81%|████████  | 17/21 [00:02<00:00,  5.10profile/s][AutoTuner]: Tuning fp4_gemm:  86%|████████▌ | 18/21 [00:02<00:00,  4.76profile/s][AutoTuner]: Tuning fp4_gemm:  90%|█████████ | 19/21 [00:03<00:00,  4.33profile/s][AutoTuner]: Tuning fp4_gemm:  95%|█████████▌| 20/21 [00:03<00:00,  4.04profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:03<00:00,  3.15profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:03<00:00,  5.42profile/s]
+(Worker_TP1 pid=258) [AutoTuner]: Tuning fp4_gemm:   0%|          | 0/21 [00:00<?, ?profile/s][AutoTuner]: Tuning fp4_gemm:   5%|▍         | 1/21 [00:00<00:02,  8.55profile/s][AutoTuner]: Tuning fp4_gemm:  10%|▉         | 2/21 [00:00<00:02,  7.84profile/s][AutoTuner]: Tuning fp4_gemm:  14%|█▍        | 3/21 [00:00<00:02,  7.79profile/s][AutoTuner]: Tuning fp4_gemm:  19%|█▉        | 4/21 [00:00<00:02,  7.76profile/s][AutoTuner]: Tuning fp4_gemm:  24%|██▍       | 5/21 [00:00<00:02,  7.83profile/s][AutoTuner]: Tuning fp4_gemm:  29%|██▊       | 6/21 [00:00<00:01,  7.74profile/s][AutoTuner]: Tuning fp4_gemm:  33%|███▎      | 7/21 [00:00<00:01,  7.85profile/s][AutoTuner]: Tuning fp4_gemm:  38%|███▊      | 8/21 [00:01<00:01,  7.88profile/s][AutoTuner]: Tuning fp4_gemm:  43%|████▎     | 9/21 [00:01<00:01,  7.81profile/s][AutoTuner]: Tuning fp4_gemm:  48%|████▊     | 10/21 [00:01<00:01,  7.58profile/s][AutoTuner]: Tuning fp4_gemm:  52%|█████▏    | 11/21 [00:01<00:01,  7.26profile/s][AutoTuner]: Tuning fp4_gemm:  57%|█████▋    | 12/21 [00:01<00:01,  7.27profile/s][AutoTuner]: Tuning fp4_gemm:  62%|██████▏   | 13/21 [00:01<00:01,  6.73profile/s][AutoTuner]: Tuning fp4_gemm:  67%|██████▋   | 14/21 [00:01<00:01,  6.33profile/s][AutoTuner]: Tuning fp4_gemm:  71%|███████▏  | 15/21 [00:02<00:01,  5.94profile/s][AutoTuner]: Tuning fp4_gemm:  76%|███████▌  | 16/21 [00:02<00:00,  5.53profile/s][AutoTuner]: Tuning fp4_gemm:  81%|████████  | 17/21 [00:02<00:00,  5.10profile/s][AutoTuner]: Tuning fp4_gemm:  86%|████████▌ | 18/21 [00:02<00:00,  4.70profile/s][AutoTuner]: Tuning fp4_gemm:  90%|█████████ | 19/21 [00:03<00:00,  4.33profile/s][AutoTuner]: Tuning fp4_gemm:  95%|█████████▌| 20/21 [00:03<00:00,  4.02profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:03<00:00,  3.31profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:03<00:00,  5.52profile/s]
+(Worker_TP1 pid=258) [AutoTuner]: Tuning fp4_gemm:   0%|          | 0/21 [00:00<?, ?profile/s][AutoTuner]: Tuning fp4_gemm:   5%|▍         | 1/21 [00:00<00:03,  6.32profile/s][AutoTuner]: Tuning fp4_gemm:  10%|▉         | 2/21 [00:00<00:03,  6.26profile/s][AutoTuner]: Tuning fp4_gemm:  14%|█▍        | 3/21 [00:00<00:02,  6.41profile/s][AutoTuner]: Tuning fp4_gemm:  19%|█▉        | 4/21 [00:00<00:02,  6.39profile/s][AutoTuner]: Tuning fp4_gemm:  24%|██▍       | 5/21 [00:00<00:02,  6.46profile/s][AutoTuner]: Tuning fp4_gemm:  29%|██▊       | 6/21 [00:00<00:02,  6.57profile/s][AutoTuner]: Tuning fp4_gemm:  33%|███▎      | 7/21 [00:01<00:02,  6.70profile/s][AutoTuner]: Tuning fp4_gemm:  38%|███▊      | 8/21 [00:01<00:01,  6.72profile/s][AutoTuner]: Tuning fp4_gemm:  43%|████▎     | 9/21 [00:01<00:01,  6.81profile/s][AutoTuner]: Tuning fp4_gemm:  48%|████▊     | 10/21 [00:01<00:01,  6.47profile/s][AutoTuner]: Tuning fp4_gemm:  52%|█████▏    | 11/21 [00:01<00:01,  5.99profile/s][AutoTuner]: Tuning fp4_gemm:  57%|█████▋    | 12/21 [00:01<00:01,  5.48profile/s][AutoTuner]: Tuning fp4_gemm:  62%|██████▏   | 13/21 [00:02<00:01,  4.94profile/s][AutoTuner]: Tuning fp4_gemm:  67%|██████▋   | 14/21 [00:02<00:01,  4.51profile/s][AutoTuner]: Tuning fp4_gemm:  71%|███████▏  | 15/21 [00:02<00:01,  4.17profile/s][AutoTuner]: Tuning fp4_gemm:  76%|███████▌  | 16/21 [00:03<00:01,  3.75profile/s][AutoTuner]: Tuning fp4_gemm:  81%|████████  | 17/21 [00:03<00:01,  3.41profile/s][AutoTuner]: Tuning fp4_gemm:  86%|████████▌ | 18/21 [00:03<00:00,  3.09profile/s][AutoTuner]: Tuning fp4_gemm:  90%|█████████ | 19/21 [00:04<00:00,  2.78profile/s][AutoTuner]: Tuning fp4_gemm:  95%|█████████▌| 20/21 [00:04<00:00,  2.48profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:05<00:00,  1.88profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:05<00:00,  3.75profile/s]
+(Worker_TP1 pid=258) [AutoTuner]: Tuning fp4_gemm:   0%|          | 0/21 [00:00<?, ?profile/s][AutoTuner]: Tuning fp4_gemm:   5%|▍         | 1/21 [00:00<00:02,  7.30profile/s][AutoTuner]: Tuning fp4_gemm:  10%|▉         | 2/21 [00:00<00:02,  7.25profile/s][AutoTuner]: Tuning fp4_gemm:  14%|█▍        | 3/21 [00:00<00:02,  7.20profile/s][AutoTuner]: Tuning fp4_gemm:  19%|█▉        | 4/21 [00:00<00:02,  7.25profile/s][AutoTuner]: Tuning fp4_gemm:  24%|██▍       | 5/21 [00:00<00:02,  7.13profile/s][AutoTuner]: Tuning fp4_gemm:  29%|██▊       | 6/21 [00:00<00:02,  7.07profile/s][AutoTuner]: Tuning fp4_gemm:  33%|███▎      | 7/21 [00:00<00:02,  6.97profile/s][AutoTuner]: Tuning fp4_gemm:  38%|███▊      | 8/21 [00:01<00:01,  6.88profile/s][AutoTuner]: Tuning fp4_gemm:  43%|████▎     | 9/21 [00:01<00:01,  6.84profile/s][AutoTuner]: Tuning fp4_gemm:  48%|████▊     | 10/21 [00:01<00:01,  6.80profile/s][AutoTuner]: Tuning fp4_gemm:  52%|█████▏    | 11/21 [00:01<00:01,  6.61profile/s][AutoTuner]: Tuning fp4_gemm:  57%|█████▋    | 12/21 [00:01<00:01,  6.43profile/s][AutoTuner]: Tuning fp4_gemm:  62%|██████▏   | 13/21 [00:01<00:01,  6.35profile/s][AutoTuner]: Tuning fp4_gemm:  67%|██████▋   | 14/21 [00:02<00:01,  6.65profile/s][AutoTuner]: Tuning fp4_gemm:  71%|███████▏  | 15/21 [00:02<00:00,  6.41profile/s][AutoTuner]: Tuning fp4_gemm:  76%|███████▌  | 16/21 [00:02<00:00,  6.23profile/s][AutoTuner]: Tuning fp4_gemm:  81%|████████  | 17/21 [00:02<00:00,  6.08profile/s][AutoTuner]: Tuning fp4_gemm:  86%|████████▌ | 18/21 [00:02<00:00,  5.90profile/s][AutoTuner]: Tuning fp4_gemm:  90%|█████████ | 19/21 [00:02<00:00,  5.59profile/s][AutoTuner]: Tuning fp4_gemm:  95%|█████████▌| 20/21 [00:03<00:00,  5.24profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:03<00:00,  4.45profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:03<00:00,  6.04profile/s]
+(Worker_TP1 pid=258) [AutoTuner]: Tuning fp4_gemm:   0%|          | 0/21 [00:00<?, ?profile/s][AutoTuner]: Tuning fp4_gemm:   5%|▍         | 1/21 [00:00<00:02,  9.99profile/s][AutoTuner]: Tuning fp4_gemm:  10%|▉         | 2/21 [00:00<00:02,  9.14profile/s][AutoTuner]: Tuning fp4_gemm:  14%|█▍        | 3/21 [00:00<00:02,  8.84profile/s][AutoTuner]: Tuning fp4_gemm:  19%|█▉        | 4/21 [00:00<00:01,  8.54profile/s][AutoTuner]: Tuning fp4_gemm:  24%|██▍       | 5/21 [00:00<00:01,  8.38profile/s][AutoTuner]: Tuning fp4_gemm:  29%|██▊       | 6/21 [00:00<00:01,  8.29profile/s][AutoTuner]: Tuning fp4_gemm:  33%|███▎      | 7/21 [00:00<00:01,  8.26profile/s][AutoTuner]: Tuning fp4_gemm:  38%|███▊      | 8/21 [00:00<00:01,  8.21profile/s][AutoTuner]: Tuning fp4_gemm:  43%|████▎     | 9/21 [00:01<00:01,  8.11profile/s][AutoTuner]: Tuning fp4_gemm:  48%|████▊     | 10/21 [00:01<00:01,  7.93profile/s][AutoTuner]: Tuning fp4_gemm:  52%|█████▏    | 11/21 [00:01<00:01,  7.69profile/s][AutoTuner]: Tuning fp4_gemm:  57%|█████▋    | 12/21 [00:01<00:01,  7.57profile/s][AutoTuner]: Tuning fp4_gemm:  62%|██████▏   | 13/21 [00:01<00:01,  7.32profile/s][AutoTuner]: Tuning fp4_gemm:  67%|██████▋   | 14/21 [00:01<00:00,  7.03profile/s][AutoTuner]: Tuning fp4_gemm:  71%|███████▏  | 15/21 [00:01<00:00,  6.67profile/s][AutoTuner]: Tuning fp4_gemm:  76%|███████▌  | 16/21 [00:02<00:00,  6.41profile/s][AutoTuner]: Tuning fp4_gemm:  81%|████████  | 17/21 [00:02<00:00,  6.15profile/s][AutoTuner]: Tuning fp4_gemm:  86%|████████▌ | 18/21 [00:02<00:00,  5.86profile/s][AutoTuner]: Tuning fp4_gemm:  90%|█████████ | 19/21 [00:02<00:00,  5.62profile/s][AutoTuner]: Tuning fp4_gemm:  95%|█████████▌| 20/21 [00:02<00:00,  5.35profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:03<00:00,  4.58profile/s][AutoTuner]: Tuning fp4_gemm: 100%|██████████| 21/21 [00:03<00:00,  6.59profile/s]
+(Worker_TP1 pid=258) WARNING 09-09 00:04:14 [flashinfer.py:1308] Using FlashInfer for draft model non-causal attention; TRTLLM can still be used for target model causal attention.
+(Worker_TP1 pid=258) 2026-09-09 00:04:14,941 - INFO - autotuner.py:995 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP1 pid=258) INFO 09-09 00:04:16 [speculator.py:137] Capturing model for DFlash2 speculator...
+(Worker_TP1 pid=258) WARNING 09-09 00:04:16 [glm53_fp8_dense.py:619] [fp8-dense] drafter lane serving: 30 of 31 opaque GEMM calls per forward
+(Worker_TP1 pid=258) WARNING 09-09 00:04:16 [glm53_megakernel.py:1279] [megakernel] m8 shape CAPTURED M=6 N=1536 K=4096 plan=[8, 96, 2]
+(Worker_TP1 pid=258) WARNING 09-09 00:04:16 [glm53_megakernel.py:1282] [megakernel] fp8-pack2 CAPTURED M=6 N=1536 K=4096
+(Worker_TP1 pid=258) WARNING 09-09 00:04:16 [glm53_megakernel.py:1284] [megakernel] transpose-m8 CAPTURED M=6 N=1536 K=4096 compact=False
+(Worker_TP1 pid=258) WARNING 09-09 00:04:16 [glm53_megakernel.py:1287] [megakernel] m8-fastpath CAPTURED M=6 N=1536 K=4096
+(Worker_TP1 pid=258) WARNING 09-09 00:04:16 [glm53_megakernel.py:1279] [megakernel] m8 shape CAPTURED M=6 N=4096 K=1024 plan=[2, 64, 2]
+(Worker_TP1 pid=258) WARNING 09-09 00:04:16 [glm53_megakernel.py:1282] [megakernel] fp8-pack2 CAPTURED M=6 N=4096 K=1024
+(Worker_TP1 pid=258) WARNING 09-09 00:04:16 [glm53_megakernel.py:1284] [megakernel] transpose-m8 CAPTURED M=6 N=4096 K=1024 compact=False
+(Worker_TP1 pid=258) WARNING 09-09 00:04:16 [glm53_megakernel.py:1287] [megakernel] m8-fastpath CAPTURED M=6 N=4096 K=1024
+(Worker_TP1 pid=258) INFO 09-09 00:04:16 [model_runner.py:1012] Graph capturing finished in 2 secs, took 0.37 GiB
+(Worker_TP1 pid=258) [boot-stamp] cudagraph-capture took 1.8s (at 474.1s since interpreter start) dev free 25.35 GiB (-1.00 GiB used this phase)
+(Worker_TP1 pid=258) INFO 09-09 00:04:16 [gpu_worker.py:745] CUDA graph pool memory: 0.37 GiB (actual), 1.04 GiB (estimated), difference: 0.67 GiB (180.4%).
+(Worker_TP1 pid=258) INFO 09-09 00:04:16 [gpu_worker.py:808] Free memory on device (95.28/121.63 GiB) on startup. Desired GPU memory utilization is (0.6429, 78.2 GiB). Actual usage is 63.06 GiB for consumed memory (weights + non-torch), 3.5 GiB for peak activation, and 0.37 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=11947857911` (11.13 GiB) to fit into requested memory, or `--kv-cache-memory=30289144320` (28.21 GiB) to fully utilize gpu memory. Current kv cache memory in use is 11.64 GiB.
+(Worker_TP1 pid=258) 2026-09-09 00:04:17,226 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m28_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_a42655345ac23093
+(Worker_TP1 pid=258) REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+(Worker_TP1 pid=258) [osar] phase rank=1 us/collective (n=423): guard=3.0 copy=3.5 wait=3358.6 reduce=3.5 | total=3368.6  @1592 MHz assumed | wait by size: <=128KiB n=202 2129.9, >128KiB n=221 4481.6
+(Worker_TP1 pid=258) 2026-09-09 00:04:19,277 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m28_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_a42655345ac23093.o
+(Worker_TP1 pid=258) [b12x static v2] lane serving: static2_m28_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1 (mac=48, m=28, routed=224, smem=101376 B)
+(Worker_TP1 pid=258) [b12x sf6 unpack] lane serving: backend=static u8x4=1 artifact=static2_m28_k4096_n512_t8_r640_tm32f2g2a32wutsf6v1_a42655345ac23093
+(Worker_TP1 pid=258) 2026-09-09 00:04:22,543 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_cb73655b0ac64a69
+(Worker_TP1 pid=258) DECODE_REFORM_LAYOUT_PASS 1024
+(Worker_TP1 pid=258) REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+(Worker_TP1 pid=258) 2026-09-09 00:04:27,532 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_cb73655b0ac64a69.o
+(Worker_TP1 pid=258) [b12x static v2] lane serving: static2_m7_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+(Worker_TP1 pid=258) [b12x sf6 unpack] lane serving: backend=static u8x4=1 artifact=static2_m7_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_cb73655b0ac64a69
+(Worker_TP1 pid=258) [boot-stamp] compile+warmup still running after 62s; its thread is at:
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 309, in build_and_load_cute_dsl_kernel
+(Worker_TP1 pid=258)     return spec.build_and_load()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/core.py", line 320, in build_and_load
+(Worker_TP1 pid=258)     self.build()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 178, in build
+(Worker_TP1 pid=258)     self._compiled_kernel = self.compile_fn()
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 2305, in <lambda>
+(Worker_TP1 pid=258)     lambda: cute.compile(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/compiler.py", line 1250, in __call__
+(Worker_TP1 pid=258)     return self._compile(*args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/compiler.py", line 1396, in _compile
+(Worker_TP1 pid=258)     return func._dsl_object._func(func, *args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2782, in _func
+(Worker_TP1 pid=258)     return self._func_impl(funcBody, *args, **kwargs)
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2795, in _func_impl
+(Worker_TP1 pid=258)     result = self.generate_mlir(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2397, in generate_mlir
+(Worker_TP1 pid=258)     jit_function = self.compile_and_cache(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/cutlass_dsl/cutlass.py", line 868, in compile_and_cache
+(Worker_TP1 pid=258)     return super().compile_and_cache(  # type: ignore[return-value]
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 2127, in compile_and_cache
+(Worker_TP1 pid=258)     engine = self.compile_and_jit(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py", line 1647, in compile_and_jit
+(Worker_TP1 pid=258)     kernel = self.compiler_provider.compile_and_jit(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/compiler.py", line 203, in compile_and_jit
+(Worker_TP1 pid=258)     self.compile(
+(Worker_TP1 pid=258)   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/compiler.py", line 139, in compile
+(Worker_TP1 pid=258)     pm.run(module.operation)
+(Worker_TP1 pid=258) 2026-09-09 00:04:27,843 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_647216c3ea7ad3c9
+[osar] phase rank=1 us/collective (n=306): guard=3.3 copy=4.0 wait=9085.1 reduce=4.1 | total=9096.6  @1592 MHz assumed | wait by size: <=128KiB n=110 148.9, >128KiB n=196 14100.3
+(Worker_TP1 pid=258) DECODE_REFORM_LAYOUT_PASS 1024
+(Worker_TP1 pid=258) REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+(Worker_TP1 pid=258) 2026-09-09 00:04:32,872 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_647216c3ea7ad3c9.o
+(Worker_TP1 pid=258) [b12x static v2] lane serving: static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=2, routed=16, smem=98304 B)
+(Worker_TP1 pid=258) [b12x sf6 unpack] lane serving: backend=static u8x4=1 artifact=static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_647216c3ea7ad3c9
+(Worker_TP1 pid=258) 2026-09-09 00:04:34,012 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_32bb973b3d96603d
+(Worker_TP1 pid=258) DECODE_REFORM_LAYOUT_PASS 1024
+(Worker_TP1 pid=258) REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+[osar] phase rank=1 us/collective (n=204): guard=2.6 copy=3.3 wait=358.3 reduce=1.9 | total=366.1  @1592 MHz assumed | wait by size: <=128KiB n=204 358.3, >128KiB n=0 0.0
+(Worker_TP1 pid=258) 2026-09-09 00:04:39,003 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_32bb973b3d96603d.o
+(Worker_TP1 pid=258) [b12x static v2] lane serving: static2_m1_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=1, routed=8, smem=98304 B)
+(Worker_TP1 pid=258) [b12x sf6 unpack] lane serving: backend=static u8x4=1 artifact=static2_m1_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_32bb973b3d96603d
+(Worker_TP1 pid=258) INFO 09-09 00:04:39 [jit_monitor.py:79] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(Worker_TP1 pid=258) INFO 09-09 00:04:39 [torch_utils.py:262] Reducing Torch threads from 20 to 1 for serving. Set OMP_NUM_THREADS in the external environment to override.
+(Worker_TP1 pid=258) [boot-stamp] compile+warmup took 73.8s (at 497.2s since interpreter start) dev free 24.88 GiB (+1.94 GiB used this phase)

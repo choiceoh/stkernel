@@ -1,0 +1,458 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "core",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "tests/test_logic.py",
+        "--component",
+        "core"
+      ],
+      "returncode": 0,
+      "seconds": 4.603,
+      "log": "/tmp/sf6-unpack-0909-cpu-local-after-compose-core-0.log",
+      "skipped": [],
+      "tests_run": 71161,
+      "counts": null
+    },
+    {
+      "suite": "sensitivity",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "bench/cpu_contracts.py",
+        "--mutation-audit",
+        "--report",
+        "/tmp/sf6-unpack-0909-cpu-local-after-compose-sensitivity-1.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.474,
+      "log": "/tmp/sf6-unpack-0909-cpu-local-after-compose-sensitivity-1.log",
+      "skipped": [],
+      "tests_run": 7,
+      "counts": {
+        "passed": true,
+        "coverage_complete": true,
+        "tests_run": 7,
+        "skipped": [],
+        "scope": "fault sensitivity of three declared CPU helpers only",
+        "controls": [
+          {
+            "contract": "math",
+            "tests_run": 98,
+            "count_unit": "assertions",
+            "passed": true,
+            "coverage_complete": true,
+            "skipped": [],
+            "error": null,
+            "mutation": null,
+            "applications": 0,
+            "scope": "declared CPU helper contract",
+            "full_suite": false
+          },
+          {
+            "contract": "layout",
+            "tests_run": 29,
+            "count_unit": "assertions",
+            "passed": true,
+            "coverage_complete": true,
+            "skipped": [],
+            "error": null,
+            "mutation": null,
+            "applications": 0,
+            "scope": "declared CPU helper contract",
+            "full_suite": false
+          },
+          {
+            "contract": "dispatch",
+            "tests_run": 18,
+            "count_unit": "assertions",
+            "passed": true,
+            "coverage_complete": true,
+            "skipped": [],
+            "error": null,
+            "mutation": null,
+            "applications": 0,
+            "scope": "declared CPU helper contract",
+            "full_suite": false
+          }
+        ],
+        "mutations": [
+          {
+            "name": "logits-byte-width",
+            "status": "detected",
+            "result": {
+              "contract": "math",
+              "tests_run": 15,
+              "count_unit": "assertions",
+              "passed": false,
+              "coverage_complete": true,
+              "skipped": [],
+              "error": {
+                "type": "SystemExit",
+                "message": "1",
+                "exit_code": 1
+              },
+              "mutation": "logits-byte-width",
+              "applications": 1,
+              "scope": "declared CPU helper contract",
+              "full_suite": false
+            }
+          },
+          {
+            "name": "request-boundary",
+            "status": "detected",
+            "result": {
+              "contract": "math",
+              "tests_run": 6,
+              "count_unit": "assertions",
+              "passed": false,
+              "coverage_complete": true,
+              "skipped": [],
+              "error": {
+                "type": "SystemExit",
+                "message": "1",
+                "exit_code": 1
+              },
+              "mutation": "request-boundary",
+              "applications": 1,
+              "scope": "declared CPU helper contract",
+              "full_suite": false
+            }
+          },
+          {
+            "name": "shard-stride",
+            "status": "detected",
+            "result": {
+              "contract": "layout",
+              "tests_run": 21,
+              "count_unit": "assertions",
+              "passed": false,
+              "coverage_complete": true,
+              "skipped": [],
+              "error": {
+                "type": "SystemExit",
+                "message": "1",
+                "exit_code": 1
+              },
+              "mutation": "shard-stride",
+              "applications": 4,
+              "scope": "declared CPU helper contract",
+              "full_suite": false
+            }
+          },
+          {
+            "name": "reuse-mask",
+            "status": "detected",
+            "result": {
+              "contract": "dispatch",
+              "tests_run": 1,
+              "count_unit": "assertions",
+              "passed": false,
+              "coverage_complete": true,
+              "skipped": [],
+              "error": {
+                "type": "SystemExit",
+                "message": "1",
+                "exit_code": 1
+              },
+              "mutation": "reuse-mask",
+              "applications": 1,
+              "scope": "declared CPU helper contract",
+              "full_suite": false
+            }
+          }
+        ],
+        "detected": 4,
+        "total": 4
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "bench/cpu_unittest.py",
+        "tests/test_moe_reform_sf_pack.py",
+        "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-2.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.687,
+      "log": "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-2.log",
+      "skipped": [],
+      "tests_run": 13,
+      "counts": {
+        "tests_run": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_moe_reform_sf_pack.ByteContract.test_all_byte_codes_and_packing_boundaries",
+          "test_moe_reform_sf_pack.ByteContract.test_byte_map_matches_nvfp4_row_and_k_coordinates",
+          "test_moe_reform_sf_pack.ByteContract.test_fc2_real_cute_layout_anchor",
+          "test_moe_reform_sf_pack.ByteContract.test_full_code_range_falls_back_without_clipping",
+          "test_moe_reform_sf_pack.ByteContract.test_rejects_invalid_encodings_and_geometry",
+          "test_moe_reform_sf_pack.DispatchContract.test_defaults_stay_off_and_q_stays_probe_only",
+          "test_moe_reform_sf_pack.ProbeEvidenceContract.test_nonfinite_or_negative_reference_cannot_relax_numeric_gate",
+          "test_moe_reform_sf_pack.ProbeEvidenceContract.test_observed_lane_distinguishes_active_fallback_and_prefill",
+          "test_moe_reform_sf_pack.ProbeEvidenceContract.test_stock_and_capture_evidence_fail_closed",
+          "test_moe_reform_sf_pack.TensorContract.test_actual_packer_rejects_bad_storage",
+          "test_moe_reform_sf_pack.TensorContract.test_actual_torch_packer_both_planes_and_source_retention",
+          "test_moe_reform_sf_pack.TensorContract.test_chunk_edges_and_both_plane_admission",
+          "test_moe_reform_sf_pack.TensorContract.test_serving_cache_generation_and_owner_lifetime"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_moe_reform_sf_pack.ByteContract.test_all_byte_codes_and_packing_boundaries": 0.006306500174105167,
+          "test_moe_reform_sf_pack.ByteContract.test_byte_map_matches_nvfp4_row_and_k_coordinates": 0.0379310417920351,
+          "test_moe_reform_sf_pack.ByteContract.test_fc2_real_cute_layout_anchor": 1.16666778922081e-05,
+          "test_moe_reform_sf_pack.ByteContract.test_full_code_range_falls_back_without_clipping": 6.625056266784668e-05,
+          "test_moe_reform_sf_pack.ByteContract.test_rejects_invalid_encodings_and_geometry": 0.0005112085491418839,
+          "test_moe_reform_sf_pack.DispatchContract.test_defaults_stay_off_and_q_stays_probe_only": 0.01329987496137619,
+          "test_moe_reform_sf_pack.ProbeEvidenceContract.test_nonfinite_or_negative_reference_cannot_relax_numeric_gate": 3.762543201446533e-05,
+          "test_moe_reform_sf_pack.ProbeEvidenceContract.test_observed_lane_distinguishes_active_fallback_and_prefill": 2.1209008991718292e-05,
+          "test_moe_reform_sf_pack.ProbeEvidenceContract.test_stock_and_capture_evidence_fail_closed": 1.0708346962928772e-05,
+          "test_moe_reform_sf_pack.TensorContract.test_actual_packer_rejects_bad_storage": 0.0007857084274291992,
+          "test_moe_reform_sf_pack.TensorContract.test_actual_torch_packer_both_planes_and_source_retention": 0.029226082377135754,
+          "test_moe_reform_sf_pack.TensorContract.test_chunk_edges_and_both_plane_admission": 0.002201208844780922,
+          "test_moe_reform_sf_pack.TensorContract.test_serving_cache_generation_and_owner_lifetime": 0.03466483298689127
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "bench/cpu_unittest.py",
+        "tests/test_moe_sf6_owner.py",
+        "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-3.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.639,
+      "log": "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-3.log",
+      "skipped": [],
+      "tests_run": 10,
+      "counts": {
+        "tests_run": 10,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_moe_sf6_owner.ModelOwnership.test_bad_owner_or_alias_fails_before_source_release",
+          "test_moe_sf6_owner.ModelOwnership.test_model_apply_and_repeated_postload_never_rebuild_raw",
+          "test_moe_sf6_owner.ModelOwnership.test_nonrepresentable_layer_keeps_both_original_planes",
+          "test_moe_sf6_owner.ModelOwnership.test_only_requested_model_layers_and_non_ep_are_finalised",
+          "test_moe_sf6_owner.ModelOwnership.test_pending_registry_never_owns_model_or_experts",
+          "test_moe_sf6_owner.ModelOwnership.test_real_lossless_owner_releases_all_raw_aliases_and_survives",
+          "test_moe_sf6_owner.ModelOwnership.test_requested_flag_has_no_substring_or_default_activation",
+          "test_moe_sf6_owner.PackedWrapper.test_dynamic_prefill_keeps_explicit_owner",
+          "test_moe_sf6_owner.PackedWrapper.test_invalid_or_raw_mixed_owner_is_rejected",
+          "test_moe_sf6_owner.PackedWrapper.test_repeated_captured_calls_use_owner_without_allocating_or_raw_cache"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_moe_sf6_owner.ModelOwnership.test_bad_owner_or_alias_fails_before_source_release": 0.010159791447222233,
+          "test_moe_sf6_owner.ModelOwnership.test_model_apply_and_repeated_postload_never_rebuild_raw": 0.019540750421583652,
+          "test_moe_sf6_owner.ModelOwnership.test_nonrepresentable_layer_keeps_both_original_planes": 0.00790158286690712,
+          "test_moe_sf6_owner.ModelOwnership.test_only_requested_model_layers_and_non_ep_are_finalised": 0.007700332440435886,
+          "test_moe_sf6_owner.ModelOwnership.test_pending_registry_never_owns_model_or_experts": 0.023427415639162064,
+          "test_moe_sf6_owner.ModelOwnership.test_real_lossless_owner_releases_all_raw_aliases_and_survives": 0.024739833548665047,
+          "test_moe_sf6_owner.ModelOwnership.test_requested_flag_has_no_substring_or_default_activation": 0.00803337525576353,
+          "test_moe_sf6_owner.PackedWrapper.test_dynamic_prefill_keeps_explicit_owner": 0.0017740828916430473,
+          "test_moe_sf6_owner.PackedWrapper.test_invalid_or_raw_mixed_owner_is_rejected": 0.002063833177089691,
+          "test_moe_sf6_owner.PackedWrapper.test_repeated_captured_calls_use_owner_without_allocating_or_raw_cache": 0.0017919158563017845
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "bench/cpu_unittest.py",
+        "tests/test_moe_sf6_dispatch.py",
+        "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-4.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.641,
+      "log": "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-4.log",
+      "skipped": [],
+      "tests_run": 6,
+      "counts": {
+        "tests_run": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_moe_sf6_dispatch.PackedViews.test_dead_pointer_slots_use_packed_addresses_and_reject_raw_launch",
+          "test_moe_sf6_dispatch.PackedViews.test_dynamic_prefill_launch_passes_compressed_planes_without_raw_tensors",
+          "test_moe_sf6_dispatch.PackedViews.test_final_owner_releases_raw_aliases_and_only_its_cache",
+          "test_moe_sf6_dispatch.PackedViews.test_ineligible_paths_decline_before_packing",
+          "test_moe_sf6_dispatch.PackedViews.test_sf6_workspace_uses_supported_gated_tile_for_prefill_tails",
+          "test_moe_sf6_dispatch.PackedViews.test_unrepresentable_layer_retains_both_raw_planes"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_moe_sf6_dispatch.PackedViews.test_dead_pointer_slots_use_packed_addresses_and_reject_raw_launch": 0.017268874682486057,
+          "test_moe_sf6_dispatch.PackedViews.test_dynamic_prefill_launch_passes_compressed_planes_without_raw_tensors": 0.015397291630506516,
+          "test_moe_sf6_dispatch.PackedViews.test_final_owner_releases_raw_aliases_and_only_its_cache": 0.03327691648155451,
+          "test_moe_sf6_dispatch.PackedViews.test_ineligible_paths_decline_before_packing": 0.01373608224093914,
+          "test_moe_sf6_dispatch.PackedViews.test_sf6_workspace_uses_supported_gated_tile_for_prefill_tails": 0.013712290674448013,
+          "test_moe_sf6_dispatch.PackedViews.test_unrepresentable_layer_retains_both_raw_planes": 0.02841124963015318
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "bench/cpu_unittest.py",
+        "tests/test_moe_static_sf6_direct.py",
+        "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-5.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.291,
+      "log": "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-5.log",
+      "skipped": [],
+      "tests_run": 9,
+      "counts": {
+        "tests_run": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_moe_static_sf6_direct.FourByteUnpack.test_every_low_and_high_plane_pattern_uses_independent_byte_positions",
+          "test_moe_static_sf6_direct.FourByteUnpack.test_every_valid_base_code_and_lane_with_signed_inputs_and_output",
+          "test_moe_static_sf6_direct.FourByteUnpack.test_mixed_codes_at_nibble_pair_byte_and_signed_boundaries",
+          "test_moe_static_sf6_direct.StaticDirectScales.test_fc1_two_independent_bases_expand_without_neighbor_or_ring_alias",
+          "test_moe_static_sf6_direct.StaticDirectScales.test_fc2_selective_bulk_and_actual_unpack_all_codes_halves_and_ring_slots",
+          "test_moe_static_sf6_direct.StaticDirectScales.test_legacy_q_4096_in_place_expansion_is_unchanged",
+          "test_moe_static_sf6_direct.StaticDirectScales.test_no_original_scale_tensor_is_created_outside_raw_only_branch",
+          "test_moe_static_sf6_direct.StaticDirectScales.test_ordinary_and_reform_geometry_transaction_contract",
+          "test_moe_static_sf6_direct.StaticDirectScales.test_source_map_matches_actual_mma_byte_positions_for_both_geometries"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_moe_static_sf6_direct.FourByteUnpack.test_every_low_and_high_plane_pattern_uses_independent_byte_positions": 0.049273750744760036,
+          "test_moe_static_sf6_direct.FourByteUnpack.test_every_valid_base_code_and_lane_with_signed_inputs_and_output": 0.09410549979656935,
+          "test_moe_static_sf6_direct.FourByteUnpack.test_mixed_codes_at_nibble_pair_byte_and_signed_boundaries": 0.00517958402633667,
+          "test_moe_static_sf6_direct.StaticDirectScales.test_fc1_two_independent_bases_expand_without_neighbor_or_ring_alias": 0.015170625410974026,
+          "test_moe_static_sf6_direct.StaticDirectScales.test_fc2_selective_bulk_and_actual_unpack_all_codes_halves_and_ring_slots": 0.019883000291883945,
+          "test_moe_static_sf6_direct.StaticDirectScales.test_legacy_q_4096_in_place_expansion_is_unchanged": 0.0031820833683013916,
+          "test_moe_static_sf6_direct.StaticDirectScales.test_no_original_scale_tensor_is_created_outside_raw_only_branch": 0.008431291207671165,
+          "test_moe_static_sf6_direct.StaticDirectScales.test_ordinary_and_reform_geometry_transaction_contract": 0.012380500324070454,
+          "test_moe_static_sf6_direct.StaticDirectScales.test_source_map_matches_actual_mma_byte_positions_for_both_geometries": 0.021447207778692245
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "bench/cpu_unittest.py",
+        "tests/test_moe_dynamic_sf6.py",
+        "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-6.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.399,
+      "log": "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-6.log",
+      "skipped": [],
+      "tests_run": 7,
+      "counts": {
+        "tests_run": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_moe_dynamic_sf6.ByteMapTests.test_actual_unpack_exact_for_both_physical_halves_and_all_lanes",
+          "test_moe_dynamic_sf6.ByteMapTests.test_bad_geometry_coordinates_and_plane_shapes_fail_closed",
+          "test_moe_dynamic_sf6.ByteMapTests.test_dynamic_tiles_match_original_raw_layout_through_shared_sf6_format",
+          "test_moe_dynamic_sf6.ForkContractTests.test_no_raw_expert_scale_descriptor_and_extended_abi_are_explicit",
+          "test_moe_dynamic_sf6.ForkContractTests.test_tma_transaction_budgets_exclude_synchronous_scale_bytes",
+          "test_moe_dynamic_sf6.ProducerTests.test_fc1_native_n64_halves_replay_correct_physical_n128_scale_blocks",
+          "test_moe_dynamic_sf6.ProducerTests.test_fc2_stage_mapping_and_alias_publication"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_moe_dynamic_sf6.ByteMapTests.test_actual_unpack_exact_for_both_physical_halves_and_all_lanes": 0.2710683327168226,
+          "test_moe_dynamic_sf6.ByteMapTests.test_bad_geometry_coordinates_and_plane_shapes_fail_closed": 0.004795166663825512,
+          "test_moe_dynamic_sf6.ByteMapTests.test_dynamic_tiles_match_original_raw_layout_through_shared_sf6_format": 0.010564332827925682,
+          "test_moe_dynamic_sf6.ForkContractTests.test_no_raw_expert_scale_descriptor_and_extended_abi_are_explicit": 0.0016915826126933098,
+          "test_moe_dynamic_sf6.ForkContractTests.test_tma_transaction_budgets_exclude_synchronous_scale_bytes": 7.87908211350441e-05,
+          "test_moe_dynamic_sf6.ProducerTests.test_fc1_native_n64_halves_replay_correct_physical_n128_scale_blocks": 0.005583292804658413,
+          "test_moe_dynamic_sf6.ProducerTests.test_fc2_stage_mapping_and_alias_publication": 0.005021083168685436
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/private/tmp/glm53-decode-deps-0909.rtAexv/bin/python",
+        "bench/cpu_unittest.py",
+        "tests/test_decode_next_cpu_runner.py",
+        "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-7.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.073,
+      "log": "/tmp/sf6-unpack-0909-cpu-local-after-compose-individual-7.log",
+      "skipped": [],
+      "tests_run": 7,
+      "counts": {
+        "tests_run": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_decode_next_cpu_runner.RunnerTests.test_absent_auto_removed_container_counts_as_clean",
+          "test_decode_next_cpu_runner.RunnerTests.test_missing_or_duplicate_spec_cannot_hide_behind_pass",
+          "test_decode_next_cpu_runner.RunnerTests.test_partial_stage_success_does_not_claim_complete_gate",
+          "test_decode_next_cpu_runner.RunnerTests.test_payload_timeout_receipt_survives_both_cleanup_timeouts",
+          "test_decode_next_cpu_runner.RunnerTests.test_requested_dynamic_arm_must_also_compile",
+          "test_decode_next_cpu_runner.RunnerTests.test_successful_compile_with_failed_cleanup_is_not_pass",
+          "test_decode_next_cpu_runner.RunnerTests.test_transport_receipt_requires_requested_modes_and_no_context"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_decode_next_cpu_runner.RunnerTests.test_absent_auto_removed_container_counts_as_clean": 0.00014070887118577957,
+          "test_decode_next_cpu_runner.RunnerTests.test_missing_or_duplicate_spec_cannot_hide_behind_pass": 0.0001599583774805069,
+          "test_decode_next_cpu_runner.RunnerTests.test_partial_stage_success_does_not_claim_complete_gate": 0.0010659163817763329,
+          "test_decode_next_cpu_runner.RunnerTests.test_payload_timeout_receipt_survives_both_cleanup_timeouts": 0.001477832905948162,
+          "test_decode_next_cpu_runner.RunnerTests.test_requested_dynamic_arm_must_also_compile": 2.879183739423752e-05,
+          "test_decode_next_cpu_runner.RunnerTests.test_successful_compile_with_failed_cleanup_is_not_pass": 0.0008756248280405998,
+          "test_decode_next_cpu_runner.RunnerTests.test_transport_receipt_requires_requested_modes_and_no_context": 0.0004475843161344528
+        },
+        "failure_details": []
+      }
+    }
+  ],
+  "passed": true,
+  "coverage_complete": true,
+  "tests_run": 71220
+}

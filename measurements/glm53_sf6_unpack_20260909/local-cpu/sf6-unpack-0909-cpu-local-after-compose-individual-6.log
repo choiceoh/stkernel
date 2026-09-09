@@ -1,0 +1,12 @@
+test_actual_unpack_exact_for_both_physical_halves_and_all_lanes (test_moe_dynamic_sf6.ByteMapTests.test_actual_unpack_exact_for_both_physical_halves_and_all_lanes) ... ok
+test_bad_geometry_coordinates_and_plane_shapes_fail_closed (test_moe_dynamic_sf6.ByteMapTests.test_bad_geometry_coordinates_and_plane_shapes_fail_closed) ... ok
+test_dynamic_tiles_match_original_raw_layout_through_shared_sf6_format (test_moe_dynamic_sf6.ByteMapTests.test_dynamic_tiles_match_original_raw_layout_through_shared_sf6_format) ... ok
+test_no_raw_expert_scale_descriptor_and_extended_abi_are_explicit (test_moe_dynamic_sf6.ForkContractTests.test_no_raw_expert_scale_descriptor_and_extended_abi_are_explicit) ... ok
+test_tma_transaction_budgets_exclude_synchronous_scale_bytes (test_moe_dynamic_sf6.ForkContractTests.test_tma_transaction_budgets_exclude_synchronous_scale_bytes) ... ok
+test_fc1_native_n64_halves_replay_correct_physical_n128_scale_blocks (test_moe_dynamic_sf6.ProducerTests.test_fc1_native_n64_halves_replay_correct_physical_n128_scale_blocks) ... ok
+test_fc2_stage_mapping_and_alias_publication (test_moe_dynamic_sf6.ProducerTests.test_fc2_stage_mapping_and_alias_publication) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.299s
+
+OK

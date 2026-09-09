@@ -1,0 +1,164 @@
+{
+  "evidence": "isolated-unpack-compile-only",
+  "method": "SASS instructions through EXIT inclusive; unreachable BRA/NOP padding excluded",
+  "scope": "Includes identical source wrapper loads/stores and compiler-selected instructions; not full MoE kernel or runtime timing",
+  "cases": [
+    {
+      "words": 1,
+      "arm": "scalar",
+      "instructions": 42,
+      "opcodes": {
+        "LDC": 1,
+        "S2R": 1,
+        "LDC.64": 4,
+        "LDCU.64": 1,
+        "IMAD.WIDE.U32": 4,
+        "LDG.E": 3,
+        "SHF.R.U32.HI": 3,
+        "LOP3.LUT": 11,
+        "IMAD.SHL.U32": 3,
+        "IADD3": 3,
+        "IMAD.U32": 1,
+        "IADD": 3,
+        "IMAD": 2,
+        "STG.E": 1,
+        "EXIT": 1
+      }
+    },
+    {
+      "words": 1,
+      "arm": "u8x4",
+      "instructions": 29,
+      "opcodes": {
+        "LDC": 1,
+        "S2R": 1,
+        "LDC.64": 4,
+        "LDCU.64": 1,
+        "IMAD.WIDE.U32": 4,
+        "LDG.E": 2,
+        "LDG.E.U8": 1,
+        "IMAD.SHL.U32": 3,
+        "LOP3.LUT": 6,
+        "LEA": 1,
+        "SHF.L.U32": 1,
+        "IMAD": 1,
+        "IADD": 1,
+        "STG.E": 1,
+        "EXIT": 1
+      }
+    },
+    {
+      "words": 4,
+      "arm": "scalar",
+      "instructions": 122,
+      "opcodes": {
+        "LDC": 1,
+        "S2R": 1,
+        "LDC.64": 4,
+        "LDCU.64": 1,
+        "IMAD.WIDE.U32": 4,
+        "IMAD.SHL.U32": 9,
+        "LDG.E": 2,
+        "LDG.E.64": 1,
+        "SHF.R.U32.HI": 19,
+        "LOP3.LUT": 42,
+        "LEA.HI": 2,
+        "IADD3": 9,
+        "IMAD": 11,
+        "IADD": 13,
+        "IMAD.U32": 1,
+        "STG.E.128": 1,
+        "EXIT": 1
+      }
+    },
+    {
+      "words": 4,
+      "arm": "u8x4",
+      "instructions": 73,
+      "opcodes": {
+        "LDC": 1,
+        "S2R": 1,
+        "LDC.64": 4,
+        "LDCU.64": 1,
+        "IMAD.WIDE.U32": 4,
+        "LDG.E": 1,
+        "IMAD.SHL.U32": 19,
+        "LDG.E.64": 1,
+        "LDG.E.U8": 1,
+        "SHF.R.U32.HI": 5,
+        "LOP3.LUT": 22,
+        "IMAD": 7,
+        "IADD": 4,
+        "STG.E.128": 1,
+        "EXIT": 1
+      }
+    },
+    {
+      "words": 8,
+      "arm": "scalar",
+      "instructions": 228,
+      "opcodes": {
+        "LDC": 1,
+        "S2R": 1,
+        "LDC.64": 4,
+        "LDCU.64": 1,
+        "IMAD.SHL.U32": 17,
+        "IMAD.WIDE.U32": 4,
+        "LDG.E.64": 1,
+        "LDG.E.128": 1,
+        "LDG.E": 1,
+        "LOP3.LUT": 84,
+        "SHF.R.U32.HI": 38,
+        "IADD3": 17,
+        "LEA.HI": 4,
+        "IMAD": 22,
+        "IADD": 27,
+        "IMAD.U32": 2,
+        "STG.E.128": 2,
+        "EXIT": 1
+      }
+    },
+    {
+      "words": 8,
+      "arm": "u8x4",
+      "instructions": 130,
+      "opcodes": {
+        "LDC": 1,
+        "S2R": 1,
+        "LDC.64": 4,
+        "LDCU.64": 1,
+        "IMAD.SHL.U32": 37,
+        "IMAD.WIDE.U32": 4,
+        "LDG.E.128": 1,
+        "LDG.E.64": 1,
+        "LDG.E.U8": 1,
+        "LOP3.LUT": 44,
+        "IMAD": 14,
+        "SHF.R.U32.HI": 10,
+        "IADD": 8,
+        "STG.E.128": 2,
+        "EXIT": 1
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "words": 1,
+      "scalar": 42,
+      "u8x4": 29,
+      "reduction_pct": 30.952380952380953
+    },
+    {
+      "words": 4,
+      "scalar": 122,
+      "u8x4": 73,
+      "reduction_pct": 40.16393442622951
+    },
+    {
+      "words": 8,
+      "scalar": 228,
+      "u8x4": 130,
+      "reduction_pct": 42.98245614035088
+    }
+  ]
+}

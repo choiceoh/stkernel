@@ -1,0 +1,2 @@
+{"entry": "bench/chain.sh", "kind": "boot", "policy": "onepass-only"}
+PREPARE REFUSED (no GPU hold): candidate must include relevant changes from d1264d29e60133238f82054d17eb5cb15d95c335: MEASUREMENTS.md, bench/cpu_contracts.py, bench/cpu_evidence.py, profiles/glm53.env, tests/test_logic.py

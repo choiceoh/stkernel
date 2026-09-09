@@ -1,0 +1,93 @@
+2026-09-08 23:14:10,388 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_7099257078d3f717
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-08 23:14:15,213 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_7099257078d3f717.o
+[b12x static v2] lane serving: static2_m1_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=1, routed=8, smem=98304 B)
+2026-09-08 23:14:15,215 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_21b12ea49ed07935
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-08 23:14:17,283 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m2_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_21b12ea49ed07935.o
+[b12x static v2] lane serving: static2_m2_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=2, routed=16, smem=98304 B)
+2026-09-08 23:14:17,285 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_cf85d0ee343d56a2
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-08 23:14:19,380 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_cf85d0ee343d56a2.o
+[b12x static v2] lane serving: static2_m6_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=98304 B)
+2026-09-08 23:14:19,382 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_5fe4a31fd98691a7
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-08 23:14:21,481 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_5fe4a31fd98691a7.o
+[b12x static v2] lane serving: static2_m8_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=8, routed=64, smem=98304 B)
+2026-09-08 23:14:21,483 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_c1f9ed1a69631c30
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-08 23:14:23,550 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_c1f9ed1a69631c30.o
+[b12x static v2] lane serving: static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=16, routed=128, smem=101376 B)
+{
+  "mode": "cpu",
+  "expand_blocks": [
+    1024,
+    2048,
+    4096
+  ],
+  "source_sha256": {
+    "moe_dispatch.py": "bc76cb045ce7c85f3299494369aa0d6c5820b139a22b31eab2d016830c44fcb4",
+    "moe_activation.py": "ce4c28f512c7d8cff08e7dfe8a2717713bde112752a137ef09acddd77f420b2b",
+    "moe_static_kernel.py": "b87e2b80f706e1db91b95c8a619806af37f7be25021b33a1da7f117ff4d87610",
+    "moe_static_common.py": "04ef86a796a0fc69d416685eae86b1924c2cf4ba13c686fc7f6ef68473332e81",
+    "moe_static_kernel_v4.py": "629a8cf71843acfca6e3674602e2153a5db375ee7cc527de4c922daebd9b1072",
+    "moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+    "moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+    "moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "moe_dynamic_gated_sf6.py": "b4c2eef037c2bd9663a613e266d3e4f1dd86cf9712bb1cd30233f03b1a6274f7",
+    "moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+    "moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+    "moe_micro_kernel.py": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+    "moe_dynamic_kernel.py": "7532e1338df8e80c4b8f0bd6473c2ffeda9a5028018c77775c4e9fe2fa47b072",
+    "gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "generic.py": "38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da",
+    "utils.py": "8cc8cd27082a19868d72effff860aa6a3d8b35b56a12d8098d1384aaf989a398",
+    "fp4_common.py": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+    "dense_blockscaled_gemm_sm120_b12x.py": "e364a769a64c35424d76e039d55daddd1b0715b5048504ff0afa48fa22351b69"
+  },
+  "gates": [
+    {
+      "m": 1,
+      "compiled": true,
+      "sf6": true,
+      "reform": true,
+      "direct_prefill": false
+    },
+    {
+      "m": 2,
+      "compiled": true,
+      "sf6": true,
+      "reform": true,
+      "direct_prefill": false
+    },
+    {
+      "m": 6,
+      "compiled": true,
+      "sf6": true,
+      "reform": true,
+      "direct_prefill": false
+    },
+    {
+      "m": 8,
+      "compiled": true,
+      "sf6": true,
+      "reform": true,
+      "direct_prefill": false
+    },
+    {
+      "m": 16,
+      "compiled": true,
+      "sf6": true,
+      "reform": false,
+      "direct_prefill": true
+    }
+  ],
+  "status": "PASS",
+  "scope": "correctness/compile only; no serving or speed verdict"
+}
+REFORM_SF6_CORRECTNESS_PASS

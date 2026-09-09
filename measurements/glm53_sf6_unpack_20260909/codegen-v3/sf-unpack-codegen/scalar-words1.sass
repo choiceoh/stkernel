@@ -1,0 +1,78 @@
+	.target	sm_121a
+
+	.elftype	@"ET_EXEC"
+
+
+//--------------------- .text.kernel_cutlass_unpack_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o1281_tensorptri32gmemalign16o128111_0 --------------------------
+	.section	.text.kernel_cutlass_unpack_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o1281_tensorptri32gmemalign16o128111_0,"ax",@progbits
+	.align	128
+        .global         kernel_cutlass_unpack_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o1281_tensorptri32gmemalign16o128111_0
+        .type           kernel_cutlass_unpack_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o1281_tensorptri32gmemalign16o128111_0,@function
+        .size           kernel_cutlass_unpack_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o1281_tensorptri32gmemalign16o128111_0,(.L_x_1 - kernel_cutlass_unpack_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o1281_tensorptri32gmemalign16o128111_0)
+        .other          kernel_cutlass_unpack_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o1281_tensorptri32gmemalign16o128111_0,@"STO_CUDA_ENTRY STV_DEFAULT"
+kernel_cutlass_unpack_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o1281_tensorptri32gmemalign16o128111_0:
+.text.kernel_cutlass_unpack_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o128111_tensorptri32gmemalign16o1281_tensorptri32gmemalign16o128111_0:
+        /*0000*/                   LDC R1, c[0x0][0x37c] ;
+        /*0010*/                   S2R R5, SR_TID.X ;
+        /*0020*/                   LDC.64 R6, c[0x0][0x380] ;
+        /*0030*/                   LDCU.64 UR4, c[0x0][0x358] ;
+        /*0040*/                   LDC.64 R8, c[0x0][0x388] ;
+        /*0050*/                   LDC.64 R10, c[0x0][0x390] ;
+        /*0060*/                   LDC.64 R2, c[0x0][0x398] ;
+        /*0070*/                   IMAD.WIDE.U32 R6, R5, 0x4, R6 ;
+        /*0080*/                   IMAD.WIDE.U32 R8, R5.reuse, 0x4, R8 ;
+        /*0090*/                   LDG.E R6, desc[UR4][R6.64] ;
+        /*00a0*/                   IMAD.WIDE.U32 R10, R5.reuse, 0x4, R10 ;
+        /*00b0*/                   LDG.E R8, desc[UR4][R8.64] ;
+        /*00c0*/                   LDG.E R10, desc[UR4][R10.64] ;
+        /*00d0*/                   IMAD.WIDE.U32 R2, R5, 0x4, R2 ;
+        /*00e0*/                   SHF.R.U32.HI R0, RZ, 0x8, R6 ;
+        /*00f0*/                   SHF.R.U32.HI R12, RZ, 0xc, R6.reuse ;
+        /*0100*/                   LOP3.LUT R4, R8, 0x30, RZ, 0xc0, !PT ;
+        /*0110*/                   LOP3.LUT R15, R0, 0xf, RZ, 0xc0, !PT ;
+        /*0120*/                   IMAD.SHL.U32 R0, R8, 0x10, RZ ;
+        /*0130*/                   LOP3.LUT R13, R6, 0xf, RZ, 0xc0, !PT ;
+        /*0140*/                   IADD3 R15, PT, PT, R4, R10, R15 ;
+        /*0150*/                   SHF.R.U32.HI R4, RZ, 0x4, R6 ;
+        /*0160*/                   IMAD.SHL.U32 R6, R8, 0x400, RZ ;
+        /*0170*/                   LOP3.LUT R9, R12, 0xf, RZ, 0xc0, !PT ;
+        /*0180*/                   IMAD.SHL.U32 R8, R8, 0x400000, RZ ;
+        /*0190*/                   LOP3.LUT R7, R4, 0xf, RZ, 0xc0, !PT ;
+        /*01a0*/                   IMAD.U32 R15, R15, 0x10000, RZ ;
+        /*01b0*/                   LOP3.LUT R0, R0, 0x30, RZ, 0xc0, !PT ;
+        /*01c0*/                   LOP3.LUT R6, R6, 0x3000, RZ, 0xc0, !PT ;
+        /*01d0*/                   IADD R7, R10.reuse, R7 ;
+        /*01e0*/                   IADD R9, R10, R9 ;
+        /*01f0*/                   LOP3.LUT R8, R8, 0x30000000, RZ, 0xc0, !PT ;
+        /*0200*/                   IADD3 R0, PT, PT, R0, R10, R13 ;
+        /*0210*/                   IMAD R6, R7, 0x100, R6 ;
+        /*0220*/                   LOP3.LUT R15, R15, 0xff0000, RZ, 0xc0, !PT ;
+        /*0230*/                   IMAD R8, R9, 0x1000000, R8 ;
+        /*0240*/                   LOP3.LUT R0, R0, 0xff, RZ, 0xc0, !PT ;
+        /*0250*/                   LOP3.LUT R6, R6, 0xff00, RZ, 0xc0, !PT ;
+        /*0260*/                   IADD3 R15, PT, PT, R15, R8, R0 ;
+        /*0270*/                   IADD R15, R6, R15 ;
+        /*0280*/                   STG.E desc[UR4][R2.64], R15 ;
+        /*0290*/                   EXIT ;
+.L_x_0:
+        /*02a0*/                   BRA `(.L_x_0);
+        /*02b0*/                   NOP;
+        /*02c0*/                   NOP;
+        /*02d0*/                   NOP;
+        /*02e0*/                   NOP;
+        /*02f0*/                   NOP;
+        /*0300*/                   NOP;
+        /*0310*/                   NOP;
+        /*0320*/                   NOP;
+        /*0330*/                   NOP;
+        /*0340*/                   NOP;
+        /*0350*/                   NOP;
+        /*0360*/                   NOP;
+        /*0370*/                   NOP;
+.L_x_1:
+
+
+//--------------------- SYMBOLS --------------------------
+
+	.type		.nv.reservedSmem.offset0,@object
+	.size		.nv.reservedSmem.offset0,0x4

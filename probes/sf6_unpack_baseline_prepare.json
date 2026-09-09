@@ -1,0 +1,36 @@
+{
+  "required_paths": [
+    "probes/decode_next_runtime_proof.py",
+    "probes/analyze_decode_next_onepass.py",
+    "probes/observe_decode_next_onepass.py",
+    "build/glm53/manifest.tsv",
+    "overlay/modules/glm53_moe/moe_static_common.py",
+    "overlay/modules/glm53_moe/moe_dynamic_gated_sf6.py",
+    "overlay/modules/glm53_model/glm53_fp8_dense.py",
+    "probes/observe_sf6_baseline.py",
+    "probes/sf6_unpack_baseline_onepass_v2.json"
+  ],
+  "git": {
+    "ancestor": "origin/main",
+    "clean": true
+  },
+  "images": [
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211"
+  ],
+  "cpu_command": [
+    "python3",
+    "-m",
+    "unittest",
+    "tests.test_decode_next_runtime",
+    "tests.test_observe_sf6_baseline",
+    "tests.test_sf6_unpack_baseline_onepass"
+  ],
+  "timeout_seconds": 120,
+  "deployment_targets": [
+    {
+      "repo": ".",
+      "profile": "glm53",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211"
+    }
+  ]
+}

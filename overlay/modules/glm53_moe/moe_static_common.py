@@ -10,6 +10,7 @@ shared pieces live here and moe_static_kernel_v4 imports them from here.
 """
 from __future__ import annotations
 
+import os
 from typing import Tuple
 
 import cuda.bindings.driver as cuda
@@ -74,6 +75,35 @@ STAMP_MMA_END = 2 + 5 * STAMP_ITEMS
 STAMP_DMA_BASE = STAMP_MMA_END + 2
 STAMP_BARRIER1 = STAMP_DMA_BASE + 3 * STAMP_ITEMS   # after grid barrier 1
 STAMP_SLOTS = STAMP_BARRIER1 + 1
+
+
+def _parse_sf6_unpack_u8x4(value: str) -> bool:
+    if value not in ("0", "1"):
+        raise ValueError("VLLM_GLM53_SF6_UNPACK_U8X4 must be exactly 0 or 1")
+    return value == "1"
+
+
+# A process chooses one compiler specialization before any kernel or graph
+# is prepared. No environment reads occur in the launch/restore hot path.
+_SF6_UNPACK_U8X4 = _parse_sf6_unpack_u8x4(
+    os.environ.get("VLLM_GLM53_SF6_UNPACK_U8X4", "1"))
+
+
+@cute.jit
+def _sf6_unpack_u8x4(low4: Int32, high4: Int32, base_word: Int32) -> Int32:
+    """Expand four SF6 codes into one word without changing their byte order.
+
+    low4 holds four nibbles and high4 four two-bit codes in their low bits.
+    The lossless packer guarantees code + base <= 255 in every byte, so
+    adding the broadcast base cannot carry into a neighboring byte.
+    """
+    lo = low4 & Int32(0xFFFF)
+    lo = (lo | (lo << Int32(8))) & Int32(0x00FF00FF)
+    lo = (lo | (lo << Int32(4))) & Int32(0x0F0F0F0F)
+    hi = high4 & Int32(0xFF)
+    hi = (hi | (hi << Int32(12))) & Int32(0x000F000F)
+    hi = (hi | (hi << Int32(6))) & Int32(0x03030303)
+    return (lo | (hi << Int32(4))) + base_word
 
 
 @cute.jit
