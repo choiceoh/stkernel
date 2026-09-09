@@ -7,8 +7,8 @@ already mapped to local IDs: [0,72) routes execute; sentinel72 and every other
 invalid ID are ignored before indexing any expert state, scales or weights.
 Signed-zero route weights are skipped; NaNs on valid routes remain selected.
 
-The kernel body is a bounded fork of v4: only route admission, output zero
-width, and BF16-rounded contributions widened to FP32 RED differ. FC1/FC2,
+The kernel body is a bounded fork of v4: route admission differs, and the
+reference modes widen BF16-rounded contributions to FP32 RED. FC1/FC2,
 activation, both BF16 rounding sites and every publication/pipeline barrier
 remain in the same order. FP32 global RED follows its hardware FTZ semantics;
 this is a new accumulation ABI and still requires the normal numerical gate.
@@ -16,6 +16,8 @@ SF6 native M1..8 shares the existing FC1 A/SFA ring between gate and up;
 their independent weight/SF6 stages and the I128 rounding boundary stay intact.
 That geometry restores four SF6 bytes per integer word, with the original
 volatile reads, in-place ownership and both expansion barriers unchanged.
+It also uses stock BF16 atomic scatter directly into the caller's BF16 output;
+raw modes and M9..32 retain the separate FP32 accumulation/output conversion.
 """
 
 from __future__ import annotations
@@ -108,6 +110,7 @@ STOCK_V5_SHA256 = "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a2322
 EP_TILED_CACHE_TAG = "glm53_ep_static_tiled_fp32_v1"
 EP_TILED_A_RING_CACHE_TAG = "glm53_ep_static_sf6_a_ring_v1"
 EP_TILED_SF6_WORD_CACHE_TAG = "glm53_ep_static_sf6_word_unpack_v1"
+EP_TILED_BF16_SCATTER_CACHE_TAG = "glm53_ep_static_bf16_scatter_v1"
 
 
 def ep_tiled_scale_mode(reform_sf_pack):
@@ -207,6 +210,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         # No storage/layout is conditional on a_ring in the inherited init.
         self.a_ring = bool(reform_sf_pack and geometry["reform"])
         self.word_unpack = bool(reform_sf_pack and geometry["reform"])
+        self.scatter_bf16 = bool(reform_sf_pack and geometry["reform"])
 
     def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096):
         if not self.word_unpack:
@@ -315,7 +319,8 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                 or tuple(rows.shape) != (72,)
                 or tuple(token_map.shape) != (72, self.ep_max_rows)
                 or tuple(output.shape) != (self.ep_num_tokens, 4096)
-                or output.element_type != cutlass.Float32):
+                or output.element_type != (cutlass.BFloat16 if self.scatter_bf16
+                                           else cutlass.Float32)):
             raise ValueError("EP tiled static kernel ABI/geometry mismatch")
 
     @cute.kernel
@@ -579,7 +584,10 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         scatter_total = num_tokens * cols
         j = flat_tid
         while j < scatter_total:
-            scatter_output[j // cols, j % cols] = cutlass.Float32(0.0)
+            if cutlass.const_expr(self.scatter_bf16):
+                scatter_output[j // cols, j % cols] = cutlass.BFloat16(0.0)
+            else:
+                scatter_output[j // cols, j % cols] = cutlass.Float32(0.0)
             j += flat_stride
         cute.arch.sync_threads()
         self._resident_grid_barrier(
@@ -1476,13 +1484,22 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                         sc_v7 = cutlass.Float32(
                             sC[warp_m_base + local_row, local_col + Int32(7), 0]
                         )
-                        scatter_add_v4_bf16x2_to_f32(
-                            get_ptr_as_int64(
-                                scatter_output, tok * scatter_N + global_col
-                            ),
-                            wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
-                            wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
-                        )
+                        if cutlass.const_expr(self.scatter_bf16):
+                            scatter_add_v4_bf16x2(
+                                get_ptr_as_int64(
+                                    scatter_output, tok * scatter_N + global_col
+                                ),
+                                wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
+                                wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
+                            )
+                        else:
+                            scatter_add_v4_bf16x2_to_f32(
+                                get_ptr_as_int64(
+                                    scatter_output, tok * scatter_N + global_col
+                                ),
+                                wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
+                                wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
+                            )
                         vec_idx += Int32(self.num_threads_per_warp)
                     self.epilog_sync_barrier.arrive_and_wait()
 
@@ -1903,8 +1920,10 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     global_scale_fake = cute.runtime.make_fake_compact_tensor(
         alpha_dtype, (weight_E,), assumed_align=16
     )
+    scatter_bf16 = bool(reform_sf_pack and geometry["reform"])
     scatter_fake = cute.runtime.make_fake_compact_tensor(
-        cutlass.Float32, (m, k), stride_order=(1, 0), assumed_align=16
+        cutlass.BFloat16 if scatter_bf16 else cutlass.Float32,
+        (m, k), stride_order=(1, 0), assumed_align=16
     )
     token_map_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int32, (state_E, max_rows), stride_order=(1, 0), assumed_align=4
@@ -1960,9 +1979,11 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     key = (EP_TILED_CACHE_TAG, m, max_rows, mac, str(topk_ids_dtype),
            bool(input_scales_are_reciprocal), bool(fast_math),
            geometry["fc1"], geometry["fc2"], "nvfp4", scale_mode,
-           "swigluoai_uninterleave", 1.0, 0.0, 10.0, "fp32_scatter")
+           "swigluoai_uninterleave", 1.0, 0.0, 10.0,
+           "bf16_scatter" if scatter_bf16 else "fp32_scatter")
     if reform_sf_pack and geometry["reform"]:
-        key += (EP_TILED_A_RING_CACHE_TAG, EP_TILED_SF6_WORD_CACHE_TAG)
+        key += (EP_TILED_A_RING_CACHE_TAG, EP_TILED_SF6_WORD_CACHE_TAG,
+                EP_TILED_BF16_SCATTER_CACHE_TAG)
     return kernel, args, key
 
 
@@ -1980,6 +2001,7 @@ def get_ep_tiled_decode_kernel(**kwargs):
     mac = kwargs.get("max_active_clusters", 48)
     geometry = ep_tiled_geometry(m, max_rows, mac)
     scale_mode = ep_tiled_scale_mode(kwargs.get("reform_sf_pack", False))
+    scatter_bf16 = bool(kwargs.get("reform_sf_pack", False) and geometry["reform"])
     dtype = kwargs.get("topk_ids_dtype") or torch.int32
     if dtype not in (torch.int32, torch.int64):
         raise TypeError("EP tiled route IDs must be int32 or int64")
@@ -1987,9 +2009,10 @@ def get_ep_tiled_decode_kernel(**kwargs):
            bool(kwargs.get("input_scales_are_reciprocal", False)),
            bool(kwargs.get("fast_math", True)), geometry["fc1"], geometry["fc2"],
            "nvfp4", scale_mode, "swigluoai_uninterleave", 1.0, 0.0, 10.0,
-           "fp32_scatter")
+           "bf16_scatter" if scatter_bf16 else "fp32_scatter")
     if kwargs.get("reform_sf_pack", False) and geometry["reform"]:
-        key += (EP_TILED_A_RING_CACHE_TAG, EP_TILED_SF6_WORD_CACHE_TAG)
+        key += (EP_TILED_A_RING_CACHE_TAG, EP_TILED_SF6_WORD_CACHE_TAG,
+                EP_TILED_BF16_SCATTER_CACHE_TAG)
     if key in _EP_TILED_KERNEL_CACHE:
         return _EP_TILED_KERNEL_CACHE[key], mac
     if torch.cuda.is_current_stream_capturing():
@@ -2047,16 +2070,17 @@ def warm_ep_tiled_decode(*, max_rows=256, max_active_clusters=48,
 def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
                            input_gs, down_input_scale, output, scratch,
                            input_scales_are_reciprocal=False, fast_math=True):
-    """Launch only the tiled EP path over pre-remapped routes, then BF16 copy.
+    """Launch tiled EP over pre-remapped routes into the admitted output ABI.
 
     No dummy expert exists in weights. Root's EP remapper applies expert_map
     first; this entry accepts only its local IDs or sentinels. It never calls
     the row-major micro fallback or creates/reorders expert weight storage.
     Workspace use is serialized as in the existing model-owned MoE workspace.
+    Native M1..8 SF6 writes BF16 output directly; other modes copy FP32 scratch.
     """
     import torch
     m = a.shape[0]
-    ep_tiled_geometry(m, workspace.max_rows, scratch.max_active_clusters)
+    geometry = ep_tiled_geometry(m, workspace.max_rows, scratch.max_active_clusters)
     if ((workspace.state_E, workspace.weight_E, workspace.k, workspace.n,
          workspace.num_topk, workspace.activation_precision, workspace.quant_mode)
             != (72, 72, 4096, 2048, 8, "fp4", "nvfp4")):
@@ -2075,6 +2099,9 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
     if not weights.tiled:
         raise ValueError("EP tiled decode requires tile-major weights")
     reform_sf_pack = weights.reform_scales is not None
+    scatter_bf16 = bool(reform_sf_pack and geometry["reform"])
+    if scatter_bf16 and output.data_ptr() % 16:
+        raise ValueError("EP tiled BF16 scatter output requires 16-byte alignment")
     if reform_sf_pack:
         owner = weights.reform_scales
         if (not weights.packed_only or not owner.enabled
@@ -2135,7 +2162,7 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
         topk_ids_dtype=topk_ids.dtype,
         input_scales_are_reciprocal=input_scales_are_reciprocal, fast_math=fast_math,
         reform_sf_pack=reform_sf_pack)
-    accum = scratch.scatter_fp32[:m]
+    accum = output if scatter_bf16 else scratch.scatter_fp32[:m]
     accum.record_stream(torch.cuda.current_stream(device))
     compiled(
         a, topk_ids.view(-1), topk_weights.view(-1), workspace.packed_a_view,
@@ -2149,5 +2176,6 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
         workspace.token_weights, scratch.stamps, scratch.counter,
         sfb1_packed, sfb2_packed,
     )
-    output.copy_(accum)
+    if not scatter_bf16:
+        output.copy_(accum)
     return output

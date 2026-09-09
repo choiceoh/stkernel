@@ -183,7 +183,8 @@ class EPTiledARingTests(unittest.TestCase):
                     fast_math=True, activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
                 self.assertEqual(actual.a_ring, sf6 and m<=8)
                 self.assertEqual(actual.word_unpack, sf6 and m<=8)
-                self.assertEqual({k:v for k,v in vars(actual).items() if k not in ('a_ring','word_unpack','ep_num_tokens','ep_max_rows')},
+                self.assertEqual(actual.scatter_bf16, sf6 and m<=8)
+                self.assertEqual({k:v for k,v in vars(actual).items() if k not in ('a_ring','word_unpack','scatter_bf16','ep_num_tokens','ep_max_rows')},
                                  {k:v for k,v in vars(reference).items() if k != 'a_ring'})
         with self.assertRaises(ValueError): ns['MoEStaticKernelV5'](16, 16, reform_sf_pack=True, a_ring=True)
 
@@ -233,9 +234,11 @@ class EPTiledARingTests(unittest.TestCase):
                     geom = ns['ep_tiled_geometry'](m,256,48)
                     key = (ns['EP_TILED_CACHE_TAG'],m,256,48,'int32',False,True,
                            geom['fc1'],geom['fc2'],'nvfp4','sf6_v1' if sf6 else 'raw_mma_scales',
-                           'swigluoai_uninterleave',1.,0.,10.,'fp32_scatter')
+                           'swigluoai_uninterleave',1.,0.,10.,
+                           'bf16_scatter' if sf6 and m<=8 else 'fp32_scatter')
                     if sf6 and m<=8:
-                        key += (ns['EP_TILED_A_RING_CACHE_TAG'], ns['EP_TILED_SF6_WORD_CACHE_TAG'])
+                        key += (ns['EP_TILED_A_RING_CACHE_TAG'], ns['EP_TILED_SF6_WORD_CACHE_TAG'],
+                                ns['EP_TILED_BF16_SCATTER_CACHE_TAG'])
                     sentinel = object(); ns['_EP_TILED_KERNEL_CACHE'][key] = sentinel
                     self.assertEqual(get(num_tokens=m,reform_sf_pack=sf6), (sentinel,48))
 

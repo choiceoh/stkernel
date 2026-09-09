@@ -101,9 +101,15 @@ class Harness:
         test.addCleanup(lambda: sys.modules.pop(spec.name, None))
         spec.loader.exec_module(self.module)
         self.real_shared_workspace = self.module._shared_workspace
-        self.workspace = SimpleNamespace(static=object(),
+        static_fields = dict(packed_input=((72,256,2048),'u8'),packed_input_scale=((72,256,256),'u8'),
+            row_counts=((72,),'i32'),token_map=((72,256),'i32'),token_weights=((72,256),'f32'),
+            barrier_count=((1,),'i32'),barrier_epoch=((1,),'i32'),active_expert_count=((1,),'i32'),
+            weight_expert_ids=((72,),'i32'),global_to_local_expert=((72,),'i32'))
+        self.workspace = SimpleNamespace(static=SimpleNamespace(**{
+            name:Tensor(shape,dtype) for name,(shape,dtype) in static_fields.items()}),
             dynamic=SimpleNamespace(ep_tiled=True, ep_scatter_fp32=Tensor((capacity, 4096))),
-            scratch=SimpleNamespace(scatter_fp32=Tensor((32, 4096))))
+            scratch=SimpleNamespace(scatter_fp32=Tensor((32, 4096)),stamps=Tensor((48,71),'i64'),
+                                    counter=Tensor((1,),'i32'),dummy_scales=Tensor((1,1,16),'u8')))
         self.module._shared_workspace = Mock(return_value=self.workspace)
         self.owner = SimpleNamespace(_use_ep=True, _ep_no_dummy=True, global_num_experts=288,
             num_local_experts=72, hidden_dim=4096, intermediate_size_per_partition=2048,
@@ -412,12 +418,18 @@ class OwnerTests(unittest.TestCase):
                     h.remap.try_remap_ep_local.assert_not_called()
 
     def test_output_aliases_decline_including_partial_byte_overlap_and_scale_planes(self):
-        for name in ('x', 'ids', 'scales', 'w1', 'w2', 'remap', 'scatter', 'packed_fc1', 'packed_fc2'):
+        static_names=('packed_input','packed_input_scale','row_counts','token_map','token_weights',
+                      'barrier_count','barrier_epoch','active_expert_count','weight_expert_ids',
+                      'global_to_local_expert')
+        scratch_names=('stamps','counter','dummy_scales')
+        for name in ('x', 'ids', 'scales', 'w1', 'w2', 'remap', 'scatter', 'packed_fc1', 'packed_fc2')+static_names+scratch_names:
             h = Harness(self).prepare()
             args = h.inputs(6)
             tensor = dict(remap=h.owner._ep_ids, scatter=h.workspace.scratch.scatter_fp32,
                           packed_fc1=h.owner._ep_tiled_weight_views.sfb1_packed,
                           packed_fc2=h.owner._ep_tiled_weight_views.sfb2_packed).get(name, args.get(name))
+            if name in static_names:tensor=getattr(h.workspace.static,name)
+            if name in scratch_names:tensor=getattr(h.workspace.scratch,name)
             args['output'] = Tensor((6, 4096), 'bf16', pointer=tensor.data_ptr() + 2)
             with self.subTest(name=name), self.assertRaises(ValueError):
                 h.module.launch_ep_tiled(h.owner, **args)

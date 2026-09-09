@@ -8,7 +8,7 @@ import re
 import subprocess
 import glm53_ep_capsule_runtime as capsule_runtime
 from glm53_ep_tiled_compile import (source_receipt, STATIC_ROWS, DYNAMIC_ROWS,
-                                   CPU_TEST_COUNTS, EXPECTED_CPU_TESTS, static_specialization)
+    CPU_TEST_COUNTS, EXPECTED_CPU_TESTS, static_specialization, validate_scatter_helper_receipt)
 
 
 def validate_artifacts(output,result):
@@ -21,7 +21,8 @@ def validate_artifacts(output,result):
             if kind == 'static':
                 selected = passed['specialization']
                 assert selected == static_specialization(rows_count,passed['cache_key'],
-                                                         selected['a_ring'],selected['word_unpack'])
+                    selected['a_ring'],selected['word_unpack'],
+                    selected['scatter_bf16'],selected['output_dtype'])
             for name,suffix in (('artifacts','.ptx'),('resources','.cubin')):
                 assert len(passed[name])==1
                 for row in passed[name]:
@@ -87,6 +88,7 @@ def main():
     for key in ('contracts','selected_test_counts','binding_runtime','mounted_sources','contract_sources'):
         assert contracts[key]==result[key]
     capsule_runtime.validate_runtime_receipt(result['binding_runtime'])
+    validate_scatter_helper_receipt(root,result['scatter_helper'])
     assert source_receipt(root)==sources
     for key,value in sources.items():assert result[key]==value
     validate_artifacts(output,result)

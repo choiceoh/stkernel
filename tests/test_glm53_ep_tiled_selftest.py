@@ -69,11 +69,13 @@ def native_cache_fixture():
     geometry = ep_tiled_geometry(m, max_rows, mac)
     scale_mode = ep_tiled_scale_mode(reform_sf_pack)
 ''').body[0]
-    key_fn.body += copy.deepcopy(factory.body[start:end]) + [ast.Return(ast.Name('key',ast.Load()))]
+    selected = next(n for n in factory.body if isinstance(n,ast.Assign)
+                    and ast.unparse(n.targets[0])=='scatter_bf16')
+    key_fn.body += [copy.deepcopy(selected)] + copy.deepcopy(factory.body[start:end]) + [ast.Return(ast.Name('key',ast.Load()))]
     constants = [copy.deepcopy(n) for n in tree.body if isinstance(n,ast.Assign)
                  and isinstance(n.targets[0],ast.Name)
                  and n.targets[0].id in ('EP_TILED_CACHE_TAG','EP_TILED_A_RING_CACHE_TAG',
-                                        'EP_TILED_SF6_WORD_CACHE_TAG')]
+                                        'EP_TILED_SF6_WORD_CACHE_TAG','EP_TILED_BF16_SCATTER_CACHE_TAG')]
     module = ast.Module(body=constants + [copy.deepcopy(functions[name]) for name in
         ('ep_tiled_geometry','ep_tiled_scale_mode')] + [key_fn], type_ignores=[])
     ns = {}
@@ -294,18 +296,20 @@ class AdmissionTests(unittest.TestCase):
         for rows in range(1,33):
             with self.subTest(rows=rows):
                 key=decode.native_key(rows)
-                self.assertEqual(len(key),18 if rows<=8 else 16)
+                self.assertEqual(len(key),19 if rows<=8 else 16)
                 if rows<=8:
-                    self.assertEqual(key[-2:],('glm53_ep_static_sf6_a_ring_v1',
-                                              'glm53_ep_static_sf6_word_unpack_v1'))
+                    self.assertEqual(key[-4:],('bf16_scatter','glm53_ep_static_sf6_a_ring_v1',
+                        'glm53_ep_static_sf6_word_unpack_v1','glm53_ep_static_bf16_scatter_v1'))
                 else:
                     self.assertEqual(key[-1],'fp32_scatter')
                 decode._EP_TILED_KERNEL_CACHE={key:object()}
                 self.assertEqual(canary._cache_evidence(context,owner,rows)['keys'],[repr(key)])
-                wrong_ring=key[:-2]+key[-1:] if rows<=8 else key+('glm53_ep_static_sf6_a_ring_v1',)
-                wrong_word=key[:-1] if rows<=8 else key+('glm53_ep_static_sf6_word_unpack_v1',)
-                wrong_tag=key[:-1]+('glm53_ep_static_sf6_word_unpack_v0',)
+                wrong_ring=key[:-3]+key[-2:] if rows<=8 else key+('glm53_ep_static_sf6_a_ring_v1',)
+                wrong_word=key[:-2]+key[-1:] if rows<=8 else key+('glm53_ep_static_sf6_word_unpack_v1',)
+                wrong_tag=key[:-1]+('glm53_ep_static_bf16_scatter_v0',)
+                wrong_abi=key[:15]+(('fp32_scatter' if rows<=8 else 'bf16_scatter'),)+key[16:]
                 mutations=(wrong_ring,wrong_word,wrong_tag,decode.native_key(rows,False),
+                                 wrong_abi,key[:-1] if rows<=8 else key+('glm53_ep_static_bf16_scatter_v1',),
                                  key[:1]+(rows+1,)+key[2:],key[:4]+('torch.int64',)+key[5:],
                                  key[:5]+(True,)+key[6:],key+('extra',))
                 for mutation in mutations:
@@ -314,13 +318,19 @@ class AdmissionTests(unittest.TestCase):
                 if rows in probe['STATIC_ROWS']:
                     selected=rows<=8
                     check=probe['static_specialization']
-                    self.assertEqual(check(rows,key,selected,selected),dict(a_ring=selected,
-                        word_unpack=selected,scale_mode='sf6_v1',cache_tag=key[-1]))
+                    dtype='bfloat16' if selected else 'float32'
+                    self.assertEqual(check(rows,key,selected,selected,selected,dtype),dict(a_ring=selected,
+                        word_unpack=selected,scatter_bf16=selected,output_dtype=dtype,
+                        scale_mode='sf6_v1',cache_tag=key[-1]))
                     for ring,word in ((selected,not selected),(not selected,selected),
                                       (selected,int(selected)),(int(selected),selected)):
-                        with self.assertRaises(AssertionError):check(rows,key,ring,word)
-                    for mutation in mutations[:4]+mutations[-1:]:
-                        with self.assertRaises(AssertionError):check(rows,mutation,selected,selected)
+                        with self.assertRaises(AssertionError):check(rows,key,ring,word,selected,dtype)
+                    for scatter,output in ((not selected,dtype),(int(selected),dtype),
+                                           (selected,'float32' if selected else 'bfloat16'),
+                                           (selected,None)):
+                        with self.assertRaises(AssertionError):check(rows,key,selected,selected,scatter,output)
+                    for mutation in mutations[:6]+mutations[-1:]:
+                        with self.assertRaises(AssertionError):check(rows,mutation,selected,selected,selected,dtype)
         dynamic=('dynamic','fp4','nvfp4',72,4096,2048,8,48,(128,128),'torch.int32',False,True,'swigluoai_uninterleave',1.,0.,10.,False,True,'glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1')
         context['md']._DYNAMIC_KERNEL_CACHE[dynamic]=object()
         self.assertEqual(canary._cache_evidence(context,owner,8192)['keys'],[repr(dynamic)])

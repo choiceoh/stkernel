@@ -248,6 +248,12 @@ def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
     _require_output_disjoint(output, (
         x, ids, scales, expert_map, w1, w2, owner._ep_ids, owner._ep_scales,
         workspace.scratch.scatter_fp32, workspace.dynamic.ep_scatter_fp32,
+        workspace.static.packed_input, workspace.static.packed_input_scale,
+        workspace.static.row_counts, workspace.static.token_map,
+        workspace.static.token_weights, workspace.static.barrier_count,
+        workspace.static.barrier_epoch, workspace.static.active_expert_count,
+        workspace.static.weight_expert_ids, workspace.static.global_to_local_expert,
+        workspace.scratch.stamps, workspace.scratch.counter, workspace.scratch.dummy_scales,
         owner.w1_scale, owner.w2_scale, owner.w1_sf_mma, owner.w2_sf_mma,
         owner.g1_alphas, owner.g2_alphas, owner._fc2_input_scale,
         owner._ep_tiled_weight_views.sfb1_packed,

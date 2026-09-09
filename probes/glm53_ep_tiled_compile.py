@@ -23,8 +23,8 @@ CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_moe_static_sf6_direct.py", "test_moe_dynamic_sf6.py",
              "test_moe_sf6_dispatch.py", "test_glm53_ep_tiled_a_ring.py",
              "test_glm53_ep_tiled_sf6_word_unpack.py")
-CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (10, 12, 19, 12, 12, 12, 6, 7, 6, 5, 6)))
-EXPECTED_CPU_TESTS = 107
+CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (12, 12, 19, 12, 12, 12, 6, 7, 6, 5, 6)))
+EXPECTED_CPU_TESTS = 109
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',
@@ -78,22 +78,41 @@ def preserve_pass(output, arm, cache_key):
     return result
 
 
-def static_specialization(rows, key, a_ring, word_unpack):
+def static_specialization(rows, key, a_ring, word_unpack, scatter_bf16, output_dtype):
     """Bind actual constructor selection and its persisted cache namespace."""
     assert rows in STATIC_ROWS and type(a_ring) is bool and type(word_unpack) is bool
+    assert type(scatter_bf16) is bool and type(output_dtype) is str
     assert tuple(key[:4]) == ('glm53_ep_static_tiled_fp32_v1', rows, 256, 48), key
     assert key[10] == 'sf6_v1', key
     expected_ring = rows <= 8
     assert a_ring is expected_ring, (rows, a_ring)
     assert word_unpack is expected_ring, (rows, word_unpack)
+    assert scatter_bf16 is expected_ring, (rows, scatter_bf16)
+    assert output_dtype == ('bfloat16' if expected_ring else 'float32'), (rows, output_dtype)
     if expected_ring:
-        assert len(key) == 18 and tuple(key[-3:]) == (
-            'fp32_scatter', 'glm53_ep_static_sf6_a_ring_v1',
-            'glm53_ep_static_sf6_word_unpack_v1'), key
+        assert len(key) == 19 and tuple(key[-4:]) == (
+            'bf16_scatter', 'glm53_ep_static_sf6_a_ring_v1',
+            'glm53_ep_static_sf6_word_unpack_v1', 'glm53_ep_static_bf16_scatter_v1'), key
     else:
         assert len(key) == 16 and key[-1] == 'fp32_scatter', key
-    return dict(a_ring=a_ring, word_unpack=word_unpack,
+    return dict(a_ring=a_ring, word_unpack=word_unpack, scatter_bf16=scatter_bf16,
+                output_dtype=output_dtype,
                 scale_mode=key[10], cache_tag=key[-1])
+
+
+def validate_scatter_helper_receipt(root, receipt):
+    identity = json.loads((root/'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json').read_text())
+    assert receipt == dict(path=identity['source_path'], sha256=identity['source_sha256'],
+                           size=identity['source_bytes'], helper='scatter_add_v4_bf16x2')
+
+
+def scatter_helper_receipt(root, source_path):
+    path = Path(source_path)
+    content = path.read_bytes()
+    receipt = dict(path=str(path),sha256=hashlib.sha256(content).hexdigest(),
+                   size=len(content),helper='scatter_add_v4_bf16x2')
+    validate_scatter_helper_receipt(root,receipt)
+    return receipt
 
 
 def compile_candidate(output, result):
@@ -107,17 +126,25 @@ def compile_candidate(output, result):
     torch.cuda.get_device_capability = lambda *a,**kw: (12,1)
     import flashinfer.utils
     flashinfer.utils.get_num_sm = lambda *a,**kw: 48
+    import cutlass
     import cutlass.cute as cute
+    from flashinfer.cute_dsl import fp4_common
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_static_ep_tiled as ep
+    assert ep.scatter_add_v4_bf16x2 is fp4_common.scatter_add_v4_bf16x2
+    root = Path(__file__).resolve().parents[1]
+    result['scatter_helper'] = scatter_helper_receipt(root, fp4_common.__file__)
     result['static_passes'] = []
     for rows in STATIC_ROWS:
         result['phase'] = 'static-M'+str(rows)
         assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
         kernel,args,key = ep.ep_tiled_compile_spec(num_tokens=rows,max_rows=256,
             max_active_clusters=48,topk_ids_dtype=torch.int32,reform_sf_pack=True)
-        specialization = static_specialization(rows, key, kernel.a_ring, kernel.word_unpack)
+        output_types = {cutlass.BFloat16:'bfloat16', cutlass.Float32:'float32'}
+        specialization = static_specialization(rows, key, kernel.a_ring, kernel.word_unpack,
+                                                kernel.scatter_bf16, output_types[args[21].element_type])
         cute.compile(kernel,*args,options='--opt-level 2 --enable-tvm-ffi')
-        assert static_specialization(rows, key, kernel.a_ring, kernel.word_unpack) == specialization
+        assert static_specialization(rows, key, kernel.a_ring, kernel.word_unpack,
+                                     kernel.scatter_bf16, output_types[args[21].element_type]) == specialization
         passed = preserve_pass(output,'static/M'+str(rows),key)
         passed['specialization'] = specialization
         result['static_passes'].append(passed)
@@ -144,6 +171,7 @@ def compile_candidate(output, result):
         result['dynamic_passes'].append(preserve_pass(output,'dynamic/M'+str(rows),key))
         assert not torch.cuda.is_initialized()
     result['cuda_initialized'] = torch.cuda.is_initialized()
+    assert scatter_helper_receipt(root, fp4_common.__file__) == result['scatter_helper']
 
 
 def check_cpu_contracts(root, result):
@@ -208,6 +236,7 @@ def main():
             assert result['selected_test_counts'] == CPU_TEST_COUNTS
             assert result['contracts'] == dict(tests_run=EXPECTED_CPU_TESTS,failures=0,errors=0,skips=0)
             result['contracts_process_isolated'] = True
+            assert scatter_helper_receipt(root,result['scatter_helper']['path']) == result['scatter_helper']
         import torch
         assert not torch.cuda.is_initialized()
         assert source_receipt(root,verify_mounted=True)==sources

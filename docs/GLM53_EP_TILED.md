@@ -10,13 +10,14 @@ canaries and SF6 release passed on all four ranks, but every arm failed the
 existing Korean gate. The candidate also had lower observed fixed-decode
 throughput than the second baseline. It is not ready for default adoption.
 
-The later A-ring follow-up also missed the user-selected absolute decode
-target of 67 tok/s: TP B measured 71.3369 tok/s and EP A measured 61.3553
-tok/s over three complete fixed-1024 requests. B passed Korean 0/8; A failed
-1/8. Both passed facts 18/18. A's engine throughput was 18.2028 step/s,
-versus 18.2190 in the earlier EP run, so sharing FC1 activation transfers
-did not demonstrate a decode gain. The target does not waive quality gates
-or establish relative non-regression against TP.
+The latest word-unpack follow-up also missed the user-selected absolute
+decode target of 67 tok/s: TP B measured 69.8109 tok/s and EP A measured
+66.3037 tok/s over three complete fixed-1024 requests. B passed Korean 0/8;
+A failed 1/8. Both passed facts 18/18. A's engine throughput was 18.2126
+step/s, versus 18.2028 in the preceding A-ring run and 18.2190 in the first
+EP run. Neither refinement has established an engine throughput gain.
+The target does not waive quality gates or establish relative
+non-regression against TP.
 
 Enable `ENABLE_EP=1 VLLM_GLM53_EP_TILED=1 VLLM_GLM53_TP_SF6_Q0=0` on the GLM
 profile, retaining its `t,r,sf6` scale-compression setting. The TP Q0 owner/canary does not apply to EP weights. Keep the old
@@ -33,8 +34,10 @@ EP-compatible attention/MHC prefill SP configuration. Attention remains TP4.
   or request-time EP-to-TP redistribution is introduced.
 - Native M1..32 uses the EP static kernel, retaining the v5 TMA descriptors
   and v4 FC1/activation/FC2 pipeline. Remote IDs and zero route weights are
-  discarded before expert indexing. BF16-rounded contributions accumulate
-  in FP32 and are converted once to the caller's BF16 output.
+  discarded before expert indexing. The current M1..8 SF6 candidate scatters
+  BF16-rounded contributions directly into BF16 output with the stock vector
+  atomic. Raw scales and M9..32 retain FP32 accumulation and the final BF16
+  copy. All modes retain the existing publication barriers.
 - M33..capacity uses EP-local M128 prefill with the existing route/Q0/task
   publication and FP32 scatter. Its tile-major weights and direct SF6 scale loaders share the existing compute body.
 - All M1..32 static compiler keys and the runtime-shaped prefill kernel are
@@ -48,8 +51,10 @@ EP-compatible attention/MHC prefill SP configuration. Attention remains TP4.
   preserves modulo-256 output without carries between lanes. Volatile reads,
   all 128 threads' byte ownership and both expansion barriers remain the same.
   Raw scales and M9..32 retain the inherited restoration path. The selected
-  word-unpack specialization has its own 18-field cache key, required by the
-  startup canary and compiler receipt.
+  word-unpack specialization used an 18-field cache key in the measured run.
+  The new direct-BF16 specialization additionally changes the output ABI field
+  and appends its own tag, forming a 19-field key required by the startup
+  canary and compiler receipt. Other native modes retain their 16-field keys.
 - Original scale Parameters and loader aliases survive the startup canary.
   The final model hook releases them only after the full checkpoint walk and
   reseals the owner generation. Inference cannot start with an unfinished
@@ -172,3 +177,57 @@ divided by all three decode durations. B carries `cold_compile=true`; A does
 not. Prefill values are descriptive and do not establish a matched warm
 full-model speedup. The chain retained the Korean failure and exited 4.
 The 67 tok/s target was not achieved; defaults remain TP.
+
+## Word-parallel SF6 follow-up (2026-09-09)
+
+Frozen source `549fd55319c3379438c3cb99694df9f28c01aefb` passed 107 CPU
+contracts and six actual no-device lowerings. The M6 PTX scale-restoration
+interval changed from 130 to 80 integer/address instructions, with four
+stores, 123 registers and zero stack/local storage unchanged. Those static
+counts did not translate into a demonstrated engine throughput gain.
+
+Normal fleet session `eptiledword0909v4` completed a same-source B-to-A
+direct onepass. All four A ranks passed nine actual-weight canary cases and
+54 candidate comparisons each, including changed-input and graph replay.
+The selected M6 key had the required 18 fields; M12/24/32 retained 16.
+All four ranks completed SF6 finalization before readiness.
+
+| Metric | TP + SF6 B | EP + SF6 word-unpack A |
+|---|---:|---:|
+| 2K best-warm prefill tok/s / TTFT | 2557.19 / 0.832 s | 2804.52 / 0.759 s |
+| 32K prefill tok/s / TTFT | 2983.97 / 10.907 s | 3290.47 / 9.891 s |
+| 128K prefill tok/s / TTFT | 3134.64 / 41.012 s | 3261.84 / 39.413 s |
+| Fixed-1024 pooled decode tok/s | 69.8109 | 66.3037 |
+| Fixed-window pooled engine step/s | 20.4737 | 18.2126 |
+| Fact checks | 18/18 | 18/18 |
+| Korean-dirty responses | 0/8 | 1/8 |
+
+Decode repetitions were B 67.5897/70.5231/71.4368 and A
+62.8145/65.6278/70.9773 tok/s. The pooled result includes all three complete
+requests (3069 timed output tokens); the fastest repetition does not meet
+the pooled acceptance contract. B carries `cold_compile=true`; A does not.
+Prefill timings are descriptive, not a matched warm speedup verdict.
+The original quality gate failed on A's first fixed-decode repetition and
+the completed chain retained exit 4. Holder release completed at
+23:49:46 KST. Defaults remain TP.
+
+[Word-unpack CPU evidence](../measurements/glm53_ep_tiled_20260909/word_cpu4/README.md)
+and [direct onepass evidence](../measurements/glm53_ep_tiled_20260909/word_onepass4/README.md)
+preserve the source identity, full measurements and failed gates.
+
+## Native BF16 scatter candidate (2026-09-10)
+
+The next unmeasured candidate limits direct BF16 output to SF6 M1..8.
+It uses the stock `scatter_add_v4_bf16x2` helper and keeps each contribution's
+existing `satfinite` BF16 rounding. It removes the subsequent eight BF16-to-FP32
+conversions, the extra FP32 vector reduction and the final output copy.
+Collective input was already BF16; this does not reduce communication bytes.
+Output must be 16-byte aligned and disjoint from all owned workspace buffers
+before remapping or kernel admission. Larger native batches and prefill
+retain their existing FP32 accumulation path.
+
+The numerical contract is unchanged. Stock compact references produce BF16
+pair outputs and then sum tokens; direct scatter changes summation order
+and repeatedly rounds atomic additions. It therefore cannot claim bitwise
+equivalence, preserved model quality, or a speedup before the existing
+actual-weight canary and direct consumer run pass.

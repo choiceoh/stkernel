@@ -95,17 +95,27 @@ class EPTiledStaticTests(unittest.TestCase):
         restored.insert(1,guard.body[0])
         routes.body=routes.body[:1]+restored+routes.body[2:]
         class RestoreABI(ast.NodeTransformer):
+            def __init__(self, selected):self.selected,self.branches=selected,0
+            def visit_If(self,n):
+                if ast.unparse(n.test)=='cutlass.const_expr(self.scatter_bf16)':
+                    self.branches+=1
+                    return [self.visit(x) for x in (n.body if self.selected else n.orelse)]
+                return self.generic_visit(n)
             def visit_Name(self,n):
                 if n.id=='scatter_add_v4_bf16x2_to_f32': n.id='scatter_add_v4_bf16x2'
                 return n
             def visit_Assign(self,n):
                 if ast.unparse(n.targets[0])=='scatter_output[j // cols, j % cols]':
                     self.assert_zero = ast.unparse(n.value)
-                    if self.assert_zero!='cutlass.Float32(0.0)': raise AssertionError(self.assert_zero)
+                    wanted='cutlass.BFloat16(0.0)' if self.selected else 'cutlass.Float32(0.0)'
+                    if self.assert_zero!=wanted: raise AssertionError(self.assert_zero)
                     n.value=ast.parse('cutlass.BFloat16(0.0)',mode='eval').body
                 return self.generic_visit(n)
-        actual=RestoreABI().visit(actual)
-        self.assertEqual(ast.dump(actual,include_attributes=False),ast.dump(expected,include_attributes=False))
+        for selected in (False,True):
+            transform=RestoreABI(selected)
+            restored=transform.visit(copy.deepcopy(actual))
+            self.assertEqual(transform.branches,2)
+            self.assertEqual(ast.dump(restored,include_attributes=False),ast.dump(expected,include_attributes=False))
 
     def test_actual_route_guard_ignores_poison_and_preserves_nan_signed_zero_duplicates(self):
         route=next(n for n in ast.walk(function('kernel')) if isinstance(n,ast.While)
@@ -165,6 +175,31 @@ class EPTiledStaticTests(unittest.TestCase):
         self.assertEqual(new.count('red.global.add.v4.f32'),2)
         self.assertIn('add.u64 pnext,$0,16',new)
         self.assertNotIn('red.global.add.noftz.v4.bf16x2',new)
+        # The BF16 branch uses that same pinned helper and the same weighted
+        # BF16 contributions; only the accumulation precision is different.
+        scatter=next(n for n in ast.walk(function('kernel')) if isinstance(n,ast.If)
+                     and ast.unparse(n.test)=='cutlass.const_expr(self.scatter_bf16)'
+                     and isinstance(n.body[0],ast.Expr))
+        self.assertEqual(ast.unparse(scatter.body[0].value.func),'scatter_add_v4_bf16x2')
+        self.assertEqual(ast.dump(scatter.body[0].value.args[0]),ast.dump(scatter.orelse[0].value.args[0]))
+        self.assertEqual([ast.dump(x) for x in scatter.body[0].value.args],
+                         [ast.dump(x) for x in scatter.orelse[0].value.args])
+        self.assertEqual(original.count('cvt.rn.satfinite.bf16x2.f32'),4)
+        self.assertEqual(original.count('red.global.add.noftz.v4.bf16x2'),1)
+        # Validate the real CPU receipt reader against the full pinned helper
+        # file, including rejection of mutated bytes and a substituted path.
+        probe=ROOT/'probes/glm53_ep_tiled_compile.py'
+        nodes=[n for n in ast.parse(probe.read_text()).body if isinstance(n,ast.FunctionDef)
+               and n.name in ('scatter_helper_receipt','validate_scatter_helper_receipt')]
+        ns=dict(Path=Path,json=json,hashlib=hashlib)
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),str(probe),'exec'),ns)
+        actual_path=Path(ident['source_path'])
+        with patch.object(Path,'read_bytes',autospec=True,return_value=raw):
+            receipt=ns['scatter_helper_receipt'](ROOT,actual_path)
+            self.assertEqual(receipt['sha256'],ident['source_sha256'])
+            with self.assertRaises(AssertionError):ns['scatter_helper_receipt'](ROOT,actual_path.with_name('other.py'))
+        with patch.object(Path,'read_bytes',autospec=True,return_value=raw[:-1]+bytes([raw[-1]^1])):
+            with self.assertRaises(AssertionError):ns['scatter_helper_receipt'](ROOT,actual_path)
 
     def test_real_compile_factory_all_shapes_fp32_and_exact_tiled_descriptors(self):
         t=fake_torch(); dtype_names=('BFloat16','Float4E2M1FN','Float32','Float8E4M3FN',
@@ -178,6 +213,7 @@ class EPTiledStaticTests(unittest.TestCase):
             'EP_TILED_CACHE_TAG':constants()['EP_TILED_CACHE_TAG'],
             'EP_TILED_A_RING_CACHE_TAG':constants()['EP_TILED_A_RING_CACHE_TAG'],
             'EP_TILED_SF6_WORD_CACHE_TAG':constants()['EP_TILED_SF6_WORD_CACHE_TAG'],
+            'EP_TILED_BF16_SCATTER_CACHE_TAG':constants()['EP_TILED_BF16_SCATTER_CACHE_TAG'],
             'MoEStaticEPTiledKernel':lambda **kw:kw}
         extract('ep_tiled_geometry',ns);extract('ep_tiled_scale_mode',ns)
         factory=extract('ep_tiled_compile_spec',ns)
@@ -192,7 +228,9 @@ class EPTiledStaticTests(unittest.TestCase):
                         kernel,args,key=factory(num_tokens=m,topk_ids_dtype=dtype,reform_sf_pack=sf6)
                         self.assertEqual(len(args),30)
                         self.assertEqual((args[9].shape,args[11].shape),((4096,512,8,72),(4096,128,16,72)))
-                        self.assertEqual((args[21].dtype,args[21].shape),('Float32',(m,4096)))
+                        selected=sf6 and m<=8
+                        self.assertEqual((args[21].dtype,args[21].shape),
+                                         ('BFloat16' if selected else 'Float32',(m,4096)))
                         self.assertEqual(args[3].shape,(256,4096,72))
                         self.assertEqual(args[13].shape,(72,))
                         self.assertEqual(args[22].shape,(72,256))
@@ -200,10 +238,11 @@ class EPTiledStaticTests(unittest.TestCase):
                         self.assertEqual(kernel['num_tokens'],m)
                         self.assertIs(kernel['reform_sf_pack'],sf6)
                         self.assertEqual(key[10],'sf6_v1' if sf6 else 'raw_mma_scales')
-                        self.assertEqual(len(key),18 if sf6 and m<=8 else 16)
+                        self.assertEqual(len(key),19 if selected else 16)
+                        self.assertEqual(key[15],'bf16_scatter' if selected else 'fp32_scatter')
                         if sf6 and m<=8:
-                            self.assertEqual(key[-2:], (constants()['EP_TILED_A_RING_CACHE_TAG'],
-                                                       constants()['EP_TILED_SF6_WORD_CACHE_TAG']))
+                            self.assertEqual(key[-3:], (constants()['EP_TILED_A_RING_CACHE_TAG'],
+                                constants()['EP_TILED_SF6_WORD_CACHE_TAG'],constants()['EP_TILED_BF16_SCATTER_CACHE_TAG']))
                         else:
                             self.assertEqual(key[-1], 'fp32_scatter')
                         self.assertEqual(args[26].shape,(72,512,1552) if sf6 else (1,1,16))
@@ -282,16 +321,24 @@ class EPTiledStaticTests(unittest.TestCase):
             t,events,launch,kw=self._sf6_fixture(m)
             with patch.dict(sys.modules,{'torch':t}):
                 self.assertIs(launch(**kw),kw['output'])
-            self.assertEqual([e[0] for e in events],['record','compiled','copy'])
+            selected=m<=8
+            self.assertEqual([e[0] for e in events],['record','compiled']+([] if selected else ['copy']))
             args=events[1][1];owner=kw['weights'].reform_scales
             self.assertIs(args[26],owner.fc1);self.assertIs(args[27],owner.fc2)
             self.assertEqual(args[10],owner.fc1.data_ptr())
             self.assertEqual(args[12],owner.fc2.data_ptr())
             self.assertIs(args[9],kw['weights'].w13_fp4)
             self.assertIs(args[11],kw['weights'].down_fp4)
-            self.assertEqual(args[21].pointer,kw['scratch'].scatter_fp32.pointer)
+            if selected:
+                self.assertIs(args[21],kw['output'])
+                self.assertEqual(args[21].dtype,t.bfloat16)
+                self.assertEqual(events[0][1],kw['output'].pointer)
+            else:
+                self.assertEqual(args[21].pointer,kw['scratch'].scatter_fp32.pointer)
+                self.assertEqual(args[21].dtype,t.float32)
             self.assertIs(launch.compile_options[0]['reform_sf_pack'],True)
-        for mutation in ('disabled','retainedraw','rawowner','fc1shape','fc2shape','dtype','alias'):
+        for mutation in ('disabled','retainedraw','rawowner','fc1shape','fc2shape','dtype','alias',
+                         'outputdtype','outputalignment'):
             t,events,launch,kw=self._sf6_fixture()
             w=kw['weights']
             if mutation=='disabled':w.reform_scales.enabled=False
@@ -301,6 +348,8 @@ class EPTiledStaticTests(unittest.TestCase):
             if mutation=='fc2shape':w.reform_scales.fc2.shape=(72,64,1552)
             if mutation=='dtype':w.reform_scales.fc1.dtype=t.float32
             if mutation=='alias':w.sfb2_packed=object()
+            if mutation=='outputdtype':kw['output'].dtype=t.float32
+            if mutation=='outputalignment':kw['output'].pointer+=2
             with patch.dict(sys.modules,{'torch':t}),self.assertRaises(ValueError):launch(**kw)
             self.assertEqual(events,[]);self.assertEqual(launch.compile_options,[])
 
@@ -319,6 +368,7 @@ class EPTiledStaticTests(unittest.TestCase):
                     max_active_clusters=48,reform_sf_pack=mode)
                 self.assertIs(k.options['reform_sf_pack'],mode)
                 self.assertIs(k.options['decode_reform'],m<=8)
+                self.assertIs(k.scatter_bf16,mode and m<=8)
                 self.assertEqual(k.options['output_tile_count_n'],16)
                 self.assertEqual((k.options['fc1_stages'],k.options['fc2_stages']),(2,2))
         calls=[];ns['get_ep_tiled_decode_kernel']=lambda **kw:calls.append(kw)
@@ -347,6 +397,51 @@ class EPTiledStaticTests(unittest.TestCase):
         ns={};extract('ep_tiled_geometry',ns)
         alloc=extract('allocate_ep_tiled_decode_scratch',ns)
         with patch.dict(sys.modules,{'torch':t}),self.assertRaises(RuntimeError):alloc(device=types.SimpleNamespace(type='cuda'))
+
+    def test_real_entry_rejects_mixed_bf16_fp32_fake_output_abis(self):
+        types_=('BFloat16','Float32','Int32','Int64','Float4E2M1FN')
+        ns=dict(cutlass=types.SimpleNamespace(**{x:x for x in types_}))
+        check=extract('_check_ep_call',ns)
+        for m in range(1,33):
+            for sf6 in (False,True):
+                selected=sf6 and m<=8
+                owner=types.SimpleNamespace(ep_num_tokens=m,ep_max_rows=256,scatter_bf16=selected)
+                args=[Tensor((m,4096),'BFloat16'),Tensor((m*8,),'Int32'),Tensor((m*8,),'Float32'),
+                      Tensor((4096,512,8,72),'Float4E2M1FN'),Tensor((4096,128,16,72),'Float4E2M1FN'),
+                      Tensor((72,),'Int32'),Tensor((72,256),'Int32'),
+                      Tensor((m,4096),'BFloat16' if selected else 'Float32')]
+                check(owner,*args)
+                for index,replacement in ((7,Tensor((m,4096),'Float32' if selected else 'BFloat16')),
+                                           (7,Tensor((m+1,4096),args[7].dtype)),
+                                           (3,Tensor(args[3].shape,'BFloat16'))):
+                    bad=args.copy();bad[index]=replacement
+                    with self.subTest(m=m,sf6=sf6,index=index),self.assertRaises(ValueError):check(owner,*bad)
+
+    def test_entire_output_is_zeroed_once_before_routes_for_both_abis(self):
+        body=function('kernel').body
+        start=next(i for i,n in enumerate(body) if isinstance(n,ast.Assign)
+                   and ast.unparse(n.targets[0])=='scatter_total')
+        self.assertEqual(ast.unparse(body[start+3]),'cute.arch.sync_threads()')
+        self.assertEqual(ast.unparse(body[start+4].value.func),'self._resident_grid_barrier')
+        fn=ast.FunctionDef(name='zero',args=ast.arguments(posonlyargs=[],args=[ast.arg(x) for x in
+            ('self','num_tokens','cols','flat_tid','flat_stride','scatter_output')],kwonlyargs=[],kw_defaults=[],defaults=[]),
+            body=copy.deepcopy(body[start:start+3]),decorator_list=[])
+        ns=dict(cutlass=types.SimpleNamespace(const_expr=bool,Float32=lambda x:('f32',x),
+                                              BFloat16=lambda x:('bf16',x)))
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[])),str(SOURCE),'exec'),ns)
+        class Output:
+            def __init__(self,m,selected):self.m,self.dtype,self.count=m,'bf16' if selected else 'f32',bytearray((m+1)*4096)
+            def __setitem__(self,index,value):
+                row,col=index
+                assert 0<=row<self.m and 0<=col<4096 and value==(self.dtype,0.)
+                self.count[row*4096+col]+=1
+        cases=[(m,mode,1) for m in range(1,33) for mode in (False,True)]+[(6,True,48),(32,False,48)]
+        for m,sf6,grid in cases:
+            selected=sf6 and m<=8;output=Output(m,selected)
+            for tid in range(grid*160):
+                ns['zero'](types.SimpleNamespace(scatter_bf16=selected),m,4096,tid,grid*160,output)
+            self.assertEqual(output.count[:m*4096],bytes([1])*(m*4096))
+            self.assertEqual(output.count[m*4096:],bytes(4096))
 
 
 if __name__=='__main__':unittest.main()
