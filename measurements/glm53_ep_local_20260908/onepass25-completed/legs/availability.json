@@ -1,0 +1,33 @@
+{
+  "known_paths": [
+    {
+      "available": false,
+      "origins": [
+        "explicit parent-supplied path; no reconstructed lineage"
+      ],
+      "path": "/tmp/leg.589372"
+    },
+    {
+      "available": false,
+      "origins": [
+        "explicit parent-supplied path; no reconstructed lineage"
+      ],
+      "path": "/tmp/leg.616221"
+    },
+    {
+      "available": false,
+      "origins": [
+        "explicit parent-supplied path; no reconstructed lineage"
+      ],
+      "path": "/tmp/leg.647600"
+    },
+    {
+      "available": false,
+      "origins": [
+        "explicit parent-supplied path; no reconstructed lineage"
+      ],
+      "path": "/tmp/leg.674585"
+    }
+  ],
+  "scope": "Only exact parent-supplied or terminal-log paths were read. Cleaned originals stay absent; other unknown leg paths are not enumerated or reconstructed."
+}
