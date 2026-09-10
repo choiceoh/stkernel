@@ -1,0 +1,14 @@
+{
+  "files": {
+    "README.md": {
+      "bytes": 2042,
+      "sha256": "d855a2ba71502a13a91b1f13ee262eacc0a116c1c19a4c2758aa36e02f56a085"
+    },
+    "receipt.json": {
+      "bytes": 11856,
+      "sha256": "e0ac11aef1847f0be7fdeac5c5324b91b6a38d217d9d651192abe9f5812f2928"
+    }
+  },
+  "schema": 1,
+  "scope": "Sanitized recovery proof only; no raw Docker configuration"
+}
