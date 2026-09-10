@@ -8195,6 +8195,42 @@ SSD → **상주 74.2**(비전 빼면 **73.30**).
 **남은 일**: `--dense tp` 는 지금 `build` 에서 **ABORT** 한다(축이 가설이라 조용히 쓰지 않음 —
 D3 그대로다). 축을 확정하는 것이 곧 TP 규칙을 정하는 일이고, 그게 `shapes`(D2) 작업이다.
 
+### TP 축은 가설이 아니었다 — 레퍼런스 `inference/convert.py` 가 갖고 있다
+
+`engine/tp_plan.py` 신설. 축을 **손으로 옮기지 않고** convert.py 를 sha256
+`03502834…` 로 핀한 뒤 **AST 에서 `mapping` 딕셔너리를 뽑는다**(벤더가 바꾸면 드리프트가
+아니라 실패 — `dsv41_sparse_contract.py` 와 같은 계약).
+
+```
+mapping = { embed→dim0, head→dim0, wq_b→dim0, wo_a→dim0,
+            wo_b→dim1, attn_sink→dim0, weights_proj→dim0 }   # 나머지 전부 복제
+```
+
+**내 추측 두 개가 틀렸다**: `ffn.shared_experts`(1.320 GiB)는 레퍼런스도 **복제**한다 —
+TP 후보가 아니었다. 반대로 `wo_a`(1.344 GiB, `[8192,4096]`)는 **샤딩된다** — 내가 "MLA
+압축측이니 복제가 맞다"고 분류했던 것이다. 그리고 `mtp.*.experts` 는 레퍼런스가 **EP
+샤딩한다**(`current_n_experts = mtp_n_experts if name.startswith("mtp.")`) — `--mtp replicate`
+는 순전히 vLLM 의 `draft_tensor_parallel_size=1` 사정이었다.
+
+실제 48 샤드 헤더에 적용한 결과가 preshard 도구와 **독립적으로 일치**한다:
+
+| | tp_plan.py (레퍼런스 축) | preshard `--dense tp --mtp ep` |
+|---|---:|---:|
+| expert (+mtp) | 68.92 | 67.2 + 1.7 = 68.9 |
+| engram (SSD) | 47.21 | 47.2 |
+| replicate | 3.40 | 1.8 + 0.7 + 0.9 = 3.4 |
+| tp:0 / tp:1 | 1.41 / 0.42 | 1.3 / 0.5 |
+| **랭크 상주** | **74.15** | 74.2 |
+
+**엔진이 고를 수 있는 두 줄도 값이 붙었다**:
+- 비전+aligner 제거 **−0.90** (텍스트 전용)
+- `wo_a` bf16 **+0.34** — convert.py 는 샤딩 뒤 `weight * scale → .bfloat16()` 로
+  **역양자화한다.** fp8 로 두면 아끼지만 **[32,32] 블록 스케일 커널**이 필요하다(원장이 말한 그
+  블로커). 텍스트 전용 기준 fp8 **73.25** / bf16 **73.58**.
+
+최종: `--layout reference` 에서 가중치 줄이 **estimated 가 아니라 read** 가 되고 **KV 8.76 GiB**.
+재현: `python3 engine/budget.py --exclusive --layout reference`.
+
 **다음**: 추정 두 줄(로드 스크래치·액티베이션 피크, 합 21.92 GiB = 박스의 18%, 남는 KV 의
 2.5배)을 dsv41 에서 실측한다. `engine/slice_load.py` 로 층 슬라이스만 올리면 부팅·플릿 없이
 잴 수 있다.

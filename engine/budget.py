@@ -217,7 +217,8 @@ def for_dsv41(checkpoint: "str | Path", world_size: int = 4,
             f"rank*of{world_size}: {tensors:,} tensors, spread across ranks "
             f"{spread * 1024:.0f} MiB")
     else:
-        weights_line = Line("weights (this rank)", weights_gib, LEDGER,
+        provenance = READ if "convert.py axes" in weights_note else LEDGER
+        weights_line = Line("weights (this rank)", weights_gib, provenance,
                             weights_note or "supplied")
 
     if box_gib is None:
@@ -364,10 +365,17 @@ def _main(argv: "list[str] | None" = None) -> int:
                         help="assume the box is ours alone (a real serving node)")
     parser.add_argument("--replication", action="store_true",
                         help="show what every rank carries a copy of")
-    parser.add_argument("--layout", choices=("disk", "tp", "tp-notext"), default="disk",
+    parser.add_argument("--repo", default="/home/choiceoh/models/DeepSeek-V4.1-Flash",
+                        help="the HF checkpoint, for --layout reference")
+    parser.add_argument("--wo-a", choices=("fp8", "bf16"), default="fp8")
+    parser.add_argument("--vision", action="store_true", help="keep the vision tower")
+    parser.add_argument("--layout", choices=("disk", "tp", "tp-notext", "reference"),
+                        default="disk",
                         help="disk: the rank files as built (dense=replicate, mtp=replicate). "
                              "tp: what `preshard plan --dense tp --mtp ep` says. "
-                             "tp-notext: same, minus the vision tower.")
+                             "tp-notext: same, minus the vision tower. "
+                             "reference: derived here from inference/convert.py's own "
+                             "axes over the real shard headers.")
     args = parser.parse_args(argv)
 
     total, free = (None, None)
@@ -398,6 +406,14 @@ def _main(argv: "list[str] | None" = None) -> int:
     if args.layout == "tp":
         override = PLAN_TP_RESIDENT_GIB
         note = "preshard plan --dense tp --mtp ep: 121.4/rank - engram 47.2 on SSD"
+    elif args.layout == "reference":
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from tp_plan import rank_plan, resident_gib
+        plan = rank_plan(args.repo, args.world_size)
+        override = resident_gib(plan, True, args.vision, args.wo_a)
+        note = (f"inference/convert.py axes over the real shard headers: "
+                f"engram on SSD, vision {'in' if args.vision else 'out'}, wo_a {args.wo_a}")
     elif args.layout == "tp-notext":
         override = PLAN_TP_RESIDENT_NOVISION_GIB
         note = ("preshard plan --dense tp --mtp ep: 121.4/rank - engram 47.2 on SSD "
