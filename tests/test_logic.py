@@ -308,12 +308,18 @@ def test_helpers() -> None:
     )
     lt = ns["_layer_type_for"]
     check(lt(1) == "swaonly" and lt(4) == "c4a" and lt(128) == "c128a",
-          "layer types")
-    try:
-        lt(8)
-        check(False, "ratio 8 must raise")
-    except ValueError:
-        check(True, "")
+          "layer types: V4's three names are unchanged")
+    # This used to require ratio 8 to RAISE, because the stock function
+    # enumerated V4's three ratios. DeepSeek-V4.1 compresses every layer at
+    # ratio 2, so on that checkpoint the enumeration is not a safety check --
+    # it is a refusal to build a metadata builder at all, and it is what
+    # stopped the first V4.1 boot. The key's job is to keep layers with
+    # different (topk, extra_topk, extra_page_block_size) out of one
+    # tile-scheduler plan, which a distinct string per distinct ratio does.
+    check(lt(2) == "c2a" and lt(8) == "c8a",
+          "an unenumerated ratio gets its own key rather than raising")
+    check(lt(0) == "swaonly" and lt(2) != lt(4) != lt(128),
+          "ratios that must not share a plan still get distinct keys")
     print(f"  helper functions .............. OK")
 
 

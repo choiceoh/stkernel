@@ -115,6 +115,42 @@ def _build():
                     "model.")
 
             super().__init__(vllm_config=vllm_config, prefix=prefix)
+            self._install_o_proj()
+
+        def _install_o_proj(self) -> None:
+            """Swap every attention's `_o_proj` for the bf16 grouped path.
+
+            Per instance rather than by subclassing the attention class: which
+            class is used is `_select_dsv4_attn_cls(vllm_config)`'s decision,
+            and there are several. Patching the instances leaves that choice
+            where it belongs and still reaches every one of them.
+            """
+            import os
+
+            if os.environ.get("DSV41_FUSED_O_PROJ", "0").strip() in (
+                    "1", "true", "yes"):
+                logger.warning(
+                    "DSV41_FUSED_O_PROJ=1: keeping the image's fused fp8 "
+                    "o-projection. It reads weight scales at 128 granularity "
+                    "and this checkpoint ships 32, so expect either a rank "
+                    "assertion or silently wrong numbers.")
+                return
+
+            import dsv41_o_proj
+
+            patched = 0
+            for module in self.modules():
+                if hasattr(module, "_o_proj") and hasattr(module, "wo_a"):
+                    dsv41_o_proj.install(module)
+                    patched += 1
+            if not patched:
+                raise RuntimeError(
+                    "no attention module exposed `_o_proj` and `wo_a`, so the "
+                    "32-granular o-projection was never installed. Booting on "
+                    "would use the image's 128-granular kernel against 32-wide "
+                    "scales.")
+            logger.info("DeepSeek-V4.1: bf16 grouped o-projection on %d "
+                        "attention layers", patched)
 
     return DeepseekV41ForCausalLM
 
