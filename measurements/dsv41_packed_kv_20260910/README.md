@@ -59,8 +59,8 @@ admission for a serving default.
 
 ## CPU results: PASS
 
-- `cpu-unit.log`: 76 tests, zero skips, including 20 new packed-KV tests.
-- `cpu-oracle.json`: all 4,096 nibble/scale combinations and 256 packed-byte
+- `cpu-unit2.log`: 76 tests, zero skips, including 20 new packed-KV tests.
+- `cpu-oracle2.json`: all 4,096 nibble/scale combinations and 256 packed-byte
   patterns; signed zeros and NaN locations; 22 pinned original-wrapper producer
   boundary rows using explicit independent CPU arithmetic. NaN payload identity
   is not claimed.
@@ -99,3 +99,34 @@ with a bit-preserving `mov.b16` boundary whose side-effect annotation stops
 that compiler traversal. This instruction is neither arithmetic nor a memory
 fence. Tile order, compact loads, eight warps and the admission limit remain.
 See the compiler's [`computeOrigBitWidth` implementation](https://github.com/triton-lang/triton/blob/v3.7.1/lib/Dialect/TritonGPU/Transforms/AccelerateMatmul.cpp).
+
+## Final SM121 compile admission: PASS
+
+Normal CPU fleet session `dsv41packedkvcpu0910v2` compiled frozen source
+`2b2299df3fd86d6a9bc721827e1bc2e572315151` on srv3. The terminal
+`aot-cpu2/fleet-ack.json` reports `finished-cpu`, return code 0. All four
+H8/H16/H32/H64 variants use 83,968 bytes (82 KiB) of static shared memory,
+below the same 96 KiB budget. The kernel still uses eight warps, one stage
+and disabled FP fusion; only the BF16 identity boundary changed device code.
+
+The already-present image was
+`sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`,
+with Torch `2.13.0+cu130` and Triton `3.7.1`. CUDA stayed uninitialized and
+the container had no GPU devices or model. The 10.09-second compiler run is
+not a kernel timing. AOT register/spill counts were unavailable without device
+initialization and are not inferred from PTX virtual registers.
+
+All 21 source-file hashes match before/after compilation and the local final
+implementation. All 44 manifest files, including PTX, cubins and compiler IR,
+were fetched and verified. Full artifacts remain on srv3 at
+`/home/choiceoh/dsv41-packed-kv-cpu2-evidence`. The committed receipt subset
+is textual; `SHA256SUMS` covers the full remote directory.
+
+`aot-cpu2/ptx-audit.json` verifies all four variants use `kWidth=2`, one shared
+KV allocation, compact payload/scale IR loads, the bit-preserving BF16 boundary,
+original staged QK/PV accumulators and output-only global stores. Logical IR
+shapes and static PTX instructions are not physical memory-transaction counts.
+
+`cpu-unit2.log` and `cpu-oracle2.json` cover the final source; the earlier
+unsuffixed files preserve the initial CPU evidence. The source still requires
+actual GPU producer, output and consumer-speed validation before deployment.

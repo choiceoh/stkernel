@@ -1,0 +1,675 @@
+{
+  "schema": 1,
+  "verdict": "PASS_SCOPED_NO_DEVICE_CODEGEN_AUDIT",
+  "source_revision": "2b2299df3fd86d6a9bc721827e1bc2e572315151",
+  "aot_sha256": "6a140e8faad9357e9340d5dab60e562a99eb4d2a65d386ec8552b0fc9b815f67",
+  "execution_sha256": "1d8cf2aaed736324e327be109e9898af06c9a2c905a45bc386d91b9b4323852f",
+  "source_before_after_equal": true,
+  "frozen_source_files_verified_against_git": 21,
+  "compiled_ptx_cubin_hashes_verified": 8,
+  "compiled_cache_ptx_cubin_exact_matches": 8,
+  "cpu1_to_cpu2": {
+    "cpu1_revision": "82385f1ff7568be6a46be0b07145464cc61ac0f5",
+    "cpu1_result": "REJECTED_BY_UNCHANGED_96_KIB_ADMISSION_BUDGET",
+    "cpu1_metadata_sha256": "1fe4b1e4ea7aeb616926b500bd4024775e65dfde8a41b6266f5235b48dbecee5",
+    "cpu1_ttgir_sha256": "93a0f55af42f824bd0766fce1dbc90e7ddfe256db9ad65803b3c1d742c942134",
+    "cpu1_shared_bytes": 147456,
+    "cpu1_kWidth": 4,
+    "cpu1_kv_shared_copies": 2,
+    "cpu2_shared_bytes": 83968,
+    "cpu2_kWidth": 2,
+    "cpu2_kv_shared_copies": 1,
+    "runtime_offline_options_unchanged": {
+      "num_warps": 8,
+      "num_stages": 1,
+      "enable_fp_fusion": false
+    },
+    "triton_source_ast_only_added_identity_statement": true,
+    "threshold_raised": false,
+    "cause": "The uint8 load provenance selected kWidth=4 with two simultaneous 65536-byte BF16 KV swizzles plus 16384-byte Q. Opaque bit-preserving BF16 mov stops byte-width backtracking; CPU2 emits kWidth=2 and one KV allocation. CPU2 peak is Q16384+KV65536+P2048=83968 bytes.",
+    "compiler_primary_source": "https://raw.githubusercontent.com/triton-lang/triton/v3.7.1/lib/Dialect/TritonGPU/Transforms/AccelerateMatmul.cpp",
+    "compiler_source_relevant_lines": "236-277 and 400-405"
+  },
+  "variants": [
+    {
+      "label": "H8",
+      "artifacts": [
+        {
+          "path": "H8/kernel.ptx",
+          "bytes": 392985,
+          "sha256": "75c1cd6291d81f50fd5b5d5ca7a698a8b251e89b80c994c831de8681d307eebd"
+        },
+        {
+          "path": "H8/kernel.cubin",
+          "bytes": 628312,
+          "sha256": "336092125e8bab863df621a8b0fe900852120eeb24c74bc2010401c7d697d558"
+        }
+      ],
+      "ttgir_sha256": "4c2b46a433fa268231fe393c52f086c47a4e4bd2d7f7b11854a4a27b136b52b3",
+      "cache_metadata_sha256": "74f845d5276a41f5f0e4b7cfef917497e378518c9633c6f581f5ca2cbb8de38b",
+      "shared_bytes": 83968,
+      "shared_internal_budget_bytes": 98304,
+      "n_regs": null,
+      "n_spills": null,
+      "mma_kWidth": 2,
+      "single_kv_shared_alloc": {
+        "line": 310,
+        "instruction": "%kv_241 = ttg.local_alloc %kv_240 : (tensor<64x512xbf16, #blocked1>) -> !ttg.memdesc<64x512xbf16, #shared, #smem> loc(#loc341)"
+      },
+      "kv_shared_bytes": 65536,
+      "compact_ir_loads": {
+        "scale": {
+          "line": 244,
+          "instruction": "%sf_186 = tt.load %sf_182, %sf_185, %cst_22 : tensor<64x32x!tt.ptr<i8>, #blocked3> loc(#loc285)"
+        },
+        "payload": {
+          "line": 276,
+          "instruction": "%payload_213 = tt.load %payload_211, %payload_212, %cst_23 : tensor<64x256x!tt.ptr<i8>, #blocked1> loc(#loc311)"
+        }
+      },
+      "bf16_identity_ir": {
+        "line": 309,
+        "instruction": "%kv_240 = tt.elementwise_inline_asm \"mov.b16 $0, $1;\" {constraints = \"=h,h\", packed_element = 1 : i32, pure = false} %kv : tensor<64x512xbf16, #blocked1> -> tensor<64x512xbf16, #blocked1> loc(#loc341)"
+      },
+      "payload_low_high_and_scale16_broadcast_in_ir": true,
+      "runtime_abi": {
+        "dims_i32_slots": [
+          8,
+          9,
+          10,
+          11
+        ],
+        "strides_i64_slots": [
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28
+        ],
+        "declarations_and_param_loads_verified": true,
+        "flattened_grid_xy_only": true
+      },
+      "ptx_loads": {
+        "window": {
+          "static_count": 128,
+          "first_line": 2666,
+          "last_line": 3174,
+          "first_instruction": "@%p78 ld.global.b16 { %rs37 }, [ %rd226 + 0 ];",
+          "all_addresses_verified_pointer_param": 1
+        },
+        "scale": {
+          "static_count": 8,
+          "first_line": 3188,
+          "last_line": 3216,
+          "first_instruction": "@%p142 ld.global.b8 { %rs166 }, [ %rd354 + 0 ];",
+          "all_addresses_verified_pointer_param": 3
+        },
+        "payload": {
+          "static_count": 64,
+          "first_line": 4868,
+          "last_line": 5120,
+          "first_instruction": "@%p150 ld.global.b8 { %rs174 }, [ %rd362 + 0 ];",
+          "all_addresses_verified_pointer_param": 2
+        }
+      },
+      "ptx_bf16_identity": {
+        "static_count": 128,
+        "first_line": 9473,
+        "last_line": 9854,
+        "first_instruction": "mov.b16 %rs238, %rs239;"
+      },
+      "qk": {
+        "invalid_negative_inf_seed": {
+          "static_count": 4,
+          "first_line": 10242,
+          "last_line": 10247,
+          "first_instruction": "selp.f32 \t%r5134, 0f00000000, 0fFF800000, %p495;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_count": 32,
+          "first_line": 10305,
+          "last_line": 10398,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r473, %r474, %r475, %r476 }, { %r467, %r468, %r469, %r470 }, { %r471, %r472 }, { %r473, %r474, %r475, %r476 };"
+        }
+      },
+      "pv": {
+        "bf16_probability_round": {
+          "static_count": 2,
+          "first_line": 10603,
+          "last_line": 10604,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r5194, %r5172, %r5170;"
+        },
+        "scaled_previous_fp32_accumulator": {
+          "static_count": 32,
+          "first_line": 10570,
+          "last_line": 10601,
+          "first_instruction": "mul.rn.f32 \t%r694, %r694, %r5162;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_count": 32,
+          "first_line": 10631,
+          "last_line": 10724,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r694, %r695, %r696, %r697 }, { %r674, %r675, %r676, %r677 }, { %r678, %r679 }, { %r694, %r695, %r696, %r697 };"
+        }
+      },
+      "output": {
+        "single_sink_epilogue_exp": {
+          "static_count": 2,
+          "first_line": 10811,
+          "last_line": 10813,
+          "first_instruction": "ex2.approx.f32 \t%r5205, %r5204;"
+        },
+        "fp32_divide": {
+          "static_count": 32,
+          "first_line": 10818,
+          "last_line": 10849,
+          "first_instruction": "div.rn.f32 \t%r5210, %r694, %r5208;"
+        },
+        "global_stores": {
+          "static_count": 32,
+          "first_line": 10951,
+          "last_line": 11044,
+          "first_instruction": "@%p1010 st.global.b16 [ %rd1122 + 0 ], { %rs1262 };"
+        },
+        "all_global_store_pointer_roots": [
+          6
+        ],
+        "whole_prefix_dequant_global_store": false
+      }
+    },
+    {
+      "label": "H16",
+      "artifacts": [
+        {
+          "path": "H16/kernel.ptx",
+          "bytes": 392982,
+          "sha256": "205f21fee3c9c455869329b7786e55610334af85612a597b9d99e3b42055c3ec"
+        },
+        {
+          "path": "H16/kernel.cubin",
+          "bytes": 633928,
+          "sha256": "8f09fa9b206e1cb89ba2660c5a87d1ad543282852be468e67094b3514f07de9f"
+        }
+      ],
+      "ttgir_sha256": "46502edfc8eeb3b1ccdf6425ea554cc2cc6573abd9910fc09e4a10b13277b177",
+      "cache_metadata_sha256": "7b6fb063a42dffb26047716a77334137ee32fc5410bea3629a568dca253c5c35",
+      "shared_bytes": 83968,
+      "shared_internal_budget_bytes": 98304,
+      "n_regs": null,
+      "n_spills": null,
+      "mma_kWidth": 2,
+      "single_kv_shared_alloc": {
+        "line": 310,
+        "instruction": "%kv_241 = ttg.local_alloc %kv_240 : (tensor<64x512xbf16, #blocked1>) -> !ttg.memdesc<64x512xbf16, #shared, #smem> loc(#loc341)"
+      },
+      "kv_shared_bytes": 65536,
+      "compact_ir_loads": {
+        "scale": {
+          "line": 244,
+          "instruction": "%sf_186 = tt.load %sf_182, %sf_185, %cst_22 : tensor<64x32x!tt.ptr<i8>, #blocked3> loc(#loc285)"
+        },
+        "payload": {
+          "line": 276,
+          "instruction": "%payload_213 = tt.load %payload_211, %payload_212, %cst_23 : tensor<64x256x!tt.ptr<i8>, #blocked1> loc(#loc311)"
+        }
+      },
+      "bf16_identity_ir": {
+        "line": 309,
+        "instruction": "%kv_240 = tt.elementwise_inline_asm \"mov.b16 $0, $1;\" {constraints = \"=h,h\", packed_element = 1 : i32, pure = false} %kv : tensor<64x512xbf16, #blocked1> -> tensor<64x512xbf16, #blocked1> loc(#loc341)"
+      },
+      "payload_low_high_and_scale16_broadcast_in_ir": true,
+      "runtime_abi": {
+        "dims_i32_slots": [
+          8,
+          9,
+          10,
+          11
+        ],
+        "strides_i64_slots": [
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28
+        ],
+        "declarations_and_param_loads_verified": true,
+        "flattened_grid_xy_only": true
+      },
+      "ptx_loads": {
+        "window": {
+          "static_count": 128,
+          "first_line": 2665,
+          "last_line": 3173,
+          "first_instruction": "@%p77 ld.global.b16 { %rs37 }, [ %rd226 + 0 ];",
+          "all_addresses_verified_pointer_param": 1
+        },
+        "scale": {
+          "static_count": 8,
+          "first_line": 3187,
+          "last_line": 3215,
+          "first_instruction": "@%p141 ld.global.b8 { %rs166 }, [ %rd354 + 0 ];",
+          "all_addresses_verified_pointer_param": 3
+        },
+        "payload": {
+          "static_count": 64,
+          "first_line": 4867,
+          "last_line": 5119,
+          "first_instruction": "@%p149 ld.global.b8 { %rs174 }, [ %rd362 + 0 ];",
+          "all_addresses_verified_pointer_param": 2
+        }
+      },
+      "ptx_bf16_identity": {
+        "static_count": 128,
+        "first_line": 9472,
+        "last_line": 9853,
+        "first_instruction": "mov.b16 %rs238, %rs239;"
+      },
+      "qk": {
+        "invalid_negative_inf_seed": {
+          "static_count": 4,
+          "first_line": 10241,
+          "last_line": 10246,
+          "first_instruction": "selp.f32 \t%r5134, 0f00000000, 0fFF800000, %p494;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_count": 32,
+          "first_line": 10304,
+          "last_line": 10397,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r473, %r474, %r475, %r476 }, { %r467, %r468, %r469, %r470 }, { %r471, %r472 }, { %r473, %r474, %r475, %r476 };"
+        }
+      },
+      "pv": {
+        "bf16_probability_round": {
+          "static_count": 2,
+          "first_line": 10602,
+          "last_line": 10603,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r5194, %r5172, %r5170;"
+        },
+        "scaled_previous_fp32_accumulator": {
+          "static_count": 32,
+          "first_line": 10569,
+          "last_line": 10600,
+          "first_instruction": "mul.rn.f32 \t%r694, %r694, %r5162;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_count": 32,
+          "first_line": 10630,
+          "last_line": 10723,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r694, %r695, %r696, %r697 }, { %r674, %r675, %r676, %r677 }, { %r678, %r679 }, { %r694, %r695, %r696, %r697 };"
+        }
+      },
+      "output": {
+        "single_sink_epilogue_exp": {
+          "static_count": 2,
+          "first_line": 10809,
+          "last_line": 10811,
+          "first_instruction": "ex2.approx.f32 \t%r5205, %r5204;"
+        },
+        "fp32_divide": {
+          "static_count": 32,
+          "first_line": 10816,
+          "last_line": 10847,
+          "first_instruction": "div.rn.f32 \t%r5210, %r694, %r5208;"
+        },
+        "global_stores": {
+          "static_count": 32,
+          "first_line": 10949,
+          "last_line": 11042,
+          "first_instruction": "@%p1009 st.global.b16 [ %rd1122 + 0 ], { %rs1262 };"
+        },
+        "all_global_store_pointer_roots": [
+          6
+        ],
+        "whole_prefix_dequant_global_store": false
+      }
+    },
+    {
+      "label": "H32",
+      "artifacts": [
+        {
+          "path": "H32/kernel.ptx",
+          "bytes": 392982,
+          "sha256": "353d2877fe62836dec325c7fff4fd98fe574fe3212896f0ac6215f3071e7f933"
+        },
+        {
+          "path": "H32/kernel.cubin",
+          "bytes": 633928,
+          "sha256": "be833efb310618c48723fde452d5972579adcc157146af341418287575ced62a"
+        }
+      ],
+      "ttgir_sha256": "8d93725ba8c9f6cde6e477c376af9946c4e5f0024077f76e7681e2f8238cc055",
+      "cache_metadata_sha256": "d0fa02b33b971b246bbcf479f0e64b800c9a34834bfd00373d63a47e1aa0b676",
+      "shared_bytes": 83968,
+      "shared_internal_budget_bytes": 98304,
+      "n_regs": null,
+      "n_spills": null,
+      "mma_kWidth": 2,
+      "single_kv_shared_alloc": {
+        "line": 310,
+        "instruction": "%kv_241 = ttg.local_alloc %kv_240 : (tensor<64x512xbf16, #blocked1>) -> !ttg.memdesc<64x512xbf16, #shared, #smem> loc(#loc341)"
+      },
+      "kv_shared_bytes": 65536,
+      "compact_ir_loads": {
+        "scale": {
+          "line": 244,
+          "instruction": "%sf_186 = tt.load %sf_182, %sf_185, %cst_22 : tensor<64x32x!tt.ptr<i8>, #blocked3> loc(#loc285)"
+        },
+        "payload": {
+          "line": 276,
+          "instruction": "%payload_213 = tt.load %payload_211, %payload_212, %cst_23 : tensor<64x256x!tt.ptr<i8>, #blocked1> loc(#loc311)"
+        }
+      },
+      "bf16_identity_ir": {
+        "line": 309,
+        "instruction": "%kv_240 = tt.elementwise_inline_asm \"mov.b16 $0, $1;\" {constraints = \"=h,h\", packed_element = 1 : i32, pure = false} %kv : tensor<64x512xbf16, #blocked1> -> tensor<64x512xbf16, #blocked1> loc(#loc341)"
+      },
+      "payload_low_high_and_scale16_broadcast_in_ir": true,
+      "runtime_abi": {
+        "dims_i32_slots": [
+          8,
+          9,
+          10,
+          11
+        ],
+        "strides_i64_slots": [
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28
+        ],
+        "declarations_and_param_loads_verified": true,
+        "flattened_grid_xy_only": true
+      },
+      "ptx_loads": {
+        "window": {
+          "static_count": 128,
+          "first_line": 2665,
+          "last_line": 3173,
+          "first_instruction": "@%p77 ld.global.b16 { %rs37 }, [ %rd226 + 0 ];",
+          "all_addresses_verified_pointer_param": 1
+        },
+        "scale": {
+          "static_count": 8,
+          "first_line": 3187,
+          "last_line": 3215,
+          "first_instruction": "@%p141 ld.global.b8 { %rs166 }, [ %rd354 + 0 ];",
+          "all_addresses_verified_pointer_param": 3
+        },
+        "payload": {
+          "static_count": 64,
+          "first_line": 4867,
+          "last_line": 5119,
+          "first_instruction": "@%p149 ld.global.b8 { %rs174 }, [ %rd362 + 0 ];",
+          "all_addresses_verified_pointer_param": 2
+        }
+      },
+      "ptx_bf16_identity": {
+        "static_count": 128,
+        "first_line": 9472,
+        "last_line": 9853,
+        "first_instruction": "mov.b16 %rs238, %rs239;"
+      },
+      "qk": {
+        "invalid_negative_inf_seed": {
+          "static_count": 4,
+          "first_line": 10241,
+          "last_line": 10246,
+          "first_instruction": "selp.f32 \t%r5134, 0f00000000, 0fFF800000, %p494;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_count": 32,
+          "first_line": 10304,
+          "last_line": 10397,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r473, %r474, %r475, %r476 }, { %r467, %r468, %r469, %r470 }, { %r471, %r472 }, { %r473, %r474, %r475, %r476 };"
+        }
+      },
+      "pv": {
+        "bf16_probability_round": {
+          "static_count": 2,
+          "first_line": 10602,
+          "last_line": 10603,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r5194, %r5172, %r5170;"
+        },
+        "scaled_previous_fp32_accumulator": {
+          "static_count": 32,
+          "first_line": 10569,
+          "last_line": 10600,
+          "first_instruction": "mul.rn.f32 \t%r694, %r694, %r5162;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_count": 32,
+          "first_line": 10630,
+          "last_line": 10723,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r694, %r695, %r696, %r697 }, { %r674, %r675, %r676, %r677 }, { %r678, %r679 }, { %r694, %r695, %r696, %r697 };"
+        }
+      },
+      "output": {
+        "single_sink_epilogue_exp": {
+          "static_count": 2,
+          "first_line": 10809,
+          "last_line": 10811,
+          "first_instruction": "ex2.approx.f32 \t%r5205, %r5204;"
+        },
+        "fp32_divide": {
+          "static_count": 32,
+          "first_line": 10816,
+          "last_line": 10847,
+          "first_instruction": "div.rn.f32 \t%r5210, %r694, %r5208;"
+        },
+        "global_stores": {
+          "static_count": 32,
+          "first_line": 10949,
+          "last_line": 11042,
+          "first_instruction": "@%p1009 st.global.b16 [ %rd1122 + 0 ], { %rs1262 };"
+        },
+        "all_global_store_pointer_roots": [
+          6
+        ],
+        "whole_prefix_dequant_global_store": false
+      }
+    },
+    {
+      "label": "H64",
+      "artifacts": [
+        {
+          "path": "H64/kernel.ptx",
+          "bytes": 392982,
+          "sha256": "cd12d7091f1a89de123b1915a141810b17c5c06ab21336b377260565e2c88798"
+        },
+        {
+          "path": "H64/kernel.cubin",
+          "bytes": 633928,
+          "sha256": "021a52657938c4357ae9642d72978c9d822af96eb848e4e7051ad7995b019f70"
+        }
+      ],
+      "ttgir_sha256": "ea475c4fc4c23345a240ac271de7758bedfd5308bc8a278b3eaaca36e3cf6600",
+      "cache_metadata_sha256": "fba524378c58f2d5fd97f5d24ec3b560bf2ab5f024f448baac381ff1ac08960b",
+      "shared_bytes": 83968,
+      "shared_internal_budget_bytes": 98304,
+      "n_regs": null,
+      "n_spills": null,
+      "mma_kWidth": 2,
+      "single_kv_shared_alloc": {
+        "line": 310,
+        "instruction": "%kv_241 = ttg.local_alloc %kv_240 : (tensor<64x512xbf16, #blocked1>) -> !ttg.memdesc<64x512xbf16, #shared, #smem> loc(#loc341)"
+      },
+      "kv_shared_bytes": 65536,
+      "compact_ir_loads": {
+        "scale": {
+          "line": 244,
+          "instruction": "%sf_186 = tt.load %sf_182, %sf_185, %cst_22 : tensor<64x32x!tt.ptr<i8>, #blocked3> loc(#loc285)"
+        },
+        "payload": {
+          "line": 276,
+          "instruction": "%payload_213 = tt.load %payload_211, %payload_212, %cst_23 : tensor<64x256x!tt.ptr<i8>, #blocked1> loc(#loc311)"
+        }
+      },
+      "bf16_identity_ir": {
+        "line": 309,
+        "instruction": "%kv_240 = tt.elementwise_inline_asm \"mov.b16 $0, $1;\" {constraints = \"=h,h\", packed_element = 1 : i32, pure = false} %kv : tensor<64x512xbf16, #blocked1> -> tensor<64x512xbf16, #blocked1> loc(#loc341)"
+      },
+      "payload_low_high_and_scale16_broadcast_in_ir": true,
+      "runtime_abi": {
+        "dims_i32_slots": [
+          8,
+          9,
+          10,
+          11
+        ],
+        "strides_i64_slots": [
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28
+        ],
+        "declarations_and_param_loads_verified": true,
+        "flattened_grid_xy_only": true
+      },
+      "ptx_loads": {
+        "window": {
+          "static_count": 128,
+          "first_line": 2665,
+          "last_line": 3173,
+          "first_instruction": "@%p77 ld.global.b16 { %rs37 }, [ %rd226 + 0 ];",
+          "all_addresses_verified_pointer_param": 1
+        },
+        "scale": {
+          "static_count": 8,
+          "first_line": 3187,
+          "last_line": 3215,
+          "first_instruction": "@%p141 ld.global.b8 { %rs166 }, [ %rd354 + 0 ];",
+          "all_addresses_verified_pointer_param": 3
+        },
+        "payload": {
+          "static_count": 64,
+          "first_line": 4867,
+          "last_line": 5119,
+          "first_instruction": "@%p149 ld.global.b8 { %rs174 }, [ %rd362 + 0 ];",
+          "all_addresses_verified_pointer_param": 2
+        }
+      },
+      "ptx_bf16_identity": {
+        "static_count": 128,
+        "first_line": 9472,
+        "last_line": 9853,
+        "first_instruction": "mov.b16 %rs238, %rs239;"
+      },
+      "qk": {
+        "invalid_negative_inf_seed": {
+          "static_count": 4,
+          "first_line": 10241,
+          "last_line": 10246,
+          "first_instruction": "selp.f32 \t%r5134, 0f00000000, 0fFF800000, %p494;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_count": 32,
+          "first_line": 10304,
+          "last_line": 10397,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r473, %r474, %r475, %r476 }, { %r467, %r468, %r469, %r470 }, { %r471, %r472 }, { %r473, %r474, %r475, %r476 };"
+        }
+      },
+      "pv": {
+        "bf16_probability_round": {
+          "static_count": 2,
+          "first_line": 10602,
+          "last_line": 10603,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r5194, %r5172, %r5170;"
+        },
+        "scaled_previous_fp32_accumulator": {
+          "static_count": 32,
+          "first_line": 10569,
+          "last_line": 10600,
+          "first_instruction": "mul.rn.f32 \t%r694, %r694, %r5162;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_count": 32,
+          "first_line": 10630,
+          "last_line": 10723,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r694, %r695, %r696, %r697 }, { %r674, %r675, %r676, %r677 }, { %r678, %r679 }, { %r694, %r695, %r696, %r697 };"
+        }
+      },
+      "output": {
+        "single_sink_epilogue_exp": {
+          "static_count": 2,
+          "first_line": 10809,
+          "last_line": 10811,
+          "first_instruction": "ex2.approx.f32 \t%r5205, %r5204;"
+        },
+        "fp32_divide": {
+          "static_count": 32,
+          "first_line": 10816,
+          "last_line": 10847,
+          "first_instruction": "div.rn.f32 \t%r5210, %r694, %r5208;"
+        },
+        "global_stores": {
+          "static_count": 32,
+          "first_line": 10949,
+          "last_line": 11042,
+          "first_instruction": "@%p1009 st.global.b16 [ %rd1122 + 0 ], { %rs1262 };"
+        },
+        "all_global_store_pointer_roots": [
+          6
+        ],
+        "whole_prefix_dequant_global_store": false
+      }
+    }
+  ],
+  "limits": [
+    "PTX static instruction counts and compact IR load shapes do not prove physical HBM transactions, cache behavior, latency or throughput.",
+    "AOT only: no CUDA context, numerical execution, TileLang producer byte comparison, graph replay, concurrency or racecheck was performed.",
+    "Finite dequantization CPU oracle is separate evidence; this audit establishes emitted load/bit-construction/BF16 and MMA boundaries, not GPU per-value equivalence.",
+    "The identity emits mov.b16, not a memory fence; is_pure=False is an opaque compiler boundary.",
+    "n_regs/n_spills remain null when offline metadata cannot provide them without CUDA initialization.",
+    "98304 bytes is an internal conservative budget, not a measured hardware limit."
+  ]
+}
