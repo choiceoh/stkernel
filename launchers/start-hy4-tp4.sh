@@ -20,7 +20,7 @@ set -euo pipefail
 ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/dsv4.env" \
   IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
   EXTRA_ENV GRAPH_DEBUG LOAD_FORMAT MAX_NUM_BATCHED OSAR_MAXEL \
-  DRAFT_BLOCK DRAFT_KV DRAFT_PATH LONG_PREFILL SPEC_METHOD
+  DRAFT_BLOCK DRAFT_KV DRAFT_PATH LONG_PREFILL SPEC_METHOD DECODE_FIRST
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 MODEL_PATH="${MODEL_PATH:-${PROFILE_MODEL_PATH:-}}"
 SERVED_NAME="${SERVED_NAME:-${PROFILE_SERVED_NAME:-}}"
@@ -243,7 +243,7 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED -e LONG_PREFILL=$LONG_PREFILL \
 -e GRAPH_CAP=$GRAPH_CAP -e COMPILE_CFG=$COMPILE_CFG -e LOAD_FORMAT=$LOAD_FORMAT -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
 -e VLLM_TORCH_PROFILER_DIR=/prof \
--e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600"
+-e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600 -e DECODE_FIRST=${DECODE_FIRST:-0}"
 for _k in ${_vllm_keys:-}; do
   if [ -n "${!_k:-}" ]; then
     ENVV="$ENVV -e $_k=${!_k}"
@@ -563,6 +563,21 @@ echo "[hy4] spec-config=${SPEC_JSON}"
 echo "[hy4] compile-cfg=${COMPILE_CFG} load-format=${LOAD_FORMAT} osar-maxel=${VLLM_DSV4_OSAR_MAXEL:-131072(built-in)}"
 echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0} REFINE=${VLLM_DSPARK_REFINE_PASS:-0} SIDELOAD=${VLLM_DSPARK_MARKOV_SIDELOAD:-none}"
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
+# DECODE_FIRST=1: the shared decode-first scheduler (module sched_decode_first,
+# ported from GLM-5.3 in 41차 -- an AsyncScheduler subclass that caps the
+# prefill chunk whenever decoders share the step, so a long prompt stops
+# stalling a running answer for a whole batched-token chunk. Pure prefill and
+# pure decode are untouched.
+# It subclasses AsyncScheduler, so refuse the contradiction rather than let
+# vLLM fail on an import that cannot work.
+SCHED_CLS_FLAG=""
+case "${DECODE_FIRST:-0}" in
+  0) ;;
+  1) [ "${ASYNC_SCHED:-1}" = 0 ] && { echo "ABORT: DECODE_FIRST=1 needs ASYNC_SCHED=1 (the scheduler subclasses AsyncScheduler)" >&2; exit 2; }
+     SCHED_CLS_FLAG="--scheduler-cls vllm.v1.core.sched.glm53_decode_first.Glm53DecodeFirstScheduler"
+     echo "[hy4] scheduler: decode-first ${VLLM_GLM53_SCHED_MODE:-alternate} (decode steps ${VLLM_GLM53_SCHED_DECODE_STEPS:-6}, chunk ${VLLM_GLM53_SCHED_MIXED_CHUNK:-1152}, floor ${VLLM_GLM53_SCHED_PREFILL_FLOOR:-1000} tok/s)" ;;
+  *) echo "ABORT: DECODE_FIRST must be 0 or 1, got ${DECODE_FIRST}" >&2; exit 2 ;;
+esac
 exec vllm serve "${MODEL_PATH}" \
   --served-model-name "${SERVED_MODEL_NAME:-deepseek-v4-flash}" \
   --profiler-config "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"/prof\", \"torch_profiler_with_stack\": false}" --host 0.0.0.0 --port "${PORT}" --trust-remote-code --hf-overrides "{\"use_index_cache\": true, \"index_topk_freq\": ${IDXFREQ:-6}}" \
@@ -574,7 +589,7 @@ exec vllm serve "${MODEL_PATH}" \
   ${LONG_PREFILL:+--long-prefill-token-threshold "${LONG_PREFILL}"} \
   --max-cudagraph-capture-size "${GRAPH_CAP}" \
   --compilation-config "${COMPILE_CFG}" \
-  ${ASYNC_ARG} --no-scheduler-reserve-full-isl \
+  ${ASYNC_ARG} ${SCHED_CLS_FLAG:+$SCHED_CLS_FLAG }--no-scheduler-reserve-full-isl \
   --enable-chunked-prefill --enable-prefix-caching --enable-flashinfer-autotune \
   --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --reasoning-parser deepseek_v4 \
   --enable-auto-tool-choice \

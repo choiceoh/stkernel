@@ -1,0 +1,6 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+# Boot phase timing, and the .pth that arms it before anything else imports.
+# Both are new files at the package root, so they follow TARGET_PREFIX like the
+# scheduler does. Split out of glm53_runtime for the same reason.
+deneb_boot_stamps.py	deneb_boot_stamps.py	absent
+zz_deneb_boot_stamps.pth	zz_deneb_boot_stamps.pth	absent

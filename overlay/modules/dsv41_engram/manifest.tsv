@@ -1,0 +1,8 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+# Both rows are NEW files: nothing in any image on this fleet knows what an
+# engram table is, so there is no preimage to drift against. That is also what
+# makes the module composable before a deepseek_v41 image exists.
+dsv41_engram.py	vllm/model_executor/layers/dsv41_engram.py	absent
+dsv41_engram_io.py	vllm/model_executor/layers/dsv41_engram_io.py	absent
+dsv41_engram_hash.py	vllm/model_executor/layers/dsv41_engram_hash.py	absent
+dsv41_engram_gate.py	vllm/model_executor/layers/dsv41_engram_gate.py	absent

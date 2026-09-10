@@ -1,0 +1,7 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+# A NEW file, deliberately, rather than an edit of the deepseek_reasoning /
+# deepseek_tool_parser pair that DSV4 mounts. V4.1's prompt format is not V4's,
+# production serves V4 from those two files, and the compose refuses two modules
+# claiming one source name -- so a shared file that behaved differently per
+# model is exactly what the repo's rules exist to prevent.
+dsv41_encoding.py	vllm/entrypoints/openai/dsv41_encoding.py	absent
