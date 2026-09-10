@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -28,6 +29,8 @@ GLOBAL_STATIC_CASES = tuple(
     ("M6-offset216-i64", 6, "int64", None, None, 216),
     ("M6-empty-i64", 6, "int64", 0, "int64", 0),
 )
+OPT_STATIC_CASES = (("M6-local", 6, "local"),) + tuple(
+    ("M%d-map288-i32" % rows, rows, "global") for rows in (4, 6, 8))
 CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_glm53_ep_tiled_owner.py", "test_glm53_ep_tiled_selftest.py",
              "test_glm53_ep_tiled_proof.py", "test_moe_sf6_owner.py",
@@ -37,9 +40,12 @@ CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_onepass_speculation_proof.py",
              "test_glm53_ep_tiled_route_fusion.py",
              "test_glm53_prep_fused_kv_integration.py", "test_onepass_prep_proof.py",
-             "test_glm53_prep_checkpoint_logging.py")
-CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (12, 12, 27, 13, 12, 12, 6, 7, 6, 5, 6, 10, 6, 10, 10, 4)))
-EXPECTED_CPU_TESTS = 158
+             "test_glm53_prep_checkpoint_logging.py",
+             "test_glm53_ep_tiled_decode_opt.py", "test_glm53_prep_decode_opt.py",
+             "test_onepass_ep_default_proof.py", "test_glm53_ep_decode_opt_proof.py")
+CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (12, 12, 27, 14, 12, 12, 6, 7, 6, 5, 6, 10, 6, 10, 10, 4,
+                                     6, 8, 4, 4)))
+EXPECTED_CPU_TESTS = 181
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',
@@ -153,6 +159,39 @@ def validate_scatter_helper_receipt(root, receipt):
                            size=identity['source_bytes'], helper='scatter_add_v4_bf16x2')
 
 
+def opt_static_specialization(case, key, a_ring, word_unpack, scatter_bf16,
+                              output_dtype, route, decode_opt, storage_bytes):
+    """An optimized artifact preserves the old ABI and fits one resident CTA."""
+    name, rows, mode = case
+    assert case in OPT_STATIC_CASES
+    assert key[-1] == 'glm53_ep_static_sf6_fc2_out_of_place_v1'
+    assert decode_opt is True and type(storage_bytes) is int and storage_bytes == 100352
+    if mode == 'global':
+        original = next(item for item in GLOBAL_STATIC_CASES if item[0] == name)
+        selected = global_static_specialization(original, key[:-1], a_ring, word_unpack,
+                                                scatter_bf16, output_dtype, route)
+    else:
+        assert route is None
+        selected = static_specialization(rows, key[:-1], a_ring, word_unpack,
+                                         scatter_bf16, output_dtype)
+    return dict(**selected, decode_opt=True, storage_bytes=storage_bytes)
+
+
+def opt_shared_capacity(passed):
+    """cuobjdump includes static allocation in addition to dynamic Storage."""
+    assert len(passed['resources']) == 1
+    resource = passed['resources'][0]['resources']
+    assert len(re.findall(r'(?m)^ Function ', resource)) == 1
+    values = re.findall(r'(?m)^  REG:\d+ STACK:\d+ SHARED:(\d+) LOCAL:', resource)
+    assert len(values) == 1
+    static_bytes = int(values[0])
+    dynamic_bytes = passed['specialization']['storage_bytes']
+    assert type(dynamic_bytes) is int and dynamic_bytes == 100352
+    assert 0 <= static_bytes <= 1024 and static_bytes + dynamic_bytes <= 101376
+    return dict(dynamic_bytes=dynamic_bytes, static_bytes=static_bytes,
+                total_bytes=dynamic_bytes+static_bytes, block_limit_bytes=101376)
+
+
 def scatter_helper_receipt(root, source_path):
     path = Path(source_path)
     content = path.read_bytes()
@@ -228,6 +267,34 @@ def compile_candidate(output, result):
         passed['specialization']=specialization
         result['global_static_passes'].append(passed)
         assert not torch.cuda.is_initialized()
+    result['opt_static_passes'] = []
+    for case in OPT_STATIC_CASES:
+        name, rows, mode = case
+        result['phase'] = 'opt-static-' + name
+        assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
+        kernel, args, key = ep.ep_tiled_compile_spec(num_tokens=rows, max_rows=256,
+            max_active_clusters=48, topk_ids_dtype=torch.int32, reform_sf_pack=True,
+            route_mode=mode, expert_map_len=288 if mode == 'global' else None,
+            expert_map_dtype=torch.int32 if mode == 'global' else None, decode_opt=True)
+        assert len(args) == (31 if mode == 'global' else 30) and args[28] == 48
+        assert tuple(args[1].shape) == (rows*8,) and args[2].element_type == cutlass.Float32
+        route = None
+        if mode == 'global':
+            route = dict(route_mode=kernel.ep_route_mode, expert_map_len=kernel.ep_route_map_len,
+                local_expert_offset=kernel.ep_local_expert_offset,
+                topk_ids_dtype=integer_types[args[1].element_type],
+                expert_map_operand_dtype=integer_types[args[30].element_type],
+                expert_map_operand_shape=list(args[30].shape), compile_argument_count=len(args))
+        cute.compile(kernel, *args, options='--opt-level 2 --enable-tvm-ffi')
+        selected = opt_static_specialization(case, key, kernel.a_ring, kernel.word_unpack,
+            kernel.scatter_bf16, output_types[args[21].element_type], route,
+            kernel.ep_decode_opt, kernel.ep_storage_bytes)
+        assert kernel.smem_bytes == kernel.ep_storage_bytes <= kernel.smem_capacity
+        passed = preserve_pass(output, 'opt-static/' + name, key)
+        passed['specialization'] = selected
+        passed['shared_capacity'] = opt_shared_capacity(passed)
+        result['opt_static_passes'].append(passed)
+        assert not torch.cuda.is_initialized()
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
     md.get_num_sm = lambda *a: 48
     md.get_max_active_clusters = lambda *a: 48
@@ -283,7 +350,7 @@ def main():
     args=p.parse_args()
     result=dict(verdict='FAIL',phase='no-device-guard',started=time.time(),compile_only=True,
                 gpu_numerics_acceptance=False,performance_acceptance=False,
-                scope='seven local static, ten global-route static and two dynamic EP tiled compiler variants plus CPU contracts; no GPU')
+                scope='seven local static, ten global-route static, four decode-optimized static and two dynamic EP tiled compiler variants plus CPU contracts; no GPU')
     try:
         assert not list(Path('/dev').glob('nvidia*')),'CPU container exposes CUDA devices'
         runtime=verify_runtime(args.capsule_root,args.manifest_sha256)

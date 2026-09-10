@@ -73,6 +73,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import time
+import json
 import numpy as np
 import torch
 
@@ -533,6 +534,10 @@ class PrepPlan:
     align_mode: bool = False
     owned: dict[str, Any] = field(default_factory=dict)
     kernel: str = "?"   # 37차: 'cuda' or 'triton (...)', set by warmup()
+    decode_opt: bool = field(default_factory=lambda: (
+        os.environ.get("VLLM_GLM53_EP_DECODE_OPT", "0") == "1"
+        and os.environ.get("VLLM_GLM53_EP_TILED", "0") == "1"))
+    decode_live_diff_checks: int = 0
 
     def __post_init__(self) -> None:
         dev = self.device
@@ -732,7 +737,7 @@ class PrepPlan:
         self.sched_buf[:] = get_paged_mqa_logits_metadata(seq_lens, self.sbs, self.num_sms)
 
     # -- verification support ---------------------------------------------
-    def snapshot(self, num_reqs: int) -> dict[str, torch.Tensor]:
+    def snapshot(self, num_reqs: int, *, clone: bool = True) -> dict[str, torch.Tensor]:
         t = num_reqs * self.q
         o = self.owned
         snap = {
@@ -754,16 +759,23 @@ class PrepPlan:
             snap[f"gdn{m}_tok"] = self.gdn_tok[m][:t]
             snap[f"gdn{m}_qsl"] = self.gdn_qsl[m][:num_reqs + 1]
             snap[f"gdn{m}_nacc"] = self.gdn_nacc[m][:num_reqs]
-        return {k: v.clone() for k, v in snap.items()}
+        return {k: v.clone() for k, v in snap.items()} if clone else snap
 
-    def diff(self, snap: dict[str, torch.Tensor], num_reqs: int) -> list[str]:
-        live = self.snapshot(num_reqs)
+    def diff(self, snap: dict[str, torch.Tensor], num_reqs: int, *,
+             direct_views: bool = False) -> list[str]:
+        # The fused preimage must remain a clone. After the complete stock
+        # chain, these live views are read on the same stream, with no writer
+        # until verification returns. Cloning them again changes no comparison.
+        direct = direct_views and self.decode_opt and self.q == 6 and num_reqs == 1
+        live = self.snapshot(num_reqs, clone=False) if direct else self.snapshot(num_reqs)
         bad = []
         for k, v in snap.items():
             w = live[k]
             if v.shape != w.shape or not torch.equal(v, w):
                 n = int((v != w).sum().item()) if v.shape == w.shape else -1
                 bad.append(f"{k}({n})")
+        if direct and not bad:
+            self.decode_live_diff_checks += 1
         return bad
 
 
@@ -1108,6 +1120,18 @@ def _fused_prepare_inputs(runner, st: _State, scheduler_output, batch_req_state,
     return batch
 
 
+def _report_decode_opt(st, fused):
+    plan = st.plan
+    if (plan is not None and plan.decode_opt and st.mode == "on"
+            and plan.q == 6 and fused.num_reqs == 1 and st.plan_verified
+            and plan.decode_live_diff_checks > 0):
+        logger.warning("[prep-decode-opt] USED %s", json.dumps(dict(
+            version=1, num_reqs=1, q=6, live_snapshot_clones_elided=True,
+            fused_steps=st.steps_fused,
+            live_diff_checks=plan.decode_live_diff_checks,
+            first_plan_check_passed=True), sort_keys=True))
+
+
 def _compare_input_batches(fused, stock) -> list[str]:
     bad = []
     pairs = [
@@ -1167,7 +1191,7 @@ def _verify(runner, st: _State, fused, scheduler_output, batch_req_state, batch_
                        st.mode, st.n_timed, 1e6 * st.t_fused_host / max(st.steps_fused, 1),
                        1e6 * st.t_stock_host / st.n_timed)
     bad = _compare_input_batches(fused, stock)
-    bad += plan.diff(snap, num_reqs)
+    bad += plan.diff(snap, num_reqs, direct_views=st.mode == "on")
     try:
         plan.tail_ok()
     except RuntimeError as e:
@@ -1205,6 +1229,7 @@ def _patched_prepare_inputs(self, scheduler_output, batch_req_state, batch_desc)
         return stock
     st.checks_ok += 1
     st.plan_verified = True
+    _report_decode_opt(st, fused)
     if first_plan_check or st.mode == "on" or st.checks_ok % 64 == 0 or st.mode == "shadow" and st.checks_ok % 16 == 0:
         logger.warning("[prep-fused] %s: fused_steps=%d stock_steps=%d checks ok=%d drift=%d first_plan_check=%s",
                        st.mode, st.steps_fused, st.steps_stock, st.checks_ok, st.checks_drift,

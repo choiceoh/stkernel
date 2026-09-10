@@ -184,9 +184,10 @@ class EPTiledARingTests(unittest.TestCase):
                 self.assertEqual(actual.a_ring, sf6 and m<=8)
                 self.assertEqual(actual.word_unpack, sf6 and m<=8)
                 self.assertEqual(actual.scatter_bf16, sf6 and m<=8)
+                self.assertIs(actual.ep_decode_opt, False)
                 self.assertEqual((actual.ep_route_mode,actual.ep_route_map_len,actual.ep_local_expert_offset),
                                  ('local',None,0))
-                self.assertEqual({k:v for k,v in vars(actual).items() if k not in ('a_ring','word_unpack','scatter_bf16','ep_num_tokens','ep_max_rows','ep_route_mode','ep_route_map_len','ep_local_expert_offset')},
+                self.assertEqual({k:v for k,v in vars(actual).items() if k not in ('a_ring','word_unpack','scatter_bf16','ep_num_tokens','ep_max_rows','ep_route_mode','ep_route_map_len','ep_local_expert_offset','ep_decode_opt')},
                                  {k:v for k,v in vars(reference).items() if k != 'a_ring'})
         with self.assertRaises(ValueError): ns['MoEStaticKernelV5'](16, 16, reform_sf_pack=True, a_ring=True)
 

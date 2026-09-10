@@ -45,14 +45,47 @@ def constants():
 def route_helpers(ns):
     """Load actual declaration/key helpers, not a fabricated local key stub."""
     ns['EP_TILED_ROUTE_CACHE_TAG'] = constants()['EP_TILED_ROUTE_CACHE_TAG']
+    ns['EP_TILED_DECODE_OPT_CACHE_TAG'] = constants()['EP_TILED_DECODE_OPT_CACHE_TAG']
+    ns.setdefault('_EP_TILED_DECODE_OPT', False)
+    extract('ep_tiled_decode_opt', ns)
+    extract('ep_tiled_decode_opt_enabled', ns)
     extract('ep_tiled_route_metadata', ns)
     extract('ep_tiled_route_key', ns)
     return ns
 
 
+def baseline_kernel_text():
+    """Recover original bytes by selecting only the exact new opt=False arm."""
+    source=SOURCE.read_text(); node=function('kernel'); lines=source.splitlines(keepends=True)
+    branches=[n for n in ast.walk(node) if isinstance(n,ast.If)
+              and ast.unparse(n.test)=='cutlass.const_expr(self.ep_decode_opt)']
+    assert len(branches)==4
+    changes=[]
+    for branch in branches:
+        replacement=[]
+        if branch.orelse:
+            replacement=[line[4:] for line in lines[branch.orelse[0].lineno-1:branch.end_lineno]]
+        changes.append((branch.lineno-1,branch.end_lineno,replacement))
+    field=next(n for n in ast.walk(node) if isinstance(n,ast.AnnAssign)
+               and ast.unparse(n.target)=='sf2_packed_source')
+    comments=lines[field.lineno-3:field.lineno-1]
+    assert 'zero-sized MemRange' in comments[0] and 'existing header padding' in comments[1]
+    changes.append((field.lineno-3,field.end_lineno,[]))
+    for start,end,replacement in sorted(changes,reverse=True):lines[start:end]=replacement
+    restored=''.join(lines)
+    expression='self.tile_m if self.ep_decode_opt else _COMPACT_STATIC_TILE_M'
+    assert restored.count(expression)==3
+    restored=restored.replace(expression,'_COMPACT_STATIC_TILE_M')
+    restored_node=next(n for n in ast.walk(ast.parse(restored))
+                       if isinstance(n,ast.FunctionDef) and n.name=='kernel')
+    return ast.get_source_segment(restored,restored_node)
+
+
 def local_reference_function(name):
     """Select exactly the declared local route branch; reject other changes."""
-    node = function(name)
+    node = ast.parse(baseline_kernel_text()).body[0] if name == 'kernel' else function(name)
+    if name == 'kernel':
+        node.decorator_list = function(name).decorator_list
     expression = "cutlass.const_expr(self.ep_route_mode == 'global')"
     branches = [n for n in ast.walk(node) if isinstance(n, ast.If)
                 and ast.unparse(n.test) == expression]

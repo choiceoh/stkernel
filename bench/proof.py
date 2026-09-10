@@ -21,6 +21,7 @@ the leg, not after health.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -130,6 +131,49 @@ def _ep_tiled_sf6_release_proof(log):
 
 def _startup_proof(knob: str, log: str) -> bool | None:
     """Composite execution evidence; armed or partial progress is insufficient."""
+    if knob == "VLLM_GLM53_EP_DECODE_OPT":
+        if _startup_proof("VLLM_GLM53_EP_TILED", log) is not True:
+            return False
+        records = _json_marker_receipts(log, "[ep-tiled-selftest] PASS ")
+        try:
+            for record in records:
+                native = {}
+                for case in record["cases"]:
+                    rows = case["rows"]
+                    if type(rows) is not int:
+                        return False
+                    if rows > 32:
+                        continue
+                    if rows not in (4, 6, 8, 12, 16, 24, 32) or rows in native:
+                        return False
+                    native[rows] = True
+                    evidence = case["cache_evidence"]
+                    if evidence.get("decode_opt") is not (rows <= 8):
+                        return False
+                    expected = ("glm53_ep_static_tiled_fp32_v1", rows, 256, 48,
+                        "torch.int32", False, True,
+                        (16, 128, 256) if rows <= 8 else (32, 64, 512),
+                        (16, 256, 128) if rows <= 8 else (32, 128, 128),
+                        "nvfp4", "sf6_v1", "swigluoai_uninterleave", 1., 0., 10.,
+                        "bf16_scatter" if rows <= 8 else "fp32_scatter")
+                    if rows <= 8:
+                        expected += ("glm53_ep_static_sf6_a_ring_v1",
+                            "glm53_ep_static_sf6_word_unpack_v1",
+                            "glm53_ep_static_bf16_scatter_v1")
+                    expected += ("glm53_ep_static_fused_route_v1", 288, "torch.int32", 0)
+                    if rows <= 8:
+                        expected += ("glm53_ep_static_sf6_fc2_out_of_place_v1",)
+                    keys = evidence["keys"]
+                    if type(keys) is not list or len(keys) != 1 or not isinstance(keys[0], str):
+                        return False
+                    actual = ast.literal_eval(keys[0])
+                    if type(actual) is not tuple or actual != expected:
+                        return False
+                if set(native) != {4, 6, 8, 12, 16, 24, 32}:
+                    return False
+            return bool(records)
+        except (ValueError, KeyError, TypeError, SyntaxError, AttributeError):
+            return False
     if knob == "VLLM_GLM53_EP_TILED":
         if "[ep-tiled-selftest] FAIL" in log or not _ep_tiled_sf6_release_proof(log):
             return False
@@ -382,7 +426,13 @@ def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | N
     res = {}
     spec = None
     prep = None
+    decode_opt = None
     for k in knobs:
+        if k == 'VLLM_GLM53_EP_DECODE_OPT':
+            from glm53_prep_proof import evidence
+            decode_opt = evidence(preparation, log_path, decode_opt=True)
+            res[k] = (_startup_proof(k, log) is True and decode_opt['verdict'] == 'PASS')
+            continue
         if k == 'VLLM_GLM53_PREP_FUSED':
             from glm53_prep_proof import evidence
             prep = evidence(preparation, log_path)
@@ -407,6 +457,8 @@ def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | N
         result['speculation'] = spec
     if prep is not None:
         result['preparation'] = prep
+    if decode_opt is not None:
+        result['decode_optimization'] = decode_opt
     return result
 
 

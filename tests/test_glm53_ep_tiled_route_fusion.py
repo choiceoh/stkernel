@@ -13,7 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parent))
 import test_glm53_ep_tiled_static as static_tests
 from test_glm53_ep_tiled_static import (
-    Tensor, constants, extract, fake_torch, function,
+    Tensor, constants, extract, fake_torch, function, baseline_kernel_text,
 )
 
 SOURCE = Path(__file__).resolve().parents[1] / "overlay/modules/glm53_moe/moe_static_ep_tiled.py"
@@ -25,6 +25,8 @@ LOCAL_KERNEL_SHA256 = "f9af0f29945985cba066a9abf4dcab4417e23806631c7850073867408
 
 def route_ns():
     ns = constants()
+    ns["_EP_TILED_DECODE_OPT"] = False
+    extract("ep_tiled_decode_opt", ns)
     extract("ep_tiled_route_metadata", ns)
     extract("ep_tiled_route_key", ns)
     return ns
@@ -131,8 +133,7 @@ class EPTiledRouteFusionTests(unittest.TestCase):
                                  for _ in range(m*8)),m*8)
 
     def test_local_device_body_and_global_tma_host_are_exactly_preserved(self):
-        source=SOURCE.read_text(); node=function('kernel')
-        raw=ast.get_source_segment(source,node)
+        raw=baseline_kernel_text()
         branch='            if cutlass.const_expr(self.ep_route_mode == "global"):\n                expert_id = self._global_route_id(topk_ids, pair_idx, expert_map)\n            else:\n                expert_id = topk_ids[pair_idx].to(Int32)'
         self.assertEqual(raw.count(branch),1)
         raw=raw.replace(branch,'            expert_id = topk_ids[pair_idx].to(Int32)')

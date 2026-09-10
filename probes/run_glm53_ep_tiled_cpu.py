@@ -9,16 +9,19 @@ import subprocess
 import glm53_ep_capsule_runtime as capsule_runtime
 from glm53_ep_tiled_compile import (source_receipt, STATIC_ROWS, DYNAMIC_ROWS,
     CPU_TEST_COUNTS, EXPECTED_CPU_TESTS, static_specialization, validate_scatter_helper_receipt,
-    GLOBAL_STATIC_CASES, global_static_specialization)
+    GLOBAL_STATIC_CASES, global_static_specialization, OPT_STATIC_CASES, opt_static_specialization,
+    opt_shared_capacity)
 
 
 def validate_artifacts(output,result):
     output=output.resolve(strict=True)
     expected=set()
-    groups=(('static',STATIC_ROWS),('global_static',GLOBAL_STATIC_CASES),('dynamic',DYNAMIC_ROWS))
+    groups=(('static',STATIC_ROWS),('global_static',GLOBAL_STATIC_CASES),
+            ('opt_static',OPT_STATIC_CASES),('dynamic',DYNAMIC_ROWS))
     for kind,rows in groups:
         passes=result[kind+'_passes']
-        arms = (['global-static/'+case[0] for case in rows] if kind=='global_static'
+        arms = ([kind.replace('_','-')+'/'+case[0] for case in rows]
+                if kind in ('global_static','opt_static')
                 else [kind+'/M'+str(m) for m in rows])
         assert [p['arm'] for p in passes]==arms
         for rows_count,passed in zip(rows,passes):
@@ -32,6 +35,13 @@ def validate_artifacts(output,result):
                 assert selected == global_static_specialization(rows_count,passed['cache_key'],
                     selected['a_ring'],selected['word_unpack'],selected['scatter_bf16'],
                     selected['output_dtype'],selected['route'])
+            if kind == 'opt_static':
+                selected = passed['specialization']
+                assert selected == opt_static_specialization(rows_count,passed['cache_key'],
+                    selected['a_ring'],selected['word_unpack'],selected['scatter_bf16'],
+                    selected['output_dtype'],selected.get('route'),
+                    selected['decode_opt'],selected['storage_bytes'])
+                assert passed['shared_capacity'] == opt_shared_capacity(passed)
             for name,suffix in (('artifacts','.ptx'),('resources','.cubin')):
                 assert len(passed[name])==1
                 for row in passed[name]:

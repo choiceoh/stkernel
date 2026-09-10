@@ -180,6 +180,7 @@ class PrepFusedKvIntegrationTests(unittest.TestCase):
         ns['_eligible']=lambda owner,*args:ns['_ensure_plan'](owner,st)
         ns['_fused_prepare_inputs']=Mock(return_value=fused)
         ns['_verify']=Mock(return_value=(stock,['input_ids']))
+        ns['_report_decode_opt']=Mock()
         ns['_ORIG']={'prepare_inputs':Mock(return_value=stock)}
         ns['build_plan']=Mock(side_effect=AssertionError('must stay disarmed'))
         return ns,st,fused,stock

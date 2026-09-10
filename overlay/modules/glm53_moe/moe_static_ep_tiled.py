@@ -19,6 +19,9 @@ That geometry restores four SF6 bytes per integer word, with the original
 volatile reads, in-place ownership and both expansion barriers unchanged.
 It also uses stock BF16 atomic scatter directly into the caller's BF16 output;
 raw modes and M9..32 retain the separate FP32 accumulation/output conversion.
+The separately keyed decode_opt experiment gives FC2 SF6 its own packed source
+slots, removing only the in-place read-before-write expansion barrier. Other
+pipeline releases, expanded-scale publication and all arithmetic are unchanged.
 """
 
 from __future__ import annotations
@@ -101,6 +104,7 @@ _FC2_TILE_K = 128
 
 
 import hashlib
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from .moe_static_kernel_v5 import MoEStaticKernelV5
@@ -113,6 +117,23 @@ EP_TILED_A_RING_CACHE_TAG = "glm53_ep_static_sf6_a_ring_v1"
 EP_TILED_SF6_WORD_CACHE_TAG = "glm53_ep_static_sf6_word_unpack_v1"
 EP_TILED_BF16_SCATTER_CACHE_TAG = "glm53_ep_static_bf16_scatter_v1"
 EP_TILED_ROUTE_CACHE_TAG = "glm53_ep_static_fused_route_v1"
+EP_TILED_DECODE_OPT_CACHE_TAG = "glm53_ep_static_sf6_fc2_out_of_place_v1"
+_EP_TILED_DECODE_OPT = os.environ.get("VLLM_GLM53_EP_DECODE_OPT", "0").strip() == "1"
+
+
+def ep_tiled_decode_opt_enabled():
+    """Return the immutable process setting without querying CUDA."""
+    return _EP_TILED_DECODE_OPT
+
+
+def ep_tiled_decode_opt(num_tokens, reform_sf_pack, decode_opt):
+    """Resolve one process-latched switch; unaffected shapes keep their old key."""
+    if decode_opt is None:
+        decode_opt = _EP_TILED_DECODE_OPT
+    if type(decode_opt) is not bool:
+        raise TypeError("EP tiled decode_opt must be bool or None")
+    return bool(decode_opt and reform_sf_pack and 1 <= num_tokens <= 8)
+
 
 
 def ep_tiled_scale_mode(reform_sf_pack):
@@ -225,7 +246,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
     def __init__(self, *, num_tokens, max_rows, max_active_clusters,
                  input_scales_are_reciprocal=False, fast_math=True,
                  reform_sf_pack=False, route_mode="local", expert_map_len=None,
-                 local_expert_offset=0):
+                 local_expert_offset=0, decode_opt=False):
         self.ep_local_expert_offset = ep_tiled_route_metadata(
             route_mode, expert_map_len, local_expert_offset)
         self.ep_route_mode = route_mode
@@ -233,6 +254,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         ep_tiled_source_contract()
         ep_tiled_scale_mode(reform_sf_pack)
         geometry = ep_tiled_geometry(num_tokens, max_rows, max_active_clusters)
+        self.ep_decode_opt = ep_tiled_decode_opt(num_tokens, reform_sf_pack, decode_opt)
         self.ep_num_tokens = num_tokens
         self.ep_max_rows = max_rows
         super().__init__(sf_vec_size=16, output_tile_count_n=16,
@@ -250,6 +272,51 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         self.a_ring = bool(reform_sf_pack and geometry["reform"])
         self.word_unpack = bool(reform_sf_pack and geometry["reform"])
         self.scatter_bf16 = bool(reform_sf_pack and geometry["reform"])
+
+    def _smem_bytes_estimate(self):
+        original = super()._smem_bytes_estimate()
+        if not self.ep_decode_opt:
+            return original
+        # Cache only the 16 rows the selected epilogue can read. Place the
+        # two packed FC2 source slots after this smaller metadata header;
+        # every following 1024-aligned buffer moves by exactly 2048 bytes.
+        header = 2 * 4 + (self.fc1_stages + self.fc2_stages) * 2 * 8
+        header += self.fc1_stages * 2 * 8 + 2 * _COMPACT_STATIC_TILE_M * 4
+        old_start = (header + 1023) // 1024 * 1024
+        compact_header = header - 2 * (_COMPACT_STATIC_TILE_M - self.tile_m) * 4
+        source_end = (compact_header + 15) // 16 * 16 + self.fc2_stages * 1552
+        new_start = (source_end + 1023) // 1024 * 1024
+        return original + new_start - old_start
+
+    def _check_ep_storage(self, storage_type):
+        # This ordinary host helper runs during CuTe setup, before any launch;
+        # no staged dynamic raise. SM121 already has one CTA per SM at 96 KiB.
+        actual = storage_type.size_in_bytes()
+        # The admitted cubin also reserves 1024 static shared bytes. The CPU
+        # artifact gate must independently bound that compiled ELF allocation.
+        if (actual != self.smem_bytes or actual + 1024 > self.smem_capacity
+                or actual != 100352 or self.threads_per_cta != 160):
+            raise ValueError("EP separate SF6 storage exceeds the resident CTA contract")
+        self.ep_storage_bytes = actual
+
+    def _sf_expand_fc2_out_of_place(self, source_addr, stage_addr, tidx):
+        # TMA completion protects this slot's packed source. The two raw
+        # destinations are disjoint from both packed slots, so other warps may
+        # still read packed bytes while this warp writes its own raw bytes.
+        # Keep the publication barrier before any MMA warp reads raw scales.
+        a = []
+        for w in range(2):
+            a.append(_ld_shared_i32_volatile(source_addr + Int32(8) * tidx + Int32(4 * w)))
+        b = _ld_shared_i32_volatile(source_addr + Int32(1024) + Int32(4) * tidx)
+        base = cutlass.Uint32(_ld_shared_i32_volatile(source_addr + Int32(1536))) & cutlass.Uint32(0xFF)
+        base_lo = (base & cutlass.Uint32(127)) * cutlass.Uint32(0x01010101)
+        base_hi = (base & cutlass.Uint32(128)) * cutlass.Uint32(0x01010101)
+        for j in range(4):
+            word = _sf6_unpack_word(
+                cutlass.Uint32(a[j // 2]) >> cutlass.Uint32(16 * (j % 2)),
+                cutlass.Uint32(b) >> cutlass.Uint32(8 * j), base_lo, base_hi)
+            _st_shared_i32(stage_addr + Int32(16) * tidx + Int32(4 * j), Int32(word))
+        self.sf_expand_barrier.arrive_and_wait()
 
     def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096):
         if not self.word_unpack:
@@ -713,10 +780,16 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
             fc2_bars: cute.struct.MemRange[cutlass.Int64, self.fc2_stages * 2]
             a_bars: cute.struct.MemRange[cutlass.Int64, self.fc1_stages * 2]
             scatter_tok_cache: cute.struct.MemRange[
-                cutlass.Int32, _COMPACT_STATIC_TILE_M
+                cutlass.Int32, self.tile_m if self.ep_decode_opt else _COMPACT_STATIC_TILE_M
             ]
             scatter_weight_cache: cute.struct.MemRange[
-                cutlass.Float32, _COMPACT_STATIC_TILE_M
+                cutlass.Float32, self.tile_m if self.ep_decode_opt else _COMPACT_STATIC_TILE_M
+            ]
+            # A zero-sized MemRange is invalid. Off-lane 16 bytes lie wholly
+            # in existing header padding, leaving every original offset/size.
+            sf2_packed_source: cute.struct.Align[
+                cute.struct.MemRange[cutlass.Uint8,
+                    self.fc2_stages * 1552 if self.ep_decode_opt else 16], 16
             ]
             sA1: cute.struct.Align[
                 cute.struct.MemRange[self.a_dtype, cute.cosize(a1_smem_staged)],
@@ -759,6 +832,8 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                 self.buffer_align_bytes,
             ]
 
+        if cutlass.const_expr(self.ep_decode_opt):
+            self._check_ep_storage(Storage)
         storage = smem.allocate(Storage)
 
         prod_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
@@ -820,6 +895,8 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())
         sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
         sfb2_base_addr = shared_ptr_to_u32(storage.sSFB2.data_ptr())
+        if cutlass.const_expr(self.ep_decode_opt):
+            sf2_source_base_addr = shared_ptr_to_u32(storage.sf2_packed_source.data_ptr())
         ctrl_base_addr = shared_ptr_to_u32(storage.ctrl.data_ptr())
         scatter_tok_base_addr = shared_ptr_to_u32(storage.scatter_tok_cache.data_ptr())
         scatter_weight_base_addr = shared_ptr_to_u32(
@@ -1371,7 +1448,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                     valid_tile_rows = Int32(0)
 
                 cache_row = Int32(tidx)
-                if cache_row < Int32(_COMPACT_STATIC_TILE_M):
+                if cache_row < Int32(self.tile_m if self.ep_decode_opt else _COMPACT_STATIC_TILE_M):
                     tok = Int32(0)
                     wv = cutlass.Float32(0.0)
                     if cache_row < valid_tile_rows:
@@ -1651,10 +1728,17 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                     fc2_pipeline.consumer_wait(fc2_cons_state, fc2_peek)
                     if cutlass.const_expr(self.reform_sf_pack):
                         if cutlass.const_expr(self.decode_reform):
-                            self._sf_expand_stage(
-                                sfb2_base_addr + fc2_cons_state.index * Int32(2048),
-                                Int32(tidx), 2048,
-                            )
+                            if cutlass.const_expr(self.ep_decode_opt):
+                                self._sf_expand_fc2_out_of_place(
+                                    sf2_source_base_addr + fc2_cons_state.index * Int32(1552),
+                                    sfb2_base_addr + fc2_cons_state.index * Int32(2048),
+                                    Int32(tidx),
+                                )
+                            else:
+                                self._sf_expand_stage(
+                                    sfb2_base_addr + fc2_cons_state.index * Int32(2048),
+                                    Int32(tidx), 2048,
+                                )
                         else:
                             self._sf_expand_stage(
                                 sfb2_base_addr + fc2_cons_state.index * Int32(1024),
@@ -2020,7 +2104,10 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                     if cutlass.const_expr(self.reform_sf_pack):
                         if is_dma_lane0:
                             if cutlass.const_expr(self.decode_reform):
-                                sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(2048)
+                                if cutlass.const_expr(self.ep_decode_opt):
+                                    sf2_dest = sf2_source_base_addr + fc2_prod_state.index * Int32(1552)
+                                else:
+                                    sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(2048)
                                 sf2_tile = output_tile_idx
                             else:
                                 sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(1024)
@@ -2087,7 +2174,7 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
                           topk_ids_dtype=None, input_scales_are_reciprocal=False,
                           fast_math=True, reform_sf_pack=False, route_mode="local",
                           expert_map_len=None, expert_map_dtype=None,
-                          local_expert_offset=0):
+                          local_expert_offset=0, decode_opt=False):
     """Build real CuTe fake operands without querying/initializing CUDA.
 
     Return (kernel, compile_args, cache_key). compile_args include the constexpr
@@ -2098,6 +2185,7 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     from flashinfer.cute_dsl.utils import make_ptr
     geometry = ep_tiled_geometry(num_tokens, max_rows, max_active_clusters)
     scale_mode = ep_tiled_scale_mode(reform_sf_pack)
+    decode_opt = ep_tiled_decode_opt(num_tokens, reform_sf_pack, decode_opt)
     if topk_ids_dtype is None:
         topk_ids_dtype = torch.int32
     if topk_ids_dtype not in (torch.int32, torch.int64):
@@ -2118,7 +2206,8 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
         num_tokens=m, max_rows=max_rows, max_active_clusters=mac,
         input_scales_are_reciprocal=input_scales_are_reciprocal,
         fast_math=fast_math, reform_sf_pack=reform_sf_pack, route_mode=route_mode,
-        expert_map_len=expert_map_len, local_expert_offset=local_expert_offset)
+        expert_map_len=expert_map_len, local_expert_offset=local_expert_offset,
+        decode_opt=decode_opt)
     w1_rows = 2 * n
     rows_pad_k = _align_up(max_rows, 128)
     cols_pad_k = _align_up(k // sf_vec_size, 4)
@@ -2272,7 +2361,10 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
         map_fake = cute.runtime.make_fake_compact_tensor(
             map_dtype, (expert_map_len or 1,), assumed_align=8 if map_dtype == cutlass.Int64 else 4)
         args += (map_fake,)
-    return kernel, args, key + route_key
+    key += route_key
+    if decode_opt:
+        key += (EP_TILED_DECODE_OPT_CACHE_TAG,)
+    return kernel, args, key
 
 
 _EP_TILED_KERNEL_CACHE = {}
@@ -2290,6 +2382,8 @@ def get_ep_tiled_decode_kernel(**kwargs):
     geometry = ep_tiled_geometry(m, max_rows, mac)
     scale_mode = ep_tiled_scale_mode(kwargs.get("reform_sf_pack", False))
     scatter_bf16 = bool(kwargs.get("reform_sf_pack", False) and geometry["reform"])
+    decode_opt = ep_tiled_decode_opt(m, kwargs.get("reform_sf_pack", False), kwargs.get("decode_opt"))
+    kwargs = dict(kwargs, decode_opt=decode_opt)
     dtype = kwargs.get("topk_ids_dtype") or torch.int32
     if dtype not in (torch.int32, torch.int64):
         raise TypeError("EP tiled route IDs must be int32 or int64")
@@ -2306,6 +2400,8 @@ def get_ep_tiled_decode_kernel(**kwargs):
         expert_map_len=kwargs.get("expert_map_len"),
         expert_map_dtype=kwargs.get("expert_map_dtype"),
         local_expert_offset=kwargs.get("local_expert_offset", 0))
+    if decode_opt:
+        key += (EP_TILED_DECODE_OPT_CACHE_TAG,)
     if key in _EP_TILED_KERNEL_CACHE:
         return _EP_TILED_KERNEL_CACHE[key], mac
     if torch.cuda.is_current_stream_capturing():
@@ -2351,7 +2447,7 @@ def warm_ep_tiled_decode(*, max_rows=256, max_active_clusters=48,
                          token_counts=range(1, 33), reform_sf_pack=False,
                          route_mode="local", topk_ids_dtype=None,
                          expert_map_len=None, expert_map_dtype=None,
-                         local_expert_offset=0):
+                         local_expert_offset=0, decode_opt=None):
     """Prepare every requested native M; no success marker or CUDA execution."""
     rows = tuple(token_counts)
     if not rows or len(set(rows)) != len(rows):
@@ -2362,14 +2458,15 @@ def warm_ep_tiled_decode(*, max_rows=256, max_active_clusters=48,
                                   reform_sf_pack=reform_sf_pack,
                                   route_mode=route_mode, topk_ids_dtype=topk_ids_dtype,
                                   expert_map_len=expert_map_len, expert_map_dtype=expert_map_dtype,
-                                  local_expert_offset=local_expert_offset)
+                                  local_expert_offset=local_expert_offset, decode_opt=decode_opt)
     return rows
 
 
 def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
                            input_gs, down_input_scale, output, scratch,
                            input_scales_are_reciprocal=False, fast_math=True,
-                           route_mode="local", expert_map=None, local_expert_offset=0):
+                           route_mode="local", expert_map=None, local_expert_offset=0,
+                           decode_opt=None):
     """Launch local reference routes or fuse global admission into one kernel.
 
     No dummy expert exists in weights. The global specialization bounds its
@@ -2474,7 +2571,7 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
         input_scales_are_reciprocal=input_scales_are_reciprocal, fast_math=fast_math,
         reform_sf_pack=reform_sf_pack, route_mode=route_mode,
         expert_map_len=expert_map_len, expert_map_dtype=expert_map_dtype,
-        local_expert_offset=local_expert_offset)
+        local_expert_offset=local_expert_offset, decode_opt=decode_opt)
     accum = output if scatter_bf16 else scratch.scatter_fp32[:m]
     accum.record_stream(torch.cuda.current_stream(device))
     args = (

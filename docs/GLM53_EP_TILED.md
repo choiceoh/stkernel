@@ -45,6 +45,41 @@ The original [v8 records and verdicts](../measurements/glm53_ep_tiled_20260909/p
 and [CPU admission](../measurements/glm53_ep_tiled_20260909/prep_cpu10/README.md)
 remain separate from the subsequent production recovery verification.
 
+## Follow-up: EP decode target 76 tok/s
+
+`VLLM_GLM53_EP_DECODE_OPT=1` is an experimental, separately keyed extension
+to the accepted EP path. Its default is 0 until the next canonical result.
+Both comparison arms retain EP4, SF6, K5 and verified preparation; the
+candidate adds only this switch. The new absolute target is pooled
+fixed-1024 x3 decode >=76 tok/s, with the existing quality and direct
+2K/32K/128K prefill measurements. A historical 72.63 result does not replace
+the same-source EP baseline. Original cold-compile classifications and
+single-request long-prefill limitations remain visible.
+
+For SF6 M1..8, FC2 reads its packed scales from two separate shared-memory
+slots. Restored scale bytes therefore cannot overwrite another warp's
+unread packed bytes, removing one expansion barrier per FC2 stage. The
+post-expansion barrier and all producer/consumer releases remain. The
+scatter metadata cache uses its actual 16 rows instead of 128. This both
+removes unused stores and keeps dynamic shared storage at 100352 bytes;
+the compiler receipt must additionally verify static shared allocation
+<=1024 bytes and total <=101376 bytes. Baseline keys and M9+/prefill paths
+retain their preceding behavior. Arithmetic and lossless SF6 bytes are
+unchanged.
+
+Preparation keeps its first-use and every-64-step stock comparison. On
+the candidate's C=1/K5 verification steps it compares the cloned fused
+preimage directly with live stock views, eliminating only the second
+snapshot clone. Successful verification emits fresh workload checkpoints;
+turning the switch on alone does not prove this optimization ran.
+
+Both arms explicitly require EP and PREP proof even when their knob delta
+is empty. Candidate proof additionally requires the new native cache keys,
+unchanged large-shape selection and fresh verified clone-elimination
+checkpoints. The CPU gate includes the baseline's 19 lowerings plus four
+optimized local/global lowerings. Numerical and throughput acceptance
+remain pending the normal fleet onepass.
+
 ## Implementation and preceding experiments
 
 The combined candidate keeps DFlash K5 and SF6. Native M1..32 maps

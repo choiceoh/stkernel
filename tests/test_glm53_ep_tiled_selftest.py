@@ -54,7 +54,7 @@ def tensor_identity(value):
     return dict(shape=list(value.shape),dtype=value.dtype,data_ptr=value.address,sha256=value.digest)
 
 
-def native_cache_fixture():
+def native_cache_fixture(decode_opt=False):
     """Execute the real compiler's pure key construction, without CuTe imports."""
     path = SOURCE.with_name('moe_static_ep_tiled.py')
     tree = ast.parse(path.read_text())
@@ -65,11 +65,12 @@ def native_cache_fixture():
     end = next(i for i in range(start,len(factory.body)) if isinstance(factory.body[i],ast.Return))
     key_fn = ast.parse('''def native_key(m, sf6=True, route_mode="local",
                                     expert_map_len=None, expert_map_dtype=None,
-                                    local_expert_offset=0):
+                                    local_expert_offset=0, decode_opt=None):
     max_rows, mac, topk_ids_dtype = 256, 48, "torch.int32"
     input_scales_are_reciprocal, fast_math, reform_sf_pack = False, True, sf6
     geometry = ep_tiled_geometry(m, max_rows, mac)
     scale_mode = ep_tiled_scale_mode(reform_sf_pack)
+    decode_opt = ep_tiled_decode_opt(m, reform_sf_pack, decode_opt)
     route_key = ep_tiled_route_key(route_mode=route_mode, expert_map_len=expert_map_len,
         expert_map_dtype=expert_map_dtype, local_expert_offset=local_expert_offset)
 ''').body[0]
@@ -88,16 +89,17 @@ def native_cache_fixture():
                  and isinstance(n.targets[0],ast.Name)
                  and n.targets[0].id in ('EP_TILED_CACHE_TAG','EP_TILED_A_RING_CACHE_TAG',
                                         'EP_TILED_SF6_WORD_CACHE_TAG','EP_TILED_BF16_SCATTER_CACHE_TAG',
-                                        'EP_TILED_ROUTE_CACHE_TAG')]
+                                        'EP_TILED_ROUTE_CACHE_TAG','EP_TILED_DECODE_OPT_CACHE_TAG')]
     module = ast.Module(body=constants + [copy.deepcopy(functions[name]) for name in
         ('ep_tiled_geometry','ep_tiled_scale_mode','ep_tiled_route_metadata',
-         'ep_tiled_route_key')] + [key_fn], type_ignores=[])
-    ns = {}
+         'ep_tiled_route_key','ep_tiled_decode_opt','ep_tiled_decode_opt_enabled')] + [key_fn], type_ignores=[])
+    ns = {'_EP_TILED_DECODE_OPT': decode_opt}
     exec(compile(ast.fix_missing_locations(module),str(path),'exec'),ns)
     def native_key(*args, **kwargs):
         with patch.dict(sys.modules, {'torch':SimpleNamespace(int32='torch.int32',int64='torch.int64')}):
             return ns['native_key'](*args, **kwargs)
     return SimpleNamespace(ep_tiled_geometry=ns['ep_tiled_geometry'],
+                           ep_tiled_decode_opt_enabled=ns['ep_tiled_decode_opt_enabled'],
                            native_key=native_key,_EP_TILED_KERNEL_CACHE={})
 
 
@@ -402,6 +404,26 @@ class AdmissionTests(unittest.TestCase):
                     canary._cache_evidence(context, owner, rows)
             decode._EP_TILED_KERNEL_CACHE = {fused: object()}
             self.assertEqual(canary._cache_evidence(context, owner, rows)['keys'], [repr(fused)])
+
+    def test_optimized_canary_requires_new_small_shape_keys_and_preserves_large_shapes(self):
+        decode = native_cache_fixture(decode_opt=True)
+        owner = SimpleNamespace(_ep_tiled_workspace=SimpleNamespace(
+            static=SimpleNamespace(max_rows=256), scratch=SimpleNamespace(max_active_clusters=48)))
+        context = dict(decode=decode)
+        for rows in (4,6,8,12,16,24,32):
+            kwargs = dict(route_mode='global',expert_map_len=288,expert_map_dtype='torch.int32')
+            baseline = decode.native_key(rows,decode_opt=False,**kwargs)
+            selected = decode.native_key(rows,**kwargs)
+            self.assertEqual(selected, baseline + (('glm53_ep_static_sf6_fc2_out_of_place_v1',)
+                                                   if rows <= 8 else ()))
+            decode._EP_TILED_KERNEL_CACHE = {baseline:object()}
+            if rows <= 8:
+                with self.assertRaises(AssertionError):
+                    canary._cache_evidence(context,owner,rows)
+            decode._EP_TILED_KERNEL_CACHE[selected] = object()
+            evidence = canary._cache_evidence(context,owner,rows)
+            self.assertEqual(evidence['keys'],[repr(selected)])
+            self.assertIs(evidence['decode_opt'],rows<=8)
 
     def test_source_uses_established_numeric_contract_and_bounded_graph_flow(self):
         old=sys.modules[PACKAGE+'.glm53_ep_local_selftest']
