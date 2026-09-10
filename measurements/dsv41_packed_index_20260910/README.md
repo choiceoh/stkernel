@@ -114,6 +114,31 @@ repeated eight times. The follow-up kernel loads the four scale groups first
 and broadcasts them across their 32 features. A separate frozen-source receipt
 is required for that change; the original receipt is not reused as its proof.
 
+## Final scale-reuse compilation: PASS
+
+Normal CPU fleet session `dsv41packedcpu0910v2` compiled frozen source
+`40f6c0990f7ceff5b216edf69f7a4f30e4fc4d53`. All four variants pass, with the
+same shared-memory allocation as the initial compilation. The terminal
+`aot-cpu2/fleet-ack.json` records `finished-cpu`, return code 0. The runner,
+pinned image, device isolation and compiler options are unchanged; source
+hashes before/after and all fetched artifact hashes match. CUDA remains
+uninitialized.
+
+The four final PTX files each contain one scale-byte global-load instruction,
+down from 32 in the initial PTX. The packed-payload instruction count stays
+32. This is a static instruction-count comparison, not a 32x bandwidth or
+latency claim. BF16 MMA and dot/product/head-sum conversion counts remain
+unchanged. The scoped `ptx-audit.json` files retain the runtime-width, rounding
+and output-only store checks for both revisions; they do not establish SASS
+behavior or device numerical equivalence.
+
+The final full artifacts are retained at
+`/home/choiceoh/dsv41-packed-index-cpu2-evidence` on srv3. The CPU oracle's
+packed core and adapter hashes still match: the only computational source
+change since that oracle is the Triton scale-load layout. The 36 unit tests
+and overlay composition were rerun after it. Later evidence commits do not
+change these final compiled sources.
+
 Before adoption, a canonical consumer campaign must validate actual TileLang
 packed-byte layout and arithmetic, scores/selected IDs, distributed collectives,
 attention results, quality and matched end-to-end speed. The current fleet
