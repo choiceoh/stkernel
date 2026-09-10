@@ -1,0 +1,19 @@
+{
+  "scope": "controlled local scheduling, real child, unedited launch.start",
+  "only_injection": "delay live identity check until fixture exits, after process.poll has returned None",
+  "actual_child_exit": 3,
+  "returned_exit": 1,
+  "retry_exit": 1,
+  "state": "startup-failed",
+  "accepted": false,
+  "bounded_tail_length": 32768,
+  "preflight_marker_retained": true,
+  "same_launch_id": true,
+  "identity_checks": [
+    {
+      "fixture_marker_seen": true,
+      "actual_live": false
+    }
+  ],
+  "source_sha256": "8e84fd228ef56ea95c0bd5a11245c124de05c5521f9fb532d9e00b9336126173"
+}

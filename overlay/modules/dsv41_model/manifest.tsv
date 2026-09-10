@@ -2,3 +2,6 @@
 # NEW files. An architecture arrives by being ADDED and registered, not by
 # overriding something -- so none of this waits for an image.
 dsv41_layers.py	vllm/models/dsv41/dsv41_layers.py	absent
+dsv41_indexer.py	vllm/models/dsv41/dsv41_indexer.py	absent
+dsv41_indexer_triton.py	vllm/models/dsv41/dsv41_indexer_triton.py	absent
+dsv41_reference_adapter.py	vllm/models/dsv41/dsv41_reference_adapter.py	absent

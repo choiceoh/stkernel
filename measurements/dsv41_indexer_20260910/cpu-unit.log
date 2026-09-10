@@ -1,0 +1,22 @@
+test_async_or_replacement_collective_return_rejected (test_dsv41_indexer_contracts.CompactIndexerContracts.test_async_or_replacement_collective_return_rejected) ... ok
+test_bad_dtype_shape_and_chunk_refused (test_dsv41_indexer_contracts.CompactIndexerContracts.test_bad_dtype_shape_and_chunk_refused) ... ok
+test_collective_called_once_on_contiguous_bf16_payload (test_dsv41_indexer_contracts.CompactIndexerContracts.test_collective_called_once_on_contiguous_bf16_payload) ... ok
+test_collective_cannot_resize_payload (test_dsv41_indexer_contracts.CompactIndexerContracts.test_collective_cannot_resize_payload) ... ok
+test_empty_keyspace_preserves_collective_shape (test_dsv41_indexer_contracts.CompactIndexerContracts.test_empty_keyspace_preserves_collective_shape) ... ok
+test_invalid_ids_do_not_read_or_enter_topk (test_dsv41_indexer_contracts.CompactIndexerContracts.test_invalid_ids_do_not_read_or_enter_topk) ... ok
+test_offset_must_fit_int32 (test_dsv41_indexer_contracts.CompactIndexerContracts.test_offset_must_fit_int32) ... ok
+test_strided_cache_and_rounding_match_dense_gather (test_dsv41_indexer_contracts.CompactIndexerContracts.test_strided_cache_and_rounding_match_dense_gather) ... ok
+test_width_is_runtime_and_does_not_specialize_every_decode_token (test_dsv41_indexer_contracts.CompactIndexerContracts.test_width_is_runtime_and_does_not_specialize_every_decode_token) ... ok
+test_capture_rejected_and_external_forward_not_clobbered (test_dsv41_reference_adapter.AdapterTests.test_capture_rejected_and_external_forward_not_clobbered) ... ok
+test_default_off_source_and_loaded_code_fail_closed (test_dsv41_reference_adapter.AdapterTests.test_default_off_source_and_loaded_code_fail_closed) ... ok
+test_instance_only_install_restore_and_exact_geometry (test_dsv41_reference_adapter.AdapterTests.test_instance_only_install_restore_and_exact_geometry) ... ok
+test_long_decode_actual_dispatch_all_layers_and_strided_key_cache (test_dsv41_reference_adapter.AdapterTests.test_long_decode_actual_dispatch_all_layers_and_strided_key_cache) ... ok
+test_original_key_rope_quant_publication_precedes_query (test_dsv41_reference_adapter.AdapterTests.test_original_key_rope_quant_publication_precedes_query) ... ok
+test_short_prefill_and_multiquery_keep_original_and_clear_state (test_dsv41_reference_adapter.AdapterTests.test_short_prefill_and_multiquery_keep_original_and_clear_state) ... ok
+test_stale_step_order_cache_and_candidate_poison_use_dense (test_dsv41_reference_adapter.AdapterTests.test_stale_step_order_cache_and_candidate_poison_use_dense) ... ok
+test_tp4_local_state_mismatch_never_switches_collective_width (test_dsv41_reference_adapter.AdapterTests.test_tp4_local_state_mismatch_never_switches_collective_width) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.164s
+
+OK
