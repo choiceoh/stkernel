@@ -8041,6 +8041,18 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
           "the memory stamp asks whether CUDA is up BEFORE touching mem_get_info")
     check("GiB used this phase" in src and "dev free" in src,
           "each phase reports free device memory and its own delta")
+    # 40차: the post-load page cache release rides the same load-model wrapper.
+    # DONTNEED on clean pages only -- it must never write, map, or touch GMU/KV.
+    check("POSIX_FADV_DONTNEED" in src and "VLLM_GLM53_DROP_WEIGHT_CACHE" in src,
+          "load-model hands the weight files' page cache back, behind a knob")
+    check("O_RDONLY" in src and "O_WRONLY" not in src and "O_RDWR" not in src,
+          "the release opens the checkpoint read-only")
+    check(src.count("_drop_weight_page_cache") >= 2
+          and 'label == "load-model"' in src,
+          "it is hooked to the load-model phase, not to every phase")
+    prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check("\nVLLM_GLM53_DROP_WEIGHT_CACHE=1\n" in prof,
+          "the profile declares it so the launcher forwards it and it can be turned off")
     # 40차 trap, hit while splitting load-model: the meta-path finder is the
     # ONLY thing that runs _patch after install(), and it matches a hardcoded
     # TARGETS tuple. A phase added to the table but not to TARGETS is never

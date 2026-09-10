@@ -169,6 +169,72 @@ def _dev_free_gib():
         return None
 
 
+def _drop_weight_page_cache(worker):
+    """Hand the weight files' page cache back after load-model.
+
+    40차. The checkpoint is 185 GB on disk and each rank streams its shard
+    through a page cache the host can only hold ~10 GiB of, so a boot evicts
+    everything else and leaves the pages it read behind. They are never read
+    again -- weights load once -- but on GB10 the engine already holds 63% of
+    the box as a driver carve-out, and what is left is what earlyoom measures:
+    it SIGTERMed the serving worker six times on 2026-09-08/09 at MemAvailable
+    5%, every one of them DURING serving, not during a boot.
+
+    posix_fadvise(DONTNEED) only drops clean cached pages: nothing is written,
+    no mapping is touched, and a re-read would simply hit disk. It cannot move
+    GMU or KV -- this is host memory the engine never counted.
+
+    VLLM_GLM53_DROP_WEIGHT_CACHE=0 turns it off.
+    """
+    if os.environ.get("VLLM_GLM53_DROP_WEIGHT_CACHE", "1").strip() == "0":
+        return
+    try:
+        cfg = getattr(worker, "vllm_config", None)
+        paths = []
+        for attr, sub in (("model_config", "model"), ("speculative_config", "model")):
+            section = getattr(cfg, attr, None) if cfg is not None else None
+            value = getattr(section, sub, None) if section is not None else None
+            if isinstance(value, str) and os.path.isdir(value):
+                paths.append(value)
+        if not paths:
+            return
+        before = _mem_available_gib()
+        advised = 0
+        for root in paths:
+            for dirpath, _dirs, files in os.walk(root):
+                for fname in files:
+                    full = os.path.join(dirpath, fname)
+                    try:
+                        fd = os.open(full, os.O_RDONLY)
+                    except OSError:
+                        continue
+                    try:
+                        advised += os.fstat(fd).st_size
+                        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                    except OSError:
+                        pass
+                    finally:
+                        os.close(fd)
+        after = _mem_available_gib()
+        _log(f"weight page cache released: advised {advised / (1 << 30):.1f} GiB across "
+             f"{len(paths)} dir(s), host MemAvailable "
+             f"{'?' if before is None else f'{before:.1f}'} -> "
+             f"{'?' if after is None else f'{after:.1f}'} GiB")
+    except Exception as exc:                      # never stand between a boot and its work
+        _log(f"weight page cache release skipped: {type(exc).__name__}: {exc}")
+
+
+def _mem_available_gib():
+    try:
+        with open("/proc/meminfo") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) / (1 << 20)
+    except OSError:
+        pass
+    return None
+
+
 def _wrap(cls, name, label):
     fn = getattr(cls, name, None)
     if fn is None or (cls, name) in _ORIG:
@@ -197,6 +263,8 @@ def _wrap(cls, name, label):
                           if free0 is not None else ""))
             _log(f"{lab} took {now - t:.1f}s "
                  f"(at {now - _T0:.1f}s since interpreter start){mem}")
+            if label == "load-model" and a:
+                _drop_weight_page_cache(a[0])
 
     try:
         setattr(cls, name, timed)
