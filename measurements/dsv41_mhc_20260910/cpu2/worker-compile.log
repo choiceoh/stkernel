@@ -1,0 +1,166 @@
+W0910 11:45:12.534000 1 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
+[megakernel] source md5=1f6ac75f kernels=16 (/repo/overlay/modules/glm53_megakernel/glm53_megakernel.cu)
+[1/2] /usr/local/cuda/bin/nvcc -MD -MF glm53_megakernel.cuda.o.d -DTORCH_EXTENSION_NAME=glm53_megakernel -DTORCH_API_INCLUDE_EXTENSION_H -isystem /usr/local/lib/python3.12/dist-packages/torch/include -isystem /usr/local/lib/python3.12/dist-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /usr/include/python3.12 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options '-fPIC' -O2 -gencode arch=compute_121a,code=sm_121a -DMK_GRID_DEF=96 -DMK_MHC_GRID_DEF=144 -DMK_NBUF2_DEF=3 -DMK_FP8_PACK2_DEF=0 -DMK_GEMM_TRANSPOSE_M8_DEF=0 -DMK_GEMM_COMPACT_M8_DEF=0 -DMK_M8_FASTPATH_DEF=0 -Xptxas=-v -Xptxas=--warn-on-spills -std=c++20 -c /repo/overlay/modules/glm53_megakernel/glm53_megakernel.cu -o glm53_megakernel.cuda.o 
+/repo/overlay/modules/glm53_megakernel/glm53_megakernel.cu(131): warning #177-D: variable "<unnamed>::NCHUNK" was declared but never referenced
+  constexpr int NCHUNK = HIDDEN / HCHUNK;
+                ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/repo/overlay/modules/glm53_megakernel/glm53_megakernel.cu(261): warning #177-D: function "<unnamed>::mk_f32_to_e4m3" was declared but never referenced
+                            uint8_t mk_f32_to_e4m3(float x) {
+                                    ^
+
+ptxas info    : 3488920 bytes gmem
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85317mk_mhc_v41_kernelILi4096EEEvNS_12MKMhcV41ArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85317mk_mhc_v41_kernelILi4096EEEvNS_12MKMhcV41ArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 158 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 92.631 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85317mk_mhc_v41_kernelILi5120EEEvNS_12MKMhcV41ArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85317mk_mhc_v41_kernelILi5120EEEvNS_12MKMhcV41ArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 158 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 66.059 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85313mk_mhc_kernelILi4096EEEvNS_9MKMhcArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85313mk_mhc_kernelILi4096EEEvNS_9MKMhcArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 162 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 56.185 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85318mk_mhc_bf16_kernelILi4096EEEvNS_9MKMhcArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85318mk_mhc_bf16_kernelILi4096EEEvNS_9MKMhcArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 162 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 59.085 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb0ELi4096EEEvNS_9MKMhcArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb0ELi4096EEEvNS_9MKMhcArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 160 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 56.182 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb1ELi4096EEEvNS_9MKMhcArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb1ELi4096EEEvNS_9MKMhcArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 55.182 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85313mk_mhc_kernelILi5120EEEvNS_9MKMhcArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85313mk_mhc_kernelILi5120EEEvNS_9MKMhcArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 162 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 65.833 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85318mk_mhc_bf16_kernelILi5120EEEvNS_9MKMhcArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85318mk_mhc_bf16_kernelILi5120EEEvNS_9MKMhcArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 162 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 68.971 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb0ELi5120EEEvNS_9MKMhcArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb0ELi5120EEEvNS_9MKMhcArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 160 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 66.846 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb1ELi5120EEEvNS_9MKMhcArgsE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb1ELi5120EEEvNS_9MKMhcArgsE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem
+ptxas info    : Compile time = 63.748 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi1ELb0ELb1EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi1ELb0ELb1EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 108 registers, used 1 barriers, 16 bytes smem
+ptxas info    : Compile time = 51.619 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi4ELb1ELb0EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi4ELb1ELb0EEEvNS_10MKGemm2CtxE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 119 registers, used 1 barriers, 16 bytes cumulative stack size, 16 bytes smem
+ptxas info    : Compile time = 120.215 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi2ELb1ELb0EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi2ELb1ELb0EEEvNS_10MKGemm2CtxE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 101 registers, used 1 barriers, 16 bytes cumulative stack size, 16 bytes smem
+ptxas info    : Compile time = 104.714 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi1ELb1ELb0EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi1ELb1ELb0EEEvNS_10MKGemm2CtxE
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 98 registers, used 1 barriers, 16 bytes cumulative stack size, 16 bytes smem
+ptxas info    : Compile time = 104.411 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi4ELb0ELb0EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi4ELb0ELb0EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 116 registers, used 1 barriers, 16 bytes smem
+ptxas info    : Compile time = 60.033 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi2ELb0ELb0EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi2ELb0ELb0EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 106 registers, used 1 barriers, 16 bytes smem
+ptxas info    : Compile time = 50.269 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi1ELb0ELb0EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85315mk_gemm2_kernelILi1ELb0ELb0EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 108 registers, used 1 barriers, 16 bytes smem
+ptxas info    : Compile time = 48.864 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85324mk_gemm_input_cta_kernelILi2EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85324mk_gemm_input_cta_kernelILi2EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers
+ptxas info    : Compile time = 19.469 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85324mk_gemm_input_cta_kernelILi1EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85324mk_gemm_input_cta_kernelILi1EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 75 registers, used 1 barriers
+ptxas info    : Compile time = 19.215 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85324mk_gemm_input_cta_kernelILi0EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85324mk_gemm_input_cta_kernelILi0EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 78 registers, used 1 barriers
+ptxas info    : Compile time = 18.840 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85325mk_gemm_input_cta3_kernelILi2ELi2EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85325mk_gemm_input_cta3_kernelILi2ELi2EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers
+ptxas info    : Compile time = 8.823 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85320mk_gemm_input_kernelENS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85320mk_gemm_input_kernelENS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers, 16 bytes smem
+ptxas info    : Compile time = 20.575 ms
+ptxas info    : Compiling entry function '_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85320mk_input_pack_kernelENS_14MKInputPackCtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85320mk_input_pack_kernelENS_14MKInputPackCtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 21 registers, used 0 barriers
+ptxas info    : Compile time = 3.113 ms
+ptxas info    : Compiling entry function '_Z14mk_prep_kernel10MKPrepArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z14mk_prep_kernel10MKPrepArgs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers
+ptxas info    : Compile time = 43.379 ms
+ptxas info    : Compiling entry function '_Z23mk_mla_prefill32_kernel9MKMlaArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z23mk_mla_prefill32_kernel9MKMlaArgs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 27.165 ms
+ptxas info    : Compiling entry function '_Z20mk_mla_group4_kernel13MKMlaPairArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z20mk_mla_group4_kernel13MKMlaPairArgs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 127 registers, used 16 barriers
+ptxas info    : Compile time = 75.827 ms
+ptxas info    : Compiling entry function '_Z18mk_mla_pair_kernel13MKMlaPairArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z18mk_mla_pair_kernel13MKMlaPairArgs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 74.421 ms
+ptxas info    : Compiling entry function '_Z21mk_mla_group4_prepare13MKMlaPairArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z21mk_mla_group4_prepare13MKMlaPairArgs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 35 registers, used 1 barriers
+ptxas info    : Compile time = 9.688 ms
+ptxas info    : Compiling entry function '_Z19mk_mla_pair_prepare13MKMlaPairArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z19mk_mla_pair_prepare13MKMlaPairArgs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers
+ptxas info    : Compile time = 7.574 ms
+ptxas info    : Compiling entry function '_Z13mk_mla_kernel9MKMlaArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z13mk_mla_kernel9MKMlaArgs
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 114 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 37.563 ms
+[2/2] c++ glm53_megakernel.cuda.o -shared -L/usr/local/lib/python3.12/dist-packages/torch/lib -lc10 -lc10_cuda -ltorch_cpu -ltorch_cuda -ltorch -ltorch_python -L/usr/local/cuda/lib64 -lcudart -o glm53_megakernel.so
+PASS full-TU AOT/export admission; no GPU numerics/performance/model claim

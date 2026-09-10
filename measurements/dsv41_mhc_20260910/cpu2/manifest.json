@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "source_revision": "2c4b37b615a089cfd93f97e6423d52dca3846f7d",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 2257,
+      "sha256": "509f6f891a8a66751c0b8c11a2ea303fdfceba95c4b6329d333b943cba958b0c"
+    },
+    {
+      "path": "fleet-execution.json",
+      "bytes": 1077,
+      "sha256": "8dd42a2133ccc651d961cdd5b4990110e4af1814756861264207583c995a1447"
+    },
+    {
+      "path": "fleet-launch.py",
+      "bytes": 1826,
+      "sha256": "ffbe69de23ae3bdf947bba9147486032870f657d36123d933e9489c132ef18a8"
+    },
+    {
+      "path": "fleet-log",
+      "bytes": 157,
+      "sha256": "4d3a60448909faf839a9188db99534142fc968963f5cf207ad1174748f00096e"
+    },
+    {
+      "path": "fleet-prepare-transfer.py",
+      "bytes": 1677,
+      "sha256": "a99f79e9aecad6d45f01298e6565adae9f3234ce5afd5da4c13e5d3faf5ffc12"
+    },
+    {
+      "path": "fleet-prepare.py",
+      "bytes": 917,
+      "sha256": "d48ce7a4a4015717a333e14ffc8ad6a38d6cab3d938490420d153e89f820109f"
+    },
+    {
+      "path": "fleet-source-binding.log",
+      "bytes": 2158,
+      "sha256": "b75e428ca403f151f5ffeb303d46391c0443ec45a99ba02b950c85a2046ac4e1"
+    },
+    {
+      "path": "fleet-source-transfer.log",
+      "bytes": 249,
+      "sha256": "09f59e28e13993cdfc368fa4ccc4a8dcf17dd4d1b680a548402706404967f243"
+    },
+    {
+      "path": "host-preflight-summary.json",
+      "bytes": 1238,
+      "sha256": "c609b5a663c2cfd86e7c60e0db309b3a54458f730cc9f2896083366ab4eaf963"
+    },
+    {
+      "path": "resource-summary.json",
+      "bytes": 4369,
+      "sha256": "3cb346c155390c608fc9ac2c369740434bfd112be6692f5bafe74c03339966f8"
+    },
+    {
+      "path": "worker-SHA256SUMS",
+      "bytes": 907,
+      "sha256": "5bc95b356a42efb492b8aa2980a392ad60e44d22defffd913ab75cfd9a125e19"
+    },
+    {
+      "path": "worker-aot.json",
+      "bytes": 1644,
+      "sha256": "4a80e616f3207efece544e83e81b78273c6cd5b0db119fce8f6c0d583e7d9f3e"
+    },
+    {
+      "path": "worker-compile.json",
+      "bytes": 1451,
+      "sha256": "82146904d56863f728e3086ca53063888562fe0262b1858bbb625a8053a70d38"
+    },
+    {
+      "path": "worker-compile.log",
+      "bytes": 15759,
+      "sha256": "5347c967112f1a513511cd51caf2fe6e7b678b87127df314a5def5ef176a36c3"
+    },
+    {
+      "path": "worker-execution.json",
+      "bytes": 4374,
+      "sha256": "ab1ee2a001a518d2e18602c77d2cc337f57d12cf19e8965a892b7315dbc0ab19"
+    },
+    {
+      "path": "worker-inner.py",
+      "bytes": 3340,
+      "sha256": "2c1a20531c7c415aed187c860d2af5fdb495575c1e1dc95785f36d010c521acb"
+    }
+  ]
+}

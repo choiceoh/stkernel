@@ -89,4 +89,35 @@ component probes. No queue policy was weakened or bypassed. Whole-model
 tok/s, TTFT, decode step/s, output quality and default promotion additionally
 require the completed checkpoint and a verified compatible runtime.
 
-Validation receipts and their exact tested source will be recorded below.
+Recorded CPU validation at source `2c4b37b615a089cfd93f97e6423d52dca3846f7d`:
+
+- `cpu-megakernel.log`: 74 tests PASS, no skips (24 new geometry/contract tests
+  plus 50 existing regressions).
+- `cpu-mhc-ar.log`: 4 tests PASS, no skips.
+- `cpu-core.log`: 71,474 checks, 74 megakernel regressions PASS.
+- `cpu-all.log`: 71,475 checks, 74 megakernel regressions and 385 fleet
+  regressions PASS. Counts overlap; they are not additive.
+- `legacy-source-equivalence.json`: one-off normalization of the legacy
+  CUDA phase/entry bodies against PR518, with matching hashes. This is source
+  equivalence evidence only, not machine-code or performance equivalence.
+
+The CPU tests ran locally under Python 3.12.13 / PyTorch 2.14.0 with no GPU
+execution; versions and file hashes are in `cpu-environment.json`.
+
+Full-TU AOT **PASS**, same frozen source, through normal fleet CPU session
+`dsv41mhccpu0910v2` on srv3 in 45.43 seconds. The pinned image supplied
+PyTorch 2.13.0+cu130 and nvcc 13.0.88. Compilation, linking and both native
+exports passed with no CUDA initialization or device nodes. All ten MHC
+instantiations had zero spill loads/stores; both V4.1 shapes used 158 registers
+and a 16-byte stack frame. These compiler resource figures are not timing or
+runtime occupancy evidence. See [CPU2 originals and hashes](cpu2/README.md).
+
+The earlier CPU1 attempt stopped at the unchanged 12GiB host-memory guard
+before creating a container or compiling; [its receipt](cpu1/README.md) is
+preserved separately. CPU2 used a node with 16.595GiB available, without
+changing services or relaxing the guard.
+
+Implementation PR [#519](https://github.com/choiceoh/stkernel/pull/519) was
+merged as `f99e06f3baec43b03e2eccc1707140ed150b4a96`, containing the tested
+`2c4b37b6` source. Merge ancestry does not establish deployment or GPU/model
+acceptance. No GPU speedup, tok/s, TTFT or default-adoption claim is made.

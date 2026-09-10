@@ -1,0 +1,29 @@
+{
+  "source": "/home/choiceoh/stkernel-dsv41-megakernel-20260910",
+  "revision": "2c4b37b615a089cfd93f97e6423d52dca3846f7d",
+  "output": "/home/choiceoh/dsv41-mhc-cpu1-evidence",
+  "session": "dsv41mhccpu0910v1",
+  "command": [
+    "env",
+    "REPO=/home/choiceoh/stkernel-dsv41-megakernel-20260910",
+    "bash",
+    "/home/choiceoh/stkernel-dsv41-megakernel-20260910/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "dsv41mhccpu0910v1",
+    "10",
+    "DSV4.1 H5120 MHC full-TU AOT; no GPU devices",
+    "--",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "choiceoh@10.10.10.4",
+    "nice -n19 python3 -B /home/choiceoh/stkernel-dsv41-megakernel-20260910/measurements/dsv41_mhc_20260910/cpu_compile_runner.py --source /home/choiceoh/stkernel-dsv41-megakernel-20260910 --revision 2c4b37b615a089cfd93f97e6423d52dca3846f7d --output /home/choiceoh/dsv41-mhc-cpu1-evidence"
+  ],
+  "started": 1789040473.143873,
+  "scope": "Normal fleet CPU admission; AOT/export only, no GPU devices or workloads",
+  "returncode": 1,
+  "finished": 1789040475.308457
+}

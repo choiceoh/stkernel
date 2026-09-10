@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-dsv41-megakernel-20260910/measurements/dsv41_mhc_20260910/cpu_compile_runner.py", line 176, in <module>
+    main()
+  File "/home/choiceoh/stkernel-dsv41-megakernel-20260910/measurements/dsv41_mhc_20260910/cpu_compile_runner.py", line 120, in main
+    assert available >= 12 * 1024**3, ('need 12 GiB before CPU compile', available)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('need 12 GiB before CPU compile', 12633309184)

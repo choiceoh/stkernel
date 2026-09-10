@@ -1,0 +1,2 @@
+{"host": "srv2", "source": "/home/choiceoh/stkernel-dsv41-megakernel-20260910", "revision": "2c4b37b615a089cfd93f97e6423d52dca3846f7d", "clean": true, "bundle_sha256": "8da539298874276d3e389d1db3b14b6a09236c15dc2d0b44dc95f8658a77f868"}
+{"host": "srv4", "source": "/home/choiceoh/stkernel-dsv41-megakernel-20260910", "revision": "2c4b37b615a089cfd93f97e6423d52dca3846f7d", "clean": true, "bundle_sha256": "8da539298874276d3e389d1db3b14b6a09236c15dc2d0b44dc95f8658a77f868"}

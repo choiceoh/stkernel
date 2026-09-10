@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "outcome": "host_memory_guard_refused",
+  "required_mem_available_bytes": 12884901888,
+  "observed_mem_available_bytes": 12633309184,
+  "container_started": false,
+  "compile_started": false,
+  "gpu_workload": false,
+  "files": [
+    {
+      "path": "/tmp/dsv41-mhc-cpu1.log",
+      "bytes": 499,
+      "sha256": "b4c32780fc95307b793f35a5e3f17c8664de9f2b54dcb9305c880087679df7cb"
+    },
+    {
+      "path": "/tmp/dsv41-mhc-cpu1-execution.json",
+      "bytes": 1076,
+      "sha256": "2b0b58b86b6c7ef6c5d648e7332337aaefa11380c2fbc51114ba577abd7bb474"
+    },
+    {
+      "path": "/tmp/dsv41-mhc-cpu1-source-binding.log",
+      "bytes": 472,
+      "sha256": "3ddce4d489e8dbd5c2a8ab005d1a42c750561ad25c647e4d6674371f5484497e"
+    },
+    {
+      "path": "/tmp/dsv41-mhc-cpu1-launch.py",
+      "bytes": 1826,
+      "sha256": "346967761e7434ee1609b0d770c33c7a8d4cadf8da080f7807ca1bcccb3a7e24"
+    },
+    {
+      "path": "/tmp/dsv41-mhc-cpu1-prepare.py",
+      "bytes": 1750,
+      "sha256": "d2ab68276ab83a9b0e73624825eee43881a2a59e4ff2db3f66f756a6c90e9461"
+    }
+  ]
+}

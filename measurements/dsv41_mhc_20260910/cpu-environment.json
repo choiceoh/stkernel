@@ -1,0 +1,18 @@
+{
+  "source_commit": "2c4b37b615a089cfd93f97e6423d52dca3846f7d",
+  "python": "3.12.13 (main, Mar  3 2026, 12:39:30) [Clang 17.0.0 (clang-1700.6.3.2)]",
+  "torch": "2.14.0",
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "cuda_runtime": null,
+  "cuda_initialized": false,
+  "sha256": {
+    "overlay/modules/glm53_megakernel/glm53_megakernel.py": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
+    "overlay/modules/glm53_megakernel/glm53_megakernel.cu": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
+    "probes/mk_mhc_geometry_bench.py": "5e2c70b4fe06f7f5f7723f8ee3b9fe2ebf61f18acc8d8ec39b98dec74dd09c03",
+    "tests/test_megakernel_mhc_geometry.py": "cb87ab2a309640c53c6f09f9ba26be15bfe91848c69025a899f18c95e35ba9f7",
+    "tests/test_megakernel_mhc_geometry_regressions.py": "44cad6c46e5e8865610f89effe5d66219f4c7fb0019e195ee6d0cc375c32f4c0",
+    "tests/test_logic.py": "93726c06d486a67993334087dc0c5abfc894d646ae05ff8a7bcd4f51a27d884c",
+    "tests/test_mhc_ar_selftest.py": "a8f9f370034bdabb6e989d8f400038a7ba30df48c202cc5fd4424cbc9448ad1a"
+  },
+  "GPU_executed": false
+}

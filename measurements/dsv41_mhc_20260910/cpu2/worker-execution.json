@@ -1,0 +1,144 @@
+{
+  "schema": 1,
+  "passed": true,
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "source_before": {
+    "revision": "2c4b37b615a089cfd93f97e6423d52dca3846f7d",
+    "clean": true,
+    "files": [
+      {
+        "path": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
+        "bytes": 142204,
+        "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e"
+      },
+      {
+        "path": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
+        "bytes": 191391,
+        "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1"
+      },
+      {
+        "path": "probes/mk_mhc_geometry_bench.py",
+        "bytes": 21682,
+        "sha256": "5e2c70b4fe06f7f5f7723f8ee3b9fe2ebf61f18acc8d8ec39b98dec74dd09c03"
+      },
+      {
+        "path": "tests/test_megakernel_mhc_geometry.py",
+        "bytes": 15855,
+        "sha256": "cb87ab2a309640c53c6f09f9ba26be15bfe91848c69025a899f18c95e35ba9f7"
+      },
+      {
+        "path": "tests/test_megakernel_mhc_geometry_regressions.py",
+        "bytes": 19030,
+        "sha256": "44cad6c46e5e8865610f89effe5d66219f4c7fb0019e195ee6d0cc375c32f4c0"
+      },
+      {
+        "path": "measurements/dsv41_mhc_20260910/cpu_compile_runner.py",
+        "bytes": 9238,
+        "sha256": "63ef5ddcb2b6d4aa90d1d47d1de881912c1ba47e1f27f91f9c730abb022ef734"
+      }
+    ]
+  },
+  "wrapper_sha256": "63ef5ddcb2b6d4aa90d1d47d1de881912c1ba47e1f27f91f9c730abb022ef734",
+  "inner_sha256": "2c1a20531c7c415aed187c860d2af5fdb495575c1e1dc95785f36d010c521acb",
+  "mem_available_bytes": 17818423296,
+  "command": [
+    "docker",
+    "run",
+    "--pull=never",
+    "--rm",
+    "--runtime=runc",
+    "--network=none",
+    "--name",
+    "dsv41-mhc-cpu-2778527",
+    "--cpuset-cpus=14-15",
+    "--memory=6g",
+    "--memory-swap=6g",
+    "-e",
+    "NVIDIA_VISIBLE_DEVICES=void",
+    "-e",
+    "CUDA_VISIBLE_DEVICES=",
+    "-e",
+    "MK_PROBE_NO_GPU=1",
+    "-e",
+    "MAX_JOBS=1",
+    "-e",
+    "OMP_NUM_THREADS=1",
+    "-e",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "-e",
+    "CUDA_MODULE_LOADING=LAZY",
+    "-e",
+    "VLLM_GLM53_MK_BUILD_ROOT=/evidence/build/mk",
+    "-e",
+    "VLLM_GLM53_MEGAKERNEL=0",
+    "-e",
+    "VLLM_GLM53_MK_MHC=0",
+    "-e",
+    "VLLM_GLM53_MK_GRID=96",
+    "-e",
+    "VLLM_GLM53_MK_MHC_GRID=144",
+    "-e",
+    "VLLM_GLM53_MK_NBUF2=3",
+    "-e",
+    "VLLM_GLM53_MK_FP8_PACK2=0",
+    "-e",
+    "VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=0",
+    "-e",
+    "VLLM_GLM53_MK_M8_FASTPATH=0",
+    "-e",
+    "VLLM_GLM53_MK_PHASE_TS=0",
+    "--mount",
+    "type=bind,src=/home/choiceoh/stkernel-dsv41-megakernel-20260910,dst=/repo,readonly",
+    "--mount",
+    "type=bind,src=/home/choiceoh/dsv41-mhc-cpu2-evidence,dst=/evidence",
+    "--workdir",
+    "/repo",
+    "--entrypoint",
+    "python3",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "-B",
+    "/evidence/inner.py"
+  ],
+  "started_at": 1789040711.588366,
+  "gpu_numerics": false,
+  "gpu_performance": false,
+  "model_equivalence": false,
+  "returncode": 0,
+  "source_after": {
+    "revision": "2c4b37b615a089cfd93f97e6423d52dca3846f7d",
+    "clean": true,
+    "files": [
+      {
+        "path": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
+        "bytes": 142204,
+        "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e"
+      },
+      {
+        "path": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
+        "bytes": 191391,
+        "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1"
+      },
+      {
+        "path": "probes/mk_mhc_geometry_bench.py",
+        "bytes": 21682,
+        "sha256": "5e2c70b4fe06f7f5f7723f8ee3b9fe2ebf61f18acc8d8ec39b98dec74dd09c03"
+      },
+      {
+        "path": "tests/test_megakernel_mhc_geometry.py",
+        "bytes": 15855,
+        "sha256": "cb87ab2a309640c53c6f09f9ba26be15bfe91848c69025a899f18c95e35ba9f7"
+      },
+      {
+        "path": "tests/test_megakernel_mhc_geometry_regressions.py",
+        "bytes": 19030,
+        "sha256": "44cad6c46e5e8865610f89effe5d66219f4c7fb0019e195ee6d0cc375c32f4c0"
+      },
+      {
+        "path": "measurements/dsv41_mhc_20260910/cpu_compile_runner.py",
+        "bytes": 9238,
+        "sha256": "63ef5ddcb2b6d4aa90d1d47d1de881912c1ba47e1f27f91f9c730abb022ef734"
+      }
+    ]
+  },
+  "finished_at": 1789040755.359677
+}
