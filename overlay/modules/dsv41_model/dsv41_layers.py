@@ -23,6 +23,13 @@ exactly the projection of the final encoder states the card describes. Every
 other decoder layer (21..39) sources nothing. So the rule to build to is not
 "no decoder layer sources KV" but "exactly one may, and only at the boundary".
 
+A ratio of 0 is a third thing the list says, and it is not "no compression
+worth mentioning": layers 0 and 1 do no compression at all and run pure sliding
+-window attention. The reference builds their rotary table with YaRN DISABLED
+and the base `rope_theta`, while every compressing layer uses
+`compress_rope_theta` with YaRN. Two tables in one model, and a layer handed
+the wrong one still runs.
+
 `index_source_layer_ids` is the one list that crosses: [2, 8, 14, 20, 24, 28,
 32, 36]. The indexer keeps running in the decoder because selecting from KV is
 not producing it -- the decoder half indexes into what the encoder built.
@@ -62,6 +69,30 @@ class LayerPlan:
     @property
     def engram(self) -> bool:
         return self.engram_table is not None
+
+    @property
+    def swa_only(self) -> bool:
+        """compress_ratio 0 means no compression at all: pure sliding window.
+
+        It is a third thing compress_ratios says, and it changes the ROPE. The
+        reference builds this layer's table with YaRN disabled and the base
+        rope_theta, while every compressing layer uses compress_rope_theta with
+        YaRN -- two tables in one model, chosen by this flag. A layer given the
+        wrong one still runs and still returns numbers.
+
+        On this config it is layers 0 and 1, which is also why
+        kv_source_layer_ids starts at 2: a layer that does not compress has no
+        latent to source.
+        """
+        return self.compress_ratio == 0
+
+    def rope(self, cfg: dict) -> "tuple[int, float]":
+        """(original_seq_len, theta) for this layer's rotary table."""
+        scaling = cfg.get("rope_scaling") or {}
+        if self.swa_only:
+            return 0, float(cfg["rope_theta"])
+        return (int(scaling.get("original_max_position_embeddings", 0)),
+                float(cfg["compress_rope_theta"]))
 
 
 def _runs(values):

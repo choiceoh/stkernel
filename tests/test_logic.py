@@ -8656,6 +8656,173 @@ def test_glm53_megakernel_contracts() -> None:
           "the data section 8-aligned, which is what makes the output a file "
           "an ordinary safetensors reader opens")
 
+    # -- rope. This model builds TWO rotary tables and picks per layer:
+    #    compress_ratio 0 (layers 0 and 1, pure sliding window) disables YaRN
+    #    and uses the base theta, everything else uses compress_rope_theta with
+    #    YaRN. A layer handed the other one still runs and drifts with
+    #    position.
+    rope_src = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                                 "dsv41_rope.py"), encoding="utf-8").read()
+    lay_src = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                                "dsv41_layers.py"), encoding="utf-8").read()
+    check("def rope(self, cfg: dict)" in lay_src
+          and "if self.swa_only:" in lay_src
+          and 'return 0, float(cfg["rope_theta"])' in lay_src
+          and 'float(cfg["compress_rope_theta"]))' in lay_src,
+          "the per-layer rope choice is the reference's branch: SWA-only takes "
+          "the base theta with YaRN off")
+    check("def swa_only(self) -> bool:" in lay_src
+          and "return self.compress_ratio == 0" in lay_src,
+          "compress_ratio 0 means pure sliding window -- a third thing the "
+          "ratios say, and the one that changes the rope")
+    check("dim * math.log(original_seq_len / (rotations * 2 * math.pi))"
+          in rope_src and "/ (2 * math.log(base))" in rope_src,
+          "YaRN's corner dimensions carry the log base; dropping it tilts the "
+          "whole ramp by an amount nothing downstream notices")
+    check("if inverse:\n        freqs_cis = freqs_cis.conj()" in rope_src,
+          "the inverse rotation exists -- the output has the query's rotation "
+          "removed so the cache holds one shared rotated form")
+    rope_probe = open(os.path.join(REPO, "probes/dsv41_rope_diff.py"),
+                      encoding="utf-8").read()
+    check("the reference's rule\n" in rope_probe.replace("  ", " ")
+          or "the reference's rule" in rope_probe,
+          "the probe checks the CHOICE before the tables: feeding the "
+          "reference our own parameters cannot check those parameters")
+    check("if len(branches) != 2:" in rope_probe
+          and 'cfg["rope_theta"]) == float(cfg["compress_rope_theta"])'
+          in rope_probe,
+          "and it refuses to pass when only one branch occurs or the two "
+          "thetas are equal, either of which makes the choice unobservable")
+
+    # -- weight routing. Coverage is checked by pattern rather than by
+    #    walking the shape plan: walking it would make coverage true by
+    #    construction and prove nothing, while matching names means a tensor
+    #    nobody predicted arrives unclaimed and says so.
+    ldr_src = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                                "dsv41_loader.py"), encoding="utf-8").read()
+    check("class UnroutedTensor(KeyError):" in ldr_src
+          and "raise UnroutedTensor(" in ldr_src,
+          "an unclaimed name raises; a loader that skipped it would leave a "
+          "module at its initialization values and say nothing")
+    check("module, _, param = name.rpartition(\".\")" in ldr_src,
+          "the module/attribute split is uniform -- treating a layer's bare "
+          "tensors as attribute-less collapses them onto one destination and "
+          "loads whichever arrived last")
+    check("if r.kind == ENGRAM:\n        return False" in ldr_src,
+          "the engram tables are wanted by no rank: they are read row-wise off "
+          "an SSD, and a loader that materializes them needs 188.8 GiB")
+    ldr_probe = open(os.path.join(REPO, "probes/dsv41_loader_route.py"),
+                     encoding="utf-8").read()
+    check("dest = collections.Counter((r.kind, r.module, r.param)" in ldr_probe
+          and "claimed twice" in ldr_probe,
+          "the probe checks destination distinctness, which is what caught "
+          "the collapsed bare tensors")
+    check("import dsv41_preshard as builder" in ldr_probe
+          and "builder._wanted(" in ldr_probe,
+          "loader and builder are compared name by name per rank -- they never "
+          "run together, so a test is the only thing holding them to one "
+          "partition")
+
+    # -- the compressor is the CED mechanism: it returns None while a group
+    #    fills, so a caller that assumes one KV entry per token keeps the wrong
+    #    history by a factor of compress_ratio.
+    comp_src = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                                 "dsv41_compressor.py"), encoding="utf-8").read()
+    check("if not should:\n            return None" in comp_src
+          and "self.kv_state[:bsz, :remainder] = tail_kv" in comp_src,
+          "a group that has not completed yields None and its tail is carried, "
+          "not dropped")
+    check("kv = F.linear(xf, wkv.float())" in comp_src
+          and "xf = x.float()" in comp_src,
+          "the pooling runs in fp32 above ratio 1 -- the checkpoint stores "
+          "bf16 and the promotion is a load step, not a storage dtype")
+    check("should = (start_pos + 1) % ratio == 0" in comp_src,
+          "a decode step completes a group when start_pos + 1 is a multiple of "
+          "the ratio, not start_pos")
+    comp_probe = open(os.path.join(REPO, "probes/dsv41_compressor_diff.py"),
+                      encoding="utf-8").read()
+    check('"after ragged prefill"' in comp_src.join([""]) or
+          '"after ragged prefill"' in comp_probe,
+          "the probe decodes after a RAGGED prefill: an exact-multiple prefill "
+          "leaves nothing in the carry, so dropping the carry entirely passes "
+          "a test that only ever does that")
+    check("torch.equal(r, o)" in comp_probe,
+          "bit equality -- a bf16 softmax changes every group's pooling "
+          "weights by an amount a tolerance is chosen to permit")
+
+    # -- the tensor plan predicts all 96,085 names, dtypes and shapes from
+    #    config. Names alone would not be a check: a plan with wq_b's axes
+    #    swapped, or with the shared expert given a routed expert's scale rank,
+    #    produces the right names and the wrong model.
+    shapes_src = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                                   "dsv41_shapes.py"), encoding="utf-8").read()
+    check("def _fp8(out: int, inn: int" in shapes_src
+          and '("F8_E8M0", [_blk(out), _blk(inn)])' in shapes_src
+          and "def _fp4(out: int, inn: int" in shapes_src
+          and '("I8", [out, inn // 2])' in shapes_src
+          and '("F8_E8M0", [out, _blk(inn)])' in shapes_src,
+          "fp8 dense carries a [32,32]-blocked scale and fp4 routed carries "
+          "one blocked along K only -- the shared expert sits in the same FFN "
+          "as the routed ones and is the other kind")
+    check("_fp8(heads * hd, q_lora, f\"{prefix}.wq_b\", into)" in shapes_src
+          and "_fp8(o_lora * o_groups, heads * hd // o_groups" in shapes_src,
+          "the q up-projection is [heads*head_dim, q_lora] and the "
+          "o-projection is grouped: o_groups slices each through their own "
+          "low-rank pair")
+    check("if p.compress_ratio > 1:" in shapes_src
+          and "a ratio-1 compressor is a plain projection" in shapes_src,
+          "the compressor's gate follows compress_ratio, not the boundary -- "
+          "on this config the two predict the same tensors and only one is the "
+          "reason")
+    check("# query side: every index source" in shapes_src
+          and "# key side: only where a compressor made KV to key against"
+          in shapes_src,
+          "the indexer's query side is on all index sources and its key side "
+          "only on the four that produce KV")
+    check('_fp8(h, h * len(cfg["dspark_target_layer_ids"]), "mtp.0.main_proj"'
+          in shapes_src
+          and '_bf16([1, h + mk], f"{last}.confidence_head.proj.weight"'
+          in shapes_src,
+          "the DSpark block is one block: an entry projection as wide as its "
+          "target layers on mtp.0, and the heads on the last")
+    shape_probe = open(os.path.join(REPO, "probes/dsv41_shape_plan.py"),
+                       encoding="utf-8").read()
+    check("list(plan[n][1]) != list(actual[n][1]) or plan[n][0] != actual[n][0]"
+          in shape_probe
+          and "missing = sorted(set(actual) - set(plan))" in shape_probe
+          and "extra = sorted(set(plan) - set(actual))" in shape_probe,
+          "the probe compares dtype and shape, and both set differences -- a "
+          "plan that omits a tensor and a plan that invents one are different "
+          "mistakes")
+
+    # -- what sparse_attn requires of topk_idxs. The kernel is TileLang and
+    #    not installed here, so the contract is enforced on the producing side.
+    #    The clause nothing else checks is RANGE: the gather has no upper
+    #    bound, so an id past kv's length is an out-of-bounds device read
+    #    rather than the masked zero it resembles.
+    sc_src = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                               "dsv41_sparse_contract.py"), encoding="utf-8").read()
+    check("if idxs.dtype is not torch.int32:" in sc_src
+          and "bad = idxs[(idxs < 0) & (idxs != SENTINEL)]" in sc_src
+          and "over = idxs[idxs >= kv_len]" in sc_src,
+          "all three clauses are enforced: INT32, -1 as the only sentinel, and "
+          "every other id inside kv")
+    check("def rows_all_sentinel(idxs):" in sc_src
+          and "Legal; report, do not reject" in sc_src,
+          "an all--1 row is legal -- the kernel seeds its running max with "
+          "-1e30 so such a row yields zeros instead of NaN, and a producer "
+          "that invents filler to avoid it is the one in the wrong")
+    sc_probe = open(os.path.join(REPO, "probes/dsv41_sparse_contract.py"),
+                    encoding="utf-8").read()
+    check("def pin_kernel(kernel_py: Path)" in sc_probe
+          and 'present = bool(re.search(r"idxs\\[\\w+\\]\\s*<\\s*\\w+", body))'
+          in sc_probe,
+          "the probe re-reads the clauses from the kernel source, including "
+          "the ABSENCE of a bound, so a vendor change fails rather than drifts")
+    check("walked = torch.where(idxs < 40, idxs + 80, SENTINEL).int()" in sc_probe,
+          "it exercises the case the reference's own guard does not cover: the "
+          "bound is compared BEFORE the offset is added")
+
     # -- the CED layer plan is derived from config ALONE and is held to
     #    predicting the checkpoint's tensor names. That is what makes it a plan
     #    rather than a transcription of what the weights happen to contain: a
