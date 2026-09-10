@@ -95,15 +95,23 @@ the same drive, so they were the contended case. The real-shard re-run is on an
 idle drive, and lands within 1% of them -- so neither the contention nor the
 shard size moves this verdict.
 
-**The drafted layer-1 row is conditional on something not yet shown to exist.**
-It assumes a DSpark loop that hands step N the draft ids for step N+1. V4.1's
-checkpoint ships MTP, not DSpark (`SPEC_METHOD=dspark` in the profile is
-inherited from GLM-5.3 and is not yet known to apply here), and no V4.1 path in
-vLLM drives one. Without that loop the layer-1 line is the 3.99 ms p95 above,
-which does not fit; layer 14 fits either way. What closes layer 1 is a step of
-cover from any source -- draft ids, chunked prefill lookahead, or moving the
-table -- and which of those is available is an open question, not a measured
-one.
+**The drafted layer-1 row assumes a loop, not a model.** The DRAFTER is not in
+question: V4.1 ships DSpark, and the `mtp.*` namespace is where it is stored.
+The checkpoint carries `mtp.N.markov_head.{embed,head}.weight`,
+`mtp.N.confidence_head.proj.weight` and `mtp.N.main_proj.weight` -- tensors
+that exist for no other reason -- across 3 stages, and `config.json` sets
+`dspark_block_size 5`, `dspark_target_layer_ids [37, 38, 39]`,
+`dspark_n_routed_experts 128`. So a draft token's ids ARE available a step
+early in principle.
+
+What is unwritten is the plumbing. The reference implements the block's
+forward and says so in its own comment -- "Only the forward pass is implemented
+here, nothing calls forward_spec" -- so even the reference does not drive a
+speculative loop, and vLLM has no V4.1 path at all. Until something hands step
+N the draft ids for step N+1, the layer-1 line is the 3.99 ms p95 above and
+does not fit; layer 14 fits either way. What closes layer 1 is a step of cover
+from any source -- draft ids, chunked prefill lookahead, or moving the table --
+and the first of those now has a drafter behind it.
 
 ## What is not established
 
