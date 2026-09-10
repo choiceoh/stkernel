@@ -77,6 +77,12 @@ SF6 FINALIZED42, 실제 Q0 serving proof도 통과했다. 17:28:30 KST에
 payload/terminal rc0으로 종료하고 점유를 해제했다. 점유 해제는 공개 서빙 복구의
 증명이 아니며 기본값 채택이나 전체 목표40% 달성을 뜻하지 않는다.
 
+이후 정상 idle controller의 공개 복구는17:44:18에 health200,
+17:49:22에 승인 source/controller `5e0216cf`의4rank 전체 검증 PASS를 확인했다.
+[복구 증거](measurements/glm53_ep_tiled_20260909/ep76_onepass9/recovery/README.md)는
+실험407과 별도이며 추가 성능 측정이 아니다. 마지막 controller의 `waiting` 및
+idle request counter 부재 사유도 공개 health PASS와 구분해 원문 보존했다.
+
 ## GLM53 EP2/TP2: 디코드 78.93 tok/s·프리필 손실, 기본값 보류 (2026-09-10)
 
 고정 소스 `c1c1c478145ab332a4e9cdf0850c25c66a60cd5e`, 정상 fleet

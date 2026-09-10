@@ -1,0 +1,51 @@
+{
+  "boot-binding.json": {
+    "original_bytes": 993,
+    "original_path": "/tmp/glm53-ep76-v9-public-boot-binding.json",
+    "original_sha256": "9cc1e30824bf498e09e244e15f3377eea8d90135ee2c60d426d935842da7de3b",
+    "stored_bytes": 993,
+    "stored_sha256": "9cc1e30824bf498e09e244e15f3377eea8d90135ee2c60d426d935842da7de3b"
+  },
+  "final-state.json": {
+    "original_bytes": 1444,
+    "original_path": "/tmp/glm53-ep76-v9-recovery-summary/glm53-ep76-v9-recovery-state-final.json",
+    "original_sha256": "ba1907c26a1b5c69c36a00ef692457b3015b2e23f6b78c9e3f5bc5580a1bf51d",
+    "stored_bytes": 1444,
+    "stored_sha256": "ba1907c26a1b5c69c36a00ef692457b3015b2e23f6b78c9e3f5bc5580a1bf51d"
+  },
+  "initial-health.json": {
+    "original_bytes": 2856,
+    "original_path": "/tmp/glm53-ep76-v9-public-readiness-9.json",
+    "original_sha256": "04471c66b3b76a223bbc0510162b29de1c400238a1fb7e5f5939faf8478ad770",
+    "stored_bytes": 2856,
+    "stored_sha256": "04471c66b3b76a223bbc0510162b29de1c400238a1fb7e5f5939faf8478ad770"
+  },
+  "previous-verifier.py.gz": {
+    "original_bytes": 33442,
+    "original_path": "/tmp/glm53-ep76-v6-public-verify.py",
+    "original_sha256": "e43f3ed959822c44975b18dce50003f9d979298cdc3622dde93e3a71aaeaffa4",
+    "stored_bytes": 10973,
+    "stored_sha256": "5621e5fa6682bf0543459c54f7b377a9913d4181ba97ee5be55f37dd32735a4a"
+  },
+  "proof-binding.json": {
+    "original_bytes": 810,
+    "original_path": "/tmp/glm53-ep76-v9-public-full-proof-binding.json",
+    "original_sha256": "1d8e59d46b1f324111ec603db5d5f7854f5d3fda122c201d186160ffb28a2242",
+    "stored_bytes": 810,
+    "stored_sha256": "1d8e59d46b1f324111ec603db5d5f7854f5d3fda122c201d186160ffb28a2242"
+  },
+  "proof.json": {
+    "original_bytes": 13684,
+    "original_path": "/tmp/glm53-ep76-v9-public-full-proof.json",
+    "original_sha256": "593055ae6bc0f8b8304722ed260b0b88c8896c8d600bb05d5969bc56528560c9",
+    "stored_bytes": 13684,
+    "stored_sha256": "593055ae6bc0f8b8304722ed260b0b88c8896c8d600bb05d5969bc56528560c9"
+  },
+  "verifier.py.gz": {
+    "original_bytes": 33443,
+    "original_path": "/tmp/glm53-ep76-v9-public-verify.py",
+    "original_sha256": "750685963471f1be5ea10b5fd06549c0387de440c8cea200ec96ec119b888b0d",
+    "stored_bytes": 10978,
+    "stored_sha256": "66aa4a008e9642ad73ab511140ae759234d5543e65c4238ceb7abd19da77075b"
+  }
+}
