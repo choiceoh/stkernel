@@ -137,6 +137,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `tp_oneshot_ar` | 어느 모델이든 | 3 | ✓ | ● | ● | ● | ● |
 | `sched_decode_first` | 어느 모델이든 (AsyncScheduler 서브클래스; 모델·커널·형상 임포트 0) | 1 | ✓ | · | ● | ● | · |
 | `boot_stamps` | 어느 모델이든 (부팅 단계 계측) | 2 | ✓ | · | ● | ● | · |
+| `dsv41_vllm` | V4.1 을 vLLM 아키텍처로 등록 (transformers config 타입 + ModelRegistry + DSV4 모델 파생; 전부 신규 파일이라 이미지 불필요) | 5 | ✓ | · | ● | · | · |
 | `dsv41_model` | DeepSeek-V4.1 전용 (CED 층 계획·후보 인덱서·packed FP4 캐시·전체 텐서 형상·KV 컴프레서·rope·가중치 라우팅·sparse_attn 인덱스 계약·프리샤드 랭크 파일 적재·슬라이딩 윈도 KV 링; 명시적 reference opt-in) | 14 | ✓ | · | ● | · | · |
 | `dsv41_engram` | DeepSeek-V4.1 전용 (SSD 룩업표: 설정·I/O·해시·게이트) | 4 | ✓ | · | ● | · | · |
 | `dsv41_encoding` | DeepSeek-V4.1 전용 (V4.1 프롬프트 형식 파싱) | 1 | ✓ | · | ● | · | · |

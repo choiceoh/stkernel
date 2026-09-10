@@ -1,0 +1,9 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+# V4.1 as a vLLM architecture. All NEW files at the package root: adding an
+# architecture needs no preimage, which is why this profile can be brought up
+# without an image that knows about V4.1.
+dsv41_vllm.py	dsv41_vllm.py	absent
+dsv41_impl.py	dsv41_impl.py	absent
+dsv41_arch.py	dsv41_arch.py	absent
+zz_dsv41_arch.pth	zz_dsv41_arch.pth	absent
+dsv41_config.py	dsv41_config.py	absent
