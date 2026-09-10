@@ -149,24 +149,24 @@ class CompositeProofTests(unittest.TestCase):
 
 
 class WiringTests(unittest.TestCase):
-    def test_real_profile_loader_keeps_default_off_and_accepts_only_new_candidate_flags(self):
+    def test_real_profile_loader_selects_ep_and_preserves_explicit_tp_rollback(self):
         bash = shutil.which('bash')
         if bash is None: raise RuntimeError('Bash is required for the real profile loader')
-        keys = ('ENABLE_EP', KNOB, 'VLLM_GLM53_EP_PREFILL_LOCAL',
+        keys = ('ENABLE_EP', KNOB, 'SPEC_K', 'VLLM_GLM53_PREP_FUSED', 'VLLM_GLM53_TP_SF6_Q0', 'VLLM_GLM53_EP_PREFILL_LOCAL',
                 'VLLM_B12X_EP_ZERO_WEIGHT_MICRO', 'VLLM_B12X_EP_WARM_COMPACT')
         script = '''set -euo pipefail
 source "$1"
-ct_load_profile "$2" ENABLE_EP
+ct_load_profile "$2" ENABLE_EP SPEC_K
 shift 2
 for key in "$@"; do printf '%s=%s\\n' "$key" "${!key-}"; done
 '''
-        for overrides in ({}, {'ENABLE_EP': '1', KNOB: '1'}):
+        for overrides in ({}, {'ENABLE_EP':'0', KNOB:'0', 'VLLM_GLM53_TP_SF6_Q0':'1', 'SPEC_K':'5'}):
             result = subprocess.run([bash, '--noprofile', '--norc', '-c', script, 'ep-tiled-profile',
                 str(ROOT / 'launchers/lib/common-tp4.sh'), str(ROOT / 'profiles/glm53.env'), *keys],
                 env={'PATH': os.defpath, 'LC_ALL': 'C', **overrides},
                 text=True, capture_output=True, check=True, timeout=10)
             actual = dict(line.split('=', 1) for line in result.stdout.splitlines())
-            self.assertEqual(actual, {**dict.fromkeys(keys, '0'), **overrides})
+            self.assertEqual(actual, {**dict.fromkeys(keys, '0'), 'ENABLE_EP':'1', KNOB:'1', 'SPEC_K':'5', 'VLLM_GLM53_PREP_FUSED':'1', **overrides})
 
     def test_new_flag_alone_retains_the_existing_ep_mhc_single_reduction_guard(self):
         path = ROOT / 'overlay/modules/glm53_model/glm5next_model.py'

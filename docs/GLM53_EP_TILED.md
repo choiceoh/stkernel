@@ -1,9 +1,51 @@
 # EP tile-major decode and prefill
 
-This candidate retains EP4 expert ownership and shares one tile-major weight
+The GLM53 default retains EP4 expert ownership and shares one tile-major weight
 allocation between a dedicated static decode kernel and the EP-local prefill
-kernel. It is experimental and defaults off. Neither recovered decode speed
-nor retained prefill gains have been established for this implementation.
+kernel. SF6 scale compression and verified input preparation remain enabled,
+with DFlash K5. The accepted absolute decode target is 67 tok/s; this does
+not mean EP has matched TP decode speed.
+
+## Default acceptance (2026-09-10)
+
+Normal fleet session `eptiledprep0910v8`, frozen source
+`388aabdd79e874808262e15c0b974dc8ccca6f07`, measured **72.62743 tok/s**
+for EP across three complete fixed-1024 requests (72.33144 / 81.65081 /
+65.64184 tok/s). The acceptance contract uses the pooled rate, not the
+fastest repetition or a minimum per-request rate. TP measured 80.49311 tok/s;
+EP remains 9.8% below it. Both arms passed facts 18/18, Korean 0/8 and all
+required serving proof (TP 1/1, EP 2/2). The accepted user-selected absolute
+target does not establish relative non-regression or statistical superiority.
+
+| Prefill observation | TP B | EP A |
+|---|---:|---:|
+| 2K best-warm TTFT / tok/s | 0.838 s / 2539.12 | 0.708 s / 3004.23 |
+| 32K single-request TTFT / tok/s | 10.673 s / 3049.31 | 10.060 s / 3235.21 |
+| 128K single-request TTFT / tok/s | 41.168 s / 3122.79 | 39.443 s / 3259.40 |
+
+B retains `cold_compile=true`; A does not. The original prefill compatibility
+rule rejects this as a matched full-warm prefill comparison. The long-context
+values are individual observations, not an accepted steady-state speedup.
+The original decode judge also remains incomplete with one baseline sample.
+Neither limitation is erased by default adoption under the absolute target.
+
+The repaired workload evidence includes 26 fresh TP and 27 fresh EP
+preparation checkpoints, all zero drift. The final logged totals were
+1664 steps / 27 checks for TP and 1728 / 28 for EP. Startup checks were
+excluded from these fresh checkpoint counts. All four EP ranks passed the
+12-case actual-weight canary, changed-input graph replay and packed-only
+SF6 finalization of 42 layers. CPU admission passed 158 tests and 19 actual
+no-device lowerings; the default profile and explicit TP rollback passed
+14 additional focused tests.
+
+The profile changes only `ENABLE_EP=1`, `VLLM_GLM53_EP_TILED=1` and
+`VLLM_GLM53_TP_SF6_Q0=0`. Restore TP explicitly with
+`ENABLE_EP=0 VLLM_GLM53_EP_TILED=0 VLLM_GLM53_TP_SF6_Q0=1 SPEC_K=5`.
+The original [v8 records and verdicts](../measurements/glm53_ep_tiled_20260909/prep_onepass8/README.md)
+and [CPU admission](../measurements/glm53_ep_tiled_20260909/prep_cpu10/README.md)
+remain separate from the subsequent production recovery verification.
+
+## Implementation and preceding experiments
 
 The combined candidate keeps DFlash K5 and SF6. Native M1..32 maps
 global expert IDs inside the existing route-publication kernel, removing the
@@ -68,7 +110,7 @@ canaries and SF6 release passed on all four ranks, but every arm failed the
 existing Korean gate. The candidate also had lower observed fixed-decode
 throughput than the second baseline. It is not ready for default adoption.
 
-The latest BF16-scatter follow-up missed the user-selected absolute decode
+The preceding BF16-scatter follow-up missed the user-selected absolute decode
 target of 67 tok/s: warm TP B1 measured 72.9244 tok/s and EP A measured
 59.8872 tok/s over three complete fixed-1024 requests. Both passed facts
 18/18 and Korean 0/8. The matched warm prefill observations favored A, but
@@ -183,8 +225,8 @@ The decision run must compare same-source TP and EP-tiled arms with matched
 capacity/runtime settings, warm cache classification, the original quality
 checks, and direct 2K/32K/128K prefill TTFT/tok/s plus fixed-1024 decode tok/s.
 An old TP baseline or a component timing cannot establish non-regression.
-Default adoption remains conditional on both retained prefill improvement
-and resolved decode regression.
+For the acceptance decision, preserve the user's absolute decode target and
+the explicit prefill comparison limits documented above.
 
 ## First SF6 onepass result (2026-09-09)
 

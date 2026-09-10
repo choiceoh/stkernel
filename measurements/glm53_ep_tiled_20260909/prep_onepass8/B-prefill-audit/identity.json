@@ -1,0 +1,17 @@
+{
+  "captured_at": 1789000366.7813106,
+  "files": {
+    "boot.log": {
+      "path": "/home/choiceoh/glm53-logs/boot-EPTILEDPREP8B.log",
+      "sha256": "ce4ef4c0e3b33dd1efe7bb9a2e5ee3d2c4fdfda5106b65bb67789e6e21ce0e5f",
+      "bytes": 243475,
+      "mtime_ns": 1789000268036551163
+    },
+    "records.jsonl": {
+      "path": "/tmp/glm53-ep-prep-onepass-0910-8/onepass.jsonl",
+      "sha256": "ec04c47e19b35b70cba8ffdb495d95b539df000c9e8e8ee0e0552291658428c9",
+      "bytes": 59153,
+      "mtime_ns": 1789000268003652649
+    }
+  }
+}

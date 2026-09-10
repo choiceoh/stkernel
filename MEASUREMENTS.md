@@ -31,6 +31,34 @@
 8. **그리디 텍스트 diff 로는 판정하지 않는다** — 같은 구성의 두 부팅에서도 온도 0 응답이
    갈린다(28차 §8). 판정은 게이트와 브래킷이다.
 
+## GLM53 EP + 입력 준비: 67 tok/s 절대 목표 통과, 기본값 채택 (2026-09-10, PR #511)
+
+사용자가 지정한 채택 기준은 canonical fixed1024 ×3 **합산 67 tok/s**다.
+고정 소스 `388aabdd`, 정상 fleet `eptiledprep0910v8`의 TP B→EP A에서
+A는 **72.62743 tok/s**, B는 **80.49311 tok/s**였다. A 세 요청은
+72.33144/81.65081/65.64184이며 분자는 첫 토큰을 제외한 3069, 분모는
+세 decode 시간의 합이다. engine은 B22.34926/A19.86403 step/s다.
+양쪽 모두 사실18/18·한국어0/8, B PREP proof1/1 및 A EP/PREP proof2/2다.
+EP는 TP보다9.8% 느리다. 이번 채택은 사용자 지정 절대 기준이며, 기존
+baseline n1의 incomplete 판정을 덮거나 통계적 비열등성을 주장하지 않는다.
+
+PREP 첫 실행·매64 step 대조를 유지하면서 성공 로그를 각 대조 시점에
+남기도록 수정했다. 측정 구간의 새 checkpoint는 B26/A27개, drift0이다.
+EP4 실제 가중치12case·72candidate+72control/rank 및 SF6 42층 해제를
+확인했다. CPU158개·실제 no-device lowering19개, 기본값/TP 복귀14개 통과.
+native route fusion, SF6, K5, 입력 준비를 유지하고 EP1/TILED1/TPQ00만
+프로필에 반영한다. 직전 v7 A77.09304는 증거 로그 누락으로 UNPROVED였으며
+수치를 골라 쓰지 않고 이번 완전한 증거의72.62743을 채택 수치로 사용한다.
+
+프리필 A는2K best-warm0.708s/3004.23tok/s, 32K 단일10.060s/3235.21,
+128K 단일39.443s/3259.40이다. B는각각0.838s/2539.12,10.673s/3049.31,
+41.168s/3122.79였다. B `cold_compile=true`, A 미표시를 보존하며 전체
+warm-prefill 비교로 승격하지 않는다. 첫2K JIT 및128K 최초 scale-freeze도
+보존한다. 이 결과로 안정적인40% 프리필 개선을 주장하지 않는다.
+[원본과 판정](measurements/glm53_ep_tiled_20260909/prep_onepass8/README.md),
+[CPU](measurements/glm53_ep_tiled_20260909/prep_cpu10/README.md),
+[기본값과 복귀 방법](docs/GLM53_EP_TILED.md).
+
 ## GLM53 EP K3: engine 회복, 출력 67 tok/s 미달 (2026-09-10, PR #511)
 
 고정 소스 `6977199c`, 정상 fleet `eptiledk30910v6`에서 TP+SF6 K5 B0/B1

@@ -76,6 +76,13 @@ same-build CTA2/CTA4/CTA2 bracket had pooled step/s 21.752/21.962/21.892, so
 the candidate's +0.627% lies inside the baselines' own 0.641% spread.
 [Kernel, sanitizer and serving evidence](../measurements/glm53_input_cta_next_20260908/README.md).
 
+GLM53 selects EP4 MoE with `ENABLE_EP=1`, `VLLM_GLM53_EP_TILED=1` and
+`VLLM_GLM53_TP_SF6_Q0=0`, retaining K5 and `VLLM_GLM53_PREP_FUSED=1`.
+The canonical pooled decode result was 72.62743 tok/s against the operator's
+absolute 67 target; TP measured 80.49311 tok/s. Quality and required execution
+proof passed. This is not a relative non-regression or full-warm prefill claim.
+[Acceptance scope and explicit TP rollback](../docs/GLM53_EP_TILED.md).
+
 GLM53 MoE defaults to `VLLM_GLM53_B12X_STATIC_V2=t,r,sf6` (operator adoption,
 2026-09-09). SF6 losslessly packs scales for direct decode and prefill reads,
 then releases eligible raw scale Parameters and their aliases before profiling.
