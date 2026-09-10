@@ -85,6 +85,7 @@ def traces(*, wrong_a_slot=False, tasks=2):
             cutlass=types.SimpleNamespace(const_expr=bool, range_constexpr=range),
             cute=types.SimpleNamespace(copy=copy_tma),
             self=types.SimpleNamespace(a_ring=True, skip_a=False, skip_sf=False,
+                ep_decode_opt=False,
                 sf_pack=False, reform_sf_pack=True, sf1_packed_blocks=1,
                 sf1_block_bytes=2048, _sf_expand_stage=expand),
             a_pipeline=Pipeline('A', events), fc1_pipeline=Pipeline('B', events),
@@ -184,9 +185,11 @@ class EPTiledARingTests(unittest.TestCase):
                 self.assertEqual(actual.a_ring, sf6 and m<=8)
                 self.assertEqual(actual.word_unpack, sf6 and m<=8)
                 self.assertEqual(actual.scatter_bf16, sf6 and m<=8)
+                self.assertIs(actual.ep_decode_opt, False)
+                self.assertEqual((actual.ep_num_experts, actual.ep_intermediate_size), (72,2048))
                 self.assertEqual((actual.ep_route_mode,actual.ep_route_map_len,actual.ep_local_expert_offset),
                                  ('local',None,0))
-                self.assertEqual({k:v for k,v in vars(actual).items() if k not in ('a_ring','word_unpack','scatter_bf16','ep_num_tokens','ep_max_rows','ep_route_mode','ep_route_map_len','ep_local_expert_offset')},
+                self.assertEqual({k:v for k,v in vars(actual).items() if k not in ('a_ring','word_unpack','scatter_bf16','ep_num_tokens','ep_max_rows','ep_route_mode','ep_route_map_len','ep_local_expert_offset','ep_decode_opt','ep_num_experts','ep_intermediate_size')},
                                  {k:v for k,v in vars(reference).items() if k != 'a_ring'})
         with self.assertRaises(ValueError): ns['MoEStaticKernelV5'](16, 16, reform_sf_pack=True, a_ring=True)
 

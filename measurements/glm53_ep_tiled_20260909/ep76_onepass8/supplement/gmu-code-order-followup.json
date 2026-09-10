@@ -1,0 +1,43 @@
+{
+  "new_gpu_work": false,
+  "new_remote_reads": false,
+  "new_tests": false,
+  "not_resolved": [
+    "No proof of sufficient physical free memory, allocator success, safe transient peak, or fresh normal preflight acceptance at GMU0.60.",
+    "The fixed1056 override does not shrink physical KV allocation when GMU is lowered. All-rank actual1056/served capacity/readiness still require fresh evidence.",
+    "No inference that v9 boot, quality, performance or adoption has passed.",
+    "No retrospective change to v8 missing-A or B quality/cold/JIT classifications."
+  ],
+  "pinned_image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "pinned_image_receipt": {
+    "never_started": true,
+    "path": "pinned-image/receipt.json",
+    "sha256": "ccd124509c79b304f17902f4a3796c9937001b2f5ff5691e411004bbe13694eb"
+  },
+  "prior_review": {
+    "path": "gmu-original/audit.json",
+    "prior_statement": "Pinned kv_cache_utils original is absent locally, so max-length memory admission order relative to num_gpu_blocks_override is not verified. New head projected availableKV4.86GiB may be a separate boot admission constraint.",
+    "sha256": "a8c46da8af02e488412614ac77c673e01d3b02aee97279f07a23ea1843c6e465",
+    "unchanged": true
+  },
+  "resolved": [
+    "When num_gpu_blocks_override is supplied and worker groups are nonempty, override * bytes_per_block replaces profiled available_memory before auto-fit and maximum-length memory admission.",
+    "The unchanged explicit1056 override therefore supplies the effective capacity checked here; the projected4.86GiB raw profiling budget alone is not the separate pre-override max-length rejection claimed as a possibility in the earlier review.",
+    "Empty worker groups preserve the original value and are skipped by this per-worker capacity check."
+  ],
+  "reviewed_locally": true,
+  "schema": 1,
+  "service_changes": false,
+  "source": {
+    "function": "get_kv_cache_configs",
+    "max_length_memory_check_line": 2628,
+    "optional_auto_fit_line": 2619,
+    "override_capacity_line": 2616,
+    "override_read_line": 2603,
+    "path": "pinned-image/kv_cache_utils.py.gz",
+    "replace_available_memory_line": 2617,
+    "sha256": "624ea7b0244972cb6c53044588912dfea54f3d6a91661cbc423af27e3b5c4b86"
+  },
+  "source_scope": "Exact local files from the pinned image receipt; no current serving container claim.",
+  "verdict": "PRIOR_CODE_ORDERING_UNCERTAINTY_RESOLVED_ONLY"
+}

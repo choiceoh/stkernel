@@ -1,0 +1,24 @@
+{
+  "path": "/home/choiceoh/glm53-logs/boot-EPDECODE76B.log",
+  "before": {
+    "size": 361353,
+    "device": 66306,
+    "inode": 163351638,
+    "mtime_ns": 1789026688162525338
+  },
+  "after": {
+    "size": 361353,
+    "device": 66306,
+    "inode": 163351638,
+    "mtime_ns": 1789026688162525338
+  },
+  "read_bytes": 361198,
+  "read_sha256": "7ab82b002d4026d6baba5ca79b233818d60a41a30bdf9e294333af3ebbb1c3e5",
+  "record_path": "/tmp/glm53-ep76-onepass8-B-prefix.jsonl",
+  "record_sha256": "024a8de0de0abb28021c5f96fb76f754003e9dd1cb45cde91162e4cba1bf1a49",
+  "prefix_matched": true,
+  "after_matched": true,
+  "delta_bytes": 70787,
+  "delta_sha256": "f42d050504e77c8d2c08f8ca9da1956fcc93bb41b56462b412eaee277f125672",
+  "retained_file_scope": "Only first 361198 bytes read; prefix and after hashes match the canonical record. Retained copy inode is not required to equal live original inode."
+}

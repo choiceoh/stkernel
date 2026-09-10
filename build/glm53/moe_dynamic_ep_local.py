@@ -88,7 +88,26 @@ def scatter_add_weighted_bf16x8_to_f32(
     )
 
 
+from .glm53_ep_shard_geometry import ep_shard_geometry
+
+
 class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
+    # Raw and default SF6 entries retain the original one-warp Q0 producer.
+    q0_dual_warp = False
+
+    def _check_ep_shard_weights(self, w13, down, rows, *, sf6):
+        # Ordinary Python/CuTe host setup, never a staged dynamic raise.
+        if len(w13.shape) != 4 or len(down.shape) != 4:
+            raise ValueError("EP tiled operands must both be four-dimensional")
+        shard = ep_shard_geometry(int(rows.shape[0]), int(w13.shape[0]) // 2)
+        if getattr(self, "q0_dual_warp", False) and not (shard["hybrid"] and sf6):
+            raise ValueError("dual-warp Q0 requires the E144/I1024 SF6 shard")
+        if shard["hybrid"] and not sf6:
+            raise ValueError("Hybrid EP requires SF6")
+        if (tuple(w13.shape) != shard["cute_w13"]
+                or tuple(down.shape) != shard["cute_down"]):
+            raise ValueError("EP tiled shard weight geometry mismatch")
+
     def _setup_attributes(self, hidden_size):
         if hidden_size != 4096 or self.tile_shape_mnk != (128, 128, 128):
             raise ValueError("expert-local prefill requires H4096 and M128/N128/K128")
@@ -507,12 +526,18 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                             first_copy_bytes + second_copy_bytes,
                         )
 
-                # Each math warp owns one token with at most eight local
-                # routes, as required by the exact top8 dispatcher gate.
-                token_idx = batch_base + warp_idx
-                if warp_idx < producer_batch_tokens and token_idx < num_tokens:
-                    route_slot_base = warp_idx * Int32(32)
-                    if lane_id == Int32(0):
+                # The hybrid option keeps four staged rows, sharing each row
+                # between two math warps. Only the even warp's lane 0 allocates
+                # routes; the other warp consumes the same published slots.
+                q0_row_idx = warp_idx
+                q0_producer_lane = lane_id
+                if cutlass.const_expr(self.q0_dual_warp):
+                    q0_row_idx = warp_idx // Int32(2)
+                    q0_producer_lane = lane_id + (warp_idx & Int32(1)) * Int32(32)
+                token_idx = batch_base + q0_row_idx
+                if q0_row_idx < producer_batch_tokens and token_idx < num_tokens:
+                    route_slot_base = q0_row_idx * Int32(32)
+                    if q0_producer_lane == Int32(0):
                         topk_slot = Int32(0)
                         local_topk = Int32(0)
                         producer_first_gs = cutlass.Float32(0.0)
@@ -594,7 +619,18 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                             route_expert_ids_addr + (route_slot_base + Int32(31)) * Int32(4),
                             local_topk | (producer_scales_equal << Int32(4)),
                         )
-                    cute.arch.sync_warp()
+                    if cutlass.const_expr(not self.q0_dual_warp):
+                        cute.arch.sync_warp()
+
+                if cutlass.const_expr(self.q0_dual_warp):
+                    # Outside all token/warp/lane guards: both math warps,
+                    # inactive tail warps, and the DMA warp must arrive.
+                    # This publishes row/scale metadata only; the bulk wait
+                    # below still separately waits for the BF16 input copy.
+                    cute.arch.sync_threads()
+
+                if q0_row_idx < producer_batch_tokens and token_idx < num_tokens:
+                    route_slot_base = q0_row_idx * Int32(32)
                     q0_ready = q0_bulk_try_wait(q0_bulk_barrier_addr, q0_bulk_phase)
                     while q0_ready == Int32(0):
                         q0_ready = q0_bulk_try_wait(
@@ -615,11 +651,13 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                         route_scales_equal = route_state >> Int32(4)
 
                         sf_idx = lane_id
+                        if cutlass.const_expr(self.q0_dual_warp):
+                            sf_idx = q0_producer_lane
                         while sf_idx < sf_blocks_per_row:
                             block_start = sf_idx * Int32(16)
                             loaded_values = load_shared_bf16x16_to_f32x16(
                                 q0_input_stage_base_addr
-                                + warp_idx * cols * Int32(2)
+                                + q0_row_idx * cols * Int32(2)
                                 + block_start * Int32(2)
                             )
                             values = cute.make_rmem_tensor((16,), cutlass.Float32)
@@ -721,7 +759,10 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                     )
                                     scale_storage[scale_offset] = scale_byte
                                     cache_slot += Int32(1)
-                            sf_idx += Int32(32)
+                            if cutlass.const_expr(self.q0_dual_warp):
+                                sf_idx += Int32(64)
+                            else:
+                                sf_idx += Int32(32)
 
                 q0_bulk_phase = Int32(1) - q0_bulk_phase
 
@@ -818,11 +859,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         # divide the inner K512/K128 modes, so no tile crosses a storage chunk.
         # Reject mixed or different 4-D layouts before any TMA descriptor exists.
         if cutlass.const_expr(len(b_w13.shape) == 4 or len(b_down.shape) == 4):
-            if cutlass.const_expr(
-                b_w13.shape != (4096, 512, 8, 72)
-                or b_down.shape != (4096, 128, 16, 72)
-            ):
-                raise ValueError("expert-local tiled weights require E72/H4096/I2048 v5 views")
+            self._check_ep_shard_weights(b_w13, b_down, row_counts, sf6=False)
             b_w13 = cute.group_modes(b_w13, 1, 3)
             b_down = cute.group_modes(b_down, 1, 3)
         # Raw MMA scales keep their original logical shape, independent of the
@@ -990,10 +1027,21 @@ class MoEGatedEPLocalKernelSF6(MoEGatedEPLocalKernel, MoEGatedDynamicKernelSF6):
     ABI placeholders and are never made into descriptors or dereferenced here.
     """
 
-    def __init__(self, *args, reform_sf_pack: bool = True, **kwargs):
+    def __init__(self, *args, reform_sf_pack: bool = True,
+                 q0_dual_warp: bool = False, **kwargs):
         if reform_sf_pack is not True:
             raise ValueError("expert-local SF6 cannot fall back to raw scale storage")
+        if type(q0_dual_warp) is not bool:
+            raise TypeError("q0_dual_warp must be bool")
+        self.q0_dual_warp = q0_dual_warp
         super().__init__(*args, reform_sf_pack=True, **kwargs)
+        if q0_dual_warp and (
+                self.num_mma_warps != 8 or self.threads_per_cta != 288
+                or self.tile_shape_mnk != (128, 128, 128) or self.sf_vec_size != 16
+                or self.share_input_across_experts
+                or (self.activation, self.swiglu_alpha, self.swiglu_beta,
+                    self.swiglu_limit) != ("swigluoai_uninterleave", 1.0, 0.0, 10.0)):
+            raise ValueError("dual-warp Q0 requires the exact hybrid top8 producer geometry")
 
     @cute.jit
     def __call__(
@@ -1033,12 +1081,7 @@ class MoEGatedEPLocalKernelSF6(MoEGatedEPLocalKernel, MoEGatedDynamicKernelSF6):
     ):
         if cutlass.const_expr(scatter_output.element_type != cutlass.Float32):
             raise ValueError("expert-local SF6 scatter requires FP32 accumulation storage")
-        if cutlass.const_expr(
-            b_w13.shape != (4096, 512, 8, 72)
-            or b_down.shape != (4096, 128, 16, 72)
-            or row_counts.shape[0] != 72
-        ):
-            raise ValueError("expert-local SF6 requires tiled E72/H4096/I2048 weights")
+        self._check_ep_shard_weights(b_w13, b_down, row_counts, sf6=True)
         b_w13 = cute.group_modes(b_w13, 1, 3)
         b_down = cute.group_modes(b_down, 1, 3)
         self._check_sf6_shapes(b_w13, b_down, sfb1_packed, sfb2_packed)

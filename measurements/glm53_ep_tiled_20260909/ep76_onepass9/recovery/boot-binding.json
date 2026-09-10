@@ -1,0 +1,26 @@
+{
+  "boots": {
+    "0": {
+      "id": "f472d21255e0091d1b48cf646291328f3178d9865336e089052a523a150c0aa5",
+      "started_at": "2026-09-10T08:34:15.249939566Z"
+    },
+    "1": {
+      "id": "d863e7f1b2778b17245ecf4e8db7144f41b0978155ce257f34ceaad6bedf9aba",
+      "started_at": "2026-09-10T08:34:14.752739544Z"
+    },
+    "2": {
+      "id": "f9b3bd1f6c61a04ec47b2c9df7dbe13c5f2b619fc4d5b63f7331da5d53b259f1",
+      "started_at": "2026-09-10T08:34:14.755310576Z"
+    },
+    "3": {
+      "id": "0181fb064f1dc393804505dbcdf191addc03f0ac7aea7cb99bc325080632ad0f",
+      "started_at": "2026-09-10T08:34:14.702363683Z"
+    }
+  },
+  "source_verifier": "/tmp/glm53-ep76-v6-public-verify.py",
+  "source_sha256": "e43f3ed959822c44975b18dce50003f9d979298cdc3622dde93e3a71aaeaffa4",
+  "verifier": "/tmp/glm53-ep76-v9-public-verify.py",
+  "verifier_sha256": "750685963471f1be5ea10b5fd06549c0387de440c8cea200ec96ec119b888b0d",
+  "only_expected_boots_ast_changed": true,
+  "captured_at": 1789030149.7643871
+}

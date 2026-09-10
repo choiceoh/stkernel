@@ -31,6 +31,284 @@
 8. **그리디 텍스트 diff 로는 판정하지 않는다** — 같은 구성의 두 부팅에서도 온도 0 응답이
    갈린다(28차 §8). 판정은 게이트와 브래킷이다.
 
+## GLM53 EP2/TP2 Q0: 32K +11.27%, 디코드 72.51 tok/s로 미채택 (2026-09-10)
+
+고정 소스 `407271d9cf73f5db6192a8410c68f152e67301cb`, 정상 fleet
+`epdecode76onepass0910v9`에서 EP2/TP2 기준선 B와 Q0 dual-warp 후보 A의
+원패스를 완료했다. 양쪽 HYBRID1/SF6/K5/PREP1/OPT0이며 A만
+`VLLM_GLM53_EP_HYBRID_Q0_DUAL_WARP=1`이다. **32K 이득은 관측됐으나
+128K 이득은 없고, 디코드 목표76을 충족하지 못했다. Q0와 HYBRID 모두
+공개 기본값0을 유지한다.** 이전 v6의 EP4 비교와는 별도 실험이다.
+
+| 지표 | EP2/TP2 기준선 B | Q0 후보 A | 관측 변화 |
+|---|---:|---:|---:|
+| fixed1024 ×3 합산 출력 tok/s | 76.54038 | 72.50972 | −5.27% |
+| fixed 구간 합산 engine step/s | 21.53830 | 21.41215 | −0.59% |
+| 2K best-warm TTFT / 입력 tok/s | 0.788482s / 2698.86 | 0.784304s / 2713.24 | 입력 +0.53% |
+| 32K 단일 TTFT / 입력 tok/s | 12.370252s / 2630.91 | 11.116860s / 2927.54 | 입력 +11.27% |
+| 128K 단일 TTFT / 입력 tok/s | 40.801576s / 3150.83 | 41.130386s / 3125.65 | 입력 −0.80% |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 0/8 | 양쪽 통과 |
+| 실제 serving proof | 3/3 EP/PREP/HYBRID | 4/4, Q0 포함 | 양쪽 통과 |
+
+B 세 요청80.87967/72.55165/76.64205, A75.54754/76.10326/66.67989를
+모두 보존했다. 출력 속도는 첫 토큰 제외3069를 세 decode 시간 합으로 나눈다.
+순서별8개 요청 해시는 모두 같고 출력 해시는 모두 다르다. static decode 코드는
+동일하지만 그것만으로 출력 처리량 무회귀를 보장하지 않는다. 전체 원패스의
+투기 수용률51.06%→48.59%는 fixed 요청별 수용률이 아니므로 디코드 손실의
+원인을 확정하는 근거로 쓰지 않는다. 한 쌍이고 긴 입력은 각1회라 canonical
+판정은 noise floor 부재로 `incomplete`다. 양쪽 `cold_compile` 필드는 없으며,
+필드 부재를 측정 중 JIT가 없다는 증거로 해석하지 않는다. 실제 head log의
+측정 구간 차분에는 양쪽 동일하게 첫2K 요청6개와 fixed rep0의 gumbel1개,
+총7개 JIT 경고가 있다. 32K 구간에는 양쪽 모두 해당 경고가 없어 비대칭
+컴파일이32K 차이를 설명한다는 기록 근거는 없다. 로거의 전체 탐지 범위까지
+검증한 것은 아니므로 경고가 없는 구간의 모든 JIT 부재를 단정하지 않는다.
+
+모든4rank에서 같은 이미지와73개 mounted source, 실제 GMU0.60 및 KV block1056,
+max-len1048576/seq4/batch8192를 확인했다. 노드별 환경 차이는 Q0 선택값뿐이다.
+메모리 설정은 양쪽 동일하며 앞선 실패한 v8 B를 기준선으로 재사용하지 않았다.
+v8은 B만 완료한 뒤 A 기동 전 메모리 관문에서 종료했고, B의 한국어1/8도
+그대로 실패로 보존했다. GMU 조정은 실제 KV 용량 감소나 메모리 절감 실측이 아니다.
+
+[구현·검증 범위](measurements/glm53_ep_tiled_20260909/EP2_TP2_Q0_DUAL_WARP.md),
+[원패스 원본](measurements/glm53_ep_tiled_20260909/ep76_onepass9/README.md),
+[앞선 부분 실행](measurements/glm53_ep_tiled_20260909/ep76_onepass8/README.md)을
+보존했다. CPU13은239 tests/9 fresh lowerings를 통과했고 네 rank startup canary와
+SF6 FINALIZED42, 실제 Q0 serving proof도 통과했다. 17:28:30 KST에
+payload/terminal rc0으로 종료하고 점유를 해제했다. 점유 해제는 공개 서빙 복구의
+증명이 아니며 기본값 채택이나 전체 목표40% 달성을 뜻하지 않는다.
+
+이후 정상 idle controller의 공개 복구는17:44:18에 health200,
+17:49:22에 승인 source/controller `5e0216cf`의4rank 전체 검증 PASS를 확인했다.
+[복구 증거](measurements/glm53_ep_tiled_20260909/ep76_onepass9/recovery/README.md)는
+실험407과 별도이며 추가 성능 측정이 아니다. 마지막 controller의 `waiting` 및
+idle request counter 부재 사유도 공개 health PASS와 구분해 원문 보존했다.
+
+## GLM53 EP2/TP2: 디코드 78.93 tok/s·프리필 손실, 기본값 보류 (2026-09-10)
+
+고정 소스 `c1c1c478145ab332a4e9cdf0850c25c66a60cd5e`, 정상 fleet
+`epdecode76onepass0910v6`에서 EP4 E72/I2048 B → EP2/TP2 E144/I1024 A를
+완료했다. 양쪽 SF6/K5/PREP1/OPT0이며 A만 `VLLM_GLM53_EP_HYBRID_TP2=1`이다.
+**디코드 목표76은 관측상 달성했지만 프리필 무회귀 조건은 충족하지 못했다.
+HYBRID 기본값0을 유지하고 기존 EP4를 대체하지 않는다.**
+
+| 지표 | EP4 기준선 B | EP2/TP2 후보 A | 관측 변화 |
+|---|---:|---:|---:|
+| fixed1024 ×3 합산 출력 tok/s | 74.10855 | 78.93348 | +6.51% |
+| fixed 구간 합산 engine step/s | 19.83751 | 21.33829 | +7.57% |
+| 2K best-warm TTFT / 입력 tok/s | 0.746899s / 2849.11 | 0.783517s / 2715.96 | 입력 −4.67% |
+| 32K 단일 TTFT / 입력 tok/s | 10.008524s / 3251.73 | 10.558120s / 3082.46 | 입력 −5.21% |
+| 128K 단일 TTFT / 입력 tok/s | 39.233580s / 3276.76 | 40.554412s / 3170.04 | 입력 −3.26% |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 0/8 | 양쪽 통과 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/HYBRID | 양쪽 통과 |
+
+B 세 요청74.87850/66.15997/83.25486, A77.85915/82.64748/76.54978을
+모두 보존했다. 합산 출력 속도는 첫 토큰을 제외한3069를 세 decode 시간의
+합으로 나눈 값이다. 순서별8개 요청 해시는 동일하고 출력 해시는 모두 다르다.
+사실·한국어 통과가 출력의 수치적 동일성을 뜻하지 않는다. 전체 원패스 수용률
+48.59931%→52.52985%는 fixed별 수용률이 아니며, engine 속도와 출력 속도는
+별도 지표로 유지한다.
+
+한 쌍의 B/A에서 디코드와 프리필의 교환 비용이 관측됐다. 짧은 디코드에서
+랭크별 작업 쏠림을 줄이는 분할이 긴 입력에서는 라우팅/Q0 준비를 중복시키는
+구조와 부합하지만, 해당 비용의 component timing이나 실제 라우팅 trace로
+원인을 분리한 결과는 아니다. B의 `cold_compile=true`, A의 필드 없음,
+2K 반복 best-warm 및32K/128K 각 단일 표본을 그대로 유지한다. 통계적
+무회귀/성능 채택을 주장하지 않으며 canonical verdict도 noise floor 부재로
+`unresolved` / `incomplete`다. 이전 빌드의 TP 수치와 직접 비교하지 않는다.
+
+[원패스 원본·실행 증거](measurements/glm53_ep_tiled_20260909/ep76_onepass6/README.md)는
+15:17:32 KST 종료, payload/terminal rc0 및 점유 해제를 보존한다. 모든4rank의
+첫 대상 layer에서12case, candidate72/stock72 비교와 SF6 FINALIZED42를
+통과했다. rank-local canary는 최종 distributed sum의 독립 증명이 아니다.
+[CPU11](measurements/glm53_ep_tiled_20260909/ep76_cpu11/README.md)은
+217 tests 및 실제 fresh lowering8개를 통과했다. 앞선 CPU8/9/10의 관측기 실패는
+각각 shared-memory 추정치 표시, pointer dtype 접근, JSON 직렬화였으며 원본을
+별도 보존한다. 커널 성능 결과로 재해석하지 않는다.
+
+## GLM53 EP76 register-max: 69.52 tok/s·한국어 게이트 실패, 미채택 (2026-09-10)
+
+고정 소스 `ca076d35e64a6a19e90dffe54054269d1a5e1887`, 정상 fleet
+`epdecode76onepass0910v5`에서 같은 소스 EP B→EP A를 완료했다.
+양쪽 EP4/SF6/K5/PREP를 유지하고 A만 `VLLM_GLM53_EP_DECODE_OPT=1`이다.
+`glm53_ep_static_sf6_q1_register_max_v5`는 FC1 BF16 값을 레지스터에
+유지하고 작은 Q1의 반쪽 최대값만 기존 shared512B로 교환하는 후보다.
+**합산 출력69.51989 tok/s로 목표76 미달이며, 한국어1/8 게이트도 실패했다.
+채택하지 않고 OPT 기본값0을 유지한다.**
+
+| 지표 | EP 기준선 B | EP 후보 A |
+|---|---:|---:|
+| fixed1024 ×3 합산 tok/s | 76.80574 | 69.51989 |
+| fixed 구간 합산 engine step/s | 19.99353 | 19.73476 |
+| 2K best-warm TTFT / 입력 tok/s | 0.711161s / 2992.29 | 0.747535s / 2846.69 |
+| 32K 단일 TTFT / 입력 tok/s | 11.705526s / 2780.31 | 10.148737s / 3206.80 |
+| 128K 단일 TTFT / 입력 tok/s | 66.927469s / 1920.87 | 39.210135s / 3278.72 |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 1/8 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B 세 요청74.59396/78.11939/77.80435, A80.99978/69.93406/60.57588을
+모두 보존했다. 첫 토큰을 제외한3069를 세 decode 시간 합으로 나눈 값이다.
+출력 속도 차이는 관측상−9.48607%, engine 차이는−1.29427%다. 한 쌍의
+관측을 통계적 유의성이나 native kernel 단독 효과로 해석하지 않는다.
+순서별 요청 해시는 같고8개 출력 해시는 모두 다르다. 전체 원패스 수용률
+54.05797%→48.90511%는 fixed별 수용률이 아니다. A fixed rep0의 reasoning에
+`Halvorsen博士`가 포함돼 한자2자, 한국어1/8로 판정됐으며 content는0자다.
+원본 judge `invalid` / `GATE FAIL: korean 1/8`,13:45:04 KST 종료코드4와
+점유 해제를 보존한다. 양쪽4rank canary/SF6 및 fresh PREP·OPT 증거 통과가
+품질 실패나 절대 목표 미달을 대신하지 않는다.
+
+긴 프리필의 B 지연은 별도 이상 관측이다. v4 B9.9659s/39.3263s 대비
+v5 B11.7055s/66.9275s로 늘었지만 입력 토큰과8개 요청 해시는 동일했다.
+보존된 B head 로그만 읽은 감사에서 해당 구간의 새 JIT·graph capture·PREP
+plan·ERROR/DISARM/DRIFT는 발견되지 않았다. head OSAR 대기 표본은
+1354.5–2629.1µs로, 이전29.2–63.3µs보다 컸다. 다만 OSAR 행에는 타임스탬프가
+없고 가중 대기 합0.279671s는128K 증가27.6011s를 설명하지 못한다.
+peer 대기 증상만 확인됐으며 원인·외부 간섭·정확한 요청별 귀속은 미입증이다.
+B의 `cold_compile=true`, A의 필드 없음과 긴 입력별 단일 표본을 유지한다.
+B를 제외하거나 재분류하지 않으며 matched warm-prefill 또는 후보의 프리필
+가속 주장으로 바꾸지 않는다. 감사 원본 B 로그의 SHA는
+`d61634daff8413786ce50cf000255f9c401b6da79e72ff490f47f533bf37d255`이고
+[v5 원패스 아카이브](measurements/glm53_ep_tiled_20260909/ep76_onepass5/README.md)에
+측정·실패 판정과 함께 보존됐다.
+
+[CPU7](measurements/glm53_ep_tiled_20260909/ep76_cpu7/README.md)은183 tests와
+23 lowering, 실제 CuTe `partition_D`/flat-register 및 R0..8 소유권 witness,
+CUDA 미초기화·마지막 runtime identity 대조를 통과했다. 네 OPT 변형 모두
+REG128·STACK8·LOCAL0, dynamic98304+static1024=shared99328B다.
+이전 global STACK0를 이번 결과로 옮겨 적지 않는다. staging byte budget을
+줄인 구조가 실제 decode 이득으로 이어지지 않았으며, 정적 증명을 성능
+증거로 대체하지 않는다. 더 큰 구조 변경의 가능성은 별도 검토 중이고 아직
+측정하지 않았다. 기존 채택 EP 기본값과 앞선 실측 기록은 그대로 유지한다.
+
+## GLM53 EP76 Q1 pair: 72.68 tok/s, 긴 프리필 유지·목표76 미달 (2026-09-10)
+
+고정 소스 `4618859c90131b33c5d9ebd85a67f1537497a357`, 정상 fleet
+`epdecode76onepass0910v4`에서 EP B→EP A를 완료했다. 양쪽 EP4/SF6/K5/PREP를
+유지하고 A만 `VLLM_GLM53_EP_DECODE_OPT=1`이며, 작은 디코드 Q1의16값 블록을
+인접 두 lane이 나누는 `glm53_ep_static_sf6_q1_pair_v4` 후보다.
+**합산 출력72.68329 tok/s로 기준선70.57122 대비 관측상+2.99282%이나,
+절대 목표76은 미달했다. 기본값OPT=0을 유지한다.**
+
+| 지표 | EP 기준선 B | EP 후보 A |
+|---|---:|---:|
+| fixed1024 ×3 합산 tok/s | 70.57122 | 72.68329 |
+| fixed 구간 합산 engine step/s | 20.03988 | 20.12691 |
+| 2K best-warm TTFT / 입력 tok/s | 0.745s / 2856.03 | 0.710s / 2999.11 |
+| 32K 단일 TTFT / 입력 tok/s | 9.966s / 3265.63 | 9.950s / 3270.82 |
+| 128K 단일 TTFT / 입력 tok/s | 39.326s / 3269.03 | 39.450s / 3258.77 |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 0/8 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B 세 요청72.16725/69.95732/69.64218, A73.45801/74.31549/70.39480이며,
+3069를 세 decode 시간의 합으로 나눴다. engine 차이는+0.43425%로 작고,
+출력 속도 차이 전체를 Q1 커널 가속으로 귀속하지 않는다. 전체8요청의
+수용률은48.3513%→49.0519%이며 fixed별 수용률은 아니다. 순서별 요청 해시는
+동일하지만8개 출력 해시는 모두 달랐다. 원본 judge는 baseline n1의
+`incomplete`/`unresolved`이며 추가 표본을 요구했다. 이 상태를 통계적 개선
+판정으로 바꾸지 않는다.
+
+32K 관측+0.1590%,128K−0.3137%로 긴 프리필은 거의 유지됐다. 디코드 개선과
+프리필 손실이 필연적이라는 근거는 아니다. B `cold_compile=true`, A 필드 없음,
+각 긴 입력 단일 표본을 보존하며 matched warm-prefill 성능 주장으로 바꾸지 않는다.
+정상 종료코드0, GPU 점유 해제, 양쪽4rank ready 및 원본 판정/응답/구간은
+[원패스 원본](measurements/glm53_ep_tiled_20260909/ep76_onepass4/README.md)에 있다.
+
+CPU5(`48df5117`)는183 tests 중 baseline AST 추출기의 낡은 분기 수 검사2개가
+실패했다. 23 lowering 성공과 최종 CPU 실패를 분리해 보존한다.
+추출기를 실제 Q1 분기 구조에 맞춘 CPU6(`4618859c`)은183 tests·23 lowering,
+CUDA 미초기화 및 마지막 runtime identity 대조까지 통과했다. 두 실행69개
+PTX/cubin/resource는 바이트 동일하다. 실제 Q1 layout/소유권 receipt,128개
+참여 thread의3 shuffle, global M6 REG128·STACK0·LOCAL0을 확인했다.
+local M6 STACK8은 그대로 기록하며 모든 opt 경로가 stack0이라고 쓰지 않는다.
+[CPU5 실패](measurements/glm53_ep_tiled_20260909/ep76_cpu5_failed/README.md),
+[CPU6 통과](measurements/glm53_ep_tiled_20260909/ep76_cpu6/README.md).
+
+## GLM53 EP76 FC1 후속: 68.53 tok/s·한국어 게이트 실패, 미채택 (2026-09-10)
+
+고정 소스 `3fab1ce81a79936b3b76fa4d87b447d9f55bacba`, 정상 fleet
+`epdecode76onepass0910v3`에서 같은 소스 EP B→EP A를 완료했다.
+양쪽 EP4/SF6/K5/PREP를 유지하고 A만 `VLLM_GLM53_EP_DECODE_OPT=1`이다.
+앞선 FC2 변경은 원복하고, 작은 디코드의 FC1 SF6를 MMA register로 직접
+복원하는 후보를 측정했다. **A68.53325 tok/s로 목표76 미달이며,
+fixed rep0의 한자 혼입2자로 한국어1/8 게이트도 실패했다. 채택하지 않는다.**
+
+| 지표 | EP 기준선 B | EP 후보 A |
+|---|---:|---:|
+| fixed1024 ×3 합산 tok/s | 72.97741 | 68.53325 |
+| fixed 구간 합산 engine step/s | 19.90260 | 19.93309 |
+| 2K best-warm TTFT / 입력 tok/s | 0.756s / 2815.58 | 0.721s / 2951.34 |
+| 32K 단일 TTFT / 입력 tok/s | 10.253s / 3174.11 | 10.126s / 3214.15 |
+| 128K 단일 TTFT / 입력 tok/s | 39.283s / 3272.66 | 39.312s / 3270.24 |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 1/8 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B 세 요청80.41462/70.19200/69.31725, A62.91417/74.95916/68.78004다.
+첫 토큰을 제외한3069를 세 decode 시간 합으로 나눈 값이며, 느린 회차를
+제외하지 않았다. engine step/s는 거의 같아 register/barrier 절감이 실제
+엔진 속도 개선으로 이어졌다고 볼 수 없다. 전체8요청 수용률은 B51.0685%,
+A48.9939%이며 fixed별 수용률로 재라벨하지 않는다. 출력 차이의 원인과
+한자 혼입을 특정 kernel 수치 오류에 귀속할 근거는 아직 없다.
+
+이번32K/128K 관측은 프리필이 일관되게 줄어드는 모습이 아니다. 다만
+B `cold_compile=true`, A 필드 없음 및 긴 입력별 단일 표본을 유지하며
+matched warm-prefill 개선이나 상충관계의 인과 증명으로 바꾸지 않는다.
+원본 judge의 `GATE FAIL: korean 1/8`, 종료코드4, 양쪽4rank ready 증거,
+요청·응답 해시 및 모든 구간을 그대로 보존했다.
+[실측 원본과 판정](measurements/glm53_ep_tiled_20260909/ep76_onepass3/README.md).
+
+CPU3(`29daef8b`)와 CPU4(`3fab1ce8`)는 각각181 tests·23 lowering을 통과했다.
+실제 FC1 scale register layout2048B/2stage 검증과 opt4개 REG96·STACK0·LOCAL0,
+shared99328B는 실행 전 검증이며 성능·서빙 품질 통과를 의미하지 않는다.
+두 실행의69개 PTX/cubin/resource는 바이트가 같았다. 중간v2 제출은
+main 변경 누락으로 GPU 점유 전에 거절됐고, 정상 merge 및 CPU4 재검증 뒤
+v3를 실행했다. [CPU3](measurements/glm53_ep_tiled_20260909/ep76_cpu3/README.md),
+[CPU4](measurements/glm53_ep_tiled_20260909/ep76_cpu4/README.md),
+[v2 제출 거절](measurements/glm53_ep_tiled_20260909/ep76_submit2_failed/README.md)을
+따로 보존한다. 기본값 `EP_DECODE_OPT=0`을 유지한다.
+
+## GLM53 EP76 1차: 품질·실행 증거 통과, 76 tok/s 목표 미달 (2026-09-10)
+
+고정 소스 `b41d0da24059379d41c079626cc67c3e83cd14e3`, 정상 fleet
+`epdecode76onepass0910v1`에서 같은 소스의 EP B→EP A를 측정했다.
+양쪽 EP4/SF6/K5/PREP를 유지하고 A만 `VLLM_GLM53_EP_DECODE_OPT=1`이다.
+후보는 FC2 SF6 복원 버퍼 분리·실제16행 scatter metadata와 PREP 검증 시
+두 번째 snapshot clone 제거를 결합했다. **A71.78687 tok/s로 절대 목표76
+미달이므로 채택하지 않는다.** B72.76702 대비 관측 차이는−1.34697%다.
+기존 EP 기본값과 v8 채택 기록은 유지한다. FC1 후속 결과는 위 항목에 별도로 기록했다.
+
+| 지표 | EP 기준선 B | EP 후보 A |
+|---|---:|---:|
+| fixed1024 ×3 합산 tok/s | 72.76702 | 71.78687 |
+| fixed 구간 합산 engine step/s | 19.89587 | 18.72490 |
+| 2K best-warm TTFT / 입력 tok/s | 0.709s / 3001.52 | 0.749s / 2841.01 |
+| 32K 단일 TTFT / 입력 tok/s | 10.070s / 3231.86 | 9.947s / 3271.83 |
+| 128K 단일 TTFT / 입력 tok/s | 40.178s / 3199.74 | 39.244s / 3275.87 |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 0/8 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B 세 요청76.38589/76.49326/66.38786, A72.44182/72.30024/70.64654다.
+분자는 첫 토큰을 제외한3069, 분모는 세 decode 시간의 합이다. 원본 판정은
+baseline n1의 `incomplete`/`unresolved`로 보존한다. 목표 미달은 명확하지만
+이 한 쌍으로 통계적 회귀·개선이나 병목 원인을 확정하지 않는다. engine은
+별도 fixed metric window이며 전체 onepass 수용률과 같은 구간이 아니다.
+
+요청 해시는 순서대로 모두 같지만32K/128K 및 fixed 세 응답의 출력 해시는
+양쪽이 다르다. 긴 요청 출력 길이는32K B692/A1200,128K B1200/A474였고
+fixed는 모두1024다. B `cold_compile=true`, A 해당 필드 없음도 유지한다.
+32K/128K는 각각 단일 요청 관측이며 matched warm-prefill 우위로 바꾸지 않는다.
+4rank 양쪽 실제 가중치12case·72candidate+72stock/rank와 SF6 42층 해제가
+통과했다. fresh PREP checkpoint B26/A25·drift0, A clone 제거 실행 증거25개
+(마지막 fused1600)를 확인했으며 실행 증거를 속도 개선으로 해석하지 않는다.
+
+CPU1 소스 `680a899d`는181 tests 중 기존 fixture의 `_report_decode_opt`
+namespace 누락4 errors로 실패했다(0 failures/0 skips). 23 lowering은
+생성됐지만 최종 runtime 재검사는 없으며 실패 기록을 통과로 바꾸지 않는다.
+CPU2 측정 소스는181 tests·23 lowering·0 errors/failures/skips, CUDA 미초기화,
+마지막 runtime identity 재검사까지 통과했다.
+[CPU1 실패](measurements/glm53_ep_tiled_20260909/ep76_cpu1_failed/README.md),
+[CPU2 통과](measurements/glm53_ep_tiled_20260909/ep76_cpu2/README.md),
+[원본 원패스·판정](measurements/glm53_ep_tiled_20260909/ep76_onepass1/README.md),
+[후속 구현과 증거 범위](docs/GLM53_EP_TILED.md#follow-up-ep-decode-target-76-toks).
+
 ## GLM53 EP + 입력 준비: 67 tok/s 절대 목표 통과, 기본값 채택 (2026-09-10, PR #511)
 
 사용자가 지정한 채택 기준은 canonical fixed1024 ×3 **합산 67 tok/s**다.

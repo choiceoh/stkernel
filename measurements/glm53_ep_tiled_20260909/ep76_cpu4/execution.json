@@ -1,0 +1,30 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-tiled-0909-ring",
+  "revision": "3fab1ce81a79936b3b76fa4d87b447d9f55bacba",
+  "session": "epdecode76cpu0910v4",
+  "output": "/home/choiceoh/glm53-ep76-4-cpu-evidence",
+  "command": [
+    "env",
+    "REPO=/home/choiceoh/stkernel-ep-tiled-0909-ring",
+    "bash",
+    "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "epdecode76cpu0910v4",
+    "5",
+    "EP76 exact source-bound CPU contracts and kernel lowerings; no GPU devices",
+    "--",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "choiceoh@10.10.10.4",
+    "nice -n19 python3 -B /home/choiceoh/stkernel-ep-tiled-0909-ring/probes/run_glm53_ep_tiled_cpu.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --output /home/choiceoh/glm53-ep76-4-cpu-evidence --capsule-root /home/choiceoh/glm53-ep-cpu-0909-21/capsule --manifest-sha256 b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "started": 1789007758.625726,
+  "log": "/tmp/glm53-ep76-cpu4.log",
+  "scope": "Normal fleet CPU admission; no GPU devices or workload",
+  "returncode": 0,
+  "finished": 1789007909.871348
+}

@@ -1,0 +1,2 @@
+{"entry": "bench/chain.sh", "kind": "boot", "policy": "onepass-only"}
+PREPARE REFUSED (no GPU hold): candidate must include relevant changes from 8855a7c4673c0b6063442ba5d96ee2692ca6d2d3: build/glm53/glm53_fp8_dense.py, overlay/modules/glm53_model/glm53_fp8_dense.py

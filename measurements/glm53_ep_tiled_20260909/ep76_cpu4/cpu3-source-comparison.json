@@ -1,0 +1,76 @@
+{
+  "cpu3_source": "29daef8b95f3dd098ba24b2fae61b322d70ecb38",
+  "cpu4_source": "3fab1ce81a79936b3b76fa4d87b447d9f55bacba",
+  "mounted_sources": {
+    "count": 22,
+    "changed": []
+  },
+  "contract_sources": {
+    "count": 44,
+    "changed": [
+      {
+        "path": "probes/glm53_ep_tiled_compile.py",
+        "cpu3_sha256": "79e025046b48a35d66c9228e6ffb519b291db1d54b0c71cdfbb809c7e81148c2",
+        "cpu4_sha256": "97f57e096c7ea5df67717d0a95cda51e1737eb4c29e8f055735532585e35e660"
+      },
+      {
+        "path": "probes/run_glm53_ep_tiled_cpu.py",
+        "cpu3_sha256": "a0cd78972fe9075883588a52db3046cf47b8b00e85e7dde33eb4dcead55af8af",
+        "cpu4_sha256": "366ce486160b18b4e8ec0c1426e5669ec3e7535c78efcfc412482a5642c3640d"
+      }
+    ]
+  },
+  "native_and_prep": [
+    {
+      "path": "overlay/modules/glm53_moe/moe_static_ep_tiled.py",
+      "identical": true,
+      "sha256": "f4435778e3248d0fee3cf373fb95800475c38e2354e59600943574ccff6a4583"
+    },
+    {
+      "path": "overlay/modules/glm53_runtime/glm53_prep_fused.py",
+      "identical": true,
+      "sha256": "e66daae3f0dee55fb5f4f42ea7409cd62dc42e395f559db0d7266873b638371c"
+    },
+    {
+      "path": "build/glm53/moe_static_ep_tiled.py",
+      "identical": true,
+      "sha256": "f4435778e3248d0fee3cf373fb95800475c38e2354e59600943574ccff6a4583"
+    },
+    {
+      "path": "build/glm53/glm53_prep_fused.py",
+      "identical": true,
+      "sha256": "e66daae3f0dee55fb5f4f42ea7409cd62dc42e395f559db0d7266873b638371c"
+    }
+  ],
+  "all_git_changed_paths": [
+    "build/glm53/glm53_fp8_dense.py",
+    "overlay/modules/glm53_model/glm53_fp8_dense.py",
+    "probes/glm53_ep_tiled_compile.py",
+    "probes/run_glm53_ep_tiled_cpu.py"
+  ],
+  "all_git_changed_sources": [
+    {
+      "path": "build/glm53/glm53_fp8_dense.py",
+      "cpu3_sha256": "c6d660e97dbb6a776cbb5e2b62bf3a7d4a31ef3b8dd0c8fd4896dc3d0851b7db",
+      "cpu4_sha256": "cf5f7a78cc886493cb688d5b9836d5adb34b046d2ad669da76ca8a016f0fa587"
+    },
+    {
+      "path": "overlay/modules/glm53_model/glm53_fp8_dense.py",
+      "cpu3_sha256": "c6d660e97dbb6a776cbb5e2b62bf3a7d4a31ef3b8dd0c8fd4896dc3d0851b7db",
+      "cpu4_sha256": "cf5f7a78cc886493cb688d5b9836d5adb34b046d2ad669da76ca8a016f0fa587"
+    },
+    {
+      "path": "probes/glm53_ep_tiled_compile.py",
+      "cpu3_sha256": "79e025046b48a35d66c9228e6ffb519b291db1d54b0c71cdfbb809c7e81148c2",
+      "cpu4_sha256": "97f57e096c7ea5df67717d0a95cda51e1737eb4c29e8f055735532585e35e660"
+    },
+    {
+      "path": "probes/run_glm53_ep_tiled_cpu.py",
+      "cpu3_sha256": "a0cd78972fe9075883588a52db3046cf47b8b00e85e7dde33eb4dcead55af8af",
+      "cpu4_sha256": "366ce486160b18b4e8ec0c1426e5669ec3e7535c78efcfc412482a5642c3640d"
+    }
+  ],
+  "binding_runtime_identical": true,
+  "scatter_helper_identical": true,
+  "scope": "FP8 dense source/generated startup memory accounting additions; pure register-layout validation is now also called after artifact transfer. Native EP and PREP bytes are identical. No runtime throughput equivalence is inferred."
+}

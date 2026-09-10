@@ -1,0 +1,27 @@
+{
+  "gpu_admitted": false,
+  "gpu_test_performed": false,
+  "original_startup_metadata": [
+    {
+      "before_after_same": true,
+      "captured_at": 1789025772.2506194,
+      "inode": 171608339,
+      "mtime_ns": 1789025131166113760,
+      "path": "/home/choiceoh/glm53-logs/fleet/launches/21ff235114646af3cd46e57cca3cd44dbd751d844f81586f9f5aa958773ecf21.511dc38a8ed84035874ddd0694b3be87.log",
+      "sha256": "e10e55754ac918d9e685c0d22e51706557a634f139afed61cd5767299b0cc277",
+      "size": 466,
+      "stored": "originals/startup.log"
+    }
+  ],
+  "private_inventory_sha256": "1eed8174c3561521af8ae25129d68ee9af320947ca59c62b0f00eeb9edc30e76",
+  "scope": "admission refusal and local incomplete CPU-only checks; no GPU test",
+  "submission": {
+    "accepted": false,
+    "launch_id": "511dc38a8ed84035874ddd0694b3be87",
+    "pid": 2312941,
+    "refusal": "candidate missing required relevant origin/main changes",
+    "returncode": 3,
+    "session": "epdecode76onepass0910v7",
+    "state": "startup-failed"
+  }
+}

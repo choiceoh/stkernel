@@ -45,6 +45,248 @@ The original [v8 records and verdicts](../measurements/glm53_ep_tiled_20260909/p
 and [CPU admission](../measurements/glm53_ep_tiled_20260909/prep_cpu10/README.md)
 remain separate from the subsequent production recovery verification.
 
+## Follow-up: EP decode target 76 tok/s
+
+`VLLM_GLM53_EP_DECODE_OPT=1` is an experimental, separately keyed extension
+to the accepted EP path. Its default remains 0: all four measured candidates
+missed the 76 tok/s target, and the FC1 and register-max candidates failed
+the Korean gate.
+Both comparison arms retain EP4, SF6, K5 and verified preparation; the
+candidate adds only this switch. The new absolute target is pooled
+fixed-1024 x3 decode >=76 tok/s, with the existing quality and direct
+2K/32K/128K prefill measurements. A historical 72.63 result does not replace
+the same-source EP baseline. Original cold-compile classifications and
+single-request long-prefill limitations remain visible.
+
+The measured register-max candidate targets BF16 activation staging before Q1 for
+SF6 M1..8 with at most eight actual expert rows. It retains those BF16-rounded
+values in the original FC1 output registers, exchanging only per-half maxima
+through512 bytes of the existing sC1 storage. Four-lane subgroups compute
+eight-value maxima; the original publication barrier makes both warp halves
+visible. Each half leader joins the maxima and applies the original scale
+math, then each lane converts its own pair to the existing FP4 layout.
+One half owns the scale byte. Larger actual expert-row counts retain the
+full scalar staging path.
+
+The cache tag is `glm53_ep_static_sf6_q1_register_max_v5`. The actual CuTe
+setup must prove the r2s `partition_D` coordinates and flat BF16 register
+indices agree, then verify max-scratch and packed/scale ownership for R0..8.
+A source-bound `q1_register_layout` receipt replaces the earlier pair-layout
+receipt. Peer-max loads explicitly use volatile shared reads with side effects
+so persistent items cannot reuse a prior item's value through compiler CSE.
+The accepted FC1/FC2 SF6 expansions and all existing barriers remain.
+
+For R8, the affected shared staging accounts for6144→1024 bytes per tile;
+this is an instruction/byte budget, not a timing forecast. The path adds
+four live F32 values per thread, duplicates scale work across two half leaders
+and uses16 Q1 shuffles versus the preceding pair path's3. Actual compiler
+resources, GPU numerics and throughput must decide whether those costs win.
+CPU admission and the v5 onepass are complete: the byte reduction did not
+produce a measured decode gain or meet the absolute target, as recorded below.
+
+Preparation keeps its first-use and every-64-step stock comparison. On
+the candidate's C=1/K5 verification steps it compares the cloned fused
+preimage directly with live stock views, eliminating only the second
+snapshot clone. Successful verification emits fresh workload checkpoints;
+turning the switch on alone does not prove this optimization ran.
+
+Both arms explicitly require EP and PREP proof even when their knob delta
+is empty. Candidate proof additionally requires the new native cache keys,
+unchanged large-shape selection and fresh verified clone-elimination
+checkpoints. The CPU gate includes the baseline's 19 lowerings plus four
+optimized local/global lowerings.
+
+### Q1 register-max result (2026-09-10)
+
+Frozen source `ca076d35e64a6a19e90dffe54054269d1a5e1887`, session
+`epdecode76onepass0910v5`, completed B→A at 13:45:04 KST with terminal rc4.
+Pooled fixed1024×3 output was **76.80574→69.51989 tok/s** (observed −9.48607%);
+the candidate missed 76 and remains default-off. B's three rates were
+74.59396/78.11939/77.80435, and A's were 80.99978/69.93406/60.57588.
+All three complete requests contribute to each pooled rate. Fixed-window
+engine speed was 19.99353→19.73476 step/s (−1.29427%). This single pair
+does not establish a statistically significant effect or attribute the
+output-rate difference entirely to the native kernel.
+
+Both arms passed facts18/18. B had Korean0/8; A had Korean1/8, with two CJK
+characters in `Halvorsen博士` in the reasoning channel of fixed rep0.
+The canonical judge remains `invalid` / `GATE FAIL: korean 1/8`.
+EP/PREP execution proof passed B2/2; EP/PREP/OPT passed A3/3, including
+fresh preparation checkpoints. Four-rank startup evidence and SF6 release
+passed. These proofs do not override the quality failure or missed target.
+Ordered request hashes match; all eight output hashes differ. Whole-onepass
+acceptance was 54.05797%→48.90511%, not a fixed-request acceptance count.
+
+| Prefill observation | EP baseline B | Register-max A |
+|---|---:|---:|
+| 2K best-warm TTFT / input tok/s | 0.711161 s / 2992.29 | 0.747535 s / 2846.69 |
+| 32K single-request TTFT / input tok/s | 11.705526 s / 2780.31 | 10.148737 s / 3206.80 |
+| 128K single-request TTFT / input tok/s | 66.927469 s / 1920.87 | 39.210135 s / 3278.72 |
+
+B retains `cold_compile=true`; A has no such field. The long contexts each
+have one request. B's long-prefill times were anomalously higher than v4 B
+(9.9659s/39.3263s), despite identical prompt tokens and all eight request
+hashes. A read-only audit of the retained B head log found no newly logged
+JIT, graph capture, PREP plan or ERROR/DISARM/DRIFT in the retained
+long-context log segment.
+It found head OSAR wait samples of 1354.5–2629.1µs versus historical
+29.2–63.3µs. Those lines have no timestamps; their weighted sum of 0.279671s
+cannot explain the 27.6011s 128K difference. This is a head-only peer-wait
+symptom, not evidence of its cause or external interference. No sample is
+excluded or reclassified, and these values establish no matched warm-prefill
+or prefill speedup claim.
+
+[CPU7](../measurements/glm53_ep_tiled_20260909/ep76_cpu7/README.md) passed
+183 tests and 23 no-device lowerings with all four actual register-layout
+witnesses, CUDA uninitialized, and final runtime identity recheck. Every
+optimized local/global variant reports REG128, STACK8, LOCAL0 and shared
+99,328 bytes (98,304 dynamic + 1,024 static). The prior global STACK0 result
+does not carry over. Reduced staging bytes and successful ownership proofs
+did not translate into a decode win. The complete measurements, hashes,
+ready receipts and original failed verdict remain in the
+[v5 archive](../measurements/glm53_ep_tiled_20260909/ep76_onepass5/README.md).
+The accepted EP defaults stay unchanged; larger structural alternatives
+remain under feasibility review and are unmeasured.
+
+### Q1 pair result (2026-09-10)
+
+The measured Q1 pair candidate restores the accepted in-place FC1 SF6 expansion and
+targets Q1, the FP4 conversion between FC1 and FC2. For at most eight valid
+expert rows, two adjacent warp lanes share each16-value scale block: each
+loads and converts eight values, while the leader computes the original
+scale and reciprocal. All128 MMA threads execute the three shuffles, even
+when their pair is inactive. The original fast or precise math mode and
+operand order are retained; more than eight expert rows use the original
+scalar body. FC1/FC2 scale expansion, pipeline barriers, scatter metadata
+and98304-byte dynamic storage remain the accepted baseline.
+
+The cache tag is `glm53_ep_static_sf6_q1_pair_v4`; M9+ and prefill keep their
+existing selection. CuTe setup must verify the actual sC1, packed A2 and
+SFA2 physical addresses, unique writes and single scale owner for R0..8.
+The source-bound CPU receipt records those layouts and coordinate digests
+and verifies the actual selected math mode before and after transfer.
+This historical pair implementation is distinct from the current register-max path.
+
+
+Frozen source `4618859c90131b33c5d9ebd85a67f1537497a357`, session
+`epdecode76onepass0910v4`, completed B→A at13:05:11 KST with terminal rc0.
+Pooled fixed1024×3 output was **70.57122→72.68329 tok/s** (+2.99282%), below76.
+Engine fixed-window speed was20.03988→20.12691 step/s (+0.43425%). Both arms
+passed facts18/18 and Korean0/8; execution proof was B2/2 and A3/3.
+A's three rates73.45801/74.31549/70.39480 are all retained. The original judge
+remains `incomplete`/`unresolved` with baseline n1, and the candidate is not adopted.
+
+32K input throughput was3265.63→3270.82 tok/s and128K3269.03→3258.77;
+TTFT was9.966→9.950s and39.326→39.450s. These long-prefill observations
+are nearly unchanged. B's `cold_compile=true`, A's absent field and each
+long context's single request prevent a matched warm-prefill claim.
+Ordered request hashes match, while all eight output hashes differ.
+The output-rate difference is not attributed entirely to Q1 kernel speed.
+
+CPU5 generated23 lowerings but failed two stale baseline-extractor tests.
+CPU6 corrected only that extractor and passed183 tests/23 no-device lowerings;
+the69 PTX/cubin/resource artifacts are byte-identical. Global M6 uses128
+registers and zero stack/local bytes, but local M6 retains8 stack bytes.
+Both original outcomes and actual CuTe Q1 address/ownership receipts remain
+in [CPU5](../measurements/glm53_ep_tiled_20260909/ep76_cpu5_failed/README.md),
+[CPU6](../measurements/glm53_ep_tiled_20260909/ep76_cpu6/README.md), and
+[the onepass archive](../measurements/glm53_ep_tiled_20260909/ep76_onepass4/README.md).
+
+### FC1 register result (2026-09-10)
+
+Frozen source `3fab1ce81a79936b3b76fa4d87b447d9f55bacba`, session
+`epdecode76onepass0910v3`, completed B→A at 12:11:10 KST. Pooled fixed1024×3
+decode was **72.97741→68.53325 tok/s**; fixed-window engine speed was
+19.90260→19.93309 step/s. A's three requests were62.91417/74.95916/68.78004,
+all retained. Facts passed18/18 in both arms, but A's first fixed response
+contained `Halvorsen博士` in the reasoning channel: Korean1/8, two CJK
+characters. The original judge is `GATE FAIL: korean 1/8`, terminal rc4.
+The quality gate is unchanged and the candidate is not adopted.
+That candidate used tag `glm53_ep_static_sf6_fc1_register_v2`, restoring
+packed SF6 bytes directly into the original MMA scale register layout.
+
+32K input throughput was3174.11→3214.15 tok/s and128K3272.66→3270.24;
+TTFT was10.253→10.126s and39.283→39.312s, respectively. These observations
+do not show a consistent loss of prefill speed. B's original
+`cold_compile=true` and A's absent field remain unchanged; each long
+context has one request and is not a matched warm-prefill performance claim.
+Both four-rank ready snapshots and required EP/PREP proofs passed; A also
+passed native selection and fresh PREP optimization proof. Those successes
+do not override the failed quality or absolute-throughput target.
+
+CPU3 and CPU4 each passed181 tests and23 no-device lowerings. Their69
+PTX/cubin/resource artifacts are byte-identical, including opt REG96,
+zero stack/local memory and99328 total shared bytes. This static result
+did not become an engine-speed gain. Source/layout evidence, output hashes,
+all timing windows, original judge and failure exit are retained in
+[the terminal archive](../measurements/glm53_ep_tiled_20260909/ep76_onepass3/README.md).
+
+### First EP76 result (2026-09-10)
+
+The first candidate used the separate FC2 source layout described below;
+it is separate from the FC1 register follow-up above.
+
+For SF6 M1..8, FC2 reads its packed scales from two separate shared-memory
+slots. Restored scale bytes therefore cannot overwrite another warp's
+unread packed bytes, removing one expansion barrier per FC2 stage. The
+post-expansion barrier and all producer/consumer releases remain. The
+scatter metadata cache uses its actual 16 rows instead of 128. This both
+removes unused stores and keeps dynamic shared storage at 100352 bytes;
+the compiler receipt must additionally verify static shared allocation
+<=1024 bytes and total <=101376 bytes. Baseline keys and M9+/prefill paths
+retain their preceding behavior. Arithmetic and lossless SF6 bytes are
+unchanged.
+
+
+Frozen source `b41d0da24059379d41c079626cc67c3e83cd14e3`, normal fleet
+session `epdecode76onepass0910v1`, completed the same-source EP B→A pair.
+The candidate measured **71.78687 tok/s**, versus baseline **72.76702 tok/s**
+(-1.34697%), and did not meet the absolute 76 target. The original judge
+remains `incomplete`/`unresolved` with one baseline; this observation does
+not establish a statistically significant regression or improvement.
+The candidate is not adopted. The accepted EP default and v8 evidence above
+remain unchanged.
+
+| Observation | EP baseline B | EP candidate A |
+|---|---:|---:|
+| Fixed-1024 pooled decode tok/s | 72.76702 | 71.78687 |
+| Fixed-window pooled engine step/s | 19.89587 | 18.72490 |
+| 2K best-warm TTFT / input tok/s | 0.709 s / 3001.52 | 0.749 s / 2841.01 |
+| 32K single-request TTFT / input tok/s | 10.070 s / 3231.86 | 9.947 s / 3271.83 |
+| 128K single-request TTFT / input tok/s | 40.178 s / 3199.74 | 39.244 s / 3275.87 |
+| Facts / Korean-dirty responses | 18/18 / 0/8 | 18/18 / 0/8 |
+| Required serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B's three fixed requests measured 76.38589/76.49326/66.38786 tok/s;
+A's measured 72.44182/72.30024/70.64654. Each pooled rate uses all 3069
+timed output tokens. The engine rate uses the separately recorded fixed
+metric windows. Whole-onepass acceptance counters are not those same windows.
+
+All ordered request hashes match. The 32K/128K and all three fixed output
+hashes differ across arms; long-request completion lengths were B692/A1200
+and B1200/A474 respectively. Fixed requests all completed exactly 1024
+tokens. B retains `cold_compile=true`; A has no such field. The long-context
+values each come from one request and do not establish matched warm-prefill
+superiority. Neither these differences nor the lower engine rate identify
+the cause of the observed throughput difference by themselves.
+
+Both arms passed all four ranks' 12-case actual-weight canary and SF6
+finalization. Native M4/6/8 used baseline global key23 or candidate key24;
+M12/16/24/32 retained key20. Fresh PREP checkpoints numbered B26/A25 with
+zero drift. A also recorded 25 verified clone-elimination checkpoints,
+ending at fused step1600; these prove execution, not performance improvement.
+
+The first CPU prerequisite failed at source `680a899d` with four existing
+test-fixture namespace errors for `_report_decode_opt`: 181 tests, zero
+failures and zero skips. Its 23 compiled artifacts remain failed-gate
+evidence, and no final runtime recheck is claimed. CPU2 at the measured
+source passed all 181 tests and 23 lowerings, with CUDA uninitialized and
+the final runtime identity rechecked. [CPU1 failure](../measurements/glm53_ep_tiled_20260909/ep76_cpu1_failed/README.md),
+[CPU2 pass](../measurements/glm53_ep_tiled_20260909/ep76_cpu2/README.md),
+and [original onepass records and verdicts](../measurements/glm53_ep_tiled_20260909/ep76_onepass1/README.md)
+preserve the separate outcomes. An FC1 follow-up is being prepared and has
+not yet been measured.
+
 ## Implementation and preceding experiments
 
 The combined candidate keeps DFlash K5 and SF6. Native M1..32 maps

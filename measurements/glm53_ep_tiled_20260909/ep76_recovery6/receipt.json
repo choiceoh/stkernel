@@ -1,0 +1,319 @@
+{
+  "approved_recovery_receipt": "/home/choiceoh/glm53-logs/fleet/validation/recovery-receipts/b2e54281e6fd5fb9daa2eda04887edaad9da1605a99c516c9faca79c9115cca2.json",
+  "controller_source": "5e0216cfdc83c3cce9fc6b7f70a28a5511824d64",
+  "evidence_sha256": {
+    "closure": "5c98a9b316fcb64638a7bf7471cd437a75f53dcbae327f0d12b9b3884eac5e22",
+    "full_public_proof": "cf948a8bbf3e07cb710e9735a09ba4b259e1c850b14ff2c3efe5a45a5ba89c3d",
+    "verifier": "e43f3ed959822c44975b18dce50003f9d979298cdc3622dde93e3a71aaeaffa4"
+  },
+  "nodes": [
+    {
+      "configuration": {
+        "candidate_options": {
+          "VLLM_GLM53_EP_DECODE_OPT": {
+            "actual": null,
+            "basis": "Exact approved EP4 source plus baseline startup keys; absent flags remain recorded as absent",
+            "effective": "0"
+          },
+          "VLLM_GLM53_EP_HYBRID_TP2": {
+            "actual": null,
+            "basis": "Exact approved EP4 source plus baseline startup keys; absent flags remain recorded as absent",
+            "effective": "0"
+          }
+        },
+        "ep_size": 4,
+        "prep": {
+          "execution_proved": false,
+          "kernel": "cuda",
+          "mode": "1",
+          "selfcheck_every": 64,
+          "shadow_every": 1
+        },
+        "spec_k": 5,
+        "spec_method": "dflash",
+        "tensor_parallel_size": 4
+      },
+      "created_at": "2026-09-10T06:23:18.580206074Z",
+      "id": "b58a3dba15c344bfa23ab24c8a729fe7f3d8aa4877704c3a35cec70d509d77b7",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "mounts": {
+        "count": 71,
+        "files_equal_approved": true,
+        "files_metadata_sha256": "9dfdaadd4b21fb4818cf03bd3cdc3af85a1ec0b3af39a8f637e4af7a47278bd1",
+        "manifest_sha256": "8d58020ab5a97773076707c07a2f229f49c46a6d37a7e2f1ad71a7c25638c121",
+        "mtimes_precede_start": true,
+        "readonly_exact": true
+      },
+      "node": "10.10.10.2",
+      "rank": 0,
+      "source": "5e0216cfdc83c3cce9fc6b7f70a28a5511824d64",
+      "started_at": "2026-09-10T06:23:18.649787695Z",
+      "startup": {
+        "actual_packed_owner": true,
+        "caller_preserved": true,
+        "canary_sha256": "86e6a33160eb0efcd0b4b8a63693e32a400b2e230bce010f74b76c5060c212db",
+        "candidate_checks": 72,
+        "cases": 12,
+        "completed_at": 1789021919.9648015,
+        "graph_finished": true,
+        "log_prefix_sha256": "8b4be7a945f8879e91e90094e5ca2b1a74080489eb17b1d29a87341c8c66f160",
+        "native_key_lengths": {
+          "12": 20,
+          "16": 20,
+          "24": 20,
+          "32": 20,
+          "4": 23,
+          "6": 23,
+          "8": 23
+        },
+        "sf6_finalized": {
+          "format": "sf6_v1",
+          "layers": 42,
+          "packed_bytes": 3604414464,
+          "packed_only": true,
+          "raw_bytes_released": 4756340736,
+          "storage_bytes_saved": 1151926272
+        },
+        "source_receipt_sha256": "46136b2f8d26acbf4e9f1d6e1d7e32549692df1e5c142b1008594dc410a97c62",
+        "started_at": 1789021541.360449,
+        "stock_control_checks": 72
+      },
+      "verdict": "PASS"
+    },
+    {
+      "configuration": {
+        "candidate_options": {
+          "VLLM_GLM53_EP_DECODE_OPT": {
+            "actual": null,
+            "basis": "Exact approved EP4 source plus baseline startup keys; absent flags remain recorded as absent",
+            "effective": "0"
+          },
+          "VLLM_GLM53_EP_HYBRID_TP2": {
+            "actual": null,
+            "basis": "Exact approved EP4 source plus baseline startup keys; absent flags remain recorded as absent",
+            "effective": "0"
+          }
+        },
+        "ep_size": 4,
+        "prep": {
+          "execution_proved": false,
+          "kernel": "cuda",
+          "mode": "1",
+          "selfcheck_every": 64,
+          "shadow_every": 1
+        },
+        "spec_k": 5,
+        "spec_method": "dflash",
+        "tensor_parallel_size": 4
+      },
+      "created_at": "2026-09-10T06:23:18.100632171Z",
+      "id": "9ff8100ca133f23d6156a3f56d60bd237c7681c2672e202b325dc4acc642f444",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "mounts": {
+        "count": 71,
+        "files_equal_approved": true,
+        "files_metadata_sha256": "a14b88b91220c7a07deaa1bf9a884e89e2fd3b58c8296d52aa65421dee312ea3",
+        "manifest_sha256": "8d58020ab5a97773076707c07a2f229f49c46a6d37a7e2f1ad71a7c25638c121",
+        "mtimes_precede_start": true,
+        "readonly_exact": true
+      },
+      "node": "10.10.10.1",
+      "rank": 1,
+      "source": "5e0216cfdc83c3cce9fc6b7f70a28a5511824d64",
+      "started_at": "2026-09-10T06:23:18.146859432Z",
+      "startup": {
+        "actual_packed_owner": true,
+        "caller_preserved": true,
+        "canary_sha256": "c5ac2d7cf69a802a17d5f742a74fd8dfc72715153a9e68ff1fa3424902c0d668",
+        "candidate_checks": 72,
+        "cases": 12,
+        "completed_at": 1789021914.8389916,
+        "graph_finished": true,
+        "log_prefix_sha256": "332258a301bfaf5cc20374b4735cf238f510b0b0343a6c8feff2020df6069591",
+        "native_key_lengths": {
+          "12": 20,
+          "16": 20,
+          "24": 20,
+          "32": 20,
+          "4": 23,
+          "6": 23,
+          "8": 23
+        },
+        "sf6_finalized": {
+          "format": "sf6_v1",
+          "layers": 42,
+          "packed_bytes": 3604414464,
+          "packed_only": true,
+          "raw_bytes_released": 4756340736,
+          "storage_bytes_saved": 1151926272
+        },
+        "source_receipt_sha256": "46136b2f8d26acbf4e9f1d6e1d7e32549692df1e5c142b1008594dc410a97c62",
+        "started_at": 1789021541.5912619,
+        "stock_control_checks": 72
+      },
+      "verdict": "PASS"
+    },
+    {
+      "configuration": {
+        "candidate_options": {
+          "VLLM_GLM53_EP_DECODE_OPT": {
+            "actual": null,
+            "basis": "Exact approved EP4 source plus baseline startup keys; absent flags remain recorded as absent",
+            "effective": "0"
+          },
+          "VLLM_GLM53_EP_HYBRID_TP2": {
+            "actual": null,
+            "basis": "Exact approved EP4 source plus baseline startup keys; absent flags remain recorded as absent",
+            "effective": "0"
+          }
+        },
+        "ep_size": 4,
+        "prep": {
+          "execution_proved": false,
+          "kernel": "cuda",
+          "mode": "1",
+          "selfcheck_every": 64,
+          "shadow_every": 1
+        },
+        "spec_k": 5,
+        "spec_method": "dflash",
+        "tensor_parallel_size": 4
+      },
+      "created_at": "2026-09-10T06:23:18.159743475Z",
+      "id": "4601c65a6acc8d12d0b9ff6be9437ecf09ed489072b76edce423f9fc2536f60a",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "mounts": {
+        "count": 71,
+        "files_equal_approved": true,
+        "files_metadata_sha256": "9162d3dd4261c54274557f8023b29b088d45bd777ddc2371567bd01b8139ef9d",
+        "manifest_sha256": "8d58020ab5a97773076707c07a2f229f49c46a6d37a7e2f1ad71a7c25638c121",
+        "mtimes_precede_start": true,
+        "readonly_exact": true
+      },
+      "node": "10.10.10.3",
+      "rank": 2,
+      "source": "5e0216cfdc83c3cce9fc6b7f70a28a5511824d64",
+      "started_at": "2026-09-10T06:23:18.208186331Z",
+      "startup": {
+        "actual_packed_owner": true,
+        "caller_preserved": true,
+        "canary_sha256": "07ca99ef081c10de51d6ba0dc315a144cbeabc58b04686de3466924801954291",
+        "candidate_checks": 72,
+        "cases": 12,
+        "completed_at": 1789021916.9510298,
+        "graph_finished": true,
+        "log_prefix_sha256": "329657e81053a522ef800a9c5f08e38bfdf6c2f639af03a98c0f839e49079740",
+        "native_key_lengths": {
+          "12": 20,
+          "16": 20,
+          "24": 20,
+          "32": 20,
+          "4": 23,
+          "6": 23,
+          "8": 23
+        },
+        "sf6_finalized": {
+          "format": "sf6_v1",
+          "layers": 42,
+          "packed_bytes": 3604414464,
+          "packed_only": true,
+          "raw_bytes_released": 4756340736,
+          "storage_bytes_saved": 1151926272
+        },
+        "source_receipt_sha256": "46136b2f8d26acbf4e9f1d6e1d7e32549692df1e5c142b1008594dc410a97c62",
+        "started_at": 1789021541.4295638,
+        "stock_control_checks": 72
+      },
+      "verdict": "PASS"
+    },
+    {
+      "configuration": {
+        "candidate_options": {
+          "VLLM_GLM53_EP_DECODE_OPT": {
+            "actual": null,
+            "basis": "Exact approved EP4 source plus baseline startup keys; absent flags remain recorded as absent",
+            "effective": "0"
+          },
+          "VLLM_GLM53_EP_HYBRID_TP2": {
+            "actual": null,
+            "basis": "Exact approved EP4 source plus baseline startup keys; absent flags remain recorded as absent",
+            "effective": "0"
+          }
+        },
+        "ep_size": 4,
+        "prep": {
+          "execution_proved": false,
+          "kernel": "cuda",
+          "mode": "1",
+          "selfcheck_every": 64,
+          "shadow_every": 1
+        },
+        "spec_k": 5,
+        "spec_method": "dflash",
+        "tensor_parallel_size": 4
+      },
+      "created_at": "2026-09-10T06:23:18.125047709Z",
+      "id": "5e0366e052a68d7883d74f5f18a3b9b7f0c89fd3f47029bd6137781a1e47c927",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "mounts": {
+        "count": 71,
+        "files_equal_approved": true,
+        "files_metadata_sha256": "a1b086ce66dd95ef493133f1660e12c63c80bbda3ccb84069cdaed8f5d2174b0",
+        "manifest_sha256": "8d58020ab5a97773076707c07a2f229f49c46a6d37a7e2f1ad71a7c25638c121",
+        "mtimes_precede_start": true,
+        "readonly_exact": true
+      },
+      "node": "10.10.10.4",
+      "rank": 3,
+      "source": "5e0216cfdc83c3cce9fc6b7f70a28a5511824d64",
+      "started_at": "2026-09-10T06:23:18.17361639Z",
+      "startup": {
+        "actual_packed_owner": true,
+        "caller_preserved": true,
+        "canary_sha256": "088a8830dbd563300864bf1bcbad97ed1ca015675dc4d21eaddb92722098350c",
+        "candidate_checks": 72,
+        "cases": 12,
+        "completed_at": 1789021922.6428344,
+        "graph_finished": true,
+        "log_prefix_sha256": "308d90c944a9a79b32d06b108a32f032060f3fa78aabee78d85c93a6b979f603",
+        "native_key_lengths": {
+          "12": 20,
+          "16": 20,
+          "24": 20,
+          "32": 20,
+          "4": 23,
+          "6": 23,
+          "8": 23
+        },
+        "sf6_finalized": {
+          "format": "sf6_v1",
+          "layers": 42,
+          "packed_bytes": 3604414464,
+          "packed_only": true,
+          "raw_bytes_released": 4756340736,
+          "storage_bytes_saved": 1151926272
+        },
+        "source_receipt_sha256": "46136b2f8d26acbf4e9f1d6e1d7e32549692df1e5c142b1008594dc410a97c62",
+        "started_at": 1789021542.1035578,
+        "stock_control_checks": 72
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "normal_recovery_closure": {
+    "holder": null,
+    "idle_phase": "waiting",
+    "idle_reason": "not idle: live serving lacks idle request counters: num_requests_running",
+    "idle_updated_at": 1789022051.4719276,
+    "observed_at": 1789022063.2743955,
+    "pointer_sha256": "09bcd97d8fe91cf03bb19f3040980574932be61e4e23c3d770baeefbf552a7ca",
+    "recovery_owner_present": false
+  },
+  "public_head_health": 200,
+  "schema": 1,
+  "scope": "Sanitized read-only public recovery verification. New current boot identities, approved source/image/mounts/startup numerics and GET health only. No inference, new performance acceptance, new PREP execution proof, restart or deployment.",
+  "source": "5e0216cfdc83c3cce9fc6b7f70a28a5511824d64",
+  "verdict": "PUBLIC_EP4_READY_VERIFIED",
+  "verified_finished_at": 1789022030.230672,
+  "verified_started_at": 1789022026.9765913
+}

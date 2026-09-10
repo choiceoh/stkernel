@@ -1,0 +1,317 @@
+{
+  "arm": "B",
+  "identity_sha256": "89071dbe84cac1d34543bd1f6444ab45a05d9dca7db5e27bdedc98b053e7e5c4",
+  "ranks": [
+    {
+      "canary_cases": 12,
+      "canary_receipt_sha256": "44b8b5a2887194214254075335ede4aeda9aab39a2df0b881495085352631f11",
+      "candidate_checks": 72,
+      "control_checks": 72,
+      "decode_opt": false,
+      "drop_weight_cache": "1",
+      "dynamic_key_lengths": [
+        21
+      ],
+      "hybrid": true,
+      "id": "393a9a5765cba052de853ea90162fa4476563f0a79e9d37be87675d887eb861d",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "loader_pins": 15,
+      "memory_observation": {
+        "actual_device_free_at_ready": null,
+        "configuration": {
+          "explicit_kv_cache_memory_bytes": false,
+          "gpu_memory_utilization": "0.60",
+          "max_model_len": 1048576,
+          "max_num_batched_tokens": 8192,
+          "max_num_seqs": 4,
+          "num_gpu_blocks_override": 1056
+        },
+        "kv_profile_available_gib": 5.42,
+        "kv_profile_line_sha256": "f356520f682f09a4063292160e6f5d4e8112723e4d7fa822d49d9a52a65286b5",
+        "reported_gpu_kv_cache_tokens": 2241490,
+        "scope": "Exact saved receipts and rounded log values at distinct startup times. No causal memory saving/reclaimed-RAM claim; no new live memory or free-device measurement.",
+        "startup_trim_after_bytes": {
+          "allocated": 71898309632,
+          "mem_available": 14676172800,
+          "reserved": 75008835584,
+          "vm_rss": 9672060928
+        },
+        "startup_trim_after_gib": {
+          "allocated": 66.9605188369751,
+          "mem_available": 13.668251037597656,
+          "reserved": 69.857421875,
+          "vm_rss": 9.007808685302734
+        },
+        "startup_trim_completed_at": 1789028301.5792851,
+        "worker_startup_profile": {
+          "cudagraph_gib": 0.51,
+          "free_on_startup_gib": 93.35,
+          "gpu_memory_utilization": 0.6,
+          "log_line_sha256": "6b3225449f67c5035629bfa2f173561ae2b2f3d9d8a533530a9e45c01bf50143",
+          "peak_activation_gib": 3.64,
+          "requested_budget_gib": 71.82,
+          "scope": "Worker logged startup/profiling values, rounded GiB; free_on_startup is not device free memory at ready/capture time.",
+          "total_device_gib": 119.69,
+          "weights_plus_nontorch_gib": 62.76
+        }
+      },
+      "native_key_lengths": {
+        "12": 23,
+        "16": 23,
+        "24": 23,
+        "32": 23,
+        "4": 26,
+        "6": 26,
+        "8": 26
+      },
+      "preparation_failure_marker_present": false,
+      "q0_dual_warp": false,
+      "rank": 0,
+      "serving_log_sha256": "355365731fd94d951ea50873fd4f47c29761d0be41b858a6c78226f5149720ef",
+      "sf6_finalized_layers": 42,
+      "source_entries": 14,
+      "source_mounts": 73,
+      "source_sha256": "b5d58f3aaedbf4d033e539da18d70d5c3319b9b7ab8f918cbe82eeeeb18cc8d7",
+      "spec_k": 5,
+      "started_at": "2026-09-10T08:08:28.735176036Z",
+      "startup_trim_complete": true
+    },
+    {
+      "canary_cases": 12,
+      "canary_receipt_sha256": "0cbda81642d172b44cefaf3c1ba92f69f5fd299c265b4e1ec0255a9adca0e442",
+      "candidate_checks": 72,
+      "control_checks": 72,
+      "decode_opt": false,
+      "drop_weight_cache": "1",
+      "dynamic_key_lengths": [
+        21
+      ],
+      "hybrid": true,
+      "id": "8aaf6fcca788abe622b90e8785e3ef5cd3c5992e619a31f91c7198e9b0e290df",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "loader_pins": 15,
+      "memory_observation": {
+        "actual_device_free_at_ready": null,
+        "configuration": {
+          "explicit_kv_cache_memory_bytes": false,
+          "gpu_memory_utilization": "0.60",
+          "max_model_len": 1048576,
+          "max_num_batched_tokens": 8192,
+          "max_num_seqs": 4,
+          "num_gpu_blocks_override": 1056
+        },
+        "kv_profile_available_gib": 6.57,
+        "kv_profile_line_sha256": "4903d1cc87d70c435c18a18ff6f4a1dcc9b41e793536dd18b4a5877afcc7202f",
+        "reported_gpu_kv_cache_tokens": null,
+        "scope": "Exact saved receipts and rounded log values at distinct startup times. No causal memory saving/reclaimed-RAM claim; no new live memory or free-device measurement.",
+        "startup_trim_after_bytes": {
+          "allocated": 71898141184,
+          "mem_available": 16408526848,
+          "reserved": 75010932736,
+          "vm_rss": 9598054400
+        },
+        "startup_trim_after_gib": {
+          "allocated": 66.96036195755005,
+          "mem_available": 15.281631469726562,
+          "reserved": 69.859375,
+          "vm_rss": 8.938884735107422
+        },
+        "startup_trim_completed_at": 1789028301.5065494,
+        "worker_startup_profile": {
+          "cudagraph_gib": 0.56,
+          "free_on_startup_gib": 95.37,
+          "gpu_memory_utilization": 0.6,
+          "log_line_sha256": "e086a25cf24e417cac02f73ed78169fbc80e4f548e209344669e3db84c51024e",
+          "peak_activation_gib": 3.64,
+          "requested_budget_gib": 72.98,
+          "scope": "Worker logged startup/profiling values, rounded GiB; free_on_startup is not device free memory at ready/capture time.",
+          "total_device_gib": 121.63,
+          "weights_plus_nontorch_gib": 62.76
+        }
+      },
+      "native_key_lengths": {
+        "12": 23,
+        "16": 23,
+        "24": 23,
+        "32": 23,
+        "4": 26,
+        "6": 26,
+        "8": 26
+      },
+      "preparation_failure_marker_present": false,
+      "q0_dual_warp": false,
+      "rank": 1,
+      "serving_log_sha256": "91424146ae3335873dafa2d40e7d40f1b207d726d886729ad844b18172ed5bb5",
+      "sf6_finalized_layers": 42,
+      "source_entries": 14,
+      "source_mounts": 73,
+      "source_sha256": "b5d58f3aaedbf4d033e539da18d70d5c3319b9b7ab8f918cbe82eeeeb18cc8d7",
+      "spec_k": 5,
+      "started_at": "2026-09-10T08:08:28.018219434Z",
+      "startup_trim_complete": true
+    },
+    {
+      "canary_cases": 12,
+      "canary_receipt_sha256": "3b8081119c633b2fcc066ac19df22f40d02fb53b8f23bea577f7e6eea8cf74f0",
+      "candidate_checks": 72,
+      "control_checks": 72,
+      "decode_opt": false,
+      "drop_weight_cache": "1",
+      "dynamic_key_lengths": [
+        21
+      ],
+      "hybrid": true,
+      "id": "372722ea8d779fc39ce01477dfc509e29d098c740a16d2538a178d7e0e66fe64",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "loader_pins": 15,
+      "memory_observation": {
+        "actual_device_free_at_ready": null,
+        "configuration": {
+          "explicit_kv_cache_memory_bytes": false,
+          "gpu_memory_utilization": "0.60",
+          "max_model_len": 1048576,
+          "max_num_batched_tokens": 8192,
+          "max_num_seqs": 4,
+          "num_gpu_blocks_override": 1056
+        },
+        "kv_profile_available_gib": 5.29,
+        "kv_profile_line_sha256": "e29ae9f1f13da3ff217398d8dbb048489de8f7399e19e5bc99bbc6a87c51d3d3",
+        "reported_gpu_kv_cache_tokens": null,
+        "scope": "Exact saved receipts and rounded log values at distinct startup times. No causal memory saving/reclaimed-RAM claim; no new live memory or free-device measurement.",
+        "startup_trim_after_bytes": {
+          "allocated": 71898141184,
+          "mem_available": 22534995968,
+          "reserved": 75008835584,
+          "vm_rss": 9627615232
+        },
+        "startup_trim_after_gib": {
+          "allocated": 66.96036195755005,
+          "mem_available": 20.987350463867188,
+          "reserved": 69.857421875,
+          "vm_rss": 8.966415405273438
+        },
+        "startup_trim_completed_at": 1789028301.5113146,
+        "worker_startup_profile": {
+          "cudagraph_gib": 0.36,
+          "free_on_startup_gib": 100.99,
+          "gpu_memory_utilization": 0.6,
+          "log_line_sha256": "088a15ec00c5b211e1040fec7193d9ac026634074e73b862223f82b4d364c5cb",
+          "peak_activation_gib": 3.64,
+          "requested_budget_gib": 71.78,
+          "scope": "Worker logged startup/profiling values, rounded GiB; free_on_startup is not device free memory at ready/capture time.",
+          "total_device_gib": 119.63,
+          "weights_plus_nontorch_gib": 62.84
+        }
+      },
+      "native_key_lengths": {
+        "12": 23,
+        "16": 23,
+        "24": 23,
+        "32": 23,
+        "4": 26,
+        "6": 26,
+        "8": 26
+      },
+      "preparation_failure_marker_present": false,
+      "q0_dual_warp": false,
+      "rank": 2,
+      "serving_log_sha256": "c28f1696931487fc4f8111f4c2c70b3c7ce0338aa25aa2c95d3ff9f322b4b087",
+      "sf6_finalized_layers": 42,
+      "source_entries": 14,
+      "source_mounts": 73,
+      "source_sha256": "b5d58f3aaedbf4d033e539da18d70d5c3319b9b7ab8f918cbe82eeeeb18cc8d7",
+      "spec_k": 5,
+      "started_at": "2026-09-10T08:08:28.033488923Z",
+      "startup_trim_complete": true
+    },
+    {
+      "canary_cases": 12,
+      "canary_receipt_sha256": "c458ae0450146aa2e91ce86ebbfe8e7d9ec9e915a299b84ee7c01373f3108f76",
+      "candidate_checks": 72,
+      "control_checks": 72,
+      "decode_opt": false,
+      "drop_weight_cache": "1",
+      "dynamic_key_lengths": [
+        21
+      ],
+      "hybrid": true,
+      "id": "3417ab2b927a1d79063f4ffc930852e9732ccafe2c470ff1ac74ef85b09e4c55",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "loader_pins": 15,
+      "memory_observation": {
+        "actual_device_free_at_ready": null,
+        "configuration": {
+          "explicit_kv_cache_memory_bytes": false,
+          "gpu_memory_utilization": "0.60",
+          "max_model_len": 1048576,
+          "max_num_batched_tokens": 8192,
+          "max_num_seqs": 4,
+          "num_gpu_blocks_override": 1056
+        },
+        "kv_profile_available_gib": 8.42,
+        "kv_profile_line_sha256": "6805581c41aa8bb023d25e5a1b2802e962ab3f3a922a00e450c9092aa30f7189",
+        "reported_gpu_kv_cache_tokens": null,
+        "scope": "Exact saved receipts and rounded log values at distinct startup times. No causal memory saving/reclaimed-RAM claim; no new live memory or free-device measurement.",
+        "startup_trim_after_bytes": {
+          "allocated": 71898141184,
+          "mem_available": 14669045760,
+          "reserved": 75008835584,
+          "vm_rss": 9606631424
+        },
+        "startup_trim_after_gib": {
+          "allocated": 66.96036195755005,
+          "mem_available": 13.661613464355469,
+          "reserved": 69.857421875,
+          "vm_rss": 8.94687271118164
+        },
+        "startup_trim_completed_at": 1789028301.483599,
+        "worker_startup_profile": {
+          "cudagraph_gib": 1.14,
+          "free_on_startup_gib": 91.75,
+          "gpu_memory_utilization": 0.6,
+          "log_line_sha256": "0685ba960e7089639756770a65f21956cb18888bbde5a6adbc7f8df83885c7da",
+          "peak_activation_gib": 3.64,
+          "requested_budget_gib": 72.98,
+          "scope": "Worker logged startup/profiling values, rounded GiB; free_on_startup is not device free memory at ready/capture time.",
+          "total_device_gib": 121.63,
+          "weights_plus_nontorch_gib": 60.92
+        }
+      },
+      "native_key_lengths": {
+        "12": 23,
+        "16": 23,
+        "24": 23,
+        "32": 23,
+        "4": 26,
+        "6": 26,
+        "8": 26
+      },
+      "preparation_failure_marker_present": false,
+      "q0_dual_warp": false,
+      "rank": 3,
+      "serving_log_sha256": "7575daaf384cee1a38fb64c058ce7c61a5b2506fe980cadf6de004d49cf1e56e",
+      "sf6_finalized_layers": 42,
+      "source_entries": 14,
+      "source_mounts": 73,
+      "source_sha256": "b5d58f3aaedbf4d033e539da18d70d5c3319b9b7ab8f918cbe82eeeeb18cc8d7",
+      "spec_k": 5,
+      "started_at": "2026-09-10T08:08:28.065158401Z",
+      "startup_trim_complete": true
+    }
+  ],
+  "revision": "407271d9cf73f5db6192a8410c68f152e67301cb",
+  "runtime_binding_sha256": "fdf4f919949074dda65b74b4f0530e2eeba52fcff453fb37d99649eb3e3468a8",
+  "scope": "Independent local verification of saved immutable ready prefixes only; no remote/inference/tests.",
+  "snapshot": "/tmp/glm53-ep76-onepass9-live-B-ready-393a9a5765cb",
+  "snapshot_helper_sha256": "659e6c475456b1386af91b8ef5916ddcfa376fff51ca2ea7cdd1e9073c722e4e",
+  "status": "PASS",
+  "unresolved": [
+    "Ready snapshot does not prove completed onepass rows or per-request counters.",
+    "Rank-local first-eligible-layer canaries do not independently prove final distributed output sum.",
+    "PREP fields here are configuration only; fresh execution/quality/performance remain canonical onepass evidence.",
+    "DROP_WEIGHT_CACHE1 proves configuration, not actual reclaimed RAM bytes.",
+    "No new live health/current container state is inferred after the saved capture.",
+    "Startup device-free and post-trim host available are different timestamps; actual ready device-free is not captured."
+  ],
+  "verified_at": 1789028483.155967
+}

@@ -1,0 +1,156 @@
+{
+  "collection_verdict": "ORIGINAL_PASS_EVIDENCE_REVALIDATED",
+  "cpu_verdict": "PASS",
+  "source_revision": "b36dc7f1b19e471fa3280536e244f1711311eaea",
+  "original_file_count": 29,
+  "original_bytes": 6438770,
+  "lowerings": 9,
+  "baseline_lowerings": 3,
+  "hybrid_lowerings": 6,
+  "hybrid_q0_control_lowerings": 1,
+  "hybrid_q0_candidate_lowerings": 1,
+  "contracts": {
+    "tests_run": 239,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "mounted_sources": 23,
+  "contract_sources": 84,
+  "cuda_initialized": false,
+  "binding_runtime_rechecked": true,
+  "contracts_process_isolated": true,
+  "strict_validate_artifacts": true,
+  "strict_validate_compile_matrix": true,
+  "frozen_validator_sha256": {
+    "probes/glm53_ep_tiled_compile.py": "4d0ef4ecc7fb94897b344f28971a9d5d1e09cdb6763e94356163278f58f2bdf6",
+    "probes/run_glm53_ep_tiled_cpu.py": "4c35d1ffb95ced8b46abc5b1bbf231fcd99f1ac09d6dcae2275f45ea2a81cb81",
+    "probes/glm53_ep_capsule_runtime.py": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7"
+  },
+  "resources": [
+    {
+      "arm": "baseline-static/M6-map288-i32",
+      "registers": 123,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "local_bytes": 0,
+      "estimated_shared_bytes": 98304,
+      "kernel_smem_capacity_bytes": 101376,
+      "dynamic_shared_bytes": null,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "baseline-static/M32-map288-i32",
+      "registers": 118,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "local_bytes": 0,
+      "estimated_shared_bytes": 101376,
+      "kernel_smem_capacity_bytes": 101376,
+      "dynamic_shared_bytes": null,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "baseline-dynamic/M8192",
+      "registers": 168,
+      "stack_bytes": 112,
+      "static_shared_bytes": 1024,
+      "local_bytes": 0,
+      "estimated_shared_bytes": null,
+      "kernel_smem_capacity_bytes": null,
+      "dynamic_shared_bytes": null,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-static/M6-local",
+      "registers": 123,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "local_bytes": 0,
+      "estimated_shared_bytes": 98304,
+      "kernel_smem_capacity_bytes": 101376,
+      "dynamic_shared_bytes": null,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-static/M6-map288-i32",
+      "registers": 123,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "local_bytes": 0,
+      "estimated_shared_bytes": 98304,
+      "kernel_smem_capacity_bytes": 101376,
+      "dynamic_shared_bytes": null,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-static/M32-local",
+      "registers": 118,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "local_bytes": 0,
+      "estimated_shared_bytes": 101376,
+      "kernel_smem_capacity_bytes": 101376,
+      "dynamic_shared_bytes": null,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-static/M32-map288-i32",
+      "registers": 118,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "local_bytes": 0,
+      "estimated_shared_bytes": 101376,
+      "kernel_smem_capacity_bytes": 101376,
+      "dynamic_shared_bytes": null,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-dynamic/M8192",
+      "registers": 168,
+      "stack_bytes": 112,
+      "static_shared_bytes": 1024,
+      "local_bytes": 0,
+      "estimated_shared_bytes": null,
+      "kernel_smem_capacity_bytes": null,
+      "dynamic_shared_bytes": null,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-q0-dynamic/M8192",
+      "registers": 168,
+      "stack_bytes": 112,
+      "static_shared_bytes": 1024,
+      "local_bytes": 0,
+      "estimated_shared_bytes": null,
+      "kernel_smem_capacity_bytes": null,
+      "dynamic_shared_bytes": null,
+      "total_shared_bytes": null
+    }
+  ],
+  "separate_prior_failures": {
+    "8": {
+      "path": "/tmp/glm53-ep76-cpu8-completed",
+      "cpu_verdict": "FAIL",
+      "inventory_sha256": "38389be9e180a3395908af39cf711df5bee9e61417e7aeb6414e183741a3c4c1",
+      "result_sha256": "ba515c3ddcd914fcbc748e37a8c8639543f1e9f3e4af6feca8220c73dc46b6bb"
+    },
+    "9": {
+      "path": "/tmp/glm53-ep76-cpu9-completed.private",
+      "cpu_verdict": "FAIL",
+      "inventory_sha256": "744ac5e56fd641fcd6eeb398d1a686b629a0feed138c93d451d55f3da402001c",
+      "result_sha256": "6c4d05048f082c17d952407c07cbcfb09a1b4b6d21f91976391c67025e0061d0"
+    },
+    "10": {
+      "path": "/tmp/glm53-ep76-cpu10-completed.private",
+      "cpu_verdict": "FAIL",
+      "inventory_sha256": "91991554c36bb6b0bbb6ffdc1cdfe4bdc95683582a7af03ca611febb5d1b518e",
+      "result_sha256": "d811eb21bfdee6ceb40ffdca5b60be75b4b1f064b598354a9562cfe4a3a104a1"
+    }
+  },
+  "result_sha256": "98c3d5882813430b7608662c13ee2bd41dc71e0bcee76142116755015f20a822",
+  "contracts_sha256": "ee476b3d4c8f3a251dcdfa672129bb7ebc90e3dbd23bf49d8b8d619f3a365686",
+  "compile_only": true,
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false
+}

@@ -317,7 +317,8 @@ def _served_speculation(boot_id, *, preparation=False):
             result.update(preparation_mode=env.get('VLLM_GLM53_PREP_FUSED'),
                 preparation_kernel=env.get('VLLM_GLM53_PREP_FUSED_KERNEL', 'cuda'),
                 shadow_every=env.get('VLLM_GLM53_PREP_FUSED_SHADOW_EVERY', '1'),
-                selfcheck_every=env.get('VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY', '64'))
+                selfcheck_every=env.get('VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY', '64'),
+                ep_decode_opt=env.get('VLLM_GLM53_EP_DECODE_OPT', '0'))
         return result
     except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError):
         return None  # Missing evidence never arms SPEC_K proof.
@@ -329,13 +330,40 @@ def build_record(args, revision):
                 prefill=[], quality={}, decode={}, korean={}, **metadata(from_args(args)))
 
 
-def _require_preparation(rec):
+def _require_execution_proof(rec, knob):
     # Defaults stay knobs={}; execution must still be proved. Seed a rejection
     # before collection so an exception cannot erase this requirement.
-    rec['required_proofs'] = ['VLLM_GLM53_PREP_FUSED']
-    rec['proof'] = {'VLLM_GLM53_PREP_FUSED': False}
-    rec['proof_ok'] = '0/1'
+    required = rec.setdefault('required_proofs', [])
+    if knob not in required:
+        required.append(knob)
+    proofs = rec.setdefault('proof', {})
+    proofs[knob] = False
+    rec['proof_ok'] = f"{sum(value is True for value in proofs.values())}/{len(proofs)}"
+
+
+def _require_preparation(rec):
+    _require_execution_proof(rec, 'VLLM_GLM53_PREP_FUSED')
     rec['preparation'] = dict(verdict='REJECTED', reason='preparation proof not completed')
+
+
+def _execution_proof_knobs(rec):
+    selected = [key for key, value in (rec.get('knobs') or {}).items()
+                if value not in ('0', '', 'off')]
+    for required in rec.get('required_proofs', []):
+        if required not in selected:
+            selected.append(required)
+    return selected
+
+
+def _require_observed_decode_opt(rec, launch):
+    # Nondefault lanes are already proved through knobs. An enabled default
+    # (or missing knob metadata) must independently retain the requirement.
+    # Do not add candidate-only requirements to a normal baseline pair: that
+    # would change its declared comparison scope.
+    knob = 'VLLM_GLM53_EP_DECODE_OPT'
+    if (isinstance(launch, dict) and launch.get('ep_decode_opt') == '1'
+            and (rec.get('knobs') or {}).get(knob) != '1'):
+        _require_execution_proof(rec, knob)
 
 
 def main() -> int:
@@ -379,7 +407,10 @@ def main() -> int:
     prove_prep = os.environ.get('ONEPASS_REQUIRE_PREP_FUSED') == '1'
     if prove_prep:
         _require_preparation(rec)
+    if os.environ.get('ONEPASS_REQUIRE_EP_TILED') == '1':
+        _require_execution_proof(rec, 'VLLM_GLM53_EP_TILED')
     prep_before = _served_speculation(rec.get('boot_id'), preparation=True) if prove_prep else None
+    _require_observed_decode_opt(rec, prep_before)
     prep_log_path = os.environ.get('MK_HEAD_LOG', '/home/choiceoh/glm53-logs/glm53.log')
     prep_prefix = None
     if prove_prep:
@@ -593,9 +624,7 @@ def main() -> int:
     # checked after the traffic above (serving markers appear only then).
     try:
         from proof import check as _proof_check
-        _kn = [kk for kk, vv in (rec.get("knobs") or {}).items() if vv not in ("0", "", "off")]
-        if prove_prep and 'VLLM_GLM53_PREP_FUSED' not in _kn:
-            _kn.append('VLLM_GLM53_PREP_FUSED')
+        _kn = _execution_proof_knobs(rec)
         if _kn:
             rec.update({kk: vv for kk, vv in _proof_check(
                 _kn, os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log"),
@@ -607,7 +636,7 @@ def main() -> int:
                     boot_id=rec.get('boot_id'), launch_before=prep_before, launch_after=prep_after,
                     exclusive=args.require_exclusive and not traffic_issues,
                     log_prefix=prep_prefix) if prove_prep else None).items()
-                if kk in ("proof", "proof_ok", "speculation", "preparation")})
+                if kk in ("proof", "proof_ok", "speculation", "preparation", "decode_optimization")})
     except Exception:
         pass
 

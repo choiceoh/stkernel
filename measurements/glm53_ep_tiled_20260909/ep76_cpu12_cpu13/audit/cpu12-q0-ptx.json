@@ -1,0 +1,264 @@
+{
+  "artifacts": {
+    "baseline": {
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        144,
+        4096,
+        1024,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1",
+        "glm53_ep2tp2_tiled_e144_i1024_v1"
+      ],
+      "cubin_sha256": "897d6229b09831de50718611af50fa3653bf43a47c404c2b83e60b8b366bad38",
+      "ptx_path": "/tmp/glm53-ep76-cpu12-q0-audit/baseline.ptx",
+      "ptx_sha256": "300e1df65779b9b27cccf19da1865c8b1c913471ea839548bde7df87d5892491",
+      "q0_dual_warp": false,
+      "resources": {
+        "dynamic_shared_bytes": null,
+        "estimated_shared_bytes": null,
+        "kernel_smem_capacity_bytes": null,
+        "local_bytes": 0,
+        "registers": 168,
+        "stack_bytes": 112,
+        "static_shared_bytes": 1024,
+        "total_shared_bytes": null
+      },
+      "specialization": {
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "SF6": true,
+        "argument_count": 36,
+        "dynamic_four_slice_groups": 2,
+        "intermediate_slices": 8,
+        "kernel_class": "MoEGatedEPLocalKernelSF6",
+        "math_warps": 8,
+        "output_dtype": "float32",
+        "q0_batch_tokens": 4,
+        "q0_dual_warp": false,
+        "q0_warps_per_token": 1,
+        "requested_rows": 8192,
+        "tensor_shapes": {
+          "14": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "16": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "18": [
+            144
+          ],
+          "20": [
+            145
+          ],
+          "28": [
+            144,
+            256,
+            1552
+          ],
+          "29": [
+            144,
+            128,
+            1552
+          ]
+        },
+        "threads_per_cta": 288,
+        "top_k": 8
+      }
+    },
+    "candidate": {
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        144,
+        4096,
+        1024,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1",
+        "glm53_ep2tp2_tiled_e144_i1024_v1",
+        "glm53_ep2tp2_q0_dual_warp_v1"
+      ],
+      "cubin_sha256": "9c0a7a08ad95abdfa276130c6d8cff7010a913e68fbb97a628f9bdfdc57e2b42",
+      "ptx_path": "/tmp/glm53-ep76-cpu12-q0-audit/candidate.ptx",
+      "ptx_sha256": "9a6bd5ac8c6c0d5d0322f3a3a8364e1cf7d3454bc7c95def7ab67042cecf4b37",
+      "q0_dual_warp": true,
+      "resources": {
+        "dynamic_shared_bytes": null,
+        "estimated_shared_bytes": null,
+        "kernel_smem_capacity_bytes": null,
+        "local_bytes": 0,
+        "registers": 168,
+        "stack_bytes": 112,
+        "static_shared_bytes": 1024,
+        "total_shared_bytes": null
+      },
+      "specialization": {
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "SF6": true,
+        "argument_count": 36,
+        "dynamic_four_slice_groups": 2,
+        "intermediate_slices": 8,
+        "kernel_class": "MoEGatedEPLocalKernelSF6",
+        "math_warps": 8,
+        "output_dtype": "float32",
+        "q0_batch_tokens": 4,
+        "q0_dual_warp": true,
+        "q0_warps_per_token": 2,
+        "requested_rows": 8192,
+        "tensor_shapes": {
+          "14": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "16": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "18": [
+            144
+          ],
+          "20": [
+            145
+          ],
+          "28": [
+            144,
+            256,
+            1552
+          ],
+          "29": [
+            144,
+            128,
+            1552
+          ]
+        },
+        "threads_per_cta": 288,
+        "top_k": 8
+      }
+    }
+  },
+  "candidate_ptx_lines": {
+    "batch_claim_barrier": 1178,
+    "batch_loop_backedge": 2960,
+    "batch_loop_label": 1167,
+    "claim4": 1170,
+    "equal_scale_phys_row_load": 1941,
+    "equal_scale_row_offset_load": 1952,
+    "final_cta_barrier": 2962,
+    "first_gs_load": 1687,
+    "inactive_skip_after_barrier": 1667,
+    "input_bulk_copy": 1193,
+    "input_copy_acquire_wait": [
+      1669,
+      1675
+    ],
+    "metadata_cta_barrier": 1666,
+    "odd_warp_offset32_and_lane": [
+      1152,
+      1154
+    ],
+    "post_fence_cta_barrier": 2966,
+    "producer_and_inactive_skip_to_common_barrier": [
+      1200,
+      1206
+    ],
+    "publish_global_fence": 2964,
+    "reqntid_288": 53,
+    "route_state_load": 1681,
+    "route_state_store": 1663,
+    "sf_loop_backedge": 2955,
+    "sf_stride64": 2953,
+    "unequal_route_gs_load": 2110,
+    "unequal_scale_phys_row_load": 2106,
+    "warp_div2": [
+      1143,
+      1151
+    ]
+  },
+  "cpu_contracts": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "tests_run": 239
+  },
+  "fresh_lowerings": 9,
+  "limits": [
+    "Source locations are PTX file line numbers; no .loc debug mapping is present.",
+    "The post-Q0 comparison normalizes register and block-label identities and establishes structural identity, not whole-program equivalence.",
+    "PTX ordering does not prove final SASS ordering or GPU race freedom. Startup numerics, changed graph replay and canonical onepass remain required.",
+    "REG168/STACK112/LOCAL0 does not prove absence of spills. Actual dynamic and total shared allocation remain null in the CPU receipt.",
+    "No new compile, GPU, inference, runtime mutation, or performance claim."
+  ],
+  "original_archive": "/tmp/glm53-ep76-cpu12-completed.private/originals",
+  "ptx_observations": {
+    "additional_cta_barriers_per_live_batch": 1,
+    "debug_source_loc_present": false,
+    "metadata_load_hoist_or_previous_batch_reuse_observed": false,
+    "post_q0_baseline_tail_begin_line": 2951,
+    "post_q0_candidate_tail_begin_line": 2964,
+    "post_q0_tail_alpha_renamed_equal": true,
+    "post_q0_tail_noncomment_lines": 20635,
+    "q0_static_shared_s32_load_sites_baseline": 44,
+    "q0_static_shared_s32_load_sites_candidate": 44,
+    "replaced_warp_barriers_per_live_batch": 1,
+    "route_metadata_loads_remain_inside_batch_loop_after_metadata_barrier": true
+  },
+  "result_sha256": "98c3d5882813430b7608662c13ee2bd41dc71e0bcee76142116755015f20a822",
+  "source_observations": {
+    "changed_dynamic_methods": [
+      "MoEGatedEPLocalKernel._check_ep_shard_weights",
+      "MoEGatedEPLocalKernel.initialize_route_q0_and_publish",
+      "MoEGatedEPLocalKernelSF6.__init__"
+    ],
+    "compared_parent": "2153108509c4c8b9b0e31d19827fc20734d750cc",
+    "native_source_unchanged": true,
+    "sf6_compute_source_unchanged": true
+  },
+  "source_revision": "b36dc7f1b19e471fa3280536e244f1711311eaea",
+  "verdict": "NO_BLOCKER_IN_PTX_AND_SOURCE_SCOPE"
+}

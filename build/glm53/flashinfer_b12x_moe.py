@@ -1408,7 +1408,16 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._sf6_weight_views: Any | None = None
         self._sf6_generation: tuple | None = None
         self._sf6_finalized = False
+        # Preserve the layer-local loader proof before owner admission.
+        self._glm53_hybrid_loader_identity = getattr(
+            moe_config, "_glm53_hybrid_loader_identity", None)
+        self._glm53_hybrid_runtime_sources = getattr(
+            moe_config, "_glm53_hybrid_runtime_sources", None)
+        pc = moe_config.moe_parallel_config
+        self._glm53_ep_parallelism = (pc.tp_size, pc.tp_rank, pc.ep_size, pc.ep_rank)
         self._ep_tiled = read_b12x_ep_exact_bool("VLLM_GLM53_EP_TILED")
+        if self._glm53_hybrid_loader_identity is not None and not self._ep_tiled:
+            raise ValueError("hybrid EP loader requires the tiled SF6 owner")
         if self._ep_tiled:
             from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_tiled import (
                 validate_configuration,

@@ -1,0 +1,125 @@
+{
+  "canonical_record_reference": "verification.json",
+  "delivery": {
+    "context": "DURABLE_REPOSITORY_COPY",
+    "original_staging_inventory_sha256": "504c9a01f18d16c02b7b47240e50578aefa7206e5cee0e59fa9ed6a87a60b1cc",
+    "path": "delivery.json"
+  },
+  "files": {
+    "gmu-original/audit.json": {
+      "encoding": "raw",
+      "original_sha256": "a8c46da8af02e488412614ac77c673e01d3b02aee97279f07a23ea1843c6e465",
+      "original_size": 15216,
+      "path": "gmu-original/audit.json",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-retry-gmu060-review/audit.json",
+      "stored_sha256": "a8c46da8af02e488412614ac77c673e01d3b02aee97279f07a23ea1843c6e465",
+      "stored_size": 15216
+    },
+    "gmu-original/audit.md": {
+      "encoding": "raw",
+      "original_sha256": "d34d5ed491397bac7eabe659baeaff36978a2c051d2bc6959fea6faf9623743a",
+      "original_size": 2097,
+      "path": "gmu-original/audit.md",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-retry-gmu060-review/audit.md",
+      "stored_sha256": "d34d5ed491397bac7eabe659baeaff36978a2c051d2bc6959fea6faf9623743a",
+      "stored_size": 2097
+    },
+    "jit/audit.json": {
+      "encoding": "raw",
+      "original_sha256": "29468a038b67b2725f9abada66fd180d9e162ddf3def19f3846db2cb33fd04c0",
+      "original_size": 5972,
+      "path": "jit/audit.json",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-onepass8-B-jit-audit/audit.json",
+      "stored_sha256": "29468a038b67b2725f9abada66fd180d9e162ddf3def19f3846db2cb33fd04c0",
+      "stored_size": 5972
+    },
+    "jit/audit.md": {
+      "encoding": "raw",
+      "original_sha256": "10e62fde27d8f962f55be6a575eea0de9a7cea404e6ac01099779fd92edcecff",
+      "original_size": 1722,
+      "path": "jit/audit.md",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-onepass8-B-jit-audit/audit.md",
+      "stored_sha256": "10e62fde27d8f962f55be6a575eea0de9a7cea404e6ac01099779fd92edcecff",
+      "stored_size": 1722
+    },
+    "jit/log-prefix.raw": {
+      "encoding": "gzip",
+      "original_sha256": "2801c46f8e65f48bbaa7195998fb3d5c651a4bfdfc3b9b96d315695790b8cdd6",
+      "original_size": 290411,
+      "path": "jit/log-prefix.raw.gz",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-onepass8-B-jit-audit/log-prefix.raw",
+      "stored_sha256": "ba45065df8f75fe7c640e7820594f2fba99bb6659ad2b8b58b1e63d858af58a5",
+      "stored_size": 39268
+    },
+    "jit/log-through-after.raw": {
+      "encoding": "gzip",
+      "original_sha256": "7ab82b002d4026d6baba5ca79b233818d60a41a30bdf9e294333af3ebbb1c3e5",
+      "original_size": 361198,
+      "path": "jit/log-through-after.raw.gz",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-onepass8-B-jit-audit/log-through-after.raw",
+      "stored_sha256": "a130f6c1c448ccd46d6470eaf97c25d8f29800dfc7561d2ec662804d95c7e1dd",
+      "stored_size": 43543
+    },
+    "jit/onepass-delta.raw": {
+      "encoding": "gzip",
+      "original_sha256": "f42d050504e77c8d2c08f8ca9da1956fcc93bb41b56462b412eaee277f125672",
+      "original_size": 70787,
+      "path": "jit/onepass-delta.raw.gz",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-onepass8-B-jit-audit/onepass-delta.raw",
+      "stored_sha256": "acfe8737711da8746549222fc04f27e81250dcce48ca3b54bcecb3732b779864",
+      "stored_size": 4614
+    },
+    "jit/readback.json": {
+      "encoding": "raw",
+      "original_sha256": "c30a13fb7f0e8c770630f4ca9ab4374ab086359120c802f4a701fa2a9c8b8d31",
+      "original_size": 895,
+      "path": "jit/readback.json",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-onepass8-B-jit-audit/readback.json",
+      "stored_sha256": "c30a13fb7f0e8c770630f4ca9ab4374ab086359120c802f4a701fa2a9c8b8d31",
+      "stored_size": 895
+    },
+    "pinned-image/core.py": {
+      "encoding": "gzip",
+      "original_sha256": "86b8f3b3826504549ef8bea2e7fbf7553728339803abcb3e7d051d146963ff9c",
+      "original_size": 104047,
+      "path": "pinned-image/core.py.gz",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-kv-image-read/core.py",
+      "stored_sha256": "0d1d93049e7eab351f7d8c07b6be04e792045b648da5a955ba5d05051f19233b",
+      "stored_size": 25308
+    },
+    "pinned-image/kv_cache_utils.py": {
+      "encoding": "gzip",
+      "original_sha256": "624ea7b0244972cb6c53044588912dfea54f3d6a91661cbc423af27e3b5c4b86",
+      "original_size": 115187,
+      "path": "pinned-image/kv_cache_utils.py.gz",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-kv-image-read/kv_cache_utils.py",
+      "stored_sha256": "93f20c5980f52714bd47d8760e535838d295c9ad6d61618d04dd5b3403859ff0",
+      "stored_size": 28666
+    },
+    "pinned-image/receipt.json": {
+      "encoding": "raw",
+      "original_sha256": "ccd124509c79b304f17902f4a3796c9937001b2f5ff5691e411004bbe13694eb",
+      "original_size": 627,
+      "path": "pinned-image/receipt.json",
+      "redactions": [],
+      "source_private_path": "/tmp/glm53-ep76-kv-image-read/receipt.json",
+      "stored_sha256": "ccd124509c79b304f17902f4a3796c9937001b2f5ff5691e411004bbe13694eb",
+      "stored_size": 627
+    }
+  },
+  "followup": "gmu-code-order-followup.json",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "schema": 1,
+  "scope": "local analysis supplement; historical GPU log evidence, no new GPU validation",
+  "source_revision": "407271d9cf73f5db6192a8410c68f152e67301cb"
+}

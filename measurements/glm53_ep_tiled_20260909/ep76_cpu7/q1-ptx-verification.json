@@ -1,0 +1,354 @@
+{
+  "source": "ca076d35e64a6a19e90dffe54054269d1a5e1887",
+  "variants": [
+    {
+      "arm": "opt-static/M6-local",
+      "path": "opt-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+      "sha256": "6efec1fd172007f530866eff37204edceefa6e327c6b70484ab183a70c6e4828",
+      "total_shuffle_count": 19,
+      "shuffle_instructions": [
+        {
+          "line": 81,
+          "text": "shfl.sync.idx.b32 \t%r4, %r225, 0, 31, -1;"
+        },
+        {
+          "line": 92,
+          "text": "shfl.sync.idx.b32 \t%r233, %r232, 0, 31, -1;"
+        },
+        {
+          "line": 93,
+          "text": "shfl.sync.idx.b32 \t%r3, %r233, 0, 31, -1;"
+        },
+        {
+          "line": 1830,
+          "text": "shfl.sync.idx.b32 \t%r1503, %r3493, %r68, 31, -1;"
+        },
+        {
+          "line": 1835,
+          "text": "shfl.sync.idx.b32 \t%r1505, %r1504, %r69, 31, -1;"
+        },
+        {
+          "line": 1866,
+          "text": "shfl.sync.idx.b32 \t%r1522, %r3494, %r68, 31, -1;"
+        },
+        {
+          "line": 1870,
+          "text": "shfl.sync.idx.b32 \t%r1524, %r1523, %r69, 31, -1;"
+        },
+        {
+          "line": 1900,
+          "text": "shfl.sync.idx.b32 \t%r1532, %r3495, %r68, 31, -1;"
+        },
+        {
+          "line": 1904,
+          "text": "shfl.sync.idx.b32 \t%r1534, %r1533, %r69, 31, -1;"
+        },
+        {
+          "line": 1934,
+          "text": "shfl.sync.idx.b32 \t%r1542, %r3496, %r68, 31, -1;"
+        },
+        {
+          "line": 1938,
+          "text": "shfl.sync.idx.b32 \t%r1544, %r1543, %r69, 31, -1;"
+        },
+        {
+          "line": 2107,
+          "text": "shfl.sync.idx.b32 \t%r72, %r3497, %r71, 31, -1;"
+        },
+        {
+          "line": 2108,
+          "text": "shfl.sync.idx.b32 \t%r73, %r3498, %r71, 31, -1;"
+        },
+        {
+          "line": 2211,
+          "text": "shfl.sync.idx.b32 \t%r74, %r3499, %r71, 31, -1;"
+        },
+        {
+          "line": 2212,
+          "text": "shfl.sync.idx.b32 \t%r75, %r3500, %r71, 31, -1;"
+        },
+        {
+          "line": 2317,
+          "text": "shfl.sync.idx.b32 \t%r76, %r3501, %r71, 31, -1;"
+        },
+        {
+          "line": 2318,
+          "text": "shfl.sync.idx.b32 \t%r77, %r3502, %r71, 31, -1;"
+        },
+        {
+          "line": 2423,
+          "text": "shfl.sync.idx.b32 \t%r78, %r3503, %r71, 31, -1;"
+        },
+        {
+          "line": 2424,
+          "text": "shfl.sync.idx.b32 \t%r79, %r3504, %r71, 31, -1;"
+        }
+      ],
+      "ptx_local_loads": 0,
+      "ptx_local_stores": 0,
+      "scope": "Observed complete emitted PTX only; no inherited pair-v4 opcode count or no-spill assertion."
+    },
+    {
+      "arm": "opt-static/M4-map288-i32",
+      "path": "opt-static/M4-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.ptx",
+      "sha256": "5732017b0691873ac727ae8274cfe9b5e86424a456cce3aaf785ee3188f8ddc8",
+      "total_shuffle_count": 19,
+      "shuffle_instructions": [
+        {
+          "line": 83,
+          "text": "shfl.sync.idx.b32 \t%r4, %r225, 0, 31, -1;"
+        },
+        {
+          "line": 94,
+          "text": "shfl.sync.idx.b32 \t%r233, %r232, 0, 31, -1;"
+        },
+        {
+          "line": 95,
+          "text": "shfl.sync.idx.b32 \t%r3, %r233, 0, 31, -1;"
+        },
+        {
+          "line": 1840,
+          "text": "shfl.sync.idx.b32 \t%r1504, %r3495, %r68, 31, -1;"
+        },
+        {
+          "line": 1845,
+          "text": "shfl.sync.idx.b32 \t%r1506, %r1505, %r69, 31, -1;"
+        },
+        {
+          "line": 1876,
+          "text": "shfl.sync.idx.b32 \t%r1523, %r3496, %r68, 31, -1;"
+        },
+        {
+          "line": 1880,
+          "text": "shfl.sync.idx.b32 \t%r1525, %r1524, %r69, 31, -1;"
+        },
+        {
+          "line": 1910,
+          "text": "shfl.sync.idx.b32 \t%r1533, %r3497, %r68, 31, -1;"
+        },
+        {
+          "line": 1914,
+          "text": "shfl.sync.idx.b32 \t%r1535, %r1534, %r69, 31, -1;"
+        },
+        {
+          "line": 1944,
+          "text": "shfl.sync.idx.b32 \t%r1543, %r3498, %r68, 31, -1;"
+        },
+        {
+          "line": 1948,
+          "text": "shfl.sync.idx.b32 \t%r1545, %r1544, %r69, 31, -1;"
+        },
+        {
+          "line": 2117,
+          "text": "shfl.sync.idx.b32 \t%r72, %r3499, %r71, 31, -1;"
+        },
+        {
+          "line": 2118,
+          "text": "shfl.sync.idx.b32 \t%r73, %r3500, %r71, 31, -1;"
+        },
+        {
+          "line": 2221,
+          "text": "shfl.sync.idx.b32 \t%r74, %r3501, %r71, 31, -1;"
+        },
+        {
+          "line": 2222,
+          "text": "shfl.sync.idx.b32 \t%r75, %r3502, %r71, 31, -1;"
+        },
+        {
+          "line": 2327,
+          "text": "shfl.sync.idx.b32 \t%r76, %r3503, %r71, 31, -1;"
+        },
+        {
+          "line": 2328,
+          "text": "shfl.sync.idx.b32 \t%r77, %r3504, %r71, 31, -1;"
+        },
+        {
+          "line": 2433,
+          "text": "shfl.sync.idx.b32 \t%r78, %r3505, %r71, 31, -1;"
+        },
+        {
+          "line": 2434,
+          "text": "shfl.sync.idx.b32 \t%r79, %r3506, %r71, 31, -1;"
+        }
+      ],
+      "ptx_local_loads": 0,
+      "ptx_local_stores": 0,
+      "scope": "Observed complete emitted PTX only; no inherited pair-v4 opcode count or no-spill assertion."
+    },
+    {
+      "arm": "opt-static/M6-map288-i32",
+      "path": "opt-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+      "sha256": "3efb8d89aa81c0f9b738e4389bb5532002ccb7349628ceeda8e0870cdde81369",
+      "total_shuffle_count": 19,
+      "shuffle_instructions": [
+        {
+          "line": 83,
+          "text": "shfl.sync.idx.b32 \t%r4, %r225, 0, 31, -1;"
+        },
+        {
+          "line": 94,
+          "text": "shfl.sync.idx.b32 \t%r233, %r232, 0, 31, -1;"
+        },
+        {
+          "line": 95,
+          "text": "shfl.sync.idx.b32 \t%r3, %r233, 0, 31, -1;"
+        },
+        {
+          "line": 1840,
+          "text": "shfl.sync.idx.b32 \t%r1504, %r3495, %r68, 31, -1;"
+        },
+        {
+          "line": 1845,
+          "text": "shfl.sync.idx.b32 \t%r1506, %r1505, %r69, 31, -1;"
+        },
+        {
+          "line": 1876,
+          "text": "shfl.sync.idx.b32 \t%r1523, %r3496, %r68, 31, -1;"
+        },
+        {
+          "line": 1880,
+          "text": "shfl.sync.idx.b32 \t%r1525, %r1524, %r69, 31, -1;"
+        },
+        {
+          "line": 1910,
+          "text": "shfl.sync.idx.b32 \t%r1533, %r3497, %r68, 31, -1;"
+        },
+        {
+          "line": 1914,
+          "text": "shfl.sync.idx.b32 \t%r1535, %r1534, %r69, 31, -1;"
+        },
+        {
+          "line": 1944,
+          "text": "shfl.sync.idx.b32 \t%r1543, %r3498, %r68, 31, -1;"
+        },
+        {
+          "line": 1948,
+          "text": "shfl.sync.idx.b32 \t%r1545, %r1544, %r69, 31, -1;"
+        },
+        {
+          "line": 2117,
+          "text": "shfl.sync.idx.b32 \t%r72, %r3499, %r71, 31, -1;"
+        },
+        {
+          "line": 2118,
+          "text": "shfl.sync.idx.b32 \t%r73, %r3500, %r71, 31, -1;"
+        },
+        {
+          "line": 2221,
+          "text": "shfl.sync.idx.b32 \t%r74, %r3501, %r71, 31, -1;"
+        },
+        {
+          "line": 2222,
+          "text": "shfl.sync.idx.b32 \t%r75, %r3502, %r71, 31, -1;"
+        },
+        {
+          "line": 2327,
+          "text": "shfl.sync.idx.b32 \t%r76, %r3503, %r71, 31, -1;"
+        },
+        {
+          "line": 2328,
+          "text": "shfl.sync.idx.b32 \t%r77, %r3504, %r71, 31, -1;"
+        },
+        {
+          "line": 2433,
+          "text": "shfl.sync.idx.b32 \t%r78, %r3505, %r71, 31, -1;"
+        },
+        {
+          "line": 2434,
+          "text": "shfl.sync.idx.b32 \t%r79, %r3506, %r71, 31, -1;"
+        }
+      ],
+      "ptx_local_loads": 0,
+      "ptx_local_stores": 0,
+      "scope": "Observed complete emitted PTX only; no inherited pair-v4 opcode count or no-spill assertion."
+    },
+    {
+      "arm": "opt-static/M8-map288-i32",
+      "path": "opt-static/M8-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.ptx",
+      "sha256": "8f7d70a0cb926666938793b05ab4db13813598ed8e9c4fe2ec7606c006776899",
+      "total_shuffle_count": 19,
+      "shuffle_instructions": [
+        {
+          "line": 83,
+          "text": "shfl.sync.idx.b32 \t%r4, %r225, 0, 31, -1;"
+        },
+        {
+          "line": 94,
+          "text": "shfl.sync.idx.b32 \t%r233, %r232, 0, 31, -1;"
+        },
+        {
+          "line": 95,
+          "text": "shfl.sync.idx.b32 \t%r3, %r233, 0, 31, -1;"
+        },
+        {
+          "line": 1840,
+          "text": "shfl.sync.idx.b32 \t%r1504, %r3495, %r68, 31, -1;"
+        },
+        {
+          "line": 1845,
+          "text": "shfl.sync.idx.b32 \t%r1506, %r1505, %r69, 31, -1;"
+        },
+        {
+          "line": 1876,
+          "text": "shfl.sync.idx.b32 \t%r1523, %r3496, %r68, 31, -1;"
+        },
+        {
+          "line": 1880,
+          "text": "shfl.sync.idx.b32 \t%r1525, %r1524, %r69, 31, -1;"
+        },
+        {
+          "line": 1910,
+          "text": "shfl.sync.idx.b32 \t%r1533, %r3497, %r68, 31, -1;"
+        },
+        {
+          "line": 1914,
+          "text": "shfl.sync.idx.b32 \t%r1535, %r1534, %r69, 31, -1;"
+        },
+        {
+          "line": 1944,
+          "text": "shfl.sync.idx.b32 \t%r1543, %r3498, %r68, 31, -1;"
+        },
+        {
+          "line": 1948,
+          "text": "shfl.sync.idx.b32 \t%r1545, %r1544, %r69, 31, -1;"
+        },
+        {
+          "line": 2117,
+          "text": "shfl.sync.idx.b32 \t%r72, %r3499, %r71, 31, -1;"
+        },
+        {
+          "line": 2118,
+          "text": "shfl.sync.idx.b32 \t%r73, %r3500, %r71, 31, -1;"
+        },
+        {
+          "line": 2221,
+          "text": "shfl.sync.idx.b32 \t%r74, %r3501, %r71, 31, -1;"
+        },
+        {
+          "line": 2222,
+          "text": "shfl.sync.idx.b32 \t%r75, %r3502, %r71, 31, -1;"
+        },
+        {
+          "line": 2327,
+          "text": "shfl.sync.idx.b32 \t%r76, %r3503, %r71, 31, -1;"
+        },
+        {
+          "line": 2328,
+          "text": "shfl.sync.idx.b32 \t%r77, %r3504, %r71, 31, -1;"
+        },
+        {
+          "line": 2433,
+          "text": "shfl.sync.idx.b32 \t%r78, %r3505, %r71, 31, -1;"
+        },
+        {
+          "line": 2434,
+          "text": "shfl.sync.idx.b32 \t%r79, %r3506, %r71, 31, -1;"
+        }
+      ],
+      "ptx_local_loads": 0,
+      "ptx_local_stores": 0,
+      "scope": "Observed complete emitted PTX only; no inherited pair-v4 opcode count or no-spill assertion."
+    }
+  ],
+  "scope": "PTX opcode, operands, compiler resources and source-bound layout witness only; no GPU numerical or performance claim"
+}

@@ -22,6 +22,10 @@ from .glm53_ep_local_selftest import (
     ROW_L2_FLOOR, ROW_PEAK_FLOOR,
 )
 
+from .glm53_ep_shard_geometry import (
+    ep_shard_geometry, ep_shard_cache_suffix, owner_contract, hybrid_rank_contract,
+)
+
 SEED = 905329
 CASES = (("mixed6", 6, "mixed"), ("balanced12", 12, "balanced"),
          ("concentrated24", 24, "concentrated"), ("zeros32", 32, "zeros"),
@@ -41,20 +45,22 @@ def _sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def route_rows(rows, kind, offset, changed=False):
+def route_rows(rows, kind, offset, changed=False, *, num_local_experts=72):
     """Global top8 IDs; all-remote remains remote in both phases."""
-    if kind not in {case[2] for case in CASES} or offset not in (0, 72, 144, 216):
+    if (type(num_local_experts) is not int or num_local_experts not in (72,144)
+            or type(offset) is not int or offset not in range(0,288,num_local_experts)
+            or kind not in {case[2] for case in CASES}):
         raise ValueError("unsupported EP tiled fixture")
     shift = 3 if changed else 0
     result = []
     for token in range(rows):
         if kind == "remote":
-            row = [(offset + 72 + (token + slot + shift) % 216) % 288 for slot in range(8)]
+            row = [(offset + num_local_experts + (token + slot + shift) % (288-num_local_experts)) % 288 for slot in range(8)]
         elif kind == "concentrated":
-            row = [offset + (slot + shift) % 72 for slot in range(8)]
+            row = [offset + (slot + shift) % num_local_experts for slot in range(8)]
         elif kind == "mixed" and token % 3 == 0:
-            row = [offset+shift, (offset+72) % 288, offset+1, -1,
-                   offset+71, 288, offset+2, offset+2]
+            row = [offset+shift, (offset+num_local_experts) % 288, offset+1, -1,
+                   offset+num_local_experts-1, 288, offset+2, offset+2]
         else:
             row = [(token*37 + slot*31 + (137 if changed else 0)) % 288 for slot in range(8)]
         result.append(row)
@@ -72,11 +78,31 @@ def _identities(owner, layer):
     return {name: _tensor_identity(value) for name, value in _backings(owner, layer).items()}
 
 
+def _hybrid_loader_provenance(owner):
+    """Recheck the loader's base-source seal at the actual-weight canary."""
+    module = importlib.import_module("vllm.models.glm5next.nvidia.glm53_ep_hybrid")
+    helper = Path(module.__file__).resolve(strict=True)
+    root = helper.parents[3]
+    sources = getattr(owner, "_glm53_hybrid_runtime_sources", None)
+    pins = module._RUNTIME_SOURCE_PINS
+    if (type(sources) is not dict or set(sources) != set(pins)
+            or len(pins) != 15):
+        raise RuntimeError("hybrid loader runtime source seal is missing")
+    actual = {}
+    for relative, expected in pins.items():
+        path = root / relative
+        item = sources[relative]
+        if (path.resolve(strict=True) != path or type(item) is not dict
+                or item != dict(path=str(path), sha256=expected)
+                or _sha(path.read_bytes()) != expected):
+            raise RuntimeError("hybrid loader runtime changed: " + relative)
+        actual[relative] = dict(item)
+    return dict(hybrid_loader_runtime=actual,
+                hybrid_loader=dict(path=str(helper), sha256=_sha(helper.read_bytes())))
+
+
 def _runtime(owner, layer):
-    if (not owner._use_ep or not owner._ep_no_dummy or
-            (owner.global_num_experts, owner.num_local_experts, owner.hidden_dim,
-             owner.intermediate_size_per_partition, owner.topk) != (288, 72, 4096, 2048, 8)):
-        raise RuntimeError("EP tiled self-test needs the exact unpadded actual owner")
+    shard = owner_contract(owner)
     # This hook deliberately precedes allocation of the old micro workspaces.
     # Its admission belongs to the tiled owner, independently of the old knob.
     import torch
@@ -89,7 +115,7 @@ def _runtime(owner, layer):
         raise RuntimeError("EP tiled self-test requires SM121 outside graph capture")
     if not md._GLM53_EP_TILED or not local.stock_contract_matches():
         raise RuntimeError("EP tiled self-test selection/source contract differs")
-    if (owner._kernel_num_experts != 72 or
+    if (owner._kernel_num_experts != shard["E"] or
             (owner._activation_str, owner._swiglu_alpha, owner._swiglu_beta, owner._swiglu_limit)
             != ("swigluoai_uninterleave", 1., 0., 10.)):
         raise RuntimeError("EP tiled self-test requires the exact serving activation")
@@ -104,6 +130,9 @@ def _runtime(owner, layer):
     for name in ("moe_static_kernel_v4", "moe_static_kernel_v5",
                  "moe_reform_sf_pack", "moe_sf_pack", "moe_dynamic_gated_sf6"):
         files[name] = Path(importlib.import_module(prefix+name).__file__)
+    if shard["hybrid"]:
+        geometry_module = importlib.import_module(prefix + "glm53_ep_shard_geometry")
+        files["shard_geometry"] = Path(geometry_module.__file__)
     versions = {}
     for name in ("torch", "cuda.bindings", "flashinfer"):
         module = importlib.import_module(name)
@@ -123,17 +152,42 @@ def _runtime(owner, layer):
         versions[name] = entry
     provenance = dict(source={name:dict(path=str(path),sha256=_sha(path.read_bytes()))
                              for name,path in files.items()}, versions=versions)
-    return dict(torch=torch, md=md, device=device, tiled=tiled, decode=decode, provenance=provenance)
+    if shard["hybrid"]:
+        provenance.update(_hybrid_loader_provenance(owner))
+    context = dict(torch=torch, md=md, device=device, tiled=tiled, decode=decode,
+                   provenance=provenance, shard=shard)
+    if shard["hybrid"]:
+        context.update(loader_identity=owner._glm53_hybrid_loader_identity,
+                       rank_geometry=hybrid_rank_contract(owner))
+    q0_dual_warp = getattr(owner, "_ep_tiled_q0_dual_warp", False)
+    if shard["hybrid"]:
+        if (tiled.ep_hybrid_q0_dual_warp_enabled(shard) is not q0_dual_warp
+                or md._GLM53_EP_HYBRID_Q0_DUAL_WARP is not q0_dual_warp):
+            raise RuntimeError("hybrid Q0 mode differs from its actual loaded dispatcher")
+    elif q0_dual_warp:
+        raise RuntimeError("hybrid Q0 mode requires the hybrid shard")
+    if q0_dual_warp:
+        context["q0_dual_warp"] = True
+    return context
 
 
 def _key(context):
-    return (os.getpid(), str(context["device"]),
-            _sha(json.dumps(context["provenance"], sort_keys=True).encode()), SEED)
+    key = (os.getpid(), str(context["device"]),
+           _sha(json.dumps(context["provenance"], sort_keys=True).encode()), SEED)
+    shard = context.get("shard", ep_shard_geometry())
+    key += ((context["loader_identity"],) if shard["hybrid"] else ())
+    if context.get("q0_dual_warp", False):
+        key += ("glm53_ep2tp2_q0_dual_warp_v1",)
+    return key
+
+
+def _marker(receipt):
+    return "[ep-hybrid-selftest]" if receipt["schema"] == 2 else "[ep-tiled-selftest]"
 
 
 def _publish_failure(receipt, exc):
     receipt.update(verdict="FAIL", error=repr(exc), completed_at=time.time())
-    print("[ep-tiled-selftest] FAIL " + json.dumps(receipt, sort_keys=True), flush=True)
+    print(_marker(receipt) + " FAIL " + json.dumps(receipt, sort_keys=True), flush=True)
 
 
 def _same_weights_and_scales(before, after, *, relayout):
@@ -153,7 +207,8 @@ def _reference_owner(owner):
     # of the real owner. This object only borrows immutable tensors/methods.
     cls = type("_EPTiledStockReference", (SimpleNamespace,),
                {"_apply_ep_compact": type(owner)._apply_ep_compact})
-    return cls(num_local_experts=72, _kernel_num_experts=72, max_num_tokens=8192,
+    e = owner.num_local_experts
+    return cls(num_local_experts=e, _kernel_num_experts=e, max_num_tokens=8192,
                w1_sf_mma=owner.w1_sf_mma, w2_sf_mma=owner.w2_sf_mma,
                g1_alphas=owner.g1_alphas, g2_alphas=owner.g2_alphas,
                _fc2_input_scale=owner._fc2_input_scale,
@@ -168,7 +223,8 @@ def _fill(context, buffers, case_index, changed, offset):
     generator = torch.Generator(device=device).manual_seed(SEED + case_index)
     x.copy_(torch.randn(x.shape, dtype=torch.bfloat16, device=device, generator=generator))
     x.mul_(-.375 if changed else .5)
-    ids.copy_(torch.tensor(route_rows(rows, kind, offset, changed), dtype=torch.int32, device=device))
+    ids.copy_(torch.tensor(route_rows(rows, kind, offset, changed,
+        num_local_experts=context.get("shard", ep_shard_geometry())["E"]), dtype=torch.int32, device=device))
     weights.copy_(torch.rand(weights.shape, dtype=torch.float32, device=device, generator=generator))
     weights.div_(weights.sum(dim=1, keepdim=True))
     if kind in ("zeros", "mixed"):
@@ -192,7 +248,8 @@ def _check_rng(context, original):
 
 def _capture_references(context, owner, layer, receipt):
     torch, md, device = context["torch"], context["md"], context["device"]
-    if tuple(layer.w13_weight.shape) != (72,4096,2048) or tuple(layer.w2_weight.shape) != (72,4096,1024):
+    shard = context.get("shard", ep_shard_geometry())
+    if tuple(layer.w13_weight.shape) != shard["raw_w13"] or tuple(layer.w2_weight.shape) != shard["raw_down"]:
         raise RuntimeError("EP reference expects original row-major model weights")
     if getattr(layer.w13_weight, "_b12x_tile_major", False):
         raise RuntimeError("row-major reference requested after tiling")
@@ -218,8 +275,8 @@ def _capture_references(context, owner, layer, receipt):
                 x, ids, weights, out = _fill(context, buffers, index, changed, offset)
                 identity = _inputs(x, ids, weights, _scales(owner))
                 cell["inputs"].append(identity)
-                local = (ids >= offset) & (ids < offset+72)
-                mapped = torch.where(local, ids-offset, torch.full_like(ids,72))
+                local = (ids >= offset) & (ids < offset+shard["E"])
+                mapped = torch.where(local, ids-offset, torch.full_like(ids,shard["E"]))
                 values = torch.where(local, weights, torch.zeros_like(weights))
                 outputs = []
                 for label in ("B1", "B2", "B3"):
@@ -260,11 +317,18 @@ def before_relayout(owner, layer):
             if previous["verdict"] != "PASS":
                 raise RuntimeError("EP tiled canary previously failed or remains in progress")
             return dict(cached=True, receipt=previous)
-        receipt = dict(schema=1, verdict="RUNNING", phase="before-relayout", started_at=time.time(),
-                       source=context["provenance"], geometry=dict(E=72,K=4096,I=2048,top8=8),
+        shard = context.get("shard", ep_shard_geometry())
+        receipt = dict(schema=2 if shard["hybrid"] else 1, verdict="RUNNING", phase="before-relayout", started_at=time.time(),
+                       source=context["provenance"], geometry=dict(E=shard["E"],K=4096,I=shard["I"],top8=8),
                        cases=[], actual_weight_owner=True, performance_acceptance=False,
                        full_sanitizer_acceptance=False,
                        scope="first actual EP layer per process/device/source; stock compact references before in-place tiling")
+        if shard["hybrid"]:
+            receipt.update(loader_identity=list(context["loader_identity"]),
+                           rank_geometry=context["rank_geometry"],
+                           numerical_scope="rank-local E144/I1024 shard vs original row-major owned weights; no cross-rank output-sum equivalence")
+        if context.get("q0_dual_warp", False):
+            receipt["q0_dual_warp"] = True
         _STATES[key] = receipt
         try:
             receipt["memory_before"] = _memory(context["torch"],context["device"])
@@ -302,6 +366,8 @@ def _packed_identity(owner, layer):
     device roundtrips. This records that source-bound preparation contract;
     it does not run another pack/unpack or claim raw sources are released.
     """
+    shard = ep_shard_geometry(getattr(owner,"num_local_experts",72),
+                              getattr(owner,"intermediate_size_per_partition",2048))
     views = owner._ep_tiled_weight_views
     scales = getattr(views, "reform_scales", None)
     if (not getattr(views, "tiled", False) or not getattr(views, "packed_only", False)
@@ -319,8 +385,8 @@ def _packed_identity(owner, layer):
         raise AssertionError("EP tiled canary must precede final model raw-scale release")
     raw_addresses = {value.untyped_storage().data_ptr() for value in raw}
     planes = {}
-    for name, value, blocks in (("fc1", scales.fc1, 512), ("fc2", scales.fc2, 256)):
-        if (tuple(value.shape) != (72,blocks,1552) or str(value.dtype) != "torch.uint8"
+    for name, value, blocks in (("fc1", scales.fc1, shard["sf6_fc1"][1]), ("fc2", scales.fc2, shard["sf6_fc2"][1])):
+        if (tuple(value.shape) != (shard["E"],blocks,1552) or str(value.dtype) != "torch.uint8"
                 or value.device != layer.w13_weight.device or not value.is_contiguous()
                 or value.untyped_storage().data_ptr() in raw_addresses):
             raise AssertionError("EP tiled SF6 plane geometry/device/source alias mismatch: " + name)
@@ -330,12 +396,14 @@ def _packed_identity(owner, layer):
         preparation_contract=dict(
             scope="source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
             both_planes_enabled=True, stage_raw_bytes=2048, stage_packed_bytes=1552,
-            fc1_stages=72*512, fc2_stages=72*256,
-            raw_bytes=72*768*2048, packed_bytes=72*768*1552))
+            fc1_stages=shard["E"]*shard["sf6_fc1"][1], fc2_stages=shard["E"]*shard["sf6_fc2"][1],
+            raw_bytes=shard["raw_sf1_bytes"]+shard["raw_sf2_bytes"],
+            packed_bytes=shard["E"]*(shard["sf6_fc1"][1]+shard["sf6_fc2"][1])*1552))
 
 
 def _cache_evidence(context, owner, rows):
     """Require the real launcher's isolated direct SF6 artifact namespace."""
+    shard = context.get("shard", ep_shard_geometry())
     if rows <= 32:
         ws = owner._ep_tiled_workspace
         geometry = context["decode"].ep_tiled_geometry(
@@ -353,15 +421,26 @@ def _cache_evidence(context, owner, rows):
         # 288-entry int32 map through the production owner. A supplied map
         # makes rank offset unused; the native compile namespace normalizes it.
         expected += ("glm53_ep_static_fused_route_v1", 288, "torch.int32", 0)
+        decode_opt = bool(not shard["hybrid"] and context["decode"].ep_tiled_decode_opt_enabled() and geometry["reform"])
+        if decode_opt:
+            expected += ("glm53_ep_static_sf6_q1_register_max_v5",)
+        expected += ep_shard_cache_suffix(shard)
         if expected not in context["decode"]._EP_TILED_KERNEL_CACHE:
             raise AssertionError("native EP tiled decode artifact was not selected/warmed")
-        return dict(scope="source-bound global-map fixture native shape cache key", keys=[repr(expected)])
+        return dict(scope="source-bound global-map fixture native shape cache key",
+                    keys=[repr(expected)], decode_opt=decode_opt)
+    dynamic_tail = ("glm53_ep_prefill_local_fp32_v2","glm53_ep_tiled_sf6_v1")
+    if shard["hybrid"]:
+        dynamic_tail += (ep_shard_cache_suffix(shard)[0],)
+    if context.get("q0_dual_warp", False):
+        if not shard["hybrid"]:
+            raise AssertionError("dual-warp canary requires the hybrid shard")
+        dynamic_tail += ("glm53_ep2tp2_q0_dual_warp_v1",)
     keys = [key for key in context["md"]._DYNAMIC_KERNEL_CACHE
-            if len(key) == 20 and key[:7] == ("dynamic","fp4","nvfp4",72,4096,2048,8)
+            if len(key) == 18+len(dynamic_tail) and key[:7] == ("dynamic","fp4","nvfp4",shard["E"],4096,shard["I"],8)
             and str(key[9]) == "torch.int32" and key[10:16] ==
                 (False,True,"swigluoai_uninterleave",1.,0.,10.)
-            and key[17] is True and key[-2:] ==
-                ("glm53_ep_prefill_local_fp32_v2","glm53_ep_tiled_sf6_v1")]
+            and key[17] is True and key[18:] == dynamic_tail]
     if not keys:
         raise AssertionError("tiled EP prefill artifact namespace is absent")
     return dict(scope="matching runtime-shaped dynamic keys; source binds per-shape selection",
@@ -377,8 +456,9 @@ def _validate_candidate(context, owner, layer, handle):
     _same_weights_and_scales(handle["original"],after,relayout=True)
     receipt["weights_after_relayout"] = after
     receipt["packed_before"] = _packed_identity(owner,layer)
+    shard = context.get("shard", ep_shard_geometry())
     mapping = torch.full((288,),-1,dtype=torch.int32,device=device)
-    mapping[handle["offset"]:handle["offset"]+72] = torch.arange(72,dtype=torch.int32,device=device)
+    mapping[handle["offset"]:handle["offset"]+shard["E"]] = torch.arange(shard["E"],dtype=torch.int32,device=device)
     for index, cell in enumerate(receipt["cases"]):
         graph, side = None, torch.cuda.Stream(device=device)
         try:
@@ -474,5 +554,5 @@ def after_relayout(owner, layer, reference):
             _publish_failure(receipt,primary)
             raise RuntimeError("EP tiled numerical canary failed; readiness refused") from primary
         receipt.update(verdict="PASS",phase="complete",completed_at=time.time())
-        print("[ep-tiled-selftest] PASS "+json.dumps(receipt,sort_keys=True),flush=True)
+        print(_marker(receipt)+" PASS "+json.dumps(receipt,sort_keys=True),flush=True)
         return receipt

@@ -42,17 +42,90 @@ def constants():
             and isinstance(n.value, ast.Constant)}
 
 
+def shard_helpers(ns):
+    """Load actual pure geometry helpers for AST-extracted production functions."""
+    path = SOURCE.with_name('glm53_ep_shard_geometry.py')
+    tree = ast.parse(path.read_text())
+    wanted = {'ep_shard_geometry', 'ep_shard_cache_suffix', 'require_hybrid_mode'}
+    nodes = [copy.deepcopy(n) for n in tree.body if
+        (isinstance(n, ast.FunctionDef) and n.name in wanted) or
+        (isinstance(n, ast.Assign) and len(n.targets) == 1 and
+         isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'HYBRID_TAG')]
+    assert {n.name for n in nodes if isinstance(n, ast.FunctionDef)} == wanted
+    exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])),
+                 str(path), 'exec'), ns)
+    return ns
+
+
 def route_helpers(ns):
     """Load actual declaration/key helpers, not a fabricated local key stub."""
+    shard_helpers(ns)
     ns['EP_TILED_ROUTE_CACHE_TAG'] = constants()['EP_TILED_ROUTE_CACHE_TAG']
+    ns['EP_TILED_DECODE_OPT_CACHE_TAG'] = constants()['EP_TILED_DECODE_OPT_CACHE_TAG']
+    ns.setdefault('_EP_TILED_DECODE_OPT', False)
+    extract('ep_tiled_decode_opt', ns)
+    extract('ep_tiled_decode_opt_enabled', ns)
     extract('ep_tiled_route_metadata', ns)
     extract('ep_tiled_route_key', ns)
     return ns
 
 
+def baseline_kernel_text():
+    """Recover original bytes by selecting only the exact new opt=False arm."""
+    source=SOURCE.read_text(); node=function('kernel'); lines=source.splitlines(keepends=True)
+    branches=[n for n in ast.walk(node) if isinstance(n,ast.If)
+              and ast.unparse(n.test)=='cutlass.const_expr(self.ep_decode_opt)']
+    # Admit the exact five register-max additions, not just a branch count.
+    # Both staging and quantization keep the complete old fallback bodies.
+    assert len(branches)==5
+    setup, scratch, registers, staging, quant = sorted(branches, key=lambda n:n.lineno)
+    for branch, expected in ((setup, [
+            'self._check_ep_storage(Storage)',
+            'self._check_ep_q1_register_layout(tiled_mma1, epi1_smem_staged, a2_smem_layout, sfa2_smem_layout)']),
+            (scratch, ['q1_max_scratch = shared_ptr_to_u32(storage.sC1.data_ptr())']),
+            (registers, ['tRS_q1_halfmax = cute.make_rmem_tensor((4,), Float32)'])):
+        assert not branch.orelse and [ast.unparse(n) for n in branch.body] == expected
+    for branch, predicate, call in ((staging, 'epi_m_valid <= Int32(8)',
+            'self._ep_q1_register_max(tRS_rD1_out, tRS_q1_halfmax, epi_m_valid, tidx, q1_max_scratch)'),
+            (quant, 'epi_rows <= Int32(8)',
+            'self._ep_q1_register_quantize(tRS_rD1_out, tRS_q1_halfmax, epi_rows, tidx, gs_value, q1_max_scratch, a2_base_addr, a2_smem_layout, sfa2_base_addr)')):
+        assert len(branch.body)==1 and isinstance(branch.body[0],ast.If)
+        bounded = branch.body[0]
+        assert ast.unparse(bounded.test)==predicate
+        assert [ast.unparse(n) for n in bounded.body] == [call]
+        assert [ast.dump(n,include_attributes=False) for n in bounded.orelse] == [
+            ast.dump(n,include_attributes=False) for n in branch.orelse]
+    assert [ast.unparse(n) for n in staging.orelse] == [
+        'cute.copy(tiled_copy_r2s1, tRS_rD1_out, tRS_sD1[None, None, None, 0])']
+    assert len(quant.orelse)==2 and isinstance(quant.orelse[1],ast.While)
+    assert ast.unparse(quant.orelse[0])=='quant_idx = Int32(tidx)'
+    changes=[]
+    for branch in branches:
+        replacement=[]
+        if branch.orelse:
+            replacement=[line[4:] if line.startswith('    ') else line
+                         for line in lines[branch.orelse[0].lineno-1:branch.end_lineno]]
+        changes.append((branch.lineno-1,branch.end_lineno,replacement))
+    fields=[n for n in ast.walk(node) if isinstance(n,ast.AnnAssign)
+            and ast.unparse(n.target)=='sf2_packed_source']
+    assert len(fields)==1
+    field=fields[0]
+    assert ast.unparse(field.annotation)=='cute.struct.Align[cute.struct.MemRange[cutlass.Uint8, 16], 16]'
+    comments=lines[field.lineno-3:field.lineno-1]
+    assert 'zero-sized MemRange' in comments[0] and 'existing header padding' in comments[1]
+    changes.append((field.lineno-3,field.end_lineno,[]))
+    for start,end,replacement in sorted(changes,reverse=True):lines[start:end]=replacement
+    restored=''.join(lines)
+    restored_node=next(n for n in ast.walk(ast.parse(restored))
+                       if isinstance(n,ast.FunctionDef) and n.name=='kernel')
+    return ast.get_source_segment(restored,restored_node)
+
+
 def local_reference_function(name):
     """Select exactly the declared local route branch; reject other changes."""
-    node = function(name)
+    node = ast.parse(baseline_kernel_text()).body[0] if name == 'kernel' else function(name)
+    if name == 'kernel':
+        node.decorator_list = function(name).decorator_list
     expression = "cutlass.const_expr(self.ep_route_mode == 'global')"
     branches = [n for n in ast.walk(node) if isinstance(n, ast.If)
                 and ast.unparse(n.test) == expression]
@@ -477,7 +550,8 @@ class EPTiledStaticTests(unittest.TestCase):
         for m in range(1,33):
             for sf6 in (False,True):
                 selected=sf6 and m<=8
-                owner=types.SimpleNamespace(ep_num_tokens=m,ep_max_rows=256,scatter_bf16=selected)
+                owner=types.SimpleNamespace(ep_num_tokens=m,ep_max_rows=256,scatter_bf16=selected,
+                                            ep_num_experts=72,ep_intermediate_size=2048)
                 args=[Tensor((m,4096),'BFloat16'),Tensor((m*8,),'Int32'),Tensor((m*8,),'Float32'),
                       Tensor((4096,512,8,72),'Float4E2M1FN'),Tensor((4096,128,16,72),'Float4E2M1FN'),
                       Tensor((72,),'Int32'),Tensor((72,256),'Int32'),

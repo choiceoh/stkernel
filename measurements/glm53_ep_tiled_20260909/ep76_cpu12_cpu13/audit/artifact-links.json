@@ -1,0 +1,29 @@
+{
+  "all_27_artifact_payloads_equal": true,
+  "cpu12_result_sha256": "98c3d5882813430b7608662c13ee2bd41dc71e0bcee76142116755015f20a822",
+  "cpu13_result_sha256": "134ace613b47afeae8fa7abc8fe5cb3355f68f185b4c84ef3b14a7ac79ab3f18",
+  "four_audited_payloads": {
+    "baseline_cubin": {
+      "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+      "original_sha256": "897d6229b09831de50718611af50fa3653bf43a47c404c2b83e60b8b366bad38",
+      "stored": "artifacts/897d6229b09831de50718611af50fa3653bf43a47c404c2b83e60b8b366bad38.cubin.gz"
+    },
+    "baseline_ptx": {
+      "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+      "original_sha256": "300e1df65779b9b27cccf19da1865c8b1c913471ea839548bde7df87d5892491",
+      "stored": "artifacts/300e1df65779b9b27cccf19da1865c8b1c913471ea839548bde7df87d5892491.ptx.gz"
+    },
+    "candidate_cubin": {
+      "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+      "original_sha256": "9c0a7a08ad95abdfa276130c6d8cff7010a913e68fbb97a628f9bdfdc57e2b42",
+      "stored": "artifacts/9c0a7a08ad95abdfa276130c6d8cff7010a913e68fbb97a628f9bdfdc57e2b42.cubin.gz"
+    },
+    "candidate_ptx": {
+      "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+      "original_sha256": "9a6bd5ac8c6c0d5d0322f3a3a8364e1cf7d3454bc7c95def7ab67042cecf4b37",
+      "stored": "artifacts/9a6bd5ac8c6c0d5d0322f3a3a8364e1cf7d3454bc7c95def7ab67042cecf4b37.ptx.gz"
+    }
+  },
+  "no_new_ptx_analysis": true,
+  "schema": 1
+}

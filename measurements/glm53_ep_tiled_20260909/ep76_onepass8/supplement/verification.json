@@ -1,0 +1,140 @@
+{
+  "absence_of_all_compilation_proven": false,
+  "after": {
+    "bytes": 361198,
+    "sha256": "7ab82b002d4026d6baba5ca79b233818d60a41a30bdf9e294333af3ebbb1c3e5"
+  },
+  "all_inputs_unchanged": true,
+  "canonical_record_reference": {
+    "boot_id": "0dc29dfa37a0d70d1d2afd97f55dc36bd401e215fd6178d4479c6786404a4599|2026-09-10T07:38:23.746905432Z",
+    "original_sha256": "024a8de0de0abb28021c5f96fb76f754003e9dd1cb45cde91162e4cba1bf1a49",
+    "original_size": 65729,
+    "record_git": "407271d9",
+    "record_git_resolves_locally_to": "407271d9cf73f5db6192a8410c68f152e67301cb",
+    "repository_path": "measurements/glm53_ep_tiled_20260909/ep76_onepass8/job/onepass.jsonl.gz",
+    "stored_sha256": "3061b64391a512d4b18bef87a157dde25d4d74a60cdd807761da38554a6934cc"
+  },
+  "delta": {
+    "bytes": 70787,
+    "sha256": "f42d050504e77c8d2c08f8ca9da1956fcc93bb41b56462b412eaee277f125672"
+  },
+  "first32k_logged_compile_event_count": 0,
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "input_hashes_after": {
+    "/tmp/glm53-ep76-kv-image-read/core.py": {
+      "sha256": "86b8f3b3826504549ef8bea2e7fbf7553728339803abcb3e7d051d146963ff9c",
+      "size": 104047
+    },
+    "/tmp/glm53-ep76-kv-image-read/kv_cache_utils.py": {
+      "sha256": "624ea7b0244972cb6c53044588912dfea54f3d6a91661cbc423af27e3b5c4b86",
+      "size": 115187
+    },
+    "/tmp/glm53-ep76-kv-image-read/receipt.json": {
+      "sha256": "ccd124509c79b304f17902f4a3796c9937001b2f5ff5691e411004bbe13694eb",
+      "size": 627
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/audit.json": {
+      "sha256": "29468a038b67b2725f9abada66fd180d9e162ddf3def19f3846db2cb33fd04c0",
+      "size": 5972
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/audit.md": {
+      "sha256": "10e62fde27d8f962f55be6a575eea0de9a7cea404e6ac01099779fd92edcecff",
+      "size": 1722
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/log-prefix.raw": {
+      "sha256": "2801c46f8e65f48bbaa7195998fb3d5c651a4bfdfc3b9b96d315695790b8cdd6",
+      "size": 290411
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/log-through-after.raw": {
+      "sha256": "7ab82b002d4026d6baba5ca79b233818d60a41a30bdf9e294333af3ebbb1c3e5",
+      "size": 361198
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/onepass-delta.raw": {
+      "sha256": "f42d050504e77c8d2c08f8ca9da1956fcc93bb41b56462b412eaee277f125672",
+      "size": 70787
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/readback.json": {
+      "sha256": "c30a13fb7f0e8c770630f4ca9ab4374ab086359120c802f4a701fa2a9c8b8d31",
+      "size": 895
+    },
+    "/tmp/glm53-ep76-retry-gmu060-review/audit.json": {
+      "sha256": "a8c46da8af02e488412614ac77c673e01d3b02aee97279f07a23ea1843c6e465",
+      "size": 15216
+    },
+    "/tmp/glm53-ep76-retry-gmu060-review/audit.md": {
+      "sha256": "d34d5ed491397bac7eabe659baeaff36978a2c051d2bc6959fea6faf9623743a",
+      "size": 2097
+    }
+  },
+  "input_hashes_before": {
+    "/tmp/glm53-ep76-kv-image-read/core.py": {
+      "sha256": "86b8f3b3826504549ef8bea2e7fbf7553728339803abcb3e7d051d146963ff9c",
+      "size": 104047
+    },
+    "/tmp/glm53-ep76-kv-image-read/kv_cache_utils.py": {
+      "sha256": "624ea7b0244972cb6c53044588912dfea54f3d6a91661cbc423af27e3b5c4b86",
+      "size": 115187
+    },
+    "/tmp/glm53-ep76-kv-image-read/receipt.json": {
+      "sha256": "ccd124509c79b304f17902f4a3796c9937001b2f5ff5691e411004bbe13694eb",
+      "size": 627
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/audit.json": {
+      "sha256": "29468a038b67b2725f9abada66fd180d9e162ddf3def19f3846db2cb33fd04c0",
+      "size": 5972
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/audit.md": {
+      "sha256": "10e62fde27d8f962f55be6a575eea0de9a7cea404e6ac01099779fd92edcecff",
+      "size": 1722
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/log-prefix.raw": {
+      "sha256": "2801c46f8e65f48bbaa7195998fb3d5c651a4bfdfc3b9b96d315695790b8cdd6",
+      "size": 290411
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/log-through-after.raw": {
+      "sha256": "7ab82b002d4026d6baba5ca79b233818d60a41a30bdf9e294333af3ebbb1c3e5",
+      "size": 361198
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/onepass-delta.raw": {
+      "sha256": "f42d050504e77c8d2c08f8ca9da1956fcc93bb41b56462b412eaee277f125672",
+      "size": 70787
+    },
+    "/tmp/glm53-ep76-onepass8-B-jit-audit/readback.json": {
+      "sha256": "c30a13fb7f0e8c770630f4ca9ab4374ab086359120c802f4a701fa2a9c8b8d31",
+      "size": 895
+    },
+    "/tmp/glm53-ep76-retry-gmu060-review/audit.json": {
+      "sha256": "a8c46da8af02e488412614ac77c673e01d3b02aee97279f07a23ea1843c6e465",
+      "size": 15216
+    },
+    "/tmp/glm53-ep76-retry-gmu060-review/audit.md": {
+      "sha256": "d34d5ed491397bac7eabe659baeaff36978a2c051d2bc6959fea6faf9623743a",
+      "size": 2097
+    }
+  },
+  "logged_jit_event_count": 7,
+  "new_runtime_validation": false,
+  "original_file_count": 11,
+  "packaging_history": [
+    {
+      "attempt": 1,
+      "outcome": "LOCAL_ASSERTION_BEFORE_OUTPUT",
+      "reason": "Expected full git SHA where canonical schema records short407271d9; corrected to exactshort plus localgitobject resolution without changing record or source.",
+      "receipt_sha256": "ed14e7af21b36df6a7ea29d3db675040ddaeac83578bc8afae020e584c024851"
+    },
+    {
+      "attempt": 2,
+      "outcome": "PACKAGED"
+    }
+  ],
+  "performance_acceptance": false,
+  "physical_memory_sufficiency_proven": false,
+  "prefix": {
+    "bytes": 290411,
+    "sha256": "2801c46f8e65f48bbaa7195998fb3d5c651a4bfdfc3b9b96d315695790b8cdd6"
+  },
+  "prefix_plus_delta_equals_after": true,
+  "quality_gate_changed": false,
+  "schema": 1,
+  "source_revision": "407271d9cf73f5db6192a8410c68f152e67301cb"
+}

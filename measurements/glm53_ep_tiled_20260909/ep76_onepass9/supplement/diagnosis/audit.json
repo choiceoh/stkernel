@@ -1,0 +1,845 @@
+{
+  "verdict": "SCOPED_LOG_TIMING_DIAGNOSIS_CAUSALITY_NOT_PROVED",
+  "source_revision": "407271d9cf73f5db6192a8410c68f152e67301cb",
+  "record_path": "/tmp/glm53-ep76-onepass9-streams/records-039d91324a657eae023147143a5faedfc2110722b34e0174c55dba5011acf20a.jsonl",
+  "record_sha256": "039d91324a657eae023147143a5faedfc2110722b34e0174c55dba5011acf20a",
+  "source_sha256": {
+    "bench/bracket.py": "f8a7b7d9ce6d8c25df0e86da99fb78375feb020f938a5059e4067a6c461a5147",
+    "bench/window_metrics.py": "e791c6dbafae901e1e9d9abe7380c2c395e6f10039b8c8a6c97f6e70d1807cb5",
+    "bench/onepass.py": "e21cbb2e0d9911e06027f1831f2c0ca7a79dc7730eba7cfa21856b713687caf2",
+    "overlay/modules/glm53_moe/moe_dispatch.py": "3e7e9c04fd0d2ea4eb6757ef1471d025d51bc23aff08be58a6382023a4d59022",
+    "overlay/modules/glm53_moe/glm53_ep_tiled.py": "b1c719e536bd10276e01e8d02702f992cfbc9dc972c25b8bf34f95b919e904de",
+    "overlay/modules/glm53_moe/moe_static_ep_tiled.py": "bbbcfe2ec30bce5dc7c265262e2fbd98de0ed3e697305d77418b457797b454ac"
+  },
+  "arms": [
+    {
+      "arm": "B",
+      "boot_archive_path": "/tmp/glm53-ep76-onepass9-completed-private/boot/boot-EPDECODE76B.log.gz",
+      "boot_archive_gzip_sha256": "01f133967db23928aa94f132eb315984dc97b89d5a8bae659fe5f58a25a40fc8",
+      "boot_original_bytes": 353668,
+      "boot_original_sha256": "a6935dec6b5aa9915b7fbd80e4ab4f92266b3a30c56f396ceb2c1b20dc6e1f5e",
+      "recorded_prefix": {
+        "bytes": 284980,
+        "sha256": "525f8615408114933e167df42841e8d6a31af2b57e28f0caa6366d7e1a1b8843",
+        "device": 66306,
+        "inode": 163350222
+      },
+      "recorded_after": {
+        "bytes": 353513,
+        "sha256": "a1571d04176d65ea17502357fce6c2d8a1f02b46fdd5268529c573fff2670757"
+      },
+      "preserved_artifacts": {
+        "B-log-prefix.raw": {
+          "bytes": 284980,
+          "sha256": "525f8615408114933e167df42841e8d6a31af2b57e28f0caa6366d7e1a1b8843"
+        },
+        "B-log-through-after.raw": {
+          "bytes": 353513,
+          "sha256": "a1571d04176d65ea17502357fce6c2d8a1f02b46fdd5268529c573fff2670757"
+        },
+        "B-onepass-delta.raw": {
+          "bytes": 68533,
+          "sha256": "b8a79c6f3255de38aed06fb2764ce1fc1d287007e7192118c2d540f69d92c667"
+        }
+      },
+      "request_segments": [
+        {
+          "request_ordinal": 1,
+          "ctx": 2000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            3,
+            25
+          ],
+          "full_lines": [
+            1530,
+            1552
+          ],
+          "timestamp_bounds_utc": [
+            "08:18:50",
+            "08:18:57"
+          ],
+          "compile_pattern_matches": [
+            {
+              "delta_line": 5,
+              "full_line": 1532,
+              "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:50 [jit_monitor.py:135] TileLang JIT compilation during inference: mhc_pre_big_fuse_with_norm_tilelang. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 7,
+              "full_line": 1534,
+              "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:50 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _finish. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 9,
+              "full_line": 1536,
+              "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:50 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _copy_pad. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 14,
+              "full_line": 1541,
+              "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:52 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _compute_local_logits_stats_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 15,
+              "full_line": 1542,
+              "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:52 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _rejection_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 16,
+              "full_line": 1543,
+              "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:52 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _resample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+            }
+          ],
+          "ttft_s": 2.272990714991465,
+          "elapsed_s": 7.595636565005407,
+          "decode_s": 5.3226458500139415
+        },
+        {
+          "request_ordinal": 2,
+          "ctx": 2000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            26,
+            35
+          ],
+          "full_lines": [
+            1553,
+            1562
+          ],
+          "timestamp_bounds_utc": [
+            "08:18:57",
+            "08:19:01"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 0.788481944007799,
+          "elapsed_s": 5.863042888930067,
+          "decode_s": 5.074560944922268
+        },
+        {
+          "request_ordinal": 3,
+          "ctx": 2000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            36,
+            47
+          ],
+          "full_lines": [
+            1563,
+            1574
+          ],
+          "timestamp_bounds_utc": [
+            "08:19:05",
+            "08:19:08"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 0.7955838129855692,
+          "elapsed_s": 6.198606119956821,
+          "decode_s": 5.403022306971252
+        },
+        {
+          "request_ordinal": 4,
+          "ctx": 32000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            48,
+            90
+          ],
+          "full_lines": [
+            1575,
+            1617
+          ],
+          "timestamp_bounds_utc": [
+            "08:19:09",
+            "08:19:35"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 12.370252177934162,
+          "elapsed_s": 26.766766009037383,
+          "decode_s": 14.39651383110322
+        },
+        {
+          "request_ordinal": 5,
+          "ctx": 128000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            91,
+            359
+          ],
+          "full_lines": [
+            1618,
+            1886
+          ],
+          "timestamp_bounds_utc": [
+            "08:19:37",
+            "08:20:28"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 40.80157613102347,
+          "elapsed_s": 52.17096028896049,
+          "decode_s": 11.36938415793702
+        },
+        {
+          "request_ordinal": 6,
+          "ctx": 2000,
+          "rep": 0,
+          "fixed_decode": true,
+          "delta_lines": [
+            360,
+            383
+          ],
+          "full_lines": [
+            1887,
+            1910
+          ],
+          "timestamp_bounds_utc": [
+            "08:20:28",
+            "08:20:40"
+          ],
+          "compile_pattern_matches": [
+            {
+              "delta_line": 363,
+              "full_line": 1890,
+              "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:20:29 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _gumbel_sample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+            }
+          ],
+          "ttft_s": 0.8375553559744731,
+          "elapsed_s": 13.48597463592887,
+          "decode_s": 12.648419279954396
+        },
+        {
+          "request_ordinal": 7,
+          "ctx": 2000,
+          "rep": 1,
+          "fixed_decode": true,
+          "delta_lines": [
+            384,
+            410
+          ],
+          "full_lines": [
+            1911,
+            1937
+          ],
+          "timestamp_bounds_utc": [
+            "08:20:44",
+            "08:20:57"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 0.8466762839816511,
+          "elapsed_s": 14.946975269936956,
+          "decode_s": 14.100298985955305
+        },
+        {
+          "request_ordinal": 8,
+          "ctx": 2000,
+          "rep": 2,
+          "fixed_decode": true,
+          "delta_lines": [
+            411,
+            433
+          ],
+          "full_lines": [
+            1938,
+            1960
+          ],
+          "timestamp_bounds_utc": [
+            "08:21:00",
+            "08:21:09"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 0.8334734459640458,
+          "elapsed_s": 14.181237988988869,
+          "decode_s": 13.347764543024823
+        }
+      ],
+      "logged_compile_events": [
+        {
+          "request_ordinal": 1,
+          "delta_line": 5,
+          "full_line": 1532,
+          "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:50 [jit_monitor.py:135] TileLang JIT compilation during inference: mhc_pre_big_fuse_with_norm_tilelang. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 7,
+          "full_line": 1534,
+          "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:50 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _finish. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 9,
+          "full_line": 1536,
+          "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:50 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _copy_pad. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 14,
+          "full_line": 1541,
+          "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:52 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _compute_local_logits_stats_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 15,
+          "full_line": 1542,
+          "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:52 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _rejection_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 16,
+          "full_line": 1543,
+          "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:18:52 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _resample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 6,
+          "delta_line": 363,
+          "full_line": 1890,
+          "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 08:20:29 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _gumbel_sample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+        }
+      ],
+      "periodic_acceptance_log_lines": [
+        {
+          "delta_line": 24,
+          "full_line": 1551,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:18:57 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.60, Accepted throughput: 8.49 tokens/s, Drafted throughput: 16.33 tokens/s, Accepted: 260 tokens, Drafted: 500 tokens, Per-position acceptance rate: 0.820, 0.620, 0.470, 0.390, 0.300, Avg Draft acceptance rate: 52.0%"
+        },
+        {
+          "delta_line": 43,
+          "full_line": 1570,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:19:07 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.59, Accepted throughput: 47.40 tokens/s, Drafted throughput: 91.50 tokens/s, Accepted: 474 tokens, Drafted: 915 tokens, Per-position acceptance rate: 0.869, 0.634, 0.475, 0.350, 0.262, Avg Draft acceptance rate: 51.8%"
+        },
+        {
+          "delta_line": 59,
+          "full_line": 1586,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:19:17 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.10, Accepted throughput: 12.40 tokens/s, Drafted throughput: 29.50 tokens/s, Accepted: 124 tokens, Drafted: 295 tokens, Per-position acceptance rate: 0.729, 0.559, 0.356, 0.237, 0.220, Avg Draft acceptance rate: 42.0%"
+        },
+        {
+          "delta_line": 76,
+          "full_line": 1603,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:19:27 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 4.00, Accepted throughput: 31.50 tokens/s, Drafted throughput: 52.50 tokens/s, Accepted: 315 tokens, Drafted: 525 tokens, Per-position acceptance rate: 0.857, 0.714, 0.581, 0.448, 0.400, Avg Draft acceptance rate: 60.0%"
+        },
+        {
+          "delta_line": 93,
+          "full_line": 1620,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:19:37 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.82, Accepted throughput: 57.59 tokens/s, Drafted throughput: 101.99 tokens/s, Accepted: 576 tokens, Drafted: 1020 tokens, Per-position acceptance rate: 0.804, 0.642, 0.525, 0.446, 0.407, Avg Draft acceptance rate: 56.5%"
+        },
+        {
+          "delta_line": 357,
+          "full_line": 1884,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:20:27 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.29, Accepted throughput: 9.66 tokens/s, Drafted throughput: 21.10 tokens/s, Accepted: 483 tokens, Drafted: 1055 tokens, Per-position acceptance rate: 0.796, 0.550, 0.389, 0.313, 0.242, Avg Draft acceptance rate: 45.8%"
+        },
+        {
+          "delta_line": 376,
+          "full_line": 1903,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:20:37 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.57, Accepted throughput: 50.89 tokens/s, Drafted throughput: 98.99 tokens/s, Accepted: 509 tokens, Drafted: 990 tokens, Per-position acceptance rate: 0.833, 0.657, 0.465, 0.333, 0.283, Avg Draft acceptance rate: 51.4%"
+        },
+        {
+          "delta_line": 393,
+          "full_line": 1920,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:20:47 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 4.12, Accepted throughput: 61.10 tokens/s, Drafted throughput: 97.99 tokens/s, Accepted: 611 tokens, Drafted: 980 tokens, Per-position acceptance rate: 0.872, 0.730, 0.602, 0.495, 0.418, Avg Draft acceptance rate: 62.3%"
+        },
+        {
+          "delta_line": 409,
+          "full_line": 1936,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:20:57 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.86, Accepted throughput: 40.10 tokens/s, Drafted throughput: 107.99 tokens/s, Accepted: 401 tokens, Drafted: 1080 tokens, Per-position acceptance rate: 0.750, 0.486, 0.287, 0.194, 0.139, Avg Draft acceptance rate: 37.1%"
+        },
+        {
+          "delta_line": 426,
+          "full_line": 1953,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:21:07 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.80, Accepted throughput: 55.20 tokens/s, Drafted throughput: 98.49 tokens/s, Accepted: 552 tokens, Drafted: 985 tokens, Per-position acceptance rate: 0.832, 0.680, 0.523, 0.416, 0.350, Avg Draft acceptance rate: 56.0%"
+        }
+      ],
+      "fixed_requests": [
+        {
+          "rep": 0,
+          "seed": 7,
+          "completion_tokens": 1024,
+          "decode_s": 12.648419279954396,
+          "ttft_s": 0.8375553559744731,
+          "output_tok_s": 80.87967178802191,
+          "window_steps": 216.0,
+          "window_seconds": 10.081134923966601,
+          "window_step_s": 21.426159021687905,
+          "sse_nonempty_text_chunks": 272,
+          "sse_gap_median_ms": 46.39807890634984,
+          "sse_gap_max_ms": 88.13528704922646,
+          "sse_gaps_gt100ms": 0,
+          "request_sha256": "17663bd85442793cb36280663a46b10af2945e17bea8801cb0723ae9cb504c09",
+          "output_sha256": "4ab3d9d32f8417a5d6ea7e5f006ec8cfe9d97ecb04294e65ea50f9598fe46aa0"
+        },
+        {
+          "rep": 1,
+          "seed": 8,
+          "completion_tokens": 1024,
+          "decode_s": 14.100298985955305,
+          "ttft_s": 0.8466762839816511,
+          "output_tok_s": 72.55165305494343,
+          "window_steps": 262.0,
+          "window_seconds": 12.0976995510282,
+          "window_step_s": 21.657009987302278,
+          "sse_nonempty_text_chunks": 299,
+          "sse_gap_median_ms": 46.28908005543053,
+          "sse_gap_max_ms": 137.63965992257,
+          "sse_gaps_gt100ms": 1,
+          "request_sha256": "c4cc52fd750e4a5fbc6bb1c91b980d43ddf1fef4bdd13b32e300d692bc08d130",
+          "output_sha256": "4e3556bf8a475307311cf3c89af44432ecd2d8dc792abb3af327ab5c8d55c0bd"
+        },
+        {
+          "rep": 2,
+          "seed": 9,
+          "completion_tokens": 1024,
+          "decode_s": 13.347764543024823,
+          "ttft_s": 0.8334734459640458,
+          "output_tok_s": 76.64204719093519,
+          "window_steps": 238.0,
+          "window_seconds": 11.064274449949153,
+          "window_step_s": 21.510673933173607,
+          "sse_nonempty_text_chunks": 285,
+          "sse_gap_median_ms": 46.17819102713838,
+          "sse_gap_max_ms": 92.38215896766633,
+          "sse_gaps_gt100ms": 0,
+          "request_sha256": "1e04d15b571663bd16676d356aee0879ced9e5c8fdf19bfc05f98fc0fb72ed76",
+          "output_sha256": "4e99627d83c86f4a9504d24e1258ca9e22cf190818dbf090212c9ad87c98ebac"
+        }
+      ],
+      "whole_onepass_only": {
+        "acc_raw": 0.5105561861520999,
+        "acc_legacy": 0.8509269769201665,
+        "tokens_per_step": 3.552780930760499,
+        "gen_tokens": 6263,
+        "wall_s": 141.2232630252838
+      }
+    },
+    {
+      "arm": "A",
+      "boot_archive_path": "/tmp/glm53-ep76-onepass9-completed-private/boot/boot-EPDECODE76A.log.gz",
+      "boot_archive_gzip_sha256": "e8be3876acef9bb4a750879c6dd64b020bf41b7c97700033ba63c5f560e55a2f",
+      "boot_original_bytes": 271788,
+      "boot_original_sha256": "fd4d571c89cb4e6b26c357d3b4a937e774c5655537bc5a1063d06935bec9f9e8",
+      "recorded_prefix": {
+        "bytes": 201085,
+        "sha256": "6a7a6df69304ae41cce8a587877e64873ad9dfe9203eacc0887858fa949faaf9",
+        "device": 66306,
+        "inode": 163350222
+      },
+      "recorded_after": {
+        "bytes": 271633,
+        "sha256": "9c4ccd54e1d8f8ad2f4e598e13952ef778bf5ea834178149e978c05ff7261023"
+      },
+      "preserved_artifacts": {
+        "A-log-prefix.raw": {
+          "bytes": 201085,
+          "sha256": "6a7a6df69304ae41cce8a587877e64873ad9dfe9203eacc0887858fa949faaf9"
+        },
+        "A-log-through-after.raw": {
+          "bytes": 271633,
+          "sha256": "9c4ccd54e1d8f8ad2f4e598e13952ef778bf5ea834178149e978c05ff7261023"
+        },
+        "A-onepass-delta.raw": {
+          "bytes": 70548,
+          "sha256": "0a115e79474761b968aa0ccb931beeb7268661ffb5779e6d0401ba7ba04a1cea"
+        }
+      },
+      "request_segments": [
+        {
+          "request_ordinal": 1,
+          "ctx": 2000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            3,
+            25
+          ],
+          "full_lines": [
+            887,
+            909
+          ],
+          "timestamp_bounds_utc": [
+            "08:26:03",
+            "08:26:08"
+          ],
+          "compile_pattern_matches": [
+            {
+              "delta_line": 5,
+              "full_line": 889,
+              "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:03 [jit_monitor.py:135] TileLang JIT compilation during inference: mhc_pre_big_fuse_with_norm_tilelang. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 7,
+              "full_line": 891,
+              "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:03 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _finish. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 9,
+              "full_line": 893,
+              "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:03 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _copy_pad. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 13,
+              "full_line": 897,
+              "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:05 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _compute_local_logits_stats_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 14,
+              "full_line": 898,
+              "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:05 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _rejection_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+            },
+            {
+              "delta_line": 15,
+              "full_line": 899,
+              "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:05 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _resample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+            }
+          ],
+          "ttft_s": 1.8197056900244206,
+          "elapsed_s": 7.580218352028169,
+          "decode_s": 5.760512662003748
+        },
+        {
+          "request_ordinal": 2,
+          "ctx": 2000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            26,
+            36
+          ],
+          "full_lines": [
+            910,
+            920
+          ],
+          "timestamp_bounds_utc": [
+            "08:26:11",
+            "08:26:14"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 0.7843035639962181,
+          "elapsed_s": 6.718070829985663,
+          "decode_s": 5.933767265989445
+        },
+        {
+          "request_ordinal": 3,
+          "ctx": 2000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            37,
+            48
+          ],
+          "full_lines": [
+            921,
+            932
+          ],
+          "timestamp_bounds_utc": [
+            "08:26:17",
+            "08:26:21"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 0.7872530570020899,
+          "elapsed_s": 6.363519191974774,
+          "decode_s": 5.576266134972684
+        },
+        {
+          "request_ordinal": 4,
+          "ctx": 32000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            49,
+            92
+          ],
+          "full_lines": [
+            933,
+            976
+          ],
+          "timestamp_bounds_utc": [
+            "08:26:24",
+            "08:26:47"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 11.116859729983844,
+          "elapsed_s": 26.206918854964897,
+          "decode_s": 15.090059124981053
+        },
+        {
+          "request_ordinal": 5,
+          "ctx": 128000,
+          "rep": null,
+          "fixed_decode": false,
+          "delta_lines": [
+            93,
+            366
+          ],
+          "full_lines": [
+            977,
+            1250
+          ],
+          "timestamp_bounds_utc": [
+            "08:26:57",
+            "08:27:43"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 41.1303858209867,
+          "elapsed_s": 55.0191944539547,
+          "decode_s": 13.888808632967994
+        },
+        {
+          "request_ordinal": 6,
+          "ctx": 2000,
+          "rep": 0,
+          "fixed_decode": true,
+          "delta_lines": [
+            367,
+            393
+          ],
+          "full_lines": [
+            1251,
+            1277
+          ],
+          "timestamp_bounds_utc": [
+            "08:27:45",
+            "08:27:59"
+          ],
+          "compile_pattern_matches": [
+            {
+              "delta_line": 369,
+              "full_line": 1253,
+              "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:27:45 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _gumbel_sample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+            }
+          ],
+          "ttft_s": 0.8384366820100695,
+          "elapsed_s": 14.379578394000418,
+          "decode_s": 13.541141711990349
+        },
+        {
+          "request_ordinal": 7,
+          "ctx": 2000,
+          "rep": 1,
+          "fixed_decode": true,
+          "delta_lines": [
+            394,
+            416
+          ],
+          "full_lines": [
+            1278,
+            1300
+          ],
+          "timestamp_bounds_utc": [
+            "08:28:03",
+            "08:28:12"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 0.8448754450073466,
+          "elapsed_s": 14.287138298037462,
+          "decode_s": 13.442262853030115
+        },
+        {
+          "request_ordinal": 8,
+          "ctx": 2000,
+          "rep": 2,
+          "fixed_decode": true,
+          "delta_lines": [
+            417,
+            445
+          ],
+          "full_lines": [
+            1301,
+            1329
+          ],
+          "timestamp_bounds_utc": [
+            "08:28:16",
+            "08:28:27"
+          ],
+          "compile_pattern_matches": [],
+          "ttft_s": 0.796844337019138,
+          "elapsed_s": 16.138801050023176,
+          "decode_s": 15.341956713004038
+        }
+      ],
+      "logged_compile_events": [
+        {
+          "request_ordinal": 1,
+          "delta_line": 5,
+          "full_line": 889,
+          "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:03 [jit_monitor.py:135] TileLang JIT compilation during inference: mhc_pre_big_fuse_with_norm_tilelang. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 7,
+          "full_line": 891,
+          "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:03 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _finish. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 9,
+          "full_line": 893,
+          "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:03 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _copy_pad. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 13,
+          "full_line": 897,
+          "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:05 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _compute_local_logits_stats_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 14,
+          "full_line": 898,
+          "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:05 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _rejection_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 1,
+          "delta_line": 15,
+          "full_line": 899,
+          "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:05 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _resample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+        },
+        {
+          "request_ordinal": 6,
+          "delta_line": 369,
+          "full_line": 1253,
+          "raw_line": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:27:45 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _gumbel_sample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+        }
+      ],
+      "periodic_acceptance_log_lines": [
+        {
+          "delta_line": 20,
+          "full_line": 904,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:26:07 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.69, Accepted throughput: 4.51 tokens/s, Drafted throughput: 8.38 tokens/s, Accepted: 140 tokens, Drafted: 260 tokens, Per-position acceptance rate: 0.865, 0.654, 0.558, 0.385, 0.231, Avg Draft acceptance rate: 53.8%"
+        },
+        {
+          "delta_line": 39,
+          "full_line": 923,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:26:17 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.08, Accepted throughput: 41.20 tokens/s, Drafted throughput: 98.99 tokens/s, Accepted: 412 tokens, Drafted: 990 tokens, Per-position acceptance rate: 0.773, 0.525, 0.374, 0.253, 0.157, Avg Draft acceptance rate: 41.6%"
+        },
+        {
+          "delta_line": 56,
+          "full_line": 940,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:26:27 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.34, Accepted throughput: 28.10 tokens/s, Drafted throughput: 60.00 tokens/s, Accepted: 281 tokens, Drafted: 600 tokens, Per-position acceptance rate: 0.817, 0.583, 0.400, 0.292, 0.250, Avg Draft acceptance rate: 46.8%"
+        },
+        {
+          "delta_line": 72,
+          "full_line": 956,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:26:37 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 4.66, Accepted throughput: 19.40 tokens/s, Drafted throughput: 26.50 tokens/s, Accepted: 194 tokens, Drafted: 265 tokens, Per-position acceptance rate: 0.906, 0.868, 0.736, 0.604, 0.547, Avg Draft acceptance rate: 73.2%"
+        },
+        {
+          "delta_line": 89,
+          "full_line": 973,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:26:47 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.48, Accepted throughput: 52.90 tokens/s, Drafted throughput: 106.50 tokens/s, Accepted: 529 tokens, Drafted: 1065 tokens, Per-position acceptance rate: 0.784, 0.587, 0.441, 0.357, 0.315, Avg Draft acceptance rate: 49.7%"
+        },
+        {
+          "delta_line": 102,
+          "full_line": 986,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:26:57 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.91, Accepted throughput: 16.00 tokens/s, Drafted throughput: 27.50 tokens/s, Accepted: 160 tokens, Drafted: 275 tokens, Per-position acceptance rate: 0.782, 0.709, 0.545, 0.473, 0.400, Avg Draft acceptance rate: 58.2%"
+        },
+        {
+          "delta_line": 354,
+          "full_line": 1238,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:27:37 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 4.28, Accepted throughput: 10.90 tokens/s, Drafted throughput: 16.62 tokens/s, Accepted: 436 tokens, Drafted: 665 tokens, Per-position acceptance rate: 0.872, 0.767, 0.624, 0.534, 0.481, Avg Draft acceptance rate: 65.6%"
+        },
+        {
+          "delta_line": 374,
+          "full_line": 1258,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:27:47 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.09, Accepted throughput: 41.30 tokens/s, Drafted throughput: 98.99 tokens/s, Accepted: 413 tokens, Drafted: 990 tokens, Per-position acceptance rate: 0.697, 0.500, 0.369, 0.288, 0.232, Avg Draft acceptance rate: 41.7%"
+        },
+        {
+          "delta_line": 390,
+          "full_line": 1274,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:27:57 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.31, Accepted throughput: 49.30 tokens/s, Drafted throughput: 106.49 tokens/s, Accepted: 493 tokens, Drafted: 1065 tokens, Per-position acceptance rate: 0.746, 0.559, 0.427, 0.329, 0.254, Avg Draft acceptance rate: 46.3%"
+        },
+        {
+          "delta_line": 407,
+          "full_line": 1291,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:28:07 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.72, Accepted throughput: 53.39 tokens/s, Drafted throughput: 97.99 tokens/s, Accepted: 534 tokens, Drafted: 980 tokens, Per-position acceptance rate: 0.755, 0.622, 0.520, 0.444, 0.383, Avg Draft acceptance rate: 54.5%"
+        },
+        {
+          "delta_line": 424,
+          "full_line": 1308,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:28:17 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.66, Accepted throughput: 52.20 tokens/s, Drafted throughput: 97.99 tokens/s, Accepted: 522 tokens, Drafted: 980 tokens, Per-position acceptance rate: 0.811, 0.633, 0.510, 0.398, 0.311, Avg Draft acceptance rate: 53.3%"
+        },
+        {
+          "delta_line": 440,
+          "full_line": 1324,
+          "raw_line": "(APIServer pid=29) INFO 09-10 08:28:27 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.95, Accepted throughput: 42.10 tokens/s, Drafted throughput: 107.99 tokens/s, Accepted: 421 tokens, Drafted: 1080 tokens, Per-position acceptance rate: 0.690, 0.477, 0.324, 0.250, 0.208, Avg Draft acceptance rate: 39.0%"
+        }
+      ],
+      "fixed_requests": [
+        {
+          "rep": 0,
+          "seed": 7,
+          "completion_tokens": 1024,
+          "decode_s": 13.541141711990349,
+          "ttft_s": 0.8384366820100695,
+          "output_tok_s": 75.5475440519287,
+          "window_steps": 235.0,
+          "window_seconds": 11.073945719050243,
+          "window_step_s": 21.220981749597627,
+          "sse_nonempty_text_chunks": 285,
+          "sse_gap_median_ms": 47.007432964164764,
+          "sse_gap_max_ms": 90.4290369944647,
+          "sse_gaps_gt100ms": 0,
+          "request_sha256": "17663bd85442793cb36280663a46b10af2945e17bea8801cb0723ae9cb504c09",
+          "output_sha256": "c55c5904655b68927de6b42ed9ec1675286d194a78b8a9412a0fd0ef42c21567"
+        },
+        {
+          "rep": 1,
+          "seed": 8,
+          "completion_tokens": 1024,
+          "decode_s": 13.442262853030115,
+          "ttft_s": 0.8448754450073466,
+          "output_tok_s": 76.1032581481918,
+          "window_steps": 258.0,
+          "window_seconds": 12.092877720948309,
+          "window_step_s": 21.334872141564,
+          "sse_nonempty_text_chunks": 279,
+          "sse_gap_median_ms": 46.88384901965037,
+          "sse_gap_max_ms": 134.2864080797881,
+          "sse_gaps_gt100ms": 2,
+          "request_sha256": "c4cc52fd750e4a5fbc6bb1c91b980d43ddf1fef4bdd13b32e300d692bc08d130",
+          "output_sha256": "4a7fd7952f46757f41896fc06629fd1d4183f0dcf00e4facb7615fb3ce1f19aa"
+        },
+        {
+          "rep": 2,
+          "seed": 9,
+          "completion_tokens": 1024,
+          "decode_s": 15.341956713004038,
+          "ttft_s": 0.796844337019138,
+          "output_tok_s": 66.67989091201726,
+          "window_steps": 305.0,
+          "window_seconds": 14.101739224977791,
+          "window_step_s": 21.62853780899358,
+          "sse_nonempty_text_chunks": 323,
+          "sse_gap_median_ms": 46.1244480102323,
+          "sse_gap_max_ms": 135.590698919259,
+          "sse_gaps_gt100ms": 1,
+          "request_sha256": "1e04d15b571663bd16676d356aee0879ced9e5c8fdf19bfc05f98fc0fb72ed76",
+          "output_sha256": "6c68f3a3520a30527baea4be2e2a86e70f4d252081022411ddeb4b1cdf93be78"
+        }
+      ],
+      "whole_onepass_only": {
+        "acc_raw": 0.4858649789029536,
+        "acc_legacy": 0.809774964838256,
+        "tokens_per_step": 3.429324894514768,
+        "gen_tokens": 6491,
+        "wall_s": 146.7051990032196
+      }
+    }
+  ],
+  "findings": [
+    "Both arms log the same six JIT names during initial2K and gumbel_sample during fixedrep0. Neither32K segment contains a compiler/JIT event. No asymmetric logged compilation explains32K+11.2747%; no-JIT proof or timing correction is available.",
+    "The request/window records contain no per-fixed accepted/drafted/per-position counters. bracket._StepWindows discards metrics text after extracting iteration count and traffic. The boot logs contain asynchronous periodic acceptance aggregates, not exact fixed-request endpoints.",
+    "All8 request hash pairs match, all8 output hash pairs differ. Fixed output is1024tokens each. A rep2 needs15.34196s vsB13.34776s despite A rep2 engine21.62854 vsB21.51067step/s; its SSE text chunks323 vs285. This is consistent with less output progress per engine cycle on a different generation path, but SSEchunks are not steps and speculative acceptance cause is unproved.",
+    "Native source/cache specialization is unchanged across the matched arms. The sole changed flag selects dynamicQ0 only for33<=m<=16384; fixed small-row decode uses the unchanged native branch. Prefill-result rounding/order, sampling trajectory and runtime variation could still affect later generation; no one is established as the cause."
+  ],
+  "conclusion": "No supported request-local JIT explanation for32K; no direct evidence of a native compute regression matching the5.27%token-rate drop. Changed output/acceptance trajectory is a plausible explanation, not an exoneration or a successful76tok/s result.",
+  "limits": [
+    "Head retained boot logs only; exact prefix/after hashes verified. JIT monitor suppression/hook/rank completeness unverified.",
+    "No raw SSEcomplete text or per-fixed endpoint acceptance counters retained. Content hashes compared from canonical fields, not recomputed from text.",
+    "Whole-onepass acceptance includes different variable completion counts6263/6491 and allprefill contexts; it must not be substituted for fixed acceptance.",
+    "Fixed engine metrics exclude response edges; request tok/s includes complete post-first-token stream tail. Ratio of these is not a measured fixed tokens-per-step metric.",
+    "Long32K/128K n1 each perarm; no variance estimate or repeated-performance guarantee.",
+    "No GPU/HTTP/remote/source mutation or new benchmark was performed."
+  ]
+}

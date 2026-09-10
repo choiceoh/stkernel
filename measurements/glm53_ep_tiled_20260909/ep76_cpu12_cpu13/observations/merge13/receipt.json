@@ -1,0 +1,109 @@
+{
+  "attempts": [
+    {
+      "attempt": "initial",
+      "child_returncode": 1,
+      "coverage_complete": false,
+      "failure_messages": [
+        "glm53_model: table says 14 files, manifest has 15"
+      ],
+      "passed": false,
+      "reported_tests_run": 0,
+      "result_path": "originals/glm53-ep76-merge13-core.json",
+      "skipped": [
+        "UE8M0 scale repair ............. SKIP (no torch on this host)",
+        "b12x SF 6-bit pack ............ OK (skipped: no torch)",
+        "dflash2 selector score precision  SKIP (no torch on this host)",
+        "b12x EP routing ................ OK (tensor remap skipped)"
+      ]
+    },
+    {
+      "attempt": "retry",
+      "child_returncode": 1,
+      "coverage_complete": false,
+      "failure_messages": [
+        "proof marker source literal exists for VLLM_GLM53_EP_HYBRID_TP2: 'glm53_ep_tiled.py'"
+      ],
+      "passed": false,
+      "reported_tests_run": 0,
+      "result_path": "originals/glm53-ep76-merge13-core-retry.json",
+      "skipped": [
+        "UE8M0 scale repair ............. SKIP (no torch on this host)",
+        "b12x SF 6-bit pack ............ OK (skipped: no torch)",
+        "dflash2 selector score precision  SKIP (no torch on this host)",
+        "b12x EP routing ................ OK (tensor remap skipped)",
+        "DSV4 UE8M0 host guard ......... SKIP values (no torch)",
+        "glm53 kpool packed scratch contract ... SKIP (no torch on this host)",
+        "w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)"
+      ]
+    },
+    {
+      "attempt": "final",
+      "child_returncode": 0,
+      "core_counts": {
+        "checks": 7021,
+        "fleet_regressions": 0,
+        "megakernel_regressions": 50
+      },
+      "coverage_complete": false,
+      "failure_messages": [],
+      "outer_returncode_original_json_present": false,
+      "outer_returncode_parent_reported": 3,
+      "passed": false,
+      "reported_tests_run": 7021,
+      "result_path": "originals/glm53-ep76-merge13-core-final.json",
+      "skipped": [
+        "OK (skipped=2)",
+        "UE8M0 scale repair ............. SKIP (no torch on this host)",
+        "b12x SF 6-bit pack ............ OK (skipped: no torch)",
+        "dflash2 selector score precision  SKIP (no torch on this host)",
+        "b12x EP routing ................ OK (tensor remap skipped)",
+        "DSV4 UE8M0 host guard ......... SKIP values (no torch)",
+        "glm53 kpool packed scratch contract ... SKIP (no torch on this host)",
+        "w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)"
+      ]
+    }
+  ],
+  "full_validation_pass": false,
+  "gpu_test_performed": false,
+  "original_jsons": [
+    {
+      "coverage_complete": false,
+      "encoding": "gzip",
+      "original_bytes_preserved": true,
+      "original_sha256": "d5fc45f413092bb9c54030ec8200d3c9c98f1c7a8713f2b0b643cb356bbb8dbf",
+      "original_size": 759,
+      "passed": false,
+      "path": "observations/merge13/glm53-ep76-merge13-core.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-merge13-core.json",
+      "stored_sha256": "8d8405ca3575e2e944f27c9c11a46f19288559af8a785ffa1565f07916b9c466",
+      "stored_size": 394
+    },
+    {
+      "coverage_complete": false,
+      "encoding": "gzip",
+      "original_bytes_preserved": true,
+      "original_sha256": "5859d94358eb8a8bb7d317a0d4cfbf030e0a7f8d6136075b5bbe06d380b5793c",
+      "original_size": 1001,
+      "passed": false,
+      "path": "observations/merge13/glm53-ep76-merge13-core-retry.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-merge13-core-retry.json",
+      "stored_sha256": "fb7449a379090d2ff7071d66e1488a7fde83f39cba130d489156cc01270731b1",
+      "stored_size": 490
+    },
+    {
+      "coverage_complete": false,
+      "encoding": "gzip",
+      "original_bytes_preserved": true,
+      "original_sha256": "c1c138f592317541908e166cf236a9af4bc0e94de1c05fb966baee7b8a3dd54c",
+      "original_size": 1032,
+      "passed": false,
+      "path": "observations/merge13/glm53-ep76-merge13-core-final.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-merge13-core-final.json",
+      "stored_sha256": "0f8cab2978c91f902b6c6210e217a3ccd604151718401f5ebb55ee3e3c82e515",
+      "stored_size": 499
+    }
+  ],
+  "private_inventory_sha256": "1eed8174c3561521af8ae25129d68ee9af320947ca59c62b0f00eeb9edc30e76",
+  "schema": 1
+}

@@ -1,0 +1,271 @@
+{
+  "verdict": "PASSED_CPU_ORIGINALS_VERIFIED",
+  "source": "3fab1ce81a79936b3b76fa4d87b447d9f55bacba",
+  "result_sha256": "fbd20dc4346bf1592c6000fd811d918c6974f718c1ab58a951a8344e8eab0c04",
+  "contracts_sha256": "b959ad4f59cdef711c08ac22ac349890f004a8889e5eea82a8a4ebfc9cb544d1",
+  "original_files": 71,
+  "original_bytes": 9815145,
+  "lowerings": 23,
+  "contracts": {
+    "tests_run": 181,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "mounted_sources": 22,
+  "contract_sources": 44,
+  "cuda_initialized": false,
+  "runtime_post_recheck_recorded": true,
+  "elapsed_seconds": 151.24562191963196,
+  "resources": [
+    {
+      "arm": "static/M4",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M6",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M8",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M12",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M16",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M24",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M4-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M8-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M12-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M16-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M24-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M32-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-map288-i64",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-offset216-i64",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-empty-i64",
+      "REG": 126,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "opt-static/M6-local",
+      "REG": 96,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 98304,
+        "static_bytes": 1024,
+        "total_bytes": 99328,
+        "block_limit_bytes": 101376
+      },
+      "register_layout": {
+        "proven": true,
+        "threads": 128,
+        "raw_stage_bytes": 2048,
+        "num_k_blocks": 4,
+        "word_coverage_bytes": 2048,
+        "stages": 2,
+        "stage_stride_bytes": 2048,
+        "copy_shape": "((1, (1, 4)), 4, 4)",
+        "words_per_thread": [
+          16
+        ],
+        "offset_engine": "static_scalar_physical_layout",
+        "slot_zero_relative_offsets": true
+      }
+    },
+    {
+      "arm": "opt-static/M4-map288-i32",
+      "REG": 96,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 98304,
+        "static_bytes": 1024,
+        "total_bytes": 99328,
+        "block_limit_bytes": 101376
+      },
+      "register_layout": {
+        "proven": true,
+        "threads": 128,
+        "raw_stage_bytes": 2048,
+        "num_k_blocks": 4,
+        "word_coverage_bytes": 2048,
+        "stages": 2,
+        "stage_stride_bytes": 2048,
+        "copy_shape": "((1, (1, 4)), 4, 4)",
+        "words_per_thread": [
+          16
+        ],
+        "offset_engine": "static_scalar_physical_layout",
+        "slot_zero_relative_offsets": true
+      }
+    },
+    {
+      "arm": "opt-static/M6-map288-i32",
+      "REG": 96,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 98304,
+        "static_bytes": 1024,
+        "total_bytes": 99328,
+        "block_limit_bytes": 101376
+      },
+      "register_layout": {
+        "proven": true,
+        "threads": 128,
+        "raw_stage_bytes": 2048,
+        "num_k_blocks": 4,
+        "word_coverage_bytes": 2048,
+        "stages": 2,
+        "stage_stride_bytes": 2048,
+        "copy_shape": "((1, (1, 4)), 4, 4)",
+        "words_per_thread": [
+          16
+        ],
+        "offset_engine": "static_scalar_physical_layout",
+        "slot_zero_relative_offsets": true
+      }
+    },
+    {
+      "arm": "opt-static/M8-map288-i32",
+      "REG": 96,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 98304,
+        "static_bytes": 1024,
+        "total_bytes": 99328,
+        "block_limit_bytes": 101376
+      },
+      "register_layout": {
+        "proven": true,
+        "threads": 128,
+        "raw_stage_bytes": 2048,
+        "num_k_blocks": 4,
+        "word_coverage_bytes": 2048,
+        "stages": 2,
+        "stage_stride_bytes": 2048,
+        "copy_shape": "((1, (1, 4)), 4, 4)",
+        "words_per_thread": [
+          16
+        ],
+        "offset_engine": "static_scalar_physical_layout",
+        "slot_zero_relative_offsets": true
+      }
+    },
+    {
+      "arm": "dynamic/M33",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M8192",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    }
+  ],
+  "artifact_validator": "frozen source pure validator replayed over original files; no tests/compiler/GPU",
+  "source_binding": "original receipt compared against immutable git 3fab1ce8; worker before/after HEAD and clean state independently retained",
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false
+}

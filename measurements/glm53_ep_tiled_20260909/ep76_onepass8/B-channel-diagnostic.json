@@ -1,0 +1,130 @@
+{
+  "canonical_jsonl_sha256": "024a8de0de0abb28021c5f96fb76f754003e9dd1cb45cde91162e4cba1bf1a49",
+  "channel_diagnostics": {
+    "channels": {
+      "content": {
+        "gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "non_text_fields": 0,
+        "raw_chars": 0,
+        "raw_pieces": 0,
+        "selected_chars": 0,
+        "selected_pieces": 0
+      },
+      "reasoning": {
+        "gated_counts": {
+          "cjk_mixed": 2,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "non_text_fields": 0,
+        "raw_chars": 2718,
+        "raw_pieces": 301,
+        "selected_chars": 2718,
+        "selected_pieces": 301
+      },
+      "reasoning_content": {
+        "gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "non_text_fields": 0,
+        "raw_chars": 0,
+        "raw_pieces": 0,
+        "selected_chars": 0,
+        "selected_pieces": 0
+      }
+    },
+    "combined_chars": 2718,
+    "combined_gated_counts": {
+      "cjk_mixed": 2,
+      "control": 0,
+      "lone_jamo": 0,
+      "replacement": 0
+    },
+    "first_offending_channel": "reasoning",
+    "offenses": [
+      {
+        "channel": "reasoning",
+        "combined_offset": 1218,
+        "kind": "cjk_mixed",
+        "selected_channel_offset": 1218,
+        "snippet": "info, Francis Crick biography, Halvorsen博士 signing tundra report, Jimmy Carter foundation activi",
+        "snippet_start": 1178
+      }
+    ],
+    "precedence": [
+      "content",
+      "reasoning_content",
+      "reasoning"
+    ],
+    "schema": 1,
+    "scope": "diagnostic-only; existing combined-text gate",
+    "snippet_scope": "combined-selected-text",
+    "unlocated_kinds": []
+  },
+  "korean": {
+    "dirty": 1,
+    "hits": [
+      [
+        "fixed2K rep1",
+        {
+          "cjk_mixed": 2
+        }
+      ]
+    ],
+    "kinds": {
+      "cjk_mixed": 2,
+      "control": 0,
+      "lone_jamo": 0,
+      "replacement": 0
+    },
+    "n": 8
+  },
+  "output_sha256": "ca684dd4ad655c97e1518d7eeec970d6c2c0b233fede33ab8c9905260818c878",
+  "prior_same_literal": [
+    {
+      "name": "EPDECODE76A",
+      "offense": {
+        "channel": "reasoning",
+        "combined_offset": 1342,
+        "kind": "cjk_mixed",
+        "selected_channel_offset": 1342,
+        "snippet": "도쿄도), Francis Crick biography, Halvorsen博士 tundra report, Jimmy Carter (카터 재단), combustion condi",
+        "snippet_start": 1302
+      },
+      "path": "measurements/glm53_ep_tiled_20260909/ep76_onepass3/comparison.json",
+      "question": "fixed-all",
+      "rep": 0,
+      "request_index": 5,
+      "sha256": "384c428c0a53efc2c1cee0bedd3dd9570cb16e1a4849959ca48e8e0dc17111bb"
+    },
+    {
+      "name": "EPDECODE76A",
+      "offense": {
+        "channel": "reasoning",
+        "combined_offset": 932,
+        "kind": "cjk_mixed",
+        "selected_channel_offset": 932,
+        "snippet": "kyo population, Francis Crick, Halvorsen博士 signing a tundra survey report, Jimmy Carter's founda",
+        "snippet_start": 892
+      },
+      "path": "measurements/glm53_ep_tiled_20260909/ep76_onepass5/comparison.json",
+      "question": "fixed-all",
+      "rep": 0,
+      "request_index": 5,
+      "sha256": "a65df0bd25e15158a592e6c75a9d1120fc25fa165b4fd1282f03dd69b182d6a2"
+    }
+  ],
+  "question": "fixed-all",
+  "rep": 1,
+  "request_index": 6,
+  "scope": "Diagnostic only. Original combined-text Korean gate stays failed; repeating a known name does not waive the gate."
+}

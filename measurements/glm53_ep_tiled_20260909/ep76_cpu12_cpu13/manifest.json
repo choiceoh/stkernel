@@ -1,0 +1,871 @@
+{
+  "adoption_acceptance": false,
+  "cpu_runs": {
+    "12": {
+      "compile_only": true,
+      "contract_sources": 84,
+      "contracts": {
+        "errors": 0,
+        "failures": 0,
+        "skips": 0,
+        "tests_run": 239
+      },
+      "contracts_receipt": {
+        "encoding": "raw",
+        "original_sha256": "ee476b3d4c8f3a251dcdfa672129bb7ebc90e3dbd23bf49d8b8d619f3a365686",
+        "original_size": 18645,
+        "path": "cpu12/originals/contracts.json",
+        "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/originals/contracts.json",
+        "stored_sha256": "ee476b3d4c8f3a251dcdfa672129bb7ebc90e3dbd23bf49d8b8d619f3a365686",
+        "stored_size": 18645
+      },
+      "fresh_lowerings": 9,
+      "gpu_numerics_acceptance": false,
+      "hybrid_lowerings": 6,
+      "manifest": "cpu12/originals-manifest.json",
+      "mounted_sources": 23,
+      "performance_acceptance": false,
+      "result": {
+        "encoding": "raw",
+        "original_sha256": "98c3d5882813430b7608662c13ee2bd41dc71e0bcee76142116755015f20a822",
+        "original_size": 52169,
+        "path": "cpu12/originals/result.json",
+        "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/originals/result.json",
+        "stored_sha256": "98c3d5882813430b7608662c13ee2bd41dc71e0bcee76142116755015f20a822",
+        "stored_size": 52169
+      },
+      "returncode": 0,
+      "same_source_baseline_lowerings": 3,
+      "session": "epdecode76cpu0910v12",
+      "source_binding": "cpu12/source-binding.json",
+      "source_revision": "b36dc7f1b19e471fa3280536e244f1711311eaea"
+    },
+    "13": {
+      "compile_only": true,
+      "contract_sources": 84,
+      "contracts": {
+        "errors": 0,
+        "failures": 0,
+        "skips": 0,
+        "tests_run": 239
+      },
+      "contracts_receipt": {
+        "encoding": "raw",
+        "original_sha256": "22bcc92d5b4ac31877ffd211e236cbfff709ee5f7d0be69848b1ec9059b99f96",
+        "original_size": 18644,
+        "path": "cpu13/originals/contracts.json",
+        "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/originals/contracts.json",
+        "stored_sha256": "22bcc92d5b4ac31877ffd211e236cbfff709ee5f7d0be69848b1ec9059b99f96",
+        "stored_size": 18644
+      },
+      "fresh_lowerings": 9,
+      "gpu_numerics_acceptance": false,
+      "hybrid_lowerings": 6,
+      "manifest": "cpu13/originals-manifest.json",
+      "mounted_sources": 23,
+      "performance_acceptance": false,
+      "result": {
+        "encoding": "raw",
+        "original_sha256": "134ace613b47afeae8fa7abc8fe5cb3355f68f185b4c84ef3b14a7ac79ab3f18",
+        "original_size": 52169,
+        "path": "cpu13/originals/result.json",
+        "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/originals/result.json",
+        "stored_sha256": "134ace613b47afeae8fa7abc8fe5cb3355f68f185b4c84ef3b14a7ac79ab3f18",
+        "stored_size": 52169
+      },
+      "returncode": 0,
+      "same_source_baseline_lowerings": 3,
+      "session": "epdecode76cpu0910v13",
+      "source_binding": "cpu13/source-binding.json",
+      "source_revision": "407271d9cf73f5db6192a8410c68f152e67301cb"
+    }
+  },
+  "delivery": {
+    "context": "DURABLE_REPOSITORY_COPY",
+    "original_staging_inventory_sha256": "6bf12310c395ab2c04a1c5d5b1e0d8f555e4511be9ff3b2a3543487c3f2bd1b4",
+    "path": "delivery.json"
+  },
+  "gpu_numerics_acceptance": false,
+  "original_files": {
+    "audit/cpu12-q0-ptx.json": {
+      "encoding": "raw",
+      "original_sha256": "de90d2f84b723259e20df50f6451323405a8339ca149d9ca9a11ccf8d6edee6f",
+      "original_size": 7123,
+      "path": "audit/cpu12-q0-ptx.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-q0-audit/audit.json",
+      "stored_sha256": "de90d2f84b723259e20df50f6451323405a8339ca149d9ca9a11ccf8d6edee6f",
+      "stored_size": 7123
+    },
+    "audit/cpu12-q0-ptx.md": {
+      "encoding": "raw",
+      "original_sha256": "487d725bca42695396659e205496f7afddf5d906089a093c6372d9bc6548eac0",
+      "original_size": 2176,
+      "path": "audit/cpu12-q0-ptx.md",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-q0-audit/audit.md",
+      "stored_sha256": "487d725bca42695396659e205496f7afddf5d906089a093c6372d9bc6548eac0",
+      "stored_size": 2176
+    },
+    "audit/cpu13-q0-audit-reuse.json": {
+      "encoding": "raw",
+      "original_sha256": "4ff4dc44fdfcdb2c0853e4f987d737f72374f6635255bdce7712f56d4ec500c4",
+      "original_size": 7238,
+      "path": "audit/cpu13-q0-audit-reuse.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu13-exact-reuse-wrapper.json",
+      "stored_sha256": "4ff4dc44fdfcdb2c0853e4f987d737f72374f6635255bdce7712f56d4ec500c4",
+      "stored_size": 7238
+    },
+    "cpu12/collection-attempt1.json": {
+      "encoding": "raw",
+      "original_sha256": "88c1c184b4c1ae08b5b623d28b55600632b3a7ddfa235e588d7b261a9c3c35fd",
+      "original_size": 314,
+      "path": "cpu12/collection-attempt1.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/collection-attempt1.json",
+      "stored_sha256": "88c1c184b4c1ae08b5b623d28b55600632b3a7ddfa235e588d7b261a9c3c35fd",
+      "stored_size": 314
+    },
+    "cpu12/fleet.log": {
+      "encoding": "gzip",
+      "original_sha256": "d74d714665fe8fffd582025371786962a3ed429be72d134f833a527434f963df",
+      "original_size": 44998,
+      "path": "cpu12/fleet.log.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/fleet.log",
+      "stored_sha256": "81f2a12e130cece8176888b71a010a60338ed84a97e327e27e71a81f3e8b7b57",
+      "stored_size": 7984
+    },
+    "cpu12/originals/contracts.json": {
+      "encoding": "raw",
+      "original_sha256": "ee476b3d4c8f3a251dcdfa672129bb7ebc90e3dbd23bf49d8b8d619f3a365686",
+      "original_size": 18645,
+      "path": "cpu12/originals/contracts.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/originals/contracts.json",
+      "stored_sha256": "ee476b3d4c8f3a251dcdfa672129bb7ebc90e3dbd23bf49d8b8d619f3a365686",
+      "stored_size": 18645
+    },
+    "cpu12/originals/result.json": {
+      "encoding": "raw",
+      "original_sha256": "98c3d5882813430b7608662c13ee2bd41dc71e0bcee76142116755015f20a822",
+      "original_size": 52169,
+      "path": "cpu12/originals/result.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/originals/result.json",
+      "stored_sha256": "98c3d5882813430b7608662c13ee2bd41dc71e0bcee76142116755015f20a822",
+      "stored_size": 52169
+    },
+    "cpu12/private-archive-SHA256SUMS": {
+      "encoding": "raw",
+      "original_sha256": "8ebcf2275d6412f826efd74eb7874fb3e112837a16f932d8b78ac47fd769cd90",
+      "original_size": 9642,
+      "path": "cpu12/private-archive-SHA256SUMS",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/SHA256SUMS",
+      "stored_sha256": "8ebcf2275d6412f826efd74eb7874fb3e112837a16f932d8b78ac47fd769cd90",
+      "stored_size": 9642
+    },
+    "cpu12/source-binding.json": {
+      "encoding": "raw",
+      "original_sha256": "265da249f552fa57374d6628d861eff0572cb22f0d6513b48a65aef847922218",
+      "original_size": 14100,
+      "path": "cpu12/source-binding.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/source-binding.json",
+      "stored_sha256": "265da249f552fa57374d6628d861eff0572cb22f0d6513b48a65aef847922218",
+      "stored_size": 14100
+    },
+    "cpu12/verification.json": {
+      "encoding": "raw",
+      "original_sha256": "176146da7366c1d0352b3c25f12a1cfa1c34e316c2a01b0796872fcb032f8180",
+      "original_size": 5055,
+      "path": "cpu12/verification.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/verification.json",
+      "stored_sha256": "176146da7366c1d0352b3c25f12a1cfa1c34e316c2a01b0796872fcb032f8180",
+      "stored_size": 5055
+    },
+    "cpu12/worker-after.json": {
+      "encoding": "gzip",
+      "original_sha256": "0dc1fdeb7e2cdd5e6a05a1d8709cb6e19a3449b3f81c38f22f95521b1c15689c",
+      "original_size": 18349,
+      "path": "cpu12/worker-after.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/worker-after.json",
+      "stored_sha256": "81577faede8e0b66ffb15d17005e2f740463686039ad3c76586a6b97f15b77d8",
+      "stored_size": 2316
+    },
+    "cpu12/worker-before.json": {
+      "encoding": "gzip",
+      "original_sha256": "4ec8a38ae84d9dcc666264cb2097bf6ecbf05089b7cc73e763fbacf95ef1d41e",
+      "original_size": 18350,
+      "path": "cpu12/worker-before.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/worker-before.json",
+      "stored_sha256": "2e7e6e945605b66cbb783929acac2186a19710117aa25204209e62d477d4d3c2",
+      "stored_size": 2315
+    },
+    "cpu12/worker-retry-before.json": {
+      "encoding": "gzip",
+      "original_sha256": "06077f6fb33c8f33020ec4c59dc604b7e7223b601dbf5514d38a0ec3d04175b0",
+      "original_size": 18350,
+      "path": "cpu12/worker-retry-before.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/worker-retry-before.json",
+      "stored_sha256": "7430cd97b13a982963063705be6cf61c5ef285129a8a6c53445794321e58ba07",
+      "stored_size": 2318
+    },
+    "cpu13/fleet.log": {
+      "encoding": "gzip",
+      "original_sha256": "45210becd4d741f123675d8e4a81edf985ff8ada7139f086814acc0007b6c721",
+      "original_size": 44998,
+      "path": "cpu13/fleet.log.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/fleet.log",
+      "stored_sha256": "b6096dbddad6d59e1454ebda8a79c20c49627038bc1b7691d28e72f540184e91",
+      "stored_size": 7983
+    },
+    "cpu13/originals/contracts.json": {
+      "encoding": "raw",
+      "original_sha256": "22bcc92d5b4ac31877ffd211e236cbfff709ee5f7d0be69848b1ec9059b99f96",
+      "original_size": 18644,
+      "path": "cpu13/originals/contracts.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/originals/contracts.json",
+      "stored_sha256": "22bcc92d5b4ac31877ffd211e236cbfff709ee5f7d0be69848b1ec9059b99f96",
+      "stored_size": 18644
+    },
+    "cpu13/originals/result.json": {
+      "encoding": "raw",
+      "original_sha256": "134ace613b47afeae8fa7abc8fe5cb3355f68f185b4c84ef3b14a7ac79ab3f18",
+      "original_size": 52169,
+      "path": "cpu13/originals/result.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/originals/result.json",
+      "stored_sha256": "134ace613b47afeae8fa7abc8fe5cb3355f68f185b4c84ef3b14a7ac79ab3f18",
+      "stored_size": 52169
+    },
+    "cpu13/private-archive-SHA256SUMS": {
+      "encoding": "raw",
+      "original_sha256": "bc44fd6896764807d7e6d8b9e4129722181798dc5e8efbbc5422925740053aa6",
+      "original_size": 9371,
+      "path": "cpu13/private-archive-SHA256SUMS",
+      "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/SHA256SUMS",
+      "stored_sha256": "bc44fd6896764807d7e6d8b9e4129722181798dc5e8efbbc5422925740053aa6",
+      "stored_size": 9371
+    },
+    "cpu13/source-binding.json": {
+      "encoding": "raw",
+      "original_sha256": "9b5a4ae0c2ea08aa103a1448d79c631a9c7cb3a2addd7687915916acfa1426de",
+      "original_size": 14100,
+      "path": "cpu13/source-binding.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/source-binding.json",
+      "stored_sha256": "9b5a4ae0c2ea08aa103a1448d79c631a9c7cb3a2addd7687915916acfa1426de",
+      "stored_size": 14100
+    },
+    "cpu13/verification.json": {
+      "encoding": "raw",
+      "original_sha256": "461970e24a90f0be8fc6ac4fc92d2fc4311b301c424ecd95853793f46141fb8e",
+      "original_size": 5055,
+      "path": "cpu13/verification.json",
+      "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/verification.json",
+      "stored_sha256": "461970e24a90f0be8fc6ac4fc92d2fc4311b301c424ecd95853793f46141fb8e",
+      "stored_size": 5055
+    },
+    "cpu13/worker-after.json": {
+      "encoding": "gzip",
+      "original_sha256": "70ee787e472b032adf00a94f04ab0cd10137ee26c5862911f43d8a68194d9ff6",
+      "original_size": 18350,
+      "path": "cpu13/worker-after.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/worker-after.json",
+      "stored_sha256": "8ec8bc34dab62ac4e46a1c03f0268f9de033cd46e6ce2fc6ea5b02be1fe63004",
+      "stored_size": 2319
+    },
+    "cpu13/worker-before.json": {
+      "encoding": "gzip",
+      "original_sha256": "f12fa15f368ccc5686150ae5d14f4b3c989f97d7eb19a3792e5176cd79a47df9",
+      "original_size": 18350,
+      "path": "cpu13/worker-before.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu13-completed.private/worker-before.json",
+      "stored_sha256": "5a37378dce9310c5cdaefbc3d55e52070e3a57c15a64939f3a3c3417630cf15b",
+      "stored_size": 2319
+    },
+    "frozen-validator-source/probes/glm53_ep_capsule_runtime.py": {
+      "encoding": "gzip",
+      "original_sha256": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+      "original_size": 5679,
+      "path": "frozen-validator-source/probes/glm53_ep_capsule_runtime.py.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/frozen-validator-source/probes/glm53_ep_capsule_runtime.py",
+      "stored_sha256": "d6cd7bd81304993b74743173cc47116c85cd37f136951c0efd5db29f3b4d3fc7",
+      "stored_size": 2022
+    },
+    "frozen-validator-source/probes/glm53_ep_tiled_compile.py": {
+      "encoding": "gzip",
+      "original_sha256": "4d0ef4ecc7fb94897b344f28971a9d5d1e09cdb6763e94356163278f58f2bdf6",
+      "original_size": 39510,
+      "path": "frozen-validator-source/probes/glm53_ep_tiled_compile.py.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/frozen-validator-source/probes/glm53_ep_tiled_compile.py",
+      "stored_sha256": "36037dd6f8d30d8bc418a2c5aa6deef5a70475de77446adcf8c2c068cfcfbe4f",
+      "stored_size": 10704
+    },
+    "frozen-validator-source/probes/run_glm53_ep_tiled_cpu.py": {
+      "encoding": "gzip",
+      "original_sha256": "4c35d1ffb95ced8b46abc5b1bbf231fcd99f1ac09d6dcae2275f45ea2a81cb81",
+      "original_size": 5307,
+      "path": "frozen-validator-source/probes/run_glm53_ep_tiled_cpu.py.gz",
+      "source_private_path": "/tmp/glm53-ep76-cpu12-completed.private/frozen-validator-source/probes/run_glm53_ep_tiled_cpu.py",
+      "stored_sha256": "5192ee70a033fe877ed297efd0595814dcd8deb3c3148efcc7659ee28fd49a3c",
+      "stored_size": 1974
+    },
+    "observations/merge13/glm53-ep76-merge13-core-core-0.log": {
+      "encoding": "gzip",
+      "original_sha256": "8fdb583707e01b14ef6d74e49a0f4be9dfb92a60daa8f6c2620c4b68809ed8cd",
+      "original_size": 2745,
+      "path": "observations/merge13/glm53-ep76-merge13-core-core-0.log.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-merge13-core-core-0.log",
+      "stored_sha256": "6de7fb3def48722edd60222cad06629dbb364767dd77d3e5c66f01b41a0573c4",
+      "stored_size": 1118
+    },
+    "observations/merge13/glm53-ep76-merge13-core-final-core-0.log": {
+      "encoding": "gzip",
+      "original_sha256": "47ecbec3a5e679828b9bd0ba43ada43842672c79b4f896b8a87044f57932531c",
+      "original_size": 5722,
+      "path": "observations/merge13/glm53-ep76-merge13-core-final-core-0.log.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-merge13-core-final-core-0.log",
+      "stored_sha256": "e719665c4c4964fbbc6125d42bd8d42f26821bc77e6cc918123752c5dcadea17",
+      "stored_size": 2175
+    },
+    "observations/merge13/glm53-ep76-merge13-core-final.json": {
+      "encoding": "gzip",
+      "original_sha256": "c1c138f592317541908e166cf236a9af4bc0e94de1c05fb966baee7b8a3dd54c",
+      "original_size": 1032,
+      "path": "observations/merge13/glm53-ep76-merge13-core-final.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-merge13-core-final.json",
+      "stored_sha256": "0f8cab2978c91f902b6c6210e217a3ccd604151718401f5ebb55ee3e3c82e515",
+      "stored_size": 499
+    },
+    "observations/merge13/glm53-ep76-merge13-core-retry-core-0.log": {
+      "encoding": "gzip",
+      "original_sha256": "860bc39622f0953fecd17d9de1fc5edbd3ef88a042190c73429966101da3d9a2",
+      "original_size": 5200,
+      "path": "observations/merge13/glm53-ep76-merge13-core-retry-core-0.log.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-merge13-core-retry-core-0.log",
+      "stored_sha256": "c8a4dae8884f8f88a37cb4e684252fdb7f75166e90042a250a2b26bf844f1170",
+      "stored_size": 2056
+    },
+    "observations/merge13/glm53-ep76-merge13-core-retry.json": {
+      "encoding": "gzip",
+      "original_sha256": "5859d94358eb8a8bb7d317a0d4cfbf030e0a7f8d6136075b5bbe06d380b5793c",
+      "original_size": 1001,
+      "path": "observations/merge13/glm53-ep76-merge13-core-retry.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-merge13-core-retry.json",
+      "stored_sha256": "fb7449a379090d2ff7071d66e1488a7fde83f39cba130d489156cc01270731b1",
+      "stored_size": 490
+    },
+    "observations/merge13/glm53-ep76-merge13-core.json": {
+      "encoding": "gzip",
+      "original_sha256": "d5fc45f413092bb9c54030ec8200d3c9c98f1c7a8713f2b0b643cb356bbb8dbf",
+      "original_size": 759,
+      "path": "observations/merge13/glm53-ep76-merge13-core.json.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-merge13-core.json",
+      "stored_sha256": "8d8405ca3575e2e944f27c9c11a46f19288559af8a785ffa1565f07916b9c466",
+      "stored_size": 394
+    },
+    "observations/private-archive-SHA256SUMS": {
+      "encoding": "raw",
+      "original_sha256": "1eed8174c3561521af8ae25129d68ee9af320947ca59c62b0f00eeb9edc30e76",
+      "original_size": 1015,
+      "path": "observations/private-archive-SHA256SUMS",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/SHA256SUMS",
+      "stored_sha256": "1eed8174c3561521af8ae25129d68ee9af320947ca59c62b0f00eeb9edc30e76",
+      "stored_size": 1015
+    },
+    "observations/submit7/glm53-ep76-submit7.log": {
+      "encoding": "gzip",
+      "original_sha256": "f569619a42129273dfe2fb1886f43c14757b7b7f6466dacff5947a116391e3c5",
+      "original_size": 1008,
+      "path": "observations/submit7/glm53-ep76-submit7.log.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/glm53-ep76-submit7.log",
+      "stored_sha256": "d0ff92c931becc32d94c92a0a37e1fded85492af3c62146df6c2a82894af755c",
+      "stored_size": 516
+    },
+    "observations/submit7/startup.log": {
+      "encoding": "gzip",
+      "original_sha256": "e10e55754ac918d9e685c0d22e51706557a634f139afed61cd5767299b0cc277",
+      "original_size": 466,
+      "path": "observations/submit7/startup.log.gz",
+      "source_private_path": "/tmp/glm53-ep76-submit7-merge13.private/originals/startup.log",
+      "stored_sha256": "5d55459a8c8ccd4f3bc3627cd52ea87c2f5c25bbdee092192fd3c9b38395dc84",
+      "stored_size": 300
+    }
+  },
+  "original_worker_files_per_cpu": 29,
+  "package_scope": "CPU-only original evidence and non-GPU/incomplete preparation observations",
+  "performance_acceptance": false,
+  "private_archive_inventories": {
+    "/tmp/glm53-ep76-cpu12-completed.private": "8ebcf2275d6412f826efd74eb7874fb3e112837a16f932d8b78ac47fd769cd90",
+    "/tmp/glm53-ep76-cpu13-completed.private": "bc44fd6896764807d7e6d8b9e4129722181798dc5e8efbbc5422925740053aa6",
+    "/tmp/glm53-ep76-submit7-merge13.private": "1eed8174c3561521af8ae25129d68ee9af320947ca59c62b0f00eeb9edc30e76"
+  },
+  "schema": 2,
+  "shared_artifact_reference_entries": 54,
+  "shared_artifacts": {
+    "1c3e2fe7b2a5dabe43ef934f1213a2a4c48db370ad6c4c01ea3a6550d0204fe2": {
+      "encoding": "gzip",
+      "kind": ".cubin",
+      "original_sha256": "1c3e2fe7b2a5dabe43ef934f1213a2a4c48db370ad6c4c01ea3a6550d0204fe2",
+      "original_size": 142976,
+      "path": "artifacts/1c3e2fe7b2a5dabe43ef934f1213a2a4c48db370ad6c4c01ea3a6550d0204fe2.cubin.gz",
+      "stored_sha256": "38344967cba0f79407476f9f2a9fdc72846c796977f0901d08ca42b68b9d1ea6",
+      "stored_size": 28049,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin"
+        },
+        {
+          "cpu": 13,
+          "original_path": "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin"
+        }
+      ]
+    },
+    "2101afce8704b15742124c25ae9a427a65526f0fc3997ffdb3b1d15b4b4e8ef7": {
+      "encoding": "gzip",
+      "kind": ".ptx",
+      "original_sha256": "2101afce8704b15742124c25ae9a427a65526f0fc3997ffdb3b1d15b4b4e8ef7",
+      "original_size": 176338,
+      "path": "artifacts/2101afce8704b15742124c25ae9a427a65526f0fc3997ffdb3b1d15b4b4e8ef7.ptx.gz",
+      "stored_sha256": "fa631af72a9476614617ac80a41b66eef1f8ae0cce0489b160cba52519a58f64",
+      "stored_size": 28952,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx"
+        },
+        {
+          "cpu": 13,
+          "original_path": "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx"
+        }
+      ]
+    },
+    "2e1f44af6221b8f26d960f88730dc06c971126ffbcd76090f3210a435f341f7e": {
+      "encoding": "gzip",
+      "kind": ".ptx",
+      "original_sha256": "2e1f44af6221b8f26d960f88730dc06c971126ffbcd76090f3210a435f341f7e",
+      "original_size": 176335,
+      "path": "artifacts/2e1f44af6221b8f26d960f88730dc06c971126ffbcd76090f3210a435f341f7e.ptx.gz",
+      "stored_sha256": "1035fbcf2204ba4dbb3ba42313d67ce8f605fff28c3e78707dfebd70d15c389f",
+      "stored_size": 28959,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx"
+        }
+      ]
+    },
+    "300e1df65779b9b27cccf19da1865c8b1c913471ea839548bde7df87d5892491": {
+      "encoding": "gzip",
+      "kind": ".ptx",
+      "original_sha256": "300e1df65779b9b27cccf19da1865c8b1c913471ea839548bde7df87d5892491",
+      "original_size": 1108760,
+      "path": "artifacts/300e1df65779b9b27cccf19da1865c8b1c913471ea839548bde7df87d5892491.ptx.gz",
+      "stored_sha256": "f70162a8f331728b28345ad5c40e890fe3e08ccfca59bd04a69702af25be9fa3",
+      "stored_size": 174634,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx"
+        }
+      ]
+    },
+    "480cd05158373ebe7ca0f83692c5904c6905110a2389a6a8d4567229dfe47e27": {
+      "encoding": "gzip",
+      "kind": ".cubin",
+      "original_sha256": "480cd05158373ebe7ca0f83692c5904c6905110a2389a6a8d4567229dfe47e27",
+      "original_size": 87672,
+      "path": "artifacts/480cd05158373ebe7ca0f83692c5904c6905110a2389a6a8d4567229dfe47e27.cubin.gz",
+      "stored_sha256": "10866fce9ec84e0fd0aa6a559965aa7cb1d922917095f53a96de860747729a32",
+      "stored_size": 22581,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin"
+        }
+      ]
+    },
+    "4b6f5fd15de591e1d052efe26410d7179d1413ace4db681143a10ccf0715bd06": {
+      "encoding": "gzip",
+      "kind": ".ptx",
+      "original_sha256": "4b6f5fd15de591e1d052efe26410d7179d1413ace4db681143a10ccf0715bd06",
+      "original_size": 274826,
+      "path": "artifacts/4b6f5fd15de591e1d052efe26410d7179d1413ace4db681143a10ccf0715bd06.ptx.gz",
+      "stored_sha256": "dedb9a64c7c1ff3fdc9e333ceac55df0ee2240668066542ea1b6abc889fa6ffe",
+      "stored_size": 44410,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx"
+        },
+        {
+          "cpu": 13,
+          "original_path": "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx"
+        }
+      ]
+    },
+    "65fd5d6e0039d17d29365f59bd60fd5dffb3692b71bbfc08dc8d02c9cd2279b8": {
+      "encoding": "gzip",
+      "kind": ".cubin",
+      "original_sha256": "65fd5d6e0039d17d29365f59bd60fd5dffb3692b71bbfc08dc8d02c9cd2279b8",
+      "original_size": 141904,
+      "path": "artifacts/65fd5d6e0039d17d29365f59bd60fd5dffb3692b71bbfc08dc8d02c9cd2279b8.cubin.gz",
+      "stored_sha256": "72af29e5fa28abb2f1d144639edece967d6fe16e4783902ee189781fc3318b98",
+      "stored_size": 28017,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin"
+        }
+      ]
+    },
+    "6b8ec2f28e81fbc8858202789ad97003762e9825bae682c3ae6063aeaa6e61b3": {
+      "encoding": "gzip",
+      "kind": ".cubin",
+      "original_sha256": "6b8ec2f28e81fbc8858202789ad97003762e9825bae682c3ae6063aeaa6e61b3",
+      "original_size": 87720,
+      "path": "artifacts/6b8ec2f28e81fbc8858202789ad97003762e9825bae682c3ae6063aeaa6e61b3.cubin.gz",
+      "stored_sha256": "cde3aed80ec0082d05bf59b7be55ae18d0261a82042f9414a271d72c618add1e",
+      "stored_size": 22643,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin"
+        },
+        {
+          "cpu": 13,
+          "original_path": "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin"
+        }
+      ]
+    },
+    "6bd70db5b91ac55fc070a02f606b0925a6f14ad7a4268f65a23244b2c6da152c": {
+      "encoding": "gzip",
+      "kind": ".cubin",
+      "original_sha256": "6bd70db5b91ac55fc070a02f606b0925a6f14ad7a4268f65a23244b2c6da152c",
+      "original_size": 142976,
+      "path": "artifacts/6bd70db5b91ac55fc070a02f606b0925a6f14ad7a4268f65a23244b2c6da152c.cubin.gz",
+      "stored_sha256": "37e1af11359727474930ea54a5fbc6f14ab80dc155d3707ca09adc6525724860",
+      "stored_size": 28061,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin"
+        }
+      ]
+    },
+    "784a2b15126f845b1335817c2515fcffcbcba353783d486351dada1b6da8006f": {
+      "encoding": "gzip",
+      "kind": ".ptx",
+      "original_sha256": "784a2b15126f845b1335817c2515fcffcbcba353783d486351dada1b6da8006f",
+      "original_size": 1095954,
+      "path": "artifacts/784a2b15126f845b1335817c2515fcffcbcba353783d486351dada1b6da8006f.ptx.gz",
+      "stored_sha256": "0b050b9a3a5640b3b5a60ea7b65ca849d0c7cbe1e73e00b0468f24e02ff31788",
+      "stored_size": 172295,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx"
+        },
+        {
+          "cpu": 13,
+          "original_path": "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx"
+        }
+      ]
+    },
+    "897d6229b09831de50718611af50fa3653bf43a47c404c2b83e60b8b366bad38": {
+      "encoding": "gzip",
+      "kind": ".cubin",
+      "original_sha256": "897d6229b09831de50718611af50fa3653bf43a47c404c2b83e60b8b366bad38",
+      "original_size": 338208,
+      "path": "artifacts/897d6229b09831de50718611af50fa3653bf43a47c404c2b83e60b8b366bad38.cubin.gz",
+      "stored_sha256": "22b6fe36cbe132dc7e6564e176916976d87bedadaa4b243d8ee0cb5515848f07",
+      "stored_size": 72282,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin"
+        }
+      ]
+    },
+    "89a366ce8e36987472bc92e720b996ab382813c6730de9b47f1e2efa71370a95": {
+      "encoding": "gzip",
+      "kind": ".ptx",
+      "original_sha256": "89a366ce8e36987472bc92e720b996ab382813c6730de9b47f1e2efa71370a95",
+      "original_size": 274823,
+      "path": "artifacts/89a366ce8e36987472bc92e720b996ab382813c6730de9b47f1e2efa71370a95.ptx.gz",
+      "stored_sha256": "1af5a8c80f9c56a6cf48df75bda4e0ddc5670eb8fc093c08612fb78590573bb2",
+      "stored_size": 44403,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx"
+        }
+      ]
+    },
+    "9a6bd5ac8c6c0d5d0322f3a3a8364e1cf7d3454bc7c95def7ab67042cecf4b37": {
+      "encoding": "gzip",
+      "kind": ".ptx",
+      "original_sha256": "9a6bd5ac8c6c0d5d0322f3a3a8364e1cf7d3454bc7c95def7ab67042cecf4b37",
+      "original_size": 1109193,
+      "path": "artifacts/9a6bd5ac8c6c0d5d0322f3a3a8364e1cf7d3454bc7c95def7ab67042cecf4b37.ptx.gz",
+      "stored_sha256": "364bb4c2517e4c9abf8c1aaeca0ab2f32816fab0cc125da7d3b71acf48d9c83f",
+      "stored_size": 174507,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx"
+        }
+      ]
+    },
+    "9c0a7a08ad95abdfa276130c6d8cff7010a913e68fbb97a628f9bdfdc57e2b42": {
+      "encoding": "gzip",
+      "kind": ".cubin",
+      "original_sha256": "9c0a7a08ad95abdfa276130c6d8cff7010a913e68fbb97a628f9bdfdc57e2b42",
+      "original_size": 338272,
+      "path": "artifacts/9c0a7a08ad95abdfa276130c6d8cff7010a913e68fbb97a628f9bdfdc57e2b42.cubin.gz",
+      "stored_sha256": "bfaa3ef588c131693c33772903b8f49386c952023eeffc1b42b29e01ef773291",
+      "stored_size": 72139,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin"
+        }
+      ]
+    },
+    "a065ad3f6cfa0478544c7af8919c45372b08820efc9800a5e3bac195914ab138": {
+      "encoding": "gzip",
+      "kind": ".resources.log",
+      "original_sha256": "a065ad3f6cfa0478544c7af8919c45372b08820efc9800a5e3bac195914ab138",
+      "original_size": 337,
+      "path": "artifacts/a065ad3f6cfa0478544c7af8919c45372b08820efc9800a5e3bac195914ab138.resources.log.gz",
+      "stored_sha256": "d0d361f690819456c2eff639e66165ed7091729d4e50d32571011436e3cbc1df",
+      "stored_size": 265,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.resources.log"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.resources.log"
+        }
+      ]
+    },
+    "a17d163b8fd68e583d64844b917b06f3372726f9f3cd17556c589b821c4de535": {
+      "encoding": "gzip",
+      "kind": ".ptx",
+      "original_sha256": "a17d163b8fd68e583d64844b917b06f3372726f9f3cd17556c589b821c4de535",
+      "original_size": 274141,
+      "path": "artifacts/a17d163b8fd68e583d64844b917b06f3372726f9f3cd17556c589b821c4de535.ptx.gz",
+      "stored_sha256": "bdb1b0e877ae81d50e5bba2b85ca94b069980f87f77a4e54462687e877227fef",
+      "stored_size": 44383,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx"
+        }
+      ]
+    },
+    "aa8e4e859cc88229124d8fdc3309c174f2bbd0b681f8334c42b47972f1291849": {
+      "encoding": "gzip",
+      "kind": ".resources.log",
+      "original_sha256": "aa8e4e859cc88229124d8fdc3309c174f2bbd0b681f8334c42b47972f1291849",
+      "original_size": 337,
+      "path": "artifacts/aa8e4e859cc88229124d8fdc3309c174f2bbd0b681f8334c42b47972f1291849.resources.log.gz",
+      "stored_sha256": "a932d4f3c82f5f28249ba468f746e104ddce7235f782a9b875747eeedf9ff58b",
+      "stored_size": 264,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.resources.log"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.resources.log"
+        }
+      ]
+    },
+    "b830de12e7b094c5f3c17313ae916a1e9a58619aff4481ce76e1918dde62bfa1": {
+      "encoding": "gzip",
+      "kind": ".resources.log",
+      "original_sha256": "b830de12e7b094c5f3c17313ae916a1e9a58619aff4481ce76e1918dde62bfa1",
+      "original_size": 337,
+      "path": "artifacts/b830de12e7b094c5f3c17313ae916a1e9a58619aff4481ce76e1918dde62bfa1.resources.log.gz",
+      "stored_sha256": "68f2e055614ef41228ac17d5714e88b49231c84ac5c65f2733929e4392b805f6",
+      "stored_size": 265,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.resources.log"
+        },
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.resources.log"
+        },
+        {
+          "cpu": 13,
+          "original_path": "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.resources.log"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.resources.log"
+        }
+      ]
+    },
+    "c14dc1441eabbbb4006e0a87be600a2b8461cb4f1be63bed4121795e96ccc016": {
+      "encoding": "gzip",
+      "kind": ".ptx",
+      "original_sha256": "c14dc1441eabbbb4006e0a87be600a2b8461cb4f1be63bed4121795e96ccc016",
+      "original_size": 175653,
+      "path": "artifacts/c14dc1441eabbbb4006e0a87be600a2b8461cb4f1be63bed4121795e96ccc016.ptx.gz",
+      "stored_sha256": "c5d542d1659935721e629b95e94a236b2d53a17dca7ebcb94c37ba0beed290b6",
+      "stored_size": 28909,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx"
+        }
+      ]
+    },
+    "cca0bb84ccdf34bea259cc32a7ecef0356191a6790c14f326f19d74db6c74d67": {
+      "encoding": "gzip",
+      "kind": ".cubin",
+      "original_sha256": "cca0bb84ccdf34bea259cc32a7ecef0356191a6790c14f326f19d74db6c74d67",
+      "original_size": 331488,
+      "path": "artifacts/cca0bb84ccdf34bea259cc32a7ecef0356191a6790c14f326f19d74db6c74d67.cubin.gz",
+      "stored_sha256": "4eed009bc5a51e14594a99bf8d85eca2942f526d53dd7d3a67dd0e31ed86ec10",
+      "stored_size": 71496,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin"
+        },
+        {
+          "cpu": 13,
+          "original_path": "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin"
+        }
+      ]
+    },
+    "db83c87efe0df0b033966662aaca259b19daaa611ee74850dc29c0a20b3af4b1": {
+      "encoding": "gzip",
+      "kind": ".cubin",
+      "original_sha256": "db83c87efe0df0b033966662aaca259b19daaa611ee74850dc29c0a20b3af4b1",
+      "original_size": 87720,
+      "path": "artifacts/db83c87efe0df0b033966662aaca259b19daaa611ee74850dc29c0a20b3af4b1.cubin.gz",
+      "stored_sha256": "b8c5f3203b50807144d81068da1ca81ee2714522666b5a529fb82ea1b1741317",
+      "stored_size": 22634,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin"
+        }
+      ]
+    },
+    "f5eef9b3c7a0e30b0b03b020b98f4711cd10db4c832b66d782e1ce3e022888c2": {
+      "encoding": "gzip",
+      "kind": ".resources.log",
+      "original_sha256": "f5eef9b3c7a0e30b0b03b020b98f4711cd10db4c832b66d782e1ce3e022888c2",
+      "original_size": 337,
+      "path": "artifacts/f5eef9b3c7a0e30b0b03b020b98f4711cd10db4c832b66d782e1ce3e022888c2.resources.log.gz",
+      "stored_sha256": "66fa386a0609f633a93075a81e57f19c3f40577a677989abd3527d68be477b4a",
+      "stored_size": 264,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.resources.log"
+        },
+        {
+          "cpu": 12,
+          "original_path": "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.resources.log"
+        },
+        {
+          "cpu": 13,
+          "original_path": "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.resources.log"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.resources.log"
+        }
+      ]
+    },
+    "f9117379ebca149a7fa6f0acfed530098d1d951e6504db62fd892a2a010e2dea": {
+      "encoding": "gzip",
+      "kind": ".resources.log",
+      "original_sha256": "f9117379ebca149a7fa6f0acfed530098d1d951e6504db62fd892a2a010e2dea",
+      "original_size": 325,
+      "path": "artifacts/f9117379ebca149a7fa6f0acfed530098d1d951e6504db62fd892a2a010e2dea.resources.log.gz",
+      "stored_sha256": "2d311ea727c7c8ea6e8cf0f2de5b2bd3f78c4a33c09279284c206a9936753191",
+      "stored_size": 265,
+      "uses": [
+        {
+          "cpu": 12,
+          "original_path": "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log"
+        },
+        {
+          "cpu": 12,
+          "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log"
+        },
+        {
+          "cpu": 12,
+          "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log"
+        },
+        {
+          "cpu": 13,
+          "original_path": "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log"
+        },
+        {
+          "cpu": 13,
+          "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log"
+        }
+      ]
+    }
+  },
+  "stored_unique_artifact_payloads": 23,
+  "total_original_worker_entries": 58
+}

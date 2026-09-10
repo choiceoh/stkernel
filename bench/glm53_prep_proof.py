@@ -1,5 +1,6 @@
 """Same-boot decode preparation execution proof; no inference or serving imports."""
 import hashlib
+import json
 import os
 import re
 import stat
@@ -23,6 +24,9 @@ REJECTION_CODES = {
     'invalid verification checkpoint': 'invalid_checkpoint',
     'verification counters reset': 'counter_reset',
     'no verified execution during onepass': 'no_fresh_checkpoint',
+    'decode optimization launch differs': 'decode_opt_launch_mismatch',
+    'decode optimization checkpoint differs': 'decode_opt_checkpoint_mismatch',
+    'no verified decode optimization during onepass': 'decode_opt_no_fresh_checkpoint',
 }
 
 
@@ -48,7 +52,42 @@ def log_prefix(path):
         return None
 
 
-def evidence(context, path):
+def _decode_opt_checkpoints(text, preparation_checkpoints):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError('decode optimization checkpoint differs')
+            result[key] = value
+        return result
+
+    prefix = '[prep-decode-opt] USED '
+    records = []
+    for line in text.splitlines():
+        if prefix not in line:
+            continue
+        record = json.loads(line.split(prefix, 1)[1], object_pairs_hook=pairs)
+        expected = dict(version=1, num_reqs=1, q=6, live_snapshot_clones_elided=True,
+                        first_plan_check_passed=True)
+        counters = ('fused_steps', 'live_diff_checks')
+        if (type(record) is not dict or set(record) != set(expected) | set(counters)
+                or any(type(record.get(key)) is not type(value) or record[key] != value
+                       for key, value in expected.items())
+                or any(type(record.get(key)) is not int or record[key] <= 0 for key in counters)
+                or record['live_diff_checks'] > record['fused_steps']
+                or not any(check['fused_steps'] == record['fused_steps']
+                           and check['checks_ok'] >= record['live_diff_checks']
+                           for check in preparation_checkpoints)):
+            raise ValueError('decode optimization checkpoint differs')
+        if records and any(record[key] < records[-1][key] for key in counters):
+            raise ValueError('decode optimization checkpoint differs')
+        records.append(record)
+    if not records:
+        raise ValueError('no verified decode optimization during onepass')
+    return records
+
+
+def evidence(context, path, *, decode_opt=False):
     result = dict(verdict='REJECTED', scope='same-boot preparation log checkpoints during onepass; '
                   'not fixed-request counters or a performance verdict')
     try:
@@ -79,6 +118,11 @@ def evidence(context, path):
             'method', 'num_speculative_tokens', 'config_sha256', 'command_sha256',
             'node_rank', 'boot_id', 'image', 'environment_spec_k', 'preparation_mode',
             'preparation_kernel', 'shadow_every', 'selfcheck_every')})
+        if decode_opt:
+            if (expected != '1' or before.get('ep_decode_opt') != '1'
+                    or before['num_speculative_tokens'] != 5):
+                raise ValueError('decode optimization launch differs')
+            result['launch']['ep_decode_opt'] = before['ep_decode_opt']
         raw, info = _read(path)
         prefix = context['log_prefix']
         if (not isinstance(prefix, dict) or type(prefix.get('bytes')) is not int
@@ -117,6 +161,11 @@ def evidence(context, path):
             checkpoints.append(current)
         if not checkpoints:
             raise ValueError('no verified execution during onepass')
+        if decode_opt:
+            optimized = _decode_opt_checkpoints(
+                raw[prefix['bytes']:].decode('utf-8', 'strict'), checkpoints)
+            result['decode_opt_last_checkpoint'] = optimized[-1]
+            result['decode_opt_checkpoint_count'] = len(optimized)
         result.update(verdict='PASS', last_checkpoint=checkpoints[-1],
                       checkpoint_count=len(checkpoints))
     except (KeyError, TypeError, ValueError, OSError, UnicodeError) as error:

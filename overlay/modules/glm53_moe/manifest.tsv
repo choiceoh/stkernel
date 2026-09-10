@@ -26,3 +26,4 @@ glm53_tp_sf6_q0_selftest.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_
 glm53_ep_tiled.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled.py	absent
 moe_static_ep_tiled.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_ep_tiled.py	absent
 glm53_ep_tiled_selftest.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled_selftest.py	absent
+glm53_ep_shard_geometry.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_shard_geometry.py	absent

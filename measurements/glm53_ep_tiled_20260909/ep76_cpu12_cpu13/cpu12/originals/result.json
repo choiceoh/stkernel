@@ -1,0 +1,1490 @@
+{
+  "verdict": "PASS",
+  "phase": "complete",
+  "started": 1789024659.1665425,
+  "compile_only": true,
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false,
+  "scope": "same-source EP4 baseline three plus EP2xTP2 hybrid five fresh lowerings, and isolated full CPU contracts; no GPU",
+  "binding_runtime": {
+    "schema": 1,
+    "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+    "binding_identity": {
+      "version": "13.0.3",
+      "root": "/opt/glm53-bindings-capsule",
+      "modules": {
+        "cuda.bindings.driver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+        },
+        "cuda.bindings._bindings.cydriver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+        }
+      },
+      "distributions": {
+        "cuda-bindings": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+          "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+        },
+        "cuda-python": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+          "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+        }
+      }
+    },
+    "pathfinder": {
+      "version": "1.7.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+      "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+      "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+      "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+    }
+  },
+  "mounted_sources": {
+    "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "43b3c7346e21c99c59bfc6074179d584676a3f70d0a8ea82d219361cccf6a09a",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "3e7e9c04fd0d2ea4eb6757ef1471d025d51bc23aff08be58a6382023a4d59022",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6_q0.py": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "ebfe98cd75156a12f6ed2d7aac91543af5f8545d0b1083b403f18f9f1c840347",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "a44838c409ebf52db88177ccaad0719c13f3295257cd6c6b81de0f1d0214e735",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_tp_sf6_q0_selftest.py": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled.py": "b1c719e536bd10276e01e8d02702f992cfbc9dc972c25b8bf34f95b919e904de",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_ep_tiled.py": "bbbcfe2ec30bce5dc7c265262e2fbd98de0ed3e697305d77418b457797b454ac",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled_selftest.py": "dd0f1c57fe229e705966df488b54af51319cbe090818b73531fead6524f29c06",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_shard_geometry.py": "77bc02b9726adf8e60ec3abdea97852ff5c68d45f4429cb4f04cf82a5a958510",
+    "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8"
+  },
+  "contract_sources": {
+    "probes/glm53_ep_tiled_compile.py": "4d0ef4ecc7fb94897b344f28971a9d5d1e09cdb6763e94356163278f58f2bdf6",
+    "probes/run_glm53_ep_tiled_cpu.py": "4c35d1ffb95ced8b46abc5b1bbf231fcd99f1ac09d6dcae2275f45ea2a81cb81",
+    "probes/glm53_ep_capsule_runtime.py": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+    "probes/glm53_ep_bindings_capsule.py": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+    "probes/glm53_ep_bindings_pair_check.py": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0",
+    "profiles/glm53.env": "3e45272020d5c2b8639a8feb4124a030e50dbf45d22829ee2bed727bbdde771e",
+    "bench/proof.py": "83fc505ba54ab2a0ad107e0639e18f6495efa9ed60df627ccbecd79328b63bf3",
+    "bench/proof-markers.tsv": "ef1bfb881ff08ec5fa85f59b2cf31dae1db929d26ade0df2d667950483acbae6",
+    "bench/onepass.py": "e21cbb2e0d9911e06027f1831f2c0ca7a79dc7730eba7cfa21856b713687caf2",
+    "bench/glm53_launch_metadata.py": "e24acbfcc43b64fff1a586c71e954de821f7b7b684350cb4be743606c1d0de13",
+    "bench/glm53_prep_proof.py": "461f300273c87d5565bf403b82e300054809e91ab8a0f8a59eed50f7da65e665",
+    "bench/baseline.py": "b64df502c8b2b60a2272b0608350d2feb3c085e409003986d0221274cf38c9de",
+    "bench/judge.py": "2c6acfe1f7e645ccddfac39744ebd8f760c318e2f50cd5ee78c5d42ed2f9fd3f",
+    "overlay/modules/glm53_runtime/glm53_prep_fused.py": "e66daae3f0dee55fb5f4f42ea7409cd62dc42e395f559db0d7266873b638371c",
+    "overlay/modules/glm53_runtime/kv_zero_worker_utils.py": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c",
+    "overlay/modules/glm53_runtime/manifest.tsv": "68e8023a5240bbc4316a5699bf0cc05eafe419a1f45d348aefa91be18bef0c31",
+    "tests/fixtures/glm53_prep_fused_runtime/identity.json": "eac6286d68d23c4f257a60243689fd8ee5a1f8c3eb53eedac7365adacbb9677e",
+    "tests/fixtures/glm53_prep_fused_runtime/model_runner.py.gz": "8202b1e8e8672c03a1be4be6835f25fd321aaf4cca9f66684fc6bcb28a23db76",
+    "tests/fixtures/glm53_prep_fused_runtime/worker_utils.image.py.gz": "5fc24d0e5813cc441965b7adea980a22242baf81e59b2ad6f80b14db56fc3dbc",
+    "overlay/modules/glm53_model/glm5next_model.py": "a9a735a92665368654a8e90b565f975d0f0c1efac18032727de37c192346c659",
+    "measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz": "55d1c3ea9543bec24f65196440b740bb56c71ad6e5c1addf58be85b26896c605",
+    "measurements/glm53_ep_tiled_20260909/ep76_onepass1/source/moe_static_ep_tiled.py.gz": "24db4ed00c49317d3b7c19f934fe78a3ff1caf4f01db44503d4971b1eb35341d",
+    "measurements/glm53_ep_tiled_20260909/ep76_onepass3/source/moe_static_ep_tiled.py.gz": "36fd2439fa10aa44c9ff3a5bca27f41f7162a05f82262092d6f7acf0083afd0b",
+    "measurements/glm53_ep_tiled_20260909/ep76_onepass4/source/moe_static_ep_tiled.py.gz": "3867de6f49d9909186f579647f23c2d5fd48f1eab2f111c7ce77e0bccdaec0a4",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz": "4df575b8bc6d8d71b7e364fc89913ef5fa151a170179d994dc8bf83788bf89fb",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json": "8b23e618d5cf16281a535a6769515a542bfb79bf9aa70a503c90138679c3f775",
+    "overlay/modules/glm53_moe/glm53_ep_shard_geometry.py": "77bc02b9726adf8e60ec3abdea97852ff5c68d45f4429cb4f04cf82a5a958510",
+    "overlay/modules/glm53_moe/glm53_ep_route_remap.py": "a44838c409ebf52db88177ccaad0719c13f3295257cd6c6b81de0f1d0214e735",
+    "overlay/modules/glm53_moe/manifest.tsv": "c9e0f6f7137d322a7dd59dff24bd5ba46613fbdccb5af94737b1c5bcc303899a",
+    "overlay/modules/glm53_model/glm53_ep_hybrid.py": "02e8c6fed63646082f1e9311ca8165a1c642e255a89b8c30012485b6d691c002",
+    "overlay/modules/glm53_model/manifest.tsv": "10ab45f9c214d14cd2fdde072af95496c71bc0845dc3fd822727491fbaf6ccac",
+    "tests/fixtures/glm53_ep_hybrid/ep4_route_remap.py.gz": "689f0fda58dd8c1148c16c0fd60776c73979eba998692793a8e5e82d4f2111d8",
+    "tests/fixtures/glm53_ep_hybrid/runtime/source_pins.json": "6b43eab85d1d5040c117154b3887b9b3a396f247d438f42066b7b4fc505d6595",
+    "measurements/glm53_ep_tiled_20260909/ep76_onepass5/source/moe_static_ep_tiled.py.gz": "6fb17e6cbf2a6bd5c4ca30f86b96536a575c644d34e19302f71bede4d3847098",
+    "measurements/glm53_ep_tiled_20260909/ep76_onepass5/source/moe_dynamic_ep_local.py.gz": "6f3b52696a6ab7737ba9f97784ee9155ff0d4f2b20fce02a323132397fdbe606",
+    "measurements/glm53_ep_tiled_20260909/ep76_onepass6/source/moe_dynamic_ep_local.py.gz": "d2dabe1c8c88393c7fee61a662a3b41a0546b171610cffbb00c32c2110944d11",
+    "tests/test_glm53_ep_route_scale_cache.py": "5559aa9e26e18bd6a6d1995e8033762940ae38c685e9b28fc81c57058c13f36d",
+    "measurements/glm53_ep_tiled_20260909/onepass1/source/moe_dispatch.py.gz": "f0ad543acffcfafbb3e8c014832b7228fa1953ec87d828a9071d47f26f0a54af",
+    "measurements/glm53_ep_local_20260908/cpu13/stock-gated.py.gz": "745d514f81a649d08e220d82ad486cb513b44f3832fcc218d3b646cdc454dab3",
+    "measurements/glm53_ep_tiled_20260909/ep76_cpu7/originals/result.json": "eaa69a1651341a21e66e5353b1de5a03beb4689198ae070e72a893673fa599d7",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/config.py.gz": "69833441aeada6005f39d64289ee7cbffd56d0bb6b365252e433f1cec3d6736c",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/layer.py.gz": "2480d5030433543a8e8b8414df24f2c50051f8f22493469dec2925ca6624c5de",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/expert_map_manager.py.gz": "088e4b78856344b35be6298ec1bf1952033c925249f6a7e1f019e17473836063",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/routed_experts.py.gz": "6978b846fc8f24adebb86d818ca2ca5e97ffbcad6619547b048dc94d509ce925",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/runner/moe_runner.py.gz": "a095d1579f258e5b528a405ff42abeb7b5fb233ff7b71bf4433ab35fdd6494af",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/prepare_finalize/no_dp_ep.py.gz": "fa3faec44a82b31ae37360be1b45ab8b632fcb4392fff4bb1f7a3584bcc0fa61",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/oracle/nvfp4.py.gz": "6b33a440873a745790a908819c1c17140f82551ef61d844c5213d37eb6af2792",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/all2all_utils.py.gz": "f290b010636ed4b1f336b34d3c1c9d8f818073a8d51b05fece8dafb934758756",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/utils/flashinfer_fp4_moe.py.gz": "b8f8a64c1fb82889ed550eeac98405c6f17fcfbf83a5008106206a14773bdfff",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py.gz": "dfc8a4c75a3e1d49aab0d5e0bdf93cbf1f0eadff7ad1a443f53b6c179f2df11b",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe.py.gz": "ea3c963a302988f215bdca3e8b691955868419298cbb363e38db342df139db72",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe_w4a4_nvfp4.py.gz": "11c334323cb0dc48613391875e0abd8d4903fb3523d8e3d1ed2629d2e2d5c490",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/compressed_tensors/utils.py.gz": "a69f00275cf5f38164e7d8ca1781ff2f150a1bea0a5a026df0b1f29aec249276",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/utils/quant_utils.py.gz": "14652cae3e488d9929dea5fa640f8de04c78a893931750749108b5eb29282d69",
+    "tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/modular_kernel.py.gz": "47b0919bf1c1f6ad55be07ea848ad684718e067a0ac73a952180b1b578e48975",
+    "tests/test_glm53_ep_tiled_static.py": "d90f521dbbc6b39264281bd7ce1ce0f2e758af50fd9a96284bee17952036846e",
+    "tests/test_glm53_ep_tiled_prefill.py": "39fad881a216c289e67de64c53c807b313d4d666e2213c211450dc3306ca41c3",
+    "tests/test_glm53_ep_tiled_owner.py": "d9af64b8cd48802d9fd9de9ddacbb31b5fcc0cdedbaf3e995ac6c41a36c1e45b",
+    "tests/test_glm53_ep_tiled_selftest.py": "cc92ab7ba317ed075a9888b3d813e5d7cad42b2226ae5763042eb3fe55a4b6a8",
+    "tests/test_glm53_ep_tiled_proof.py": "66218d4c79886a45a9b381ee4ab1f72e8d60ea11063d38a4cb5b96f2e455a2a2",
+    "tests/test_moe_sf6_owner.py": "221c13318d505cc2a1c66d79bc25da0419cf769f24a2568b6060db90826fed1f",
+    "tests/test_moe_static_sf6_direct.py": "a6636beeff6880f62d096eb967cd44d6c6cc773d01877f567e62d464dc27c14e",
+    "tests/test_moe_dynamic_sf6.py": "72e12732a03af33c472f9704cff1afbcefafeb190b3da9d3d8b0724c601b9435",
+    "tests/test_moe_sf6_dispatch.py": "6747a7366e8b906db653f24204a4b3f186f95e72085a72d6cfcc1a74f0bc5c2f",
+    "tests/test_glm53_ep_tiled_a_ring.py": "2e49ae9f956891aac541dedd60355a90c10a0e9212ab3bdf465b1981ee08b284",
+    "tests/test_glm53_ep_tiled_sf6_word_unpack.py": "56ed7cabfc780fc6c65fb602c70c059199dde1ceebcdb9eaaa3b2e48670ef8b7",
+    "tests/test_onepass_speculation_proof.py": "91a72dfffa3758da1445dd521d0fb67d7b496ece2aec8ab4cd31872b674d7419",
+    "tests/test_glm53_ep_tiled_route_fusion.py": "d01a6c2a89e6877d98e1d57222a19121283e4137f66773f339e0464899c13466",
+    "tests/test_glm53_prep_fused_kv_integration.py": "e83b615b7a85526e0d09e6a666f4f4250c88c9bc39e057afcdb4cc7a43a0e70e",
+    "tests/test_onepass_prep_proof.py": "65e523860ea14abb96db6d936e354446f15a38ededa793da3c2a1db445cf13b8",
+    "tests/test_glm53_prep_checkpoint_logging.py": "91003fe683f294c108c6778f7ef2174d3bba013b088c9228882713dbe4b009bb",
+    "tests/test_glm53_ep_tiled_decode_opt.py": "4301d1d256fae4ad7411daab74fbceb6b8a65fdb9d40ea825922a45b327dfb3d",
+    "tests/test_glm53_prep_decode_opt.py": "2ce3a769eda31638d26babe99190bb6f891c08e649da84b179439c09d4a45719",
+    "tests/test_onepass_ep_default_proof.py": "ee0ad8184d432e0c50bb09c51b172050e7fcc4e1a8bcc712433b9fcfd1094814",
+    "tests/test_glm53_ep_decode_opt_proof.py": "717f031f25cc9c209946efd6262724f8421fc085909fcda5344c8cf3176d4009",
+    "tests/test_glm53_ep_q1_cpu_receipt.py": "911ab5958ec9742baf2d242220b57dce684a27cfb9a7ea04775ed92260531b16",
+    "tests/test_glm53_ep_hybrid_geometry.py": "24df00b862be23626f80db68baa6ed43923ed08b3370c7d1f00d42be29b99707",
+    "tests/test_glm53_ep_hybrid_owner.py": "71d3d525d9920ebf699878f97d7e9c9421ef7a87a55a378ba0cb7a236ca5f63b",
+    "tests/test_glm53_ep_hybrid_remap.py": "e9b6bc22e684f2055561e61052f7fd26caa659bb22cb8aa34444d8bfa57413a2",
+    "tests/test_glm53_ep_hybrid_proof.py": "15b927475006175aeeec3bdf6723411d60872135bdfb1adfe1bd86a42c5b7106",
+    "tests/test_glm53_ep_hybrid_loader.py": "a635db2b86824a91456fecf94887b27e2126cac04f1b7b3f95fb8f699619919f",
+    "tests/test_glm53_ep_hybrid_q0_cpu_receipt.py": "4cdf01faeb9a952922ffb09b9084aba383215f95a9eb0966f98320b2adae9f7d",
+    "tests/test_glm53_ep_hybrid_q0_dispatch.py": "c5f89691e748ac69aecfaadd2f1df4ca5de76896059e04d73bd0f400e4c7cc11",
+    "tests/test_glm53_ep_hybrid_q0_dual_warp.py": "0ecd7afa7eb31e7367d883bf8aa83591bef9c8a55c60840da11da627f01f5283"
+  },
+  "scatter_helper": {
+    "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py",
+    "sha256": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+    "size": 87909,
+    "helper": "scatter_add_v4_bf16x2"
+  },
+  "historical_cpu7_reference": {
+    "source_revision": "ca076d35e64a6a19e90dffe54054269d1a5e1887",
+    "result_sha256": "eaa69a1651341a21e66e5353b1de5a03beb4689198ae070e72a893673fa599d7",
+    "tests_run": 183,
+    "lowerings": 23,
+    "role": "historical cache/ABI reference only; not this run or a performance baseline"
+  },
+  "baseline_static_passes": [
+    {
+      "arm": "baseline-static/M6-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "2101afce8704b15742124c25ae9a427a65526f0fc3997ffdb3b1d15b4b4e8ef7"
+        }
+      ],
+      "resources": [
+        {
+          "path": "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "6b8ec2f28e81fbc8858202789ad97003762e9825bae682c3ae6063aeaa6e61b3",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "compiled_in_this_run": true,
+      "candidate": false,
+      "q0_dual_warp": false,
+      "specialization": {
+        "E": 72,
+        "H": 4096,
+        "I": 2048,
+        "top_k": 8,
+        "rows": 6,
+        "route_mode": "global",
+        "map_length": 288,
+        "local_expert_offset": 0,
+        "argument_count": 31,
+        "dtype_ids": "int32",
+        "dtype_output": "bfloat16",
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "decode_opt": false,
+        "native_slices": 16,
+        "tensor_shapes": {
+          "0": [
+            6,
+            4096
+          ],
+          "1": [
+            48
+          ],
+          "2": [
+            48
+          ],
+          "3": [
+            256,
+            4096,
+            72
+          ],
+          "5": [
+            37748736
+          ],
+          "6": [
+            4718592
+          ],
+          "9": [
+            4096,
+            512,
+            8,
+            72
+          ],
+          "11": [
+            4096,
+            128,
+            16,
+            72
+          ],
+          "13": [
+            72
+          ],
+          "15": [
+            72
+          ],
+          "16": [
+            72
+          ],
+          "17": [
+            72
+          ],
+          "18": [
+            72
+          ],
+          "19": [
+            72
+          ],
+          "20": [
+            72
+          ],
+          "21": [
+            6,
+            4096
+          ],
+          "22": [
+            72,
+            256
+          ],
+          "23": [
+            72,
+            256
+          ],
+          "26": [
+            72,
+            512,
+            1552
+          ],
+          "27": [
+            72,
+            256,
+            1552
+          ],
+          "30": [
+            288
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 123,
+        "stack_bytes": 0,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": 98304,
+        "kernel_smem_capacity_bytes": 101376,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      }
+    },
+    {
+      "arm": "baseline-static/M32-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        32,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx",
+          "sha256": "4b6f5fd15de591e1d052efe26410d7179d1413ace4db681143a10ccf0715bd06"
+        }
+      ],
+      "resources": [
+        {
+          "path": "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin",
+          "sha256": "1c3e2fe7b2a5dabe43ef934f1213a2a4c48db370ad6c4c01ea3a6550d0204fe2",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o32409640961_tensorptri32gmemo2561_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "compiled_in_this_run": true,
+      "candidate": false,
+      "q0_dual_warp": false,
+      "specialization": {
+        "E": 72,
+        "H": 4096,
+        "I": 2048,
+        "top_k": 8,
+        "rows": 32,
+        "route_mode": "global",
+        "map_length": 288,
+        "local_expert_offset": 0,
+        "argument_count": 31,
+        "dtype_ids": "int32",
+        "dtype_output": "float32",
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "decode_opt": false,
+        "native_slices": 16,
+        "tensor_shapes": {
+          "0": [
+            32,
+            4096
+          ],
+          "1": [
+            256
+          ],
+          "2": [
+            256
+          ],
+          "3": [
+            256,
+            4096,
+            72
+          ],
+          "5": [
+            37748736
+          ],
+          "6": [
+            4718592
+          ],
+          "9": [
+            4096,
+            512,
+            8,
+            72
+          ],
+          "11": [
+            4096,
+            128,
+            16,
+            72
+          ],
+          "13": [
+            72
+          ],
+          "15": [
+            72
+          ],
+          "16": [
+            72
+          ],
+          "17": [
+            72
+          ],
+          "18": [
+            72
+          ],
+          "19": [
+            72
+          ],
+          "20": [
+            72
+          ],
+          "21": [
+            32,
+            4096
+          ],
+          "22": [
+            72,
+            256
+          ],
+          "23": [
+            72,
+            256
+          ],
+          "26": [
+            72,
+            512,
+            1552
+          ],
+          "27": [
+            72,
+            256,
+            1552
+          ],
+          "30": [
+            288
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 118,
+        "stack_bytes": 0,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": 101376,
+        "kernel_smem_capacity_bytes": 101376,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      }
+    }
+  ],
+  "baseline_dynamic_passes": [
+    {
+      "arm": "baseline-dynamic/M8192",
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        72,
+        4096,
+        2048,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "784a2b15126f845b1335817c2515fcffcbcba353783d486351dada1b6da8006f"
+        }
+      ],
+      "resources": [
+        {
+          "path": "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "cca0bb84ccdf34bea259cc32a7ecef0356191a6790c14f326f19d74db6c74d67",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernelSF6_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32g_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "compiled_in_this_run": true,
+      "candidate": false,
+      "q0_dual_warp": false,
+      "specialization": {
+        "kernel_class": "MoEGatedEPLocalKernelSF6",
+        "argument_count": 36,
+        "E": 72,
+        "H": 4096,
+        "I": 2048,
+        "top_k": 8,
+        "requested_rows": 8192,
+        "output_dtype": "float32",
+        "intermediate_slices": 16,
+        "dynamic_four_slice_groups": 4,
+        "SF6": true,
+        "q0_dual_warp": false,
+        "math_warps": 8,
+        "threads_per_cta": 288,
+        "q0_batch_tokens": 4,
+        "q0_warps_per_token": 1,
+        "tensor_shapes": {
+          "14": [
+            4096,
+            512,
+            8,
+            72
+          ],
+          "16": [
+            4096,
+            128,
+            16,
+            72
+          ],
+          "18": [
+            72
+          ],
+          "20": [
+            73
+          ],
+          "28": [
+            72,
+            512,
+            1552
+          ],
+          "29": [
+            72,
+            256,
+            1552
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 168,
+        "stack_bytes": 112,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": null,
+        "kernel_smem_capacity_bytes": null,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      }
+    }
+  ],
+  "hybrid_static_passes": [
+    {
+      "arm": "hybrid-static/M6-local",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep2tp2_tiled_e144_i1024_v1",
+        144,
+        1024
+      ],
+      "artifacts": [
+        {
+          "path": "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "c14dc1441eabbbb4006e0a87be600a2b8461cb4f1be63bed4121795e96ccc016"
+        }
+      ],
+      "resources": [
+        {
+          "path": "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "480cd05158373ebe7ca0f83692c5904c6905110a2389a6a8d4567229dfe47e27",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "compiled_in_this_run": true,
+      "candidate": true,
+      "q0_dual_warp": false,
+      "specialization": {
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "top_k": 8,
+        "rows": 6,
+        "route_mode": "local",
+        "map_length": null,
+        "local_expert_offset": 0,
+        "argument_count": 30,
+        "dtype_ids": "int32",
+        "dtype_output": "bfloat16",
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "decode_opt": false,
+        "native_slices": 8,
+        "tensor_shapes": {
+          "0": [
+            6,
+            4096
+          ],
+          "1": [
+            48
+          ],
+          "2": [
+            48
+          ],
+          "3": [
+            256,
+            4096,
+            144
+          ],
+          "5": [
+            75497472
+          ],
+          "6": [
+            9437184
+          ],
+          "9": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "11": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "13": [
+            144
+          ],
+          "15": [
+            144
+          ],
+          "16": [
+            144
+          ],
+          "17": [
+            144
+          ],
+          "18": [
+            144
+          ],
+          "19": [
+            144
+          ],
+          "20": [
+            144
+          ],
+          "21": [
+            6,
+            4096
+          ],
+          "22": [
+            144,
+            256
+          ],
+          "23": [
+            144,
+            256
+          ],
+          "26": [
+            144,
+            256,
+            1552
+          ],
+          "27": [
+            144,
+            128,
+            1552
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 123,
+        "stack_bytes": 0,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": 98304,
+        "kernel_smem_capacity_bytes": 101376,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      }
+    },
+    {
+      "arm": "hybrid-static/M6-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0,
+        "glm53_ep2tp2_tiled_e144_i1024_v1",
+        144,
+        1024
+      ],
+      "artifacts": [
+        {
+          "path": "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "2e1f44af6221b8f26d960f88730dc06c971126ffbcd76090f3210a435f341f7e"
+        }
+      ],
+      "resources": [
+        {
+          "path": "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "db83c87efe0df0b033966662aaca259b19daaa611ee74850dc29c0a20b3af4b1",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "compiled_in_this_run": true,
+      "candidate": true,
+      "q0_dual_warp": false,
+      "specialization": {
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "top_k": 8,
+        "rows": 6,
+        "route_mode": "global",
+        "map_length": 288,
+        "local_expert_offset": 0,
+        "argument_count": 31,
+        "dtype_ids": "int32",
+        "dtype_output": "bfloat16",
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "decode_opt": false,
+        "native_slices": 8,
+        "tensor_shapes": {
+          "0": [
+            6,
+            4096
+          ],
+          "1": [
+            48
+          ],
+          "2": [
+            48
+          ],
+          "3": [
+            256,
+            4096,
+            144
+          ],
+          "5": [
+            75497472
+          ],
+          "6": [
+            9437184
+          ],
+          "9": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "11": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "13": [
+            144
+          ],
+          "15": [
+            144
+          ],
+          "16": [
+            144
+          ],
+          "17": [
+            144
+          ],
+          "18": [
+            144
+          ],
+          "19": [
+            144
+          ],
+          "20": [
+            144
+          ],
+          "21": [
+            6,
+            4096
+          ],
+          "22": [
+            144,
+            256
+          ],
+          "23": [
+            144,
+            256
+          ],
+          "26": [
+            144,
+            256,
+            1552
+          ],
+          "27": [
+            144,
+            128,
+            1552
+          ],
+          "30": [
+            288
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 123,
+        "stack_bytes": 0,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": 98304,
+        "kernel_smem_capacity_bytes": 101376,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      }
+    },
+    {
+      "arm": "hybrid-static/M32-local",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        32,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep2tp2_tiled_e144_i1024_v1",
+        144,
+        1024
+      ],
+      "artifacts": [
+        {
+          "path": "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx",
+          "sha256": "a17d163b8fd68e583d64844b917b06f3372726f9f3cd17556c589b821c4de535"
+        }
+      ],
+      "resources": [
+        {
+          "path": "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin",
+          "sha256": "65fd5d6e0039d17d29365f59bd60fd5dffb3692b71bbfc08dc8d02c9cd2279b8",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o32409640961_tensorptri32gmemo2561_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "compiled_in_this_run": true,
+      "candidate": true,
+      "q0_dual_warp": false,
+      "specialization": {
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "top_k": 8,
+        "rows": 32,
+        "route_mode": "local",
+        "map_length": null,
+        "local_expert_offset": 0,
+        "argument_count": 30,
+        "dtype_ids": "int32",
+        "dtype_output": "float32",
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "decode_opt": false,
+        "native_slices": 8,
+        "tensor_shapes": {
+          "0": [
+            32,
+            4096
+          ],
+          "1": [
+            256
+          ],
+          "2": [
+            256
+          ],
+          "3": [
+            256,
+            4096,
+            144
+          ],
+          "5": [
+            75497472
+          ],
+          "6": [
+            9437184
+          ],
+          "9": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "11": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "13": [
+            144
+          ],
+          "15": [
+            144
+          ],
+          "16": [
+            144
+          ],
+          "17": [
+            144
+          ],
+          "18": [
+            144
+          ],
+          "19": [
+            144
+          ],
+          "20": [
+            144
+          ],
+          "21": [
+            32,
+            4096
+          ],
+          "22": [
+            144,
+            256
+          ],
+          "23": [
+            144,
+            256
+          ],
+          "26": [
+            144,
+            256,
+            1552
+          ],
+          "27": [
+            144,
+            128,
+            1552
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 118,
+        "stack_bytes": 0,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": 101376,
+        "kernel_smem_capacity_bytes": 101376,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      }
+    },
+    {
+      "arm": "hybrid-static/M32-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        32,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0,
+        "glm53_ep2tp2_tiled_e144_i1024_v1",
+        144,
+        1024
+      ],
+      "artifacts": [
+        {
+          "path": "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx",
+          "sha256": "89a366ce8e36987472bc92e720b996ab382813c6730de9b47f1e2efa71370a95"
+        }
+      ],
+      "resources": [
+        {
+          "path": "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin",
+          "sha256": "6bd70db5b91ac55fc070a02f606b0925a6f14ad7a4268f65a23244b2c6da152c",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o32409640961_tensorptri32gmemo2561_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "compiled_in_this_run": true,
+      "candidate": true,
+      "q0_dual_warp": false,
+      "specialization": {
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "top_k": 8,
+        "rows": 32,
+        "route_mode": "global",
+        "map_length": 288,
+        "local_expert_offset": 0,
+        "argument_count": 31,
+        "dtype_ids": "int32",
+        "dtype_output": "float32",
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "decode_opt": false,
+        "native_slices": 8,
+        "tensor_shapes": {
+          "0": [
+            32,
+            4096
+          ],
+          "1": [
+            256
+          ],
+          "2": [
+            256
+          ],
+          "3": [
+            256,
+            4096,
+            144
+          ],
+          "5": [
+            75497472
+          ],
+          "6": [
+            9437184
+          ],
+          "9": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "11": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "13": [
+            144
+          ],
+          "15": [
+            144
+          ],
+          "16": [
+            144
+          ],
+          "17": [
+            144
+          ],
+          "18": [
+            144
+          ],
+          "19": [
+            144
+          ],
+          "20": [
+            144
+          ],
+          "21": [
+            32,
+            4096
+          ],
+          "22": [
+            144,
+            256
+          ],
+          "23": [
+            144,
+            256
+          ],
+          "26": [
+            144,
+            256,
+            1552
+          ],
+          "27": [
+            144,
+            128,
+            1552
+          ],
+          "30": [
+            288
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 118,
+        "stack_bytes": 0,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": 101376,
+        "kernel_smem_capacity_bytes": 101376,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      }
+    }
+  ],
+  "hybrid_dynamic_passes": [
+    {
+      "arm": "hybrid-dynamic/M8192",
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        144,
+        4096,
+        1024,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1",
+        "glm53_ep2tp2_tiled_e144_i1024_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "300e1df65779b9b27cccf19da1865c8b1c913471ea839548bde7df87d5892491"
+        }
+      ],
+      "resources": [
+        {
+          "path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "897d6229b09831de50718611af50fa3653bf43a47c404c2b83e60b8b366bad38",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernelSF6_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32g_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "compiled_in_this_run": true,
+      "candidate": true,
+      "q0_dual_warp": false,
+      "specialization": {
+        "kernel_class": "MoEGatedEPLocalKernelSF6",
+        "argument_count": 36,
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "top_k": 8,
+        "requested_rows": 8192,
+        "output_dtype": "float32",
+        "intermediate_slices": 8,
+        "dynamic_four_slice_groups": 2,
+        "SF6": true,
+        "q0_dual_warp": false,
+        "math_warps": 8,
+        "threads_per_cta": 288,
+        "q0_batch_tokens": 4,
+        "q0_warps_per_token": 1,
+        "tensor_shapes": {
+          "14": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "16": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "18": [
+            144
+          ],
+          "20": [
+            145
+          ],
+          "28": [
+            144,
+            256,
+            1552
+          ],
+          "29": [
+            144,
+            128,
+            1552
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 168,
+        "stack_bytes": 112,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": null,
+        "kernel_smem_capacity_bytes": null,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      }
+    }
+  ],
+  "hybrid_q0_dynamic_passes": [
+    {
+      "arm": "hybrid-q0-dynamic/M8192",
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        144,
+        4096,
+        1024,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1",
+        "glm53_ep2tp2_tiled_e144_i1024_v1",
+        "glm53_ep2tp2_q0_dual_warp_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "9a6bd5ac8c6c0d5d0322f3a3a8364e1cf7d3454bc7c95def7ab67042cecf4b37"
+        }
+      ],
+      "resources": [
+        {
+          "path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "9c0a7a08ad95abdfa276130c6d8cff7010a913e68fbb97a628f9bdfdc57e2b42",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernelSF6_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32g_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "compiled_in_this_run": true,
+      "candidate": true,
+      "q0_dual_warp": true,
+      "specialization": {
+        "kernel_class": "MoEGatedEPLocalKernelSF6",
+        "argument_count": 36,
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "top_k": 8,
+        "requested_rows": 8192,
+        "output_dtype": "float32",
+        "intermediate_slices": 8,
+        "dynamic_four_slice_groups": 2,
+        "SF6": true,
+        "q0_dual_warp": true,
+        "math_warps": 8,
+        "threads_per_cta": 288,
+        "q0_batch_tokens": 4,
+        "q0_warps_per_token": 2,
+        "tensor_shapes": {
+          "14": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "16": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "18": [
+            144
+          ],
+          "20": [
+            145
+          ],
+          "28": [
+            144,
+            256,
+            1552
+          ],
+          "29": [
+            144,
+            128,
+            1552
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 168,
+        "stack_bytes": 112,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": null,
+        "kernel_smem_capacity_bytes": null,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      }
+    }
+  ],
+  "fresh_lowerings": 9,
+  "same_source_baseline_lowerings": 3,
+  "hybrid_lowerings": 6,
+  "hybrid_q0_control_lowerings": 1,
+  "hybrid_q0_candidate_lowerings": 1,
+  "cuda_initialized": false,
+  "contracts": {
+    "tests_run": 239,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "selected_test_counts": {
+    "test_glm53_ep_tiled_static.py": 12,
+    "test_glm53_ep_tiled_prefill.py": 12,
+    "test_glm53_ep_tiled_owner.py": 27,
+    "test_glm53_ep_tiled_selftest.py": 14,
+    "test_glm53_ep_tiled_proof.py": 12,
+    "test_moe_sf6_owner.py": 12,
+    "test_moe_static_sf6_direct.py": 6,
+    "test_moe_dynamic_sf6.py": 7,
+    "test_moe_sf6_dispatch.py": 6,
+    "test_glm53_ep_tiled_a_ring.py": 5,
+    "test_glm53_ep_tiled_sf6_word_unpack.py": 6,
+    "test_onepass_speculation_proof.py": 10,
+    "test_glm53_ep_tiled_route_fusion.py": 6,
+    "test_glm53_prep_fused_kv_integration.py": 10,
+    "test_onepass_prep_proof.py": 10,
+    "test_glm53_prep_checkpoint_logging.py": 4,
+    "test_glm53_ep_tiled_decode_opt.py": 6,
+    "test_glm53_prep_decode_opt.py": 8,
+    "test_onepass_ep_default_proof.py": 4,
+    "test_glm53_ep_decode_opt_proof.py": 4,
+    "test_glm53_ep_q1_cpu_receipt.py": 2,
+    "test_glm53_ep_hybrid_geometry.py": 10,
+    "test_glm53_ep_hybrid_owner.py": 9,
+    "test_glm53_ep_hybrid_remap.py": 3,
+    "test_glm53_ep_hybrid_proof.py": 8,
+    "test_glm53_ep_hybrid_loader.py": 8,
+    "test_glm53_ep_hybrid_q0_cpu_receipt.py": 4,
+    "test_glm53_ep_hybrid_q0_dispatch.py": 6,
+    "test_glm53_ep_hybrid_q0_dual_warp.py": 8
+  },
+  "contracts_process_isolated": true,
+  "binding_runtime_rechecked": true,
+  "finished": 1789024800.9743307
+}

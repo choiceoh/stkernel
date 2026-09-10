@@ -1,0 +1,46 @@
+{
+  "baseline_quality_accepted": false,
+  "candidate_measured": false,
+  "candidate_ready": false,
+  "comparison_scope": "Single-row ordered_request_hashes_equal/required_proofs_equal are vacuous prefix checks, not evidence of a B/A pair.",
+  "completed_arms": [
+    "B"
+  ],
+  "default_adoption": false,
+  "failure": {
+    "anon_gib": 15.061523,
+    "free_gib": 94.589225,
+    "observed_abort": "pinned GMU=0.6329 exceeds measured memory budget 0.61",
+    "observed_node": "10.10.10.4",
+    "reference_anon_gib": 0.191886,
+    "reference_node": "10.10.10.3",
+    "run_log_sha256": "9203c24b859ece018aa0e757204db7095e1871ea21989bcd071532c6cde51af7",
+    "scope": "Pre-launch refusal; no A readiness or canonical row. Failure-handler log copies are not new A container identity.",
+    "stage": "A launcher memory preflight"
+  },
+  "independent_B_audit_sha256": "1daf8a9257d4c5cc9384ffeadf462dc6c679591c8e19ed521bb504b30e4b318f",
+  "original_comparison_sha256": "09739e28396cea565939bc15687bb17fd589a5ddda12c7f92ddf6f7ec45e7fc2",
+  "pair_comparison_available": false,
+  "revision": "407271d9cf73f5db6192a8410c68f152e67301cb",
+  "schema": 1,
+  "session": "epdecode76onepass0910v8",
+  "stale_optional_boot": {
+    "original": {
+      "bytes": 355124,
+      "device": 66306,
+      "inode": 163351643,
+      "mtime_ns": 1789021052361017919,
+      "sha256": "203ac409ec81010cd5d9a32345f01bd42696e12758a268bd9d705599e72b87e1"
+    },
+    "path": "boot/boot-EPDECODE76A.log.gz",
+    "run_started_at": 1789025880.6686947,
+    "scope": "Preserved stale file predating this reservation, explicitly excluded from A boot/execution evidence."
+  },
+  "terminal": {
+    "owned_holder": false,
+    "payload_returncode": 1,
+    "phase": "finished",
+    "returncode": 1
+  },
+  "ticket": "17890258792363139"
+}

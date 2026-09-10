@@ -1,0 +1,9 @@
+# Public recovery after onepass9
+
+The normal five-minute idle controller restored the approved EP4 deployment after the experiment released ownership at 17:28:30 KST on September 10. Public port8000 health first returned200 at17:44:18. The strict four-rank verification completed at17:49:22 with PASS on source/controller `5e0216cfdc83c3cce9fc6b7f70a28a5511824d64`, authenticated recovery receipt `b2e54281e6fd5fb9daa2eda04887edaad9da1605a99c516c9faca79c9115cca2`, the pinned image and71 exact read-only mounted sources per rank. Candidate Q0/hybrid configuration was inactive. This is the approved public deployment, separate from measured source407271d9 and private port18000.
+
+`proof.json` preserves all four boot identities, configuration/source comparisons, startup canaries and SF6 finalization. It establishes startup/configuration and public health only, not new inference, throughput, preparation execution or continuity of unrelated services. The initial local wrapper referenced the wrong existing verifier path/hash and stopped before remote full verification; no server action occurred. The final binding retains the original v6 verifier and refreshed current boot identities. Only the expected-boot AST constant changed; the strict validation contract was retained.
+
+The JSON files are exact read-only results; gzip sources decompress to original bytes. Private path strings are historical provenance. `manifest.json` binds original/stored hashes and sizes, and `SHA256SUMS` covers this independent supplement. The parent experiment archive and its inventory are unchanged.
+
+At17:50:00 the final read showed no holder, idle owner or queued work. The controller phase was `waiting`, with reason `not idle: live serving lacks idle request counters: num_requests_running`; this observation is retained in `final-state.json`. It is separate from the completed four-rank/public-health PASS and is not relabelled controller `healthy`. No further action was taken.

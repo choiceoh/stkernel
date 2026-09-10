@@ -1,0 +1,53 @@
+{
+  "approved_source": {
+    "base": "313e36c2ad915edbbd7823fdc4ec9b2a1af62e08",
+    "candidate": "407271d9cf73f5db6192a8410c68f152e67301cb",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "path": "/home/choiceoh/glm53-logs/fleet/preparations/bc787584364549c788e2cf0160a9981d.json",
+    "profile": "glm53",
+    "sha256": "b28fcffcaef5b42af933d15d9d9d13511373da4922b06b145d17fece5b48255d",
+    "version": 2
+  },
+  "collection_helpers": {
+    "glm53_collect_ep76_completed9.py": "656e9797a592d16b97cbc9489d7bc28080deedd3c9ff562e49a43b41b486d1d2"
+  },
+  "cpu_binding": {
+    "path": "/tmp/glm53-ep76-cpu-binding9.json",
+    "sha256": "540257e2750d47bf8688ee282769628d06a38e0f51590238546a9e87cf556461"
+  },
+  "helpers": {
+    "glm53_ep76_observer9.py": "e6a5e778c73967f1e4a2701f9391276ba4ac5618e06bc6a75972e02e2f2b8db4",
+    "glm53_ep76_snapshot9.py": "659e6c475456b1386af91b8ef5916ddcfa376fff51ca2ea7cdd1e9073c722e4e"
+  },
+  "identity_source": "Exact bounded read-only /proc start + pending/own holder + preparation approval, with clean source before local binding.",
+  "job": "/tmp/glm53-ep76-onepass-0910-9",
+  "launch_id": "dc8b53477cb64303ab1c0cc04cb1f233",
+  "memory_configuration_required": {
+    "explicit_kv_cache_memory_bytes": false,
+    "gpu_memory_utilization": "0.60",
+    "max_model_len": 1048576,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 4,
+    "num_gpu_blocks_override": 1056
+  },
+  "observe_seconds": 3600,
+  "owner_pid": "2476723",
+  "owner_start_tick": "53001196",
+  "readback": {
+    "path": "/tmp/glm53-ep76-runtime-readback9.json",
+    "sha256": "dd930ca8749f2725b8163ec71a3f4a3d611eebf91ec63c8a4beceaee65ecec58"
+  },
+  "revision": "407271d9cf73f5db6192a8410c68f152e67301cb",
+  "run_log_basename": "3b81cbc106c1e34987e624fd471ebe10bbca177585d1b274d0bcd5e020692f82.log",
+  "schema": 1,
+  "scope": "Local helper binding only. Root starts observer after reviewing actual GO; deadline is start+3600 seconds. Collector waits for terminal and observer closure. No observer, inference or lifecycle operation executed.",
+  "session": "epdecode76onepass0910v9",
+  "source": "/home/choiceoh/stkernel-ep-tiled-0909-ring",
+  "started_at": 1789027686.626893,
+  "submission_log": {
+    "path": "/tmp/glm53-ep76-submit9.log",
+    "sha256": "bd344a59c0e5ad5cd8d5ae10a83fdbd4f333983aca4f54bfa0c6fc21580c4f84",
+    "startup_log": "/home/choiceoh/glm53-logs/fleet/launches/dc08b645b1c8d105b17b5b46aba976408eb846cb6644ca5e6d23095dfc401b1a.dc8b53477cb64303ab1c0cc04cb1f233.log"
+  },
+  "ticket": "17890276212476723"
+}

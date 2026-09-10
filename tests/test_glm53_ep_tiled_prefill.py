@@ -12,6 +12,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import test_moe_dynamic_sf6 as sf6_oracle
+from test_glm53_ep_tiled_static import shard_helpers
+from test_glm53_ep_route_scale_cache import single_warp_projection
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +99,9 @@ class Entry:
                      'phase2_b_smem_layout_staged', 'phase2_sfb_smem_layout_staged',
                      'fc1_sfb_smem_layout_storage', 'epi_smem_layout_staged'):
             attrs[name] = name
+        shard_check = compile_method(method('_check_ep_shard_weights'), shard_helpers({}))
+        attrs['_check_ep_shard_weights'] = lambda *args, **kw: shard_check(
+            SimpleNamespace(**attrs), *args, **kw)
         if self.sf6:
             checker = sf6_oracle.functions({'_check_sf6_shapes'})['_check_sf6_shapes']
             attrs['_check_sf6_shapes'] = lambda *args: checker(SimpleNamespace(**attrs), *args)
@@ -185,7 +190,10 @@ class TiledEntryTests(unittest.TestCase):
         archived = gzip.decompress(ORACLE.read_bytes()).decode()
         for name in ('_setup_attributes', 'initialize_route_q0_and_publish',
                      'publish_ep_local_uniform_tasks', 'scatter_sC_to_gmem'):
-            self.assertEqual(ast.dump(method(name), include_attributes=False),
+            actual = method(name)
+            if name == 'initialize_route_q0_and_publish':
+                actual = single_warp_projection(actual)
+            self.assertEqual(ast.dump(actual, include_attributes=False),
                              ast.dump(method(name, archived), include_attributes=False), name)
 
     def test_actual_small_batch_cooperative_init_zeros_entire_fp32_output(self):
@@ -396,6 +404,7 @@ class SF6EntryTests(unittest.TestCase):
         def raw(**kwargs): calls.append(('raw', kwargs)); return object()
         def packed(**kwargs): calls.append(('sf6', kwargs)); return object()
         ns = dict(ep_local_cls=raw, sf_vec_size=16, mma_tiler_mn=(128,128),
+                  ep_hybrid_q0_dual_warp=False,
                   input_scales_are_reciprocal=False, fast_math=True, activation='swigluoai_uninterleave',
                   swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10., __package__='_ep_test')
         for enabled in (False, True):

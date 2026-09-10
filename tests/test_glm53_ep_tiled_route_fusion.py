@@ -13,7 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parent))
 import test_glm53_ep_tiled_static as static_tests
 from test_glm53_ep_tiled_static import (
-    Tensor, constants, extract, fake_torch, function,
+    Tensor, constants, extract, fake_torch, function, baseline_kernel_text,
 )
 
 SOURCE = Path(__file__).resolve().parents[1] / "overlay/modules/glm53_moe/moe_static_ep_tiled.py"
@@ -24,7 +24,9 @@ LOCAL_KERNEL_SHA256 = "f9af0f29945985cba066a9abf4dcab4417e23806631c7850073867408
 
 
 def route_ns():
-    ns = constants()
+    ns = static_tests.shard_helpers(constants())
+    ns["_EP_TILED_DECODE_OPT"] = False
+    extract("ep_tiled_decode_opt", ns)
     extract("ep_tiled_route_metadata", ns)
     extract("ep_tiled_route_key", ns)
     return ns
@@ -78,7 +80,7 @@ class EPTiledRouteFusionTests(unittest.TestCase):
         for dtype in (I32, I64):
             actual = [int(dtype(x)) for x in values]
             for offset in (0, 1, 72, 216, 2**31-1):
-                owner = types.SimpleNamespace(ep_route_map_len=None, ep_local_expert_offset=offset)
+                owner = types.SimpleNamespace(ep_num_experts=72, ep_route_map_len=None, ep_local_expert_offset=offset)
                 for e in actual:
                     ids, mapping = Guarded([e], dtype), Guarded()
                     self.assertEqual(run(owner,ids,I32(0),mapping), reference(e,None,offset))
@@ -87,7 +89,7 @@ class EPTiledRouteFusionTests(unittest.TestCase):
                      2**31, 2**32-1, 2**32, 2**32+71, 2**63-1]
         for dtype in (I32,I64):
             mapping = [int(dtype(x)) for x in mapvalues]
-            owner = types.SimpleNamespace(ep_route_map_len=len(mapping), ep_local_expert_offset=0)
+            owner = types.SimpleNamespace(ep_num_experts=72, ep_route_map_len=len(mapping), ep_local_expert_offset=0)
             for e in range(-2,len(mapping)+2):
                 ids, arr = Guarded([e]), Guarded(mapping,dtype)
                 self.assertEqual(run(owner,ids,I32(0),arr), reference(e,mapping,0))
@@ -98,7 +100,7 @@ class EPTiledRouteFusionTests(unittest.TestCase):
                 self.assertEqual(arr.reads,[])
 
     def test_empty_and_remote_routes_never_read_poison_and_weight_bits_survive(self):
-        run=admission(); owner=types.SimpleNamespace(ep_route_map_len=0,ep_local_expert_offset=0)
+        run=admission(); owner=types.SimpleNamespace(ep_num_experts=72, ep_route_map_len=0,ep_local_expert_offset=0)
         ids,mapping=Guarded(),Guarded()
         self.assertEqual(run(owner,ids,I32(100),mapping),72)
         self.assertEqual(ids.reads+mapping.reads,[])
@@ -131,8 +133,7 @@ class EPTiledRouteFusionTests(unittest.TestCase):
                                  for _ in range(m*8)),m*8)
 
     def test_local_device_body_and_global_tma_host_are_exactly_preserved(self):
-        source=SOURCE.read_text(); node=function('kernel')
-        raw=ast.get_source_segment(source,node)
+        raw=baseline_kernel_text()
         branch='            if cutlass.const_expr(self.ep_route_mode == "global"):\n                expert_id = self._global_route_id(topk_ids, pair_idx, expert_map)\n            else:\n                expert_id = topk_ids[pair_idx].to(Int32)'
         self.assertEqual(raw.count(branch),1)
         raw=raw.replace(branch,'            expert_id = topk_ids[pair_idx].to(Int32)')

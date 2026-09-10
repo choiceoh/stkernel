@@ -90,7 +90,9 @@ class Harness:
         self.canary = ModuleType(package + '.glm53_ep_tiled_selftest')
         self.canary.before_relayout = Mock(side_effect=lambda *a: self.events.append(('before', a)))
         self.canary.after_relayout = Mock(side_effect=lambda *a: (self.events.append(('after', a)), {'verdict':'PASS'})[1])
-        self.modules = {'torch': self.torch, package: ModuleType(package),
+        package_module = ModuleType(package)
+        package_module.__path__ = [str(SOURCE.parent)]
+        self.modules = {'torch': self.torch, package: package_module,
             self.md.__name__: self.md, self.static.__name__: self.static,
             self.remap.__name__: self.remap, self.canary.__name__: self.canary}
         self.context = patch.dict(sys.modules, self.modules)

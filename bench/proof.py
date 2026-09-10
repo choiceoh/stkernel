@@ -21,6 +21,7 @@ the leg, not after health.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -90,7 +91,7 @@ def _ep_tiled_case_proof(case):
                for item, phase in zip(items, phases))
 
 
-def _ep_tiled_sf6_proof(record):
+def _ep_tiled_sf6_proof(record, *, experts=72, fc1_blocks=512, fc2_blocks=256):
     before, after = record.get("packed_before"), record.get("packed_after")
     if (record.get("actual_packed_owner") is not True or not isinstance(before, dict)
             or before != after or before.get("raw_sources_retained") is not True
@@ -99,9 +100,9 @@ def _ep_tiled_sf6_proof(record):
     planes = before.get("planes")
     if not isinstance(planes, dict) or set(planes) != {"fc1", "fc2"}:
         return False
-    for name, blocks in (("fc1", 512), ("fc2", 256)):
+    for name, blocks in (("fc1", fc1_blocks), ("fc2", fc2_blocks)):
         plane = planes[name]
-        if (not isinstance(plane, dict) or plane.get("shape") != [72, blocks, 1552]
+        if (not isinstance(plane, dict) or plane.get("shape") != [experts, blocks, 1552]
                 or plane.get("dtype") != "torch.uint8"
                 or type(plane.get("data_ptr")) is not int or plane["data_ptr"] <= 0
                 or re.fullmatch(r"[0-9a-f]{64}", str(plane.get("sha256"))) is None):
@@ -128,9 +129,191 @@ def _ep_tiled_sf6_release_proof(log):
     return True
 
 
+def _ep_hybrid_identity(identity):
+    if (type(identity) is not list or len(identity) != 13
+            or identity[0] != 'glm53_ep2_tp2_loader_v1'
+            or any(type(x) is not int for x in identity[1:])):
+        return False
+    p = identity[6]
+    if not 0 <= p < 4:
+        return False
+    ep, tp = divmod(p, 2)
+    return identity == ['glm53_ep2_tp2_loader_v1', 288, 144, 4096, 2048, 1024,
+                        p, ep, tp, ep*144, (ep+1)*144, tp*1024, (tp+1)*1024]
+
+
+def _ep_hybrid_cache(case, *, q0_dual_warp=False):
+    """Require the actual hybrid artifact, excluding all failed decode opts."""
+    rows = case['rows']
+    evidence = case.get('cache_evidence')
+    if not isinstance(evidence, dict):
+        return False
+    keys = evidence.get('keys')
+    if (type(keys) is not list or not keys
+            or any(type(key) is not str for key in keys)):
+        return False
+    class DtypeLiteral(ast.NodeTransformer):
+        def visit_Attribute(self, node):
+            if (isinstance(node.value, ast.Name) and node.value.id == 'torch'
+                    and node.attr == 'int32'):
+                return ast.copy_location(ast.Constant('torch.int32'), node)
+            return node
+    try:
+        keys = [ast.literal_eval(DtypeLiteral().visit(ast.parse(key, mode='eval')))
+                for key in keys]
+    except (ValueError, TypeError, SyntaxError):
+        return False
+    tag = 'glm53_ep2tp2_tiled_e144_i1024_v1'
+    if rows <= 32:
+        expected = ('glm53_ep_static_tiled_fp32_v1', rows, 256, 48,
+            'torch.int32', False, True,
+            (16, 128, 256) if rows <= 8 else (32, 64, 512),
+            (16, 256, 128) if rows <= 8 else (32, 128, 128),
+            'nvfp4', 'sf6_v1', 'swigluoai_uninterleave', 1., 0., 10.,
+            'bf16_scatter' if rows <= 8 else 'fp32_scatter')
+        if rows <= 8:
+            expected += ('glm53_ep_static_sf6_a_ring_v1',
+                         'glm53_ep_static_sf6_word_unpack_v1',
+                         'glm53_ep_static_bf16_scatter_v1')
+        expected += ('glm53_ep_static_fused_route_v1', 288, 'torch.int32', 0,
+                     tag, 144, 1024)
+        return evidence.get('decode_opt') is False and keys == [expected]
+    suffix = ('glm53_ep_prefill_local_fp32_v2', 'glm53_ep_tiled_sf6_v1', tag)
+    if q0_dual_warp:
+        suffix += ('glm53_ep2tp2_q0_dual_warp_v1',)
+    return all(type(key) is tuple and len(key) == 18 + len(suffix)
+               and key[:7] == ('dynamic', 'fp4', 'nvfp4', 144, 4096, 1024, 8)
+               and type(key[7]) is int and key[7] > 0 and key[8] == (128, 128)
+               and key[9:18] == ('torch.int32', False, True,
+                                  'swigluoai_uninterleave', 1., 0., 10., False, True)
+               and key[18:] == suffix for key in keys)
+
+
+def _ep_hybrid_proof(log):
+    """Rank-local canary plus both serving lanes; not end-to-end acceptance."""
+    if ('[ep-hybrid-selftest] FAIL' in log or '[ep-tiled-selftest]' in log
+            or not _ep_tiled_sf6_release_proof(log)):
+        return False
+    for lane, lo, hi in (('decode', 1, 32), ('prefill', 33, 16384)):
+        prefix = '[ep-hybrid] LAUNCHED ' + lane + ' E144/H4096/I1024/top8 T='
+        values = [line.split(prefix, 1)[1].strip() for line in log.splitlines() if prefix in line]
+        if not values or any(re.fullmatch('[0-9]+', value) is None
+                             or not lo <= int(value) <= hi for value in values):
+            return False
+    records = _json_marker_receipts(log, '[ep-hybrid-selftest] PASS ')
+    if not records or len(records) != 1:
+        return False
+    expected = {'mixed6': 6, 'balanced12': 12, 'concentrated24': 24, 'zeros32': 32,
+                'remote33': 33, 'balanced2128': 2128, 'balanced4096': 4096,
+                'concentrated6912': 6912, 'balanced8192': 8192,
+                'mixed4': 4, 'balanced8': 8, 'concentrated16': 16}
+    record = records[0]
+    q0_dual_warp = record.get('q0_dual_warp', False)
+    if (type(record.get('schema')) is not int or record['schema'] != 2
+            or type(q0_dual_warp) is not bool
+            or record.get('verdict') != 'PASS' or record.get('phase') != 'complete'
+            or record.get('caller_preserved') is not True
+            or record.get('actual_weight_owner') is not True
+            or record.get('geometry') != dict(E=144, K=4096, I=1024, top8=8)
+            or not _ep_hybrid_identity(record.get('loader_identity'))
+            or not _ep_tiled_sf6_proof(record, experts=144, fc1_blocks=256, fc2_blocks=128)
+            or any(key in record for key in ('error', 'cleanup_error'))):
+        return False
+    identity = record['loader_identity']
+    expected_rank = dict(physical_rank=identity[6], world_size=4,
+        ep_size=2, ep_rank=identity[7], tp_size=2, tp_rank=identity[8],
+        expert_start=identity[9], expert_stop=identity[10],
+        intermediate_start=identity[11], intermediate_stop=identity[12],
+        attention_shared_tp_size=4, terminal_output_sum_size=4,
+        collective_execution_verified=False)
+    rank = record.get('rank_geometry')
+    if (type(rank) is not dict or rank != expected_rank
+            or any(type(rank[k]) is not type(value) for k, value in expected_rank.items())):
+        return False
+    cases = record.get('cases')
+    if type(cases) is not list or len(cases) != len(expected):
+        return False
+    try:
+        if {c['case'] for c in cases} != set(expected):
+            return False
+        return all(type(case['rows']) is int and case['rows'] == expected[case['case']]
+                   and _ep_tiled_case_proof(case)
+                   and _ep_hybrid_cache(case, q0_dual_warp=q0_dual_warp) for case in cases)
+    except (KeyError, TypeError, AttributeError):
+        return False
+
+
+def _ep_hybrid_q0_dual_warp_proof(log):
+    """The selected canary artifact and completed serving call must agree."""
+    if ('[ep-hybrid-q0-dual-warp] FAIL' in log
+            or not _ep_hybrid_proof(log)):
+        return False
+    records = _json_marker_receipts(log, '[ep-hybrid-selftest] PASS ')
+    if records[0].get('q0_dual_warp') is not True:
+        return False
+    prefix = '[ep-hybrid-q0-dual-warp] LAUNCHED '
+    values = [line.split(prefix, 1)[1].strip() for line in log.splitlines() if prefix in line]
+    if not values:
+        return False
+    for value in values:
+        match = re.fullmatch(r'prefill E144/H4096/I1024/top8 T=([0-9]+)', value)
+        if match is None or not 33 <= int(match[1]) <= 16384:
+            return False
+    return True
+
+
 def _startup_proof(knob: str, log: str) -> bool | None:
     """Composite execution evidence; armed or partial progress is insufficient."""
+    if knob == "VLLM_GLM53_EP_HYBRID_TP2":
+        return _ep_hybrid_proof(log)
+    if knob == "VLLM_GLM53_EP_HYBRID_Q0_DUAL_WARP":
+        return _ep_hybrid_q0_dual_warp_proof(log)
+    if knob == "VLLM_GLM53_EP_DECODE_OPT":
+        if _startup_proof("VLLM_GLM53_EP_TILED", log) is not True:
+            return False
+        records = _json_marker_receipts(log, "[ep-tiled-selftest] PASS ")
+        try:
+            for record in records:
+                native = {}
+                for case in record["cases"]:
+                    rows = case["rows"]
+                    if type(rows) is not int:
+                        return False
+                    if rows > 32:
+                        continue
+                    if rows not in (4, 6, 8, 12, 16, 24, 32) or rows in native:
+                        return False
+                    native[rows] = True
+                    evidence = case["cache_evidence"]
+                    if evidence.get("decode_opt") is not (rows <= 8):
+                        return False
+                    expected = ("glm53_ep_static_tiled_fp32_v1", rows, 256, 48,
+                        "torch.int32", False, True,
+                        (16, 128, 256) if rows <= 8 else (32, 64, 512),
+                        (16, 256, 128) if rows <= 8 else (32, 128, 128),
+                        "nvfp4", "sf6_v1", "swigluoai_uninterleave", 1., 0., 10.,
+                        "bf16_scatter" if rows <= 8 else "fp32_scatter")
+                    if rows <= 8:
+                        expected += ("glm53_ep_static_sf6_a_ring_v1",
+                            "glm53_ep_static_sf6_word_unpack_v1",
+                            "glm53_ep_static_bf16_scatter_v1")
+                    expected += ("glm53_ep_static_fused_route_v1", 288, "torch.int32", 0)
+                    if rows <= 8:
+                        expected += ("glm53_ep_static_sf6_q1_register_max_v5",)
+                    keys = evidence["keys"]
+                    if type(keys) is not list or len(keys) != 1 or not isinstance(keys[0], str):
+                        return False
+                    actual = ast.literal_eval(keys[0])
+                    if type(actual) is not tuple or actual != expected:
+                        return False
+                if set(native) != {4, 6, 8, 12, 16, 24, 32}:
+                    return False
+            return bool(records)
+        except (ValueError, KeyError, TypeError, SyntaxError, AttributeError):
+            return False
     if knob == "VLLM_GLM53_EP_TILED":
+        if "[ep-hybrid" in log:
+            return _ep_hybrid_proof(log)
         if "[ep-tiled-selftest] FAIL" in log or not _ep_tiled_sf6_release_proof(log):
             return False
         for lane, low, high in (("decode", 1, 32), ("prefill", 33, 16384)):
@@ -382,7 +565,13 @@ def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | N
     res = {}
     spec = None
     prep = None
+    decode_opt = None
     for k in knobs:
+        if k == 'VLLM_GLM53_EP_DECODE_OPT':
+            from glm53_prep_proof import evidence
+            decode_opt = evidence(preparation, log_path, decode_opt=True)
+            res[k] = (_startup_proof(k, log) is True and decode_opt['verdict'] == 'PASS')
+            continue
         if k == 'VLLM_GLM53_PREP_FUSED':
             from glm53_prep_proof import evidence
             prep = evidence(preparation, log_path)
@@ -407,6 +596,8 @@ def check(knobs: list[str], log_path: str, table: dict[str, tuple[str, str]] | N
         result['speculation'] = spec
     if prep is not None:
         result['preparation'] = prep
+    if decode_opt is not None:
+        result['decode_optimization'] = decode_opt
     return result
 
 

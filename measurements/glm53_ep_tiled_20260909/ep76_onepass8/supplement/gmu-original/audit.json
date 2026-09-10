@@ -1,0 +1,251 @@
+{
+  "verdict": "GMU060_WITHIN_OLD_PREFLIGHT_BOUND_NOT_BOOT_OR_CAPACITY_PROOF",
+  "source_revision": "407271d9cf73f5db6192a8410c68f152e67301cb",
+  "source_hashes": {
+    "launchers/memfree-preflight.sh": "3a8099d001f0326a4afa94954e72e2383c0bf23df9bd494887ab21632f12ab5a",
+    "launchers/start-glm53-nvfp4-tp4.sh": "19319c62bf21272a540111686d36d7282981434d475f6bee69a4596efad1aad0",
+    "overlay/modules/glm53_runtime/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8",
+    "overlay/modules/glm53_runtime/kv_zero_worker_utils.py": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c"
+  },
+  "node_evidence": [
+    {
+      "node": "local",
+      "log_path": "/tmp/glm53-ep76-onepass8-live-B-ready-0dc29dfa37a0/local.serving.log.gz",
+      "log_raw_sha256": "2801c46f8e65f48bbaa7195998fb3d5c651a4bfdfc3b9b96d315695790b8cdd6",
+      "total_gib_rounded": 119.69,
+      "new_requested_gib_from_rounded_total": 71.814,
+      "estimated_available_kv_if_same_profile_gib": 4.862198999999996,
+      "after_trim": {
+        "allocated": {
+          "bytes": 71898309632,
+          "gib": 66.9605188369751
+        },
+        "mem_available": {
+          "bytes": 14652379136,
+          "gib": 13.64609146118164
+        },
+        "reserved": {
+          "bytes": 75136761856,
+          "gib": 69.9765625
+        },
+        "vm_rss": {
+          "bytes": 9695158272,
+          "gib": 9.029319763183594
+        }
+      },
+      "original_evidence": [
+        {
+          "line": 1408,
+          "text": "(Worker_TP0_EP0 pid=338) INFO 09-10 07:48:17 [gpu_worker.py:681] Available KV cache memory: 8.8 GiB"
+        },
+        {
+          "line": 1410,
+          "text": "(EngineCore pid=246) INFO 09-10 07:48:18 [kv_cache_utils.py:2611] Overriding num_gpu_blocks=684 with num_gpu_blocks_override=1056"
+        },
+        {
+          "line": 1411,
+          "text": "(EngineCore pid=246) INFO 09-10 07:48:18 [kv_cache_utils.py:2611] Overriding num_gpu_blocks=867 with num_gpu_blocks_override=1056"
+        },
+        {
+          "line": 1412,
+          "text": "(EngineCore pid=246) INFO 09-10 07:48:18 [kv_cache_utils.py:2611] Overriding num_gpu_blocks=727 with num_gpu_blocks_override=1056"
+        },
+        {
+          "line": 1413,
+          "text": "(EngineCore pid=246) INFO 09-10 07:48:18 [kv_cache_utils.py:2611] Overriding num_gpu_blocks=935 with num_gpu_blocks_override=1056"
+        },
+        {
+          "line": 1414,
+          "text": "(EngineCore pid=246) INFO 09-10 07:48:18 [kv_cache_utils.py:2274] GPU KV cache size: 2,241,490 tokens, Maximum concurrency for 1,048,576 tokens per request: 2.14x"
+        },
+        {
+          "line": 1418,
+          "text": "(Worker_TP0_EP0 pid=338) [boot-stamp] kv-cache-alloc took 0.6s (at 541.3s since interpreter start) dev free 18.41 GiB (+15.16 GiB used this phase)"
+        },
+        {
+          "line": 1497,
+          "text": "(Worker_TP0_EP0 pid=338) INFO 09-10 07:48:28 [gpu_worker.py:907] Free memory on device (94.09/119.69 GiB) on startup. Desired GPU memory utilization is (0.6329, 75.75 GiB). Actual usage is 63.31 GiB for consumed memory (weights + non-torch), 3.64 GiB for peak activation, and 0.45 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=8804877668` (8.2 GiB) to fit into requested memory, or `--kv-cache-memory=28496806400` (26.54 GiB) to fully utilize gpu memory. Current kv cache memory in use is 8.8 GiB."
+        },
+        {
+          "line": 1499,
+          "text": "(Worker_TP0_EP0 pid=338) WARNING 09-10 07:48:31 [gpu_worker.py:189] [glm53-startup-trim] {\"after\": {\"allocated\": 71898309632, \"mem_available\": 14652379136, \"reserved\": 75136761856, \"vm_rss\": 9695158272}, \"before\": {\"allocated\": 71898309632, \"mem_available\": 14646378496, \"reserved\": 75143053312, \"vm_rss\": 9697202176}, \"completed_at\": 1789026511.224607, \"measurement_errors\": [], \"rank\": 0, \"schema\": 1, \"stages\": [{\"stage\": \"synchronize\", \"status\": \"COMPLETE\"}, {\"collected\": 4052, \"stage\": \"gc_collect\", \"status\": \"COMPLETE\"}, {\"stage\": \"empty_cache\", \"status\": \"COMPLETE\"}, {\"returned\": 1, \"stage\": \"malloc_trim\", \"status\": \"COMPLETE\"}], \"started_at\": 1789026510.6799767, \"verdict\": \"COMPLETE\"}"
+        },
+        {
+          "line": 1502,
+          "text": "(Worker_TP0_EP0 pid=338) [boot-stamp] compile+warmup took 12.0s (at 554.2s since interpreter start) dev free 16.40 GiB (+2.00 GiB used this phase)"
+        }
+      ]
+    },
+    {
+      "node": "10.10.10.1",
+      "log_path": "/tmp/glm53-ep76-onepass8-live-B-ready-0dc29dfa37a0/10.10.10.1.serving.log.gz",
+      "log_raw_sha256": "804baf998b0b97a5fe0cb817b94bb18d3559e9ac44c3114aa5410a7f90d0a0d5",
+      "total_gib_rounded": 121.63,
+      "new_requested_gib_from_rounded_total": 72.978,
+      "estimated_available_kv_if_same_profile_gib": 7.158372999999996,
+      "after_trim": {
+        "allocated": {
+          "bytes": 71898141184,
+          "gib": 66.96036195755005
+        },
+        "mem_available": {
+          "bytes": 16946147328,
+          "gib": 15.782329559326172
+        },
+        "reserved": {
+          "bytes": 75134664704,
+          "gib": 69.974609375
+        },
+        "vm_rss": {
+          "bytes": 9593483264,
+          "gib": 8.934627532958984
+        }
+      },
+      "original_evidence": [
+        {
+          "line": 1307,
+          "text": "(Worker_TP1_EP1 pid=259) INFO 09-10 07:48:18 [gpu_worker.py:681] Available KV cache memory: 11.16 GiB"
+        },
+        {
+          "line": 1312,
+          "text": "(Worker_TP1_EP1 pid=259) [boot-stamp] kv-cache-alloc took 0.7s (at 557.9s since interpreter start) dev free 23.32 GiB (+15.16 GiB used this phase)"
+        },
+        {
+          "line": 1379,
+          "text": "(Worker_TP1_EP1 pid=259) INFO 09-10 07:48:28 [gpu_worker.py:907] Free memory on device (95.13/121.63 GiB) on startup. Desired GPU memory utilization is (0.6329, 76.98 GiB). Actual usage is 62.18 GiB for consumed memory (weights + non-torch), 3.64 GiB for peak activation, and 0.53 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=11260883939` (10.49 GiB) to fit into requested memory, or `--kv-cache-memory=30747455488` (28.64 GiB) to fully utilize gpu memory. Current kv cache memory in use is 11.16 GiB."
+        },
+        {
+          "line": 1381,
+          "text": "(Worker_TP1_EP1 pid=259) WARNING 09-10 07:48:31 [gpu_worker.py:189] [glm53-startup-trim] {\"after\": {\"allocated\": 71898141184, \"mem_available\": 16946147328, \"reserved\": 75134664704, \"vm_rss\": 9593483264}, \"before\": {\"allocated\": 71898141184, \"mem_available\": 16938360832, \"reserved\": 75143053312, \"vm_rss\": 9595330560}, \"completed_at\": 1789026511.12506, \"measurement_errors\": [], \"rank\": 1, \"schema\": 1, \"stages\": [{\"stage\": \"synchronize\", \"status\": \"COMPLETE\"}, {\"collected\": 1378, \"stage\": \"gc_collect\", \"status\": \"COMPLETE\"}, {\"stage\": \"empty_cache\", \"status\": \"COMPLETE\"}, {\"returned\": 1, \"stage\": \"malloc_trim\", \"status\": \"COMPLETE\"}], \"started_at\": 1789026510.6542275, \"verdict\": \"COMPLETE\"}"
+        },
+        {
+          "line": 1384,
+          "text": "(Worker_TP1_EP1 pid=259) [boot-stamp] compile+warmup took 11.8s (at 570.5s since interpreter start) dev free 21.28 GiB (+2.04 GiB used this phase)"
+        }
+      ]
+    },
+    {
+      "node": "10.10.10.3",
+      "log_path": "/tmp/glm53-ep76-onepass8-live-B-ready-0dc29dfa37a0/10.10.10.3.serving.log.gz",
+      "log_raw_sha256": "50f8e04bf26d3d5328d8793453aae069d656aba6f2d79f9f9a19388500643034",
+      "total_gib_rounded": 119.63,
+      "new_requested_gib_from_rounded_total": 71.77799999999999,
+      "estimated_available_kv_if_same_profile_gib": 5.414172999999995,
+      "after_trim": {
+        "allocated": {
+          "bytes": 71898141184,
+          "gib": 66.96036195755005
+        },
+        "mem_available": {
+          "bytes": 22745665536,
+          "gib": 21.183551788330078
+        },
+        "reserved": {
+          "bytes": 75155636224,
+          "gib": 69.994140625
+        },
+        "vm_rss": {
+          "bytes": 9634856960,
+          "gib": 8.973159790039062
+        }
+      },
+      "original_evidence": [
+        {
+          "line": 1307,
+          "text": "(Worker_TP2_EP2 pid=302) INFO 09-10 07:48:18 [gpu_worker.py:681] Available KV cache memory: 9.35 GiB"
+        },
+        {
+          "line": 1312,
+          "text": "(Worker_TP2_EP2 pid=302) [boot-stamp] kv-cache-alloc took 0.6s (at 561.7s since interpreter start) dev free 25.95 GiB (+15.13 GiB used this phase)"
+        },
+        {
+          "line": 1379,
+          "text": "(Worker_TP2_EP2 pid=302) INFO 09-10 07:48:27 [gpu_worker.py:907] Free memory on device (100.94/119.63 GiB) on startup. Desired GPU memory utilization is (0.6329, 75.71 GiB). Actual usage is 62.72 GiB for consumed memory (weights + non-torch), 3.64 GiB for peak activation, and 0.47 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=9378768128` (8.73 GiB) to fit into requested memory, or `--kv-cache-memory=36461408256` (33.96 GiB) to fully utilize gpu memory. Current kv cache memory in use is 9.35 GiB."
+        },
+        {
+          "line": 1381,
+          "text": "(Worker_TP2_EP2 pid=302) WARNING 09-10 07:48:31 [gpu_worker.py:189] [glm53-startup-trim] {\"after\": {\"allocated\": 71898141184, \"mem_available\": 22745665536, \"reserved\": 75155636224, \"vm_rss\": 9634856960}, \"before\": {\"allocated\": 71898141184, \"mem_available\": 22737371136, \"reserved\": 75164024832, \"vm_rss\": 9635659776}, \"completed_at\": 1789026511.092388, \"measurement_errors\": [], \"rank\": 2, \"schema\": 1, \"stages\": [{\"stage\": \"synchronize\", \"status\": \"COMPLETE\"}, {\"collected\": 1381, \"stage\": \"gc_collect\", \"status\": \"COMPLETE\"}, {\"stage\": \"empty_cache\", \"status\": \"COMPLETE\"}, {\"returned\": 1, \"stage\": \"malloc_trim\", \"status\": \"COMPLETE\"}], \"started_at\": 1789026510.6335874, \"verdict\": \"COMPLETE\"}"
+        },
+        {
+          "line": 1384,
+          "text": "(Worker_TP2_EP2 pid=302) [boot-stamp] compile+warmup took 11.8s (at 574.5s since interpreter start) dev free 24.01 GiB (+1.94 GiB used this phase)"
+        }
+      ]
+    },
+    {
+      "node": "10.10.10.4",
+      "log_path": "/tmp/glm53-ep76-onepass8-live-B-ready-0dc29dfa37a0/10.10.10.4.serving.log.gz",
+      "log_raw_sha256": "320eadbacc90fea2ff9cbc2db5c7b8a0aeb6e62ff8bfa19a22a17d6c8edade3d",
+      "total_gib_rounded": 121.63,
+      "new_requested_gib_from_rounded_total": 72.978,
+      "estimated_available_kv_if_same_profile_gib": 8.038372999999995,
+      "after_trim": {
+        "allocated": {
+          "bytes": 71898141184,
+          "gib": 66.96036195755005
+        },
+        "mem_available": {
+          "bytes": 12437504000,
+          "gib": 11.583328247070312
+        },
+        "reserved": {
+          "bytes": 75008835584,
+          "gib": 69.857421875
+        },
+        "vm_rss": {
+          "bytes": 9623023616,
+          "gib": 8.962139129638672
+        }
+      },
+      "original_evidence": [
+        {
+          "line": 1307,
+          "text": "(Worker_TP3_EP3 pid=304) INFO 09-10 07:48:18 [gpu_worker.py:681] Available KV cache memory: 12.04 GiB"
+        },
+        {
+          "line": 1312,
+          "text": "(Worker_TP3_EP3 pid=304) [boot-stamp] kv-cache-alloc took 1.6s (at 553.4s since interpreter start) dev free 1.63 GiB (+4.92 GiB used this phase)"
+        },
+        {
+          "line": 1379,
+          "text": "(Worker_TP3_EP3 pid=304) INFO 09-10 07:48:27 [gpu_worker.py:907] Free memory on device (90.53/121.63 GiB) on startup. Desired GPU memory utilization is (0.6329, 76.98 GiB). Actual usage is 61.3 GiB for consumed memory (weights + non-torch), 3.64 GiB for peak activation, and 0.5 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=12231897117` (11.39 GiB) to fit into requested memory, or `--kv-cache-memory=26784411648` (24.94 GiB) to fully utilize gpu memory. Current kv cache memory in use is 12.04 GiB."
+        },
+        {
+          "line": 1381,
+          "text": "(Worker_TP3_EP3 pid=304) WARNING 09-10 07:48:31 [gpu_worker.py:189] [glm53-startup-trim] {\"after\": {\"allocated\": 71898141184, \"mem_available\": 12437504000, \"reserved\": 75008835584, \"vm_rss\": 9623023616}, \"before\": {\"allocated\": 71898141184, \"mem_available\": 12440465408, \"reserved\": 75017224192, \"vm_rss\": 9625260032}, \"completed_at\": 1789026511.1265357, \"measurement_errors\": [], \"rank\": 3, \"schema\": 1, \"stages\": [{\"stage\": \"synchronize\", \"status\": \"COMPLETE\"}, {\"collected\": 1378, \"stage\": \"gc_collect\", \"status\": \"COMPLETE\"}, {\"stage\": \"empty_cache\", \"status\": \"COMPLETE\"}, {\"returned\": 1, \"stage\": \"malloc_trim\", \"status\": \"COMPLETE\"}], \"started_at\": 1789026510.6364162, \"verdict\": \"COMPLETE\"}"
+        },
+        {
+          "line": 1384,
+          "text": "(Worker_TP3_EP3 pid=304) [boot-stamp] compile+warmup took 11.9s (at 565.3s since interpreter start) dev free 1.48 GiB (+0.15 GiB used this phase)"
+        }
+      ]
+    }
+  ],
+  "preflight": {
+    "min_memfree_gib": 94.589225,
+    "anon_gib": 15.061523,
+    "boot_cost_gib": 11,
+    "margin_gib": 10,
+    "usable_gib": 73.589225,
+    "fixed_total_gib": 119.69,
+    "floored_safe_gmu": 0.61,
+    "pinned_new_gmu": 0.6,
+    "node4_actual_total_gib_rounded": 121.63,
+    "node4_new_requested_gib_rounded": 72.978,
+    "node4_margin_to_usable_gib": 0.611225
+  },
+  "requirements": [
+    "Fresh matched B and A both GMU=.60 and CG_UTIL_DELTA=0; B8 remains unmatched context only.",
+    "Preserve KV_BYTES=auto, KV_TOKENS=2000000, KV_HYBRID_BLOCKS=187. Launcher formula must yield num_gpu_blocks_override=1056 in actual all-rank command/config.",
+    "Before measuring require fresh successful profile/cache allocation, all four overrides=1056, same served KV size2241490 tokens and model limit1048576, maxseqs4/maxbatch8192/K5/MM4image0video.",
+    "Retain all-rank startup trim allocated/reserved and host/device memory receipts after normal readiness; no foreign-service changes."
+  ],
+  "limits": [
+    "GMU is a profiling budget, not a hard allocation cap; fixed block override prevents KV from shrinking with the budget. Lowering GMU does not establish recovered physical RAM.",
+    "PyTorch reserved excludes other CUDA/non-Torch/host allocations; compare cannot establish total capacity.",
+    "gpu_worker Current kv cache memory log prints available_kv_cache_memory_bytes, not actual fixed-block tensor bytes.",
+    "B node4 ready devfree1.48GiB was observed concurrently with torch reserved69.857GiB and host MemAvailable11.583GiB; these metrics are not interchangeable.",
+    "Pinned kv_cache_utils original is absent locally, so max-length memory admission order relative to num_gpu_blocks_override is not verified. New head projected availableKV4.86GiB may be a separate boot admission constraint.",
+    "Per-rank requested and available estimates use rounded logged totals and assume unchanged nonKV profiling; foreign workloads and transient peaks can change."
+  ]
+}
