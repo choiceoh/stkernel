@@ -1,0 +1,231 @@
+{
+  "schema": 1,
+  "scope": "File/hash/receipt identity reuse of the original CPU12 PTX audit; no new PTX interpretation",
+  "source_cpu12": "b36dc7f1b19e471fa3280536e244f1711311eaea",
+  "source_cpu13": "407271d9cf73f5db6192a8410c68f152e67301cb",
+  "cpu12_result_sha256": "98c3d5882813430b7608662c13ee2bd41dc71e0bcee76142116755015f20a822",
+  "cpu13_result_sha256": "134ace613b47afeae8fa7abc8fe5cb3355f68f185b4c84ef3b14a7ac79ab3f18",
+  "cpu13_source_binding_sha256": "9b5a4ae0c2ea08aa103a1448d79c631a9c7cb3a2addd7687915916acfa1426de",
+  "cpu13_private_inventory_sha256": "bc44fd6896764807d7e6d8b9e4129722181798dc5e8efbbc5422925740053aa6",
+  "original_cpu12_audit_sha256": "de90d2f84b723259e20df50f6451323405a8339ca149d9ca9a11ccf8d6edee6f",
+  "all_four_actual_payloads_identical": true,
+  "cache_keys_specializations_resources_identical": true,
+  "compared": [
+    {
+      "group": "hybrid_dynamic_passes",
+      "artifacts": [
+        {
+          "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "300e1df65779b9b27cccf19da1865c8b1c913471ea839548bde7df87d5892491",
+          "bytes": 1108760,
+          "cpu12_cpu13_actual_bytes_equal": true
+        },
+        {
+          "original_path": "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "897d6229b09831de50718611af50fa3653bf43a47c404c2b83e60b8b366bad38",
+          "bytes": 338208,
+          "cpu12_cpu13_actual_bytes_equal": true
+        }
+      ],
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        144,
+        4096,
+        1024,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1",
+        "glm53_ep2tp2_tiled_e144_i1024_v1"
+      ],
+      "specialization": {
+        "kernel_class": "MoEGatedEPLocalKernelSF6",
+        "argument_count": 36,
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "top_k": 8,
+        "requested_rows": 8192,
+        "output_dtype": "float32",
+        "intermediate_slices": 8,
+        "dynamic_four_slice_groups": 2,
+        "SF6": true,
+        "q0_dual_warp": false,
+        "math_warps": 8,
+        "threads_per_cta": 288,
+        "q0_batch_tokens": 4,
+        "q0_warps_per_token": 1,
+        "tensor_shapes": {
+          "14": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "16": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "18": [
+            144
+          ],
+          "20": [
+            145
+          ],
+          "28": [
+            144,
+            256,
+            1552
+          ],
+          "29": [
+            144,
+            128,
+            1552
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 168,
+        "stack_bytes": 112,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": null,
+        "kernel_smem_capacity_bytes": null,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      },
+      "compiled_independently_in_both_runs": true
+    },
+    {
+      "group": "hybrid_q0_dynamic_passes",
+      "artifacts": [
+        {
+          "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "9a6bd5ac8c6c0d5d0322f3a3a8364e1cf7d3454bc7c95def7ab67042cecf4b37",
+          "bytes": 1109193,
+          "cpu12_cpu13_actual_bytes_equal": true
+        },
+        {
+          "original_path": "hybrid-q0-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "9c0a7a08ad95abdfa276130c6d8cff7010a913e68fbb97a628f9bdfdc57e2b42",
+          "bytes": 338272,
+          "cpu12_cpu13_actual_bytes_equal": true
+        }
+      ],
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        144,
+        4096,
+        1024,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1",
+        "glm53_ep2tp2_tiled_e144_i1024_v1",
+        "glm53_ep2tp2_q0_dual_warp_v1"
+      ],
+      "specialization": {
+        "kernel_class": "MoEGatedEPLocalKernelSF6",
+        "argument_count": 36,
+        "E": 144,
+        "H": 4096,
+        "I": 1024,
+        "top_k": 8,
+        "requested_rows": 8192,
+        "output_dtype": "float32",
+        "intermediate_slices": 8,
+        "dynamic_four_slice_groups": 2,
+        "SF6": true,
+        "q0_dual_warp": true,
+        "math_warps": 8,
+        "threads_per_cta": 288,
+        "q0_batch_tokens": 4,
+        "q0_warps_per_token": 2,
+        "tensor_shapes": {
+          "14": [
+            2048,
+            512,
+            8,
+            144
+          ],
+          "16": [
+            4096,
+            128,
+            8,
+            144
+          ],
+          "18": [
+            144
+          ],
+          "20": [
+            145
+          ],
+          "28": [
+            144,
+            256,
+            1552
+          ],
+          "29": [
+            144,
+            128,
+            1552
+          ]
+        }
+      },
+      "resource_summary": {
+        "registers": 168,
+        "stack_bytes": 112,
+        "static_shared_bytes": 1024,
+        "local_bytes": 0,
+        "estimated_shared_bytes": null,
+        "kernel_smem_capacity_bytes": null,
+        "dynamic_shared_bytes": null,
+        "total_shared_bytes": null
+      },
+      "compiled_independently_in_both_runs": true
+    }
+  ],
+  "carried_scoped_verdict": "NO_BLOCKER_IN_PTX_AND_SOURCE_SCOPE",
+  "limitations": [
+    "Source locations are PTX file line numbers; no .loc debug mapping is present.",
+    "The post-Q0 comparison normalizes register and block-label identities and establishes structural identity, not whole-program equivalence.",
+    "PTX ordering does not prove final SASS ordering or GPU race freedom. Startup numerics, changed graph replay and canonical onepass remain required.",
+    "REG168/STACK112/LOCAL0 does not prove absence of spills. Actual dynamic and total shared allocation remain null in the CPU receipt.",
+    "No new compile, GPU, inference, runtime mutation, or performance claim."
+  ],
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false,
+  "adoption_acceptance": false
+}

@@ -1,0 +1,8 @@
+{
+  "collection_verdict": "TIMEOUT",
+  "phase": "original bundle transfer",
+  "timeout_seconds": 60,
+  "remote_mutations": false,
+  "artifact_before_inventory_sha256": "4ec8a38ae84d9dcc666264cb2097bf6ecbf05089b7cc73e763fbacf95ef1d41e",
+  "retry": "gzip stdout transport; identical original byte hashes required"
+}

@@ -1,0 +1,35 @@
+{
+  "captured_at": 1789027081.9163058,
+  "files": {
+    "glm53.log.10.10.10.1": {
+      "bytes": 319685,
+      "mtime_ns": 1789026703144870041,
+      "sha256": "5d3ef4ef5deb6a2b4a98d193b066c12c1c3e53d403715bc1951d723cd51b3fed",
+      "stored_bytes": 38104,
+      "stored_sha256": "3d598aec45d48e5afeb35a410c95b16f00b86f1e14eedf5aec2c54ab69120737"
+    },
+    "glm53.log.10.10.10.3": {
+      "bytes": 316611,
+      "mtime_ns": 1789026703511870684,
+      "sha256": "dc10cf39d6a6f3f6aa82260e48287daa8081c2bdd051f04e8ea58c764df152e3",
+      "stored_bytes": 36019,
+      "stored_sha256": "c4572159ccd72b8fdcf1a190dbdfc9d43e72b640d70b3270e1b34b782aecc4fd"
+    },
+    "glm53.log.10.10.10.4": {
+      "bytes": 315709,
+      "mtime_ns": 1789026703844871268,
+      "sha256": "cbc56b8a29f5fc50311dcc8db4415131b523b48b5c915c4428bcbbc7b6e961c8",
+      "stored_bytes": 35667,
+      "stored_sha256": "adecdf3c6a0828d00eab84dce70f1151bc9187f326670f8dbed8ecf2a5bc0426"
+    },
+    "glm53.log.srv2": {
+      "bytes": 361525,
+      "mtime_ns": 1789026702786869413,
+      "sha256": "8ff568f0e6d76c52153251505e16b2118c5a8efeaf57759c8f6bae8e90e1274f",
+      "stored_bytes": 43580,
+      "stored_sha256": "48441078b1721125e0fb137f70ebeacafe57bdfc58c1ba196612f68b6c03b378"
+    }
+  },
+  "path": "/home/choiceoh/glm53-logs/fail-EPDECODE76A-165142",
+  "scope": "Failure-handler copied logs. No new A container identity is established by these files; some or all content may originate from the preceding B containers."
+}

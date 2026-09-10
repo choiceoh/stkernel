@@ -1,0 +1,74 @@
+{
+  "adoption_acceptance": false,
+  "canonical_record": {
+    "original_sha256": "039d91324a657eae023147143a5faedfc2110722b34e0174c55dba5011acf20a",
+    "original_size": 126961,
+    "path": "../job/onepass.jsonl.gz",
+    "rows": 2,
+    "stored_sha256": "f9dd96877dadd94247bfe776e5209a99cd544080def8af54aae27cb405d2a8c9"
+  },
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "log_boundary_proofs": [
+    {
+      "absence_of_all_jit_proven": false,
+      "after": {
+        "bytes": 353513,
+        "sha256": "a1571d04176d65ea17502357fce6c2d8a1f02b46fdd5268529c573fff2670757"
+      },
+      "arm": "B",
+      "boot_id": "393a9a5765cba052de853ea90162fa4476563f0a79e9d37be87675d887eb861d|2026-09-10T08:08:28.735176036Z",
+      "ctx32k_delta_lines": [
+        48,
+        90
+      ],
+      "ctx32k_logged_compile_messages": 0,
+      "delta": {
+        "bytes": 68533,
+        "sha256": "b8a79c6f3255de38aed06fb2764ce1fc1d287007e7192118c2d540f69d92c667"
+      },
+      "logged_jit_events": 7,
+      "prefix": {
+        "bytes": 284980,
+        "sha256": "525f8615408114933e167df42841e8d6a31af2b57e28f0caa6366d7e1a1b8843"
+      }
+    },
+    {
+      "absence_of_all_jit_proven": false,
+      "after": {
+        "bytes": 271633,
+        "sha256": "9c4ccd54e1d8f8ad2f4e598e13952ef778bf5ea834178149e978c05ff7261023"
+      },
+      "arm": "A",
+      "boot_id": "772c4d58f44a011a8f866d3471540df4082926507b9e793729505494163d5c94|2026-09-10T08:21:27.270015491Z",
+      "ctx32k_delta_lines": [
+        49,
+        92
+      ],
+      "ctx32k_logged_compile_messages": 0,
+      "delta": {
+        "bytes": 70548,
+        "sha256": "0a115e79474761b968aa0ccb931beeb7268661ffb5779e6d0401ba7ba04a1cea"
+      },
+      "logged_jit_events": 7,
+      "prefix": {
+        "bytes": 201085,
+        "sha256": "6a7a6df69304ae41cce8a587877e64873ad9dfe9203eacc0887858fa949faaf9"
+      }
+    }
+  ],
+  "new_gpu_work": false,
+  "new_remote_reads": false,
+  "new_tests": false,
+  "original_audit_inputs_unchanged": true,
+  "original_file_count": 13,
+  "parent_inventory_sha256": "1ea7b05b53adfb28b5e81c138dd725b06ba6f0f6b8c52d8c7d18e248644d9a81",
+  "parent_manifest_sha256": "9c126bec3da969a7676b3a50b547b08064fdfb98749472a5b59653088b302457",
+  "parent_original_file_count": 79,
+  "parent_originals_unchanged": true,
+  "performance_acceptance": false,
+  "raw_log_gzip_count": 6,
+  "ready_rank_count_per_arm": 4,
+  "schema": 1,
+  "scope": "local packaging/integrity validation of original audits; no new test or runtime validation",
+  "source_revision": "407271d9cf73f5db6192a8410c68f152e67301cb"
+}

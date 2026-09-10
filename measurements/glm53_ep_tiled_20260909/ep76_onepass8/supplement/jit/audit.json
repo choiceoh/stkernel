@@ -1,0 +1,131 @@
+{
+  "verdict": "CANONICAL_LOG_HASHES_MATCHED_JIT_EVENTS_SCOPED",
+  "source_revision": "407271d9cf73f5db6192a8410c68f152e67301cb",
+  "readback": {
+    "path": "/home/choiceoh/glm53-logs/boot-EPDECODE76B.log",
+    "before": {
+      "size": 361353,
+      "device": 66306,
+      "inode": 163351638,
+      "mtime_ns": 1789026688162525338
+    },
+    "after": {
+      "size": 361353,
+      "device": 66306,
+      "inode": 163351638,
+      "mtime_ns": 1789026688162525338
+    },
+    "read_bytes": 361198,
+    "read_sha256": "7ab82b002d4026d6baba5ca79b233818d60a41a30bdf9e294333af3ebbb1c3e5",
+    "record_path": "/tmp/glm53-ep76-onepass8-B-prefix.jsonl",
+    "record_sha256": "024a8de0de0abb28021c5f96fb76f754003e9dd1cb45cde91162e4cba1bf1a49",
+    "prefix_matched": true,
+    "after_matched": true,
+    "delta_bytes": 70787,
+    "delta_sha256": "f42d050504e77c8d2c08f8ca9da1956fcc93bb41b56462b412eaee277f125672",
+    "retained_file_scope": "Only first 361198 bytes read; prefix and after hashes match the canonical record. Retained copy inode is not required to equal live original inode."
+  },
+  "scope": "Head retained B boot log only; exact canonical preparation prefix-to-after bytes. No new inference, GPU or runtime changes.",
+  "record_start_kst": "2026-09-10 16:49:00",
+  "recorded_wall_s": 147.9815456867218,
+  "log_times": "UTC log 07:49:00\u201307:51:27 corresponds to KST16:49:00\u201316:51:27; after boundary captured at canonical end16:51:28.",
+  "cold_compile_semantics": "bench/onepass.py:421\u2013422 only records MK_COLD_COMPILE=1 as first boot on this build; it does not inspect per-request compilation.",
+  "request_attribution": "Eight POST entries match eight sequential canonical requests and exclusive traffic accounting. POST lines lack wall timestamps; surrounding timestamped logs bound attribution, not precise HTTP/TTFT start times.",
+  "post_delta_lines": [
+    3,
+    26,
+    38,
+    49,
+    94,
+    371,
+    397,
+    423
+  ],
+  "jit_monitor_mode": "warn activated at16:48:31 before requests (prefix line1500)",
+  "logged_jit_events": [
+    {
+      "delta_line": 5,
+      "through_after_line": 1563,
+      "request_ordinal": 1,
+      "ctx": 2000,
+      "fixed_decode": false,
+      "rep": null,
+      "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 07:49:00 [jit_monitor.py:135] TileLang JIT compilation during inference: mhc_pre_big_fuse_with_norm_tilelang. This causes a latency spike; consider extending warmup to cover this shape/config."
+    },
+    {
+      "delta_line": 7,
+      "through_after_line": 1565,
+      "request_ordinal": 1,
+      "ctx": 2000,
+      "fixed_decode": false,
+      "rep": null,
+      "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 07:49:00 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _finish. This causes a latency spike; consider extending warmup to cover this shape/config."
+    },
+    {
+      "delta_line": 9,
+      "through_after_line": 1567,
+      "request_ordinal": 1,
+      "ctx": 2000,
+      "fixed_decode": false,
+      "rep": null,
+      "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 07:49:00 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _copy_pad. This causes a latency spike; consider extending warmup to cover this shape/config."
+    },
+    {
+      "delta_line": 14,
+      "through_after_line": 1572,
+      "request_ordinal": 1,
+      "ctx": 2000,
+      "fixed_decode": false,
+      "rep": null,
+      "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 07:49:02 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _compute_local_logits_stats_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+    },
+    {
+      "delta_line": 15,
+      "through_after_line": 1573,
+      "request_ordinal": 1,
+      "ctx": 2000,
+      "fixed_decode": false,
+      "rep": null,
+      "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 07:49:02 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _rejection_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+    },
+    {
+      "delta_line": 16,
+      "through_after_line": 1574,
+      "request_ordinal": 1,
+      "ctx": 2000,
+      "fixed_decode": false,
+      "rep": null,
+      "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 07:49:02 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _resample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+    },
+    {
+      "delta_line": 373,
+      "through_after_line": 1931,
+      "request_ordinal": 6,
+      "ctx": 2000,
+      "fixed_decode": true,
+      "rep": 0,
+      "raw_line": "(Worker_TP0_EP0 pid=338) WARNING 09-10 07:50:44 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _gumbel_sample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+    }
+  ],
+  "first32k": {
+    "request_ordinal": 4,
+    "ctx": 32000,
+    "prompt_tokens": 32545,
+    "combined": true,
+    "ttft_s": 11.702632039086893,
+    "delta_line_start": 49,
+    "delta_line_end": 93,
+    "through_after_line_start": 1607,
+    "through_after_line_end": 1651,
+    "first_timestamp_kst": "16:49:20",
+    "last_timestamp_kst": "16:49:46",
+    "compile_pattern_matches": 0
+  },
+  "cu_te_or_torch_compile_events_in_delta": 0,
+  "limitations": [
+    "JIT monitor implementation, warning suppression, all-rank coverage and all compiler hooks were not audited; absence of a log event is not proof that no compilation occurred.",
+    "No compile duration appears for these seven warnings; none can be subtracted from TTFT or used to explain the 32K throughput difference quantitatively.",
+    "Only head boot log bytes through canonical after boundary retained here; later 155 bytes in retained copy are outside this record and not copied.",
+    "No change to canonical quality or performance verdict; firstboot flag is not a per-request JIT classifier."
+  ]
+}

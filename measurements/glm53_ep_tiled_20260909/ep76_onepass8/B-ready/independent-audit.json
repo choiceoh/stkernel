@@ -1,0 +1,160 @@
+{
+  "arm": "B",
+  "identity_sha256": "3726fbd43014ef3b03a9bc8bbb956988beebfe7c14494368f148edce929e8d63",
+  "ranks": [
+    {
+      "canary_cases": 12,
+      "canary_receipt_sha256": "7c039cd00688334e46474181c739f1c3c875328bb27e07ac14d5b49fc020f637",
+      "candidate_checks": 72,
+      "control_checks": 72,
+      "decode_opt": false,
+      "drop_weight_cache": "1",
+      "dynamic_key_lengths": [
+        21
+      ],
+      "hybrid": true,
+      "id": "0dc29dfa37a0d70d1d2afd97f55dc36bd401e215fd6178d4479c6786404a4599",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "loader_pins": 15,
+      "native_key_lengths": {
+        "12": 23,
+        "16": 23,
+        "24": 23,
+        "32": 23,
+        "4": 26,
+        "6": 26,
+        "8": 26
+      },
+      "preparation_failure_marker_present": false,
+      "q0_dual_warp": false,
+      "rank": 0,
+      "serving_log_sha256": "2801c46f8e65f48bbaa7195998fb3d5c651a4bfdfc3b9b96d315695790b8cdd6",
+      "sf6_finalized_layers": 42,
+      "source_entries": 14,
+      "source_mounts": 73,
+      "source_sha256": "b5d58f3aaedbf4d033e539da18d70d5c3319b9b7ab8f918cbe82eeeeb18cc8d7",
+      "spec_k": 5,
+      "started_at": "2026-09-10T07:38:23.746905432Z",
+      "startup_trim_complete": true
+    },
+    {
+      "canary_cases": 12,
+      "canary_receipt_sha256": "a9268c447dffa0a72a4d3e7e9f2aca7619c1d776049d308c5f0634107de980de",
+      "candidate_checks": 72,
+      "control_checks": 72,
+      "decode_opt": false,
+      "drop_weight_cache": "1",
+      "dynamic_key_lengths": [
+        21
+      ],
+      "hybrid": true,
+      "id": "efac7ebeee8763fe592712d0a9ee1ac3e3dd5f770e3a76759712e9eca3c86ff1",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "loader_pins": 15,
+      "native_key_lengths": {
+        "12": 23,
+        "16": 23,
+        "24": 23,
+        "32": 23,
+        "4": 26,
+        "6": 26,
+        "8": 26
+      },
+      "preparation_failure_marker_present": false,
+      "q0_dual_warp": false,
+      "rank": 1,
+      "serving_log_sha256": "804baf998b0b97a5fe0cb817b94bb18d3559e9ac44c3114aa5410a7f90d0a0d5",
+      "sf6_finalized_layers": 42,
+      "source_entries": 14,
+      "source_mounts": 73,
+      "source_sha256": "b5d58f3aaedbf4d033e539da18d70d5c3319b9b7ab8f918cbe82eeeeb18cc8d7",
+      "spec_k": 5,
+      "started_at": "2026-09-10T07:38:23.028480914Z",
+      "startup_trim_complete": true
+    },
+    {
+      "canary_cases": 12,
+      "canary_receipt_sha256": "e8e203d04da718febf6378882e376aa8c10d27c9cf6be983570cc38a5ee54eb6",
+      "candidate_checks": 72,
+      "control_checks": 72,
+      "decode_opt": false,
+      "drop_weight_cache": "1",
+      "dynamic_key_lengths": [
+        21
+      ],
+      "hybrid": true,
+      "id": "b64a2790f495bffa366ef11007c206c2616732952ec1b13566db6b3a25e91c2a",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "loader_pins": 15,
+      "native_key_lengths": {
+        "12": 23,
+        "16": 23,
+        "24": 23,
+        "32": 23,
+        "4": 26,
+        "6": 26,
+        "8": 26
+      },
+      "preparation_failure_marker_present": false,
+      "q0_dual_warp": false,
+      "rank": 2,
+      "serving_log_sha256": "50f8e04bf26d3d5328d8793453aae069d656aba6f2d79f9f9a19388500643034",
+      "sf6_finalized_layers": 42,
+      "source_entries": 14,
+      "source_mounts": 73,
+      "source_sha256": "b5d58f3aaedbf4d033e539da18d70d5c3319b9b7ab8f918cbe82eeeeb18cc8d7",
+      "spec_k": 5,
+      "started_at": "2026-09-10T07:38:23.028452081Z",
+      "startup_trim_complete": true
+    },
+    {
+      "canary_cases": 12,
+      "canary_receipt_sha256": "125f7c95e5347bfef6542955b12dde63822542a33942617bb8d49235798b5527",
+      "candidate_checks": 72,
+      "control_checks": 72,
+      "decode_opt": false,
+      "drop_weight_cache": "1",
+      "dynamic_key_lengths": [
+        21
+      ],
+      "hybrid": true,
+      "id": "c3d34a088b65ec9ad627efa75fb4e69a19b2227c53ba4a2bbe3f944118918839",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "loader_pins": 15,
+      "native_key_lengths": {
+        "12": 23,
+        "16": 23,
+        "24": 23,
+        "32": 23,
+        "4": 26,
+        "6": 26,
+        "8": 26
+      },
+      "preparation_failure_marker_present": false,
+      "q0_dual_warp": false,
+      "rank": 3,
+      "serving_log_sha256": "320eadbacc90fea2ff9cbc2db5c7b8a0aeb6e62ff8bfa19a22a17d6c8edade3d",
+      "sf6_finalized_layers": 42,
+      "source_entries": 14,
+      "source_mounts": 73,
+      "source_sha256": "b5d58f3aaedbf4d033e539da18d70d5c3319b9b7ab8f918cbe82eeeeb18cc8d7",
+      "spec_k": 5,
+      "started_at": "2026-09-10T07:38:23.094269255Z",
+      "startup_trim_complete": true
+    }
+  ],
+  "revision": "407271d9cf73f5db6192a8410c68f152e67301cb",
+  "runtime_binding_sha256": "b561999dbdf8b5fb5808548c7cd899af42ea1cb8c192de47d01d9bba4dcc5b5d",
+  "scope": "Independent local verification of saved immutable ready prefixes only; no remote/inference/tests.",
+  "snapshot": "/tmp/glm53-ep76-onepass8-live-B-ready-0dc29dfa37a0",
+  "snapshot_helper_sha256": "538bae042688e19e24074e48e3bdfcd6584a0d36e3c66797f8bb1d7f5e4016a6",
+  "status": "PASS",
+  "unresolved": [
+    "Ready snapshot does not prove completed onepass rows or per-request counters.",
+    "Rank-local first-eligible-layer canaries do not independently prove final distributed output sum.",
+    "PREP fields here are configuration only; fresh execution/quality/performance remain canonical onepass evidence.",
+    "DROP_WEIGHT_CACHE1 proves configuration, not actual reclaimed RAM bytes.",
+    "No new live health/current container state is inferred after the saved capture."
+  ],
+  "verified_at": 1789026760.996594
+}

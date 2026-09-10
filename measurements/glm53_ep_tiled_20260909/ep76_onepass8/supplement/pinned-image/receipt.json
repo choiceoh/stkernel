@@ -1,0 +1,17 @@
+{
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "container_id": "40ec8850b65a727b69bb95dde766bca6dd24d7d597b4d5964ac01f191450c54e",
+  "never_started": true,
+  "files": {
+    "v1/core/kv_cache_utils.py": {
+      "sha256": "624ea7b0244972cb6c53044588912dfea54f3d6a91661cbc423af27e3b5c4b86",
+      "bytes": 115187,
+      "local": "/tmp/glm53-ep76-kv-image-read/kv_cache_utils.py"
+    },
+    "v1/engine/core.py": {
+      "sha256": "86b8f3b3826504549ef8bea2e7fbf7553728339803abcb3e7d051d146963ff9c",
+      "bytes": 104047,
+      "local": "/tmp/glm53-ep76-kv-image-read/core.py"
+    }
+  }
+}

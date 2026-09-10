@@ -1,0 +1,6 @@
+{
+  "initial_manifest_sha256": "ed4f21e5781df7ae2c63e0a771c2dd3aa471245d0d82b57e0a2d98f2f2f25bac",
+  "schema": 1,
+  "scope": "Local append of exact failure copies, independent B audit and explicit partial-run interpretation; canonical dictionaries/helpers unchanged.",
+  "script_sha256": "3a8aa97f927087ecb69f1e2fc3ee83e2f24a0f7d2af5ed14fdeeb348c85bd227"
+}

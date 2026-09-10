@@ -1,0 +1,45 @@
+{
+  "approved_source": {
+    "base": "313e36c2ad915edbbd7823fdc4ec9b2a1af62e08",
+    "candidate": "407271d9cf73f5db6192a8410c68f152e67301cb",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "path": "/home/choiceoh/glm53-logs/fleet/preparations/02ac214b87684b5ebc9e73a0e730a874.json",
+    "profile": "glm53",
+    "sha256": "13fc81022ba71b2932e343636f3b932e25536478618a1ba65194ff021118e2e2",
+    "version": 2
+  },
+  "collection_helpers": {
+    "glm53_collect_ep76_completed8.py": "be51e3c76eb323b53a4d89f4c3f388850b8be3e3dc530cec3145378becfae733"
+  },
+  "cpu_binding": {
+    "path": "/tmp/glm53-ep76-cpu-binding8.json",
+    "sha256": "3e06e41e6d97f23b81945124e5051f2ba0b4804608c1e12d3f5537e4d0512c04"
+  },
+  "helpers": {
+    "glm53_ep76_observer8.py": "73ab1f32fd85a995b4d4b2022724c51f82448fe7f61550e3da403a32475b5882",
+    "glm53_ep76_snapshot8.py": "538bae042688e19e24074e48e3bdfcd6584a0d36e3c66797f8bb1d7f5e4016a6"
+  },
+  "identity_source": "Exact bounded read-only /proc start + pending/own holder + preparation approval, with clean source before local binding.",
+  "job": "/tmp/glm53-ep76-onepass-0910-8",
+  "launch_id": "3adf95ad3ab54bd9ae2c06659dafe5c6",
+  "observe_seconds": 3600,
+  "owner_pid": "2363139",
+  "owner_start_tick": "52827050",
+  "readback": {
+    "path": "/tmp/glm53-ep76-runtime-readback8.json",
+    "sha256": "9630292feda0f79e707a0b7910ff12c59dbdee490a17aee2723095fba3839d0f"
+  },
+  "revision": "407271d9cf73f5db6192a8410c68f152e67301cb",
+  "run_log_basename": "0cd1189e2ff8ecaad15cb3a5653d47dfcb212b638de4975e019e417e122156a0.log",
+  "schema": 1,
+  "scope": "Local helper binding only. Root starts observer after reviewing actual GO; deadline is start+3600 seconds. Collector waits for terminal and observer closure. No observer, inference or lifecycle operation executed.",
+  "session": "epdecode76onepass0910v8",
+  "source": "/home/choiceoh/stkernel-ep-tiled-0909-ring",
+  "started_at": 1789025880.6686947,
+  "submission_log": {
+    "path": "/tmp/glm53-ep76-submit8.log",
+    "sha256": "901505502cad6ff6bba54a34bc6fe8724ab3ca0c048f4223ec2cf0302bf73ab4",
+    "startup_log": "/home/choiceoh/glm53-logs/fleet/launches/598fc01076b6dccef4aa0534f8d86bc8402a17b38319a05655cfb23452190c86.3adf95ad3ab54bd9ae2c06659dafe5c6.log"
+  },
+  "ticket": "17890258792363139"
+}

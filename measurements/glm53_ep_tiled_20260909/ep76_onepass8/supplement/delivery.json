@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "context": "DURABLE_REPOSITORY_COPY",
+  "repository_path": "measurements/glm53_ep_tiled_20260909/ep76_onepass8/supplement",
+  "original_staging_path": "/tmp/glm53-ep76-onepass8-supplement-staging",
+  "original_staging_inventory_sha256": "504c9a01f18d16c02b7b47240e50578aefa7206e5cee0e59fa9ed6a87a60b1cc",
+  "original_staging_manifest_sha256": "a8546dddbed74cc0327593306dfbfd580c306d504b19ad3aad37bbf2dc691b8c",
+  "original_staging_readme_sha256": "c5dc5128e63e250c0de0351c8256e97b4a36e2764d2d582ca676d27d5f95fbc0",
+  "delivered_readme_sha256": "c3fe6d9be28142d88553b4d5c3180c0756d96dbe22bcc927102a1241f2794158",
+  "original_receipts_artifacts_unchanged": true,
+  "changes": [
+    "README delivery-context prose",
+    "manifest delivery reference",
+    "new delivery.json",
+    "regenerated package SHA256SUMS"
+  ],
+  "delivered_package_inventory": "SHA256SUMS",
+  "scope": "Packaging metadata update only; no runtime/tests/GPU"
+}

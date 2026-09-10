@@ -1,0 +1,242 @@
+{
+  "scope": "Saved ready prefix only. Marker presence cannot supply fresh canonical counters or quality; absence at ready is not a serving failure.",
+  "snap_identity_sha256": "d6017a1941f09cb683c678f457a302ec91f8c6d46700a0f40b22d66f032ffa2a",
+  "nodes": [
+    {
+      "node": "local",
+      "markers": {
+        "[ep-hybrid-q0-dual-warp] LAUNCHED prefill ": [
+          {
+            "line_sha256": "088fe6a929dae84eb401cd2f9e0fb00bc02e8a5a686105e22c9f94007cdc8549",
+            "text": "(Worker_TP0_EP0 pid=243) [ep-hybrid-q0-dual-warp] LAUNCHED prefill E144/H4096/I1024/top8 T=8192"
+          }
+        ],
+        "[ep-hybrid] LAUNCHED prefill ": [
+          {
+            "line_sha256": "73a5e97d2926fbb398389d452bc524a6232742a1a783415a251a1b9bda50ef4d",
+            "text": "(Worker_TP0_EP0 pid=243) [ep-hybrid] LAUNCHED prefill E144/H4096/I1024/top8 T=8192"
+          }
+        ],
+        "[ep-hybrid] LAUNCHED decode ": [
+          {
+            "line_sha256": "cc7a1272c96b9db6d294bb90293aae89ed77499e90c25d751a31467fd8f269ba",
+            "text": "Capturing CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s](Worker_TP0_EP0 pid=243) [ep-hybrid] LAUNCHED decode E144/H4096/I1024/top8 T=24"
+          }
+        ],
+        "[prep-fused]": [
+          {
+            "line_sha256": "10dc4754515a4fe98982cef1d59222a6d8f5f486b4b11951a31b17eadfb92fff",
+            "text": "(APIServer pid=29) WARNING 09-10 08:21:57 [glm53_prep_fused.py:1365] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture"
+          },
+          {
+            "line_sha256": "7094550efebbff14dd98a40768a5e0662007997beb193a31ad2339c0ad6e4927",
+            "text": "WARNING 09-10 08:22:18 [glm53_prep_fused.py:1365] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture"
+          },
+          {
+            "line_sha256": "d8a902f8a7d9d66c98012ec7118e9fbd03b44ba3186c80294ce92fc58a30b76d",
+            "text": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:25:29 [glm53_prep_fused.py:872] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step"
+          },
+          {
+            "line_sha256": "f5a523a92731b0ab87090e1e236f36346fc61eff0ff9502a7ce95245deee07ab",
+            "text": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:25:29 [glm53_prep_fused.py:1032] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64"
+          },
+          {
+            "line_sha256": "7b2379a50f16c33c52dd7ac06cba5fdd4f06bfc362aa0905c2b8893ad7157be0",
+            "text": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:25:30 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=1 stock_steps=1 checks ok=1 drift=0 first_plan_check=True"
+          },
+          {
+            "line_sha256": "3bf2174b82d48d6c55898b9929693d032b1b5ad36ef12783712afe131e566226",
+            "text": "(EngineCore pid=151) WARNING 09-10 08:25:35 [glm53_prep_fused.py:1365] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture"
+          },
+          {
+            "line_sha256": "66f5574c0701e88bbaceb0793123e06b6182da2e9cf502720a963e08864e265d",
+            "text": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:08 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=64 stock_steps=5 checks ok=2 drift=0 first_plan_check=False"
+          },
+          {
+            "line_sha256": "d3048bd8294818d423b8b81298f9ed5821620e75cde14f0af324e9f2ba85a12b",
+            "text": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:11 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=128 stock_steps=6 checks ok=3 drift=0 first_plan_check=False"
+          },
+          {
+            "line_sha256": "780f558400f2bcfc12f08e0269c8b7e73cf57f258957897b5135e8e234e8e375",
+            "text": "(Worker_TP0_EP0 pid=243) WARNING 09-10 08:26:14 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=192 stock_steps=6 checks ok=4 drift=0 first_plan_check=False"
+          }
+        ]
+      },
+      "log_sha256": "f07a3749cf13ede19d22195a6cd550340e7ebe947a5b169ea0c6cd900702610f"
+    },
+    {
+      "node": "10.10.10.1",
+      "markers": {
+        "[ep-hybrid-q0-dual-warp] LAUNCHED prefill ": [
+          {
+            "line_sha256": "ca9910ca45bc9604efed245ca194af6b628423551e9e495f7d65010f71a7d85d",
+            "text": "(Worker_TP1_EP1 pid=164) [ep-hybrid-q0-dual-warp] LAUNCHED prefill E144/H4096/I1024/top8 T=8192"
+          }
+        ],
+        "[ep-hybrid] LAUNCHED prefill ": [
+          {
+            "line_sha256": "c0750925b05d0f988336d767797202abf3ab82041a889cf6ab6870f1c8be2357",
+            "text": "(Worker_TP1_EP1 pid=164) [ep-hybrid] LAUNCHED prefill E144/H4096/I1024/top8 T=8192"
+          }
+        ],
+        "[ep-hybrid] LAUNCHED decode ": [
+          {
+            "line_sha256": "f49931a3b785e54ae507a9289fd0ab73dafd7ca04cc720cf86653975795eefeb",
+            "text": "(Worker_TP1_EP1 pid=164) [ep-hybrid] LAUNCHED decode E144/H4096/I1024/top8 T=24"
+          }
+        ],
+        "[prep-fused]": [
+          {
+            "line_sha256": "33f68409ac9b7640540c9a79635f2541b1128079a121fe4b6d5f57d1156917df",
+            "text": "WARNING 09-10 08:21:51 [glm53_prep_fused.py:1365] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture"
+          },
+          {
+            "line_sha256": "e1c9640f38800c524101b554cfbf1d9d42cae2f0d897e719cbeeb643b1610dc0",
+            "text": "WARNING 09-10 08:22:00 [glm53_prep_fused.py:1365] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture"
+          },
+          {
+            "line_sha256": "2f6b2a8bbf12c74efd601d9803effb7526ebcb781442b688e5426e3c8a993cc1",
+            "text": "(Worker_TP1_EP1 pid=164) WARNING 09-10 08:25:29 [glm53_prep_fused.py:872] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step"
+          },
+          {
+            "line_sha256": "bbf2fe29896e5354f01440b78cef0f189df43b43c7b3495b16aceaefc174339d",
+            "text": "(Worker_TP1_EP1 pid=164) WARNING 09-10 08:25:29 [glm53_prep_fused.py:1032] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64"
+          },
+          {
+            "line_sha256": "7941ce16bf7c7e1e00233625afd4c60d393b9bea48e9fe91aa76bea84b6a81bb",
+            "text": "(Worker_TP1_EP1 pid=164) WARNING 09-10 08:25:30 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=1 stock_steps=1 checks ok=1 drift=0 first_plan_check=True"
+          },
+          {
+            "line_sha256": "4836dd55a0832a5fe692392408b83e10e747398129ee7a167d74f612e0da70fc",
+            "text": "(Worker_TP1_EP1 pid=164) WARNING 09-10 08:26:08 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=64 stock_steps=5 checks ok=2 drift=0 first_plan_check=False"
+          },
+          {
+            "line_sha256": "dc705bff147fedc2330a9646aee6e46f1770114f7de83fe2fd90743db8cee1a2",
+            "text": "(Worker_TP1_EP1 pid=164) WARNING 09-10 08:26:11 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=128 stock_steps=6 checks ok=3 drift=0 first_plan_check=False"
+          },
+          {
+            "line_sha256": "4ece27ffa326fa7d3a39edda3b79d84b6d69547319a9f67e0ccf0ddf74cc6532",
+            "text": "(Worker_TP1_EP1 pid=164) WARNING 09-10 08:26:14 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=192 stock_steps=6 checks ok=4 drift=0 first_plan_check=False"
+          }
+        ]
+      },
+      "log_sha256": "16ce16127db63bd9ea3e7edb4bce324f47c9596f4e93f98a203fa4f80eaecf06"
+    },
+    {
+      "node": "10.10.10.3",
+      "markers": {
+        "[ep-hybrid-q0-dual-warp] LAUNCHED prefill ": [
+          {
+            "line_sha256": "fd612704ca9b48fa7eb74bbb997007ba3f3921498b3b569894e22814e79fcb3a",
+            "text": "(Worker_TP2_EP2 pid=210) [ep-hybrid-q0-dual-warp] LAUNCHED prefill E144/H4096/I1024/top8 T=8192"
+          }
+        ],
+        "[ep-hybrid] LAUNCHED prefill ": [
+          {
+            "line_sha256": "f5c8c7b28a99fed43aeb7ddb225fa30ca19de69bbd108f8b7ee822fad4339249",
+            "text": "(Worker_TP2_EP2 pid=210) [ep-hybrid] LAUNCHED prefill E144/H4096/I1024/top8 T=8192"
+          }
+        ],
+        "[ep-hybrid] LAUNCHED decode ": [
+          {
+            "line_sha256": "87613ef836a0bb50a0a684db8ed350f691bdb4348f90e80ae2f3468767681014",
+            "text": "(Worker_TP2_EP2 pid=210) [ep-hybrid] LAUNCHED decode E144/H4096/I1024/top8 T=24"
+          }
+        ],
+        "[prep-fused]": [
+          {
+            "line_sha256": "77e95d5d5a484444b88eb7cb36c88cad7502df45b7040a1ab226f86928d847b8",
+            "text": "WARNING 09-10 08:21:49 [glm53_prep_fused.py:1365] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture"
+          },
+          {
+            "line_sha256": "f3798eb8c494e96a4f46e7eeb2aeb443aef8738d0754b4a05011c5a9980e6a23",
+            "text": "WARNING 09-10 08:22:01 [glm53_prep_fused.py:1365] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture"
+          },
+          {
+            "line_sha256": "a7c8a8139605ff1bbf3c64a8e4fc1312f8cea3138bf15710926ba28122e556eb",
+            "text": "(Worker_TP2_EP2 pid=210) WARNING 09-10 08:25:29 [glm53_prep_fused.py:872] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step"
+          },
+          {
+            "line_sha256": "7617cd26c8deb45e222d09b49643bd529d29217f4eda73945b69ec8eff8e248d",
+            "text": "(Worker_TP2_EP2 pid=210) WARNING 09-10 08:25:29 [glm53_prep_fused.py:1032] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64"
+          },
+          {
+            "line_sha256": "241c7cb5d1a3e6d54840184b4139d3dfb9548ad1d6cfa13262622b869f0aa849",
+            "text": "(Worker_TP2_EP2 pid=210) WARNING 09-10 08:25:30 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=1 stock_steps=1 checks ok=1 drift=0 first_plan_check=True"
+          },
+          {
+            "line_sha256": "d18f1635c1afb59d504cbf41fff13872812fb1d296eb09979bc9bec27a63ce2c",
+            "text": "(Worker_TP2_EP2 pid=210) WARNING 09-10 08:26:08 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=64 stock_steps=5 checks ok=2 drift=0 first_plan_check=False"
+          },
+          {
+            "line_sha256": "fc11f478d9adb39ac00f1b2de19d6a82f418c917a34dd917e806f5f171a3c72d",
+            "text": "(Worker_TP2_EP2 pid=210) WARNING 09-10 08:26:11 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=128 stock_steps=6 checks ok=3 drift=0 first_plan_check=False"
+          },
+          {
+            "line_sha256": "394b08a07fa7fe26452df9befc25f3e72c3ffe8cbfe7302ef5c7983dd57e48f4",
+            "text": "(Worker_TP2_EP2 pid=210) WARNING 09-10 08:26:14 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=192 stock_steps=6 checks ok=4 drift=0 first_plan_check=False"
+          }
+        ]
+      },
+      "log_sha256": "2defa2a5ccded4ae593ca05172b0f8a34bd045d6630f8ddce2cfae11221cd0c2"
+    },
+    {
+      "node": "10.10.10.4",
+      "markers": {
+        "[ep-hybrid-q0-dual-warp] LAUNCHED prefill ": [
+          {
+            "line_sha256": "ece9038d8014f6cf4b861ff8e635ae1a0078ccb0fb5b51581beedcc5ca6682b1",
+            "text": "(Worker_TP3_EP3 pid=208) [ep-hybrid-q0-dual-warp] LAUNCHED prefill E144/H4096/I1024/top8 T=8192"
+          }
+        ],
+        "[ep-hybrid] LAUNCHED prefill ": [
+          {
+            "line_sha256": "dd27cc4b2f375f31d41bb244a6a8fb7539bbfedc20f5c412babf0ad80a2afa6a",
+            "text": "(Worker_TP3_EP3 pid=208) [ep-hybrid] LAUNCHED prefill E144/H4096/I1024/top8 T=8192"
+          }
+        ],
+        "[ep-hybrid] LAUNCHED decode ": [
+          {
+            "line_sha256": "66626630641dac7d269e35c8b3fbd54ada375881ef3180741bb974ee8b69778e",
+            "text": "(Worker_TP3_EP3 pid=208) [ep-hybrid] LAUNCHED decode E144/H4096/I1024/top8 T=24"
+          }
+        ],
+        "[prep-fused]": [
+          {
+            "line_sha256": "dc59e72411189b64a59b40c3c97bc7f1fa0dd02d329056679feefe262f80cc31",
+            "text": "WARNING 09-10 08:21:55 [glm53_prep_fused.py:1365] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture"
+          },
+          {
+            "line_sha256": "ad95f6a89092a0435373ece3a6cd05d38a6c7a0b750f2ba3a235c84b64f5c59c",
+            "text": "WARNING 09-10 08:22:08 [glm53_prep_fused.py:1365] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture"
+          },
+          {
+            "line_sha256": "e9bc03c1f289f6910bc4446b5275ad7f123fc366c5c8b222c014232cccc6de70",
+            "text": "(Worker_TP3_EP3 pid=208) WARNING 09-10 08:25:29 [glm53_prep_fused.py:872] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step"
+          },
+          {
+            "line_sha256": "7c27af313056c7f3c0d0f56be8e09e6678e59b16a5ffa438b9c6916e366fe3c0",
+            "text": "(Worker_TP3_EP3 pid=208) WARNING 09-10 08:25:29 [glm53_prep_fused.py:1032] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64"
+          },
+          {
+            "line_sha256": "7b1a3fa46b877bf6a9642d4e75efec0fcf2c2dc5ca795797ab1b835251a176cb",
+            "text": "(Worker_TP3_EP3 pid=208) WARNING 09-10 08:25:30 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=1 stock_steps=1 checks ok=1 drift=0 first_plan_check=True"
+          },
+          {
+            "line_sha256": "1854cf45278e828d61973173b0fa350a38d4d8c5187f353ee7325774d9642b54",
+            "text": "(Worker_TP3_EP3 pid=208) WARNING 09-10 08:26:08 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=64 stock_steps=5 checks ok=2 drift=0 first_plan_check=False"
+          },
+          {
+            "line_sha256": "dfe4af0edf0d112a5bd5dd2fa6de1e438fb26edcebaa27d13378f47d4c1f166f",
+            "text": "(Worker_TP3_EP3 pid=208) WARNING 09-10 08:26:11 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=128 stock_steps=6 checks ok=3 drift=0 first_plan_check=False"
+          },
+          {
+            "line_sha256": "597bf64b9de07bd40d585de22b37cee7774146d429a4a61e2f496e631481ca8f",
+            "text": "(Worker_TP3_EP3 pid=208) WARNING 09-10 08:26:14 [glm53_prep_fused.py:1234] [prep-fused] on: fused_steps=192 stock_steps=6 checks ok=4 drift=0 first_plan_check=False"
+          }
+        ]
+      },
+      "log_sha256": "36c5e91d3c9d95cb7727aab4d93c14ca14e073b75c732f558644a0b8e5c5b8a2"
+    }
+  ]
+}

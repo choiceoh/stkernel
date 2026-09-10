@@ -1,0 +1,35 @@
+{
+  "bytes_mtime_inode_unchanged": true,
+  "execution": {
+    "expected_cpu_tests": 239,
+    "expected_groups": {
+      "baseline_dynamic_passes": 1,
+      "baseline_static_passes": 2,
+      "hybrid_dynamic_passes": 1,
+      "hybrid_q0_dynamic_passes": 1,
+      "hybrid_static_passes": 4
+    },
+    "finished": 1789025786.289946,
+    "log": "/tmp/glm53-ep76-cpu13.log",
+    "output": "/home/choiceoh/glm53-ep76-13-cpu-evidence",
+    "returncode": 0,
+    "revision": "407271d9cf73f5db6192a8410c68f152e67301cb",
+    "scope": "Normal fleet CPU admission; no GPU devices or workload",
+    "session": "epdecode76cpu0910v13",
+    "source": "/home/choiceoh/stkernel-ep-tiled-0909-ring",
+    "started": 1789025633.035271
+  },
+  "gpu_numerics_acceptance": false,
+  "image_reinspected_during_collection": false,
+  "not_staged": [
+    "execution command",
+    "Docker/environment metadata",
+    "original transport tar duplicate"
+  ],
+  "original_worker_tar_sha256": "7e2939cd36b8811da0119d752f8cb324a6423f54986d8593e39763c9684a4063",
+  "performance_acceptance": false,
+  "private_archive_inventory_sha256": "bc44fd6896764807d7e6d8b9e4129722181798dc5e8efbbc5422925740053aa6",
+  "schema": 1,
+  "source_binding_path": "cpu13/source-binding.json",
+  "validation_path": "cpu13/verification.json"
+}

@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "context": "DURABLE_REPOSITORY_COPY",
+  "repository_path": "measurements/glm53_ep_tiled_20260909/ep76_cpu12_cpu13",
+  "original_staging_path": "/tmp/glm53-ep76-cpu12-cpu13-durable-staging",
+  "original_staging_inventory_sha256": "6bf12310c395ab2c04a1c5d5b1e0d8f555e4511be9ff3b2a3543487c3f2bd1b4",
+  "original_staging_manifest_sha256": "737d19d60dc090641b0550b8a7f327b16bcf9ede9f1761c1745353477283a57e",
+  "original_staging_readme_sha256": "f8dd084acf953499d7bcc6aba554baa52bcc847d9d781fc3d32ef6e88ad426e0",
+  "delivered_readme_sha256": "3d294311c3b52a0d32e17dab00d14da3246a5826a04417d1ebaa55f19e2815c7",
+  "original_receipts_artifacts_unchanged": true,
+  "changes": [
+    "README delivery-context prose",
+    "manifest delivery reference",
+    "new delivery.json",
+    "regenerated package SHA256SUMS"
+  ],
+  "delivered_package_inventory": "SHA256SUMS",
+  "scope": "Packaging metadata update only; no runtime/tests/GPU"
+}
