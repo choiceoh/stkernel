@@ -54,9 +54,16 @@ CPU_TESTS += ("test_glm53_ep_hybrid_geometry.py", "test_glm53_ep_hybrid_owner.py
               "test_glm53_ep_hybrid_loader.py")
 CPU_TEST_COUNTS.update({"test_glm53_ep_hybrid_geometry.py":10,
     "test_glm53_ep_hybrid_owner.py":9,"test_glm53_ep_hybrid_remap.py":3,
-    "test_glm53_ep_hybrid_proof.py":4,
+    "test_glm53_ep_hybrid_proof.py":8,
     "test_glm53_ep_hybrid_loader.py":HYBRID_LOADER_TEST_COUNT})
-EXPECTED_CPU_TESTS = (209 + HYBRID_LOADER_TEST_COUNT
+HYBRID_Q0_TEST_COUNTS = {
+    "test_glm53_ep_hybrid_q0_cpu_receipt.py":4,
+    "test_glm53_ep_hybrid_q0_dispatch.py":6,
+    "test_glm53_ep_hybrid_q0_dual_warp.py":8,
+}
+CPU_TESTS += tuple(HYBRID_Q0_TEST_COUNTS)
+CPU_TEST_COUNTS.update(HYBRID_Q0_TEST_COUNTS)
+EXPECTED_CPU_TESTS = (213 + HYBRID_LOADER_TEST_COUNT + sum(HYBRID_Q0_TEST_COUNTS.values())
                       if type(HYBRID_LOADER_TEST_COUNT) is int else None)
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
@@ -87,6 +94,8 @@ CONTRACT_PATHS = (
     'tests/fixtures/glm53_ep_hybrid/runtime/source_pins.json',
     'measurements/glm53_ep_tiled_20260909/ep76_onepass5/source/moe_static_ep_tiled.py.gz',
     'measurements/glm53_ep_tiled_20260909/ep76_onepass5/source/moe_dynamic_ep_local.py.gz',
+    'measurements/glm53_ep_tiled_20260909/ep76_onepass6/source/moe_dynamic_ep_local.py.gz',
+    'tests/test_glm53_ep_route_scale_cache.py',
     'measurements/glm53_ep_tiled_20260909/onepass1/source/moe_dispatch.py.gz',
     'measurements/glm53_ep_local_20260908/cpu13/stock-gated.py.gz',
     'measurements/glm53_ep_tiled_20260909/ep76_cpu7/originals/result.json',
@@ -304,12 +313,14 @@ def scatter_helper_receipt(root, source_path):
     return receipt
 
 
-# The actual hybrid gate compiles only these eight variants. The legacy
-# specialization validators above remain used by the unchanged CPU contracts.
+# The actual hybrid gate preserves its eight variants and adds one fresh
+# hybrid Q0 candidate lowering. Legacy specialization validators above remain
+# used by the unchanged CPU contracts.
 BASELINE_STATIC_CASES = (("M6-map288-i32",6,"global"),("M32-map288-i32",32,"global"))
 HYBRID_STATIC_CASES = (("M6-local",6,"local"),("M6-map288-i32",6,"global"),
                        ("M32-local",32,"local"),("M32-map288-i32",32,"global"))
 HYBRID_TAG = 'glm53_ep2tp2_tiled_e144_i1024_v1'
+HYBRID_Q0_TAG = 'glm53_ep2tp2_q0_dual_warp_v1'
 HISTORICAL_CPU7_PATH = 'measurements/glm53_ep_tiled_20260909/ep76_cpu7/originals/result.json'
 HISTORICAL_CPU7_SHA256 = 'eaa69a1651341a21e66e5353b1de5a03beb4689198ae070e72a893673fa599d7'
 COMPILE_GROUPS = (
@@ -317,6 +328,7 @@ COMPILE_GROUPS = (
     ('baseline_dynamic',72,2048,(("M8192",8192,"dynamic"),)),
     ('hybrid_static',144,1024,HYBRID_STATIC_CASES),
     ('hybrid_dynamic',144,1024,(("M8192",8192,"dynamic"),)),
+    ('hybrid_q0_dynamic',144,1024,(("M8192",8192,"dynamic"),)),
 )
 
 
@@ -328,7 +340,7 @@ def require_bound_hybrid_loader_contracts():
     assert all(type(n) is int and n > 0 for n in CPU_TEST_COUNTS.values())
     assert len(CPU_TESTS) == len(set(CPU_TESTS)) == len(CPU_TEST_COUNTS)
     assert sum(CPU_TEST_COUNTS.values()) == EXPECTED_CPU_TESTS
-    assert EXPECTED_CPU_TESTS == 209 + HYBRID_LOADER_TEST_COUNT
+    assert EXPECTED_CPU_TESTS == 213 + HYBRID_LOADER_TEST_COUNT + sum(HYBRID_Q0_TEST_COUNTS.values())
     assert len(CONTRACT_PATHS) == len(set(CONTRACT_PATHS))
 
 
@@ -417,13 +429,49 @@ def native_actual_specialization(kernel,args,key,rows,mode,e,n,cutlass):
     return expected
 
 
-def expected_dynamic_specialization(e,n):
+def expected_dynamic_specialization(e,n,q0_dual_warp=False):
+    assert type(q0_dual_warp) is bool
+    assert (e,n) in ((72,2048),(144,1024))
+    assert not q0_dual_warp or (e,n) == (144,1024)
     return dict(kernel_class='MoEGatedEPLocalKernelSF6',argument_count=36,
         E=e,H=4096,I=n,top_k=8,requested_rows=8192,output_dtype='float32',
         intermediate_slices=n//128,dynamic_four_slice_groups=n//512,SF6=True,
+        q0_dual_warp=q0_dual_warp,math_warps=8,threads_per_cta=288,
+        q0_batch_tokens=4,q0_warps_per_token=2 if q0_dual_warp else 1,
         tensor_shapes={'14':[2*n,512,8,e],'16':[4096,128,n//128,e],
                        '18':[e],'20':[e+1],'28':[e,(2*n//128)*16,1552],
                        '29':[e,16*(n//128),1552]})
+
+
+def expected_dynamic_key(e,n,q0_dual_warp=False):
+    expected_dynamic_specialization(e,n,q0_dual_warp)
+    key = ['dynamic','fp4','nvfp4',e,4096,n,8,48,[128,128],
+        'torch.int32',False,True,'swigluoai_uninterleave',1.,0.,10.,False,True,
+        'glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1']
+    if e == 144:key.append(HYBRID_TAG)
+    if q0_dual_warp:key.append(HYBRID_Q0_TAG)
+    return key
+
+
+def dynamic_actual_specialization(kernel,args,e,n,q0_dual_warp,cutlass,*,lowered):
+    """Observe constructor and actual pointer ABI; layout fields follow lowering."""
+    assert type(lowered) is bool
+    expected = expected_dynamic_specialization(e,n,q0_dual_warp)
+    assert type(kernel).__name__ == expected['kernel_class']
+    assert type(kernel.q0_dual_warp) is bool and kernel.q0_dual_warp is q0_dual_warp
+    assert len(args) == expected['argument_count'] and args[34] == 48
+    assert kernel.reform_sf_pack is True
+    for index,shape in expected['tensor_shapes'].items():
+        assert list(args[int(index)].shape) == shape,(index,args[int(index)].shape,shape)
+    # make_ptr exposes dtype, whereas make_fake_compact_tensor has element_type.
+    assert args[25].dtype == cutlass.Float32
+    if lowered:
+        assert kernel.num_mma_warps == expected['math_warps']
+        assert kernel.threads_per_cta == expected['threads_per_cta']
+        assert tuple(kernel.tile_shape_mnk) == (128,128,128)
+        assert min(kernel.tile_shape_mnk[0]*kernel.tile_shape_mnk[1]//4096,
+                   kernel.num_mma_warps) == expected['q0_batch_tokens']
+    return expected
 
 
 def validate_compile_matrix(result):
@@ -431,11 +479,14 @@ def validate_compile_matrix(result):
     assert {k for k in result if k.endswith('_passes')} == expected_groups
     count = 0
     for kind,e,n,cases in COMPILE_GROUPS:
+        q0_dual_warp = kind == 'hybrid_q0_dynamic'
         passes = result[kind+'_passes']
         assert [p['arm'] for p in passes] == [kind.replace('_','-')+'/'+c[0] for c in cases]
         for passed,(name,rows,mode) in zip(passes,cases):
             assert passed['compiled_in_this_run'] is True
             assert passed['candidate'] is (e==144)
+            assert type(passed['q0_dual_warp']) is bool
+            assert passed['q0_dual_warp'] is q0_dual_warp
             assert not {'q1_register_layout','q1_pair_layout','register_layout'} & set(passed)
             summary = passed['resource_summary']
             assert type(summary) is dict
@@ -448,28 +499,26 @@ def validate_compile_matrix(result):
                 assert type(passed['resource_summary']['estimated_shared_bytes']) is int
                 assert type(passed['resource_summary']['kernel_smem_capacity_bytes']) is int
             else:
-                key = passed['cache_key']
-                expected = ['dynamic','fp4','nvfp4',e,4096,n,8,48,[128,128],
-                    'torch.int32',False,True,'swigluoai_uninterleave',1.,0.,10.,False,True,
-                    'glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1']
-                if e==144:expected.append(HYBRID_TAG)
-                assert key == expected
-                assert passed['specialization'] == expected_dynamic_specialization(e,n)
+                assert passed['cache_key'] == expected_dynamic_key(e,n,q0_dual_warp)
+                assert type(passed['specialization']['q0_dual_warp']) is bool
+                assert passed['specialization'] == expected_dynamic_specialization(e,n,q0_dual_warp)
                 assert passed['resource_summary']['estimated_shared_bytes'] is None
                 assert passed['resource_summary']['kernel_smem_capacity_bytes'] is None
             assert passed['resource_summary'] == compiler_resource_summary(
                 passed,passed['resource_summary']['estimated_shared_bytes'],
                 passed['resource_summary']['kernel_smem_capacity_bytes'])
             count += 1
-    assert count == 8 and result['fresh_lowerings'] == 8
-    assert result['same_source_baseline_lowerings'] == 3 and result['hybrid_lowerings'] == 5
+    assert count == 9 and result['fresh_lowerings'] == 9
+    assert result['same_source_baseline_lowerings'] == 3 and result['hybrid_lowerings'] == 6
+    assert result['hybrid_q0_control_lowerings'] == result['hybrid_q0_candidate_lowerings'] == 1
 
 
 def compile_candidate(output, result):
     os.environ.update(CUTE_DSL_ARCH='sm_121a',CUTE_DSL_KEEP='ptx,cubin',
         CUTE_DSL_DUMP_DIR=str(output),CUTE_DSL_CACHE_DIR=str(output/'cache'),
         CUTE_DSL_DISABLE_FILE_CACHING='1',CUTE_DSL_COMPILER_OPT='ptx-options=-v',
-        VLLM_GLM53_EP_TILED='1',VLLM_GLM53_EP_PREFILL_LOCAL='1',VLLM_GLM53_EP_DECODE_OPT='0')
+        VLLM_GLM53_EP_TILED='1',VLLM_GLM53_EP_PREFILL_LOCAL='1',VLLM_GLM53_EP_DECODE_OPT='0',
+        VLLM_GLM53_EP_HYBRID_Q0_DUAL_WARP='0')
     import torch
     assert not torch.cuda.is_initialized()
     torch.cuda.is_available = lambda: True
@@ -493,6 +542,7 @@ def compile_candidate(output, result):
     md.get_max_active_clusters = lambda *a: 48
     md.build_and_load_cute_dsl_kernel = lambda module,name,build,**kw: build()
     for kind,e,n,cases in COMPILE_GROUPS:
+        q0_dual_warp = kind == 'hybrid_q0_dynamic'
         result[kind+'_passes'] = []
         for name,rows,mode in cases:
             result['phase'] = kind+'-'+name
@@ -518,20 +568,20 @@ def compile_candidate(output, result):
                 real_compile=cute.compile
                 def observe_compile(launch,*args,**kw):
                     kernel=launch._kernel
-                    expected=expected_dynamic_specialization(e,n)
-                    assert type(kernel).__name__ == expected['kernel_class']
-                    assert len(args) == 36 and args[34] == 48 and kernel.reform_sf_pack is True
-                    for index,shape in expected['tensor_shapes'].items():
-                        assert list(args[int(index)].shape) == shape
-                    assert args[25].dtype == cutlass.Float32
+                    expected=dynamic_actual_specialization(
+                        kernel,args,e,n,q0_dual_warp,cutlass,lowered=False)
+                    compiled=real_compile(launch,*args,**kw)
+                    assert dynamic_actual_specialization(
+                        kernel,args,e,n,q0_dual_warp,cutlass,lowered=True) == expected
                     seen.append(expected)
-                    return real_compile(launch,*args,**kw)
+                    return compiled
                 md._DYNAMIC_KERNEL_CACHE.clear()
                 cute.compile=observe_compile
                 try:
                     md._get_dynamic_kernel(e,rows,4096,n,8,8192,
                         activation='swigluoai_uninterleave',swiglu_alpha=1.,swiglu_beta=0.,
-                        swiglu_limit=10.,tile_m=128,tiled=True,reform_sf_pack=True)
+                        swiglu_limit=10.,tile_m=128,tiled=True,reform_sf_pack=True,
+                        _ep_hybrid_q0_dual_warp_override=q0_dual_warp)
                 finally:
                     cute.compile=real_compile
                 assert len(seen) == len(md._DYNAMIC_KERNEL_CACHE) == 1
@@ -542,11 +592,13 @@ def compile_candidate(output, result):
                     prior=next(p for p in old['dynamic_passes'] if p['arm']=='dynamic/M8192')
                     assert json.loads(json.dumps(key,default=str)) == prior['cache_key']
             passed=preserve_pass(output,kind.replace('_','-')+'/'+name,key)
-            passed.update(compiled_in_this_run=True,candidate=e==144,specialization=selected,
+            passed.update(compiled_in_this_run=True,candidate=e==144,q0_dual_warp=q0_dual_warp,
+                          specialization=selected,
                           resource_summary=compiler_resource_summary(passed,estimated_shared,kernel_smem_capacity))
             result[kind+'_passes'].append(passed)
             assert not torch.cuda.is_initialized()
-    result.update(fresh_lowerings=8,same_source_baseline_lowerings=3,hybrid_lowerings=5,
+    result.update(fresh_lowerings=9,same_source_baseline_lowerings=3,hybrid_lowerings=6,
+                  hybrid_q0_control_lowerings=1,hybrid_q0_candidate_lowerings=1,
                   cuda_initialized=torch.cuda.is_initialized())
     assert result['cuda_initialized'] is False
     validate_compile_matrix(json.loads(json.dumps(result,default=str)))

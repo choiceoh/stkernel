@@ -52,6 +52,58 @@ def uses_name(node, name):
     return any(isinstance(item, ast.Name) and item.id == name for item in ast.walk(node))
 
 
+def single_warp_projection(node):
+    """Resolve only the new constexpr option, then join its split old guard.
+
+    The dedicated dual-warp tests compare this projection with the pinned
+    pre-option method. Arithmetic, route filters and scale oracles stay intact.
+    """
+    class Project(ast.NodeTransformer):
+        def visit_If(self, node):
+            spelling = ast.unparse(node.test)
+            if spelling in ("cutlass.const_expr(self.q0_dual_warp)",
+                            "cutlass.const_expr(not self.q0_dual_warp)"):
+                body = node.body if spelling.startswith("cutlass.const_expr(not ") else node.orelse
+                return [self.visit(item) for item in body]
+            return self.generic_visit(node)
+
+        def visit_Assign(self, node):
+            if (len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id in ("q0_row_idx", "q0_producer_lane")):
+                expected = {"q0_row_idx": "warp_idx", "q0_producer_lane": "lane_id"}
+                if ast.unparse(node.value) != expected[node.targets[0].id]:
+                    raise AssertionError("constant-off Q0 alias changed")
+                return None
+            return self.generic_visit(node)
+
+        def visit_Name(self, node):
+            aliases = {"q0_row_idx": "warp_idx", "q0_producer_lane": "lane_id"}
+            return ast.copy_location(ast.Name(aliases.get(node.id, node.id), node.ctx), node)
+
+        def generic_visit(self, node):
+            node = super().generic_visit(node)
+            for field, value in ast.iter_fields(node):
+                if not isinstance(value, list):
+                    continue
+                joined = []
+                for item in value:
+                    if (joined and isinstance(item, ast.If) and isinstance(joined[-1], ast.If)
+                            and not item.orelse and not joined[-1].orelse
+                            and ast.dump(item.test) == ast.dump(joined[-1].test)):
+                        previous = joined[-1]
+                        body = item.body
+                        if (body and previous.body and isinstance(body[0], ast.Assign)
+                                and ast.unparse(body[0]) == "route_slot_base = warp_idx * Int32(32)"
+                                and ast.dump(body[0]) == ast.dump(previous.body[0])):
+                            body = body[1:]  # repeated identical route_slot_base view
+                        previous.body.extend(body)
+                    else:
+                        joined.append(item)
+                setattr(node, field, joined)
+            return node
+    return ast.fix_missing_locations(Project().visit(copy.deepcopy(node)))
+
+
 class SourceCache:
     """Execute actual lane-0 allocation and each lane's published-state loads.
 
@@ -69,6 +121,7 @@ class SourceCache:
         tree = ast.parse(KERNEL.read_text())
         method = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
                       and node.name == "initialize_route_q0_and_publish")
+        method = single_warp_projection(method)
         selected = next(node for node in ast.walk(method) if isinstance(node, ast.If)
                         and ast.unparse(node.test) == "local_topk > Int32(0)")
         token_body = next(node.body for node in ast.walk(method)

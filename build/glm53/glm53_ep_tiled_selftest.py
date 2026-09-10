@@ -159,6 +159,15 @@ def _runtime(owner, layer):
     if shard["hybrid"]:
         context.update(loader_identity=owner._glm53_hybrid_loader_identity,
                        rank_geometry=hybrid_rank_contract(owner))
+    q0_dual_warp = getattr(owner, "_ep_tiled_q0_dual_warp", False)
+    if shard["hybrid"]:
+        if (tiled.ep_hybrid_q0_dual_warp_enabled(shard) is not q0_dual_warp
+                or md._GLM53_EP_HYBRID_Q0_DUAL_WARP is not q0_dual_warp):
+            raise RuntimeError("hybrid Q0 mode differs from its actual loaded dispatcher")
+    elif q0_dual_warp:
+        raise RuntimeError("hybrid Q0 mode requires the hybrid shard")
+    if q0_dual_warp:
+        context["q0_dual_warp"] = True
     return context
 
 
@@ -166,7 +175,10 @@ def _key(context):
     key = (os.getpid(), str(context["device"]),
            _sha(json.dumps(context["provenance"], sort_keys=True).encode()), SEED)
     shard = context.get("shard", ep_shard_geometry())
-    return key + ((context["loader_identity"],) if shard["hybrid"] else ())
+    key += ((context["loader_identity"],) if shard["hybrid"] else ())
+    if context.get("q0_dual_warp", False):
+        key += ("glm53_ep2tp2_q0_dual_warp_v1",)
+    return key
 
 
 def _marker(receipt):
@@ -315,6 +327,8 @@ def before_relayout(owner, layer):
             receipt.update(loader_identity=list(context["loader_identity"]),
                            rank_geometry=context["rank_geometry"],
                            numerical_scope="rank-local E144/I1024 shard vs original row-major owned weights; no cross-rank output-sum equivalence")
+        if context.get("q0_dual_warp", False):
+            receipt["q0_dual_warp"] = True
         _STATES[key] = receipt
         try:
             receipt["memory_before"] = _memory(context["torch"],context["device"])
@@ -418,6 +432,10 @@ def _cache_evidence(context, owner, rows):
     dynamic_tail = ("glm53_ep_prefill_local_fp32_v2","glm53_ep_tiled_sf6_v1")
     if shard["hybrid"]:
         dynamic_tail += (ep_shard_cache_suffix(shard)[0],)
+    if context.get("q0_dual_warp", False):
+        if not shard["hybrid"]:
+            raise AssertionError("dual-warp canary requires the hybrid shard")
+        dynamic_tail += ("glm53_ep2tp2_q0_dual_warp_v1",)
     keys = [key for key in context["md"]._DYNAMIC_KERNEL_CACHE
             if len(key) == 18+len(dynamic_tail) and key[:7] == ("dynamic","fp4","nvfp4",shard["E"],4096,shard["I"],8)
             and str(key[9]) == "torch.int32" and key[10:16] ==

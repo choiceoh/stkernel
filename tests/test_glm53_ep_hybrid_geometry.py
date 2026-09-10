@@ -18,6 +18,7 @@ BASE_DIR=ROOT/'measurements/glm53_ep_tiled_20260909/ep76_onepass5/source'
 sys.path.insert(0,str(ROOT/'tests'))
 from test_glm53_ep_tiled_static import Tensor, fake_torch
 from test_glm53_ep_tiled_route_fusion import I32,I64,Guarded
+from test_glm53_ep_route_scale_cache import single_warp_projection
 
 spec=importlib.util.spec_from_file_location('private_geometry',MODULES/'glm53_ep_shard_geometry.py')
 geom=importlib.util.module_from_spec(spec);spec.loader.exec_module(geom)
@@ -175,7 +176,10 @@ class HybridContracts(unittest.TestCase):
             self.assertEqual(ast.dump(node(NATIVE,f)),ast.dump(node(BASE,f)))
         base=BASE_DYNAMIC
         for f in ('initialize_route_q0_and_publish','scatter_sC_to_gmem','publish_ep_local_uniform_tasks'):
-            self.assertEqual(ast.dump(node(DYNAMIC,f)),ast.dump(node(base,f)))
+            actual = node(DYNAMIC,f)
+            if f == 'initialize_route_q0_and_publish':
+                actual = single_warp_projection(actual)
+            self.assertEqual(ast.dump(actual),ast.dump(node(base,f)))
         # Execute actual existing vector dispatcher and its actual stock scalar fallback.
         ns=dict(Int32=int,Uint32=int,Int64=int,get_ptr_as_int64=lambda a,i:i*4,
                 st_global_v4_u32=lambda *x:None)

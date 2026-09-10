@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -16,8 +17,10 @@ proof=load('private_hybrid_proof',ROOT/'bench/proof.py')
 base.proof=proof
 KNOB='VLLM_GLM53_EP_HYBRID_TP2'
 TAG='glm53_ep2tp2_tiled_e144_i1024_v1'
+DUAL_KNOB='VLLM_GLM53_EP_HYBRID_Q0_DUAL_WARP'
+DUAL_TAG='glm53_ep2tp2_q0_dual_warp_v1'
 
-def receipt():
+def receipt(*, q0_dual_warp=False):
     record=base.receipt()
     record.update(schema=2,geometry=dict(E=144,K=4096,I=1024,top8=8),
         loader_identity=['glm53_ep2_tp2_loader_v1',288,144,4096,2048,1024,
@@ -45,9 +48,11 @@ def receipt():
             key=('dynamic','fp4','nvfp4',144,4096,1024,8,48,(128,128),'torch.int32',False,
                  True,'swigluoai_uninterleave',1.,0.,10.,False,True,
                  'glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1',TAG)
+            if q0_dual_warp:key+=(DUAL_TAG,)
         text=repr(key)
         if m>32:text=text.replace("'torch.int32'",'torch.int32')
         case['cache_evidence']=dict(keys=[text],decode_opt=False)
+    if q0_dual_warp:record['q0_dual_warp']=True
     return record
 
 def log(record=None):
@@ -55,6 +60,10 @@ def log(record=None):
         '[ep-hybrid] LAUNCHED decode E144/H4096/I1024/top8 T=6',
         '[ep-hybrid] LAUNCHED prefill E144/H4096/I1024/top8 T=8192',
         base.log().splitlines()[-1]))
+
+def dual_log(record=None, *, rows=8192):
+    return log(receipt(q0_dual_warp=True) if record is None else record)+'\n'+(
+        '[ep-hybrid-q0-dual-warp] LAUNCHED prefill E144/H4096/I1024/top8 T='+str(rows))
 
 class HybridProofTests(unittest.TestCase):
     def test_exact_hybrid_executes_both_proofs(self):
@@ -101,6 +110,73 @@ class HybridProofTests(unittest.TestCase):
                       '\n'.join(text.splitlines()[:-1]),text.replace('T=6','T=33'),
                       text+'\n'+text.splitlines()[0],text.replace('"schema": 2','"schema": 2,"schema": 2')):
             self.assertFalse(proof._startup_proof(KNOB,wrong))
+
+    def test_dual_warp_actual_prefill_preserves_native_and_base_proofs(self):
+        for rows in (33,2128,8192,16384):
+            text=dual_log(rows=rows)
+            for knob in (KNOB,'VLLM_GLM53_EP_TILED',DUAL_KNOB):
+                self.assertIs(proof._startup_proof(knob,text),True)
+        # Absence remains the original artifact; an explicit false is equivalent.
+        for record in (receipt(),dict(receipt(),q0_dual_warp=False)):
+            self.assertIs(proof._startup_proof(KNOB,log(record)),True)
+            self.assertIs(proof._startup_proof(DUAL_KNOB,dual_log(record)),False)
+        original=receipt();selected=receipt(q0_dual_warp=True)
+        self.assertEqual([c for c in original['cases'] if c['rows']<=32],
+                         [c for c in selected['cases'] if c['rows']<=32])
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'actual.log';path.write_text(dual_log())
+            result=proof.check([KNOB,'VLLM_GLM53_EP_TILED',DUAL_KNOB],str(path),table={})
+            self.assertEqual(result['proof_ok'],'3/3')
+            self.assertIs(result['proof'][DUAL_KNOB],True)
+
+    def test_dual_warp_selection_and_every_dynamic_key_must_agree(self):
+        for value in (None,0,1,'true',[],{}):
+            record=receipt(q0_dual_warp=True);record['q0_dual_warp']=value
+            self.assertIs(proof._startup_proof(KNOB,dual_log(record)),False)
+        for value in (False,'missing'):
+            record=receipt(q0_dual_warp=True)
+            if value=='missing':record.pop('q0_dual_warp')
+            else:record['q0_dual_warp']=value
+            self.assertIs(proof._startup_proof(KNOB,dual_log(record)),False)
+        for idx,case in enumerate(receipt()['cases']):
+            if case['rows']<=32:continue
+            for text in (case['cache_evidence']['keys'][0],
+                         receipt(q0_dual_warp=True)['cases'][idx]['cache_evidence']['keys'][0].replace(DUAL_TAG,'retired')):
+                record=receipt(q0_dual_warp=True)
+                record['cases'][idx]['cache_evidence']['keys']=[text]
+                self.assertIs(proof._startup_proof(DUAL_KNOB,dual_log(record)),False)
+        # A correctly suffixed key cannot launder an additional stale artifact.
+        record=receipt(q0_dual_warp=True)
+        record['cases'][4]['cache_evidence']['keys']+=receipt()['cases'][4]['cache_evidence']['keys']
+        self.assertIs(proof._startup_proof(DUAL_KNOB,dual_log(record)),False)
+
+    def test_dual_warp_armed_canary_wrong_or_failed_serving_never_proves(self):
+        candidate=log(receipt(q0_dual_warp=True))
+        for text in (candidate,candidate+'\n'+DUAL_KNOB+'=1',
+                     candidate+'\n[ep-hybrid-q0-dual-warp] ARMED',
+                     dual_log().replace('LAUNCHED prefill E144','LAUNCHED decode E144'),
+                     dual_log().replace('I1024/top8 T=8192','I2048/top8 T=8192')):
+            self.assertIs(proof._startup_proof(DUAL_KNOB,text),False)
+        for rows in (0,32,16385,'6.0','8192 trailing','-1',''):
+            self.assertIs(proof._startup_proof(DUAL_KNOB,dual_log(rows=rows)),False)
+        for failure in ('[ep-hybrid-q0-dual-warp] FAIL {}','[ep-hybrid-selftest] FAIL {}'):
+            for text in (failure+'\n'+dual_log(),dual_log()+'\n'+failure):
+                self.assertIs(proof._startup_proof(DUAL_KNOB,text),False)
+
+    def test_dual_warp_marker_never_replaces_full_numerics_and_owner_proof(self):
+        mutations=(lambda r:r['cases'][4]['candidate'][0].update(bad_rows=1),
+                   lambda r:r['cases'][4].update(graph_replay=False),
+                   lambda r:r['packed_after']['planes']['fc1'].update(sha256='b'*64),
+                   lambda r:r['rank_geometry'].update(tp_size=4),
+                   lambda r:r.update(cleanup_error='failed'))
+        for mutate in mutations:
+            record=receipt(q0_dual_warp=True);mutate(record)
+            self.assertIs(proof._startup_proof(DUAL_KNOB,dual_log(record)),False)
+        text=dual_log()
+        for partial in ('\n'.join(line for line in text.splitlines() if 'LAUNCHED decode' not in line),
+                        '\n'.join(line for line in text.splitlines() if 'FINALIZED' not in line),
+                        text+'\n'+text.splitlines()[0],text+'\n'+log()):
+            self.assertIs(proof._startup_proof(DUAL_KNOB,partial),False)
 
 if __name__=='__main__':
     unittest.main()

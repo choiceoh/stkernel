@@ -17,6 +17,8 @@ from .glm53_ep_shard_geometry import (
 
 
 KNOB = "VLLM_GLM53_EP_TILED"
+Q0_DUAL_WARP_KNOB = "VLLM_GLM53_EP_HYBRID_Q0_DUAL_WARP"
+Q0_DUAL_WARP_TAG = "glm53_ep2tp2_q0_dual_warp_v1"
 STATIC_MAX_TOKENS = 32
 MAX_TOKENS = 16384
 _WORKSPACES = WeakValueDictionary()
@@ -28,6 +30,15 @@ _LAUNCH_PREFIXES = {
 }
 
 
+def ep_hybrid_q0_dual_warp_enabled(shard):
+    value = os.environ.get(Q0_DUAL_WARP_KNOB, "0")
+    if value not in ("0", "1"):
+        raise ValueError(Q0_DUAL_WARP_KNOB + " requires exact 0 or 1")
+    if value == "1" and not shard["hybrid"]:
+        raise ValueError(Q0_DUAL_WARP_KNOB + " requires the EP2/TP2 SF6 owner")
+    return value == "1"
+
+
 def validate_configuration(owner):
     if os.environ.get("VLLM_GLM53_TP_SF6_Q0", "0") == "1":
         raise ValueError(f"{KNOB}=1 requires VLLM_GLM53_TP_SF6_Q0=0 for the EP owner")
@@ -35,6 +46,7 @@ def validate_configuration(owner):
             "VLLM_GLM53_B12X_STATIC_V2", "").split(",")}:
         raise ValueError(f"{KNOB}=1 requires lossless sf6 in VLLM_GLM53_B12X_STATIC_V2")
     shard = owner_contract(owner)
+    ep_hybrid_q0_dual_warp_enabled(shard)
     expected = (True, True, 288, shard["E"], 4096, shard["I"], 8,
                 "swigluoai_uninterleave", 1., 0., 10.)
     actual = (owner._use_ep, owner._ep_no_dummy, owner.global_num_experts,
@@ -64,6 +76,8 @@ def _prepared_shard(owner):
     if shard["hybrid"] and (owner_contract(owner) != shard or
             getattr(owner, "_ep_tiled_loader_identity", None) != owner._glm53_hybrid_loader_identity):
         raise RuntimeError("hybrid tiled owner identity changed after preparation")
+    if ep_hybrid_q0_dual_warp_enabled(shard) != getattr(owner, "_ep_tiled_q0_dual_warp", False):
+        raise RuntimeError("hybrid Q0 mode changed after preparation")
     return shard
 
 
@@ -197,13 +211,17 @@ def _warm_native_routes(workspace, ids_dtype, expert_map, local_expert_offset):
         workspace.native_route_warmed.add(key)
 
 
-def _shared_workspace(device, capacity, *, shard=None):
+def _shared_workspace(device, capacity, *, shard=None, q0_dual_warp=False):
     import torch
     from . import moe_dispatch as md
     from .moe_static_ep_tiled import allocate_ep_tiled_decode_scratch, warm_ep_tiled_decode
 
     shard = ep_shard_geometry() if shard is None else shard
+    if type(q0_dual_warp) is not bool or (q0_dual_warp and not shard["hybrid"]):
+        raise ValueError("dual-warp workspace requires the exact hybrid mode")
     key = (str(device), capacity, "sf6_v1") + ep_shard_cache_suffix(shard)
+    if q0_dual_warp:
+        key += (Q0_DUAL_WARP_TAG,)
     with _LOCK:
         workspace = _WORKSPACES.get(key)
         if workspace is None:
@@ -223,7 +241,8 @@ def _shared_workspace(device, capacity, *, shard=None):
                 shard["E"], capacity, 4096, shard["I"], 8, dynamic.max_rows,
                 activation="swigluoai_uninterleave", swiglu_alpha=1.,
                 swiglu_beta=0., swiglu_limit=10., tile_m=128, tiled=True,
-                reform_sf_pack=True)
+                reform_sf_pack=True,
+                **({"_ep_hybrid_q0_dual_warp_override": q0_dual_warp} if shard["hybrid"] else {}))
             workspace = _Workspace(static, dynamic, scratch, shard=shard)
             _WORKSPACES[key] = workspace
         return workspace
@@ -242,6 +261,7 @@ def prepare_ep_tiled(owner, layer):
     owner._ep_tiled_ready = False
     owner._ep_tiled_prepared = False
     owner._ep_tiled_shard = shard
+    owner._ep_tiled_q0_dual_warp = ep_hybrid_q0_dual_warp_enabled(shard)
     owner._ep_tiled_loader_identity = getattr(owner, "_glm53_hybrid_loader_identity", None)
     w1, w2 = layer.w13_weight, layer.w2_weight
     if (torch.cuda.get_device_capability(w1.device) != (12, 1)
@@ -269,7 +289,8 @@ def prepare_ep_tiled(owner, layer):
             or views.w2_tiled_storage.data_ptr() != w2.data_ptr()):
         raise RuntimeError("tiled EP must alias the single loaded weight storage")
     owner._ep_tiled_workspace = _shared_workspace(w1.device, owner.max_num_tokens,
-        **({"shard": shard} if shard["hybrid"] else {}))
+        **({"shard": shard} if shard["hybrid"] else {}),
+        **({"q0_dual_warp": True} if owner._ep_tiled_q0_dual_warp else {}))
     owner._ep_tiled_generation = weight_generation(w1, w2, owner)
     # Dynamic prefill and the local-ID oracle retain these preallocated planes.
     # Native decode reads the original router storage without writing them.
@@ -370,8 +391,16 @@ def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
             input_gs=owner.g1_alphas, down_input_scale=owner._fc2_input_scale,
             scatter_output=output, num_experts=shard["E"], num_tokens=tokens,
             k=4096, n=shard["I"], top_k=8, activation="swigluoai_uninterleave",
-            swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
+            swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.,
+            **({"_ep_hybrid_q0_dual_warp_override": owner._ep_tiled_q0_dual_warp}
+               if shard["hybrid"] else {}))
         lane = "prefill"
+        if (owner._ep_tiled_q0_dual_warp and Q0_DUAL_WARP_TAG not in _LAUNCHED
+                and not getattr(owner, "_ep_tiled_canary_active", False)
+                and not torch.cuda.is_current_stream_capturing()):
+            print("[ep-hybrid-q0-dual-warp] LAUNCHED prefill E144/H4096/I1024/top8 T="
+                  + str(tokens), flush=True)
+            _LAUNCHED.add(Q0_DUAL_WARP_TAG)
     marker_key = (lane, shard["E"], shard["I"]) if shard["hybrid"] else lane
     if (marker_key not in _LAUNCHED and not getattr(owner, "_ep_tiled_canary_active", False)
             and not torch.cuda.is_current_stream_capturing()):

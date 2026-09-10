@@ -102,6 +102,18 @@ _GLM53_EP_PREFILL_LOCAL = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
 _TP_SF6_Q0_ENABLED = os.environ.get("VLLM_GLM53_TP_SF6_Q0") == "1"
 _TP_SF6_Q0_LAUNCH_LOGGED = False
 _GLM53_EP_TILED = os.environ.get("VLLM_GLM53_EP_TILED") == "1"
+_GLM53_EP_HYBRID_Q0_DUAL_WARP = os.environ.get("VLLM_GLM53_EP_HYBRID_Q0_DUAL_WARP") == "1"
+
+
+def _ep_hybrid_q0_dual_warp_eligible(*, enabled, E, m, k, n, num_topk,
+                                    tile_m, quant_mode, tiled, reform_sf_pack,
+                                    ep_local, activation, swiglu_alpha,
+                                    swiglu_beta, swiglu_limit):
+    return (enabled and type(m) is int and 33 <= m <= 16384
+            and (E, k, n, num_topk, tile_m) == (144, 4096, 1024, 8, 128)
+            and quant_mode == "nvfp4" and tiled and reform_sf_pack and ep_local
+            and (activation, swiglu_alpha, swiglu_beta, swiglu_limit)
+                == ("swigluoai_uninterleave", 1., 0., 10.))
 
 
 def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
@@ -1839,6 +1851,7 @@ def _dynamic_kernel_cache_key(
     tiled: bool = False,
     reform_sf_pack: bool = False,
     tp_sf6_q0: bool = False,
+    ep_hybrid_q0_dual_warp: bool = False,
 ) -> Tuple:
     """The dynamic kernel's cache key (see :func:`_static_kernel_cache_key`).
 
@@ -1846,6 +1859,16 @@ def _dynamic_kernel_cache_key(
     runtime-shaped operands as pointers, so one artifact serves every batch
     size.
     """
+    if type(ep_hybrid_q0_dual_warp) is not bool:
+        raise TypeError("hybrid Q0 dual-warp cache selector must be bool")
+    if ep_hybrid_q0_dual_warp and not (
+            ep_local_prefill and tiled and reform_sf_pack
+            and (E, k, n, num_topk, mma_tiler_mn) == (144, 4096, 1024, 8, (128, 128))
+            and (activation_precision, quant_mode) == ("fp4", "nvfp4")
+            and (activation, swiglu_alpha, swiglu_beta, swiglu_limit)
+                == ("swigluoai_uninterleave", 1., 0., 10.)
+            and not share_input_across_experts and not tp_sf6_q0):
+        raise ValueError("hybrid Q0 dual-warp cache requires exact local SF6 geometry")
     key = (
         "dynamic",
         activation_precision,
@@ -1876,6 +1899,8 @@ def _dynamic_kernel_cache_key(
             suffix += ("glm53_ep_tiled_sf6_v1",)
         if (E, n) == (144, 1024):
             suffix += ("glm53_ep2tp2_tiled_e144_i1024_v1",)
+        if ep_hybrid_q0_dual_warp:
+            suffix += ("glm53_ep2tp2_q0_dual_warp_v1",)
         return key + suffix
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
@@ -3840,6 +3865,7 @@ def _get_dynamic_kernel(
     tiled: bool = False,
     reform_sf_pack: bool = False,
     _tp_sf6_q0_override: bool | None = None,
+    _ep_hybrid_q0_dual_warp_override: bool | None = None,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -3895,6 +3921,18 @@ def _get_dynamic_kernel(
         raise ValueError("Hybrid prefill requires tiled packed SF6")
     if ep_local_cls is not None:
         share_input_across_experts = False  # per-expert scales, local route count
+    if (_ep_hybrid_q0_dual_warp_override is not None
+            and type(_ep_hybrid_q0_dual_warp_override) is not bool):
+        raise TypeError("hybrid Q0 dual-warp override must be bool or None")
+    ep_hybrid_q0_dual_warp = _ep_hybrid_q0_dual_warp_eligible(
+        enabled=(_GLM53_EP_HYBRID_Q0_DUAL_WARP if _ep_hybrid_q0_dual_warp_override is None
+                 else _ep_hybrid_q0_dual_warp_override),
+        E=E, m=m, k=k, n=n, num_topk=num_topk, tile_m=tile_m,
+        quant_mode=quant_mode, tiled=tiled, reform_sf_pack=reform_sf_pack,
+        ep_local=ep_local_cls is not None, activation=activation,
+        swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit)
+    if _ep_hybrid_q0_dual_warp_override is True and not ep_hybrid_q0_dual_warp:
+        raise ValueError("explicit hybrid Q0 dual-warp selection is outside exact eligibility")
     prefill_reuse = (
         (_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128)
         and m >= 3456
@@ -3970,6 +4008,7 @@ def _get_dynamic_kernel(
         ep_local_prefill=ep_local_cls is not None,
         reform_sf_pack=reform_sf_pack,
         tp_sf6_q0=tp_sf6_q0,
+        ep_hybrid_q0_dual_warp=ep_hybrid_q0_dual_warp,
     )
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -4052,6 +4091,8 @@ def _get_dynamic_kernel(
             from .moe_dynamic_ep_local import MoEGatedEPLocalKernelSF6
             ep_local_cls = MoEGatedEPLocalKernelSF6
             ep_kwargs = dict(reform_sf_pack=True)
+            if ep_hybrid_q0_dual_warp:
+                ep_kwargs["q0_dual_warp"] = True
         kernel = ep_local_cls(
             sf_vec_size=sf_vec_size, mma_tiler_mn=mma_tiler_mn,
             input_scales_are_reciprocal=input_scales_are_reciprocal,
@@ -4299,6 +4340,7 @@ def launch_sm120_dynamic_moe(
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
     _tp_sf6_q0_override: bool | None = None,
+    _ep_hybrid_q0_dual_warp_override: bool | None = None,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     global _TP_SF6_Q0_LAUNCH_LOGGED
@@ -4350,6 +4392,7 @@ def launch_sm120_dynamic_moe(
         tiled=bool(getattr(weights, "tiled", False)),
         reform_sf_pack=direct_sf6,
         _tp_sf6_q0_override=_tp_sf6_q0_override,
+        _ep_hybrid_q0_dual_warp_override=_ep_hybrid_q0_dual_warp_override,
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),

@@ -142,7 +142,7 @@ def _ep_hybrid_identity(identity):
                         p, ep, tp, ep*144, (ep+1)*144, tp*1024, (tp+1)*1024]
 
 
-def _ep_hybrid_cache(case):
+def _ep_hybrid_cache(case, *, q0_dual_warp=False):
     """Require the actual hybrid artifact, excluding all failed decode opts."""
     rows = case['rows']
     evidence = case.get('cache_evidence')
@@ -178,13 +178,15 @@ def _ep_hybrid_cache(case):
         expected += ('glm53_ep_static_fused_route_v1', 288, 'torch.int32', 0,
                      tag, 144, 1024)
         return evidence.get('decode_opt') is False and keys == [expected]
-    return all(type(key) is tuple and len(key) == 21
+    suffix = ('glm53_ep_prefill_local_fp32_v2', 'glm53_ep_tiled_sf6_v1', tag)
+    if q0_dual_warp:
+        suffix += ('glm53_ep2tp2_q0_dual_warp_v1',)
+    return all(type(key) is tuple and len(key) == 18 + len(suffix)
                and key[:7] == ('dynamic', 'fp4', 'nvfp4', 144, 4096, 1024, 8)
                and type(key[7]) is int and key[7] > 0 and key[8] == (128, 128)
                and key[9:18] == ('torch.int32', False, True,
                                   'swigluoai_uninterleave', 1., 0., 10., False, True)
-               and key[-3:] == ('glm53_ep_prefill_local_fp32_v2',
-                                'glm53_ep_tiled_sf6_v1', tag) for key in keys)
+               and key[18:] == suffix for key in keys)
 
 
 def _ep_hybrid_proof(log):
@@ -206,7 +208,9 @@ def _ep_hybrid_proof(log):
                 'concentrated6912': 6912, 'balanced8192': 8192,
                 'mixed4': 4, 'balanced8': 8, 'concentrated16': 16}
     record = records[0]
+    q0_dual_warp = record.get('q0_dual_warp', False)
     if (type(record.get('schema')) is not int or record['schema'] != 2
+            or type(q0_dual_warp) is not bool
             or record.get('verdict') != 'PASS' or record.get('phase') != 'complete'
             or record.get('caller_preserved') is not True
             or record.get('actual_weight_owner') is not True
@@ -233,15 +237,37 @@ def _ep_hybrid_proof(log):
         if {c['case'] for c in cases} != set(expected):
             return False
         return all(type(case['rows']) is int and case['rows'] == expected[case['case']]
-                   and _ep_tiled_case_proof(case) and _ep_hybrid_cache(case) for case in cases)
+                   and _ep_tiled_case_proof(case)
+                   and _ep_hybrid_cache(case, q0_dual_warp=q0_dual_warp) for case in cases)
     except (KeyError, TypeError, AttributeError):
         return False
+
+
+def _ep_hybrid_q0_dual_warp_proof(log):
+    """The selected canary artifact and completed serving call must agree."""
+    if ('[ep-hybrid-q0-dual-warp] FAIL' in log
+            or not _ep_hybrid_proof(log)):
+        return False
+    records = _json_marker_receipts(log, '[ep-hybrid-selftest] PASS ')
+    if records[0].get('q0_dual_warp') is not True:
+        return False
+    prefix = '[ep-hybrid-q0-dual-warp] LAUNCHED '
+    values = [line.split(prefix, 1)[1].strip() for line in log.splitlines() if prefix in line]
+    if not values:
+        return False
+    for value in values:
+        match = re.fullmatch(r'prefill E144/H4096/I1024/top8 T=([0-9]+)', value)
+        if match is None or not 33 <= int(match[1]) <= 16384:
+            return False
+    return True
 
 
 def _startup_proof(knob: str, log: str) -> bool | None:
     """Composite execution evidence; armed or partial progress is insufficient."""
     if knob == "VLLM_GLM53_EP_HYBRID_TP2":
         return _ep_hybrid_proof(log)
+    if knob == "VLLM_GLM53_EP_HYBRID_Q0_DUAL_WARP":
+        return _ep_hybrid_q0_dual_warp_proof(log)
     if knob == "VLLM_GLM53_EP_DECODE_OPT":
         if _startup_proof("VLLM_GLM53_EP_TILED", log) is not True:
             return False
