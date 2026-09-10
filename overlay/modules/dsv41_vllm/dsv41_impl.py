@@ -117,6 +117,10 @@ def _build():
             super().__init__(vllm_config=vllm_config, prefix=prefix)
             self._install_o_proj()
 
+            import dsv41_scales
+
+            dsv41_scales.install(self)
+
         def _install_o_proj(self) -> None:
             """Swap every attention's `_o_proj` for the bf16 grouped path.
 

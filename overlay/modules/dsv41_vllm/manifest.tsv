@@ -8,3 +8,4 @@ dsv41_arch.py	dsv41_arch.py	absent
 zz_dsv41_arch.pth	zz_dsv41_arch.pth	absent
 dsv41_config.py	dsv41_config.py	absent
 dsv41_o_proj.py	dsv41_o_proj.py	absent
+dsv41_scales.py	dsv41_scales.py	absent

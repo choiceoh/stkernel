@@ -8585,6 +8585,42 @@ def test_glm53_megakernel_contracts() -> None:
           "rank holds all 128, so its local index is its global one and "
           "renumbering would refuse a name that is legitimately there")
 
+    # -- dsv41 MXFP4 lane. V4.1's routed experts are fp4, and the config that
+    #    knows that is only reached when model_type is deepseek_v4 OR the user
+    #    names it. Without the name the experts are classified FP8, every fp4
+    #    backend refuses, and the fallback runs the model on the wrong lane.
+    d41env = open(os.path.join(REPO, "profiles/dsv41.env"),
+                  encoding="utf-8").read()
+    check("QUANT=deepseek_v4_fp8" in d41env,
+          "dsv41 names the DeepSeek-V4 fp8 quant config, which is what routes "
+          "the routed experts to MXFP4 rather than fp8")
+    hy4 = open(os.path.join(REPO, "launchers/start-hy4-tp4.sh"),
+               encoding="utf-8").read()
+    check("${QUANT:+--quantization ${QUANT} }" in hy4
+          and "SPEC_METHOD DECODE_FIRST QUANT" in hy4,
+          "the launcher forwards QUANT and reads it from the profile; a knob "
+          "the profile sets and the launcher drops is a silent default")
+
+    # -- dsv41 E8M0 scales. [32,32] sends the dense linears to Triton, which
+    #    cannot name float8_e8m0fnu. Casting is exact -- but MXFP4 WANTS e8m0
+    #    expert scales, so the conversion has to be scoped or it breaks the
+    #    lane the line above just opened.
+    sc = open(os.path.join(REPO, "overlay/modules/dsv41_vllm",
+                           "dsv41_scales.py"), encoding="utf-8").read()
+    check("_MOE_MARKERS" in sc and "def _is_moe(" in sc
+          and "_is_moe(module) or _is_moe(quant_method)" in sc,
+          "the E8M0 -> fp32 conversion skips MoE modules, whose MXFP4 scales "
+          "are meant to be e8m0")
+    check("process_weights_after_loading" in sc,
+          "the conversion runs AFTER the quant method has written the scales, "
+          "not before, or it converts tensors about to be overwritten")
+    sc_probe = open(os.path.join(REPO, "probes/dsv41_scales.py"),
+                    encoding="utf-8").read()
+    check("torch.arange(256, dtype=torch.uint8)" in sc_probe
+          and "256/256" in sc_probe.replace("{same}/256", "256/256"),
+          "the probe walks the whole 8-bit E8M0 domain rather than asserting "
+          "that a bare exponent must be representable")
+
     # -- dsv41 sliding-window ring. The rotation in the prefill seed is the
     #    whole thing: without it the cache holds every surviving token exactly
     #    once, at slots offset by seqlen % window, and the first decode step

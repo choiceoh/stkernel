@@ -20,7 +20,7 @@ set -euo pipefail
 ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/dsv4.env" \
   IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
   EXTRA_ENV GRAPH_DEBUG LOAD_FORMAT MAX_NUM_BATCHED OSAR_MAXEL \
-  DRAFT_BLOCK DRAFT_KV DRAFT_PATH LONG_PREFILL SPEC_METHOD DECODE_FIRST
+  DRAFT_BLOCK DRAFT_KV DRAFT_PATH LONG_PREFILL SPEC_METHOD DECODE_FIRST QUANT
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 MODEL_PATH="${MODEL_PATH:-${PROFILE_MODEL_PATH:-}}"
 SERVED_NAME="${SERVED_NAME:-${PROFILE_SERVED_NAME:-}}"
@@ -597,6 +597,7 @@ exec vllm serve "${MODEL_PATH}" \
   --default-chat-template-kwargs.thinking=true \
   ${REASONING_EFFORT:+--default-chat-template-kwargs.reasoning_effort=${REASONING_EFFORT}} \
   --attention-backend FLASHINFER_MLA_SPARSE_DSV4 --moe-backend "${MOE:-b12x}" \
+  ${QUANT:+--quantization ${QUANT} }\
   --disable-custom-all-reduce \
   --nnodes 4 --node-rank "${NODE_RANK}" --master-addr "${MASTER_ADDR}" --master-port 25000 \
   ${HEADLESS:+--headless} \
