@@ -68,6 +68,7 @@ def native_cache_fixture(decode_opt=False):
                                     local_expert_offset=0, decode_opt=None):
     max_rows, mac, topk_ids_dtype = 256, 48, "torch.int32"
     input_scales_are_reciprocal, fast_math, reform_sf_pack = False, True, sf6
+    shard = ep_shard_geometry()
     geometry = ep_tiled_geometry(m, max_rows, mac)
     scale_mode = ep_tiled_scale_mode(reform_sf_pack)
     decode_opt = ep_tiled_decode_opt(m, reform_sf_pack, decode_opt)
@@ -93,7 +94,8 @@ def native_cache_fixture(decode_opt=False):
     module = ast.Module(body=constants + [copy.deepcopy(functions[name]) for name in
         ('ep_tiled_geometry','ep_tiled_scale_mode','ep_tiled_route_metadata',
          'ep_tiled_route_key','ep_tiled_decode_opt','ep_tiled_decode_opt_enabled')] + [key_fn], type_ignores=[])
-    ns = {'_EP_TILED_DECODE_OPT': decode_opt}
+    from test_glm53_ep_tiled_static import shard_helpers
+    ns = shard_helpers({'_EP_TILED_DECODE_OPT': decode_opt})
     exec(compile(ast.fix_missing_locations(module),str(path),'exec'),ns)
     def native_key(*args, **kwargs):
         with patch.dict(sys.modules, {'torch':SimpleNamespace(int32='torch.int32',int64='torch.int64')}):

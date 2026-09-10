@@ -24,7 +24,7 @@ LOCAL_KERNEL_SHA256 = "f9af0f29945985cba066a9abf4dcab4417e23806631c7850073867408
 
 
 def route_ns():
-    ns = constants()
+    ns = static_tests.shard_helpers(constants())
     ns["_EP_TILED_DECODE_OPT"] = False
     extract("ep_tiled_decode_opt", ns)
     extract("ep_tiled_route_metadata", ns)
@@ -80,7 +80,7 @@ class EPTiledRouteFusionTests(unittest.TestCase):
         for dtype in (I32, I64):
             actual = [int(dtype(x)) for x in values]
             for offset in (0, 1, 72, 216, 2**31-1):
-                owner = types.SimpleNamespace(ep_route_map_len=None, ep_local_expert_offset=offset)
+                owner = types.SimpleNamespace(ep_num_experts=72, ep_route_map_len=None, ep_local_expert_offset=offset)
                 for e in actual:
                     ids, mapping = Guarded([e], dtype), Guarded()
                     self.assertEqual(run(owner,ids,I32(0),mapping), reference(e,None,offset))
@@ -89,7 +89,7 @@ class EPTiledRouteFusionTests(unittest.TestCase):
                      2**31, 2**32-1, 2**32, 2**32+71, 2**63-1]
         for dtype in (I32,I64):
             mapping = [int(dtype(x)) for x in mapvalues]
-            owner = types.SimpleNamespace(ep_route_map_len=len(mapping), ep_local_expert_offset=0)
+            owner = types.SimpleNamespace(ep_num_experts=72, ep_route_map_len=len(mapping), ep_local_expert_offset=0)
             for e in range(-2,len(mapping)+2):
                 ids, arr = Guarded([e]), Guarded(mapping,dtype)
                 self.assertEqual(run(owner,ids,I32(0),arr), reference(e,mapping,0))
@@ -100,7 +100,7 @@ class EPTiledRouteFusionTests(unittest.TestCase):
                 self.assertEqual(arr.reads,[])
 
     def test_empty_and_remote_routes_never_read_poison_and_weight_bits_survive(self):
-        run=admission(); owner=types.SimpleNamespace(ep_route_map_len=0,ep_local_expert_offset=0)
+        run=admission(); owner=types.SimpleNamespace(ep_num_experts=72, ep_route_map_len=0,ep_local_expert_offset=0)
         ids,mapping=Guarded(),Guarded()
         self.assertEqual(run(owner,ids,I32(100),mapping),72)
         self.assertEqual(ids.reads+mapping.reads,[])

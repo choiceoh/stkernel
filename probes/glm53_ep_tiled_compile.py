@@ -46,7 +46,18 @@ CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_glm53_ep_q1_cpu_receipt.py")
 CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (12, 12, 27, 14, 12, 12, 6, 7, 6, 5, 6, 10, 6, 10, 10, 4,
                                      6, 8, 4, 4, 2)))
-EXPECTED_CPU_TESTS = 183
+# Loader owner reported eight focused methods PASS before this source freeze.
+# Rebind this value if that suite changes; None is never executable admission.
+HYBRID_LOADER_TEST_COUNT = 8
+CPU_TESTS += ("test_glm53_ep_hybrid_geometry.py", "test_glm53_ep_hybrid_owner.py",
+              "test_glm53_ep_hybrid_remap.py", "test_glm53_ep_hybrid_proof.py",
+              "test_glm53_ep_hybrid_loader.py")
+CPU_TEST_COUNTS.update({"test_glm53_ep_hybrid_geometry.py":10,
+    "test_glm53_ep_hybrid_owner.py":9,"test_glm53_ep_hybrid_remap.py":3,
+    "test_glm53_ep_hybrid_proof.py":4,
+    "test_glm53_ep_hybrid_loader.py":HYBRID_LOADER_TEST_COUNT})
+EXPECTED_CPU_TESTS = (209 + HYBRID_LOADER_TEST_COUNT
+                      if type(HYBRID_LOADER_TEST_COUNT) is int else None)
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',
@@ -67,6 +78,33 @@ CONTRACT_PATHS = (
     'measurements/glm53_ep_tiled_20260909/ep76_onepass4/source/moe_static_ep_tiled.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json',
+    'overlay/modules/glm53_moe/glm53_ep_shard_geometry.py',
+    'overlay/modules/glm53_moe/glm53_ep_route_remap.py',
+    'overlay/modules/glm53_moe/manifest.tsv',
+    'overlay/modules/glm53_model/glm53_ep_hybrid.py',
+    'overlay/modules/glm53_model/manifest.tsv',
+    'tests/fixtures/glm53_ep_hybrid/ep4_route_remap.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/source_pins.json',
+    'measurements/glm53_ep_tiled_20260909/ep76_onepass5/source/moe_static_ep_tiled.py.gz',
+    'measurements/glm53_ep_tiled_20260909/ep76_onepass5/source/moe_dynamic_ep_local.py.gz',
+    'measurements/glm53_ep_tiled_20260909/onepass1/source/moe_dispatch.py.gz',
+    'measurements/glm53_ep_local_20260908/cpu13/stock-gated.py.gz',
+    'measurements/glm53_ep_tiled_20260909/ep76_cpu7/originals/result.json',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/config.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/layer.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/expert_map_manager.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/routed_experts.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/runner/moe_runner.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/prepare_finalize/no_dp_ep.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/oracle/nvfp4.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/all2all_utils.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/utils/flashinfer_fp4_moe.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe_w4a4_nvfp4.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/compressed_tensors/utils.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/quantization/utils/quant_utils.py.gz',
+    'tests/fixtures/glm53_ep_hybrid/runtime/model_executor/layers/fused_moe/modular_kernel.py.gz',
 ) + tuple('tests/' + name for name in CPU_TESTS)
 
 
@@ -84,7 +122,11 @@ def source_receipt(root, *, verify_mounted=False):
             mounted[target] = hashlib.sha256(content).hexdigest()
             names.add(name)
     assert {'moe_static_ep_tiled.py','moe_dynamic_ep_local.py','moe_dispatch.py',
-            'moe_static_kernel_v4.py','moe_static_kernel_v5.py'} <= names
+            'moe_static_kernel_v4.py','moe_static_kernel_v5.py','glm53_ep_shard_geometry.py'} <= names
+    for name in ('moe_static_ep_tiled.py','moe_dynamic_ep_local.py',
+                 'moe_dispatch.py','glm53_ep_shard_geometry.py'):
+        assert (root/'build/glm53'/name).read_bytes() == (
+            root/'overlay/modules/glm53_moe'/name).read_bytes(), 'stale composed source: '+name
     return dict(mounted_sources=mounted, contract_sources={
         name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in CONTRACT_PATHS})
 
@@ -262,11 +304,159 @@ def scatter_helper_receipt(root, source_path):
     return receipt
 
 
+# The actual hybrid gate compiles only these eight variants. The legacy
+# specialization validators above remain used by the unchanged CPU contracts.
+BASELINE_STATIC_CASES = (("M6-map288-i32",6,"global"),("M32-map288-i32",32,"global"))
+HYBRID_STATIC_CASES = (("M6-local",6,"local"),("M6-map288-i32",6,"global"),
+                       ("M32-local",32,"local"),("M32-map288-i32",32,"global"))
+HYBRID_TAG = 'glm53_ep2tp2_tiled_e144_i1024_v1'
+HISTORICAL_CPU7_PATH = 'measurements/glm53_ep_tiled_20260909/ep76_cpu7/originals/result.json'
+HISTORICAL_CPU7_SHA256 = 'eaa69a1651341a21e66e5353b1de5a03beb4689198ae070e72a893673fa599d7'
+COMPILE_GROUPS = (
+    ('baseline_static',72,2048,BASELINE_STATIC_CASES),
+    ('baseline_dynamic',72,2048,(("M8192",8192,"dynamic"),)),
+    ('hybrid_static',144,1024,HYBRID_STATIC_CASES),
+    ('hybrid_dynamic',144,1024,(("M8192",8192,"dynamic"),)),
+)
+
+
+def require_bound_hybrid_loader_contracts():
+    # No admission at the provisional 209 count while loader tests are pending.
+    assert type(HYBRID_LOADER_TEST_COUNT) is int and HYBRID_LOADER_TEST_COUNT > 0, (
+        'bind the completed loader test count before freeze')
+    assert CPU_TEST_COUNTS['test_glm53_ep_hybrid_loader.py'] == HYBRID_LOADER_TEST_COUNT
+    assert all(type(n) is int and n > 0 for n in CPU_TEST_COUNTS.values())
+    assert len(CPU_TESTS) == len(set(CPU_TESTS)) == len(CPU_TEST_COUNTS)
+    assert sum(CPU_TEST_COUNTS.values()) == EXPECTED_CPU_TESTS
+    assert EXPECTED_CPU_TESTS == 209 + HYBRID_LOADER_TEST_COUNT
+    assert len(CONTRACT_PATHS) == len(set(CONTRACT_PATHS))
+
+
+def historical_cpu7(root):
+    raw = (root/HISTORICAL_CPU7_PATH).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == HISTORICAL_CPU7_SHA256
+    old = json.loads(raw)
+    assert old['verdict'] == 'PASS' and old['phase'] == 'complete'
+    assert old['contracts'] == dict(tests_run=183,failures=0,errors=0,skips=0)
+    assert old['cuda_initialized'] is False and old['binding_runtime_rechecked'] is True
+    assert [len(old[k]) for k in ('static_passes','global_static_passes',
+                                  'opt_static_passes','dynamic_passes')] == [7,10,4,2]
+    return old
+
+
+def compiler_resource_summary(passed, dynamic_shared=None):
+    raw = passed['resources'][0]['resources']
+    assert len(re.findall(r'^\s*Function\s',raw,re.M)) == 1
+    found = re.findall(r'\bREG:(\d+) STACK:(\d+) SHARED:(\d+) LOCAL:(\d+)',raw)
+    assert len(found) == 1,raw
+    reg,stack,shared,local = map(int,found[0])
+    summary = dict(registers=reg,stack_bytes=stack,static_shared_bytes=shared,
+                   local_bytes=local,dynamic_shared_bytes=dynamic_shared)
+    if dynamic_shared is not None:
+        assert type(dynamic_shared) is int and dynamic_shared > 0
+        assert dynamic_shared + shared <= 101376
+        summary['total_shared_bytes'] = dynamic_shared + shared
+    # Preserve STACK and raw PTX/cubin; LOCAL=0 does not establish no spilling.
+    return summary
+
+
+def expected_native_key(rows, mode, e, n):
+    assert (e,n) in ((72,2048),(144,1024)) and rows in (6,32)
+    assert mode in ('local','global')
+    low = rows <= 8
+    key = ['glm53_ep_static_tiled_fp32_v1',rows,256,48,'torch.int32',False,True,
+           [16,128,256] if low else [32,64,512],
+           [16,256,128] if low else [32,128,128],
+           'nvfp4','sf6_v1','swigluoai_uninterleave',1.,0.,10.,
+           'bf16_scatter' if low else 'fp32_scatter']
+    if low:
+        key += ['glm53_ep_static_sf6_a_ring_v1','glm53_ep_static_sf6_word_unpack_v1',
+                'glm53_ep_static_bf16_scatter_v1']
+    if mode == 'global':key += ['glm53_ep_static_fused_route_v1',288,'torch.int32',0]
+    if e == 144:key += [HYBRID_TAG,144,1024]
+    return key
+
+
+def expected_native_specialization(rows, mode, e, n):
+    low = rows <= 8
+    shapes = {0:[rows,4096],1:[rows*8],2:[rows*8],3:[256,4096,e],
+        5:[e*256*2048],6:[e*256*256],9:[2*n,512,8,e],11:[4096,128,n//128,e],
+        13:[e],15:[e],16:[e],17:[e],18:[e],19:[e],20:[e],21:[rows,4096],
+        22:[e,256],23:[e,256],26:[e,(2*n//128)*16,1552],27:[e,16*(n//128),1552]}
+    if mode == 'global':shapes[30] = [288]
+    return dict(E=e,H=4096,I=n,top_k=8,rows=rows,route_mode=mode,
+        map_length=288 if mode=='global' else None,local_expert_offset=0,
+        argument_count=31 if mode=='global' else 30,dtype_ids='int32',
+        dtype_output='bfloat16' if low else 'float32',a_ring=low,word_unpack=low,
+        scatter_bf16=low,decode_opt=False,native_slices=n//128,
+        tensor_shapes={str(k):v for k,v in shapes.items()})
+
+
+def native_actual_specialization(kernel,args,key,rows,mode,e,n,cutlass):
+    expected = expected_native_specialization(rows,mode,e,n)
+    assert kernel.ep_num_experts == e and kernel.ep_intermediate_size == n
+    assert kernel.output_tile_count_n == n//128 and kernel.ep_decode_opt is False
+    assert kernel.ep_route_mode == mode and kernel.ep_route_map_len == expected['map_length']
+    assert kernel.ep_local_expert_offset == 0 and args[28] == 48
+    assert len(args) == expected['argument_count']
+    for index,shape in expected['tensor_shapes'].items():
+        assert list(args[int(index)].shape) == shape,(index,args[int(index)].shape,shape)
+    assert args[1].element_type == cutlass.Int32 and args[2].element_type == cutlass.Float32
+    assert args[9].element_type == args[11].element_type == cutlass.Float4E2M1FN
+    assert args[26].element_type == args[27].element_type == cutlass.Uint8
+    if mode == 'global':assert args[30].element_type == cutlass.Int32
+    low = rows <= 8
+    assert kernel.a_ring is low and kernel.word_unpack is low and kernel.scatter_bf16 is low
+    assert args[21].element_type == (cutlass.BFloat16 if low else cutlass.Float32)
+    assert json.loads(json.dumps(key)) == expected_native_key(rows,mode,e,n)
+    return expected
+
+
+def expected_dynamic_specialization(e,n):
+    return dict(kernel_class='MoEGatedEPLocalKernelSF6',argument_count=36,
+        E=e,H=4096,I=n,top_k=8,requested_rows=8192,output_dtype='float32',
+        intermediate_slices=n//128,dynamic_four_slice_groups=n//512,SF6=True,
+        tensor_shapes={'14':[2*n,512,8,e],'16':[4096,128,n//128,e],
+                       '18':[e],'20':[e+1],'28':[e,(2*n//128)*16,1552],
+                       '29':[e,16*(n//128),1552]})
+
+
+def validate_compile_matrix(result):
+    expected_groups = {kind+'_passes' for kind,_,_,_ in COMPILE_GROUPS}
+    assert {k for k in result if k.endswith('_passes')} == expected_groups
+    count = 0
+    for kind,e,n,cases in COMPILE_GROUPS:
+        passes = result[kind+'_passes']
+        assert [p['arm'] for p in passes] == [kind.replace('_','-')+'/'+c[0] for c in cases]
+        for passed,(name,rows,mode) in zip(passes,cases):
+            assert passed['compiled_in_this_run'] is True
+            assert passed['candidate'] is (e==144)
+            assert not {'q1_register_layout','q1_pair_layout','register_layout'} & set(passed)
+            if mode != 'dynamic':
+                assert passed['cache_key'] == expected_native_key(rows,mode,e,n)
+                assert passed['specialization'] == expected_native_specialization(rows,mode,e,n)
+                assert type(passed['resource_summary']['dynamic_shared_bytes']) is int
+            else:
+                key = passed['cache_key']
+                expected = ['dynamic','fp4','nvfp4',e,4096,n,8,48,[128,128],
+                    'torch.int32',False,True,'swigluoai_uninterleave',1.,0.,10.,False,True,
+                    'glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1']
+                if e==144:expected.append(HYBRID_TAG)
+                assert key == expected
+                assert passed['specialization'] == expected_dynamic_specialization(e,n)
+                assert passed['resource_summary']['dynamic_shared_bytes'] is None
+            assert passed['resource_summary'] == compiler_resource_summary(
+                passed,passed['resource_summary']['dynamic_shared_bytes'])
+            count += 1
+    assert count == 8 and result['fresh_lowerings'] == 8
+    assert result['same_source_baseline_lowerings'] == 3 and result['hybrid_lowerings'] == 5
+
+
 def compile_candidate(output, result):
     os.environ.update(CUTE_DSL_ARCH='sm_121a',CUTE_DSL_KEEP='ptx,cubin',
         CUTE_DSL_DUMP_DIR=str(output),CUTE_DSL_CACHE_DIR=str(output/'cache'),
         CUTE_DSL_DISABLE_FILE_CACHING='1',CUTE_DSL_COMPILER_OPT='ptx-options=-v',
-        VLLM_GLM53_EP_TILED='1',VLLM_GLM53_EP_PREFILL_LOCAL='1')
+        VLLM_GLM53_EP_TILED='1',VLLM_GLM53_EP_PREFILL_LOCAL='1',VLLM_GLM53_EP_DECODE_OPT='0')
     import torch
     assert not torch.cuda.is_initialized()
     torch.cuda.is_available = lambda: True
@@ -277,117 +467,81 @@ def compile_candidate(output, result):
     import cutlass.cute as cute
     from flashinfer.cute_dsl import fp4_common
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_static_ep_tiled as ep
+    from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
     assert ep.scatter_add_v4_bf16x2 is fp4_common.scatter_add_v4_bf16x2
     root = Path(__file__).resolve().parents[1]
-    result['scatter_helper'] = scatter_helper_receipt(root, fp4_common.__file__)
-    result['static_passes'] = []
-    for rows in STATIC_ROWS:
-        result['phase'] = 'static-M'+str(rows)
-        assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
-        kernel,args,key = ep.ep_tiled_compile_spec(num_tokens=rows,max_rows=256,
-            max_active_clusters=48,topk_ids_dtype=torch.int32,reform_sf_pack=True)
-        output_types = {cutlass.BFloat16:'bfloat16', cutlass.Float32:'float32'}
-        specialization = static_specialization(rows, key, kernel.a_ring, kernel.word_unpack,
-                                                kernel.scatter_bf16, output_types[args[21].element_type])
-        cute.compile(kernel,*args,options='--opt-level 2 --enable-tvm-ffi')
-        assert static_specialization(rows, key, kernel.a_ring, kernel.word_unpack,
-                                     kernel.scatter_bf16, output_types[args[21].element_type]) == specialization
-        passed = preserve_pass(output,'static/M'+str(rows),key)
-        passed['specialization'] = specialization
-        result['static_passes'].append(passed)
-        assert not torch.cuda.is_initialized()
-    result['global_static_passes'] = []
-    integer_types = {cutlass.Int32:'int32',cutlass.Int64:'int64'}
-    for case in GLOBAL_STATIC_CASES:
-        name,rows,ids_dtype,map_len,map_dtype,offset = case
-        result['phase'] = 'global-static-'+name
-        assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
-        kernel,args,key = ep.ep_tiled_compile_spec(num_tokens=rows,max_rows=256,
-            max_active_clusters=48,topk_ids_dtype=getattr(torch,ids_dtype),
-            reform_sf_pack=True,route_mode='global',expert_map_len=map_len,
-            expert_map_dtype=getattr(torch,map_dtype) if map_dtype else None,
-            local_expert_offset=offset)
-        def actual_specialization():
-            # Position21 remains output;28 is constexpr CTA count,29 the
-            # environment stream,30 the only new real/dummy map operand.
-            assert len(args)==31 and args[28]==48
-            assert tuple(args[1].shape)==(rows*8,)
-            assert args[2].element_type==cutlass.Float32
-            route=dict(route_mode=kernel.ep_route_mode,
-                expert_map_len=kernel.ep_route_map_len,
-                local_expert_offset=kernel.ep_local_expert_offset,
-                topk_ids_dtype=integer_types[args[1].element_type],
-                expert_map_operand_dtype=integer_types[args[30].element_type],
-                expert_map_operand_shape=list(args[30].shape),compile_argument_count=len(args))
-            return global_static_specialization(case,key,kernel.a_ring,kernel.word_unpack,
-                kernel.scatter_bf16,output_types[args[21].element_type],route)
-        specialization = actual_specialization()
-        cute.compile(kernel,*args,options='--opt-level 2 --enable-tvm-ffi')
-        assert actual_specialization()==specialization
-        passed=preserve_pass(output,'global-static/'+name,key)
-        passed['specialization']=specialization
-        result['global_static_passes'].append(passed)
-        assert not torch.cuda.is_initialized()
-    result['opt_static_passes'] = []
-    for case in OPT_STATIC_CASES:
-        name, rows, mode = case
-        result['phase'] = 'opt-static-' + name
-        assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
-        kernel, args, key = ep.ep_tiled_compile_spec(num_tokens=rows, max_rows=256,
-            max_active_clusters=48, topk_ids_dtype=torch.int32, reform_sf_pack=True,
-            route_mode=mode, expert_map_len=288 if mode == 'global' else None,
-            expert_map_dtype=torch.int32 if mode == 'global' else None, decode_opt=True)
-        assert len(args) == (31 if mode == 'global' else 30) and args[28] == 48
-        assert tuple(args[1].shape) == (rows*8,) and args[2].element_type == cutlass.Float32
-        route = None
-        if mode == 'global':
-            route = dict(route_mode=kernel.ep_route_mode, expert_map_len=kernel.ep_route_map_len,
-                local_expert_offset=kernel.ep_local_expert_offset,
-                topk_ids_dtype=integer_types[args[1].element_type],
-                expert_map_operand_dtype=integer_types[args[30].element_type],
-                expert_map_operand_shape=list(args[30].shape), compile_argument_count=len(args))
-        # A fresh compile must generate the actual layout witness. Constructor
-        # flags or a previous receipt must not stand in for CuTe partition_D.
-        assert not hasattr(kernel, 'ep_q1_register_layout_proven')
-        assert not hasattr(kernel, 'ep_q1_register_layout_receipt')
-        cute.compile(kernel, *args, options='--opt-level 2 --enable-tvm-ffi')
-        selected = opt_static_specialization(case, key, kernel.a_ring, kernel.word_unpack,
-            kernel.scatter_bf16, output_types[args[21].element_type], route,
-            kernel.ep_decode_opt, kernel.ep_storage_bytes)
-        assert kernel.smem_bytes == kernel.ep_storage_bytes <= kernel.smem_capacity
-        passed = preserve_pass(output, 'opt-static/' + name, key)
-        passed['specialization'] = selected
-        passed['shared_capacity'] = opt_shared_capacity(passed)
-        passed['q1_register_layout'] = opt_q1_register_layout(kernel, key)
-        result['opt_static_passes'].append(passed)
-        assert not torch.cuda.is_initialized()
-    from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
+    result['scatter_helper'] = scatter_helper_receipt(root,fp4_common.__file__)
+    old = historical_cpu7(root)
+    result['historical_cpu7_reference'] = dict(
+        source_revision='ca076d35e64a6a19e90dffe54054269d1a5e1887',
+        result_sha256=HISTORICAL_CPU7_SHA256,tests_run=183,lowerings=23,
+        role='historical cache/ABI reference only; not this run or a performance baseline')
     md.get_num_sm = lambda *a: 48
     md.get_max_active_clusters = lambda *a: 48
     md.build_and_load_cute_dsl_kernel = lambda module,name,build,**kw: build()
-    result['dynamic_passes'] = []
-    for rows in DYNAMIC_ROWS:
-        result['phase'] = 'dynamic-M'+str(rows)
-        # Each selected runtime shape receives a fresh lowering, even when
-        # both happen to share a dynamic key. This is not startup cost evidence.
-        md._DYNAMIC_KERNEL_CACHE.clear()
-        assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
-        md._get_dynamic_kernel(72,rows,4096,2048,8,8192,
-            activation='swigluoai_uninterleave',swiglu_alpha=1.,swiglu_beta=0.,
-            swiglu_limit=10.,tiled=True,reform_sf_pack=True)
-        keys = set(md._DYNAMIC_KERNEL_CACHE)
-        assert len(keys)==1, 'each fresh dynamic lowering must publish one key'
-        key = next(iter(keys))
-        assert key[3:7] == (72,4096,2048,8) and key[17] is True,key
-        assert key[-2:] == ('glm53_ep_prefill_local_fp32_v2','glm53_ep_tiled_sf6_v1'),key
-        result['dynamic_passes'].append(preserve_pass(output,'dynamic/M'+str(rows),key))
-        assert not torch.cuda.is_initialized()
-    result['cuda_initialized'] = torch.cuda.is_initialized()
-    assert scatter_helper_receipt(root, fp4_common.__file__) == result['scatter_helper']
+    for kind,e,n,cases in COMPILE_GROUPS:
+        result[kind+'_passes'] = []
+        for name,rows,mode in cases:
+            result['phase'] = kind+'-'+name
+            assert not list(output.glob('*.ptx')) and not list(output.glob('*.cubin'))
+            if mode != 'dynamic':
+                kwargs = dict(num_tokens=rows,num_local_experts=e,intermediate_size=n,
+                    max_rows=256,max_active_clusters=48,topk_ids_dtype=torch.int32,
+                    reform_sf_pack=True,decode_opt=False,route_mode=mode)
+                if mode == 'global':kwargs.update(expert_map_len=288,expert_map_dtype=torch.int32)
+                kernel,args,key = ep.ep_tiled_compile_spec(**kwargs)
+                selected = native_actual_specialization(kernel,args,key,rows,mode,e,n,cutlass)
+                cute.compile(kernel,*args,options='--opt-level 2 --enable-tvm-ffi')
+                assert native_actual_specialization(kernel,args,key,rows,mode,e,n,cutlass) == selected
+                assert not hasattr(kernel,'ep_q1_register_layout_receipt'), 'retired optimization executed'
+                dynamic_shared = int(kernel.smem_bytes)
+                if e == 72:
+                    prior = next(p for p in old['global_static_passes']
+                                 if p['arm']=='global-static/'+name)
+                    assert json.loads(json.dumps(key)) == prior['cache_key']
+            else:
+                seen=[]
+                real_compile=cute.compile
+                def observe_compile(launch,*args,**kw):
+                    kernel=launch._kernel
+                    expected=expected_dynamic_specialization(e,n)
+                    assert type(kernel).__name__ == expected['kernel_class']
+                    assert len(args) == 36 and args[34] == 48 and kernel.reform_sf_pack is True
+                    for index,shape in expected['tensor_shapes'].items():
+                        assert list(args[int(index)].shape) == shape
+                    assert args[25].element_type == cutlass.Float32
+                    seen.append(expected)
+                    return real_compile(launch,*args,**kw)
+                md._DYNAMIC_KERNEL_CACHE.clear()
+                cute.compile=observe_compile
+                try:
+                    md._get_dynamic_kernel(e,rows,4096,n,8,8192,
+                        activation='swigluoai_uninterleave',swiglu_alpha=1.,swiglu_beta=0.,
+                        swiglu_limit=10.,tile_m=128,tiled=True,reform_sf_pack=True)
+                finally:
+                    cute.compile=real_compile
+                assert len(seen) == len(md._DYNAMIC_KERNEL_CACHE) == 1
+                key=next(iter(md._DYNAMIC_KERNEL_CACHE))
+                selected=seen[0]
+                dynamic_shared=None
+                if e == 72:
+                    prior=next(p for p in old['dynamic_passes'] if p['arm']=='dynamic/M8192')
+                    assert json.loads(json.dumps(key)) == prior['cache_key']
+            passed=preserve_pass(output,kind.replace('_','-')+'/'+name,key)
+            passed.update(compiled_in_this_run=True,candidate=e==144,specialization=selected,
+                          resource_summary=compiler_resource_summary(passed,dynamic_shared))
+            result[kind+'_passes'].append(passed)
+            assert not torch.cuda.is_initialized()
+    result.update(fresh_lowerings=8,same_source_baseline_lowerings=3,hybrid_lowerings=5,
+                  cuda_initialized=torch.cuda.is_initialized())
+    assert result['cuda_initialized'] is False
+    validate_compile_matrix(json.loads(json.dumps(result)))
+    assert scatter_helper_receipt(root,fp4_common.__file__) == result['scatter_helper']
 
 
 def check_cpu_contracts(root, result):
     """Runs in a fresh process with the original pre-compiler environment."""
+    require_bound_hybrid_loader_contracts()
     import torch
     assert not torch.cuda.is_initialized()
     suite = unittest.TestSuite()
@@ -416,8 +570,9 @@ def main():
     args=p.parse_args()
     result=dict(verdict='FAIL',phase='no-device-guard',started=time.time(),compile_only=True,
                 gpu_numerics_acceptance=False,performance_acceptance=False,
-                scope='seven local static, ten global-route static, four decode-optimized static and two dynamic EP tiled compiler variants plus CPU contracts; no GPU')
+                scope='same-source EP4 baseline three plus EP2xTP2 hybrid five fresh lowerings, and isolated full CPU contracts; no GPU')
     try:
+        require_bound_hybrid_loader_contracts()
         assert not list(Path('/dev').glob('nvidia*')),'CPU container exposes CUDA devices'
         runtime=verify_runtime(args.capsule_root,args.manifest_sha256)
         result['binding_runtime']=runtime
@@ -450,6 +605,7 @@ def main():
             assert result['contracts'] == dict(tests_run=EXPECTED_CPU_TESTS,failures=0,errors=0,skips=0)
             result['contracts_process_isolated'] = True
             assert scatter_helper_receipt(root,result['scatter_helper']['path']) == result['scatter_helper']
+            validate_compile_matrix(json.loads(json.dumps(result)))
         import torch
         assert not torch.cuda.is_initialized()
         assert source_receipt(root,verify_mounted=True)==sources

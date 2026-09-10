@@ -88,7 +88,21 @@ def scatter_add_weighted_bf16x8_to_f32(
     )
 
 
+from .glm53_ep_shard_geometry import ep_shard_geometry
+
+
 class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
+    def _check_ep_shard_weights(self, w13, down, rows, *, sf6):
+        # Ordinary Python/CuTe host setup, never a staged dynamic raise.
+        if len(w13.shape) != 4 or len(down.shape) != 4:
+            raise ValueError("EP tiled operands must both be four-dimensional")
+        shard = ep_shard_geometry(int(rows.shape[0]), int(w13.shape[0]) // 2)
+        if shard["hybrid"] and not sf6:
+            raise ValueError("Hybrid EP requires SF6")
+        if (tuple(w13.shape) != shard["cute_w13"]
+                or tuple(down.shape) != shard["cute_down"]):
+            raise ValueError("EP tiled shard weight geometry mismatch")
+
     def _setup_attributes(self, hidden_size):
         if hidden_size != 4096 or self.tile_shape_mnk != (128, 128, 128):
             raise ValueError("expert-local prefill requires H4096 and M128/N128/K128")
@@ -818,11 +832,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         # divide the inner K512/K128 modes, so no tile crosses a storage chunk.
         # Reject mixed or different 4-D layouts before any TMA descriptor exists.
         if cutlass.const_expr(len(b_w13.shape) == 4 or len(b_down.shape) == 4):
-            if cutlass.const_expr(
-                b_w13.shape != (4096, 512, 8, 72)
-                or b_down.shape != (4096, 128, 16, 72)
-            ):
-                raise ValueError("expert-local tiled weights require E72/H4096/I2048 v5 views")
+            self._check_ep_shard_weights(b_w13, b_down, row_counts, sf6=False)
             b_w13 = cute.group_modes(b_w13, 1, 3)
             b_down = cute.group_modes(b_down, 1, 3)
         # Raw MMA scales keep their original logical shape, independent of the
@@ -1033,12 +1043,7 @@ class MoEGatedEPLocalKernelSF6(MoEGatedEPLocalKernel, MoEGatedDynamicKernelSF6):
     ):
         if cutlass.const_expr(scatter_output.element_type != cutlass.Float32):
             raise ValueError("expert-local SF6 scatter requires FP32 accumulation storage")
-        if cutlass.const_expr(
-            b_w13.shape != (4096, 512, 8, 72)
-            or b_down.shape != (4096, 128, 16, 72)
-            or row_counts.shape[0] != 72
-        ):
-            raise ValueError("expert-local SF6 requires tiled E72/H4096/I2048 weights")
+        self._check_ep_shard_weights(b_w13, b_down, row_counts, sf6=True)
         b_w13 = cute.group_modes(b_w13, 1, 3)
         b_down = cute.group_modes(b_down, 1, 3)
         self._check_sf6_shapes(b_w13, b_down, sfb1_packed, sfb2_packed)

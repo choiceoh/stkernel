@@ -119,13 +119,13 @@ def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
 def _ep_local_prefill_kernel(*, E, m, k, n, num_topk, tile_m, activation,
                              swiglu_alpha, swiglu_beta, swiglu_limit, quant_mode, tiled):
     tiled_ep = (tiled and globals().get("_GLM53_EP_TILED", False)
-                and (E, k, n, num_topk) == (72, 4096, 2048, 8))
+                and (E, n) in ((72, 2048), (144, 1024)) and (k, num_topk) == (4096, 8))
     if tiled_ep:
         if type(m) is not int or not 1 <= m <= 16384:
             raise ValueError("tiled EP prefill requires 1..16384 tokens")
     elif not _GLM53_EP_PREFILL_LOCAL or not 4096 <= m <= 16384:
         return None
-    if ((E, k, n, num_topk) != (72, 4096, 2048, 8)
+    if ((E, n) not in ((72, 2048), (144, 1024)) or (k, num_topk) != (4096, 8)
             or (activation, swiglu_alpha, swiglu_beta, swiglu_limit, quant_mode)
             != ("swigluoai_uninterleave", 1.0, 0.0, 10.0, "nvfp4")):
         return None
@@ -1874,6 +1874,8 @@ def _dynamic_kernel_cache_key(
         suffix = ("glm53_ep_prefill_local_fp32_v2",)
         if reform_sf_pack:
             suffix += ("glm53_ep_tiled_sf6_v1",)
+        if (E, n) == (144, 1024):
+            suffix += ("glm53_ep2tp2_tiled_e144_i1024_v1",)
         return key + suffix
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
@@ -3889,6 +3891,8 @@ def _get_dynamic_kernel(
         E=E, m=m, k=k, n=n, num_topk=num_topk, tile_m=tile_m, activation=activation,
         swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit,
         quant_mode=quant_mode, tiled=tiled)
+    if ep_local_cls is not None and (E, n) == (144, 1024) and not (tiled and reform_sf_pack):
+        raise ValueError("Hybrid prefill requires tiled packed SF6")
     if ep_local_cls is not None:
         share_input_across_experts = False  # per-expert scales, local route count
     prefill_reuse = (
@@ -4229,7 +4233,8 @@ def _get_dynamic_kernel(
         extra_key_files=_kernel_source_files() + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6_q0.py"),)
             if tp_sf6_q0 else ()) + (
-            (os.path.join(os.path.dirname(__file__), "moe_dynamic_ep_local.py"),)
+            (os.path.join(os.path.dirname(__file__), "moe_dynamic_ep_local.py"),
+             os.path.join(os.path.dirname(__file__), "glm53_ep_shard_geometry.py"))
             if ep_local_cls is not None else ()),
     )
 

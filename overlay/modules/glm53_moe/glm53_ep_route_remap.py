@@ -14,6 +14,7 @@ import triton.language as tl
 def _remap_ep_local_kernel(
     IDS, WEIGHTS, EXPERT_MAP, OUT_IDS, OUT_WEIGHTS, N_PAIRS, LOCAL_OFFSET,
     MAP_LEN: tl.constexpr, HAS_MAP: tl.constexpr, BLOCK: tl.constexpr,
+    LOCAL_EXPERTS: tl.constexpr = 72,
 ):
     slot = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     live = slot < N_PAIRS
@@ -28,7 +29,7 @@ def _remap_ep_local_kernel(
     if HAS_MAP and MAP_LEN == 0:
         # The empty-map contract is independent of both input tensors. An
         # explicit specialization avoids dead-but-retained masked loads.
-        tl.store(OUT_IDS + slot, 72, mask=live)
+        tl.store(OUT_IDS + slot, LOCAL_EXPERTS, mask=live)
         tl.store(output_bits + slot, 0, mask=live)
     else:
         expert = tl.load(IDS + slot, mask=live, other=-1).to(tl.int64)
@@ -40,11 +41,11 @@ def _remap_ep_local_kernel(
             # Match the existing out_ids.copy_(ids); out_ids.sub_(offset)
             # order, including int32 conversion before offset subtraction.
             local = (expert.to(tl.int32) - LOCAL_OFFSET).to(tl.int32)
-            remote = (expert < 0) | (local < 0) | (local >= 72)
+            remote = (expert < 0) | (local < 0) | (local >= LOCAL_EXPERTS)
         # Remote weights become positive zero without reading their storage.
         # Load local weights as bits so NaN payloads and signed zero survive.
         weight = tl.load(weight_bits + slot, mask=live & ~remote, other=0)
-        tl.store(OUT_IDS + slot, tl.where(remote, 72, local).to(tl.int32), mask=live)
+        tl.store(OUT_IDS + slot, tl.where(remote, LOCAL_EXPERTS, local).to(tl.int32), mask=live)
         tl.store(output_bits + slot, weight, mask=live)
 
 
@@ -53,7 +54,10 @@ def _ep_route_remap_metadata(
     local_expert_offset, out_ids, out_scales, min_tokens=4096,
 ):
     """Validate one call and return its launch sizes without caching tensors."""
-    if (num_local_experts != 72 or type(local_expert_offset) is not int
+    # E144 belongs only to the separately validated tiled owner.
+    if (type(num_local_experts) is not int
+            or num_local_experts not in ((72, 144) if min_tokens == 1 else (72,))
+            or type(local_expert_offset) is not int
             or not 0 <= local_expert_offset <= (1 << 31) - 1):
         return None
     tensors = (topk_ids, topk_weights, out_ids, out_scales)
@@ -120,6 +124,7 @@ def try_remap_ep_local(
         topk_ids, topk_weights, map_tensor, out_ids, out_scales,
         num_pairs, local_expert_offset,
         MAP_LEN=map_len, HAS_MAP=has_map, BLOCK=256, num_warps=4,
+        LOCAL_EXPERTS=num_local_experts,
     )
     return True
 

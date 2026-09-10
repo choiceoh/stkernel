@@ -11,6 +11,10 @@ from dataclasses import dataclass, field
 from threading import RLock
 from weakref import WeakValueDictionary
 
+from .glm53_ep_shard_geometry import (
+    ep_shard_geometry, ep_shard_cache_suffix, owner_contract, hybrid_rank_contract,
+)
+
 
 KNOB = "VLLM_GLM53_EP_TILED"
 STATIC_MAX_TOKENS = 32
@@ -30,7 +34,8 @@ def validate_configuration(owner):
     if "sf6" not in {part.strip() for part in os.environ.get(
             "VLLM_GLM53_B12X_STATIC_V2", "").split(",")}:
         raise ValueError(f"{KNOB}=1 requires lossless sf6 in VLLM_GLM53_B12X_STATIC_V2")
-    expected = (True, True, 288, 72, 4096, 2048, 8,
+    shard = owner_contract(owner)
+    expected = (True, True, 288, shard["E"], 4096, shard["I"], 8,
                 "swigluoai_uninterleave", 1., 0., 10.)
     actual = (owner._use_ep, owner._ep_no_dummy, owner.global_num_experts,
               owner.num_local_experts, owner.hidden_dim,
@@ -43,6 +48,23 @@ def validate_configuration(owner):
         raise ValueError(f"{KNOB}=1 requires max_num_tokens in 8192..{MAX_TOKENS}")
     if owner._ep_stock_topk_micro or owner._ep_disable_micro:
         raise ValueError(f"{KNOB}=1 cannot combine with alternate EP micro modes")
+    return shard
+
+
+def _native_shard_kwargs(shard):
+    # Preserve baseline call signatures/cache keys; hybrid may never inherit OPT.
+    return (dict(num_local_experts=shard["E"], intermediate_size=shard["I"],
+                 decode_opt=False) if shard["hybrid"] else {})
+
+
+def _prepared_shard(owner):
+    shard = getattr(owner, "_ep_tiled_shard", None)
+    if shard is None:
+        return ep_shard_geometry()
+    if shard["hybrid"] and (owner_contract(owner) != shard or
+            getattr(owner, "_ep_tiled_loader_identity", None) != owner._glm53_hybrid_loader_identity):
+        raise RuntimeError("hybrid tiled owner identity changed after preparation")
+    return shard
 
 
 def weight_generation(w1, w2, owner):
@@ -67,8 +89,9 @@ def weight_generation(w1, w2, owner):
     return tuple(result)
 
 
-def _require_packed_views(views):
+def _require_packed_views(views, shard=None):
     """Both consumers read the same admitted lossless planes, never raw aliases."""
+    shard = ep_shard_geometry() if shard is None else shard
     scales = getattr(views, "reform_scales", None)
     if (not views.tiled or not views.packed_only or not getattr(scales, "enabled", False)
             or views.sfb1_packed is not scales.fc1 or views.sfb2_packed is not scales.fc2):
@@ -77,7 +100,7 @@ def _require_packed_views(views):
                  "_down_sf_storage", "sfb_w13_ptr", "sfb_down_ptr"):
         if getattr(views, name) is not None:
             raise RuntimeError("tiled EP SF6 view retained a raw scale alias: " + name)
-    for tensor, shape in ((scales.fc1, (72, 512, 1552)), (scales.fc2, (72, 256, 1552))):
+    for tensor, shape in ((scales.fc1, shard["sf6_fc1"]), (scales.fc2, shard["sf6_fc2"])):
         if (tuple(tensor.shape) != shape or tensor.element_size() != 1
                 or not tensor.is_contiguous() or tensor.device != views.w1_storage.device):
             raise RuntimeError("tiled EP SF6 packed scale geometry/device differs")
@@ -90,7 +113,7 @@ def finalize_ep_tiled_scales(owner, layer, release_raw_scales):
     if not getattr(owner, "_ep_tiled_prepared", False):
         raise RuntimeError("tiled EP SF6 startup validation has not completed")
     views = owner._ep_tiled_weight_views
-    _require_packed_views(views)
+    _require_packed_views(views, _prepared_shard(owner))
     if (getattr(owner, "_ep_tiled_selftest_receipt", {}).get("verdict") != "PASS"
             or weight_generation(layer.w13_weight, layer.w2_weight, owner) != owner._ep_tiled_generation
             or owner._wrapper is not None or torch.cuda.is_current_stream_capturing()):
@@ -147,6 +170,7 @@ class _Workspace:
     dynamic: object
     scratch: object
     native_route_warmed: set = field(default_factory=set)
+    shard: object = None
 
 
 def _warm_native_routes(workspace, ids_dtype, expert_map, local_expert_offset):
@@ -154,6 +178,7 @@ def _warm_native_routes(workspace, ids_dtype, expert_map, local_expert_offset):
     import torch
     from .moe_static_ep_tiled import warm_ep_tiled_decode
 
+    shard = getattr(workspace, "shard", None) or ep_shard_geometry()
     map_len = None if expert_map is None else expert_map.numel()
     map_dtype = None if expert_map is None else expert_map.dtype
     offset = local_expert_offset if expert_map is None else 0
@@ -168,37 +193,38 @@ def _warm_native_routes(workspace, ids_dtype, expert_map, local_expert_offset):
             max_active_clusters=workspace.scratch.max_active_clusters,
             reform_sf_pack=True, route_mode="global", topk_ids_dtype=ids_dtype,
             expert_map_len=map_len, expert_map_dtype=map_dtype,
-            local_expert_offset=offset)
+            local_expert_offset=offset, **_native_shard_kwargs(shard))
         workspace.native_route_warmed.add(key)
 
 
-def _shared_workspace(device, capacity):
+def _shared_workspace(device, capacity, *, shard=None):
     import torch
     from . import moe_dispatch as md
     from .moe_static_ep_tiled import allocate_ep_tiled_decode_scratch, warm_ep_tiled_decode
 
-    key = (str(device), capacity, "sf6_v1")
+    shard = ep_shard_geometry() if shard is None else shard
+    key = (str(device), capacity, "sf6_v1") + ep_shard_cache_suffix(shard)
     with _LOCK:
         workspace = _WORKSPACES.get(key)
         if workspace is None:
             static = md.allocate_sm120_static_workspace(
-                state_E=72, weight_E=72, max_rows=STATIC_MAX_TOKENS * 8,
-                k=4096, n=2048, num_topk=8, device=device)
+                state_E=shard["E"], weight_E=shard["E"], max_rows=STATIC_MAX_TOKENS * 8,
+                k=4096, n=shard["I"], num_topk=8, device=device)
             dynamic = md.allocate_sm120_dynamic_workspace(
-                state_E=72, weight_E=72, routed_rows=capacity * 8,
-                k=4096, n=2048, num_topk=8, device=device,
+                state_E=shard["E"], weight_E=shard["E"], routed_rows=capacity * 8,
+                k=4096, n=shard["I"], num_topk=8, device=device,
                 activation="swigluoai_uninterleave", tile_m=128)
             dynamic.ep_tiled = True
             dynamic.ep_scatter_fp32 = torch.empty(
                 (capacity, 4096), dtype=torch.float32, device=device)
             scratch = allocate_ep_tiled_decode_scratch(device=device)
-            warm_ep_tiled_decode(reform_sf_pack=True)
+            warm_ep_tiled_decode(reform_sf_pack=True, **_native_shard_kwargs(shard))
             md._get_dynamic_kernel(
-                72, capacity, 4096, 2048, 8, dynamic.max_rows,
+                shard["E"], capacity, 4096, shard["I"], 8, dynamic.max_rows,
                 activation="swigluoai_uninterleave", swiglu_alpha=1.,
                 swiglu_beta=0., swiglu_limit=10., tile_m=128, tiled=True,
                 reform_sf_pack=True)
-            workspace = _Workspace(static, dynamic, scratch)
+            workspace = _Workspace(static, dynamic, scratch, shard=shard)
             _WORKSPACES[key] = workspace
         return workspace
 
@@ -209,18 +235,20 @@ def prepare_ep_tiled(owner, layer):
     from . import moe_dispatch as md
     from .glm53_ep_tiled_selftest import before_relayout, after_relayout
 
-    validate_configuration(owner)
+    shard = validate_configuration(owner)
     if getattr(owner, "_ep_tiled_prepare_started", False):
         raise RuntimeError("tiled EP startup validation already started; load a fresh model")
     owner._ep_tiled_prepare_started = True
     owner._ep_tiled_ready = False
     owner._ep_tiled_prepared = False
+    owner._ep_tiled_shard = shard
+    owner._ep_tiled_loader_identity = getattr(owner, "_glm53_hybrid_loader_identity", None)
     w1, w2 = layer.w13_weight, layer.w2_weight
     if (torch.cuda.get_device_capability(w1.device) != (12, 1)
             or owner.out_dtype != torch.bfloat16):
         raise ValueError("tiled EP requires SM121 and BF16 activations")
-    if (tuple(w1.shape), tuple(w2.shape)) != ((72, 4096, 2048), (72, 4096, 1024)):
-        raise ValueError("tiled EP loaded weight geometry differs from E72/H4096/I2048")
+    if (tuple(w1.shape), tuple(w2.shape)) != (shard["raw_w13"], shard["raw_down"]):
+        raise ValueError("tiled EP loaded weight geometry differs from declared EP shard")
     if w1.dtype != torch.uint8 or w2.dtype != torch.uint8:
         raise ValueError("tiled EP requires packed NVFP4 uint8 weights")
     if (md._FORCED_BACKEND is not None
@@ -233,14 +261,15 @@ def prepare_ep_tiled(owner, layer):
     md.tile_expert_weights_inplace(w1, w2)
     owner._ep_tiled_weight_views = md._get_weight_views(
         w1, owner.w1_sf_mma, w2, owner.w2_sf_mma,
-        owner.g1_alphas, owner.g2_alphas, n=2048, k=4096,
+        owner.g1_alphas, owner.g2_alphas, n=shard["I"], k=4096,
         tiled=True, reform_sf_pack=True, packed_only=True)
     views = owner._ep_tiled_weight_views
-    _require_packed_views(views)
+    _require_packed_views(views, _prepared_shard(owner))
     if (views.w13_tiled_storage.data_ptr() != w1.data_ptr()
             or views.w2_tiled_storage.data_ptr() != w2.data_ptr()):
         raise RuntimeError("tiled EP must alias the single loaded weight storage")
-    owner._ep_tiled_workspace = _shared_workspace(w1.device, owner.max_num_tokens)
+    owner._ep_tiled_workspace = _shared_workspace(w1.device, owner.max_num_tokens,
+        **({"shard": shard} if shard["hybrid"] else {}))
     owner._ep_tiled_generation = weight_generation(w1, w2, owner)
     # Dynamic prefill and the local-ID oracle retain these preallocated planes.
     # Native decode reads the original router storage without writing them.
@@ -264,6 +293,7 @@ def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
     if not (getattr(owner, "_ep_tiled_ready", False)
             or getattr(owner, "_ep_tiled_canary_active", False)):
         raise RuntimeError("tiled EP startup validation has not completed")
+    shard = _prepared_shard(owner)
     tokens = x.shape[0]
     if (type(tokens) is not int or not 1 <= tokens <= owner.max_num_tokens
             or tuple(x.shape) != (tokens, 4096) or tuple(output.shape) != tuple(x.shape)
@@ -282,7 +312,7 @@ def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
             or not ids.is_contiguous() or not scales.is_contiguous()):
         raise ValueError("tiled EP routes must be contiguous on the activation device")
     workspace = owner._ep_tiled_workspace
-    _require_packed_views(owner._ep_tiled_weight_views)
+    _require_packed_views(owner._ep_tiled_weight_views, shard)
     _require_native_route_metadata(expert_map, x.device, owner.local_expert_offset)
     if tokens <= STATIC_MAX_TOKENS:
         # The native kernel now reads routes while initializing its workspace.
@@ -324,12 +354,13 @@ def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
             topk_ids=ids, topk_weights=scales,
             input_gs=owner.g1_alphas, down_input_scale=owner._fc2_input_scale,
             output=output, scratch=workspace.scratch, route_mode="global",
-            expert_map=expert_map, local_expert_offset=owner.local_expert_offset)
+            expert_map=expert_map, local_expert_offset=owner.local_expert_offset,
+            **({"decode_opt": False} if shard["hybrid"] else {}))
         lane = "decode"
     else:
         local_ids, local_scales = owner._ep_ids[:tokens], owner._ep_scales[:tokens]
         if not try_remap_ep_local(
-                ids, scales, expert_map=expert_map, num_local_experts=72,
+                ids, scales, expert_map=expert_map, num_local_experts=shard["E"],
                 local_expert_offset=owner.local_expert_offset,
                 out_ids=local_ids, out_scales=local_scales, _tiled_owner=True):
             raise ValueError("tiled EP requires its prepared one-launch remap contract")
@@ -337,12 +368,15 @@ def launch_ep_tiled(owner, output, x, w1, w2, ids, scales, expert_map):
             workspace=workspace.dynamic, weights=weights, a=x,
             topk_ids=local_ids, topk_weights=local_scales,
             input_gs=owner.g1_alphas, down_input_scale=owner._fc2_input_scale,
-            scatter_output=output, num_experts=72, num_tokens=tokens,
-            k=4096, n=2048, top_k=8, activation="swigluoai_uninterleave",
+            scatter_output=output, num_experts=shard["E"], num_tokens=tokens,
+            k=4096, n=shard["I"], top_k=8, activation="swigluoai_uninterleave",
             swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
         lane = "prefill"
-    if (lane not in _LAUNCHED and not getattr(owner, "_ep_tiled_canary_active", False)
+    marker_key = (lane, shard["E"], shard["I"]) if shard["hybrid"] else lane
+    if (marker_key not in _LAUNCHED and not getattr(owner, "_ep_tiled_canary_active", False)
             and not torch.cuda.is_current_stream_capturing()):
-        print(_LAUNCH_PREFIXES[lane] + str(tokens), flush=True)
-        _LAUNCHED.add(lane)
+        prefix = (f"[ep-hybrid] LAUNCHED {lane} E144/H4096/I1024/top8 T="
+                  if shard["hybrid"] else _LAUNCH_PREFIXES[lane])
+        print(prefix + str(tokens), flush=True)
+        _LAUNCHED.add(marker_key)
     return output

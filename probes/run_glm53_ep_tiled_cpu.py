@@ -7,44 +7,18 @@ from pathlib import Path
 import re
 import subprocess
 import glm53_ep_capsule_runtime as capsule_runtime
-from glm53_ep_tiled_compile import (source_receipt, STATIC_ROWS, DYNAMIC_ROWS,
-    CPU_TEST_COUNTS, EXPECTED_CPU_TESTS, static_specialization, validate_scatter_helper_receipt,
-    GLOBAL_STATIC_CASES, global_static_specialization, OPT_STATIC_CASES, opt_static_specialization,
-    opt_shared_capacity, validate_q1_register_layout)
+from glm53_ep_tiled_compile import (source_receipt, CPU_TEST_COUNTS, EXPECTED_CPU_TESTS,
+    validate_scatter_helper_receipt, COMPILE_GROUPS, validate_compile_matrix,
+    require_bound_hybrid_loader_contracts)
 
 
 def validate_artifacts(output,result):
     output=output.resolve(strict=True)
     expected=set()
-    groups=(('static',STATIC_ROWS),('global_static',GLOBAL_STATIC_CASES),
-            ('opt_static',OPT_STATIC_CASES),('dynamic',DYNAMIC_ROWS))
-    for kind,rows in groups:
+    validate_compile_matrix(result)
+    for kind,_,_,cases in COMPILE_GROUPS:
         passes=result[kind+'_passes']
-        arms = ([kind.replace('_','-')+'/'+case[0] for case in rows]
-                if kind in ('global_static','opt_static')
-                else [kind+'/M'+str(m) for m in rows])
-        assert [p['arm'] for p in passes]==arms
-        for rows_count,passed in zip(rows,passes):
-            if kind == 'static':
-                selected = passed['specialization']
-                assert selected == static_specialization(rows_count,passed['cache_key'],
-                    selected['a_ring'],selected['word_unpack'],
-                    selected['scatter_bf16'],selected['output_dtype'])
-            if kind == 'global_static':
-                selected = passed['specialization']
-                assert selected == global_static_specialization(rows_count,passed['cache_key'],
-                    selected['a_ring'],selected['word_unpack'],selected['scatter_bf16'],
-                    selected['output_dtype'],selected['route'])
-            if kind == 'opt_static':
-                selected = passed['specialization']
-                assert selected == opt_static_specialization(rows_count,passed['cache_key'],
-                    selected['a_ring'],selected['word_unpack'],selected['scatter_bf16'],
-                    selected['output_dtype'],selected.get('route'),
-                    selected['decode_opt'],selected['storage_bytes'])
-                assert passed['shared_capacity'] == opt_shared_capacity(passed)
-                assert not {'register_layout', 'q1_pair_layout'} & set(passed)
-                assert passed['q1_register_layout'] == validate_q1_register_layout(
-                    passed['q1_register_layout'], fast_math=passed['cache_key'][6])
+        for passed in passes:
             for name,suffix in (('artifacts','.ptx'),('resources','.cubin')):
                 assert len(passed[name])==1
                 for row in passed[name]:
@@ -70,6 +44,7 @@ def main():
     p.add_argument('--capsule-root',type=Path,required=True)
     p.add_argument('--manifest-sha256',required=True)
     a=p.parse_args()
+    require_bound_hybrid_loader_contracts()
     if not re.fullmatch(r'sha256:[0-9a-f]{64}',a.image):p.error('immutable image ID required')
     root=Path(__file__).resolve().parents[1]
     capsule=capsule_runtime.validate_capsule_input(a.capsule_root,a.manifest_sha256)
@@ -94,6 +69,7 @@ def main():
         '--capsule-root',capsule_runtime.CAPSULE_MOUNT,'--manifest-sha256',a.manifest_sha256]
     completed=subprocess.run(command)
     capsule_runtime.validate_capsule_input(capsule,a.manifest_sha256)
+    assert source_receipt(root)==sources
     if completed.returncode:return completed.returncode
     result=json.loads((output/'result.json').read_text())
     assert result['verdict']=='PASS' and result['phase']=='complete' and result['cuda_initialized'] is False

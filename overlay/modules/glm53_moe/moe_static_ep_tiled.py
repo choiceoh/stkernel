@@ -270,12 +270,22 @@ def _ep_q1_cvt_pair(v0, v1, *, loc=None, ip=None):
         asm_dialect=llvm.AsmDialect.AD_ATT, loc=loc, ip=ip))
 
 
+from .glm53_ep_shard_geometry import (
+    ep_shard_geometry, ep_shard_cache_suffix, require_hybrid_mode,
+)
+
+
 class MoEStaticEPTiledKernel(MoEStaticKernelV5):
     """Same 160-thread TP producer/consumer geometry, EP-local routing only."""
     def __init__(self, *, num_tokens, max_rows, max_active_clusters,
                  input_scales_are_reciprocal=False, fast_math=True,
                  reform_sf_pack=False, route_mode="local", expert_map_len=None,
-                 local_expert_offset=0, decode_opt=False):
+                 local_expert_offset=0, decode_opt=False,
+                 num_local_experts=72, intermediate_size=2048):
+        shard = ep_shard_geometry(num_local_experts, intermediate_size)
+        require_hybrid_mode(shard, reform_sf_pack, decode_opt)
+        self.ep_num_experts = shard["E"]
+        self.ep_intermediate_size = shard["I"]
         self.ep_local_expert_offset = ep_tiled_route_metadata(
             route_mode, expert_map_len, local_expert_offset)
         self.ep_route_mode = route_mode
@@ -286,7 +296,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         self.ep_decode_opt = ep_tiled_decode_opt(num_tokens, reform_sf_pack, decode_opt)
         self.ep_num_tokens = num_tokens
         self.ep_max_rows = max_rows
-        super().__init__(sf_vec_size=16, output_tile_count_n=16,
+        super().__init__(sf_vec_size=16, output_tile_count_n=shard["native_slices"],
             fc1_stages=2, fc2_stages=2, decode_reform=geometry["reform"],
             reform_sf_pack=reform_sf_pack,
             input_scales_are_reciprocal=input_scales_are_reciprocal,
@@ -851,12 +861,12 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                 or ids.element_type not in (cutlass.Int32, cutlass.Int64)
                 or tuple(weights.shape) != (self.ep_num_tokens * 8,)
                 or weights.element_type != cutlass.Float32
-                or tuple(w13.shape) != (4096, 512, 8, 72)
-                or tuple(down.shape) != (4096, 128, 16, 72)
+                or tuple(w13.shape) != (2*self.ep_intermediate_size, 512, 8, self.ep_num_experts)
+                or tuple(down.shape) != (4096, 128, self.ep_intermediate_size//128, self.ep_num_experts)
                 or w13.element_type != cutlass.Float4E2M1FN
                 or down.element_type != cutlass.Float4E2M1FN
-                or tuple(rows.shape) != (72,)
-                or tuple(token_map.shape) != (72, self.ep_max_rows)
+                or tuple(rows.shape) != (self.ep_num_experts,)
+                or tuple(token_map.shape) != (self.ep_num_experts, self.ep_max_rows)
                 or tuple(output.shape) != (self.ep_num_tokens, 4096)
                 or output.element_type != (cutlass.BFloat16 if self.scatter_bf16
                                            else cutlass.Float32)):
@@ -877,11 +887,11 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         # address calculation. Mapping negatives are rejected before int32
         # narrowing, exactly as the standalone remapper. The offset branch
         # intentionally narrows before subtracting (including int32 wrap).
-        local = Int32(72)
+        local = Int32(self.ep_num_experts)
         if cutlass.const_expr(self.ep_route_map_len is None):
             expert = topk_ids[pair_idx].to(Int64)
             candidate = expert.to(Int32) - Int32(self.ep_local_expert_offset)
-            if expert >= Int64(0) and candidate >= Int32(0) and candidate < Int32(72):
+            if expert >= Int64(0) and candidate >= Int32(0) and candidate < Int32(self.ep_num_experts):
                 local = candidate
         elif cutlass.const_expr(self.ep_route_map_len > 0):
             expert = topk_ids[pair_idx].to(Int64)
@@ -889,7 +899,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                 mapped = expert_map[expert].to(Int64)
                 if mapped >= Int64(0):
                     candidate = mapped.to(Int32)
-                    if candidate >= Int32(0) and candidate < Int32(72):
+                    if candidate >= Int32(0) and candidate < Int32(self.ep_num_experts):
                         local = candidate
         return local
 
@@ -2473,7 +2483,8 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
                           topk_ids_dtype=None, input_scales_are_reciprocal=False,
                           fast_math=True, reform_sf_pack=False, route_mode="local",
                           expert_map_len=None, expert_map_dtype=None,
-                          local_expert_offset=0, decode_opt=False):
+                          local_expert_offset=0, decode_opt=False,
+                          num_local_experts=72, intermediate_size=2048):
     """Build real CuTe fake operands without querying/initializing CUDA.
 
     Return (kernel, compile_args, cache_key). compile_args include the constexpr
@@ -2482,6 +2493,8 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     """
     import torch
     from flashinfer.cute_dsl.utils import make_ptr
+    shard = ep_shard_geometry(num_local_experts, intermediate_size)
+    require_hybrid_mode(shard, reform_sf_pack, decode_opt)
     geometry = ep_tiled_geometry(num_tokens, max_rows, max_active_clusters)
     scale_mode = ep_tiled_scale_mode(reform_sf_pack)
     decode_opt = ep_tiled_decode_opt(num_tokens, reform_sf_pack, decode_opt)
@@ -2492,7 +2505,7 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     route_key = ep_tiled_route_key(route_mode=route_mode, expert_map_len=expert_map_len,
         expert_map_dtype=expert_map_dtype, local_expert_offset=local_expert_offset)
     m, mac = num_tokens, max_active_clusters
-    k, n, state_E, weight_E, num_topk = 4096, 2048, 72, 72, 8
+    k, n, state_E, weight_E, num_topk = 4096, shard["I"], shard["E"], shard["E"], 8
     sf_vec_size, sf_dtype = 16, cutlass.Float8E4M3FN
     a_dtype, ab_dtype = cutlass.BFloat16, cutlass.Float4E2M1FN
     weight_dtype, alpha_dtype = cutlass.Float4E2M1FN, cutlass.Float32
@@ -2506,7 +2519,7 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
         input_scales_are_reciprocal=input_scales_are_reciprocal,
         fast_math=fast_math, reform_sf_pack=reform_sf_pack, route_mode=route_mode,
         expert_map_len=expert_map_len, local_expert_offset=local_expert_offset,
-        decode_opt=decode_opt)
+        decode_opt=decode_opt, num_local_experts=state_E, intermediate_size=n)
     w1_rows = 2 * n
     rows_pad_k = _align_up(max_rows, 128)
     cols_pad_k = _align_up(k // sf_vec_size, 4)
@@ -2663,6 +2676,7 @@ def ep_tiled_compile_spec(*, num_tokens, max_rows=256, max_active_clusters=48,
     key += route_key
     if decode_opt:
         key += (EP_TILED_DECODE_OPT_CACHE_TAG,)
+    key += ep_shard_cache_suffix(shard)
     return kernel, args, key
 
 
@@ -2675,6 +2689,9 @@ def get_ep_tiled_decode_kernel(**kwargs):
     from flashinfer.jit.cute_dsl_core import build_and_load_cute_dsl_kernel
     from . import moe_dispatch
     # Shape-only admission/key stays cheap once the graph has been warmed.
+    shard = ep_shard_geometry(kwargs.get("num_local_experts", 72),
+                              kwargs.get("intermediate_size", 2048))
+    require_hybrid_mode(shard, kwargs.get("reform_sf_pack", False), kwargs.get("decode_opt"))
     m = kwargs["num_tokens"]
     max_rows = kwargs.get("max_rows", 256)
     mac = kwargs.get("max_active_clusters", 48)
@@ -2701,6 +2718,7 @@ def get_ep_tiled_decode_kernel(**kwargs):
         local_expert_offset=kwargs.get("local_expert_offset", 0))
     if decode_opt:
         key += (EP_TILED_DECODE_OPT_CACHE_TAG,)
+    key += ep_shard_cache_suffix(shard)
     if key in _EP_TILED_KERNEL_CACHE:
         return _EP_TILED_KERNEL_CACHE[key], mac
     if torch.cuda.is_current_stream_capturing():
@@ -2711,7 +2729,8 @@ def get_ep_tiled_decode_kernel(**kwargs):
     compiled = build_and_load_cute_dsl_kernel(
         "b12x_ep_tiled_decode", moe_dispatch._disk_kernel_name("ep_tiled_decode", key),
         lambda: cute.compile(kernel, *args, options="--opt-level 2 --enable-tvm-ffi"),
-        extra_key_files=moe_dispatch._kernel_source_files() + (__file__,),
+        extra_key_files=moe_dispatch._kernel_source_files() + (
+            __file__, str(Path(__file__).with_name("glm53_ep_shard_geometry.py"))),
     )
     _EP_TILED_KERNEL_CACHE[key] = compiled
     return compiled, mac
@@ -2746,7 +2765,8 @@ def warm_ep_tiled_decode(*, max_rows=256, max_active_clusters=48,
                          token_counts=range(1, 33), reform_sf_pack=False,
                          route_mode="local", topk_ids_dtype=None,
                          expert_map_len=None, expert_map_dtype=None,
-                         local_expert_offset=0, decode_opt=None):
+                         local_expert_offset=0, decode_opt=None,
+                         num_local_experts=72, intermediate_size=2048):
     """Prepare every requested native M; no success marker or CUDA execution."""
     rows = tuple(token_counts)
     if not rows or len(set(rows)) != len(rows):
@@ -2757,7 +2777,9 @@ def warm_ep_tiled_decode(*, max_rows=256, max_active_clusters=48,
                                   reform_sf_pack=reform_sf_pack,
                                   route_mode=route_mode, topk_ids_dtype=topk_ids_dtype,
                                   expert_map_len=expert_map_len, expert_map_dtype=expert_map_dtype,
-                                  local_expert_offset=local_expert_offset, decode_opt=decode_opt)
+                                  local_expert_offset=local_expert_offset, decode_opt=decode_opt,
+                                  num_local_experts=num_local_experts,
+                                  intermediate_size=intermediate_size)
     return rows
 
 
@@ -2775,11 +2797,13 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
     Native M1..8 SF6 writes BF16 output directly; other modes copy FP32 scratch.
     """
     import torch
+    shard = ep_shard_geometry(workspace.state_E, workspace.n)
+    e, n = shard["E"], shard["I"]
     m = a.shape[0]
     geometry = ep_tiled_geometry(m, workspace.max_rows, scratch.max_active_clusters)
     if ((workspace.state_E, workspace.weight_E, workspace.k, workspace.n,
          workspace.num_topk, workspace.activation_precision, workspace.quant_mode)
-            != (72, 72, 4096, 2048, 8, "fp4", "nvfp4")):
+            != (e, e, 4096, n, 8, "fp4", "nvfp4")):
         raise ValueError("EP tiled decode workspace geometry mismatch")
     device = a.device
     if device.type != "cuda" or workspace.device != device:
@@ -2806,6 +2830,7 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
     if not weights.tiled:
         raise ValueError("EP tiled decode requires tile-major weights")
     reform_sf_pack = weights.reform_scales is not None
+    require_hybrid_mode(shard, reform_sf_pack, decode_opt)
     scatter_bf16 = bool(reform_sf_pack and geometry["reform"])
     if scatter_bf16 and output.data_ptr() % 16:
         raise ValueError("EP tiled BF16 scatter output requires 16-byte alignment")
@@ -2814,8 +2839,8 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
         if (not weights.packed_only or not owner.enabled
                 or weights._w13_sf_storage is not None or weights._down_sf_storage is not None):
             raise ValueError("EP tiled SF6 requires a complete packed-only scale owner")
-        require(owner.fc1, (72, 512, REFORM_SF_STAGE), torch.uint8, "SF6 FC1 plane")
-        require(owner.fc2, (72, 256, REFORM_SF_STAGE), torch.uint8, "SF6 FC2 plane")
+        require(owner.fc1, shard["sf6_fc1"], torch.uint8, "SF6 FC1 plane")
+        require(owner.fc2, shard["sf6_fc2"], torch.uint8, "SF6 FC2 plane")
         if weights.sfb1_packed is not owner.fc1 or weights.sfb2_packed is not owner.fc2:
             raise ValueError("EP tiled SF6 scale arguments do not alias their owner")
         sfb1_packed, sfb2_packed = owner.fc1, owner.fc2
@@ -2827,8 +2852,8 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
             raise ValueError("EP tiled packed-only weights have no SF6 owner")
         if weights._w13_sf_storage is None or weights._down_sf_storage is None:
             raise ValueError("EP tiled decode raw weight scale owner is missing")
-        for name, value, count in (("FC1 scales", weights._w13_sf_storage, 72*4096*256),
-                                   ("FC2 scales", weights._down_sf_storage, 72*4096*128)):
+        for name, value, count in (("FC1 scales", weights._w13_sf_storage, shard["raw_sf1_bytes"]),
+                                   ("FC2 scales", weights._down_sf_storage, shard["raw_sf2_bytes"])):
             if (value.numel() != count or value.element_size() != 1
                     or value.device != device or not value.is_contiguous()):
                 raise ValueError("EP tiled decode invalid raw " + name)
@@ -2836,27 +2861,27 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
         sfb1_address = weights._w13_sf_storage.data_ptr()
         sfb2_address = weights._down_sf_storage.data_ptr()
     for name, shape, dtype in (
-            ("row_counts", (72,), torch.int32),
-            ("token_map", (72, workspace.max_rows), torch.int32),
-            ("token_weights", (72, workspace.max_rows), torch.float32),
-            ("packed_input", (72, workspace.max_rows, 2048), torch.uint8),
-            ("packed_input_scale", (72, workspace.max_rows, 256), torch.uint8),
+            ("row_counts", (e,), torch.int32),
+            ("token_map", (e, workspace.max_rows), torch.int32),
+            ("token_weights", (e, workspace.max_rows), torch.float32),
+            ("packed_input", (e, workspace.max_rows, 2048), torch.uint8),
+            ("packed_input_scale", (e, workspace.max_rows, 256), torch.uint8),
             ("barrier_count", (1,), torch.int32), ("barrier_epoch", (1,), torch.int32),
             ("active_expert_count", (1,), torch.int32),
-            ("weight_expert_ids", (72,), torch.int32),
-            ("global_to_local_expert", (72,), torch.int32)):
+            ("weight_expert_ids", (e,), torch.int32),
+            ("global_to_local_expert", (e,), torch.int32)):
         require(getattr(workspace, name), shape, dtype, "workspace " + name)
-    require(weights.w13_fp4, (4096, 256, 8, 72), torch.float4_e2m1fn_x2,
+    require(weights.w13_fp4, shard["torch_w13"], torch.float4_e2m1fn_x2,
             "FC1 tile-major view", False)
-    require(weights.down_fp4, (4096, 64, 16, 72), torch.float4_e2m1fn_x2,
+    require(weights.down_fp4, shard["torch_down"], torch.float4_e2m1fn_x2,
             "FC2 tile-major view", False)
-    if tuple(weights.w13_fp4.stride()) != (256, 1, 1048576, 8388608):
+    if tuple(weights.w13_fp4.stride()) != shard["torch_w13_stride"]:
         raise ValueError("EP tiled decode FC1 tile-major strides mismatch")
-    if tuple(weights.down_fp4.stride()) != (64, 1, 262144, 4194304):
+    if tuple(weights.down_fp4.stride()) != shard["torch_down_stride"]:
         raise ValueError("EP tiled decode FC2 tile-major strides mismatch")
     for name, value in (("input scale", input_gs), ("down input scale", down_input_scale),
                         ("FC1 alpha", weights.w1_alpha), ("FC2 alpha", weights.w2_alpha)):
-        require(value, (72,), torch.float32, name)
+        require(value, (e,), torch.float32, name)
     require(scratch.scatter_fp32, (scratch.max_tokens, 4096), torch.float32, "FP32 scratch")
     if m > scratch.max_tokens:
         raise ValueError("EP tiled decode output scratch is too small")
@@ -2870,7 +2895,8 @@ def launch_ep_tiled_decode(*, workspace, weights, a, topk_ids, topk_weights,
         input_scales_are_reciprocal=input_scales_are_reciprocal, fast_math=fast_math,
         reform_sf_pack=reform_sf_pack, route_mode=route_mode,
         expert_map_len=expert_map_len, expert_map_dtype=expert_map_dtype,
-        local_expert_offset=local_expert_offset, decode_opt=decode_opt)
+        local_expert_offset=local_expert_offset, decode_opt=decode_opt,
+        num_local_experts=e, intermediate_size=n)
     accum = output if scatter_bf16 else scratch.scatter_fp32[:m]
     accum.record_stream(torch.cuda.current_stream(device))
     args = (

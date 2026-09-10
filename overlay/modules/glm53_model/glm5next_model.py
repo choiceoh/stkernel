@@ -98,6 +98,7 @@ from vllm.transformers_utils.configs.glm5_next import Glm5NextConfig
 
 from .attention import Glm5NextMLAAttention
 from .glm53_prefill_fastpath import warm_glm53_prefill_metadata_runtime
+from .glm53_ep_hybrid import hybrid_factory_kwargs, validate_hybrid_loader_identity
 from .kda import Glm5NextLinearAttention
 from .multimodal import (
     Glm5NextMultiModalProcessor,
@@ -173,7 +174,9 @@ def _prefill_sp_layer_reduction_ok(layer):
     if (
         config is None
         or (getattr(config, "tp_size", None), getattr(config, "ep_size", None))
-           not in (((4, 1), (1, 4)) if _EP_PREFILL_LOCAL else ((4, 1),))
+           not in (((4, 1), (1, 4), (2, 2))
+                   if _EP_PREFILL_LOCAL and os.environ.get('VLLM_GLM53_EP_HYBRID_TP2') == '1'
+                   else (((4, 1), (1, 4)) if _EP_PREFILL_LOCAL else ((4, 1),)))
         or getattr(config, "dp_size", None) != 1
         or getattr(config, "is_sequence_parallel", None) is not False
         or getattr(config, "skip_final_all_reduce", None) is not False
@@ -352,6 +355,7 @@ class Glm5NextMoE(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
         apply_routed_scale_to_output: bool = False,
+        hybrid_main_layer: bool = True,
     ):
         super().__init__()
         self.tp_size = get_tensor_model_parallel_world_size()
@@ -418,6 +422,9 @@ class Glm5NextMoE(nn.Module):
                 swiglu_limit=swiglu_limit,
             )
 
+        hybrid_kwargs = hybrid_factory_kwargs(
+            config, parallel_config, quant_config, physical_tp_rank=self.tp_rank,
+            physical_tp_size=self.tp_size, main_layer=hybrid_main_layer)
         self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             gate=self.gate,
@@ -441,7 +448,15 @@ class Glm5NextMoE(nn.Module):
             n_shared_experts=None,
             router_logits_dtype=self.gate.out_dtype,
             swiglu_limit=swiglu_limit,
+            **hybrid_kwargs,
         )
+        if hybrid_kwargs:
+            identity = validate_hybrid_loader_identity(
+                self.experts.moe_config._glm53_hybrid_loader_identity, self.tp_rank)
+            self.ep_rank, self.ep_size = identity[7], 2
+            self.n_local_physical_experts = 144
+            self.physical_expert_start, self.physical_expert_end = identity[9:11]
+            # self.ep_group remains the actual global transport group.
 
     def forward(
         self,
@@ -553,6 +568,7 @@ class Glm5NextDecoderLayer(nn.Module):
                 config=config,
                 parallel_config=parallel_config,
                 quant_config=quant_config,
+                hybrid_main_layer=not is_mtp_layer,
                 prefix=f"{prefix}.mlp",
             )
         else:

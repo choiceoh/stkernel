@@ -42,8 +42,24 @@ def constants():
             and isinstance(n.value, ast.Constant)}
 
 
+def shard_helpers(ns):
+    """Load actual pure geometry helpers for AST-extracted production functions."""
+    path = SOURCE.with_name('glm53_ep_shard_geometry.py')
+    tree = ast.parse(path.read_text())
+    wanted = {'ep_shard_geometry', 'ep_shard_cache_suffix', 'require_hybrid_mode'}
+    nodes = [copy.deepcopy(n) for n in tree.body if
+        (isinstance(n, ast.FunctionDef) and n.name in wanted) or
+        (isinstance(n, ast.Assign) and len(n.targets) == 1 and
+         isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'HYBRID_TAG')]
+    assert {n.name for n in nodes if isinstance(n, ast.FunctionDef)} == wanted
+    exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])),
+                 str(path), 'exec'), ns)
+    return ns
+
+
 def route_helpers(ns):
     """Load actual declaration/key helpers, not a fabricated local key stub."""
+    shard_helpers(ns)
     ns['EP_TILED_ROUTE_CACHE_TAG'] = constants()['EP_TILED_ROUTE_CACHE_TAG']
     ns['EP_TILED_DECODE_OPT_CACHE_TAG'] = constants()['EP_TILED_DECODE_OPT_CACHE_TAG']
     ns.setdefault('_EP_TILED_DECODE_OPT', False)
@@ -534,7 +550,8 @@ class EPTiledStaticTests(unittest.TestCase):
         for m in range(1,33):
             for sf6 in (False,True):
                 selected=sf6 and m<=8
-                owner=types.SimpleNamespace(ep_num_tokens=m,ep_max_rows=256,scatter_bf16=selected)
+                owner=types.SimpleNamespace(ep_num_tokens=m,ep_max_rows=256,scatter_bf16=selected,
+                                            ep_num_experts=72,ep_intermediate_size=2048)
                 args=[Tensor((m,4096),'BFloat16'),Tensor((m*8,),'Int32'),Tensor((m*8,),'Float32'),
                       Tensor((4096,512,8,72),'Float4E2M1FN'),Tensor((4096,128,16,72),'Float4E2M1FN'),
                       Tensor((72,),'Int32'),Tensor((72,256),'Int32'),

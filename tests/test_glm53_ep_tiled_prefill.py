@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import test_moe_dynamic_sf6 as sf6_oracle
+from test_glm53_ep_tiled_static import shard_helpers
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +98,9 @@ class Entry:
                      'phase2_b_smem_layout_staged', 'phase2_sfb_smem_layout_staged',
                      'fc1_sfb_smem_layout_storage', 'epi_smem_layout_staged'):
             attrs[name] = name
+        shard_check = compile_method(method('_check_ep_shard_weights'), shard_helpers({}))
+        attrs['_check_ep_shard_weights'] = lambda *args, **kw: shard_check(
+            SimpleNamespace(**attrs), *args, **kw)
         if self.sf6:
             checker = sf6_oracle.functions({'_check_sf6_shapes'})['_check_sf6_shapes']
             attrs['_check_sf6_shapes'] = lambda *args: checker(SimpleNamespace(**attrs), *args)
