@@ -36,6 +36,6 @@ test_stale_step_order_cache_and_candidate_poison_use_dense (test_dsv41_reference
 test_tp4_local_state_mismatch_never_switches_collective_width (test_dsv41_reference_adapter.AdapterTests.test_tp4_local_state_mismatch_never_switches_collective_width) ... ok
 
 ----------------------------------------------------------------------
-Ran 36 tests in 0.254s
+Ran 36 tests in 0.293s
 
 OK

@@ -81,6 +81,39 @@ model mounts and must leave CUDA uninitialized. It records compiler artifacts,
 source hashes before/after execution and an execution receipt. Offline
 compilation does not establish numerical correctness or performance.
 
+## Initial offline SM121 compilation: PASS
+
+Normal CPU fleet session `dsv41packedcpu0910v1` compiled frozen source
+`7d3797f1e7e3c6a5c4828c4677b537abed157c3b` on srv3. Its terminal receipt
+is `aot-cpu1/fleet-ack.json` (`finished-cpu`, return code 0). Source hashes
+before/after execution, local source hashes, and every fetched artifact were
+verified. The source and installed serving runtime were not changed by the job.
+
+| Variant | Query tile | Static shared memory |
+|---|---:|---:|
+| H8 dense | 4 | 16,384 B |
+| H8 compact | 1 | 12,288 B |
+| H32 dense | 4 | 40,960 B |
+| H32 compact | 1 | 16,384 B |
+
+The image was already present:
+`sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`.
+Torch is `2.13.0+cu130`, Triton `3.7.1`; all variants target SM121 with four
+warps and `enable_fp_fusion=False`. Width, output columns, query count and
+strides are runtime `i32` arguments in this compilation. CUDA remained
+uninitialized and the container had no GPU device nodes. The bounded compiler
+container completed in 4.11 seconds with 16.20 GiB host memory available at
+admission; this is **not a kernel timing**.
+
+Full compiler artifacts, including PTX/cubins and the Triton cache, remain at
+`/home/choiceoh/dsv41-packed-index-cpu1-evidence` on srv3. The committed files
+are the textual receipt subset; `SHA256SUMS` describes the full remote directory.
+The source for this initial receipt is preserved unchanged. Its scoped PTX
+audit found 32 scale-byte load instructions using four address operands, each
+repeated eight times. The follow-up kernel loads the four scale groups first
+and broadcasts them across their 32 features. A separate frozen-source receipt
+is required for that change; the original receipt is not reused as its proof.
+
 Before adoption, a canonical consumer campaign must validate actual TileLang
 packed-byte layout and arithmetic, scores/selected IDs, distributed collectives,
 attention results, quality and matched end-to-end speed. The current fleet

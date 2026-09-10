@@ -71,10 +71,15 @@ def _packed_scores_kernel(
         PACKED + batch * P_B + selected[None, :] * P_S + (dim[:, None] // 2),
         valid_key[None, :], other=0,
     )
+    scale_group = tl.arange(0, 4)
     scale = tl.load(
-        SCALES + batch * S_B + selected[None, :] * S_S + (dim[:, None] // 32),
+        SCALES + batch * S_B + selected[None, :] * S_S + scale_group[:, None],
         valid_key[None, :], other=127,
     )
+    # Read four scale bytes per position, then reuse each byte for its 32
+    # adjacent values. Loading an expanded [128, C] view emits duplicate
+    # per-thread global byte loads instead of eliminating the repetitions.
+    scale = tl.broadcast_to(scale[:, None, :], (4, 32, BLOCK_C)).reshape(128, BLOCK_C)
     code = (payload >> ((dim[:, None] & 1) * 4)) & 15
     keys = _decode_bf16_bits(code, scale)
     dot = tl.dot(q, keys, out_dtype=tl.float32).to(tl.bfloat16).to(tl.float32)
