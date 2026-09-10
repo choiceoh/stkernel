@@ -42,25 +42,37 @@ from vllm.v1.kv_cache_interface import (
 if TYPE_CHECKING:
     from vllm.v1.attention.ops.flashmla import FlashMLASchedMeta
 
-# DeepseekV4 decode layer types, keyed by compress_ratio. Kept (with
+# DeepseekV4/V4.1 decode layer types, keyed by compress_ratio. Kept (with
 # _layer_type_for) for import compatibility even though the FlashMLA
-# tile-scheduler that consumed them is not used on SM120.
+# tile-scheduler that consumed them is not used on SM120. The two named
+# constants are V4's; _layer_type_for derives the rest, which is what lets
+# V4.1's ratio-2 layers build a metadata builder at all.
 _LAYER_TYPE_SWAONLY = "swaonly"
 _LAYER_TYPE_C4A = "c4a"
 _LAYER_TYPE_C128A = "c128a"
 
 
 def _layer_type_for(compress_ratio: int) -> str:
+    """A grouping key per distinct compress_ratio. ANY ratio, not an enum.
+
+    The stock function enumerated 1, 4 and 128 -- the only ratios DeepSeek-V4
+    uses -- and raised otherwise. DeepSeek-V4.1 compresses every layer at
+    ratio 2, so on that checkpoint the enumeration is not a safety check, it is
+    a refusal to run:
+
+        ValueError: Unsupported DeepseekV4 compress_ratio=2;
+                    expected 1, 4, or 128.
+
+    What the key is FOR is keeping layers with different (topk, extra_topk,
+    extra_page_block_size) out of one FlashMLA tile-scheduler plan. A distinct
+    string per distinct ratio does that for any ratio, and reproduces the stock
+    names exactly for V4's three. Nothing on this stack consumes the plans in
+    any case -- see the tile_sched_* fields, which stay None on SM120 -- so
+    this is the key alone.
+    """
     if compress_ratio <= 1:
         return _LAYER_TYPE_SWAONLY
-    if compress_ratio == 4:
-        return _LAYER_TYPE_C4A
-    if compress_ratio == 128:
-        return _LAYER_TYPE_C128A
-    raise ValueError(
-        f"Unsupported DeepseekV4 compress_ratio={compress_ratio}; "
-        "expected 1, 4, or 128."
-    )
+    return f"c{int(compress_ratio)}a"
 
 
 class DeepseekV4SWACache(torch.nn.Module, AttentionLayerBase):
