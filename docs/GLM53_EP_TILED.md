@@ -48,7 +48,8 @@ remain separate from the subsequent production recovery verification.
 ## Follow-up: EP decode target 76 tok/s
 
 `VLLM_GLM53_EP_DECODE_OPT=1` is an experimental, separately keyed extension
-to the accepted EP path. Its default is 0 until the next canonical result.
+to the accepted EP path. Its default remains 0 after the first candidate
+missed the 76 tok/s target.
 Both comparison arms retain EP4, SF6, K5 and verified preparation; the
 candidate adds only this switch. The new absolute target is pooled
 fixed-1024 x3 decode >=76 tok/s, with the existing quality and direct
@@ -77,8 +78,58 @@ Both arms explicitly require EP and PREP proof even when their knob delta
 is empty. Candidate proof additionally requires the new native cache keys,
 unchanged large-shape selection and fresh verified clone-elimination
 checkpoints. The CPU gate includes the baseline's 19 lowerings plus four
-optimized local/global lowerings. Numerical and throughput acceptance
-remain pending the normal fleet onepass.
+optimized local/global lowerings.
+
+### First EP76 result (2026-09-10)
+
+Frozen source `b41d0da24059379d41c079626cc67c3e83cd14e3`, normal fleet
+session `epdecode76onepass0910v1`, completed the same-source EP B→A pair.
+The candidate measured **71.78687 tok/s**, versus baseline **72.76702 tok/s**
+(-1.34697%), and did not meet the absolute 76 target. The original judge
+remains `incomplete`/`unresolved` with one baseline; this observation does
+not establish a statistically significant regression or improvement.
+The candidate is not adopted. The accepted EP default and v8 evidence above
+remain unchanged.
+
+| Observation | EP baseline B | EP candidate A |
+|---|---:|---:|
+| Fixed-1024 pooled decode tok/s | 72.76702 | 71.78687 |
+| Fixed-window pooled engine step/s | 19.89587 | 18.72490 |
+| 2K best-warm TTFT / input tok/s | 0.709 s / 3001.52 | 0.749 s / 2841.01 |
+| 32K single-request TTFT / input tok/s | 10.070 s / 3231.86 | 9.947 s / 3271.83 |
+| 128K single-request TTFT / input tok/s | 40.178 s / 3199.74 | 39.244 s / 3275.87 |
+| Facts / Korean-dirty responses | 18/18 / 0/8 | 18/18 / 0/8 |
+| Required serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B's three fixed requests measured 76.38589/76.49326/66.38786 tok/s;
+A's measured 72.44182/72.30024/70.64654. Each pooled rate uses all 3069
+timed output tokens. The engine rate uses the separately recorded fixed
+metric windows. Whole-onepass acceptance counters are not those same windows.
+
+All ordered request hashes match. The 32K/128K and all three fixed output
+hashes differ across arms; long-request completion lengths were B692/A1200
+and B1200/A474 respectively. Fixed requests all completed exactly 1024
+tokens. B retains `cold_compile=true`; A has no such field. The long-context
+values each come from one request and do not establish matched warm-prefill
+superiority. Neither these differences nor the lower engine rate identify
+the cause of the observed throughput difference by themselves.
+
+Both arms passed all four ranks' 12-case actual-weight canary and SF6
+finalization. Native M4/6/8 used baseline global key23 or candidate key24;
+M12/16/24/32 retained key20. Fresh PREP checkpoints numbered B26/A25 with
+zero drift. A also recorded 25 verified clone-elimination checkpoints,
+ending at fused step1600; these prove execution, not performance improvement.
+
+The first CPU prerequisite failed at source `680a899d` with four existing
+test-fixture namespace errors for `_report_decode_opt`: 181 tests, zero
+failures and zero skips. Its 23 compiled artifacts remain failed-gate
+evidence, and no final runtime recheck is claimed. CPU2 at the measured
+source passed all 181 tests and 23 lowerings, with CUDA uninitialized and
+the final runtime identity rechecked. [CPU1 failure](../measurements/glm53_ep_tiled_20260909/ep76_cpu1_failed/README.md),
+[CPU2 pass](../measurements/glm53_ep_tiled_20260909/ep76_cpu2/README.md),
+and [original onepass records and verdicts](../measurements/glm53_ep_tiled_20260909/ep76_onepass1/README.md)
+preserve the separate outcomes. An FC1 follow-up is being prepared and has
+not yet been measured.
 
 ## Implementation and preceding experiments
 

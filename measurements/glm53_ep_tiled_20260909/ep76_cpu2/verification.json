@@ -1,0 +1,211 @@
+{
+  "verdict": "PASSED_CPU_ORIGINALS_VERIFIED",
+  "source": "b41d0da24059379d41c079626cc67c3e83cd14e3",
+  "result_sha256": "8c3686ea823153bc3b3a5f47dc91e2ee9f0ad6a36e98ef62008a8be520149f3a",
+  "contracts_sha256": "4d356f60fd4eea8b9de841f038977c719ccd776747355b06c3bfae60024f13ad",
+  "original_files": 71,
+  "original_bytes": 9684823,
+  "lowerings": 23,
+  "contracts": {
+    "tests_run": 181,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "mounted_sources": 22,
+  "contract_sources": 43,
+  "cuda_initialized": false,
+  "runtime_post_recheck_recorded": true,
+  "elapsed_seconds": 142.9520878791809,
+  "resources": [
+    {
+      "arm": "static/M4",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M6",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M8",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M12",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M16",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M24",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M4-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M8-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M12-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M16-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M24-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M32-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-map288-i64",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-offset216-i64",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-empty-i64",
+      "REG": 126,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "opt-static/M6-local",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 100352,
+        "static_bytes": 1024,
+        "total_bytes": 101376,
+        "block_limit_bytes": 101376
+      }
+    },
+    {
+      "arm": "opt-static/M4-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 100352,
+        "static_bytes": 1024,
+        "total_bytes": 101376,
+        "block_limit_bytes": 101376
+      }
+    },
+    {
+      "arm": "opt-static/M6-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 100352,
+        "static_bytes": 1024,
+        "total_bytes": 101376,
+        "block_limit_bytes": 101376
+      }
+    },
+    {
+      "arm": "opt-static/M8-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 100352,
+        "static_bytes": 1024,
+        "total_bytes": 101376,
+        "block_limit_bytes": 101376
+      }
+    },
+    {
+      "arm": "dynamic/M33",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M8192",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    }
+  ],
+  "artifact_validator": "frozen source pure validator replayed over original files; no tests/compiler/GPU",
+  "source_binding": "original receipt compared against immutable git b41d0da2; worker before/after HEAD and clean state independently retained",
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false
+}

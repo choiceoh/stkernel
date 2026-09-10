@@ -31,6 +31,50 @@
 8. **그리디 텍스트 diff 로는 판정하지 않는다** — 같은 구성의 두 부팅에서도 온도 0 응답이
    갈린다(28차 §8). 판정은 게이트와 브래킷이다.
 
+## GLM53 EP76 1차: 품질·실행 증거 통과, 76 tok/s 목표 미달 (2026-09-10)
+
+고정 소스 `b41d0da24059379d41c079626cc67c3e83cd14e3`, 정상 fleet
+`epdecode76onepass0910v1`에서 같은 소스의 EP B→EP A를 측정했다.
+양쪽 EP4/SF6/K5/PREP를 유지하고 A만 `VLLM_GLM53_EP_DECODE_OPT=1`이다.
+후보는 FC2 SF6 복원 버퍼 분리·실제16행 scatter metadata와 PREP 검증 시
+두 번째 snapshot clone 제거를 결합했다. **A71.78687 tok/s로 절대 목표76
+미달이므로 채택하지 않는다.** B72.76702 대비 관측 차이는−1.34697%다.
+기존 EP 기본값과 v8 채택 기록은 유지하며, FC1 후속 후보는 준비 중·미측정이다.
+
+| 지표 | EP 기준선 B | EP 후보 A |
+|---|---:|---:|
+| fixed1024 ×3 합산 tok/s | 72.76702 | 71.78687 |
+| fixed 구간 합산 engine step/s | 19.89587 | 18.72490 |
+| 2K best-warm TTFT / 입력 tok/s | 0.709s / 3001.52 | 0.749s / 2841.01 |
+| 32K 단일 TTFT / 입력 tok/s | 10.070s / 3231.86 | 9.947s / 3271.83 |
+| 128K 단일 TTFT / 입력 tok/s | 40.178s / 3199.74 | 39.244s / 3275.87 |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 0/8 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B 세 요청76.38589/76.49326/66.38786, A72.44182/72.30024/70.64654다.
+분자는 첫 토큰을 제외한3069, 분모는 세 decode 시간의 합이다. 원본 판정은
+baseline n1의 `incomplete`/`unresolved`로 보존한다. 목표 미달은 명확하지만
+이 한 쌍으로 통계적 회귀·개선이나 병목 원인을 확정하지 않는다. engine은
+별도 fixed metric window이며 전체 onepass 수용률과 같은 구간이 아니다.
+
+요청 해시는 순서대로 모두 같지만32K/128K 및 fixed 세 응답의 출력 해시는
+양쪽이 다르다. 긴 요청 출력 길이는32K B692/A1200,128K B1200/A474였고
+fixed는 모두1024다. B `cold_compile=true`, A 해당 필드 없음도 유지한다.
+32K/128K는 각각 단일 요청 관측이며 matched warm-prefill 우위로 바꾸지 않는다.
+4rank 양쪽 실제 가중치12case·72candidate+72stock/rank와 SF6 42층 해제가
+통과했다. fresh PREP checkpoint B26/A25·drift0, A clone 제거 실행 증거25개
+(마지막 fused1600)를 확인했으며 실행 증거를 속도 개선으로 해석하지 않는다.
+
+CPU1 소스 `680a899d`는181 tests 중 기존 fixture의 `_report_decode_opt`
+namespace 누락4 errors로 실패했다(0 failures/0 skips). 23 lowering은
+생성됐지만 최종 runtime 재검사는 없으며 실패 기록을 통과로 바꾸지 않는다.
+CPU2 측정 소스는181 tests·23 lowering·0 errors/failures/skips, CUDA 미초기화,
+마지막 runtime identity 재검사까지 통과했다.
+[CPU1 실패](measurements/glm53_ep_tiled_20260909/ep76_cpu1_failed/README.md),
+[CPU2 통과](measurements/glm53_ep_tiled_20260909/ep76_cpu2/README.md),
+[원본 원패스·판정](measurements/glm53_ep_tiled_20260909/ep76_onepass1/README.md),
+[후속 구현과 증거 범위](docs/GLM53_EP_TILED.md#follow-up-ep-decode-target-76-toks).
+
 ## GLM53 EP + 입력 준비: 67 tok/s 절대 목표 통과, 기본값 채택 (2026-09-10, PR #511)
 
 사용자가 지정한 채택 기준은 canonical fixed1024 ×3 **합산 67 tok/s**다.

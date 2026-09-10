@@ -1,0 +1,212 @@
+{
+  "verdict": "FAILED_CPU_ORIGINALS_VERIFIED",
+  "source": "680a899d7de0c823905b89eed1e27cfc375feaf8",
+  "result_sha256": "b26e0541dfa11863579074b3db36651decc8681ce08a9b37e6e20abca021f20f",
+  "contracts_sha256": "c2f9d817eb1375f9a03888e981a047960598e248c01539962448ead3a309a265",
+  "original_files": 71,
+  "original_bytes": 9685053,
+  "lowerings": 23,
+  "contracts": {
+    "tests_run": 181,
+    "failures": 0,
+    "errors": 4,
+    "skips": 0
+  },
+  "mounted_sources": 22,
+  "contract_sources": 43,
+  "cuda_initialized": false,
+  "runtime_post_recheck_recorded": false,
+  "elapsed_seconds": 131.6593837738037,
+  "resources": [
+    {
+      "arm": "static/M4",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M6",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M8",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M12",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M16",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M24",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M4-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M8-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M12-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M16-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M24-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M32-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-map288-i64",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-offset216-i64",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-empty-i64",
+      "REG": 126,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "opt-static/M6-local",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 100352,
+        "static_bytes": 1024,
+        "total_bytes": 101376,
+        "block_limit_bytes": 101376
+      }
+    },
+    {
+      "arm": "opt-static/M4-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 100352,
+        "static_bytes": 1024,
+        "total_bytes": 101376,
+        "block_limit_bytes": 101376
+      }
+    },
+    {
+      "arm": "opt-static/M6-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 100352,
+        "static_bytes": 1024,
+        "total_bytes": 101376,
+        "block_limit_bytes": 101376
+      }
+    },
+    {
+      "arm": "opt-static/M8-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0,
+      "capacity": {
+        "dynamic_bytes": 100352,
+        "static_bytes": 1024,
+        "total_bytes": 101376,
+        "block_limit_bytes": 101376
+      }
+    },
+    {
+      "arm": "dynamic/M33",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M8192",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    }
+  ],
+  "first_error": "NameError: name '_report_decode_opt' is not defined in the four existing checkpoint AST fixture tests",
+  "artifact_validator": "frozen source pure validator replayed over original files; no tests/compiler/GPU",
+  "source_binding": "original receipt compared against immutable git 680a899d; current worker HEAD is captured separately and is not used as original admission",
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false
+}
