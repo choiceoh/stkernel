@@ -55,6 +55,9 @@ def _contract(q, window_kv, compressed_kv, attn_sink, topk_idxs, softmax_scale, 
             raise TypeError("KV pools must contain reference BF16 values")
     if q.dtype != torch.bfloat16 or attn_sink.dtype != torch.float32 or topk_idxs.dtype != torch.int32:
         raise TypeError("require BF16 q, FP32 sink and int32 indices")
+    # The device loop advances an i32 slot counter by 64. Reserve room for
+    # its final increment, including a partially filled last tile.
+    _integer(topk_idxs.shape[-1], "selected slot count", maximum=_INT32_MAX - (_SLOTS - 1))
     for tensor in (*tensors, *pools):
         if tensor.device != q.device or tensor.layout != torch.strided:
             raise ValueError("all inputs must be strided tensors on the same device")

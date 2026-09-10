@@ -1,0 +1,1 @@
+{"passed": true, "numerical_cases": 16, "window_cases": 4, "bf16_default_cases": 16, "adapter_steps": 4, "output": "measurements/dsv41_dual_sparse_20260910/cpu-oracle2.json"}

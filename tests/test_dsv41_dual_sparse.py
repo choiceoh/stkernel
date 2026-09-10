@@ -173,6 +173,16 @@ class DualSparseContracts(unittest.TestCase):
         for kwargs in ({"backend":"auto"},{"query_chunk_size":True},{"query_chunk_size":0},{"query_chunk_size":33}):
             with self.subTest(kwargs=kwargs),self.assertRaises(ValueError):
                 core.dual_sparse_attn(*values,512**-.5,**kwargs)
+        # Meta tensors exercise the actual signed-counter boundary without
+        # allocating billions of IDs or executing a multi-million-tile loop.
+        meta = [tensor.to("meta") for tensor in values]
+        last_safe = 2**31 - 64
+        meta[-1] = torch.empty((1, 1, last_safe), dtype=torch.int32, device="meta")
+        core._contract(*meta, 512**-.5, 1)
+        for slots in (last_safe + 1, 2**31 - 1):
+            meta[-1] = torch.empty((1, 1, slots), dtype=torch.int32, device="meta")
+            with self.subTest(slots=slots), self.assertRaisesRegex(ValueError, "selected slot count"):
+                core.dual_sparse_attn(*meta, 512**-.5, backend="triton")
 
     def test_triton_widths_and_strides_are_runtime_not_prefill_specializations(self):
         tree=ast.parse((ROOT/"overlay/modules/dsv41_model/dsv41_dual_sparse_triton.py").read_text())
