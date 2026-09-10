@@ -100,25 +100,42 @@ def main() -> int:
     import dsv41_preshard as builder
 
     ok = True
-    for rank in range(args.world_size):
-        mine = {n for n in names
-                if wanted_by(n, rank, args.world_size, n_routed, n_dspark)}
-        theirs = {n for n in names
-                  if builder._wanted(n, {"rank": rank, "world": args.world_size},
-                                     n_routed)}
-        # the builder's expert filter only knows the main stack's expert count,
-        # so compare on the tensors it is responsible for
-        main = {n for n in mine if not n.startswith("mtp.")}
-        main_theirs = {n for n in theirs if not n.startswith("mtp.")}
-        if main != main_theirs:
+    # EVERY name, both modes. This used to drop `mtp.` from the comparison
+    # because "the builder's expert filter only knows the main stack's expert
+    # count" -- which was true, and was the bug: the builder replicated the
+    # DSpark block's 128 experts while the loader sharded them, 1,728 tensors
+    # per rank, and the exclusion is what let it sit there.
+    for mtp_mode in ("replicate", "ep"):
+        for rank in range(args.world_size):
+            cfg = {"rank": rank, "world": args.world_size,
+                   "experts": n_routed, "mtp_experts": n_dspark,
+                   "dense": "replicate", "mtp": mtp_mode}
+            mine = {n for n in names
+                    if wanted_by(n, rank, args.world_size, n_routed, n_dspark,
+                                 mtp=mtp_mode)}
+            theirs = {n for n in names if builder._wanted(n, cfg)}
+            if mine != theirs:
+                ok = False
+                only_l = sorted(mine - theirs)[:2]
+                only_b = sorted(theirs - mine)[:2]
+                print(f"  FAIL mtp={mtp_mode} rank {rank}: loader-only "
+                      f"{len(mine - theirs)} {only_l}, builder-only "
+                      f"{len(theirs - mine)} {only_b}")
+            else:
+                n_mtp = sum(1 for n in mine if n.startswith("mtp."))
+                print(f"  mtp={mtp_mode:9s} rank {rank}: {len(mine):,} tensors "
+                      f"({n_mtp:,} DSpark), loader and builder agree")
+        # the two modes must actually DIFFER, or agreeing about them is
+        # agreeing about nothing
+        a = {n for n in names
+             if wanted_by(n, 0, args.world_size, n_routed, n_dspark,
+                          mtp="replicate")}
+        b = {n for n in names
+             if wanted_by(n, 0, args.world_size, n_routed, n_dspark,
+                          mtp="ep")}
+        if a == b:
+            print("  FAIL: --mtp replicate and --mtp ep select the same set")
             ok = False
-            only_l = sorted(main - main_theirs)[:2]
-            only_b = sorted(main_theirs - main)[:2]
-            print(f"  FAIL rank {rank}: loader-only {len(main - main_theirs)} "
-                  f"{only_l}, builder-only {len(main_theirs - main)} {only_b}")
-        else:
-            print(f"  rank {rank}: {len(main):,} main-stack tensors, loader and "
-                  f"builder agree")
     if not ok:
         return 1
 

@@ -16,6 +16,17 @@ fetched by range request where they do not.
     python3 tools/dsv41_preshard.py build --rank 0 --out /path/to/rank0
     python3 tools/dsv41_preshard.py verify --rank 0 --out /path/to/rank0
 
+`verify` reads the file BACK -- layout from `__metadata__`, the name set against
+the source index, dtype and shape for every tensor, and bytes for a sample
+stratified over the placement classes. It used to be `cmd_build` under another
+name, so it "passed" by rewriting the file it was meant to be checking; the
+selftest now requires it to reject a flipped byte, another rank's file under
+this rank's name, and a tensor dropped from the header.
+
+`--mtp` and `--dense` used to reach `plan` only: `build --mtp ep` reported the
+saving and wrote a replicate layout. `--mtp ep` is now built; `--dense tp`
+ABORTS in `build` rather than write a file the model side cannot read.
+
 ## How each tensor is placed
 
 Every tensor must match exactly one rule. An unmatched name ABORTS rather than
@@ -78,8 +89,11 @@ from __future__ import annotations
 
 import argparse
 import collections
+import contextlib
+import io
 import json
 import os
+import random
 import re
 import struct
 import sys
@@ -190,6 +204,7 @@ def survey(repo: Path, allow_remote: bool) -> dict:
     """Bytes per placement class, plus the per-rank division of each."""
     totals: dict[str, int] = {}
     experts_seen: set[tuple[int, int]] = set()
+    mtp_seen: set[tuple[int, int]] = set()
     unplaced: dict[str, tuple[str, list]] = {}
     for _shard, head in shard_headers(repo, allow_remote):
         for name, meta in head.items():
@@ -207,6 +222,9 @@ def survey(repo: Path, allow_remote: bool) -> dict:
             m = re.match(r"^layers\.(\d+)\.ffn\.experts\.(\d+)\.", name)
             if m:
                 experts_seen.add((int(m.group(1)), int(m.group(2))))
+            m = re.match(r"^mtp\.(\d+)\.ffn\.experts\.(\d+)\.", name)
+            if m:
+                mtp_seen.add((int(m.group(1)), int(m.group(2))))
     if unplaced:
         lines = "\n".join(
             f"    {n:52s} {d:9s} {sh}" for n, (d, sh) in sorted(unplaced.items()))
@@ -217,7 +235,11 @@ def survey(repo: Path, allow_remote: bool) -> dict:
             f"tensor either bloats every rank or silently fails to be split.")
     layers = {l for l, _ in experts_seen}
     per_layer = len({e for l, e in experts_seen if l == min(layers)}) if layers else 0
-    return {"totals": totals, "moe_layers": len(layers), "experts": per_layer}
+    mtp_layers = {l for l, _ in mtp_seen}
+    mtp_per = (len({e for l, e in mtp_seen if l == min(mtp_layers)})
+               if mtp_layers else 0)
+    return {"totals": totals, "moe_layers": len(layers), "experts": per_layer,
+            "mtp_layers": len(mtp_layers), "mtp_experts": mtp_per}
 
 
 GIB = float(1 << 30)
@@ -314,19 +336,45 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]
 from dsv41_layers import expert_rank  # noqa: E402
 
 
-def _wanted(name: str, cfg, per_layer: int) -> bool:
+def _wanted(name: str, cfg) -> bool:
     """Does this rank need this tensor?
 
     Engram is excluded on purpose: it does not live in the rank's safetensors
     at all. tools/dsv41_engram_shard.py writes it as raw row blocks because it
     is read a row at a time off an SSD, not loaded.
+
+    Everything else follows `cfg["mtp"]`. This used to ignore the mode flags
+    entirely, so `build --mtp ep` wrote a replicate layout while `plan --mtp
+    ep` reported the saving -- a flag that reports one thing and does another
+    is worse than an absent flag, because the file it produces is correct-
+    looking.
     """
     if ".engram.embed." in name:
         return False
     m = re.match(r"^layers\.\d+\.ffn\.experts\.(\d+)\.", name)
     if m:
-        return expert_rank(int(m.group(1)), per_layer, cfg["world"]) == cfg["rank"]
+        return expert_rank(int(m.group(1)), cfg["experts"],
+                           cfg["world"]) == cfg["rank"]
+    m = re.match(r"^mtp\.\d+\.ffn\.experts\.(\d+)\.", name)
+    if m and cfg["mtp"] == "ep":
+        return expert_rank(int(m.group(1)), cfg["mtp_experts"],
+                           cfg["world"]) == cfg["rank"]
     return True
+
+
+def _mode_cfg(args, info) -> dict:
+    """The one place a build's layout is decided, so verify can re-derive it."""
+    if args.dense == "tp":
+        raise SystemExit(
+            "ABORT: --dense tp is planned but not built. Splitting the dense "
+            "tensors needs a per-parameter axis (wq_b along out, wo_b along "
+            "in, and the LM head's vocab axis), and the model side does not "
+            "read a split dense tensor yet. Writing one now produces a file "
+            "that loads and computes garbage. `plan --dense tp` still shows "
+            "what it would save.")
+    return {"rank": args.rank, "world": args.world_size,
+            "experts": info["experts"], "mtp_experts": info["mtp_experts"],
+            "dense": args.dense, "mtp": args.mtp}
 
 
 def cmd_build(args) -> int:
@@ -350,7 +398,7 @@ def cmd_build(args) -> int:
         raise SystemExit(
             f"ABORT: {per_layer} experts per layer do not divide over "
             f"{args.world_size} ranks")
-    cfg = {"rank": args.rank, "world": args.world_size}
+    cfg = _mode_cfg(args, info)
 
     index = json.loads((repo / "model.safetensors.index.json").read_text())
     weight_map = index["weight_map"]
@@ -362,7 +410,7 @@ def cmd_build(args) -> int:
             f"Building from a partial checkpoint writes zeros where the tensors "
             f"are missing and nothing downstream can detect that.")
 
-    take = [n for n in weight_map if _wanted(n, cfg, per_layer)]
+    take = [n for n in weight_map if _wanted(n, cfg)]
     heads = {}
     for shard in sorted(set(weight_map[n] for n in take)):
         heads[shard] = _shard_header(repo / shard)
@@ -377,6 +425,19 @@ def cmd_build(args) -> int:
         header[name] = {"dtype": meta["dtype"], "shape": meta["shape"],
                         "data_offsets": [cursor, cursor + size]}
         cursor += size
+    # safetensors reserves `__metadata__` for str->str side data. Recording
+    # the layout here is what lets `verify` -- and a loader -- refuse a file
+    # built for a different world size or a different mode. Without it the
+    # only evidence is the filename, which a copy or a rename loses.
+    header["__metadata__"] = {
+        "producer": "tools/dsv41_preshard.py",
+        "rank": str(args.rank), "world_size": str(args.world_size),
+        "dense": args.dense, "mtp": args.mtp,
+        "n_routed_experts": str(info["experts"]),
+        "dspark_experts": str(info["mtp_experts"]),
+        "engram": "excluded (tools/dsv41_engram_shard.py)",
+        "source_index_tensors": str(len(weight_map)),
+    }
     blob = json.dumps(header, separators=(",", ":")).encode()
     pad = (-(8 + len(blob))) % 8          # keep the data section 8-aligned
     blob += b" " * pad
@@ -410,6 +471,127 @@ def cmd_build(args) -> int:
     return 0
 
 
+def cmd_verify(args) -> int:
+    """Read a rank file back and hold it to the source checkpoint.
+
+    This used to be `cmd_build` under another name -- `verify` rebuilt the file
+    and reported success, which is the one outcome a verifier must never be
+    able to produce by itself. What it checks now:
+
+      layout    the file's `__metadata__` must say it was built for THIS rank,
+                world size and mode. A rank1of4 file copied over rank0of4's
+                name loads without complaint and routes every expert wrong.
+      names     the set in the file must EQUAL what `_wanted` selects from the
+                source index. Missing leaves a module at its initialization
+                values; extra means this rank holds another rank's expert and
+                will happily compute with it.
+      types     dtype and shape per tensor against the source header.
+      bytes     a sample, read from both sides, compared exactly. Sampling is
+                stratified over `classify` labels so a whole placement class
+                cannot go unsampled -- a uniform sample of 64 out of 24,000
+                tensors misses `vision` and `mtp-dense` most of the time.
+
+    Bytes are the expensive part, so `--samples` sets the count; the first
+    three checks cover every tensor and cost a header read.
+    """
+    repo, out = Path(args.repo), Path(args.out)
+    dst = out / f"rank{args.rank}of{args.world_size}.safetensors"
+    if not dst.is_file():
+        raise SystemExit(f"ABORT: {dst} does not exist -- build it first")
+    info = survey(repo, not args.no_remote)
+    cfg = _mode_cfg(args, info)
+
+    head, base = _shard_header(dst)
+    meta = head.pop("__metadata__", None)
+    problems = []
+    if meta is None:
+        print("  layout   NO __metadata__ (built before it was recorded); "
+              "falling back to the filename, which a copy does not preserve")
+    else:
+        want = {"rank": str(args.rank), "world_size": str(args.world_size),
+                "dense": args.dense, "mtp": args.mtp}
+        bad = {k: (meta.get(k), v) for k, v in want.items() if meta.get(k) != v}
+        if bad:
+            for k, (got, exp) in sorted(bad.items()):
+                problems.append(f"layout: {k} is {got!r}, expected {exp!r}")
+        else:
+            print(f"  layout   rank {meta['rank']}/{meta['world_size']}, "
+                  f"dense={meta['dense']}, mtp={meta['mtp']}, "
+                  f"{meta['n_routed_experts']} experts/layer")
+
+    index = json.loads((repo / "model.safetensors.index.json").read_text())
+    weight_map = index["weight_map"]
+    want_names = {n for n in weight_map if _wanted(n, cfg)}
+    got_names = set(head)
+    missing, extra = sorted(want_names - got_names), sorted(got_names - want_names)
+    if missing:
+        problems.append(f"names: {len(missing)} missing, e.g. {missing[:3]}")
+    if extra:
+        problems.append(f"names: {len(extra)} not this rank's, e.g. {extra[:3]}")
+    if not missing and not extra:
+        print(f"  names    {len(got_names):,} tensors, exactly this rank's set")
+    leaked = sorted(n for n in got_names if ".engram.embed." in n)
+    if leaked:
+        problems.append(f"engram: {len(leaked)} table tensor(s) in the rank "
+                        f"file, e.g. {leaked[0]}")
+
+    # dtype/shape for every shared name, bytes for a stratified sample
+    shared = sorted(want_names & got_names)
+    src_heads: dict[str, tuple] = {}
+
+    def src(name):
+        shard = weight_map[name]
+        if shard not in src_heads:
+            src_heads[shard] = _shard_header(repo / shard)
+        return src_heads[shard]
+
+    for name in shared:
+        sh, _ = src(name)
+        a, b = head[name], sh[name]
+        if a["dtype"] != b["dtype"] or list(a["shape"]) != list(b["shape"]):
+            problems.append(
+                f"type: {name} is {a['dtype']}{a['shape']} here, "
+                f"{b['dtype']}{b['shape']} in the source")
+            if len(problems) > 20:
+                break
+
+    buckets: dict[str, list] = collections.defaultdict(list)
+    for name in shared:
+        buckets[classify(name) or "?"].append(name)
+    rng = random.Random(args.seed)
+    sample, per_bucket = [], max(1, args.samples // max(1, len(buckets)))
+    for label in sorted(buckets):
+        names = buckets[label]
+        sample += rng.sample(names, min(per_bucket, len(names)))
+    checked = 0
+    with open(dst, "rb") as fo:
+        for name in sample:
+            sh, sbase = src(name)
+            lo, hi = sh[name]["data_offsets"]
+            with open(repo / weight_map[name], "rb") as fi:
+                fi.seek(sbase + lo)
+                want_bytes = fi.read(hi - lo)
+            d_lo, d_hi = head[name]["data_offsets"]
+            fo.seek(base + d_lo)
+            got_bytes = fo.read(d_hi - d_lo)
+            if got_bytes != want_bytes:
+                n = next((i for i, (x, y) in enumerate(zip(got_bytes, want_bytes))
+                          if x != y), min(len(got_bytes), len(want_bytes)))
+                problems.append(f"bytes: {name} differs at offset {n:,} "
+                                f"of {hi - lo:,}")
+            checked += hi - lo
+    print(f"  bytes    {len(sample)} tensors over {len(buckets)} placement "
+          f"classes, {checked / GIB:.2f} GiB compared")
+
+    if problems:
+        print(f"\n  {len(problems)} PROBLEM(S):")
+        for line in problems[:20]:
+            print(f"    {line}")
+        return 1
+    print(f"  VERIFIED {dst.name} ({dst.stat().st_size / GIB:.1f} GiB)")
+    return 0
+
+
 def cmd_selftest(args) -> int:
     """Build every rank from a synthetic checkpoint and check the partition.
 
@@ -439,6 +621,9 @@ def cmd_selftest(args) -> int:
             add(f"layers.{L}.attn_norm.weight", 0x11)
             for e in range(n_exp):
                 add(f"layers.{L}.ffn.experts.{e}.w1.weight", (L * n_exp + e) & 0xFF)
+        for e in range(n_exp):                         # the DSpark block
+            add(f"mtp.0.ffn.experts.{e}.w1.weight", 0x40 | e)
+        add("mtp.0.attn_norm.weight", 0x12)
         add("layers.0.engram.embed.weight", 0x99)      # must NOT appear
         blob = json.dumps(head, separators=(",", ":")).encode()
         blob += b" " * ((-(8 + len(blob))) % 8)
@@ -464,6 +649,7 @@ def cmd_selftest(args) -> int:
                 hl = struct.unpack("<Q", fh.read(8))[0]
                 h = json.loads(fh.read(hl))
                 body = fh.read()
+            h.pop("__metadata__", None)
             for name, meta in h.items():
                 lo, hi = meta["data_offsets"]
                 if body[lo:hi] != tensors[name]:
@@ -492,8 +678,97 @@ def cmd_selftest(args) -> int:
                       f"contiguous blocks -- a strided split routes wrong "
                       f"while passing every byte check")
                 return 1
+        # -- the verifier must be able to FAIL ---------------------------
+        # A verify that cannot fail is what this file shipped with: `verify`
+        # was cmd_build under another name, so it "passed" by rewriting the
+        # file it was meant to be checking. Each of these is a mutation that
+        # every other check in this selftest accepts.
+        def verify_rank(r, **kw):
+            ns = argparse.Namespace(repo=str(repo), out=str(out), rank=r,
+                                    world_size=world, dense="replicate",
+                                    mtp="replicate", no_remote=True,
+                                    samples=64, seed=1)
+            for k_, v in kw.items():
+                setattr(ns, k_, v)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = cmd_verify(ns)
+            return rc, buf.getvalue()
+
+        rc, _ = verify_rank(0)
+        if rc:
+            print("  FAIL: verify rejects a file this tool just built")
+            return 1
+
+        good = out / f"rank0of{world}.safetensors"
+        keep = good.read_bytes()
+        controls = []
+
+        # 1. one flipped byte in the data section
+        i = len(keep) - 1
+        good.write_bytes(keep[:i] + bytes([keep[i] ^ 0xFF]))
+        controls.append(("a flipped data byte", verify_rank(0)[0]))
+
+        # 2. another rank's file under this rank's name -- same size, same
+        #    shapes, every expert wrong
+        good.write_bytes((out / f"rank1of{world}.safetensors").read_bytes())
+        controls.append(("rank 1's file renamed to rank 0", verify_rank(0)[0]))
+
+        # 3. a tensor removed from the header: the bytes that remain all
+        #    match, and only the NAME SET shows it
+        hl = struct.unpack("<Q", keep[:8])[0]
+        h0 = json.loads(keep[8:8 + hl])
+        drop = next(n for n in h0 if ".experts." in n)
+        h0.pop(drop)
+        nb = json.dumps(h0, separators=(",", ":")).encode()
+        nb += b" " * ((-(8 + len(nb))) % 8)
+        good.write_bytes(struct.pack("<Q", len(nb)) + nb + keep[8 + hl:])
+        controls.append((f"{drop} dropped from the header", verify_rank(0)[0]))
+
+        good.write_bytes(keep)
+        for label, rc in controls:
+            if rc == 0:
+                print(f"  FAIL: verify accepted {label}")
+                return 1
+
+        # -- the mode flags must change the FILE, not just the plan --------
+        ep_out = Path(tmp) / "out-ep"
+        ns = argparse.Namespace(repo=str(repo), out=str(ep_out), rank=0,
+                                world_size=world, dense="replicate",
+                                mtp="ep", no_remote=True)
+        if cmd_build(ns):
+            return 1
+        ep_head, _ = _shard_header(ep_out / f"rank0of{world}.safetensors")
+        ep_head.pop("__metadata__", None)
+        base_head, _ = _shard_header(good)
+        base_head.pop("__metadata__", None)
+        mtp_rep = {n for n in base_head if n.startswith("mtp.") and ".experts." in n}
+        mtp_ep = {n for n in ep_head if n.startswith("mtp.") and ".experts." in n}
+        if not mtp_rep or mtp_ep >= mtp_rep:
+            print(f"  FAIL: --mtp ep kept {len(mtp_ep)} of {len(mtp_rep)} "
+                  f"DSpark expert tensors -- the flag did not reach the build")
+            return 1
+        if verify_rank(0, out=str(ep_out), mtp="replicate")[0] == 0:
+            print("  FAIL: verify accepted an --mtp ep file as replicate")
+            return 1
+
+        try:
+            cmd_build(argparse.Namespace(
+                repo=str(repo), out=str(Path(tmp) / "out-tp"), rank=0,
+                world_size=world, dense="tp", mtp="replicate", no_remote=True))
+        except SystemExit:
+            pass
+        else:
+            print("  FAIL: --dense tp built a file; it is not implemented and "
+                  "must abort rather than write a replicate layout")
+            return 1
+
         per = collections.Counter(seen.values())
         print(f"  selftest: {n_lay} layers x {n_exp} experts over {world} ranks")
+        print(f"    verify rejects: "
+              + ", ".join(label for label, _ in controls))
+        print(f"    --mtp ep keeps {len(mtp_ep)}/{len(mtp_rep)} DSpark expert "
+              f"tensors; --dense tp aborts")
         print(f"    every tensor byte-exact, engram excluded, expert names kept")
         print(f"    experts per rank {dict(sorted(per.items()))} "
               f"(= {n_lay * n_exp // world} each)")
@@ -524,9 +799,14 @@ def main() -> int:
         else:
             p.add_argument("--rank", type=int, required=True)
             p.add_argument("--out", required=True)
+            if name == "verify":
+                p.add_argument("--samples", type=int, default=64,
+                               help="tensors to compare byte-for-byte, spread "
+                                    "over the placement classes")
+                p.add_argument("--seed", type=int, default=20260910)
     args = ap.parse_args()
     return {"plan": cmd_plan, "build": cmd_build,
-            "verify": cmd_build, "selftest": cmd_selftest}[args.cmd](args)
+            "verify": cmd_verify, "selftest": cmd_selftest}[args.cmd](args)
 
 
 if __name__ == "__main__":

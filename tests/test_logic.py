@@ -8526,6 +8526,69 @@ def test_glm53_megakernel_contracts() -> None:
           "code, so replicate -- which cannot be wrong -- is the default")
     for label in ("engram", "expert", "mtp-expert", "mtp-dense", "vision"):
         check(f'"{label}"' in presh, f"placement class {label} is named")
+    # `verify` must be able to FAIL. It shipped as `cmd_build` under another
+    # name, so it "passed" by rewriting the file it was checking -- the one
+    # outcome a verifier must never be able to produce by itself.
+    check('"verify": cmd_verify' in presh and "def cmd_verify(args)" in presh,
+          "verify reads the rank file back rather than rebuilding it")
+    check('meta = head.pop("__metadata__", None)' in presh
+          and 'header["__metadata__"] = {' in presh,
+          "the build records rank/world/mode in __metadata__ and verify "
+          "checks it -- every rank file has identical shapes and sizes, so "
+          "the data says nothing about which rank it is")
+    check("verify accepted" in presh and "rank 1's file renamed to rank 0" in presh
+          and "dropped from the header" in presh,
+          "the selftest requires verify to reject a flipped byte, another "
+          "rank's file, and a tensor missing from the header")
+    check('cfg["mtp"] == "ep"' in presh and "def _mode_cfg(" in presh
+          and "--dense tp is planned but not built" in presh,
+          "the mode flags reach the BUILD: --mtp ep changes the file and "
+          "--dense tp aborts rather than writing a replicate layout under an "
+          "unimplemented name")
+
+    # -- dsv41 pre-shard, loader side. The builder and the loader never run
+    #    together, so the only thing keeping them agreed is that both take the
+    #    mode and both import the same partition.
+    ldr = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                            "dsv41_loader.py"), encoding="utf-8").read()
+    check('mtp: str = "replicate"' in ldr
+          and 'if mtp == "replicate":' in ldr,
+          "wanted_by takes the DSpark mode instead of assuming EP; it used to "
+          "shard 1,728 tensors per rank the builder replicated")
+    route_probe = open(os.path.join(REPO, "probes/dsv41_loader_route.py"),
+                       encoding="utf-8").read()
+    check('for mtp_mode in ("replicate", "ep"):' in route_probe
+          and 'if a == b:' in route_probe,
+          "the route probe compares the FULL name set in both modes and "
+          "requires the modes to differ -- excluding mtp. from the comparison "
+          "is what hid the disagreement")
+    presh_load = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                                   "dsv41_preshard_load.py"),
+                      encoding="utf-8").read()
+    check("allow_unstated: bool = False" in presh_load
+          and "class PreshardMismatch" in presh_load,
+          "a rank file with no __metadata__ is refused by default: its name "
+          "is the only claim it makes, and a copy does not preserve that")
+    check("if owner != rank:" in presh_load
+          and "from dsv41_layers import expert_rank" in presh_load,
+          "local_expert refuses an expert this rank does not own rather than "
+          "renumbering it into range, and inverts the SHARED expert_rank")
+    check('if prefix == "mtp":' in presh_load
+          and 'if mtp == "replicate":\n            return name' in presh_load,
+          "a REPLICATED expert is not renumbered: under --mtp replicate every "
+          "rank holds all 128, so its local index is its global one and "
+          "renumbering would refuse a name that is legitimately there")
+
+    # -- the engram probe must not grade real weights against its synthetic
+    #    pattern, and must not delete a real shard it was pointed at.
+    eng_probe = open(os.path.join(REPO, "probes/dsv41_engram_probe.py"),
+                     encoding="utf-8").read()
+    check('args.keep = True' in eng_probe and 'if args.real:' in eng_probe
+          and "correctness ... skipped" in eng_probe,
+          "--real skips the row-index pattern check and never unlinks the "
+          "file, so a real shard can be timed without being graded against a "
+          "pattern only the synthetic one has")
+
     check('info["experts"] % world' in presh and "ENGRAM_RANGES" not in presh,
           "expert parallelism moves whole experts, so a world size that does "
           "not divide them aborts -- while the engram side has no such "

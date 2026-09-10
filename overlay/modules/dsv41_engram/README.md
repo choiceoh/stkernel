@@ -39,9 +39,16 @@ This does NOT solve srv1 by itself -- see below.
 
 ## Measured (srv4, 2026-09-10, no GPU, no model)
 
-`probes/dsv41_engram_probe.py`, 4 GiB shard, 150 steps, batch 32 = 384
-rows/rank/step, 512 B O_DIRECT reads, QD32. Drive `ESL04TBTLCZ`, 4 TB, 512 B
-format.
+`probes/dsv41_engram_probe.py`, 150 steps, batch 32 = 384 rows/rank/step,
+512 B O_DIRECT reads, QD32. Drive `ESL04TBTLCZ`, 4 TB, 512 B format.
+
+Two shards were measured. The issue-path table below is from a 4 GiB synthetic
+file; everything after it was re-run on the **real** rank-0 layer-1 shard --
+22.89 GiB, 96,001,542 rows, written by `tools/dsv41_engram_shard.py build` from
+the downloaded checkpoint and verified against it (1,028 rows, 0 problems).
+That matters because a 4 GiB file touches 0.1% of the drive: the FTL can hold
+its whole mapping in SRAM, and a random read never misses it. The real shard
+spans 5.7x more LBA space, which is the case a rank actually runs.
 
 **Issue path first.** Same drive, same reads; only the dispatch changed.
 
@@ -49,6 +56,11 @@ format.
 |---|---|---|
 | one pool task per read | 7.30 ms | 52,607 |
 | one task per thread (strided) | **4.32 ms** | **88,790** |
+| the same, on the real 22.89 GiB shard | 4.35 ms | 88,198 |
+
+The 5.7x larger address space costs 0.7%. Random 512 B O_DIRECT on this drive
+is dispatch-bound, not mapping-bound, so the synthetic figure was not
+flattering itself.
 
 A raw tight-loop O_DIRECT benchmark on this drive reaches 157,357 IOPS at QD32,
 so Python dispatch -- not the NVMe -- was two thirds of the original cost. mmap
@@ -59,11 +71,13 @@ of 62 us is 24 ms, and the step is 20.
 step pays. The hash ids depend only on token ids, so the reads are issued at
 layer 0 and collected at the engram layer; what the step pays is the residual.
 
+Measured on the real 22.89 GiB shard:
+
 | | median | p95 | verdict |
 |---|---|---|---|
-| layer 14, 7.0 ms cover | 0.06 ms | 0.07 ms | fits |
+| layer 14, 7.0 ms cover | 0.07 ms | 0.08 ms | fits |
 | layer 14, pipelined steady state | 0.05 ms | 0.06 ms | fits |
-| layer 1, 0.5 ms cover | 3.49 ms | 4.19 ms | **over by 3.2 ms** |
+| layer 1, 0.5 ms cover | 3.37 ms | 3.99 ms | **over by 3.0 ms** |
 | **both, layer 1 drafted a step early** | **0.08 ms** | **0.09 ms** | **fits** |
 
 Layer 14 sits 13 of 40 layers after the submit and is free. Layer 1 sits one
@@ -72,12 +86,24 @@ layer in, so nothing inside the step can cover it -- but DSpark drafts 5 tokens
 ids alone, so step N can issue step N+1's layer-1 rows. That closes it: both
 tables together cost **0.09 ms of a 20 ms step, 0.5%**.
 
-The price is waste, not latency: at 75% draft acceptance 26% of the layer-1
+The price is waste, not latency: at 75% draft acceptance 24% of the layer-1
 reads are discarded. The IOPS budget absorbs it -- the step uses 89K of the
 drive's 157K.
 
-These numbers were taken WHILE the 475 GiB checkpoint was downloading to the
-same drive, so they are the contended case.
+The 4 GiB numbers were taken WHILE the 475 GiB checkpoint was downloading to
+the same drive, so they were the contended case. The real-shard re-run is on an
+idle drive, and lands within 1% of them -- so neither the contention nor the
+shard size moves this verdict.
+
+**The drafted layer-1 row is conditional on something not yet shown to exist.**
+It assumes a DSpark loop that hands step N the draft ids for step N+1. V4.1's
+checkpoint ships MTP, not DSpark (`SPEC_METHOD=dspark` in the profile is
+inherited from GLM-5.3 and is not yet known to apply here), and no V4.1 path in
+vLLM drives one. Without that loop the layer-1 line is the 3.99 ms p95 above,
+which does not fit; layer 14 fits either way. What closes layer 1 is a step of
+cover from any source -- draft ids, chunked prefill lookahead, or moving the
+table -- and which of those is available is an open question, not a measured
+one.
 
 ## What is not established
 

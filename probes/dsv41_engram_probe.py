@@ -188,15 +188,33 @@ def main() -> int:
                     help="DSpark draft acceptance; sets how many layer-1 "
                          "prefetches are thrown away")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--real", action="store_true",
+                    help="the path is a REAL shard, not this probe's synthetic "
+                         "one: skip the pattern check (its rows are weights, "
+                         "not row indices) and never delete the file. "
+                         "Correctness for a real shard is "
+                         "tools/dsv41_engram_shard.py verify, which compares "
+                         "it against the source checkpoint")
     ap.add_argument("--path", default="/tmp/dsv41-engram-probe.bin")
     args = ap.parse_args()
 
     n_rows = int(args.shard_gib * (1 << 30)) // EMB_ROW_BYTES
     rng = random.Random(20260910)
 
-    print(f"engram shard probe -- {args.shard_gib:.1f} GiB, {n_rows:,} rows, "
-          f"QD{args.queue_depth}, {args.read_bytes} B reads")
-    if not os.path.exists(args.path) or os.path.getsize(args.path) < n_rows * EMB_ROW_BYTES:
+    if args.real:
+        if not os.path.exists(args.path):
+            raise SystemExit(f"--real given but {args.path} does not exist")
+        # a real shard's size is a fact, not a request: --shard-gib does not
+        # apply, and the banner must not claim a size the file does not have
+        n_rows = os.path.getsize(args.path) // EMB_ROW_BYTES
+        args.shard_gib = n_rows * EMB_ROW_BYTES / (1 << 30)
+        args.keep = True                 # never unlink a real shard
+    print(f"engram shard probe -- {args.shard_gib:.2f} GiB, {n_rows:,} rows, "
+          f"QD{args.queue_depth}, {args.read_bytes} B reads"
+          + (f"\n  REAL shard {args.path}" if args.real else ""))
+    if not args.real and (not os.path.exists(args.path)
+                          or os.path.getsize(args.path)
+                          < n_rows * EMB_ROW_BYTES):
         t0 = time.time()
         build_shard(args.path, n_rows)
         print(f"  built {args.path} in {time.time() - t0:.1f}s")
@@ -215,7 +233,11 @@ def main() -> int:
 
     with ShardReader(args.path, queue_depth=args.queue_depth,
                      read_bytes=args.read_bytes) as reader:
-        check_correctness(reader, rng)
+        if args.real:
+            print("  correctness ... skipped (real weights; see "
+                  "dsv41_engram_shard.py verify)")
+        else:
+            check_correctness(reader, rng)
         plans = make_plans(reader, rng, args.batch, args.steps)
         print(f"  batch {args.batch} -> {per_step} rows/step over "
               f"{args.steps} steps\n")
