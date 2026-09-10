@@ -194,41 +194,86 @@ class Q1ReceiptTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.probe['validate_q1_register_layout'](original, fast_math=1)
 
-        # Exercise the outer artifact-reader connection with stored PTX/cubin
-        # bytes. Unrelated ABI/resource validators are stubbed in this unit; the
-        # real source-bound normal CPU gate retains every validator unchanged.
-        selected = dict(a_ring=True, word_unpack=True, scatter_bf16=True,
-            output_dtype='bfloat16', decode_opt=True, storage_bytes=98304)
+        # Exercise the current generic artifact reader with CPU fixture bytes.
+        # Matrix ABI/resource checking is explicitly outside this file-system
+        # unit: the stub below checks only declared arm/group connectivity.
+        # Retired Q1 ownership assertions remain in the tests above; this gate
+        # no longer attaches them to artifacts from decode_opt=False kernels.
+        tree = ast.parse((ROOT/'probes/glm53_ep_tiled_compile.py').read_text())
+        names = {'BASELINE_STATIC_CASES', 'HYBRID_STATIC_CASES', 'COMPILE_GROUPS'}
+        declarations = [copy.deepcopy(node) for node in tree.body
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id in names
+                for target in node.targets)]
+        self.assertEqual(len(declarations), len(names))
+        namespace = {}
+        exec(compile(ast.Module(body=declarations, type_ignores=[]),
+                     '<actual compile matrix constants>', 'exec'), namespace)
+        groups = namespace['COMPILE_GROUPS']
+        matrix_calls = []
+        def matrix_connectivity_only(result):
+            self.assertEqual(set(result), {kind+'_passes' for kind,_,_,_ in groups})
+            for kind,_,_,cases in groups:
+                self.assertEqual([p['arm'] for p in result[kind+'_passes']],
+                    [kind.replace('_','-')+'/'+case[0] for case in cases])
+                for passed in result[kind+'_passes']:
+                    self.assertFalse({'q1_register_layout','q1_pair_layout',
+                                      'register_layout'} & set(passed))
+            matrix_calls.append(True)
         outer = functions(ROOT/'probes/run_glm53_ep_tiled_cpu.py', {'validate_artifacts'},
-            dict(Path=Path, hashlib=hashlib, STATIC_ROWS=(), GLOBAL_STATIC_CASES=(),
-                OPT_STATIC_CASES=(('M6-local',6,'local'),), DYNAMIC_ROWS=(),
-                opt_static_specialization=lambda *args: selected,
-                opt_shared_capacity=lambda passed: passed['shared_capacity'],
-                validate_q1_register_layout=self.probe['validate_q1_register_layout']))
+            dict(Path=Path, hashlib=hashlib, COMPILE_GROUPS=groups,
+                 validate_compile_matrix=matrix_connectivity_only))
         with tempfile.TemporaryDirectory() as temporary:
             directory=Path(temporary)
-            folder=directory/'opt-static/M6-local';folder.mkdir(parents=True)
             resources='CPU unit fixture; not a real compiler result'
-            passed=dict(arm='opt-static/M6-local', cache_key=[None]*6+[True],
-                specialization=selected, shared_capacity={}, q1_register_layout=original)
-            for name,suffix in (('artifacts','.ptx'),('resources','.cubin')):
-                path=folder/('fixture'+suffix);path.write_bytes(b'CPU fixture '+suffix.encode())
-                item=dict(path=str(path.relative_to(directory)),sha256=hashlib.sha256(path.read_bytes()).hexdigest())
-                if suffix=='.cubin':
-                    item['resources']=resources;path.with_suffix('.resources.log').write_text(resources)
-                passed[name]=[item]
-            result=dict(static_passes=[],global_static_passes=[],dynamic_passes=[],opt_static_passes=[passed])
+            result = {}
+            for kind,_,_,cases in groups:
+                result[kind+'_passes'] = []
+                for case in cases:
+                    arm=kind.replace('_','-')+'/'+case[0]
+                    folder=directory/arm;folder.mkdir(parents=True)
+                    passed=dict(arm=arm)
+                    for name,suffix in (('artifacts','.ptx'),('resources','.cubin')):
+                        path=folder/('fixture'+suffix)
+                        path.write_bytes(b'CPU fixture '+arm.encode()+suffix.encode())
+                        item=dict(path=str(path.relative_to(directory)),
+                            sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+                        if suffix=='.cubin':
+                            item['resources']=resources
+                            path.with_suffix('.resources.log').write_text(resources)
+                        passed[name]=[item]
+                    result[kind+'_passes'].append(passed)
             outer['validate_artifacts'](directory,json.loads(json.dumps(result)))
-            for key in ('q1_pair_layout','register_layout'):
-                changed=copy.deepcopy(result)
-                changed['opt_static_passes'][0][key]=changed['opt_static_passes'][0].pop('q1_register_layout')
-                with self.assertRaises(AssertionError):
-                    outer['validate_artifacts'](directory,changed)
+            self.assertEqual(matrix_calls, [True])
+            first = result['baseline_static_passes'][0]
+            self.assertTrue(first['arm'].startswith('baseline-static/'))
+            def rejected(changed):
+                with self.assertRaises((AssertionError, FileNotFoundError)):
+                    outer['validate_artifacts'](directory, changed)
             changed=copy.deepcopy(result)
-            changed['opt_static_passes'][0]['q1_register_layout']['rows'][8]['max_load_bytes']=256
-            with self.assertRaises(AssertionError):
-                outer['validate_artifacts'](directory,changed)
-
+            changed['baseline_static_passes'][0]['artifacts'][0]['sha256']='0'*64
+            rejected(changed)
+            changed=copy.deepcopy(result)
+            changed['baseline_static_passes'][0]['resources'][0]['resources']='changed log'
+            rejected(changed)
+            for unsafe in ('../outside.ptx', '/tmp/outside.ptx',
+                           first['arm']+'/missing.ptx',
+                           first['arm']+'/fixture.cubin'):
+                changed=copy.deepcopy(result)
+                changed['baseline_static_passes'][0]['artifacts'][0]['path']=unsafe
+                rejected(changed)
+            path=directory/first['artifacts'][0]['path']; original_bytes=path.read_bytes()
+            path.write_bytes(b'tampered fixture')
+            rejected(result)
+            path.write_bytes(original_bytes)
+            log=(directory/first['resources'][0]['path']).with_suffix('.resources.log')
+            log.write_text('tampered resource log')
+            rejected(result)
+            log.write_text(resources)
+            extra=directory/'unclaimed.ptx';extra.write_bytes(b'extra compiler output')
+            rejected(result)
+            extra.unlink()
+            outer['validate_artifacts'](directory,result)
 
 if __name__ == '__main__':
     unittest.main()

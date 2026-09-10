@@ -413,7 +413,7 @@ def native_actual_specialization(kernel,args,key,rows,mode,e,n,cutlass):
     low = rows <= 8
     assert kernel.a_ring is low and kernel.word_unpack is low and kernel.scatter_bf16 is low
     assert args[21].element_type == (cutlass.BFloat16 if low else cutlass.Float32)
-    assert json.loads(json.dumps(key)) == expected_native_key(rows,mode,e,n)
+    assert json.loads(json.dumps(key,default=str)) == expected_native_key(rows,mode,e,n)
     return expected
 
 
@@ -512,7 +512,7 @@ def compile_candidate(output, result):
                 if e == 72:
                     prior = next(p for p in old['global_static_passes']
                                  if p['arm']=='global-static/'+name)
-                    assert json.loads(json.dumps(key)) == prior['cache_key']
+                    assert json.loads(json.dumps(key,default=str)) == prior['cache_key']
             else:
                 seen=[]
                 real_compile=cute.compile
@@ -540,7 +540,7 @@ def compile_candidate(output, result):
                 estimated_shared=kernel_smem_capacity=None
                 if e == 72:
                     prior=next(p for p in old['dynamic_passes'] if p['arm']=='dynamic/M8192')
-                    assert json.loads(json.dumps(key)) == prior['cache_key']
+                    assert json.loads(json.dumps(key,default=str)) == prior['cache_key']
             passed=preserve_pass(output,kind.replace('_','-')+'/'+name,key)
             passed.update(compiled_in_this_run=True,candidate=e==144,specialization=selected,
                           resource_summary=compiler_resource_summary(passed,estimated_shared,kernel_smem_capacity))
@@ -549,7 +549,7 @@ def compile_candidate(output, result):
     result.update(fresh_lowerings=8,same_source_baseline_lowerings=3,hybrid_lowerings=5,
                   cuda_initialized=torch.cuda.is_initialized())
     assert result['cuda_initialized'] is False
-    validate_compile_matrix(json.loads(json.dumps(result)))
+    validate_compile_matrix(json.loads(json.dumps(result,default=str)))
     assert scatter_helper_receipt(root,fp4_common.__file__) == result['scatter_helper']
 
 
@@ -619,7 +619,7 @@ def main():
             assert result['contracts'] == dict(tests_run=EXPECTED_CPU_TESTS,failures=0,errors=0,skips=0)
             result['contracts_process_isolated'] = True
             assert scatter_helper_receipt(root,result['scatter_helper']['path']) == result['scatter_helper']
-            validate_compile_matrix(json.loads(json.dumps(result)))
+            validate_compile_matrix(json.loads(json.dumps(result,default=str)))
         import torch
         assert not torch.cuda.is_initialized()
         assert source_receipt(root,verify_mounted=True)==sources
