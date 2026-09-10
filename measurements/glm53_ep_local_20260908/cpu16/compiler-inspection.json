@@ -1,0 +1,179 @@
+{
+  "source_revision": "111fff02f66f3e07a8332da1117afb75b161f0d6",
+  "verdict": "PASS",
+  "started_kst": "2026-09-08T22:04:28.712751+09:00",
+  "ended_kst": "2026-09-08T22:04:46.506080+09:00",
+  "tests": {
+    "tests_run": 134,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "cuda_initialized": false,
+  "binding_runtime_rechecked": true,
+  "runtime": {
+    "schema": 1,
+    "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+    "binding_identity": {
+      "version": "13.0.3",
+      "root": "/opt/glm53-bindings-capsule",
+      "modules": {
+        "cuda.bindings.driver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+        },
+        "cuda.bindings._bindings.cydriver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+        }
+      },
+      "distributions": {
+        "cuda-bindings": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+          "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+        },
+        "cuda-python": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+          "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+        }
+      }
+    },
+    "pathfinder": {
+      "version": "1.7.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+      "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+      "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+      "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+    }
+  },
+  "original_files_verified": 58,
+  "source_binding": {
+    "mounted_files": 13,
+    "contract_files": 27,
+    "all_match_frozen_commit": true,
+    "current_validator_passed": true
+  },
+  "compiler": {
+    "cpu14": {
+      "ptx_bytes": 939211,
+      "cubin_bytes": 288664,
+      "resources": {
+        "REG": 168,
+        "STACK": 112,
+        "SHARED": 1024,
+        "LOCAL": 0
+      }
+    },
+    "cpu16": {
+      "ptx_bytes": 964424,
+      "cubin_bytes": 300032,
+      "resources": {
+        "REG": 168,
+        "STACK": 112,
+        "SHARED": 1024,
+        "LOCAL": 0
+      }
+    }
+  },
+  "remap": [
+    {
+      "label": "mapped-i32-fp32-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i32-fp32-i64",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i32-fp16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i32-fp16-i64",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i32-bf16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i32-bf16-i64",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i64-fp32-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i64-fp32-i64",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i64-fp16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i64-fp16-i64",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i64-bf16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "mapped-i64-bf16-i64",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "empty-i32-fp32-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "empty-i32-fp16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "empty-i32-bf16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "empty-i64-fp32-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "empty-i64-fp16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "empty-i64-bf16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "offset-i32-fp32-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "offset-i32-fp16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "offset-i32-bf16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "offset-i64-fp32-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "offset-i64-fp16-i32",
+      "ptx_equal_cpu14": true
+    },
+    {
+      "label": "offset-i64-bf16-i32",
+      "ptx_equal_cpu14": true
+    }
+  ],
+  "scope": "No-device compilation and CPU contracts; not GPU numerics/sanitizers/performance"
+}

@@ -1,0 +1,101 @@
+{
+  "absent": [
+    "/tmp/leg.457771",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS24B1.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS24A.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS24B2.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS24B3.log"
+  ],
+  "cancellation_absent": {
+    "cancel-request.json": true,
+    "failfast-first-fixed-A": true,
+    "failfast-first-fixed-A0": true
+  },
+  "captured_at": 1788929780.649577,
+  "files": {
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS24A0.log": {
+      "bytes": 225581,
+      "mtime_ns": 1788929250643317141,
+      "sha256": "e440e31b7988caff9dcf2e0ef1a5378232ce5079aa7467b99bd6ac86ec3db70f"
+    },
+    "/home/choiceoh/glm53-logs/fleet/run-logs/b7faec2bc52ee6533d85aca96a99a57430d74039fdd05d890aebc1e11fd45d78.log": {
+      "bytes": 4067,
+      "mtime_ns": 1788929251081721748,
+      "sha256": "d833dd45e70982e289c49b3bf993018a40abc6d41871e35360615f790ffd4cd3"
+    },
+    "/tmp/glm53-ep-onepass-0909-24/onepass.jsonl": {
+      "bytes": 52601,
+      "mtime_ns": 1788929250601721083,
+      "sha256": "d374cadb7207f17408fc1f295e6d74886a1913e978ced5d5f04f52699a08639f"
+    },
+    "/tmp/glm53-ep-onepass-0909-24/submission.json": {
+      "bytes": 3370,
+      "mtime_ns": 1788928524532797976,
+      "sha256": "8259745201e6aa4d61a8336575ae4cd55efb0678ca74a9eb404d00ac2a3fabd0"
+    },
+    "/tmp/glm53-ep-onepass-0909-24/submit.exit.json": {
+      "bytes": 44,
+      "mtime_ns": 1788928530954770534,
+      "sha256": "716540da4f6f7e4f049362aa20a0986ef47eb5f2580259f8951a8b58a4b42387"
+    },
+    "/tmp/glm53-ep-onepass-0909-24/submit.stderr": {
+      "bytes": 0,
+      "mtime_ns": 1788928530954628022,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "/tmp/glm53-ep-onepass-0909-24/submit.stdout": {
+      "bytes": 480,
+      "mtime_ns": 1788928530954628022,
+      "sha256": "f6b7da814985823df4d27555c01a328d19873e133908004133665fe4f22e0811"
+    },
+    "/tmp/glm53-ep-onepass-0909-24/verdicts.jsonl": {
+      "bytes": 514,
+      "mtime_ns": 1788929250778429152,
+      "sha256": "9666a5ffa988ea401d2de3930f118d7f10ac0c7345f5eb98fc51857a4aa0f1e0"
+    }
+  },
+  "fleet_after": {
+    "finished_at": 1788929251.2846737,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/b7faec2bc52ee6533d85aca96a99a57430d74039fdd05d890aebc1e11fd45d78.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788929250.8791552,
+    "payload_returncode": 4,
+    "payload_seconds": 667.5,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 4,
+    "session": "eplocalonepass0909v24",
+    "started_at": 1788928583.4184806,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "1788928530449824"
+  },
+  "fleet_before": {
+    "finished_at": 1788929251.2846737,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/b7faec2bc52ee6533d85aca96a99a57430d74039fdd05d890aebc1e11fd45d78.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788929250.8791552,
+    "payload_returncode": 4,
+    "payload_seconds": 667.5,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 4,
+    "session": "eplocalonepass0909v24",
+    "started_at": 1788928583.4184806,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "1788928530449824"
+  },
+  "own_holder_after": false,
+  "own_holder_before": false,
+  "source_after": {
+    "head": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+    "status": ""
+  },
+  "source_before": {
+    "head": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+    "status": ""
+  }
+}

@@ -3,6 +3,11 @@
 **TP=4 DGX Spark GB10 MoE 서빙 스택** — 4× NVIDIA DGX Spark (GB10, sm_121a, 48 SM),
 CRS812 스위치드 패브릭, vLLM eldritch/b12x 포크 이미지.
 
+GLM-5.3-Flash는 EP4 MoE와 SF6·입력 준비 최적화를 기본으로 사용한다.
+고정1024토큰 ×3 합산 **72.63 tok/s**로 사용자 지정67 목표를 통과했다.
+TP 기준선80.49 tok/s와의 차이 및 프리필 비교 제한은
+[EP 기본값 문서](docs/GLM53_EP_TILED.md)에 기록했다. Attention은 TP4다.
+
 베이스 이미지는 서드파티라 소스 트리가 없다. 이 리포는 그 이미지를 **재빌드 없이**
 개선하기 위한 스택이다 — 파이썬 파일을 `site-packages` 위에 read-only 바인드
 마운트하는 오버레이 방식이며, 모든 수정부에 `# deneb fork:` 마커가 있다.

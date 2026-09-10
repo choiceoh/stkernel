@@ -1,0 +1,66 @@
+{
+  "all_four_content_match": true,
+  "arm_container_proof": false,
+  "new_revision": "cbf1c7916247f946167c15ff74d92261588e8cea",
+  "new_validation_sha256": "a9d23a2be6d485d4af2478f52a4e80d56567797442644047740a56b6e246145a",
+  "nodes": {
+    "10.10.10.1": {
+      "content_match": true,
+      "difference_count": 0,
+      "differences": [],
+      "new_receipt_sha256": "ede19969c2078a4d71338c6a22707fd7d95dd009a520ce79a46e9a49c5e816c2",
+      "new_within_boot_pointers_preserved": true,
+      "old_receipt_sha256": "d0704427e8af6abfa606d950065b0aff6cd59051dd2d73ebf1e312b4fc1fa8fa",
+      "serving_runtime_versions_equal": true,
+      "source_roles_different": [
+        "dispatch"
+      ],
+      "tensor_identities_compared": 64
+    },
+    "10.10.10.3": {
+      "content_match": true,
+      "difference_count": 0,
+      "differences": [],
+      "new_receipt_sha256": "511e4504bed22a7e86019226b5b82ae7356139c3d1fe96ffc4d8e51add0759fb",
+      "new_within_boot_pointers_preserved": true,
+      "old_receipt_sha256": "fdae2bf7c6dfa979125ccd0d13513604f7ba1f818b9c713197164f847e9a40fe",
+      "serving_runtime_versions_equal": true,
+      "source_roles_different": [
+        "dispatch"
+      ],
+      "tensor_identities_compared": 64
+    },
+    "10.10.10.4": {
+      "content_match": true,
+      "difference_count": 0,
+      "differences": [],
+      "new_receipt_sha256": "c8a816ae9672f2da47fa786a29fcaeb21e1cccf390db8a56d5620cf940b8f101",
+      "new_within_boot_pointers_preserved": true,
+      "old_receipt_sha256": "0e2792d04d10d5a80bbcdef56679cb803310458f0619ca9e275c59b2f305714f",
+      "serving_runtime_versions_equal": true,
+      "source_roles_different": [
+        "dispatch"
+      ],
+      "tensor_identities_compared": 64
+    },
+    "local": {
+      "content_match": true,
+      "difference_count": 0,
+      "differences": [],
+      "new_receipt_sha256": "05af10f9ec4c3cc5d0f3cdedd433ae1613323deb9d3a1254b3caa2dd43364139",
+      "new_within_boot_pointers_preserved": true,
+      "old_receipt_sha256": "70ba9d00a89506b2503d9027ba5b36c4e6fe7a921eea4354c2e90aef9a75eb86",
+      "serving_runtime_versions_equal": true,
+      "source_roles_different": [
+        "dispatch"
+      ],
+      "tensor_identities_compared": 64
+    }
+  },
+  "old_revision": "028f98167376f0a0857c20c7ec89a3505c1a000f",
+  "old_validation_sha256": "f2a895bb0b8805ca6fa0a561b5d52febc1f5aa6661b1a4d1e763ea2c79e0175c",
+  "performance_acceptance": false,
+  "schema": 1,
+  "scope": "Same-rank real TP weight/input dtype+shape+SHA only. Source revisions differ; cross-boot pointers may differ. No EP/onepass9 comparison, no new model execution.",
+  "verdict": "MATCH_SAME_RANK_TP_CONTENT"
+}

@@ -1,0 +1,15 @@
+fleet: HELD by arconsumer0908v12b [boot] (pid 2743161@srv2, since 18:59, est 70m, Correct T12 warmup to T6 vector capture then RDMA and C1 B/A/B)
+legacy: 1 bench/boot procs, 0 requests in flight
+queue (2):
+  1. vllmprs0908c [boot] (since 18:48, est 45m, expect ~45m, ETA ~20:10) 40차 PR #477 3차: block 승격 + gumbel salt + spec-state 가드(리뷰 수정 반영), prep-fused 무장 유지 확인, KDA strided 관문
+  2. epbindinggpu0908v5 [boot] (since 18:59, est 6m, expect ~6m, ETA ~20:55) Post-context binding only: CPU11 63-test source, stopped lifecycle, exact incoming restore
+  marker 18:59 FLEET-held-by-arconsumer0908v12b.done
+  marker 11:08 FLEET-held-by-alignprod.done
+log:
+  2026-09-08_18:59:10   kept /home/choiceoh/glm53-logs/boot-arprodrestore0908v2RESTORE.log
+  2026-09-08_18:59:10 release attr2-0908
+  2026-09-08_18:59:14 GO arconsumer0908v12b (pid 2743161)
+  2026-09-08_18:59:22 request epbindinggpu0908v5 est=6m Post-context binding only: CPU11 63-test source, stopped lifecycle, exact incoming restore [boot]
+production: no serving container
+deployed: 75747750c872
+baseline: NONE for build 4a2c960 -- a defaults arm is worth its boot

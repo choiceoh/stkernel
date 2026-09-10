@@ -1,0 +1,26 @@
+{
+  "alive": false,
+  "events": [
+    {
+      "at": 1788911727.961632,
+      "kind": "stream_end",
+      "local_at": 1788911727.906487,
+      "reason": "release_or_terminal"
+    },
+    {
+      "kind": "observer_stop",
+      "local_at": 1788911729.516474,
+      "reason": "terminal_or_release"
+    },
+    {
+      "attempted_arms": [
+        "B1"
+      ],
+      "kind": "observer_finished",
+      "local_at": 1788911729.5167842,
+      "owned_go_seen": true
+    }
+  ],
+  "observer_pid": 1677,
+  "scope": "Every original chunk hash/offset checked; streams span B1 and candidate startup."
+}

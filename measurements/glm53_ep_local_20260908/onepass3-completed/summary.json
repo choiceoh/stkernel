@@ -1,0 +1,175 @@
+{
+  "arms": {
+    "EPONEPASS3A": {
+      "boot_id": "44c1e7ef7f3bef466a669d61edcafd723b08563bb975c50410da1830c84e02cc|2026-09-08T17:44:48.141115195Z",
+      "cold_compile": null,
+      "decode": {
+        "acc_raw": 0.4996805111821086,
+        "num_spec": 5.0,
+        "tokens_per_step": 3.498402555910543,
+        "windows_med": 6.961514855899926
+      },
+      "git": "ac2f1883",
+      "korean": {
+        "dirty": 0,
+        "hits": [],
+        "kinds": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "n": 5
+      },
+      "overlay": "7c4c8ce88b69",
+      "quality": {
+        "ok": 9,
+        "total": 9
+      },
+      "requests": [
+        {
+          "completion_tokens": 400,
+          "ctx": 2000,
+          "decode_tok_s": 23.54621702235819,
+          "finish_reason": "length",
+          "prefill_tok_s": 103.60984847970515,
+          "prompt_tokens": 2121,
+          "ttft_s": 20.471026945044287
+        },
+        {
+          "completion_tokens": 400,
+          "ctx": 2000,
+          "decode_tok_s": 26.521514595454335,
+          "finish_reason": "length",
+          "prefill_tok_s": 2227.916904448401,
+          "prompt_tokens": 2128,
+          "ttft_s": 0.95515231997706
+        },
+        {
+          "completion_tokens": 400,
+          "ctx": 2000,
+          "decode_tok_s": 28.05769996488548,
+          "finish_reason": "length",
+          "prefill_tok_s": 413.15235673964224,
+          "prompt_tokens": 2128,
+          "ttft_s": 5.150642287975643
+        },
+        {
+          "completion_tokens": 1200,
+          "ctx": 32000,
+          "decode_tok_s": 25.85232166830412,
+          "finish_reason": "length",
+          "prefill_tok_s": 1035.1001608345857,
+          "prompt_tokens": 32545,
+          "ttft_s": 31.441401741991285
+        },
+        {
+          "completion_tokens": 883,
+          "ctx": 128000,
+          "decode_tok_s": 25.50630501505099,
+          "finish_reason": "stop",
+          "prefill_tok_s": 3503.672433091449,
+          "prompt_tokens": 128559,
+          "ttft_s": 36.69264249299886
+        }
+      ],
+      "traffic_issues": []
+    },
+    "EPONEPASS3B1": {
+      "boot_id": "6475ff5d847f518e2fc7e1c7f5b4c3428c008ad93edde1f59ec2e20829ee0e8a|2026-09-08T17:33:34.679602364Z",
+      "cold_compile": null,
+      "decode": {
+        "acc_raw": 0.4545045045045045,
+        "num_spec": 5.0,
+        "tokens_per_step": 3.2725225225225225,
+        "windows_med": 22.803652301247638
+      },
+      "git": "ac2f1883",
+      "korean": {
+        "dirty": 0,
+        "hits": [],
+        "kinds": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "n": 5
+      },
+      "overlay": "7c4c8ce88b69",
+      "quality": {
+        "ok": 9,
+        "total": 9
+      },
+      "requests": [
+        {
+          "completion_tokens": 400,
+          "ctx": 2000,
+          "decode_tok_s": 75.63548680130187,
+          "finish_reason": "length",
+          "prefill_tok_s": 881.0578166035549,
+          "prompt_tokens": 2121,
+          "ttft_s": 2.407333503011614
+        },
+        {
+          "completion_tokens": 400,
+          "ctx": 2000,
+          "decode_tok_s": 83.79416012117879,
+          "finish_reason": "length",
+          "prefill_tok_s": 2494.1825566086586,
+          "prompt_tokens": 2128,
+          "ttft_s": 0.8531853429740295
+        },
+        {
+          "completion_tokens": 400,
+          "ctx": 2000,
+          "decode_tok_s": 79.94531314184911,
+          "finish_reason": "length",
+          "prefill_tok_s": 2505.1608844207185,
+          "prompt_tokens": 2128,
+          "ttft_s": 0.8494464420364238
+        },
+        {
+          "completion_tokens": 934,
+          "ctx": 32000,
+          "decode_tok_s": 69.19991170289212,
+          "finish_reason": "stop",
+          "prefill_tok_s": 3004.911457841496,
+          "prompt_tokens": 32545,
+          "ttft_s": 10.830601984984241
+        },
+        {
+          "completion_tokens": 774,
+          "ctx": 128000,
+          "decode_tok_s": 70.34222071230244,
+          "finish_reason": "stop",
+          "prefill_tok_s": 3088.2136072483227,
+          "prompt_tokens": 128559,
+          "ttft_s": 41.628920906980056
+        }
+      ],
+      "traffic_issues": []
+    }
+  },
+  "b2_executed": false,
+  "full_model_acceptance": false,
+  "provisional_ratios": {
+    "128000": {
+      "prefill_throughput_change_pct": 13.453046928748913,
+      "scope": "one request per arm, B2 absent; descriptive only",
+      "ttft_reduction_pct": 11.857810162822446
+    },
+    "32000": {
+      "prefill_throughput_change_pct": -65.55305620957881,
+      "scope": "one request per arm, B2 absent; descriptive only",
+      "ttft_reduction_pct": -190.3015158860261
+    }
+  },
+  "source": {
+    "clean": true,
+    "path": "/home/choiceoh/stkernel-ep-onepass-0909-2",
+    "revision": "ac2f188392bc76f1194f8eee7be9b0dfbec346f5"
+  },
+  "speedup_verdict": null,
+  "terminal_outcome": "invalid / UNPROVED; exit 4"
+}

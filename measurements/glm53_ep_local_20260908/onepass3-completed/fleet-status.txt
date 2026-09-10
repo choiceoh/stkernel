@@ -1,0 +1,15 @@
+fleet: HELD by validate0909c [boot] (pid 1536004@srv2, since 02:56, est 55m, 40차: KDA_STRIDED 기본값 서빙 마커 + ROUTER_CUBLAS/fly 두 팔 onepass)
+legacy: 2 bench/boot procs, 0 requests in flight, head booting
+queue (1):
+  1. decode-next-0909v5 [boot] (since 02:54, est 70m, expect ~70m, ETA ~03:51) PR498 same A/B KV1.1m 665 blocks; MHC large FP32 fallback; onepass 3x2048
+  marker 02:56 FLEET-held-by-validate0909c.done
+  marker 11:08 FLEET-held-by-alignprod.done
+log:
+  2026-09-09_02:53:21   kept /home/choiceoh/glm53-logs/boot-EPONEPASS3B1.log
+  2026-09-09_02:53:21 release eplocalonepass0909v3a
+  2026-09-09_02:54:43 request decode-next-0909v5 est=70m PR498 same A/B KV1.1m 665 blocks; MHC large FP32 fallback; onepass 3x2048 [boot]
+  2026-09-09_02:56:48 GO validate0909c (pid 1536004)
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "d92c4b485bb54a888bca8466714de506", "phase": "waiting", "reason": "holder active", "since": 392656.365254681, "updated_at": 1788890263.4281678, "version": 1}
+production: NOT defaults: VLLM_GLM53_KDA_STRIDED=1,VLLM_GLM53_REJECT_METHOD=block (health 000)
+deployed: 2e9155e3fd8a
+baseline: NONE for build ac2f1883 -- a defaults arm is worth its boot

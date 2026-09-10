@@ -1,0 +1,13 @@
+{
+  "path": "/home/choiceoh/stkernel",
+  "revision": "4a2c960ad632596ca3224ead88da43160012d393",
+  "approved_fixes": [
+    "d95a2cdb46f2446bd4b58f7d5969b42c895f0b3d",
+    "4a2c960ad632596ca3224ead88da43160012d393"
+  ],
+  "approved_main_verified": true,
+  "captured": 1788861561.4812076,
+  "queue": "17888609062750676|vllmprs0908c|1788860906|45|40\ucc28 PR #477 3\ucc28: block \uc2b9\uaca9 + gumbel salt + spec-state \uac00\ub4dc(\ub9ac\ubdf0 \uc218\uc815 \ubc18\uc601), prep-fused \ubb34\uc7a5 \uc720\uc9c0 \ud655\uc778, KDA strided \uad00\ubb38|boot|2750676\n",
+  "holder": "arconsumer0908v12b|2743161|srv2|1788861554|70|Correct T12 warmup to T6 vector capture then RDMA and C1 B/A/B|boot\n",
+  "restore_debt": "{\"acquired\": 1788861554.7720418, \"owner\": {\"host\": \"srv2\", \"pid\": 2743161, \"protocol\": 2, \"session\": \"arconsumer0908v12b\", \"start\": \"36326119\"}}\n"
+}

@@ -1,0 +1,9 @@
+# CPU24: completed srv1 no-device compile receipt via head fleet
+
+This archive was collected after the normal `fleet --cpu` command returned0. Frozen source `82ac3c34173ae63b3dd0a42c49f8421097e96a1a`, the exact bounded runc/network-none/4GiB/2CPU launcher, immutable image, capsule manifest, actual contracts/mounted sources and original evidence file hashes were checked before and after transfer. Both head and srv1 sources have full independent history and no alternates. The exact normal head fleet command invokes the bounded runner through srv1 SSH; payload and result-copy return codes must both be zero. The srv1 evidence inventory, capsule, image and source bytes must agree with the head copy before and after transfer. The result must contain 165 CPU tests with zero failures/errors/skips and CUDA uninitialized.
+
+The original tar retains every PTX, cubin, resource log and result byte. Its safe regular-file inventory must exactly equal both head and srv1 snapshots, and the frozen pure artifact validator checks all descriptor hashes, resource strings and the complete compiled artifact set. Source bytes also match local immutable git objects. This is compilation/CPU proof only; it does not establish serving canary, sanitizer, throughput or default adoption. The CPU uses the isolated13.0.3 bindings capsule; production13.3.1 binary identity is not asserted.
+
+No compilation, GPU execution, HTTP request, queue change or service change is performed by collection. Logs and frozen Python snapshots use deterministic gzip; original/stored hashes are preserved.
+
+Compared with CPU23, the TP stock and TP Q0 candidate each retain byte-identical PTX, cubin and resource logs (6/6 files), with identical TP artifact/cache descriptors. This comparison does not claim equality for other kernels or establish a serving speed result. See `comparison-to-cpu23-tp-only.json`.

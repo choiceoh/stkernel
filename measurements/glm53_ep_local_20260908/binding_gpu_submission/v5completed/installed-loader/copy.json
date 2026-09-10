@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-08T20:02:32.529414+09:00",
+  "container_id": "ff7e2b840b408c524e35ae84bc67aa125f26fcf6dd61e2edb5e62b06b0bb652e",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "container_path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+  "read_only_copy": true,
+  "exit_code": 0,
+  "stderr": "",
+  "sha256": "6ae437b694ad31accb9cd8745fa5dd9e52e11af045e0da683966be7b3341e67e",
+  "size": 533024
+}

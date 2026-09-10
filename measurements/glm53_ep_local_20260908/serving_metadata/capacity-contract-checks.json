@@ -1,0 +1,19 @@
+{
+  "scope": "Pure configured capacity/EP/graph replay checks; no serving or GPU execution",
+  "tests": {
+    "new_contract": 12,
+    "existing_parser": 8,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "log_sha256": "8938fc6ccc1de4d0b6f600ca6e60e947e9b5ed16793d992228022a9812a36592",
+  "files": {
+    "bench/glm53_ep_serving_contract.py": "cd6be647a87c8819e7ffba29262530f4195e173ec88e55df459cf2b4e4c030b7",
+    "tests/test_glm53_ep_serving_contract.py": "d72b5a4bb6e242209b15d231a94dd840d1f51caeff99c31c5c0b4f34cf1b3db1",
+    "bench/glm53_launch_metadata.py": "73f6f25a54733d69fb12c72f32795cb566c26c15204cd0f907d6cdf7b8504393",
+    "launchers/start-glm53-nvfp4-tp4.sh": "a8a3af9b1d27a02bb3fc7a511f3ef5ce79f858e2b1b254d76ef01404af3b37ca",
+    "launchers/lib/common-tp4.sh": "9ab4ee998f16c3c07ab170bb4c4893d9967c471e74c48771810c0acc5ed1f142"
+  },
+  "review_fix": "Preserve exact COMPILE_CFG and require original public four-rank capacity, not merely agreement of all newly booted arms. Actual launcher axis transformation is tested. Non-preservable configurations are rejected."
+}

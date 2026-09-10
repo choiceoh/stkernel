@@ -1,0 +1,8 @@
+{
+  "revision": "7a16fc51587a2be4765a268b0ff52977c460906c",
+  "source_log": "/tmp/glm53-ep-local-review-logic-0908.log",
+  "uncompressed_bytes": 5235,
+  "uncompressed_sha256": "cc6b6161b213ffe1085bf078b3671977cdf24eedd5c2dc8a85522ee6d70e6ca8",
+  "result": "all OK (6783 checks; 38 megakernel regressions; 120 fleet regressions)",
+  "host_tensor_skips_are_not_passes": true
+}

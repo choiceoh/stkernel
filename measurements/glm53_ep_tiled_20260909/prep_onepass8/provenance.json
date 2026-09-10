@@ -1,0 +1,472 @@
+{
+  "B_prefill_audit_scope": "Head-only completed log review collected during following A boot; exact B log hash and canonical B-prefix checked against terminal originals. No raw Docker/Env/Cmd included.",
+  "archive_script_sha256": "b3ffac147d6a3111bebc165158a670373d9022b037330b114db97a168cec424b",
+  "collector_sha256": "6120efc41c93afe1d3d314c784565030b6af77fe9ccef96e1af03d0648dfe08f",
+  "files": {
+    "A-canary/10.10.10.1.PASS.json.gz": {
+      "capture_kind": "ready",
+      "log_original_sha256": "c3fc2be1827c0d36d115d31c6da82ed5649f8ef1fdd821468a190bdfce41ce53",
+      "marker_line_sha256": "1ed4a849a67db7472bfc4fcecd57e7d574a12e8549289e1f0d89f79b735983a7",
+      "scope": "Exact original JSON substring; first eligible layer only"
+    },
+    "A-canary/10.10.10.3.PASS.json.gz": {
+      "capture_kind": "ready",
+      "log_original_sha256": "1a4ed0f0ce9c7129d920d65041372f2c3e26e23a0b9b83b1f8c345d279a7e1ea",
+      "marker_line_sha256": "b14e13f6bb294da20ad51cce4d53b1948868c1cdf50590c41a38cbb78a31efc3",
+      "scope": "Exact original JSON substring; first eligible layer only"
+    },
+    "A-canary/10.10.10.4.PASS.json.gz": {
+      "capture_kind": "ready",
+      "log_original_sha256": "679dee3d8872b6148a0c3d2c4c5c7ed2cf7adc2d174aa4dcbcbac3b8ae8a53fd",
+      "marker_line_sha256": "f89ef19330e5e14a694a06d24159617c8eb34e467a4b27d7328efc99988f25ae",
+      "scope": "Exact original JSON substring; first eligible layer only"
+    },
+    "A-canary/local.PASS.json.gz": {
+      "capture_kind": "ready",
+      "log_original_sha256": "24e5419ba222c36d6cbae39521bc4709c2d5daa9314afd66b2cbb285852a5afa",
+      "marker_line_sha256": "b339e6189ba8a9ea28858c9c6e797b894ea4c46e47f01ca6102441bb5194ea9c",
+      "scope": "Exact original JSON substring; first eligible layer only"
+    },
+    "boot/boot-EPTILEDPREP8A.log.gz": {
+      "original": {
+        "bytes": 262530,
+        "device": 66306,
+        "inode": 163351640,
+        "mtime_ns": 1789000703294739558,
+        "sha256": "38466a543390831229a5a7f3682d836b2644b4d15c7dc0c0dd4b3c3756982da6"
+      },
+      "path": "/home/choiceoh/glm53-logs/boot-EPTILEDPREP8A.log",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 36543,
+        "sha256": "393eef5881d20b713222680681321be8e15ec3850ce27eeca7a49e66d792f374"
+      }
+    },
+    "boot/boot-EPTILEDPREP8B.log.gz": {
+      "original": {
+        "bytes": 243475,
+        "device": 66306,
+        "inode": 163351637,
+        "mtime_ns": 1789000268036551163,
+        "sha256": "ce4ef4c0e3b33dd1efe7bb9a2e5ee3d2c4fdfda5106b65bb67789e6e21ce0e5f"
+      },
+      "path": "/home/choiceoh/glm53-logs/boot-EPTILEDPREP8B.log",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 29792,
+        "sha256": "96fceafad0321c80784e7eb033b665453e265fe3f8279e3f6b96536be5869631"
+      }
+    },
+    "fleet/run.log.gz": {
+      "original": {
+        "bytes": 10048,
+        "device": 66306,
+        "inode": 170952751,
+        "mtime_ns": 1789000703778491862,
+        "sha256": "0a27d0b8842e5389b62976a490fadddfc63d0b91c24ccffc9e6eeb46ebeb17a7"
+      },
+      "path": "/home/choiceoh/glm53-logs/fleet/run-logs/697e2dbe8d664fe4cce1c45e2629a9255528f8b743a41496bc0ce31eb7153d2b.log",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 2103,
+        "sha256": "fce9f0ab77727d6a0f502da13563e4acd18bf6a605cfe83940f16c0c9e5851ec"
+      }
+    },
+    "job/onepass.jsonl.gz": {
+      "original": {
+        "bytes": 121024,
+        "device": 66306,
+        "inode": 130556598,
+        "mtime_ns": 1789000703260314466,
+        "sha256": "7e49e9d810105d541ad7256596d8774d486162051d3430c072a4d4dec50ecbe8"
+      },
+      "path": "/tmp/glm53-ep-prep-onepass-0910-8/onepass.jsonl",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 40493,
+        "sha256": "f71b858be2540cd67afde46b4e9d9efb3adb6155263a69a22b2c969b40c6f6b6"
+      }
+    },
+    "job/submission.json.gz": {
+      "original": {
+        "bytes": 3371,
+        "device": 66306,
+        "inode": 130556571,
+        "mtime_ns": 1788999282947036764,
+        "sha256": "196820b5f55eaba14ea16582e6810004a3ed54919ae9043985b247bdfc65763e"
+      },
+      "path": "/tmp/glm53-ep-prep-onepass-0910-8/submission.json",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 1533,
+        "sha256": "17d353728ef5a8c0f02c725ef271da8cee6ede07b65c1ac1b4c8ce9382223d81"
+      }
+    },
+    "job/verdicts.jsonl.gz": {
+      "original": {
+        "bytes": 1052,
+        "device": 66306,
+        "inode": 130556572,
+        "mtime_ns": 1789000703467314781,
+        "sha256": "485f3fa97e4507745ef25b6b2681e1ccd3b518893749c8b2961714b39ce82ee0"
+      },
+      "path": "/tmp/glm53-ep-prep-onepass-0910-8/verdicts.jsonl",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 374,
+        "sha256": "9ac9385664dd537cfa5fabc53d382a5a41390b613a293f534dd8f5fbf47ba0ed"
+      }
+    },
+    "observer/events.jsonl.gz": {
+      "original": {
+        "bytes": 8742,
+        "sha256": "117b4ddd8bd9930b06b863416d698d222dcaf650786fbf722867520cc8e5f116"
+      },
+      "path": "/tmp/glm53-ep-prep-onepass8-streams/events.jsonl",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 2180,
+        "sha256": "9fbe5847455546cc934a0d49eac82369271bb416cecb582aec674a2ee9391f30"
+      }
+    },
+    "snapshot-0/10.10.10.1.docker.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/10.10.10.1.docker.log.gz",
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-0/10.10.10.1.manifest.tsv.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/10.10.10.1.manifest.tsv.gz",
+      "stored_sha256": "69102ed1ade93166e25baa2973dc49e9e9bb14c72247afb77b873d8759e6fa75"
+    },
+    "snapshot-0/10.10.10.1.serving.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/10.10.10.1.serving.log.gz",
+      "stored_sha256": "ba1b0e2654c88209c5e656cb5726d6937f5255e104f5713a3867ee7b7ad6386b"
+    },
+    "snapshot-0/10.10.10.3.docker.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/10.10.10.3.docker.log.gz",
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-0/10.10.10.3.manifest.tsv.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/10.10.10.3.manifest.tsv.gz",
+      "stored_sha256": "69102ed1ade93166e25baa2973dc49e9e9bb14c72247afb77b873d8759e6fa75"
+    },
+    "snapshot-0/10.10.10.3.serving.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/10.10.10.3.serving.log.gz",
+      "stored_sha256": "bb3a7b32f05a881379ab7ea13e3611707e0efceeaa0f34f1d004c4b4042e3919"
+    },
+    "snapshot-0/10.10.10.4.docker.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/10.10.10.4.docker.log.gz",
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-0/10.10.10.4.manifest.tsv.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/10.10.10.4.manifest.tsv.gz",
+      "stored_sha256": "69102ed1ade93166e25baa2973dc49e9e9bb14c72247afb77b873d8759e6fa75"
+    },
+    "snapshot-0/10.10.10.4.serving.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/10.10.10.4.serving.log.gz",
+      "stored_sha256": "6e84fb0b29611e1865638177da1ffa0af217871405bb9fa1d9e373b30cbcf32f"
+    },
+    "snapshot-0/local.docker.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/local.docker.log.gz",
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-0/local.manifest.tsv.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/local.manifest.tsv.gz",
+      "stored_sha256": "69102ed1ade93166e25baa2973dc49e9e9bb14c72247afb77b873d8759e6fa75"
+    },
+    "snapshot-0/local.serving.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-B-ready-9fc60c53bfed/local.serving.log.gz",
+      "stored_sha256": "8070b59fa302ee9fd6d3246ad40cc04243f8d09b55ad728f5236f30b5c2808cc"
+    },
+    "snapshot-1/10.10.10.1.docker.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/10.10.10.1.docker.log.gz",
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-1/10.10.10.1.manifest.tsv.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/10.10.10.1.manifest.tsv.gz",
+      "stored_sha256": "69102ed1ade93166e25baa2973dc49e9e9bb14c72247afb77b873d8759e6fa75"
+    },
+    "snapshot-1/10.10.10.1.serving.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/10.10.10.1.serving.log.gz",
+      "stored_sha256": "c34b1c3a1f6b1e48a82166c4c956a1e6dad116b80454ca350da0c1d743162c6a"
+    },
+    "snapshot-1/10.10.10.3.docker.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/10.10.10.3.docker.log.gz",
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-1/10.10.10.3.manifest.tsv.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/10.10.10.3.manifest.tsv.gz",
+      "stored_sha256": "69102ed1ade93166e25baa2973dc49e9e9bb14c72247afb77b873d8759e6fa75"
+    },
+    "snapshot-1/10.10.10.3.serving.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/10.10.10.3.serving.log.gz",
+      "stored_sha256": "db8f024778271a00d6438066be8c8a708b0dd6a5f694a1812690cccae72fe84a"
+    },
+    "snapshot-1/10.10.10.4.docker.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/10.10.10.4.docker.log.gz",
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-1/10.10.10.4.manifest.tsv.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/10.10.10.4.manifest.tsv.gz",
+      "stored_sha256": "69102ed1ade93166e25baa2973dc49e9e9bb14c72247afb77b873d8759e6fa75"
+    },
+    "snapshot-1/10.10.10.4.serving.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/10.10.10.4.serving.log.gz",
+      "stored_sha256": "00e4fb423a37868e3712db9ee5f5a0ce06a2c43e99eaf3f9d2a0fc706637ac87"
+    },
+    "snapshot-1/local.docker.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/local.docker.log.gz",
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-1/local.manifest.tsv.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/local.manifest.tsv.gz",
+      "stored_sha256": "69102ed1ade93166e25baa2973dc49e9e9bb14c72247afb77b873d8759e6fa75"
+    },
+    "snapshot-1/local.serving.log.gz": {
+      "original_path": "/tmp/glm53-ep-prep-onepass8-live-A-ready-a1e4e3f32575/local.serving.log.gz",
+      "stored_sha256": "833001c4362cf59a44c79db33ba1c1bb04a2b9c5f152f29e601c8650c233f238"
+    },
+    "source/bench/ab-lever.sh.gz": {
+      "original": {
+        "bytes": 11205,
+        "device": 66306,
+        "inode": 166475818,
+        "mtime_ns": 1788960784391394591,
+        "sha256": "2fc19dfd44a10dc2e918f19fd25a890e487499951325b8053edab7ed1d204ebc"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/ab-lever.sh",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 5155,
+        "sha256": "d3b447dbb8c3aaaf8837ed28a444abc5f214275d3aaa00d95b3ec34e1b3155ab"
+      }
+    },
+    "source/bench/baseline.py.gz": {
+      "original": {
+        "bytes": 13213,
+        "device": 66306,
+        "inode": 166475819,
+        "mtime_ns": 1788996517120216396,
+        "sha256": "b64df502c8b2b60a2272b0608350d2feb3c085e409003986d0221274cf38c9de"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/baseline.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 4742,
+        "sha256": "629ed82292ce4244a9d1c336aeb275a5051cea036473312cfb69fd631cfc4ce5"
+      }
+    },
+    "source/bench/chain.sh.gz": {
+      "original": {
+        "bytes": 3457,
+        "device": 66306,
+        "inode": 166475827,
+        "mtime_ns": 1788960784391555311,
+        "sha256": "0b89b41bae46a68e7f7c476a457aa5b998fc2c4a469043922c3b1864dfac65b3"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/chain.sh",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 1704,
+        "sha256": "9ac0c32f6ff1eff67861120f2d2df29d240157ea3b5f16db34b35145be32a769"
+      }
+    },
+    "source/bench/glm53_launch_metadata.py.gz": {
+      "original": {
+        "bytes": 9042,
+        "device": 66306,
+        "inode": 166475868,
+        "mtime_ns": 1788969670487914907,
+        "sha256": "e24acbfcc43b64fff1a586c71e954de821f7b7b684350cb4be743606c1d0de13"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/glm53_launch_metadata.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 3333,
+        "sha256": "22afcb2ae8eba450738c6cd65b39edd75ba2665cd42a09990977269f103824f7"
+      }
+    },
+    "source/bench/glm53_prep_proof.py.gz": {
+      "original": {
+        "bytes": 6938,
+        "device": 66306,
+        "inode": 166482397,
+        "mtime_ns": 1788999184167043113,
+        "sha256": "4dd9034c95d8103caf01d7a2a4b2b551192ac6a311e76fbeff1acc47e7c4cb10"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/glm53_prep_proof.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 2208,
+        "sha256": "161ad9f1a391c4c57ae828c381a974eada56589f37372244228c2bb76bca2624"
+      }
+    },
+    "source/bench/judge.py.gz": {
+      "original": {
+        "bytes": 10536,
+        "device": 66306,
+        "inode": 166475869,
+        "mtime_ns": 1788996517120216396,
+        "sha256": "2c6acfe1f7e645ccddfac39744ebd8f760c318e2f50cd5ee78c5d42ed2f9fd3f"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/judge.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 3790,
+        "sha256": "cfdea10cc92d58b7ccfe95dffbc320df52f84d29814a0262180f3c08145a7a3b"
+      }
+    },
+    "source/bench/onepass.py.gz": {
+      "original": {
+        "bytes": 34794,
+        "device": 66306,
+        "inode": 166475876,
+        "mtime_ns": 1788996517121216397,
+        "sha256": "ea807b17eb1b578121eba0cac91109160edd45646799dc5c669ecc236a4d964d"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/onepass.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 11619,
+        "sha256": "a61d34fb3f706b48920086b999b42a813fe6b09c6c249b6f7a3644680c53d022"
+      }
+    },
+    "source/bench/proof.py.gz": {
+      "original": {
+        "bytes": 21718,
+        "device": 66306,
+        "inode": 166475892,
+        "mtime_ns": 1788996517121216397,
+        "sha256": "cc6e40070298c382e4f1e9d39e4efeecf1424d4864f5a48da2ec18d7bf100668"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/proof.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 6727,
+        "sha256": "4b668070eef8e65fdd4a7d8b0c7ce3ad5653433f8755d830557d18e457d66a97"
+      }
+    },
+    "source/glm53_ep_tiled.py.gz": {
+      "original": {
+        "bytes": 18344,
+        "device": 66306,
+        "inode": 166475969,
+        "mtime_ns": 1788999612594139701,
+        "sha256": "133520fab17bffdf528791c5115c465a768a70b5812acf0e9213d94fdccc8fa0"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/glm53_ep_tiled.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 5033,
+        "sha256": "a150a11c5008eb0d3868f2f19e3a2b7234ad98405f979e82c96bcb725fe7f8d8"
+      }
+    },
+    "source/glm53_ep_tiled_selftest.py.gz": {
+      "original": {
+        "bytes": 26260,
+        "device": 66306,
+        "inode": 166475971,
+        "mtime_ns": 1788999612596830713,
+        "sha256": "e1e0b457499f5ef0858fbd121cc07608cc35c3f16d1f93ffd73d15bc6ce39c5a"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/glm53_ep_tiled_selftest.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 7840,
+        "sha256": "a033c69a11300ae84d7ce0114a764f3c4524cb71c801c2586bcb82fc8070c246"
+      }
+    },
+    "source/glm53_prep_fused.py.gz": {
+      "original": {
+        "bytes": 63363,
+        "device": 66306,
+        "inode": 166475992,
+        "mtime_ns": 1788999612625077922,
+        "sha256": "6f20085319b33e6627f86b8d501242e21f83c1f6f5d8fc3ac5760f5feab25b20"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/glm53_prep_fused.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 18456,
+        "sha256": "9e76cf4b82ebd29f0cd5fd41215d6509e8db36412355fdc205d2e69a3a8d3c55"
+      }
+    },
+    "source/manifest.tsv.gz": {
+      "original": {
+        "bytes": 10046,
+        "device": 66306,
+        "inode": 166475938,
+        "mtime_ns": 1788999612648485859,
+        "sha256": "bf27adbeb9a4d7d30f2e2bb22840fa6c400d5a209e752522dd3ed1bbfc500192"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/manifest.tsv",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 2273,
+        "sha256": "3d2db019ba242b03a15cace2752233ea82db468d959fd45e0e45fb1300fa3aec"
+      }
+    },
+    "source/moe_dynamic_ep_local.py.gz": {
+      "original": {
+        "bytes": 53790,
+        "device": 66306,
+        "inode": 166475964,
+        "mtime_ns": 1788999612587631196,
+        "sha256": "89bab8e22514d4ce036e4cc6755a5dcfaeb8b12277766394dcdd101db8751595"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/moe_dynamic_ep_local.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 11227,
+        "sha256": "6f3b52696a6ab7737ba9f97784ee9155ff0d4f2b20fce02a323132397fdbe606"
+      }
+    },
+    "source/moe_static_ep_tiled.py.gz": {
+      "original": {
+        "bytes": 126925,
+        "device": 66306,
+        "inode": 166475970,
+        "mtime_ns": 1788999612595681447,
+        "sha256": "9288110d2c77b43e0ea08ad1edb4e0bfd5ef1ffd1ce9ba6bf2a469eb22815f21"
+      },
+      "path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/moe_static_ep_tiled.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 23269,
+        "sha256": "d9fdb02253bb9abd014cd6539bfd17a7235aac10664cf61d9eec97a074f4553c"
+      }
+    },
+    "utilities/observer.py.gz": {
+      "original": {
+        "bytes": 31096,
+        "sha256": "822eb409922d926cb0eb46c18aff9c301d76829841b9ff6bb999c5d09e0ee066"
+      },
+      "path": "/tmp/glm53_ep_prep_observer8.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 10013,
+        "sha256": "e91c201db88dd30207c6ed2a423b6e6ee19a580586f3fcd06d765b1d5463f2e9"
+      }
+    },
+    "utilities/snapshot.py.gz": {
+      "original": {
+        "bytes": 31026,
+        "sha256": "44650f0f4210b51f8a97b93a43dc30c79b2ee0af7100ea04ecf7f8c1248ba7a9"
+      },
+      "path": "/tmp/glm53_ep_prep_snapshot8.py",
+      "scope": "Original bytes; deterministic gzip storage",
+      "stored": {
+        "bytes": 10133,
+        "sha256": "ef5e4a537de85c43b36f4e57f7f8d6e1fddab2eb19ebc7aeb87936d49a268f0a"
+      }
+    }
+  },
+  "owner_pid": "640996",
+  "owner_start_tick": "50167591",
+  "readme_readout_scope": "Post-collection descriptive summary from exact canonical rows/verdicts; user absolute target and statistical verdict separated; no original/gate changes.",
+  "remote_capture_manifest_sha256": "ed6da51b15e8754e5e3d8ef99839d0c58beccda8975b228818077403934ee85d",
+  "revision": "388aabdd79e874808262e15c0b974dc8ccca6f07",
+  "schema": 1,
+  "session": "eptiledprep0910v8",
+  "snapshot_sha256": "44650f0f4210b51f8a97b93a43dc30c79b2ee0af7100ea04ecf7f8c1248ba7a9",
+  "ticket": "1788999285640996"
+}

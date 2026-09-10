@@ -1,0 +1,54 @@
+{
+  "10.10.10.1": {
+    "candidate_comparisons": 24,
+    "cases": 4,
+    "completed_at": 1788924490.733203,
+    "control_comparisons": 24,
+    "inputs_same_address": true,
+    "q0_comparisons": 24,
+    "source_matches_cpu21b": true,
+    "started_at": 1788924468.0492914,
+    "strict_A0_source_container_bound": true,
+    "verdict": "PASS",
+    "weights_preserved": true
+  },
+  "10.10.10.3": {
+    "candidate_comparisons": 24,
+    "cases": 4,
+    "completed_at": 1788924491.6572676,
+    "control_comparisons": 24,
+    "inputs_same_address": true,
+    "q0_comparisons": 24,
+    "source_matches_cpu21b": true,
+    "started_at": 1788924467.7510774,
+    "strict_A0_source_container_bound": true,
+    "verdict": "PASS",
+    "weights_preserved": true
+  },
+  "10.10.10.4": {
+    "candidate_comparisons": 24,
+    "cases": 4,
+    "completed_at": 1788924492.2915878,
+    "control_comparisons": 24,
+    "inputs_same_address": true,
+    "q0_comparisons": 24,
+    "source_matches_cpu21b": true,
+    "started_at": 1788924467.732922,
+    "strict_A0_source_container_bound": true,
+    "verdict": "PASS",
+    "weights_preserved": true
+  },
+  "local": {
+    "candidate_comparisons": 24,
+    "cases": 4,
+    "completed_at": 1788924492.1796212,
+    "control_comparisons": 24,
+    "inputs_same_address": true,
+    "q0_comparisons": 24,
+    "source_matches_cpu21b": true,
+    "started_at": 1788924467.7196982,
+    "strict_A0_source_container_bound": true,
+    "verdict": "PASS",
+    "weights_preserved": true
+  }
+}

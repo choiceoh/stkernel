@@ -1,0 +1,20 @@
+test_go_cannot_downgrade_authenticated_receipt_to_legacy (test_fleet_prepare.PrepareTests.test_go_cannot_downgrade_authenticated_receipt_to_legacy) ... ok
+test_failed_check_passes_exact_record_to_pause_callback (test_fleet_prepare.PrepareTests.test_failed_check_passes_exact_record_to_pause_callback) ... ok
+test_go_checks_transitive_source_without_reexecuting_cpu (test_fleet_prepare.PrepareTests.test_go_checks_transitive_source_without_reexecuting_cpu) ... ok
+test_manifest_matches_edited_command_and_is_private (test_fleet_prepare.PrepareTests.test_manifest_matches_edited_command_and_is_private) ... ok
+test_release_evidence_drift_pauses_before_go_and_local_check_stays_pure (test_fleet_prepare.PrepareTests.test_release_evidence_drift_pauses_before_go_and_local_check_stays_pure) ... ok
+test_same_modern_record_or_missing_record_cannot_swallow_failed_pause (test_fleet_prepare.PrepareTests.test_same_modern_record_or_missing_record_cannot_swallow_failed_pause) ... ok
+test_unsupported_legacy_pause_still_withdraws_failed_matching_ticket (test_fleet_prepare.PrepareTests.test_unsupported_legacy_pause_still_withdraws_failed_matching_ticket) ... ok
+test_contract_cache_reuses_unrelated_changes_and_invalidates_inputs (test_fleet_coalescing.CoalescingTests.test_contract_cache_reuses_unrelated_changes_and_invalidates_inputs) ... ok
+test_auto_contract_plan_falls_back_for_unknown_changes_and_blocks_faults (test_fleet_coalescing.CoalescingTests.test_auto_contract_plan_falls_back_for_unknown_changes_and_blocks_faults) ... ok
+test_bare_wait_cannot_remove_retired_ticket_without_supervisor (test_fleet_coalescing.CoalescingTests.test_bare_wait_cannot_remove_retired_ticket_without_supervisor) ... ok
+test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits (test_fleet_feedback.FeedbackTests.test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits) ... /opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/ast.py:46: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1061072e0>
+  return compile(source, filename, mode, flags,
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_logic_docs_reuse_reports_and_real_changes_invalidate (test_fleet_source.CpuSourceTests.test_logic_docs_reuse_reports_and_real_changes_invalidate) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 2.665s
+
+OK

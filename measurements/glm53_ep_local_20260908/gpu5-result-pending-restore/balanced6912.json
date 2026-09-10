@@ -1,0 +1,253 @@
+{
+  "case": "balanced6912",
+  "sanitize": false,
+  "verdict": "PASS",
+  "phase": "complete",
+  "performance_acceptance": false,
+  "binding_runtime": {
+    "schema": 1,
+    "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+    "binding_identity": {
+      "version": "13.0.3",
+      "root": "/opt/glm53-bindings-capsule",
+      "modules": {
+        "cuda.bindings.driver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+        },
+        "cuda.bindings._bindings.cydriver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+        }
+      },
+      "distributions": {
+        "cuda-bindings": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+          "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+        },
+        "cuda-python": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+          "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+        }
+      }
+    },
+    "pathfinder": {
+      "version": "1.7.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+      "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+      "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+      "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+    }
+  },
+  "rows": 6912,
+  "routing": "balanced",
+  "legacy_max_num_tokens": 8192,
+  "remap_capacity_tokens": 6912,
+  "timing_scope": "EP remap plus MoE wrapper",
+  "provenance": {
+    "flashinfer_b12x_moe.py": "5c7cdbc7d87129d3314725923a674728da113f7918b9c33dab164aa1c5cfc56d",
+    "moe_micro_kernel.py": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655",
+    "moe_dispatch.py": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905",
+    "b12x_moe.py": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68",
+    "moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+    "moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+    "moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+    "moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+    "moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+    "moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+    "moe_dynamic_ep_local.py": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9",
+    "glm53_ep_route_remap.py": "9d83120fb20e4aae382e3971a86c1a3b6970e591dd31ee5d7fc3e1a2ca521339"
+  },
+  "controls": [
+    [
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007734320126473904,
+        "max_row_relative_abs": 0.02445652149617672
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.0077620879746973515,
+        "max_row_relative_abs": 0.024390242993831635
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007487743627279997,
+        "max_row_relative_abs": 0.02500000037252903
+      }
+    ],
+    [
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007535133510828018,
+        "max_row_relative_abs": 0.021621622145175934
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.0075361356139183044,
+        "max_row_relative_abs": 0.0235294122248888
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.007560937665402889,
+        "max_row_relative_abs": 0.02259887009859085
+      }
+    ]
+  ],
+  "candidate": [
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.009253480471670628,
+      "max_row_relative_abs": 0.02469135820865631,
+      "stock_max_row_relative_l2": 0.007734320126473904,
+      "stock_max_row_relative_abs": 0.02445652149617672
+    },
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.009214824996888638,
+      "max_row_relative_abs": 0.02469135820865631,
+      "stock_max_row_relative_l2": 0.007734320126473904,
+      "stock_max_row_relative_abs": 0.02445652149617672
+    },
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.009588976390659809,
+      "max_row_relative_abs": 0.025477707386016846,
+      "stock_max_row_relative_l2": 0.007535133510828018,
+      "stock_max_row_relative_abs": 0.021621622145175934
+    },
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.009434348903596401,
+      "max_row_relative_abs": 0.025477707386016846,
+      "stock_max_row_relative_l2": 0.007535133510828018,
+      "stock_max_row_relative_abs": 0.021621622145175934
+    }
+  ],
+  "timing": {
+    "wall_ms": {
+      "compact": [
+        19.688723996902507,
+        19.729924330022186,
+        19.651934679131955,
+        19.675214658491313,
+        19.686036005926628,
+        19.70597232381503,
+        19.662547992387164,
+        19.700707984156907
+      ],
+      "local": [
+        7.293136673979461,
+        7.0238349920449155,
+        7.020560345457246,
+        7.336256656950961,
+        7.01861366784821,
+        7.026448321994394,
+        7.018800320414205,
+        7.3277236660942435
+      ]
+    },
+    "device_ms": {
+      "compact": [
+        19.677941640218098,
+        19.721195220947266,
+        19.64292271931966,
+        19.666805267333984,
+        19.677567799886067,
+        19.694442749023438,
+        19.65430450439453,
+        19.691669464111328
+      ],
+      "local": [
+        7.284224192301433,
+        7.0154774983723955,
+        7.0126082102457685,
+        7.327786763509114,
+        7.0099945068359375,
+        7.018069585164388,
+        7.0099945068359375,
+        7.319562911987305
+      ]
+    },
+    "wall_speedup_pct": 180.24175116444187
+  },
+  "cache_keys": [
+    [
+      "dynamic",
+      "fp4",
+      "nvfp4",
+      72,
+      4096,
+      2048,
+      1,
+      48,
+      [
+        128,
+        128
+      ],
+      "torch.int32",
+      false,
+      true,
+      "swigluoai_uninterleave",
+      1.0,
+      0.0,
+      10.0,
+      false,
+      false
+    ],
+    [
+      "dynamic",
+      "fp4",
+      "nvfp4",
+      72,
+      4096,
+      2048,
+      1,
+      48,
+      [
+        64,
+        128
+      ],
+      "torch.int32",
+      false,
+      true,
+      "swigluoai_uninterleave",
+      1.0,
+      0.0,
+      10.0,
+      false,
+      false
+    ],
+    [
+      "dynamic",
+      "fp4",
+      "nvfp4",
+      72,
+      4096,
+      2048,
+      8,
+      48,
+      [
+        128,
+        128
+      ],
+      "torch.int32",
+      false,
+      true,
+      "swigluoai_uninterleave",
+      1.0,
+      0.0,
+      10.0,
+      false,
+      false,
+      "glm53_ep_prefill_local_v1"
+    ]
+  ],
+  "device": "NVIDIA GB10",
+  "max_allocated_bytes": 2027357696,
+  "max_reserved_bytes": 2055208960,
+  "binding_runtime_rechecked": true
+}

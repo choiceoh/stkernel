@@ -1,0 +1,9 @@
+{
+  "submitted": true,
+  "source": "/home/choiceoh/stkernel-ep-local-0908-17",
+  "job": "/tmp/glm53-ep-local-compile0908-17-head",
+  "revision": "123fbb01211eaf8cec46fd0965dd9320d02a375b",
+  "pid": 585433,
+  "host_mem_available_kib": 99919020,
+  "scheduler_revision": "6e33221dffe9f0e2b16d5b8cdd9adf08952eb608"
+}

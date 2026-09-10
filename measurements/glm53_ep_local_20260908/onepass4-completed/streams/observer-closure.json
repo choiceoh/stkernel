@@ -1,0 +1,41 @@
+{
+  "checked_utc": "2026-09-08T21:24:04.898003+00:00",
+  "final_events_original_bytes": 2198268,
+  "final_events_original_sha256": "60086a574174c7b72f9668dda7c337ccb83a9500dd02f6eb72ba85174f717af5",
+  "manual_stop": {
+    "action": "SIGTERM after fleet release",
+    "collector_signalled_process": false,
+    "reported_by": "parent agent, after verifying PID8542 was the owned passive observer"
+  },
+  "note": "Data stream subprocess had already ended when reservation metadata disappeared. Outer status polling continued until the owner stopped it; observer_finished now confirms cleanup.",
+  "observer_finished": {
+    "attempted_arms": [
+      "A",
+      "B1",
+      "B2"
+    ],
+    "kind": "observer_finished",
+    "local_at": 1788902501.7452621,
+    "owned_go_seen": true
+  },
+  "process_check": {
+    "argv": [
+      "ps",
+      "-p",
+      "8542",
+      "-o",
+      "pid=,comm="
+    ],
+    "returncode": 1,
+    "stderr": "",
+    "stdout": ""
+  },
+  "stream_end": [
+    {
+      "at": 1788902170.1983652,
+      "kind": "stream_end",
+      "local_at": 1788902170.108407,
+      "reason": "FileNotFoundError"
+    }
+  ]
+}

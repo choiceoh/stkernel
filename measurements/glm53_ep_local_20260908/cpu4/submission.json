@@ -1,0 +1,37 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-0908-4",
+  "revision": "7a16fc51587a2be4765a268b0ff52977c460906c",
+  "commands": [
+    [
+      "bash",
+      "/home/choiceoh/stkernel-ep-local-0908-4/bench/fleet.sh",
+      "run",
+      "--cpu",
+      "eplocalcpu0908v4local",
+      "6",
+      "CPU-only E72 CuTe compiler, runc no devices 4g 2cpu",
+      "--",
+      "ssh",
+      "-o",
+      "BatchMode=yes",
+      "choiceoh@10.10.10.4",
+      "python3 /home/choiceoh/stkernel-ep-local-0908-4/probes/run_glm53_ep_local_cpu_compile.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --arm local --output /tmp/glm53-ep-local-compile0908-4/local"
+    ],
+    [
+      "bash",
+      "/home/choiceoh/stkernel-ep-local-0908-4/bench/fleet.sh",
+      "run",
+      "--cpu",
+      "eplocalcpu0908v4stock",
+      "6",
+      "CPU-only E72 CuTe compiler, runc no devices 4g 2cpu",
+      "--",
+      "ssh",
+      "-o",
+      "BatchMode=yes",
+      "choiceoh@10.10.10.4",
+      "python3 /home/choiceoh/stkernel-ep-local-0908-4/probes/run_glm53_ep_local_cpu_compile.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --arm stock --output /tmp/glm53-ep-local-compile0908-4/stock"
+    ]
+  ],
+  "created": 1788846376.7767367
+}

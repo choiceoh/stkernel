@@ -1,0 +1,13 @@
+{
+  "session": "eplocalonepass0909v6",
+  "ticket": "17889071393096545",
+  "supervisor_pid": 3096545,
+  "signal": "SIGTERM",
+  "at": 1788908374.99539,
+  "reason": "User stopped unnecessary remaining measurements after candidate decode regression",
+  "completed_arms": [
+    "EPONEPASS6B1",
+    "EPONEPASS6A"
+  ],
+  "B2": "loading; no completed measurement row"
+}

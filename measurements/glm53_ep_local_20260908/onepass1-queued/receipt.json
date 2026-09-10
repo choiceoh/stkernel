@@ -1,0 +1,25 @@
+{
+  "session": "eplocalonepass0909v1",
+  "ticket": "1788883625926754",
+  "launch_id": "8f9637fdd87347278e11e5d72ed1eab9",
+  "pid": 926754,
+  "accepted": true,
+  "state": "queued",
+  "submitted_kst": "2026-09-09 01:07:05",
+  "source": "eb743c5a16bb9b8aaada69d7c29c3e9cf5a8928c",
+  "source_parent": "530533e72427002f3eb18e441a965c84ea7c4c25",
+  "merged_main": "478842f3df9a2a8eef8a8bb61c5e1566060de6ef",
+  "payload_sha256": "5007dc2f96e4b96261d3d6da9131fd003fe7b64ad4432e767e622d323d3d0a75",
+  "onepass_contexts": [
+    2000,
+    32000,
+    128000
+  ],
+  "arm_order": [
+    "B1",
+    "A",
+    "B2"
+  ],
+  "performance_measured": false,
+  "numerics_resolved": false
+}

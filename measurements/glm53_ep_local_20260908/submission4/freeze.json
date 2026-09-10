@@ -1,0 +1,9 @@
+{
+  "revision": "71e804e7aa6b29d6ddf4577809a5fa5e05a999e6",
+  "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-4",
+  "clean": true,
+  "created": 1788850461.9858887,
+  "cpu_evidence": "cpu7",
+  "tests": 37,
+  "remap_specializations": 24
+}

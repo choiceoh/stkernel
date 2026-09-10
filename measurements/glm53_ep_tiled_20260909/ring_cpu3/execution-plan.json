@@ -1,0 +1,68 @@
+{
+  "scope": "PREPARATION ONLY; not submitted or executed",
+  "revision": "57914a3f8bb01a76a20099b9c2605be3ea15b7f4",
+  "source_head": "/home/choiceoh/stkernel-ep-tiled-0909-ring",
+  "source_worker": "/home/choiceoh/stkernel-ep-tiled-0909-ring",
+  "evidence_worker": "/home/choiceoh/glm53-ep-tiled-ring3-cpu-evidence",
+  "stdout_local": "/tmp/glm53-ep-ring-cpu3.log",
+  "archive_future": "measurements/glm53_ep_tiled_20260909/ring_cpu3",
+  "session": "eptiledcpu0909ring3",
+  "command": [
+    "env",
+    "REPO=/home/choiceoh/stkernel-ep-tiled-0909-ring",
+    "bash",
+    "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "eptiledcpu0909ring3",
+    "5",
+    "EP SF6 A-ring canary key fix: 6 real lowerings and 101 CPU contracts; no GPU devices",
+    "--",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "choiceoh@10.10.10.4",
+    "nice -n19 python3 -B /home/choiceoh/stkernel-ep-tiled-0909-ring/probes/run_glm53_ep_tiled_cpu.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --output /home/choiceoh/glm53-ep-tiled-ring3-cpu-evidence --capsule-root /home/choiceoh/glm53-ep-cpu-0909-21/capsule --manifest-sha256 b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "shell_command": "env REPO=/home/choiceoh/stkernel-ep-tiled-0909-ring bash /home/choiceoh/stkernel-ep-tiled-0909-ring/bench/fleet.sh run --cpu eptiledcpu0909ring3 5 'EP SF6 A-ring canary key fix: 6 real lowerings and 101 CPU contracts; no GPU devices' -- ssh -o BatchMode=yes -o ConnectTimeout=8 choiceoh@10.10.10.4 'nice -n19 python3 -B /home/choiceoh/stkernel-ep-tiled-0909-ring/probes/run_glm53_ep_tiled_cpu.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --output /home/choiceoh/glm53-ep-tiled-ring3-cpu-evidence --capsule-root /home/choiceoh/glm53-ep-cpu-0909-21/capsule --manifest-sha256 b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab'",
+  "expected_cpu_test_counts": {
+    "test_glm53_ep_tiled_static.py": 10,
+    "test_glm53_ep_tiled_prefill.py": 12,
+    "test_glm53_ep_tiled_owner.py": 19,
+    "test_glm53_ep_tiled_selftest.py": 12,
+    "test_glm53_ep_tiled_proof.py": 12,
+    "test_moe_sf6_owner.py": 12,
+    "test_moe_static_sf6_direct.py": 6,
+    "test_moe_dynamic_sf6.py": 7,
+    "test_moe_sf6_dispatch.py": 6,
+    "test_glm53_ep_tiled_a_ring.py": 5
+  },
+  "expected_cpu_tests": 101,
+  "static_rows": [
+    6,
+    12,
+    24,
+    32
+  ],
+  "dynamic_rows": [
+    33,
+    8192
+  ],
+  "worker_guard": {
+    "mem_available_gib_at_least": 12,
+    "memory": "4g",
+    "cpus": 2,
+    "network": "none",
+    "runtime": "runc",
+    "cuda_devices": false
+  },
+  "required_before_submission": [
+    "Commit/freeze final full source including generated build snapshot after selftest fix.",
+    "Root confirmed head and worker existing source were fast-forwarded cleanly to the exact final revision; no new source directory is created.",
+    "Confirm pinned image and external capsule manifest identity on worker; no installation/reclaim.",
+    "Require the fresh evidence directory to be absent; normal runner enforces 12 GiB host guard.",
+    "Bind REVISION_TO_BIND to the approved final commit before root submits the displayed normal fleet command."
+  ]
+}

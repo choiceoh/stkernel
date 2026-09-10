@@ -1,0 +1,161 @@
+{
+  "absent": [
+    "/tmp/glm53-ep-onepass-0909-25/cancel-request.json",
+    "/tmp/glm53-ep-onepass-0909-25/failfast-first-fixed-A/pre-signal.json",
+    "/tmp/glm53-ep-onepass-0909-25/failfast-first-fixed-A/result.json",
+    "/tmp/glm53-ep-onepass-0909-25/failfast-first-fixed-A/leg.raw",
+    "/tmp/leg.589372",
+    "/tmp/leg.616221",
+    "/tmp/leg.647600",
+    "/tmp/leg.674585"
+  ],
+  "after": {
+    "bound_supervisor_alive": false,
+    "fleet": {
+      "finished_at": 1788932239.4750495,
+      "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/aa8c73d9d096f11c11c11c41536a7e3b5d41e96d648331a05c8e31f1c672f42e.log",
+      "outcome": "succeeded",
+      "payload_finished_at": 1788932239.0673394,
+      "payload_returncode": 0,
+      "payload_seconds": 2124.2,
+      "phase": "finished",
+      "recovery_deferred": true,
+      "recovery_policy": "idle-controller",
+      "returncode": 0,
+      "session": "eplocalonepass0909v25",
+      "started_at": 1788930114.8325536,
+      "state": "succeeded",
+      "supervisor_alive": false,
+      "ticket": "1788930114553638"
+    },
+    "own_holder": false,
+    "reservation": {
+      "cwd": "/home/choiceoh/stkernel-ep-onepass-0909-25",
+      "pid": 553638,
+      "repo": "/home/choiceoh/stkernel-ep-onepass-0909-25",
+      "session": "eplocalonepass0909v25",
+      "start": "43250203",
+      "ticket": "1788930114553638"
+    },
+    "source": {
+      "head": "055914aeb719c1769e05cdb863e43a88b2ee47af",
+      "status": ""
+    }
+  },
+  "before": {
+    "bound_supervisor_alive": false,
+    "fleet": {
+      "finished_at": 1788932239.4750495,
+      "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/aa8c73d9d096f11c11c11c41536a7e3b5d41e96d648331a05c8e31f1c672f42e.log",
+      "outcome": "succeeded",
+      "payload_finished_at": 1788932239.0673394,
+      "payload_returncode": 0,
+      "payload_seconds": 2124.2,
+      "phase": "finished",
+      "recovery_deferred": true,
+      "recovery_policy": "idle-controller",
+      "returncode": 0,
+      "session": "eplocalonepass0909v25",
+      "started_at": 1788930114.8325536,
+      "state": "succeeded",
+      "supervisor_alive": false,
+      "ticket": "1788930114553638"
+    },
+    "own_holder": false,
+    "reservation": {
+      "cwd": "/home/choiceoh/stkernel-ep-onepass-0909-25",
+      "pid": 553638,
+      "repo": "/home/choiceoh/stkernel-ep-onepass-0909-25",
+      "session": "eplocalonepass0909v25",
+      "start": "43250203",
+      "ticket": "1788930114553638"
+    },
+    "source": {
+      "head": "055914aeb719c1769e05cdb863e43a88b2ee47af",
+      "status": ""
+    }
+  },
+  "captured_at": 1788932276.1437793,
+  "files": {
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS25A.log": {
+      "bytes": 203860,
+      "mtime_ns": 1788931455731606132,
+      "sha256": "e66548e1a43f4aef38673074d3f81317c8a6ee2fb74328b15a61b12bd8df17f0"
+    },
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS25B0.log": {
+      "bytes": 177522,
+      "mtime_ns": 1788930627429904253,
+      "sha256": "95da68fc171543c61f15709026ed28801af6bfa04dfa118f58fef3f6fd4dd133"
+    },
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS25B1.log": {
+      "bytes": 169637,
+      "mtime_ns": 1788931011634554192,
+      "sha256": "9bfd239bc6b98f204eb77058cf9ee16ad25094569f7f794e1f04866c2b81e045"
+    },
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS25B2.log": {
+      "bytes": 169783,
+      "mtime_ns": 1788931850513011616,
+      "sha256": "849f3c9428cb239bd0f5708e2adf26e39abf3998775c1ad3538653b7bddff63e"
+    },
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS25B3.log": {
+      "bytes": 168159,
+      "mtime_ns": 1788932238819827713,
+      "sha256": "e668de250f7245a6fa8e05f153127d6ad2dd330a045d50793bc3ee4386d84789"
+    },
+    "/home/choiceoh/glm53-logs/fleet/run-logs/aa8c73d9d096f11c11c11c41536a7e3b5d41e96d648331a05c8e31f1c672f42e.log": {
+      "bytes": 16349,
+      "mtime_ns": 1788932239271871419,
+      "sha256": "d939baeaa140179965ae033939986fec177ad4cedef179ad9598743da756c684"
+    },
+    "/tmp/glm53-ep-onepass-0909-25/cpu24-reuse.json": {
+      "bytes": 851,
+      "mtime_ns": 1788930109063120633,
+      "sha256": "8b27f9505d18724d295977b08a4a942e2b3bf203b5904bbcca8926b8a7b636a7"
+    },
+    "/tmp/glm53-ep-onepass-0909-25/onepass.jsonl": {
+      "bytes": 303044,
+      "mtime_ns": 1788932238781482626,
+      "sha256": "1121b5d632fd483ae6a16ec97b0129a084e09c4737e44843ca044a1283227854"
+    },
+    "/tmp/glm53-ep-onepass-0909-25/submission.json": {
+      "bytes": 3917,
+      "mtime_ns": 1788930109063072153,
+      "sha256": "9a9eba59f39e7da063fb54c02cdf0f5e2b2a760ae5666664a51dee839ec980e3"
+    },
+    "/tmp/glm53-ep-onepass-0909-25/submit.exit.json": {
+      "bytes": 44,
+      "mtime_ns": 1788930114299020020,
+      "sha256": "f0e2c9d0bc3aee537d10466249cb91ab865820e4b3c7f5a90a15723c082977f3"
+    },
+    "/tmp/glm53-ep-onepass-0909-25/submit.stderr": {
+      "bytes": 0,
+      "mtime_ns": 1788930114298962100,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "/tmp/glm53-ep-onepass-0909-25/submit.stdout": {
+      "bytes": 513,
+      "mtime_ns": 1788930114298962100,
+      "sha256": "de6463beb86fab9ee9c8f55c60bffa53b65eccd30f01fca210e53a2420e13b6f"
+    },
+    "/tmp/glm53-ep-onepass-0909-25/verdicts.jsonl": {
+      "bytes": 1518,
+      "mtime_ns": 1788932238959482919,
+      "sha256": "1f4ad4503c183e7b21b61249ba951ed41f72ec5efb528581114ac3b76b0d131e"
+    }
+  },
+  "leg_origins": {
+    "/tmp/leg.589372": [
+      "explicit parent-supplied path; no reconstructed lineage"
+    ],
+    "/tmp/leg.616221": [
+      "explicit parent-supplied path; no reconstructed lineage"
+    ],
+    "/tmp/leg.647600": [
+      "explicit parent-supplied path; no reconstructed lineage"
+    ],
+    "/tmp/leg.674585": [
+      "explicit parent-supplied path; no reconstructed lineage"
+    ]
+  },
+  "schema": 1
+}

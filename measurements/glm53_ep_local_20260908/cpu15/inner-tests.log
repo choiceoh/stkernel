@@ -1,0 +1,15 @@
+test_all_inner_clis_require_both_capsule_arguments (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_all_inner_clis_require_both_capsule_arguments) ... ok
+test_cpu_device_guard_still_precedes_runtime_and_compilation (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_cpu_device_guard_still_precedes_runtime_and_compilation) ... ok
+test_failed_operation_keeps_primary_error_phase_and_records_secondary_error (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_failed_operation_keeps_primary_error_phase_and_records_secondary_error) ... ok
+test_gpu_rejects_missing_and_different_compile_runtime_before_import (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_gpu_rejects_missing_and_different_compile_runtime_before_import) ... ok
+test_inners_can_be_loaded_as_packages_without_probes_on_path (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_inners_can_be_loaded_as_packages_without_probes_on_path) ... ok
+test_invalid_runtime_stops_before_accelerator_import_or_operation (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_invalid_runtime_stops_before_accelerator_import_or_operation) ... ok
+test_post_operation_identity_change_prevents_pass_and_keeps_partial_results (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_post_operation_identity_change_prevents_pass_and_keeps_partial_results) ... ok
+test_postcheck_validation_exception_also_prevents_pass (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_postcheck_validation_exception_also_prevents_pass) ... ok
+test_real_operation_imports_are_after_admission_and_failure_is_rechecked (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_real_operation_imports_are_after_admission_and_failure_is_rechecked) ... ok
+test_success_requires_matching_checks_before_and_after_operation (test_glm53_ep_capsule_inners.InnerCapsuleTests.test_success_requires_matching_checks_before_and_after_operation) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.028s
+
+OK

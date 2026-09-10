@@ -1,0 +1,13 @@
+{
+  "started": 1788885272.7934353,
+  "exit_code": 1,
+  "experimental": true,
+  "full_model_acceptance": false,
+  "default_promotion": false,
+  "prior_numerics_failure": true,
+  "supervisor_recovery": "pending normal restore or handoff",
+  "offline_binding_runtime": "13.0.3",
+  "serving_binding_runtime": "normal pinned-image runtime; not forced to offline capsule",
+  "error": "CalledProcessError(1, ['bash', '/home/choiceoh/stkernel-ep-onepass-0909-1/bench/chain.sh', 'EPONEPASS1B1=', 'EPONEPASS1A=ENABLE_EP=1 VLLM_GLM53_EP_PREFILL_LOCAL=1', 'EPONEPASS1B2=', '--legs', 'EPONEPASS1B1', 'none', '--after', 'EPONEPASS1B1', 'python3 -B /tmp/glm53-ep-onepass-0909-1/payload-v2.py after EPONEPASS1B1', '--legs', 'EPONEPASS1A', 'none', '--after', 'EPONEPASS1A', 'python3 -B /tmp/glm53-ep-onepass-0909-1/payload-v2.py after EPONEPASS1A', '--legs', 'EPONEPASS1B2', 'none', '--after', 'EPONEPASS1B2', 'python3 -B /tmp/glm53-ep-onepass-0909-1/payload-v2.py after EPONEPASS1B2'])",
+  "ended": 1788885754.210596
+}

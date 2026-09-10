@@ -1,0 +1,127 @@
+{
+  "files": {
+    "10.10.10.1.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "10.10.10.1.inspect.after.json.gz": {
+      "original_bytes": 68971,
+      "original_sha256": "72a80a7e06314789d26cb48d6efaf017d3412617c3948acf43d4534c55ff3bd1",
+      "stored_bytes": 13188,
+      "stored_sha256": "098ba6f12e9a2f96366c90c6e5e27027d52031860eaaaa6d0a904c68880c4074"
+    },
+    "10.10.10.1.inspect.before.json.gz": {
+      "original_bytes": 68971,
+      "original_sha256": "567acc4a9411a57d3e1e1c5b282e213ac668463271bc3bd387d84ad9fe5e6c8f",
+      "stored_bytes": 13225,
+      "stored_sha256": "82493292a79c7eb48f80bebfcf1d300ee3c8833f056f4cce05bd89ad0fb8895d"
+    },
+    "10.10.10.1.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "b3870b09b651a949d48bb3d0e7d6f64dc19427a25efe2219cfb7d359ac7d4755",
+      "stored_bytes": 2313,
+      "stored_sha256": "b6bc15530866799b25c58eed6cf5484bbb8cc1556ae8924679646d440bfffaf2"
+    },
+    "10.10.10.1.serving.log.gz": {
+      "original_bytes": 130937,
+      "original_sha256": "cbffd945e4a32e2066c2b691d7c9947f07ad0d40e9a217d8340f1579d95452f3",
+      "stored_bytes": 18063,
+      "stored_sha256": "fc1f5a5cac4ad9923debf61afc3b2f04ebfa8f77187522a34f2adda44f24f3ee"
+    },
+    "10.10.10.3.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "10.10.10.3.inspect.after.json.gz": {
+      "original_bytes": 68839,
+      "original_sha256": "90f1107ff5609947f4af58582f9c0b83a9f2c9956fd97ff87691c9764be82f45",
+      "stored_bytes": 13175,
+      "stored_sha256": "544238db964e84a3c88f9ecc038034fa4a58c1319340f27ae3eb42d02494b614"
+    },
+    "10.10.10.3.inspect.before.json.gz": {
+      "original_bytes": 68839,
+      "original_sha256": "fbd9fbdbbdebc1c637f60af9b6bcf90ff77a6c5a87575588079f9e034516132c",
+      "stored_bytes": 13216,
+      "stored_sha256": "34117e152730116605611b58b4824b178b2f64ed752310bdff4a7dbedb9bf50e"
+    },
+    "10.10.10.3.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "b3870b09b651a949d48bb3d0e7d6f64dc19427a25efe2219cfb7d359ac7d4755",
+      "stored_bytes": 2313,
+      "stored_sha256": "b6bc15530866799b25c58eed6cf5484bbb8cc1556ae8924679646d440bfffaf2"
+    },
+    "10.10.10.3.serving.log.gz": {
+      "original_bytes": 131526,
+      "original_sha256": "3da2ad73d40a0fb33919a9994cbf953b1867f4e3ca0f63058ec1742751ef1d97",
+      "stored_bytes": 17817,
+      "stored_sha256": "cd4309beca7637251716ee89e088ea365a5d0815f4103cb9f5714bd3ef36f2fa"
+    },
+    "10.10.10.4.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "10.10.10.4.inspect.after.json.gz": {
+      "original_bytes": 68137,
+      "original_sha256": "4af12435711efbc7d5b858bfeb0652bd532aa4374ac7b05f3a731fc45d856586",
+      "stored_bytes": 12801,
+      "stored_sha256": "8706a540b9c33c662e57d15b46e4c957c05adfe6e6d2cd00630d0c37c778f6a6"
+    },
+    "10.10.10.4.inspect.before.json.gz": {
+      "original_bytes": 68137,
+      "original_sha256": "5ab89defbc49340272824ab12c503173e355aed41b9a46cb8a3399c89d995aac",
+      "stored_bytes": 12796,
+      "stored_sha256": "164e5b0edc814af291e67ba7c16c7a72b255a7b5d133884438aca8bfef2b944e"
+    },
+    "10.10.10.4.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "b3870b09b651a949d48bb3d0e7d6f64dc19427a25efe2219cfb7d359ac7d4755",
+      "stored_bytes": 2313,
+      "stored_sha256": "b6bc15530866799b25c58eed6cf5484bbb8cc1556ae8924679646d440bfffaf2"
+    },
+    "10.10.10.4.serving.log.gz": {
+      "original_bytes": 130735,
+      "original_sha256": "7202ebc735438c547eb42e861458c4e34624466f2307101cc6c1044331d61280",
+      "stored_bytes": 17737,
+      "stored_sha256": "4c54f1276883902101bfe999865a0973c01ab4b14cd0b99a3972467c87f85f45"
+    },
+    "local.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "local.inspect.after.json.gz": {
+      "original_bytes": 68526,
+      "original_sha256": "8dd215752d600151c2e04ba6783dab3399799aad596930fb45715728a9f666af",
+      "stored_bytes": 13008,
+      "stored_sha256": "e5ab9b2f9a7d2c0b0c5c3ac4f0623b2d174efafdc7c33cdc8482e34ef95284e1"
+    },
+    "local.inspect.before.json.gz": {
+      "original_bytes": 68526,
+      "original_sha256": "76fa1e7ee7037315595ec1bf557b7e1238bbe6f0b368f82742dd560532034f12",
+      "stored_bytes": 12973,
+      "stored_sha256": "96174ed8b51c048acbdd67f87cc17dd65ba206c119b79adfc95b3c3a415dad60"
+    },
+    "local.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "b3870b09b651a949d48bb3d0e7d6f64dc19427a25efe2219cfb7d359ac7d4755",
+      "stored_bytes": 2313,
+      "stored_sha256": "b6bc15530866799b25c58eed6cf5484bbb8cc1556ae8924679646d440bfffaf2"
+    },
+    "local.serving.log.gz": {
+      "original_bytes": 152087,
+      "original_sha256": "95cb7550bae25f142f35fc2c3162b43dc28628d349cd4ace28928de47c336bca",
+      "stored_bytes": 23194,
+      "stored_sha256": "d1e5fc85a65e4ed45f2c15c02145b0b5ec2ade41abca98a7a01024a6e34b56b9"
+    }
+  },
+  "private_original_identity_sha256": "656573d29caeb4437172c483988fa4a0cd3598138ea806c028bb49de1132ee88",
+  "schema": 1,
+  "scope": "Hashes only; raw Docker inspect/Env/HostConfig excluded"
+}

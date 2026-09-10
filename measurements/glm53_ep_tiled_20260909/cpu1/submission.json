@@ -1,0 +1,26 @@
+{
+  "source_revision": "a62d492b90caf712d0522528c0baa02926c256d6",
+  "source": "/home/choiceoh/stkernel-ep-tiled-0909-cpu1",
+  "command": [
+    "env",
+    "REPO=/home/choiceoh/stkernel-ep-tiled-0909-cpu1",
+    "bash",
+    "/home/choiceoh/stkernel-ep-tiled-0909-cpu1/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "eptiledcpu0909v1",
+    "5",
+    "EP tile-major static and prefill lowering only; srv4 no-device runc 4GiB 2CPU 12GiB guard",
+    "--",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "choiceoh@10.10.10.4",
+    "nice -n 19 python3 -B /home/choiceoh/stkernel-ep-tiled-0909-cpu1/probes/run_glm53_ep_tiled_cpu.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --output /home/choiceoh/glm53-ep-tiled-cpu1-evidence --capsule-root /home/choiceoh/glm53-ep-cpu-0909-21/capsule --manifest-sha256 b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "started": 1788938639.616386,
+  "returncode": 0,
+  "finished": 1788938664.3105521
+}

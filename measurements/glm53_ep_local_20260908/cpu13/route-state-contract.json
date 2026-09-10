@@ -1,0 +1,230 @@
+{
+  "stock_source_path": "/tmp/glm53-stock-gated.py",
+  "stock_source_sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+  "pinned_stock_guard_matches": true,
+  "inherited_class": "MoEGatedDynamicKernel",
+  "inherited_kernel_range": [
+    3851,
+    4852
+  ],
+  "overridable_initialize_call_range": [
+    4119,
+    4145
+  ],
+  "route_address_references_in_kernel": [
+    {
+      "name": "route_phys_rows_addr",
+      "line": 4110,
+      "context": "Store"
+    },
+    {
+      "name": "route_expert_ids_addr",
+      "line": 4111,
+      "context": "Store"
+    },
+    {
+      "name": "route_phys_rows_addr",
+      "line": 4111,
+      "context": "Load"
+    },
+    {
+      "name": "route_phys_rows_addr",
+      "line": 4139,
+      "context": "Load"
+    },
+    {
+      "name": "route_expert_ids_addr",
+      "line": 4140,
+      "context": "Load"
+    }
+  ],
+  "route_address_references_after_initialize_call": [],
+  "excerpts": {
+    "route_cache_alias": [
+      {
+        "line": 4109,
+        "text": "        # Move both 288-entry route caches to startup-idle sA."
+      },
+      {
+        "line": 4110,
+        "text": "        route_phys_rows_addr = shared_ptr_to_u32(storage.sA.data_ptr())"
+      },
+      {
+        "line": 4111,
+        "text": "        route_expert_ids_addr = route_phys_rows_addr + Int32("
+      },
+      {
+        "line": 4112,
+        "text": "            (self.num_mma_warps + 1) * 32 * 4"
+      },
+      {
+        "line": 4113,
+        "text": "        )"
+      },
+      {
+        "line": 4114,
+        "text": "        q0_input_stage_base_addr = shared_ptr_to_u32(storage.sC.data_ptr())"
+      },
+      {
+        "line": 4115,
+        "text": "        q0_bulk_barrier_addr = shared_ptr_to_u32(storage.q0_bulk_barrier.data_ptr())"
+      }
+    ],
+    "overridable_call_shared_addresses": [
+      {
+        "line": 4135,
+        "text": "            ),"
+      },
+      {
+        "line": 4136,
+        "text": "            (barrier_count, barrier_epoch),"
+      },
+      {
+        "line": 4137,
+        "text": "            ("
+      },
+      {
+        "line": 4138,
+        "text": "                ctrl_base_addr,"
+      },
+      {
+        "line": 4139,
+        "text": "                route_phys_rows_addr,"
+      },
+      {
+        "line": 4140,
+        "text": "                route_expert_ids_addr,"
+      },
+      {
+        "line": 4141,
+        "text": "                q0_input_stage_base_addr,"
+      },
+      {
+        "line": 4142,
+        "text": "                q0_bulk_barrier_addr,"
+      },
+      {
+        "line": 4143,
+        "text": "            ),"
+      },
+      {
+        "line": 4144,
+        "text": "            launch_params,"
+      },
+      {
+        "line": 4145,
+        "text": "        )"
+      }
+    ],
+    "next_phase": [
+      {
+        "line": 4147,
+        "text": "        # Deferred publication is complete after the resident-grid barrier"
+      },
+      {
+        "line": 4148,
+        "text": "        # inside initialize_route_q0_and_publish.  Cache the immutable tail in"
+      },
+      {
+        "line": 4149,
+        "text": "        # the otherwise streaming-only ctrl[28] slot; the claim loop uses a"
+      },
+      {
+        "line": 4150,
+        "text": "        # side-effecting shared load to preserve phase ordering."
+      },
+      {
+        "line": 4151,
+        "text": "        if is_cta_leader > Int32(0):"
+      },
+      {
+        "line": 4152,
+        "text": "            stable_task_tail = _ld_global_acquire_i32("
+      },
+      {
+        "line": 4153,
+        "text": "                get_ptr_as_int64(task_tail, Int32(0))"
+      },
+      {
+        "line": 4154,
+        "text": "            )"
+      },
+      {
+        "line": 4155,
+        "text": "            _st_shared_i32(ctrl_base_addr + Int32(28), stable_task_tail)"
+      },
+      {
+        "line": 4156,
+        "text": "            _st_shared_i32(ctrl_base_addr + Int32(32), Int32(0))"
+      },
+      {
+        "line": 4157,
+        "text": "            _st_shared_i32(ctrl_base_addr + Int32(36), Int32(0))"
+      },
+      {
+        "line": 4158,
+        "text": ""
+      },
+      {
+        "line": 4159,
+        "text": "        gA = cute.local_tile("
+      },
+      {
+        "line": 4160,
+        "text": "            mA, cute.slice_(self.tile_shape_mnk, (None, 0, None)), (None, None, None)"
+      },
+      {
+        "line": 4161,
+        "text": "        )"
+      },
+      {
+        "line": 4162,
+        "text": "        # B is tiled at the native N64 compute granularity.  SFB is tiled at"
+      },
+      {
+        "line": 4163,
+        "text": "        # the physical N128 scale-factor block granularity and replayed for"
+      },
+      {
+        "line": 4164,
+        "text": "        # the two B halves."
+      },
+      {
+        "line": 4165,
+        "text": "        gB_w13_tiled = cute.local_tile("
+      }
+    ]
+  },
+  "reviewed_candidate": {
+    "path": "overlay/modules/glm53_moe/moe_dynamic_ep_local.py",
+    "sha256": "c52757d150f890f302593aa936a015ed2e6f1a6f0bf0211db5c9dd02c0cc32f1",
+    "worktree_head": "b56d9b8d67ff01c17fa0937f45c4bc73bed116be",
+    "uncommitted_kernel_at_review": true
+  },
+  "packed_state": {
+    "count_range": [
+      0,
+      8
+    ],
+    "equality_range": [
+      0,
+      1
+    ],
+    "expression": "count | (equality << 4)",
+    "decode_count": "state & 15",
+    "decode_equality": "state >> 4",
+    "required_order": "Decode count before testing count > 0; state16 is empty count0/equal1 and must not read scale slot0.",
+    "examples": {
+      "empty_equal": 16,
+      "single_equal": 17,
+      "eight_equal": 24,
+      "eight_varied": 8
+    },
+    "location": "existing per-warp route_expert_ids slot31",
+    "new_shared_loads": 0,
+    "new_shared_stores": 0,
+    "new_shared_slots": 0
+  },
+  "synchronization": "Existing sync_warp publishes scale bits and packed state. The next batch CTA barrier prevents reuse until prior consumers finish. Final resident grid barrier precedes inherited compute reuse of sA.",
+  "limitation": "Static source scope and encoding review; does not establish compiled code, GPU race freedom, throughput, or TTFT."
+}

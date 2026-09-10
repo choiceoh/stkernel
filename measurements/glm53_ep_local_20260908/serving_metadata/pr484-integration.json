@@ -1,0 +1,128 @@
+{
+  "source_revision": "c27c98193200e81cd6dda34abc845289f3d03dee",
+  "started": "2026-09-08T18:03:49.965654+09:00",
+  "scope": "PR484 integration: three changed CPU test modules plus existing sanitizer unit tests; no kernel compile, remote or GPU execution",
+  "commands": [
+    {
+      "argv": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_glm53_probe_lifecycle.py",
+        "-v"
+      ],
+      "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+      "returncode": 0,
+      "tests_run": 12,
+      "skips": 0,
+      "stdout_sha256": "a12312083f8753794e07e252120327cc5dbb8f12fe922636b996ffbcaa6cad78"
+    },
+    {
+      "argv": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_glm53_ep_local_probe.py",
+        "-v"
+      ],
+      "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+      "returncode": 0,
+      "tests_run": 10,
+      "skips": 4,
+      "stdout_sha256": "bdaa83c9d30f711ff9c388159c02d90b82f9a3a678d976be2c3173393e8c346a"
+    },
+    {
+      "argv": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_glm53_ep_binding_check.py",
+        "-v"
+      ],
+      "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+      "returncode": 0,
+      "tests_run": 5,
+      "skips": 0,
+      "stdout_sha256": "fb6dc16cb5f651988ca3b9c2607498fa6581268311847efa8c7c52e6d404a704"
+    },
+    {
+      "argv": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_glm53_ep_sanitizer.py",
+        "-v"
+      ],
+      "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+      "returncode": 0,
+      "tests_run": 8,
+      "skips": 0,
+      "stdout_sha256": "aa19895dbab08e9dce61e05578f6050cc98ae1568e8491dd06926b5d9b68778d"
+    }
+  ],
+  "files": {
+    "tests/test_glm53_probe_lifecycle.py": "c35a83f6e3eb34adc6a77b240994a7ce1cdc86d4da3f2e9a81220de4bf3f2706",
+    "tests/test_glm53_ep_local_probe.py": "d892cf37bb700c3141f6d82cbbc7630e14193cc441a18f2ff441e8ea7ecc4f2f",
+    "tests/test_glm53_ep_binding_check.py": "eedeca9b4bc0f01c4fa2a20518182dba6a5a6854b55c36c7c6af394541f5b26f",
+    "tests/test_glm53_ep_sanitizer.py": "c5ec424b9631dc4a498fbf4f8497b2c063afcadef7b2a633d4b15ad85a558279",
+    "probes/glm53_probe_lifecycle.py": "ac981627094546373ffbee6970a23d9356f23642b628dd228168324c50b7cc16",
+    "probes/run_glm53_ep_binding_offline.py": "357ce3de1b087135b4661aeea8fe7a6ea5ce978de024a9f1c9c83b4aba766514",
+    "probes/run_glm53_ep_local_offline.py": "13a4b6a580660943ed1dcefced165ff31715ac187873d4f10baa0d930de18747",
+    "probes/glm53_ep_sanitizer.py": "7144f2b4c488e073257845dc65b028c220a06831ac9ce654d6fbaa2f01ca7e1a"
+  },
+  "ended": "2026-09-08T18:03:51.758305+09:00",
+  "tests_run": 35,
+  "skips": 4,
+  "log_sha256": "ba21c08f40302ce408dafe5c24ec156c91e1b7aefe3a8e93711e1ee80309ad1e",
+  "log_bytes": 7169,
+  "all_commands_succeeded": true,
+  "tests_passed": 31,
+  "failures": 0,
+  "errors": 0,
+  "proof_limit": "Four Torch-dependent numerical-gate tests skipped on this host. Runner/lifecycle tests are local mocks; CPU9 kernel resources are unchanged historical compile evidence, and changed runner/probe/test contracts require a fresh pinned CPU receipt before GPU submission.",
+  "cpu9_comparison": {
+    "mounted_sources_matching": 13,
+    "mounted_files": [
+      "overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
+      "overlay/modules/glm53_moe/moe_micro_kernel.py",
+      "overlay/modules/glm53_moe/moe_dispatch.py",
+      "overlay/modules/glm53_moe/b12x_moe.py",
+      "overlay/modules/glm53_moe/moe_static_common.py",
+      "overlay/modules/glm53_moe/moe_sf_pack.py",
+      "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
+      "overlay/modules/glm53_moe/moe_static_kernel_v5.py",
+      "overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py",
+      "overlay/modules/glm53_moe/moe_dynamic_prefill.py",
+      "overlay/modules/glm53_moe/moe_dynamic_prefill_n128.py",
+      "overlay/modules/glm53_moe/moe_dynamic_ep_local.py",
+      "overlay/modules/glm53_moe/glm53_ep_route_remap.py"
+    ],
+    "changed_contract_files": [
+      "tests/test_glm53_ep_local_probe.py",
+      "tests/test_glm53_probe_lifecycle.py",
+      "tests/test_glm53_ep_binding_check.py",
+      "probes/run_glm53_ep_local_offline.py",
+      "probes/glm53_probe_lifecycle.py",
+      "probes/run_glm53_ep_binding_offline.py"
+    ],
+    "kernel_resources_recompiled": false,
+    "historical_resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+    "note": "All 13 mounted MoE sources remain byte-identical to CPU9. That supports retaining CPU9 compile artifacts, not claiming a fresh runner/test receipt."
+  }
+}

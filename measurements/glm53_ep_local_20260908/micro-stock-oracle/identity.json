@@ -1,0 +1,15 @@
+{
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "source_path": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py",
+  "capture_scope": "read-only immutable image layer candidates, no container started",
+  "selected_layer": "/var/lib/docker/overlay2/65ed8fd146fdd22ee302c6b7658518db9284ab91f6ad62bd92eb5b03bdd7a12f/diff",
+  "source_sha256": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+  "source_bytes": 87909,
+  "gzip_sha256": "4df575b8bc6d8d71b7e364fc89913ef5fa151a170179d994dc8bf83788bf89fb",
+  "helper": "scatter_add_bf16x2",
+  "helper_lines": [
+    1963,
+    1984
+  ],
+  "selection": "first existing exact file in immutable image UpperDir then LowerDir order; no container launched"
+}

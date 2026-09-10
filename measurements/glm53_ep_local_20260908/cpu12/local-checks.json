@@ -1,0 +1,14 @@
+{
+  "scope": "Separate local composition/core checks before freezing CPU12; pinned65 test result has no skips, host Torch skips remain in core log",
+  "core": {
+    "checks": 6795,
+    "megakernel_regressions": 38,
+    "fleet_regressions": 0,
+    "exit_code": 0,
+    "sha256": "878dce1ca9afe42336f613b901503f8403bc56e90b91afeb637126e633af35e3"
+  },
+  "gpu_execution": false,
+  "compose": {
+    "sha256": "529c826bebdf0d283148daac0d2ce4c130942a40bd74a4c6e064f4ab426c354d"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "raw_snapshot_sha256": "a57b95d0f686e8cdb87f4aa5c084814db5155003a1d0fa544def8fbef78d1b79",
+  "raw_snapshot_committed": false,
+  "parser_sha256": "73f6f25a54733d69fb12c72f32795cb566c26c15204cd0f907d6cdf7b8504393",
+  "scope": "configured launch of existing public containers; no EP candidate, process, kernel, quality or performance acceptance"
+}

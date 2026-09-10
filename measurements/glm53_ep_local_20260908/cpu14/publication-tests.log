@@ -1,0 +1,15 @@
+test_every_admissible_tile_boundary_matches_original_address (test_glm53_ep_task_publication.PhysicalRowAddressTests.test_every_admissible_tile_boundary_matches_original_address) ... ok
+test_histogram_rows_match_original_without_overlap_or_padding_writes (test_glm53_ep_task_publication.PhysicalRowAddressTests.test_histogram_rows_match_original_without_overlap_or_padding_writes) ... ok
+test_actual_dispatch_admission_excludes_the_stock_retention_range (test_glm53_ep_task_publication.Q0StorePolicyTests.test_actual_dispatch_admission_excludes_the_stock_retention_range) ... ok
+test_both_actual_q0_stores_keep_exact_addresses_and_payload_bits (test_glm53_ep_task_publication.Q0StorePolicyTests.test_both_actual_q0_stores_keep_exact_addresses_and_payload_bits) ... ok
+test_all_physical_rows_and_sf_indices_match_original_layout (test_glm53_ep_task_publication.ScaleOffsetAddressTests.test_all_physical_rows_and_sf_indices_match_original_layout) ... ok
+test_m128_tiles_cover_every_scale_byte_without_overlap (test_glm53_ep_task_publication.ScaleOffsetAddressTests.test_m128_tiles_cover_every_scale_byte_without_overlap) ... ok
+test_all_valid_rows_and_experts_match_scalar_words (test_glm53_ep_task_publication.TaskPublicationTests.test_all_valid_rows_and_experts_match_scalar_words) ... ok
+test_complete_tile_prefix_has_no_gap_overlap_or_tail_write (test_glm53_ep_task_publication.TaskPublicationTests.test_complete_tile_prefix_has_no_gap_overlap_or_tail_write) ... ok
+test_four_byte_pointer_abi_uses_scalar_fallback (test_glm53_ep_task_publication.TaskPublicationTests.test_four_byte_pointer_abi_uses_scalar_fallback) ... ok
+test_other_slice_contracts_keep_stock_scalar_publication (test_glm53_ep_task_publication.TaskPublicationTests.test_other_slice_contracts_keep_stock_scalar_publication) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 1.351s
+
+OK

@@ -1,0 +1,323 @@
+"""Metadata admission and real Torch oracle for the one-launch EP remap.
+
+GPU callers can use ``legacy_remap`` with CUDA tensors to compare the fused
+kernel against the actual serving remap, without duplicating its semantics.
+"""
+import ast
+import importlib.util
+import math
+from pathlib import Path
+import sys
+from types import ModuleType, SimpleNamespace
+import unittest
+from unittest.mock import Mock, patch
+
+ROOT = Path(__file__).resolve().parents[1]
+REMAP = ROOT / "overlay/modules/glm53_moe/glm53_ep_route_remap.py"
+WRAPPER = ROOT / "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"
+
+
+def extract(path, names, namespace):
+    body = [node for node in ast.parse(path.read_text()).body
+            if isinstance(node, ast.FunctionDef) and node.name in names]
+    exec(compile(ast.Module(body=body, type_ignores=[]), str(path), "exec"), namespace)
+    return namespace
+
+
+def legacy_remap(topk_ids, topk_weights, **kwargs):
+    """Run the actual wrapper implementation with ordinary CPU or CUDA tensors."""
+    import torch
+    ns = extract(WRAPPER, {"_ep_buf", "remap_b12x_ep_tensors"}, {"torch": torch})
+    return ns["remap_b12x_ep_tensors"](topk_ids, topk_weights, **kwargs)
+
+
+def _i32(value):
+    return (int(value) + (1 << 31)) % (1 << 32) - (1 << 31)
+
+
+def slot_reference(expert, *, expert_map, local_expert_offset):
+    """Independent scalar description of the legacy tensor conversion order."""
+    if expert_map is not None:
+        if not 0 <= expert < len(expert_map) or expert_map[expert] < 0:
+            return 72, True
+        return _i32(expert_map[expert]), False
+    local = _i32(_i32(expert) - local_expert_offset)
+    remote = expert < 0 or local < 0 or local >= 72
+    return (72 if remote else local), remote
+
+
+class FakeTensor:
+    def __init__(self, shape=(4097, 8), dtype="int32", device="cuda:0", contiguous=True):
+        self.shape, self.dtype, self.device = shape, dtype, device
+        self.is_cuda = device.startswith("cuda")
+        self.ndim, self._contiguous = len(shape), contiguous
+
+    def is_contiguous(self):
+        return self._contiguous
+
+    def numel(self):
+        return math.prod(self.shape)
+
+
+class AdmissionTests(unittest.TestCase):
+    def namespace(self):
+        launcher = Mock()
+        # A JITFunction is subscripted with a launch grid.
+        class Kernel:
+            def __getitem__(self, grid):
+                self.grid = grid
+                return launcher
+        kernel = Kernel()
+        torch = SimpleNamespace(Tensor=FakeTensor, int32="int32", int64="int64",
+                                float32="float32", float16="float16", bfloat16="bfloat16")
+        ns = extract(REMAP, {"_ep_route_remap_metadata", "ep_route_remap_supported",
+                             "try_remap_ep_local"}, dict(
+            torch=torch, triton=SimpleNamespace(cdiv=lambda n, d: (n+d-1)//d),
+            _remap_ep_local_kernel=kernel))
+        return ns, kernel, launcher
+
+    def inputs(self, dtype="float32"):
+        return dict(topk_ids=FakeTensor(), topk_weights=FakeTensor(dtype=dtype),
+                    expert_map=FakeTensor((288,)), num_local_experts=72,
+                    local_expert_offset=72, out_ids=FakeTensor(),
+                    out_scales=FakeTensor(dtype=dtype))
+
+    def test_one_launch_reuses_scratch_and_preserves_dtype_for_each_arm(self):
+        ns, kernel, launch = self.namespace()
+        for dtype in ("float32", "float16", "bfloat16"):
+            for mapping in (None, FakeTensor((0,)), FakeTensor((288,), dtype="int64")):
+                with self.subTest(dtype=dtype, mapping=mapping):
+                    launch.reset_mock()
+                    args = self.inputs(dtype)
+                    args["expert_map"] = mapping
+                    self.assertTrue(ns["try_remap_ep_local"](**args))
+                    launch.assert_called_once()
+                    sent, constants = launch.call_args
+                    self.assertIs(sent[0], args["topk_ids"])
+                    self.assertIs(sent[1], args["topk_weights"])
+                    self.assertIs(sent[3], args["out_ids"])
+                    self.assertIs(sent[4], args["out_scales"])
+                    self.assertEqual(kernel.grid, (129,))  # 4097*8 tail mask
+                    self.assertEqual(constants["HAS_MAP"], mapping is not None)
+                    self.assertEqual(constants["MAP_LEN"], mapping.numel() if mapping else 0)
+                    if mapping is None or not mapping.numel():
+                        self.assertIs(sent[2], args["out_ids"])
+
+    def test_unsupported_metadata_returns_before_any_launch(self):
+        ns, _, launch = self.namespace()
+        changes = (
+            {"num_local_experts": 73}, {"local_expert_offset": -1},
+            {"local_expert_offset": True},
+            {"topk_ids": FakeTensor((4095, 8))},
+            {"topk_ids": FakeTensor((16385, 8))},
+            {"topk_ids": FakeTensor((4097, 1))},
+            {"topk_ids": FakeTensor(dtype="float32")},
+            {"topk_ids": FakeTensor(device="cpu")},
+            {"topk_weights": FakeTensor(dtype="float64")},
+            {"out_ids": FakeTensor(dtype="int64")},
+            {"out_scales": FakeTensor(dtype="float16")},
+            {"out_scales": FakeTensor(dtype="float32", contiguous=False)},
+            {"out_scales": FakeTensor(dtype="float32", device="cuda:1")},
+            {"expert_map": FakeTensor((288,), dtype="float32")},
+            {"expert_map": FakeTensor((288, 1))},
+            {"expert_map": FakeTensor((288,), contiguous=False)},
+            {"expert_map": FakeTensor((288,), device="cuda:1")},
+        )
+        for change in changes:
+            with self.subTest(change=change):
+                self.assertFalse(ns["try_remap_ep_local"](**dict(self.inputs(), **change)))
+        launch.assert_not_called()
+
+    def test_launch_failure_propagates_instead_of_requesting_fallback(self):
+        ns, _, launch = self.namespace()
+        launch.side_effect = RuntimeError("launch failed")
+        with self.assertRaisesRegex(RuntimeError, "launch failed"):
+            ns["try_remap_ep_local"](**self.inputs())
+
+    def test_launch_sizes_are_validated_once_and_recomputed_for_reused_tensors(self):
+        ns, kernel, launch = self.namespace()
+        args = self.inputs()
+        ids, mapping = args["topk_ids"], args["expert_map"]
+        # Admission already has the dense shape; avoid additional Tensor size
+        # queries to prepare the launch, or reading the map size a second time.
+        ids.numel = Mock(side_effect=AssertionError("redundant ids size query"))
+        mapping.numel = Mock(wraps=mapping.numel)
+        for rows, map_len in ((4097, 288), (8192, 144), (4096, 0)):
+            with self.subTest(rows=rows, map_len=map_len):
+                for name in ("topk_ids", "topk_weights", "out_ids", "out_scales"):
+                    args[name].shape = (rows, 8)
+                mapping.shape = (map_len,)
+                mapping.numel.reset_mock()
+                launch.reset_mock()
+                self.assertTrue(ns["try_remap_ep_local"](**args))
+                mapping.numel.assert_called_once_with()
+                launch.assert_called_once()
+                sent, constants = launch.call_args
+                self.assertEqual(sent[5], rows * 8)
+                self.assertEqual(kernel.grid, ((rows * 8 + 255) // 256,))
+                self.assertEqual(constants["MAP_LEN"], map_len)
+                self.assertTrue(constants["HAS_MAP"])
+                self.assertIs(sent[2], mapping if map_len else args["out_ids"])
+        ids.numel.assert_not_called()
+
+    def test_reused_tensor_metadata_is_revalidated_after_every_launch(self):
+        ns, _, launch = self.namespace()
+        args = self.inputs()
+        self.assertTrue(ns["try_remap_ep_local"](**args))
+        for name, attribute, invalid in (
+            ("topk_ids", "shape", (4095, 8)),
+            ("topk_ids", "_contiguous", False),
+            ("out_ids", "device", "cuda:1"),
+            ("topk_weights", "dtype", "float16"),
+            ("expert_map", "device", "cuda:1"),
+            ("expert_map", "shape", ((1 << 31),)),
+        ):
+            with self.subTest(tensor=name, attribute=attribute):
+                tensor = args[name]
+                original = getattr(tensor, attribute)
+                setattr(tensor, attribute, invalid)
+                launch.reset_mock()
+                self.assertFalse(ns["try_remap_ep_local"](**args))
+                launch.assert_not_called()
+                setattr(tensor, attribute, original)
+                self.assertTrue(ns["try_remap_ep_local"](**args))
+                launch.assert_called_once()
+
+    def test_public_support_check_is_boolean_and_never_launches(self):
+        ns, _, launch = self.namespace()
+        args = self.inputs()
+        self.assertIs(ns["ep_route_remap_supported"](**args), True)
+        args["out_ids"].device = "cuda:1"
+        self.assertIs(ns["ep_route_remap_supported"](**args), False)
+        launch.assert_not_called()
+
+
+class WrapperScratchTests(unittest.TestCase):
+    class Buffer:
+        def __init__(self, rows):
+            self.rows = rows
+            self.slices = []
+
+        def size(self, axis):
+            return self.rows if axis == 0 else 8
+
+        def __getitem__(self, key):
+            view = SimpleNamespace(parent=self, key=key)
+            self.slices.append(view)
+            return view
+
+    def fixture(self):
+        tree = ast.parse(WRAPPER.read_text())
+        cls = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+                   and node.name == "FlashInferB12xExperts")
+        method = next(node for node in cls.body if isinstance(node, ast.FunctionDef)
+                      and node.name == "_remap_ep_tensors")
+        legacy = Mock(return_value=("legacy ids", "legacy weights"))
+        namespace = {"remap_b12x_ep_tensors": legacy}
+        future = ast.parse("from __future__ import annotations").body[0]
+        exec(compile(ast.Module(body=[future, method], type_ignores=[]),
+                     str(WRAPPER), "exec"), namespace)
+        buffers = {name: self.Buffer(8192) for name in (
+            "_ep_ids", "_ep_scales", "_ep_long", "_ep_mapped",
+            "_ep_remote", "_ep_tmp_a", "_ep_tmp_b")}
+        wrapper = SimpleNamespace(num_local_experts=72, local_expert_offset=72, **buffers)
+        module = ModuleType("test_remap")
+        module.try_remap_ep_local = Mock(return_value=True)
+        return namespace["_remap_ep_tensors"], wrapper, module, legacy
+
+    def test_full_candidate_reuses_tensor_objects_without_any_scratch_views(self):
+        method, wrapper, module, legacy = self.fixture()
+        name = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap"
+        with patch.dict(sys.modules, {name: module}):
+            result = method(wrapper, self.Buffer(8192), object(), object(),
+                            fuse_local_prefill=True)
+        self.assertIs(result[0], wrapper._ep_ids)
+        self.assertIs(result[1], wrapper._ep_scales)
+        for value in vars(wrapper).values():
+            if isinstance(value, self.Buffer):
+                self.assertEqual(value.slices, [])
+        legacy.assert_not_called()
+
+    def test_partial_candidate_uses_current_storage_and_exact_row_views(self):
+        method, wrapper, module, _ = self.fixture()
+        name = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap"
+        with patch.dict(sys.modules, {name: module}):
+            for rows in (4096, 6912):
+                # Replacement models a dtype/device scratch rebuild. No view
+                # from the earlier storage may be reused by the wrapper.
+                wrapper._ep_ids = self.Buffer(8192)
+                wrapper._ep_scales = self.Buffer(8192)
+                result = method(wrapper, self.Buffer(rows), object(), object(),
+                                fuse_local_prefill=True)
+                for actual, parent in zip(result, (wrapper._ep_ids, wrapper._ep_scales)):
+                    self.assertIs(actual.parent, parent)
+                    self.assertEqual(actual.key, slice(None, rows))
+
+    def test_declined_candidate_and_disabled_path_keep_legacy_scratch(self):
+        method, wrapper, module, legacy = self.fixture()
+        module.try_remap_ep_local.return_value = False
+        name = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap"
+        with patch.dict(sys.modules, {name: module}):
+            result = method(wrapper, self.Buffer(8192), object(), object(),
+                            fuse_local_prefill=True)
+            self.assertEqual(result, legacy.return_value)
+            self.assertIs(legacy.call_args.kwargs["out_ids"], wrapper._ep_ids)
+            self.assertIs(legacy.call_args.kwargs["out_scales"], wrapper._ep_scales)
+            for name in ("long_idx", "mapped", "remote", "tmp_a", "tmp_b"):
+                self.assertEqual(legacy.call_args.kwargs[name].key, slice(None, 8192))
+            module.try_remap_ep_local.reset_mock()
+            method(wrapper, self.Buffer(8192), object(), object())
+            module.try_remap_ep_local.assert_not_called()
+            self.assertIs(legacy.call_args.kwargs["out_ids"].parent, wrapper._ep_ids)
+            self.assertIs(legacy.call_args.kwargs["out_scales"].parent, wrapper._ep_scales)
+
+
+@unittest.skipUnless(importlib.util.find_spec("torch"), "pinned CPU image supplies Torch")
+class ReferenceTests(unittest.TestCase):
+    def test_actual_tensor_remap_matches_scalar_conversion_and_range_oracle(self):
+        import torch
+        pattern = [-1, -(1 << 40), 0, 71, 72, 73, 143, 144, 287, 288,
+                   (1 << 32)+72, (1 << 32)+73, 72, 72, 74, 75]
+        mapping = [-1]*288
+        mapping[72:76] = [0, 72, 73, (1 << 32)+7]
+        maps = (None, [], mapping)
+        for offset in (0, 72, 216):
+            for values in maps:
+                with self.subTest(offset=offset, mapped=values is not None):
+                    ids = torch.tensor(pattern, dtype=torch.int64).reshape(2, 8)
+                    weights = torch.arange(16, dtype=torch.float32).reshape(2, 8)
+                    mapped = None if values is None else torch.tensor(values, dtype=torch.int64)
+                    out_ids, out_weights = legacy_remap(
+                        ids, weights, expert_map=mapped, num_local_experts=72,
+                        local_expert_offset=offset)
+                    expected = [slot_reference(x, expert_map=values, local_expert_offset=offset)
+                                for x in pattern]
+                    self.assertEqual(out_ids.reshape(-1).tolist(), [x[0] for x in expected])
+                    self.assertEqual(out_weights.reshape(-1).tolist(),
+                                     [0. if x[1] else float(i) for i, x in enumerate(expected)])
+
+    def test_actual_remap_preserves_local_bits_and_zeros_remote_nonfinite_weights(self):
+        import torch
+        for dtype, bits_dtype, nan, negative_zero in (
+            (torch.float32, torch.int32, 0x7FC01234, -(1 << 31)),
+            (torch.float16, torch.int16, 0x7E12, -(1 << 15)),
+            (torch.bfloat16, torch.int16, 0x7FC1, -(1 << 15)),
+        ):
+            with self.subTest(dtype=dtype):
+                bits = torch.tensor([nan, negative_zero, nan, negative_zero,
+                                     nan, negative_zero, nan, negative_zero], dtype=bits_dtype)
+                weights = bits.view(dtype).reshape(1, 8)
+                ids = torch.tensor([[72, 72, -1, 288, 72, 72, 71, 144]], dtype=torch.int32)
+                mapping = torch.full((288,), -1, dtype=torch.int32)
+                mapping[72] = 0
+                _, remapped = legacy_remap(ids, weights, expert_map=mapping,
+                                          num_local_experts=72, local_expert_offset=72)
+                self.assertEqual(remapped.view(bits_dtype).reshape(-1).tolist(),
+                                 [nan, negative_zero, 0, 0, nan, negative_zero, 0, 0])
+                _, empty = legacy_remap(ids, weights, expert_map=mapping[:0],
+                                       num_local_experts=72, local_expert_offset=72)
+                self.assertEqual(empty.view(bits_dtype).reshape(-1).tolist(), [0]*8)
+
+
+if __name__ == "__main__":
+    unittest.main()

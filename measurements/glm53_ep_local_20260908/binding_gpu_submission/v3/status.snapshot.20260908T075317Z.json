@@ -1,0 +1,15 @@
+{
+  "captured_at_utc": "2026-09-08T07:53:17.212059+00:00",
+  "captured_at_kst": "2026-09-08T16:53:17.212059+09:00",
+  "epoch": 1788853997.2152457,
+  "job": "/tmp/glm53-ep-binding-gpu0908-3",
+  "driver_pid": 1808590,
+  "driver_proc_exists": true,
+  "exit_json_exists": false,
+  "capture_directory_exists": false,
+  "capture_files": [],
+  "holder": "attr0908|1789800|srv2|1788853755|60|40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해|boot\n",
+  "queue": "17888538141808591|epbindinggpu0908v3|1788853814|6|Post-context CUDA binding only: CPU48 gates, same image and sanitizer, exact original restore|boot|1808591\n",
+  "source_read_only": true,
+  "driver_stat": "1808590 (python3) S 1 1808590 1808590 0 -1 4194304 1521 0 0 0 0 0 0 0 20 0 1 0 35620663 33841152 2824 18446744073709551615 4194304 10541936 281474343865296 0 0 0 0 16781312 2 1 0 0 17 0 0 0 0 0 0 10616216 12102000 666931200 281474343869885 281474343869935 281474343869935 281474343870439 0\n"
+}

@@ -1,0 +1,12 @@
+{"verdict": "FAIL", "phase": "micro-cute-compile", "error": "DSLUserCodeError('\\n\\x1b[91m\\x1b[1merror[UNSUP_EARLY_EXIT]:\\x1b[0m Early exit (raise) is not allowed in `kernel`. A staged for/while/if runs as a whole, so it cannot return/break/continue out early.\\n    \\x1b[94m-->\\x1b[0m /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py:1734:25\\n     |\\n1732 |                     # contiguous BF16 register pair; no scalar-warp remapping.\\n1733 |                     if cutlass.const_expr(cute.size(tRS_sD, mode=[3]) != 1):\\n1734 |                         raise ValueError(\"direct scatter requires one epilogue buffer\")\\n     |                         \\x1b[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\x1b[0m\\n  \\x1b[92msuggestion:\\x1b[0m If the condition is decided at compile time, write `if const_expr(...)` or `for ... in\\n              range_constexpr(...)` -- then the early exit runs in Python and is allowed.\\n')", "contracts": null, "cuda_initialized": null}
+
+[91m[1merror[UNSUP_EARLY_EXIT]:[0m Early exit (raise) is not allowed in `kernel`. A staged for/while/if runs as a whole, so it cannot return/break/continue out early.
+    [94m-->[0m /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py:1734:25
+     |
+1732 |                     # contiguous BF16 register pair; no scalar-warp remapping.
+1733 |                     if cutlass.const_expr(cute.size(tRS_sD, mode=[3]) != 1):
+1734 |                         raise ValueError("direct scatter requires one epilogue buffer")
+     |                         [91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [92msuggestion:[0m If the condition is decided at compile time, write `if const_expr(...)` or `for ... in
+              range_constexpr(...)` -- then the early exit runs in Python and is allowed.
+

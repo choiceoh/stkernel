@@ -1,0 +1,212 @@
+{
+  "verified_at_utc": "2026-09-08T07:57:09.159124+00:00",
+  "immutable_source_rechecks_passed": true,
+  "immutable_source_count": 20,
+  "all_local_archive_hashes_match": true,
+  "cpu_receipts_match_cpu8_local_result": true,
+  "checks": [
+    {
+      "local": "v1/driver.pid",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "9be4a9129d63e4a2861a78a6684fcb2afb33dcea111382c120b0f0b157478540",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v1/submission.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "040dccb562372cf9d47ba8734e974d14d34f2b383275cd401718ed55455f6a4e",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v1/freeze.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "f1957665fb5209d518b96f9c17e739ae07535da6a80deb84c8e4769e87b7aea1",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v1/exit.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "07458b468e7ce2086ac57c436f0bc3f31224a81eb6142c9091e61c3292195ecd",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v1/phase-results.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "02d95e3aa52b118cbd415523036aff2574474a1a4eabe805bd06aebf78617fe2",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v1/fleet.log",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "1c8f08c450c0223e977d545053afe1ef78867172db8297f2e0a5e3d680f26c3d",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/driver.pid",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "270d429c5d69f41cca094342c832ee48fd1262fa5247ebc4deb455076ab6f97a",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/submission.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "c697ae403fcbe730e72da8b5a11647451cbe41c829c4aaaa349a09ec04a3bc6b",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/freeze.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "cde3ec91dbacc26ecba64911db70b5cf067403a65c12a613c231757feeca41c1",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/exit.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "0e75647d2338633f116a3098c8385dea2b2e6a0b08b13c4906fdd2961e2c8cb7",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/cpu-evidence.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "b88d759166a6c3e8b64e21b095763a0344a7e3867c101883a2cf4246cf62dc11",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/fleet.log",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "5f4ec515b3598c212a9306e39c0c662eeee56183f310dacc8b0a9bd20ce66055",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/capture/before.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "22ddd9eb5a3082fed08251ed203ae311bb23d95a6b6a1d15556abd9b02ca95cd",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/capture/completion.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "db7f952bfb5bb8b1ef01e0faa95ad487bbd8b37119cbbc6d97aa0f28361ddbc5",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/capture/sanitizer-preflight.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "949e950be9717ecb70e26db4f83fe8765c0518a493aed3b8214e614629ca3558",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v2/capture/resources-before.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "85586f82cdb027f282f08e898f2f22cc99635dfd3e4308a5f3b9fa0d1f8183b9",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v3/driver.pid",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "cc147590a57dd2025751b3f4f9d77cb41d3ef655a906110f3b797886ba1c83d6",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v3/submission.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "98495658da5aa781fd5f3b20e4b35580fd67f3c6c768c531e5c4ca2fdfeb94f6",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v3/freeze.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "8e9afc35570792e702c8995b104fd37f8ccaf818b0f44aec2c20747722fbfdc9",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v3/cpu-evidence.json",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "b88d759166a6c3e8b64e21b095763a0344a7e3867c101883a2cf4246cf62dc11",
+      "remote_still_matches_capture": true,
+      "mutable_source": false
+    },
+    {
+      "local": "v3/fleet.snapshot.20260908T075317Z.log",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "2e03a94a68f63f833b671fd296ab782f2de4ca5d74e0ec207036dee4e21de9d1",
+      "remote_still_matches_capture": false,
+      "mutable_source": true
+    },
+    {
+      "local": "v3/fleet-state/holder.snapshot.20260908T075317Z.txt",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "c923e404a33beaad62d1edd2bde7b2adc9c21130c0208dec8b91809f3b61a6c8",
+      "remote_still_matches_capture": true,
+      "mutable_source": true
+    },
+    {
+      "local": "v3/fleet-state/queue.snapshot.20260908T075317Z.txt",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "32f3b96469c01b5e244b45745a5474c78b7ed910de86f70511647d0fc513ecaa",
+      "remote_still_matches_capture": false,
+      "mutable_source": true
+    },
+    {
+      "local": "fleet-history/log.relevant.snapshot.20260908T075317Z.txt",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "da6e11fd2329c53a7b202955877db1fafd554239a498cbad80e580d4ef4ff905",
+      "remote_still_matches_capture": false,
+      "mutable_source": true
+    },
+    {
+      "local": "fleet-history/events.log.relevant.snapshot.20260908T075317Z.txt",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "90380681b371db982f0d2712467669206bd3ec7391e6fae7eb2ee3f7a7ba9778",
+      "remote_still_matches_capture": true,
+      "mutable_source": true
+    },
+    {
+      "local": "fleet-history/ledger.tsv.relevant.snapshot.20260908T075317Z.txt",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "d305b33af75c5f0a0ed11545a687fc9f1d76cd8be1b6f415dbc297badf1933cc",
+      "remote_still_matches_capture": true,
+      "mutable_source": true
+    },
+    {
+      "local": "v3/fleet.snapshot.20260908T075507Z.log",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "2e03a94a68f63f833b671fd296ab782f2de4ca5d74e0ec207036dee4e21de9d1",
+      "remote_still_matches_capture": true,
+      "mutable_source": true
+    },
+    {
+      "local": "v3/fleet-state/holder.snapshot.20260908T075507Z.txt",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "c923e404a33beaad62d1edd2bde7b2adc9c21130c0208dec8b91809f3b61a6c8",
+      "remote_still_matches_capture": true,
+      "mutable_source": true
+    },
+    {
+      "local": "v3/fleet-state/queue.snapshot.20260908T075507Z.txt",
+      "local_sha256_matches": true,
+      "remote_source_sha256_recheck": "32f3b96469c01b5e244b45745a5474c78b7ed910de86f70511647d0fc513ecaa",
+      "remote_still_matches_capture": true,
+      "mutable_source": true
+    }
+  ]
+}

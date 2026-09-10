@@ -1,0 +1,7 @@
+2026-09-08_16:34:46 refused --cpu epbindingcpugate0908v1: classifier saw GPU use
+2026-09-08_16:42:35 request epbindinggpu0908v2 est=6m Post-context CUDA binding only: CPU48 gates, same image and sanitizer, exact original restore [boot]
+2026-09-08_16:44:07 GO epbindinggpu0908v2 (pid 1751927)
+2026-09-08_16:49:14 ledger epbindinggpu0908v2 held=5m boots=1 records=0 wasted=1
+2026-09-08_16:49:14   kept /home/choiceoh/glm53-logs/boot-epbindinggpu0908v2RESTORE.log
+2026-09-08_16:49:14 release epbindinggpu0908v2
+2026-09-08_16:50:14 request epbindinggpu0908v3 est=6m Post-context CUDA binding only: CPU48 gates, same image and sanitizer, exact original restore [boot]

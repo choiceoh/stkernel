@@ -1,0 +1,287 @@
+{
+  "driver.pid": {
+    "bytes": 8,
+    "sha256": "8a68d5010e06d4b8dfd6479c77f9837e248d0f2bc971821a684c9377fc3f10e6",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/driver.pid"
+  },
+  "driver.py": {
+    "bytes": 417,
+    "sha256": "775909d98d7608dc73d123fabdb80be92a0ddc5e6e04be07d6b5e01cfda8346f",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/driver.py"
+  },
+  "exit.json": {
+    "bytes": 1050,
+    "sha256": "ec44dc7e28f923e644b2ed5b96a4c55bacb8b275b10a950bae0a1be5a87c1085",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/exit.json"
+  },
+  "fleet.log": {
+    "bytes": 10827,
+    "sha256": "4f1a7b7a5090f05699d2da985f66e57e3d07537e53681d5e75e24fcb8c7e5454",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/fleet.log"
+  },
+  "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+    "bytes": 308384,
+    "sha256": "686ed711e7ff348166ce0e5cf660fdb01dd866df1a5a694dd995246e24551f08",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin"
+  },
+  "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+    "bytes": 958390,
+    "sha256": "e9069f2712a21cec7ab6ef08b316794c2abfeff15dfb161296a774fb8c2f079c",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx"
+  },
+  "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+    "bytes": 325,
+    "sha256": "792e298351a987a48eb76f5d7ff6d7094a9f9d2895a1e553c15832cc3eea38e2",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log"
+  },
+  "local/remap/empty-i32-bf16-i32/kernel.cubin": {
+    "bytes": 10032,
+    "sha256": "8a0ffe987e360c69444edb7410b1f5e5ff9c5ff51ea90bcfdc8c5cd4eb60689e",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i32-bf16-i32/kernel.cubin"
+  },
+  "local/remap/empty-i32-bf16-i32/kernel.ptx": {
+    "bytes": 5248,
+    "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i32-bf16-i32/kernel.ptx"
+  },
+  "local/remap/empty-i32-fp16-i32/kernel.cubin": {
+    "bytes": 10032,
+    "sha256": "8a0ffe987e360c69444edb7410b1f5e5ff9c5ff51ea90bcfdc8c5cd4eb60689e",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i32-fp16-i32/kernel.cubin"
+  },
+  "local/remap/empty-i32-fp16-i32/kernel.ptx": {
+    "bytes": 5248,
+    "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i32-fp16-i32/kernel.ptx"
+  },
+  "local/remap/empty-i32-fp32-i32/kernel.cubin": {
+    "bytes": 9736,
+    "sha256": "14038407b9f850a845065baf1dc73054053ab55f35f8d6f4f7fdd461f68b0666",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i32-fp32-i32/kernel.cubin"
+  },
+  "local/remap/empty-i32-fp32-i32/kernel.ptx": {
+    "bytes": 5241,
+    "sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i32-fp32-i32/kernel.ptx"
+  },
+  "local/remap/empty-i64-bf16-i32/kernel.cubin": {
+    "bytes": 10032,
+    "sha256": "8a0ffe987e360c69444edb7410b1f5e5ff9c5ff51ea90bcfdc8c5cd4eb60689e",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i64-bf16-i32/kernel.cubin"
+  },
+  "local/remap/empty-i64-bf16-i32/kernel.ptx": {
+    "bytes": 5248,
+    "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i64-bf16-i32/kernel.ptx"
+  },
+  "local/remap/empty-i64-fp16-i32/kernel.cubin": {
+    "bytes": 10032,
+    "sha256": "8a0ffe987e360c69444edb7410b1f5e5ff9c5ff51ea90bcfdc8c5cd4eb60689e",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i64-fp16-i32/kernel.cubin"
+  },
+  "local/remap/empty-i64-fp16-i32/kernel.ptx": {
+    "bytes": 5248,
+    "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i64-fp16-i32/kernel.ptx"
+  },
+  "local/remap/empty-i64-fp32-i32/kernel.cubin": {
+    "bytes": 9736,
+    "sha256": "14038407b9f850a845065baf1dc73054053ab55f35f8d6f4f7fdd461f68b0666",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i64-fp32-i32/kernel.cubin"
+  },
+  "local/remap/empty-i64-fp32-i32/kernel.ptx": {
+    "bytes": 5241,
+    "sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/empty-i64-fp32-i32/kernel.ptx"
+  },
+  "local/remap/mapped-i32-bf16-i32/kernel.cubin": {
+    "bytes": 11808,
+    "sha256": "6a10a3a365501de6617dcbd47857f0c81cde704dfb92aeade209a1e9bcb63781",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-bf16-i32/kernel.cubin"
+  },
+  "local/remap/mapped-i32-bf16-i32/kernel.ptx": {
+    "bytes": 7720,
+    "sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-bf16-i32/kernel.ptx"
+  },
+  "local/remap/mapped-i32-bf16-i64/kernel.cubin": {
+    "bytes": 12016,
+    "sha256": "ef0f88b26b7b053e27079d0142e17a96878d659c94d35b2b0c69ed9b1e836873",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-bf16-i64/kernel.cubin"
+  },
+  "local/remap/mapped-i32-bf16-i64/kernel.ptx": {
+    "bytes": 7991,
+    "sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-bf16-i64/kernel.ptx"
+  },
+  "local/remap/mapped-i32-fp16-i32/kernel.cubin": {
+    "bytes": 11808,
+    "sha256": "6a10a3a365501de6617dcbd47857f0c81cde704dfb92aeade209a1e9bcb63781",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-fp16-i32/kernel.cubin"
+  },
+  "local/remap/mapped-i32-fp16-i32/kernel.ptx": {
+    "bytes": 7720,
+    "sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-fp16-i32/kernel.ptx"
+  },
+  "local/remap/mapped-i32-fp16-i64/kernel.cubin": {
+    "bytes": 12016,
+    "sha256": "ef0f88b26b7b053e27079d0142e17a96878d659c94d35b2b0c69ed9b1e836873",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-fp16-i64/kernel.cubin"
+  },
+  "local/remap/mapped-i32-fp16-i64/kernel.ptx": {
+    "bytes": 7991,
+    "sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-fp16-i64/kernel.ptx"
+  },
+  "local/remap/mapped-i32-fp32-i32/kernel.cubin": {
+    "bytes": 11808,
+    "sha256": "20973762a79a7677483290a4a877dcb5f775f374159f97629d8fefc333549319",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-fp32-i32/kernel.cubin"
+  },
+  "local/remap/mapped-i32-fp32-i32/kernel.ptx": {
+    "bytes": 7667,
+    "sha256": "2f5e7f4c0033be95e1b339ebbf7dd8f03c494135feab5fbe78911b5a2b57eb0d",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-fp32-i32/kernel.ptx"
+  },
+  "local/remap/mapped-i32-fp32-i64/kernel.cubin": {
+    "bytes": 11888,
+    "sha256": "ad5234088c26573042a926d514856e5c18ea385c7717a6bcddc68cca5aaae78f",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-fp32-i64/kernel.cubin"
+  },
+  "local/remap/mapped-i32-fp32-i64/kernel.ptx": {
+    "bytes": 7941,
+    "sha256": "8f702e3f7c6203b6a62f314614b0c6274a024d0122edf82800349859019489db",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i32-fp32-i64/kernel.ptx"
+  },
+  "local/remap/mapped-i64-bf16-i32/kernel.cubin": {
+    "bytes": 12240,
+    "sha256": "03ff39a9ed69290329e53fab2c14614d516a83f2183ef4278233df2eb5712e65",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-bf16-i32/kernel.cubin"
+  },
+  "local/remap/mapped-i64-bf16-i32/kernel.ptx": {
+    "bytes": 7747,
+    "sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-bf16-i32/kernel.ptx"
+  },
+  "local/remap/mapped-i64-bf16-i64/kernel.cubin": {
+    "bytes": 12432,
+    "sha256": "d1e5c979b38e37a95dea75e585e2989dc60da678b6708a65bfacd70095da0ef0",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-bf16-i64/kernel.cubin"
+  },
+  "local/remap/mapped-i64-bf16-i64/kernel.ptx": {
+    "bytes": 8020,
+    "sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-bf16-i64/kernel.ptx"
+  },
+  "local/remap/mapped-i64-fp16-i32/kernel.cubin": {
+    "bytes": 12240,
+    "sha256": "03ff39a9ed69290329e53fab2c14614d516a83f2183ef4278233df2eb5712e65",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-fp16-i32/kernel.cubin"
+  },
+  "local/remap/mapped-i64-fp16-i32/kernel.ptx": {
+    "bytes": 7747,
+    "sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-fp16-i32/kernel.ptx"
+  },
+  "local/remap/mapped-i64-fp16-i64/kernel.cubin": {
+    "bytes": 12432,
+    "sha256": "d1e5c979b38e37a95dea75e585e2989dc60da678b6708a65bfacd70095da0ef0",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-fp16-i64/kernel.cubin"
+  },
+  "local/remap/mapped-i64-fp16-i64/kernel.ptx": {
+    "bytes": 8020,
+    "sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-fp16-i64/kernel.ptx"
+  },
+  "local/remap/mapped-i64-fp32-i32/kernel.cubin": {
+    "bytes": 12208,
+    "sha256": "59de63523ff1f458b9afe78ae4dc07ebee20fc7ca8d8145acbc11912414311e3",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-fp32-i32/kernel.cubin"
+  },
+  "local/remap/mapped-i64-fp32-i32/kernel.ptx": {
+    "bytes": 7722,
+    "sha256": "8b5122b74204fdf9e6dcf24c6fc8853e42955682ff4a4548355c9bc4a1b8e1b9",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-fp32-i32/kernel.ptx"
+  },
+  "local/remap/mapped-i64-fp32-i64/kernel.cubin": {
+    "bytes": 12272,
+    "sha256": "c336033a6f6894796e70141ae67957bdd4e070e8e0ee9eff0523bae268607ac1",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-fp32-i64/kernel.cubin"
+  },
+  "local/remap/mapped-i64-fp32-i64/kernel.ptx": {
+    "bytes": 7993,
+    "sha256": "4825abab342c3ed078cfa33618cbb9484127586a9cbbc0029d1987aeba893738",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/mapped-i64-fp32-i64/kernel.ptx"
+  },
+  "local/remap/offset-i32-bf16-i32/kernel.cubin": {
+    "bytes": 11504,
+    "sha256": "624c46a7187fa257862c038ac25974ddbc92f84a4d1b1d4067c2687bbe4b08b6",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i32-bf16-i32/kernel.cubin"
+  },
+  "local/remap/offset-i32-bf16-i32/kernel.ptx": {
+    "bytes": 7313,
+    "sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i32-bf16-i32/kernel.ptx"
+  },
+  "local/remap/offset-i32-fp16-i32/kernel.cubin": {
+    "bytes": 11504,
+    "sha256": "624c46a7187fa257862c038ac25974ddbc92f84a4d1b1d4067c2687bbe4b08b6",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i32-fp16-i32/kernel.cubin"
+  },
+  "local/remap/offset-i32-fp16-i32/kernel.ptx": {
+    "bytes": 7313,
+    "sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i32-fp16-i32/kernel.ptx"
+  },
+  "local/remap/offset-i32-fp32-i32/kernel.cubin": {
+    "bytes": 11368,
+    "sha256": "5c0ca00d0ddc3474e634ffd48f7b540337a7c55a4b5000bef8b0b7f20ad7b10f",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i32-fp32-i32/kernel.cubin"
+  },
+  "local/remap/offset-i32-fp32-i32/kernel.ptx": {
+    "bytes": 7263,
+    "sha256": "a0cefa45eadba91362f0a98ae35d3bef8e35afa627ff1bda2dd4394749c9ed58",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i32-fp32-i32/kernel.ptx"
+  },
+  "local/remap/offset-i64-bf16-i32/kernel.cubin": {
+    "bytes": 11640,
+    "sha256": "6600a53d941789f190e578cfb3428106ccca0ea6e5e3d5dc87dd078d818ce6e4",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i64-bf16-i32/kernel.cubin"
+  },
+  "local/remap/offset-i64-bf16-i32/kernel.ptx": {
+    "bytes": 7301,
+    "sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i64-bf16-i32/kernel.ptx"
+  },
+  "local/remap/offset-i64-fp16-i32/kernel.cubin": {
+    "bytes": 11640,
+    "sha256": "6600a53d941789f190e578cfb3428106ccca0ea6e5e3d5dc87dd078d818ce6e4",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i64-fp16-i32/kernel.cubin"
+  },
+  "local/remap/offset-i64-fp16-i32/kernel.ptx": {
+    "bytes": 7301,
+    "sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i64-fp16-i32/kernel.ptx"
+  },
+  "local/remap/offset-i64-fp32-i32/kernel.cubin": {
+    "bytes": 11624,
+    "sha256": "a938c50c41c07d54a523bc664da75aca5ca710db06d7cf157e76bbed5960024d",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i64-fp32-i32/kernel.cubin"
+  },
+  "local/remap/offset-i64-fp32-i32/kernel.ptx": {
+    "bytes": 7274,
+    "sha256": "630fe8b409dc6030aca83bbdb4c6864fafb5078753a995c871229186f4cba4a3",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/remap/offset-i64-fp32-i32/kernel.ptx"
+  },
+  "local/result.json": {
+    "bytes": 25469,
+    "sha256": "818c3d727de9b3af0c82146bbf7b596626672288bc964348b3a09dc03296e4ce",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/local/result.json"
+  },
+  "submission.json": {
+    "bytes": 947,
+    "sha256": "2ad2ada3277499d747085fed74b0a610dca7067de536c628b5699d1e87edd305",
+    "source": "/tmp/glm53-ep-local-compile0908-10-head/submission.json"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "mode": "ORIGINAL_CPU24_EXACT_SOURCE_REUSE",
+  "cpu_origin": {
+    "job": "/tmp/glm53-ep-decode-cpu-0909-24",
+    "source": "/home/choiceoh/stkernel-ep-onepass-0909-24",
+    "revision": "82ac3c34173ae63b3dd0a42c49f8421097e96a1a",
+    "result_sha256": "1d96612938f200bd86d078e1d8841cc92df808ba4ab802ca51306fe229b67506",
+    "submission_sha256": "b99461061122fb83a7beb4106fa1733e5fbf21a06bae45b92ff83b625474ed6c",
+    "exit_sha256": "ca36e7af240ffd23f4117192b13e4a6310ca53ffd5c3e9a4d695fde531c5ee56",
+    "archive_result": "measurements/glm53_ep_local_20260908/decode24-cpu/result.json"
+  },
+  "new_source": "/home/choiceoh/stkernel-ep-onepass-0909-25",
+  "new_revision": "055914aeb719c1769e05cdb863e43a88b2ee47af",
+  "mounted_and_contract_sources_equal": true,
+  "artifact_and_runtime_validation": true,
+  "new_cpu_compile": false
+}

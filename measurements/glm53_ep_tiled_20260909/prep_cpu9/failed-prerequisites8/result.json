@@ -1,0 +1,1252 @@
+{
+  "verdict": "FAIL",
+  "phase": "cpu-contracts",
+  "started": 1788996699.0781264,
+  "compile_only": true,
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false,
+  "scope": "seven local static, ten global-route static and two dynamic EP tiled compiler variants plus CPU contracts; no GPU",
+  "binding_runtime": {
+    "schema": 1,
+    "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+    "binding_identity": {
+      "version": "13.0.3",
+      "root": "/opt/glm53-bindings-capsule",
+      "modules": {
+        "cuda.bindings.driver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+        },
+        "cuda.bindings._bindings.cydriver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+        }
+      },
+      "distributions": {
+        "cuda-bindings": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+          "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+        },
+        "cuda-python": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+          "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+        }
+      }
+    },
+    "pathfinder": {
+      "version": "1.7.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+      "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+      "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+      "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+    }
+  },
+  "mounted_sources": {
+    "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "cfed03b8dfbd8fff466d143c0bee4e66f6f76f703a508461ffa8e301205a8204",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "40bdc0e9c38c3e406fd7dd7350e14077b80b5edf8b5e9fc31d323753b9bfbadf",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6_q0.py": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "89bab8e22514d4ce036e4cc6755a5dcfaeb8b12277766394dcdd101db8751595",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "b577457ff566add86837c467e2062b715bc9b1f2d1d2bfbb2addc0b9520a9b11",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_tp_sf6_q0_selftest.py": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled.py": "133520fab17bffdf528791c5115c465a768a70b5812acf0e9213d94fdccc8fa0",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_ep_tiled.py": "9288110d2c77b43e0ea08ad1edb4e0bfd5ef1ffd1ce9ba6bf2a469eb22815f21",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled_selftest.py": "e1e0b457499f5ef0858fbd121cc07608cc35c3f16d1f93ffd73d15bc6ce39c5a",
+    "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8"
+  },
+  "contract_sources": {
+    "probes/glm53_ep_tiled_compile.py": "3d188138d09b0b18d25d67dd114599d8877711933e104934313dd6df05690822",
+    "probes/run_glm53_ep_tiled_cpu.py": "61ce24a9f8b65ba7323a494e20943b0992f6482b5d4d61c6a7882fa9a89269b4",
+    "probes/glm53_ep_capsule_runtime.py": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+    "probes/glm53_ep_bindings_capsule.py": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+    "probes/glm53_ep_bindings_pair_check.py": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0",
+    "profiles/glm53.env": "b851576610bcba3be686b0b79435075ca92094bc613fbf5547ec413ad3235c20",
+    "bench/proof.py": "cc6e40070298c382e4f1e9d39e4efeecf1424d4864f5a48da2ec18d7bf100668",
+    "bench/proof-markers.tsv": "245a2764d9fac03888941714561fc130c2d81ee2c7b0a56553698b5df8f0a568",
+    "bench/onepass.py": "ea807b17eb1b578121eba0cac91109160edd45646799dc5c669ecc236a4d964d",
+    "bench/glm53_launch_metadata.py": "e24acbfcc43b64fff1a586c71e954de821f7b7b684350cb4be743606c1d0de13",
+    "bench/glm53_prep_proof.py": "a9323ca73c5753696e5a3cdb12647fc1a96649236960adaaf86a472b1cc982ee",
+    "bench/baseline.py": "b64df502c8b2b60a2272b0608350d2feb3c085e409003986d0221274cf38c9de",
+    "bench/judge.py": "2c6acfe1f7e645ccddfac39744ebd8f760c318e2f50cd5ee78c5d42ed2f9fd3f",
+    "overlay/modules/glm53_runtime/glm53_prep_fused.py": "097284ff8929d8aca4349bf861f7a71a61b82b8c5a580b282c20061ca579ef88",
+    "overlay/modules/glm53_runtime/kv_zero_worker_utils.py": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c",
+    "overlay/modules/glm53_runtime/manifest.tsv": "68e8023a5240bbc4316a5699bf0cc05eafe419a1f45d348aefa91be18bef0c31",
+    "tests/fixtures/glm53_prep_fused_runtime/identity.json": "eac6286d68d23c4f257a60243689fd8ee5a1f8c3eb53eedac7365adacbb9677e",
+    "tests/fixtures/glm53_prep_fused_runtime/model_runner.py.gz": "8202b1e8e8672c03a1be4be6835f25fd321aaf4cca9f66684fc6bcb28a23db76",
+    "tests/fixtures/glm53_prep_fused_runtime/worker_utils.image.py.gz": "5fc24d0e5813cc441965b7adea980a22242baf81e59b2ad6f80b14db56fc3dbc",
+    "overlay/modules/glm53_model/glm5next_model.py": "3ed3207b3767142326f75b33a712b3e990261a351d88802a4bb18945b0fa0b3f",
+    "measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz": "55d1c3ea9543bec24f65196440b740bb56c71ad6e5c1addf58be85b26896c605",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz": "4df575b8bc6d8d71b7e364fc89913ef5fa151a170179d994dc8bf83788bf89fb",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json": "8b23e618d5cf16281a535a6769515a542bfb79bf9aa70a503c90138679c3f775",
+    "tests/test_glm53_ep_tiled_static.py": "1ae2bb176a779e81de51ff830cd8a5c8bba7aa6d8b799343adbe06e42901dfde",
+    "tests/test_glm53_ep_tiled_prefill.py": "2a6cc96ff3474be8f71e89a220fb5076573680aafd13098429c1accab75f928d",
+    "tests/test_glm53_ep_tiled_owner.py": "f6e3c41f038c8218b0adb4cfd8eb744ddadd7cc9148a79b79e237795549eb81b",
+    "tests/test_glm53_ep_tiled_selftest.py": "85154729829f52d73b19f191b796ac626e2af41820f021b390b9ab3557b9f747",
+    "tests/test_glm53_ep_tiled_proof.py": "b46bf9a99735b485a8026ff282020448fb34927dce7dc0836f2c5d8ebdc87ab5",
+    "tests/test_moe_sf6_owner.py": "221c13318d505cc2a1c66d79bc25da0419cf769f24a2568b6060db90826fed1f",
+    "tests/test_moe_static_sf6_direct.py": "a6636beeff6880f62d096eb967cd44d6c6cc773d01877f567e62d464dc27c14e",
+    "tests/test_moe_dynamic_sf6.py": "72e12732a03af33c472f9704cff1afbcefafeb190b3da9d3d8b0724c601b9435",
+    "tests/test_moe_sf6_dispatch.py": "6747a7366e8b906db653f24204a4b3f186f95e72085a72d6cfcc1a74f0bc5c2f",
+    "tests/test_glm53_ep_tiled_a_ring.py": "857e253bc82a87274013d8932d029222330c7c4f5dcfe797f9b5b7325293ec9e",
+    "tests/test_glm53_ep_tiled_sf6_word_unpack.py": "56ed7cabfc780fc6c65fb602c70c059199dde1ceebcdb9eaaa3b2e48670ef8b7",
+    "tests/test_onepass_speculation_proof.py": "91a72dfffa3758da1445dd521d0fb67d7b496ece2aec8ab4cd31872b674d7419",
+    "tests/test_glm53_ep_tiled_route_fusion.py": "0c46d8c26fdd0b5191ceb4e645f6c3ba4d5516bf0846bce3c03c399841756f31",
+    "tests/test_glm53_prep_fused_kv_integration.py": "22afcac02d566ded61b45e645eaece5fbac25a66c3778aba4a883f2b2d079277",
+    "tests/test_onepass_prep_proof.py": "65e523860ea14abb96db6d936e354446f15a38ededa793da3c2a1db445cf13b8"
+  },
+  "scatter_helper": {
+    "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py",
+    "sha256": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+    "size": 87909,
+    "helper": "scatter_add_v4_bf16x2"
+  },
+  "static_passes": [
+    {
+      "arm": "static/M4",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        4,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M4/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.ptx",
+          "sha256": "ad3583c89a7922353b01efc75de3dfbc9d1ff0cb294feda6b8d7f6b630be17d6"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M4/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.cubin",
+          "sha256": "6d558f6ba5e649047102ef928b35daee6ec5036d33ad163802f481c1ebb3a3da",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o4409640961_tensorptri32gmemo321_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1"
+      }
+    },
+    {
+      "arm": "static/M6",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M6/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "9956ca79236fb0d939ec32a9ad25b9a8067ecfe2152da4d92873096bc61ba1af"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M6/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "c88e3364ed60119dfab547264dc419f5b690d488a28a3e3a8d7ece66cafc31d3",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1"
+      }
+    },
+    {
+      "arm": "static/M8",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        8,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M8/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.ptx",
+          "sha256": "3d7cdc9075310327d1906a729403ec50b60853399ad41edf891cac0319b0b51d"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M8/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.cubin",
+          "sha256": "95019b4f9eaeb1827b908835a78b6b10cf2bf3446028dacfbd1ae8577e119f3f",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1"
+      }
+    },
+    {
+      "arm": "static/M12",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        12,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M12/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1612409640961_FakeTensorInt32961_FakeTensorFloat3296.sm_121a.ptx",
+          "sha256": "6bd7c1a9825f408c2d9348661ffd8ffa4a4bb2910921a0c265007f35d6eb50fb"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M12/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1612409640961_FakeTensorInt32961_FakeTensorFloat3296.sm_121a.cubin",
+          "sha256": "8904342b2a7dd0e988e5d2f95aacd61f541f471c1e991375891786582035a600",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o12409640961_tensorptri32gmemo961_tensorptrf32_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter"
+      }
+    },
+    {
+      "arm": "static/M16",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        16,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1616409640961_FakeTensorInt321281_FakeTensorFloat321.sm_121a.ptx",
+          "sha256": "71b043668762e656fbfeeb8cdd09362e02f0574557fa6ce444cc977f66b9958a"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1616409640961_FakeTensorInt321281_FakeTensorFloat321.sm_121a.cubin",
+          "sha256": "3e56b23e295bd9491ebe264b7fc4afec2d86adce982a8ecd70559e8c73d45ea3",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter"
+      }
+    },
+    {
+      "arm": "static/M24",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        24,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M24/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1624409640961_FakeTensorInt321921_FakeTensorFloat321.sm_121a.ptx",
+          "sha256": "8f837a3e2a6fec3813782ebb44500c7f0d4420a2b8232c15544f723713d792e5"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M24/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1624409640961_FakeTensorInt321921_FakeTensorFloat321.sm_121a.cubin",
+          "sha256": "9846ce95c9e393f99361b5537d1b4b4fdbfa7d811299a56397eee724312181e8",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o24409640961_tensorptri32gmemo1921_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter"
+      }
+    },
+    {
+      "arm": "static/M32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        32,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx",
+          "sha256": "4b77bf255edb31a4df4acee97f2e10d2130311352e9dc2772e897ae526956da8"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin",
+          "sha256": "eb942da60370c20b9717ba360197a95b24b9b576cd3168423087be5f77f56742",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o32409640961_tensorptri32gmemo2561_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter"
+      }
+    }
+  ],
+  "global_static_passes": [
+    {
+      "arm": "global-static/M4-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        4,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M4-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.ptx",
+          "sha256": "8cd3f469ed98ecbf31708c8eecb9db7ca46b0592aee3b21392cdbc7c9bab8c8f"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M4-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.cubin",
+          "sha256": "cb1c520f991a25506c90867cf3ddde9067a653da32a01001533c900e06af162c",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o4409640961_tensorptri32gmemo321_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M6-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "2101afce8704b15742124c25ae9a427a65526f0fc3997ffdb3b1d15b4b4e8ef7"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "6b8ec2f28e81fbc8858202789ad97003762e9825bae682c3ae6063aeaa6e61b3",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M8-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        8,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M8-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.ptx",
+          "sha256": "53a243353d1147f07e7396641c64b12062e75e81ee161262ef088ba0b700a56c"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M8-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.cubin",
+          "sha256": "869a86233ded0a46cb3e2ea84540d0824775149555c633c8a8a540df32646545",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M12-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        12,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M12-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1612409640961_FakeTensorInt32961_FakeTensorFloat3296.sm_121a.ptx",
+          "sha256": "ecdfa0d86969ccaece005c16ae84b1fe81a3bb89fdbb18c608a03c464de848ff"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M12-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1612409640961_FakeTensorInt32961_FakeTensorFloat3296.sm_121a.cubin",
+          "sha256": "729e00fb61a4ecce8b74137ea9a6cbeca3c6cb07a798aa74eb162eaf31849855",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o12409640961_tensorptri32gmemo961_tensorptrf32_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M16-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        16,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M16-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1616409640961_FakeTensorInt321281_FakeTensorFloat321.sm_121a.ptx",
+          "sha256": "d6961a736d1e24b21ad1c68aaaaddd6a66ed3114a22a6132c0fdd50eefb46391"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M16-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1616409640961_FakeTensorInt321281_FakeTensorFloat321.sm_121a.cubin",
+          "sha256": "bba26fc846e33227c0fa03232a41ce03efdd114b43b34641bacb5ed4f0c3009f",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M24-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        24,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M24-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1624409640961_FakeTensorInt321921_FakeTensorFloat321.sm_121a.ptx",
+          "sha256": "9b97ff1a5270cc63c8c479a98ef345cdd25aa0e4475efcf9feb8cd0dc88a3d5b"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M24-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1624409640961_FakeTensorInt321921_FakeTensorFloat321.sm_121a.cubin",
+          "sha256": "091ea8658680450fd9735d7cd9c9230699de43c8112314c6e591827485ba528b",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o24409640961_tensorptri32gmemo1921_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M32-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        32,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx",
+          "sha256": "4b6f5fd15de591e1d052efe26410d7179d1413ace4db681143a10ccf0715bd06"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin",
+          "sha256": "1c3e2fe7b2a5dabe43ef934f1213a2a4c48db370ad6c4c01ea3a6550d0204fe2",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o32409640961_tensorptri32gmemo2561_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M6-map288-i64",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int64",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int64",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M6-map288-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "ffabd1274fc326b54dcfbd14e37f3c1cba58deb1d8a376d4764398cbe2604d98"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M6-map288-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "d2fb8e270069dc089d5e63930a08bc238591b4b71a440a26d75446e78b850965",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri64gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int64",
+          "expert_map_operand_dtype": "int64",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M6-offset216-i64",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int64",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        null,
+        null,
+        216
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M6-offset216-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "bad484aa7e0134ded69fe969f90c463f60c00363e89ef18151417268cca996ee"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M6-offset216-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "614dcb8da404ec79c9b6e24df7bd2e12321a71ecf0c3404994a085864182ec9c",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri64gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": null,
+          "local_expert_offset": 216,
+          "topk_ids_dtype": "int64",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            1
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M6-empty-i64",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int64",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        0,
+        null,
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M6-empty-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "8e41b9bd59ff913490986502321407401ee6bf7d46f3ed7ccf9befc1c77b7530"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M6-empty-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "8f83711c65e603c362b2b7ad190c213dbb814865ed84a97d026bcbdc9beff86a",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri64gmemo481_tensorptrf32g_0:\n  REG:126 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 0,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int64",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            1
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    }
+  ],
+  "dynamic_passes": [
+    {
+      "arm": "dynamic/M33",
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        72,
+        4096,
+        2048,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "dynamic/M33/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "784a2b15126f845b1335817c2515fcffcbcba353783d486351dada1b6da8006f"
+        }
+      ],
+      "resources": [
+        {
+          "path": "dynamic/M33/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "cca0bb84ccdf34bea259cc32a7ecef0356191a6790c14f326f19d74db6c74d67",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernelSF6_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32g_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ]
+    },
+    {
+      "arm": "dynamic/M8192",
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        72,
+        4096,
+        2048,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "784a2b15126f845b1335817c2515fcffcbcba353783d486351dada1b6da8006f"
+        }
+      ],
+      "resources": [
+        {
+          "path": "dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "cca0bb84ccdf34bea259cc32a7ecef0356191a6790c14f326f19d74db6c74d67",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernelSF6_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32g_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ]
+    }
+  ],
+  "cuda_initialized": false,
+  "contracts": null,
+  "selected_test_counts": {
+    "test_glm53_ep_tiled_static.py": 12,
+    "test_glm53_ep_tiled_prefill.py": 12,
+    "test_glm53_ep_tiled_owner.py": 27,
+    "test_glm53_ep_tiled_selftest.py": 13,
+    "test_glm53_ep_tiled_proof.py": 12,
+    "test_moe_sf6_owner.py": 12,
+    "test_moe_static_sf6_direct.py": 6,
+    "test_moe_dynamic_sf6.py": 7,
+    "test_moe_sf6_dispatch.py": 6,
+    "test_glm53_ep_tiled_a_ring.py": 5,
+    "test_glm53_ep_tiled_sf6_word_unpack.py": 6,
+    "test_onepass_speculation_proof.py": 10,
+    "test_glm53_ep_tiled_route_fusion.py": 1,
+    "test_glm53_prep_fused_kv_integration.py": 10,
+    "test_onepass_prep_proof.py": 10
+  },
+  "error": "CalledProcessError(1, ['/usr/bin/python3', '-B', '/repo/probes/glm53_ep_tiled_compile.py', '--output', '/evidence', '--capsule-root', '/opt/glm53-bindings-capsule', '--manifest-sha256', 'b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab', '--contracts-only'], None, None)",
+  "finished": 1788996780.469043
+}

@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""Private, immutable live-arm evidence; inspect/log reads only, no requests."""
+import argparse
+import ast
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import subprocess
+import sys
+
+IMAGE = 'sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211'
+JOB = '/tmp/glm53-ep-onepass-0909-4'
+SOURCE = '/home/choiceoh/stkernel-ep-onepass-0909-4'
+NODE = r'''
+import base64,datetime,gzip,hashlib,json,os,stat,subprocess,tempfile,time
+from pathlib import Path
+sha=lambda b:hashlib.sha256(b).hexdigest()
+def need(ok,msg):
+    if not ok: raise RuntimeError(msg)
+def command(argv):
+    p=subprocess.run(argv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+    need(p.returncode==0,'read command failed')
+    need(len(p.stdout)<=16*2**20,'command output too large')
+    return p.stdout
+def inspect(ref):
+    raw=command(['docker','inspect',ref]); values=json.loads(raw)
+    need(len(values)==1,'container inspect not unique')
+    return values[0],raw
+def bounded(path,maximum=32*2**20):
+    path=Path(path); a=path.lstat()
+    need(stat.S_ISREG(a.st_mode) and a.st_size<=maximum,'unsafe or oversized file')
+    raw=path.read_bytes(); b=path.lstat()
+    need((a.st_dev,a.st_ino,a.st_size,a.st_mtime_ns)==(b.st_dev,b.st_ino,b.st_size,b.st_mtime_ns),'file changed')
+    return raw
+def active(c):
+    need(c['State']['Running'] is True and not c['State'].get('Paused') and not c['State'].get('Restarting'),'container not actively running')
+    need(c['Image']==cfg['image'],'wrong pinned image')
+def fixed(c):
+    return {k:c[k] for k in ('Id','Image','Config','HostConfig','Mounts','RestartCount')} | {'StartedAt':c['State']['StartedAt'],'Pid':c['State']['Pid']}
+def source_evidence(c):
+    manifest=bounded('/home/choiceoh/overlays/glm53/manifest.tsv')
+    need(sha(manifest)==cfg['manifest_sha256'],'deployed source manifest differs')
+    found={}
+    for mount in c['Mounts']:
+        dest=mount['Destination']
+        if dest in cfg['mounts']:
+            need(dest not in found and mount['Type']=='bind' and mount['RW'] is False,'ambiguous or writable overlay mount')
+            need(mount['Source'].startswith('/home/choiceoh/overlays/glm53/'),'unexpected overlay source')
+            found[dest]=sha(bounded(mount['Source']))
+    need(found==cfg['mounts'],'mounted overlay source differs')
+    return {'manifest_sha256':sha(manifest),'mounts':found}
+started=time.time(); c,before=inspect(cfg['name']); active(c)
+need(c['Name']=='/'+cfg['name'] and len(c['Id'])==64,'wrong container name/ID')
+namespace={'__name__':'snapshot_launch_parser'}
+exec(compile(base64.b64decode(cfg['parser']),'<frozen-launch-parser>','exec'),namespace)
+topology=namespace['launch_parallelism'](c['Config']['Cmd'])
+need(topology['enabled']==cfg['ep'] and topology['tensor_parallel_size']==4 and topology['nnodes']==4 and topology['node_rank']==cfg['rank'],'wrong EP/topology')
+payload=namespace['_WRAPPER'].fullmatch(c['Config']['Cmd'][1])[1]
+script=base64.b64decode(payload,validate=True).decode()
+line=script[len(namespace['_GID_PRELUDE']):].removesuffix('\n')
+argv=namespace['_literal_argv'](line[:-len(namespace['_REDIRECTION'])])
+env={}
+for item in c['Config']['Env']:
+    key,value=item.split('=',1); need(key and key not in env,'duplicate environment key'); env[key]=value
+for key,value in cfg['flags'].items(): need(env.get(key)==value,'unexpected required arm flag: '+key)
+endpoint={}
+for i,arg in enumerate(argv):
+    key,equal,value=arg.partition('=')
+    if key in ('--host','--port'):
+        need(key not in endpoint,'duplicate endpoint option')
+        endpoint[key]=value if equal else argv[i+1]
+if cfg['rank']==0: need(endpoint=={'--host':'127.0.0.1','--port':'18000'},'wrong private head endpoint')
+source=source_evidence(c)
+mounts=[m for m in c['Mounts'] if m['Destination']=='/glmlogs']
+need(len(mounts)==1 and mounts[0]['Type']=='bind','serving log bind missing')
+path=Path(mounts[0]['Source'])/'glm53.log'; a=path.lstat()
+boot=datetime.datetime.fromisoformat(c['State']['StartedAt'].replace('Z','+00:00')).timestamp()
+need(stat.S_ISREG(a.st_mode) and 0<a.st_size<=128*2**20 and a.st_mtime>=boot,'unsafe, stale or oversized serving log')
+with path.open('rb') as stream: log=stream.read(a.st_size)
+b=path.lstat()
+need(len(log)==a.st_size and (a.st_dev,a.st_ino)==(b.st_dev,b.st_ino) and b.st_size>=a.st_size,'serving log rotated or truncated')
+with tempfile.TemporaryFile() as stream:
+    result=subprocess.run(['docker','logs','--timestamps','--since',c['State']['StartedAt'],c['Id']],stdout=stream,stderr=stream,timeout=30)
+    need(result.returncode==0,'docker log read failed')
+    size=stream.tell(); need(size<=128*2**20,'docker logs too large')
+    stream.seek(0); docker_log=stream.read()
+again,after=inspect(c['Id']); by_name,_=inspect(cfg['name']); active(again); active(by_name)
+need(fixed(c)==fixed(again)==fixed(by_name),'container/start/config changed during capture')
+need(source_evidence(again)==source,'source changed during capture')
+files={'inspect.before.json':before,'inspect.after.json':after,'serving.log':log,'docker.log':docker_log,
+       'manifest.tsv':bounded('/home/choiceoh/overlays/glm53/manifest.tsv')}
+summary={'node':cfg['node'],'id':c['Id'],'started_at':c['State']['StartedAt'],'image':c['Image'],
+         'capture_started_at':started,'capture_finished_at':time.time(),'running_start_config_stable':True,
+         'topology':topology,'flags':cfg['flags'],'endpoint':endpoint,'source':source,
+         'environment_sha256':sha(json.dumps(env,sort_keys=True,separators=(',',':')).encode()),
+         'log_source':{'path':str(path),'device':a.st_dev,'inode':a.st_ino,'captured_prefix_bytes':len(log),
+                       'size_after':b.st_size,'mtime_ns_before':a.st_mtime_ns,'mtime_ns_after':b.st_mtime_ns},
+         'scope':'live prefix snapshot; traffic may still be in progress; no quality/performance acceptance'}
+print(json.dumps({'summary':summary,'files':{k:{'sha256':sha(v),'bytes':len(v),'gzip':base64.b64encode(gzip.compress(v,mtime=0)).decode()} for k,v in files.items()}}))
+'''
+
+REMOTE = r'''
+import base64,gzip,hashlib,json,os,stat,subprocess,time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+os.umask(0o077)
+sha=lambda b:hashlib.sha256(b).hexdigest()
+def need(ok,msg):
+    if not ok: raise RuntimeError(msg)
+def run(argv):
+    p=subprocess.run(argv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+    need(p.returncode==0,'source read command failed'); return p.stdout
+def holder():
+    raw=Path('/home/choiceoh/glm53-logs/fleet/holder').read_bytes()
+    need(raw.decode().strip().split('|')[0]==cfg['session'],'different active fleet holder')
+    return raw
+def source_check():
+    need(run(['git','-C',cfg['source'],'rev-parse','HEAD']).decode().strip()==cfg['revision'],'frozen HEAD differs')
+    need(not run(['git','-C',cfg['source'],'status','--porcelain','--untracked-files=no']).strip(),'frozen tracked source dirty')
+def write(path,data):
+    with path.open('xb') as stream: stream.write(data)
+    path.chmod(0o600)
+before_holder=holder(); source_check()
+job=Path(cfg['job']); need(job.is_dir() and not job.is_symlink(),'job directory absent/unsafe')
+dest=job/('live-'+cfg['label']); dest.mkdir(mode=0o700,exist_ok=False)
+source=Path(cfg['source']); manifest=(source/'build/glm53/manifest.tsv').read_bytes()
+expected=b'# source_commit='+cfg['revision'].encode()+b'\n'+manifest
+mounts={}
+for line in manifest.decode().splitlines():
+    if not line or line.startswith('#'): continue
+    name,target,group=line.split('\t')
+    need('/' not in name and name not in ('.','..') and target not in mounts,'unsafe/duplicate manifest entry')
+    mounts[target]=sha((source/'build/glm53'/name).read_bytes())
+parser=(source/'bench/glm53_launch_metadata.py').read_bytes()
+need(parser==run(['git','-C',str(source),'show',cfg['revision']+':bench/glm53_launch_metadata.py']),'launch parser differs')
+common=dict(cfg,parser=base64.b64encode(parser).decode(),manifest_sha256=sha(expected),mounts=mounts)
+nodes=('local','10.10.10.1','10.10.10.3','10.10.10.4')
+def capture(pair):
+    rank,node=pair
+    data=dict(common,node=node,rank=rank,name='glm53' if rank==0 else 'glm53-worker')
+    code='cfg='+repr(data)+'\n'+node_code
+    cmd=['python3','-B','-'] if rank==0 else ['ssh','-o','BatchMode=yes','-o','ConnectTimeout=15','choiceoh@'+node,'python3 -B -']
+    result=subprocess.run(cmd,input=code.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=150)
+    if result.returncode:
+        write(dest/(node+'.failure.private.log'),result.stderr)
+        raise RuntimeError('node snapshot failed: '+node)
+    obj=json.loads(result.stdout); entries={}
+    for name,item in obj['files'].items():
+        need(name in ('inspect.before.json','inspect.after.json','serving.log','docker.log','manifest.tsv'),'unexpected capture path')
+        packed=base64.b64decode(item['gzip'],validate=True); raw=gzip.decompress(packed)
+        need(len(raw)==item['bytes'] and sha(raw)==item['sha256'],'capture transport hash differs')
+        relative=node+'.'+name+'.gz'; write(dest/relative,packed)
+        entries[relative]={'original_sha256':sha(raw),'original_bytes':len(raw),'stored_sha256':sha(packed),'stored_bytes':len(packed)}
+    return node,obj['summary'],entries
+with ThreadPoolExecutor(max_workers=4) as pool: results=list(pool.map(capture,enumerate(nodes)))
+after_holder=holder(); need(before_holder==after_holder,'holder changed during capture'); source_check()
+write(dest/'holder.before.private',before_holder); write(dest/'holder.after.private',after_holder)
+write(dest/'launch-parser.py',parser)
+identity={'schema':1,'arm':cfg['arm'],'label':cfg['label'],'revision':cfg['revision'],'source':cfg['source'],
+          'session':cfg['session'],'captured_at':time.time(),'parser_sha256':sha(parser),
+          'nodes':{n:s for n,s,_ in results},'files':{k:v for _,_,es in results for k,v in es.items()}}
+write(dest/'identity.json',(json.dumps(identity,indent=2,sort_keys=True)+'\n').encode())
+files={}
+for path in sorted(dest.iterdir()):
+    need(path.is_file() and not path.is_symlink(),'unsafe saved capture')
+    raw=path.read_bytes(); files[path.name]={'sha256':sha(raw),'data':base64.b64encode(raw).decode()}
+print(json.dumps({'identity':identity,'remote_directory':str(dest),'files':files}))
+'''
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--arm',choices=('B1','A','B2'),required=True)
+    p.add_argument('--revision',required=True)
+    p.add_argument('--session',required=True)
+    p.add_argument('--suffix',default='')
+    p.add_argument('--syntax-check',action='store_true')
+    args=p.parse_args()
+    if not re.fullmatch('[a-f0-9]{40}',args.revision): p.error('full revision required')
+    if not re.fullmatch('[A-Za-z0-9_.-]{1,80}',args.session): p.error('unsafe session')
+    if args.suffix and not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,39}',args.suffix): p.error('unsafe suffix')
+    label=args.arm+('-'+args.suffix if args.suffix else '')
+    config=dict(arm=args.arm,label=label,revision=args.revision,session=args.session,job=JOB,source=SOURCE,
+                image=IMAGE,ep=args.arm=='A',flags={
+                    'VLLM_GLM53_EP_PREFILL_LOCAL':'1' if args.arm=='A' else '0',
+                    'VLLM_B12X_EP_WARM_COMPACT':'1' if args.arm=='A' else '0',
+                    'VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE':'1'})
+    code='cfg='+repr(config)+'\nnode_code='+repr(NODE)+'\n'+REMOTE
+    ast.parse(NODE); ast.parse(code)
+    if args.syntax_check:
+        print(json.dumps({'syntax':'PASS','arm':args.arm,'label':label,'remote_execution':False})); return
+    os.umask(0o077)
+    local=Path('/tmp')/('glm53-onepass4-live-'+label)
+    local.mkdir(mode=0o700,exist_ok=False)
+    result=subprocess.run(['ssh','-o','BatchMode=yes','-o','ConnectTimeout=15','choiceoh@srv2','python3 -B -'],
+                          input=code.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=210)
+    if result.returncode:
+        (local/'failure.private.log').write_bytes(result.stderr)
+        (local/'failure.private.log').chmod(0o600)
+        raise RuntimeError('snapshot rejected; private failure log: '+str(local/'failure.private.log'))
+    obj=json.loads(result.stdout)
+    for name,item in obj['files'].items():
+        if Path(name).name!=name or name in ('.','..'): raise RuntimeError('unsafe received path')
+        raw=base64.b64decode(item['data'],validate=True)
+        if hashlib.sha256(raw).hexdigest()!=item['sha256']: raise RuntimeError('received hash differs')
+        target=local/name
+        with target.open('xb') as stream: stream.write(raw)
+        target.chmod(0o600)
+    print(json.dumps({'arm':args.arm,'revision':args.revision,'remote_directory':obj['remote_directory'],
+                      'local_directory':str(local),'identity_sha256':hashlib.sha256((local/'identity.json').read_bytes()).hexdigest(),
+                      'nodes':{n:{k:s[k] for k in ('id','started_at','image','running_start_config_stable')} for n,s in obj['identity']['nodes'].items()}}))
+
+
+if __name__=='__main__':
+    try: main()
+    except Exception as exc:
+        print(str(exc),file=sys.stderr)
+        raise SystemExit(1)

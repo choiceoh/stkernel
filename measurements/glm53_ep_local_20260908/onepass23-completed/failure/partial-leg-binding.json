@@ -1,0 +1,12 @@
+{
+  "lever_pid": 357316,
+  "onepass_child_pid": 389865,
+  "owner_pid": 262324,
+  "parent_observed_at": "2026-09-09T13:23:38+09:00",
+  "path": "/tmp/leg.357316",
+  "scope": "Parent observed exact process ancestry/cwd before death; collector hashes terminal original file. No claim processes are still alive.",
+  "session": "eplocalonepass0909v23",
+  "sha256": "28e28d9b528d56398a8d57b922475e0c49f9c28455596c9fe97fc46ce136046f",
+  "source": "cbf1c7916247f946167c15ff74d92261588e8cea",
+  "ticket": "1788926263262324"
+}

@@ -1,0 +1,22 @@
+{
+  "A": {
+    "complete_record": true,
+    "verdict": "STRICT_IDENTITY_VERIFIED"
+  },
+  "B0": {
+    "complete_record": true,
+    "verdict": "STRICT_IDENTITY_VERIFIED"
+  },
+  "B1": {
+    "complete_record": true,
+    "verdict": "STRICT_IDENTITY_VERIFIED"
+  },
+  "B2": {
+    "complete_record": true,
+    "verdict": "STRICT_IDENTITY_VERIFIED"
+  },
+  "B3": {
+    "complete_record": true,
+    "verdict": "STRICT_IDENTITY_VERIFIED"
+  }
+}

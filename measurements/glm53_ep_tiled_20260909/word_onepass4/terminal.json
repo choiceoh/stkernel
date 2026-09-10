@@ -1,0 +1,23 @@
+{
+  "original_sha256": "77583200fc3d86fc14f77d1286da6adde182f9e08d58e48d054f3e14ddf33804",
+  "owned_holder_at_capture": false,
+  "record": {
+    "finished_at": 1788965386.205834,
+    "outcome": "failed",
+    "payload_finished_at": 1788965385.8302977,
+    "payload_returncode": 4,
+    "phase": "finished",
+    "pid": 2654735,
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 4,
+    "session": "eptiledword0909v4",
+    "start": "46667392",
+    "started_at": 1788964283.701419,
+    "state": "finished",
+    "ticket": "17889642832654735"
+  },
+  "schema": 1,
+  "scope": "Allowlisted terminal fields; raw pending kept private",
+  "source_revision": "549fd55319c3379438c3cb99694df9f28c01aefb"
+}

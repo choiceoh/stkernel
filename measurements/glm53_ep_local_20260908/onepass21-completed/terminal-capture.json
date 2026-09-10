@@ -1,0 +1,129 @@
+{
+  "absent": [
+    "/tmp/glm53-ep-onepass-0909-21/onepass.jsonl",
+    "/tmp/glm53-ep-onepass-0909-21/verdicts.jsonl",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS21A0.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS21B1.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS21A.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS21B2.log",
+    "/home/choiceoh/glm53-logs/boot-EPONEPASS21B3.log"
+  ],
+  "captured_at": 1788925389.5554543,
+  "files": {
+    "/home/choiceoh/glm53-logs/fleet/run-logs/cbb5f99d8948d25415f18beb687c09e88198d62405c948c0c7a342e808bd4abd.log": {
+      "bytes": 4006,
+      "mtime_ns": 1788924669807536908,
+      "sha256": "3c1129291cbb77059a4d98ca4656916db44d8759a03a5b03bb15031fa5721d88"
+    },
+    "/tmp/glm53-ep-onepass-0909-21/submission.json": {
+      "bytes": 3198,
+      "mtime_ns": 1788924159549367079,
+      "sha256": "703f03e6a54bfcf71eadffe8bd899e08f65091541e649b32e8dfa1e05cc6847c"
+    },
+    "/tmp/glm53-ep-onepass-0909-21/submit.exit.json": {
+      "bytes": 43,
+      "mtime_ns": 1788924164403162020,
+      "sha256": "69c94fd52bf4910f77517b209d4091fe535b1b3f792409aabca9c6bb3308d107"
+    },
+    "/tmp/glm53-ep-onepass-0909-21/submit.stderr": {
+      "bytes": 0,
+      "mtime_ns": 1788924164402979700,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "/tmp/glm53-ep-onepass-0909-21/submit.stdout": {
+      "bytes": 480,
+      "mtime_ns": 1788924164402979700,
+      "sha256": "3abbfbeea52179bdcae5c700c30b510f65d78b7a6169813eaeb08b090f9cd2b2"
+    },
+    "/tmp/leg.134506": {
+      "bytes": 2032,
+      "mtime_ns": 1788924668030811378,
+      "sha256": "d72e2ae18f62a6898e2fbbedb8c6e7d11fdddcff6ac1b1c167973568346a3f13"
+    }
+  },
+  "fleet_after": {
+    "finished_at": 1788924670.0107958,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/cbb5f99d8948d25415f18beb687c09e88198d62405c948c0c7a342e808bd4abd.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788924669.591418,
+    "payload_returncode": 1,
+    "payload_seconds": 504.8,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v21",
+    "started_at": 1788924164.7854521,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "1788924164133801"
+  },
+  "fleet_before": {
+    "finished_at": 1788924670.0107958,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/cbb5f99d8948d25415f18beb687c09e88198d62405c948c0c7a342e808bd4abd.log",
+    "outcome": "failed",
+    "payload_finished_at": 1788924669.591418,
+    "payload_returncode": 1,
+    "payload_seconds": 504.8,
+    "phase": "finished",
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 1,
+    "session": "eplocalonepass0909v21",
+    "started_at": 1788924164.7854521,
+    "state": "failed",
+    "supervisor_alive": false,
+    "ticket": "1788924164133801"
+  },
+  "journal": {
+    "earlyoom": {
+      "argv": [
+        "sudo",
+        "-n",
+        "journalctl",
+        "-u",
+        "earlyoom",
+        "--utc",
+        "--since",
+        "2026-09-09 03:25:00 UTC",
+        "--until",
+        "2026-09-09 03:34:00 UTC",
+        "--no-pager",
+        "-o",
+        "short-iso"
+      ],
+      "bytes": 1935,
+      "returncode": 0,
+      "sha256": "a847929ff1f1b12662a29f09bfc08959e09ef9b8e26ad78e3e1de96d93cb38f3"
+    },
+    "kernel": {
+      "argv": [
+        "sudo",
+        "-n",
+        "journalctl",
+        "-k",
+        "--utc",
+        "--since",
+        "2026-09-09 03:25:00 UTC",
+        "--until",
+        "2026-09-09 03:34:00 UTC",
+        "--no-pager",
+        "-o",
+        "short-iso"
+      ],
+      "bytes": 17,
+      "returncode": 0,
+      "sha256": "19c4e28b2f54ea8f217db4e622b0a5c758efa7b77ce2dc0394b6d159568c0b2e"
+    }
+  },
+  "own_holder_after": false,
+  "own_holder_before": false,
+  "source_after": {
+    "head": "028f98167376f0a0857c20c7ec89a3505c1a000f",
+    "status": ""
+  },
+  "source_before": {
+    "head": "028f98167376f0a0857c20c7ec89a3505c1a000f",
+    "status": ""
+  }
+}

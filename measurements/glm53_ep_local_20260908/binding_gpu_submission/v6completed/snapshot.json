@@ -1,0 +1,132 @@
+{
+  "files": {
+    "capsule-cpu-binding.json": {
+      "sha256": "9e48ba17de3aaadccf8d388cdd1dc80dc1822969138374cdea18f64b14e6046a",
+      "bytes": 1348
+    },
+    "submission.json": {
+      "sha256": "323e9be5e0211635f4110e11a6f85be102751b52154f71e02cd2e030dfa5b267",
+      "bytes": 2477
+    },
+    "driver.py": {
+      "sha256": "fbb4cc450ae480b0b5b5193ee599d35fd12d57442ba0c23c6d94c68bfabcc2fb",
+      "bytes": 2400
+    },
+    "freeze.json": {
+      "sha256": "8091f46429c22fe7ef486c40cfb0208e24b4df308d7378dce2093ec1061970ce",
+      "bytes": 511
+    },
+    "driver-start.json": {
+      "sha256": "e08e844ba5852643a8ce74dff04f7f511ad7fc8de1f7d7082dbb9b218a9ddc68",
+      "bytes": 2579
+    },
+    "capsule-cpu-receipt.json": {
+      "sha256": "d85e9203ac41dbb265db57da0ee6793c7fa3372013bf276662b64a65ee6c42f8",
+      "bytes": 2218
+    },
+    "exit.json": {
+      "sha256": "fc434fb64bc814dd698620880586ddece31c55d2a9be4568e87fb86570567d6d",
+      "bytes": 2631
+    },
+    "driver.pid": {
+      "sha256": "43a19e1cb5dc30c3ed4626cdf9676d6f7ae8e04680bdd3ce173c07a2110a9a03",
+      "bytes": 8
+    },
+    "scheduler.json": {
+      "sha256": "2ae4d5976d4226f447a5ef896c7a4fbb8b14fc9f321d6669012ddf303244f3d7",
+      "bytes": 642
+    },
+    "capsule-cpu-container.log": {
+      "sha256": "35e598bf1215584657daf6dc174f832c92e3c5b5940d260fed8b4c5f3d7961b8",
+      "bytes": 67
+    },
+    "fleet.log": {
+      "sha256": "2fbfc3018553fc7da6f1d7688a58d30a3971ba4bd75c9c840ca4f3c542b050ef",
+      "bytes": 9879
+    },
+    "capsule-cpu-distribution-resolution.json": {
+      "sha256": "56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2",
+      "bytes": 3064809
+    },
+    "capsule-cpu-result.json": {
+      "sha256": "611cd509d98b9a8075a92c4d01e2a4ef0de9f50856d08430c568b34f788ef9cd",
+      "bytes": 98041
+    },
+    "inventory-at-submission.json": {
+      "sha256": "ff146fc10c455f3624f5258ed1a90f36f1d420d11c5ee44ae5c7087a47a171c4",
+      "bytes": 42395
+    },
+    "cpu-evidence.json": {
+      "sha256": "b68bcead10b78d19c3df09f0d765cf485dffd79b0ce3377ca379921d1c4ee7c2",
+      "bytes": 25470
+    },
+    "capsule-cpu-base-distributions.json": {
+      "sha256": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1",
+      "bytes": 2965757
+    },
+    "capture/stopped-restored.json": {
+      "sha256": "bde04b0326ddbf01eb57efcc62893d87f2c14198eeb5218da04f16283cb635cc",
+      "bytes": 41738
+    },
+    "capture/baseline.json": {
+      "sha256": "151fe360035ebf09901f89ef04a246090953e1875e44df1af43bc5d1152cd2a5",
+      "bytes": 1675
+    },
+    "capture/stopped.json": {
+      "sha256": "eaf4a461401044df92c4cc3f2be36c0376f7ebce739567a0eb0519bbc78cea3a",
+      "bytes": 41738
+    },
+    "capture/capsule-manifest.json": {
+      "sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+      "bytes": 20559
+    },
+    "capture/resources-candidate.json": {
+      "sha256": "d55ed6389ba059a95a0accb8d52107b10ba28f21fefd378ea8b2e4847a2d7453",
+      "bytes": 362
+    },
+    "capture/completion.json": {
+      "sha256": "e159ae4ee87f9414e71b74e2adb427d3ca14adc05101af3d69162f9a49cd7b66",
+      "bytes": 5085
+    },
+    "capture/resources-baseline.json": {
+      "sha256": "bd27c2e1b655b0802c2fec90bc59fde5acf4f890bdfb90033ba713d92bfae689",
+      "bytes": 362
+    },
+    "capture/progress.json": {
+      "sha256": "4b67fb2ab94f8bc968b980e3a7303c73a1e090a10bfc078aef1921eb628c2edf",
+      "bytes": 4938
+    },
+    "capture/baseline.log": {
+      "sha256": "3b3ff4e6b92972bd247c9a266b37a97974b8be4d5e95ff9b697a87f304354cd1",
+      "bytes": 51973
+    },
+    "capture/before.json": {
+      "sha256": "bd6104132b3c4b511b8509b1010edc6c3a4c0cc6b2f02e616a95847053471226",
+      "bytes": 41738
+    },
+    "capture/restored.json": {
+      "sha256": "4528622aa15d4a29c0e9d0dfc1d17283e65699e38e3529f149a4daca0c65ae41",
+      "bytes": 41738
+    },
+    "capture/candidate.log": {
+      "sha256": "7693be95ac9c4ab0a94e2506e4e573ecc76b2d27b5efee08c818ce25b5f11499",
+      "bytes": 1593
+    },
+    "capture/candidate.json": {
+      "sha256": "345bee786fe8e6c93aa40af392bcfca080db650e528226e8a959b18940791324",
+      "bytes": 1616
+    },
+    "capture/sanitizer-preflight.json": {
+      "sha256": "efbc5d02d1631cd3b95ad94f50732de551f7aa7d4af5aa58b21b0e18ac30e541",
+      "bytes": 1490
+    },
+    "capture/resources-before.json": {
+      "sha256": "b2908300c0851912d5317d5fd8b23a2f8539e7270283618ea53d78deba9d5fd0",
+      "bytes": 362
+    }
+  },
+  "captured": 1788869103.7048967,
+  "queue": "",
+  "holder": "attr5-0908|3805122|srv2|1788868989|35|40\ucc28: 211 ms \uadc0\uc18d 5\ucc28 \u2014 \ucc3d=\uc694\uccad1\uac1c \uaddc\uce59 \uc801\uc6a9, \uccad\ud06c 1152 \ub97c \uccab \ucc3d\uc73c\ub85c. attr2 \uc758 6912 \ucea1\ucc98\ub97c PRIOR_ATTR \ub85c \uc811\uc5b4 \ud06c\uae30 4\uc885 \ud655\ubcf4|boot\n",
+  "exit": "{\n  \"source\": \"/home/choiceoh/stkernel-ep-binding-gpu0908-6b\",\n  \"scheduler\": \"/home/choiceoh/stkernel\",\n  \"scheduler_revision\": \"cf405a7e03bd8ac95933d76f590fdfc4b0685e99\",\n  \"revision\": \"63f56a54dbb91e994456b519a53b679963a93583\",\n  \"approved_fixes\": [\n    \"d95a2cdb46f2446bd4b58f7d5969b42c895f0b3d\",\n    \"4a2c960ad632596ca3224ead88da43160012d393\"\n  ],\n  \"cpu_evidence_sha256\": \"b68bcead10b78d19c3df09f0d765cf485dffd79b0ce3377ca379921d1c4ee7c2\",\n  \"capsule_root\": \"/tmp/glm53-bindings-capsule-cpu0908-2/capsule\",\n  \"capsule_manifest_sha256\": \"b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab\",\n  \"capsule_cpu_artifacts\": {\n    \"capsule-cpu-receipt.json\": \"d85e9203ac41dbb265db57da0ee6793c7fa3372013bf276662b64a65ee6c42f8\",\n    \"capsule-cpu-result.json\": \"611cd509d98b9a8075a92c4d01e2a4ef0de9f50856d08430c568b34f788ef9cd\",\n    \"capsule-cpu-container.log\": \"35e598bf1215584657daf6dc174f832c92e3c5b5940d260fed8b4c5f3d7961b8\",\n    \"capsule-cpu-base-distributions.json\": \"d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1\",\n    \"capsule-cpu-distribution-resolution.json\": \"56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2\"\n  },\n  \"pair_sources\": {\n    \"probes/glm53_ep_bindings_pair_check.py\": \"6fcbc5efc61e45397f0e2a8ef67f533675d002cb3d5129e225db656f72c88ed0\",\n    \"probes/run_glm53_ep_bindings_pair_offline.py\": \"420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587\"\n  },\n  \"command\": [\n    \"bash\",\n    \"/home/choiceoh/stkernel/bench/fleet.sh\",\n    \"run\",\n    \"--gpu\",\n    \"epbindinggpu0908v6\",\n    \"8\",\n    \"Fresh binding 13.3.1 vs capsule13.0.3; CPU2 import PASS, exact source/capsule and incoming restore\",\n    \"--\",\n    \"python3\",\n    \"-B\",\n    \"/home/choiceoh/stkernel-ep-binding-gpu0908-6b/probes/run_glm53_ep_bindings_pair_offline.py\",\n    \"--revision\",\n    \"63f56a54dbb91e994456b519a53b679963a93583\",\n    \"--out\",\n    \"/tmp/glm53-ep-binding-gpu0908-6/capture\",\n    \"--capsule-root\",\n    \"/tmp/glm53-bindings-capsule-cpu0908-2/capsule\",\n    \"--manifest-sha256\",\n    \"b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab\"\n  ],\n  \"created\": 1788868346.0558858,\n  \"diagnostic_only\": true,\n  \"performance_acceptance\": false,\n  \"full_gpu_acceptance\": false,\n  \"enqueue_while_other_holder_allowed\": true,\n  \"go_time_lifecycle_guards_unchanged\": true,\n  \"supersedes\": \"v5 completed with34 API lookup errors and exact restoration; v6 is fresh same-image pinned binding A/B, baseline failure remains failure\",\n  \"started\": 1788868346.0708675,\n  \"exit_code\": 1,\n  \"removed_inherited_fleet_environment_names\": [],\n  \"ended\": 1788868989.2516727,\n  \"complete\": false\n}\n"
+}

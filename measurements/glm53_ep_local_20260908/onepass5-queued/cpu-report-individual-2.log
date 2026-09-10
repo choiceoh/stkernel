@@ -1,0 +1,16 @@
+test_candidate_and_baseline_unproved_or_contradictory_proofs_are_invalid (test_onepass_scoped_baseline.ScopedBaselineTests.test_candidate_and_baseline_unproved_or_contradictory_proofs_are_invalid) ... ok
+test_count_for_final_baseline_counts_distinct_proved_scoped_boots (test_onepass_scoped_baseline.ScopedBaselineTests.test_count_for_final_baseline_counts_distinct_proved_scoped_boots) ... ok
+test_exact_knobs_no_silent_dropping_or_candidate_as_baseline (test_onepass_scoped_baseline.ScopedBaselineTests.test_exact_knobs_no_silent_dropping_or_candidate_as_baseline) ... ok
+test_invalid_json_values_duplicates_and_missing_session_fail (test_onepass_scoped_baseline.ScopedBaselineTests.test_invalid_json_values_duplicates_and_missing_session_fail) ... ok
+test_scope_does_not_change_production_defaults_or_records (test_onepass_scoped_baseline.ScopedBaselineTests.test_scope_does_not_change_production_defaults_or_records) ... ok
+test_scope_preserves_noise_gate_and_does_not_borrow_cross_session_floor (test_onepass_scoped_baseline.ScopedBaselineTests.test_scope_preserves_noise_gate_and_does_not_borrow_cross_session_floor) ... ok
+test_unrelated_context_runtime_and_missing_identity_are_excluded (test_onepass_scoped_baseline.ScopedBaselineTests.test_unrelated_context_runtime_and_missing_identity_are_excluded) ... ok
+test_compact_requires_entire_coherent_completed_plan (test_onepass_scoped_baseline.StartupProofTests.test_compact_requires_entire_coherent_completed_plan) ... ok
+test_real_onepass3_logs_recognize_shared_proof_without_rewriting_archives (test_onepass_scoped_baseline.StartupProofTests.test_real_onepass3_logs_recognize_shared_proof_without_rewriting_archives) ... ok
+test_skip_requires_skipped_estimate_and_completed_real_capture (test_onepass_scoped_baseline.StartupProofTests.test_skip_requires_skipped_estimate_and_completed_real_capture) ... ok
+test_unknown_marker_stays_unknown_and_cli_fails (test_onepass_scoped_baseline.StartupProofTests.test_unknown_marker_stays_unknown_and_cli_fails) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.008s
+
+OK

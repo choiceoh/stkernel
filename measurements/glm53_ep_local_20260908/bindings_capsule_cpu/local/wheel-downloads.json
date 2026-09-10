@@ -1,0 +1,20 @@
+[
+  {
+    "filename": "cuda_bindings-13.0.3-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+    "url": "https://files.pythonhosted.org/packages/61/3c/c33fd3aa5fcc89aa1c135e477a0561f29142ab5fe028ca425fc87f7f0a74/cuda_bindings-13.0.3-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+    "sha256": "b899e5a513c11eaa18648f9bf5265d8de2a93f76ef66a6bfca0a2887303965cd",
+    "bytes": 11709086,
+    "metadata_sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235",
+    "dependencies": [
+      "cuda-pathfinder~=1.1",
+      "cuda-toolkit[nvjitlink,nvrtc,nvvm]==13.*; extra == \"all\"",
+      "cuda-toolkit[cufile]==13.*; sys_platform == \"linux\" and extra == \"all\""
+    ]
+  },
+  {
+    "filename": "cuda_python-13.0.3-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/31/5f/beaa12a11b051027eec0b041df01c6690db4f02e3b2e8fadd5a0eeb4df52/cuda_python-13.0.3-py3-none-any.whl",
+    "sha256": "914cd7e2dd075bd06a2d5121c1d9ccdd3d0c94b03ea5a44dbd98d24d8ed93bab",
+    "bytes": 7605
+  }
+]

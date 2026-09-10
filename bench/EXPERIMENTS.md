@@ -976,6 +976,16 @@ state restarts observation. The controller rechecks requests, GPU processes and
 runnable reservations immediately before claiming the hold. Dead/paused tickets
 are excluded; probes waiting for absent serving can resume after recovery.
 
+Resident GPU processes belonging to other services do not block GLM recovery.
+The node check requires a readable driver process inventory, not exclusive GPU
+ownership. GLM requests, unmanaged experiments, holders and runnable tickets
+still block the idle window. Before boot, the launcher removes only the old GLM
+containers, releases file caches and sizes memory from the smallest node's
+`MemFree`, retaining the boot allowance and safety margin. It leaves unrelated
+processes running and aborts on a failed memory probe or an explicit GMU above
+the measured ceiling. The memory helper comes from the approved launcher's own
+checkout, so recovery cannot silently use an older central copy.
+
 Already healthy approved defaults need no reboot. Recovery consumes the stable
 release receipt and never starts a full CPU suite. Missing evidence defers recovery;
 prime or refresh it explicitly using the command above. Failures retry only after

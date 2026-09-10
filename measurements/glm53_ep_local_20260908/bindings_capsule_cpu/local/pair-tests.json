@@ -1,0 +1,30 @@
+{
+  "command": "python3 -m unittest discover -s tests -p test_glm53_ep_bindings_pair.py -v && git diff --check",
+  "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+  "run_evidence": {
+    "kind": "captured tool output transcript; no original redirected log was saved",
+    "exec_chunk_id": "f20294",
+    "exit_code": 0,
+    "tests_run": 15,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "reported_seconds": 0.026,
+    "trailer": "Ran 15 tests in 0.026s\n\nOK",
+    "rerun": false
+  },
+  "files": {
+    "probes/glm53_ep_bindings_pair_check.py": {
+      "sha256": "6fcbc5efc61e45397f0e2a8ef67f533675d002cb3d5129e225db656f72c88ed0",
+      "size": 6149
+    },
+    "probes/run_glm53_ep_bindings_pair_offline.py": {
+      "sha256": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587",
+      "size": 11396
+    },
+    "tests/test_glm53_ep_bindings_pair.py": {
+      "sha256": "8dfedc98646a0580781cad5e14921d4ce277c8f899e1ec65fb26af496a5bff6a",
+      "size": 14769
+    }
+  }
+}

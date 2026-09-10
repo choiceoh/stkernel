@@ -1,0 +1,32 @@
+{
+  "original_overall_verdict": "FAIL",
+  "compile_artifact_integrity": "PASS",
+  "source_receipts_match_submission": true,
+  "original_files": 58,
+  "ptx_files": 27,
+  "cubin_files": 27,
+  "resource_logs": 3,
+  "micro_shapes": [
+    [
+      32,
+      128
+    ],
+    [
+      64,
+      128
+    ]
+  ],
+  "prefill_key_tail": "glm53_ep_prefill_local_fp32_v2",
+  "triton_variants": 24,
+  "cpu_contracts": {
+    "tests_run": 69,
+    "failures": 0,
+    "errors": 3,
+    "skips": 0
+  },
+  "final_runtime_recheck_recorded": false,
+  "final_cuda_initialized_recorded": false,
+  "result_sha256": "127db760e777163b43dfda34aa0b71b5bef987b6ab9af9c7f773318405c47867",
+  "evidence_tar_sha256": "dbeb9948a039dc67a084f91f47958f9b9219a13944386bfc8c2dbecc0ecd08b1",
+  "limitation": "Artifact compilation and byte integrity only; original CPU FAIL retained, no GPU numerical or performance acceptance."
+}

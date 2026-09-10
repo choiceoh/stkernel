@@ -1,0 +1,26 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-gpu-0908-3",
+  "revision": "ebbe255100be7a00c293e8c4799ec403043c63c3",
+  "session": "eplocal0908v3",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-ep-local-gpu-0908-3/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "eplocal0908v3",
+    "45",
+    "Fused EP remap + CTA scale cache: exact 24-type remap oracle, remap-inclusive MoE numerics/timing and sanitizers, exact restore",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-ep-local-gpu-0908-3/probes/run_glm53_ep_local_offline.py",
+    "--revision",
+    "ebbe255100be7a00c293e8c4799ec403043c63c3",
+    "--out",
+    "/tmp/glm53-ep-local-gpu-0908-3/capture"
+  ],
+  "created": 1788849308.8475318,
+  "follows": "eplocal0908v2",
+  "started": 1788849308.8711555,
+  "ended": 1788849441.8736863,
+  "exit_code": 143
+}

@@ -1,0 +1,628 @@
+{
+  "scope": "Installed metadata only; no Torch/CUDA imports or package changes",
+  "distribution_count": 268,
+  "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+  "machine": "aarch64",
+  "exposed_device_nodes": [],
+  "imported_accelerator_modules": [],
+  "installed_focus": {
+    "cuda-bindings": "13.3.1",
+    "cuda-core": "1.0.1",
+    "cuda-pathfinder": "1.7.0",
+    "cuda-python": "13.3.1",
+    "flashinfer-python": "0.6.18.dev20260819",
+    "nvidia-cutlass-dsl": "4.6.2",
+    "torch": "2.13.0+cu130",
+    "vllm": "0.1.dev20051+g487ecf187"
+  },
+  "records": [
+    {
+      "name": "nvidia-cutlass-dsl-libs-base",
+      "version": "4.6.2",
+      "path": "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl_libs_base-4.6.2.dist-info",
+      "metadata_sha256": "5ba89f5d567a16e05958f7f24bf14eb993f32b5e294b7f8d297b1415e601478c",
+      "requires_dist": [
+        "numpy",
+        "typing-extensions>=4.10.0",
+        "cuda-python>=12.8",
+        "protobuf<7,>=6.30.2",
+        "nvidia-cuda-nvdisasm<14,>=13.3",
+        "nvidia-cutlass-dsl-libs-core==4.6.2"
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-python>=12.8",
+          "name": "cuda-python",
+          "active": true,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "nvidia-cutlass-dsl-libs-cu12",
+      "version": "4.6.2",
+      "path": "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl_libs_cu12-4.6.2.dist-info",
+      "metadata_sha256": "5f20db1f539f289578c3f0b269f696cb83f4a4d93167bf58574c42a7cea4a8a7",
+      "requires_dist": [
+        "numpy",
+        "typing-extensions>=4.10.0",
+        "cuda-python>=12.8",
+        "protobuf<7,>=6.30.2",
+        "nvidia-cuda-nvdisasm<14,>=13.3",
+        "nvidia-cutlass-dsl-libs-base==4.6.2"
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-python>=12.8",
+          "name": "cuda-python",
+          "active": true,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "nvidia-cutlass-dsl",
+      "version": "4.6.2",
+      "path": "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl-4.6.2.dist-info",
+      "metadata_sha256": "4cea0154ea40fa8f3457b509af788aefd7d602cf36e9f3e39e3d10f0289d579b",
+      "requires_dist": [
+        "nvidia-cutlass-dsl-libs-base==4.6.2",
+        "nvidia-cutlass-dsl-libs-cu12==4.6.2",
+        "nvidia-cutlass-dsl-libs-cu13==4.6.2; extra == \"cu13\""
+      ],
+      "relevant_requirements": []
+    },
+    {
+      "name": "nvidia-cutlass-dsl-libs-core",
+      "version": "4.6.2",
+      "path": "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl_libs_core-4.6.2.dist-info",
+      "metadata_sha256": "515540bf051062a730a2be22c933c25a2fefbfc5880536bf2c64483691dc8733",
+      "requires_dist": [
+        "numpy",
+        "typing-extensions>=4.10.0",
+        "cuda-python>=12.8",
+        "protobuf<7,>=6.30.2",
+        "nvidia-cuda-nvdisasm<14,>=13.3"
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-python>=12.8",
+          "name": "cuda-python",
+          "active": true,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "flashinfer-python",
+      "version": "0.6.18.dev20260819",
+      "path": "/usr/local/lib/python3.12/dist-packages/flashinfer_python-0.6.18.dev20260819.dist-info",
+      "metadata_sha256": "507ab8fb568c9d576f27415bedca2e0a16f098c5d81312a39143d5dfa26cb1c7",
+      "requires_dist": [
+        "apache-tvm-ffi!=0.1.8,!=0.1.8.post0,<0.2,>=0.1.6",
+        "click",
+        "cuda-python>=12.0",
+        "cuda-tile>=1.4.0",
+        "einops",
+        "nccl4py>=0.3.1",
+        "ninja",
+        "numpy",
+        "nvidia-cudnn-frontend>=1.25.0",
+        "nvidia-cutlass-dsl==4.7.0",
+        "nvidia-ml-py",
+        "packaging>=24.2",
+        "requests",
+        "tabulate",
+        "torch",
+        "tqdm",
+        "nvidia-cutlass-dsl==4.7.0; extra == \"cu12\"",
+        "nvidia-cutlass-dsl[cu13]==4.7.0; extra == \"cu13\""
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-python>=12.0",
+          "name": "cuda-python",
+          "active": true,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "nvidia-cutlass-dsl==4.7.0",
+          "name": "nvidia-cutlass-dsl",
+          "active": true,
+          "current": "4.6.2",
+          "current_satisfies": false,
+          "pair13_0_3_satisfies": false
+        },
+        {
+          "requirement": "torch",
+          "name": "torch",
+          "active": true,
+          "current": "2.13.0+cu130",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "nvidia-cutlass-dsl==4.7.0; extra == \"cu12\"",
+          "name": "nvidia-cutlass-dsl",
+          "active": false,
+          "current": "4.6.2",
+          "current_satisfies": false,
+          "pair13_0_3_satisfies": false
+        },
+        {
+          "requirement": "nvidia-cutlass-dsl[cu13]==4.7.0; extra == \"cu13\"",
+          "name": "nvidia-cutlass-dsl",
+          "active": false,
+          "current": "4.6.2",
+          "current_satisfies": false,
+          "pair13_0_3_satisfies": false
+        }
+      ]
+    },
+    {
+      "name": "vllm",
+      "version": "0.1.dev20051+g487ecf187",
+      "path": "/usr/local/lib/python3.12/dist-packages/vllm-0.1.dev20051+g487ecf187.dist-info",
+      "metadata_sha256": "3654ed13a0b99684f1d67d2442edafbbd531fd252f92d1727f7dbe4d493de5c1",
+      "requires_dist": [
+        "regex",
+        "cachetools",
+        "psutil",
+        "sentencepiece",
+        "numpy",
+        "requests>=2.26.0",
+        "tqdm",
+        "blake3",
+        "py-cpuinfo",
+        "transformers>=5.5.3",
+        "huggingface_hub>=1.27.0",
+        "tokenizers>=0.21.1",
+        "safetensors>=0.6.2",
+        "protobuf!=6.30.*,!=6.31.*,!=6.32.*,!=6.33.0.*,!=6.33.1.*,!=6.33.2.*,!=6.33.3.*,!=6.33.4.*,>=5.29.6",
+        "fastapi[standard]<0.137.0,>=0.133.0",
+        "starlette>=1.0.1",
+        "aiohttp>=3.13.3",
+        "openai>=2.0.0",
+        "pydantic>=2.12.0",
+        "prometheus_client>=0.18.0",
+        "pillow",
+        "prometheus-fastapi-instrumentator>=8.0.0",
+        "tiktoken>=0.6.0",
+        "lm-format-enforcer==0.11.3",
+        "llguidance<1.8.0,>=1.7.0; platform_machine == \"x86_64\" or platform_machine == \"arm64\" or platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"s390x\"",
+        "outlines_core==0.2.14",
+        "lark==1.2.2",
+        "xgrammar<1.0.0,>=0.2.1; platform_machine == \"x86_64\" or platform_machine == \"aarch64\" or platform_machine == \"arm64\" or platform_machine == \"s390x\" or platform_machine == \"ppc64le\"",
+        "typing_extensions>=4.10",
+        "filelock>=3.16.1",
+        "partial-json-parser",
+        "jsonschema>=4.23.0",
+        "pyzmq>=25.0.0",
+        "msgspec",
+        "mistral_common[image]>=1.11.6",
+        "opencv-python-headless>=4.13.0",
+        "pyyaml",
+        "six>=1.16.0; python_version > \"3.11\"",
+        "setuptools<81.0.0,>=77.0.3; python_version > \"3.11\"",
+        "einops",
+        "compressed-tensors==0.17.0",
+        "depyf==0.20.0",
+        "cloudpickle",
+        "watchfiles",
+        "python-json-logger",
+        "ninja",
+        "pybase64",
+        "cbor2",
+        "ijson",
+        "setproctitle",
+        "openai-harmony>=0.0.3",
+        "anthropic>=0.71.0",
+        "model-hosting-container-standards<1.0.0,>=0.1.14",
+        "mcp",
+        "opentelemetry-sdk>=1.27.0",
+        "opentelemetry-api>=1.27.0",
+        "opentelemetry-exporter-otlp>=1.27.0",
+        "opentelemetry-semantic-conventions-ai>=0.4.1",
+        "numba==0.65.0",
+        "torch==2.13.0",
+        "torchaudio==2.11.0",
+        "torchvision==0.28.0",
+        "torchcodec>=0.14",
+        "PyNvVideoCodec==2.0.4",
+        "flashinfer-python==0.6.17",
+        "apache-tvm-ffi==0.1.11",
+        "tilelang==0.1.12",
+        "nvidia-cudnn-frontend>=1.19.1",
+        "nvtx==0.2.15",
+        "fastsafetensors>=0.3.3",
+        "nvidia-cutlass-dsl[cu13]==4.6.2",
+        "quack-kernels==0.6.4",
+        "tokenspeed-mla==0.1.8; platform_system == \"Linux\"",
+        "humming-kernels[cu13]==0.1.12",
+        "zentorch==2.13.0.0; extra == \"zen\"",
+        "pandas; extra == \"bench\"",
+        "matplotlib; extra == \"bench\"",
+        "seaborn; extra == \"bench\"",
+        "datasets; extra == \"bench\"",
+        "scipy; extra == \"bench\"",
+        "plotly; extra == \"bench\"",
+        "tensorizer==2.10.1; extra == \"tensorizer\"",
+        "fastsafetensors>=0.3.3; extra == \"fastsafetensors\"",
+        "instanttensor>=0.1.9; extra == \"instanttensor\"",
+        "runai-model-streamer[azure,gcs,s3]>=0.15.7; extra == \"runai\"",
+        "av; extra == \"audio\"",
+        "scipy; extra == \"audio\"",
+        "soundfile; extra == \"audio\"",
+        "soxr; extra == \"audio\"",
+        "mistral_common[audio]; extra == \"audio\"",
+        "nvidia-deepstream-videodecode-cu13>=9.0.2; extra == \"deepstream\"",
+        "helion==1.4.0; extra == \"helion\"",
+        "smg-grpc-servicer[vllm]>=0.5.2; extra == \"grpc\"",
+        "opentelemetry-sdk>=1.26.0; extra == \"otel\"",
+        "opentelemetry-api>=1.26.0; extra == \"otel\"",
+        "opentelemetry-exporter-otlp>=1.26.0; extra == \"otel\"",
+        "opentelemetry-semantic-conventions-ai>=0.4.1; extra == \"otel\"",
+        "vllm-gguf-plugin>=0.0.2; extra == \"extra-quant\""
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "torch==2.13.0",
+          "name": "torch",
+          "active": true,
+          "current": "2.13.0+cu130",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "flashinfer-python==0.6.17",
+          "name": "flashinfer-python",
+          "active": true,
+          "current": "0.6.18.dev20260819",
+          "current_satisfies": false,
+          "pair13_0_3_satisfies": false
+        },
+        {
+          "requirement": "nvidia-cutlass-dsl[cu13]==4.6.2",
+          "name": "nvidia-cutlass-dsl",
+          "active": true,
+          "current": "4.6.2",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "nvidia-cutlass-dsl-libs-cu13",
+      "version": "4.6.2",
+      "path": "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl_libs_cu13-4.6.2.dist-info",
+      "metadata_sha256": "20ad977c34e6ba814652be93384f77cb2ec955bdbbeeccce19a224d39ea7f2a9",
+      "requires_dist": [
+        "numpy",
+        "typing-extensions>=4.10.0",
+        "cuda-python>=12.8",
+        "protobuf<7,>=6.30.2",
+        "nvidia-cuda-nvdisasm<14,>=13.3",
+        "nvidia-cutlass-dsl-libs-base==4.6.2"
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-python>=12.8",
+          "name": "cuda-python",
+          "active": true,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "cuda-pathfinder",
+      "version": "1.7.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info",
+      "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548",
+      "requires_dist": [],
+      "relevant_requirements": []
+    },
+    {
+      "name": "humming-kernels",
+      "version": "0.1.12",
+      "path": "/usr/local/lib/python3.12/dist-packages/humming_kernels-0.1.12.dist-info",
+      "metadata_sha256": "347b64ca0bf34125f8b31324be34bad33ad53f3a755ce031e886785aa13845ee",
+      "requires_dist": [
+        "torch>=2.7",
+        "triton",
+        "numpy",
+        "safetensors",
+        "jinja2",
+        "nvidia-ml-py",
+        "cuda-bindings",
+        "tqdm",
+        "tabulate",
+        "nvidia-cuda-runtime-cu12; extra == \"cu12\"",
+        "nvidia-cuda-cccl-cu12; extra == \"cu12\"",
+        "nvidia-cuda-nvcc-cu12; extra == \"cu12\"",
+        "nvidia-cuda-nvrtc-cu12; extra == \"cu12\"",
+        "nvidia-cuda-runtime; extra == \"cu13\"",
+        "nvidia-cuda-cccl; extra == \"cu13\"",
+        "nvidia-cuda-nvcc; extra == \"cu13\"",
+        "nvidia-cuda-nvrtc; extra == \"cu13\""
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "torch>=2.7",
+          "name": "torch",
+          "active": true,
+          "current": "2.13.0+cu130",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "cuda-bindings",
+          "name": "cuda-bindings",
+          "active": true,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "torch",
+      "version": "2.13.0+cu130",
+      "path": "/usr/local/lib/python3.12/dist-packages/torch-2.13.0+cu130.dist-info",
+      "metadata_sha256": "7477a1e61a4ecc055e52577f79be3dcc6d4d2ef6d423089469c9366cf4191a80",
+      "requires_dist": [
+        "filelock",
+        "typing-extensions>=4.10.0",
+        "setuptools>=77.0.3",
+        "sympy>=1.13.3",
+        "networkx>=2.5.1",
+        "jinja2",
+        "fsspec>=0.8.5",
+        "cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == \"Linux\"",
+        "cuda-bindings<14,>=13.0.3; platform_system == \"Linux\" and python_version < \"3.15\"",
+        "nvidia-cudnn-cu13==9.20.0.48; platform_system == \"Linux\"",
+        "nvidia-cusparselt-cu13==0.8.1; platform_system == \"Linux\"",
+        "nvidia-nccl-cu13==2.29.7; platform_system == \"Linux\"",
+        "nvidia-nvshmem-cu13==3.4.5; platform_system == \"Linux\"",
+        "triton==3.7.1; platform_system == \"Linux\" and python_version < \"3.15\"",
+        "optree>=0.13.0; extra == \"optree\"",
+        "opt-einsum>=3.3; extra == \"opt-einsum\"",
+        "pyyaml; extra == \"pyyaml\""
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-bindings<14,>=13.0.3; platform_system == \"Linux\" and python_version < \"3.15\"",
+          "name": "cuda-bindings",
+          "active": true,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "nccl4py",
+      "version": "0.4.1",
+      "path": "/usr/local/lib/python3.12/dist-packages/nccl4py-0.4.1.dist-info",
+      "metadata_sha256": "fe06eacec7a8488a4510e0c59162a4e0e6cb77985aa2ee9125be3f85ac3bbfdc",
+      "requires_dist": [
+        "packaging",
+        "numpy",
+        "cuda-core~=1.0",
+        "cuda-pathfinder<2.0.0,>=1.5.4",
+        "nvidia-nccl-cu12; extra == \"cu12\"",
+        "cuda-bindings~=12.0; extra == \"cu12\"",
+        "nvidia-cutlass-dsl~=4.6; extra == \"cu12\"",
+        "nvidia-nccl-cu13; extra == \"cu13\"",
+        "cuda-bindings~=13.0; extra == \"cu13\"",
+        "nvidia-cutlass-dsl[cu13]~=4.6; extra == \"cu13\""
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-core~=1.0",
+          "name": "cuda-core",
+          "active": true,
+          "current": "1.0.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "cuda-pathfinder<2.0.0,>=1.5.4",
+          "name": "cuda-pathfinder",
+          "active": true,
+          "current": "1.7.0",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "cuda-bindings~=12.0; extra == \"cu12\"",
+          "name": "cuda-bindings",
+          "active": false,
+          "current": "13.3.1",
+          "current_satisfies": false,
+          "pair13_0_3_satisfies": false
+        },
+        {
+          "requirement": "nvidia-cutlass-dsl~=4.6; extra == \"cu12\"",
+          "name": "nvidia-cutlass-dsl",
+          "active": false,
+          "current": "4.6.2",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "cuda-bindings~=13.0; extra == \"cu13\"",
+          "name": "cuda-bindings",
+          "active": false,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "nvidia-cutlass-dsl[cu13]~=4.6; extra == \"cu13\"",
+          "name": "nvidia-cutlass-dsl",
+          "active": false,
+          "current": "4.6.2",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "nvidia-cudnn-frontend",
+      "version": "1.27.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/nvidia_cudnn_frontend-1.27.0.dist-info",
+      "metadata_sha256": "cb41eb04c9983311d98f6869bcb6376bd74f8b2dd5742886a692edc6e8a63af4",
+      "requires_dist": [
+        "nvidia-cutlass-dsl[cu13]>=4.5.0; extra == \"cutedsl\"",
+        "cuda-python; extra == \"cutedsl\"",
+        "torch; extra == \"cutedsl\"",
+        "apache-tvm-ffi>=0.1.11; extra == \"cutedsl\"",
+        "torch-c-dlpack-ext; extra == \"cutedsl\""
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "nvidia-cutlass-dsl[cu13]>=4.5.0; extra == \"cutedsl\"",
+          "name": "nvidia-cutlass-dsl",
+          "active": false,
+          "current": "4.6.2",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "cuda-python; extra == \"cutedsl\"",
+          "name": "cuda-python",
+          "active": false,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "torch; extra == \"cutedsl\"",
+          "name": "torch",
+          "active": false,
+          "current": "2.13.0+cu130",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "cuda-bindings",
+      "version": "13.3.1",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info",
+      "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+      "requires_dist": [
+        "cuda-pathfinder>=1.4.2",
+        "cuda-toolkit[nvfatbin,nvjitlink,nvrtc,nvvm]==13.*; extra == \"all\"",
+        "cuda-toolkit[cufile]==13.*; sys_platform == \"linux\" and extra == \"all\"",
+        "cuda-toolkit==13.*; extra == \"all\"",
+        "nvidia-cudla==13.*; (platform_system == \"Linux\" and platform_machine == \"aarch64\") and extra == \"all\""
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-pathfinder>=1.4.2",
+          "name": "cuda-pathfinder",
+          "active": true,
+          "current": "1.7.0",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    },
+    {
+      "name": "cuda-python",
+      "version": "13.3.1",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda_python-13.3.1.dist-info",
+      "metadata_sha256": "8bea0c1333aaef1205d3cdea2690d935b4127448c1ed78e55c179fe1658856fd",
+      "requires_dist": [
+        "cuda-bindings~=13.3.1",
+        "cuda-core~=1.0.0",
+        "cuda-pathfinder~=1.1",
+        "cuda-bindings[all]~=13.3.1; extra == \"all\""
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-bindings~=13.3.1",
+          "name": "cuda-bindings",
+          "active": true,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": false
+        },
+        {
+          "requirement": "cuda-core~=1.0.0",
+          "name": "cuda-core",
+          "active": true,
+          "current": "1.0.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "cuda-pathfinder~=1.1",
+          "name": "cuda-pathfinder",
+          "active": true,
+          "current": "1.7.0",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "cuda-bindings[all]~=13.3.1; extra == \"all\"",
+          "name": "cuda-bindings",
+          "active": false,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": false
+        }
+      ]
+    },
+    {
+      "name": "cuda-core",
+      "version": "1.0.1",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda_core-1.0.1.dist-info",
+      "metadata_sha256": "7614e2baedae2aea3da9210eb2bc60f52a4d159f2cdf88a17380e2a2386a98fd",
+      "requires_dist": [
+        "cuda-pathfinder>=1.4.2",
+        "numpy",
+        "backports.strenum; python_version < \"3.11\"",
+        "cuda-bindings[all]==12.*; extra == \"cu12\"",
+        "cuda-bindings[all]==13.*; extra == \"cu13\""
+      ],
+      "relevant_requirements": [
+        {
+          "requirement": "cuda-pathfinder>=1.4.2",
+          "name": "cuda-pathfinder",
+          "active": true,
+          "current": "1.7.0",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        },
+        {
+          "requirement": "cuda-bindings[all]==12.*; extra == \"cu12\"",
+          "name": "cuda-bindings",
+          "active": false,
+          "current": "13.3.1",
+          "current_satisfies": false,
+          "pair13_0_3_satisfies": false
+        },
+        {
+          "requirement": "cuda-bindings[all]==13.*; extra == \"cu13\"",
+          "name": "cuda-bindings",
+          "active": false,
+          "current": "13.3.1",
+          "current_satisfies": true,
+          "pair13_0_3_satisfies": true
+        }
+      ]
+    }
+  ]
+}

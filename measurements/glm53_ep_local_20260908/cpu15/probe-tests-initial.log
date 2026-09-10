@@ -1,0 +1,15 @@
+test_failed_probe_preserves_phase_and_partial_results (test_glm53_ep_local_probe.EvidenceTests.test_failed_probe_preserves_phase_and_partial_results) ... ok
+test_incomplete_remap_compile_matrix_is_rejected (test_glm53_ep_local_probe.EvidenceTests.test_incomplete_remap_compile_matrix_is_rejected) ... ok
+test_matching_evidence_passes_and_changed_overlay_fails (test_glm53_ep_local_probe.EvidenceTests.test_matching_evidence_passes_and_changed_overlay_fails) ... ok
+test_missing_mount_skips_and_changed_test_are_rejected (test_glm53_ep_local_probe.EvidenceTests.test_missing_mount_skips_and_changed_test_are_rejected) ... ok
+test_stale_receipt_is_rejected_before_service_inventory_or_pause (test_glm53_ep_local_probe.EvidenceTests.test_stale_receipt_is_rejected_before_service_inventory_or_pause) ... ok
+test_stopped_handoff_reaches_failed_cell_and_restores_original_running_flags (test_glm53_ep_local_probe.EvidenceTests.test_stopped_handoff_reaches_failed_cell_and_restores_original_running_flags) ... ok
+test_corrupt_small_row_cannot_hide_behind_a_large_row (test_glm53_ep_local_probe.NumericalTests.test_corrupt_small_row_cannot_hide_behind_a_large_row) ... skipped 'requires torch; pinned CPU image covers this'
+test_large_stock_noise_cannot_authorize_a_bad_candidate (test_glm53_ep_local_probe.NumericalTests.test_large_stock_noise_cannot_authorize_a_bad_candidate) ... skipped 'requires torch; pinned CPU image covers this'
+test_nonfinite_and_broadcastable_shapes_are_rejected (test_glm53_ep_local_probe.NumericalTests.test_nonfinite_and_broadcastable_shapes_are_rejected) ... skipped 'requires torch; pinned CPU image covers this'
+test_small_stock_noise_preserves_existing_candidate_floor (test_glm53_ep_local_probe.NumericalTests.test_small_stock_noise_preserves_existing_candidate_floor) ... skipped 'requires torch; pinned CPU image covers this'
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.019s
+
+OK (skipped=4)

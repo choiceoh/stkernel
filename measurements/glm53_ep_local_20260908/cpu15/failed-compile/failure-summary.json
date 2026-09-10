@@ -1,0 +1,20 @@
+{
+  "verdict": "FAIL",
+  "phase": "cpu-contracts",
+  "source_revision": "30608530f0c908bc5f81db6bdb69fd70ccee9a24",
+  "started_kst": "2026-09-08T21:53:07.865313+09:00",
+  "ended_kst": "2026-09-08T21:53:21.961431+09:00",
+  "tests": {
+    "tests_run": 129,
+    "failures": 0,
+    "errors": 1,
+    "skips": 0
+  },
+  "runtime_rechecked": true,
+  "original_files_verified": 58,
+  "contract_files_match_frozen_revision": 27,
+  "cute_ptx_and_cubin_identical_cpu14": true,
+  "remap_ptx_identical_cpu14": 24,
+  "full_source_admission_receipt_present": false,
+  "failure": "RunnerOrderTests sanitizer mock omitted new required capsule CLI arguments; argparse SystemExit2"
+}

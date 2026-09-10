@@ -1,0 +1,35 @@
+{
+  "captured_utc": "2026-09-08T15:26:50.928175+00:00",
+  "source_revision": "69f5b8330bf63534f950e36cb2c40e844e7806f1",
+  "job": "/tmp/glm53-ep-local-diag-gpu-0908-1",
+  "session": "eplocaldiag0908v1",
+  "records": [
+    {
+      "original_path": "/tmp/glm53-ep-local-diag-gpu-0908-1/submission.json",
+      "stored_path": "submission.json",
+      "original_sha256": "dbfde415f84e00d62f49b1257ec38027b6ed6cba1a6901d0779341259d74c0e6",
+      "stored_sha256": "dbfde415f84e00d62f49b1257ec38027b6ed6cba1a6901d0779341259d74c0e6"
+    },
+    {
+      "original_path": "/tmp/glm53-ep-local-diag-gpu-0908-1/driver-start.json",
+      "stored_path": "driver-start.json",
+      "original_sha256": "24a81c6055a46fdd552ba3a2a839970edc19f32ec4a4a414a09bf55cde94397e",
+      "stored_sha256": "24a81c6055a46fdd552ba3a2a839970edc19f32ec4a4a414a09bf55cde94397e"
+    },
+    {
+      "original_path": "/tmp/glm53-ep-local-diag-gpu-0908-1/driver.pid",
+      "stored_path": "driver.pid",
+      "original_sha256": "9ebd83b04654e0e49d73025fe6b36f6ddf1a0f47ac6fa77a86d2039701865edc",
+      "stored_sha256": "9ebd83b04654e0e49d73025fe6b36f6ddf1a0f47ac6fa77a86d2039701865edc"
+    },
+    {
+      "original_path": "/tmp/glm53-ep-local-diag-gpu-0908-1/fleet.log",
+      "stored_path": "fleet.log.gz",
+      "original_sha256": "fec1ab682d6173391109d4e9a098e84f996362e026ed6d28ede1a59b7cefb291",
+      "stored_sha256": "310e2fad0f7a5c8e536701439bd682f10f2502106e2593ca45c85cedc8b3cc4c"
+    }
+  ],
+  "snapshot_only": true,
+  "gpu_numerical_acceptance": false,
+  "performance_acceptance": false
+}

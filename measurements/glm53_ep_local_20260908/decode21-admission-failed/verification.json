@@ -1,0 +1,19 @@
+{
+  "verdict": "PASS",
+  "scope": "archive integrity and admission-refusal classification only",
+  "original_payload_returncode": 2,
+  "compiler_result_present": false,
+  "compiler_started": false,
+  "container_started": false,
+  "actual_failed_memory_kib": null,
+  "original_job_files": 5,
+  "original_job_bytes": 10171,
+  "frozen_runner_sha256": "69e95fd5c9c82cae699065bb3c219e796cb053e615dea222a9c0a798bdeafcf2",
+  "source_revision": "028f98167376f0a0857c20c7ec89a3505c1a000f",
+  "guard_lines": [
+    90,
+    92,
+    93,
+    103
+  ]
+}

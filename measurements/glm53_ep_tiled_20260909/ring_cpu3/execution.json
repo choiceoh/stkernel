@@ -1,0 +1,22 @@
+{
+  "scope": "actual normal CPU fleet execution; no GPU workload",
+  "source": "57914a3f8bb01a76a20099b9c2605be3ea15b7f4",
+  "session": "eptiledcpu0909ring3",
+  "command": [
+    "ssh",
+    "-T",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "choiceoh@srv2",
+    "env REPO=/home/choiceoh/stkernel-ep-tiled-0909-ring bash /home/choiceoh/stkernel-ep-tiled-0909-ring/bench/fleet.sh run --cpu eptiledcpu0909ring3 5 'EP SF6 A-ring canary key fix: 6 real lowerings and 101 CPU contracts; no GPU devices' -- ssh -o BatchMode=yes -o ConnectTimeout=8 choiceoh@10.10.10.4 'nice -n19 python3 -B /home/choiceoh/stkernel-ep-tiled-0909-ring/probes/run_glm53_ep_tiled_cpu.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --output /home/choiceoh/glm53-ep-tiled-ring3-cpu-evidence --capsule-root /home/choiceoh/glm53-ep-cpu-0909-21/capsule --manifest-sha256 b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab'"
+  ],
+  "plan_sha256": "b97e13495d138b37797d79863f6e8b4764c72b13a58eb08d339a837dbc08dae6",
+  "started": 1788962418.827679,
+  "stdout": "/tmp/glm53-ep-ring-cpu3.log",
+  "returncode": 0,
+  "finished": 1788962463.242523,
+  "stdout_sha256": "858e9d4b953893f250e698b7cf1b3ab425759499108b08bac640d746c982119c",
+  "stdout_bytes": 19430
+}

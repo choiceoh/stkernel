@@ -1,0 +1,123 @@
+{
+  "candidate_ready": false,
+  "candidate_serving_metrics_available": false,
+  "ranks": {
+    "glm53.log.10.10.10.1.gz": {
+      "candidate_comparison_records": 1,
+      "candidate_first_result": {
+        "bad_rows": 0,
+        "max_row_relative_abs": 0.009316770359873772,
+        "max_row_relative_l2": 0.005571101326495409,
+        "phase": "initial-C1-eager",
+        "stock_max_row_relative_abs": 0.012820512987673283,
+        "stock_max_row_relative_l2": 0.007013391703367233
+      },
+      "candidate_graph_comparisons": 0,
+      "case_verdicts": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING"
+      ],
+      "completed_at_KST": "2026-09-09T22:52:25.679468+09:00",
+      "error": "AssertionError('native EP tiled decode artifact was not selected/warmed')",
+      "reference_bad_rows_total": 0,
+      "reference_comparison_records": 54,
+      "remaining_planned_candidate_comparisons": 53
+    },
+    "glm53.log.10.10.10.3.gz": {
+      "candidate_comparison_records": 1,
+      "candidate_first_result": {
+        "bad_rows": 0,
+        "max_row_relative_abs": 0.013333333656191826,
+        "max_row_relative_l2": 0.005436957813799381,
+        "phase": "initial-C1-eager",
+        "stock_max_row_relative_abs": 0.013333333656191826,
+        "stock_max_row_relative_l2": 0.006859090644866228
+      },
+      "candidate_graph_comparisons": 0,
+      "case_verdicts": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING"
+      ],
+      "completed_at_KST": "2026-09-09T22:52:44.912523+09:00",
+      "error": "AssertionError('native EP tiled decode artifact was not selected/warmed')",
+      "reference_bad_rows_total": 0,
+      "reference_comparison_records": 54,
+      "remaining_planned_candidate_comparisons": 53
+    },
+    "glm53.log.10.10.10.4.gz": {
+      "candidate_comparison_records": 1,
+      "candidate_first_result": {
+        "bad_rows": 0,
+        "max_row_relative_abs": 0.010989011265337467,
+        "max_row_relative_l2": 0.005295850802212954,
+        "phase": "initial-C1-eager",
+        "stock_max_row_relative_abs": 0.016853932291269302,
+        "stock_max_row_relative_l2": 0.006771547719836235
+      },
+      "candidate_graph_comparisons": 0,
+      "case_verdicts": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING"
+      ],
+      "completed_at_KST": "2026-09-09T22:52:40.503946+09:00",
+      "error": "AssertionError('native EP tiled decode artifact was not selected/warmed')",
+      "reference_bad_rows_total": 0,
+      "reference_comparison_records": 54,
+      "remaining_planned_candidate_comparisons": 53
+    },
+    "glm53.log.srv2.gz": {
+      "candidate_comparison_records": 1,
+      "candidate_first_result": {
+        "bad_rows": 0,
+        "max_row_relative_abs": 0.01123595517128706,
+        "max_row_relative_l2": 0.005460996180772781,
+        "phase": "initial-C1-eager",
+        "stock_max_row_relative_abs": 0.012711863964796066,
+        "stock_max_row_relative_l2": 0.007056995294988155
+      },
+      "candidate_graph_comparisons": 0,
+      "case_verdicts": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING"
+      ],
+      "completed_at_KST": "2026-09-09T22:52:39.725172+09:00",
+      "error": "AssertionError('native EP tiled decode artifact was not selected/warmed')",
+      "reference_bad_rows_total": 0,
+      "reference_comparison_records": 54,
+      "remaining_planned_candidate_comparisons": 53
+    }
+  },
+  "schema": 1,
+  "scope": "Original failed startup evidence; numeric first-C1 result and artifact-selection assertion are distinct. No full numerics/graph/performance acceptance.",
+  "session": "eptiledring0909v2",
+  "source_revision": "5663b1beb13e97116e6244af02a22ecc5074a263",
+  "verdict": "FAIL"
+}

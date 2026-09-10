@@ -1,0 +1,13 @@
+test_changed_executable_cannot_reuse_successful_preflight (test_glm53_ep_sanitizer.PreflightTests.test_changed_executable_cannot_reuse_successful_preflight) ... ok
+test_missing_executable_and_wrong_hash_fail_before_container (test_glm53_ep_sanitizer.PreflightTests.test_missing_executable_and_wrong_hash_fail_before_container) ... ok
+test_nonzero_exit_or_missing_version_cannot_pass (test_glm53_ep_sanitizer.PreflightTests.test_nonzero_exit_or_missing_version_cannot_pass) ... ok
+test_outer_timeout_removes_only_its_preflight_container (test_glm53_ep_sanitizer.PreflightTests.test_outer_timeout_removes_only_its_preflight_container) ... ok
+test_pinned_version_runs_in_bounded_no_device_container_and_records_identity (test_glm53_ep_sanitizer.PreflightTests.test_pinned_version_runs_in_bounded_no_device_container_and_records_identity) ... ok
+test_failed_preflight_never_reaches_service_inventory_or_pause (test_glm53_ep_sanitizer.RunnerOrderTests.test_failed_preflight_never_reaches_service_inventory_or_pause) ... ok
+test_absent_errors_ignored_errors_and_warnings_are_rejected (test_glm53_ep_sanitizer.SummaryTests.test_absent_errors_ignored_errors_and_warnings_are_rejected) ... ok
+test_tool_specific_clean_summaries_are_required (test_glm53_ep_sanitizer.SummaryTests.test_tool_specific_clean_summaries_are_required) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.006s
+
+OK

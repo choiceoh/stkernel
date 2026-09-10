@@ -1,0 +1,6 @@
+
+Resource usage:
+ Common:
+  GLOBAL:0
+ Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_ten_0:
+  REG:220 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1848 TEXTURE:0 SURFACE:0 SAMPLER:0

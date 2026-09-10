@@ -1,0 +1,60 @@
+{
+  "adoption_acceptance": false,
+  "all_four_new_canaries_pass": false,
+  "full_sanitizer_acceptance": false,
+  "host_binding": "caller-provided receipt filenames",
+  "identity_match": true,
+  "new_source_manifest_sha256": "1374a187d39f64a3fb329281714e3ee467babab5e4dbea34e84320ba73934da6",
+  "nodes": {
+    "10.10.10.1": {
+      "difference_count": 0,
+      "differences": [],
+      "failure_summary": "AssertionError({'verdict': 'UNSTABLE_STOCK_CONTROL', 'bad_rows': 1, 'max_row_relative_l2': 0.010242566466331482, 'max_row_relative_abs': 0.10869564861059189})",
+      "identity_match": true,
+      "new_receipt_sha256": "f44310acf2629d2a32441cdf14cf71a2341729b185bdfd9be3d09156123ab27f",
+      "new_verdict": "FAIL",
+      "old_receipt_sha256": "88d8da775c9fc6ea64bcefe43d92ac1b22056cc21f741859b4fc2773370c87d8",
+      "old_verdict": "FAIL",
+      "within_boot_storage_reused": true
+    },
+    "10.10.10.3": {
+      "difference_count": 0,
+      "differences": [],
+      "failure_summary": "AssertionError({'verdict': 'UNSTABLE_STOCK_CONTROL', 'bad_rows': 1, 'max_row_relative_l2': 0.006412902846932411, 'max_row_relative_abs': 0.054187193512916565})",
+      "identity_match": true,
+      "new_receipt_sha256": "571c6959d66546e245c12c5a0b47cc7608fa9c50d4c0805dda10679203801755",
+      "new_verdict": "FAIL",
+      "old_receipt_sha256": "2f662ebba1df44e385ed92257e8269bf6073b003c6ade33fdbb72602b481cfb2",
+      "old_verdict": "FAIL",
+      "within_boot_storage_reused": true
+    },
+    "10.10.10.4": {
+      "difference_count": 0,
+      "differences": [],
+      "failure_summary": "AssertionError({'verdict': 'UNSTABLE_STOCK_CONTROL', 'bad_rows': 1, 'max_row_relative_l2': 0.005637871101498604, 'max_row_relative_abs': 0.07905138283967972})",
+      "identity_match": true,
+      "new_receipt_sha256": "fc7bca03b4b432ee4b6b7c8cedf10772abd59a4f4c622bba63d6f4a978e0803a",
+      "new_verdict": "FAIL",
+      "old_receipt_sha256": "8984002c092d8a4db1c34425703868d0410df1117dca49bbf5b7350184b9705a",
+      "old_verdict": "FAIL",
+      "within_boot_storage_reused": true
+    },
+    "local": {
+      "difference_count": 0,
+      "differences": [],
+      "failure_summary": "AssertionError({'verdict': 'CANDIDATE_NUMERICS_FAIL', 'bad_rows': 2, 'max_row_relative_l2': 0.015016310848295689, 'max_row_relative_abs': 0.12648221850395203, 'stock_max_row_relative_l2': 0.0037261447869241238, 'stock_max_row_relative_abs':",
+      "identity_match": true,
+      "new_receipt_sha256": "3400e39028dd50d99cf405d7d6636a89dd325cb411786dd305afa1c4e8d411b1",
+      "new_verdict": "FAIL",
+      "old_receipt_sha256": "023930ffdfcf2e24609ad086e9b3c634c71c61cc26b7af858e17bc3ba45a5339",
+      "old_verdict": "FAIL",
+      "within_boot_storage_reused": true
+    }
+  },
+  "old_source_manifest_sha256": "71183492eaf3cbb8c3d80bebdece79f2f27f9906b1e058542d82b02c9dea0910",
+  "performance_acceptance": false,
+  "schema": 1,
+  "scope": "same-input bounded startup canary; no performance/sanitizer/adoption acceptance",
+  "source_revisions_verified": false,
+  "verdict": "MATCH_BUT_CANARY_FAIL"
+}

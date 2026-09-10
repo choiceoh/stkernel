@@ -1,0 +1,191 @@
+{
+  "verdict": "PASS_DIAGNOSTIC_ONLY",
+  "diagnostic_only": true,
+  "performance_acceptance": false,
+  "full_gpu_acceptance": false,
+  "default_promotion": false,
+  "session": "eplocaldiag0908v1",
+  "revision": "69f5b8330bf63534f950e36cb2c40e844e7806f1",
+  "case": "concentrated6912",
+  "observed_cells": 1,
+  "inner_exit_code": 0,
+  "outer_exit_code": 0,
+  "error": null,
+  "probe_verdict": "PASS",
+  "phase": "complete",
+  "candidate_first_failure": null,
+  "candidate_failure_diagnostics": null,
+  "candidate_failure_diagnostics_error": null,
+  "probe_error": null,
+  "controls": [
+    [
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.008805343881249428,
+        "max_row_relative_abs": 0.024539876729249954
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.008855223655700684,
+        "max_row_relative_abs": 0.023668639361858368
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.008832580409944057,
+        "max_row_relative_abs": 0.021276595070958138
+      }
+    ],
+    [
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.008712002076208591,
+        "max_row_relative_abs": 0.023255813866853714
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.008751371875405312,
+        "max_row_relative_abs": 0.02298850566148758
+      },
+      {
+        "bad_rows": 0,
+        "max_row_relative_l2": 0.008711876347661018,
+        "max_row_relative_abs": 0.021739130839705467
+      }
+    ]
+  ],
+  "candidate": [
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.011814472265541553,
+      "max_row_relative_abs": 0.035353533923625946,
+      "stock_max_row_relative_l2": 0.008805343881249428,
+      "stock_max_row_relative_abs": 0.024539876729249954
+    },
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.01175552885979414,
+      "max_row_relative_abs": 0.03333333507180214,
+      "stock_max_row_relative_l2": 0.008805343881249428,
+      "stock_max_row_relative_abs": 0.024539876729249954
+    },
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.011864148080348969,
+      "max_row_relative_abs": 0.032786883413791656,
+      "stock_max_row_relative_l2": 0.008712002076208591,
+      "stock_max_row_relative_abs": 0.023255813866853714
+    },
+    {
+      "bad_rows": 0,
+      "max_row_relative_l2": 0.011984633281826973,
+      "max_row_relative_abs": 0.033898305147886276,
+      "stock_max_row_relative_l2": 0.008712002076208591,
+      "stock_max_row_relative_abs": 0.023255813866853714
+    }
+  ],
+  "timing": {
+    "wall_ms": {
+      "compact": [
+        53.851800000605486,
+        53.92730932605142,
+        55.30698065801213,
+        54.56292600138113,
+        53.17178834229708,
+        53.94595467563098,
+        53.23772966706505,
+        53.92880266299471
+      ],
+      "local": [
+        15.286084322724491,
+        14.261171008305004,
+        14.60136865110447,
+        14.238520331370333,
+        14.884115992269168,
+        14.619443682022393,
+        14.60701167040194,
+        14.62217433921372
+      ]
+    },
+    "device_ms": {
+      "compact": [
+        53.84184773763021,
+        53.92366027832031,
+        55.303070068359375,
+        54.55941263834635,
+        53.16795857747396,
+        53.9421641031901,
+        53.234110514322914,
+        53.9251963297526
+      ],
+      "local": [
+        15.282399495442709,
+        14.258132934570312,
+        14.598133087158203,
+        14.23569107055664,
+        14.880811055501303,
+        14.616533915201822,
+        14.603829701741537,
+        14.619307200113932
+      ]
+    },
+    "wall_speedup_pct": 269.0358980877901
+  },
+  "timing_scope": "EP remap plus MoE wrapper",
+  "rows": 6912,
+  "max_allocated_bytes": 2539167232,
+  "max_reserved_bytes": 3030384640,
+  "restoration": {
+    "scope": "Normal supervisor closure; no live public identity after handoff",
+    "original_snapshot_equal": false,
+    "incoming_mode": "present",
+    "immutable_and_running_equal": true
+  },
+  "lifecycle_events": [
+    {
+      "t": 1788881155.3818622,
+      "session": "eplocaldiag0908v1",
+      "event": "ready",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "protocol": 2,
+      "source_sha256": {
+        "fleet.sh": "654b6812b0b08655d74ed63a0519d211ecae1c787e014a4c7bdf0c71007884f7",
+        "fleet_boot.py": "dc01cffc16b8e06b98d93b834d8606149ca14809c7a086d2b48ac44f4f0605f5",
+        "fleet_handoff.py": "21e7d234702cbf746f55e83e10bbb60e22394bac9cab342ff8b67e2f73c856f9"
+      }
+    },
+    {
+      "t": 1788881341.8506336,
+      "session": "eplocaldiag0908v1",
+      "event": "accepted",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "revision": 1
+    },
+    {
+      "t": 1788881575.1983597,
+      "session": "eplocaldiag0908v1",
+      "event": "payload-finished",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "rc": 0
+    },
+    {
+      "t": 1788881575.2314253,
+      "session": "eplocaldiag0908v1",
+      "event": "handoff-offered",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "successor": "mb9216-0909"
+    },
+    {
+      "t": 1788881575.7140775,
+      "session": "eplocaldiag0908v1",
+      "event": "handoff-accepted",
+      "runner": "/home/choiceoh/glm53-logs/fleet/runners/5eb7163c1ebc117bc15fc6886098b05b273b6064817aec9929bdeacdfa05ef67",
+      "successor": "mb9216-0909"
+    }
+  ],
+  "cpu17_proof_sha256": "1d8ee9b9657cd49240f2b1f6d5eee40a413e647dc8ee0743d911d69e0ac8eba7",
+  "limitations": [
+    "One unchanged synthetic fixture; no full GPU, sanitizer-suite or performance acceptance.",
+    "No full-model TTFT or serving-quality proof. The original GPU v5 failure is preserved.",
+    "Raw BF16 words and original comparison limits are diagnostic evidence, not a new acceptance rule."
+  ]
+}

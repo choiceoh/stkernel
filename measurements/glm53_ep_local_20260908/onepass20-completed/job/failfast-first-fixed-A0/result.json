@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "session": "eplocalonepass0909v20",
+  "ticket": "178892234520953",
+  "owner_pid": 20953,
+  "owner_start_tick": "42473355",
+  "revision": "82d81d65b6a74e09abd9be0a8f05508e4855f6f1",
+  "arm": {
+    "arm": "A0",
+    "started_at": 1788922347.0,
+    "offset": 641,
+    "line": "== 11:52:27 arm EPONEPASS20A0: ENABLE_EP=1 VLLM_GLM53_EP_PREFILL_LOCAL=1 VLLM_B12X_EP_WARM_COMPACT=1 VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1",
+    "log_device": 66306,
+    "log_inode": 170952721
+  },
+  "processes": [
+    {
+      "pid": 50269,
+      "ppid": 21607,
+      "start": "42512787",
+      "cwd": "/home/choiceoh/stkernel-ep-onepass-0909-20"
+    },
+    {
+      "pid": 21607,
+      "ppid": 21599,
+      "start": "42474057",
+      "cwd": "/home/choiceoh/stkernel-ep-onepass-0909-20"
+    },
+    {
+      "pid": 21599,
+      "ppid": 20953,
+      "start": "42474055",
+      "cwd": "/home/choiceoh/stkernel-ep-onepass-0909-20"
+    },
+    {
+      "pid": 20953,
+      "ppid": 1,
+      "start": "42473355",
+      "cwd": "/home/choiceoh/stkernel-ep-onepass-0909-20"
+    }
+  ],
+  "threshold_tok_s": 65.0,
+  "observed": {
+    "path": "/tmp/leg.21607",
+    "device": 66306,
+    "inode": 130555277,
+    "bytes": 328,
+    "sha256": "263dec15ad9ba9a56c3b3802398a38a6762a892cf04b2d18d96fc97a23065688",
+    "mtime_ns": 1788922862681518580,
+    "offset": 278,
+    "line": "fixed2K rep=0 tokens=1024/1024 decode=53.10 tok/s\n",
+    "line_sha256": "c9618faac42949cb66d837f0060304407b408c6e2c10ef127007ccc2b37d54af",
+    "decode_tok_s": 53.1,
+    "observed_at": 1788922863.565804
+  },
+  "records_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "completed_records": [],
+  "helper_sha256": "4ecabbe07a3bd6aba9fe8176eb05e84fc7e04e7e683ef21364bcd3eb369fba28",
+  "signal_sent": true,
+  "scope": "early-stop policy on first rounded stdout result; no matched performance or adoption verdict",
+  "action": "SIGTERM_SENT",
+  "signalled_at": 1788922863.6167352
+}

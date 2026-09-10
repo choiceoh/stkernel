@@ -1,0 +1,25 @@
+{
+  "changes": [
+    {
+      "after_sha256": "12051ef627d506ba5c2e19c92d4d3e20f18f8bc8b48dd9d9972416c15bae65cb",
+      "before_sha256": "031ff8be8433a20fc2aa94c52a6d5b4a26ea65d19b6703dd3279b57fe9dee931",
+      "path": "README.md"
+    },
+    {
+      "after_sha256": "e7df02519abcc2e27e77e83953e0e1314d195281d2d19d8c61c4803b42d17168",
+      "before_sha256": "8b7e8e8e70c7e624976d7d83584ce41c4f8251e154e57a3ffc326888342f8de1",
+      "path": "result-summary.json"
+    },
+    {
+      "after_sha256": "c226d77efd7ca4e1b6c0213ab44859260c2fa91f4b050bdafacf3fe44c5c8c7a",
+      "before_sha256": "430308f6e283fc56919b0e8920930ba4b6678fdad7963312ad819ef9b26c4f36",
+      "path": "canary/verified-summary.json"
+    },
+    {
+      "after_sha256": "bbcd03b6714d102f7245d176d59317ccddc12b67bda589d86a95500f8967e245",
+      "before_sha256": "c5c94caf0641c04bcec97287ffa9074333d72e3b4415f14543d027a467c1df85",
+      "path": "source/cpu21-reference.json"
+    }
+  ],
+  "scope": "Derived wording/field clarification only; raw logs, canary receipts, parser rejection and exact executed collector unchanged."
+}

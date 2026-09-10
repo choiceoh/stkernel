@@ -1,0 +1,13 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-binding-gpu0908-5",
+  "revision": "8dc665b018d1d86286c7d72f4d01a368581be106",
+  "clean": true,
+  "cpu_tests": 63,
+  "cpu_proof_source_match": true,
+  "cpu_evidence_sha256": "49f34f59b0d51609ecced3a21d4c278977e93f3a64c9267a9a18baf61282b8f0",
+  "mounted_source_count": 13,
+  "contract_source_count": 18,
+  "remap_compile_count": 24,
+  "purpose": "post-context binding diagnostic only; CPU11 source includes stopped-container lifecycle",
+  "created": 1788861561.0376873
+}

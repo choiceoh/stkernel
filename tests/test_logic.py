@@ -5538,10 +5538,17 @@ def test_b12x_micro_chunk_width() -> None:
     for tokens in (8, 16, 24, 32, 80):
         check(tail(tokens, 8, 72, enabled=True) is None,
               f"{tokens} tokens is aligned -- no tail")
-    for tokens in (0, 1, 7, 81, 8192):
+    for tokens in range(1, stock):
+        check(chunks(tokens, 8, 72, enabled=True) == ()
+              and tail(tokens, 8, 72, enabled=True) == (0, tokens),
+              f"{tokens} tokens must use one padded short-only batch")
+        for enabled, topk, experts in ((False, 8, 72), (True, 4, 72), (True, 8, 71)):
+            check(tail(tokens, topk, experts, enabled=enabled) is None,
+                  "short-only padding retains the exact experiment gate")
+    for tokens in (0, 81, 8192):
         check(chunks(tokens, 8, 72, enabled=True) == ()
               and tail(tokens, 8, 72, enabled=True) is None,
-              f"{tokens} tokens must fail closed (below one chunk, or past the "
+              f"{tokens} tokens must fail closed (empty, or past the "
               "compact cutover where dropping remote slots is cheaper)")
     check(chunks(8, 8, 72, enabled=False) == (), "disabled yields no plan")
     check(chunks(8, 4, 72, enabled=True) == (), "top_k must be 8")
@@ -5657,7 +5664,7 @@ def test_ep_compact_shape_align() -> None:
 
 
 def test_ep_compact_warmup_ladder() -> None:
-    """Load-time warmup ladder: opt-in, shape-derived, never fatal."""
+    """Required compact coverage includes every aligned routing tail."""
     ns = load_defs(
         "overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
         {"b12x_ep_compact_warmup_buckets", "b12x_ep_compact_pair_count",
@@ -5673,10 +5680,11 @@ def test_ep_compact_warmup_ladder() -> None:
           "long prompt hits")
     check(all(b % align == 0 for b in got), "every rung is a real bucket")
     check(len(set(got)) == len(got), "no rung repeats")
-    check(len(got) <= 8, "the ladder must stay short; each rung is a compile")
-    check(got[0] == ns["b12x_ep_compact_pair_count"](8192 * 8 * 72 // 288),
-          "the top rung is the largest chunk this engine can schedule, scaled "
-          "to the slots this rank actually owns")
+    check(got == tuple(range(8192, 0, -align)),
+          "routing concentration and slicing can reach every aligned tail; "
+          "the actual compiler keys decide which rows need distinct calls")
+    check(128 in got and 192 in got,
+          "previous request-time static compilations must be represented")
 
     for args in ((0, 8, 72, 288), (8192, 0, 72, 288), (8192, 8, 0, 288),
                  (8192, 8, 72, 0), (8192, 8, 288, 72)):
@@ -5690,10 +5698,11 @@ def test_ep_compact_warmup_ladder() -> None:
     check('os.environ.get("VLLM_B12X_EP_WARM_COMPACT", "0").strip() != "1"'
           in body and "return" in body,
           "warmup must be exact opt-in -- it costs load time")
-    check("except Exception as exc:" in body and "warning_once" in body,
-          "a failed warmup must cost a log line, never the boot")
-    check("logger.info_once" in body,
-          "a warmup that ran must say which shapes it covered")
+    check("except Exception" not in body,
+          "required preparation failures must propagate before readiness")
+    check("_b12x_ep_compact_warmup_execute" in body
+          and "[b12x EP compact warmup] COMPLETE" in body,
+          "completion requires execution, synchronization and exact-key checks")
 
     print("  EP compact warmup ladder ...... OK")
 
@@ -11677,8 +11686,9 @@ def test_fleet_reservation_tooling_contracts() -> None:
         check(src in src_all, f"proof marker source literal exists for {knob}: {src!r}")
         check(knob.startswith("VLLM_GLM53_"), f"proof marker row names a glm53 knob: {knob}")
     proof = open(os.path.join(REPO, "bench", "proof.py"), encoding="utf-8").read()
-    check("table[k][0] in log" in proof and "import re" not in proof,
-          "proof.py matches markers as fixed strings, never as a regex")
+    check("table[k][0] in log" in proof,
+          "table markers remain literal; composite startup records have "
+          "separate structured completion checks")
     onepass = open(os.path.join(REPO, "bench", "onepass.py"), encoding="utf-8").read()
     check("def _served_build(" in onepass and 'out["overlay"]' in onepass and 'out["knobs"]' in onepass,
           "onepass records the deployed build and the serving container's non-default knobs")

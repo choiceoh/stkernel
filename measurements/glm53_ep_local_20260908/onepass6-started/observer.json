@@ -1,0 +1,9 @@
+{
+  "observer_pid": 58369,
+  "observer_exec_session": 94179,
+  "files": {
+    "glm53_onepass6_observer.py": "96bc5286717965b02791028dd18bea962ea25d61aa47e2808b96817c8a0d36d9",
+    "glm53_onepass6_snapshot.py": "b79589debb891697d6eddee870a53e2d03d942f97821d7cde5c1684617c01a95"
+  },
+  "scope": "passive owned-reservation logs and private strict snapshots; no GPU requests"
+}

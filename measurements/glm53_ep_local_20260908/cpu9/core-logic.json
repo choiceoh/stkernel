@@ -1,0 +1,23 @@
+{
+  "original_path": "/tmp/glm53-ep-extra2-core0908.log",
+  "raw_sha256": "3ef7e4e2fbc511d5b86bf00e2436df1938a0133ee5d1e6f020bfbd99236550c1",
+  "raw_bytes": 5195,
+  "stored_sha256": "f14331e18327a33f20221d6c63676d1050bee8060dd19c84877da3e17b5e586f",
+  "stored_bytes": 2003,
+  "summary": "core OK (6793 checks; 38 megakernel regressions; 0 fleet regressions)",
+  "checks": 6793,
+  "megakernel_regressions": 38,
+  "fleet_regressions": 0,
+  "skips_reported": [
+    "skip_topk rule ................ OK",
+    "UE8M0 scale repair ............. SKIP (no torch on this host)",
+    "b12x SF 6-bit pack ............ OK (skipped: no torch)",
+    "dflash2 selector score precision  SKIP (no torch on this host)",
+    "b12x EP routing ................ OK (tensor remap skipped)",
+    "DSV4 UE8M0 host guard ......... SKIP values (no torch)",
+    "glm53 kpool packed scratch contract ... SKIP (no torch on this host)",
+    "w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)"
+  ],
+  "source_revision": "not recorded in this local core log; frozen CPU compile source is recorded independently",
+  "note": "Host tensor-dependent skips are not counted as test passes; zero fleet regressions is not a fleet-suite pass."
+}

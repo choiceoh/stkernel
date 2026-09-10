@@ -1,0 +1,84 @@
+{
+  "scope": "CPU-only unit-test fixture environment isolation; no fleet runtime or scheduler changes",
+  "worktree": "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908",
+  "branch": "codex/glm53-fleet-restore-test-env",
+  "base_head": "0ac504b7f50f11d8388b80b6f15d228d15b2ab7c",
+  "worktree_status": "M tests/test_fleet_pending.py",
+  "common_checkout": {
+    "path": "/Users/ost/Documents/Github2/stkernel2",
+    "head": "14ffb9eefb14216eea3594656e6e068e92136c20",
+    "branch": "main",
+    "status": "",
+    "origin_main": "0ac504b7f50f11d8388b80b6f15d228d15b2ab7c"
+  },
+  "test_file_sha256": "58c8ffdd3e88c598c02c9263abdadf3c4f2cdd08995155c26c3934fd00e8c3a3",
+  "before": {
+    "phase": "before",
+    "head": "0ac504b7f50f11d8388b80b6f15d228d15b2ab7c",
+    "cwd": "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908",
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_fleet_pending.py",
+      "-v"
+    ],
+    "started": "2026-09-08T18:21:53.409636+09:00",
+    "ended": "2026-09-08T18:21:53.520040+09:00",
+    "returncode": 1,
+    "test_file_sha256": "c29786da65ddfd50417f084914d606223b712442b26951e9222c5c2ed1cf571f",
+    "injected_environment": {
+      "FLEET_PREPARE_MANIFEST": "/tmp/glm53-fleet-restore-test-env0908/parent-preparation.json"
+    },
+    "parent_manifest_sha256": "378367626970f652ab87b272f1755b4163e835b40df2d1394e89ab3d13abf1dd",
+    "parent_manifest_unchanged": true,
+    "stdout_sha256": "fb9d749e64e46167c1443112a3f75766cd74e5fd1d8f5ee106cc8fb7dcdfb00c",
+    "stdout_bytes": 5972,
+    "scope": "Local synthetic parent environment; no fleet hold, queue, remote or GPU execution."
+  },
+  "after": {
+    "phase": "after",
+    "head": "0ac504b7f50f11d8388b80b6f15d228d15b2ab7c",
+    "cwd": "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908",
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_fleet_pending.py",
+      "-v"
+    ],
+    "started": "2026-09-08T18:24:46.854130+09:00",
+    "ended": "2026-09-08T18:24:46.927835+09:00",
+    "returncode": 0,
+    "test_file_sha256": "58c8ffdd3e88c598c02c9263abdadf3c4f2cdd08995155c26c3934fd00e8c3a3",
+    "injected_environment": {
+      "FLEET_PREPARE_MANIFEST": "/tmp/glm53-fleet-restore-test-env0908/parent-preparation.json"
+    },
+    "parent_manifest_sha256": "378367626970f652ab87b272f1755b4163e835b40df2d1394e89ab3d13abf1dd",
+    "parent_manifest_unchanged": true,
+    "stdout_sha256": "b1f3c41f4487ac41a7addcd4a1a8121b72dbe216874e0e1989e14377d8734c5c",
+    "stdout_bytes": 1465,
+    "scope": "Local synthetic parent environment; no fleet hold, queue, remote or GPU execution."
+  },
+  "result": {
+    "before_existing_tests": 7,
+    "before_failures": 2,
+    "before_errors": 2,
+    "after_total_tests": 8,
+    "after_failures": 0,
+    "after_errors": 0,
+    "after_skips": 0,
+    "nested_regression_case": "One existing edit case additionally runs through setup/cleanup inside the new regression test; unittest top-level count is 8."
+  },
+  "diff_check": "PASS",
+  "no_remote_or_gpu_execution": true,
+  "no_commit": true
+}

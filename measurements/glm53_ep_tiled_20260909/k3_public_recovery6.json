@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "kind": "derived summary of the successful read-only tool result, not raw verifier stdout",
+  "verified_at_utc": "2026-09-09T17:15:18.181191Z",
+  "verdict": "PASS",
+  "public_head_health": 200,
+  "controller_source": "0738ca4b18d30cbca83850d0fcd9814e3b803ee1",
+  "approved_source": "074c804522735b35bbc957735623faadcfdcff49",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "profile": "TP4; EP disabled; prior approved defaults preserved",
+  "source_mounts_per_rank": 68,
+  "ranks_passed": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "verifier_path": "/tmp/glm53-shared-recovery-verify-v2.py",
+  "verifier_sha256": "10a5202dbcab5be6eb695fcf4e226e37f28e82143a19c1b127b19d743c8c9a05",
+  "receipt": "/home/choiceoh/glm53-logs/fleet/validation/recovery-receipts/57ef37726799f8ae260475211864647e8564e04937b3541c3ab416e6f7a956e4.json",
+  "performance_acceptance": false,
+  "scope": "Existing public recovery verified; no inference or other-service continuity claim",
+  "automation": {
+    "id": "glm",
+    "status": "PAUSED",
+    "reason": "requested public recovery proof completed"
+  }
+}

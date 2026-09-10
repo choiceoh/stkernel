@@ -79,7 +79,8 @@ def _counter(text, name):
     return float(m.group(1)) if m else 0.0
 
 
-def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=None):
+def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=None,
+               channel_trace=None):
     """(text, ttft_s, prompt_tokens, completion_tokens, finish_reason) of one
     streamed chat completion: ttft = first chunk carrying content."""
     body = json.dumps({"model": model, "max_tokens": max_tokens, "min_tokens": min_tokens,
@@ -93,6 +94,7 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                        # decode windows (TPL1: no windows). Keep the condition constant.
                        "chat_template_kwargs": {"thinking": True}}).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    stream_channels = [] if channel_trace is not None else None
     t0 = time.monotonic()
     ttft = None
     arrivals = []
@@ -124,6 +126,10 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                     parts.append(piece)
                 if ch.get("finish_reason"):
                     finish = ch["finish_reason"]
+                if stream_channels is not None:
+                    # Retain references after the original arrival timestamp.
+                    # Classify only after all requests and sampling have ended.
+                    stream_channels.append(d)
     if ttft is None:
         ttft = time.monotonic() - t0
     if timing is not None:
@@ -141,8 +147,86 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                       tpot_ms=1000 * decode_s / (ctok - 1) if ctok > 1 else None,
                       decode_tok_s=(ctok - 1) / decode_s if ctok > 1 and decode_s > 0 else None,
                       chunk_gaps_ms=[1000 * (b - a) for a, b in zip(arrivals, arrivals[1:])])
+    if channel_trace is not None:
+        channel_trace.append(stream_channels)
     return ("".join(parts), ttft, int(usage.get("prompt_tokens", 0) or 0),
             int(usage.get("completion_tokens", 0) or 0), finish)
+
+
+def _channel_diagnostics(events, text, finish, hits, scanner):
+    """Attribute existing combined-text hits; never change the Korean gate.
+
+    Transient deltas are not serialized. At most one 96-character combined
+    context per gated kind is retained, with the exact offending channel.
+    """
+    names = ("content", "reasoning_content", "reasoning")
+    gated_kinds = ("replacement", "lone_jamo", "cjk_mixed", "control")
+    counts = {name: dict(raw_chars=0, raw_pieces=0, selected_chars=0,
+                         selected_pieces=0, non_text_fields=0,
+                         gated_counts={kind: 0 for kind in gated_kinds}) for name in names}
+    spans, selected, offset = [], [], 0
+    for delta in events:
+        for name in names:
+            value = delta.get(name)
+            if isinstance(value, str):
+                counts[name]["raw_chars"] += len(value)
+                counts[name]["raw_pieces"] += bool(value)
+            elif value is not None:
+                counts[name]["non_text_fields"] += 1
+        # Preserve the existing truthy precedence, including simultaneous keys.
+        name = next((name for name in names if delta.get(name)), None)
+        if name is not None:
+            value = delta[name]
+            row = counts[name]
+            spans.append((offset, offset + len(value), name, row["selected_chars"]))
+            selected.append(value)
+            offset += len(value)
+            row["selected_chars"] += len(value)
+            row["selected_pieces"] += 1
+    if "".join(selected) != text:
+        raise ValueError("channel trace does not match the unchanged onepass text")
+
+    effective = text[:-1] if finish == "length" and text.endswith("\ufffd") else text
+    positions = []
+    if hits.get("replacement"):
+        positions.extend((i, "replacement") for i, char in enumerate(effective) if char == "\ufffd")
+    if hits.get("lone_jamo"):
+        # Attribute each jamo, not the preceding syllable (possibly another channel).
+        positions.extend((match.end() - 1, "lone_jamo")
+                         for match in scanner.WELDED_JAMO.finditer(effective))
+    if hits.get("cjk_mixed"):
+        glosses = [(m.start(), m.end()) for m in scanner.HANJA_GLOSS.finditer(effective)]
+        for match in scanner.HAN.finditer(effective):
+            if not any(a <= match.start() < b for a, b in glosses):
+                positions.append((match.start(), "cjk_mixed"))
+    if hits.get("control"):
+        positions.extend((i, "control") for i, char in enumerate(effective)
+                         if scanner.unicodedata.category(char) == "Cc" and char not in "\t\n\r")
+    offenses, seen, span_index = [], set(), 0
+    for position, kind in sorted(positions):
+        while position >= spans[span_index][1]:
+            span_index += 1
+        start, end, channel, channel_start = spans[span_index]
+        counts[channel]["gated_counts"][kind] += 1
+        if kind not in seen:
+            seen.add(kind)
+            context_start = max(0, position - 40)
+            offenses.append(dict(kind=kind, channel=channel, combined_offset=position,
+                                 selected_channel_offset=channel_start + position - start,
+                                 snippet_start=context_start,
+                                 snippet=text[context_start:context_start + 96]))
+    combined_counts = {kind: sum(row["gated_counts"][kind] for row in counts.values())
+                       for kind in gated_kinds}
+    if combined_counts != {kind: hits.get(kind, 0) for kind in gated_kinds}:
+        raise ValueError("channel attribution does not match the existing combined Korean scan")
+    located = {item["kind"] for item in offenses}
+    return dict(schema=1, scope="diagnostic-only; existing combined-text gate",
+                precedence=list(names), channels=counts, combined_chars=len(text),
+                combined_gated_counts=combined_counts,
+                first_offending_channel=offenses[0]["channel"] if offenses else None,
+                offenses=offenses, snippet_scope="combined-selected-text",
+                unlocated_kinds=[kind for kind, count in hits.items()
+                                 if count and kind not in scanner.INFORMATIONAL and kind not in located])
 
 
 def _served_build(repo: str, profile: str = "glm53") -> dict:
@@ -203,10 +287,55 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
     return out
 
 
+def _served_speculation(boot_id, *, preparation=False):
+    """Read the identified head's actual command; no serving imports or requests."""
+    import subprocess
+    try:
+        from glm53_launch_metadata import launch_speculation
+        if not isinstance(boot_id, str) or re.fullmatch(r'[0-9a-f]{64}\|[^|]+', boot_id) is None:
+            raise ValueError('missing identified serving boot')
+        container_id, started = boot_id.split('|', 1)
+        raw = subprocess.check_output(['docker', 'inspect', container_id], text=True,
+                                      stderr=subprocess.DEVNULL, timeout=10)
+        containers = json.loads(raw)
+        if not isinstance(containers, list) or len(containers) != 1:
+            raise ValueError('ambiguous serving container')
+        container = containers[0]
+        state = container['State']
+        if (container['Id'] != container_id or state['StartedAt'] != started
+                or state['Running'] is not True or state['Paused'] or state['Restarting']):
+            raise ValueError('serving boot changed or stopped')
+        env = {}
+        for item in container['Config']['Env']:
+            key, value = item.split('=', 1)
+            if key in env:
+                raise ValueError('duplicate serving environment')
+            env[key] = value
+        result = dict(launch_speculation(container['Config']['Cmd']), boot_id=boot_id,
+                      image=container['Image'], environment_spec_k=env.get('VLLM_GLM53_SPEC_K'))
+        if preparation:
+            result.update(preparation_mode=env.get('VLLM_GLM53_PREP_FUSED'),
+                preparation_kernel=env.get('VLLM_GLM53_PREP_FUSED_KERNEL', 'cuda'),
+                shadow_every=env.get('VLLM_GLM53_PREP_FUSED_SHADOW_EVERY', '1'),
+                selfcheck_every=env.get('VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY', '64'))
+        return result
+    except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError):
+        return None  # Missing evidence never arms SPEC_K proof.
+
+
 def build_record(args, revision):
     from measurement_contract import from_args, metadata
     return dict(name=args.name, t=time.strftime("%F %T"), git=revision,
                 prefill=[], quality={}, decode={}, korean={}, **metadata(from_args(args)))
+
+
+def _require_preparation(rec):
+    # Defaults stay knobs={}; execution must still be proved. Seed a rejection
+    # before collection so an exception cannot erase this requirement.
+    rec['required_proofs'] = ['VLLM_GLM53_PREP_FUSED']
+    rec['proof'] = {'VLLM_GLM53_PREP_FUSED': False}
+    rec['proof_ok'] = '0/1'
+    rec['preparation'] = dict(verdict='REJECTED', reason='preparation proof not completed')
 
 
 def main() -> int:
@@ -245,12 +374,24 @@ def main() -> int:
         rec["runtime"] = json.loads(os.environ.get("FLEET_CONTEXT", "{}"))
     rec["endpoint"] = {"completion": bd.URL, "metrics": bd.METRICS}
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    prove_spec = 'VLLM_GLM53_SPEC_K' in (rec.get('knobs') or {})
+    spec_before = _served_speculation(rec.get('boot_id')) if prove_spec else None
+    prove_prep = os.environ.get('ONEPASS_REQUIRE_PREP_FUSED') == '1'
+    if prove_prep:
+        _require_preparation(rec)
+    prep_before = _served_speculation(rec.get('boot_id'), preparation=True) if prove_prep else None
+    prep_log_path = os.environ.get('MK_HEAD_LOG', '/home/choiceoh/glm53-logs/glm53.log')
+    prep_prefix = None
+    if prove_prep:
+        from glm53_prep_proof import log_prefix
+        prep_prefix = log_prefix(prep_log_path)
     if os.environ.get("FLEET_SESSION"):
         rec["session"] = os.environ["FLEET_SESSION"]          # who held the fleet (fleet.sh run)
     if os.environ.get("MK_COLD_COMPILE") == "1":
         rec["cold_compile"] = True                              # first boot on this build (ab-lever)
     t_all = time.time()
     texts = []          # (tag, text, finish) for the corruption scan
+    channel_traces = []  # Transient SSE references; only bounded diagnostics enter the record.
     phases = []         # (ctx, t_first_token, t_end): each answer's decode phase
     fixed_phases = []
     rec["requests"] = []
@@ -283,7 +424,8 @@ def main() -> int:
                 content = f"문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}"
                 t_req = time.monotonic()
                 timing = {"ctx": ctx, "question": "all"}
-                text, ttft, ptok, ctok, finish = ask_stream(bd.URL, cq.MODEL, content, args.max_tokens * len(facts), timing)
+                text, ttft, ptok, ctok, finish = ask_stream(bd.URL, cq.MODEL, content, args.max_tokens * len(facts), timing,
+                                                        channel_trace=channel_traces)
                 rec["requests"].append(timing)
                 phases.append((ctx, t_req + ttft, time.monotonic()))
                 tok = ptok or tok
@@ -302,7 +444,8 @@ def main() -> int:
                 content = f"문서:\n{doc}\n\n{INSTRUCTION}{q}"
                 t_req = time.monotonic()
                 timing = {"ctx": ctx, "question": qi}
-                text, ttft, ptok, ctok, finish = ask_stream(bd.URL, cq.MODEL, content, args.max_tokens, timing)
+                text, ttft, ptok, ctok, finish = ask_stream(bd.URL, cq.MODEL, content, args.max_tokens, timing,
+                                                        channel_trace=channel_traces)
                 rec["requests"].append(timing)
                 phases.append((ctx, t_req + ttft, time.monotonic()))
                 tok = ptok or tok
@@ -336,7 +479,8 @@ def main() -> int:
                 t_req = time.monotonic()
                 text, ttft, ptok, ctok, finish = ask_stream(
                     bd.URL, cq.MODEL, content, args.fixed_decode_tokens, timing,
-                    min_tokens=args.fixed_decode_tokens, seed=args.seed + rep)
+                    min_tokens=args.fixed_decode_tokens, seed=args.seed + rep,
+                    channel_trace=channel_traces)
                 phase = (2000, t_req + ttft, time.monotonic())
                 phases.append(phase)
                 fixed_phases.append(phase)
@@ -351,6 +495,8 @@ def main() -> int:
                       f"decode={timing['decode_tok_s']:.2f} tok/s", flush=True)
     wall = time.time() - t_dec0
     metrics_after = _metrics_text(bd.METRICS)
+    spec_after = _served_speculation(rec.get('boot_id')) if prove_spec else None
+    prep_after = _served_speculation(rec.get('boot_id'), preparation=True) if prove_prep else None
     m1 = bd._parse_spec_metrics(metrics_after)
     traffic_issues = exclusive_errors(before_traffic, traffic_state(metrics_after),
                                       sw.traffic_samples, len(rec["requests"]))
@@ -398,9 +544,11 @@ def main() -> int:
 
     # ---- Korean corruption on every answer
     dirty, chars, kinds_tot = [], 0, {}
-    for tag, text, finish in texts:
+    for index, (tag, text, finish) in enumerate(texts):
         chars += len(text)
         h = kq.scan(text, truncated=(finish == "length"))
+        rec["requests"][index]["channel_diagnostics"] = _channel_diagnostics(
+            channel_traces[index], text, finish, h, kq)
         gated = {k: v for k, v in h.items() if k not in kq.INFORMATIONAL}
         for k, v in gated.items():
             kinds_tot[k] = kinds_tot.get(k, 0) + v
@@ -446,10 +594,20 @@ def main() -> int:
     try:
         from proof import check as _proof_check
         _kn = [kk for kk, vv in (rec.get("knobs") or {}).items() if vv not in ("0", "", "off")]
+        if prove_prep and 'VLLM_GLM53_PREP_FUSED' not in _kn:
+            _kn.append('VLLM_GLM53_PREP_FUSED')
         if _kn:
             rec.update({kk: vv for kk, vv in _proof_check(
-                _kn, os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log")).items()
-                if kk in ("proof", "proof_ok")})
+                _kn, os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log"),
+                speculation=dict(expected_k=rec['knobs'].get('VLLM_GLM53_SPEC_K'),
+                    boot_id=rec.get('boot_id'), launch_before=spec_before, launch_after=spec_after,
+                    exclusive=args.require_exclusive and not traffic_issues,
+                    metrics_before=metrics_before, metrics_after=metrics_after),
+                preparation=dict(expected_mode=rec['knobs'].get('VLLM_GLM53_PREP_FUSED', '1'),
+                    boot_id=rec.get('boot_id'), launch_before=prep_before, launch_after=prep_after,
+                    exclusive=args.require_exclusive and not traffic_issues,
+                    log_prefix=prep_prefix) if prove_prep else None).items()
+                if kk in ("proof", "proof_ok", "speculation", "preparation")})
     except Exception:
         pass
 

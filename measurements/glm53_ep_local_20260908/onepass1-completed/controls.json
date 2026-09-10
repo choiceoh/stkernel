@@ -1,0 +1,16 @@
+{
+  "KV_TOKENS": "2000000",
+  "KV_HYBRID_BLOCKS": "187",
+  "KV_BYTES": "auto",
+  "MAX_LEN": "1048576",
+  "MAX_SEQS": "4",
+  "MAX_BATCHED": "8192",
+  "GMU": "0.6329",
+  "CG_UTIL_DELTA": "0",
+  "EAGER": "0",
+  "PREFIX_CACHE": "1",
+  "GRAPH_CAP": "32",
+  "COMPILE_CFG": "{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}",
+  "CUSTOM_OPS_AXIS": "all",
+  "PIECEWISE": "0"
+}

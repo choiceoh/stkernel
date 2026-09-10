@@ -1,0 +1,53 @@
+{
+  "adoption_acceptance": false,
+  "canary_cases": 16,
+  "candidate_comparisons": 96,
+  "collection_error": "initial safe literal parser rejected torch.int32 repr; identical original PASS receipts preserved then revalidated",
+  "completed_arms": [],
+  "fixed_decode_tok_s": [],
+  "fixed_pooled_tok_s": null,
+  "full_canary_pass_receipts": 4,
+  "full_sanitizer_acceptance": false,
+  "korean": null,
+  "matched_baseline": false,
+  "onepass_records": 0,
+  "own_holder_after": false,
+  "payload_returncode": 1,
+  "performance_acceptance": false,
+  "prefill_stdout_only": {
+    "request_128k_completion_tokens": 0,
+    "request_128k_elapsed_s": 24.1,
+    "tokens_2k_warm_per_s": 2431,
+    "tokens_32k_single_request_per_s": 3022,
+    "valid_128k_measurement": false
+  },
+  "proof_ok": null,
+  "q0_comparisons": 96,
+  "quality": null,
+  "recovery_deferred": true,
+  "recovery_policy": "idle-controller",
+  "returncode": 1,
+  "revision": "028f98167376f0a0857c20c7ec89a3505c1a000f",
+  "schema": 1,
+  "session": "eplocalonepass0909v21",
+  "source_bound_cpu_run": "CPU21b",
+  "stock_control_comparisons": 96,
+  "supervisor_pid": 133801,
+  "termination": {
+    "action": "SIGTERM",
+    "at_utc": "2026-09-09T03:30:59Z",
+    "available_memory_mib": 6011,
+    "available_percent": 4.9,
+    "source": "head earlyoom journal",
+    "worker_exited_utc": "2026-09-09T03:31:06Z",
+    "worker_pid": 141595
+  },
+  "ticket": "1788924164133801",
+  "unrun_arms": [
+    "B1",
+    "A",
+    "B2",
+    "B3"
+  ],
+  "verdict": "A0_INFRASTRUCTURE_FAILURE_BEFORE_FIXED_DECODE"
+}

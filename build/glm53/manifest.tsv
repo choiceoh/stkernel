@@ -20,9 +20,17 @@ moe_static_kernel_v4.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused
 moe_static_kernel_v5.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py	absent
 moe_dynamic_gated_tiled.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py	absent
 moe_dynamic_gated_sf6.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py	absent
+moe_dynamic_gated_sf6_q0.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6_q0.py	absent
 moe_dynamic_prefill.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py	absent
 moe_dynamic_prefill_n128.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py	absent
+moe_dynamic_ep_local.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py	absent
+glm53_ep_route_remap.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py	absent
 moe_reform_sf_pack.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py	absent
+glm53_ep_local_selftest.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py	absent
+glm53_tp_sf6_q0_selftest.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_tp_sf6_q0_selftest.py	absent
+glm53_ep_tiled.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled.py	absent
+moe_static_ep_tiled.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_ep_tiled.py	absent
+glm53_ep_tiled_selftest.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled_selftest.py	absent
 glm5next_model.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py	a13ebce1807328004c96146882f7c599d58d20fbb25819316ce90c2aa3e6cff1
 glm53_prefill_fastpath.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py	absent
 glm5next_attention.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py	a0870c317287ab444a4639ad418964e981efafb5386592540f85eb38d534c369

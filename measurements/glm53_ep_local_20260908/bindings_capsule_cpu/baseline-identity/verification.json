@@ -1,0 +1,6 @@
+{
+  "driver_sha256": "23596c158b5ef437517605405aa25978d7a442fa1c222d59a392300bc39a0119",
+  "size": 6910920,
+  "record_matches": true,
+  "scope": "Read-only pinned-image binary identity; binary remains outside repository"
+}

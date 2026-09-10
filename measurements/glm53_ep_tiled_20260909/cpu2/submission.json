@@ -1,0 +1,26 @@
+{
+  "source_revision": "f6b0934eb3d14b46cc58c29f6c9983f776eed250",
+  "source": "/home/choiceoh/stkernel-ep-tiled-0909-sf6",
+  "command": [
+    "env",
+    "REPO=/home/choiceoh/stkernel-ep-tiled-0909-sf6",
+    "bash",
+    "/home/choiceoh/stkernel-ep-tiled-0909-sf6/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "eptiledcpu0909v2",
+    "5",
+    "EP tiled SF6 four static and two prefill lowerings plus 96 CPU contracts; srv4 no-device runc 4GiB 2CPU 12GiB guard",
+    "--",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "choiceoh@10.10.10.4",
+    "nice -n 19 python3 -B /home/choiceoh/stkernel-ep-tiled-0909-sf6/probes/run_glm53_ep_tiled_cpu.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --output /home/choiceoh/glm53-ep-tiled-cpu2-evidence --capsule-root /home/choiceoh/glm53-ep-cpu-0909-21/capsule --manifest-sha256 b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "started": 1788940144.336396,
+  "returncode": 0,
+  "finished": 1788940184.135463
+}

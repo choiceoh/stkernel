@@ -1,0 +1,14 @@
+{
+  "before_copy": {
+    "verified_after_transfer": true,
+    "files": 150,
+    "revision": "123fbb01211eaf8cec46fd0965dd9320d02a375b",
+    "checked_epoch": 1788880884.6689615
+  },
+  "after_copy": {
+    "verified_after_transfer": true,
+    "files": 150,
+    "revision": "123fbb01211eaf8cec46fd0965dd9320d02a375b",
+    "checked_epoch": 1788880885.4055705
+  }
+}

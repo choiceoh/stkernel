@@ -1,0 +1,21 @@
+{"entry": "bench/chain.sh", "kind": "boot", "policy": "onepass-only"}
+preflight eplocalonepass0909v2b [boot]:
+{"entry": "bench/chain.sh", "kind": "boot", "policy": "onepass-only"}
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: VLLM_GLM53_EP_PREFILL_LOCAL=0,VLLM_GLM53_EP_PREFILL_LOCAL=1,VLLM_GLM53_PREFILL_SP=1,VLLM_GLM53_PREFILL_SP_FP8=3,VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS=4096
+  NOTE declared only in the checkout (not in origin/main yet): VLLM_GLM53_EP_PREFILL_LOCAL VLLM_GLM53_EP_PREFILL_LOCAL
+  this arm (VLLM_GLM53_EP_PREFILL_LOCAL,VLLM_GLM53_PREFILL_SP,VLLM_GLM53_PREFILL_SP_FP8,VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS) has no record on build ac2f1883
+  baseline: NONE for build ac2f1883 -- a defaults arm is worth its boot
+  -> PASS
+[{"target": {"image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211", "profile": "glm53", "repo": "/home/choiceoh/stkernel-ep-onepass-0909-2"}, "validation": {"artifacts": {"caefd7a3725fc1f99d741b0a27ed695c783045c8c772c670a8c626aa38ccee6f.log": "99d87f01cb2641c39252e43e0b6032702c189f5e7932d262860c4367d990dc14", "caefd7a3725fc1f99d741b0a27ed695c783045c8c772c670a8c626aa38ccee6f.report.json": "36305e91aea6fac71ef2aa604165e7e04e83c01e611ea2c4bb75fbf6fb9765d9"}, "completed_at": 1788886628.7434008, "context": {"checker": "f232834ae5e341fdee5e217efcfd50e64bd050be4947969adc936563866d4bca", "gate": "overlay-admission", "profile": "glm53", "selected": ["shell-syntax", "selected-profile-compose", "overlay-manifest-syntax"], "validator": "1201372f0f6b0e9f10d5f20ee2c1ad8b7bc9f974c7413c09d989c369b2b29c96", "version": 1}, "coverage_complete": true, "key": "caefd7a3725fc1f99d741b0a27ed695c783045c8c772c670a8c626aa38ccee6f", "passed": true, "profile": "glm53", "receipt": "/home/choiceoh/glm53-logs/fleet/validation/receipts/caefd7a3725fc1f99d741b0a27ed695c783045c8c772c670a8c626aa38ccee6f.json", "reused": false, "scope": "admission-full-tree", "source": "ac2f188392bc76f1194f8eee7be9b0dfbec346f5", "started_at": 1788886628.2565448, "tests_run": 3, "version": 1}}]
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "85f80f7d2cbb422b9d9036b9032f0844", "phase": "waiting", "reason": "enqueue", "since": 389021.842541538, "updated_at": 1788886628.9054596, "version": 1}
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "generation": "efa930c497fd4db68abbcde3dd38db88", "phase": "waiting", "reason": "dequeue", "since": 389022.286550283, "updated_at": 1788886629.3494682, "version": 1}
+GO eplocalonepass0909v2b 2026-09-09_01:57:09
+  node 10.10.10.1: gpu=ok stray=4 ram=14G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=10G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=15G path=ok 
+== chain EPONEPASS2B1 EPONEPASS2A EPONEPASS2B2 01:57:10 session=eplocalonepass0909v2b rehearse=0
+   baseline: NONE for build ac2f1883 -- a defaults arm is worth its boot
+== 01:57:10 arm EPONEPASS2B1: (defaults)

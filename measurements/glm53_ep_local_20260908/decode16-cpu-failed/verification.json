@@ -1,0 +1,13 @@
+{
+  "verdict": "PASS",
+  "scope": "CPU16 archive integrity only; no new tests or GPU execution",
+  "original_verdict": "FAIL",
+  "contracts": null,
+  "original_files": 1,
+  "ptx": 0,
+  "cubin": 0,
+  "resource_logs": 0,
+  "source_revision": "014ddde8919f24f94f0aee1730c09efb0b04088b",
+  "evidence_tar_sha256": "5952b3fa5eda32e198059bd8c18380a0f2b667c933d459b66f71072e90b35cd0",
+  "result_sha256": "7e10b87201cf4538da5853962c02e6cf4bffe334533f36435cba45e870907549"
+}

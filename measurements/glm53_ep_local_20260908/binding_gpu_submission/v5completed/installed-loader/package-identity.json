@@ -1,0 +1,28 @@
+{
+  "container_id": "ff7e2b840b408c524e35ae84bc67aa125f26fcf6dd61e2edb5e62b06b0bb652e",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "binding_mounts": [],
+  "metadata": [
+    {
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+      "local": "/tmp/glm53-cydriver-v5-static-0908/METADATA",
+      "sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+      "size": 2498
+    },
+    {
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/RECORD",
+      "local": "/tmp/glm53-cydriver-v5-static-0908/RECORD",
+      "sha256": "2ef4de802fa152d7ff666aa6e14c1136b4ae4e3d23193be636e88542f979830e",
+      "size": 9340
+    }
+  ],
+  "record": [
+    "cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+    "sha256=auQ3tpStMazLnNh0X6XdnlLhGvBF4NpoOWa-ezNB5n4",
+    "533024"
+  ],
+  "record_matches_binary": true,
+  "exact_files_changed_in_container_layer": [],
+  "scope": "Read-only docker cp, docker inspect and docker diff; no container exec or runtime action",
+  "applicable_mounts_at_or_above_copied_files": []
+}

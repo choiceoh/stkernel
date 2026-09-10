@@ -1,0 +1,16 @@
+
+Resource usage:
+ Common:
+  GLOBAL:0
+ Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmem_0:
+  REG:168 STACK:1520 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0
+
+COMPILE PASS arm=local m=6912
+
+Resource usage:
+ Common:
+  GLOBAL:0
+ Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12x_moe_dynamicgenericMoEDynamicKernel_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_ten_0:
+  REG:255 STACK:432 SHARED:1024 LOCAL:0 CONSTANT[0]:2128 TEXTURE:0 SURFACE:0 SAMPLER:0
+
+COMPILE PASS arm=stock m=6912

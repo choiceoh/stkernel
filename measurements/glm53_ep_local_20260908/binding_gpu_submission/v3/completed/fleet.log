@@ -1,0 +1,68 @@
+preflight epbindinggpu0908v3 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  SYNC /home/choiceoh/glm53-logs/fleet.sh <- repo (was stale)
+  PASS knobs declared in origin/main: 
+  NOTE checkout is 17 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  baseline: NONE for build 7254422 -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해) 2026-09-08_16:50:14
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 0 reqs) 2026-09-08_16:50:28
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (4 procs, 0 reqs) 2026-09-08_16:50:29
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 0 reqs) 2026-09-08_16:50:31
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 0 reqs, booting) 2026-09-08_16:50:34
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 0 reqs) 2026-09-08_16:50:37
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:50:44
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_16:50:45
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:51:43
+waiting: pos 1/1, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_16:52:43
+waiting: pos 1/2, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_16:53:57
+waiting: pos 1/2, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:57:22
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:57:44
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_16:57:51
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:58:09
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_16:58:10
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:58:23
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_16:58:25
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:58:36
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_16:58:38
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:58:49
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_16:58:50
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:59:06
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_16:59:07
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:59:20
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_16:59:23
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:59:32
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_16:59:36
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:59:44
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_16:59:48
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_16:59:57
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs) 2026-09-08_17:00:18
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 2 reqs) 2026-09-08_17:00:19
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_17:01:18
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_17:02:43
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (1 procs, 0 reqs) 2026-09-08_17:30:17
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 0 reqs) 2026-09-08_17:30:18
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (4 procs, 0 reqs) 2026-09-08_17:30:19
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 0 reqs) 2026-09-08_17:30:21
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_17:30:35
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_17:30:36
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_17:31:34
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_17:32:34
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 0 reqs) 2026-09-08_17:33:48
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 0 reqs) 2026-09-08_17:34:10
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 3 reqs) 2026-09-08_17:34:12
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 1 reqs) 2026-09-08_17:34:20
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 3 reqs) 2026-09-08_17:34:27
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 1 reqs) 2026-09-08_17:34:32
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 2 reqs) 2026-09-08_17:34:39
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 1 reqs) 2026-09-08_17:34:40
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 0 reqs) 2026-09-08_17:35:00
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (3 procs, 1 reqs) 2026-09-08_17:35:02
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (2 procs, 1 reqs, booting) 2026-09-08_17:35:36
+waiting: pos 1/3, held by attr0908 [boot] (pid 1789800@srv2, since 16:49, est 60m, 40차: 프리필 스텝 고정비 211 ms 회수 — 청크 1152/2304/8192 트레이스 귀속 + 카테고리 분해), legacy busy (0 procs, 1 reqs, booting) 2026-09-08_17:35:37
+GO epbindinggpu0908v3 2026-09-08_17:35:38
+  node 10.10.10.1: gpu=ok stray=4 ram=12G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=7G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=12G path=ok 
+{"started": 1788856539.9038265, "source_revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00", "exit_code": 1, "performance_acceptance": false, "diagnostic_only": true, "error": "RuntimeError('require four running, persistent, pinned-image containers or four absent containers')", "ended": 1788856542.0498254, "restored_original": false}

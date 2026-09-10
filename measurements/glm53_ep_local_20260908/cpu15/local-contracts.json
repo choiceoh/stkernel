@@ -1,0 +1,49 @@
+{
+  "scope": "local focused contracts; no actual compilation or GPU",
+  "sources": {
+    "probes/glm53_ep_capsule_runtime.py": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+    "probes/glm53_ep_local_evidence.py": "052bbc888b326d7fd330cb9cc622dae526c3ebf1f3362f96a9e0dc05e5cf7dde",
+    "probes/glm53_ep_bindings_pair_check.py": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0",
+    "probes/glm53_ep_local_check.py": "8a9c8bd1e3d04bb4b557181ec55e16a2698bd079540af4c6d1a2ae6cce39348c",
+    "probes/glm53_ep_local_compile_check.py": "4187c1150ce16bc12e33dec8d6136b108f36dc3792b2f45421fd44a3c6a082cf",
+    "probes/glm53_ep_route_remap_check.py": "241c11de8db10b550f6a624e91ec729882d4993b1919abe7b187acec4252e568",
+    "probes/run_glm53_ep_local_cpu_compile.py": "2353825ca1bd395a122439402b2eac892518d52c99e52de1872d6dad70f18da8",
+    "probes/run_glm53_ep_local_offline.py": "426159d546f189726d82ccf9a1274fa61be453a698ec1a829fa987bc34fda48f",
+    "tests/test_glm53_ep_capsule_runtime.py": "624a496cfa8a37be53c9625962e1119d89a8d87f1d9de5c8f20b9a34f8c6779f",
+    "tests/test_glm53_ep_capsule_inners.py": "fccae5d3ff7a57d72e3c0d25355193ab4409ae2d2668c26ae362fe313efc599d",
+    "tests/test_glm53_ep_capsule_wrappers.py": "9ff4d4eeedc91ca56856f3a23dc0cb3473a66a2d42de670a8fc1f53fbbfad6dc",
+    "tests/test_glm53_ep_local_probe.py": "5a8fb78fd9dcc233fb02e1253bfd6247b24baaeb0c80387c6e381ccaafc0b325"
+  },
+  "tests": {
+    "runtime": {
+      "run": 7,
+      "skipped": 0
+    },
+    "inner": {
+      "run": 10,
+      "skipped": 0
+    },
+    "wrapper": {
+      "run": 13,
+      "skipped": 0
+    },
+    "pair": {
+      "run": 15,
+      "skipped": 0
+    },
+    "probe": {
+      "run": 11,
+      "skipped": 4,
+      "reason": "local host Torch unavailable; pinned compiler suite will cover"
+    }
+  },
+  "independent_read_only_review": "PASS after failed-recheck receipt and package-import fixes",
+  "logs": {
+    "runtime-tests.log": "d981febb38029b3466a6d9cd92ec63e7e6e2d192baf5fcdbc7210bb0f3f76bad",
+    "probe-tests.log": "4b24d11d23db0e182351da5b65e0589c4dd19dcecbcc624e41ea3e7895752aec",
+    "pair-tests.log": "4db2287020bd4aaccb1754c85131eabae2f6d7ef63165ce2ed0995f4fdb156fd",
+    "wrapper-tests.log": "62c9f37465bf83da23c9e19611c1b63c0ebd0e9fd16fc2afc9a07c4a12f606dd",
+    "probe-tests-initial.log": "6e8bd39e10da23a5a286cdb910ed433270c77a03d21c8500ae828993a406dcec",
+    "inner-tests.log": "add0ddc2cd5ae56037293cbba8e34bfc2feec2b194dd64ca088c54a0875fd320"
+  }
+}

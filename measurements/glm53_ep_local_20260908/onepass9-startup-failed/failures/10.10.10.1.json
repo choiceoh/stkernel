@@ -1,0 +1,988 @@
+{
+  "caller_scale_storage_unchanged": true,
+  "cases": [
+    {
+      "candidate": [
+        {
+          "bad_rows": 0,
+          "max_row_relative_abs": 0.03401360660791397,
+          "max_row_relative_l2": 0.011602317914366722,
+          "stock_max_row_relative_abs": 0.023255813866853714,
+          "stock_max_row_relative_l2": 0.008871069177985191
+        },
+        {
+          "bad_rows": 0,
+          "max_row_relative_abs": 0.03481012582778931,
+          "max_row_relative_l2": 0.011655714362859726,
+          "stock_max_row_relative_abs": 0.023255813866853714,
+          "stock_max_row_relative_l2": 0.008871069177985191
+        },
+        {
+          "bad_rows": 0,
+          "max_row_relative_abs": 0.036082472652196884,
+          "max_row_relative_l2": 0.011697298847138882,
+          "stock_max_row_relative_abs": 0.023255813866853714,
+          "stock_max_row_relative_l2": 0.008871069177985191
+        },
+        {
+          "bad_rows": 0,
+          "max_row_relative_abs": 0.03378378227353096,
+          "max_row_relative_l2": 0.011781780049204826,
+          "stock_max_row_relative_abs": 0.021621622145175934,
+          "stock_max_row_relative_l2": 0.008761654607951641
+        }
+      ],
+      "candidate_failure_diagnostics": {
+        "captured_bad_rows": 1,
+        "diagnostic_only": true,
+        "first_failure_preserved": true,
+        "input_column_scope": "X is the same input-column index, not a causal attribution",
+        "raw_dtype": "bfloat16",
+        "rows": [
+          {
+            "metrics": {
+              "b1_absmax": 37.0,
+              "b1_l2_norm": 630.35595703125,
+              "l2_limit": 0.02315470390021801,
+              "peak_limit": 0.03999999910593033,
+              "relative_l2": 0.011459946632385254,
+              "relative_peak": 0.04054053872823715,
+              "stock_relative_l2": 0.007718234788626432,
+              "stock_relative_peak": 0.010135134682059288
+            },
+            "routes": [
+              {
+                "global_expert_id": 3,
+                "local_expert_id": 3,
+                "scales": {
+                  "fc1_alpha": 0.91796875,
+                  "fc1_input": 0.91796875,
+                  "fc2_alpha": 1.1875,
+                  "fc2_input": 0.91796875
+                },
+                "slot": 0,
+                "weight": 0.2294921875
+              },
+              {
+                "global_expert_id": 4,
+                "local_expert_id": 4,
+                "scales": {
+                  "fc1_alpha": 0.92578125,
+                  "fc1_input": 0.92578125,
+                  "fc2_alpha": 1.1796875,
+                  "fc2_input": 0.92578125
+                },
+                "slot": 1,
+                "weight": 0.201171875
+              },
+              {
+                "global_expert_id": 5,
+                "local_expert_id": 5,
+                "scales": {
+                  "fc1_alpha": 0.9296875,
+                  "fc1_input": 0.9296875,
+                  "fc2_alpha": 1.171875,
+                  "fc2_input": 0.9296875
+                },
+                "slot": 2,
+                "weight": 0.05810546875
+              },
+              {
+                "global_expert_id": 6,
+                "local_expert_id": 6,
+                "scales": {
+                  "fc1_alpha": 0.94140625,
+                  "fc1_input": 0.94140625,
+                  "fc2_alpha": 1.171875,
+                  "fc2_input": 0.94140625
+                },
+                "slot": 3,
+                "weight": 0.2158203125
+              },
+              {
+                "global_expert_id": 7,
+                "local_expert_id": 7,
+                "scales": {
+                  "fc1_alpha": 0.9453125,
+                  "fc1_input": 0.9453125,
+                  "fc2_alpha": 1.1640625,
+                  "fc2_input": 0.9453125
+                },
+                "slot": 4,
+                "weight": 0.01116943359375
+              },
+              {
+                "global_expert_id": 8,
+                "local_expert_id": 8,
+                "scales": {
+                  "fc1_alpha": 0.953125,
+                  "fc1_input": 0.953125,
+                  "fc2_alpha": 1.15625,
+                  "fc2_input": 0.953125
+                },
+                "slot": 5,
+                "weight": 0.038330078125
+              },
+              {
+                "global_expert_id": 9,
+                "local_expert_id": 9,
+                "scales": {
+                  "fc1_alpha": 0.95703125,
+                  "fc1_input": 0.95703125,
+                  "fc2_alpha": 1.1484375,
+                  "fc2_input": 0.95703125
+                },
+                "slot": 6,
+                "weight": 0.1435546875
+              },
+              {
+                "global_expert_id": 10,
+                "local_expert_id": 10,
+                "scales": {
+                  "fc1_alpha": 0.96875,
+                  "fc1_input": 0.96875,
+                  "fc2_alpha": 1.1484375,
+                  "fc2_input": 0.96875
+                },
+                "slot": 7,
+                "weight": 0.1044921875
+              }
+            ],
+            "row_id": 6388,
+            "violations": {
+              "l2": false,
+              "peak": true
+            },
+            "worst_columns": [
+              {
+                "absolute_delta_f32": 1.5,
+                "column": 2918,
+                "raw_bf16_u16": {
+                  "B1": 16916,
+                  "B2": 16915,
+                  "B3": 16916,
+                  "C1": 16910,
+                  "X": 16207
+                }
+              },
+              {
+                "absolute_delta_f32": 0.625,
+                "column": 1140,
+                "raw_bf16_u16": {
+                  "B1": 16866,
+                  "B2": 16868,
+                  "B3": 16868,
+                  "C1": 16871,
+                  "X": 16098
+                }
+              },
+              {
+                "absolute_delta_f32": 0.625,
+                "column": 1247,
+                "raw_bf16_u16": {
+                  "B1": 49584,
+                  "B2": 49582,
+                  "B3": 49583,
+                  "C1": 49579,
+                  "X": 15875
+                }
+              },
+              {
+                "absolute_delta_f32": 0.625,
+                "column": 3110,
+                "raw_bf16_u16": {
+                  "B1": 16856,
+                  "B2": 16856,
+                  "B3": 16853,
+                  "C1": 16851,
+                  "X": 16135
+                }
+              },
+              {
+                "absolute_delta_f32": 0.5625,
+                "column": 1963,
+                "raw_bf16_u16": {
+                  "B1": 16749,
+                  "B2": 16751,
+                  "B3": 16751,
+                  "C1": 16758,
+                  "X": 48688
+                }
+              },
+              {
+                "absolute_delta_f32": 0.5625,
+                "column": 2330,
+                "raw_bf16_u16": {
+                  "B1": 16710,
+                  "B2": 16710,
+                  "B3": 16712,
+                  "C1": 16719,
+                  "X": 15750
+                }
+              },
+              {
+                "absolute_delta_f32": 0.5,
+                "column": 106,
+                "raw_bf16_u16": {
+                  "B1": 49597,
+                  "B2": 49597,
+                  "B3": 49596,
+                  "C1": 49601,
+                  "X": 16054
+                }
+              },
+              {
+                "absolute_delta_f32": 0.5,
+                "column": 587,
+                "raw_bf16_u16": {
+                  "B1": 49618,
+                  "B2": 49618,
+                  "B3": 49618,
+                  "C1": 49614,
+                  "X": 48794
+                }
+              }
+            ]
+          }
+        ],
+        "schema": 1,
+        "selection": "first bad rows in ascending row order; worst absolute-delta columns",
+        "total_bad_rows": 1,
+        "truncated": false
+      },
+      "candidate_first_failure": {
+        "bad_rows": 1,
+        "max_row_relative_abs": 0.04054053872823715,
+        "max_row_relative_l2": 0.011912372894585133,
+        "phase": "changed-C2",
+        "stock_max_row_relative_abs": 0.021621622145175934,
+        "stock_max_row_relative_l2": 0.008761654607951641,
+        "verdict": "CANDIDATE_NUMERICS_FAIL"
+      },
+      "case": "concentrated6912",
+      "completed_at": 1788911669.4885495,
+      "controls": [
+        [
+          {
+            "bad_rows": 0,
+            "max_row_relative_abs": 0.023255813866853714,
+            "max_row_relative_l2": 0.008871069177985191
+          },
+          {
+            "bad_rows": 0,
+            "max_row_relative_abs": 0.02250000089406967,
+            "max_row_relative_l2": 0.008869011886417866
+          },
+          {
+            "bad_rows": 0,
+            "max_row_relative_abs": 0.02358490601181984,
+            "max_row_relative_l2": 0.00885386485606432
+          }
+        ],
+        [
+          {
+            "bad_rows": 0,
+            "max_row_relative_abs": 0.021621622145175934,
+            "max_row_relative_l2": 0.008761654607951641
+          },
+          {
+            "bad_rows": 0,
+            "max_row_relative_abs": 0.02142857201397419,
+            "max_row_relative_l2": 0.008847247809171677
+          },
+          {
+            "bad_rows": 0,
+            "max_row_relative_abs": 0.024096384644508362,
+            "max_row_relative_l2": 0.008714299649000168
+          }
+        ]
+      ],
+      "duration_s": 13.16110372543335,
+      "inputs": [
+        {
+          "X": {
+            "data_ptr": 477305884672,
+            "dtype": "torch.bfloat16",
+            "sha256": "3e42cdd93258168e33b3d85bcc28715d2c8e618ab7c9c1bbc2694be7271861cd",
+            "shape": [
+              6912,
+              4096
+            ]
+          },
+          "fc1_alpha": {
+            "data_ptr": 145271511040,
+            "dtype": "torch.bfloat16",
+            "sha256": "4997db389b839732dcc86ce0900318672c1b97c6c0ec5f7d35f55059e0024198",
+            "shape": [
+              72
+            ]
+          },
+          "fc1_input": {
+            "data_ptr": 145271511040,
+            "dtype": "torch.bfloat16",
+            "sha256": "4997db389b839732dcc86ce0900318672c1b97c6c0ec5f7d35f55059e0024198",
+            "shape": [
+              72
+            ]
+          },
+          "fc2_alpha": {
+            "data_ptr": 145271511552,
+            "dtype": "torch.bfloat16",
+            "sha256": "90e0eebc7df09b4d4c5b7735bb068bfc95c8e09d7bf4086633dd864f31b030de",
+            "shape": [
+              72
+            ]
+          },
+          "fc2_input": {
+            "data_ptr": 145271511040,
+            "dtype": "torch.bfloat16",
+            "sha256": "4997db389b839732dcc86ce0900318672c1b97c6c0ec5f7d35f55059e0024198",
+            "shape": [
+              72
+            ]
+          },
+          "ids": {
+            "data_ptr": 145272951296,
+            "dtype": "torch.int32",
+            "sha256": "69f17fa80cc8bf3dc5b86deccdd217c4c183aaf009eeb6bad61b24aed0f23e86",
+            "shape": [
+              6912,
+              8
+            ]
+          },
+          "weights": {
+            "data_ptr": 145272840704,
+            "dtype": "torch.bfloat16",
+            "sha256": "d462e9b49a725b07bc461b02996261c614e3ca52e6b82d8aa8eb4a4143a0ba74",
+            "shape": [
+              6912,
+              8
+            ]
+          }
+        },
+        {
+          "X": {
+            "data_ptr": 477305884672,
+            "dtype": "torch.bfloat16",
+            "sha256": "e3c4a1c47dd3a742850d20e7478a7cbc98fc2b6bd57a150ea038fbb174af07b9",
+            "shape": [
+              6912,
+              4096
+            ]
+          },
+          "fc1_alpha": {
+            "data_ptr": 145271511040,
+            "dtype": "torch.bfloat16",
+            "sha256": "83117f039daf9e8d62e392e5b77176dc24936213757002020708ee4beb56f81f",
+            "shape": [
+              72
+            ]
+          },
+          "fc1_input": {
+            "data_ptr": 145271511040,
+            "dtype": "torch.bfloat16",
+            "sha256": "83117f039daf9e8d62e392e5b77176dc24936213757002020708ee4beb56f81f",
+            "shape": [
+              72
+            ]
+          },
+          "fc2_alpha": {
+            "data_ptr": 145271511552,
+            "dtype": "torch.bfloat16",
+            "sha256": "90e0eebc7df09b4d4c5b7735bb068bfc95c8e09d7bf4086633dd864f31b030de",
+            "shape": [
+              72
+            ]
+          },
+          "fc2_input": {
+            "data_ptr": 145271511040,
+            "dtype": "torch.bfloat16",
+            "sha256": "83117f039daf9e8d62e392e5b77176dc24936213757002020708ee4beb56f81f",
+            "shape": [
+              72
+            ]
+          },
+          "ids": {
+            "data_ptr": 145272951296,
+            "dtype": "torch.int32",
+            "sha256": "10d2feeb468bfec7d91801a2e62f415a54b9f6adf732d4e4e628d7671d2af817",
+            "shape": [
+              6912,
+              8
+            ]
+          },
+          "weights": {
+            "data_ptr": 145272840704,
+            "dtype": "torch.bfloat16",
+            "sha256": "2a5b212c58c7c2cf71fa4739472d59ad844980ac8b4f2c1ba58890ffb76717fa",
+            "shape": [
+              6912,
+              8
+            ]
+          }
+        }
+      ],
+      "memory_after": {
+        "allocated": 54657900032,
+        "process_peak_allocated": 55827471872,
+        "process_peak_reserved": 56088330240,
+        "reserved": 56088330240
+      },
+      "memory_before": {
+        "allocated": 54259427328,
+        "process_peak_allocated": 54334924800,
+        "process_peak_reserved": 54590963712,
+        "reserved": 54590963712
+      },
+      "phase": "changed-C2",
+      "preparation": [],
+      "q0": [
+        {
+          "phase": "initial-C1",
+          "row_counts": [
+            6901,
+            6899,
+            6901,
+            6903,
+            6897,
+            6901,
+            6902,
+            6898,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "scope": "candidate valid Q0 routes; not a stock packed-input equivalence proof",
+          "sha256": "b99dfa436330b6883c7d4cb588994c7cd88aeb9aff7a14438fe3881a48841dd6",
+          "valid_routes": 55202
+        },
+        {
+          "phase": "initial-C2",
+          "row_counts": [
+            6901,
+            6899,
+            6901,
+            6903,
+            6897,
+            6901,
+            6902,
+            6898,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "scope": "candidate valid Q0 routes; not a stock packed-input equivalence proof",
+          "sha256": "b99dfa436330b6883c7d4cb588994c7cd88aeb9aff7a14438fe3881a48841dd6",
+          "valid_routes": 55202
+        },
+        {
+          "phase": "initial-C3",
+          "row_counts": [
+            6901,
+            6899,
+            6901,
+            6903,
+            6897,
+            6901,
+            6902,
+            6898,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "scope": "candidate valid Q0 routes; not a stock packed-input equivalence proof",
+          "sha256": "b99dfa436330b6883c7d4cb588994c7cd88aeb9aff7a14438fe3881a48841dd6",
+          "valid_routes": 55202
+        },
+        {
+          "phase": "changed-C1",
+          "row_counts": [
+            0,
+            0,
+            0,
+            6893,
+            6902,
+            6896,
+            6898,
+            6901,
+            6900,
+            6891,
+            6900,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "scope": "candidate valid Q0 routes; not a stock packed-input equivalence proof",
+          "sha256": "0dabcc96f98fe0527c2e323d6c4d6f5a224ff60a2fb68bd98c359e5de1bffe54",
+          "valid_routes": 55181
+        },
+        {
+          "phase": "changed-C2",
+          "row_counts": [
+            0,
+            0,
+            0,
+            6893,
+            6902,
+            6896,
+            6898,
+            6901,
+            6900,
+            6891,
+            6900,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "scope": "candidate valid Q0 routes; not a stock packed-input equivalence proof",
+          "sha256": "0dabcc96f98fe0527c2e323d6c4d6f5a224ff60a2fb68bd98c359e5de1bffe54",
+          "valid_routes": 55181
+        }
+      ],
+      "self_variation": [
+        {
+          "max_row_relative_abs": 0.02866242080926895,
+          "max_row_relative_l2": 0.007855878211557865,
+          "phase": "initial-C2",
+          "scope": "candidate-self variation only; original numerical gate unchanged"
+        },
+        {
+          "max_row_relative_abs": 0.02666666731238365,
+          "max_row_relative_l2": 0.007861399091780186,
+          "phase": "initial-C3",
+          "scope": "candidate-self variation only; original numerical gate unchanged"
+        }
+      ],
+      "started_at": 1788911656.3274457,
+      "verdict": "FAIL"
+    }
+  ],
+  "compiled_kernel_cache_retained": true,
+  "completed_at": 1788911669.4891992,
+  "device": "cuda:0",
+  "error": "AssertionError({'verdict': 'CANDIDATE_NUMERICS_FAIL', 'bad_rows': 1, 'max_row_relative_l2': 0.011912372894585133, 'max_row_relative_abs': 0.04054053872823715, 'stock_max_row_relative_l2': 0.008761654607951641, 'stock_max_row_relative_abs': 0.021621622145175934})",
+  "full_sanitizer_acceptance": false,
+  "memory": {
+    "allocated_after": 54657900032,
+    "allocated_before": 53240211456,
+    "process_peak_allocated": 55827471872,
+    "process_peak_reserved": 56088330240,
+    "reserved_after": 56088330240,
+    "reserved_before": 54045704192,
+    "scope": "process peaks include earlier model loading; no reset or canary-only peak claim"
+  },
+  "performance_acceptance": false,
+  "pid": 164,
+  "provenance": {
+    "source": {
+      "dispatch": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py",
+        "sha256": "fe1cdec6b4d38a328e8215664afb9ef61f641cb76125ab8262ce4a30accff2ff"
+      },
+      "local": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py",
+        "sha256": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9"
+      },
+      "micro": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py",
+        "sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655"
+      },
+      "remap": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py",
+        "sha256": "37862eb433b3e4255645bd7a103b530d558408209f3741b87c5b3292f6d8fbad"
+      },
+      "selftest": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py",
+        "sha256": "ae0e4543fd1264c0401c6adb0403baef9be9ad350f7ccd13ee0d8cc42e85e3e7"
+      },
+      "stock": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py",
+        "sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445"
+      },
+      "wrapper": {
+        "path": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py",
+        "sha256": "b23aa556926c7d56e87bb48ef189374dce637dcb6368ed90c43cfeed37117d1b"
+      }
+    },
+    "versions": {
+      "cuda.bindings": {
+        "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+        "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+        "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/__init__.py",
+        "sha256": "3306a21b3b278d04708edc053064b7e929ee6849589850e1fd5393e6f02fce12",
+        "version": "13.3.1"
+      },
+      "flashinfer": {
+        "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/__init__.py",
+        "sha256": "c0762de404eb0c9f903fe1b8a107300a3d3bd06d1a3692560a38b0647333f751",
+        "version": "0.6.18.dev20260819"
+      },
+      "torch": {
+        "path": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py",
+        "sha256": "cf40c075c95864036e835795756d69b8cccfafa76f3bcde5eba9d06065ccd3d1",
+        "version": "2.13.0+cu130"
+      }
+    }
+  },
+  "schema": 1,
+  "scope": "bounded synthetic serving-runtime startup canary; no component timing",
+  "scratch_cache_removed": {
+    "_PADDED_WEIGHT_CACHE": 0,
+    "_SF_PACKED": 0,
+    "_SF_PACK_DUMMY": 0,
+    "_W4A16_WEIGHT_CACHE": 0,
+    "_WEIGHT_CACHE": 0,
+    "_WORKSPACE_CACHE": 0
+  },
+  "scratch_cache_restored": true,
+  "seed": 905308,
+  "started_at": 1788911653.4404292,
+  "verdict": "FAIL",
+  "weights": {
+    "sf13": {
+      "data_ptr": 477136015360,
+      "dtype": "torch.float8_e4m3fn",
+      "sha256": "e2ee4b7e955b3934747610071314f4c431d8eb3ebbf9e17d78f25593fe91184f",
+      "shape": [
+        32,
+        4,
+        32,
+        4,
+        64,
+        72
+      ]
+    },
+    "sf2": {
+      "data_ptr": 477211512832,
+      "dtype": "torch.float8_e4m3fn",
+      "sha256": "21ec2a889dbf1c2a2c4d39d72d98875403feeacefe59b49c9c138cbd00ebf154",
+      "shape": [
+        32,
+        4,
+        32,
+        4,
+        32,
+        72
+      ]
+    },
+    "w13": {
+      "data_ptr": 476230045696,
+      "dtype": "torch.uint8",
+      "sha256": "9db95382a71330159fbb7ef58b0ec07e9bbc196ca2e2e071742231c5cfa20156",
+      "shape": [
+        72,
+        4096,
+        2048
+      ]
+    },
+    "w2": {
+      "data_ptr": 476834025472,
+      "dtype": "torch.uint8",
+      "sha256": "70c26f5f09dd1e4baf92a44a26c6a34438c0fd159519c2bb42f64578a1392bc5",
+      "shape": [
+        72,
+        4096,
+        1024
+      ]
+    }
+  }
+}

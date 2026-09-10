@@ -1,0 +1,15 @@
+fleet: FREE
+legacy: 0 bench/boot procs, 0 requests in flight
+queue (0):
+  marker 17:42 FLEET-free-for-glmfix.done
+  marker 17:42 FLEET-free-for-b12x.done
+  marker 17:42 FLEET-free-for-fusion.done
+  marker 17:42 FLEET-free-for-mkg3.done
+log:
+  2026-09-08_17:45:50 nogpu-done arconsumermainfleet0908 rc=1
+  2026-09-08_17:48:39 nogpu-start arconsumermaincpu0908srv4 Latest-main Torch CPU core and MHC gate on srv4 with sufficient memory
+  2026-09-08_17:48:46 nogpu-done arconsumermaincpu0908srv4 rc=0
+  2026-09-08_17:49:29 nogpu-start arconsumermainfleet0908v2 Linux fleet fixtures and cache audit with two CPU test workers
+production: defaults (health 200)
+deployed: 3c67b447eb27
+baseline: ATTRBASE on build 3c67b447eb27 -- 21.85 step/s, 3.43 tok/step, 48.5% acc, 2026-09-08 17:34:09 -- skip a defaults arm and compare against it

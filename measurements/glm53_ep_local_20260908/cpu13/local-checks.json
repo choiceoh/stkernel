@@ -1,0 +1,13 @@
+{
+  "scope": "Separate local CPU checks; no GPU execution",
+  "source_revision": "18148116a7abb242741d5b112c8d735353d9fc71",
+  "scale_cache_tests": 7,
+  "core_checks": 6795,
+  "megakernel_regressions": 38,
+  "fleet_regressions": 0,
+  "host_torch_skips_preserved_in_log": true,
+  "pinned_tests_without_skips": 68,
+  "stock_source_sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+  "stock_excerpt_lines_rechecked": 37,
+  "stock_route_state_reader_after_override": false
+}

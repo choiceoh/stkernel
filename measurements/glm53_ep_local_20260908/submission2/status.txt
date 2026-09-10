@@ -1,0 +1,18 @@
+fleet: FREE
+legacy: 0 bench/boot procs, 1 requests in flight
+queue (3):
+  1. arconsumer0908v4 [boot] (since 14:26, est 70m, expect ~70m, ETA ~15:03) AR/MHC consumer preparation after main refresh: exact numerics and C1 B/A/B
+  2. vllmprs0908 [boot] (since 14:48, est 60m, expect ~60m, ETA ~16:13) 40차 상류 도입 번들 PR #477: KDA strided 무장 관문 프로브 + 브랜치 기본값 팔(정합성 3건) + main 반납
+  3. eplocal0908v2 [boot] (since 15:02, est 45m, expect ~45m, ETA ~17:13) Refined E72 full-token prefill: strict stock controls, CPU source binding, numerics and sanitizers, exact restore
+  marker 15:03 FLEET-free-for-glmfix.done
+  marker 15:03 FLEET-free-for-b12x.done
+  marker 15:03 FLEET-free-for-mkg3.done
+  marker 15:03 FLEET-free-for-fusion.done
+log:
+  2026-09-08_15:03:37   kept /home/choiceoh/glm53-logs/boot-IDXC6BASE.log
+  2026-09-08_15:03:37   kept /home/choiceoh/glm53-logs/boot-IDXC6.log
+  2026-09-08_15:03:37   kept /home/choiceoh/glm53-logs/boot-PSTEP.log
+  2026-09-08_15:03:37 release pstep0908v1
+production: defaults (health 200)
+deployed: ee954ac1323a
+baseline: IDXC6BASE on build ee954ac1323a -- 21.86 step/s, 2.75 tok/step, 35.0% acc, 2026-09-08 15:00:09 -- skip a defaults arm and compare against it

@@ -1,0 +1,1 @@
+{"cand": "EPTILEDRING3A", "base": "EPTILEDRING3B", "build": "b3870b09b651", "harness": 40, "session": "eptiledring0909v3", "status": "invalid", "gates": ["korean 1/8"], "proof_ok": "1/1", "objective": {"metric": "decode_tokens"}, "verdict": "GATE FAIL: korean 1/8", "t": "2026-09-09 23:19:27"}

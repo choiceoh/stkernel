@@ -1,0 +1,7 @@
+{
+  "initial_cpu21_admission": "failed before compile",
+  "path": "measurements/glm53_ep_local_20260908/decode21-cpu/result.json",
+  "run_name": "CPU21b",
+  "scope": "CPU capsule13.0.3 versus serving image13.3.1; matching kernel/source bytes only",
+  "sha256": "b4bfcb1c13885939553a1e5c56fb65595a5a5f78c6e73001d3c3eee24396a725"
+}

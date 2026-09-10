@@ -1,0 +1,10 @@
+{
+  "submitted": false,
+  "source": "/home/choiceoh/stkernel-ep-local-0908-15",
+  "job": "/tmp/glm53-ep-local-compile0908-15-head",
+  "revision": "30608530f0c908bc5f81db6bdb69fd70ccee9a24",
+  "source_exists": false,
+  "host_mem_available_kib": 9103036,
+  "bundle_sha256": null,
+  "reason": "unchanged 12 GiB host memory guard; no reclaim or worker fallback"
+}

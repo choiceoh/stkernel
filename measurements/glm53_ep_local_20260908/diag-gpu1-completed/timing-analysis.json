@@ -1,0 +1,30 @@
+{
+  "timing_scope": "EP remap plus MoE wrapper",
+  "rows": 6912,
+  "statistics": {
+    "wall_ms": {
+      "compact_median_ms": 53.92805599452306,
+      "local_median_ms": 14.613227676212166,
+      "ratio_of_medians": 3.690358980877901,
+      "latency_reduction_pct": 72.90236518502302,
+      "paired_ratio_min": 3.522929670128059,
+      "paired_ratio_max": 3.832064338958592,
+      "pairs": 8,
+      "calls_per_arm_per_pair": 3
+    },
+    "device_ms": {
+      "compact_median_ms": 53.924428304036454,
+      "local_median_ms": 14.61018180847168,
+      "ratio_of_medians": 3.690880032223042,
+      "latency_reduction_pct": 72.90619063016001,
+      "paired_ratio_min": 3.5231278801268173,
+      "paired_ratio_max": 3.8325791398487397,
+      "pairs": 8,
+      "calls_per_arm_per_pair": 3
+    }
+  },
+  "synthetic_routing": "concentrated",
+  "full_model_ttft": false,
+  "performance_acceptance": false,
+  "original_numerical_failure_unresolved": true
+}

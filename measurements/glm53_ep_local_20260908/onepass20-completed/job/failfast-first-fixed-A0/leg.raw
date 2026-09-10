@@ -1,0 +1,5 @@
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         894        2554      2.38s      0.83s  o o o
+  32000   32545        3212     (1 req)     10.13s          -  o o o
+ 128000  128559        3304     (1 req)     38.91s          -  o o o
+fixed2K rep=0 tokens=1024/1024 decode=53.10 tok/s

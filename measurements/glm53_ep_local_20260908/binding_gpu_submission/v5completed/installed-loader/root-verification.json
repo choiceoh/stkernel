@@ -1,0 +1,9 @@
+{
+  "status": "VERIFIED",
+  "binary_sha256": "6ae437b694ad31accb9cd8745fa5dd9e52e11af045e0da683966be7b3341e67e",
+  "log_sha256": "52fc79a2ee507591adb6daec386dd155f8e8951f8ee529b477c0d093ff81ec40",
+  "independent_rerun_lookups": 34,
+  "all_symbol_version_pairs_match_official13_3_1": true,
+  "source_manifest": "../compatibility/report.json",
+  "scope": "Static argument mapping only; no compatibility GPU verdict"
+}

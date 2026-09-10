@@ -1,0 +1,89 @@
+{
+  "arm": "A0",
+  "case_metric_receipts_available": false,
+  "effective_runtime_logger_level_verified": false,
+  "failure_level": "ERROR",
+  "full_pass_json_captured": false,
+  "inference": "Matched mandatory hook propagates every failed or reentrant canary; both first success and reused state return only PASS. Same worker subsequently completed model loading and graph capture.",
+  "logger_creation": "logging.getLogger(__name__)",
+  "logger_name": "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_local_selftest",
+  "logging_explanation": "INFO suppression is consistent with available evidence; no runtime logging introspection or injection was performed.",
+  "nodes": {
+    "10.10.10.1": {
+      "container_id": "9601f18efa9f8f12b1beff93e9fdbfc2cfc4996edea9cf8b977022b1046aea04",
+      "flags": {
+        "VLLM_B12X_EP_NO_DUMMY": "1",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "1",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "1"
+      },
+      "markers": {
+        "fixed_workspace": "(Worker_TP1_EP1 pid=164) INFO 09-09 01:20:58 [flashinfer_b12x_moe.py:1078] b12x EP fixed workspace pinned across layers (72 experts, top_k 1, max_rows 8, 4096/2048)",
+        "graph": "(Worker_TP1_EP1 pid=164) INFO 09-09 01:24:06 [model_runner.py:1012] Graph capturing finished in 2 secs, took 0.62 GiB",
+        "loaded": "(Worker_TP1_EP1 pid=164) INFO 09-09 01:22:26 [model_runner.py:374] Model loading took 50.6 GiB and 212.269665 seconds",
+        "zero_workspace": "(Worker_TP1_EP1 pid=164) INFO 09-09 01:20:58 [flashinfer_b12x_moe.py:1078] b12x EP fixed workspace pinned across layers (72 experts, top_k 8, max_rows 64, 4096/2048)"
+      },
+      "stream_prefix_scope": "These exact post-GO lines only; the passive stream may continue after this check.",
+      "worker_pid": 164
+    },
+    "10.10.10.3": {
+      "container_id": "c0f110ab7d7f4c1bec791421a2c3c1c7a50bc1b24d00200b97c49b1a8ddc8bfb",
+      "flags": {
+        "VLLM_B12X_EP_NO_DUMMY": "1",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "1",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "1"
+      },
+      "markers": {
+        "fixed_workspace": "(Worker_TP2_EP2 pid=209) INFO 09-09 01:20:54 [flashinfer_b12x_moe.py:1078] b12x EP fixed workspace pinned across layers (72 experts, top_k 1, max_rows 8, 4096/2048)",
+        "graph": "(Worker_TP2_EP2 pid=209) INFO 09-09 01:24:06 [model_runner.py:1012] Graph capturing finished in 2 secs, took 0.55 GiB",
+        "loaded": "(Worker_TP2_EP2 pid=209) INFO 09-09 01:22:25 [model_runner.py:374] Model loading took 50.6 GiB and 212.069344 seconds",
+        "zero_workspace": "(Worker_TP2_EP2 pid=209) INFO 09-09 01:20:54 [flashinfer_b12x_moe.py:1078] b12x EP fixed workspace pinned across layers (72 experts, top_k 8, max_rows 64, 4096/2048)"
+      },
+      "stream_prefix_scope": "These exact post-GO lines only; the passive stream may continue after this check.",
+      "worker_pid": 209
+    },
+    "10.10.10.4": {
+      "container_id": "682c94d3345ea35e641800a1d5a08842338e351f6ab6e1dba1c1af369a431f68",
+      "flags": {
+        "VLLM_B12X_EP_NO_DUMMY": "1",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "1",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "1"
+      },
+      "markers": {
+        "fixed_workspace": "(Worker_TP3_EP3 pid=208) INFO 09-09 01:21:03 [flashinfer_b12x_moe.py:1078] b12x EP fixed workspace pinned across layers (72 experts, top_k 1, max_rows 8, 4096/2048)",
+        "graph": "(Worker_TP3_EP3 pid=208) INFO 09-09 01:24:06 [model_runner.py:1012] Graph capturing finished in 2 secs, took 0.61 GiB",
+        "loaded": "(Worker_TP3_EP3 pid=208) INFO 09-09 01:22:26 [model_runner.py:374] Model loading took 50.6 GiB and 212.101946 seconds",
+        "zero_workspace": "(Worker_TP3_EP3 pid=208) INFO 09-09 01:21:03 [flashinfer_b12x_moe.py:1078] b12x EP fixed workspace pinned across layers (72 experts, top_k 8, max_rows 64, 4096/2048)"
+      },
+      "stream_prefix_scope": "These exact post-GO lines only; the passive stream may continue after this check.",
+      "worker_pid": 208
+    },
+    "local": {
+      "container_id": "232a1e00a149edf527429c6c6b5c424c1f5fe53f148346a97f122c36ae2e2ab3",
+      "flags": {
+        "VLLM_B12X_EP_NO_DUMMY": "1",
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "1",
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "1"
+      },
+      "markers": {
+        "fixed_workspace": "(Worker_TP0_EP0 pid=223) INFO 09-09 01:21:03 [flashinfer_b12x_moe.py:1078] b12x EP fixed workspace pinned across layers (72 experts, top_k 1, max_rows 8, 4096/2048)",
+        "graph": "(Worker_TP0_EP0 pid=223) INFO 09-09 01:24:06 [model_runner.py:1012] Graph capturing finished in 2 secs, took 0.61 GiB",
+        "loaded": "(Worker_TP0_EP0 pid=223) INFO 09-09 01:22:26 [model_runner.py:374] Model loading took 50.6 GiB and 212.345476 seconds",
+        "zero_workspace": "(Worker_TP0_EP0 pid=223) INFO 09-09 01:21:03 [flashinfer_b12x_moe.py:1078] b12x EP fixed workspace pinned across layers (72 experts, top_k 8, max_rows 64, 4096/2048)"
+      },
+      "stream_prefix_scope": "These exact post-GO lines only; the passive stream may continue after this check.",
+      "worker_pid": 223
+    }
+  },
+  "patch": "/tmp/glm53_ep_selftest_positive_receipt.patch",
+  "patch_limit": "WARNING survives the usual default threshold, but a deployment deliberately configured above WARNING would need an explicit audit sink.",
+  "patch_scope": "One success logging level plus comment; no fixture, math, threshold, control-flow or measurement change. Apply only to a future frozen source and verify positive JSON on its normal startup.",
+  "patch_sha256": "d58dcdaa41ed251e67adbb565297c8c3c9f1f94aad42be4fbba0857e4e794755",
+  "private_snapshot_sha256": "33253c0af400ffd13f1b27d6710dd928a7bb05e024c843cca12a0025ccb094e6",
+  "revision": "c3696a76c6674ad38e01967fa587b8d31a6d121e",
+  "schema": 1,
+  "session": "eplocalonepass0909v14",
+  "source": "overlay/modules/glm53_moe/glm53_ep_local_selftest.py",
+  "source_sha256": "9a3e880307f51dd5dfdf97a59c8e1d6f263fd55a93eb4330e016f729156d1ce9",
+  "status": "MANDATORY_GATE_PASS_INFERRED_FROM_MATCHED_SOURCE_FLAGS_AND_POSTLOAD_GRAPH",
+  "success_level": "INFO"
+}

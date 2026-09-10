@@ -1,0 +1,90 @@
+{
+  "captured_at": "2026-09-08T08:58:06.310458+00:00",
+  "files": {
+    "bootstrap-correction.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/bootstrap-correction.json",
+      "size": 247,
+      "mtime_ns": 1788857729271162872,
+      "sha256": "8229aa031b90db135248ac7995829cbb2b16b537507a91b2c2dec96ce7b9dc8b"
+    },
+    "healthy-before-submission.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/healthy-before-submission.json",
+      "size": 42385,
+      "mtime_ns": 1788857599721588281,
+      "sha256": "ad8a4b73f5d9865fe00566ee3e1202acbb9c0e1aca241dc990c13da0aacf54b1"
+    },
+    "scheduler.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/scheduler.json",
+      "size": 303,
+      "mtime_ns": 1788857599723288572,
+      "sha256": "4a46be281d02b177653a7db2a1eec46464173b6f5b1098fe8155f1ac46772135"
+    },
+    "cpu-evidence.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/cpu-evidence.json",
+      "size": 25354,
+      "mtime_ns": 1788857599015183714,
+      "sha256": "b88d759166a6c3e8b64e21b095763a0344a7e3867c101883a2cf4246cf62dc11"
+    },
+    "driver.pid": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/driver.pid",
+      "size": 8,
+      "mtime_ns": 1788857729272123466,
+      "sha256": "8fac32b52ac59de3b97e1cfbba350c9045418eadb087506d19e5b133a3538337"
+    },
+    "driver.py": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/driver.py",
+      "size": 391,
+      "mtime_ns": 1788857729271257497,
+      "sha256": "11b51a891c348ae9036c4119bb1f37b0b5d9acfd8cca2b4f69467cba059ef245"
+    },
+    "exit.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/exit.json",
+      "size": 943,
+      "mtime_ns": 1788857797466848814,
+      "sha256": "d0eb9f4b75d1c5318e51c757f0f1a59b8edfa9885757539b72ae85c811b45022"
+    },
+    "fleet.log": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/fleet.log",
+      "size": 30365,
+      "mtime_ns": 1788857797101554561,
+      "sha256": "7d69f89a381bd5cc0d881d0f7ebcdfc782c72ddf2302f53b2c9fa802896e7235"
+    },
+    "freeze.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/freeze.json",
+      "size": 224,
+      "mtime_ns": 1788857599025881393,
+      "sha256": "290a28af2329c4f9cdf30447b08419b6e192ea2477bf8924eaa7caf0f07e3aff"
+    },
+    "submission.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/submission.json",
+      "size": 863,
+      "mtime_ns": 1788857599723411116,
+      "sha256": "b098871e43c634a3447dc6cfce76b1959d427ec6869a14cd85ff9de90520e02b"
+    },
+    "capture/before.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/capture/before.json",
+      "size": 41730,
+      "mtime_ns": 1788857734703003385,
+      "sha256": "38d8b8eb772add4010bb0e80553651fe69097bbed9c586488e8ed8b022f979ee"
+    },
+    "capture/completion.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/capture/completion.json",
+      "size": 322,
+      "mtime_ns": 1788857734736740554,
+      "sha256": "1cb36590f2d3fb4e7ee58901d99e04d8329a2cd8b5764f245109354d0c5130b9"
+    },
+    "capture/resources-before.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/capture/resources-before.json",
+      "size": 358,
+      "mtime_ns": 1788857734269696378,
+      "sha256": "e19f8cacf319dcdfe5852e53e899c9bff9622260696a5e6f733d9bdc9bf33b65"
+    },
+    "capture/sanitizer-preflight.json": {
+      "source": "/tmp/glm53-ep-binding-gpu0908-4/capture/sanitizer-preflight.json",
+      "size": 1490,
+      "mtime_ns": 1788857733160095999,
+      "sha256": "033e722a0cca2d59ebbba2a53b2c2c7af7c0b5617bec1b82a88ee636a26749a7"
+    }
+  },
+  "originals_rechecked": 14
+}

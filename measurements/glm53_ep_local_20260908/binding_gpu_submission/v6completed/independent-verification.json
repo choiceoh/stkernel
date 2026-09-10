@@ -1,0 +1,496 @@
+{
+  "schema": 1,
+  "scope": "Independent read-only evidence and live stopped-container preservation verification; no GPU rerun, acceptance waiver, MoE correctness or performance claim",
+  "remote_host": "choiceoh@srv2",
+  "job": "/tmp/glm53-ep-binding-gpu0908-6",
+  "verification_started_utc": "2026-09-08T12:07:21.233849+00:00",
+  "checks": {
+    "source_revision_pinned": true,
+    "manifest_admission_pinned": true,
+    "source_current_head_unchanged": true,
+    "source_clean": true,
+    "scope_and_failure_preserved": true,
+    "baseline_marker_order": true,
+    "baseline_exact_error_signature": true,
+    "baseline_lookup_window": true,
+    "baseline_result_and_log_hashes": true,
+    "baseline_observation": true,
+    "baseline_module_hash_identity": true,
+    "baseline_same_pinned_image": true,
+    "candidate_marker_order": true,
+    "candidate_exact_error_signature": true,
+    "candidate_lookup_window": true,
+    "candidate_result_and_log_hashes": true,
+    "candidate_observation": true,
+    "candidate_module_hash_identity": true,
+    "candidate_same_pinned_image": true,
+    "commands_match_except_declared_arm_fields": true,
+    "baseline_failure_retained": true,
+    "candidate_clean_retained": true,
+    "pair_sequential_timestamps": true,
+    "before.json_exact_original_preserved": true,
+    "stopped.json_exact_original_preserved": true,
+    "stopped-restored.json_exact_original_preserved": true,
+    "restored.json_exact_original_preserved": true,
+    "incoming_four_persistent_stopped": true,
+    "restoration_receipt_precedes_completion": true,
+    "owned_diagnostic_containers_removed": true,
+    "source_hash_probes/glm53_ep_bindings_pair_check.py": true,
+    "source_hash_probes/run_glm53_ep_bindings_pair_offline.py": true,
+    "restoration_precedes_subsequent_holder": true,
+    "replacement_containers_started_after_v6_exit": true,
+    "current_holder_differs_from_v6": true,
+    "captured_manifest_bytes_match_external_admission_hash": true
+  },
+  "issues": [],
+  "files": {
+    "capture/completion.json": {
+      "sha256": "e159ae4ee87f9414e71b74e2adb427d3ca14adc05101af3d69162f9a49cd7b66",
+      "bytes": 5085,
+      "mtime_ns": 1788868988575599813,
+      "mtime_utc": "2026-09-08T12:03:08.575600+00:00"
+    },
+    "exit.json": {
+      "sha256": "fc434fb64bc814dd698620880586ddece31c55d2a9be4568e87fb86570567d6d",
+      "bytes": 2631,
+      "mtime_ns": 1788868989251880754,
+      "mtime_utc": "2026-09-08T12:03:09.251881+00:00"
+    },
+    "capture/capsule-manifest.json": {
+      "sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+      "bytes": 20559,
+      "mtime_ns": 1788868975711513611,
+      "mtime_utc": "2026-09-08T12:02:55.711514+00:00"
+    },
+    "capture/baseline.log": {
+      "sha256": "3b3ff4e6b92972bd247c9a266b37a97974b8be4d5e95ff9b697a87f304354cd1",
+      "bytes": 51973,
+      "mtime_ns": 1788868982663104141,
+      "mtime_utc": "2026-09-08T12:03:02.663104+00:00"
+    },
+    "capture/baseline.json": {
+      "sha256": "151fe360035ebf09901f89ef04a246090953e1875e44df1af43bc5d1152cd2a5",
+      "bytes": 1675,
+      "mtime_ns": 1788868981999091331,
+      "mtime_utc": "2026-09-08T12:03:01.999091+00:00"
+    },
+    "capture/candidate.log": {
+      "sha256": "7693be95ac9c4ab0a94e2506e4e573ecc76b2d27b5efee08c818ce25b5f11499",
+      "bytes": 1593,
+      "mtime_ns": 1788868987406111643,
+      "mtime_utc": "2026-09-08T12:03:07.406112+00:00"
+    },
+    "capture/candidate.json": {
+      "sha256": "345bee786fe8e6c93aa40af392bcfca080db650e528226e8a959b18940791324",
+      "bytes": 1616,
+      "mtime_ns": 1788868986775703302,
+      "mtime_utc": "2026-09-08T12:03:06.775703+00:00"
+    },
+    "capture/before.json": {
+      "sha256": "bd6104132b3c4b511b8509b1010edc6c3a4c0cc6b2f02e616a95847053471226",
+      "bytes": 41738,
+      "mtime_ns": 1788868977399350024,
+      "mtime_utc": "2026-09-08T12:02:57.399350+00:00"
+    },
+    "capture/stopped.json": {
+      "sha256": "eaf4a461401044df92c4cc3f2be36c0376f7ebce739567a0eb0519bbc78cea3a",
+      "bytes": 41738,
+      "mtime_ns": 1788868977789559778,
+      "mtime_utc": "2026-09-08T12:02:57.789560+00:00"
+    },
+    "capture/stopped-restored.json": {
+      "sha256": "bde04b0326ddbf01eb57efcc62893d87f2c14198eeb5218da04f16283cb635cc",
+      "bytes": 41738,
+      "mtime_ns": 1788868988192065414,
+      "mtime_utc": "2026-09-08T12:03:08.192065+00:00"
+    },
+    "capture/restored.json": {
+      "sha256": "4528622aa15d4a29c0e9d0dfc1d17283e65699e38e3529f149a4daca0c65ae41",
+      "bytes": 41738,
+      "mtime_ns": 1788868988575327492,
+      "mtime_utc": "2026-09-08T12:03:08.575327+00:00"
+    },
+    "fleet.log": {
+      "sha256": "2fbfc3018553fc7da6f1d7688a58d30a3971ba4bd75c9c840ca4f3c542b050ef",
+      "bytes": 9879,
+      "mtime_ns": 1788868988575599813,
+      "mtime_utc": "2026-09-08T12:03:08.575600+00:00"
+    }
+  },
+  "run_times": {
+    "started": 1788868975.3547537,
+    "ended": 1788868988.5754259,
+    "outer_ended": 1788868989.2516727
+  },
+  "arms": {
+    "baseline": {
+      "version": "13.3.1",
+      "started": 1788868979.3646443,
+      "ended": 1788868982.7409675,
+      "sanitizer_exit_code": 86,
+      "program_error_count": 34,
+      "api_lookup_error_count": 34,
+      "error_summary": [
+        "ERROR SUMMARY: 34 errors"
+      ],
+      "markers_lines": {
+        "EP_BINDING_CONTEXT_BEGIN": [
+          2
+        ],
+        "EP_BINDING_CONTEXT_READY": [
+          3
+        ],
+        "EP_BINDING_IDENTITY_VERIFIED": [
+          4
+        ],
+        "EP_BINDING_DEVICE_COUNT_BEGIN": [
+          5
+        ],
+        "EP_BINDING_DEVICE_COUNT_END": [
+          720
+        ]
+      },
+      "first_error_line": 6,
+      "last_error_line": 699,
+      "verdict": "FAIL",
+      "module_identity": {
+        "version": "13.3.1",
+        "root": "/usr/local/lib/python3.12/dist-packages",
+        "modules": {
+          "cuda.bindings.driver": {
+            "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+            "sha256": "23596c158b5ef437517605405aa25978d7a442fa1c222d59a392300bc39a0119"
+          },
+          "cuda.bindings._bindings.cydriver": {
+            "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+            "sha256": "6ae437b694ad31accb9cd8745fa5dd9e52e11af045e0da683966be7b3341e67e"
+          }
+        },
+        "distributions": {
+          "cuda-bindings": {
+            "version": "13.3.1",
+            "path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/METADATA",
+            "sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f"
+          },
+          "cuda-python": {
+            "version": "13.3.1",
+            "path": "/usr/local/lib/python3.12/dist-packages/cuda_python-13.3.1.dist-info/METADATA",
+            "sha256": "8bea0c1333aaef1205d3cdea2690d935b4127448c1ed78e55c179fe1658856fd"
+          }
+        }
+      }
+    },
+    "candidate": {
+      "version": "13.0.3",
+      "started": 1788868984.4146647,
+      "ended": 1788868987.4911675,
+      "sanitizer_exit_code": 0,
+      "program_error_count": 0,
+      "api_lookup_error_count": 0,
+      "error_summary": [
+        "ERROR SUMMARY: 0 errors"
+      ],
+      "markers_lines": {
+        "EP_BINDING_CONTEXT_BEGIN": [
+          2
+        ],
+        "EP_BINDING_CONTEXT_READY": [
+          3
+        ],
+        "EP_BINDING_IDENTITY_VERIFIED": [
+          4
+        ],
+        "EP_BINDING_DEVICE_COUNT_BEGIN": [
+          5
+        ],
+        "EP_BINDING_DEVICE_COUNT_END": [
+          6
+        ]
+      },
+      "first_error_line": null,
+      "last_error_line": null,
+      "verdict": "CLEAN_DIAGNOSTIC",
+      "module_identity": {
+        "version": "13.0.3",
+        "root": "/opt/glm53-bindings-capsule",
+        "modules": {
+          "cuda.bindings.driver": {
+            "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+            "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+          },
+          "cuda.bindings._bindings.cydriver": {
+            "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+            "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+          }
+        },
+        "distributions": {
+          "cuda-bindings": {
+            "version": "13.0.3",
+            "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+            "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+          },
+          "cuda-python": {
+            "version": "13.0.3",
+            "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+            "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+          }
+        }
+      }
+    }
+  },
+  "live_snapshot": {
+    "started_utc": "2026-09-08T12:07:21.327501+00:00",
+    "ended_utc": "2026-09-08T12:07:22.982334+00:00",
+    "method": "reviewed lifecycle.snapshot: docker ps/inspect + mounted-file SHA256 only",
+    "captured_after_outer_exit": true,
+    "nodes": {
+      "local": {
+        "original": {
+          "id": "00f9d6fc1f39cbdbabe106977da866035d94ee99718231cdc9da63e399c23d7b",
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "running": false,
+          "started": "2026-09-08T11:55:55.326009925Z",
+          "auto_remove": false,
+          "config": "67e6a8894af17cb9873231fc9688c655f136692191c8652859f3030bb5143011",
+          "host_config": "fe94f99c411ddbaf1b6ade6541bcbc2a2c3c435de6b96e159b3d7ddd7b3ea71b",
+          "mounts": "4dfbfac823a702aa5067d5d2a01d5ba02ff3c0e64e99c5e0ec234e0fa14cdc0d",
+          "manifest": "29851eaa8973b4c7a567fa231ce35ac27273ad431b3d1a1f7aed9b64c06d4548",
+          "port": 18000
+        },
+        "original_overlay_count": 59,
+        "original_overlay_map_sha256": "0ad1c2f1183d03177ccc3a4fc29bcaa7f608d2fbebd2e58c2bb218d46a1d41b8",
+        "original_full_state_sha256": "cc4d3aaa030b3fca4d7260e7dc8a284d52501a9452e4d22bec515ce9c48a70cb",
+        "current_full_state_sha256": "f483fa50b39f5cf2644d9f1d9d0464b7a9bf6864355604d7e4ad1dbc4733c57d",
+        "fields_equal": {
+          "id": false,
+          "image": true,
+          "running": false,
+          "started": false,
+          "auto_remove": true,
+          "config": false,
+          "host_config": false,
+          "mounts": true,
+          "overlays": false,
+          "manifest": false,
+          "port": false
+        }
+      },
+      "10.10.10.1": {
+        "original": {
+          "id": "6af5ec013e0bf7fe082bf08b61bf42846f20ae616f804bdb895c99b8536cb311",
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "running": false,
+          "started": "2026-09-08T11:55:54.585473205Z",
+          "auto_remove": false,
+          "config": "01dfa647af2d1c5e9508fa207c25194805fc281dddc7cc0b1f70893b7f0d7a71",
+          "host_config": "26791d52ee5d727338de3a2eec407df7b3c2bb0bd073a4b62cddf8058ffe20e1",
+          "mounts": "4dfbfac823a702aa5067d5d2a01d5ba02ff3c0e64e99c5e0ec234e0fa14cdc0d",
+          "manifest": "29851eaa8973b4c7a567fa231ce35ac27273ad431b3d1a1f7aed9b64c06d4548",
+          "port": 18000
+        },
+        "original_overlay_count": 59,
+        "original_overlay_map_sha256": "0ad1c2f1183d03177ccc3a4fc29bcaa7f608d2fbebd2e58c2bb218d46a1d41b8",
+        "original_full_state_sha256": "86829ba46bb7ab7e58aedef53311b41fc7a0cd356cc89cce08abf6f7701be5f7",
+        "current_full_state_sha256": "d0678dd9d2b27b6d58ccb8cdf84230c36f82579dc5a33adc473ee260f19dc20c",
+        "fields_equal": {
+          "id": false,
+          "image": true,
+          "running": false,
+          "started": false,
+          "auto_remove": true,
+          "config": false,
+          "host_config": false,
+          "mounts": true,
+          "overlays": false,
+          "manifest": false,
+          "port": false
+        }
+      },
+      "10.10.10.3": {
+        "original": {
+          "id": "d5c41573959b9050647c75fedc6b7fa7bfd0a912e81574a9998bfb95f3008525",
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "running": false,
+          "started": "2026-09-08T11:55:54.532280391Z",
+          "auto_remove": false,
+          "config": "4de108bd5fa3901d21ef61839052b103adda7b8c5cb6a9311b705dabae1cfbe3",
+          "host_config": "925810294cf699a82dfd4187f1c2eff9f7deb6333568cb646de6cdf0bd2d81b1",
+          "mounts": "4dfbfac823a702aa5067d5d2a01d5ba02ff3c0e64e99c5e0ec234e0fa14cdc0d",
+          "manifest": "29851eaa8973b4c7a567fa231ce35ac27273ad431b3d1a1f7aed9b64c06d4548",
+          "port": 18000
+        },
+        "original_overlay_count": 59,
+        "original_overlay_map_sha256": "0ad1c2f1183d03177ccc3a4fc29bcaa7f608d2fbebd2e58c2bb218d46a1d41b8",
+        "original_full_state_sha256": "87c8b7714d5bbce3f1cfc8f3099de4ae0e31b4a1e16e7bec4083feb9b90b605c",
+        "current_full_state_sha256": "d71d4dc7e602c606a0a877c294229e517c8d2cc9051ce9d7d0833b0e32bc51fc",
+        "fields_equal": {
+          "id": false,
+          "image": true,
+          "running": false,
+          "started": false,
+          "auto_remove": true,
+          "config": false,
+          "host_config": false,
+          "mounts": true,
+          "overlays": false,
+          "manifest": false,
+          "port": false
+        }
+      },
+      "10.10.10.4": {
+        "original": {
+          "id": "e5f683561eb4638011c8b41392695fb503ec8a1eae274e9594a57dc2d11d62fc",
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "running": false,
+          "started": "2026-09-08T11:55:54.589538392Z",
+          "auto_remove": false,
+          "config": "152a75ea798acd3c086c7c31ccc3327ed09fe203c2580cdaf21240afb99c729e",
+          "host_config": "ea6996597e2e33c0a50f9c4e0e4f997ef03b9bf29ad7319f300d420254ac6ba4",
+          "mounts": "4dfbfac823a702aa5067d5d2a01d5ba02ff3c0e64e99c5e0ec234e0fa14cdc0d",
+          "manifest": "29851eaa8973b4c7a567fa231ce35ac27273ad431b3d1a1f7aed9b64c06d4548",
+          "port": 18000
+        },
+        "original_overlay_count": 59,
+        "original_overlay_map_sha256": "0ad1c2f1183d03177ccc3a4fc29bcaa7f608d2fbebd2e58c2bb218d46a1d41b8",
+        "original_full_state_sha256": "5833ab8c3b8b3ba3a51dc0b3fda693db1f65f31680745c5c179d08a98ac6bf64",
+        "current_full_state_sha256": "da964d1b5724c011971647f125b85ec195a92dd73d09aeda4f64d940b4bba353",
+        "fields_equal": {
+          "id": false,
+          "image": true,
+          "running": false,
+          "started": false,
+          "auto_remove": true,
+          "config": false,
+          "host_config": false,
+          "mounts": true,
+          "overlays": false,
+          "manifest": false,
+          "port": false
+        }
+      }
+    }
+  },
+  "source_files": {
+    "probes/glm53_ep_bindings_pair_check.py": "6fcbc5efc61e45397f0e2a8ef67f533675d002cb3d5129e225db656f72c88ed0",
+    "probes/run_glm53_ep_bindings_pair_offline.py": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587"
+  },
+  "fleet_log_tail": [
+    "waiting: pos 1/1, held by arconsumer0908v14 [boot] (pid 3649879@srv2, since 20:32, est 45m, Candidate-first C1 step; reuse exact 15-stage GPU PASS and fresh deployment CPU gate), legacy busy (2 procs, 0 reqs) 2026-09-08_20:56:55",
+    "waiting: pos 1/1, held by arconsumer0908v14 [boot] (pid 3649879@srv2, since 20:32, est 45m, Candidate-first C1 step; reuse exact 15-stage GPU PASS and fresh deployment CPU gate), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_20:57:56",
+    "waiting: pos 1/2, held by arconsumer0908v14 [boot] (pid 3649879@srv2, since 20:32, est 45m, Candidate-first C1 step; reuse exact 15-stage GPU PASS and fresh deployment CPU gate), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_20:58:49",
+    "waiting: pos 1/2, held by arconsumer0908v14 [boot] (pid 3649879@srv2, since 20:32, est 45m, Candidate-first C1 step; reuse exact 15-stage GPU PASS and fresh deployment CPU gate), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_20:59:47",
+    "waiting: pos 1/2, held by arconsumer0908v14 [boot] (pid 3649879@srv2, since 20:32, est 45m, Candidate-first C1 step; reuse exact 15-stage GPU PASS and fresh deployment CPU gate), legacy busy (0 procs, 0 reqs, booting) 2026-09-08_21:02:18",
+    "waiting: pos 1/2, held by arconsumer0908v14 [boot] (pid 3649879@srv2, since 20:32, est 45m, Candidate-first C1 step; reuse exact 15-stage GPU PASS and fresh deployment CPU gate) 2026-09-08_21:02:19",
+    "GO epbindinggpu0908v6 2026-09-08_21:02:53",
+    "  node 10.10.10.1: gpu=ok stray=3 ram=98G path=ok ",
+    "  node 10.10.10.2: ssh=FAIL",
+    "  node 10.10.10.3: gpu=ok stray=1 ram=93G path=ok ",
+    "  node 10.10.10.4: gpu=ok stray=15 ram=97G path=ok "
+  ],
+  "verification_finished_utc": "2026-09-08T12:07:23.002773+00:00",
+  "verification_verdict": "VERIFIED_WITH_POST_HANDOFF_LIVE_LIMITATION",
+  "post_handoff_followup": {
+    "started_utc": "2026-09-08T12:08:15.753620+00:00",
+    "ended_utc": "2026-09-08T12:08:16.143821+00:00",
+    "current_nodes": {
+      "local": {
+        "id": "fd4c646d6ccb59d7eed585d0f9fde3878219c66b31900d98204a066bd53a8cf3",
+        "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+        "running": true,
+        "started": "2026-09-08T12:03:29.894661774Z",
+        "auto_remove": false,
+        "config": "625dc073a7935934aa5b29dc1d46f3ac77ce373f602ec4d4e741bf638fedf42f",
+        "host_config": "97b456d84d3e72e3e1cdbc18492c7ac0dacc9e79cff60a8bacce13700c113fef",
+        "mounts": "4dfbfac823a702aa5067d5d2a01d5ba02ff3c0e64e99c5e0ec234e0fa14cdc0d",
+        "manifest": "d5531efa2398cf7ed80ad429c34fd4bea2e7247b212c8c6cf46dcc328cd63a64",
+        "port": 8000,
+        "overlays_sha256": "d648fcfea670002de0aa1483d4d05317dd5a41338c5a69a93ebb1c33314092d6",
+        "overlay_count": 59
+      },
+      "10.10.10.1": {
+        "id": "318b1af2998fd5f3e3d52f0e682d1a9373b44404a675fb97ea3dca55d6237cd2",
+        "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+        "running": true,
+        "started": "2026-09-08T12:03:29.246013248Z",
+        "auto_remove": false,
+        "config": "4fe8a90934e1bebb5d3317232bccc4092ea0ad290cf2612dbe104ebe54a7b154",
+        "host_config": "7a249a021dc17cf46c6fe64af3e1bb0928f191484b0b4bcd95605d07d82d55da",
+        "mounts": "4dfbfac823a702aa5067d5d2a01d5ba02ff3c0e64e99c5e0ec234e0fa14cdc0d",
+        "manifest": "d5531efa2398cf7ed80ad429c34fd4bea2e7247b212c8c6cf46dcc328cd63a64",
+        "port": 8000,
+        "overlays_sha256": "d648fcfea670002de0aa1483d4d05317dd5a41338c5a69a93ebb1c33314092d6",
+        "overlay_count": 59
+      },
+      "10.10.10.3": {
+        "id": "0dd3c42998c577cad51f0bf44ba6c19456c5e506693f4f9cf88a65896f13cdd4",
+        "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+        "running": true,
+        "started": "2026-09-08T12:03:29.115599734Z",
+        "auto_remove": false,
+        "config": "47bf4fd30a37a88a57fac7497b9a5aab78a08337068d4045808d73824920fc1b",
+        "host_config": "475cbc9d05db36e229885084afc91a23083f6ad27a32236730b99d9ac91a259a",
+        "mounts": "4dfbfac823a702aa5067d5d2a01d5ba02ff3c0e64e99c5e0ec234e0fa14cdc0d",
+        "manifest": "d5531efa2398cf7ed80ad429c34fd4bea2e7247b212c8c6cf46dcc328cd63a64",
+        "port": 8000,
+        "overlays_sha256": "d648fcfea670002de0aa1483d4d05317dd5a41338c5a69a93ebb1c33314092d6",
+        "overlay_count": 59
+      },
+      "10.10.10.4": {
+        "id": "792201a4279e109646dcd40ebe29119f02063a042845c39faffe1e029180bea9",
+        "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+        "running": true,
+        "started": "2026-09-08T12:03:29.136149964Z",
+        "auto_remove": false,
+        "config": "6a357701dc19329ff2923e96c4f341c954e87ea596538a8e3d6fdbe25ceaf898",
+        "host_config": "8d846162c9a60d25d44bfa2d816a9ec680276b2842d4be7550de396f167b1895",
+        "mounts": "4dfbfac823a702aa5067d5d2a01d5ba02ff3c0e64e99c5e0ec234e0fa14cdc0d",
+        "manifest": "d5531efa2398cf7ed80ad429c34fd4bea2e7247b212c8c6cf46dcc328cd63a64",
+        "port": 8000,
+        "overlays_sha256": "d648fcfea670002de0aa1483d4d05317dd5a41338c5a69a93ebb1c33314092d6",
+        "overlay_count": 59
+      }
+    },
+    "fleet_state": {
+      "holder": {
+        "text": "attr5-0908|3805122|srv2|1788868989|35|40\ucc28: 211 ms \uadc0\uc18d 5\ucc28 \u2014 \ucc3d=\uc694\uccad1\uac1c \uaddc\uce59 \uc801\uc6a9, \uccad\ud06c 1152 \ub97c \uccab \ucc3d\uc73c\ub85c. attr2 \uc758 6912 \ucea1\ucc98\ub97c PRIOR_ATTR \ub85c \uc811\uc5b4 \ud06c\uae30 4\uc885 \ud655\ubcf4|boot\n",
+        "sha256": "a2c3309b06a5072d58df992bb36cb9291ccc8ad09b81baf4e3e893502bb71430",
+        "mtime_ns": 1788868989096672029
+      },
+      "queue": {
+        "text": "",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mtime_ns": 1788869246720521772
+      },
+      "restore-debt.json": {
+        "text": "{\"acquired\": 1788868989.1026459, \"owner\": {\"host\": \"srv2\", \"pid\": 3805122, \"protocol\": 2, \"session\": \"attr5-0908\", \"start\": \"37094192\"}}\n",
+        "sha256": "8228db4cc1277f76fa989ecf998dbd754cc6e73b8ef6a02f121d7bdf29972b3f",
+        "mtime_ns": 1788868989102747654
+      }
+    },
+    "source_artifact": {
+      "path": "/tmp/glm53-v6-live-handoff.json",
+      "sha256": "881dae4f359b0c6b7a44b72f1b572665a2dec0a1d758dfead2eeaee2ea984175"
+    }
+  },
+  "handoff_timeline": {
+    "restoration_and_completion_ended_epoch": 1788868988.5754259,
+    "next_holder_session": "attr5-0908",
+    "next_holder_record_mtime_epoch": 1788868989.096672,
+    "v6_outer_driver_exit_epoch": 1788868989.2516727,
+    "current_container_started_epochs": {
+      "local": 1788869009.894661,
+      "10.10.10.1": 1788869009.246013,
+      "10.10.10.3": 1788869009.115599,
+      "10.10.10.4": 1788869009.136149
+    },
+    "interpretation": "Archived exact restoration completed before the next holder record; current container replacements started after v6 driver exit. The later live mismatch is consistent with the subsequent normal holder and is not attributed to v6."
+  },
+  "captured_manifest_file_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "scope_limitations": [
+    "The independent live snapshot happened after normal fleet handoff and does not reproduce the original stopped state. Exact four-node stopped preservation is verified from the original before/stopped/stopped-restored/restored receipts, including their hashes and timestamps before handoff.",
+    "This establishes only the minimal Torch-context then CUDA-binding identity/count/version sanitizer diagnostic. Baseline remains FAIL/86 and the whole pair remains exit 1; no MoE/CuTe correctness or performance acceptance."
+  ],
+  "observed_post_handoff_difference_checks": {
+    "live_four_node_state_exactly_matches_original": false
+  }
+}

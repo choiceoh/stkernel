@@ -1,0 +1,48 @@
+{
+  "tools": [
+    {
+      "source": "/tmp/glm53_prepare_diag_gpu1.py",
+      "path": "prepare-diag-gpu1.py",
+      "sha256": "85bcd47dd2ed517314de83e28026010a152187522d029bc5dcbb08c8814ef90a",
+      "bytes": 21413,
+      "syntax_checked": [
+        "outer",
+        "GUARDS",
+        "DRIVER",
+        "REMOTE"
+      ],
+      "executed": false,
+      "remote_actions": false
+    },
+    {
+      "source": "/tmp/glm53_fetch_cpu17.py",
+      "path": "collect-cpu17.py",
+      "sha256": "9964724f8336f05dc0ed344a67b39f6b75c28660255e358477e0af302d4aeb25",
+      "bytes": 19030,
+      "syntax_checked": [
+        "outer",
+        "REMOTE"
+      ],
+      "executed": false,
+      "remote_actions": false
+    }
+  ],
+  "scope": "Prepared tooling only; CPU17 and diagnostic GPU have not run",
+  "heartbeat_observation": {
+    "epoch": 1788876300.5894322,
+    "mem_available_kib": 6867044,
+    "cpu17_source_exists": false,
+    "cpu17_job_exists": false,
+    "fleet_holder": null,
+    "fleet_queue": "",
+    "scheduler_head": "c7401026315fbf4f82ee4c8592766f3bdf63d9b8",
+    "scheduler_clean": true
+  },
+  "review": {
+    "root_read_only": "PASS",
+    "independent_gpu_preparer_review": "PASS",
+    "independent_cpu_collector_review": "PASS",
+    "remote_execution": false,
+    "tests_run": false
+  }
+}

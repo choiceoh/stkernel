@@ -1,0 +1,32 @@
+{
+  "submission.json": {
+    "sha256": "6c5dd947e9abe361b6333d86e5fe5a981d35f4848a9c553cea25b71d3be38786",
+    "bytes": 783,
+    "compressed": false
+  },
+  "driver.py": {
+    "sha256": "a1a35e55514bc0282fba3579cbdf3c460bb15b8f799ab96520bdaf3a6b7e74e1",
+    "bytes": 388,
+    "compressed": false
+  },
+  "freeze.json": {
+    "sha256": "89006b2f8ca1325894e9ec1e28852f0e763c240e3a9bf87ad79165f883b39d2c",
+    "bytes": 242,
+    "compressed": false
+  },
+  "driver.pid": {
+    "sha256": "dd821d3abb1d676a08eea45a53413e5bd956d15e36de501d3093afbdb3fffe69",
+    "bytes": 8,
+    "compressed": false
+  },
+  "fleet.log.gz": {
+    "sha256": "011fad61f1a7f661ad6f8de1b56a0d11b8eade111a186e82642bb5a2a5011ce1",
+    "bytes": 2102,
+    "compressed": true
+  },
+  "fleet-status.txt.gz": {
+    "sha256": "f3203cc13d8cf6211ef6dd48c799e188ed8fdb60fcf76651fcf6b7672d125d22",
+    "bytes": 1106,
+    "compressed": true
+  }
+}

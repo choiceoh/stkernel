@@ -1,0 +1,13 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-binding-gpu0908-6b",
+  "revision": "63f56a54dbb91e994456b519a53b679963a93583",
+  "clean": true,
+  "cpu_tests": 68,
+  "cpu_proof_source_match": true,
+  "cpu_evidence_sha256": "b68bcead10b78d19c3df09f0d765cf485dffd79b0ce3377ca379921d1c4ee7c2",
+  "mounted_source_count": 13,
+  "contract_source_count": 18,
+  "remap_compile_count": 24,
+  "purpose": "paired 13.3.1/13.0.3 post-context API diagnostic only; exact original lifecycle restore",
+  "created": 1788868345.357557
+}

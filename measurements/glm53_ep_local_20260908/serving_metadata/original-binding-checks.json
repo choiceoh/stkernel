@@ -1,0 +1,14 @@
+{
+  "tests": 20,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "scope": "Pure configured original-to-B1 and B1/A/B2 identity; no serving or GPU execution",
+  "source_hashes": {
+    "bench/glm53_ep_serving_contract.py": "970b2109c870733227e492249c2c43160229ffa50820b2b282d55e81e2f53e90",
+    "tests/test_glm53_ep_serving_contract.py": "a7e955951677be10f7ef85774a2c15075e5c799a93d68d732f990c2543c98f6a"
+  },
+  "log_sha256": "190829951223e2fa72e19c22ee9d33ccc086a5570cdfbc0f3ac5d9e2d1958469",
+  "controls_bound_to_arm_envelope": true,
+  "checksum_is_accidental_drift_detection_not_authentication": true
+}

@@ -1,0 +1,11 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-0908-10",
+  "revision": "a9d0d1e3e8161ee44eac02191021ea9512a3e2cc",
+  "clean": true,
+  "captured_epoch": 1788859356.7110355,
+  "compile_receipt_validated": true,
+  "tests": 61,
+  "mounted_files": 13,
+  "contract_files": 18,
+  "original_files_rechecked": 57
+}

@@ -1,0 +1,18 @@
+{
+  "binding_runtime_rechecked": null,
+  "cpu_acceptance": false,
+  "cubin_files": 30,
+  "cuda_initialized": null,
+  "error": "NameError: _TP_SF6_Q0_ENABLED is not defined",
+  "errors": 1,
+  "failures": 0,
+  "gpu_submitted": false,
+  "performance_acceptance": false,
+  "phase": "cpu-contracts",
+  "ptx_files": 30,
+  "returncode": 1,
+  "revision": "2d6b5d6168a4992645fb4daa60cbf27a2e445262",
+  "skips": 0,
+  "tests_run": 165,
+  "verdict": "CPU_CONTRACT_ERROR"
+}

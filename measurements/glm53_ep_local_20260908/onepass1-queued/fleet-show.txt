@@ -1,0 +1,13 @@
+eplocalonepass0909v1: queued (queue #2)
+  ticket: 1788883625926754
+  revision: 1
+  note: EP-local actual onepass B1/A/B2 2K32K128K tok/s and TTFT
+  cwd: /home/choiceoh/stkernel-ep-local-scheduler-0909
+  wait_seconds: 63.8
+  log_path: /home/choiceoh/glm53-logs/fleet/run-logs/a9ff1ea045510a5fad0f1237ab345c5b2b2d73108d6e3d232aeafb5de3c5c9a2.log
+  waiting_for: holder validate0909b
+  command: env REPO=/home/choiceoh/stkernel-ep-onepass-0909-1 python3 -B /tmp/glm53-ep-onepass-0909-1/payload.py run
+  edit: command, cwd, metadata
+  fleet.sh edit eplocalonepass0909v1 --expect-revision 1
+  fleet.sh pause eplocalonepass0909v1 --expect-revision 1
+  fleet.sh logs eplocalonepass0909v1

@@ -1,0 +1,18 @@
+{
+  "local": {
+    "available_kib": 100498820,
+    "disk_free_bytes": 905050398720
+  },
+  "10.10.10.1": {
+    "available_kib": 103010988,
+    "disk_free_bytes": 293510651904
+  },
+  "10.10.10.3": {
+    "available_kib": 97597872,
+    "disk_free_bytes": 1849089982464
+  },
+  "10.10.10.4": {
+    "available_kib": 101947944,
+    "disk_free_bytes": 2194557747200
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "verdict": "ORIGINAL_CPU_EVIDENCE_VERIFIED",
+  "source": "6977199cf699f82696f925f77bc930d500135532",
+  "result_sha256": "93e28079eff1ec4493633ef253c00442cf3f960f0060731ed348b7eadb547348",
+  "original_worker_files": 29,
+  "original_worker_bytes": 5347729,
+  "execution_sha256": "5247c97f31c87c41a36d096aa0a34b901270316475eb23cada64f540e35a371b",
+  "stdout_sha256": "1c5155eef5465514f43561c0e4ceac313603d761a9a43452e2bebec40aefd0f2",
+  "stdout_bytes": 23105,
+  "mounted_sources": 22,
+  "contract_sources": 26,
+  "contracts": {
+    "tests_run": 119,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "scatter_helper": {
+    "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py",
+    "sha256": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+    "size": 87909,
+    "helper": "scatter_add_v4_bf16x2"
+  },
+  "resources": [
+    {
+      "arm": "static/M4",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M6",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M8",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M12",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M16",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M24",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M33",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M8192",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    }
+  ],
+  "compile_only": true,
+  "cuda_initialized": false,
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false,
+  "source_rebind_required": false
+}

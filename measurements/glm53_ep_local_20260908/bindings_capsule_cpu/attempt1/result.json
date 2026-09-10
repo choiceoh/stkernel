@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "verdict": "FAIL",
+  "scope": "No-device metadata and import identity only; no compilation or GPU compatibility proof",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "image_binding": "fixed immutable wrapper Docker argv; no engine query in this process",
+  "started": 1788867448.4715264,
+  "sources": {
+    "probes/glm53_ep_bindings_capsule.py": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+    "probes/glm53_ep_bindings_capsule_check.py": "b6d580ac13f96f9e9decfaf6ac2ddb1d6486a8b25d20939eeeffc737c110ed9b",
+    "probes/run_glm53_ep_bindings_capsule_cpu.py": "897def54d5a280038973512a358275e89049fc97dd20c8e262e3d8541b1fc1a3"
+  },
+  "probe_cuda_api_calls": false,
+  "cuda_context_queried": false,
+  "torch_imported": false,
+  "exposed_device_nodes": [],
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "implementation": "cpython",
+    "machine": "aarch64",
+    "platform": "linux"
+  },
+  "base_distributions": {
+    "path": "/evidence/base-distributions.json",
+    "count": 268,
+    "sha256": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1"
+  },
+  "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "marker_environment": {
+    "implementation_name": "cpython",
+    "implementation_version": "3.12.3",
+    "os_name": "posix",
+    "platform_machine": "aarch64",
+    "platform_release": "6.17.0-1021-nvidia",
+    "platform_system": "Linux",
+    "platform_version": "#21-Ubuntu SMP PREEMPT_DYNAMIC Wed May 27 19:14:05 UTC 2026",
+    "python_full_version": "3.12.3",
+    "platform_python_implementation": "CPython",
+    "python_version": "3.12",
+    "sys_platform": "linux"
+  },
+  "error": "ValueError('duplicate or invalid supplied distribution')",
+  "ended": 1788867449.4660106
+}

@@ -1,0 +1,2 @@
+17888538141808591|epbindinggpu0908v3|1788853814|6|Post-context CUDA binding only: CPU48 gates, same image and sanitizer, exact original restore|boot|1808591
+17888540361837187|vllmprs0908b|1788854036|45|40차 PR #477 2차: block 검증 승격 + gumbel salt + spec-state 커널 가드, prep-fused 무장 유지 확인, KDA strided 관문 재시도|boot|1840239

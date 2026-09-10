@@ -1,0 +1,13 @@
+test_actual_cutover_ladders_scalar_scales_and_existing_capacity (test_glm53_ep_compact_warmup.CoverageTests.test_actual_cutover_ladders_scalar_scales_and_existing_capacity) ... ok
+test_all_reachable_rows_match_real_compiler_prefix_keys (test_glm53_ep_compact_warmup.CoverageTests.test_all_reachable_rows_match_real_compiler_prefix_keys) ... ok
+test_every_padded_and_sliced_local_count_is_covered (test_glm53_ep_compact_warmup.CoverageTests.test_every_padded_and_sliced_local_count_is_covered) ... ok
+test_unbounded_or_unsupported_preparation_fails_closed (test_glm53_ep_compact_warmup.CoverageTests.test_unbounded_or_unsupported_preparation_fails_closed) ... ok
+test_all_calls_sync_and_cache_keys_precede_completion_then_deduplicate (test_glm53_ep_compact_warmup.OrchestrationTests.test_all_calls_sync_and_cache_keys_precede_completion_then_deduplicate) ... ok
+test_dedup_does_not_hide_evicted_key_or_new_scale_signature (test_glm53_ep_compact_warmup.OrchestrationTests.test_dedup_does_not_hide_evicted_key_or_new_scale_signature) ... ok
+test_default_off_does_no_preparation (test_glm53_ep_compact_warmup.OrchestrationTests.test_default_off_does_no_preparation) ... ok
+test_launch_sync_or_missing_key_never_marks_complete (test_glm53_ep_compact_warmup.OrchestrationTests.test_launch_sync_or_missing_key_never_marks_complete) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.981s
+
+OK

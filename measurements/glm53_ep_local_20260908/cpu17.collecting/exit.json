@@ -1,0 +1,63 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-0908-17",
+  "revision": "123fbb01211eaf8cec46fd0965dd9320d02a375b",
+  "scheduler": "/home/choiceoh/stkernel-ep-local-scheduler-0909",
+  "scheduler_revision": "6e33221dffe9f0e2b16d5b8cdd9adf08952eb608",
+  "scheduler_approved_main": "6e33221dffe9f0e2b16d5b8cdd9adf08952eb608",
+  "approved_scheduler_ancestor": true,
+  "approved_identical_directories": [
+    "bench",
+    "launchers",
+    "profiles",
+    "tests"
+  ],
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-ep-local-scheduler-0909/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "eplocalcpu0908v17head",
+    "6",
+    "CPU17 bounded numerical failure diagnostics; unchanged kernel, capsule13.0.3 no devices 4g2CPU",
+    "--",
+    "python3",
+    "-B",
+    "/home/choiceoh/stkernel-ep-local-0908-17/probes/run_glm53_ep_local_cpu_compile.py",
+    "--image",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "--arm",
+    "local",
+    "--output",
+    "/tmp/glm53-ep-local-compile0908-17-head/local",
+    "--capsule-root",
+    "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+    "--manifest-sha256",
+    "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "created": 1788880343.2091577,
+  "host_mem_available_kib": 99919020,
+  "existing_frozen_source_reused": false,
+  "serving_memory_reclaimed": false,
+  "reason": "CPU17 diagnostic contracts only; original GPU v5 failure preserved, no kernel/tolerance change",
+  "base_revision": "111fff02f66f3e07a8332da1117afb75b161f0d6",
+  "no_kernel_change_from_base": true,
+  "bundle_sha256": "8f25da372eacd75c3cb4e2ae295f42dbb77835d9a18e65b6252b5cd66b8eeb8f",
+  "approved_scheduler_state": {
+    "revision": "6e33221dffe9f0e2b16d5b8cdd9adf08952eb608",
+    "approved_main": "6e33221dffe9f0e2b16d5b8cdd9adf08952eb608",
+    "approved_fixes": [
+      "d95a2cdb46f2446bd4b58f7d5969b42c895f0b3d",
+      "4a2c960ad632596ca3224ead88da43160012d393"
+    ],
+    "approved_identical_directories": [
+      "bench",
+      "launchers",
+      "profiles",
+      "tests"
+    ]
+  },
+  "started": 1788880343.2236006,
+  "returncode": 0,
+  "complete": true,
+  "ended": 1788880359.082704
+}

@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/repo/probes/glm53_ep_bindings_capsule_check.py", line 197, in <module>
+    run_check(Path("/wheels"), Path("/evidence"))
+  File "/repo/probes/glm53_ep_bindings_capsule_check.py", line 172, in run_check
+    report = check_dependencies(base, manifest["distributions"], marker_environment=receipt["marker_environment"])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/probes/glm53_ep_bindings_capsule.py", line 259, in check_dependencies
+    base, selected = inventory(base_distributions), inventory(selected_metadata)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/probes/glm53_ep_bindings_capsule.py", line 256, in inventory
+    raise ValueError("duplicate or invalid supplied distribution")
+ValueError: duplicate or invalid supplied distribution

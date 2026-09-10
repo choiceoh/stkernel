@@ -76,6 +76,13 @@ same-build CTA2/CTA4/CTA2 bracket had pooled step/s 21.752/21.962/21.892, so
 the candidate's +0.627% lies inside the baselines' own 0.641% spread.
 [Kernel, sanitizer and serving evidence](../measurements/glm53_input_cta_next_20260908/README.md).
 
+GLM53 selects EP4 MoE with `ENABLE_EP=1`, `VLLM_GLM53_EP_TILED=1` and
+`VLLM_GLM53_TP_SF6_Q0=0`, retaining K5 and `VLLM_GLM53_PREP_FUSED=1`.
+The canonical pooled decode result was 72.62743 tok/s against the operator's
+absolute 67 target; TP measured 80.49311 tok/s. Quality and required execution
+proof passed. This is not a relative non-regression or full-warm prefill claim.
+[Acceptance scope and explicit TP rollback](../docs/GLM53_EP_TILED.md).
+
 GLM53 MoE defaults to `VLLM_GLM53_B12X_STATIC_V2=t,r,sf6` (operator adoption,
 2026-09-09). SF6 losslessly packs scales for direct decode and prefill reads,
 then releases eligible raw scale Parameters and their aliases before profiling.
@@ -136,7 +143,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_model` | **묶음(34차)**: 모델·어텐션·KDA·MLA 파일 접수 + 밀집 GEMM fp8/W4 패스 + KDA 원패스 + 순수 프리필 SP/NVFP4 후보 + 영상 자리표시 수정(39차) + FP8·랭크별 부팅 캐시 | 14 | 일부 | · | ● | · |
 | `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·tail-select 융합, tail 슬롯, MHC TileLang 프리필 big_fuse 오버라이드 + MK 훅 (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_mhc_tilelang`; 34차 §8 일몰: radix top-k 확장, SM121 MLA 프리필, MHC SMALLM/ONEPASS; KDA 프리필 버킷(`kda.py`·`chunk_delta_h.py`)은 #368 이 direct-out 을 얹어 유지) | 6 | 일부 | · | ● | · |
 | `glm53_drafter` | **묶음(34차)**: DFlash2 드래프터 접수, fp8 로더, 워밍업, early-fc, 준비 캐시, fp8 lm_head (옛 `glm53_dflash2_fp8_head`·`glm53_dflash_loader_fp8`·`glm53_dflash_warmup`·`glm53_dflash_early_fc`·`glm53_drafter_prep`·`fp8_lm_head`) | 6 | 일부 | · | ● | · |
-| `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) + 정적(디코드) MoE 커널 v4(35·38차, `moe_static_kernel_v4.py` + 공유 헬퍼 `moe_static_common.py`, 프로필 기본값 `u`; v2/v3 은 34차 §8 일몰) + 순수 프리필 dynamic 재사용 후보(#368) + v5 `moe_static_kernel_v5.py`(타일 우선 가중치, 셀 `t`, 39차; `z`·`h` 는 39차 §3g/§3h 일몰) + 그 배치를 읽는 gated 프리필 커널 서브클래스 `moe_dynamic_gated_tiled.py` + NVFP4 블록 스케일 6-bit 패커 `moe_sf_pack.py`(39차 §4c) + SF6 직접 읽기 프리필 `moe_dynamic_gated_sf6.py` | 13 | — | · | ● | · |
+| `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) + 정적(디코드) MoE 커널 v4(35·38차, `moe_static_kernel_v4.py` + 공유 헬퍼 `moe_static_common.py`, 프로필 기본값 `u`; v2/v3 은 34차 §8 일몰) + 순수 프리필 dynamic 재사용 후보(#368) + v5 `moe_static_kernel_v5.py`(타일 우선 가중치, 셀 `t`, 39차; `z`·`h` 는 39차 §3g/§3h 일몰) + 그 배치를 읽는 gated 프리필 커널 서브클래스 `moe_dynamic_gated_tiled.py` + NVFP4 블록 스케일 6-bit 패커 `moe_sf_pack.py`(39차 §4c) + E72 전체 토큰 프리필 후보 `moe_dynamic_ep_local.py` 및 단일 실행 remap `glm53_ep_route_remap.py` + SF6 직접 읽기 프리필 `moe_dynamic_gated_sf6.py` 및 `moe_reform_sf_pack.py` + EP 시작 수치 검증 `glm53_ep_local_selftest.py` + TP Q0 프리필 `moe_dynamic_gated_sf6_q0.py` 및 실제 가중치 시작 검증 `glm53_tp_sf6_q0_selftest.py` + EP tile-major 공통 가중치·static 디코드 및 시작 검증 | 21 | — | · | ● | · |
 | `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 및 순수 프리필 collectives, 디코드 우선 스케줄러(39차, 기본값 `DECODE_FIRST=1` v3.2 순차 모드(디코더 뒤 대기 ≤20 s, 그 뒤 번갈아)), 채팅 옵션 검증 및 GLM 본문 보존, KV 블록 zeroing 커널의 블록 인덱스 경계 가드(40차) | 17 | 일부 | · | ● | · |
 | `glm53_prefix_cache` | 하이브리드 KV 프리픽스 캐시 조정자 수정(39차; 스톡은 이 레이아웃에서 히트 0). 기본값 `PREFIX_CACHE=1`(같은 접두사 재질문 92~99.6% 재사용, warm 수용률 = cold) | 1 | — | · | ● | · |
 | `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |

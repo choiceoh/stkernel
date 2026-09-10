@@ -1,0 +1,11 @@
+{
+  "captured": 1788873241.69866,
+  "revision": "d53fd44f2b8a69869cddc9df10fa4cbb21bc56d9",
+  "source_clean": true,
+  "source_has_alternates": false,
+  "shallow": "true",
+  "holder": "arconsumer0908v17|4133545|srv2|1788872734|20|Only missing B2; includes main #494; preserve original reservation and GPU evidence|boot\n",
+  "queue": "178887315179672|eplocal0908v5|1788873151|45|CPU16-matched full MoE remap/numerics/streams/sanitizers; capsule13.0.3 and exact incoming restore|boot|79672\n",
+  "exit": null,
+  "capture_exists": false
+}

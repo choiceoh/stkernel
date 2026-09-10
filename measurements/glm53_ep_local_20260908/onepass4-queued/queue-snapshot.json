@@ -1,0 +1,89 @@
+{
+  "captured_utc": "2026-09-08T20:39:02.432204+00:00",
+  "source": "/home/choiceoh/stkernel-ep-onepass-0909-4",
+  "job": "/tmp/glm53-ep-onepass-0909-4",
+  "before": {
+    "head": {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "returncode": 0,
+      "stdout": "96cb599d8816ee2585988fc7b750a21e2eb66a0b\n",
+      "stderr": ""
+    },
+    "status": {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  "queue": {
+    "argv": [
+      "bash",
+      "/home/choiceoh/stkernel-ep-onepass-0909-4/bench/fleet.sh",
+      "show",
+      "eplocalonepass0909v4"
+    ],
+    "returncode": 0,
+    "stdout": "eplocalonepass0909v4: queued (queue #1)\n  ticket: 17888996582431852\n  revision: 1\n  note: Canonical onepass B1 A B2; compact startup coverage and scoped shared-control proof\n  cwd: /home/choiceoh/stkernel-ep-onepass-0909-4\n  wait_seconds: 284.5\n  log_path: /home/choiceoh/glm53-logs/fleet/run-logs/684fe9015a6e3b720a4d8d163b6af8ad220c85c1d4f0276261551889262aecbc.log\n  waiting_for: holder sf6-direct-0909v1\n  command: env 'ONEPASS_BASELINE_KNOBS={\"VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE\":\"1\"}' 'FLEET_OBJECTIVE={\"metric\":\"prefill_ttft\",\"ctx\":32000}' KV_TOKENS=2000000 KV_HYBRID_BLOCKS=187 KV_BYTES=auto MAX_LEN=1048576 MAX_SEQS=4 MAX_BATCHED=8192 GMU=0.6329 CG_UTIL_DELTA=0 CG_MEM_PROFILE=0 VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=1 EAGER=0 PREFIX_CACHE=1 GRAPH_CAP=32 'COMPILE_CFG={\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}' CUSTOM_OPS_AXIS=all PIECEWISE=0 REPO=/home/choiceoh/stkernel-ep-onepass-0909-4 FLEET=/home/choiceoh/stkernel-ep-onepass-0909-4/bench/fleet.sh LEVER=/home/choiceoh/stkernel-ep-onepass-0909-4/bench/ab-lever.sh IMAGE=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 ENABLE_EP=0 VLLM_GLM53_EP_PREFILL_LOCAL=0 VLLM_GLM53_PREFILL_SP=1 VLLM_GLM53_PREFILL_SP_FP8=3 VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS=4096 LEGS=onepass PREFILL_WARMUP=0 GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1 HEAD_URL=http://127.0.0.1:18000 BENCH_MODEL=glm-5.3-flash ONEPASS_JSONL=/tmp/glm53-ep-onepass-0909-4/onepass.jsonl ONEPASS_REQUIRE_EXCLUSIVE=1 QUALITY_CTX=2000,32000,128000 SPEC_K=5 bash /home/choiceoh/stkernel-ep-onepass-0909-4/bench/chain.sh EPONEPASS4B1= 'EPONEPASS4A=ENABLE_EP=1 VLLM_GLM53_EP_PREFILL_LOCAL=1 VLLM_B12X_EP_WARM_COMPACT=1' EPONEPASS4B2=\n  edit: command, cwd, metadata\n  fleet.sh edit eplocalonepass0909v4 --expect-revision 1\n  fleet.sh pause eplocalonepass0909v4 --expect-revision 1\n  fleet.sh logs eplocalonepass0909v4\n",
+    "stderr": ""
+  },
+  "cpu_session": {
+    "argv": [
+      "bash",
+      "/home/choiceoh/stkernel-ep-onepass-0909-4/bench/fleet.sh",
+      "show",
+      "eponepass4logic0909"
+    ],
+    "returncode": 2,
+    "stdout": "",
+    "stderr": "unknown reservation: eponepass4logic0909\n"
+  },
+  "job_inventory": [
+    {
+      "name": "cpu-report-logic-0.log",
+      "size": 5676
+    },
+    {
+      "name": "cpu-report.json",
+      "size": 974
+    },
+    {
+      "name": "submission-output.txt",
+      "size": 481
+    },
+    {
+      "name": "submission.json",
+      "size": 2465
+    }
+  ],
+  "after": {
+    "head": {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "returncode": 0,
+      "stdout": "96cb599d8816ee2585988fc7b750a21e2eb66a0b\n",
+      "stderr": ""
+    },
+    "status": {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  }
+}

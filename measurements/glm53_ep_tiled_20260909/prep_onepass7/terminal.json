@@ -1,0 +1,31 @@
+{
+  "original_sha256": "681503e3385582574cdb23586a04674255eae81d266f5a8b2d36f1b9089cc27b",
+  "owner_pid": "440247",
+  "owner_start_tick": "49936373",
+  "record": {
+    "finished_at": 1788998803.4178696,
+    "outcome": "failed",
+    "payload_finished_at": 1788998803.0165105,
+    "payload_returncode": 4,
+    "phase": "finished",
+    "pid": 440247,
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 4,
+    "session": "eptiledprep0910v7",
+    "start": "49936373",
+    "started_at": 1788996973.7703967,
+    "state": "finished",
+    "ticket": "1788996973440247"
+  },
+  "revision": "96a8cab45a1eb049298315a77ed881ee74f04f9b",
+  "scope": "Allowlisted terminal fields; raw pending remains private. Release is not public recovery.",
+  "session": "eptiledprep0910v7",
+  "terminal": {
+    "owned_holder": false,
+    "payload_returncode": 4,
+    "phase": "finished",
+    "returncode": 4
+  },
+  "ticket": "1788996973440247"
+}

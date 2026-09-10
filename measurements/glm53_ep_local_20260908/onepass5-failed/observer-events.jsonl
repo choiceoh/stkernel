@@ -1,0 +1,5 @@
+{"kind": "observer_start", "pid": 22690, "session": "eplocalonepass0909v5", "ticket": "17889057482943885", "revision": "e2a54cff881465c2bb7dbbd3f5ec39ca240c7f74", "deadline": 1788916675.5143921, "local_at": 1788905875.514401}
+{"kind": "status", "status": {"own": false, "go": false, "terminal": false, "phase": null, "state": "queued", "payload_returncode": null, "returncode": null, "at": 1788905876.1009245}, "local_at": 1788905876.12166}
+{"kind": "status", "status": {"own": false, "go": true, "terminal": true, "phase": "finished", "state": "finished", "payload_returncode": 2, "returncode": 2, "at": 1788906369.7448566}, "local_at": 1788906369.7738812}
+{"kind": "observer_stop", "reason": "terminal_or_release", "local_at": 1788906369.774236}
+{"kind": "observer_finished", "attempted_arms": [], "owned_go_seen": false, "local_at": 1788906369.774339}

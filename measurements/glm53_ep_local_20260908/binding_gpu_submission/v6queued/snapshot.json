@@ -1,0 +1,68 @@
+{
+  "files": {
+    "capsule-cpu-binding.json": {
+      "sha256": "9e48ba17de3aaadccf8d388cdd1dc80dc1822969138374cdea18f64b14e6046a",
+      "bytes": 1348
+    },
+    "submission.json": {
+      "sha256": "323e9be5e0211635f4110e11a6f85be102751b52154f71e02cd2e030dfa5b267",
+      "bytes": 2477
+    },
+    "driver.py": {
+      "sha256": "fbb4cc450ae480b0b5b5193ee599d35fd12d57442ba0c23c6d94c68bfabcc2fb",
+      "bytes": 2400
+    },
+    "freeze.json": {
+      "sha256": "8091f46429c22fe7ef486c40cfb0208e24b4df308d7378dce2093ec1061970ce",
+      "bytes": 511
+    },
+    "driver-start.json": {
+      "sha256": "e08e844ba5852643a8ce74dff04f7f511ad7fc8de1f7d7082dbb9b218a9ddc68",
+      "bytes": 2579
+    },
+    "capsule-cpu-receipt.json": {
+      "sha256": "d85e9203ac41dbb265db57da0ee6793c7fa3372013bf276662b64a65ee6c42f8",
+      "bytes": 2218
+    },
+    "driver.pid": {
+      "sha256": "43a19e1cb5dc30c3ed4626cdf9676d6f7ae8e04680bdd3ce173c07a2110a9a03",
+      "bytes": 8
+    },
+    "scheduler.json": {
+      "sha256": "2ae4d5976d4226f447a5ef896c7a4fbb8b14fc9f321d6669012ddf303244f3d7",
+      "bytes": 642
+    },
+    "capsule-cpu-container.log": {
+      "sha256": "35e598bf1215584657daf6dc174f832c92e3c5b5940d260fed8b4c5f3d7961b8",
+      "bytes": 67
+    },
+    "fleet.log": {
+      "sha256": "62296ef47844982ece35adbb321ffde361540910dd566273dbefa8d59a907443",
+      "bytes": 2789
+    },
+    "capsule-cpu-distribution-resolution.json": {
+      "sha256": "56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2",
+      "bytes": 3064809
+    },
+    "capsule-cpu-result.json": {
+      "sha256": "611cd509d98b9a8075a92c4d01e2a4ef0de9f50856d08430c568b34f788ef9cd",
+      "bytes": 98041
+    },
+    "inventory-at-submission.json": {
+      "sha256": "ff146fc10c455f3624f5258ed1a90f36f1d420d11c5ee44ae5c7087a47a171c4",
+      "bytes": 42395
+    },
+    "cpu-evidence.json": {
+      "sha256": "b68bcead10b78d19c3df09f0d765cf485dffd79b0ce3377ca379921d1c4ee7c2",
+      "bytes": 25470
+    },
+    "capsule-cpu-base-distributions.json": {
+      "sha256": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1",
+      "bytes": 2965757
+    }
+  },
+  "captured": 1788868443.3100884,
+  "queue": "17888683543778039|epbindinggpu0908v6|1788868354|8|Fresh binding 13.3.1 vs capsule13.0.3; CPU2 import PASS, exact source/capsule and incoming restore|boot|3778039\n",
+  "holder": "arconsumer0908v14|3649879|srv2|1788867171|45|Candidate-first C1 step; reuse exact 15-stage GPU PASS and fresh deployment CPU gate|boot\n",
+  "exit": null
+}

@@ -1,0 +1,315 @@
+{
+  "verdict": "REJECT_DIFFERENCE",
+  "accepted_compile_proof": false,
+  "actual_cpu17_revision": "123fbb01211eaf8cec46fd0965dd9320d02a375b",
+  "cpu16_revision": "111fff02f66f3e07a8332da1117afb75b161f0d6",
+  "cpu16_receipt_sha256": "70c06279f97f2cb951606ae64be65038c957a9274bb3885d2371dc998a16578c",
+  "differences": [
+    "CPU16 remap descriptor differs: mapped-i32-fp32-i32",
+    "CPU16 remap artifact differs: local/remap/mapped-i32-fp32-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i32-fp32-i64",
+    "CPU16 remap artifact differs: local/remap/mapped-i32-fp32-i64/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i32-fp16-i32",
+    "CPU16 remap artifact differs: local/remap/mapped-i32-fp16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i32-fp16-i64",
+    "CPU16 remap artifact differs: local/remap/mapped-i32-fp16-i64/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i32-bf16-i32",
+    "CPU16 remap artifact differs: local/remap/mapped-i32-bf16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i32-bf16-i64",
+    "CPU16 remap artifact differs: local/remap/mapped-i32-bf16-i64/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i64-fp32-i32",
+    "CPU16 remap artifact differs: local/remap/mapped-i64-fp32-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i64-fp32-i64",
+    "CPU16 remap artifact differs: local/remap/mapped-i64-fp32-i64/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i64-fp16-i32",
+    "CPU16 remap artifact differs: local/remap/mapped-i64-fp16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i64-fp16-i64",
+    "CPU16 remap artifact differs: local/remap/mapped-i64-fp16-i64/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i64-bf16-i32",
+    "CPU16 remap artifact differs: local/remap/mapped-i64-bf16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: mapped-i64-bf16-i64",
+    "CPU16 remap artifact differs: local/remap/mapped-i64-bf16-i64/kernel.cubin",
+    "CPU16 remap descriptor differs: empty-i32-fp32-i32",
+    "CPU16 remap artifact differs: local/remap/empty-i32-fp32-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: empty-i32-fp16-i32",
+    "CPU16 remap artifact differs: local/remap/empty-i32-fp16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: empty-i32-bf16-i32",
+    "CPU16 remap artifact differs: local/remap/empty-i32-bf16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: empty-i64-fp32-i32",
+    "CPU16 remap artifact differs: local/remap/empty-i64-fp32-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: empty-i64-fp16-i32",
+    "CPU16 remap artifact differs: local/remap/empty-i64-fp16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: empty-i64-bf16-i32",
+    "CPU16 remap artifact differs: local/remap/empty-i64-bf16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: offset-i32-fp32-i32",
+    "CPU16 remap artifact differs: local/remap/offset-i32-fp32-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: offset-i32-fp16-i32",
+    "CPU16 remap artifact differs: local/remap/offset-i32-fp16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: offset-i32-bf16-i32",
+    "CPU16 remap artifact differs: local/remap/offset-i32-bf16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: offset-i64-fp32-i32",
+    "CPU16 remap artifact differs: local/remap/offset-i64-fp32-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: offset-i64-fp16-i32",
+    "CPU16 remap artifact differs: local/remap/offset-i64-fp16-i32/kernel.cubin",
+    "CPU16 remap descriptor differs: offset-i64-bf16-i32",
+    "CPU16 remap artifact differs: local/remap/offset-i64-bf16-i32/kernel.cubin"
+  ],
+  "artifacts": [
+    {
+      "file": "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+      "sha256": "aa04b5bd7ed9209c7d9826361439e4e3c331b0e160152deed3074332b57b65ab",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+      "sha256": "0dc09f29c66e4625c71519d101a1708f321613db7b5eb686750f37de98d9faa5",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log",
+      "sha256": "792e298351a987a48eb76f5d7ff6d7094a9f9d2895a1e553c15832cc3eea38e2",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i32-fp32-i32/kernel.ptx",
+      "sha256": "2f5e7f4c0033be95e1b339ebbf7dd8f03c494135feab5fbe78911b5a2b57eb0d",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i32-fp32-i32/kernel.cubin",
+      "sha256": "7342a47318fe1bd38469da5321b74401f5118b048aebcfee38251e0720483951",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i32-fp32-i64/kernel.ptx",
+      "sha256": "8f702e3f7c6203b6a62f314614b0c6274a024d0122edf82800349859019489db",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i32-fp32-i64/kernel.cubin",
+      "sha256": "0143b223d6cb629edb0018ce71e7e8138d72a9647f2ddadbc90f8d1cc9264316",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i32-fp16-i32/kernel.ptx",
+      "sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i32-fp16-i32/kernel.cubin",
+      "sha256": "dc5430753f769bec11bc95762b422e1ba73ec7204f434ca40866226d6884dbae",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i32-fp16-i64/kernel.ptx",
+      "sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i32-fp16-i64/kernel.cubin",
+      "sha256": "283c08b0b2aca5f27db2eae4ca092e95c21aaa0737b9a4624421c9bffc74ad60",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i32-bf16-i32/kernel.ptx",
+      "sha256": "d271146a71b20215e799e331441a50ec6e2f50a2f55f1197a6d903aa2225ed9b",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i32-bf16-i32/kernel.cubin",
+      "sha256": "dc5430753f769bec11bc95762b422e1ba73ec7204f434ca40866226d6884dbae",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i32-bf16-i64/kernel.ptx",
+      "sha256": "8f90d2116e5382a2d125119fb578e3158c24fa015b8c6b6687545d86a1aadb09",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i32-bf16-i64/kernel.cubin",
+      "sha256": "283c08b0b2aca5f27db2eae4ca092e95c21aaa0737b9a4624421c9bffc74ad60",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i64-fp32-i32/kernel.ptx",
+      "sha256": "8b5122b74204fdf9e6dcf24c6fc8853e42955682ff4a4548355c9bc4a1b8e1b9",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i64-fp32-i32/kernel.cubin",
+      "sha256": "16cce7cf61e4870a6ae0d69a8718eb68a9705ee7f4f218cec3933cf3197334cd",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i64-fp32-i64/kernel.ptx",
+      "sha256": "4825abab342c3ed078cfa33618cbb9484127586a9cbbc0029d1987aeba893738",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i64-fp32-i64/kernel.cubin",
+      "sha256": "6042823dc298d1e8fe704ae428e9e40c3ff5c648a87cf48f04d41f06c3004515",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i64-fp16-i32/kernel.ptx",
+      "sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i64-fp16-i32/kernel.cubin",
+      "sha256": "585c7139fa29de64c359d0e1e49c8affad9a3a151477d7d5b5afd460f7e2666d",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i64-fp16-i64/kernel.ptx",
+      "sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i64-fp16-i64/kernel.cubin",
+      "sha256": "4e919623a6b953a81bedee4959c7aeb8e12e1cf68f15d4f409ebdc94a4bdfc90",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i64-bf16-i32/kernel.ptx",
+      "sha256": "9615f43d780e43f2770472901a085a9b3d3747ca2fc12f23854b0be11d086c2b",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i64-bf16-i32/kernel.cubin",
+      "sha256": "585c7139fa29de64c359d0e1e49c8affad9a3a151477d7d5b5afd460f7e2666d",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/mapped-i64-bf16-i64/kernel.ptx",
+      "sha256": "98a7500d9941e7c2e47454d518bb9e6f69253a147e488de7fec6408f30ce9e4e",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/mapped-i64-bf16-i64/kernel.cubin",
+      "sha256": "4e919623a6b953a81bedee4959c7aeb8e12e1cf68f15d4f409ebdc94a4bdfc90",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/empty-i32-fp32-i32/kernel.ptx",
+      "sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/empty-i32-fp32-i32/kernel.cubin",
+      "sha256": "6250206a0b0e8bac3560dc4486c19fb0b95e8f48d950aab793e95693de92b6c8",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/empty-i32-fp16-i32/kernel.ptx",
+      "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/empty-i32-fp16-i32/kernel.cubin",
+      "sha256": "a2a6b3d97dc5e815a38c42733b2f18cea503d11d43f8f551f772ec8d6b92f2e9",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/empty-i32-bf16-i32/kernel.ptx",
+      "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/empty-i32-bf16-i32/kernel.cubin",
+      "sha256": "a2a6b3d97dc5e815a38c42733b2f18cea503d11d43f8f551f772ec8d6b92f2e9",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/empty-i64-fp32-i32/kernel.ptx",
+      "sha256": "bcef4b25cf42de6a314dcdc0a4a303101add2cf8ade9c5dd524c3f8435d4182f",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/empty-i64-fp32-i32/kernel.cubin",
+      "sha256": "6250206a0b0e8bac3560dc4486c19fb0b95e8f48d950aab793e95693de92b6c8",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/empty-i64-fp16-i32/kernel.ptx",
+      "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/empty-i64-fp16-i32/kernel.cubin",
+      "sha256": "a2a6b3d97dc5e815a38c42733b2f18cea503d11d43f8f551f772ec8d6b92f2e9",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/empty-i64-bf16-i32/kernel.ptx",
+      "sha256": "e93c46c095b7b0f7555827d661fc89512abda37468f669f5d2811835951e7f15",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/empty-i64-bf16-i32/kernel.cubin",
+      "sha256": "a2a6b3d97dc5e815a38c42733b2f18cea503d11d43f8f551f772ec8d6b92f2e9",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/offset-i32-fp32-i32/kernel.ptx",
+      "sha256": "a0cefa45eadba91362f0a98ae35d3bef8e35afa627ff1bda2dd4394749c9ed58",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/offset-i32-fp32-i32/kernel.cubin",
+      "sha256": "59cba0be8986402435dd68276119b8e8fb266ea6c93d5212523018ad0e8cf11b",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/offset-i32-fp16-i32/kernel.ptx",
+      "sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/offset-i32-fp16-i32/kernel.cubin",
+      "sha256": "e2001da11f9fdaaaa63e2ac67b954b463ce676b7d7195ad0bcffe65b4658d97b",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/offset-i32-bf16-i32/kernel.ptx",
+      "sha256": "98426119fc8481fcd8cae129d4ab5bfd3381f79637d613f7b5c9be57399d407f",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/offset-i32-bf16-i32/kernel.cubin",
+      "sha256": "e2001da11f9fdaaaa63e2ac67b954b463ce676b7d7195ad0bcffe65b4658d97b",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/offset-i64-fp32-i32/kernel.ptx",
+      "sha256": "630fe8b409dc6030aca83bbdb4c6864fafb5078753a995c871229186f4cba4a3",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/offset-i64-fp32-i32/kernel.cubin",
+      "sha256": "f0f966fe970f18204b1af19b272742bf0a65ebe70bf75e1c5ec1e64b9dc0fd2a",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/offset-i64-fp16-i32/kernel.ptx",
+      "sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/offset-i64-fp16-i32/kernel.cubin",
+      "sha256": "81b26a7c77a18fecb390866231cd56747157e628e4ea5e23ae07e5967a645197",
+      "cpu16_equal": false
+    },
+    {
+      "file": "local/remap/offset-i64-bf16-i32/kernel.ptx",
+      "sha256": "42e737bc23882197dc5613648dc7e3b66eac27f5d1b0c07c7f47dfe0b75d8f2b",
+      "cpu16_equal": true
+    },
+    {
+      "file": "local/remap/offset-i64-bf16-i32/kernel.cubin",
+      "sha256": "81b26a7c77a18fecb390866231cd56747157e628e4ea5e23ae07e5967a645197",
+      "cpu16_equal": false
+    }
+  ],
+  "scope": "Exact source/PTX/cubin/resource/remap equality; no runtime numerical or speed claim"
+}

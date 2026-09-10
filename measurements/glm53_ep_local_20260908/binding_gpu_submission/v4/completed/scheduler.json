@@ -1,0 +1,14 @@
+{
+  "path": "/home/choiceoh/stkernel",
+  "revision": "0d8ce2cef9a0991075329f4d8957091ddc43fb58",
+  "restore_debt": {
+    "acquired": 1788856684.4278858,
+    "owner": {
+      "host": "srv2",
+      "pid": 2342874,
+      "protocol": 2,
+      "session": "prodrec0908",
+      "start": "35907642"
+    }
+  }
+}

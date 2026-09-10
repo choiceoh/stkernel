@@ -328,3 +328,90 @@ the lane declines to the stock dispatcher — with the knob armed that decline
 now logs `[b12x prefill reuse] declining the opt-in lane ...` instead of
 silently serving stock perf. GPU numerics/spill/occupancy validation is
 still pending; keep both at 0 until the combined campaign.
+
+## Full-token expert-local prefill candidate
+
+`VLLM_GLM53_EP_PREFILL_LOCAL=1` with `ENABLE_EP=1` selects a new E72,
+I2048, top8 M128 producer for 4096..16384 eager rows and permits the exact
+TP4/EP4 MHC sequence-parallel path. The producer discards remote sentinel
+IDs before reserving expert rows, quantizes original token rows and scatters
+directly to the caller output. Existing EP compact prefill and decode
+fallbacks remain for other shapes. The source pin and a separate artifact
+key prevent stock-kernel execution on invalid remote IDs. Both flags stay
+default-off. The preceding v2 source passed eight plain component numerical
+fixtures; its five timed cases improved 2.105x–3.545x versus the E72 compact
+wrapper, excluding remap, shared expert, transport and full-model prefill.
+The first sanitizer failed to start (missing path, exit 127), followed by exact
+original restoration and normal fleet release. These results do not establish
+production TP4/TTFT improvement. See `docs/GLM53_EP_PREFILL_LOCAL.md` and
+`measurements/glm53_ep_local_20260908/attempt2/README.md`.
+
+The admitted candidate uses a single Triton remap into existing scratch and
+prepares expert scales once per CTA in dead histogram storage. Its fallback
+retains the original Torch remap. Preceding source `7254422f` also masks remote
+weight loads, removes input loads from empty-map variants and avoids two
+slice views when prefill exactly fills both output scratch buffers. Aligned
+four-task publication uses two vector stores instead of eight scalar stores;
+other alignments/contracts retain scalar publication. No map or view contents
+are assumed immutable.
+
+[CPU8 evidence](../../../measurements/glm53_ep_local_20260908/cpu8/README.md)
+records actual E72/I2048 CuTe and 24-specialization Triton compilation plus
+48 pinned CPU tests without skips. All six empty-map PTX variants have zero
+global loads; the other 18 mask weight loads with the route-keep predicate.
+CuTe resources remain REG168 STACK1040 SHARED1024. The static vector-store
+count changed from 1 to 33, which is not an executed count or speed claim.
+These latest optimizations have no GPU numerical or performance result yet.
+The historical CPU7/37-test and CPU6/29-test receipts remain unchanged.
+
+Latest source `cf1365b8` replaces the per-thread `route_gs[8]` array with
+raw scale bits in the existing shared route slots, keeping the single first
+scale for equal-scale quantization. The original barriers protect the same
+slot lifetime. It adds no shared storage or atomics. Remap launch preparation
+also reuses metadata validated within that call, with no cross-call cache.
+[CPU9 evidence](../../../measurements/glm53_ep_local_20260908/cpu9/README.md)
+records 55 passing tests, actual E72/I2048 CuTe and all 24 Triton compilations,
+without CUDA initialization. Stack use fell from 1040 to 112 bytes while
+REG168 and SHARED1024 stayed unchanged. The initial srv4 attempt was refused
+by the unchanged 12 GiB host-memory guard; head completed the same capped
+CPU workflow. These resource results do not establish GPU latency gains.
+
+The earlier attempt4 source passed the 24-variant GPU remap oracle, eight MoE numerical
+fixtures and remap memcheck. Remap-inclusive MoE timing was 2.053x–3.495x
+versus existing EP compact. MoE memcheck failed on 34 CUDA API lookup errors
+in the initial compact hardware-info path; remaining sanitizers did not run.
+The instrumented numerical PASS does not override that failure. Attempt4
+retains the raw results and exact original recovery/release evidence, and
+cannot validate the later CPU8 or CPU9 changes. The reserved binding-reproducer v2
+was refused before its GPU payload because all four incoming containers were
+stopped. The normal supervisor restored all four public containers and
+health 200, then released at 16:49:14 KST. The CPU8-pinned v3 retry is waiting
+normally behind `attr0908`, with no diagnostic result yet. Full serving and
+direct TTFT remain unverified.
+
+### Decode regression repair
+
+The exact EP6-token, E72/H4096/I2048/top8 zero-weight lane now prepares its
+existing eight-row input in one Triton launch. It reads the original router
+IDs and weights, performs the same local remap, copies six input rows, and
+pads the last two rows with row zero and positive-zero weights. The same
+four staging tensors remain pinned across 18/12/6-token graph captures.
+Unsupported metadata retains the existing remap path; a submitted kernel
+failure propagates. The micro result still uses the established six-row
+copy-back, so the padded kernel cannot write beyond the caller's output.
+
+Only that lane's exact E72/M8/top8 micro compiler selects M32/N128. Its
+cache key includes the tile; the fixed top1 control and other geometries
+retain the existing selector. Physical activation/scale loads still span
+128 rows. These changes remove preparation launches and reduce padded MMA
+work; a throughput gain requires the canonical full-model onepass result.
+
+When EP/local-prefill/zero-weight are armed together, each serving worker
+runs `glm53_ep_local_selftest.py` once after allocating both pinned decode
+workspaces and before readiness. It uses isolated synthetic weights and the
+actual serving methods, preserves the original numerical thresholds,
+checks changed values at the same addresses and a nondefault stream, and
+compares fused preparation bytes with the original remap/padding. Failure
+rejects readiness and preserves diagnostics. Compiled kernels remain warm;
+canary scratch entries are restored. This is a startup numerical gate, not
+full sanitizer or performance acceptance.

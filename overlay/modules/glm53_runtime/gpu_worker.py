@@ -91,6 +91,105 @@ from .utils import request_memory
 
 logger = init_logger(__name__)
 
+
+def _glm53_startup_trim(worker):
+    """Return unused allocator blocks once, after warmup, with measured evidence.
+
+    Live weights, KV, graph pools and workspace references remain owned by the
+    worker. This never clears a model/cache dictionary or runs during requests.
+    """
+    if os.environ.get("VLLM_GLM53_STARTUP_TRIM") != "1":
+        return None
+    previous = getattr(worker, "_glm53_startup_trim_receipt", None)
+    if previous is not None:
+        if previous["verdict"] not in ("COMPLETE", "PARTIAL"):
+            raise RuntimeError("GLM startup trim previously failed or is reentrant")
+        return previous
+
+    # Diagnostics and libc lookup are confined to this explicit startup flag.
+    import ctypes
+    import json
+
+    receipt = dict(schema=1, verdict="RUNNING", rank=worker.rank,
+                   started_at=time.time(), stages=[], measurement_errors=[])
+    worker._glm53_startup_trim_receipt = receipt
+
+    def snapshot(label):
+        result = {}
+        for name, read in (
+            ("allocated", lambda: torch.cuda.memory_allocated(worker.device)),
+            ("reserved", lambda: torch.cuda.memory_reserved(worker.device)),
+        ):
+            try:
+                result[name] = int(read())
+            except Exception as exc:
+                result[name] = None
+                receipt["measurement_errors"].append(
+                    dict(phase=label, metric=name, error=repr(exc)[:240]))
+        for name, path, field in (
+            ("mem_available", "/proc/meminfo", "MemAvailable:"),
+            ("vm_rss", "/proc/self/status", "VmRSS:"),
+        ):
+            try:
+                with open(path) as stream:
+                    lines = stream.read(65536).splitlines()
+                values = [line.split() for line in lines if line.startswith(field)]
+                if len(values) != 1 or len(values[0]) != 3 or values[0][2] != "kB":
+                    raise ValueError("missing or invalid proc memory field")
+                result[name] = int(values[0][1]) * 1024
+            except Exception as exc:
+                result[name] = None
+                receipt["measurement_errors"].append(
+                    dict(phase=label, metric=name, error=repr(exc)[:240]))
+        return result
+
+    receipt["before"] = snapshot("before")
+    active_stage = "synchronize"
+    try:
+        torch.cuda.synchronize(worker.device)
+        receipt["stages"].append(dict(stage=active_stage, status="COMPLETE"))
+        active_stage = "gc_collect"
+        collected = gc.collect()
+        receipt["stages"].append(dict(stage=active_stage, status="COMPLETE",
+                                      collected=int(collected)))
+        active_stage = "empty_cache"
+        torch.accelerator.empty_cache()
+        receipt["stages"].append(dict(stage=active_stage, status="COMPLETE"))
+        active_stage = "malloc_trim"
+        # A missing glibc extension is optional and explicitly reported. Its
+        # return code is not a byte count and must not be called "GiB saved".
+        try:
+            libc = ctypes.CDLL(None)
+            getattr(libc, "gnu_get_libc_version")
+            trim = libc.malloc_trim
+        except (AttributeError, OSError) as exc:
+            receipt["stages"].append(dict(stage=active_stage, status="UNAVAILABLE",
+                                          error=repr(exc)[:240]))
+        else:
+            trim.argtypes = [ctypes.c_size_t]
+            trim.restype = ctypes.c_int
+            trim_result = int(trim(0))
+            if trim_result not in (0, 1):
+                raise RuntimeError("malloc_trim returned an unexpected status")
+            receipt["stages"].append(dict(stage=active_stage, status="COMPLETE",
+                                          returned=trim_result))
+        receipt["verdict"] = "COMPLETE"
+    except Exception as exc:
+        receipt.update(verdict="FAIL", failed_stage=active_stage,
+                       error=repr(exc)[:240])
+        raise
+    finally:
+        receipt["after"] = snapshot("after")
+        if receipt["verdict"] == "COMPLETE" and (
+            receipt["measurement_errors"]
+            or any(stage["status"] != "COMPLETE" for stage in receipt["stages"])
+        ):
+            receipt["verdict"] = "PARTIAL"
+        receipt["completed_at"] = time.time()
+        logger.warning("[glm53-startup-trim] %s", json.dumps(receipt, sort_keys=True))
+    return receipt
+
+
 if TYPE_CHECKING:
     from vllm.device_allocator.sleep_mode_backend import SleepModeBackend
     from vllm.model_executor.model_loader.tensorizer import TensorizerConfig
@@ -847,6 +946,8 @@ class Worker(WorkerBase):
             )
 
             trigger_inductor_lazy_init(self.device)
+
+        _glm53_startup_trim(self)
 
         # All warmup is done — start monitoring for unexpected JIT
         # compilations that would cause latency spikes during inference.

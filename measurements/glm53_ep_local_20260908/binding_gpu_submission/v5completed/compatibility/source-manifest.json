@@ -1,0 +1,38 @@
+[
+  {
+    "file": "driver-template-13.3.1.pyx",
+    "url": "https://raw.githubusercontent.com/NVIDIA/cuda-python/v13.3.1/cuda_bindings/cuda/bindings/_bindings/cydriver.pyx.in",
+    "bytes": 860158,
+    "sha256": "d15dfb898939694a8db621de08bcde95e88de1c124f82a29066f46e4ee5f5a0e"
+  },
+  {
+    "file": "driver-template-13.0.3.pyx",
+    "url": "https://raw.githubusercontent.com/NVIDIA/cuda-python/v13.0.3/cuda_bindings/cuda/bindings/_bindings/cydriver.pyx.in",
+    "bytes": 798500,
+    "sha256": "79e38a81a1b20213124321ca27ffdd4c21bd2a062a75de221cfd4d64fae2c3a0"
+  },
+  {
+    "file": "pyproject-13.3.1.toml",
+    "url": "https://raw.githubusercontent.com/NVIDIA/cuda-python/v13.3.1/cuda_bindings/pyproject.toml",
+    "bytes": 2896,
+    "sha256": "e084980648ecc971519757e053ec290a671587b2ba7b0b8761ba1f203f69b947"
+  },
+  {
+    "file": "pyproject-13.0.3.toml",
+    "url": "https://raw.githubusercontent.com/NVIDIA/cuda-python/v13.0.3/cuda_bindings/pyproject.toml",
+    "bytes": 1990,
+    "sha256": "86e5eb41b8000a615779f2af931ab7f41d86c0911689ae6fbb0b1cab842e2ed1"
+  },
+  {
+    "file": "pypi-13.0.3.json",
+    "url": "https://pypi.org/pypi/cuda-bindings/13.0.3/json",
+    "bytes": 24361,
+    "sha256": "158626d483255f4bdfda5342343ae396a00389f992fa4b9f0973e833a0d681f2"
+  },
+  {
+    "file": "pypi-13.3.1.json",
+    "url": "https://pypi.org/pypi/cuda-bindings/13.3.1/json",
+    "bytes": 19245,
+    "sha256": "2e0875e47754dd16a9cd8f971f93c3c80450eb2d404d45190dce404bf1b0ab72"
+  }
+]

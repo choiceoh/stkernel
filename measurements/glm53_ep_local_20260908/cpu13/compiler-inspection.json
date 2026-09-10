@@ -1,0 +1,361 @@
+{
+  "source_revision": "18148116a7abb242741d5b112c8d735353d9fc71",
+  "prior_cpu": 12,
+  "scope": "Actual no-device E72/I2048 CuTe and 24 Triton compiles plus pinned CPU contracts; no GPU execution",
+  "tests": {
+    "tests_run": 68,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "cuda_initialized": false,
+  "source_binding": [
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py",
+      "sha256": "5c7cdbc7d87129d3314725923a674728da113f7918b9c33dab164aa1c5cfc56d"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_micro_kernel.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py",
+      "sha256": "70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_dispatch.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py",
+      "sha256": "365295f1b0240a00dfd159aa5cd34e0e38ca78e748425cdb42b08968fe41a905"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/b12x_moe.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py",
+      "sha256": "352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_static_common.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py",
+      "sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_sf_pack.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py",
+      "sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py",
+      "sha256": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_static_kernel_v5.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py",
+      "sha256": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py",
+      "sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_dynamic_prefill.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py",
+      "sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_dynamic_prefill_n128.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py",
+      "sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/moe_dynamic_ep_local.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py",
+      "sha256": "c52757d150f890f302593aa936a015ed2e6f1a6f0bf0211db5c9dd02c0cc32f1"
+    },
+    {
+      "kind": "mounted",
+      "source": "overlay/modules/glm53_moe/glm53_ep_route_remap.py",
+      "target": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py",
+      "sha256": "9d83120fb20e4aae382e3971a86c1a3b6970e591dd31ee5d7fc3e1a2ca521339"
+    },
+    {
+      "kind": "contract",
+      "source": "tests/test_glm53_ep_prefill_local.py",
+      "sha256": "3f79ec33eaabff5521b898b6e72555116e8c1797b51f3b5871fb9c46a203130a"
+    },
+    {
+      "kind": "contract",
+      "source": "tests/test_glm53_ep_local_probe.py",
+      "sha256": "d892cf37bb700c3141f6d82cbbc7630e14193cc441a18f2ff441e8ea7ecc4f2f"
+    },
+    {
+      "kind": "contract",
+      "source": "tests/test_glm53_probe_lifecycle.py",
+      "sha256": "c35a83f6e3eb34adc6a77b240994a7ce1cdc86d4da3f2e9a81220de4bf3f2706"
+    },
+    {
+      "kind": "contract",
+      "source": "tests/test_glm53_ep_route_remap.py",
+      "sha256": "7f6a9ab88f1eaf219a662f4ffca41cb42aef941fb14bd3c0289f677f16e1da5c"
+    },
+    {
+      "kind": "contract",
+      "source": "tests/test_glm53_ep_sanitizer.py",
+      "sha256": "c5ec424b9631dc4a498fbf4f8497b2c063afcadef7b2a633d4b15ad85a558279"
+    },
+    {
+      "kind": "contract",
+      "source": "tests/test_glm53_ep_binding_check.py",
+      "sha256": "eedeca9b4bc0f01c4fa2a20518182dba6a5a6854b55c36c7c6af394541f5b26f"
+    },
+    {
+      "kind": "contract",
+      "source": "tests/test_glm53_ep_task_publication.py",
+      "sha256": "4f0e75df010a948f5387e4bc7fa9bdd7f637c064a735985e461359e54870c33e"
+    },
+    {
+      "kind": "contract",
+      "source": "tests/test_glm53_ep_route_scale_cache.py",
+      "sha256": "2c3184346c11096f4bf8e1cdbba93a0c1cb528c858fb5ce82ba88e1dc82dc008"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/glm53_ep_local_check.py",
+      "sha256": "2d40ece456cdda4d3a3d3cdd9cc58e0d77e44ffb0608585d9adc0f2550a54540"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/glm53_ep_local_evidence.py",
+      "sha256": "d8323a606bf392a6614fa91588e3d05b5d90523c17ae4d98e855db8ae5d416e2"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/run_glm53_ep_local_offline.py",
+      "sha256": "e6091ff43ecb4cd8f50c1280db4476d21a57c0131a65a6a219af724e8bb8daba"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/glm53_probe_lifecycle.py",
+      "sha256": "ac981627094546373ffbee6970a23d9356f23642b628dd228168324c50b7cc16"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/glm53_ep_local_compile_check.py",
+      "sha256": "1c65fcc3646247e4339dfdd74a09c9e0f4e4d31190feae7f050d3c248590f36c"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/run_glm53_ep_local_cpu_compile.py",
+      "sha256": "0284a1bd41040f5f8a8172490aebec5463ac5794496d6d321aa62a7b56d9f373"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/glm53_ep_route_remap_check.py",
+      "sha256": "1adea2879f76502eecfcdb94b955effc9b1153a6136de59ef5ebb3169c8154e1"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/glm53_ep_sanitizer.py",
+      "sha256": "7144f2b4c488e073257845dc65b028c220a06831ac9ce654d6fbaa2f01ca7e1a"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/glm53_ep_binding_check.py",
+      "sha256": "1d8027b4575bed172b4daeb2a19c10b44977afd34d3d483fb038b0cf4404463c"
+    },
+    {
+      "kind": "contract",
+      "source": "probes/run_glm53_ep_binding_offline.py",
+      "sha256": "357ce3de1b087135b4661aeea8fe7a6ea5ce978de024a9f1c9c83b4aba766514"
+    }
+  ],
+  "original_files_verified": 58,
+  "compiler": {
+    "cpu12": {
+      "ptx_sha256": "55a8b0c48de4629874c1ee042adb05254657472db2795c3873248c04b4a4c1f4",
+      "ptx_bytes": 942077,
+      "cubin_sha256": "20d99e2a98327ddd8599703326568d6815282cfa0518c0f44bb83187221af193",
+      "cubin_bytes": 300864,
+      "resources": {
+        "REG": 168,
+        "STACK": 112,
+        "SHARED": 1024,
+        "LOCAL": 0
+      },
+      "static_local_loads": 4,
+      "static_local_stores": 5
+    },
+    "cpu13": {
+      "ptx_sha256": "21a5c860b7f02aa887dd1cd8e90a5953094842b83ee24b118697c2f4d334d2de",
+      "ptx_bytes": 941539,
+      "cubin_sha256": "397eaf35853780c85b37ea3a9c8491f4e4fd9f0c3c9380e1ca298b419fe0f4a3",
+      "cubin_bytes": 298456,
+      "resources": {
+        "REG": 168,
+        "STACK": 112,
+        "SHARED": 1024,
+        "LOCAL": 0
+      },
+      "static_local_loads": 4,
+      "static_local_stores": 5
+    }
+  },
+  "remap": [
+    {
+      "label": "mapped-i32-fp32-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i32-fp32-i64",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i32-fp16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i32-fp16-i64",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i32-bf16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i32-bf16-i64",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i64-fp32-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i64-fp32-i64",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i64-fp16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i64-fp16-i64",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i64-bf16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "mapped-i64-bf16-i64",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "empty-i32-fp32-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "empty-i32-fp16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "empty-i32-bf16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "empty-i64-fp32-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "empty-i64-fp16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "empty-i64-bf16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "offset-i32-fp32-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "offset-i32-fp16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "offset-i32-bf16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "offset-i64-fp32-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "offset-i64-fp16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    },
+    {
+      "label": "offset-i64-bf16-i32",
+      "ptx_equal": true,
+      "compiler_hash_equal": true,
+      "cubin_equal": false
+    }
+  ],
+  "completed_kst": "2026-09-08T19:34:23.620075+09:00",
+  "host_mem_available_gib": 39.40382385253906
+}

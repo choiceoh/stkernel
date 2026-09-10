@@ -1,0 +1,8 @@
+preflight epbindinggpu0908v5 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  baseline: NONE for build 4a2c960 -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 2/2, held by arconsumer0908v12b [boot] (pid 2743161@srv2, since 18:59, est 70m, Correct T12 warmup to T6 vector capture then RDMA and C1 B/A/B) 2026-09-08_18:59:22
+waiting: pos 2/2, held by arconsumer0908v12b [boot] (pid 2743161@srv2, since 18:59, est 70m, Correct T12 warmup to T6 vector capture then RDMA and C1 B/A/B), legacy busy (1 procs, 0 reqs) 2026-09-08_18:59:51

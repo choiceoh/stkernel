@@ -1,0 +1,73 @@
+{
+  "verdict": "ORIGINAL_CPU_EVIDENCE_VERIFIED",
+  "source": "e88f5fd368ef8c895000496101fc7fcf8e7fb344",
+  "result_sha256": "8c39170913365b171f39f257ab10f4bbe0192900767c3de373d6f9f31bddbff9",
+  "original_worker_files": 20,
+  "original_worker_bytes": 4397679,
+  "execution_sha256": "b7a009717eeabf5519dcba00aa8e84ba8747e04e860b21a066573e0a96c7a19e",
+  "stdout_sha256": "83986ac87aaa5bb89b394ba32eea0b38ed4288f0e3571683ebb60c5b7e62d046",
+  "stdout_bytes": 20981,
+  "mounted_sources": 22,
+  "contract_sources": 23,
+  "contracts": {
+    "tests_run": 109,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "scatter_helper": {
+    "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py",
+    "sha256": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+    "size": 87909,
+    "helper": "scatter_add_v4_bf16x2"
+  },
+  "resources": [
+    {
+      "arm": "static/M6",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M12",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M24",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M33",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M8192",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    }
+  ],
+  "compile_only": true,
+  "cuda_initialized": false,
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false,
+  "source_rebind_required": false
+}

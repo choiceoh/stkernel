@@ -1,0 +1,152 @@
+{
+  "verdict": "PASS",
+  "scope": "Original CPU13 PTX shared-memory address ownership, not an observed GPU race trace. CTA shared base normalized to zero (1024-byte aligned). First output tile, first eight valid rows; both BF16 words per pair.",
+  "variants": {
+    "m32-topk8-fp32": {
+      "ptx_sha256": "a3332b0ed5eac3d6ed158ff15654e21e55387c71bf153e15e7e814eeecc40598",
+      "unique_producer_bf16_locations": 4096,
+      "pair_reads": 512,
+      "cross_warp_pair_reads": 384,
+      "reader_to_writer_warp_pairs": {
+        "0->0": 128,
+        "0->2": 128,
+        "1->0": 128,
+        "1->2": 128
+      },
+      "witnesses": [
+        {
+          "reader_tid": 8,
+          "producer_tid": 64,
+          "row": 0,
+          "column": 16,
+          "shared_offsets": [
+            57376,
+            57378
+          ]
+        },
+        {
+          "reader_tid": 8,
+          "producer_tid": 68,
+          "row": 1,
+          "column": 16,
+          "shared_offsets": [
+            57520,
+            57522
+          ]
+        },
+        {
+          "reader_tid": 8,
+          "producer_tid": 72,
+          "row": 2,
+          "column": 16,
+          "shared_offsets": [
+            57600,
+            57602
+          ]
+        },
+        {
+          "reader_tid": 8,
+          "producer_tid": 76,
+          "row": 3,
+          "column": 16,
+          "shared_offsets": [
+            57744,
+            57746
+          ]
+        }
+      ],
+      "store_lines": [
+        3448,
+        3463
+      ],
+      "fence_line": 3464,
+      "load_lines": [
+        3506,
+        3517
+      ],
+      "post_barrier_line": 3532
+    },
+    "m64-topk1-fp32": {
+      "ptx_sha256": "af8ee944deabff26d5cbafcece9a69da2bc9e2fc36267d174c3bd6bd4eee15cf",
+      "unique_producer_bf16_locations": 8192,
+      "pair_reads": 512,
+      "cross_warp_pair_reads": 384,
+      "reader_to_writer_warp_pairs": {
+        "0->0": 128,
+        "0->2": 128,
+        "1->0": 128,
+        "1->2": 128
+      },
+      "witnesses": [
+        {
+          "reader_tid": 8,
+          "producer_tid": 64,
+          "row": 0,
+          "column": 16,
+          "shared_offsets": [
+            57376,
+            57378
+          ]
+        },
+        {
+          "reader_tid": 8,
+          "producer_tid": 68,
+          "row": 1,
+          "column": 16,
+          "shared_offsets": [
+            57520,
+            57522
+          ]
+        },
+        {
+          "reader_tid": 8,
+          "producer_tid": 72,
+          "row": 2,
+          "column": 16,
+          "shared_offsets": [
+            57600,
+            57602
+          ]
+        },
+        {
+          "reader_tid": 8,
+          "producer_tid": 76,
+          "row": 3,
+          "column": 16,
+          "shared_offsets": [
+            57744,
+            57746
+          ]
+        }
+      ],
+      "store_lines": [
+        4957,
+        4988
+      ],
+      "fence_line": 4989,
+      "load_lines": [
+        5031,
+        5042
+      ],
+      "post_barrier_line": 5062
+    }
+  },
+  "original_receipt_binding": {
+    "receipt_sha256": "e3ec24f8b8bfa65a1d83295fb8dbd7d6e49fb89a5cb1a48c8928106526e8cb2e",
+    "artifact_tar_sha256": "e85d45b2da461fc50a83735d9bde4c651fc7e38b345ac9d97cf743a6871a06c6",
+    "variants": {
+      "m32-topk8-fp32": {
+        "archive_member": "evidence/micro/m32-topk8-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641_FakeTensor.sm_121a.ptx",
+        "ptx_sha256": "a3332b0ed5eac3d6ed158ff15654e21e55387c71bf153e15e7e814eeecc40598",
+        "original_bytes_equal": true,
+        "sha_recorded_in_cpu13_receipt": true
+      },
+      "m64-topk1-fp32": {
+        "archive_member": "evidence/micro/m64-topk1-fp32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_micro_kernelMoEMicroKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt3281_FakeTensorFloat3281_FakeTensorFl.sm_121a.ptx",
+        "ptx_sha256": "af8ee944deabff26d5cbafcece9a69da2bc9e2fc36267d174c3bd6bd4eee15cf",
+        "original_bytes_equal": true,
+        "sha_recorded_in_cpu13_receipt": true
+      }
+    }
+  }
+}

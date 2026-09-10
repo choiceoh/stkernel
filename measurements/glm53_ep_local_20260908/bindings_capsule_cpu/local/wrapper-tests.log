@@ -1,0 +1,15 @@
+test_actual_module_files_must_be_inside_capsule_and_unchanged (test_glm53_ep_bindings_capsule_cpu.InnerTests.test_actual_module_files_must_be_inside_capsule_and_unchanged) ... ok
+test_base_pathfinder_version_cannot_be_replaced (test_glm53_ep_bindings_capsule_cpu.InnerTests.test_base_pathfinder_version_cannot_be_replaced) ... ok
+test_device_guard_and_preimport_checks_fail_closed (test_glm53_ep_bindings_capsule_cpu.InnerTests.test_device_guard_and_preimport_checks_fail_closed) ... ok
+test_every_installed_metadata_record_is_kept_including_legacy_packages (test_glm53_ep_bindings_capsule_cpu.InnerTests.test_every_installed_metadata_record_is_kept_including_legacy_packages) ... ok
+test_full_metadata_and_dependency_decision_precede_import_and_postvalidate (test_glm53_ep_bindings_capsule_cpu.InnerTests.test_full_metadata_and_dependency_decision_precede_import_and_postvalidate) ... ok
+test_selected_import_metadata_version_and_base_pathfinder_are_checked (test_glm53_ep_bindings_capsule_cpu.InnerTests.test_selected_import_metadata_version_and_base_pathfinder_are_checked) ... ok
+test_fixed_no_device_command_and_distinct_mounts (test_glm53_ep_bindings_capsule_cpu.WrapperTests.test_fixed_no_device_command_and_distinct_mounts) ... ok
+test_no_arbitrary_image_or_command_cli_is_accepted (test_glm53_ep_bindings_capsule_cpu.WrapperTests.test_no_arbitrary_image_or_command_cli_is_accepted) ... ok
+test_outer_failure_and_timeout_never_create_success_receipt (test_glm53_ep_bindings_capsule_cpu.WrapperTests.test_outer_failure_and_timeout_never_create_success_receipt) ... ok
+test_unchanged_twelve_gib_guard_precedes_all_processes_and_output (test_glm53_ep_bindings_capsule_cpu.WrapperTests.test_unchanged_twelve_gib_guard_precedes_all_processes_and_output) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.018s
+
+OK

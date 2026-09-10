@@ -1,0 +1,550 @@
+{
+  "arm": "A",
+  "requests": [
+    {
+      "channel_diagnostics": {
+        "channels": {
+          "content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 13,
+            "raw_pieces": 3,
+            "selected_chars": 13,
+            "selected_pieces": 3
+          },
+          "reasoning": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 1266,
+            "raw_pieces": 128,
+            "selected_chars": 1255,
+            "selected_pieces": 127
+          },
+          "reasoning_content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          }
+        },
+        "combined_chars": 1268,
+        "combined_gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "first_offending_channel": null,
+        "offenses": [],
+        "precedence": [
+          "content",
+          "reasoning_content",
+          "reasoning"
+        ],
+        "schema": 1,
+        "scope": "diagnostic-only; existing combined-text gate",
+        "snippet_scope": "combined-selected-text",
+        "unlocated_kinds": []
+      },
+      "ctx": 2000,
+      "fixed_decode": false,
+      "rep": null,
+      "request_index": 0,
+      "status": "RECORDED"
+    },
+    {
+      "channel_diagnostics": {
+        "channels": {
+          "content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 155,
+            "raw_pieces": 33,
+            "selected_chars": 155,
+            "selected_pieces": 33
+          },
+          "reasoning": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 980,
+            "raw_pieces": 72,
+            "selected_chars": 979,
+            "selected_pieces": 71
+          },
+          "reasoning_content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          }
+        },
+        "combined_chars": 1134,
+        "combined_gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "first_offending_channel": null,
+        "offenses": [],
+        "precedence": [
+          "content",
+          "reasoning_content",
+          "reasoning"
+        ],
+        "schema": 1,
+        "scope": "diagnostic-only; existing combined-text gate",
+        "snippet_scope": "combined-selected-text",
+        "unlocated_kinds": []
+      },
+      "ctx": 2000,
+      "fixed_decode": false,
+      "rep": null,
+      "request_index": 1,
+      "status": "RECORDED"
+    },
+    {
+      "channel_diagnostics": {
+        "channels": {
+          "content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 164,
+            "raw_pieces": 45,
+            "selected_chars": 164,
+            "selected_pieces": 45
+          },
+          "reasoning": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 1122,
+            "raw_pieces": 79,
+            "selected_chars": 1114,
+            "selected_pieces": 78
+          },
+          "reasoning_content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          }
+        },
+        "combined_chars": 1278,
+        "combined_gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "first_offending_channel": null,
+        "offenses": [],
+        "precedence": [
+          "content",
+          "reasoning_content",
+          "reasoning"
+        ],
+        "schema": 1,
+        "scope": "diagnostic-only; existing combined-text gate",
+        "snippet_scope": "combined-selected-text",
+        "unlocated_kinds": []
+      },
+      "ctx": 2000,
+      "fixed_decode": false,
+      "rep": null,
+      "request_index": 2,
+      "status": "RECORDED"
+    },
+    {
+      "channel_diagnostics": {
+        "channels": {
+          "content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 310,
+            "raw_pieces": 60,
+            "selected_chars": 310,
+            "selected_pieces": 60
+          },
+          "reasoning": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 800,
+            "raw_pieces": 59,
+            "selected_chars": 786,
+            "selected_pieces": 58
+          },
+          "reasoning_content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          }
+        },
+        "combined_chars": 1096,
+        "combined_gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "first_offending_channel": null,
+        "offenses": [],
+        "precedence": [
+          "content",
+          "reasoning_content",
+          "reasoning"
+        ],
+        "schema": 1,
+        "scope": "diagnostic-only; existing combined-text gate",
+        "snippet_scope": "combined-selected-text",
+        "unlocated_kinds": []
+      },
+      "ctx": 32000,
+      "fixed_decode": false,
+      "rep": null,
+      "request_index": 3,
+      "status": "RECORDED"
+    },
+    {
+      "channel_diagnostics": {
+        "channels": {
+          "content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 665,
+            "raw_pieces": 141,
+            "selected_chars": 665,
+            "selected_pieces": 141
+          },
+          "reasoning": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 855,
+            "raw_pieces": 65,
+            "selected_chars": 855,
+            "selected_pieces": 65
+          },
+          "reasoning_content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          }
+        },
+        "combined_chars": 1520,
+        "combined_gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "first_offending_channel": null,
+        "offenses": [],
+        "precedence": [
+          "content",
+          "reasoning_content",
+          "reasoning"
+        ],
+        "schema": 1,
+        "scope": "diagnostic-only; existing combined-text gate",
+        "snippet_scope": "combined-selected-text",
+        "unlocated_kinds": []
+      },
+      "ctx": 128000,
+      "fixed_decode": false,
+      "rep": null,
+      "request_index": 4,
+      "status": "RECORDED"
+    },
+    {
+      "channel_diagnostics": {
+        "channels": {
+          "content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          },
+          "reasoning": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 2870,
+            "raw_pieces": 291,
+            "selected_chars": 2870,
+            "selected_pieces": 291
+          },
+          "reasoning_content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          }
+        },
+        "combined_chars": 2870,
+        "combined_gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "first_offending_channel": null,
+        "offenses": [],
+        "precedence": [
+          "content",
+          "reasoning_content",
+          "reasoning"
+        ],
+        "schema": 1,
+        "scope": "diagnostic-only; existing combined-text gate",
+        "snippet_scope": "combined-selected-text",
+        "unlocated_kinds": []
+      },
+      "ctx": 2000,
+      "fixed_decode": true,
+      "rep": 0,
+      "request_index": 5,
+      "status": "RECORDED"
+    },
+    {
+      "channel_diagnostics": {
+        "channels": {
+          "content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 1071,
+            "raw_pieces": 284,
+            "selected_chars": 1071,
+            "selected_pieces": 284
+          },
+          "reasoning": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 713,
+            "raw_pieces": 54,
+            "selected_chars": 712,
+            "selected_pieces": 53
+          },
+          "reasoning_content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          }
+        },
+        "combined_chars": 1783,
+        "combined_gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "first_offending_channel": null,
+        "offenses": [],
+        "precedence": [
+          "content",
+          "reasoning_content",
+          "reasoning"
+        ],
+        "schema": 1,
+        "scope": "diagnostic-only; existing combined-text gate",
+        "snippet_scope": "combined-selected-text",
+        "unlocated_kinds": []
+      },
+      "ctx": 2000,
+      "fixed_decode": true,
+      "rep": 1,
+      "request_index": 6,
+      "status": "RECORDED"
+    },
+    {
+      "channel_diagnostics": {
+        "channels": {
+          "content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          },
+          "reasoning": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 2916,
+            "raw_pieces": 283,
+            "selected_chars": 2916,
+            "selected_pieces": 283
+          },
+          "reasoning_content": {
+            "gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "non_text_fields": 0,
+            "raw_chars": 0,
+            "raw_pieces": 0,
+            "selected_chars": 0,
+            "selected_pieces": 0
+          }
+        },
+        "combined_chars": 2916,
+        "combined_gated_counts": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "first_offending_channel": null,
+        "offenses": [],
+        "precedence": [
+          "content",
+          "reasoning_content",
+          "reasoning"
+        ],
+        "schema": 1,
+        "scope": "diagnostic-only; existing combined-text gate",
+        "snippet_scope": "combined-selected-text",
+        "unlocated_kinds": []
+      },
+      "ctx": 2000,
+      "fixed_decode": true,
+      "rep": 2,
+      "request_index": 7,
+      "status": "RECORDED"
+    }
+  ],
+  "scope": "Exact native diagnostics fields copied from original canonical record. Existing combined-text gates remain authoritative; no regating, attribution waiver, or reconstructed channels."
+}

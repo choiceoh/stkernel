@@ -1,0 +1,14 @@
+{
+  "action": "REPORT_FIRST_RESULT_NOT_BELOW_THRESHOLD",
+  "exec_session": 93829,
+  "exit_code": 0,
+  "observed_rounded_decode_tok_s": 81.29,
+  "raw_stdout_archived": false,
+  "scope": "Parent-supplied tool stdout observation, not a captured raw stdout file",
+  "signal_paths_absent": {
+    "cancel-request.json": true,
+    "failfast-first-fixed-A": true,
+    "failfast-first-fixed-A0": true
+  },
+  "signal_sent": false
+}

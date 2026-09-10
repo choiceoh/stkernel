@@ -1,0 +1,10 @@
+{
+  "at": 1788901729.496393,
+  "fixed_helper_sha256": "5a1d388daab7f98472fc86c0339e248cfbc65c6842baa184f75cca4c4f367251",
+  "old_helper_sha256": "b17eaf4813de69d25bc036528d388a77af8516f283c91910a566b39b97a9ecda",
+  "capture": "/tmp/glm53-onepass4-live-A-manualfix",
+  "identity_sha256": "c258f0c7b604f14de9a5f01432d7f320060bbb7bfbc85c3aa3fb862f60270cf7",
+  "all_four_stable": true,
+  "B1_observer_partial": "Only four node failure logs existed; no raw inspect/log capture was saved, insufficient to recover B1 strict identity",
+  "B2_helper_reads_current_file": true
+}

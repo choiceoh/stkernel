@@ -1,0 +1,7 @@
+{
+  "source_revision": "0331579f4b16b8b811f2ca7e5099f8f461507c67",
+  "source_path": "overlay/modules/glm53_moe/moe_micro_kernel.py",
+  "source_sha256": "fbf64e979f313b5f460094be5158055992f44607542c4209d73b4108c69ced07",
+  "gzip_sha256": "cd99fc59d4b8889bfbc32c7bd5dc6c2f4514cd6d546b268723d7ba1ab1cd6862",
+  "scope": "Unmodified pre-shared-FC1-A source; same-runtime AST false-body oracle, not a new execution"
+}

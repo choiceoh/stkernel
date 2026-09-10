@@ -1,0 +1,30 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-onepass-0909-7",
+  "revision": "54eef0fba65459d938e7a9d81365f7f648d6e2c6",
+  "shallow": false,
+  "alternates": false,
+  "mem_available_kib": 100822580,
+  "job": "/tmp/glm53-ep-decode-cpu-0909-7",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-ep-onepass-0909-7/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "epdecodecpu0909v7",
+    "6",
+    "Exact EP T6 fused preparation and M32 CuTe lowering; no devices, 4GiB and 2CPU",
+    "--",
+    "python3",
+    "-B",
+    "/home/choiceoh/stkernel-ep-onepass-0909-7/probes/run_glm53_ep_short_decode_cpu.py",
+    "--image",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "--output",
+    "/tmp/glm53-ep-decode-cpu-0909-7/evidence",
+    "--capsule-root",
+    "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+    "--manifest-sha256",
+    "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "created": 1788910521.442279
+}

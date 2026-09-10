@@ -1,0 +1,110 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-local-diag-0908-1",
+  "revision": "69f5b8330bf63534f950e36cb2c40e844e7806f1",
+  "source_clean": true,
+  "scheduler": "/home/choiceoh/stkernel-ep-local-scheduler-0909",
+  "scheduler_state": {
+    "revision": "73b2ca051e7d1a439b5202c9245db43fcb6332ac",
+    "approved_main": "73b2ca051e7d1a439b5202c9245db43fcb6332ac",
+    "approved_fixes": [
+      "d95a2cdb46f2446bd4b58f7d5969b42c895f0b3d",
+      "4a2c960ad632596ca3224ead88da43160012d393"
+    ],
+    "approved_identical_directories": [
+      "bench",
+      "launchers",
+      "profiles",
+      "tests"
+    ]
+  },
+  "cpu_state": {
+    "revision": "123fbb01211eaf8cec46fd0965dd9320d02a375b",
+    "submission_sha256": "02c4799468b4313e4a1f4a39e828538d6f4e110ee72f4b541efe201f34810abb",
+    "exit_sha256": "853b8ec39c92d89af1e0fed1015c4a068ff55edccc09af913a4a2a75d20cb491",
+    "result_sha256": "1d8ee9b9657cd49240f2b1f6d5eee40a413e647dc8ee0743d911d69e0ac8eba7"
+  },
+  "cpu_evidence_sha256": "1d8ee9b9657cd49240f2b1f6d5eee40a413e647dc8ee0743d911d69e0ac8eba7",
+  "cpu_summary": {
+    "tests_run": 146,
+    "mounted_source_count": 13,
+    "contract_source_count": 29,
+    "remap_compile_count": 24,
+    "binding_runtime": {
+      "schema": 1,
+      "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+      "binding_identity": {
+        "version": "13.0.3",
+        "root": "/opt/glm53-bindings-capsule",
+        "modules": {
+          "cuda.bindings.driver": {
+            "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+            "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+          },
+          "cuda.bindings._bindings.cydriver": {
+            "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+            "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+          }
+        },
+        "distributions": {
+          "cuda-bindings": {
+            "version": "13.0.3",
+            "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+            "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+          },
+          "cuda-python": {
+            "version": "13.0.3",
+            "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+            "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+          }
+        }
+      },
+      "pathfinder": {
+        "version": "1.7.0",
+        "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+        "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+        "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+        "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+      }
+    }
+  },
+  "capsule_root": "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+  "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "bundle_sha256": "f760b8851d1c16fd8900c2beb0353a61ba2928fa373d5869b33043634864d96b",
+  "driver_sha256": "c9778a40d5bf07e2e8a9dfb29c295c6882997c574cb39d3b0973beda06feb25c",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel-ep-local-scheduler-0909/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "eplocaldiag0908v1",
+    "8",
+    "CPU17-matched concentrated6912 failure diagnostics only; unchanged fixture and exact incoming restore",
+    "--",
+    "python3",
+    "-B",
+    "/home/choiceoh/stkernel-ep-local-diag-0908-1/probes/run_glm53_ep_local_offline.py",
+    "--revision",
+    "69f5b8330bf63534f950e36cb2c40e844e7806f1",
+    "--out",
+    "/tmp/glm53-ep-local-diag-gpu-0908-1/capture",
+    "--capsule-root",
+    "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+    "--manifest-sha256",
+    "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+    "--diagnose-case",
+    "concentrated6912"
+  ],
+  "created": 1788880969.9302592,
+  "session": "eplocaldiag0908v1",
+  "diagnostic_only": true,
+  "mode": "diagnostic",
+  "diagnose_case": "concentrated6912",
+  "performance_acceptance": false,
+  "full_gpu_acceptance": false,
+  "default_promotion": false,
+  "enqueue_while_other_holder_allowed": true,
+  "go_time_lifecycle_guards_unchanged": true,
+  "queue_before": "1788880826604994|prodrec2-0909|1788880826|20|\ud504\ub85c\ub355\uc158 \ubcf5\uad6c \ubd80\ud305(\uae30\ubcf8\uac12, \ub808\uadf8 \uc5c6\uc74c) \u2014 22:26 \uc774\ud6c4 \uc11c\ube59 \uc815\uc9c0 \uc0c1\ud0dc|boot|604994\n",
+  "holder_before": "kdagate0909|609268|srv2|1788880826|20|KDA strided \ubb34\uc7a5 \uad00\ubb38\ub9cc: \ud504\ub85c\ube0c(\ubc30\ud3ec \uc5c6\uc74c) + \ud504\ub85c\ub355\uc158 \ubcf5\uadc0|boot\n",
+  "restore_debt_before": "{\"acquired\": 1788880826.8928409, \"owner\": {\"host\": \"srv2\", \"pid\": 609268, \"protocol\": 2, \"session\": \"kdagate0909\", \"start\": \"38308311\"}}\n"
+}
