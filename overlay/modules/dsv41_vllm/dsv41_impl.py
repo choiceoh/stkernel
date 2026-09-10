@@ -15,6 +15,7 @@ engram layer does not crash, it answers worse, and nothing downstream can tell.
 from __future__ import annotations
 
 import logging
+import re
 
 from dsv41_vllm import adapt_text_config, engram_layers, layer_roles
 
@@ -120,6 +121,81 @@ def _build():
             import dsv41_scales
 
             dsv41_scales.install(self)
+
+        # Names this derivation has no module for. The V4 model already skips
+        # `mtp.`; V4.1 adds a vision tower, an aligner and the image marker
+        # embeddings, none of which exist here, and each of which otherwise
+        # stops the load with "no module or parameter named 'aligner'".
+        #
+        # `.engram.embed.` is listed for the same reason but is NOT the real
+        # defence: vLLM materializes every tensor the index names before any
+        # skip runs, and one engram table is 94 GiB. Removing them from the
+        # INDEX is what keeps them out of host memory --
+        # tools/dsv41_preshard.py does that for both the staged view and the
+        # per-rank files. The entry here only makes a hand-assembled directory
+        # fail with a message instead of a name error.
+        # Derived from the full name-pattern diff between the two
+        # checkpoints, not one boot failure at a time. V4.1 has 30 name
+        # patterns V4 does not; these are the ones this derivation has no
+        # destination for.
+        SKIP_SUBSTRS = (
+            "mtp.",                     # the DSpark block, 3 stages
+            "vision.", "aligner.",      # the ViT tower and its aligner
+            "image_start", "image_end", "image_newline",
+            ".engram.",                 # tables AND the small projections
+            "ffn.gate.bias_vl",         # the vision-token gate bias
+            "attn.indexer.k_norm", "attn.indexer.wk",
+        )
+
+        def load_weights(self, weights):
+            from vllm.model_executor.models.utils import AutoWeightsLoader
+
+            loader = AutoWeightsLoader(self,
+                                       skip_substrs=list(self.SKIP_SUBSTRS))
+            loaded = loader.load_weights(weights,
+                                         mapper=self.hf_to_vllm_mapper)
+            self._report_unloaded(loaded)
+            self.model.finalize_mega_moe_weights()
+            self.model.setup_b12x_wo_projection()
+            return loaded
+
+        def _report_unloaded(self, loaded) -> None:
+            """Name every parameter no checkpoint tensor reached.
+
+            An unloaded parameter keeps whatever `initialize_dummy_weights` or
+            `torch.empty` left in it. The model then runs at full speed and is
+            wrong in a way no output inspection finds -- which is exactly what
+            V4.1 sets up: it does NOT ship `hc_head_base/fn/scale`, and the V4
+            model allocates them. Silence here would be a model built on three
+            tensors of uninitialized memory.
+            """
+            import os
+            import sys
+
+            missing = sorted(name for name, _ in self.named_parameters()
+                             if name not in loaded)
+            if not missing:
+                sys.stderr.write("[dsv41] every parameter was loaded\n")
+                sys.stderr.flush()
+                return
+            groups = {}
+            for name in missing:
+                key = re.sub(r"\.\d+\.", ".N.", name)
+                groups.setdefault(key, 0)
+                groups[key] += 1
+            lines = "\n".join(f"      {n:5d}  {k}"
+                               for k, n in sorted(groups.items()))
+            sys.stderr.write(
+                f"[dsv41] {len(missing)} PARAMETER(S) NOT LOADED -- they hold "
+                f"uninitialized memory:\n{lines}\n")
+            sys.stderr.flush()
+            if os.environ.get("DSV41_ALLOW_PARTIAL", "0").strip() not in (
+                    "1", "true", "yes"):
+                raise RuntimeError(
+                    f"{len(missing)} parameter(s) had no checkpoint tensor. "
+                    f"Set DSV41_ALLOW_PARTIAL=1 to run anyway; the result is "
+                    f"a model computing with uninitialized memory and must "
+                    f"never be measured for quality.")
 
         def _install_o_proj(self) -> None:
             """Swap every attention's `_o_proj` for the bf16 grouped path.
