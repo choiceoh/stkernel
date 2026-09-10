@@ -48,8 +48,8 @@ remain separate from the subsequent production recovery verification.
 ## Follow-up: EP decode target 76 tok/s
 
 `VLLM_GLM53_EP_DECODE_OPT=1` is an experimental, separately keyed extension
-to the accepted EP path. Its default remains 0 after the first candidate
-missed the 76 tok/s target.
+to the accepted EP path. Its default remains 0: both measured candidates
+missed the 76 tok/s target, and the FC1 follow-up failed the Korean gate.
 Both comparison arms retain EP4, SF6, K5 and verified preparation; the
 candidate adds only this switch. The new absolute target is pooled
 fixed-1024 x3 decode >=76 tok/s, with the existing quality and direct
@@ -57,7 +57,7 @@ fixed-1024 x3 decode >=76 tok/s, with the existing quality and direct
 the same-source EP baseline. Original cold-compile classifications and
 single-request long-prefill limitations remain visible.
 
-The next candidate targets FC1 for SF6 M1..8. It restores packed scale
+The measured FC1 follow-up targets SF6 M1..8. It restores packed scale
 bytes directly into the original MMA scale registers instead of expanding
 an intermediate shared-memory stage. The original copy partition must
 prove the exact physical byte mapping during CuTe setup. TMA completion,
@@ -65,7 +65,7 @@ consumer release, MMA order and scale arithmetic remain unchanged. FC2,
 scatter metadata and the 98304-byte dynamic storage layout return to the
 accepted baseline. The cache tag is
 `glm53_ep_static_sf6_fc1_register_v2`; M9+ and prefill keep their existing
-selection. This path is under validation and has no performance result yet.
+selection. The result below rejects adoption of this path.
 
 Preparation keeps its first-use and every-64-step stock comparison. On
 the candidate's C=1/K5 verification steps it compares the cloned fused
@@ -79,10 +79,37 @@ unchanged large-shape selection and fresh verified clone-elimination
 checkpoints. The CPU gate includes the baseline's 19 lowerings plus four
 optimized local/global lowerings.
 
+### FC1 register result (2026-09-10)
+
+Frozen source `3fab1ce81a79936b3b76fa4d87b447d9f55bacba`, session
+`epdecode76onepass0910v3`, completed B→A at 12:11:10 KST. Pooled fixed1024×3
+decode was **72.97741→68.53325 tok/s**; fixed-window engine speed was
+19.90260→19.93309 step/s. A's three requests were62.91417/74.95916/68.78004,
+all retained. Facts passed18/18 in both arms, but A's first fixed response
+contained `Halvorsen博士` in the reasoning channel: Korean1/8, two CJK
+characters. The original judge is `GATE FAIL: korean 1/8`, terminal rc4.
+The quality gate is unchanged and the candidate is not adopted.
+
+32K input throughput was3174.11→3214.15 tok/s and128K3272.66→3270.24;
+TTFT was10.253→10.126s and39.283→39.312s, respectively. These observations
+do not show a consistent loss of prefill speed. B's original
+`cold_compile=true` and A's absent field remain unchanged; each long
+context has one request and is not a matched warm-prefill performance claim.
+Both four-rank ready snapshots and required EP/PREP proofs passed; A also
+passed native selection and fresh PREP optimization proof. Those successes
+do not override the failed quality or absolute-throughput target.
+
+CPU3 and CPU4 each passed181 tests and23 no-device lowerings. Their69
+PTX/cubin/resource artifacts are byte-identical, including opt REG96,
+zero stack/local memory and99328 total shared bytes. This static result
+did not become an engine-speed gain. Source/layout evidence, output hashes,
+all timing windows, original judge and failure exit are retained in
+[the terminal archive](../measurements/glm53_ep_tiled_20260909/ep76_onepass3/README.md).
+
 ### First EP76 result (2026-09-10)
 
 The first candidate used the separate FC2 source layout described below;
-it is not the pending FC1 register candidate.
+it is separate from the FC1 register follow-up above.
 
 For SF6 M1..8, FC2 reads its packed scales from two separate shared-memory
 slots. Restored scale bytes therefore cannot overwrite another warp's

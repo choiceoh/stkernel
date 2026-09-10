@@ -31,6 +31,49 @@
 8. **그리디 텍스트 diff 로는 판정하지 않는다** — 같은 구성의 두 부팅에서도 온도 0 응답이
    갈린다(28차 §8). 판정은 게이트와 브래킷이다.
 
+## GLM53 EP76 FC1 후속: 68.53 tok/s·한국어 게이트 실패, 미채택 (2026-09-10)
+
+고정 소스 `3fab1ce81a79936b3b76fa4d87b447d9f55bacba`, 정상 fleet
+`epdecode76onepass0910v3`에서 같은 소스 EP B→EP A를 완료했다.
+양쪽 EP4/SF6/K5/PREP를 유지하고 A만 `VLLM_GLM53_EP_DECODE_OPT=1`이다.
+앞선 FC2 변경은 원복하고, 작은 디코드의 FC1 SF6를 MMA register로 직접
+복원하는 후보를 측정했다. **A68.53325 tok/s로 목표76 미달이며,
+fixed rep0의 한자 혼입2자로 한국어1/8 게이트도 실패했다. 채택하지 않는다.**
+
+| 지표 | EP 기준선 B | EP 후보 A |
+|---|---:|---:|
+| fixed1024 ×3 합산 tok/s | 72.97741 | 68.53325 |
+| fixed 구간 합산 engine step/s | 19.90260 | 19.93309 |
+| 2K best-warm TTFT / 입력 tok/s | 0.756s / 2815.58 | 0.721s / 2951.34 |
+| 32K 단일 TTFT / 입력 tok/s | 10.253s / 3174.11 | 10.126s / 3214.15 |
+| 128K 단일 TTFT / 입력 tok/s | 39.283s / 3272.66 | 39.312s / 3270.24 |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 1/8 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B 세 요청80.41462/70.19200/69.31725, A62.91417/74.95916/68.78004다.
+첫 토큰을 제외한3069를 세 decode 시간 합으로 나눈 값이며, 느린 회차를
+제외하지 않았다. engine step/s는 거의 같아 register/barrier 절감이 실제
+엔진 속도 개선으로 이어졌다고 볼 수 없다. 전체8요청 수용률은 B51.0685%,
+A48.9939%이며 fixed별 수용률로 재라벨하지 않는다. 출력 차이의 원인과
+한자 혼입을 특정 kernel 수치 오류에 귀속할 근거는 아직 없다.
+
+이번32K/128K 관측은 프리필이 일관되게 줄어드는 모습이 아니다. 다만
+B `cold_compile=true`, A 필드 없음 및 긴 입력별 단일 표본을 유지하며
+matched warm-prefill 개선이나 상충관계의 인과 증명으로 바꾸지 않는다.
+원본 judge의 `GATE FAIL: korean 1/8`, 종료코드4, 양쪽4rank ready 증거,
+요청·응답 해시 및 모든 구간을 그대로 보존했다.
+[실측 원본과 판정](measurements/glm53_ep_tiled_20260909/ep76_onepass3/README.md).
+
+CPU3(`29daef8b`)와 CPU4(`3fab1ce8`)는 각각181 tests·23 lowering을 통과했다.
+실제 FC1 scale register layout2048B/2stage 검증과 opt4개 REG96·STACK0·LOCAL0,
+shared99328B는 실행 전 검증이며 성능·서빙 품질 통과를 의미하지 않는다.
+두 실행의69개 PTX/cubin/resource는 바이트가 같았다. 중간v2 제출은
+main 변경 누락으로 GPU 점유 전에 거절됐고, 정상 merge 및 CPU4 재검증 뒤
+v3를 실행했다. [CPU3](measurements/glm53_ep_tiled_20260909/ep76_cpu3/README.md),
+[CPU4](measurements/glm53_ep_tiled_20260909/ep76_cpu4/README.md),
+[v2 제출 거절](measurements/glm53_ep_tiled_20260909/ep76_submit2_failed/README.md)을
+따로 보존한다. 기본값 `EP_DECODE_OPT=0`을 유지한다.
+
 ## GLM53 EP76 1차: 품질·실행 증거 통과, 76 tok/s 목표 미달 (2026-09-10)
 
 고정 소스 `b41d0da24059379d41c079626cc67c3e83cd14e3`, 정상 fleet
@@ -39,7 +82,7 @@
 후보는 FC2 SF6 복원 버퍼 분리·실제16행 scatter metadata와 PREP 검증 시
 두 번째 snapshot clone 제거를 결합했다. **A71.78687 tok/s로 절대 목표76
 미달이므로 채택하지 않는다.** B72.76702 대비 관측 차이는−1.34697%다.
-기존 EP 기본값과 v8 채택 기록은 유지하며, FC1 후속 후보는 준비 중·미측정이다.
+기존 EP 기본값과 v8 채택 기록은 유지한다. FC1 후속 결과는 위 항목에 별도로 기록했다.
 
 | 지표 | EP 기준선 B | EP 후보 A |
 |---|---:|---:|

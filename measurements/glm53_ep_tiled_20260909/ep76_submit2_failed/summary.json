@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "session": "epdecode76onepass0910v2",
+  "source_revision": "29daef8b95f3dd098ba24b2fae61b322d70ecb38",
+  "state": "startup-failed",
+  "accepted": false,
+  "startup_returncode": 3,
+  "launch_id": "dd5a8791af8f4aa4856b13848d8a6150",
+  "startup_process_pid": 1177218,
+  "no_gpu_hold_evidence": "Explicit PREPARE REFUSED (no GPU hold) in original startup log. disposition=started refers to the startup process, not a GPU workload.",
+  "missing_main_revision": "8855a7c4673c0b6063442ba5d96ee2692ca6d2d3",
+  "missing_paths": [
+    "build/glm53/glm53_fp8_dense.py",
+    "overlay/modules/glm53_model/glm53_fp8_dense.py"
+  ],
+  "gpu_measurement": null,
+  "new_source_cpu4_acceptance": null,
+  "native_prep_comparison": {
+    "overlay/modules/glm53_moe/moe_static_ep_tiled.py": {
+      "old_revision": "29daef8b95f3dd098ba24b2fae61b322d70ecb38",
+      "new_revision": "3fab1ce81a79936b3b76fa4d87b447d9f55bacba",
+      "sha256": "f4435778e3248d0fee3cf373fb95800475c38e2354e59600943574ccff6a4583",
+      "bytes": 138421,
+      "identical": true
+    },
+    "overlay/modules/glm53_runtime/glm53_prep_fused.py": {
+      "old_revision": "29daef8b95f3dd098ba24b2fae61b322d70ecb38",
+      "new_revision": "3fab1ce81a79936b3b76fa4d87b447d9f55bacba",
+      "sha256": "e66daae3f0dee55fb5f4f42ea7409cd62dc42e395f559db0d7266873b638371c",
+      "bytes": 64737,
+      "identical": true
+    }
+  },
+  "scope": "Local original startup refusal evidence and bounded git object byte comparison only; no remote reads, GPU, workload, service or queue action. This failure remains distinct from any later v3 outcome."
+}
