@@ -523,7 +523,7 @@ def compile_candidate(output, result):
                     assert len(args) == 36 and args[34] == 48 and kernel.reform_sf_pack is True
                     for index,shape in expected['tensor_shapes'].items():
                         assert list(args[int(index)].shape) == shape
-                    assert args[25].element_type == cutlass.Float32
+                    assert args[25].dtype == cutlass.Float32
                     seen.append(expected)
                     return real_compile(launch,*args,**kw)
                 md._DYNAMIC_KERNEL_CACHE.clear()
