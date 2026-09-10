@@ -7,6 +7,45 @@ nvcc (`-arch=sm_121a`) instead of JIT. 34차 §8 (2026-09-06) sunset the
 persistent v1 GEMM kernel and the MK_SEG_KDA block; their sections below
 are kept as history where they still explain a number.
 
+## V4.1 numerical contract after PR #518 (experimental, 2026-09-10)
+
+[PR #518](https://github.com/choiceoh/stkernel/pull/518) provides H4096/H5120
+and the separate **MHC_MAX_TOK=128** bound. This change builds on that code;
+GEMM/MLA retain their original geometry. It also repairs the host ABI: the
+Python caller sends `[tokens, iterations, hidden]`, but the C++ entry still
+accepted only two integers. Both the old two-integer form and PR518's
+three-integer form now work; invalid token counts and hidden sizes fail before
+pointer unpacking. A source-extracted host test exercises the actual entry.
+
+The new `_mhc_v41_call` / `run_mhc_v41` explicitly separates V4.1 math from
+the established fused contract:
+
+| Contract | Projection input | Collapse coefficient | Norm statistic |
+|---|---|---|---|
+| Legacy | FP32 post result before storing BF16 | Newly computed pre mix | FP32 collapse before storing BF16 |
+| V4.1 | BF16 post result converted to FP32 | Independent incoming pre mix | BF16 collapse converted to FP32 |
+
+V4.1 additionally returns the current pre mix for the next sublayer. Its
+reference config uses projection/norm epsilon `1e-20`, Sinkhorn/pre epsilon
+`1e-6`, and post multiplier `2`. Merely accepting H5120 does **not** implement
+this contract. The model call site must own and forward the correct pre mix.
+
+The V4.1 specialization uses FP32 projection weights, device-specific
+occupancy and geometry-specific persistent scratch prepared before capture.
+It also bounds token groups by the token count, removing weight loads for
+empty groups. The legacy schedule, BF16 packing and AR paths remain as in
+PR518. All MHC launches, including different contracts, must be serialized;
+the shared device ticket counters are not a concurrent-stream API.
+
+`probes/mk_mhc_geometry_bench.py` checks separate legacy and V4.1 references
+with nonzero projections, every output, and changed-input graph replay through
+the Python/native binding. Its compile-only path builds the whole extension
+without devices. The current fleet policy does not admit standalone GPU
+probes; no renamed onepass command bypasses that rule. No serving hook or
+profile enables the new V4.1 seam. Direct tok/s, TTFT, quality and GPU numerical
+acceptance remain required before adoption. See
+[the validation record](../../../measurements/dsv41_mhc_20260910/README.md).
+
 ## MK-GEMM is the W4 lane (the fp8 W8 arm was removed 2026-09-02)
 
 Weights are stored as e2m1 nibbles x one pow2 scale per 16 elements

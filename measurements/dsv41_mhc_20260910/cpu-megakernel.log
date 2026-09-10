@@ -1,0 +1,12 @@
+..[osar] consumer PDL CAPTURED numel=4096
+..[megakernel] mhc-bf16 large fallback CAPTURED T=12 storage=fp32
+[megakernel] mhc-bf16 CAPTURED T=6 cached=1
+[megakernel] mhc-bf16 large fallback CAPTURED T=12 storage=fp32
+[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True
+[megakernel] mhc-bf16 CAPTURED T=6 cached=1
+[megakernel] AR consumer MHC CAPTURED T=6 bf16=False vec4=False
+......................................................................
+----------------------------------------------------------------------
+Ran 74 tests in 3.133s
+
+OK

@@ -194,6 +194,7 @@ def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
 # ---------------------------------------------------------------------------
 _EXT = None
 _WS = None
+_MHC_WORKSPACES = {}  # V4.1 scratch stays alive for captured graphs.
 _ARMED = {"mhc": False, "mhc_pre": False, "gemm": False, "mla": False,
           "smlp2": False}
 
@@ -359,6 +360,43 @@ def _ensure_workspace(device):
     }
     return _WS
 
+
+def _ensure_mhc_workspace(device, hidden, contract="legacy"):
+    """Static scratch for a serialized MHC stream (not a concurrent pool).
+
+    The legacy contract keeps PR518's shared allocation and ABI. V4.1
+    scratch must be prepared eagerly before graph capture.
+    CUDA ticket counters are shared by MHC launches, so different geometries
+    and contracts must also be ordered on the same stream or by dependencies.
+    """
+    if hidden not in (HIDDEN, HIDDEN_V41) or contract not in ("legacy", "v41"):
+        raise ValueError("unsupported MHC geometry or contract")
+    if contract == "legacy":
+        return _ensure_workspace(device)
+    import torch
+
+    device = torch.device(device)
+    if device.type != "cuda":
+        raise ValueError("MHC workspace requires a CUDA device")
+    index = device.index if device.index is not None else torch.cuda.current_device()
+    key = (index, hidden, contract)
+    ws = _MHC_WORKSPACES.get(key)
+    if ws is None:
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError("prepare the MHC geometry workspace before graph capture")
+        chunks = hidden // 256
+        z = lambda *s, dt=torch.float32: torch.zeros(  # noqa: E731
+            *s, dtype=dt, device=device)
+        ws = {
+            "barrier_mhc": z(8, dt=torch.int32),
+            "yp": z(chunks * MHC_MAX_TOK * NOUT),
+            "rp": z(chunks * MHC_MAX_TOK),
+            "sq": z(chunks * MHC_MAX_TOK),
+            "pmix": z(MHC_MAX_TOK * HC),
+            "ol_stash": z(MHC_MAX_TOK * hidden, dt=torch.bfloat16),
+        }
+        _MHC_WORKSPACES[key] = ws
+    return ws
 
 # ---------------------------------------------------------------------------
 # weight quant for MK_SEG_GEMM. Own layout: e4m3 + fp32 pow2
@@ -1845,6 +1883,80 @@ def _mhc_bf16_weight(fn, hidden, *, ar_consumer=False):
         entry = (entry[0], entry[1], _mhc_bf16_vec4(entry[1], hidden))
         _MHC_BF16_CACHE[key] = entry
     return entry[2]
+
+
+def _validate_mhc_specialization(x, residual, post, comb, fn, scale, base,
+                                 norm, num_tokens, hidden, collapse_pre):
+    """Raw pointer bindings cannot check tensor bounds, dtype or placement."""
+    import torch
+
+    tensors = (
+        (x, (num_tokens, hidden), torch.bfloat16),
+        (residual, (num_tokens, HC, hidden), torch.bfloat16),
+        (post, (num_tokens, HC), torch.float32),
+        (fn, (NOUT, HC * hidden), torch.float32),
+        (scale, (3,), torch.float32),
+        (base, (NOUT,), torch.float32),
+        (norm, (hidden,), torch.bfloat16),
+    )
+    if collapse_pre is not None:
+        tensors += ((collapse_pre, (num_tokens, HC), torch.float32),)
+    if tuple(comb.shape) not in ((num_tokens, HC, HC), (num_tokens, HC * HC)):
+        raise ValueError("MHC comb must contain one 4x4 matrix per token")
+    tensors += ((comb, tuple(comb.shape), torch.float32),)
+    for tensor, shape, dtype in tensors:
+        if (tuple(tensor.shape) != shape or tensor.dtype != dtype
+                or tensor.device != x.device or not tensor.is_cuda
+                or not tensor.is_contiguous()):
+            raise ValueError("MHC specialization requires matching contiguous CUDA tensors")
+    if torch.device(x.device).index != torch.cuda.current_device():
+        raise ValueError("select the MHC input device before launching its current stream")
+
+def _mhc_v41_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
+                   hc_base, norm_weight, num_tokens, rms_eps, pre_eps,
+                   sinkhorn_eps, post_mult, norm_eps, sinkhorn_repeat, *,
+                   collapse_pre_mix):
+    """Experimental V4.1 post/mixes/pre/norm seam; no serving hook arms it.
+
+    The caller supplies the preceding sublayer's pre coefficients. Outputs
+    are residual, current post, current comb, normalized input, and current
+    pre (for the next sublayer). Projection and RMS consume BF16-rounded
+    values. Inputs and all MHC launches must be ordered on the current CUDA
+    stream, including calls to the legacy contract's shared ticket counters.
+    """
+    import torch
+
+    if len(residual_flat.shape) != 3:
+        raise ValueError("MHC residual must have shape [tokens, 4, hidden]")
+    hc_mult, hidden = residual_flat.shape[1:]
+    if (type(num_tokens) is not int or not _mk_mhc_eligible(num_tokens, hc_mult, hidden)
+            or residual_flat.shape[0] != num_tokens or collapse_pre_mix is None):
+        raise ValueError("unsupported V4.1 MHC geometry or missing collapse_pre_mix")
+    _validate_mhc_specialization(
+        x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale, hc_base,
+        norm_weight, num_tokens, hidden, collapse_pre_mix)
+    if (not all(math.isfinite(float(v)) and float(v) >= 0 for v in
+                (rms_eps, pre_eps, sinkhorn_eps, post_mult, norm_eps))
+            or min(float(rms_eps), float(sinkhorn_eps), float(norm_eps)) <= 0
+            or type(sinkhorn_repeat) is not int or not 1 <= sinkhorn_repeat <= 64):
+        raise ValueError("invalid V4.1 MHC numerical parameters")
+    ws = _ensure_mhc_workspace(x_flat.device, hidden, "v41")
+    residual_cur = torch.empty_like(residual_flat)
+    post_mix_cur = torch.empty(num_tokens, HC, dtype=torch.float32, device=x_flat.device)
+    comb_mix_cur = torch.empty(num_tokens, HC * HC, dtype=torch.float32, device=x_flat.device)
+    layer_input_cur = torch.empty(num_tokens, hidden, dtype=torch.bfloat16, device=x_flat.device)
+    next_pre = torch.empty(num_tokens, HC, dtype=torch.float32, device=x_flat.device)
+    _EXT.run_mhc_v41(
+        [x_flat.data_ptr(), residual_flat.data_ptr(), pm_flat.data_ptr(),
+         cm_flat.data_ptr(), fn.data_ptr(), hc_scale.data_ptr(),
+         hc_base.data_ptr(), norm_weight.data_ptr(), residual_cur.data_ptr(),
+         post_mix_cur.data_ptr(), comb_mix_cur.data_ptr(), layer_input_cur.data_ptr(),
+         ws["yp"].data_ptr(), ws["rp"].data_ptr(), ws["sq"].data_ptr(),
+         ws["pmix"].data_ptr(), ws["ol_stash"].data_ptr(), ws["barrier_mhc"].data_ptr(),
+         collapse_pre_mix.data_ptr(), next_pre.data_ptr()],
+        [float(rms_eps), float(pre_eps), float(sinkhorn_eps), float(post_mult), float(norm_eps)],
+        [num_tokens, sinkhorn_repeat], hidden)
+    return residual_cur, post_mix_cur, comb_mix_cur, layer_input_cur, next_pre
 
 
 def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,

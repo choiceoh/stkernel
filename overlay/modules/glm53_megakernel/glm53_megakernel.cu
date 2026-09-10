@@ -1538,6 +1538,13 @@ struct MKMhcArgs {
   int sinkhorn_repeat;
 };
 
+// Actual HF V4.1 passes the preceding sublayer's pre mix and returns its
+// own pre mix for the next sublayer. Keep PR518's legacy argument ABI intact.
+struct MKMhcV41Args : MKMhcArgs {
+  const float* collapse_pre_input;  // [T, HC]
+  float* current_pre_output;       // [T, HC]
+};
+
 // Per-token chunk arrivals (rearmed by the block that runs the token's
 // tail), the tail ticket counter, and the exit ticket whose last holder
 // rearms the tail counter -- so graph replay needs no host-side reset (the
@@ -1553,8 +1560,8 @@ __device__ __forceinline__ float mk_ldcg_bf16(const __nv_bfloat16* p) {
 // p2 for ONE token, by one warp: the 24 chunk reductions, rms, the post /
 // comb (sinkhorn) / pre mixes. Reads the other blocks' partials through
 // L2 (__ldcg): they were published with a fence + the arrival counter.
-template <int HID = HIDDEN>
-__device__ void mk_mhc_p2_token(const MKMhcArgs& a, int t, float* s_pmix) {
+template <int HID = HIDDEN, bool V41 = false, typename Args = MKMhcArgs>
+__device__ void mk_mhc_p2_token(const Args& a, int t, float* s_pmix) {
   // Shadows the file-scope NCHUNK so the chunk loops below read unchanged.
   constexpr int NCHUNK = HID / HCHUNK;
   // One warp, and as few DEPENDENT shuffles as possible: on this part a
@@ -1600,7 +1607,13 @@ __device__ void mk_mhc_p2_token(const MKMhcArgs& a, int t, float* s_pmix) {
         mk_sigmoid(post_in * hs1 + hb_post) * a.post_mult;
   }
   if (lane >= 2 * HC && lane < 3 * HC) {  // pre mixes: hc_scale[0], 8..11
-    s_pmix[lane & 3] = mk_sigmoid(pre_in * hs0 + hb_pre) + a.pre_eps;
+    if constexpr (V41) {
+      a.current_pre_output[t * HC + (lane & 3)] =
+          mk_sigmoid(pre_in * hs0 + hb_pre) + a.pre_eps;
+      s_pmix[lane & 3] = a.collapse_pre_input[t * HC + (lane & 3)];
+    } else {
+      s_pmix[lane & 3] = mk_sigmoid(pre_in * hs0 + hb_pre) + a.pre_eps;
+    }
   }
   if (lane == 0) {  // comb mixes: hc_scale[2] + sinkhorn, 4x4 in registers
     const float hb[HC][HC] = {{hbc0.x, hbc0.y, hbc0.z, hbc0.w},
@@ -1694,7 +1707,7 @@ __device__ __forceinline__ void mk_mhc_p34_load(const MKMhcArgs& a, int t,
   }
 }
 
-template <int HID = HIDDEN>
+template <int HID = HIDDEN, bool V41 = false>
 __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
                                    const float* s_pmix,
                                    const MhcTailRegs<HID>& r) {
@@ -1709,9 +1722,16 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
     float v = 0.0f;
 #pragma unroll
     for (int j = 0; j < HC; ++j) v += pre[j] * r.res[j][i];
-    sq += v * v;
-    // the old p3 stashed v as bf16 and p4 read it back: same rounding
-    vals[i] = __bfloat162float(__float2bfloat16(v));
+    if constexpr (V41) {
+      // HF hc_pre returns BF16: RMSNorm consumes the rounded numerator
+      // and denominator. Legacy fused math keeps its FP32 square sum.
+      vals[i] = __bfloat162float(__float2bfloat16(v));
+      sq += vals[i] * vals[i];
+    } else {
+      sq += v * v;
+      // the old p3 stashed v as bf16 and p4 read it back: same rounding
+      vals[i] = __bfloat162float(__float2bfloat16(v));
+    }
   }
   MK_MHC_PROBE(5);  // loads consumed, mixing done
 #pragma unroll
@@ -1741,8 +1761,9 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
   return make_float2(__uint_as_float(low), __uint_as_float(high));
 }
 
-template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN>
-__device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
+template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
+          bool V41 = false, typename Args = MKMhcArgs>
+__device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
   constexpr int NCHUNK = HID / HCHUNK;
   // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
@@ -1761,7 +1782,10 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
   //  * a token's p2 / p3 / p4 ("tail", ~4 us on one block) runs on
   //    whichever block is free: blocks that are done take tail tickets
   //    and wait on the token's chunk-arrival counter -- no grid barrier.
-  const int groups = max(1, a.grid / NCHUNK);  // token groups per chunk
+  // PR518's legacy schedule is unchanged. Only V4.1 skips fn loads for
+  // groups with no token; every live token/chunk keeps its owner and order.
+  const int groups = V41 ? min(a.num_tokens, max(1, a.grid / NCHUNK))
+                         : max(1, a.grid / NCHUNK);
   __shared__ float part[MK_THREADS][NOUT + 3];  // pitch 27: conflict-free
   __shared__ float s_pmix[HC];
   __shared__ int s_tok;
@@ -1835,9 +1859,19 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
       float r[HC], sqr = 0.0f;
 #pragma unroll
       for (int j = 0; j < HC; ++j) {
-        float v = pm[j] * xv;
+        float v;
+        if constexpr (V41) {
+          // HF hc_post reduces comb*res before post*x addition and returns
+          // BF16. Its projection and RMS statistic consume that tensor.
+          float comb_sum = 0.0f;
 #pragma unroll
-        for (int k = 0; k < HC; ++k) v += cm[k][j] * res[k];
+          for (int k = 0; k < HC; ++k) comb_sum += cm[k][j] * res[k];
+          v = __bfloat162float(__float2bfloat16(pm[j] * xv + comb_sum));
+        } else {
+          v = pm[j] * xv;
+#pragma unroll
+          for (int k = 0; k < HC; ++k) v += cm[k][j] * res[k];
+        }
         r[j] = v;
         a.residual_out[(size_t)t * HC * HID + j * HID + h] =
             __float2bfloat16(v);
@@ -1946,12 +1980,12 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
     if (warp != 0) mk_mhc_p34_load<HID>(a, t, tr);
     MK_MHC_PROBE(4);  // p34 loads issued
     if (warp == 0) {
-      mk_mhc_p2_token<HID>(a, t, s_pmix);
+      mk_mhc_p2_token<HID, V41>(a, t, s_pmix);
       mk_mhc_p34_load<HID>(a, t, tr);
     }
     __syncthreads();
     MK_MHC_TS(3);  // (probe) p2 end / p34 start
-    mk_mhc_p34_compute<HID>(a, t, s_pmix, tr);  // ends in a __syncthreads
+    mk_mhc_p34_compute<HID, V41>(a, t, s_pmix, tr);  // ends in a __syncthreads
     MK_MHC_TS(4);  // (probe) p34 end
   }
   MK_MHC_TS(6);
@@ -2007,6 +2041,16 @@ __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   MK_MHC_TS(0);
   mk_mhc_p1_impl<BF16_FN, true, HID>(a, blockIdx.x);
+  MK_MHC_TS(7);
+}
+
+// Actual V4.1 currently uses FP32 coefficients and no AR-consumer pack.
+template <int HID>
+__global__ void mk_mhc_v41_kernel(const MKMhcV41Args a) {
+  asm volatile("griddepcontrol.launch_dependents;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  MK_MHC_TS(0);
+  mk_mhc_p1_impl<false, false, HID, true>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
@@ -3246,8 +3290,16 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
-  TORCH_CHECK(ptrs.size() == 18 && ints.size() == 2 && scalars.size() == 5,
+  TORCH_CHECK(ptrs.size() == 18 && (ints.size() == 2 || ints.size() == 3) && scalars.size() == 5,
               "run_mhc arg contract");
+  // PR518 adds optional ints[2]. Validate the full int64 value before
+  // narrowing it or reading pointers; otherwise a huge value could wrap.
+  const int64_t hidden_arg = ints.size() == 3 ? ints[2] : HIDDEN;
+  TORCH_CHECK(hidden_arg == HIDDEN || hidden_arg == HIDDEN_V41,
+              "mhc: unsupported hidden size");
+  TORCH_CHECK(ints[0] > 0 && ints[0] <= MHC_MAX_TOK,
+              "mhc: token count outside compiled MHC bound");
+  const int hidden = static_cast<int>(hidden_arg);
   // A BF16 consumer pointer has the vector layout. Never silently send it
   // to the scalar-layout fallback when an internal caller breaks the gate.
   TORCH_CHECK(!ar_consumer || (mk_pdl_enabled() && ints[0] > 0 && ints[0] <= 8),
@@ -3281,15 +3333,86 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
 
   auto stream = c10::cuda::getCurrentCUDAStream();
   (void)stream;
-  // ints[2] is optional and absent from every existing caller, so the GLM-5.3
-  // and V4-Flash path resolves to HIDDEN exactly as it did before this
-  // parameter existed.
-  const int hidden = ints.size() > 2 ? (int)ints[2] : HIDDEN;
-  TORCH_CHECK(hidden == HIDDEN || hidden == HIDDEN_V41,
-              "mhc: hidden ", hidden, " has no instantiation (have ",
-              HIDDEN, ", ", HIDDEN_V41, ")");
   if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer);
   else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer);
+}
+
+// V4.1 has a separate occupancy cache from every legacy PR518 kernel.
+// Host-thread-local storage avoids races while growing a device-keyed cache;
+// shared device ticket counters still require serialized MHC invocation.
+template <int HID>
+static void mk_mhc_v41_launch(MKMhcV41Args a) {
+  static thread_local std::vector<int> grids;
+  int device = 0;
+  MK_CHECK_CUDA(cudaGetDevice(&device));
+  TORCH_CHECK(device >= 0, "invalid current CUDA device");
+  if (grids.size() <= static_cast<size_t>(device))
+    grids.resize(static_cast<size_t>(device) + 1, 0);
+  int& grid = grids[device];
+  auto kernel = mk_mhc_v41_kernel<HID>;
+  if (!grid) {
+    int per_sm = 0, sms = 0;
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &per_sm, kernel, MK_THREADS, 0));
+    MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, device));
+    grid = std::min(per_sm * sms, MK_MHC_GRID_CAP);
+    TORCH_CHECK(grid > 0, "V4.1 MHC has no resident blocks");
+  }
+  a.grid = grid;
+  mk_launch(kernel, grid, 0, c10::cuda::getCurrentCUDAStream(), a);
+}
+
+// Experimental HF V4.1 component seam. Unlike legacy run_mhc, this takes
+// two additional pointers and a separate hidden argument. FP32 reduction
+// order differs from framework GEMM/reductions: GPU tolerance proof is needed.
+void mk_run_mhc_v41(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                    std::vector<int64_t> ints, int hidden = HIDDEN_V41) {
+  TORCH_CHECK(ptrs.size() == 20 && ints.size() == 2 && scalars.size() == 5,
+              "run_mhc_v41 arg contract");
+  TORCH_CHECK(hidden == HIDDEN || hidden == HIDDEN_V41,
+              "V4.1 MHC hidden must be 4096 or 5120");
+  TORCH_CHECK(ints[0] > 0 && ints[0] <= MHC_MAX_TOK,
+              "V4.1 MHC token count outside compiled MHC bound");
+  TORCH_CHECK(ints[1] >= 1 && ints[1] <= 64,
+              "V4.1 MHC sinkhorn repeat must be 1..64");
+  for (int i = 0; i < 5; ++i) {
+    const float value = static_cast<float>(scalars[i]);
+    TORCH_CHECK(std::isfinite(scalars[i]) && std::isfinite(value),
+                "V4.1 MHC scalar must be finite in FP32");
+    TORCH_CHECK((i == 1 || i == 3) ? value >= 0.0f : value > 0.0f,
+                "V4.1 MHC RMS/norm/sinkhorn epsilon positive; pre/post nonnegative");
+  }
+  set_kernel_attrs();
+  MKMhcV41Args a{};
+  a.x_in = (const __nv_bfloat16*)ptrs[0];
+  a.residual_in = (const __nv_bfloat16*)ptrs[1];
+  a.post_mix_in = (const float*)ptrs[2];
+  a.comb_mix_in = (const float*)ptrs[3];
+  a.fn = (const float*)ptrs[4];
+  a.hc_scale = (const float*)ptrs[5];
+  a.hc_base = (const float*)ptrs[6];
+  a.norm_weight = (const __nv_bfloat16*)ptrs[7];
+  a.residual_out = (__nv_bfloat16*)ptrs[8];
+  a.post_mix_out = (float*)ptrs[9];
+  a.comb_mix_out = (float*)ptrs[10];
+  a.layer_input = (__nv_bfloat16*)ptrs[11];
+  a.yp = (float*)ptrs[12];
+  a.rp = (float*)ptrs[13];
+  a.sq = (float*)ptrs[14];
+  a.pmix = (float*)ptrs[15];
+  a.ol_stash = (__nv_bfloat16*)ptrs[16];
+  a.barrier_ctr = (unsigned long long*)ptrs[17];
+  a.collapse_pre_input = (const float*)ptrs[18];
+  a.current_pre_output = (float*)ptrs[19];
+  a.num_tokens = (int)ints[0];
+  a.sinkhorn_repeat = (int)ints[1];
+  a.rms_eps = (float)scalars[0];
+  a.pre_eps = (float)scalars[1];
+  a.sinkhorn_eps = (float)scalars[2];
+  a.post_mult = (float)scalars[3];
+  a.norm_eps = (float)scalars[4];
+  if (hidden == HIDDEN_V41) mk_mhc_v41_launch<HIDDEN_V41>(a);
+  else mk_mhc_v41_launch<HIDDEN>(a);
 }
 
 // MK_SEG_MLA. `splits` is chosen by the caller so T x splits fills the
@@ -3930,6 +4053,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("bf16_fn") = false,
         pybind11::arg("ar_consumer") = false);
+  m.def("run_mhc_v41", &mk_run_mhc_v41, "Experimental HF V4.1 MHC seam",
+        pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
+        pybind11::arg("hidden") = HIDDEN_V41);
   m.def("run_prep", &mk_run_prep, "MK_PREP: fused decode-step preparation (CUDA form of glm53_prep_fused)");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");
