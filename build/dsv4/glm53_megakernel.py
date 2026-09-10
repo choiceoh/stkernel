@@ -47,6 +47,30 @@ HIDDEN = 4096
 NOUT = HC * (2 + HC)
 MAX_TOK = 32
 NCHUNK = 16
+# The mHC segment's own token bound, mirroring MHC_MAX_TOK_DEF in the .cu.
+# (Its banner name is not written here: tests/test_logic.py slices this file at
+# the first occurrence of that name and an earlier one inverts the slice.)
+# Split from MAX_TOK because that constant is also the SMLP admission gate and the
+# MLA workspace cap: 32 was chosen for those, and it left this segment able to
+# serve only C <= 5 at SPEC_TOKENS 5 before falling silently back to the stock
+# pair. Widening costs workspace and nothing else -- the constant appears only
+# in strides, never in a per-thread array.
+MHC_MAX_TOK = 128
+# DeepSeek-V4.1-Flash. The .cu carries the matching HIDDEN_V41 and instantiates
+# the mHC segment at both; these mirror it so the host half can gate and size.
+# The segment's name is deliberately not spelled here: tests/test_logic.py
+# slices this file at the first occurrence of that banner, and an earlier one
+# inverts the slice.
+HIDDEN_V41 = 5120
+HIDDEN_SUPPORTED = (HIDDEN, HIDDEN_V41)
+# The workspace is allocated ONCE and its addresses are baked into captured
+# graphs, so it is sized for the largest supported hidden rather than for the
+# model that happens to load first. yp/rp/sq are indexed by chunk and the
+# kernel's chunk count is hidden/HCHUNK -- 16 at 4096, 20 at 5120 -- so a
+# workspace sized at 16 would be written past its end by the 5120 kernel, not
+# merely be a tight fit.
+HIDDEN_MAX = max(HIDDEN_SUPPORTED)
+NCHUNK_MAX = NCHUNK * HIDDEN_MAX // HIDDEN
 KDA_H, KDA_D = 16, 128
 KDA_QKV = 3 * KDA_H * KDA_D                 # 6144
 KDA_INPROJ_N = KDA_QKV + KDA_H + 2 * KDA_D  # 6416
@@ -153,9 +177,16 @@ def _mk_gemm_eligible(m: int, k: int, n_pad: int) -> bool:
             and n_pad % 128 == 0)
 
 
+# The flattened fn width the kernel reads, one per supported hidden. Kept as a
+# set rather than recomputed inline so that adding a hidden size cannot admit a
+# shape whose fn layout nobody checked.
+_MHC_FLAT_WIDTHS = frozenset(HC * h for h in HIDDEN_SUPPORTED)
+
+
 def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
-    return (0 < num_tokens <= 32 and hc_mult == 4 and hidden == 4096
-            and hc_mult * hidden == 16384)
+    return (0 < num_tokens <= MHC_MAX_TOK and hc_mult == HC
+            and hidden in HIDDEN_SUPPORTED
+            and hc_mult * hidden in _MHC_FLAT_WIDTHS)
 
 
 # ---------------------------------------------------------------------------
@@ -316,13 +347,15 @@ def _ensure_workspace(device):
         # kernels ran 48, and the ticket barrier only releases correctly
         # when the counter is aligned to THIS launch's grid.
         "barrier_mla": z(8, dt=torch.int32),
-        "yp": z(NCHUNK * MAX_TOK * NOUT),
-        "rp": z(NCHUNK * MAX_TOK),
+        # NCHUNK_MAX, not NCHUNK: the 5120 kernel indexes 20 chunks and this
+        # buffer is shared by every instantiation. See the note on HIDDEN_MAX.
+        "yp": z(NCHUNK_MAX * MHC_MAX_TOK * NOUT),
+        "rp": z(NCHUNK_MAX * MHC_MAX_TOK),
         # [NCHUNK][MAX_TOK]: p3 stores one sumsq per (chunk, token) and
         # p4 reduces them in a fixed order -- see the note in mk_mhc_p3.
-        "sq": z(NCHUNK * MAX_TOK),
-        "pmix": z(MAX_TOK * HC),
-        "ol_stash": z(MAX_TOK * HIDDEN, dt=torch.bfloat16),
+        "sq": z(NCHUNK_MAX * MHC_MAX_TOK),
+        "pmix": z(MHC_MAX_TOK * HC),
+        "ol_stash": z(MHC_MAX_TOK * HIDDEN_MAX, dt=torch.bfloat16),
     }
     return _WS
 
@@ -1763,17 +1796,17 @@ _AR_CONSUMER_OK = False
 _AR_CONSUMER_CAPTURED = set()
 
 
-def _mhc_bf16_vec4(packed):
+def _mhc_bf16_vec4(packed, hidden):
     # [output, stream, hidden] -> [output, hidden, stream]: one aligned
     # uint2 contains the four BF16 coefficients used by one CUDA thread.
-    return packed.view(NOUT, HC, HIDDEN).transpose(1, 2).contiguous()
+    return packed.view(NOUT, HC, hidden).transpose(1, 2).contiguous()
 
 
-def _mhc_bf16_weight(fn, *, ar_consumer=False):
+def _mhc_bf16_weight(fn, hidden, *, ar_consumer=False):
     import torch
 
     if (fn.dtype != torch.float32 or not fn.is_cuda
-            or tuple(fn.shape) != (NOUT, HC * HIDDEN) or not fn.is_contiguous()):
+            or tuple(fn.shape) != (NOUT, HC * hidden) or not fn.is_contiguous()):
         return None
     try:
         version = fn._version
@@ -1781,7 +1814,9 @@ def _mhc_bf16_weight(fn, *, ar_consumer=False):
         # Inference tensors have no mutation counter. Do not cache a copy
         # whose freshness cannot be checked by subsequent eager calls.
         return None
-    key = (fn.device, fn.data_ptr(), version)
+    # hidden is in the key because the two packs have different shapes and a
+    # pointer can be reused across a reload.
+    key = (fn.device, fn.data_ptr(), version, hidden)
     entry = _MHC_BF16_CACHE.get(key)
     if entry is None:
         if (torch.cuda.is_current_stream_capturing()
@@ -1796,7 +1831,7 @@ def _mhc_bf16_weight(fn, *, ar_consumer=False):
         # Prepare both immutable layouts on the first eager weight visit,
         # even when that shape uses the scalar kernel. Waiting until the
         # first small shape would miss the vector pack during capture.
-        vector = (_mhc_bf16_vec4(packed)
+        vector = (_mhc_bf16_vec4(packed, hidden)
                   if packed is not None and ENABLE_AR_CONSUMER else None)
         entry = (fn, packed, vector)
         _MHC_BF16_CACHE[key] = entry
@@ -1807,7 +1842,7 @@ def _mhc_bf16_weight(fn, *, ar_consumer=False):
             return None
         # Keep the old scalar pack alive for larger shapes and captured
         # graphs. Both layouts share one versioned entry/cache-limit slot.
-        entry = (entry[0], entry[1], _mhc_bf16_vec4(entry[1]))
+        entry = (entry[0], entry[1], _mhc_bf16_vec4(entry[1], hidden))
         _MHC_BF16_CACHE[key] = entry
     return entry[2]
 
@@ -1829,7 +1864,7 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
     ws = _ensure_workspace(x_flat.device)
     early = ((ENABLE_AR_CONSUMER and _AR_CONSUMER_OK) if _ar_consumer is None
              else bool(_ar_consumer)) and 0 < num_tokens <= 8
-    prepared = (_mhc_bf16_weight(fn, ar_consumer=early) if ENABLE_MHC_BF16 and _MHC_BF16_OK
+    prepared = (_mhc_bf16_weight(fn, hidden, ar_consumer=early) if ENABLE_MHC_BF16 and _MHC_BF16_OK
                 and not _fp32_fn else None)
     # The v4 boot failed the exact T=16 graph test on the ordinary BF16
     # storage path, while its FP32 fallback passed. Until the cause is known,
@@ -1869,7 +1904,10 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
          ws["ol_stash"].data_ptr(), ws["barrier_mhc"].data_ptr()],
         [float(rms_eps), float(pre_eps), float(sinkhorn_eps),
          float(post_mult), float(norm_eps)],
-        [num_tokens, int(sinkhorn_repeat)],
+        # ints[2] selects the instantiation. The C++ side defaults to HIDDEN
+        # when it is absent, so this stays compatible with any caller that
+        # predates the parameter.
+        [num_tokens, int(sinkhorn_repeat), int(hidden)],
         packed is not None,
         early,
     )
@@ -2092,7 +2130,7 @@ def _selftest_bf16_mhc() -> bool:
         # loaded Parameters; this gate must not pass by falling back.
         with torch.inference_mode(False):
             fn = (torch.randn(NOUT, HC * HIDDEN, device="cuda") * .02).bfloat16().float()
-        assert _mhc_bf16_weight(fn) is not None
+        assert _mhc_bf16_weight(fn, HIDDEN) is not None
         for t in (2, 6, 8):
             values = (torch.randn(t, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
                       torch.randn(t, HC, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
@@ -2169,7 +2207,7 @@ def _selftest_ar_consumer() -> bool:
             graph = torch.cuda.CUDAGraph()
             with torch.cuda.graph(graph):
                 if not fp32 and ENABLE_MHC_BF16:
-                    packed = _mhc_bf16_weight(fn, ar_consumer=t <= 8)
+                    packed = _mhc_bf16_weight(fn, HIDDEN, ar_consumer=t <= 8)
                     expected = (NOUT, HIDDEN, HC) if t <= 8 else (NOUT, HC * HIDDEN)
                     assert packed is not None and tuple(packed.shape) == expected
                 got = _mhc_call(*values, _fp32_fn=fp32, _ar_consumer=True)

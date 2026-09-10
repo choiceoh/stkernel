@@ -138,7 +138,7 @@ int main() {
         # is a byte-preserving permutation, independent of the finite gate.
         bits = torch.arange(-32768, 32768, dtype=torch.int32).to(torch.int16).repeat(6)
         original = bits.view(torch.bfloat16).view(24, 16384)
-        packed = m._mhc_bf16_vec4(original)
+        packed = m._mhc_bf16_vec4(original, 4096)
         self.assertEqual(tuple(packed.shape), (24, 4096, 4))
         self.assertTrue(packed.is_contiguous())
         flat = packed.view(torch.int16).flatten()
@@ -164,29 +164,29 @@ int main() {
         fake_torch = SimpleNamespace(float32='fp32', bfloat16='bf16', int32='int32',
             cuda=SimpleNamespace(is_current_stream_capturing=lambda: capture[0]),
             isfinite=lambda _: SimpleNamespace(all=lambda: True), equal=lambda *_: True)
-        m._mhc_bf16_vec4 = lambda _: Pack()
+        m._mhc_bf16_vec4 = lambda _, _hidden: Pack()
         with patch.dict(sys.modules, {'torch': fake_torch}):
-            scalar = m._mhc_bf16_weight(fn)
+            scalar = m._mhc_bf16_weight(fn, 4096)
             capture[0] = True
-            self.assertIsNone(m._mhc_bf16_weight(fn, ar_consumer=True))
-            self.assertIs(m._mhc_bf16_weight(fn), scalar)
+            self.assertIsNone(m._mhc_bf16_weight(fn, 4096, ar_consumer=True))
+            self.assertIs(m._mhc_bf16_weight(fn, 4096), scalar)
             capture[0] = False
-            vector = m._mhc_bf16_weight(fn, ar_consumer=True)
+            vector = m._mhc_bf16_weight(fn, 4096, ar_consumer=True)
             self.assertIsNot(vector, scalar)
             self.assertEqual(len(m._MHC_BF16_CACHE), 1)
             capture[0] = True
-            self.assertIs(m._mhc_bf16_weight(fn, ar_consumer=True), vector)
-            self.assertIs(m._mhc_bf16_weight(fn), scalar)
+            self.assertIs(m._mhc_bf16_weight(fn, 4096, ar_consumer=True), vector)
+            self.assertIs(m._mhc_bf16_weight(fn, 4096), scalar)
             capture[0] = False
             fn._version += 1
-            changed = m._mhc_bf16_weight(fn, ar_consumer=True)
+            changed = m._mhc_bf16_weight(fn, 4096, ar_consumer=True)
             self.assertIsNot(changed, vector)
             retained = list(m._MHC_BF16_CACHE.values())[0]
             self.assertIs(retained[1], scalar)
             self.assertIs(retained[2], vector)
             m._MHC_BF16_CACHE_LIMIT = 2
             fn._version += 1
-            self.assertIsNone(m._mhc_bf16_weight(fn, ar_consumer=True))
+            self.assertIsNone(m._mhc_bf16_weight(fn, 4096, ar_consumer=True))
 
     def test_large_warmup_prepares_first_small_capture_without_repacking(self):
         # Reproduce serving: T=12 visits the weight eagerly, then the graph
@@ -213,7 +213,7 @@ int main() {
                         return Tensor(*self.shape)
 
                 self_test = self
-                def vector_pack(_):
+                def vector_pack(_, _hidden):
                     self.assertFalse(capture[0], 'vector packing during capture')
                     pack = Tensor(24, 4096, 4)
                     packed_layouts.append(pack)

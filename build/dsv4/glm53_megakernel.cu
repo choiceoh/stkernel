@@ -90,8 +90,43 @@ constexpr int MK_WARPS = MK_THREADS / 32;
 // one of these before arming a segment).
 constexpr int HC = 4;                    // mhc_num_residual_streams
 constexpr int HIDDEN = 4096;
+// DeepSeek-V4.1-Flash. The MHC segment is the only one this second value
+// reaches, and it reaches it because the rest of the block geometry is
+// identical: hc_mult 4 (HC), hc_sinkhorn_iters 20 (SINKHORN_SERVED) and
+// hc_eps 1e-6 are V4.1's config values as much as GLM-5.3's and V4-Flash's.
+// 5120 divides HCHUNK (NCHUNK 20) and MK_THREADS (MHC_EPT 20), so the chunk
+// and the per-thread decomposition both stay integral and no tail block
+// appears. Everything below defaults to HIDDEN, so the GLM instantiation is
+// the same code it was before this parameter existed.
+constexpr int HIDDEN_V41 = 5120;
 constexpr int NOUT = HC * (2 + HC);      // 24 hc pre outputs
 constexpr int MAX_TOK = 32;              // C=4 x (SPEC_K+1) verify buckets
+// MK_SEG_MHC's own token bound, split from MAX_TOK in the V4.1 work.
+//
+// MAX_TOK was doing two unrelated jobs. It bounds this segment's workspace,
+// and it is ALSO the SMLP lane's admission gate (`T > MAX_TOK -> return None`)
+// and the MLA workspace cap (`max(need, 2 * MAX_TOK)`). Raising one raised all
+// three, which is why the MHC cap sat at a value chosen for a different lane:
+// 32 = C 4 x (SPEC_K 5 + 1) rounded up, and GLM-5.3 serves max_num_seqs 4 at
+// SPEC_TOKENS 5, so T = 24 with eight to spare. Any concurrency above C=5
+// silently falls back to the stock post+big_fuse pair -- not slower, ARMED AND
+// NOT RUNNING, which is the failure this fleet has been bitten by before.
+//
+// DeepSeek-V4.1-Flash makes that binding rather than tight: dspark_block_size
+// 5 over num_nextn_predict_layers 3. Splitting the constant costs workspace and
+// nothing else -- MHC_MAX_TOK appears only in pointer strides and one device
+// counter, never in a per-thread array, so registers and occupancy do not move.
+//
+// This lifts the KERNEL's gate. The other gate is the wrapper the hook sits in
+// (DSV4's is inside `use_small_fma`, T <= 16), and that one lives in the hook
+// module, not here.
+#ifndef MHC_MAX_TOK_DEF
+#define MHC_MAX_TOK_DEF 128
+#endif
+constexpr int MHC_MAX_TOK = MHC_MAX_TOK_DEF;
+static_assert(MHC_MAX_TOK >= MAX_TOK,
+              "MHC_MAX_TOK below MAX_TOK would narrow the segment rather than "
+              "widen it, and the host sizes its workspace from the same value");
 constexpr int HCHUNK = 256;
 constexpr int NCHUNK = HIDDEN / HCHUNK;  // 16
 
@@ -1470,7 +1505,7 @@ mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
 }
 
 // ===========================================================================
-// MK_SEG_MHC -- fused hc_post + hc_pre (+ RMSNorm), T <= MAX_TOK.
+// MK_SEG_MHC -- fused hc_post + hc_pre (+ RMSNorm), T <= MHC_MAX_TOK.
 // Port of mhc_fused_tilelang + mhc_pre_big_fuse_with_norm_tilelang
 // (overlay/modules/glm53_kernels/tilelang_kernels.py). Every rounding
 // point is kept: residual_out rounds the fp32 rnew to bf16 while the sqrsum
@@ -1490,12 +1525,12 @@ struct MKMhcArgs {
   float* post_mix_out;               // [T, HC]
   float* comb_mix_out;               // [T, HC*HC]
   __nv_bfloat16* layer_input;        // [T, HIDDEN]
-  float* yp;                         // ws [NCHUNK, MAX_TOK, NOUT]
-  float* rp;                         // ws [NCHUNK, MAX_TOK]
-  float* sq;                         // ws [MAX_TOK]
-  float* rsq;                        // ws [MAX_TOK]
-  float* pmix;                       // ws [MAX_TOK, HC]
-  __nv_bfloat16* ol_stash;           // ws [MAX_TOK, HIDDEN]
+  float* yp;                         // ws [NCHUNK, MHC_MAX_TOK, NOUT]
+  float* rp;                         // ws [NCHUNK, MHC_MAX_TOK]
+  float* sq;                         // ws [MHC_MAX_TOK]
+  float* rsq;                        // ws [MHC_MAX_TOK]
+  float* pmix;                       // ws [MHC_MAX_TOK, HC]
+  __nv_bfloat16* ol_stash;           // ws [MHC_MAX_TOK, HIDDEN]
   unsigned long long* barrier_ctr;
   int grid;          // resident blocks; see MK_MHC_GRID_CAP
   int num_tokens;
@@ -1507,7 +1542,7 @@ struct MKMhcArgs {
 // tail), the tail ticket counter, and the exit ticket whose last holder
 // rearms the tail counter -- so graph replay needs no host-side reset (the
 // tile counters' trick, twice).
-__device__ unsigned int g_mk_mhc_tok_arrive[MAX_TOK];
+__device__ unsigned int g_mk_mhc_tok_arrive[MHC_MAX_TOK];
 __device__ unsigned int g_mk_mhc_tail_next = 0u;
 __device__ unsigned int g_mk_mhc_exit = 0u;
 
@@ -1518,7 +1553,10 @@ __device__ __forceinline__ float mk_ldcg_bf16(const __nv_bfloat16* p) {
 // p2 for ONE token, by one warp: the 24 chunk reductions, rms, the post /
 // comb (sinkhorn) / pre mixes. Reads the other blocks' partials through
 // L2 (__ldcg): they were published with a fence + the arrival counter.
+template <int HID = HIDDEN>
 __device__ void mk_mhc_p2_token(const MKMhcArgs& a, int t, float* s_pmix) {
+  // Shadows the file-scope NCHUNK so the chunk loops below read unchanged.
+  constexpr int NCHUNK = HID / HCHUNK;
   // One warp, and as few DEPENDENT shuffles as possible: on this part a
   // dependent shuffle step in this tail measured ~0.15 us (the 5-step rms
   // reduce 0.75 us, the 16-step lane-parallel sinkhorn ~3.5 us, and a
@@ -1539,13 +1577,13 @@ __device__ void mk_mhc_p2_token(const MKMhcArgs& a, int t, float* s_pmix) {
   if (lane < NOUT) {
 #pragma unroll
     for (int c = 0; c < NCHUNK; ++c)
-      mine += __ldcg(&a.yp[((size_t)c * MAX_TOK + t) * NOUT + lane]);
+      mine += __ldcg(&a.yp[((size_t)c * MHC_MAX_TOK + t) * NOUT + lane]);
   } else if (lane == NOUT) {
 #pragma unroll
-    for (int c = 0; c < NCHUNK; ++c) mine += __ldcg(&a.rp[c * MAX_TOK + t]);
+    for (int c = 0; c < NCHUNK; ++c) mine += __ldcg(&a.rp[c * MHC_MAX_TOK + t]);
   }
   MK_MHC_PROBE(1);  // partial sums landed
-  const float rms_l = rsqrtf(mine / (float)(HC * HIDDEN) + a.rms_eps);
+  const float rms_l = rsqrtf(mine / (float)(HC * HID) + a.rms_eps);
   const float rms = __shfl_sync(0xffffffffu, rms_l, NOUT);
   const float mixv = mine * rms;
   const float post_in = __shfl_sync(0xffffffffu, mixv, HC + (lane & 3));
@@ -1634,35 +1672,40 @@ __device__ void mk_mhc_p2_token(const MKMhcArgs& a, int t, float* s_pmix) {
 // trips and their two grid barriers are gone. The residual loads do not
 // depend on p2, so every warp issues them BEFORE warp 0 runs p2 (load
 // phase) and only the mixing runs after (compute phase).
-constexpr int MHC_EPT = HIDDEN / MK_THREADS;  // 16 elements per thread
+template <int HID = HIDDEN>
 struct MhcTailRegs {
-  float res[HC][MHC_EPT];
-  float nw[MHC_EPT];
+  static constexpr int MHC_EPT_ = HID / MK_THREADS;
+  float res[HC][MHC_EPT_];
+  float nw[MHC_EPT_];
 };
 
+template <int HID = HIDDEN>
 __device__ __forceinline__ void mk_mhc_p34_load(const MKMhcArgs& a, int t,
-                                                MhcTailRegs& r) {
+                                                MhcTailRegs<HID>& r) {
+  constexpr int MHC_EPT_ = HID / MK_THREADS;
 #pragma unroll
-  for (int i = 0; i < MHC_EPT; ++i) {
+  for (int i = 0; i < MHC_EPT_; ++i) {
     const int h = i * MK_THREADS + threadIdx.x;
 #pragma unroll
     for (int j = 0; j < HC; ++j)
-      r.res[j][i] = mk_ldcg_bf16(a.residual_out + (size_t)t * HC * HIDDEN +
-                                 j * HIDDEN + h);
+      r.res[j][i] = mk_ldcg_bf16(a.residual_out + (size_t)t * HC * HID +
+                                 j * HID + h);
     r.nw[i] = __bfloat162float(a.norm_weight[h]);
   }
 }
 
+template <int HID = HIDDEN>
 __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
                                    const float* s_pmix,
-                                   const MhcTailRegs& r) {
+                                   const MhcTailRegs<HID>& r) {
+  constexpr int MHC_EPT_ = HID / MK_THREADS;
   __shared__ float sqred[MK_WARPS];
   float pre[HC];
 #pragma unroll
   for (int j = 0; j < HC; ++j) pre[j] = s_pmix[j];
-  float vals[MHC_EPT], sq = 0.0f;
+  float vals[MHC_EPT_], sq = 0.0f;
 #pragma unroll
-  for (int i = 0; i < MHC_EPT; ++i) {
+  for (int i = 0; i < MHC_EPT_; ++i) {
     float v = 0.0f;
 #pragma unroll
     for (int j = 0; j < HC; ++j) v += pre[j] * r.res[j][i];
@@ -1678,11 +1721,11 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
   float tot = 0.0f;
 #pragma unroll
   for (int w = 0; w < MK_WARPS; ++w) tot += sqred[w];
-  const float rsq = rsqrtf(tot / (float)HIDDEN + a.norm_eps);
+  const float rsq = rsqrtf(tot / (float)HID + a.norm_eps);
 #pragma unroll
-  for (int i = 0; i < MHC_EPT; ++i) {
+  for (int i = 0; i < MHC_EPT_; ++i) {
     const int h = i * MK_THREADS + threadIdx.x;
-    a.layer_input[t * HIDDEN + h] =
+    a.layer_input[t * HID + h] =
         __float2bfloat16(vals[i] * rsq * r.nw[i]);
   }
   __syncthreads();  // sqred reuse
@@ -1698,8 +1741,10 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
   return make_float2(__uint_as_float(low), __uint_as_float(high));
 }
 
-template <bool BF16_FN, bool AR_CONSUMER = false>
+template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN>
 __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
+  // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
+  constexpr int NCHUNK = HID / HCHUNK;
   // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
   // streams for this thread's h -- lives in 96 REGISTERS, loaded once, and
   // the group's tokens run against it. At T=8 the old (token, chunk)-pair
@@ -1725,11 +1770,11 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
   // ahead so the chain does not open with a global round trip
   auto load_tok = [&](int t, int h, float& xv_, float (&res_)[HC],
                       float (&pm_)[HC], float (&cm_)[HC][HC]) {
-    xv_ = __bfloat162float(a.x_in[t * HIDDEN + h]);
+    xv_ = __bfloat162float(a.x_in[t * HID + h]);
 #pragma unroll
     for (int k = 0; k < HC; ++k)
       res_[k] = __bfloat162float(
-          a.residual_in[(size_t)t * HC * HIDDEN + k * HIDDEN + h]);
+          a.residual_in[(size_t)t * HC * HID + k * HID + h]);
 #pragma unroll
     for (int j = 0; j < HC; ++j) {
       pm_[j] = a.post_mix_in[t * HC + j];
@@ -1759,7 +1804,7 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
       for (int m = 0; m < NOUT; ++m) {
         // An ordinary vector load participates in the memory clobber below.
         // __ldg is a read-only intrinsic that nvcc can sink past that wait.
-        fnv[m] = ((const uint2*)a.fn)[(size_t)m * HIDDEN + h];
+        fnv[m] = ((const uint2*)a.fn)[(size_t)m * HID + h];
       }
     } else {
 #pragma unroll
@@ -1768,9 +1813,9 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
         for (int j = 0; j < HC; ++j)
           if constexpr (BF16_FN)
             fnr[m][j] = __bfloat162float(((const __nv_bfloat16*)a.fn)[
-                (size_t)m * HC * HIDDEN + j * HIDDEN + h]);
+                (size_t)m * HC * HID + j * HID + h]);
           else
-            fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
+            fnr[m][j] = a.fn[(size_t)m * HC * HID + j * HID + h];
     }
     if constexpr (AR_CONSUMER) {
       // Only immutable model weights were read above. Keep the exact same
@@ -1794,7 +1839,7 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
 #pragma unroll
         for (int k = 0; k < HC; ++k) v += cm[k][j] * res[k];
         r[j] = v;
-        a.residual_out[(size_t)t * HC * HIDDEN + j * HIDDEN + h] =
+        a.residual_out[(size_t)t * HC * HID + j * HID + h] =
             __float2bfloat16(v);
         sqr += v * v;
       }
@@ -1833,9 +1878,9 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
         for (int off = 4; off; off >>= 1) v += __shfl_xor_sync(~0u, v, off);
         if (l8 == 0 && m <= NOUT) {
           if (m < NOUT)
-            a.yp[((size_t)c * MAX_TOK + t) * NOUT + m] = v;
+            a.yp[((size_t)c * MHC_MAX_TOK + t) * NOUT + m] = v;
           else
-            a.rp[c * MAX_TOK + t] = v;
+            a.rp[c * MHC_MAX_TOK + t] = v;
         }
       }
       // publish every second token (and the last): the fence + sync +
@@ -1895,18 +1940,18 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
     }
     __syncthreads();
     MK_MHC_TS(2);  // (probe) last tail's p2 start
-    MhcTailRegs tr;
+    MhcTailRegs<HID> tr;
     // warps 1..7 issue their p34 loads under p2; warp 0 loads after its
     // p2 so the sinkhorn chain is not squeezed for registers by them
-    if (warp != 0) mk_mhc_p34_load(a, t, tr);
+    if (warp != 0) mk_mhc_p34_load<HID>(a, t, tr);
     MK_MHC_PROBE(4);  // p34 loads issued
     if (warp == 0) {
-      mk_mhc_p2_token(a, t, s_pmix);
-      mk_mhc_p34_load(a, t, tr);
+      mk_mhc_p2_token<HID>(a, t, s_pmix);
+      mk_mhc_p34_load<HID>(a, t, tr);
     }
     __syncthreads();
     MK_MHC_TS(3);  // (probe) p2 end / p34 start
-    mk_mhc_p34_compute(a, t, s_pmix, tr);  // ends in a __syncthreads
+    mk_mhc_p34_compute<HID>(a, t, s_pmix, tr);  // ends in a __syncthreads
     MK_MHC_TS(4);  // (probe) p34 end
   }
   MK_MHC_TS(6);
@@ -1924,10 +1969,12 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
   }
 }
 
+template <int HID = HIDDEN>
 __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
-  mk_mhc_p1_impl<false>(a, bid);
+  mk_mhc_p1_impl<false, false, HID>(a, bid);
 }
 
+template <int HID = HIDDEN>
 __global__ void mk_mhc_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
@@ -1937,10 +1984,11 @@ __global__ void mk_mhc_kernel(const MKMhcArgs a) {
   // barrier anywhere in this kernel. (There used to be three: p1|p2,
   // p2|p3 and the p3|p4 that a p3 storing sumsq per chunk had already
   // retired.)
-  mk_mhc_p1(a, blockIdx.x);
+  mk_mhc_p1<HID>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
+template <int HID = HIDDEN>
 __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
@@ -1950,15 +1998,15 @@ __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
   // barrier anywhere in this kernel. (There used to be three: p1|p2,
   // p2|p3 and the p3|p4 that a p3 storing sumsq per chunk had already
   // retired.)
-  mk_mhc_p1_impl<true>(a, blockIdx.x);
+  mk_mhc_p1_impl<true, false, HID>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN>
+template <bool BF16_FN, int HID = HIDDEN>
 __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   MK_MHC_TS(0);
-  mk_mhc_p1_impl<BF16_FN, true>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HID>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
@@ -3125,6 +3173,73 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 //       pm_out, cm_out, layer_in, yp, rp, sq, pmix, ol_stash, barrier
 // ints: num_tokens, sinkhorn_repeat
 // scalars: rms_eps, pre_eps, sinkhorn_eps, post_mult, norm_eps
+// The grid caches below are `static` INSIDE this template, so each hidden
+// size gets its own -- which is required rather than tidy: MHC_EPT grows
+// 16 -> 20 at HID 5120, res[HC][MHC_EPT] and the two MHC_EPT-wide scratch
+// arrays grow with it, and a register allocation that changes changes
+// occupancy. Sharing one cached grid across instantiations would launch the
+// 5120 kernel on a residency measured for 4096 and deadlock its barrier.
+template <int HID>
+static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  // Separate occupancy for both new instantiations. Only immutable fn may
+  // be prepared early, and only when the caller opted into the PDL chain.
+  // A serialized launch remains correct: overlap is opportunistic.
+  if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 8) {
+    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID> : mk_mhc_ar_kernel<false, HID>;
+    static int ar_grids[2] = {0, 0};
+    int& grid = ar_grids[bf16_fn ? 1 : 0];
+    if (!grid) {
+      int per_sm = 0, sms = 0;
+      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &per_sm, kernel, MK_THREADS, 0));
+      MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
+      // Packed coefficients fit two CTAs per SM, but doubling the token
+      // groups also doubles fn traffic and delays release of the next grid.
+      // Keep one CTA per SM so the saved registers remain available to the
+      // overlapping AR/input-pack/GEMM kernels. Still verify residency.
+      grid = std::min(std::min(per_sm, 1) * sms, MK_MHC_GRID_CAP);
+      TORCH_CHECK(grid > 0, "AR consumer MHC has no resident blocks");
+    }
+    a.grid = grid;
+    mk_launch(kernel, grid, 0, stream, a);
+    return;
+  }
+  // A persistent grid must be fully resident or the grid barrier deadlocks.
+  // Ask the device rather than assume, and clamp to what it answers. Cached
+  // because the barrier's ticket arithmetic also needs the grid to be the
+  // SAME on every launch.
+  // The BF16 path differs only in lossless weight loads. Its register
+  // allocation may differ, so its persistent grid needs its own occupancy.
+  if (bf16_fn) {
+    static int bf16_grid = 0;
+    if (!bf16_grid) {
+      int per_sm = 0, sms = 0;
+      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &per_sm, mk_mhc_bf16_kernel<HID>, MK_THREADS, 0));
+      MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
+      bf16_grid = std::min(per_sm * sms, MK_MHC_GRID_CAP);
+      TORCH_CHECK(bf16_grid > 0, "bf16 mhc has no resident blocks");
+    }
+    a.grid = bf16_grid;
+    mk_launch(mk_mhc_bf16_kernel<HID>, bf16_grid, 0, stream, a);
+    return;
+  }
+  static int mhc_grid = 0;
+  if (mhc_grid == 0) {
+    int per_sm = 0, sms = 0;
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &per_sm, mk_mhc_kernel<HID>, MK_THREADS, 0));
+    MK_CHECK_CUDA(cudaDeviceGetAttribute(
+        &sms, cudaDevAttrMultiProcessorCount, 0));
+    mhc_grid = per_sm * sms;
+    if (mhc_grid > MK_MHC_GRID_CAP) mhc_grid = MK_MHC_GRID_CAP;
+    TORCH_CHECK(mhc_grid > 0, "mhc has no resident blocks");
+  }
+  a.grid = mhc_grid;
+  mk_launch(mk_mhc_kernel<HID>, mhc_grid, 0, stream, a);
+}
+
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints, bool bf16_fn = false,
                 bool ar_consumer = false) {
@@ -3165,62 +3280,16 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.norm_eps = (float)scalars[4];
 
   auto stream = c10::cuda::getCurrentCUDAStream();
-  // Separate occupancy for both new instantiations. Only immutable fn may
-  // be prepared early, and only when the caller opted into the PDL chain.
-  // A serialized launch remains correct: overlap is opportunistic.
-  if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 8) {
-    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true> : mk_mhc_ar_kernel<false>;
-    static int ar_grids[2] = {0, 0};
-    int& grid = ar_grids[bf16_fn ? 1 : 0];
-    if (!grid) {
-      int per_sm = 0, sms = 0;
-      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-          &per_sm, kernel, MK_THREADS, 0));
-      MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
-      // Packed coefficients fit two CTAs per SM, but doubling the token
-      // groups also doubles fn traffic and delays release of the next grid.
-      // Keep one CTA per SM so the saved registers remain available to the
-      // overlapping AR/input-pack/GEMM kernels. Still verify residency.
-      grid = std::min(std::min(per_sm, 1) * sms, MK_MHC_GRID_CAP);
-      TORCH_CHECK(grid > 0, "AR consumer MHC has no resident blocks");
-    }
-    a.grid = grid;
-    mk_launch(kernel, grid, 0, stream, a);
-    return;
-  }
-  // A persistent grid must be fully resident or the grid barrier deadlocks.
-  // Ask the device rather than assume, and clamp to what it answers. Cached
-  // because the barrier's ticket arithmetic also needs the grid to be the
-  // SAME on every launch.
-  // The BF16 path differs only in lossless weight loads. Its register
-  // allocation may differ, so its persistent grid needs its own occupancy.
-  if (bf16_fn) {
-    static int bf16_grid = 0;
-    if (!bf16_grid) {
-      int per_sm = 0, sms = 0;
-      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-          &per_sm, mk_mhc_bf16_kernel, MK_THREADS, 0));
-      MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
-      bf16_grid = std::min(per_sm * sms, MK_MHC_GRID_CAP);
-      TORCH_CHECK(bf16_grid > 0, "bf16 mhc has no resident blocks");
-    }
-    a.grid = bf16_grid;
-    mk_launch(mk_mhc_bf16_kernel, bf16_grid, 0, stream, a);
-    return;
-  }
-  static int mhc_grid = 0;
-  if (mhc_grid == 0) {
-    int per_sm = 0, sms = 0;
-    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-        &per_sm, mk_mhc_kernel, MK_THREADS, 0));
-    MK_CHECK_CUDA(cudaDeviceGetAttribute(
-        &sms, cudaDevAttrMultiProcessorCount, 0));
-    mhc_grid = per_sm * sms;
-    if (mhc_grid > MK_MHC_GRID_CAP) mhc_grid = MK_MHC_GRID_CAP;
-    TORCH_CHECK(mhc_grid > 0, "mhc has no resident blocks");
-  }
-  a.grid = mhc_grid;
-  mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);
+  (void)stream;
+  // ints[2] is optional and absent from every existing caller, so the GLM-5.3
+  // and V4-Flash path resolves to HIDDEN exactly as it did before this
+  // parameter existed.
+  const int hidden = ints.size() > 2 ? (int)ints[2] : HIDDEN;
+  TORCH_CHECK(hidden == HIDDEN || hidden == HIDDEN_V41,
+              "mhc: hidden ", hidden, " has no instantiation (have ",
+              HIDDEN, ", ", HIDDEN_V41, ")");
+  if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer);
+  else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer);
 }
 
 // MK_SEG_MLA. `splits` is chosen by the caller so T x splits fills the
