@@ -141,3 +141,28 @@ modes to differ.
 `--dense tp` aborts in `build`. It is planned and accounted for, but the model
 side does not read a split dense tensor yet, and a file written now would load
 and compute garbage.
+
+## The sliding-window KV ring
+
+Every attention layer attends over a window of raw KV; the layers with
+`compress_ratio > 0` concatenate compressed positions after it.
+`dsv41_window.py` is the window half -- where a token's KV is written, and
+which slots a query may read -- and both are pure index arithmetic, so they are
+held to the reference exactly rather than within a tolerance.
+
+The whole invariant is `slot = position % window_size`. Decode satisfies it
+directly. Prefill does not: it seeds the ring from the last `window` tokens of
+the chunk with a rotated two-part copy, and it is the rotation that makes the
+invariant hold for the decode steps that follow. Seed it without the rotation
+and the cache still holds every surviving token exactly once -- nothing about
+it looks wrong -- while every slot is off by `seqlen % window`, so the first
+decode step reads real, plausible tokens from the wrong positions.
+`probes/dsv41_window_diff.py` checks the ring against the invariant rather
+than against a second implementation, and includes that seed as a control:
+it misplaces all 64 of 64 slots while losing nothing.
+
+The second thing worth writing down is that the returned ids live in TWO index
+spaces, chosen by `start_pos`: prefill ids index the CHUNK (one causal row per
+query), decode ids index the RING (one row, oldest first). `window_kv_len`
+exists so `dsv41_sparse_contract.check_topk_idxs` can be given the right bound
+and the distinction becomes a checked contract instead of a comment.
