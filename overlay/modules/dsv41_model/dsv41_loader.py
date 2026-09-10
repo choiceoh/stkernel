@@ -103,12 +103,22 @@ def route(name: str) -> Route:
 
 
 def wanted_by(name: str, rank: int, world_size: int,
-              n_routed_experts: int, dspark_experts: int) -> bool:
+              n_routed_experts: int, dspark_experts: int,
+              mtp: str = "replicate") -> bool:
     """Does this rank load this tensor?
 
     Only routed experts are rank-local; everything else is replicated, which is
     what tools/dsv41_preshard.py writes and why the two must agree. The engram
     tables are wanted by no rank: they are not loaded at all.
+
+    `mtp` is the DSpark block, and it is a MODE rather than a fact. This used
+    to shard its 128 experts unconditionally while the builder replicated them,
+    a disagreement of 1,728 tensors per rank -- and it went unnoticed because
+    the probe that compares the two excluded `mtp.` from the comparison. The
+    default here is `replicate` because that is what the builder writes and
+    what this fleet's draft_tensor_parallel_size=1 means; `ep` exists so that
+    a build made with --mtp ep can be read by a loader told the same thing,
+    and neither side may pick on its own.
     """
     from dsv41_layers import expert_rank
 
@@ -117,5 +127,10 @@ def wanted_by(name: str, rank: int, world_size: int,
         return False
     if r.expert is None:
         return True
-    total = dspark_experts if name.startswith("mtp.") else n_routed_experts
-    return expert_rank(r.expert, total, world_size) == rank
+    if name.startswith("mtp."):
+        if mtp == "replicate":
+            return True
+        if mtp != "ep":
+            raise ValueError(f"mtp must be 'replicate' or 'ep', not {mtp!r}")
+        return expert_rank(r.expert, dspark_experts, world_size) == rank
+    return expert_rank(r.expert, n_routed_experts, world_size) == rank

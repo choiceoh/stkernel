@@ -18,7 +18,7 @@ import __future__
 # tests and load_defs AST match main. PR #508 adds the video-slot assertion;
 # PR #509 parses the already-read boot-stamp phase table and TARGETS strings.
 # Dependency access graphs and source closure are unchanged.
-LOGIC_AUDIT = 'd428b44c9a995679cc1d9ac254e3a74064fe8d88c44b1f315f95acfaa03a8dc0'
+LOGIC_AUDIT = 'c61c781c80b7d67a6519a72f469d8be43a7d89bba5d54ead9d1e6bc66a6ab945'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

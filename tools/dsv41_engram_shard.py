@@ -333,6 +333,12 @@ def main() -> int:
         p.add_argument("--only-layer", type=int, default=None)
         p.add_argument("--only-rank", type=int, default=None)
     args = ap.parse_args()
+    # EngramConfig refuses ENGRAM_BACKEND=ssd without ENGRAM_SHARD_DIR, which
+    # is right for a serving rank -- it must never silently fall back. Here
+    # --out already says where the shards go, so asking for the same fact
+    # twice only makes the tool fail on a path it was told.
+    if getattr(args, "out", None):
+        os.environ.setdefault("ENGRAM_SHARD_DIR", str(args.out))
     return {"plan": cmd_plan, "build": cmd_build,
             "verify": cmd_verify, "selftest": cmd_selftest}[args.cmd](args)
 

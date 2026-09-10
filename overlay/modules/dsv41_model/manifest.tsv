@@ -13,3 +13,4 @@ dsv41_sparse_contract.py	vllm/models/dsv41/dsv41_sparse_contract.py	absent
 dsv41_packed_index.py	vllm/models/dsv41/dsv41_packed_index.py	absent
 dsv41_packed_index_triton.py	vllm/models/dsv41/dsv41_packed_index_triton.py	absent
 dsv41_packed_reference_adapter.py	vllm/models/dsv41/dsv41_packed_reference_adapter.py	absent
+dsv41_preshard_load.py	vllm/models/dsv41/dsv41_preshard_load.py	absent

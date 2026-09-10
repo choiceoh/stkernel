@@ -107,3 +107,37 @@ attention outputs, and a matched consumer benchmark including decode tok/s,
 step/s, TTFT and quality. Current fleet policy admits canonical consumer
 campaigns, not arbitrary component GPU scripts. CPU tests or offline compilation
 must not be recorded as GPU validation.
+
+## Reading a pre-sharded rank file
+
+`dsv41_preshard_load.py` is the loader half of `tools/dsv41_preshard.py`. The
+builder writes one safetensors per rank -- 84.7 GiB for rank 0 of 4, measured,
+against 475.2 GiB for the whole checkpoint -- and leaves expert names at their
+GLOBAL ids on purpose: a file that renumbered them is indistinguishable from a
+correct one once written. The renumbering happens here, where the rank is
+known.
+
+Every rank file has the same dtypes, the same shapes and nearly the same size,
+so nothing about the DATA says which rank it is. The builder therefore records
+`__metadata__` (rank, world size, `--dense`, `--mtp`, expert counts) and
+`require()` refuses a file that disagrees. A file built before that existed
+falls back to its filename and is refused unless `allow_unstated=True`.
+
+`probes/dsv41_preshard_load.py` holds both halves to the same partition, and
+found a real disagreement on its first run: `wanted_by` sharded the DSpark
+block's 128 experts across ranks while the builder replicated them -- 1,728
+tensors per rank. It had gone unnoticed because
+`probes/dsv41_loader_route.py` excluded `mtp.` from its comparison, with a
+comment explaining why that was reasonable. Both sides now take an `mtp` mode,
+the default (`replicate`) matches this fleet's `draft_tensor_parallel_size=1`,
+and the probe compares the full name set in both modes and requires the two
+modes to differ.
+
+| | rank 0 tensors | of which DSpark |
+|---|---|---|
+| `--mtp replicate` | 26,961 | 2,401 |
+| `--mtp ep` | 25,233 | 673 |
+
+`--dense tp` aborts in `build`. It is planned and accounted for, but the model
+side does not read a split dense tensor yet, and a file written now would load
+and compute garbage.
