@@ -1,0 +1,31 @@
+{
+  "original_sha256": "12c9b3a43f71352ecb2ff4665057a16cde34b1f070dbaa749fa7a6be68487e43",
+  "owner_pid": "1954013",
+  "owner_start_tick": "52189287",
+  "record": {
+    "finished_at": 1789021053.0533197,
+    "outcome": "succeeded",
+    "payload_finished_at": 1789021052.655349,
+    "payload_returncode": 0,
+    "phase": "finished",
+    "pid": 1954013,
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 0,
+    "session": "epdecode76onepass0910v6",
+    "start": "52189287",
+    "started_at": 1789019502.752434,
+    "state": "finished",
+    "ticket": "17890195021954013"
+  },
+  "revision": "c1c1c478145ab332a4e9cdf0850c25c66a60cd5e",
+  "scope": "Allowlisted terminal fields; raw pending remains private. Release is not public recovery.",
+  "session": "epdecode76onepass0910v6",
+  "terminal": {
+    "owned_holder": false,
+    "payload_returncode": 0,
+    "phase": "finished",
+    "returncode": 0
+  },
+  "ticket": "17890195021954013"
+}

@@ -1,0 +1,41 @@
+{
+  "after_sha256": {
+    "/tmp/glm53_collect_ep76_completed6.py": "8eeeec79c2607cdca273d1f229b4f200c197aeff587a3062045ef804025b9674",
+    "/tmp/glm53_ep76_observer6.py": "4fe89d72d9c138ddb3a8739b2e225899c0b17fbf44a4ba612101af8d4ebf81c8",
+    "/tmp/glm53_ep76_snapshot6.py": "92ff16c88fe66e7f536025f9922c2c699087f5ac8a11885fa5d484856efba198"
+  },
+  "before_sha256": {
+    "/tmp/glm53_collect_ep76_completed6.py": "f2fb4ea285d30de28763108913948f415e94b5baff1ec2ff8df111a255f23bc7",
+    "/tmp/glm53_ep76_observer6.py": "6cdc280ffd3faacdf31cf46a4b03e6543762127c93013e06886cd68f78699490",
+    "/tmp/glm53_ep76_snapshot6.py": "8e6e7a17020baccce03e8742edb1247728b0ded3e6daa96e26eb60a3e468479b"
+  },
+  "collection_helpers": {
+    "glm53_collect_ep76_completed6.py": "8eeeec79c2607cdca273d1f229b4f200c197aeff587a3062045ef804025b9674"
+  },
+  "helpers": {
+    "glm53_ep76_observer6.py": "4fe89d72d9c138ddb3a8739b2e225899c0b17fbf44a4ba612101af8d4ebf81c8",
+    "glm53_ep76_snapshot6.py": "92ff16c88fe66e7f536025f9922c2c699087f5ac8a11885fa5d484856efba198"
+  },
+  "identity_source": "Root-provided matched live process/pending start tick and local normal submission receipt. No independent remote reads.",
+  "job": "/tmp/glm53-ep76-onepass-0910-6",
+  "launch_id": "47f6e4ff628d41d3b894995142b03896",
+  "observe_seconds": 3600,
+  "observer_started": false,
+  "owner_pid": "1954013",
+  "owner_start_tick": "52189287",
+  "preimage_directory": "/tmp/glm53-ep76-binding6-runtime-preimages",
+  "remote": false,
+  "revision": "c1c1c478145ab332a4e9cdf0850c25c66a60cd5e",
+  "run_log_basename": "d19911c4e7fa7697885f797ffb744b36b6f7e42c9a43aea4adda9714edc19919.log",
+  "schema": 1,
+  "scope": "Local runtime binding only. Root must start observer after actual GO; collection requires terminal and observer closure.",
+  "session": "epdecode76onepass0910v6",
+  "source": "/home/choiceoh/stkernel-ep-tiled-0909-ring",
+  "started_at": 1789019502.752434,
+  "submission_log": {
+    "path": "/tmp/glm53-ep76-submit6.log",
+    "sha256": "716886ab753dbf427f8d6543e74195f2f9d18810d9144bd7023ca9154a7f79c3"
+  },
+  "submitted": false,
+  "ticket": "17890195021954013"
+}

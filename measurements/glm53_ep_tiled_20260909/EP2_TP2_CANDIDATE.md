@@ -1,5 +1,13 @@
 # Routed EP2 / TP2 candidate
 
+The completed September 10 onepass reached 78.93348 pooled decode tok/s versus
+74.10855 for same-source EP4 (+6.51%), but observed prefill throughput fell
+4.67% / 5.21% / 3.26% at 2K / 32K / 128K. Both arms passed facts 18/18 and
+Korean 0/8. The decode target is met in this run; retaining prefill is not.
+The profile remains off and the canonical statistical verdict remains
+unresolved. See [terminal evidence](ep76_onepass6/README.md) and the
+[measurement ledger](../../MEASUREMENTS.md) for all repetitions and limits.
+
 This candidate changes only the main GLM routed-expert layout. It is opt-in via
 `VLLM_GLM53_EP_HYBRID_TP2=1`; the profile remains `0`. Rejected decode option v5
 must remain `VLLM_GLM53_EP_DECODE_OPT=0` in both arms.
@@ -34,10 +42,12 @@ remains one. B12X defers input quantization until its owner consumes BF16.
 These checks do not execute FP8 casts, CUDA arithmetic, or distributed sums.
 
 The new portable host suite has 34 passing tests: geometry 10, owner 9, remap 3,
-proof 4 and actual-loader contracts 8. A local attempt to run all 217 tests
+proof 4 and actual-loader contracts 8. The full no-device image CPU11 gate
+subsequently passed all 217 tests and eight fresh lowerings on the frozen
+measured source. Earlier CPU8/9/10 observation failures remain separate.
+A local attempt to run all 217 tests
 could not import the two existing torch-dependent suites because the macOS
-Python environment has no torch; the full suite belongs to the normal
-no-device image CPU gate. No GPU result is implied by these host checks.
+Python environment has no torch. No GPU result is implied by these host checks.
 
 Acceptance requires fresh same-source baseline and candidate CPU lowerings,
 the full CPU suite, four-rank startup canaries, and the canonical direct

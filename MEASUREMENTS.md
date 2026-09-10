@@ -31,6 +31,48 @@
 8. **그리디 텍스트 diff 로는 판정하지 않는다** — 같은 구성의 두 부팅에서도 온도 0 응답이
    갈린다(28차 §8). 판정은 게이트와 브래킷이다.
 
+## GLM53 EP2/TP2: 디코드 78.93 tok/s·프리필 손실, 기본값 보류 (2026-09-10)
+
+고정 소스 `c1c1c478145ab332a4e9cdf0850c25c66a60cd5e`, 정상 fleet
+`epdecode76onepass0910v6`에서 EP4 E72/I2048 B → EP2/TP2 E144/I1024 A를
+완료했다. 양쪽 SF6/K5/PREP1/OPT0이며 A만 `VLLM_GLM53_EP_HYBRID_TP2=1`이다.
+**디코드 목표76은 관측상 달성했지만 프리필 무회귀 조건은 충족하지 못했다.
+HYBRID 기본값0을 유지하고 기존 EP4를 대체하지 않는다.**
+
+| 지표 | EP4 기준선 B | EP2/TP2 후보 A | 관측 변화 |
+|---|---:|---:|---:|
+| fixed1024 ×3 합산 출력 tok/s | 74.10855 | 78.93348 | +6.51% |
+| fixed 구간 합산 engine step/s | 19.83751 | 21.33829 | +7.57% |
+| 2K best-warm TTFT / 입력 tok/s | 0.746899s / 2849.11 | 0.783517s / 2715.96 | 입력 −4.67% |
+| 32K 단일 TTFT / 입력 tok/s | 10.008524s / 3251.73 | 10.558120s / 3082.46 | 입력 −5.21% |
+| 128K 단일 TTFT / 입력 tok/s | 39.233580s / 3276.76 | 40.554412s / 3170.04 | 입력 −3.26% |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 0/8 | 양쪽 통과 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/HYBRID | 양쪽 통과 |
+
+B 세 요청74.87850/66.15997/83.25486, A77.85915/82.64748/76.54978을
+모두 보존했다. 합산 출력 속도는 첫 토큰을 제외한3069를 세 decode 시간의
+합으로 나눈 값이다. 순서별8개 요청 해시는 동일하고 출력 해시는 모두 다르다.
+사실·한국어 통과가 출력의 수치적 동일성을 뜻하지 않는다. 전체 원패스 수용률
+48.59931%→52.52985%는 fixed별 수용률이 아니며, engine 속도와 출력 속도는
+별도 지표로 유지한다.
+
+한 쌍의 B/A에서 디코드와 프리필의 교환 비용이 관측됐다. 짧은 디코드에서
+랭크별 작업 쏠림을 줄이는 분할이 긴 입력에서는 라우팅/Q0 준비를 중복시키는
+구조와 부합하지만, 해당 비용의 component timing이나 실제 라우팅 trace로
+원인을 분리한 결과는 아니다. B의 `cold_compile=true`, A의 필드 없음,
+2K 반복 best-warm 및32K/128K 각 단일 표본을 그대로 유지한다. 통계적
+무회귀/성능 채택을 주장하지 않으며 canonical verdict도 noise floor 부재로
+`unresolved` / `incomplete`다. 이전 빌드의 TP 수치와 직접 비교하지 않는다.
+
+[원패스 원본·실행 증거](measurements/glm53_ep_tiled_20260909/ep76_onepass6/README.md)는
+15:17:32 KST 종료, payload/terminal rc0 및 점유 해제를 보존한다. 모든4rank의
+첫 대상 layer에서12case, candidate72/stock72 비교와 SF6 FINALIZED42를
+통과했다. rank-local canary는 최종 distributed sum의 독립 증명이 아니다.
+[CPU11](measurements/glm53_ep_tiled_20260909/ep76_cpu11/README.md)은
+217 tests 및 실제 fresh lowering8개를 통과했다. 앞선 CPU8/9/10의 관측기 실패는
+각각 shared-memory 추정치 표시, pointer dtype 접근, JSON 직렬화였으며 원본을
+별도 보존한다. 커널 성능 결과로 재해석하지 않는다.
+
 ## GLM53 EP76 register-max: 69.52 tok/s·한국어 게이트 실패, 미채택 (2026-09-10)
 
 고정 소스 `ca076d35e64a6a19e90dffe54054269d1a5e1887`, 정상 fleet

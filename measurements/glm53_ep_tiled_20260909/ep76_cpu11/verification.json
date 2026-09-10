@@ -1,0 +1,143 @@
+{
+  "baseline_lowerings": 3,
+  "binding_runtime_rechecked": true,
+  "collection_verdict": "ORIGINAL_PASS_EVIDENCE_REVALIDATED",
+  "compile_only": true,
+  "contract_sources": 79,
+  "contracts": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "tests_run": 217
+  },
+  "contracts_process_isolated": true,
+  "contracts_sha256": "daa4086c1265e15b0c9ba0f400558c21f43cf9fc1a3c7ab81ee5f9225ae694d1",
+  "cpu_verdict": "PASS",
+  "cuda_initialized": false,
+  "frozen_validator_sha256": {
+    "probes/glm53_ep_capsule_runtime.py": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+    "probes/glm53_ep_tiled_compile.py": "79b8b5152d0c0cb304505fee5acfc2c9322e91098c52aa4c8e94b6559290b9a2",
+    "probes/run_glm53_ep_tiled_cpu.py": "4c35d1ffb95ced8b46abc5b1bbf231fcd99f1ac09d6dcae2275f45ea2a81cb81"
+  },
+  "gpu_numerics_acceptance": false,
+  "hybrid_lowerings": 5,
+  "lowerings": 8,
+  "mounted_sources": 23,
+  "original_bytes": 4985727,
+  "original_file_count": 26,
+  "performance_acceptance": false,
+  "resources": [
+    {
+      "arm": "baseline-static/M6-map288-i32",
+      "dynamic_shared_bytes": null,
+      "estimated_shared_bytes": 98304,
+      "kernel_smem_capacity_bytes": 101376,
+      "local_bytes": 0,
+      "registers": 123,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "baseline-static/M32-map288-i32",
+      "dynamic_shared_bytes": null,
+      "estimated_shared_bytes": 101376,
+      "kernel_smem_capacity_bytes": 101376,
+      "local_bytes": 0,
+      "registers": 118,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "baseline-dynamic/M8192",
+      "dynamic_shared_bytes": null,
+      "estimated_shared_bytes": null,
+      "kernel_smem_capacity_bytes": null,
+      "local_bytes": 0,
+      "registers": 168,
+      "stack_bytes": 112,
+      "static_shared_bytes": 1024,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-static/M6-local",
+      "dynamic_shared_bytes": null,
+      "estimated_shared_bytes": 98304,
+      "kernel_smem_capacity_bytes": 101376,
+      "local_bytes": 0,
+      "registers": 123,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-static/M6-map288-i32",
+      "dynamic_shared_bytes": null,
+      "estimated_shared_bytes": 98304,
+      "kernel_smem_capacity_bytes": 101376,
+      "local_bytes": 0,
+      "registers": 123,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-static/M32-local",
+      "dynamic_shared_bytes": null,
+      "estimated_shared_bytes": 101376,
+      "kernel_smem_capacity_bytes": 101376,
+      "local_bytes": 0,
+      "registers": 118,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-static/M32-map288-i32",
+      "dynamic_shared_bytes": null,
+      "estimated_shared_bytes": 101376,
+      "kernel_smem_capacity_bytes": 101376,
+      "local_bytes": 0,
+      "registers": 118,
+      "stack_bytes": 0,
+      "static_shared_bytes": 1024,
+      "total_shared_bytes": null
+    },
+    {
+      "arm": "hybrid-dynamic/M8192",
+      "dynamic_shared_bytes": null,
+      "estimated_shared_bytes": null,
+      "kernel_smem_capacity_bytes": null,
+      "local_bytes": 0,
+      "registers": 168,
+      "stack_bytes": 112,
+      "static_shared_bytes": 1024,
+      "total_shared_bytes": null
+    }
+  ],
+  "result_sha256": "df81efee6bd90f386b2d1999c732ee225729cccd13428e77025aeb7d8ca4cb85",
+  "separate_prior_failures": {
+    "10": {
+      "cpu_verdict": "FAIL",
+      "inventory_sha256": "91991554c36bb6b0bbb6ffdc1cdfe4bdc95683582a7af03ca611febb5d1b518e",
+      "path": "failures/cpu10",
+      "result_sha256": "d811eb21bfdee6ceb40ffdca5b60be75b4b1f064b598354a9562cfe4a3a104a1"
+    },
+    "8": {
+      "cpu_verdict": "FAIL",
+      "inventory_sha256": "38389be9e180a3395908af39cf711df5bee9e61417e7aeb6414e183741a3c4c1",
+      "path": "failures/cpu8",
+      "result_sha256": "ba515c3ddcd914fcbc748e37a8c8639543f1e9f3e4af6feca8220c73dc46b6bb"
+    },
+    "9": {
+      "cpu_verdict": "FAIL",
+      "inventory_sha256": "744ac5e56fd641fcd6eeb398d1a686b629a0feed138c93d451d55f3da402001c",
+      "path": "failures/cpu9",
+      "result_sha256": "6c4d05048f082c17d952407c07cbcfb09a1b4b6d21f91976391c67025e0061d0"
+    }
+  },
+  "source_revision": "c1c1c478145ab332a4e9cdf0850c25c66a60cd5e",
+  "strict_validate_artifacts": true,
+  "strict_validate_compile_matrix": true
+}

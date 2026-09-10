@@ -1,0 +1,147 @@
+{
+  "collection": {
+    "after_receipt_sha256": "02f5f23ca5fb2f79fd75a32b7bf75d7d9f0714cbab70dcff0b9239d78c8459b4",
+    "before_receipt_sha256": "613a3707aaf9059ab3931fcdc25a2b9fe64606e98b2acb823da0f8b2f27d9831",
+    "bytes_mtime_inode_unchanged": true,
+    "captured_after": 1789019646.3882902,
+    "captured_before": 1789019643.8754017,
+    "clean_after": true,
+    "clean_before": true,
+    "head_after": "c1c1c478145ab332a4e9cdf0850c25c66a60cd5e",
+    "head_before": "c1c1c478145ab332a4e9cdf0850c25c66a60cd5e",
+    "image_reinspected_during_collection": false
+  },
+  "execution": {
+    "expected_cpu_tests": 217,
+    "expected_groups": {
+      "baseline_dynamic_passes": 1,
+      "baseline_static_passes": 2,
+      "hybrid_dynamic_passes": 1,
+      "hybrid_static_passes": 4
+    },
+    "finished": 1789019463.442258,
+    "returncode": 0,
+    "revision": "c1c1c478145ab332a4e9cdf0850c25c66a60cd5e",
+    "scope": "Normal fleet CPU admission; no GPU devices or workload",
+    "session": "epdecode76cpu0910v11",
+    "source": "/home/choiceoh/stkernel-ep-tiled-0909-ring",
+    "started": 1789019367.970431
+  },
+  "gpu_numerics_acceptance": false,
+  "not_collected_for_publication": [
+    "execution command",
+    "environment dump",
+    "Docker inspect",
+    "pending queue metadata"
+  ],
+  "original_worker_inventory": {
+    "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+      "sha256": "cca0bb84ccdf34bea259cc32a7ecef0356191a6790c14f326f19d74db6c74d67",
+      "size": 331488
+    },
+    "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+      "sha256": "784a2b15126f845b1335817c2515fcffcbcba353783d486351dada1b6da8006f",
+      "size": 1095954
+    },
+    "baseline-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+      "sha256": "f9117379ebca149a7fa6f0acfed530098d1d951e6504db62fd892a2a010e2dea",
+      "size": 325
+    },
+    "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin": {
+      "sha256": "1c3e2fe7b2a5dabe43ef934f1213a2a4c48db370ad6c4c01ea3a6550d0204fe2",
+      "size": 142976
+    },
+    "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx": {
+      "sha256": "4b6f5fd15de591e1d052efe26410d7179d1413ace4db681143a10ccf0715bd06",
+      "size": 274826
+    },
+    "baseline-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.resources.log": {
+      "sha256": "b830de12e7b094c5f3c17313ae916a1e9a58619aff4481ce76e1918dde62bfa1",
+      "size": 337
+    },
+    "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin": {
+      "sha256": "6b8ec2f28e81fbc8858202789ad97003762e9825bae682c3ae6063aeaa6e61b3",
+      "size": 87720
+    },
+    "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx": {
+      "sha256": "2101afce8704b15742124c25ae9a427a65526f0fc3997ffdb3b1d15b4b4e8ef7",
+      "size": 176338
+    },
+    "baseline-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.resources.log": {
+      "sha256": "f5eef9b3c7a0e30b0b03b020b98f4711cd10db4c832b66d782e1ce3e022888c2",
+      "size": 337
+    },
+    "contracts.json": {
+      "sha256": "daa4086c1265e15b0c9ba0f400558c21f43cf9fc1a3c7ab81ee5f9225ae694d1",
+      "size": 17872
+    },
+    "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin": {
+      "sha256": "897d6229b09831de50718611af50fa3653bf43a47c404c2b83e60b8b366bad38",
+      "size": 338208
+    },
+    "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+      "sha256": "300e1df65779b9b27cccf19da1865c8b1c913471ea839548bde7df87d5892491",
+      "size": 1108760
+    },
+    "hybrid-dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+      "sha256": "f9117379ebca149a7fa6f0acfed530098d1d951e6504db62fd892a2a010e2dea",
+      "size": 325
+    },
+    "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin": {
+      "sha256": "65fd5d6e0039d17d29365f59bd60fd5dffb3692b71bbfc08dc8d02c9cd2279b8",
+      "size": 141904
+    },
+    "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx": {
+      "sha256": "a17d163b8fd68e583d64844b917b06f3372726f9f3cd17556c589b821c4de535",
+      "size": 274141
+    },
+    "hybrid-static/M32-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.resources.log": {
+      "sha256": "a065ad3f6cfa0478544c7af8919c45372b08820efc9800a5e3bac195914ab138",
+      "size": 337
+    },
+    "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin": {
+      "sha256": "6bd70db5b91ac55fc070a02f606b0925a6f14ad7a4268f65a23244b2c6da152c",
+      "size": 142976
+    },
+    "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx": {
+      "sha256": "89a366ce8e36987472bc92e720b996ab382813c6730de9b47f1e2efa71370a95",
+      "size": 274823
+    },
+    "hybrid-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.resources.log": {
+      "sha256": "b830de12e7b094c5f3c17313ae916a1e9a58619aff4481ce76e1918dde62bfa1",
+      "size": 337
+    },
+    "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin": {
+      "sha256": "480cd05158373ebe7ca0f83692c5904c6905110a2389a6a8d4567229dfe47e27",
+      "size": 87672
+    },
+    "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx": {
+      "sha256": "c14dc1441eabbbb4006e0a87be600a2b8461cb4f1be63bed4121795e96ccc016",
+      "size": 175653
+    },
+    "hybrid-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.resources.log": {
+      "sha256": "aa8e4e859cc88229124d8fdc3309c174f2bbd0b681f8334c42b47972f1291849",
+      "size": 337
+    },
+    "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin": {
+      "sha256": "db83c87efe0df0b033966662aaca259b19daaa611ee74850dc29c0a20b3af4b1",
+      "size": 87720
+    },
+    "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx": {
+      "sha256": "2e1f44af6221b8f26d960f88730dc06c971126ffbcd76090f3210a435f341f7e",
+      "size": 176335
+    },
+    "hybrid-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.resources.log": {
+      "sha256": "f5eef9b3c7a0e30b0b03b020b98f4711cd10db4c832b66d782e1ce3e022888c2",
+      "size": 337
+    },
+    "result.json": {
+      "sha256": "df81efee6bd90f386b2d1999c732ee225729cccd13428e77025aeb7d8ca4cb85",
+      "size": 47689
+    }
+  },
+  "original_worker_tar_sha256": "90ba1baacbd5bd11a1fd85cf14d2ebb13e1b54669f575efff2e16fc9d69bb3b2",
+  "performance_acceptance": false,
+  "private_archive_inventory_sha256": "8f171ad4af1888156abc75db8681322fe1e392e96e8ea6f6e8b35e3b5ff3d5ca",
+  "schema": 1
+}
