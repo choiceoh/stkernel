@@ -36,7 +36,7 @@ FLEET_AUDIT = {'tests/test_fleet_admission.py': 'd452bec3a6ae34be36547174f956d27
 # table with TARGETS; it introduces no file, import or execution dependency.
 # The startup-only memory-gate registration leaves the logic command and
 # dependencies unchanged. Changed test or runner disables pruning.
-LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': 'c61c781c80b7d67a6519a72f469d8be43a7d89bba5d54ead9d1e6bc66a6ab945', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'f61b906b52d1e288ac9c70fb286f3fffeedbd2337a324c82c13e713a94fd4efd', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
+LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': '5ff4b2aeff6fc75efcf0439ba9e595a9236c3f284166c1e07d0ab4e697a8f6e5', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'f61b906b52d1e288ac9c70fb286f3fffeedbd2337a324c82c13e713a94fd4efd', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
 
 
 def sha(path):

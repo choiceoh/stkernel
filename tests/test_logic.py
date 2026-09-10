@@ -8579,6 +8579,32 @@ def test_glm53_megakernel_contracts() -> None:
           "rank holds all 128, so its local index is its global one and "
           "renumbering would refuse a name that is legitimately there")
 
+    # -- dsv41 sliding-window ring. The rotation in the prefill seed is the
+    #    whole thing: without it the cache holds every surviving token exactly
+    #    once, at slots offset by seqlen % window, and the first decode step
+    #    reads real tokens from the wrong positions.
+    win_src = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                                "dsv41_window.py"), encoding="utf-8").read()
+    check("cutoff = seqlen % window_size" in win_src
+          and "def prefill_ring_writes(" in win_src
+          and "return position % window_size" in win_src,
+          "the ring seed rotates by seqlen % window, and the invariant "
+          "slot == position % window is written once and reused")
+    check("def window_kv_len(" in win_src
+          and "return seqlen if start_pos == 0 else window_size" in win_src,
+          "prefill ids index the CHUNK and decode ids index the RING, and the "
+          "bound that distinguishes them is a function rather than a comment")
+    win_probe = open(os.path.join(REPO, "probes/dsv41_window_diff.py"),
+                     encoding="utf-8").read()
+    check("the control must lose no token" in win_probe
+          and "misplaced > 0" in win_probe,
+          "the window probe includes the un-rotated seed as a control, and "
+          "requires it to misplace slots while losing nothing -- otherwise "
+          "checking the rotation proves nothing")
+    check("check_topk_idxs(got, kv_len" in win_probe,
+          "the window ids are held to the sparse_attn contract with the "
+          "index space's own bound")
+
     # -- the engram probe must not grade real weights against its synthetic
     #    pattern, and must not delete a real shard it was pointed at.
     eng_probe = open(os.path.join(REPO, "probes/dsv41_engram_probe.py"),
