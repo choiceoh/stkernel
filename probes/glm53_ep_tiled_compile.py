@@ -61,6 +61,7 @@ CONTRACT_PATHS = (
     'tests/fixtures/glm53_prep_fused_runtime/worker_utils.image.py.gz',
     'overlay/modules/glm53_model/glm5next_model.py',
     'measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz',
+    'measurements/glm53_ep_tiled_20260909/ep76_onepass1/source/moe_static_ep_tiled.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json',
 ) + tuple('tests/' + name for name in CPU_TESTS)
@@ -164,8 +165,8 @@ def opt_static_specialization(case, key, a_ring, word_unpack, scatter_bf16,
     """An optimized artifact preserves the old ABI and fits one resident CTA."""
     name, rows, mode = case
     assert case in OPT_STATIC_CASES
-    assert key[-1] == 'glm53_ep_static_sf6_fc2_out_of_place_v1'
-    assert decode_opt is True and type(storage_bytes) is int and storage_bytes == 100352
+    assert key[-1] == 'glm53_ep_static_sf6_fc1_register_v2'
+    assert decode_opt is True and type(storage_bytes) is int and storage_bytes == 98304
     if mode == 'global':
         original = next(item for item in GLOBAL_STATIC_CASES if item[0] == name)
         selected = global_static_specialization(original, key[:-1], a_ring, word_unpack,
@@ -186,10 +187,28 @@ def opt_shared_capacity(passed):
     assert len(values) == 1
     static_bytes = int(values[0])
     dynamic_bytes = passed['specialization']['storage_bytes']
-    assert type(dynamic_bytes) is int and dynamic_bytes == 100352
+    assert type(dynamic_bytes) is int and dynamic_bytes == 98304
     assert 0 <= static_bytes <= 1024 and static_bytes + dynamic_bytes <= 101376
     return dict(dynamic_bytes=dynamic_bytes, static_bytes=static_bytes,
                 total_bytes=dynamic_bytes+static_bytes, block_limit_bytes=101376)
+
+
+def opt_register_layout(kernel):
+    """Preserve the actual CuTe copy-layout check performed during lowering."""
+    assert kernel.ep_sf1_register_layout_proven is True
+    receipt = kernel.ep_sf1_register_layout_receipt
+    fixed = dict(proven=True, threads=128, raw_stage_bytes=2048, num_k_blocks=4,
+                 word_coverage_bytes=2048, stages=2, stage_stride_bytes=2048,
+                 offset_engine='static_scalar_physical_layout',
+                 slot_zero_relative_offsets=True)
+    assert type(receipt) is dict and set(receipt) == set(fixed) | {'copy_shape', 'words_per_thread'}
+    assert all(type(receipt[k]) is type(value) and receipt[k] == value
+               for k, value in fixed.items())
+    assert type(receipt['copy_shape']) is str and receipt['copy_shape']
+    words = receipt['words_per_thread']
+    assert type(words) is list and words and all(type(x) is int and x > 0 for x in words)
+    assert words == sorted(set(words))
+    return dict(receipt)
 
 
 def scatter_helper_receipt(root, source_path):
@@ -293,6 +312,7 @@ def compile_candidate(output, result):
         passed = preserve_pass(output, 'opt-static/' + name, key)
         passed['specialization'] = selected
         passed['shared_capacity'] = opt_shared_capacity(passed)
+        passed['register_layout'] = opt_register_layout(kernel)
         result['opt_static_passes'].append(passed)
         assert not torch.cuda.is_initialized()
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md

@@ -85,6 +85,7 @@ def traces(*, wrong_a_slot=False, tasks=2):
             cutlass=types.SimpleNamespace(const_expr=bool, range_constexpr=range),
             cute=types.SimpleNamespace(copy=copy_tma),
             self=types.SimpleNamespace(a_ring=True, skip_a=False, skip_sf=False,
+                ep_decode_opt=False,
                 sf_pack=False, reform_sf_pack=True, sf1_packed_blocks=1,
                 sf1_block_bytes=2048, _sf_expand_stage=expand),
             a_pipeline=Pipeline('A', events), fc1_pipeline=Pipeline('B', events),

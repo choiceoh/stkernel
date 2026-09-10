@@ -162,7 +162,7 @@ def _startup_proof(knob: str, log: str) -> bool | None:
                             "glm53_ep_static_bf16_scatter_v1")
                     expected += ("glm53_ep_static_fused_route_v1", 288, "torch.int32", 0)
                     if rows <= 8:
-                        expected += ("glm53_ep_static_sf6_fc2_out_of_place_v1",)
+                        expected += ("glm53_ep_static_sf6_fc1_register_v2",)
                     keys = evidence["keys"]
                     if type(keys) is not list or len(keys) != 1 or not isinstance(keys[0], str):
                         return False

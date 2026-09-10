@@ -16,7 +16,7 @@ from test_glm53_ep_tiled_proof import receipt, log
 from test_onepass_speculation_proof import BOOT, command
 
 KNOB = 'VLLM_GLM53_EP_DECODE_OPT'
-TAG = 'glm53_ep_static_sf6_fc2_out_of_place_v1'
+TAG = 'glm53_ep_static_sf6_fc1_register_v2'
 
 
 def optimized_receipt():

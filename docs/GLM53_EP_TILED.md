@@ -57,16 +57,15 @@ fixed-1024 x3 decode >=76 tok/s, with the existing quality and direct
 the same-source EP baseline. Original cold-compile classifications and
 single-request long-prefill limitations remain visible.
 
-For SF6 M1..8, FC2 reads its packed scales from two separate shared-memory
-slots. Restored scale bytes therefore cannot overwrite another warp's
-unread packed bytes, removing one expansion barrier per FC2 stage. The
-post-expansion barrier and all producer/consumer releases remain. The
-scatter metadata cache uses its actual 16 rows instead of 128. This both
-removes unused stores and keeps dynamic shared storage at 100352 bytes;
-the compiler receipt must additionally verify static shared allocation
-<=1024 bytes and total <=101376 bytes. Baseline keys and M9+/prefill paths
-retain their preceding behavior. Arithmetic and lossless SF6 bytes are
-unchanged.
+The next candidate targets FC1 for SF6 M1..8. It restores packed scale
+bytes directly into the original MMA scale registers instead of expanding
+an intermediate shared-memory stage. The original copy partition must
+prove the exact physical byte mapping during CuTe setup. TMA completion,
+consumer release, MMA order and scale arithmetic remain unchanged. FC2,
+scatter metadata and the 98304-byte dynamic storage layout return to the
+accepted baseline. The cache tag is
+`glm53_ep_static_sf6_fc1_register_v2`; M9+ and prefill keep their existing
+selection. This path is under validation and has no performance result yet.
 
 Preparation keeps its first-use and every-64-step stock comparison. On
 the candidate's C=1/K5 verification steps it compares the cloned fused
@@ -81,6 +80,21 @@ checkpoints. The CPU gate includes the baseline's 19 lowerings plus four
 optimized local/global lowerings.
 
 ### First EP76 result (2026-09-10)
+
+The first candidate used the separate FC2 source layout described below;
+it is not the pending FC1 register candidate.
+
+For SF6 M1..8, FC2 reads its packed scales from two separate shared-memory
+slots. Restored scale bytes therefore cannot overwrite another warp's
+unread packed bytes, removing one expansion barrier per FC2 stage. The
+post-expansion barrier and all producer/consumer releases remain. The
+scatter metadata cache uses its actual 16 rows instead of 128. This both
+removes unused stores and keeps dynamic shared storage at 100352 bytes;
+the compiler receipt must additionally verify static shared allocation
+<=1024 bytes and total <=101376 bytes. Baseline keys and M9+/prefill paths
+retain their preceding behavior. Arithmetic and lossless SF6 bytes are
+unchanged.
+
 
 Frozen source `b41d0da24059379d41c079626cc67c3e83cd14e3`, normal fleet
 session `epdecode76onepass0910v1`, completed the same-source EP B→A pair.

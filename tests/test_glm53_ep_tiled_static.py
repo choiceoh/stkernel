@@ -59,7 +59,7 @@ def baseline_kernel_text():
     source=SOURCE.read_text(); node=function('kernel'); lines=source.splitlines(keepends=True)
     branches=[n for n in ast.walk(node) if isinstance(n,ast.If)
               and ast.unparse(n.test)=='cutlass.const_expr(self.ep_decode_opt)']
-    assert len(branches)==4
+    assert len(branches)==5
     changes=[]
     for branch in branches:
         replacement=[]
@@ -73,9 +73,6 @@ def baseline_kernel_text():
     changes.append((field.lineno-3,field.end_lineno,[]))
     for start,end,replacement in sorted(changes,reverse=True):lines[start:end]=replacement
     restored=''.join(lines)
-    expression='self.tile_m if self.ep_decode_opt else _COMPACT_STATIC_TILE_M'
-    assert restored.count(expression)==3
-    restored=restored.replace(expression,'_COMPACT_STATIC_TILE_M')
     restored_node=next(n for n in ast.walk(ast.parse(restored))
                        if isinstance(n,ast.FunctionDef) and n.name=='kernel')
     return ast.get_source_segment(restored,restored_node)

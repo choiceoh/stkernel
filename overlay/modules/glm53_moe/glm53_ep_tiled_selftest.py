@@ -355,7 +355,7 @@ def _cache_evidence(context, owner, rows):
         expected += ("glm53_ep_static_fused_route_v1", 288, "torch.int32", 0)
         decode_opt = bool(context["decode"].ep_tiled_decode_opt_enabled() and geometry["reform"])
         if decode_opt:
-            expected += ("glm53_ep_static_sf6_fc2_out_of_place_v1",)
+            expected += ("glm53_ep_static_sf6_fc1_register_v2",)
         if expected not in context["decode"]._EP_TILED_KERNEL_CACHE:
             raise AssertionError("native EP tiled decode artifact was not selected/warmed")
         return dict(scope="source-bound global-map fixture native shape cache key",

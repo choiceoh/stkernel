@@ -117,7 +117,7 @@ EP_TILED_A_RING_CACHE_TAG = "glm53_ep_static_sf6_a_ring_v1"
 EP_TILED_SF6_WORD_CACHE_TAG = "glm53_ep_static_sf6_word_unpack_v1"
 EP_TILED_BF16_SCATTER_CACHE_TAG = "glm53_ep_static_bf16_scatter_v1"
 EP_TILED_ROUTE_CACHE_TAG = "glm53_ep_static_fused_route_v1"
-EP_TILED_DECODE_OPT_CACHE_TAG = "glm53_ep_static_sf6_fc2_out_of_place_v1"
+EP_TILED_DECODE_OPT_CACHE_TAG = "glm53_ep_static_sf6_fc1_register_v2"
 _EP_TILED_DECODE_OPT = os.environ.get("VLLM_GLM53_EP_DECODE_OPT", "0").strip() == "1"
 
 
@@ -273,20 +273,125 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         self.word_unpack = bool(reform_sf_pack and geometry["reform"])
         self.scatter_bf16 = bool(reform_sf_pack and geometry["reform"])
 
+    def _setup_attributes(self, hidden_size):
+        super()._setup_attributes(hidden_size)
+        if self.ep_decode_opt:
+            self._check_ep_sf1_register_layout()
+
+    def _check_ep_sf1_register_layout(self):
+        # Ordinary host/CuTe setup, not a GPU branch. The counting engine
+        # uses the *original physical SF layout*, including broadcast strides.
+        # This assertion is intentionally fail-closed until actual lowering
+        # confirms the copied four-byte groups for every MMA thread/K block.
+        if (not self.decode_reform or not self.reform_sf_pack
+                or self.fc1_tile_n != 128 or self.fc1_tile_k != 256
+                or self.sf1_packed_blocks != 1 or self.sf1_block_bytes != 2048
+                or self.num_mma_warps != 4 or self.num_k_blocks1 != 4):
+            raise ValueError("EP FC1 direct SF register geometry mismatch")
+        atom = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), self.sf_dtype)
+        copier = cute.make_tiled_copy(
+            atom, self._dense_cls._get_layoutSFB_TV(self, self.tiled_mma1),
+            (cute.size(self.tiled_mma1.permutation_mnk[1]),
+             cute.size(self.tiled_mma1.permutation_mnk[2])))
+        offsets = cute.make_tensor(0, self.sfb1_smem_layout_staged)
+        offsets = cute.local_tile(
+            offsets, cute.slice_(self.fc1_tile_shape_mnk, (0, None, None)),
+            (0, 0, None))
+        for stage in range(2):
+            engine = offsets[None, None, stage].iterator
+            if type(engine) is not int or engine != stage * 2048:
+                raise ValueError("EP SF compressed ring stage stride mismatch")
+        seen = set()
+        copied_shape = None
+        thread_word_counts = set()
+        for tid in range(128):
+            partition = copier.get_slice(tid).partition_S(offsets)
+            slot = cute.filter_zeros(partition[None, None, None, 0])
+            if copied_shape is None:
+                copied_shape = slot.shape
+            elif copied_shape != slot.shape:
+                raise ValueError("EP SF register copy shape varies across threads")
+            if cute.size(slot, mode=[2]) != 4:
+                raise ValueError("EP SF register K-block count mismatch")
+            thread_word_counts.add(cute.size(slot) // 4)
+            for kb in range(4):
+                group = slot[None, None, kb]
+                if cute.size(group) % 4:
+                    raise ValueError("EP SF register fragment is not four-byte grouped")
+                for start in range(0, cute.size(group), 4):
+                    e = self._ep_sf1_static_offset(group, start)
+                    points = [self._ep_sf1_static_offset(group, start + lane)
+                              for lane in range(4)]
+                    if not (0 <= e <= 2044 and e % 4 == 0
+                            and points == list(range(e, e + 4))):
+                        raise ValueError("EP SF register word is not aligned/adjacent")
+                    seen.update(points)
+        if seen != set(range(2048)):
+            raise ValueError("EP SF register copy does not cover the exact raw stage")
+        self.ep_sf1_register_layout_proven = True
+        self.ep_sf1_register_layout_receipt = dict(
+            proven=True, threads=128, raw_stage_bytes=2048,
+            num_k_blocks=4, word_coverage_bytes=len(seen),
+            stages=2, stage_stride_bytes=2048,
+            copy_shape=str(copied_shape),
+            words_per_thread=sorted(thread_word_counts),
+            offset_engine="static_scalar_physical_layout",
+            slot_zero_relative_offsets=True)
+
+    def _ep_sf1_static_offset(self, tensor, index):
+        # Read only static counting-engine/layout metadata; never int() a
+        # symbolic CoordTensor load. CuTe gives a scalar engine for make_tensor(0,L).
+        engine = tensor.iterator
+        if type(engine) is not int or type(index) is not int:
+            raise ValueError("EP SF coordinate engine is not a static scalar")
+        def leaves(value):
+            if type(value) is tuple:
+                result = []
+                for child in value:
+                    result.extend(leaves(child))
+                return result
+            if type(value) is not int:
+                raise ValueError("EP SF coordinate shape/stride is not static")
+            return [value]
+        shape, stride = leaves(tensor.layout.shape), leaves(tensor.layout.stride)
+        if len(shape) != len(stride) or any(extent <= 0 for extent in shape):
+            raise ValueError("EP SF coordinate layout mismatch")
+        offset, rest = engine, index
+        for extent, step in zip(shape, stride):
+            rest, digit = divmod(rest, extent)
+            offset += digit * step
+        if rest:
+            raise ValueError("EP SF coordinate index outside copy fragment")
+        return offset
+
+    def _check_ep_sf1_register_copy(self, offsets, register):
+        # Evaluated by Python during CuTe specialization. This retains the
+        # original cute.copy logical element pairing before writing a byte view.
+        if (offsets.shape != register.shape or register.element_type != self.sf_dtype
+                or register.element_type.width != 8):
+            raise ValueError("EP SF source/register shape or element ABI mismatch")
+
+    @cute.jit
+    def _sf1_load_register_words(self, packed_addr, offsets, register,
+                                base_lo, base_hi):
+        # Same-width memory reinterpretation, never a numeric FP8 conversion.
+        dst = cute.recast_tensor(register, cutlass.Uint8)
+        for group in cutlass.range_constexpr(cute.size(dst) // 4):
+            e = Int32(offsets[group * 4])
+            low = cutlass.Uint32(_ld_shared_i32_volatile(
+                packed_addr + (e // Int32(8)) * Int32(4)))
+            high = cutlass.Uint32(_ld_shared_i32_volatile(
+                packed_addr + Int32(1024) + (e // Int32(16)) * Int32(4)))
+            word = _sf6_unpack_word(
+                low >> cutlass.Uint32((e // Int32(4) % Int32(2)) * Int32(16)),
+                high >> cutlass.Uint32((e // Int32(4) % Int32(4)) * Int32(8)),
+                base_lo, base_hi)
+            for byte in cutlass.range_constexpr(4):
+                dst[group * 4 + byte] = cutlass.Uint8(
+                    word >> cutlass.Uint32(byte * 8))
+
     def _smem_bytes_estimate(self):
-        original = super()._smem_bytes_estimate()
-        if not self.ep_decode_opt:
-            return original
-        # Cache only the 16 rows the selected epilogue can read. Place the
-        # two packed FC2 source slots after this smaller metadata header;
-        # every following 1024-aligned buffer moves by exactly 2048 bytes.
-        header = 2 * 4 + (self.fc1_stages + self.fc2_stages) * 2 * 8
-        header += self.fc1_stages * 2 * 8 + 2 * _COMPACT_STATIC_TILE_M * 4
-        old_start = (header + 1023) // 1024 * 1024
-        compact_header = header - 2 * (_COMPACT_STATIC_TILE_M - self.tile_m) * 4
-        source_end = (compact_header + 15) // 16 * 16 + self.fc2_stages * 1552
-        new_start = (source_end + 1023) // 1024 * 1024
-        return original + new_start - old_start
+        return super()._smem_bytes_estimate()
 
     def _check_ep_storage(self, storage_type):
         # This ordinary host helper runs during CuTe setup, before any launch;
@@ -295,28 +400,10 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         # The admitted cubin also reserves 1024 static shared bytes. The CPU
         # artifact gate must independently bound that compiled ELF allocation.
         if (actual != self.smem_bytes or actual + 1024 > self.smem_capacity
-                or actual != 100352 or self.threads_per_cta != 160):
-            raise ValueError("EP separate SF6 storage exceeds the resident CTA contract")
+                or actual != 98304 or self.threads_per_cta != 160):
+            raise ValueError("EP FC1 register path changed the baseline resident CTA storage")
         self.ep_storage_bytes = actual
 
-    def _sf_expand_fc2_out_of_place(self, source_addr, stage_addr, tidx):
-        # TMA completion protects this slot's packed source. The two raw
-        # destinations are disjoint from both packed slots, so other warps may
-        # still read packed bytes while this warp writes its own raw bytes.
-        # Keep the publication barrier before any MMA warp reads raw scales.
-        a = []
-        for w in range(2):
-            a.append(_ld_shared_i32_volatile(source_addr + Int32(8) * tidx + Int32(4 * w)))
-        b = _ld_shared_i32_volatile(source_addr + Int32(1024) + Int32(4) * tidx)
-        base = cutlass.Uint32(_ld_shared_i32_volatile(source_addr + Int32(1536))) & cutlass.Uint32(0xFF)
-        base_lo = (base & cutlass.Uint32(127)) * cutlass.Uint32(0x01010101)
-        base_hi = (base & cutlass.Uint32(128)) * cutlass.Uint32(0x01010101)
-        for j in range(4):
-            word = _sf6_unpack_word(
-                cutlass.Uint32(a[j // 2]) >> cutlass.Uint32(16 * (j % 2)),
-                cutlass.Uint32(b) >> cutlass.Uint32(8 * j), base_lo, base_hi)
-            _st_shared_i32(stage_addr + Int32(16) * tidx + Int32(4 * j), Int32(word))
-        self.sf_expand_barrier.arrive_and_wait()
 
     def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096):
         if not self.word_unpack:
@@ -780,16 +867,16 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
             fc2_bars: cute.struct.MemRange[cutlass.Int64, self.fc2_stages * 2]
             a_bars: cute.struct.MemRange[cutlass.Int64, self.fc1_stages * 2]
             scatter_tok_cache: cute.struct.MemRange[
-                cutlass.Int32, self.tile_m if self.ep_decode_opt else _COMPACT_STATIC_TILE_M
+                cutlass.Int32, _COMPACT_STATIC_TILE_M
             ]
             scatter_weight_cache: cute.struct.MemRange[
-                cutlass.Float32, self.tile_m if self.ep_decode_opt else _COMPACT_STATIC_TILE_M
+                cutlass.Float32, _COMPACT_STATIC_TILE_M
             ]
             # A zero-sized MemRange is invalid. Off-lane 16 bytes lie wholly
             # in existing header padding, leaving every original offset/size.
             sf2_packed_source: cute.struct.Align[
                 cute.struct.MemRange[cutlass.Uint8,
-                    self.fc2_stages * 1552 if self.ep_decode_opt else 16], 16
+                    16], 16
             ]
             sA1: cute.struct.Align[
                 cute.struct.MemRange[self.a_dtype, cute.cosize(a1_smem_staged)],
@@ -895,8 +982,6 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())
         sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
         sfb2_base_addr = shared_ptr_to_u32(storage.sSFB2.data_ptr())
-        if cutlass.const_expr(self.ep_decode_opt):
-            sf2_source_base_addr = shared_ptr_to_u32(storage.sf2_packed_source.data_ptr())
         ctrl_base_addr = shared_ptr_to_u32(storage.ctrl.data_ptr())
         scatter_tok_base_addr = shared_ptr_to_u32(storage.scatter_tok_cache.data_ptr())
         scatter_weight_base_addr = shared_ptr_to_u32(
@@ -1315,6 +1400,15 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
             csSFB1_1 = thr_ld_SFB1.partition_S(sSFB1_1)
             fz_crSFB1_0 = cute.filter_zeros(thr_ld_SFB1.retile(tCrSFB1_0))
             fz_crSFB1_1 = cute.filter_zeros(thr_ld_SFB1.retile(tCrSFB1_1))
+            if cutlass.const_expr(self.ep_decode_opt):
+                # Offset engine has the same physical layout/zero strides as
+                # csSFB1_0. Its slot-zero offsets are relative to the packed
+                # stage base, selected separately by the consumer ring state.
+                sf1_offset_tensor = cute.make_tensor(0, sSFB1_0.layout)
+                sf1_offset_partition = thr_ld_SFB1.partition_S(sf1_offset_tensor)
+                sf1_register_offsets = cute.filter_zeros(
+                    sf1_offset_partition[None, None, None, 0])
+                self._check_ep_sf1_register_copy(sf1_register_offsets, fz_crSFB1_0)
             csA2 = thr_ld_A.partition_S(sA2)
             crA2 = thr_ld_A.retile(tCrA2)
             csSFA2 = thr_ld_SFA.partition_S(sSFA2_tile)
@@ -1448,7 +1542,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                     valid_tile_rows = Int32(0)
 
                 cache_row = Int32(tidx)
-                if cache_row < Int32(self.tile_m if self.ep_decode_opt else _COMPACT_STATIC_TILE_M):
+                if cache_row < Int32(_COMPACT_STATIC_TILE_M):
                     tok = Int32(0)
                     wv = cutlass.Float32(0.0)
                     if cache_row < valid_tile_rows:
@@ -1506,12 +1600,23 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
                                 if cutlass.const_expr(self.reform_sf_pack):
-                                    for sf_block in cutlass.range_constexpr(self.sf1_packed_blocks):
-                                        self._sf_expand_stage(
-                                            sfb1_base_addr
-                                            + fc1_cons_state.index * Int32(self.sf1_block_bytes)
-                                            + Int32(sf_block * 2048), Int32(tidx), 2048,
-                                        )
+                                    if cutlass.const_expr(self.ep_decode_opt):
+                                        # TMA has completed and the original pipeline
+                                        # keeps this compressed slot alive through all
+                                        # K blocks. There are no expansion shared writes.
+                                        sf1_packed_addr = (sfb1_base_addr
+                                            + fc1_cons_state.index * Int32(self.sf1_block_bytes))
+                                        sf1_base = cutlass.Uint32(_ld_shared_i32_volatile(
+                                            sf1_packed_addr + Int32(1536))) & cutlass.Uint32(255)
+                                        sf1_base_lo = (sf1_base & cutlass.Uint32(127)) * cutlass.Uint32(0x01010101)
+                                        sf1_base_hi = (sf1_base & cutlass.Uint32(128)) * cutlass.Uint32(0x01010101)
+                                    else:
+                                        for sf_block in cutlass.range_constexpr(self.sf1_packed_blocks):
+                                            self._sf_expand_stage(
+                                                sfb1_base_addr
+                                                + fc1_cons_state.index * Int32(self.sf1_block_bytes)
+                                                + Int32(sf_block * 2048), Int32(tidx), 2048,
+                                            )
                                 elif cutlass.const_expr(self.sf_pack):
                                     self._sf_expand_stage(
                                         sfb1_base_addr
@@ -1536,10 +1641,15 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                                     smem_copy_SFA1, fz_csSFA_p[None, None, 0],
                                     fz_crSFA1_tile[None, None, 0],
                                 )
-                                cute.copy(
-                                    smem_copy_SFB1, fz_csSFB_p[None, None, 0],
-                                    fz_crSFB1[None, None, 0],
-                                )
+                                if cutlass.const_expr(self.ep_decode_opt):
+                                    self._sf1_load_register_words(
+                                        sf1_packed_addr, sf1_register_offsets[None, None, 0],
+                                        fz_crSFB1[None, None, 0], sf1_base_lo, sf1_base_hi)
+                                else:
+                                    cute.copy(
+                                        smem_copy_SFB1, fz_csSFB_p[None, None, 0],
+                                        fz_crSFB1[None, None, 0],
+                                    )
                                 for k_block_idx in cutlass.range_constexpr(num_k_blocks1):
                                     k_next = (
                                         0 if k_block_idx + 1 == num_k_blocks1
@@ -1558,10 +1668,15 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                                             smem_copy_SFA1, fz_csSFA_p[None, None, k_next],
                                             fz_crSFA1_tile[None, None, k_next],
                                         )
-                                        cute.copy(
-                                            smem_copy_SFB1, fz_csSFB_p[None, None, k_next],
-                                            fz_crSFB1[None, None, k_next],
-                                        )
+                                        if cutlass.const_expr(self.ep_decode_opt):
+                                            self._sf1_load_register_words(
+                                                sf1_packed_addr, sf1_register_offsets[None, None, k_next],
+                                                fz_crSFB1[None, None, k_next], sf1_base_lo, sf1_base_hi)
+                                        else:
+                                            cute.copy(
+                                                smem_copy_SFB1, fz_csSFB_p[None, None, k_next],
+                                                fz_crSFB1[None, None, k_next],
+                                            )
                                     for _mt in range(self.num_m_tiles):
                                         for _nt in range(self.num_n_tiles1):
                                             mma_atom.set(
@@ -1728,17 +1843,10 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                     fc2_pipeline.consumer_wait(fc2_cons_state, fc2_peek)
                     if cutlass.const_expr(self.reform_sf_pack):
                         if cutlass.const_expr(self.decode_reform):
-                            if cutlass.const_expr(self.ep_decode_opt):
-                                self._sf_expand_fc2_out_of_place(
-                                    sf2_source_base_addr + fc2_cons_state.index * Int32(1552),
-                                    sfb2_base_addr + fc2_cons_state.index * Int32(2048),
-                                    Int32(tidx),
-                                )
-                            else:
-                                self._sf_expand_stage(
-                                    sfb2_base_addr + fc2_cons_state.index * Int32(2048),
-                                    Int32(tidx), 2048,
-                                )
+                            self._sf_expand_stage(
+                                sfb2_base_addr + fc2_cons_state.index * Int32(2048),
+                                Int32(tidx), 2048,
+                            )
                         else:
                             self._sf_expand_stage(
                                 sfb2_base_addr + fc2_cons_state.index * Int32(1024),
@@ -2104,10 +2212,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                     if cutlass.const_expr(self.reform_sf_pack):
                         if is_dma_lane0:
                             if cutlass.const_expr(self.decode_reform):
-                                if cutlass.const_expr(self.ep_decode_opt):
-                                    sf2_dest = sf2_source_base_addr + fc2_prod_state.index * Int32(1552)
-                                else:
-                                    sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(2048)
+                                sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(2048)
                                 sf2_tile = output_tile_idx
                             else:
                                 sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(1024)
