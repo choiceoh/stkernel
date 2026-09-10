@@ -21,6 +21,12 @@ Reference release: `deepseek-ai/DeepSeek-V4.1-Flash`, revision
 - `cpu-logic-first.log`: the first complete repository regression run reached
   the fleet suite but had one failure in a pre-existing asynchronous launch
   fixture. It is retained as a failure, not counted as a complete gate pass.
+- `cpu-core.log`: the separated core gate passes 71,655 checks and 74
+  megakernel regressions. `cpu-fleet-retry.log` passes the original 385 fleet
+  tests in two isolated shards. No test or fleet source was changed. A
+  controlled reproduction of an existing process-exit race is retained in
+  `existing-fleet-exit-race.json`; the first failure's truncated output does
+  not establish that this was its exact cause.
 - `readiness.json`: read-only source/runtime inventory. At observation, only
   46/48 checkpoint shards were present; Engram shards 47/48 were absent. The
   profile still lacks a complete model, loader and paged attention integration.
@@ -39,7 +45,35 @@ python tests/test_logic.py
 compilation of the exact Triton score kernel. It requires a clean committed
 source, the pinned image already on the node and 12 GiB available host memory.
 The container has no GPU devices, network or model mounts; CPU/memory are
-bounded. Its eventual compile receipt is a code-generation result only.
+bounded. Its compile receipt is a code-generation result only.
+
+## Offline SM121 compilation: PASS
+
+Normal CPU fleet session `dsv41indexercpu0910v1`, on srv3, compiled the frozen
+source `582eb1aecadd3b6454cb9e215ff81c68a3fb3e34`. Its terminal receipt is
+`aot-cpu1/fleet-ack.json`; the device-free execution, source hashes before/after
+and original compiler log are retained alongside it. The local source hashes
+and fetched artifact hashes were checked against these receipts.
+
+- Already-present image:
+  `sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`.
+- Torch `2.13.0+cu130`, Triton `3.7.1`, target `cuda/SM121`, four warps,
+  `enable_fp_fusion=False`; runtime-width `i32` argument in both variants.
+- H8/D128 and H32/D128 compile; static shared memory is 12,288/16,384 bytes.
+- `aot-cpu1/ptx-audit.json` checks the fetched PTX against the compiler hashes
+  and identifies the runtime-width load/bounds tests, BF16-input MMA, and
+  separate dot/product/head-sum BF16 conversions. This checks generated code,
+  not numerical equivalence on a device.
+- No device nodes; CUDA remains uninitialized. The bounded compiler container
+  completes in 2.51 seconds with 16.35 GiB host memory available at admission.
+  This elapsed time is **not** a kernel timing.
+- The full remote evidence, including cubins/PTX and the Triton cache, remains
+  at `/home/choiceoh/dsv41-indexer-cpu1-evidence` on srv3. `SHA256SUMS` describes
+  that complete directory; the committed evidence is its textual subset.
+
+Later evidence/documentation commits do not change the compiled kernel or
+adapter sources. No serving defaults, GPU reservations or admission policy
+were changed.
 
 ## What the optimization changes
 

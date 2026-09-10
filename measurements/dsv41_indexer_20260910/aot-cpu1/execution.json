@@ -1,0 +1,130 @@
+{
+  "schema": 1,
+  "passed": true,
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "source_before": {
+    "revision": "582eb1aecadd3b6454cb9e215ff81c68a3fb3e34",
+    "clean": true,
+    "files": [
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer.py",
+        "bytes": 12221,
+        "sha256": "5c9a19b4a4a9007ca293205017481a873325aa739ef9ac8322561141c250d2d0"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer_triton.py",
+        "bytes": 6415,
+        "sha256": "c52c05cc25b41a33a27b897cadddd015acd774a2cc5753573335e3feec3f0b78"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_reference_adapter.py",
+        "bytes": 13944,
+        "sha256": "8bed06943405be212486dd4bf1e8f864a019ccd5912a7be54135950fe07a0e99"
+      },
+      {
+        "path": "probes/dsv41_indexer_diff.py",
+        "bytes": 21776,
+        "sha256": "6210fcd6b36aa58c46de02002ca07442dc70de11bed26f90227773b38456f55b"
+      },
+      {
+        "path": "tests/test_dsv41_reference_adapter.py",
+        "bytes": 16855,
+        "sha256": "c8718a8d7414d25814b064700ab442a0edb5a5564c39884d99cc9b9c9f35552a"
+      },
+      {
+        "path": "tests/test_dsv41_indexer_contracts.py",
+        "bytes": 5402,
+        "sha256": "29dc4078c976cb2b8961726d09029d479908019cfb7ebd6a90610bee59508b86"
+      },
+      {
+        "path": "measurements/dsv41_indexer_20260910/cpu_compile_runner.py",
+        "bytes": 6607,
+        "sha256": "8382cb50ad027f52fc4cda6fc8fcd2a042eae9e3219800423ef05e1a190b6775"
+      }
+    ]
+  },
+  "mem_available_bytes": 17551249408,
+  "command": [
+    "docker",
+    "run",
+    "--pull=never",
+    "--rm",
+    "--runtime=runc",
+    "--network=none",
+    "--name",
+    "dsv41-indexer-cpu-2919080",
+    "--cpuset-cpus=14-15",
+    "--memory=6g",
+    "--memory-swap=6g",
+    "-e",
+    "NVIDIA_VISIBLE_DEVICES=void",
+    "-e",
+    "CUDA_VISIBLE_DEVICES=",
+    "-e",
+    "OMP_NUM_THREADS=1",
+    "-e",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "-e",
+    "TRITON_CACHE_DIR=/evidence/cache",
+    "--mount",
+    "type=bind,src=/home/choiceoh/stkernel-dsv41-indexer-20260910,dst=/repo,readonly",
+    "--mount",
+    "type=bind,src=/home/choiceoh/dsv41-indexer-cpu1-evidence,dst=/evidence",
+    "--workdir",
+    "/repo",
+    "--entrypoint",
+    "python3",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "-B",
+    "/evidence/inner.py"
+  ],
+  "started_at": 1789042922.8410509,
+  "wrapper_sha256": "8382cb50ad027f52fc4cda6fc8fcd2a042eae9e3219800423ef05e1a190b6775",
+  "inner_sha256": "14370a1a51e3d1eebbfb5b541a228a42238e1526fc85b34fb45ab49bddc6cb58",
+  "gpu_numerics": false,
+  "gpu_performance": false,
+  "model_equivalence": false,
+  "returncode": 0,
+  "source_after": {
+    "revision": "582eb1aecadd3b6454cb9e215ff81c68a3fb3e34",
+    "clean": true,
+    "files": [
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer.py",
+        "bytes": 12221,
+        "sha256": "5c9a19b4a4a9007ca293205017481a873325aa739ef9ac8322561141c250d2d0"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer_triton.py",
+        "bytes": 6415,
+        "sha256": "c52c05cc25b41a33a27b897cadddd015acd774a2cc5753573335e3feec3f0b78"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_reference_adapter.py",
+        "bytes": 13944,
+        "sha256": "8bed06943405be212486dd4bf1e8f864a019ccd5912a7be54135950fe07a0e99"
+      },
+      {
+        "path": "probes/dsv41_indexer_diff.py",
+        "bytes": 21776,
+        "sha256": "6210fcd6b36aa58c46de02002ca07442dc70de11bed26f90227773b38456f55b"
+      },
+      {
+        "path": "tests/test_dsv41_reference_adapter.py",
+        "bytes": 16855,
+        "sha256": "c8718a8d7414d25814b064700ab442a0edb5a5564c39884d99cc9b9c9f35552a"
+      },
+      {
+        "path": "tests/test_dsv41_indexer_contracts.py",
+        "bytes": 5402,
+        "sha256": "29dc4078c976cb2b8961726d09029d479908019cfb7ebd6a90610bee59508b86"
+      },
+      {
+        "path": "measurements/dsv41_indexer_20260910/cpu_compile_runner.py",
+        "bytes": 6607,
+        "sha256": "8382cb50ad027f52fc4cda6fc8fcd2a042eae9e3219800423ef05e1a190b6775"
+      }
+    ]
+  },
+  "finished_at": 1789042925.3480165
+}

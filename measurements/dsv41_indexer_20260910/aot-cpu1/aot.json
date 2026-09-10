@@ -1,0 +1,134 @@
+{
+  "schema": 1,
+  "passed": true,
+  "compiled": [
+    {
+      "entry": "_compact_scores_kernel",
+      "heads": 8,
+      "signature": {
+        "Q": "*bf16",
+        "K": "*bf16",
+        "W": "*bf16",
+        "IDS": "*i32",
+        "OUT": "*bf16",
+        "WIDTH": "i32"
+      },
+      "constants": {
+        "Q_QUERIES": 1,
+        "HEADS": 8,
+        "DIM": 128,
+        "CAPACITY": 16384,
+        "Q_B": 1024,
+        "Q_Q": 1024,
+        "Q_H": 128,
+        "Q_D": 1,
+        "K_B": 134217728,
+        "K_S": 128,
+        "K_D": 1,
+        "W_B": 8,
+        "W_Q": 8,
+        "W_H": 1,
+        "I_B": 16384,
+        "I_Q": 16384,
+        "I_C": 1,
+        "BLOCK_H": 16,
+        "BLOCK_D": 128,
+        "BLOCK_C": 32
+      },
+      "runtime_example": {
+        "WIDTH": 131073
+      },
+      "options": {
+        "num_warps": 4,
+        "enable_fp_fusion": false
+      },
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "kernel_hash": "b04420c7dfab38a1a55de68da6fa1d88c34241682fd0b8076d53cb12cdd9fc5b",
+      "shared_bytes": 12288,
+      "artifacts": [
+        {
+          "path": "H8/kernel.ptx",
+          "bytes": 42376,
+          "sha256": "647aba07e80dea7bbd0eacab122638d95ad97c9e906c1cac00bd1f44681e274d"
+        },
+        {
+          "path": "H8/kernel.cubin",
+          "bytes": 59744,
+          "sha256": "8e841c1e89d78bd19d0ee6a381d457934dd31adc712bc9a670efe19f7373d732"
+        }
+      ]
+    },
+    {
+      "entry": "_compact_scores_kernel",
+      "heads": 32,
+      "signature": {
+        "Q": "*bf16",
+        "K": "*bf16",
+        "W": "*bf16",
+        "IDS": "*i32",
+        "OUT": "*bf16",
+        "WIDTH": "i32"
+      },
+      "constants": {
+        "Q_QUERIES": 1,
+        "HEADS": 32,
+        "DIM": 128,
+        "CAPACITY": 16384,
+        "Q_B": 4096,
+        "Q_Q": 4096,
+        "Q_H": 128,
+        "Q_D": 1,
+        "K_B": 134217728,
+        "K_S": 128,
+        "K_D": 1,
+        "W_B": 32,
+        "W_Q": 32,
+        "W_H": 1,
+        "I_B": 16384,
+        "I_Q": 16384,
+        "I_C": 1,
+        "BLOCK_H": 32,
+        "BLOCK_D": 128,
+        "BLOCK_C": 32
+      },
+      "runtime_example": {
+        "WIDTH": 131073
+      },
+      "options": {
+        "num_warps": 4,
+        "enable_fp_fusion": false
+      },
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "kernel_hash": "326d4146056b9ea5f790e5a2d432543e898d49c6a0fd57437d999efe8d356356",
+      "shared_bytes": 16384,
+      "artifacts": [
+        {
+          "path": "H32/kernel.ptx",
+          "bytes": 57199,
+          "sha256": "097ec2138f20486910b98c530826e5291096bf6869c001cf95f7da9b74f1dd9d"
+        },
+        {
+          "path": "H32/kernel.cubin",
+          "bytes": 73224,
+          "sha256": "e6ff2a626f628ac410698f03b74b5ed2ec3a8343dba12c80d9ea2dcab7438651"
+        }
+      ]
+    }
+  ],
+  "torch_version": "2.13.0+cu130",
+  "triton_version": "3.7.1",
+  "torch_cuda_version": "13.0",
+  "devices": [],
+  "cuda_initialized": false,
+  "gpu_numerics": false,
+  "gpu_performance": false,
+  "model_equivalence": false
+}
