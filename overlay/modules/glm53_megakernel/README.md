@@ -7,6 +7,49 @@ nvcc (`-arch=sm_121a`) instead of JIT. 34차 §8 (2026-09-06) sunset the
 persistent v1 GEMM kernel and the MK_SEG_KDA block; their sections below
 are kept as history where they still explain a number.
 
+## Shared MHC geometry and V4.1 contract (experimental, 2026-09-10)
+
+The MHC segment now specializes hidden size **4096 or 5120**, with four
+streams and 1–32 tokens. The larger shape uses twenty 256-column chunks and
+twenty tail values per thread. GEMM and MLA retain their existing geometry.
+The existing 4096 serving hooks and numerical gates are unchanged; additional
+geometry and V4.1 semantics are exposed only through the low-level probe API.
+No model profile enables them.
+
+Two contracts share the projection, Sinkhorn and tail implementation:
+
+| Contract | Projection input | Collapse coefficient | Norm statistic |
+|---|---|---|---|
+| `legacy` | FP32 post result before storing BF16 | Newly computed pre mix | FP32 collapse before storing BF16 |
+| `v41` | BF16 post result converted to FP32 | Independent incoming pre mix | BF16 collapse converted to FP32 |
+
+V4.1 additionally returns the newly computed pre mix for the next sublayer.
+Its reference config uses projection/norm epsilon `1e-20`, Sinkhorn/pre epsilon
+`1e-6`, and post multiplier `2`. These are separate caller parameters, not a
+change to the GLM defaults. Merely accepting H=5120 under the legacy contract
+does **not** implement V4.1. The reference provenance, runtime limitations and
+validation receipts are in
+[`measurements/dsv41_mhc_20260910`](../../../measurements/dsv41_mhc_20260910/README.md).
+
+New specializations use FP32 projection weights, ordinary stream ordering and
+geometry/contract-specific persistent scratch. Their cold workspace must be
+prepared before graph capture. MHC device ticket counters remain shared:
+**all MHC calls, including different geometries, must be serialized**. Distinct
+scratch allocations do not make concurrent streams safe. BF16 weight packing
+and AR-consumer PDL remain confined to the established 4096 legacy path.
+
+For new paths, token-group count is bounded by the token count, eliminating
+projection-weight loads for groups with no tokens. The resident grid and
+tail completion protocol are preserved. This removes redundant work at tiny
+batch sizes; GPU timing is required to quantify any benefit.
+
+`probes/mk_mhc_geometry_bench.py` keeps the legacy and V4.1 PyTorch oracles
+separate and validates eager calls and changed-input graph replay. It does not
+measure serving throughput. Its compile-only path needs no CUDA device. The current
+fleet policy does not admit standalone GPU probes; do not bypass it with a
+renamed onepass command. Full V4.1 serving integration and direct tok/s/TTFT
+validation remain separate gates.
+
 ## MK-GEMM is the W4 lane (the fp8 W8 arm was removed 2026-09-02)
 
 Weights are stored as e2m1 nibbles x one pow2 scale per 16 elements
