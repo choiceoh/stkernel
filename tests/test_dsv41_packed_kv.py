@@ -191,6 +191,24 @@ class PackedKVContracts(unittest.TestCase):
         text=ast.unparse(offline)
         self.assertIn("{name: 'i32' for name in _RUNTIME_DIMS}",text)
         self.assertIn("{name: 'i64' for name in _RUNTIME_STRIDES}",text)
+        # Code-generation boundary only: this is not GPU numerical proof.
+        # The BF16 register move must remain opaque and bit preserving, with
+        # the original selected KV feeding both unmodified seeded dot calls.
+        loop=next(n for n in kernel.body if isinstance(n,ast.For))
+        kv_assignments=[n for n in loop.body if isinstance(n,ast.Assign)
+                        and any(isinstance(t,ast.Name) and t.id=='kv' for t in n.targets)]
+        expected=ast.parse("""
+kv = tl.where(in_window[:, None], window, compressed)
+kv = tl.inline_asm_elementwise('mov.b16 $0, $1;', constraints='=h,h', args=[kv], dtype=tl.bfloat16, is_pure=False, pack=1)
+""").body
+        self.assertEqual([ast.dump(n) for n in kv_assignments],[ast.dump(n) for n in expected])
+        moves=[n for n in ast.walk(kernel) if isinstance(n,ast.Call)
+               and ast.unparse(n.func)=='tl.inline_asm_elementwise']
+        self.assertEqual(len(moves),1)
+        dots=[ast.unparse(n) for statement in loop.body for n in ast.walk(statement) if isinstance(n,ast.Call)
+              and ast.unparse(n.func)=='tl.dot']
+        self.assertEqual(dots,["tl.dot(q, tl.trans(kv), initial, out_dtype=tl.float32)",
+                               "tl.dot(probability.to(tl.bfloat16), kv, accumulated, out_dtype=tl.float32)"])
 
 
 if __name__=='__main__':unittest.main()

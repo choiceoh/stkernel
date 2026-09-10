@@ -81,3 +81,21 @@ admission for a serving default.
   tensor lifetime, not GPU allocator-reserved memory.
 - `cpu-core.log`: 71,769 core checks and 74 megakernel regressions pass.
   `compose.log`: 25 overlays from seven modules, including 13 model files.
+
+## Initial SM121 compile admission: rejected
+
+Normal CPU fleet session `dsv41packedkvcpu0910v1` used frozen source
+`82385f1ff7568be6a46be0b07145464cc61ac0f5`. Code generation produced H8, but
+its 147,456-byte shared allocation exceeded the unchanged 98,304-byte budget,
+so the runner stopped before compiling the remaining variants. No kernel ran.
+The failed receipt, original metadata and manifest are retained in `aot-cpu1`.
+All 21 source hashes and all 11 fetched files were verified.
+
+TTGIR shows two simultaneous 64x512 BF16 KV allocations, with different QK/PV
+swizzles, plus a 16x512 BF16 Q allocation: 64+64+16 KiB. Triton 3.7.1 follows
+the pure conversion chain back to uint8 transport when choosing the dot's
+original operand width. The correction explicitly marks the final BF16 value
+with a bit-preserving `mov.b16` boundary whose side-effect annotation stops
+that compiler traversal. This instruction is neither arithmetic nor a memory
+fence. Tile order, compact loads, eight warps and the admission limit remain.
+See the compiler's [`computeOrigBitWidth` implementation](https://github.com/triton-lang/triton/blob/v3.7.1/lib/Dialect/TritonGPU/Transforms/AccelerateMatmul.cpp).

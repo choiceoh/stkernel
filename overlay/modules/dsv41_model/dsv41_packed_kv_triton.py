@@ -102,6 +102,14 @@ def _packed_sparse_kernel(
         bits = tl.where(sf_nan, 0x7FC0, bits)
         compressed = bits.to(tl.uint16).to(tl.bfloat16, bitcast=True)
         kv = tl.where(in_window[:, None], window, compressed)
+        # Triton 3.7.1 computeOrigBitWidth follows pure elementwise operations
+        # back to byte loads, choosing kWidth=4 and two live KV swizzles. This
+        # bit-preserving BF16 boundary stops that traversal (kWidth=2). It is
+        # neither a memory fence nor arithmetic; the AOT budget remains binding.
+        kv = tl.inline_asm_elementwise(
+            "mov.b16 $0, $1;", constraints="=h,h", args=[kv],
+            dtype=tl.bfloat16, is_pure=False, pack=1,
+        )
         initial = tl.where((in_window | in_comp)[None, :], 0.0, -float("inf"))
         initial = tl.broadcast_to(initial, (16, 64))
         scores = tl.dot(q, tl.trans(kv), initial, out_dtype=tl.float32) * SCALE
