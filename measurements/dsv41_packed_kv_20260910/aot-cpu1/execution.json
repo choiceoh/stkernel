@@ -1,0 +1,160 @@
+{
+  "schema": 1,
+  "passed": false,
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "source_before": {
+    "revision": "82385f1ff7568be6a46be0b07145464cc61ac0f5",
+    "clean": true,
+    "files": [
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer.py",
+        "bytes": 12221,
+        "sha256": "5c9a19b4a4a9007ca293205017481a873325aa739ef9ac8322561141c250d2d0"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer_triton.py",
+        "bytes": 6415,
+        "sha256": "c52c05cc25b41a33a27b897cadddd015acd774a2cc5753573335e3feec3f0b78"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_layers.py",
+        "bytes": 7721,
+        "sha256": "71b5919843f981a3abfc1f6b10f064513058653eef3e5497d5ba796121477bea"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_index.py",
+        "bytes": 14412,
+        "sha256": "93960e9ac7eda0c4a51b5dac0b92312a44adf9d47f56f17df509e07ca4d232c5"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_index_triton.py",
+        "bytes": 8935,
+        "sha256": "8de2ef1ec1d2c96498f214ad8718e478c9c3360faba4a2c4cadd755635e5101a"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_reference_adapter.py",
+        "bytes": 22340,
+        "sha256": "7cc814d930d7fd5b70eebbb2aeb6feeb1ce4c07e0ae3dcc3aa814da1ec69e9b5"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_reference_adapter.py",
+        "bytes": 13944,
+        "sha256": "8bed06943405be212486dd4bf1e8f864a019ccd5912a7be54135950fe07a0e99"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_dual_sparse.py",
+        "bytes": 8429,
+        "sha256": "f1a9516e75f176f954415208537ff01444d4ef4039e851c42bc7a3def83de0f3"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_dual_sparse_triton.py",
+        "bytes": 9916,
+        "sha256": "aa2feb6df5c87e4aaa4c5e812d29c1ecc2ffd58601a97cda31d5d078f3dda08e"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_dual_sparse_reference_adapter.py",
+        "bytes": 16248,
+        "sha256": "f76b2beb4125153f29f794ba0f36d989d9f69e302868c3984558452a5006ff52"
+      },
+      {
+        "path": "probes/dsv41_dual_sparse_diff.py",
+        "bytes": 24979,
+        "sha256": "c1c3a15b55425b6a988b53edad923292f0e2a5fb77c56796810be4b0e799ac7c"
+      },
+      {
+        "path": "probes/dsv41_packed_index_diff.py",
+        "bytes": 30089,
+        "sha256": "493a33f020c09b2f6de1135fad5664f09d72278adc011c08400f7d4f37c35b97"
+      },
+      {
+        "path": "tests/test_dsv41_dual_sparse.py",
+        "bytes": 11443,
+        "sha256": "d736ca381a8118c3bea4d43c77f76963527a40f5e7597fe2ead9d77e2e53ebe2"
+      },
+      {
+        "path": "tests/test_dsv41_dual_sparse_reference_adapter.py",
+        "bytes": 21244,
+        "sha256": "2cbd4acd63fd466cae43d61d9cfce3328b374f7914c2b63e011b651fc7303229"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_kv.py",
+        "bytes": 14119,
+        "sha256": "9a5d88e707c0b841bdd2c8cc920e34060047bc9cd65e39a250e2a360689a2d32"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_kv_triton.py",
+        "bytes": 11757,
+        "sha256": "57ab94a137b55a70207824479005dba325be5af11a62e173970846912762dc0e"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_kv_reference_adapter.py",
+        "bytes": 19819,
+        "sha256": "bfc125f68bf2877affb5b5408b318d0e025515114b49f0db669fcd3ddc528e5d"
+      },
+      {
+        "path": "probes/dsv41_packed_kv_diff.py",
+        "bytes": 22915,
+        "sha256": "0557332ceabbcb564219c89318782de7ea34cc5269199b1d308d15ae4eb6974c"
+      },
+      {
+        "path": "tests/test_dsv41_packed_kv.py",
+        "bytes": 11057,
+        "sha256": "aa9fabed597daf1d6d6e954833237d0d18ec22a8090ad72ba6d3f755b1533fa8"
+      },
+      {
+        "path": "tests/test_dsv41_packed_kv_reference_adapter.py",
+        "bytes": 14430,
+        "sha256": "907b664b494bc90357e1d6532827bb593e9bbb4fa6efdc9b2a05773e6d7deb62"
+      },
+      {
+        "path": "measurements/dsv41_packed_kv_20260910/cpu_compile_runner.py",
+        "bytes": 7454,
+        "sha256": "4fc845d8e665ce9fface2bf7cf3379c71383450f6b72c87d402144d84d152d96"
+      }
+    ]
+  },
+  "mem_available_bytes": 17597964288,
+  "command": [
+    "docker",
+    "run",
+    "--pull=never",
+    "--rm",
+    "--runtime=runc",
+    "--network=none",
+    "--name",
+    "dsv41-packed-kv-cpu-3314344",
+    "--cpuset-cpus=14-15",
+    "--memory=6g",
+    "--memory-swap=6g",
+    "-e",
+    "NVIDIA_VISIBLE_DEVICES=void",
+    "-e",
+    "CUDA_VISIBLE_DEVICES=",
+    "-e",
+    "OMP_NUM_THREADS=1",
+    "-e",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "-e",
+    "TRITON_CACHE_DIR=/evidence/cache",
+    "--mount",
+    "type=bind,src=/home/choiceoh/stkernel-dsv41-packed-kv-20260910,dst=/repo,readonly",
+    "--mount",
+    "type=bind,src=/home/choiceoh/dsv41-packed-kv-cpu1-evidence,dst=/evidence",
+    "--workdir",
+    "/repo",
+    "--entrypoint",
+    "python3",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "-B",
+    "/evidence/inner.py"
+  ],
+  "started_at": 1789049357.6677055,
+  "wrapper_sha256": "4fc845d8e665ce9fface2bf7cf3379c71383450f6b72c87d402144d84d152d96",
+  "inner_sha256": "6a8639f760437c9270fc9059130e63fedd7ba30a482a28e17aae9b3967baaf15",
+  "gpu_numerics": false,
+  "gpu_performance": false,
+  "model_equivalence": false,
+  "returncode": 1,
+  "error": "RuntimeError: offline compile failed: exit 1; see compile.log",
+  "finished_at": 1789049362.0627115
+}

@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "source_revision": "2b2299df3fd86d6a9bc721827e1bc2e572315151",
+  "source_files_verified": 21,
+  "artifacts_verified": 44,
+  "artifact_readback_directory": "/tmp/dsv41-packed-kv-cpu2-readback",
+  "manifest_scope": "Full remote evidence directory including compiler cache; all manifest files fetched and verified.",
+  "elapsed_compile_seconds": 10.08992052078247,
+  "variants": [
+    {
+      "label": "H8",
+      "shared_bytes": 83968
+    },
+    {
+      "label": "H16",
+      "shared_bytes": 83968
+    },
+    {
+      "label": "H32",
+      "shared_bytes": 83968
+    },
+    {
+      "label": "H64",
+      "shared_bytes": 83968
+    }
+  ]
+}

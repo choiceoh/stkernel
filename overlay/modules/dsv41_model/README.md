@@ -15,6 +15,11 @@ reference's full-prefix KV concatenation across the 38 compressed-attention
 layers. It composes with either indexer adapter and does not change KV storage,
 candidate selection or serving defaults.
 
+The [packed compressed-KV path](PACKED_KV.md) retains those direct reads while
+storing the original E2M1/E4M3 quantizer output. Compressed rows occupy 288
+bytes instead of 1,024 BF16 bytes. This is an explicit alternative to the
+BF16 dual-pool adapter and composes with the packed indexer.
+
 ## Work removed
 
 The reference's layer 20 selects up to 2,048 candidate blocks, each containing

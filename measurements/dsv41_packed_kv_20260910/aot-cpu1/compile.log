@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/evidence/inner.py", line 13, in <module>
+    compiled = offline_compile(out / 'compiled')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/overlay/modules/dsv41_model/dsv41_packed_kv_triton.py", line 200, in offline_compile
+    shared = _resource_contract(compiled)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/overlay/modules/dsv41_model/dsv41_packed_kv_triton.py", line 127, in _resource_contract
+    raise RuntimeError("packed sparse compiled shared memory exceeds the 96 KiB admission budget")
+RuntimeError: packed sparse compiled shared memory exceeds the 96 KiB admission budget

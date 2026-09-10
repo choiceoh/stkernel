@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-dsv41-packed-kv-20260910/measurements/dsv41_packed_kv_20260910/cpu_compile_runner.py", line 154, in <module>
+    main()
+  File "/home/choiceoh/stkernel-dsv41-packed-kv-20260910/measurements/dsv41_packed_kv_20260910/cpu_compile_runner.py", line 132, in main
+    raise RuntimeError(f"offline compile failed: exit {report['returncode']}; see compile.log")
+RuntimeError: offline compile failed: exit 1; see compile.log

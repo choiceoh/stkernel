@@ -1,0 +1,13 @@
+{
+  "artifacts_verified": 11,
+  "source_files_verified": 21,
+  "source_revision": "82385f1ff7568be6a46be0b07145464cc61ac0f5",
+  "compiler_created_kernel": true,
+  "admission_passed": false,
+  "shared_bytes": 147456,
+  "shared_budget_bytes": 98304,
+  "metadata_original_path": "cache/B36FCF4OZCUNJI7HJUASOF224RCJW4TBF32NZ6WKZQUMFZ2AGOYA/_packed_sparse_kernel.json",
+  "metadata_sha256": "1fe4b1e4ea7aeb616926b500bd4024775e65dfde8a41b6266f5235b48dbecee5",
+  "local_full_readback": "/tmp/dsv41-packed-kv-cpu1-readback",
+  "gpu_execution": false
+}

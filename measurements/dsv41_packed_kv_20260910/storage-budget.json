@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "scope": "Static tensor allocation and logical operand bytes, not measured memory reservation, HBM traffic or speed.",
+  "reference_sha256": {
+    "config.json": "2e84f45cf1dac8c7fcbb200e96667d4b913275690668ed496f24c7747207a809",
+    "model.py": "4e9ae23620edc8028ccc5d5fef552ab7fdc7dcd6f79608754fe9f67644056f65",
+    "kernel.py": "1236c3507019ed176f5dba5e04bcea58867cf654818c6cf138ed4845398c2455"
+  },
+  "owner_layers": [
+    2,
+    8,
+    14,
+    20
+  ],
+  "owner_ratios": [
+    2,
+    2,
+    2,
+    1
+  ],
+  "row_bytes": {
+    "bf16": 1024,
+    "packed_payload": 256,
+    "e4m3_scales": 32,
+    "packed_total": 288
+  },
+  "reduction_percent": 71.875,
+  "allocations": [
+    {
+      "batch_size": 1,
+      "capacity_tokens": 2048,
+      "owner_count": 4,
+      "stored_positions": 5120,
+      "bf16_allocated_bytes": 5242880,
+      "packed_allocated_bytes": 1474560,
+      "removed_allocated_bytes": 3768320
+    },
+    {
+      "batch_size": 1,
+      "capacity_tokens": 32768,
+      "owner_count": 4,
+      "stored_positions": 81920,
+      "bf16_allocated_bytes": 83886080,
+      "packed_allocated_bytes": 23592960,
+      "removed_allocated_bytes": 60293120
+    },
+    {
+      "batch_size": 1,
+      "capacity_tokens": 131072,
+      "owner_count": 4,
+      "stored_positions": 327680,
+      "bf16_allocated_bytes": 335544320,
+      "packed_allocated_bytes": 94371840,
+      "removed_allocated_bytes": 241172480
+    },
+    {
+      "batch_size": 1,
+      "capacity_tokens": 1048576,
+      "owner_count": 4,
+      "stored_positions": 2621440,
+      "bf16_allocated_bytes": 2684354560,
+      "packed_allocated_bytes": 754974720,
+      "removed_allocated_bytes": 1929379840
+    },
+    {
+      "batch_size": 4,
+      "capacity_tokens": 2048,
+      "owner_count": 4,
+      "stored_positions": 20480,
+      "bf16_allocated_bytes": 20971520,
+      "packed_allocated_bytes": 5898240,
+      "removed_allocated_bytes": 15073280
+    },
+    {
+      "batch_size": 4,
+      "capacity_tokens": 32768,
+      "owner_count": 4,
+      "stored_positions": 327680,
+      "bf16_allocated_bytes": 335544320,
+      "packed_allocated_bytes": 94371840,
+      "removed_allocated_bytes": 241172480
+    },
+    {
+      "batch_size": 4,
+      "capacity_tokens": 131072,
+      "owner_count": 4,
+      "stored_positions": 1310720,
+      "bf16_allocated_bytes": 1342177280,
+      "packed_allocated_bytes": 377487360,
+      "removed_allocated_bytes": 964689920
+    },
+    {
+      "batch_size": 4,
+      "capacity_tokens": 1048576,
+      "owner_count": 4,
+      "stored_positions": 10485760,
+      "bf16_allocated_bytes": 10737418240,
+      "packed_allocated_bytes": 3019898880,
+      "removed_allocated_bytes": 7717519360
+    }
+  ],
+  "max_selected_compressed_operand_per_decode_query": {
+    "layers": 38,
+    "positions_per_layer": 512,
+    "bf16_bytes": 19922944,
+    "packed_bytes": 5603328,
+    "removed_bytes": 14319616,
+    "caveat": "Assumes 512 valid compressed selections per layer counted once. Head-CTA rereads, padding, caches and invalid slots change physical traffic."
+  }
+}

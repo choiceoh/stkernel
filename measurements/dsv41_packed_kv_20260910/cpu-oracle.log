@@ -1,0 +1,1 @@
+{"passed": true, "format_pairs": 4096, "score_cases": 6, "adapter_steps": 8, "output": "measurements/dsv41_packed_kv_20260910/cpu-oracle.json"}

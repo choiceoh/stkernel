@@ -137,7 +137,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `tp_oneshot_ar` | 어느 모델이든 | 3 | ✓ | ● | ● | ● | ● |
 | `sched_decode_first` | 어느 모델이든 (AsyncScheduler 서브클래스; 모델·커널·형상 임포트 0) | 1 | ✓ | · | ● | ● | · |
 | `boot_stamps` | 어느 모델이든 (부팅 단계 계측) | 2 | ✓ | · | ● | ● | · |
-| `dsv41_model` | DeepSeek-V4.1 전용 (CED 인덱서·packed 캐시·dual-pool attention; 명시적 reference opt-in) | 10 | ✓ | · | ● | · | · |
+| `dsv41_model` | DeepSeek-V4.1 전용 (CED 인덱서·packed index/KV 캐시·dual-pool attention; 명시적 reference opt-in) | 13 | ✓ | · | ● | · | · |
 | `dsv41_engram` | DeepSeek-V4.1 전용 (SSD 룩업표: 설정·I/O·해시·게이트) | 4 | ✓ | · | ● | · | · |
 | `dsv41_encoding` | DeepSeek-V4.1 전용 (V4.1 프롬프트 형식 파싱) | 1 | ✓ | · | ● | · | · |
 | `glm53_megakernel` | sm_121a 디코드 커널 코어 (opt-in; dsv4 는 MK_SEG_MHC 만 해당) | 2 | ✓ | ○ | · | ○ | · |
