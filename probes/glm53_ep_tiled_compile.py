@@ -344,20 +344,25 @@ def historical_cpu7(root):
     return old
 
 
-def compiler_resource_summary(passed, dynamic_shared=None):
+def compiler_resource_summary(passed, estimated_shared=None, kernel_smem_capacity=None):
     raw = passed['resources'][0]['resources']
     assert len(re.findall(r'^\s*Function\s',raw,re.M)) == 1
     found = re.findall(r'\bREG:(\d+) STACK:(\d+) SHARED:(\d+) LOCAL:(\d+)',raw)
     assert len(found) == 1,raw
     reg,stack,shared,local = map(int,found[0])
-    summary = dict(registers=reg,stack_bytes=stack,static_shared_bytes=shared,
-                   local_bytes=local,dynamic_shared_bytes=dynamic_shared)
-    if dynamic_shared is not None:
-        assert type(dynamic_shared) is int and dynamic_shared > 0
-        assert dynamic_shared + shared <= 101376
-        summary['total_shared_bytes'] = dynamic_shared + shared
-    # Preserve STACK and raw PTX/cubin; LOCAL=0 does not establish no spilling.
-    return summary
+    # kernel.smem_bytes comes from V4._smem_bytes_estimate(), not the
+    # allocator's Storage size or actual launch dynamic-shared argument.
+    # Keep the cuobjdump SHARED value separate; their sum is not a bound
+    # actual per-block allocation witness. No physical limit is increased.
+    if estimated_shared is None:
+        assert kernel_smem_capacity is None
+    else:
+        assert type(estimated_shared) is int and type(kernel_smem_capacity) is int
+        assert 0 < estimated_shared <= kernel_smem_capacity <= 101376
+    return dict(registers=reg,stack_bytes=stack,static_shared_bytes=shared,
+        local_bytes=local,estimated_shared_bytes=estimated_shared,
+        kernel_smem_capacity_bytes=kernel_smem_capacity,
+        dynamic_shared_bytes=None,total_shared_bytes=None)
 
 
 def expected_native_key(rows, mode, e, n):
@@ -432,10 +437,16 @@ def validate_compile_matrix(result):
             assert passed['compiled_in_this_run'] is True
             assert passed['candidate'] is (e==144)
             assert not {'q1_register_layout','q1_pair_layout','register_layout'} & set(passed)
+            summary = passed['resource_summary']
+            assert type(summary) is dict
+            assert all(type(summary[k]) is int for k in (
+                'registers','stack_bytes','static_shared_bytes','local_bytes'))
+            assert summary['dynamic_shared_bytes'] is None and summary['total_shared_bytes'] is None
             if mode != 'dynamic':
                 assert passed['cache_key'] == expected_native_key(rows,mode,e,n)
                 assert passed['specialization'] == expected_native_specialization(rows,mode,e,n)
-                assert type(passed['resource_summary']['dynamic_shared_bytes']) is int
+                assert type(passed['resource_summary']['estimated_shared_bytes']) is int
+                assert type(passed['resource_summary']['kernel_smem_capacity_bytes']) is int
             else:
                 key = passed['cache_key']
                 expected = ['dynamic','fp4','nvfp4',e,4096,n,8,48,[128,128],
@@ -444,9 +455,11 @@ def validate_compile_matrix(result):
                 if e==144:expected.append(HYBRID_TAG)
                 assert key == expected
                 assert passed['specialization'] == expected_dynamic_specialization(e,n)
-                assert passed['resource_summary']['dynamic_shared_bytes'] is None
+                assert passed['resource_summary']['estimated_shared_bytes'] is None
+                assert passed['resource_summary']['kernel_smem_capacity_bytes'] is None
             assert passed['resource_summary'] == compiler_resource_summary(
-                passed,passed['resource_summary']['dynamic_shared_bytes'])
+                passed,passed['resource_summary']['estimated_shared_bytes'],
+                passed['resource_summary']['kernel_smem_capacity_bytes'])
             count += 1
     assert count == 8 and result['fresh_lowerings'] == 8
     assert result['same_source_baseline_lowerings'] == 3 and result['hybrid_lowerings'] == 5
@@ -494,7 +507,8 @@ def compile_candidate(output, result):
                 cute.compile(kernel,*args,options='--opt-level 2 --enable-tvm-ffi')
                 assert native_actual_specialization(kernel,args,key,rows,mode,e,n,cutlass) == selected
                 assert not hasattr(kernel,'ep_q1_register_layout_receipt'), 'retired optimization executed'
-                dynamic_shared = int(kernel.smem_bytes)
+                estimated_shared = int(kernel.smem_bytes)
+                kernel_smem_capacity = int(kernel.smem_capacity)
                 if e == 72:
                     prior = next(p for p in old['global_static_passes']
                                  if p['arm']=='global-static/'+name)
@@ -523,13 +537,13 @@ def compile_candidate(output, result):
                 assert len(seen) == len(md._DYNAMIC_KERNEL_CACHE) == 1
                 key=next(iter(md._DYNAMIC_KERNEL_CACHE))
                 selected=seen[0]
-                dynamic_shared=None
+                estimated_shared=kernel_smem_capacity=None
                 if e == 72:
                     prior=next(p for p in old['dynamic_passes'] if p['arm']=='dynamic/M8192')
                     assert json.loads(json.dumps(key)) == prior['cache_key']
             passed=preserve_pass(output,kind.replace('_','-')+'/'+name,key)
             passed.update(compiled_in_this_run=True,candidate=e==144,specialization=selected,
-                          resource_summary=compiler_resource_summary(passed,dynamic_shared))
+                          resource_summary=compiler_resource_summary(passed,estimated_shared,kernel_smem_capacity))
             result[kind+'_passes'].append(passed)
             assert not torch.cuda.is_initialized()
     result.update(fresh_lowerings=8,same_source_baseline_lowerings=3,hybrid_lowerings=5,
