@@ -592,6 +592,178 @@ def cmd_verify(args) -> int:
     return 0
 
 
+SIDECARS = ("config.json", "tokenizer.json", "tokenizer_config.json",
+            "generation_config.json", "chat_template.jinja",
+            "preprocessor_config.json")
+
+
+def _write_index(out: Path, header: dict, shard_name: str, total: int) -> None:
+    """A weight_map naming only what this directory actually holds.
+
+    vLLM enumerates the files in the index and materializes every tensor it
+    finds before any name filter can run. That is why the engram tables have to
+    be absent from the INDEX rather than skipped by the loader: a
+    `layers.1.engram.embed.weight` that reaches `get_tensor` is 94 GiB of host
+    memory, and a skip_substrs check downstream of it is a check that runs
+    after the OOM.
+    """
+    index = {"metadata": {"total_size": total},
+             "weight_map": {name: shard_name for name in sorted(header)}}
+    (out / "model.safetensors.index.json").write_text(
+        json.dumps(index, indent=1))
+
+
+def _link_sidecars(repo: Path, out: Path) -> list[str]:
+    """config.json and the tokenizer, COPIED so the directory stands alone.
+
+    Copied rather than symlinked because a staged directory gets bind-mounted
+    into a container, and a symlink pointing at a host path outside the mount
+    resolves to nothing there -- which vLLM reports as "ensure the presence of
+    a config.json", i.e. as a missing file rather than as a dangling link.
+    They are kilobytes; the shards, which are not, stay symlinked and are made
+    RELATIVE for the same reason.
+    """
+    linked = []
+    for name in SIDECARS:
+        src = repo / name
+        if not src.is_file():
+            continue
+        dst = out / name
+        if dst.exists() or dst.is_symlink():
+            dst.unlink()
+        shutil_copy(src, dst)
+        linked.append(name)
+    return linked
+
+
+def _relative_symlink(src: Path, dst: Path) -> None:
+    """Point dst at src by a relative path where one exists.
+
+    A staged view is mounted somewhere else than it was written. An absolute
+    link survives only if the target path exists identically inside the
+    container; a relative one survives whenever the whole tree is mounted,
+    wherever it lands.
+    """
+    if dst.exists() or dst.is_symlink():
+        dst.unlink()
+    try:
+        target = os.path.relpath(src, dst.parent)
+    except ValueError:                      # different drives; cannot be relative
+        target = str(src)
+    os.symlink(target, dst)
+
+
+def shutil_copy(src: Path, dst: Path) -> None:
+    import shutil
+
+    shutil.copy2(src, dst)
+
+
+def _stage_dir(out: Path, rank, world) -> Path:
+    return out if rank is None else out / f"rank{rank}"
+
+
+def cmd_stage(args) -> int:
+    """Write a directory vLLM can load directly. Two modes, one output shape.
+
+    `--rank R`  stage the rank file `build` wrote: its own directory, holding
+                a symlink to the weights, an index naming only them, and the
+                sidecars. The launcher bind-mounts a per-node path at one
+                container path, so every rank names the same --model while
+                reading its own weights.
+    `--view`    stage a VIEW of the full checkpoint: symlinks to the original
+                shards and an index with the engram tables removed. Nothing is
+                copied. This exists because the tables cannot be skipped by
+                name at load time -- vLLM materializes every tensor the index
+                names before any filter runs, and
+                `layers.1.engram.embed.weight` is 94 GiB of host memory. The
+                only place to remove them is the index.
+
+    `--max-layers N` truncates the view to the first N layers, for a
+    real-weights smoke test that fits on one node. It is a TEST artifact and
+    says so in its index metadata, so a directory that ends up somewhere it
+    should not be can be recognised rather than guessed at.
+    """
+    repo, out = Path(args.repo), Path(args.out)
+    if args.view:
+        index = json.loads((repo / "model.safetensors.index.json").read_text())
+        weight_map = dict(index["weight_map"])
+        # engram tables leave because they are 188.8 GiB the loader would
+        # materialize; the vision tower leaves because this derivation has no
+        # module for it and the load stops on the first such name.
+        drop = re.compile(r"\.engram\.embed\.|^(vision|aligner)\.|"
+                          r"^image_(start|end|newline)$")
+        dropped_engram = [n for n in weight_map if drop.search(n)]
+        for name in dropped_engram:
+            del weight_map[name]
+        dropped_layers = []
+        if args.max_layers:
+            for name in list(weight_map):
+                m = re.match(r"^layers\.(\d+)\.", name)
+                if m and int(m.group(1)) >= args.max_layers:
+                    dropped_layers.append(name)
+                    del weight_map[name]
+        shards = sorted(set(weight_map.values()))
+        missing = [s for s in shards if not (repo / s).is_file()]
+        if missing:
+            raise SystemExit(
+                f"ABORT: {len(missing)} shard(s) the view needs are not "
+                f"downloaded, e.g. {missing[0]}")
+        out.mkdir(parents=True, exist_ok=True)
+        for shard in shards:
+            dst = out / shard
+            _relative_symlink(repo / shard, dst)
+        note = ("a VIEW of the full checkpoint with the engram tables removed"
+                + (f", truncated to {args.max_layers} layers -- TEST ARTIFACT"
+                   if args.max_layers else ""))
+        (out / "model.safetensors.index.json").write_text(json.dumps(
+            {"metadata": {"total_size": index["metadata"]["total_size"],
+                          "dsv41_view": note},
+             "weight_map": weight_map}, indent=1))
+        linked = _link_sidecars(repo, out)
+        print(f"  staged VIEW {out}")
+        print(f"    shards     {len(shards)} symlinked, nothing copied")
+        print(f"    index      {len(weight_map):,} tensors "
+              f"(-{len(dropped_engram)} engram/vision"
+              + (f", -{len(dropped_layers):,} beyond layer "
+                 f"{args.max_layers - 1}" if args.max_layers else "") + ")")
+        print(f"    sidecars   {', '.join(linked) or 'none found'}")
+        if args.max_layers:
+            print(f"    NOTE       truncated: a model built from this has "
+                  f"{args.max_layers} layers and is a plumbing test, never a "
+                  f"quality measurement")
+        print(f"    load with  --model {out}"
+              + (f" --hf-overrides '{{\"num_hidden_layers\": "
+                 f"{args.max_layers}}}'" if args.max_layers else ""))
+        return 0
+
+    if args.rank is None:
+        raise SystemExit("stage needs --rank R or --view")
+    src = out / f"rank{args.rank}of{args.world_size}.safetensors"
+    if not src.is_file():
+        raise SystemExit(
+            f"ABORT: {src} does not exist. Run `build --rank {args.rank}` "
+            f"first; staging only writes the index and the sidecars.")
+    stage = _stage_dir(out, args.rank, args.world_size)
+    stage.mkdir(parents=True, exist_ok=True)
+    _relative_symlink(src, stage / src.name)
+    header, _ = _shard_header(src)
+    header.pop("__metadata__", None)
+    total = max(m["data_offsets"][1] for m in header.values())
+    _write_index(stage, header, src.name, total)
+    linked = _link_sidecars(repo, stage)
+    engram = [n for n in header if ".engram.embed." in n]
+    print(f"  staged rank {args.rank} at {stage}")
+    print(f"    index      {len(header):,} tensors -> {src.name}")
+    print(f"    sidecars   {', '.join(linked) or 'none found'}")
+    print(f"    engram     {len(engram)} table tensor(s) "
+          f"({'none, as intended' if not engram else 'PROBLEM'})")
+    if engram:
+        return 1
+    print(f"    load with  --model {stage}")
+    return 0
+
+
 def cmd_selftest(args) -> int:
     """Build every rank from a synthetic checkpoint and check the partition.
 
@@ -779,7 +951,7 @@ def cmd_selftest(args) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("plan", "build", "verify", "selftest"):
+    for name in ("plan", "build", "verify", "stage", "selftest"):
         p = sub.add_parser(name)
         p.add_argument("--repo", default="/home/choiceoh/models/DeepSeek-V4.1-Flash")
         p.add_argument("--world-size", type=int, default=4)
@@ -797,15 +969,23 @@ def main() -> int:
         elif name == "selftest":
             p.add_argument("--out", default="")
         else:
-            p.add_argument("--rank", type=int, required=True)
+            p.add_argument("--rank", type=int,
+                           required=name in ("build", "verify"))
             p.add_argument("--out", required=True)
+            if name == "stage":
+                p.add_argument("--view", action="store_true",
+                               help="stage a filtered view of the full "
+                                    "checkpoint instead of a built rank file")
+                p.add_argument("--max-layers", type=int, default=0,
+                               help="truncate the view to the first N layers; "
+                                    "a test artifact, marked as one")
             if name == "verify":
                 p.add_argument("--samples", type=int, default=64,
                                help="tensors to compare byte-for-byte, spread "
                                     "over the placement classes")
                 p.add_argument("--seed", type=int, default=20260910)
     args = ap.parse_args()
-    return {"plan": cmd_plan, "build": cmd_build,
+    return {"plan": cmd_plan, "build": cmd_build, "stage": cmd_stage,
             "verify": cmd_verify, "selftest": cmd_selftest}[args.cmd](args)
 
 

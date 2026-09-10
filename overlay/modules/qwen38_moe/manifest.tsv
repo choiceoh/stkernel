@@ -1,0 +1,5 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+# Qwen3.8-Flash-Next MoE. A NEW file at the package root: the fusion is a
+# transform over routing tensors and stacked expert weights, so it is called
+# from the model path rather than replacing one.
+qwen38_shared_fuse.py	qwen38_shared_fuse.py	absent

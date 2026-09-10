@@ -8621,6 +8621,71 @@ def test_glm53_megakernel_contracts() -> None:
           "the probe walks the whole 8-bit E8M0 domain rather than asserting "
           "that a bare exponent must be representable")
 
+    # -- qwen38 shared-expert fusion. The shared expert has a routed expert's
+    #    shape (both intermediates are 640), so a grouped GEMM can host it as
+    #    one more slot -- which is also what keeps it ALIGNED: 640 stays 640
+    #    (1280 gate+up rows) instead of a TP split's 160 (320 rows). Padding
+    #    that misalignment is recorded as booting and destroying the model.
+    fuse = open(os.path.join(REPO, "overlay/modules/qwen38_moe",
+                             "qwen38_shared_fuse.py"), encoding="utf-8").read()
+    check("SHARED_SLOT_ID = -2" in fuse and "NO_EXPERT_ID = -1" in fuse,
+          "the fused slot's sentinel is distinct from 'no expert': -1 already "
+          "means emptiness in this stack's sparse contracts")
+    check("def dispatch_ids(" in fuse
+          and "out[out == SHARED_SLOT_ID] = NO_EXPERT_ID" in fuse,
+          "the all-to-all never sees the shared slot -- every token uses the "
+          "shared expert, so routing it as a real id sends the whole batch to "
+          "one rank")
+    check("out[fused_ids == SHARED_SLOT_ID] = local_shared_index(" in fuse,
+          "the shared slot resolves to the same REPLICATED local index on "
+          "every rank, which is what makes it communication-free")
+    check("ALREADY-NORMALISED" in fuse and "norm_topk_prob" in fuse,
+          "fuse_routing documents that the weights arrive normalised: "
+          "appending the gate before normalising renormalises every routed "
+          "weight against a value outside their distribution")
+    check("the shared slot must be the last column" in fuse,
+          "a grouped GEMM reads the slot columns positionally, so a drifted "
+          "shared slot is a routed expert given the shared gate's weight")
+    fuse_probe = open(os.path.join(REPO, "probes/qwen38_shared_fuse.py"),
+                      encoding="utf-8").read()
+    check("order control" in fuse_probe and "bad_weights" in fuse_probe,
+          "the probe carries the normalisation-order mistake as a control, "
+          "so the exactness check is not vacuous")
+    check("for r in range(W):" in fuse_probe and "local_ids(" in fuse_probe,
+          "the local-index mapping is checked on EVERY rank, not just rank 0")
+
+    # -- dsv41 mHC. V4 and V4.1 PAIR the mixing coefficients differently: a
+    #    sublayer collapses its input with the PREVIOUS sublayer's pre, not
+    #    its own. Running V4.1 through V4's pairing produces tokens and is
+    #    wrong by max |d| 4.5 on the probe's inputs.
+    mhc = open(os.path.join(REPO, "overlay/modules/dsv41_vllm",
+                            "dsv41_mhc.py"), encoding="utf-8").read()
+    check("def sublayer_pair(" in mhc and "own_pre" in mhc
+          and "collapse with the CARRIED pre_mix, not own_pre" in mhc,
+          "the sublayer helper keeps the carried pre and its own pre as two "
+          "tensors, which is the entire V4 / V4.1 difference")
+    check("torch.sum(comb.unsqueeze(-1) * residual.unsqueeze(-2), dim=-3)"
+          in mhc,
+          "hc_post sums comb over its FIRST index; over the second it is a "
+          "transpose of a nearly doubly-stochastic matrix, with every shape "
+          "and every value still correct")
+    check("comb = torch.softmax(comb, dim=-1) + eps" in mhc
+          and "comb = comb / (comb.sum(dim=-2, keepdim=True) + eps)" in mhc,
+          "the sinkhorn's first pass is softmax-over-rows then a COLUMN "
+          "normalise, and the loop ends on a column pass")
+    mhc_probe = open(os.path.join(REPO, "probes/dsv41_mhc_diff.py"),
+                     encoding="utf-8").read()
+    check("ends on a COLUMN pass" in mhc_probe
+          and "the rows converged too, so nothing below is a control"
+          in mhc_probe,
+          "the sinkhorn checks run on a WIDE input and FAIL if it converges, "
+          "because a converged matrix answers every structural question the "
+          "same way")
+    check("pairing control" in mhc_probe
+          and "Block.forward" in mhc_probe,
+          "the pairing is held to the reference's own Block.forward, with "
+          "V4's pairing as the control")
+
     # -- dsv41 sliding-window ring. The rotation in the prefill seed is the
     #    whole thing: without it the cache holds every surviving token exactly
     #    once, at slots offset by seqlen % window, and the first decode step
