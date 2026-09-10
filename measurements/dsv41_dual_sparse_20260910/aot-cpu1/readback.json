@@ -1,0 +1,40 @@
+{
+  "passed": true,
+  "source_revision": "a413da924f16cea4e6af4973e352c510994cfacc",
+  "source_files_verified": 15,
+  "artifacts_verified": [
+    "aot.json",
+    "compile.log",
+    "compiled/H16/kernel.cubin",
+    "compiled/H16/kernel.ptx",
+    "compiled/H32/kernel.cubin",
+    "compiled/H32/kernel.ptx",
+    "compiled/H64/kernel.cubin",
+    "compiled/H64/kernel.ptx",
+    "compiled/H8/kernel.cubin",
+    "compiled/H8/kernel.ptx",
+    "execution.json",
+    "inner.py"
+  ],
+  "manifest_scope": "Full remote directory including cache; readback subset excludes cache.",
+  "artifact_readback_directory": "/tmp/dsv41-dual-sparse-cpu1-readback",
+  "elapsed_compile_seconds": 6.633546590805054,
+  "variants": [
+    {
+      "label": "H8",
+      "shared_bytes": 83968
+    },
+    {
+      "label": "H16",
+      "shared_bytes": 83968
+    },
+    {
+      "label": "H32",
+      "shared_bytes": 83968
+    },
+    {
+      "label": "H64",
+      "shared_bytes": 83968
+    }
+  ]
+}

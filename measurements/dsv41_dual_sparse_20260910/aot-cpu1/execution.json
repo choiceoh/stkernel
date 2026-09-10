@@ -1,0 +1,210 @@
+{
+  "schema": 1,
+  "passed": true,
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "source_before": {
+    "revision": "a413da924f16cea4e6af4973e352c510994cfacc",
+    "clean": true,
+    "files": [
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer.py",
+        "bytes": 12221,
+        "sha256": "5c9a19b4a4a9007ca293205017481a873325aa739ef9ac8322561141c250d2d0"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer_triton.py",
+        "bytes": 6415,
+        "sha256": "c52c05cc25b41a33a27b897cadddd015acd774a2cc5753573335e3feec3f0b78"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_layers.py",
+        "bytes": 7721,
+        "sha256": "71b5919843f981a3abfc1f6b10f064513058653eef3e5497d5ba796121477bea"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_index.py",
+        "bytes": 14412,
+        "sha256": "93960e9ac7eda0c4a51b5dac0b92312a44adf9d47f56f17df509e07ca4d232c5"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_index_triton.py",
+        "bytes": 8935,
+        "sha256": "8de2ef1ec1d2c96498f214ad8718e478c9c3360faba4a2c4cadd755635e5101a"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_reference_adapter.py",
+        "bytes": 22340,
+        "sha256": "7cc814d930d7fd5b70eebbb2aeb6feeb1ce4c07e0ae3dcc3aa814da1ec69e9b5"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_reference_adapter.py",
+        "bytes": 13944,
+        "sha256": "8bed06943405be212486dd4bf1e8f864a019ccd5912a7be54135950fe07a0e99"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_dual_sparse.py",
+        "bytes": 8195,
+        "sha256": "22000b7a698a4d0e14498d65184b7b066687915993088c47453de6492f8bec97"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_dual_sparse_triton.py",
+        "bytes": 9916,
+        "sha256": "aa2feb6df5c87e4aaa4c5e812d29c1ecc2ffd58601a97cda31d5d078f3dda08e"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_dual_sparse_reference_adapter.py",
+        "bytes": 16248,
+        "sha256": "f76b2beb4125153f29f794ba0f36d989d9f69e302868c3984558452a5006ff52"
+      },
+      {
+        "path": "probes/dsv41_dual_sparse_diff.py",
+        "bytes": 24979,
+        "sha256": "c1c3a15b55425b6a988b53edad923292f0e2a5fb77c56796810be4b0e799ac7c"
+      },
+      {
+        "path": "probes/dsv41_packed_index_diff.py",
+        "bytes": 30089,
+        "sha256": "493a33f020c09b2f6de1135fad5664f09d72278adc011c08400f7d4f37c35b97"
+      },
+      {
+        "path": "tests/test_dsv41_dual_sparse.py",
+        "bytes": 10768,
+        "sha256": "7cc7a0ea925e040a6d9e9ba6fe13ae4048e5e8276e89c23060ce06bb526ec8d4"
+      },
+      {
+        "path": "tests/test_dsv41_dual_sparse_reference_adapter.py",
+        "bytes": 21244,
+        "sha256": "2cbd4acd63fd466cae43d61d9cfce3328b374f7914c2b63e011b651fc7303229"
+      },
+      {
+        "path": "measurements/dsv41_dual_sparse_20260910/cpu_compile_runner.py",
+        "bytes": 7143,
+        "sha256": "96d973108b209a9e42426c66bb6f04abbf2c210f4d691f856f0a1c07e750021f"
+      }
+    ]
+  },
+  "mem_available_bytes": 17300369408,
+  "command": [
+    "docker",
+    "run",
+    "--pull=never",
+    "--rm",
+    "--runtime=runc",
+    "--network=none",
+    "--name",
+    "dsv41-dual-sparse-cpu-3170228",
+    "--cpuset-cpus=14-15",
+    "--memory=6g",
+    "--memory-swap=6g",
+    "-e",
+    "NVIDIA_VISIBLE_DEVICES=void",
+    "-e",
+    "CUDA_VISIBLE_DEVICES=",
+    "-e",
+    "OMP_NUM_THREADS=1",
+    "-e",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "-e",
+    "TRITON_CACHE_DIR=/evidence/cache",
+    "--mount",
+    "type=bind,src=/home/choiceoh/stkernel-dsv41-dual-sparse-20260910,dst=/repo,readonly",
+    "--mount",
+    "type=bind,src=/home/choiceoh/dsv41-dual-sparse-cpu1-evidence,dst=/evidence",
+    "--workdir",
+    "/repo",
+    "--entrypoint",
+    "python3",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "-B",
+    "/evidence/inner.py"
+  ],
+  "started_at": 1789047006.7526822,
+  "wrapper_sha256": "96d973108b209a9e42426c66bb6f04abbf2c210f4d691f856f0a1c07e750021f",
+  "inner_sha256": "a83b648cd2561fff95b3f7dc77741f57f77f13ff332cdf97498462af65c87282",
+  "gpu_numerics": false,
+  "gpu_performance": false,
+  "model_equivalence": false,
+  "returncode": 0,
+  "source_after": {
+    "revision": "a413da924f16cea4e6af4973e352c510994cfacc",
+    "clean": true,
+    "files": [
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer.py",
+        "bytes": 12221,
+        "sha256": "5c9a19b4a4a9007ca293205017481a873325aa739ef9ac8322561141c250d2d0"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_indexer_triton.py",
+        "bytes": 6415,
+        "sha256": "c52c05cc25b41a33a27b897cadddd015acd774a2cc5753573335e3feec3f0b78"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_layers.py",
+        "bytes": 7721,
+        "sha256": "71b5919843f981a3abfc1f6b10f064513058653eef3e5497d5ba796121477bea"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_index.py",
+        "bytes": 14412,
+        "sha256": "93960e9ac7eda0c4a51b5dac0b92312a44adf9d47f56f17df509e07ca4d232c5"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_index_triton.py",
+        "bytes": 8935,
+        "sha256": "8de2ef1ec1d2c96498f214ad8718e478c9c3360faba4a2c4cadd755635e5101a"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_packed_reference_adapter.py",
+        "bytes": 22340,
+        "sha256": "7cc814d930d7fd5b70eebbb2aeb6feeb1ce4c07e0ae3dcc3aa814da1ec69e9b5"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_reference_adapter.py",
+        "bytes": 13944,
+        "sha256": "8bed06943405be212486dd4bf1e8f864a019ccd5912a7be54135950fe07a0e99"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_dual_sparse.py",
+        "bytes": 8195,
+        "sha256": "22000b7a698a4d0e14498d65184b7b066687915993088c47453de6492f8bec97"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_dual_sparse_triton.py",
+        "bytes": 9916,
+        "sha256": "aa2feb6df5c87e4aaa4c5e812d29c1ecc2ffd58601a97cda31d5d078f3dda08e"
+      },
+      {
+        "path": "overlay/modules/dsv41_model/dsv41_dual_sparse_reference_adapter.py",
+        "bytes": 16248,
+        "sha256": "f76b2beb4125153f29f794ba0f36d989d9f69e302868c3984558452a5006ff52"
+      },
+      {
+        "path": "probes/dsv41_dual_sparse_diff.py",
+        "bytes": 24979,
+        "sha256": "c1c3a15b55425b6a988b53edad923292f0e2a5fb77c56796810be4b0e799ac7c"
+      },
+      {
+        "path": "probes/dsv41_packed_index_diff.py",
+        "bytes": 30089,
+        "sha256": "493a33f020c09b2f6de1135fad5664f09d72278adc011c08400f7d4f37c35b97"
+      },
+      {
+        "path": "tests/test_dsv41_dual_sparse.py",
+        "bytes": 10768,
+        "sha256": "7cc7a0ea925e040a6d9e9ba6fe13ae4048e5e8276e89c23060ce06bb526ec8d4"
+      },
+      {
+        "path": "tests/test_dsv41_dual_sparse_reference_adapter.py",
+        "bytes": 21244,
+        "sha256": "2cbd4acd63fd466cae43d61d9cfce3328b374f7914c2b63e011b651fc7303229"
+      },
+      {
+        "path": "measurements/dsv41_dual_sparse_20260910/cpu_compile_runner.py",
+        "bytes": 7143,
+        "sha256": "96d973108b209a9e42426c66bb6f04abbf2c210f4d691f856f0a1c07e750021f"
+      }
+    ]
+  },
+  "finished_at": 1789047013.3862288
+}

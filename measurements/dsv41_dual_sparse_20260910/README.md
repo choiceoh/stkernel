@@ -54,7 +54,7 @@ Offline code generation cannot establish real-device equivalence or speed.
 ## CPU results
 
 - `cpu-unit.log`: 56 tests passed, zero skips, including 20 new dual-pool tests.
-- `cpu-oracle.json`: 40 independent comparison rows passed: 16 arithmetic
+- `cpu-oracle2.json`: 40 independent comparison rows passed: 16 arithmetic
   fixtures under each of FP32 and BF16 global defaults, four original window
   fixtures, and four actual source-extracted Attention sequences. The first
   three sequences use all 38 dual-pool layers alongside the actual packed
@@ -70,6 +70,40 @@ Offline code generation cannot establish real-device equivalence or speed.
 CPU results do not establish TileLang/Triton GPU GEMM equivalence, full-model
 quality, or speed. The standalone Torch backend is a bounded correctness
 implementation; the optimized Triton path still requires its device gate.
+
+## Final offline SM121 compilation: PASS
+
+Normal CPU fleet session `dsv41dualcpu0910v2` compiled frozen source
+`9027678bdd0f2fc40b622ecc0ecc843446ee52d0` on srv3. The terminal receipt
+`aot-cpu2/fleet-ack.json` records `finished-cpu`, return code 0. All 15 source
+file hashes match before/after execution and the local final implementation;
+all 12 fetched evidence/artifact files match the remote manifest.
+
+H8/H16/H32/H64 each compile to 83,968 bytes of static shared memory, below the
+internal 96 KiB admission budget. The pinned image uses Torch `2.13.0+cu130`
+and Triton `3.7.1`; target SM121, eight warps, one stage, FP fusion disabled.
+No GPU device nodes were mounted and CUDA stayed uninitialized. Register and
+spill counts are unavailable without device initialization and are not inferred
+from PTX virtual registers. These results establish compilation only.
+
+The original frozen source `a413da924f16cea4e6af4973e352c510994cfacc`
+also compiled successfully (`aot-cpu1`). PTX review found an i32 loop-counter
+overflow at standalone slot counts above 2,147,483,584. The final host contract
+rejects these before dispatch; the actual V4.1 bound is only 640. Meta-tensor
+boundary tests and the independent oracle passed again after the guard.
+`cpu-oracle.json` retains the original receipt; `cpu-oracle2.json` covers the
+final guard. Final PTX hashes for all four variants match the first run; the
+device source did not change. Cubin hashes differ between compilations, so
+binary identity is not claimed; each run's artifacts match its own manifest.
+`aot-cpu1/ptx-audit.json` links the identical final PTX to the scoped audit of
+runtime scalar types, direct loads from both pools, BF16 probability conversion,
+FP32 seeded accumulators, one sink epilogue and output-only global stores.
+
+Full compiler artifacts remain on srv3 at
+`/home/choiceoh/dsv41-dual-sparse-cpu2-evidence`. The committed files are textual
+receipts; `SHA256SUMS` describes the full remote directory including compiler
+cache. The readback receipt identifies exactly which files were fetched and
+verified. Existing serving runtimes were not changed.
 
 The next GPU gate must compare the original TileLang path with direct reads,
 including selected KV values, attention output, changed inputs/cache updates,

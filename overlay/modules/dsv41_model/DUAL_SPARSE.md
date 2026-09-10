@@ -56,6 +56,10 @@ decode context grows. No full-prefix BF16 materialization is used. The Torch
 backend gathers only bounded query/64-position tiles and is an arithmetic
 validation implementation; selecting Triton is explicit.
 
+Runtime dimensions use i32 and strides use i64. The flattened query grid
+avoids the CUDA grid-y limit for long prefill. The selected-slot bound reserves
+room for the device loop's final 64-slot increment, preventing signed overflow.
+
 ## Integration and lifetime
 
 The adapter changes only the 38 compressed Attention instance forwards. It
