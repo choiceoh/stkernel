@@ -10,7 +10,7 @@ import glm53_ep_capsule_runtime as capsule_runtime
 from glm53_ep_tiled_compile import (source_receipt, STATIC_ROWS, DYNAMIC_ROWS,
     CPU_TEST_COUNTS, EXPECTED_CPU_TESTS, static_specialization, validate_scatter_helper_receipt,
     GLOBAL_STATIC_CASES, global_static_specialization, OPT_STATIC_CASES, opt_static_specialization,
-    opt_shared_capacity)
+    opt_shared_capacity, validate_register_layout)
 
 
 def validate_artifacts(output,result):
@@ -42,6 +42,7 @@ def validate_artifacts(output,result):
                     selected['output_dtype'],selected.get('route'),
                     selected['decode_opt'],selected['storage_bytes'])
                 assert passed['shared_capacity'] == opt_shared_capacity(passed)
+                assert passed['register_layout'] == validate_register_layout(passed['register_layout'])
             for name,suffix in (('artifacts','.ptx'),('resources','.cubin')):
                 assert len(passed[name])==1
                 for row in passed[name]:

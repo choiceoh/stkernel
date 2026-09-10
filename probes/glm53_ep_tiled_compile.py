@@ -196,7 +196,11 @@ def opt_shared_capacity(passed):
 def opt_register_layout(kernel):
     """Preserve the actual CuTe copy-layout check performed during lowering."""
     assert kernel.ep_sf1_register_layout_proven is True
-    receipt = kernel.ep_sf1_register_layout_receipt
+    return validate_register_layout(kernel.ep_sf1_register_layout_receipt)
+
+
+def validate_register_layout(receipt):
+    """Validate the layout witness both before and after artifact transfer."""
     fixed = dict(proven=True, threads=128, raw_stage_bytes=2048, num_k_blocks=4,
                  word_coverage_bytes=2048, stages=2, stage_stride_bytes=2048,
                  offset_engine='static_scalar_physical_layout',
