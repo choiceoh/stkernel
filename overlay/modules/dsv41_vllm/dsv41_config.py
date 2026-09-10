@@ -31,6 +31,14 @@ class DeepseekV41TextConfig(PretrainedConfig):
 
     model_type = "deepseek_v41_text"
 
+    # V4 hashed its first `num_hash_layers` MoE layers. V4.1 has no hash MoE --
+    # engram replaced it -- and the V4 model reads the attribute bare
+    # (`extract_layer_index(prefix) < config.num_hash_layers`), so its absence
+    # is an AttributeError at layer 0 rather than a fallback. 0 is the value,
+    # and it belongs on the config class where it cannot depend on an adapter
+    # having run first.
+    num_hash_layers = 0
+
     def __init__(
         self,
         max_position_embeddings: int = 1048576,
@@ -61,6 +69,7 @@ class DeepseekV41Config(PretrainedConfig):
     """The outer config: text backbone, vision tower, and the quant scheme."""
 
     model_type = "deepseek_v41"
+    num_hash_layers = 0                    # see DeepseekV41TextConfig
     sub_configs = {"text_config": DeepseekV41TextConfig,
                    "vision_config": DeepseekV41VisionConfig}
 
@@ -72,19 +81,35 @@ class DeepseekV41Config(PretrainedConfig):
         self.text_config = text_config
         self.vision_config = vision_config
         super().__init__(**kwargs)
-        # vLLM reads sizes off the top-level config for a text model. The
-        # checkpoint puts every one of them under text_config, so without
-        # this the outer object answers `hidden_size` with a transformers
-        # default and the model is built at the wrong width.
         if text_config is not None:
-            for name in ("hidden_size", "num_hidden_layers", "vocab_size",
-                         "num_attention_heads", "max_position_embeddings",
-                         "rope_scaling", "rope_theta", "rms_norm_eps",
-                         "num_key_value_heads", "head_dim",
-                         "num_nextn_predict_layers", "sliding_window"):
-                value = getattr(text_config, name, None)
-                if value is not None and getattr(self, name, None) is None:
-                    setattr(self, name, value)
+            self._flatten(text_config)
+
+    # The outer config is a FLAT VIEW of the text backbone.
+    #
+    # The image's DeepSeek-V4 model reads `vllm_config.model_config.hf_config`
+    # directly -- `config.hidden_size`, `config.n_routed_experts`,
+    # `config.index_topk`. V4's config is flat, so that works there. V4.1
+    # nests everything under `text_config`, and an outer object that does not
+    # forward answers `hidden_size` with PretrainedConfig's default (768) and
+    # builds a 768-wide model without complaining once.
+    #
+    # Forwarding rather than swapping the config object: vLLM hands the same
+    # hf_config to the tokenizer, the scheduler and the quant config, and
+    # replacing it under them is a much larger blast radius than adding
+    # attributes that were missing.
+    OUTER_OWNED = frozenset((
+        "architectures", "model_type", "quantization_config", "text_config",
+        "vision_config", "dtype", "torch_dtype", "transformers_version",
+        "bos_token_id", "eos_token_id", "pad_token_id", "image_token_id",
+        "tie_word_embeddings",
+    ))
+
+    def _flatten(self, text_config):
+        for name, value in vars(text_config).items():
+            if name.startswith("_") or name in self.OUTER_OWNED:
+                continue
+            if getattr(self, name, None) is None:
+                setattr(self, name, value)
 
 
 REGISTERED = (("deepseek_v41", DeepseekV41Config),

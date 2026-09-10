@@ -53,8 +53,15 @@ V41_UNSUPPORTED_BY_B12X_MHC = 5120
 
 
 def adapt_text_config(hf_config):
-    """Give V4.1's text config the surface the V4 model reads. Idempotent."""
-    text = getattr(hf_config, "text_config", None) or hf_config
+    """Give the config the V4 model reads the surface it expects. Idempotent.
+
+    Writes to `hf_config` ITSELF, not to its nested `text_config`. The V4 model
+    reads `vllm_config.model_config.hf_config` directly, and an earlier version
+    of this set `num_hash_layers` on the nested object -- which is a different
+    object, so layer 0 still raised AttributeError with the adapter having run
+    and reported success.
+    """
+    text = hf_config
 
     if not hasattr(text, "num_hash_layers"):
         # `is_hash_moe = extract_layer_index(prefix) < config.num_hash_layers`
