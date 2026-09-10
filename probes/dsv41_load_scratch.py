@@ -44,6 +44,23 @@ def bytes_of(head: dict, keys: "list[str]") -> int:
     return sum(head[k]["data_offsets"][1] - head[k]["data_offsets"][0] for k in keys)
 
 
+def meminfo() -> dict:
+    """MemFree and the reclaimable pieces, so page cache can be subtracted.
+
+    `mem_get_info`'s free on GB10 is the BOX's free, and reading a 90 GiB file
+    fills page cache out of the same pool. Without this split, "scratch" is
+    whatever the loader allocated PLUS whatever the read cached, and the two
+    are not the same thing at all: page cache is reclaimable, an allocation is
+    not, and only one of them is what earlyoom eventually kills you over.
+    """
+    out = {}
+    for raw in Path("/proc/meminfo").read_text().splitlines():
+        key, _, rest = raw.partition(":")
+        if key in ("MemFree", "MemAvailable", "Cached", "Buffers", "SReclaimable"):
+            out[key] = float(rest.strip().split()[0]) / (1 << 20)
+    return out
+
+
 def run(path: Path, layers: "list[int]", mode: str) -> dict:
     import torch
     from safetensors import safe_open
@@ -57,6 +74,7 @@ def run(path: Path, layers: "list[int]", mode: str) -> dict:
     torch.cuda.init()
     torch.cuda.synchronize()
     free_before, total = torch.cuda.mem_get_info()
+    mem_before = meminfo()
     torch.cuda.reset_peak_memory_stats()
 
     started = time.perf_counter()
@@ -83,6 +101,9 @@ def run(path: Path, layers: "list[int]", mode: str) -> dict:
     elapsed = time.perf_counter() - started
 
     free_after, _ = torch.cuda.mem_get_info()
+    mem_after = meminfo()
+    cache_grew = ((mem_after["Cached"] + mem_after["Buffers"])
+                  - (mem_before["Cached"] + mem_before["Buffers"]))
     peak_alloc = torch.cuda.max_memory_allocated()
     resident_alloc = torch.cuda.memory_allocated()
     reserved = torch.cuda.memory_reserved()
@@ -97,6 +118,9 @@ def run(path: Path, layers: "list[int]", mode: str) -> dict:
         "torch_resident_gib": resident_alloc / GIB,
         "torch_reserved_gib": reserved / GIB,
         "scratch_gib": (free_before - free_after) / GIB - want / GIB,
+        "cache_grew_gib": cache_grew,
+        "scratch_ex_cache_gib": (free_before - free_after) / GIB - want / GIB - cache_grew,
+        "avail_delta_gib": mem_before["MemAvailable"] - mem_after["MemAvailable"],
         "seconds": elapsed,
         "gib_per_s": (want / GIB) / elapsed if elapsed else 0.0,
     }

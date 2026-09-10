@@ -172,11 +172,25 @@ def rank_files(checkpoint: "str | Path", world_size: int) -> "list[Path]":
 # NCCL is configured with 16 channels; that setting's memory cost lives here.
 RUNTIME_FLOOR_GIB = 5.54
 
-# Same table: load-model took 59.17 GiB while vLLM reported 50.4 GiB of
-# weights. The 8.77 GiB difference is pack/quant scratch, the drafter, and
-# cuBLAS init. Scaling a ratio measured on a different model is a guess, and
-# this module is required to say so.
-LOAD_SCRATCH_RATIO = 8.77 / 50.4
+# Measured on dsv41's own rank file, 2026-09-11 (probes/dsv41_load_scratch.py,
+# 13 runs across three load paths and three sizes):
+#
+#   torch's peak allocation equals the tensor bytes EXACTLY, every run. There
+#   is no repack, no requantize, no staging tensor held alongside. Whatever
+#   GLM's loader does, dsv41's does not.
+#
+#   The caching allocator's block rounding is the only torch-side overhead, and
+#   it is 16.1% without `expandable_segments` and 0.1% with. Both launchers on
+#   this fleet already pass it (start-glm53-nvfp4-tp4.sh:434, start-hy4:227),
+#   so it is a floor to hold, not a lever to pull.
+ALLOCATOR_SLACK_RATIO = 0.001
+
+# What is left in GLM's load-model above its weights -- 59.17 vs 50.4 = 8.77 --
+# WITH expandable_segments already on. So that 8.77 is real work: pack/quant
+# scratch, the drafter, cuBLAS init. dsv41 has no pack/quant step, so this is
+# an upper bound on its module construction, not an estimate of it. Still a
+# guess, still says so.
+CONSTRUCTION_UPPER_GIB = 8.77
 
 # Same table again: profile-run peaked at +9.17 GiB on GLM-5.3. DSv4.1 splits
 # encoder/decoder (CED), gathers engram rows, and carries three MTP layers, so
@@ -240,9 +254,12 @@ def for_dsv41(checkpoint: "str | Path", world_size: int = 4,
         Line("runtime floor (CUDA ctx + NCCL)", RUNTIME_FLOOR_GIB, LEDGER,
              "40th boot table: init-device 2.29 + dist 1.00 + 2.25, NCCL 16 channels"),
         weights_line,
-        Line("load scratch (pack/quant/drafter/cuBLAS)",
-             weights_gib * LOAD_SCRATCH_RATIO, ESTIMATED,
-             f"GLM ratio {LOAD_SCRATCH_RATIO:.1%} of weights -- NOT measured on dsv41"),
+        Line("allocator slack", weights_gib * ALLOCATOR_SLACK_RATIO, MEASURED,
+             "expandable_segments:True -> 0.1% (16.1% without); torch peak == "
+             "tensor bytes exactly in 13 runs, dsv41 has no repack step"),
+        Line("module construction (cuBLAS, init)", CONSTRUCTION_UPPER_GIB, ESTIMATED,
+             "UPPER BOUND from GLM's 59.17-50.4 with expandable_segments already "
+             "on; dsv41 has no pack/quant step so its share is smaller"),
         Line("activation peak", ACTIVATION_PEAK_GIB, ESTIMATED,
              "GLM profile-run +9.17 GiB -- dsv41 has CED, engram, MTP x3; not measured"),
     ]
