@@ -57,15 +57,23 @@ fixed-1024 x3 decode >=76 tok/s, with the existing quality and direct
 the same-source EP baseline. Original cold-compile classifications and
 single-request long-prefill limitations remain visible.
 
-The measured FC1 follow-up targets SF6 M1..8. It restores packed scale
-bytes directly into the original MMA scale registers instead of expanding
-an intermediate shared-memory stage. The original copy partition must
-prove the exact physical byte mapping during CuTe setup. TMA completion,
-consumer release, MMA order and scale arithmetic remain unchanged. FC2,
-scatter metadata and the 98304-byte dynamic storage layout return to the
-accepted baseline. The cache tag is
-`glm53_ep_static_sf6_fc1_register_v2`; M9+ and prefill keep their existing
-selection. The result below rejects adoption of this path.
+The next candidate restores the accepted in-place FC1 SF6 expansion and
+targets Q1, the FP4 conversion between FC1 and FC2. For at most eight valid
+expert rows, two adjacent warp lanes share each16-value scale block: each
+loads and converts eight values, while the leader computes the original
+scale and reciprocal. All128 MMA threads execute the three shuffles, even
+when their pair is inactive. The original fast or precise math mode and
+operand order are retained; more than eight expert rows use the original
+scalar body. FC1/FC2 scale expansion, pipeline barriers, scatter metadata
+and98304-byte dynamic storage remain the accepted baseline.
+
+The cache tag is `glm53_ep_static_sf6_q1_pair_v4`; M9+ and prefill keep their
+existing selection. CuTe setup must verify the actual sC1, packed A2 and
+SFA2 physical addresses, unique writes and single scale owner for R0..8.
+The source-bound CPU receipt records those layouts and coordinate digests
+and verifies the actual selected math mode before and after transfer.
+This Q1 path is not yet measured. The rejected FC1 register result below
+belongs to the preceding, separately keyed implementation.
 
 Preparation keeps its first-use and every-64-step stock comparison. On
 the candidate's C=1/K5 verification steps it compares the cloned fused
@@ -89,6 +97,8 @@ all retained. Facts passed18/18 in both arms, but A's first fixed response
 contained `Halvorsen博士` in the reasoning channel: Korean1/8, two CJK
 characters. The original judge is `GATE FAIL: korean 1/8`, terminal rc4.
 The quality gate is unchanged and the candidate is not adopted.
+That candidate used tag `glm53_ep_static_sf6_fc1_register_v2`, restoring
+packed SF6 bytes directly into the original MMA scale register layout.
 
 32K input throughput was3174.11→3214.15 tok/s and128K3272.66→3270.24;
 TTFT was10.253→10.126s and39.283→39.312s, respectively. These observations

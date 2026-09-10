@@ -1,216 +1,251 @@
-"""Pure CPU contracts for native FC1 SF6 register restore; no CuTe/GPU import.
+"""Pure Q1 bit-flow and ownership tests. No CuTe import/lowering or GPU.
 
-The real CuTe host validator is present and tested with adversarial synthetic
-layouts here. Only a later actual CuTe lowering can prove its real lane mapping.
+The common conversion stubs model IEEE boundaries for comparison; their results
+are not evidence of hardware FP4 conversion. Exact helper/operand reuse is also
+checked against the pinned source, so device conversion remains the same call.
 """
-import ast
-import copy
-import gzip
-import hashlib
-import os
+import ast,copy,gzip,hashlib,itertools,json,math,os,random,struct,types,unittest
 from pathlib import Path
-import random
-import types
-import unittest
-
-ROOT=Path(os.environ.get('GLM53_EP_FC1_TEST_ROOT',Path(__file__).resolve().parents[1]))
-SOURCE=Path(os.environ.get('GLM53_EP_FC1_TEST_SOURCE',ROOT/'overlay/modules/glm53_moe/moe_static_ep_tiled.py'))
-ORACLE=ROOT/'measurements/glm53_ep_tiled_20260909/ep76_onepass1/source/moe_static_ep_tiled.py.gz'
-BASE_SHA='f975bbf6faea6899a8d7af0f1a182548da784b238209c2580ffd2b562a4be952'
-BASE=gzip.decompress(ORACLE.read_bytes()).decode()
-assert hashlib.sha256(BASE.encode()).hexdigest()==BASE_SHA
-TEXT=SOURCE.read_text()
-def fn(name,text=TEXT):
- return copy.deepcopy(next(n for n in ast.walk(ast.parse(text)) if isinstance(n,ast.FunctionDef) and n.name==name))
-def run_function(name,ns):
- node=fn(name);node.decorator_list=[]
- exec(compile(ast.fix_missing_locations(ast.Module(body=[ast.ImportFrom('__future__',[ast.alias('annotations')],0),node],type_ignores=[])),str(SOURCE),'exec'),ns)
- return ns[name]
-def dump(node):return ast.dump(node,include_attributes=False)
-class Select(ast.NodeTransformer):
- def __init__(self,opt):self.opt=opt
+ROOT=Path(os.environ.get('GLM53_EP_Q1_ROOT',Path(__file__).resolve().parents[1]))
+SOURCE=Path(os.environ.get('GLM53_EP_Q1_SOURCE',ROOT/'overlay/modules/glm53_moe/moe_static_ep_tiled.py'))
+BASE=gzip.decompress((ROOT/'measurements/glm53_ep_tiled_20260909/ep76_onepass3/source/moe_static_ep_tiled.py.gz').read_bytes()).decode()
+NEW=SOURCE.read_text()
+ORACLE=gzip.decompress((ROOT/'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz').read_bytes()).decode()
+BASE_SHA='f4435778e3248d0fee3cf373fb95800475c38e2354e59600943574ccff6a4583'
+ORACLE_SHA='a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1'
+def bits(x):return struct.unpack('<I',struct.pack('<f',float(x)))[0]
+def frombits(x):return struct.unpack('<f',struct.pack('<I',x))[0]
+class F32(float):
+ def __new__(cls,x=0):
+  try:x=struct.unpack('<f',struct.pack('<f',float(x)))[0]
+  except OverflowError:x=math.copysign(math.inf,x)
+  return float.__new__(cls,x)
+ def __mul__(self,x):return F32(float(self)*float(x))
+ def __rmul__(self,x):return F32(float(x)*float(self))
+ def __truediv__(self,x):
+  x=float(x)
+  if x==0:
+   return F32(math.nan if float(self)==0 or math.isnan(self) else math.copysign(math.inf,math.copysign(1,self)*math.copysign(1,x)))
+  return F32(float(self)/x)
+def u8(v):return int(v)&255
+def u32(v):return int(v)&0xffffffff
+def u64(v):return int(v)&0xffffffffffffffff
+def mx(a,b):
+ if math.isnan(a):return F32(b)
+ if math.isnan(b):return F32(a)
+ return F32(max(a,b))
+def mn(a,b):
+ if math.isnan(a):return F32(b)
+ if math.isnan(b):return F32(a)
+ return F32(min(a,b))
+def absolute(a):return F32(frombits(bits(a)&0x7fffffff))
+FP8=[m/512 if e==0 else (1+m/8)*2**(e-7) for e in range(16) for m in range(8)][:-1]
+def cvt8(x):
+ if math.isnan(x):return 127
+ sign=bits(x)>>31;v=min(abs(float(x)),448)
+ q=min(range(127),key=lambda i:(abs(FP8[i]-v),i&1))
+ return q|(sign<<7)
+def from8(x):
+ x=int(x)&255
+ if x&127==127:return F32(math.nan)
+ return F32(math.copysign(FP8[x&127],-1 if x&128 else 1))
+def recip(x):
+ if bits(x)&0x7f800000==0:x=F32(math.copysign(0,x))
+ return F32(1)/F32(x)
+def from8rcp(x):
+ x=from8(x);return F32(0) if x==0 else recip(x)
+def cvt4x8(*xs):
+ table=(0,.5,1,1.5,2,3,4,6);word=0
+ for i,x in enumerate(xs):
+  q=7 if math.isnan(x) else min(range(8),key=lambda q:(abs(table[q]-min(abs(float(x)),6)),q&1))
+  word|=(q|((bits(x)>>31)<<3))<<(4*i)
+ return word
+def fn(name,source=NEW):return copy.deepcopy(next(n for n in ast.walk(ast.parse(source)) if isinstance(n,ast.FunctionDef) and n.name==name))
+def runfn(n,ns):
+ n=copy.deepcopy(n);n.decorator_list=[]
+ module=ast.Module(body=[ast.ImportFrom('__future__',[ast.alias('annotations')],0),n],type_ignores=[])
+ exec(compile(ast.fix_missing_locations(module),str(ROOT/n.name),'exec'),ns);return ns[n.name]
+def shape_n(shape):return math.prod(shape)
+def ns_base():return dict(Float32=F32,Uint8=u8,Uint32=u32,Uint64=u64,Int32=int,FLOAT4_E2M1_MAX=6.,FLOAT8_E4M3_MAX=448.,fmax_f32=mx,fmin_f32=mn,fabs_f32=absolute,cvt_f32_to_e4m3=cvt8,fp8_e4m3_to_f32=from8,cvt_e2m1x8_f32=cvt4x8,rcp_approx_ftz=recip,fp8_e4m3_to_f32_and_rcp=from8rcp,cutlass=types.SimpleNamespace(Float32=F32,range_constexpr=range,const_expr=lambda b:b),cute=types.SimpleNamespace(make_rmem_tensor=lambda shape,dtype:[F32(0)]*shape_n(shape)))
+class SelectOld(ast.NodeTransformer):
  def visit_If(self,n):
-  if ast.unparse(n.test)=='cutlass.const_expr(self.ep_decode_opt)':
+  test=ast.unparse(n.test)
+  if test in ('cutlass.const_expr(self.ep_decode_opt)','cutlass.const_expr(self.ep_decode_opt and not self.fast_math)'):
    out=[]
-   for item in n.body if self.opt else n.orelse:
-    value=self.visit(item);out.extend(value if isinstance(value,list) else [value])
+   for x in n.orelse:
+    v=self.visit(x);out.extend(v if isinstance(v,list) else [v])
    return out
   return self.generic_visit(n)
- def visit_IfExp(self,n):
-  if ast.unparse(n.test)=='self.ep_decode_opt':return self.visit(n.body if self.opt else n.orelse)
-  return self.generic_visit(n)
-def u32(x):return int(x)&0xffffffff
-class ByteRegister(list):
- element_type='FP8-bits'
- @property
- def shape(self):return (len(self),1)
-
-class DecodeOptimizationTests(unittest.TestCase):
- def test_actual_register_loader_exhausts_base_delta_lanes_and_preserves_bits(self):
-  memory=bytearray(4096);reads=[]
-  def load(addr):
-   reads.append(addr);slot=addr//2048;rel=addr%2048
-   self.assertIn(slot,(0,1));self.assertEqual(addr%4,0)
-   self.assertTrue(0<=rel<=1020 or 1024<=rel<=1532)
-   return int.from_bytes(memory[addr:addr+4],'little')
-  def recast(reg,dtype):
-   self.assertIsInstance(reg,ByteRegister);self.assertIs(dtype,u8)
-   return reg
-  u8=lambda x:int(x)&255
-  ns=dict(Int32=int,cutlass=types.SimpleNamespace(Uint32=u32,Uint8=u8,range_constexpr=range),
-          cute=types.SimpleNamespace(size=len,recast_tensor=recast),_ld_shared_i32_volatile=load)
-  run_function('_sf6_unpack_word',ns);call=run_function('_sf1_load_register_words',ns)
-  rng=random.Random(72)
-  # Exhaust every base and each delta at each output byte position. Vary
-  # aligned source word and stage; neighbours deliberately differ.
-  for base in range(256):
-   for delta in range(64):
-    for lane in range(4):
-     e=4*((base*17+delta*5+lane)%512);slot=(base+delta+lane)%2;addr=slot*2048
-     ds=[(delta+13*i+7)&63 for i in range(4)];ds[lane]=delta
-     lo=sum((d&15)<<(4*i) for i,d in enumerate(ds));hi=sum((d>>4)<<(2*i) for i,d in enumerate(ds))
-     memory[addr+e//2:addr+e//2+2]=lo.to_bytes(2,'little');memory[addr+1024+e//4]=hi
-     before=bytes(memory);out=ByteRegister([0]*4);reads.clear()
-     call(None,addr,list(range(e,e+4)),out,(base&127)*0x01010101,(base&128)*0x01010101)
-     self.assertEqual(out,[(base+d)&255 for d in ds]);self.assertEqual(bytes(memory),before)
-     self.assertEqual(len(reads),2)
-  # All physical byte offsets in both stages with random packed planes.
-  for stage in range(2):
-   memory[:]=rng.randbytes(4096);payload=memory[stage*2048:stage*2048+1552];base=payload[1536]
-   for e in range(0,2048,4):
-    out=ByteRegister([0]*4)
-    call(None,stage*2048,list(range(e,e+4)),out,(base&127)*0x01010101,(base&128)*0x01010101)
-    expected=[(base+((payload[i//2]>>(4*(i%2)))&15)+16*((payload[1024+i//4]>>(2*(i%4)))&3))&255 for i in range(e,e+4)]
-    self.assertEqual(out,expected)
-  source=ast.unparse(fn('_sf1_load_register_words'))
-  self.assertNotIn('Float8',source);self.assertNotIn('_st_shared',source)
-  self.assertNotIn('arrive_and_wait',source)
-
- def test_actual_host_coordinate_guard_rejects_unsafe_synthetic_layouts(self):
-  offset=run_function('_ep_sf1_static_offset',{})
-  owner=types.SimpleNamespace(decode_reform=True,reform_sf_pack=True,fc1_tile_n=128,fc1_tile_k=256,
-       sf1_packed_blocks=1,sf1_block_bytes=2048,num_mma_warps=4,num_k_blocks1=4,sf_dtype=object(),
-       tiled_mma1=types.SimpleNamespace(permutation_mnk=(16,128,256)),sfb1_smem_layout_staged='actual-layout',fc1_tile_shape_mnk=(16,128,256))
-  owner._ep_sf1_static_offset=lambda t,i:offset(owner,t,i)
-  class Group:
-   def __init__(self,tid,kb,mode):
-    self.iterator=(tid%32)*16+(tid//32)*4+kb*512
-    self.layout=types.SimpleNamespace(shape=((2,2),1),stride=((1,2),0))
-    if mode=='unaligned':self.iterator+=1
-    if mode=='gap':self.layout.stride=((1,3),0)
-    if mode=='outside':self.iterator+=2048
-    if mode=='symbolic':self.iterator=object()
-  class Slot:
-   shape=(4,1,4)
-   def __init__(self,tid,mode):self.tid=tid;self.mode=mode
-   def __getitem__(self,key):return Group(self.tid,key[2],self.mode)
-  class Partition:
-   def __init__(self,tid,mode):self.tid=tid;self.mode=mode
-   def __getitem__(self,key):return Slot(self.tid,self.mode)
-  class Offsets:
-   def __getitem__(self,key):return types.SimpleNamespace(iterator=key[-1]*2048)
-  mode=['ok'];events=[]
-  def make_tensor(engine,layout):
-   events.append((engine,layout));return Offsets()
-  copier=types.SimpleNamespace(get_slice=lambda tid:types.SimpleNamespace(partition_S=lambda offsets:Partition(tid,mode[0])))
-  owner._dense_cls=types.SimpleNamespace(_get_layoutSFB_TV=lambda *args:'original-SFB-TV')
-  cute=types.SimpleNamespace(make_copy_atom=lambda *a:None,nvgpu=types.SimpleNamespace(CopyUniversalOp=lambda:None),
-    make_tiled_copy=lambda *a:copier,make_tensor=make_tensor,local_tile=lambda x,*a:x,slice_=lambda *a:None,
-    filter_zeros=lambda x:x,size=lambda x,mode=None:(4 if mode else 16) if isinstance(x,Slot) else (4 if isinstance(x,Group) else x))
-  check=run_function('_check_ep_sf1_register_layout',dict(cute=cute))
-  check(owner);self.assertTrue(owner.ep_sf1_register_layout_proven)
-  self.assertEqual(events,[(0,'actual-layout')])
-  self.assertEqual(owner.ep_sf1_register_layout_receipt,dict(proven=True,threads=128,raw_stage_bytes=2048,num_k_blocks=4,word_coverage_bytes=2048,stages=2,stage_stride_bytes=2048,copy_shape='(4, 1, 4)',words_per_thread=[4],offset_engine='static_scalar_physical_layout',slot_zero_relative_offsets=True))
-  for bad in ('unaligned','gap','outside','symbolic'):
-   mode[0]=bad
-   with self.assertRaises(ValueError):check(owner)
-  # Explicit nested/zero-stride arithmetic; no coercion of symbolic MLIR values.
-  t=types.SimpleNamespace(iterator=9,layout=types.SimpleNamespace(shape=((2,3),2),stride=((1,8),0)))
-  self.assertEqual([offset(owner,t,i) for i in range(12)],[9,10,17,18,25,26]*2)
-  with self.assertRaises(ValueError):offset(owner,t,12)
-  guard=run_function('_check_ep_sf1_register_copy',{})
-  dtype=types.SimpleNamespace(width=8);owner.sf_dtype=dtype
-  guard(owner,types.SimpleNamespace(shape=(4,1,4)),types.SimpleNamespace(shape=(4,1,4),element_type=dtype))
-  with self.assertRaises(ValueError):guard(owner,types.SimpleNamespace(shape=(8,1,4)),types.SimpleNamespace(shape=(4,1,4),element_type=dtype))
-
- def test_complete_baseline_kernel_matches_pinned_b41_and_only_fc1_changes_on(self):
-  old=Select(False).visit(fn('kernel',BASE));off=Select(False).visit(fn('kernel'))
-  self.assertEqual(dump(off),dump(old))
-  # Reconstruct the precise stock FC1 copies/expand from their replacements.
-  original_expand=next(n for n in ast.walk(old) if isinstance(n,ast.If) and ast.unparse(n.test)=='cutlass.const_expr(self.reform_sf_pack)' and 'sfb1_base_addr' in ast.unparse(n) and any(isinstance(x,ast.Call) and ast.unparse(x.func)=='self._sf_expand_stage' for x in ast.walk(n)))
-  removed={'sf1_offset_tensor','sf1_offset_partition','sf1_register_offsets'}
-  class Restore(ast.NodeTransformer):
-   def visit_If(self,n):
-    if ast.unparse(n.test)=='cutlass.const_expr(self.reform_sf_pack)' and any(isinstance(x,ast.Name) and x.id=='sf1_packed_addr' for x in ast.walk(n)):
-     n.body=copy.deepcopy(original_expand.body)
-    return self.generic_visit(n)
+class Q1PairTests(unittest.TestCase):
+ def test_all_bf16_patterns_and_nonfinite_reduction_bits(self):
+  def reduce(xs):
+   m=F32(0)
+   for x in xs:m=mx(m,absolute(x))
+   return m
+  for raw in range(65536):
+   v=F32(frombits(raw<<16));xs=[F32(0)]*16;xs[raw%16]=v
+   xs[(raw+7)%16]=F32(frombits(0x7fc10000))
+   self.assertEqual(bits(reduce(xs)),bits(mx(reduce(xs[:8]),reduce(xs[8:]))))
+  for triple in itertools.product((0.,-0.,math.nan,-math.nan,math.inf,-math.inf,1.,-1.,2**-133),repeat=3):
+   xs=list(map(F32,triple))*5+[F32(math.nan)]
+   self.assertEqual(bits(reduce(xs)),bits(mx(reduce(xs[:8]),reduce(xs[8:]))))
+ def test_scale_and_converter_formulas_are_the_actual_pinned_expressions(self):
+  old=fn('quantize_block_fp4',ORACLE);new=fn('_ep_q1_scale')
+  ob=[n for n in old.body if not isinstance(n,ast.Expr)];nb=[n for n in new.body if not isinstance(n,ast.Expr)]
+  dump=lambda n:ast.dump(n,include_attributes=False)
+  self.assertEqual([dump(n) for n in ob[:5]],[dump(n) for n in nb[:5]])
+  oi=next(n for n in ob if isinstance(n,ast.If));ni=next(n for n in nb if isinstance(n,ast.If))
+  self.assertEqual(dump(oi.test),dump(ni.test))
+  self.assertEqual(dump(oi.body[0].value.args[1]),dump(ni.body[0].value))
+  q16=fn('quantize_and_pack_16',ORACLE);q8=fn('_ep_q1_quantize_eight')
+  multiply=lambda n:next(x.value for x in ast.walk(n) if isinstance(x,ast.Assign) and isinstance(x.value,ast.BinOp) and isinstance(x.value.op,ast.Mult))
+  m16=multiply(q16);m16.left.value.id='values'
+  self.assertEqual(dump(m16),dump(multiply(q8)))
+  self.assertEqual(ast.unparse(q8.body[-1].value),'cvt_e2m1x8_f32(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7])')
+  ns=ns_base();runfn(fn('quantize_and_pack_16',ORACLE),ns);stock=runfn(old,ns);scale=runfn(new,ns);eight=runfn(q8,ns)
+  fast=fn('_ep_q1_scale_fast');stockfast=fn('quantize_block_fp4_fast',ORACLE)
+  class RestoreFast(ast.NodeTransformer):
    def visit_Assign(self,n):
-    if any(isinstance(t,ast.Name) and t.id in removed for t in n.targets):return None
+    name=ast.unparse(n.targets[0])
+    if name=='enabled':return None
+    if name=='inv_scale':
+     if isinstance(n.value,ast.Call) and ast.unparse(n.value.func)=='Float32':
+      return ast.parse('packed64 = Uint64(0)').body[0]
+     return ast.Assign([ast.Name('packed64',ast.Store())],ast.Call(ast.Name('quantize_and_pack_16_fast',ast.Load()),[ast.Name('values',ast.Load()),n.value],[]))
     return self.generic_visit(n)
-   def visit_Expr(self,n):
-    if isinstance(n.value,ast.Call):
-     c=n.value
-     if ast.unparse(c.func) in ('self._check_ep_storage','self._check_ep_sf1_register_copy'):return None
-     if ast.unparse(c.func)=='self._sf1_load_register_words':
-      dst=copy.deepcopy(c.args[2]);src=copy.deepcopy(dst);src.value=ast.Name('fz_csSFB_p',ast.Load())
-      return ast.Expr(ast.Call(ast.Attribute(ast.Name('cute',ast.Load()),'copy',ast.Load()),[ast.Name('smem_copy_SFB1',ast.Load()),src,dst],[]))
+   def visit_Return(self,n):return ast.parse('return packed64, scale_byte').body[0]
+  restored=RestoreFast().visit(fast)
+  bodies=lambda n:[ast.dump(x,include_attributes=False) for x in n.body if not isinstance(x,ast.Expr)]
+  self.assertEqual(bodies(restored),bodies(stockfast))
+  runfn(fn('quantize_and_pack_16_fast',ORACLE),ns);fast_stock=runfn(stockfast,ns);fast_scale=runfn(fn('_ep_q1_scale_fast'),ns)
+  rng=random.Random(76)
+  vals=[0.,-0.,math.inf,-math.inf,math.nan,1.,-1.,2**-133,3.3895313892515355e38]
+  for gs in (0.,-0.,1.,.125,-1.,math.inf,math.nan,1e-38,1e38):
+   for i in range(40):
+    xs=[F32(rng.choice(vals) if i<20 else rng.uniform(-10,10)) for _ in range(16)]
+    maximum=F32(0)
+    for v in xs:maximum=mx(maximum,absolute(v))
+    oldword,oldscale=stock(xs,maximum,F32(gs));inv,sf,enabled=scale(None,maximum,F32(gs))
+    newword=(eight(None,xs[:8],inv)|(eight(None,xs[8:],inv)<<32)) if enabled else 0
+    self.assertEqual((newword,sf),(oldword,oldscale))
+    oldword,oldscale=fast_stock(xs,maximum,F32(gs));inv,sf,enabled=fast_scale(None,maximum,F32(gs))
+    newword=(eight(None,xs[:8],inv)|(eight(None,xs[8:],inv)<<32)) if enabled else 0
+    self.assertEqual((newword,sf),(oldword,oldscale))
+ def simulate(self,rows,gs,data,paired,fast=False):
+  ns=ns_base();writes={};reads=[];coords=[];scale_calls=[]
+  class C:
+   def __getitem__(self,key):
+    row,col,stage=key;assert stage==0 and 0<=row<rows and 0<=col<128
+    reads.append((row,col));return data[row][col]
+  def idx(crd,outer):
+   row,col,stage=crd;coords.append(crd);return row*128+col
+  def store(addr,value):
+   self.assertNotIn(addr,writes);writes[addr]=value
+  ns.update(st_shared_u8=store);ns['cute'].crd2idx=idx
+  owner=types.SimpleNamespace(fast_math=fast,decode_reform=True,sf_vec_size=16,tile_m=16,num_mma_warps=4,num_threads_per_warp=32)
+  sc=runfn(fn('_ep_q1_scale'),ns);owner._ep_q1_scale=lambda mx,gs:(scale_calls.append((bits(mx),bits(gs))) or sc(owner,mx,gs))
+  sc_fast=runfn(fn('_ep_q1_scale_fast'),ns);owner._ep_q1_scale_fast=lambda mx,gs:(scale_calls.append((bits(mx),bits(gs))) or sc_fast(owner,mx,gs))
+  q=runfn(fn('_ep_q1_quantize_eight'),ns);owner._ep_q1_quantize_eight=lambda vals,inv:q(owner,vals,inv)
+  args=(C(),rows,8,0,None,F32(gs),0,types.SimpleNamespace(outer='synthetic-row-major'),4096)
+  if paired:
+   class YieldShuffle(ast.NodeTransformer):
+    def visit_Call(self,n):
+     if ast.unparse(n.func)=='cute.arch.shuffle_sync':return ast.Yield(ast.Tuple(n.args,ast.Load()))
+     return self.generic_visit(n)
+   f=runfn(YieldShuffle().visit(fn('_ep_q1_pair')),ns)
+   generators=[f(owner,*args[:4],tid,*args[5:]) for tid in range(128)]
+   requests=[next(g) for g in generators]
+   for stage in range(3):
+    next_requests=[]
+    for tid,g in enumerate(generators):
+     value,src=requests[tid];self.assertIn(src,range(32));self.assertEqual(src//2,(tid%32)//2)
+     reply=requests[(tid//32)*32+src][0]
+     try:next_requests.append(g.send(reply))
+     except StopIteration:self.assertEqual(stage,2)
+    if stage<2:self.assertEqual(len(next_requests),128)
+    requests=next_requests
+   self.assertEqual(len(scale_calls),rows*8)
+  else:
+   runfn(fn('quantize_and_pack_16',ORACLE),ns);runfn(fn('quantize_block_fp4',ORACLE),ns)
+   runfn(fn('quantize_and_pack_16_fast',ORACLE),ns);runfn(fn('quantize_block_fp4_fast',ORACLE),ns)
+   kernel=SelectOld().visit(fn('kernel',BASE))
+   loop=next(n for n in ast.walk(kernel) if isinstance(n,ast.While) and ast.unparse(n.test)=='quant_idx < epi_rows * sf_blocks_per_half')
+   names=['self','sC1','epi_rows','sf_blocks_per_half','h','tidx','gs_value','a2_base_addr','a2_smem_layout','sfa2_base_addr']
+   init=ast.parse('quant_idx = Int32(tidx)\na2_rows = Int32(self.tile_m)').body
+   f=ast.FunctionDef(name='scalar',args=ast.arguments(posonlyargs=[],args=[ast.arg(n) for n in names],kwonlyargs=[],kw_defaults=[],defaults=[]),body=init+[loop],decorator_list=[])
+   call=runfn(f,ns)
+   for tid in range(128):call(owner,*args[:4],tid,*args[5:])
+  return writes,sorted(reads),sorted(coords)
+ def test_actual_pair_helper_matches_scalar_ownership_and_bits_rows_zero_to_eight(self):
+  rng=random.Random(8)
+  for rows in range(9):
+   data=[[F32(frombits(rng.randrange(65536)<<16)) for _ in range(128)] for _ in range(rows)]
+   for gs,fast in itertools.product((0.,-0.,.125,1.,math.inf,math.nan),(False,True)):
+    with self.subTest(rows=rows,gs=gs,fast=fast):
+     a=self.simulate(rows,gs,data,False,fast);b=self.simulate(rows,gs,data,True,fast);self.assertEqual(a,b)
+     self.assertEqual(len(a[0]),rows*72);self.assertEqual(len(a[1]),rows*128)
+ def test_complete_kernel_restore_fallback_and_pipeline_are_unchanged(self):
+  a=SelectOld().visit(fn('kernel',BASE));b=SelectOld().visit(fn('kernel'))
+  self.assertEqual(ast.dump(a,include_attributes=False),ast.dump(b,include_attributes=False))
+  q=next(n for n in ast.walk(fn('kernel')) if isinstance(n,ast.If) and ast.unparse(n.test)=='cutlass.const_expr(self.ep_decode_opt)' and any(isinstance(x,ast.Call) and ast.unparse(x.func)=='self._ep_q1_pair' for x in ast.walk(n)))
+  self.assertEqual(ast.unparse(q.body[0].test),'epi_rows <= Int32(8)')
+  self.assertEqual(ast.dump(ast.Module(body=q.body[0].orelse,type_ignores=[]),include_attributes=False),ast.dump(ast.Module(body=q.orelse,type_ignores=[]),include_attributes=False))
+  # Even if the new opt branch is selected, the only device-body delta is
+  # Q1 helper invocation. The accepted FC1 expansions and FC2 stay identical.
+  class RestoreQ1(ast.NodeTransformer):
+   def visit_If(self,n):
+    t=ast.unparse(n.test)
+    if t=='cutlass.const_expr(self.ep_decode_opt)':return n.orelse
+    if t=='cutlass.const_expr(self.ep_decode_opt and not self.fast_math)':return n.orelse
     return self.generic_visit(n)
-  restored=Restore().visit(Select(True).visit(fn('kernel')))
-  self.assertEqual(dump(restored),dump(old))
-  for name in ('__init__','__call__','_call_global','launch_ep_tiled_decode','_global_route_id','_sf_expand_stage'):
-   self.assertEqual(dump(fn(name)),dump(fn(name,BASE)),name)
-
- def test_storage_metadata_fc2_and_actual_capacity_guard_use_baseline(self):
-  old=Select(False).visit(fn('kernel',BASE));new=Select(True).visit(fn('kernel'))
-  struct=lambda node:next(n for n in ast.walk(node) if isinstance(n,ast.ClassDef) and n.name=='Storage')
-  self.assertEqual(dump(struct(old)),dump(struct(new)))
-  guard=run_function('_check_ep_storage',{})
-  owner=types.SimpleNamespace(smem_bytes=98304,smem_capacity=101376,threads_per_cta=160)
-  guard(owner,types.SimpleNamespace(size_in_bytes=lambda:98304));self.assertEqual(owner.ep_storage_bytes,98304)
-  for n in (97280,100352,101376):
-   with self.assertRaises(ValueError):guard(owner,types.SimpleNamespace(size_in_bytes=lambda n=n:n))
-  owner.smem_capacity=99327
-  with self.assertRaises(ValueError):guard(owner,types.SimpleNamespace(size_in_bytes=lambda:98304))
-  self.assertEqual(ast.unparse(fn('_smem_bytes_estimate').body[0]),'return super()._smem_bytes_estimate()')
-  source=ast.unparse(new)
-  self.assertNotIn('sf2_source_base_addr',source);self.assertNotIn('self._sf_expand_fc2_out_of_place(',source)
-  self.assertIn('sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(2048)',source)
-  self.assertIn('_COMPACT_STATIC_TILE_M',source)
-  self.assertFalse(any(isinstance(n,ast.Raise) for n in ast.walk(fn('kernel'))))
-
- def test_fc1_pipeline_lifetime_and_all_non_expansion_barriers_are_preserved(self):
-  old=Select(False).visit(fn('kernel',BASE));new=Select(True).visit(fn('kernel'))
-  calls=lambda node:[ast.unparse(x) for x in ast.walk(node) if isinstance(x,ast.Call)]
-  for suffix in ('consumer_wait','consumer_release','producer_acquire','producer_commit','producer_tail','arrive_and_wait','_resident_grid_barrier'):
-   self.assertEqual([x for x in calls(old) if suffix in x.split('(',1)[0]],[x for x in calls(new) if suffix in x.split('(',1)[0]],suffix)
-  stage=next(x for x in ast.walk(new) if isinstance(x,ast.For) and ast.unparse(x.target)=='gu' and any(isinstance(y,ast.Name) and y.id=='sf1_packed_addr' for y in ast.walk(x)))
-  text=ast.unparse(stage)
-  self.assertLess(text.index('fc1_pipeline.consumer_wait'),text.index('_ld_shared_i32_volatile'))
-  self.assertLess(text.index('_sf1_load_register_words'),text.index('cute.gemm'))
-  self.assertLess(text.index('cute.gemm'),text.index('fc1_pipeline.consumer_release'))
-  self.assertEqual(text.count('_sf1_load_register_words'),2)
-  # Only the selected FC1 SF6 branch avoids the old expansion call. Generic
-  # sf_pack and raw/ineligible branches remain for the existing source contract.
-  self.assertEqual(sum('self._sf_expand_stage(' in x for x in calls(old)),sum('self._sf_expand_stage(' in x for x in calls(new))+1)
-
- def test_exact_selection_and_cache_abi_remain_isolated(self):
-  ns={n.targets[0].id:ast.literal_eval(n.value) for n in ast.parse(TEXT).body if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name) and isinstance(n.value,ast.Constant)}
-  ns['_EP_TILED_DECODE_OPT']=False
-  resolve=run_function('ep_tiled_decode_opt',ns);run_function('ep_tiled_decode_opt_enabled',ns)
-  for latched in (False,True):
-   ns['_EP_TILED_DECODE_OPT']=latched
-   for m in range(1,33):
-    for sf6 in (False,True):
-     self.assertEqual(resolve(m,sf6,None),latched and sf6 and m<=8)
-     self.assertEqual(resolve(m,sf6,True),sf6 and m<=8);self.assertFalse(resolve(m,sf6,False))
-  for value in (0,1,'1',[],object()):
-   with self.assertRaises(TypeError):resolve(6,True,value)
-  self.assertEqual(ns['EP_TILED_DECODE_OPT_CACHE_TAG'],'glm53_ep_static_sf6_fc1_register_v2')
-  for name in ('ep_tiled_compile_spec','get_ep_tiled_decode_kernel','warm_ep_tiled_decode'):
-   self.assertEqual(dump(fn(name)),dump(fn(name,BASE)))
-  setup=fn('_setup_attributes')
-  self.assertEqual(ast.unparse(setup.body[0]),'super()._setup_attributes(hidden_size)')
-  self.assertEqual(ast.unparse(setup.body[1].test),'self.ep_decode_opt')
-  self.assertEqual(ast.unparse(setup.body[1].body[0]),'self._check_ep_sf1_register_layout()')
-
+  self.assertEqual(ast.dump(RestoreQ1().visit(fn('kernel')),include_attributes=False),ast.dump(a,include_attributes=False))
+  self.assertNotIn('_sf1_load_register_words',NEW);self.assertNotIn('fc1_register_u32',NEW)
+  self.assertEqual(ast.dump(fn('_sf_expand_stage'),include_attributes=False),ast.dump(fn('_sf_expand_stage',BASE),include_attributes=False))
+ def test_geometry_and_collective_structure_are_fail_closed(self):
+  check=runfn(fn('_check_ep_q1_geometry'),{})
+  attrs=dict(decode_reform=True,reform_sf_pack=True,tile_m=16,fc1_tile_n=128,sf_vec_size=16,fc1_halves=1,num_mma_warps=4,num_threads_per_warp=32)
+  owner=types.SimpleNamespace(**attrs);check(owner);self.assertTrue(owner.ep_q1_pair_geometry_proven)
+  for name in attrs:
+   bad=attrs.copy();bad[name]=False if isinstance(attrs[name],bool) else attrs[name]+1
+   with self.subTest(name=name),self.assertRaises(ValueError):check(types.SimpleNamespace(**bad))
+  helper=fn('_ep_q1_pair');shuffles=[]
+  for n in helper.body:
+   if isinstance(n,ast.Assign) and isinstance(n.value,ast.Call) and ast.unparse(n.value.func)=='cute.arch.shuffle_sync':shuffles.append(n)
+  self.assertEqual(len(shuffles),3)
+  self.assertEqual(sum(isinstance(n,ast.Call) and ast.unparse(n.func)=='cute.arch.shuffle_sync' for n in ast.walk(helper)),3)
+  self.assertEqual(hashlib.sha256(BASE.encode()).hexdigest(),BASE_SHA)
+  self.assertEqual(hashlib.sha256(ORACLE.encode()).hexdigest(),ORACLE_SHA)
+ def test_actual_layout_guard_records_physical_mapping_and_rejects_bad_views(self):
+  def plain(kind,shape,stride,extent):return types.SimpleNamespace(kind=kind,shape=shape,stride=stride,extent=extent)
+  def composed(outer,sw):return types.SimpleNamespace(outer=outer,inner=types.SimpleNamespace(num_bits=sw[0],num_base=sw[1],num_shift=sw[2]),offset=0)
+  def args():
+   return [composed(plain('sc',(16,128,1),(128,1,0),2048),(0,4,3)),
+    composed(plain('a',(16,128,1),(128,1,0),2048),(2,4,3)),
+    plain('sf',(128,128,1),('SF16-broadcast',),1024)]
+  def idx(crd,l):
+   row,col,stage=crd;self.assertEqual(stage,0)
+   if l.kind=='symbolic':return object()
+   if l.kind=='alias':return 0
+   if l.kind=='badscale':return 1
+   if l.kind=='sf':return (col//64)*512+(row%32)*16+(row//32)*4+(col//16)%4
+   return row*128+col
+  cute=types.SimpleNamespace(crd2idx=idx,cosize=lambda l:l.extent)
+  guard=runfn(fn('_check_ep_q1_layout'),dict(cute=cute))
+  def owner():return types.SimpleNamespace(ep_q1_pair_geometry_proven=True,a_dtype=types.SimpleNamespace(width=4),sf_dtype=types.SimpleNamespace(width=8),buffer_align_bytes=1024,fast_math=True)
+  ob=owner();guard(ob,*args());r=ob.ep_q1_pair_layout_receipt
+  self.assertTrue(ob.ep_q1_pair_layout_proven);self.assertEqual(r['math_mode'],'fast');self.assertTrue(r['selected'])
+  self.assertEqual([x['rows'] for x in r['rows']],list(range(9)))
+  for row in r['rows']:
+   n=row['rows'];self.assertEqual((row['sc1_bytes'],row['a2_bytes'],row['sfa2_bytes']),(256*n,64*n,8*n))
+   for key in ('source_sha256','packed_sha256','scales_sha256','ownership_sha256'):self.assertRegex(row[key],r'^[0-9a-f]{64}$')
+  again=owner();guard(again,*args());self.assertEqual(r,again.ep_q1_pair_layout_receipt)
+  for kind in ('alias','symbolic','swizzle','scale','range','alignment','dtype'):
+   ob=owner();sc,a,sf=args()
+   if kind in ('alias','symbolic'):sc.outer.kind=kind
+   if kind=='swizzle':a.inner.num_bits=3
+   if kind=='scale':sf.kind='badscale'
+   if kind=='range':a.outer.extent=1
+   if kind=='alignment':ob.buffer_align_bytes=128
+   if kind=='dtype':ob.sf_dtype.width=16
+   with self.subTest(kind=kind),self.assertRaises(ValueError):guard(ob,sc,a,sf)
 if __name__=='__main__':unittest.main(verbosity=2)

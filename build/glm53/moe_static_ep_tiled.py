@@ -19,9 +19,9 @@ That geometry restores four SF6 bytes per integer word, with the original
 volatile reads, in-place ownership and both expansion barriers unchanged.
 It also uses stock BF16 atomic scatter directly into the caller's BF16 output;
 raw modes and M9..32 retain the separate FP32 accumulation/output conversion.
-The separately keyed decode_opt experiment gives FC2 SF6 its own packed source
-slots, removing only the in-place read-before-write expansion barrier. Other
-pipeline releases, expanded-scale publication and all arithmetic are unchanged.
+The separately keyed decode_opt experiment uses two lanes for each 16-value Q1
+block when at most eight expert rows are valid. It retains the original fast or
+precise scale arithmetic and the stock in-place FC1/FC2 SF6 paths and barriers.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ import cutlass.pipeline as pipeline
 import cutlass.utils as utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
 
-from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint64, dsl_user_op
+from cutlass.cutlass_dsl import Float32, Int32, Int64, Uint8, Uint32, Uint64, dsl_user_op
 from cutlass._mlir.dialects import llvm
 from cutlass.cute.nvgpu import cpasync
 
@@ -47,6 +47,13 @@ from flashinfer.cute_dsl.fp4_common import (
     atomic_add_global_i32,
     fabs_f32,
     fmax_f32,
+    fmin_f32,
+    cvt_f32_to_e4m3,
+    fp8_e4m3_to_f32,
+    fp8_e4m3_to_f32_and_rcp,
+    cvt_e2m1x8_f32,
+    FLOAT4_E2M1_MAX,
+    FLOAT8_E4M3_MAX,
     rcp_approx_ftz,
     quantize_block_fp4,
     quantize_block_fp4_fast,
@@ -117,7 +124,7 @@ EP_TILED_A_RING_CACHE_TAG = "glm53_ep_static_sf6_a_ring_v1"
 EP_TILED_SF6_WORD_CACHE_TAG = "glm53_ep_static_sf6_word_unpack_v1"
 EP_TILED_BF16_SCATTER_CACHE_TAG = "glm53_ep_static_bf16_scatter_v1"
 EP_TILED_ROUTE_CACHE_TAG = "glm53_ep_static_fused_route_v1"
-EP_TILED_DECODE_OPT_CACHE_TAG = "glm53_ep_static_sf6_fc1_register_v2"
+EP_TILED_DECODE_OPT_CACHE_TAG = "glm53_ep_static_sf6_q1_pair_v4"
 _EP_TILED_DECODE_OPT = os.environ.get("VLLM_GLM53_EP_DECODE_OPT", "0").strip() == "1"
 
 
@@ -276,119 +283,214 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
     def _setup_attributes(self, hidden_size):
         super()._setup_attributes(hidden_size)
         if self.ep_decode_opt:
-            self._check_ep_sf1_register_layout()
+            self._check_ep_q1_geometry()
 
-    def _check_ep_sf1_register_layout(self):
-        # Ordinary host/CuTe setup, not a GPU branch. The counting engine
-        # uses the *original physical SF layout*, including broadcast strides.
-        # This assertion is intentionally fail-closed until actual lowering
-        # confirms the copied four-byte groups for every MMA thread/K block.
+    def _check_ep_q1_geometry(self):
+        # Ordinary host setup assertion. Each warp-local pair owns one
+        # 16-value block; R<=8 bounds the native path to at most 64 pairs.
         if (not self.decode_reform or not self.reform_sf_pack
-                or self.fc1_tile_n != 128 or self.fc1_tile_k != 256
-                or self.sf1_packed_blocks != 1 or self.sf1_block_bytes != 2048
-                or self.num_mma_warps != 4 or self.num_k_blocks1 != 4):
-            raise ValueError("EP FC1 direct SF register geometry mismatch")
-        atom = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), self.sf_dtype)
-        copier = cute.make_tiled_copy(
-            atom, self._dense_cls._get_layoutSFB_TV(self, self.tiled_mma1),
-            (cute.size(self.tiled_mma1.permutation_mnk[1]),
-             cute.size(self.tiled_mma1.permutation_mnk[2])))
-        offsets = cute.make_tensor(0, self.sfb1_smem_layout_staged)
-        offsets = cute.local_tile(
-            offsets, cute.slice_(self.fc1_tile_shape_mnk, (0, None, None)),
-            (0, 0, None))
-        for stage in range(2):
-            engine = offsets[None, None, stage].iterator
-            if type(engine) is not int or engine != stage * 2048:
-                raise ValueError("EP SF compressed ring stage stride mismatch")
-        seen = set()
-        copied_shape = None
-        thread_word_counts = set()
-        for tid in range(128):
-            partition = copier.get_slice(tid).partition_S(offsets)
-            slot = cute.filter_zeros(partition[None, None, None, 0])
-            if copied_shape is None:
-                copied_shape = slot.shape
-            elif copied_shape != slot.shape:
-                raise ValueError("EP SF register copy shape varies across threads")
-            if cute.size(slot, mode=[2]) != 4:
-                raise ValueError("EP SF register K-block count mismatch")
-            thread_word_counts.add(cute.size(slot) // 4)
-            for kb in range(4):
-                group = slot[None, None, kb]
-                if cute.size(group) % 4:
-                    raise ValueError("EP SF register fragment is not four-byte grouped")
-                for start in range(0, cute.size(group), 4):
-                    e = self._ep_sf1_static_offset(group, start)
-                    points = [self._ep_sf1_static_offset(group, start + lane)
-                              for lane in range(4)]
-                    if not (0 <= e <= 2044 and e % 4 == 0
-                            and points == list(range(e, e + 4))):
-                        raise ValueError("EP SF register word is not aligned/adjacent")
-                    seen.update(points)
-        if seen != set(range(2048)):
-            raise ValueError("EP SF register copy does not cover the exact raw stage")
-        self.ep_sf1_register_layout_proven = True
-        self.ep_sf1_register_layout_receipt = dict(
-            proven=True, threads=128, raw_stage_bytes=2048,
-            num_k_blocks=4, word_coverage_bytes=len(seen),
-            stages=2, stage_stride_bytes=2048,
-            copy_shape=str(copied_shape),
-            words_per_thread=sorted(thread_word_counts),
-            offset_engine="static_scalar_physical_layout",
-            slot_zero_relative_offsets=True)
-
-    def _ep_sf1_static_offset(self, tensor, index):
-        # Read only static counting-engine/layout metadata; never int() a
-        # symbolic CoordTensor load. CuTe gives a scalar engine for make_tensor(0,L).
-        engine = tensor.iterator
-        if type(engine) is not int or type(index) is not int:
-            raise ValueError("EP SF coordinate engine is not a static scalar")
-        def leaves(value):
-            if type(value) is tuple:
-                result = []
-                for child in value:
-                    result.extend(leaves(child))
-                return result
-            if type(value) is not int:
-                raise ValueError("EP SF coordinate shape/stride is not static")
-            return [value]
-        shape, stride = leaves(tensor.layout.shape), leaves(tensor.layout.stride)
-        if len(shape) != len(stride) or any(extent <= 0 for extent in shape):
-            raise ValueError("EP SF coordinate layout mismatch")
-        offset, rest = engine, index
-        for extent, step in zip(shape, stride):
-            rest, digit = divmod(rest, extent)
-            offset += digit * step
-        if rest:
-            raise ValueError("EP SF coordinate index outside copy fragment")
-        return offset
-
-    def _check_ep_sf1_register_copy(self, offsets, register):
-        # Evaluated by Python during CuTe specialization. This retains the
-        # original cute.copy logical element pairing before writing a byte view.
-        if (offsets.shape != register.shape or register.element_type != self.sf_dtype
-                or register.element_type.width != 8):
-            raise ValueError("EP SF source/register shape or element ABI mismatch")
+                or self.tile_m != 16 or self.fc1_tile_n != 128
+                or self.sf_vec_size != 16 or self.fc1_halves != 1
+                or self.num_mma_warps != 4 or self.num_threads_per_warp != 32):
+            raise ValueError("EP Q1 pair geometry mismatch")
+        self.ep_q1_pair_geometry_proven = True
+        self.ep_q1_pair_geometry = dict(mma_threads=128, subgroup_threads=2,
+            sf_values=16, max_rows=8, max_blocks=64, fc1_tile_n=128,
+            source='accepted_in_place_fc1')
 
     @cute.jit
-    def _sf1_load_register_words(self, packed_addr, offsets, register,
-                                base_lo, base_hi):
-        # Same-width memory reinterpretation, never a numeric FP8 conversion.
-        dst = cute.recast_tensor(register, cutlass.Uint8)
-        for group in cutlass.range_constexpr(cute.size(dst) // 4):
-            e = Int32(offsets[group * 4])
-            low = cutlass.Uint32(_ld_shared_i32_volatile(
-                packed_addr + (e // Int32(8)) * Int32(4)))
-            high = cutlass.Uint32(_ld_shared_i32_volatile(
-                packed_addr + Int32(1024) + (e // Int32(16)) * Int32(4)))
-            word = _sf6_unpack_word(
-                low >> cutlass.Uint32((e // Int32(4) % Int32(2)) * Int32(16)),
-                high >> cutlass.Uint32((e // Int32(4) % Int32(4)) * Int32(8)),
-                base_lo, base_hi)
-            for byte in cutlass.range_constexpr(4):
-                dst[group * 4 + byte] = cutlass.Uint8(
-                    word >> cutlass.Uint32(byte * 8))
+    def _ep_q1_scale(self, max_abs, global_scale_val):
+        # Exact scale/reciprocal expressions from pinned quantize_block_fp4.
+        scale_float = max_abs / (Float32(FLOAT4_E2M1_MAX) * global_scale_val)
+        scale_float = fmin_f32(scale_float, Float32(FLOAT8_E4M3_MAX))
+        scale_u32 = cvt_f32_to_e4m3(scale_float)
+        scale_byte = Uint8(scale_u32 & Uint32(0xFF))
+        quantized_scale = fp8_e4m3_to_f32(scale_u32)
+        inv_scale = Float32(0.0)
+        enabled = Int32(0)
+        if quantized_scale != Float32(0.0) and global_scale_val != Float32(0.0):
+            inv_scale = Float32(1.0) / (quantized_scale * global_scale_val)
+            enabled = Int32(1)
+        return inv_scale, scale_byte, enabled
+
+    @cute.jit
+    def _ep_q1_scale_fast(self, max_abs, global_scale_val):
+        # Preserve the precise parenthesization and approximate reciprocal
+        # calls in pinned quantize_block_fp4_fast; do not switch math modes.
+        scale_u32 = Uint32(0)
+        scale_byte = Uint8(0)
+        inv_scale = Float32(0.0)
+        enabled = Int32(0)
+        if global_scale_val != Float32(0.0):
+            fp4_max_rcp = rcp_approx_ftz(Float32(FLOAT4_E2M1_MAX))
+            gs_recip = rcp_approx_ftz(global_scale_val)
+            scale_float = gs_recip * (max_abs * fp4_max_rcp)
+            scale_float = fmin_f32(scale_float, Float32(FLOAT8_E4M3_MAX))
+            scale_u32 = cvt_f32_to_e4m3(scale_float)
+            scale_byte = Uint8(scale_u32 & Uint32(0xFF))
+            inv_quantized_scale = fp8_e4m3_to_f32_and_rcp(scale_u32)
+            if inv_quantized_scale != Float32(0.0):
+                inv_scale = inv_quantized_scale * gs_recip
+                enabled = Int32(1)
+        return inv_scale, scale_byte, enabled
+
+    @cute.jit
+    def _ep_q1_quantize_eight(self, values, inv_scale):
+        q = cute.make_rmem_tensor((8,), Float32)
+        for i in cutlass.range_constexpr(8):
+            q[i] = values[i] * inv_scale
+        return cvt_e2m1x8_f32(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7])
+
+    @cute.jit
+    def _ep_q1_pair(self, sC1, epi_rows, sf_blocks_per_half, h, tidx,
+                    gs_value, a2_base_addr, a2_smem_layout, sfa2_base_addr):
+        # One warp-local adjacent pair per 16-value block. All 128 MMA
+        # threads execute every shuffle, including inactive pairs; only
+        # memory reads/writes and lane-zero scale work are predicated.
+        pair_index = Int32(tidx) // Int32(2)
+        pair_lane = Int32(tidx) & Int32(1)
+        warp_lane = Int32(tidx) & Int32(31)
+        valid_pair = pair_index < epi_rows * sf_blocks_per_half
+        local_row = pair_index // sf_blocks_per_half
+        sfb_local = pair_index - local_row * sf_blocks_per_half
+        sf_block = Int32(h) * sf_blocks_per_half + sfb_local
+        block_start = sfb_local * Int32(16)
+        values = cute.make_rmem_tensor((8,), Float32)
+        half_max = Float32(0.0)
+        if valid_pair:
+            for elem_idx in cutlass.range_constexpr(8):
+                value = Float32(sC1[local_row,
+                    block_start + pair_lane * Int32(8) + elem_idx, 0])
+                values[elem_idx] = value
+                half_max = fmax_f32(half_max, fabs_f32(value))
+        other_max = cute.arch.shuffle_sync(half_max, warp_lane ^ Int32(1))
+        block_max = fmax_f32(half_max, other_max)
+        inv_scale = Float32(0.0)
+        scale_byte = Uint8(0)
+        enabled = Int32(0)
+        if valid_pair and pair_lane == Int32(0):
+            if cutlass.const_expr(self.fast_math):
+                inv_scale, scale_byte, enabled = self._ep_q1_scale_fast(block_max, gs_value)
+            else:
+                inv_scale, scale_byte, enabled = self._ep_q1_scale(block_max, gs_value)
+        # Explicit warp lane index, not thread-block index. Paired lanes
+        # reconverge here before broadcasting the precise scalar result.
+        leader_lane = warp_lane & Int32(30)
+        inv_scale = cute.arch.shuffle_sync(inv_scale, leader_lane)
+        enabled = cute.arch.shuffle_sync(enabled, leader_lane)
+        if valid_pair:
+            packed_half = Uint32(0)
+            if enabled != Int32(0):
+                packed_half = self._ep_q1_quantize_eight(values, inv_scale)
+            packed_base = sf_block * Int32(8) + pair_lane * Int32(4)
+            for byte_idx in cutlass.range_constexpr(4):
+                src_pcol = packed_base + Int32(byte_idx)
+                byte_val = Uint8((packed_half >> Uint32(byte_idx * 8)) & Uint32(0xFF))
+                fp4_offset = cute.crd2idx((local_row, src_pcol * Int32(2), 0),
+                                        a2_smem_layout.outer)
+                byte_offset = fp4_offset // Int32(2)
+                byte_offset = byte_offset ^ ((byte_offset >> Int32(3)) & Int32(0x30))
+                st_shared_u8(a2_base_addr + byte_offset, byte_val)
+            if pair_lane == Int32(0):
+                outer_m_idx = local_row % Int32(32)
+                inner_m_idx = local_row // Int32(32)
+                inner_k_idx = sf_block % Int32(4)
+                k_tile_idx = sf_block // Int32(4)
+                sf_raw_idx = (k_tile_idx * Int32(32 * 4 * 4)
+                    + outer_m_idx * Int32(4 * 4)
+                    + inner_m_idx * Int32(4) + inner_k_idx)
+                st_shared_u8(sfa2_base_addr + sf_raw_idx, scale_byte)
+
+    def _check_ep_q1_layout(self, sc1, a2, sfa2):
+        # Ordinary host/CuTe specialization: use actual static consumer layouts.
+        # A pointer swizzle acts on byte offsets, after FP4 nibble-to-byte conversion.
+        import hashlib
+        import json
+        if (not self.ep_q1_pair_geometry_proven or self.a_dtype.width != 4
+                or self.sf_dtype.width != 8):
+            raise ValueError("EP Q1 physical layout element ABI mismatch")
+        def index(layout, coord):
+            value = cute.crd2idx(coord, layout)
+            if type(value) is not int or value < 0:
+                raise ValueError("EP Q1 physical coordinate is not static/nonnegative")
+            return value
+        def swizzle_params(layout):
+            values = (layout.inner.num_bits, layout.inner.num_base, layout.inner.num_shift)
+            if (any(type(v) is not int or v < 0 for v in values)
+                    or type(layout.offset) is not int or layout.offset != 0
+                    or self.buffer_align_bytes % (1 << sum(values)) != 0):
+                raise ValueError("EP Q1 pointer swizzle/base alignment is unsupported")
+            return values
+        csw, asw = swizzle_params(sc1), swizzle_params(a2)
+        if asw != (2, 4, 3) or csw[1] < 1:
+            raise ValueError("EP Q1 byte swizzle differs from accepted writer")
+        def swizzle(offset, params):
+            bits, base, shift = params
+            return offset ^ ((offset >> shift) & (((1 << bits) - 1) << base))
+        capacities = (cute.cosize(sc1.outer) * 2,
+                      (cute.cosize(a2.outer) + 1) // 2, cute.cosize(sfa2))
+        if any(type(n) is not int or n <= 0 for n in capacities):
+            raise ValueError("EP Q1 allocation extent is not static")
+        def source(row, col):
+            return swizzle(index(sc1.outer, (row, col, 0)) * 2, csw)
+        def packed(row, col):
+            nibble = index(a2.outer, (row, col * 2, 0))
+            if nibble % 2:
+                raise ValueError("EP Q1 packed pair crosses a physical byte")
+            byte = nibble // 2
+            actual = swizzle(byte, asw)
+            if actual != byte ^ ((byte >> 3) & 0x30):
+                raise ValueError("EP Q1 writer and consumer A2 address disagree")
+            return actual
+        def scale(row, block):
+            accepted = (block // 4) * 512 + (row % 32) * 16 + (row // 32) * 4 + block % 4
+            if any(index(sfa2, (row, block * 16 + i, 0)) != accepted for i in range(16)):
+                raise ValueError("EP Q1 writer and consumer SFA2 address disagree")
+            return accepted
+        def digest(records):
+            return hashlib.sha256(json.dumps(records, sort_keys=True,
+                separators=(",", ":")).encode()).hexdigest()
+        rows = []
+        for r in range(9):
+            sources, packed_bytes, scales, owners = [], [], [], []
+            for tid in range(128):
+                pair, lane = divmod(tid, 2)
+                if pair >= r * 8:
+                    continue
+                row, block = divmod(pair, 8)
+                load = [(row, block * 16 + lane * 8 + i,
+                         source(row, block * 16 + lane * 8 + i)) for i in range(8)]
+                stores = [(row, block * 8 + lane * 4 + i,
+                           packed(row, block * 8 + lane * 4 + i)) for i in range(4)]
+                sf = [(row, block, scale(row, block))] if lane == 0 else []
+                sources.extend(load);packed_bytes.extend(stores);scales.extend(sf)
+                owners.append((tid, pair, lane, load, stores, sf))
+            sources.sort();packed_bytes.sort();scales.sort()
+            expected_source = [(row, col, source(row, col)) for row in range(r) for col in range(128)]
+            expected_packed = [(row, col, packed(row, col)) for row in range(r) for col in range(64)]
+            expected_scales = [(row, block, scale(row, block)) for row in range(r) for block in range(8)]
+            if (sources != expected_source or packed_bytes != expected_packed
+                    or scales != expected_scales):
+                raise ValueError("EP Q1 pair ownership differs from scalar coordinates")
+            source_bytes = [offset + byte for _, _, offset in sources for byte in range(2)]
+            for values, limit in ((source_bytes, capacities[0]),
+                    ([x[2] for x in packed_bytes], capacities[1]),
+                    ([x[2] for x in scales], capacities[2])):
+                if len(set(values)) != len(values) or any(x < 0 or x >= limit for x in values):
+                    raise ValueError("EP Q1 physical mapping aliases or exceeds allocation")
+            rows.append(dict(rows=r, active_pairs=r*8, sc1_elements=r*128,
+                sc1_bytes=r*256, a2_bytes=r*64, sfa2_bytes=r*8, scale_owners=r*8,
+                source_sha256=digest(sources), packed_sha256=digest(packed_bytes),
+                scales_sha256=digest(scales), ownership_sha256=digest(owners)))
+        self.ep_q1_pair_layout_proven = True
+        self.ep_q1_pair_layout_receipt = dict(proven=True, selected=True,
+            math_mode="fast" if self.fast_math else "precise", threads=128,
+            subgroup_threads=2, max_rows=8, sf_values=16, stage=0,
+            shuffle_collectives=3, shuffle_threads=128, consumer_layout_matches=True,
+            element_bits=dict(sc1=16, a2=4, sfa2=8),
+            layouts=dict(sc1=dict(shape=str(sc1.outer.shape),stride=str(sc1.outer.stride),swizzle=str(csw)),
+                a2=dict(shape=str(a2.outer.shape),stride=str(a2.outer.stride),swizzle=str(asw)),
+                sfa2=dict(shape=str(sfa2.shape),stride=str(sfa2.stride),swizzle="none")), rows=rows)
 
     def _smem_bytes_estimate(self):
         return super()._smem_bytes_estimate()
@@ -401,7 +503,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         # artifact gate must independently bound that compiled ELF allocation.
         if (actual != self.smem_bytes or actual + 1024 > self.smem_capacity
                 or actual != 98304 or self.threads_per_cta != 160):
-            raise ValueError("EP FC1 register path changed the baseline resident CTA storage")
+            raise ValueError("EP Q1 pair path changed the baseline resident CTA storage")
         self.ep_storage_bytes = actual
 
 
@@ -921,6 +1023,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
 
         if cutlass.const_expr(self.ep_decode_opt):
             self._check_ep_storage(Storage)
+            self._check_ep_q1_layout(epi1_smem_staged, a2_smem_layout, sfa2_smem_layout)
         storage = smem.allocate(Storage)
 
         prod_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
@@ -1400,15 +1503,6 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
             csSFB1_1 = thr_ld_SFB1.partition_S(sSFB1_1)
             fz_crSFB1_0 = cute.filter_zeros(thr_ld_SFB1.retile(tCrSFB1_0))
             fz_crSFB1_1 = cute.filter_zeros(thr_ld_SFB1.retile(tCrSFB1_1))
-            if cutlass.const_expr(self.ep_decode_opt):
-                # Offset engine has the same physical layout/zero strides as
-                # csSFB1_0. Its slot-zero offsets are relative to the packed
-                # stage base, selected separately by the consumer ring state.
-                sf1_offset_tensor = cute.make_tensor(0, sSFB1_0.layout)
-                sf1_offset_partition = thr_ld_SFB1.partition_S(sf1_offset_tensor)
-                sf1_register_offsets = cute.filter_zeros(
-                    sf1_offset_partition[None, None, None, 0])
-                self._check_ep_sf1_register_copy(sf1_register_offsets, fz_crSFB1_0)
             csA2 = thr_ld_A.partition_S(sA2)
             crA2 = thr_ld_A.retile(tCrA2)
             csSFA2 = thr_ld_SFA.partition_S(sSFA2_tile)
@@ -1600,23 +1694,12 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
                                 if cutlass.const_expr(self.reform_sf_pack):
-                                    if cutlass.const_expr(self.ep_decode_opt):
-                                        # TMA has completed and the original pipeline
-                                        # keeps this compressed slot alive through all
-                                        # K blocks. There are no expansion shared writes.
-                                        sf1_packed_addr = (sfb1_base_addr
-                                            + fc1_cons_state.index * Int32(self.sf1_block_bytes))
-                                        sf1_base = cutlass.Uint32(_ld_shared_i32_volatile(
-                                            sf1_packed_addr + Int32(1536))) & cutlass.Uint32(255)
-                                        sf1_base_lo = (sf1_base & cutlass.Uint32(127)) * cutlass.Uint32(0x01010101)
-                                        sf1_base_hi = (sf1_base & cutlass.Uint32(128)) * cutlass.Uint32(0x01010101)
-                                    else:
-                                        for sf_block in cutlass.range_constexpr(self.sf1_packed_blocks):
-                                            self._sf_expand_stage(
-                                                sfb1_base_addr
-                                                + fc1_cons_state.index * Int32(self.sf1_block_bytes)
-                                                + Int32(sf_block * 2048), Int32(tidx), 2048,
-                                            )
+                                    for sf_block in cutlass.range_constexpr(self.sf1_packed_blocks):
+                                        self._sf_expand_stage(
+                                            sfb1_base_addr
+                                            + fc1_cons_state.index * Int32(self.sf1_block_bytes)
+                                            + Int32(sf_block * 2048), Int32(tidx), 2048,
+                                        )
                                 elif cutlass.const_expr(self.sf_pack):
                                     self._sf_expand_stage(
                                         sfb1_base_addr
@@ -1641,15 +1724,10 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                                     smem_copy_SFA1, fz_csSFA_p[None, None, 0],
                                     fz_crSFA1_tile[None, None, 0],
                                 )
-                                if cutlass.const_expr(self.ep_decode_opt):
-                                    self._sf1_load_register_words(
-                                        sf1_packed_addr, sf1_register_offsets[None, None, 0],
-                                        fz_crSFB1[None, None, 0], sf1_base_lo, sf1_base_hi)
-                                else:
-                                    cute.copy(
-                                        smem_copy_SFB1, fz_csSFB_p[None, None, 0],
-                                        fz_crSFB1[None, None, 0],
-                                    )
+                                cute.copy(
+                                    smem_copy_SFB1, fz_csSFB_p[None, None, 0],
+                                    fz_crSFB1[None, None, 0],
+                                )
                                 for k_block_idx in cutlass.range_constexpr(num_k_blocks1):
                                     k_next = (
                                         0 if k_block_idx + 1 == num_k_blocks1
@@ -1668,15 +1746,10 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                                             smem_copy_SFA1, fz_csSFA_p[None, None, k_next],
                                             fz_crSFA1_tile[None, None, k_next],
                                         )
-                                        if cutlass.const_expr(self.ep_decode_opt):
-                                            self._sf1_load_register_words(
-                                                sf1_packed_addr, sf1_register_offsets[None, None, k_next],
-                                                fz_crSFB1[None, None, k_next], sf1_base_lo, sf1_base_hi)
-                                        else:
-                                            cute.copy(
-                                                smem_copy_SFB1, fz_csSFB_p[None, None, k_next],
-                                                fz_crSFB1[None, None, k_next],
-                                            )
+                                        cute.copy(
+                                            smem_copy_SFB1, fz_csSFB_p[None, None, k_next],
+                                            fz_crSFB1[None, None, k_next],
+                                        )
                                     for _mt in range(self.num_m_tiles):
                                         for _nt in range(self.num_n_tiles1):
                                             mma_atom.set(
@@ -1745,67 +1818,134 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                             epi_rows = Int32(self.tile_m)
                         if epi_rows < Int32(0):
                             epi_rows = Int32(0)
-                        quant_idx = Int32(tidx)
-                        while quant_idx < epi_rows * sf_blocks_per_half:
-                            local_row = quant_idx // sf_blocks_per_half
-                            row = local_row
-                            sfb_local = quant_idx - local_row * sf_blocks_per_half
-                            sf_block = Int32(h) * sf_blocks_per_half + sfb_local
-                            block_start = sfb_local * Int32(self.sf_vec_size)
-
-                            values = cute.make_rmem_tensor(
-                                (self.sf_vec_size,), cutlass.Float32
-                            )
-                            block_max = cutlass.Float32(0.0)
-                            for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
-                                value = cutlass.Float32(
-                                    sC1[local_row, block_start + elem_idx, 0]
-                                )
-                                values[elem_idx] = value
-                                block_max = fmax_f32(block_max, fabs_f32(value))
-                            scale_byte = Uint8(0)
-                            packed_lo = Uint64(0)
-                            if self.fast_math:
-                                packed_lo, scale_byte = quantize_block_fp4_fast(
-                                    values, block_max, gs_value
-                                )
+                        if cutlass.const_expr(self.ep_decode_opt):
+                            if epi_rows <= Int32(8):
+                                self._ep_q1_pair(sC1, epi_rows, sf_blocks_per_half, h, tidx,
+                                                 gs_value, a2_base_addr, a2_smem_layout, sfa2_base_addr)
                             else:
-                                packed_lo, scale_byte = quantize_block_fp4(
-                                    values, block_max, gs_value
-                                )
-                            packed_base = sf_block * Int32(self.sf_vec_size // 2)
-                            xor_bits = ((row >> Int32(1)) & Int32(0x3)) << Int32(4)
-                            for byte_idx in cutlass.range_constexpr(self.sf_vec_size // 2):
-                                src_pcol = packed_base + Int32(byte_idx)
-                                dst_flat = (src_pcol ^ xor_bits) * a2_rows + row
-                                byte_val = Uint8(
-                                    (packed_lo >> Uint64(byte_idx * 8)) & Uint64(0xFF)
-                                )
-                                if cutlass.const_expr(self.decode_reform):
-                                    # Convert the outer FP4 nibble offset to
-                                    # bytes BEFORE applying the pointer swizzle.
-                                    fp4_offset = cute.crd2idx(
-                                        (row, src_pcol * Int32(2), 0), a2_smem_layout.outer
+                                quant_idx = Int32(tidx)
+                                while quant_idx < epi_rows * sf_blocks_per_half:
+                                    local_row = quant_idx // sf_blocks_per_half
+                                    row = local_row
+                                    sfb_local = quant_idx - local_row * sf_blocks_per_half
+                                    sf_block = Int32(h) * sf_blocks_per_half + sfb_local
+                                    block_start = sfb_local * Int32(self.sf_vec_size)
+
+                                    values = cute.make_rmem_tensor(
+                                        (self.sf_vec_size,), cutlass.Float32
                                     )
-                                    byte_offset = fp4_offset // Int32(2)
-                                    byte_offset = byte_offset ^ ((byte_offset >> Int32(3)) & Int32(0x30))
-                                    st_shared_u8(a2_base_addr + byte_offset, byte_val)
+                                    block_max = cutlass.Float32(0.0)
+                                    for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
+                                        value = cutlass.Float32(
+                                            sC1[local_row, block_start + elem_idx, 0]
+                                        )
+                                        values[elem_idx] = value
+                                        block_max = fmax_f32(block_max, fabs_f32(value))
+                                    scale_byte = Uint8(0)
+                                    packed_lo = Uint64(0)
+                                    if self.fast_math:
+                                        packed_lo, scale_byte = quantize_block_fp4_fast(
+                                            values, block_max, gs_value
+                                        )
+                                    else:
+                                        packed_lo, scale_byte = quantize_block_fp4(
+                                            values, block_max, gs_value
+                                        )
+                                    packed_base = sf_block * Int32(self.sf_vec_size // 2)
+                                    xor_bits = ((row >> Int32(1)) & Int32(0x3)) << Int32(4)
+                                    for byte_idx in cutlass.range_constexpr(self.sf_vec_size // 2):
+                                        src_pcol = packed_base + Int32(byte_idx)
+                                        dst_flat = (src_pcol ^ xor_bits) * a2_rows + row
+                                        byte_val = Uint8(
+                                            (packed_lo >> Uint64(byte_idx * 8)) & Uint64(0xFF)
+                                        )
+                                        if cutlass.const_expr(self.decode_reform):
+                                            # Convert the outer FP4 nibble offset to
+                                            # bytes BEFORE applying the pointer swizzle.
+                                            fp4_offset = cute.crd2idx(
+                                                (row, src_pcol * Int32(2), 0), a2_smem_layout.outer
+                                            )
+                                            byte_offset = fp4_offset // Int32(2)
+                                            byte_offset = byte_offset ^ ((byte_offset >> Int32(3)) & Int32(0x30))
+                                            st_shared_u8(a2_base_addr + byte_offset, byte_val)
+                                        else:
+                                            sA2_u8[dst_flat] = byte_val
+                                    outer_m_idx = row % Int32(32)
+                                    inner_m_idx = row // Int32(32)
+                                    inner_k_idx = sf_block % Int32(4)
+                                    k_tile_idx = sf_block // Int32(4)
+                                    sf_raw_idx = (
+                                        k_tile_idx * Int32(32 * 4 * 4)
+                                        + outer_m_idx * Int32(4 * 4)
+                                        + inner_m_idx * Int32(4)
+                                        + inner_k_idx
+                                    )
+                                    st_shared_u8(sfa2_base_addr + sf_raw_idx, scale_byte)
+                                    quant_idx += Int32(
+                                        self.num_mma_warps * self.num_threads_per_warp
+                                    )
+                        else:
+                            quant_idx = Int32(tidx)
+                            while quant_idx < epi_rows * sf_blocks_per_half:
+                                local_row = quant_idx // sf_blocks_per_half
+                                row = local_row
+                                sfb_local = quant_idx - local_row * sf_blocks_per_half
+                                sf_block = Int32(h) * sf_blocks_per_half + sfb_local
+                                block_start = sfb_local * Int32(self.sf_vec_size)
+
+                                values = cute.make_rmem_tensor(
+                                    (self.sf_vec_size,), cutlass.Float32
+                                )
+                                block_max = cutlass.Float32(0.0)
+                                for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
+                                    value = cutlass.Float32(
+                                        sC1[local_row, block_start + elem_idx, 0]
+                                    )
+                                    values[elem_idx] = value
+                                    block_max = fmax_f32(block_max, fabs_f32(value))
+                                scale_byte = Uint8(0)
+                                packed_lo = Uint64(0)
+                                if self.fast_math:
+                                    packed_lo, scale_byte = quantize_block_fp4_fast(
+                                        values, block_max, gs_value
+                                    )
                                 else:
-                                    sA2_u8[dst_flat] = byte_val
-                            outer_m_idx = row % Int32(32)
-                            inner_m_idx = row // Int32(32)
-                            inner_k_idx = sf_block % Int32(4)
-                            k_tile_idx = sf_block // Int32(4)
-                            sf_raw_idx = (
-                                k_tile_idx * Int32(32 * 4 * 4)
-                                + outer_m_idx * Int32(4 * 4)
-                                + inner_m_idx * Int32(4)
-                                + inner_k_idx
-                            )
-                            st_shared_u8(sfa2_base_addr + sf_raw_idx, scale_byte)
-                            quant_idx += Int32(
-                                self.num_mma_warps * self.num_threads_per_warp
-                            )
+                                    packed_lo, scale_byte = quantize_block_fp4(
+                                        values, block_max, gs_value
+                                    )
+                                packed_base = sf_block * Int32(self.sf_vec_size // 2)
+                                xor_bits = ((row >> Int32(1)) & Int32(0x3)) << Int32(4)
+                                for byte_idx in cutlass.range_constexpr(self.sf_vec_size // 2):
+                                    src_pcol = packed_base + Int32(byte_idx)
+                                    dst_flat = (src_pcol ^ xor_bits) * a2_rows + row
+                                    byte_val = Uint8(
+                                        (packed_lo >> Uint64(byte_idx * 8)) & Uint64(0xFF)
+                                    )
+                                    if cutlass.const_expr(self.decode_reform):
+                                        # Convert the outer FP4 nibble offset to
+                                        # bytes BEFORE applying the pointer swizzle.
+                                        fp4_offset = cute.crd2idx(
+                                            (row, src_pcol * Int32(2), 0), a2_smem_layout.outer
+                                        )
+                                        byte_offset = fp4_offset // Int32(2)
+                                        byte_offset = byte_offset ^ ((byte_offset >> Int32(3)) & Int32(0x30))
+                                        st_shared_u8(a2_base_addr + byte_offset, byte_val)
+                                    else:
+                                        sA2_u8[dst_flat] = byte_val
+                                outer_m_idx = row % Int32(32)
+                                inner_m_idx = row // Int32(32)
+                                inner_k_idx = sf_block % Int32(4)
+                                k_tile_idx = sf_block // Int32(4)
+                                sf_raw_idx = (
+                                    k_tile_idx * Int32(32 * 4 * 4)
+                                    + outer_m_idx * Int32(4 * 4)
+                                    + inner_m_idx * Int32(4)
+                                    + inner_k_idx
+                                )
+                                st_shared_u8(sfa2_base_addr + sf_raw_idx, scale_byte)
+                                quant_idx += Int32(
+                                    self.num_mma_warps * self.num_threads_per_warp
+                                )
                         # sC1 is reused by the next half / next item after this
                         self.epilog_sync_barrier.arrive_and_wait()
 

@@ -42,10 +42,11 @@ CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_glm53_prep_fused_kv_integration.py", "test_onepass_prep_proof.py",
              "test_glm53_prep_checkpoint_logging.py",
              "test_glm53_ep_tiled_decode_opt.py", "test_glm53_prep_decode_opt.py",
-             "test_onepass_ep_default_proof.py", "test_glm53_ep_decode_opt_proof.py")
+             "test_onepass_ep_default_proof.py", "test_glm53_ep_decode_opt_proof.py",
+             "test_glm53_ep_q1_cpu_receipt.py")
 CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (12, 12, 27, 14, 12, 12, 6, 7, 6, 5, 6, 10, 6, 10, 10, 4,
-                                     6, 8, 4, 4)))
-EXPECTED_CPU_TESTS = 181
+                                     6, 8, 4, 4, 2)))
+EXPECTED_CPU_TESTS = 183
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',
@@ -62,6 +63,7 @@ CONTRACT_PATHS = (
     'overlay/modules/glm53_model/glm5next_model.py',
     'measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz',
     'measurements/glm53_ep_tiled_20260909/ep76_onepass1/source/moe_static_ep_tiled.py.gz',
+    'measurements/glm53_ep_tiled_20260909/ep76_onepass3/source/moe_static_ep_tiled.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json',
 ) + tuple('tests/' + name for name in CPU_TESTS)
@@ -165,7 +167,7 @@ def opt_static_specialization(case, key, a_ring, word_unpack, scatter_bf16,
     """An optimized artifact preserves the old ABI and fits one resident CTA."""
     name, rows, mode = case
     assert case in OPT_STATIC_CASES
-    assert key[-1] == 'glm53_ep_static_sf6_fc1_register_v2'
+    assert key[-1] == 'glm53_ep_static_sf6_q1_pair_v4'
     assert decode_opt is True and type(storage_bytes) is int and storage_bytes == 98304
     if mode == 'global':
         original = next(item for item in GLOBAL_STATIC_CASES if item[0] == name)
@@ -193,25 +195,49 @@ def opt_shared_capacity(passed):
                 total_bytes=dynamic_bytes+static_bytes, block_limit_bytes=101376)
 
 
-def opt_register_layout(kernel):
-    """Preserve the actual CuTe copy-layout check performed during lowering."""
-    assert kernel.ep_sf1_register_layout_proven is True
-    return validate_register_layout(kernel.ep_sf1_register_layout_receipt)
+def opt_q1_pair_layout(kernel, key):
+    """Bind the actual CuTe physical-address witness and selected math mode."""
+    assert kernel.ep_decode_opt is True and kernel.ep_q1_pair_layout_proven is True
+    assert type(kernel.fast_math) is bool and kernel.fast_math is key[6]
+    return validate_q1_pair_layout(kernel.ep_q1_pair_layout_receipt, fast_math=kernel.fast_math)
 
 
-def validate_register_layout(receipt):
-    """Validate the layout witness both before and after artifact transfer."""
-    fixed = dict(proven=True, threads=128, raw_stage_bytes=2048, num_k_blocks=4,
-                 word_coverage_bytes=2048, stages=2, stage_stride_bytes=2048,
-                 offset_engine='static_scalar_physical_layout',
-                 slot_zero_relative_offsets=True)
-    assert type(receipt) is dict and set(receipt) == set(fixed) | {'copy_shape', 'words_per_thread'}
-    assert all(type(receipt[k]) is type(value) and receipt[k] == value
-               for k, value in fixed.items())
-    assert type(receipt['copy_shape']) is str and receipt['copy_shape']
-    words = receipt['words_per_thread']
-    assert type(words) is list and words and all(type(x) is int and x > 0 for x in words)
-    assert words == sorted(set(words))
+def validate_q1_pair_layout(receipt, *, fast_math):
+    """Validate transported layout evidence; actual address equality is checked by CuTe setup.
+
+    selected describes the compiled R<=8 branch, not a runtime branch counter.
+    The per-row digests preserve the real coordinate/address and thread-ownership
+    witnesses. Their hash format and counts do not replace the source-bound host
+    layout guard, startup numerics, or the canonical onepass execution proof.
+    """
+    assert type(fast_math) is bool
+    fixed = dict(proven=True, selected=True, math_mode='fast' if fast_math else 'precise',
+                 threads=128, subgroup_threads=2, max_rows=8, sf_values=16, stage=0,
+                 shuffle_collectives=3, shuffle_threads=128, consumer_layout_matches=True)
+    assert type(receipt) is dict and set(receipt) == set(fixed) | {'element_bits', 'layouts', 'rows'}
+    assert all(type(receipt[k]) is type(value) and receipt[k] == value for k, value in fixed.items())
+    bits = dict(sc1=16, a2=4, sfa2=8)
+    assert type(receipt['element_bits']) is dict and set(receipt['element_bits']) == set(bits)
+    assert all(type(receipt['element_bits'][k]) is int and receipt['element_bits'][k] == v for k,v in bits.items())
+    layouts = receipt['layouts']
+    assert type(layouts) is dict and set(layouts) == set(bits)
+    for value in layouts.values():
+        assert type(value) is dict and set(value) == {'shape', 'stride', 'swizzle'}
+        assert all(type(text) is str and 0 < len(text) <= 4096 for text in value.values())
+    assert layouts['a2']['swizzle'] == '(2, 4, 3)' and layouts['sfa2']['swizzle'] == 'none'
+    rows = receipt['rows']
+    hashes = ('source_sha256', 'packed_sha256', 'scales_sha256', 'ownership_sha256')
+    assert type(rows) is list and len(rows) == 9
+    empty_digest = hashlib.sha256(b'[]').hexdigest()
+    for r, row in enumerate(rows):
+        counts = dict(rows=r, active_pairs=r*8, sc1_elements=r*128, sc1_bytes=r*256,
+                      a2_bytes=r*64, sfa2_bytes=r*8, scale_owners=r*8)
+        assert type(row) is dict and set(row) == set(counts) | set(hashes)
+        assert all(type(row[k]) is int and row[k] == value for k,value in counts.items())
+        assert all(type(row[k]) is str and re.fullmatch('[0-9a-f]{64}', row[k]) for k in hashes)
+        if r == 0:
+            assert all(row[k] == empty_digest for k in hashes)
+    assert all(len({row[k] for row in rows}) == len(rows) for k in hashes)
     return dict(receipt)
 
 
@@ -316,7 +342,7 @@ def compile_candidate(output, result):
         passed = preserve_pass(output, 'opt-static/' + name, key)
         passed['specialization'] = selected
         passed['shared_capacity'] = opt_shared_capacity(passed)
-        passed['register_layout'] = opt_register_layout(kernel)
+        passed['q1_pair_layout'] = opt_q1_pair_layout(kernel, key)
         result['opt_static_passes'].append(passed)
         assert not torch.cuda.is_initialized()
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
