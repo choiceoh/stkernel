@@ -25,7 +25,7 @@ file, the module was never model-agnostic and has to be split, not overridden.
 |---|---|---|---|
 | `dsv4` | DeepSeek-V4-Flash-0731 | 18 | production |
 | `glm53` | GLM-5.3-Flash NVFP4 | 25 | kernel campaign -- boots daily; the megakernel set is its default (ledger 28차 §8) |
-| `qwen38` | Qwen3.8-Flash-Next NVFP4 | 1 | bring-up (never composed or deployed) |
+| `qwen38` | Qwen3.8-Flash-Next NVFP4 | 2 | bring-up (never composed or deployed) |
 
 `glm53` carries its own modules and can load none of `dsv4`'s: its image
 installs to dist-packages rather than the venv site-packages, and one of its
@@ -135,9 +135,11 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 |---|---|---:|:---:|:---:|:---:|:---:|:---:|
 | `moe_gate_sm121` | GB10의 모든 MoE | 1 | ✓ | ● | ● | ● | · |
 | `tp_oneshot_ar` | 어느 모델이든 | 3 | ✓ | ● | ● | ● | ● |
+| `qwen38_moe` | Qwen3.8-Flash-Next 전용 (공유 전문가를 라우팅 grouped GEMM 의 11번째 슬롯으로 융합; 랭크 로컬 센티넬 −2, all-to-all 비참여) | 1 | ✓ | · | · | · | ● |
+
 | `sched_decode_first` | 어느 모델이든 (AsyncScheduler 서브클래스; 모델·커널·형상 임포트 0) | 1 | ✓ | · | ● | ● | · |
 | `boot_stamps` | 어느 모델이든 (부팅 단계 계측) | 2 | ✓ | · | ● | ● | · |
-| `dsv41_vllm` | V4.1 을 vLLM 아키텍처로 등록 (transformers config 타입 + ModelRegistry + DSV4 모델 파생 + bf16 그룹 o-projection + E8M0 스케일 fp32 변환; 전부 신규 파일이라 이미지 불필요) | 7 | ✓ | · | ● | · | · |
+| `dsv41_vllm` | V4.1 을 vLLM 아키텍처로 등록 (transformers config 타입 + ModelRegistry + DSV4 모델 파생 + bf16 그룹 o-projection + E8M0 스케일 fp32 변환 + mHC 지연 짝짓기; 전부 신규 파일이라 이미지 불필요) | 8 | ✓ | · | ● | · | · |
 | `dsv41_model` | DeepSeek-V4.1 전용 (CED 층 계획·후보 인덱서·packed FP4 캐시·전체 텐서 형상·KV 컴프레서·rope·가중치 라우팅·sparse_attn 인덱스 계약·프리샤드 랭크 파일 적재·슬라이딩 윈도 KV 링; 명시적 reference opt-in) | 14 | ✓ | · | ● | · | · |
 | `dsv41_engram` | DeepSeek-V4.1 전용 (SSD 룩업표: 설정·I/O·해시·게이트) | 4 | ✓ | · | ● | · | · |
 | `dsv41_encoding` | DeepSeek-V4.1 전용 (V4.1 프롬프트 형식 파싱) | 1 | ✓ | · | ● | · | · |
