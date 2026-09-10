@@ -1,0 +1,4 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+# NEW files. An architecture arrives by being ADDED and registered, not by
+# overriding something -- so none of this waits for an image.
+dsv41_layers.py	vllm/models/dsv41/dsv41_layers.py	absent

@@ -131,33 +131,38 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 
 범위가 모델을 넘는 것을 위에, 한 모델에 묶인 것을 아래에 둔다. **이식 가능**은 신규 파일이면서 타깃이 상대경로인 것 — 이미지가 달라도 그대로 실린다. 나머지는 파일 전체 교체라 계약이 이미지에 묶인다.
 
-| 모듈 | 범위 | 파일 | 이식 | dsv4 | glm53 | qwen38 |
-|---|---|---:|:---:|:---:|:---:|:---:|
-| `moe_gate_sm121` | GB10의 모든 MoE | 1 | ✓ | ● | ● | · |
-| `tp_oneshot_ar` | 어느 모델이든 | 3 | ✓ | ● | ● | ● |
-| `glm53_megakernel` | sm_121a 디코드 커널 코어 (opt-in; dsv4 는 MK_SEG_MHC 만 해당) | 2 | ✓ | ○ | ○ | · |
-| `mla_indexer` | DeepSeek-MLA | 1 | — | ● | · | · |
-| `mla_sparse_swa` | DeepSeek-MLA | 1 | — | ● | · | · |
-| `spec_fp8_head` | 드래프터 일반 — **기각** | 1 | ✓ | ○ | · | · |
+| 모듈 | 범위 | 파일 | 이식 | dsv4 | dsv41 | glm53 | qwen38 |
+|---|---|---:|:---:|:---:|:---:|:---:|:---:|
+| `moe_gate_sm121` | GB10의 모든 MoE | 1 | ✓ | ● | ● | ● | · |
+| `tp_oneshot_ar` | 어느 모델이든 | 3 | ✓ | ● | ● | ● | ● |
+| `sched_decode_first` | 어느 모델이든 (AsyncScheduler 서브클래스; 모델·커널·형상 임포트 0) | 1 | ✓ | · | ● | ● | · |
+| `boot_stamps` | 어느 모델이든 (부팅 단계 계측) | 2 | ✓ | · | ● | ● | · |
+| `dsv41_model` | DeepSeek-V4.1 전용 (CED 층 계획; 아키텍처의 시작) | 1 | ✓ | · | ● | · | · |
+| `dsv41_engram` | DeepSeek-V4.1 전용 (SSD 룩업표: 설정·I/O·해시·게이트) | 4 | ✓ | · | ● | · | · |
+| `dsv41_encoding` | DeepSeek-V4.1 전용 (V4.1 프롬프트 형식 파싱) | 1 | ✓ | · | ● | · | · |
+| `glm53_megakernel` | sm_121a 디코드 커널 코어 (opt-in; dsv4 는 MK_SEG_MHC 만 해당) | 2 | ✓ | ○ | · | ○ | · |
+| `mla_indexer` | DeepSeek-MLA | 1 | — | ● | · | · | · |
+| `mla_sparse_swa` | DeepSeek-MLA | 1 | — | ● | · | · | · |
+| `spec_fp8_head` | 드래프터 일반 — **기각** | 1 | ✓ | ○ | · | · | · |
 | | | | | | | |
-| `glm53_model` | **묶음(34차)**: 모델·어텐션·KDA·MLA 파일 접수 + 밀집 GEMM fp8/W4 패스 + KDA 원패스 + 순수 프리필 SP/NVFP4 후보 + 영상 자리표시 수정(39차) + FP8·랭크별 부팅 캐시 | 14 | 일부 | · | ● | · |
-| `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·tail-select 융합, tail 슬롯, MHC TileLang 프리필 big_fuse 오버라이드 + MK 훅 (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_mhc_tilelang`; 34차 §8 일몰: radix top-k 확장, SM121 MLA 프리필, MHC SMALLM/ONEPASS; KDA 프리필 버킷(`kda.py`·`chunk_delta_h.py`)은 #368 이 direct-out 을 얹어 유지) | 6 | 일부 | · | ● | · |
-| `glm53_drafter` | **묶음(34차)**: DFlash2 드래프터 접수, fp8 로더, 워밍업, early-fc, 준비 캐시, fp8 lm_head (옛 `glm53_dflash2_fp8_head`·`glm53_dflash_loader_fp8`·`glm53_dflash_warmup`·`glm53_dflash_early_fc`·`glm53_drafter_prep`·`fp8_lm_head`) | 6 | 일부 | · | ● | · |
-| `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) + 정적(디코드) MoE 커널 v4(35·38차, `moe_static_kernel_v4.py` + 공유 헬퍼 `moe_static_common.py`, 프로필 기본값 `u`; v2/v3 은 34차 §8 일몰) + 순수 프리필 dynamic 재사용 후보(#368) + v5 `moe_static_kernel_v5.py`(타일 우선 가중치, 셀 `t`, 39차; `z`·`h` 는 39차 §3g/§3h 일몰) + 그 배치를 읽는 gated 프리필 커널 서브클래스 `moe_dynamic_gated_tiled.py` + NVFP4 블록 스케일 6-bit 패커 `moe_sf_pack.py`(39차 §4c) + E72 전체 토큰 프리필 후보 `moe_dynamic_ep_local.py` 및 단일 실행 remap `glm53_ep_route_remap.py` + SF6 직접 읽기 프리필 `moe_dynamic_gated_sf6.py` 및 `moe_reform_sf_pack.py` + EP 시작 수치 검증 `glm53_ep_local_selftest.py` + TP Q0 프리필 `moe_dynamic_gated_sf6_q0.py` 및 실제 가중치 시작 검증 `glm53_tp_sf6_q0_selftest.py` + EP tile-major 공통 가중치·static 디코드 및 시작 검증 | 21 | — | · | ● | · |
-| `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 및 순수 프리필 collectives, 디코드 우선 스케줄러(39차, 기본값 `DECODE_FIRST=1` v3.2 순차 모드(디코더 뒤 대기 ≤20 s, 그 뒤 번갈아)), 채팅 옵션 검증 및 GLM 본문 보존, KV 블록 zeroing 커널의 블록 인덱스 경계 가드(40차) | 17 | 일부 | · | ● | · |
-| `glm53_prefix_cache` | 하이브리드 KV 프리픽스 캐시 조정자 수정(39차; 스톡은 이 레이아웃에서 히트 0). 기본값 `PREFIX_CACHE=1`(같은 접두사 재질문 92~99.6% 재사용, warm 수용률 = cold) | 1 | — | · | ● | · |
-| `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |
-| `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · |
-| `dspark_drafter` | 모델 전용 | 3 | — | ● | · | · |
-| `dsv4_attention` | 모델 전용 | 1 | — | ● | · | · |
-| `dsv4_eager_scratch` | 모델 전용(신규 파일이라 계약은 이식 가능) | 1 | ✓ | ● | · | · |
-| `dsv4_flashinfer_sparse` | 모델 전용 | 1 | — | ● | · | · |
-| `dsv4_mhc_tilelang` | 모델 전용 | 1 | — | ● | · | · |
-| `dsv4_model` | 모델 전용 | 1 | — | ● | · | · |
-| `dsv4_oneshot_wiring` | 모델 전용 | 1 | — | ● | · | · |
-| `dsv4_ops_cache_utils` | 모델 전용 | 1 | — | ● | · | · |
-| `dsv4_ops_fused_indexer_q` | 모델 전용 | 1 | — | ● | · | · |
-| `dsv4_tokenizer` | 모델 전용 | 2 | — | ● | · | · |
+| `glm53_model` | **묶음(34차)**: 모델·어텐션·KDA·MLA 파일 접수 + 밀집 GEMM fp8/W4 패스 + KDA 원패스 + 순수 프리필 SP/NVFP4 후보 + 영상 자리표시 수정(39차) + FP8·랭크별 부팅 캐시 | 14 | 일부 | · | · | ● | · |
+| `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·tail-select 융합, tail 슬롯, MHC TileLang 프리필 big_fuse 오버라이드 + MK 훅 (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_mhc_tilelang`; 34차 §8 일몰: radix top-k 확장, SM121 MLA 프리필, MHC SMALLM/ONEPASS; KDA 프리필 버킷(`kda.py`·`chunk_delta_h.py`)은 #368 이 direct-out 을 얹어 유지) | 6 | 일부 | · | · | ● | · |
+| `glm53_drafter` | **묶음(34차)**: DFlash2 드래프터 접수, fp8 로더, 워밍업, early-fc, 준비 캐시, fp8 lm_head (옛 `glm53_dflash2_fp8_head`·`glm53_dflash_loader_fp8`·`glm53_dflash_warmup`·`glm53_dflash_early_fc`·`glm53_drafter_prep`·`fp8_lm_head`) | 6 | 일부 | · | · | ● | · |
+| `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) + 정적(디코드) MoE 커널 v4(35·38차, `moe_static_kernel_v4.py` + 공유 헬퍼 `moe_static_common.py`, 프로필 기본값 `u`; v2/v3 은 34차 §8 일몰) + 순수 프리필 dynamic 재사용 후보(#368) + v5 `moe_static_kernel_v5.py`(타일 우선 가중치, 셀 `t`, 39차; `z`·`h` 는 39차 §3g/§3h 일몰) + 그 배치를 읽는 gated 프리필 커널 서브클래스 `moe_dynamic_gated_tiled.py` + NVFP4 블록 스케일 6-bit 패커 `moe_sf_pack.py`(39차 §4c) + E72 전체 토큰 프리필 후보 `moe_dynamic_ep_local.py` 및 단일 실행 remap `glm53_ep_route_remap.py` + SF6 직접 읽기 프리필 `moe_dynamic_gated_sf6.py` 및 `moe_reform_sf_pack.py` + EP 시작 수치 검증 `glm53_ep_local_selftest.py` + TP Q0 프리필 `moe_dynamic_gated_sf6_q0.py` 및 실제 가중치 시작 검증 `glm53_tp_sf6_q0_selftest.py` + EP tile-major 공통 가중치·static 디코드 및 시작 검증 | 21 | — | · | · | ● | · |
+| `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프, 샘플러 가드, 개발 랩, one-shot AR 배선 및 순수 프리필 collectives, 채팅 옵션 검증 및 GLM 본문 보존, KV 블록 zeroing 커널의 블록 인덱스 경계 가드(40차). 41차에 부팅 스탬프는 `boot_stamps` 로, 디코드 우선 스케줄러는 `sched_decode_first` 로 **내용 그대로** 빠져나갔다(DeepSeek-V4.1 이 필요로 하고 둘 다 GLM 의 것이 아니다; 합성된 build/glm53 71개 파일은 바이트 불변) | 14 | 일부 | · | · | ● | · |
+| `glm53_prefix_cache` | 하이브리드 KV 프리픽스 캐시 조정자 수정(39차; 스톡은 이 레이아웃에서 히트 0). 기본값 `PREFIX_CACHE=1`(같은 접두사 재질문 92~99.6% 재사용, warm 수용률 = cold) | 1 | — | · | · | ● | · |
+| `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · | · |
+| `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · | · |
+| `dspark_drafter` | 모델 전용 | 3 | — | ● | · | · | · |
+| `dsv4_attention` | 모델 전용 | 1 | — | ● | · | · | · |
+| `dsv4_eager_scratch` | 모델 전용(신규 파일이라 계약은 이식 가능) | 1 | ✓ | ● | · | · | · |
+| `dsv4_flashinfer_sparse` | 모델 전용 | 1 | — | ● | · | · | · |
+| `dsv4_mhc_tilelang` | 모델 전용 | 1 | — | ● | · | · | · |
+| `dsv4_model` | 모델 전용 | 1 | — | ● | · | · | · |
+| `dsv4_oneshot_wiring` | 모델 전용 | 1 | — | ● | · | · | · |
+| `dsv4_ops_cache_utils` | 모델 전용 | 1 | — | ● | · | · | · |
+| `dsv4_ops_fused_indexer_q` | 모델 전용 | 1 | — | ● | · | · | · |
+| `dsv4_tokenizer` | 모델 전용 | 2 | — | ● | · | · | · |
 
 매니페스트의 모든 행이 `absent`(=대체할 베이스가 없는 신규 파일)인 모듈은 이제 **다섯 개**다 — `tp_oneshot_ar`, `moe_gate_sm121`, `spec_fp8_head`, `dsv4_eager_scratch`, `glm53_megakernel`. 34차(2026-09-05)에 glm53 전용 모듈 25개를 다섯 묶음(`glm53_model`·`glm53_kernels`·`glm53_drafter`·`glm53_moe`·`glm53_runtime`)으로 접으면서 이식 가능한 행(옛 `fp8_lm_head`·`glm53_fp8_dense`·`glm53_prep_fused`·`glm53_dflash_early_fc`·`glm53_boot_stamps` 등)은 묶음 안에서 이미지 계약 행과 섞였다 — 행 단위 계약은 그대로다(표의 "이식" 열 `일부`). 그래서 이미지가 달라도 계약이 성립한다 — 단 **형식이 이식 가능하다는 것과 내용이 모델 무관이라는 것은 다른 명제다**: `glm53_fp8_dense` 는 GLM 의 선형 이름 패턴에, `glm53_prep_fused` 는 러너의 준비 체인에 묶여 있다. 표의 "이식" 열은 앞의 뜻(계약 형식)이고, "범위" 열이 뒤의 뜻이다. 나머지가 한 이미지에 묶이는 이유는 기능이 특수해서가 아니라 오버레이가 **파일 전체 교체**이기 때문이고, 그래서 `*_wiring`·`glm53_*` 계열이 짝으로 존재한다: 이식 가능한 알맹이와 이미지별 배선.
 

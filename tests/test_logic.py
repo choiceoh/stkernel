@@ -5308,7 +5308,7 @@ def test_profiles_readme_module_table() -> None:
     import re as _re
 
     profiles = {}
-    for name in ("dsv4", "glm53", "qwen38"):
+    for name in ("dsv4", "dsv41", "glm53", "qwen38"):
         txt = open(os.path.join(REPO, "profiles", f"{name}.env"), encoding="utf-8").read()
         m = _re.search(r'MODULES="([^"]*)"', txt, _re.S)
         check(m is not None, f"{name}.env must declare MODULES=")
@@ -5320,7 +5320,7 @@ def test_profiles_readme_module_table() -> None:
         if not m:
             continue
         cells = [c.strip() for c in m.group(2).split("|")]
-        if len(cells) != 6:          # 범위 · 파일 · 이식 · dsv4 · glm53 · qwen38
+        if len(cells) != 7:          # 범위·파일·이식·dsv4·dsv41·glm53·qwen38
             continue
         rows[m.group(1)] = cells
 
@@ -5342,7 +5342,7 @@ def test_profiles_readme_module_table() -> None:
         all_new = bool(entries) and all(e[2].strip() == "absent" for e in entries)
         check((portable == "✓") == all_new,
               f"{mod}: 이식={portable!r} but manifest all-absent={all_new}")
-        for name, mark in zip(("dsv4", "glm53", "qwen38"), marks):
+        for name, mark in zip(("dsv4", "dsv41", "glm53", "qwen38"), marks):
             in_profile = mod in profiles[name]
             check((mark != "·") == in_profile,
                   f"{mod}: {name} column {mark!r} but in-profile={in_profile}")
@@ -6575,7 +6575,7 @@ def test_decode_first_scheduler_contracts() -> None:
     import sys
     import types
 
-    rel = "overlay/modules/glm53_runtime/glm53_decode_first.py"
+    rel = "overlay/modules/sched_decode_first/glm53_decode_first.py"
     warnings: list[str] = []
 
     class FakeLogger:
@@ -6904,7 +6904,11 @@ def test_decode_first_scheduler_contracts() -> None:
 
     launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
-    manifest = open(os.path.join(REPO, "overlay/modules/glm53_runtime/manifest.tsv"), encoding="utf-8").read()
+    # 41차: the scheduler moved to its own module so DeepSeek-V4.1 could
+    # mount it. Model-agnostic and needed by a second profile is exactly the
+    # case the repo says must be split rather than overridden.
+    manifest = open(os.path.join(REPO, "overlay/modules/sched_decode_first/manifest.tsv"),
+                    encoding="utf-8").read()
     check('SCHED_CLS_FLAG="--scheduler-cls vllm.v1.core.sched.glm53_decode_first.Glm53DecodeFirstScheduler"' in launcher
           and "${SCHED_CLS_FLAG:+$SCHED_CLS_FLAG }\\" in launcher
           and "PREFIX_CACHE DECODE_FIRST \\" in launcher,
@@ -6921,6 +6925,21 @@ def test_decode_first_scheduler_contracts() -> None:
           "profile: sequential mode (20 s wait cap), 6 decode steps, chunk 1152 (half the 2304 block) scaled to 4608 by position")
     check("glm53_decode_first.py\tvllm/v1/core/sched/glm53_decode_first.py\tabsent" in manifest,
           "scheduler ships as a new file next to vLLM's schedulers")
+    # The port is only real if a second launcher can turn it on. start-hy4-tp4
+    # had no --scheduler-cls at all before 41차.
+    hy4 = open(os.path.join(REPO, "launchers/start-hy4-tp4.sh"),
+               encoding="utf-8").read()
+    check("SCHED_CLS_FLAG=\"--scheduler-cls vllm.v1.core.sched."
+          "glm53_decode_first.Glm53DecodeFirstScheduler\"" in hy4
+          and "${SCHED_CLS_FLAG:+$SCHED_CLS_FLAG }" in hy4
+          and "DECODE_FIRST=1 needs ASYNC_SCHED=1" in hy4,
+          "the DSV4-lineage launcher wires DECODE_FIRST the same way, and "
+          "refuses the ASYNC_SCHED=0 contradiction rather than letting vLLM "
+          "fail on a subclass whose base is not in play")
+    d41 = open(os.path.join(REPO, "profiles/dsv41.env"), encoding="utf-8").read()
+    check("sched_decode_first" in d41 and "\nDECODE_FIRST=0\n" in d41,
+          "dsv41 mounts the scheduler and leaves it OFF: it is GLM's measured "
+          "default on a model nobody has measured")
     print("  decode-first scheduler contracts .. OK")
 
 
@@ -6975,7 +6994,7 @@ def test_dev_lab_contracts() -> None:
           "the driver rebuilds under a per-md5 name, re-arms, and installs "
           "the lab from arm() behind the knob")
     check(re.search(r"^VLLM_GLM53_DEV_LAB=0$", prof, re.M) is not None
-          and "glm53_runtime" in re.search(r'^MODULES="([^"]*)"', prof, re.M).group(1)
+          and "sched_decode_first" in re.search(r'^MODULES="([^"]*)"', prof, re.M).group(1)
           and 'if [ "${VLLM_GLM53_DEV_LAB:-0}" != 0 ]; then' in launcher
           and "--middleware vllm.glm53_lab_middleware.lab" in launcher,
           "the profile enrols the module OFF; the launcher adds the "
@@ -8019,7 +8038,7 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
     sitecustomize.py, which must not be shadowed), it patches deterministically
     (an audit hook misses modules already in sys.modules), and it must never
     stand between the boot and its work."""
-    d = os.path.join(REPO, "overlay/modules/glm53_runtime")
+    d = os.path.join(REPO, "overlay", "modules", "boot_stamps")
     src = open(os.path.join(d, "deneb_boot_stamps.py"), encoding="utf-8").read()
     man = open(os.path.join(d, "manifest.tsv"), encoding="utf-8").read()
     pth = open(os.path.join(d, "zz_deneb_boot_stamps.pth"),
@@ -8141,9 +8160,14 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
           and src.count("except Exception") >= 4,
           "boot stamps are opt-out and inert on any failure: measuring a boot "
           "must never be able to stop one")
-    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
-    check("glm53_runtime" in prof,
-          "the glm53 profile ships the boot stamps")
+    # 41차: split out of glm53_runtime so DeepSeek-V4.1 could have it too.
+    # Instrumentation is not GLM's, and a bring-up that reads 132 GiB per node
+    # wants phase timings more than a model that has served for weeks.
+    for name in ("glm53", "dsv41"):
+        prof = open(os.path.join(REPO, f"profiles/{name}.env"),
+                    encoding="utf-8").read()
+        mods = re.search(r'^MODULES="([^"]*)"', prof, re.M).group(1)
+        check("boot_stamps" in mods, f"the {name} profile ships the boot stamps")
     print("  boot stamps measure without changing the boot .. OK")
 
 
@@ -8370,8 +8394,12 @@ def test_glm53_megakernel_contracts() -> None:
     mod = "overlay/modules/glm53_megakernel"
     ns = load_defs(
         f"{mod}/glm53_megakernel.py",
+        # _mk_mhc_eligible reads the module's geometry constants now that it
+        # admits two hidden sizes; loading them here is what keeps the check
+        # below a test of the real gate rather than of a re-typed copy.
         {"_mk_pow2_scale", "_mk_pad128", "_mk_gemm_eligible", "MK_GEMM_KMAX",
-         "_mk_mhc_eligible", "_mk_w4_scale_exp"},
+         "_mk_mhc_eligible", "_mk_w4_scale_exp", "HC", "HIDDEN", "HIDDEN_V41",
+         "HIDDEN_SUPPORTED", "_MHC_FLAT_WIDTHS", "MHC_MAX_TOK"},
         {"math": _math},
     )
     pow2, pad128 = ns["_mk_pow2_scale"], ns["_mk_pad128"]
@@ -8421,9 +8449,337 @@ def test_glm53_megakernel_contracts() -> None:
     check(not gemm_ok(0, 4096, 4096), "empty batch falls back")
     check(mhc_ok(8, 4, 4096) and mhc_ok(32, 4, 4096),
           "C=1..4 verify token counts are eligible")
-    check(not mhc_ok(33, 4, 4096), "T=33 falls back")
+    # 33 used to fall back; the segment's own bound is 128 since it was split
+    # from MAX_TOK, which stays 32 for the SMLP lane. 24 is what GLM-5.3 serves
+    # today (max_num_seqs 4 x SPEC_TOKENS 5 + 1) and 192 is C=32, still out.
+    check(mhc_ok(33, 4, 4096) and mhc_ok(128, 4, 5120),
+          "the widened bound admits what MAX_TOK=32 used to reject")
+    check(not mhc_ok(129, 4, 4096) and not mhc_ok(192, 4, 5120),
+          "T past MHC_MAX_TOK still falls back rather than overrunning the "
+          "workspace it indexes")
     check(not mhc_ok(8, 6, 4096), "hc_mult!=4 falls back")
-    check(not mhc_ok(8, 4, 5120), "hidden!=4096 falls back")
+    # 5120 is DeepSeek-V4.1-Flash and the .cu instantiates MK_SEG_MHC for it.
+    # Admitting it here is half the change; the other half is that the
+    # workspace has to be big enough for the wider chunk count, checked below.
+    check(mhc_ok(8, 4, 5120) and mhc_ok(32, 4, 5120),
+          "hidden 5120 (V4.1) is eligible alongside 4096")
+    check(not mhc_ok(0, 4, 5120), "empty batch falls back at either hidden")
+    check(not mhc_ok(8, 4, 4608) and not mhc_ok(8, 4, 8192),
+          "an unlisted hidden falls back -- there is no instantiation for it, "
+          "and the workspace was not sized for its chunk count")
+
+    # -- the megakernel workspace is shared by every instantiation and its
+    #    addresses are baked into captured graphs, so it is sized once for the
+    #    LARGEST supported hidden. yp/rp/sq are indexed by chunk; at 4096 that
+    #    is 16 chunks and at 5120 it is 20, so a workspace sized at NCHUNK
+    #    would be written past its end by the 5120 kernel rather than merely
+    #    being a tight fit.
+    mk_py = open(os.path.join(REPO, mod, "glm53_megakernel.py"),
+                 encoding="utf-8").read()
+    mk_ns: dict = {}
+    for line in mk_py.splitlines():
+        m = re.match(r"^(HIDDEN|HIDDEN_V41|HIDDEN_SUPPORTED|HIDDEN_MAX|NCHUNK|"
+                     r"NCHUNK_MAX|MAX_TOK|NOUT|HC) = (.+)$", line)
+        if m:
+            mk_ns[m.group(1)] = eval(m.group(2), dict(mk_ns))
+    check(mk_ns.get("HIDDEN_V41") == 5120
+          and tuple(mk_ns.get("HIDDEN_SUPPORTED", ())) == (4096, 5120)
+          and mk_ns.get("HIDDEN_MAX") == 5120 and mk_ns.get("NCHUNK_MAX") == 20,
+          f"the host half knows both hidden sizes and their chunk counts "
+          f"(got {mk_ns.get('HIDDEN_SUPPORTED')}, NCHUNK_MAX "
+          f"{mk_ns.get('NCHUNK_MAX')})")
+    for buf in ("yp", "rp", "sq"):
+        check(f'"{buf}": z(NCHUNK_MAX' in mk_py,
+              f"workspace {buf} is sized by NCHUNK_MAX, not NCHUNK -- the 5120 "
+              f"kernel indexes 20 chunks")
+    check('"ol_stash": z(MHC_MAX_TOK * HIDDEN_MAX' in mk_py,
+          "workspace ol_stash is sized by HIDDEN_MAX and the segment's own "
+          "token bound")
+    check("[num_tokens, int(sinkhorn_repeat), int(hidden)]" in mk_py,
+          "run_mhc hands the launcher the hidden size; without ints[2] the "
+          "C++ default resolves every call to 4096 and the 5120 "
+          "instantiation is unreachable")
+    # -- dsv41_preshard: the placement table must stay exhaustive and its
+    #    debatable rows must stay visible. A rule that silently absorbs an
+    #    unknown tensor is how a rank ends up holding weights it never reads,
+    #    or missing ones it does; a default that quietly shards the drafter is
+    #    how a rank routes to an expert it does not have.
+    presh = open(os.path.join(REPO, "tools/dsv41_preshard.py"),
+                 encoding="utf-8").read()
+    check("def classify(name: str) -> \"str | None\":" in presh
+          and "unplaced.setdefault(" in presh
+          and "have no placement " in presh,
+          "an unplaced tensor aborts the plan, and every unplaced name is "
+          "reported rather than one per run")
+    check('p.add_argument("--mtp", choices=("replicate", "ep"), '
+          'default="replicate"' in presh
+          and "draft_tensor_parallel_size=1" in presh,
+          "the DSpark block is replicated by default, matching the fleet's "
+          "draft_tensor_parallel_size=1, and --mtp ep is opt-in")
+    check('p.add_argument("--dense", choices=("replicate", "tp"), '
+          'default="replicate"' in presh,
+          "the dense tp/replicate axis is a hypothesis until there is model "
+          "code, so replicate -- which cannot be wrong -- is the default")
+    for label in ("engram", "expert", "mtp-expert", "mtp-dense", "vision"):
+        check(f'"{label}"' in presh, f"placement class {label} is named")
+    check('info["experts"] % world' in presh and "ENGRAM_RANGES" not in presh,
+          "expert parallelism moves whole experts, so a world size that does "
+          "not divide them aborts -- while the engram side has no such "
+          "condition, because ceil(N/W) row blocks work for any world size "
+          "and the last block is simply short")
+
+    # -- dsv41_engram: the fetch must stay ASYNCHRONOUS. The engram tables sit
+    #    at layers 1 and 14 of 40, the hash ids depend only on token ids, and a
+    #    blocking gather turns a fully hidden 0.10 ms residual into the fetch's
+    #    whole 4-6 ms. `gather` is kept as submit+wait so the blocking form
+    #    exists for measurement, not so a caller reaches for it.
+    eng_io = open(os.path.join(REPO, "overlay/modules/dsv41_engram",
+                               "dsv41_engram_io.py"), encoding="utf-8").read()
+    check('def submit(self, rows) -> "Gather":' in eng_io
+          and "return self.submit(rows).wait()" in eng_io
+          and "class Gather:" in eng_io and "def wait(self) -> list:" in eng_io,
+          "engram reads are submitted without waiting; gather is submit+wait")
+    check("futures = [self._pool.submit(self._read_chunk, items[i::stride])" in eng_io
+          and "stride = min(self.queue_depth, len(items))" in eng_io,
+          "one task per thread, not per read -- per-read dispatch measured "
+          "52.6K IOPS against 92-95K for the strided form on the same drive")
+    check("os.O_RDONLY | os.O_DIRECT" in eng_io
+          and "_LOGICAL_BLOCK = 512" in eng_io
+          and "if start + EMB_ROW_BYTES > got:" in eng_io,
+          "O_DIRECT with sector-granular reads, and a short tail read is "
+          "refused rather than served from the reused buffer's stale bytes")
+    # The partition is DeepSeek's `ParallelEngramEmbedding`: contiguous row
+    # blocks of ceil(N/W), NOT the 24 prime bucket ranges an earlier draft
+    # used. A checkpoint split the other way cannot be loaded by that module,
+    # so this is a compatibility contract rather than a preference.
+    eng_mod = open(os.path.join(REPO, "overlay/modules/dsv41_engram",
+                                "dsv41_engram.py"), encoding="utf-8").read()
+    check("return (self.num_embeddings + self.world_size - 1) // self.world_size"
+          in eng_mod
+          and "self.rank * self.part_num_embeddings" in eng_mod
+          and "def local_row(self, index: int) -> int:" in eng_mod,
+          "the row-block partition is the reference's arithmetic verbatim")
+    check("FP8_BLOCK = 32" in eng_mod and "SCALE_COLS = EMB_ROW_DIM // FP8_BLOCK"
+          in eng_mod
+          and "values.float().unflatten(-1, (-1, FP8_BLOCK)) * scales.float()"
+          in eng_mod,
+          "dequantization matches the reference: fp8 rows, one e8m0 scale per "
+          "32 columns")
+    check("out.masked_fill(~keep.unsqueeze(-1), 0)" in eng_mod,
+          "rows this rank does not own come back as zeros, which is what the "
+          "reference's all_reduce expects to add up")
+    # -- the encoding parser is held to the reference the same way the engram
+    #    path is: its own golden fixtures, and completions its own encoder
+    #    produced. Hand-written DSML is not a valid substitute -- the wire
+    #    format carries a newline after every tag and the reference rejects
+    #    markup without them.
+    enc_probe = open(os.path.join(REPO, "probes/dsv41_encoding_diff.py"),
+                     encoding="utf-8").read()
+    check("ref.load_cases(" in enc_probe and "ref.encode_case(" in enc_probe
+          and "test_output_{case}.txt" in enc_probe,
+          "the encoding probe reproduces the checkpoint's golden fixtures "
+          "before grading anything against the reference")
+    check("ref.encode_messages(messages, thinking_mode=mode," in enc_probe
+          and "ref.parse_message_from_completion_text(" in enc_probe,
+          "the completions it parses were emitted by the reference encoder, "
+          "not written in the probe")
+    enc_mod = open(os.path.join(REPO, "overlay/modules/dsv41_encoding",
+                                "dsv41_encoding.py"), encoding="utf-8").read()
+    check('CALLS_BLOCK_NAME = " calls"' in enc_mod
+          and 'INVOKE_TAG_NAME = " invoke"' in enc_mod
+          and 'PARAMETER_TAG_NAME = " parameter"' in enc_mod,
+          "the DSML tag names keep their leading space -- V4's spaceless form "
+          "matches nothing here")
+    check('if is_string == "false":' in enc_mod
+          and "json.loads(raw.strip())" in enc_mod,
+          "a parameter marked string=false is decoded as JSON; returning it "
+          "raw hands the tool \"42\" where it expects 42")
+
+    # -- the shard builder writes what the reader reads. It imports
+    #    EngramConfig rather than repeating ceil(N/W), so writer and reader
+    #    cannot drift; and its self-test checks BOTH files against values it
+    #    computes itself, because `verify` reads the source through the same
+    #    offset arithmetic the build used and therefore agrees with itself
+    #    when that arithmetic is wrong.
+    builder = open(os.path.join(REPO, "tools/dsv41_engram_shard.py"),
+                   encoding="utf-8").read()
+    check("from dsv41_engram import (EMB_ROW_DIM, SCALE_COLS,  # noqa: E402"
+          in builder and "EngramConfig)" in builder
+          and "cfg.vocab_start_idx, n, dst)" in builder,
+          "the builder takes its partition from EngramConfig, not from a "
+          "second copy of the arithmetic")
+    check('base + meta["data_offsets"][0]' in builder,
+          "tensor data starts after the header AND at its own data_offsets -- "
+          "ignoring the second reads the neighbouring tensor, which `verify` "
+          "cannot see because it reads the source the same wrong way")
+    check("want_s = bytes([(g * 7) & 0xFF]) * SCALE_COLS" in builder
+          and "reads the weight table here" in builder,
+          "the self-test checks the scale file against independently computed "
+          "bytes, which is what catches an offset bug")
+    check("truncated or the offset is wrong" in builder,
+          "a short read aborts rather than writing a file padded with "
+          "whatever the copy loop had left")
+    check("ABORT: an engram shard is not downloaded." in builder,
+          "building from a partial checkpoint aborts -- the missing rows "
+          "would read as zeros and nothing downstream could tell")
+
+    # -- the expert partition is a contract between the builder and a
+    #    load_weights that never runs beside it. A strided split is equally
+    #    valid, produces byte-exact files, and routes every token wrong -- so
+    #    both sides import one definition rather than each writing one.
+    layers_src = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                                   "dsv41_layers.py"), encoding="utf-8").read()
+    presh_src = open(os.path.join(REPO, "tools/dsv41_preshard.py"),
+                     encoding="utf-8").read()
+    check("def expert_rank(expert: int, n_routed_experts: int, world_size: int)"
+          in layers_src
+          and "return expert // (n_routed_experts // world_size)" in layers_src,
+          "the partition lives in the module, contiguous blocks")
+    check("from dsv41_layers import expert_rank" in presh_src
+          and "def _rank_of_expert" not in presh_src,
+          "the builder IMPORTS the partition; a second copy is the failure "
+          "mode this exists to prevent")
+    check("if owners != sorted(owners):" in presh_src,
+          "the builder's self-test checks contiguity explicitly -- a strided "
+          "split passes every byte and count check it makes otherwise")
+    check('if ".engram.embed." in name:' in presh_src
+          and "engram leaked into the rank file" in presh_src,
+          "engram is excluded from the rank safetensors and the self-test "
+          "says so: it is read a row at a time off an SSD, not loaded")
+    check('"data_offsets": [cursor, cursor + size]' in presh_src
+          and 'pad = (-(8 + len(blob))) % 8' in presh_src,
+          "the writer lays out every offset before writing a byte and keeps "
+          "the data section 8-aligned, which is what makes the output a file "
+          "an ordinary safetensors reader opens")
+
+    # -- the CED layer plan is derived from config ALONE and is held to
+    #    predicting the checkpoint's tensor names. That is what makes it a plan
+    #    rather than a transcription of what the weights happen to contain: a
+    #    plan read off the tensor names could not be wrong, and could not be
+    #    checked either.
+    layers_mod = open(os.path.join(REPO, "overlay/modules/dsv41_model",
+                                   "dsv41_layers.py"), encoding="utf-8").read()
+    check("def plan_layers(cfg: dict)" in layers_mod
+          and 'cfg["compress_ratios"]' in layers_mod
+          and 'cfg["candidate_source_layer_id"]' in layers_mod
+          and 'cfg["kv_source_layer_ids"]' in layers_mod,
+          "the plan reads config keys, not tensor names")
+    check("if len(ratios) != n + n_mtp:" in layers_mod,
+          "compress_ratios must be num_hidden_layers + num_nextn_predict_layers "
+          "-- a length mismatch means the two stacks are no longer laid out end "
+          "to end and every layer index is off")
+    check("beyond = sorted(layer for layer in kv_src if layer > boundary)"
+          in layers_mod
+          and "decoder_sources not in ([], [boundary])" in layers_mod,
+          "at most ONE decoder-side KV source and only at the boundary: that "
+          "one is the projection of the final encoder states, and any other "
+          "would mean this is not a CED stack")
+    check("if encoder_ratio == decoder_ratio:" in layers_mod,
+          "the boundary the config names must be the one compress_ratios steps "
+          "at; agreeing with itself is the only cross-check available offline")
+    plan_probe = open(os.path.join(REPO, "probes/dsv41_layer_plan.py"),
+                      encoding="utf-8").read()
+    check('rest.startswith("attn.compressor.")' in plan_probe
+          and 'rest.startswith("attn.indexer.")' in plan_probe
+          and "stray = sorted(set(actual) - {p.index for p in plans})" in plan_probe,
+          "the probe checks BOTH directions -- a layer the plan gives a "
+          "component must have it, and a layer that has one must have been "
+          "given it")
+    check("is uniform across layers, so agreeing" in plan_probe,
+          "the probe says so when a component is uniform, because agreeing "
+          "about a constant proves nothing")
+
+    # -- the n-gram layout is PINNED so the serving path needs neither sympy
+    #    nor a numpy Generator stream. That is only safe while the constants
+    #    equal what the reference derives, which is what the hash probe is for.
+    #    The offline half of the check needs nothing at all: each layer's 24
+    #    bucket sizes must sum to that layer's table height in the checkpoint.
+    eng_hash = open(os.path.join(REPO, "overlay/modules/dsv41_engram",
+                                 "dsv41_engram_hash.py"), encoding="utf-8").read()
+    hash_ns: dict = {}
+    exec(compile(eng_hash, "dsv41_engram_hash.py", "exec"), hash_ns)
+    flat = [p for layer in hash_ns["PRIMES"] for per in layer for p in per]
+    check(len(flat) == 48 and len(set(flat)) == 48,
+          f"48 bucket primes, none reused (got {len(flat)}, "
+          f"{len(set(flat))} distinct)")
+    check(tuple(hash_ns["NUM_EMBEDDINGS"]) == (384006168, 384016682),
+          f"the pinned primes sum to the checkpoint's table heights "
+          f"(got {tuple(hash_ns['NUM_EMBEDDINGS'])})")
+    check(hash_ns["COMPRESSED_VOCAB_SIZE"] == 99092,
+          "the compressed vocabulary is the config's 99,092 -- every hash "
+          "multiplier is derived from it, so a wrong value rehashes both "
+          "tables with no error anywhere")
+    check(hash_ns["MAX_NGRAM_SIZE"] == 4 and hash_ns["N_HEADS"] == 8
+          and tuple(hash_ns["LAYER_IDS"]) == (1, 14)
+          and len(hash_ns["OFFSETS"][0]) == 24,
+          "the hash geometry matches the config: 3 n-gram sizes x 8 heads = "
+          "24 columns per table, two tables")
+    hash_probe = open(os.path.join(REPO, "probes/dsv41_engram_hash_diff.py"),
+                      encoding="utf-8").read()
+    check("ref.build_compressed_token_map(" in hash_probe
+          and "ref.compute_hash_multipliers(" in hash_probe
+          and "ref.NgramHashState(" in hash_probe
+          and "torch.equal(ref_out[0], mine_t)" in hash_probe,
+          "the hash probe regenerates the map, the multipliers and the hashes "
+          "from the reference and demands bit equality")
+    check("mask[0, 100:112] = False" in hash_probe,
+          "it exercises a dead span -- an n-gram may not reach across an "
+          "image, and the blocked flag that enforces that accumulates")
+    check("blocked = blocked or pos < shift or source == DEAD" in eng_hash,
+          "our window applies the reference's accumulating block rule")
+
+    # -- the gate is where a wrong formula stays plausible. Bit equality is
+    #    the bar because the most likely mistake -- normalizing rstd jointly
+    #    over the hc copies instead of per copy -- costs 0.0156 at most, which
+    #    any tolerance loose enough to be useful in bf16 would let through.
+    eng_gate = open(os.path.join(REPO, "overlay/modules/dsv41_engram",
+                                 "dsv41_engram_gate.py"), encoding="utf-8").read()
+    check("torch.rsqrt(h.square().mean(-1) + eps)" in eng_gate
+          and "* torch.rsqrt(key.square().mean(-1) + eps))" in eng_gate,
+          "rstd is the product of two per-(token, hc copy) rsqrt terms")
+    check("torch.copysign(dot.abs().clamp_min(CLAMP_VALUE).sqrt(), dot)" in eng_gate
+          and "CLAMP_VALUE = 1e-6" in eng_gate,
+          "the gate takes a SIGNED square root with the reference's clamp")
+    check("* rstd * dim ** -0.5" in eng_gate,
+          "the dot carries the dim ** -0.5 scale")
+    check("gate.masked_fill(~token_mask.unsqueeze(-1), 0)" in eng_gate,
+          "a masked token is gated to zero rather than skipped, so its "
+          "residual passes through exactly as it arrived")
+    check("def gate_and_write(x, readout," in eng_gate
+          and "F.linear(readout.flatten(-2), wkv_weight)" in eng_gate,
+          "the gate takes an ALREADY GATHERED readout and starts at wkv -- "
+          "that seam is what lets the SSD read be issued at layer 0 instead "
+          "of at the layer")
+    gate_probe = open(os.path.join(REPO, "probes/dsv41_engram_gate_diff.py"),
+                      encoding="utf-8").read()
+    check("torch.equal(ref_out, ours)" in gate_probe
+          and 'torch.equal(ref_out[0, 5:9], x[0, 5:9])' in gate_probe
+          and '"default_dtype": torch.bfloat16' in gate_probe,
+          "the gate probe runs the reference class verbatim on a bf16 Linear "
+          "path, demands bit equality, and separately proves the masked span "
+          "was left alone rather than merely agreed upon")
+
+    eng_diff = open(os.path.join(REPO, "probes/dsv41_engram_diff.py"),
+                    encoding="utf-8").read()
+    check("torch.equal(ref_total, ours_total)" in eng_diff
+          and 'text.index("class ParallelEngramEmbedding(nn.Module):")' in eng_diff
+          and "torch.isnan(ref_total.float()).sum()" in eng_diff,
+          "the differential probe compares against the vendor's class verbatim, "
+          "demands bit equality rather than a tolerance, and refuses to pass on "
+          "a table that went NaN")
+    eng_probe = open(os.path.join(REPO, "probes/dsv41_engram_probe.py"),
+                     encoding="utf-8").read()
+    check("def time_overlapped(" in eng_probe and "def time_drafted(" in eng_probe
+          and "def time_pipelined(" in eng_probe,
+          "the probe reports the residual stall after compute, in steady "
+          "state, and with layer 1 drafted a step early -- not just how long "
+          "a blocking fetch takes")
+
+    check("def _mhc_bf16_weight(fn, hidden, *, ar_consumer=False):" in mk_py
+          and "tuple(fn.shape) != (NOUT, HC * hidden)" in mk_py
+          and "def _mhc_bf16_vec4(packed, hidden):" in mk_py,
+          "the fn packers take the runtime hidden rather than the constant, "
+          "so a 5120 weight is not validated or reshaped against 4096")
 
     # -- .cu constants evaluated and pinned to the GLM-5.3 per-rank geometry
     cu = open(os.path.join(REPO, mod, "glm53_megakernel.cu"),
@@ -8478,6 +8834,50 @@ def test_glm53_megakernel_contracts() -> None:
                        ("KBLK_MAX", 32), ("SMEM_W_ROWS", 128)):
         check(consts.get(name) == want,
               f".cu constant {name} == {want} (got {consts.get(name)})")
+    # -- MHC_MAX_TOK is the segment's OWN token bound, split from MAX_TOK.
+    #    MAX_TOK is still the SMLP lane's admission gate and the MLA workspace
+    #    cap, so the two must not drift back together: widening MAX_TOK would
+    #    silently admit SMLP shapes nobody measured, and narrowing MHC_MAX_TOK
+    #    would put the segment back to serving C <= 5.
+    check(consts.get("MHC_MAX_TOK") == 128
+          and consts.get("MHC_MAX_TOK") >= consts.get("MAX_TOK", 0),
+          f".cu MHC_MAX_TOK == 128 and not below MAX_TOK "
+          f"(got {consts.get('MHC_MAX_TOK')} vs {consts.get('MAX_TOK')})")
+    # The HID and MHC_MAX_TOK changes are INDEXING, so their failure mode is a
+    # silently wrong address. probes/mk_mhc_numeric.py runs the kernel on the
+    # device against analytic inputs and was itself verified against an
+    # injected NCHUNK regression; keep it honest about what it checks.
+    numeric = open(os.path.join(REPO, "probes/mk_mhc_numeric.py"),
+                   encoding="utf-8").read()
+    check("mk_mhc_kernel<HID><<<grid, MK_THREADS>>>(a);" in numeric
+          and "run_one<HIDDEN>(T, grid)" in numeric
+          and "run_one<HIDDEN_V41>(T, grid)" in numeric,
+          "the numeric probe launches the real kernel at BOTH hidden sizes")
+    check("got != (float)(j + 2)" in numeric
+          and "fabs(rms - 13.5)" in numeric,
+          "it checks every residual_out element exactly and pins the RMS the "
+          "tail takes, which is equal at both sizes only if NCHUNK tracked HID")
+    check("f\"-DMK_MHC_GRID_DEF={args.grid}\"" in numeric,
+          "the probe caps its own grid rather than asking the device for full "
+          "residency -- it runs on a node that is serving")
+    check("static_assert(MHC_MAX_TOK >= MAX_TOK" in cu,
+          "the .cu refuses a MHC_MAX_TOK below MAX_TOK at compile time")
+    check("if T < 1 or T > MAX_TOK:" in mk_py
+          and "torch.empty(MAX_TOK, SMLP_GU_MAX" in mk_py,
+          "the SMLP lane still gates and sizes on MAX_TOK, not on the widened "
+          "MHC bound")
+    # The two halves index the same buffers. A mismatch is not a build error --
+    # it is every yp/rp read landing at the wrong stride, which shows up as
+    # wrong numbers rather than as a crash.
+    py_mhc_tok = re.search(r"^MHC_MAX_TOK = (\d+)$", mk_py, re.M)
+    check(py_mhc_tok and int(py_mhc_tok.group(1)) == consts.get("MHC_MAX_TOK"),
+          f"host and device agree on MHC_MAX_TOK "
+          f"(py {py_mhc_tok and py_mhc_tok.group(1)}, cu {consts.get('MHC_MAX_TOK')})")
+    for buf in ("yp", "rp", "sq", "pmix", "ol_stash"):
+        check(f'"{buf}": z(' in mk_py and "MHC_MAX_TOK" in
+              mk_py[mk_py.index(f'"{buf}": z('):mk_py.index(f'"{buf}": z(') + 90],
+              f"MHC workspace {buf} is sized by MHC_MAX_TOK")
+
     check(consts["GEMM2_SMEM"] <= 51200,
           "the GEMM's dynamic smem stays inside half the SM (two blocks per SM "
           "is the point of the non-persistent lane)")
@@ -8709,11 +9109,28 @@ def test_glm53_megakernel_contracts() -> None:
           and "int cap = MK_GRID_CAP" in cu and "if (cache > cap) cache = cap;" in cu,
           "mla resolves its persistent grid from the device rather than "
           "assuming a constant (the cap is a defaulted argument)")
-    check(cu.count("mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);") == 1
+    check(cu.count("mk_launch(mk_mhc_kernel<HID>, mhc_grid, 0, stream, a);") == 1
           and "if (mhc_grid > MK_MHC_GRID_CAP)" in cu,
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
+    # HID is a template parameter since DeepSeek-V4.1-Flash (hidden 5120)
+    # joined GLM-5.3 and V4-Flash (4096) on this segment. The occupancy
+    # queries and their `static` grid caches sit INSIDE the template, which
+    # is what keeps one instantiation from launching on the other's measured
+    # residency -- and a persistent grid launched above its residency
+    # deadlocks on the grid barrier rather than running slowly.
+    check("template <int HID>\nstatic void mk_mhc_launch(" in cu
+          and "mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer)" in cu
+          and "mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer)" in cu
+          and "constexpr int HIDDEN_V41 = 5120;" in cu,
+          "the mhc grid caches are per-hidden-size: they live inside the "
+          "HID template, so 5120's residency is never 4096's")
+    check("hidden == HIDDEN || hidden == HIDDEN_V41" in cu
+          and "ints.size() > 2 ? (int)ints[2] : HIDDEN" in cu,
+          "an unknown hidden size is refused at the launch rather than "
+          "silently running the 4096 instantiation, and ints[2] is optional "
+          "so every existing caller still resolves to HIDDEN")
     check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 10
           and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu
           and "&g_gemm2_m8_bps, mk_gemm2_kernel<1, false, true>, MK_THREADS, GEMM2_M8_SMEM" in cu,
@@ -8891,9 +9308,9 @@ def test_glm53_megakernel_contracts() -> None:
     #    next pair's loads. Keeping fn in smem instead measured worse.
     _mhc_k = cu[cu.index("__global__ void mk_mhc_kernel(const MKMhcArgs a) {"):]
     _mhc_k = _mhc_k[:_mhc_k.index("\n}\n")]
-    check("mk_grid_barrier" not in _mhc_k and "mk_mhc_p1(a, blockIdx.x);" in _mhc_k,
+    check("mk_grid_barrier" not in _mhc_k and "mk_mhc_p1<HID>(a, blockIdx.x);" in _mhc_k,
           "the mhc kernel has no grid barrier: p2/p3/p4 run off the tail queue")
-    check("__device__ unsigned int g_mk_mhc_tok_arrive[MAX_TOK];" in cu
+    check("__device__ unsigned int g_mk_mhc_tok_arrive[MHC_MAX_TOK];" in cu
           and "if (threadIdx.x == 0) atomicAdd(&g_mk_mhc_tok_arrive[t], 1u);" in cu
           and "atomicAdd(&g_mk_mhc_tok_arrive[pend], 1u);" in cu
           and "int pend = -1;  // a token whose chunk is done but not yet published" in cu
@@ -8901,11 +9318,11 @@ def test_glm53_megakernel_contracts() -> None:
           and "MK_SPIN_WAIT(*v < (unsigned int)NCHUNK, 128, \"mhc token arrive\");" in cu
           and "g_mk_mhc_tok_arrive[t] = 0u;  // rearm for the next launch" in cu
           and "g_mk_mhc_tail_next = 0u;" in cu
-          and "      mk_mhc_p2_token(a, t, s_pmix);\n      mk_mhc_p34_load(a, t, tr);" in cu
-          and "mk_mhc_p34_compute(a, t, s_pmix, tr);" in cu
-          and "if (warp != 0) mk_mhc_p34_load(a, t, tr);" in cu
+          and "      mk_mhc_p2_token<HID>(a, t, s_pmix);\n      mk_mhc_p34_load<HID>(a, t, tr);" in cu
+          and "mk_mhc_p34_compute<HID>(a, t, s_pmix, tr);" in cu
+          and "if (warp != 0) mk_mhc_p34_load<HID>(a, t, tr);" in cu
           and "m[j][k] = __shfl_sync(0xffffffffu, mixv, j * HC + k + 2 * HC);" in cu
-          and "mine += __ldcg(&a.yp[((size_t)c * MAX_TOK + t) * NOUT + lane]);" in cu
+          and "mine += __ldcg(&a.yp[((size_t)c * MHC_MAX_TOK + t) * NOUT + lane]);" in cu
           and "const float rms = __shfl_sync(0xffffffffu, rms_l, NOUT);" in cu
           and "if (lane == 0) {  // comb mixes: hc_scale[2] + sinkhorn, 4x4 in registers" in cu
           and "mk_ldcg_bf16(a.residual_out +" in cu,
