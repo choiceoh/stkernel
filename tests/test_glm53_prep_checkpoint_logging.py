@@ -21,7 +21,8 @@ def runtime(mode,path,*,old=False,cadence=64):
     assert source.count(NEW)==1
     if old:source=source.replace(NEW,OLD)
     tree=ast.parse(source)
-    nodes=[n for n in tree.body if getattr(n,'name',None) in ('_State','_patched_prepare_inputs')]
+    nodes=[n for n in tree.body if getattr(n,'name',None) in (
+        '_State','_report_decode_opt','_patched_prepare_inputs')]
     def warn(fmt,*args):
         with path.open('a') as stream:stream.write((fmt % args)+'\n')
     ns=dict(__name__=__name__,dataclass=dataclass,field=field,
@@ -29,7 +30,7 @@ def runtime(mode,path,*,old=False,cadence=64):
     module=ast.Module(body=[ast.parse('from __future__ import annotations').body[0],*nodes],type_ignores=[])
     exec(compile(module,str(RUNTIME),'exec'),ns)
     st=ns['_State'](mode=mode,shadow_every=1,selfcheck_every=cadence)
-    st.plan=object()
+    st.plan=SimpleNamespace(decode_opt=False)
     fused,stock=object(),object();checks=[];bad=[]
     def verify(*args):checks.append(st.steps_fused);return stock,list(bad)
     ns.update(_state_of=lambda _:st,_eligible=lambda *_:not st.plan_failed,
