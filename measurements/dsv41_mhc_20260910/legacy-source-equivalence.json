@@ -1,0 +1,49 @@
+{
+  "baseline": "e345b668deb215f8c2800f13f2b50ffc02601b5a",
+  "source_sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
+  "legacy_phase_entry_launch_bodies": [
+    {
+      "symbol": "__device__ void mk_mhc_p2_token(",
+      "original_body_sha256": "c39945ecd626d900a794d9abe52d1f2faa7fb4d24e5f93b642f78c12eb940614",
+      "normalized_candidate_body_sha256": "c39945ecd626d900a794d9abe52d1f2faa7fb4d24e5f93b642f78c12eb940614"
+    },
+    {
+      "symbol": "__device__ __forceinline__ void mk_mhc_p34_load(",
+      "original_body_sha256": "a5288c6fdc96aecff02fe8ccfeede6996b62a2844f516d8eb759a201cb898205",
+      "normalized_candidate_body_sha256": "a5288c6fdc96aecff02fe8ccfeede6996b62a2844f516d8eb759a201cb898205"
+    },
+    {
+      "symbol": "__device__ void mk_mhc_p34_compute(",
+      "original_body_sha256": "e398edffb3b509e9de935394ac14baa6902cfd3e2255b8535717f0459d9853f4",
+      "normalized_candidate_body_sha256": "e398edffb3b509e9de935394ac14baa6902cfd3e2255b8535717f0459d9853f4"
+    },
+    {
+      "symbol": "__device__ void mk_mhc_p1_impl(",
+      "original_body_sha256": "d20e64c832699145f664de391c69d7c928c5681c59d42ba8075a74f9bd48fbdb",
+      "normalized_candidate_body_sha256": "d20e64c832699145f664de391c69d7c928c5681c59d42ba8075a74f9bd48fbdb"
+    },
+    {
+      "symbol": "__global__ void mk_mhc_kernel(",
+      "original_body_sha256": "f48aa14af0b68e887c4a0c6e07a02ff015276e7f8c5a16112ee9a43deb9c26a5",
+      "normalized_candidate_body_sha256": "f48aa14af0b68e887c4a0c6e07a02ff015276e7f8c5a16112ee9a43deb9c26a5"
+    },
+    {
+      "symbol": "__global__ void mk_mhc_bf16_kernel(",
+      "original_body_sha256": "5a7569650033572b7502d595ee63121153add20a75a81dcb8a109ab23a25f696",
+      "normalized_candidate_body_sha256": "5a7569650033572b7502d595ee63121153add20a75a81dcb8a109ab23a25f696"
+    },
+    {
+      "symbol": "__global__ void mk_mhc_ar_kernel(",
+      "original_body_sha256": "b93ae3d3fed99be439dcc573f132709916e506deb0700d3627bcc5c9de650fe1",
+      "normalized_candidate_body_sha256": "b93ae3d3fed99be439dcc573f132709916e506deb0700d3627bcc5c9de650fe1"
+    },
+    {
+      "symbol": "static void mk_mhc_launch(",
+      "original_body_sha256": "292a7f8a85f7fd13c0ab4aed5704d8647f174680cebfa9b9c761f25526f87e1a",
+      "normalized_candidate_body_sha256": "292a7f8a85f7fd13c0ab4aed5704d8647f174680cebfa9b9c761f25526f87e1a"
+    }
+  ],
+  "legacy_args_bytes_preserved": true,
+  "scope": "one-off V41=false source projection only; no codegen/numerical/performance claim",
+  "cpu_tests": 6
+}

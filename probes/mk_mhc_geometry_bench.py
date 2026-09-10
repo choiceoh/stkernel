@@ -16,7 +16,7 @@ import math
 import os
 from pathlib import Path
 
-TOKENS = (1, 5, 6, 8, 10, 12, 16, 17, 24, 32)
+TOKENS = (1, 5, 6, 8, 10, 12, 16, 17, 24, 32, 33, 64, 127, 128)
 HIDDENS = (4096, 5120)
 NAMES = ("residual", "post_mix", "comb_mix", "layer_input")
 TOL = 1e-3
@@ -30,7 +30,7 @@ V41_REFERENCE = {
 
 def geometry_eligible(tokens, hc, hidden):
     return (all(type(v) is int for v in (tokens, hc, hidden))
-            and 1 <= tokens <= 32 and hc == 4 and hidden in HIDDENS)
+            and 1 <= tokens <= 128 and hc == 4 and hidden in HIDDENS)
 
 
 def validate_metadata(shapes, dtypes):
@@ -307,11 +307,12 @@ def _gpu_case(driver, hidden, tokens, contract, stock, edge="random"):
         return v41_component_reference(*values, collapse, **params)
     def call():
         x, residual, post, comb, fn, scale, base, norm = values
-        out = driver._mhc_call(x, residual, post, comb, fn, scale, base, norm,
-                              tokens, params["rms_eps"], 1e-6, 1e-6, 2.,
-                              params["norm_eps"], 20, _fp32_fn=True,
-                              _ar_consumer=False, _contract=contract,
-                              _collapse_pre_mix=collapse if contract == "v41" else None)
+        arguments = (x, residual, post, comb, fn, scale, base, norm,
+                     tokens, params["rms_eps"], 1e-6, 1e-6, 2., params["norm_eps"], 20)
+        if contract == "v41":
+            out = driver._mhc_v41_call(*arguments, collapse_pre_mix=collapse)
+        else:
+            out = driver._mhc_call(*arguments, _fp32_fn=True, _ar_consumer=False)
         return (out[0], out[1], out[2].reshape(tokens, 4, 4), out[3], *out[4:])
     expected = reference()
     actual = call()

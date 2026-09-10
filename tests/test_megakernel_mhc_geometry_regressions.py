@@ -30,7 +30,7 @@ class MetadataTests(unittest.TestCase):
         for hidden in (4096, 5120):
             for tokens in probe.TOKENS:
                 self.assertTrue(probe.geometry_eligible(tokens, 4, hidden))
-        for args in ((0, 4, 4096), (33, 4, 5120), (6, 3, 5120),
+        for args in ((0, 4, 4096), (129, 4, 5120), (6, 3, 5120),
                      (6, 4, 8192), (True, 4, 5120), (6, 4, 5120.0)):
             self.assertFalse(probe.geometry_eligible(*args))
 
@@ -127,21 +127,24 @@ class DriverTests(unittest.TestCase):
 
     def launch(self, values, contract="legacy", pre=None):
         with patch.dict(sys.modules, {"torch": self.fake}):
-            return self.driver._mhc_call(*values, values[0].shape[0],
-                                         1e-20, 1e-6, 1e-6, 2., 1e-20, 20,
-                                         _contract=contract, _collapse_pre_mix=pre)
+            arguments = (*values, values[0].shape[0], 1e-20, 1e-6, 1e-6, 2., 1e-20, 20)
+            if contract == "v41":
+                return self.driver._mhc_v41_call(*arguments, collapse_pre_mix=pre)
+            return self.driver._mhc_call(*arguments, _fp32_fn=True, _ar_consumer=False)
 
-    def test_original_hook_stays_4096_and_other_segments_keep_geometry(self):
+    def test_upstream_hook_supports_128_both_hidden_and_other_segments_stay_unchanged(self):
         d = self.driver
         self.assertTrue(d._mk_mhc_eligible(6, 4, 4096))
-        self.assertFalse(d._mk_mhc_eligible(6, 4, 5120))
+        self.assertTrue(d._mk_mhc_eligible(128, 4, 5120))
+        self.assertFalse(d._mk_mhc_eligible(129, 4, 5120))
         self.assertEqual((d.HIDDEN, d.NCHUNK, d.KDA_H, d.KDA_D, d.MLA_D, d.MLA_H),
                          (4096, 16, 16, 128, 512, 16))
+        self.assertEqual((d.MAX_TOK, d.MHC_MAX_TOK), (32, 128))
         self.assertFalse(d._mk_gemm_eligible(6, 5120, 5120))
 
     def test_exact_legacy_and_v41_pointer_abis(self):
         for hidden, mode, arity, pointers in ((4096, "legacy", 5, 18),
-                                             (5120, "legacy", 6, 18),
+                                             (5120, "legacy", 5, 18),
                                              (4096, "v41", 4, 20),
                                              (5120, "v41", 4, 20)):
             values = self.values(hidden)
@@ -152,54 +155,58 @@ class DriverTests(unittest.TestCase):
             self.assertEqual((len(args), len(args[0])), (arity, pointers))
             self.assertEqual(args[0][:8], [v.data_ptr() for v in values])
             self.assertEqual(args[1], [1e-20, 1e-6, 1e-6, 2., 1e-20])
-            self.assertEqual(args[2], [6, 20])
             if mode == "v41":
+                self.assertEqual(args[2], [6, 20])
                 self.assertEqual(len(out), 5)
                 self.assertEqual(args[0][-2:], [pre.data_ptr(), out[-1].data_ptr()])
                 self.assertEqual(args[-1], hidden)
             else:
+                self.assertEqual(args[2], [6, 20, hidden])
                 self.assertEqual(len(out), 4)
                 self.assertEqual(args[3:5], (False, False))
-                if hidden == 5120:
-                    self.assertEqual(args[-1], 5120)
 
     def test_workspace_retains_pointers_and_separates_geometry_and_contract(self):
         with patch.dict(sys.modules, {"torch": self.fake}):
-            old = self.driver._ensure_mhc_workspace("cuda:0", 4096)
-            large = self.driver._ensure_mhc_workspace("cuda:0", 5120)
+            old = self.driver._ensure_mhc_workspace("cuda:0", 4096, "legacy")
+            large = self.driver._ensure_mhc_workspace("cuda:0", 5120, "legacy")
             v41 = self.driver._ensure_mhc_workspace("cuda:0", 5120, "v41")
             self.assertIs(old, self.driver._WS)
-            self.assertIs(large, self.driver._ensure_mhc_workspace("cuda", 5120))
-            self.assertEqual(large["yp"].shape, (20 * 32 * 24,))
-            self.assertEqual(large["rp"].shape, (20 * 32,))
-            self.assertEqual(large["ol_stash"].shape, (32 * 5120,))
+            self.assertIs(large, old)
+            self.assertIs(v41, self.driver._ensure_mhc_workspace("cuda", 5120, "v41"))
+            self.assertEqual(large["yp"].shape, (20 * 128 * 24,))
+            self.assertEqual(v41["yp"].shape, (20 * 128 * 24,))
+            self.assertEqual(v41["rp"].shape, (20 * 128,))
+            self.assertEqual(v41["ol_stash"].shape, (128 * 5120,))
             self.assertTrue({v.ptr for v in large.values()}.isdisjoint({v.ptr for v in v41.values()}))
             self.capture = True
-            self.assertIs(large, self.driver._ensure_mhc_workspace("cuda:0", 5120))
+            self.assertIs(v41, self.driver._ensure_mhc_workspace("cuda:0", 5120, "v41"))
             with self.assertRaises(RuntimeError):
                 self.driver._ensure_mhc_workspace("cuda:0", 4096, "v41")
 
     def test_invalid_metadata_or_missing_pre_never_launches(self):
+        pre = Tensor((6, 4), "f32")
         for index in range(8):
             values = list(self.values())
             values[index].dtype = "wrong"
             with self.assertRaises(ValueError):
-                self.launch(values)
+                self.launch(values, "v41", pre)
         values = list(self.values())
         values[4].contiguous = False
         with self.assertRaises(ValueError):
-            self.launch(values)
+            self.launch(values, "v41", pre)
         values = list(self.values())
         values[0].device = Device("cuda:1")
         with self.assertRaises(ValueError):
-            self.launch(values)
+            self.launch(values, "v41", pre)
         with self.assertRaises(ValueError):
             self.launch(self.values(), "v41")
         with self.assertRaises(ValueError):
-            self.launch(self.values(), "legacy", Tensor((6, 4), "f32"))
+            self.launch(self.values(), "v41", Tensor((6, 3), "f32"))
+        with self.assertRaises(ValueError):
+            self.launch(self.values(tokens=129), "v41", Tensor((129, 4), "f32"))
         self.current = 1
         with self.assertRaises(ValueError):
-            self.launch(self.values())
+            self.launch(self.values(), "v41", pre)
         self.assertEqual(self.calls, [])
 
 

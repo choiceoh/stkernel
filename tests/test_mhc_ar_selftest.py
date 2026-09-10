@@ -190,7 +190,7 @@ class DiagnosticTests(unittest.TestCase):
                     finally:
                         active[0] = None
                 cuda = SimpleNamespace(CUDAGraph=Graph, graph=graph_context, synchronize=lambda: None)
-                mk._mhc_bf16_weight = lambda fn, ar_consumer=False: torch.zeros(
+                mk._mhc_bf16_weight = lambda fn, hidden=4096, ar_consumer=False: torch.zeros(
                     (24, 8, 4) if ar_consumer else (24, 32), dtype=torch.bfloat16)
                 def compute(values):
                     x, residual, pm, cm = values[:4]

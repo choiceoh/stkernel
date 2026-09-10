@@ -74,7 +74,7 @@ def stream_of(e: dict):
 # some of it out of files we overlay, which is a different axis (editable)
 # from who wrote the kernel (see STEP_KERNEL_MAP.md).
 OURS = ("mk_gemm2_kernel",
-        "mk_mhc_kernel", "mk_mla_kernel",
+        "mk_mhc_kernel", "mk_mhc_v41_kernel", "mk_mla_kernel",
         "k_oneshot", "_deneb_gate_partial_kernel",
         "_glm53_prep_fused_kernel", "_gate_splitk_partial_kernel",
         "_gate_splitk_reduce_kernel", "_kpool_seed_tail_cache_strided_kernel",
@@ -92,7 +92,7 @@ def category(n: str) -> str:
     # vendor rules below match ("mhc", "gemm", "mla", "kda")
     if "mk_gemm2_kernel" in n:
         return "MK GEMM (ours)"
-    if "mk_mhc_kernel" in n:
+    if "mk_mhc_kernel" in n or "mk_mhc_v41_kernel" in n:
         return "MK MHC (ours)"
     if "mk_mla_kernel" in n:
         return "MK MLA (ours)"

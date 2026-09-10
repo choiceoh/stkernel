@@ -5177,6 +5177,7 @@ def test_census_owner_axis() -> None:
           "our one-shot AR still groups as ours")
     for n in ("void (anonymous namespace)::mk_gemm2_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
               "(anonymous namespace)::mk_mhc_kernel((anonymous namespace)::MKMhcArgs)",
+              "(anonymous namespace)::mk_mhc_v41_kernel<5120>((anonymous namespace)::MKMhcV41Args)",
               "mk_mla_kernel(MKMlaArgs)"):
         check(group(n) == "우리 · 메가커널 세그먼트",
               f"{n[:40]!r} is a megakernel segment, not a vendor GEMM/MHC/MLA")
@@ -5184,10 +5185,11 @@ def test_census_owner_axis() -> None:
           and group("_gate_splitk_partial_kernel") == "우리 · 준비/인덱서",
           "prep-fused and the split-K head gate are ours when they are armed")
 
-    tc = load_defs("tools/trace_common.py", {"OURS", "owner"}, {})
+    tc = load_defs("tools/trace_common.py", {"OURS", "owner", "category"}, {})
     owner = tc["owner"]
     ours = ("void (anonymous namespace)::mk_gemm2_kernel<4>((anonymous namespace)::MKGemm2Ctx)",
             "mk_mhc_kernel(MKMhcArgs)", "mk_mla_kernel(MKMlaArgs)",
+            "mk_mhc_v41_kernel<5120>(MKMhcV41Args)",
             "k_oneshot(Ctrl*)",
             "_deneb_gate_partial_kernel",
             "_glm53_prep_fused_kernel", "_gate_splitk_reduce_kernel",
@@ -5195,6 +5197,8 @@ def test_census_owner_axis() -> None:
             "_kda_onepass_spec_kernel", "_dual_gate_gemm_kernel")
     for n in ours:
         check(owner(n) == "ours", f"{n[:40]!r} is compiled from this repo")
+    check(tc["category"]("mk_mhc_v41_kernel<5120>(MKMhcV41Args)") == "MK MHC (ours)",
+          "the V4.1 specialization remains attributed to the common MHC segment")
     theirs = ("void deep_gemm::sm120_split_k_reduce_impl<cutlass::bfloat16_t, 4u>",
               "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm>",
               "mhc_pre_big_fuse_with_norm_tilelang_kernel",
@@ -8947,11 +8951,11 @@ def test_glm53_megakernel_contracts() -> None:
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 14
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 15
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm2, input pack/consumers, both mhc storage paths, mla, and four MLA prefill "
+          "every segment kernel (gemm2, input pack/consumers, both mhc storage paths, V4.1 MHC, mla, and four MLA prefill "
           "pair/group4 kernels of #368, plus register-Q prefill32) triggers its dependents at entry and "
           "is launched programmatically behind the MK_PDL knob")
     # -- 34차 §8: the persistent v1 GEMM (grid barrier, shared A quant,
@@ -9126,12 +9130,13 @@ def test_glm53_megakernel_contracts() -> None:
           and "constexpr int HIDDEN_V41 = 5120;" in cu,
           "the mhc grid caches are per-hidden-size: they live inside the "
           "HID template, so 5120's residency is never 4096's")
-    check("hidden == HIDDEN || hidden == HIDDEN_V41" in cu
-          and "ints.size() > 2 ? (int)ints[2] : HIDDEN" in cu,
+    check("hidden_arg == HIDDEN || hidden_arg == HIDDEN_V41" in cu
+          and "const int64_t hidden_arg = ints.size() == 3 ? ints[2] : HIDDEN;" in cu
+          and "ints.size() == 2 || ints.size() == 3" in cu,
           "an unknown hidden size is refused at the launch rather than "
           "silently running the 4096 instantiation, and ints[2] is optional "
           "so every existing caller still resolves to HIDDEN")
-    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 10
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 11
           and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu
           and "&g_gemm2_m8_bps, mk_gemm2_kernel<1, false, true>, MK_THREADS, GEMM2_M8_SMEM" in cu,
           "the persistent grids check residency before launching: a grid "
@@ -9318,8 +9323,8 @@ def test_glm53_megakernel_contracts() -> None:
           and "MK_SPIN_WAIT(*v < (unsigned int)NCHUNK, 128, \"mhc token arrive\");" in cu
           and "g_mk_mhc_tok_arrive[t] = 0u;  // rearm for the next launch" in cu
           and "g_mk_mhc_tail_next = 0u;" in cu
-          and "      mk_mhc_p2_token<HID>(a, t, s_pmix);\n      mk_mhc_p34_load<HID>(a, t, tr);" in cu
-          and "mk_mhc_p34_compute<HID>(a, t, s_pmix, tr);" in cu
+          and "      mk_mhc_p2_token<HID, V41>(a, t, s_pmix);\n      mk_mhc_p34_load<HID>(a, t, tr);" in cu
+          and "mk_mhc_p34_compute<HID, V41>(a, t, s_pmix, tr);" in cu
           and "if (warp != 0) mk_mhc_p34_load<HID>(a, t, tr);" in cu
           and "m[j][k] = __shfl_sync(0xffffffffu, mixv, j * HC + k + 2 * HC);" in cu
           and "mine += __ldcg(&a.yp[((size_t)c * MHC_MAX_TOK + t) * NOUT + lane]);" in cu
@@ -9335,7 +9340,8 @@ def test_glm53_megakernel_contracts() -> None:
           and "load_tok(t + groups, h, nxv, nres, npm, ncm);" in cu
           and "float fnr[NOUT][HC];" in cu
           and "for (int t = g; t < a.num_tokens; t += groups) {" in cu
-          and "const int groups = max(1, a.grid / NCHUNK);" in cu
+          and "const int groups = V41 ? min(a.num_tokens, max(1, a.grid / NCHUNK))" in cu
+          and ": max(1, a.grid / NCHUNK);" in cu
           and "MHC_SMEM" not in cu,
           "p1 keeps the chunk's fn slice in registers with the tokens as the "
           "inner loop and reduces through a transposed smem tile (pitch 27); "
@@ -12236,7 +12242,7 @@ def test_megakernel_regression_suite():
 
     suite = unittest.defaultTestLoader.discover(
         os.path.dirname(os.path.abspath(__file__)),
-        pattern="test_megakernel_*regressions.py")
+        pattern="test_megakernel_*.py")
     result = unittest.TextTestRunner(verbosity=1).run(suite)
     check(result.testsRun > 0 and result.wasSuccessful(),
           "megakernel behavioral regressions must run and pass")

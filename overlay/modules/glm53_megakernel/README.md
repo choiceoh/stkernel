@@ -7,48 +7,44 @@ nvcc (`-arch=sm_121a`) instead of JIT. 34차 §8 (2026-09-06) sunset the
 persistent v1 GEMM kernel and the MK_SEG_KDA block; their sections below
 are kept as history where they still explain a number.
 
-## Shared MHC geometry and V4.1 contract (experimental, 2026-09-10)
+## V4.1 numerical contract after PR #518 (experimental, 2026-09-10)
 
-The MHC segment now specializes hidden size **4096 or 5120**, with four
-streams and 1–32 tokens. The larger shape uses twenty 256-column chunks and
-twenty tail values per thread. GEMM and MLA retain their existing geometry.
-The existing 4096 serving hooks and numerical gates are unchanged; additional
-geometry and V4.1 semantics are exposed only through the low-level probe API.
-No model profile enables them.
+[PR #518](https://github.com/choiceoh/stkernel/pull/518) provides H4096/H5120
+and the separate **MHC_MAX_TOK=128** bound. This change builds on that code;
+GEMM/MLA retain their original geometry. It also repairs the host ABI: the
+Python caller sends `[tokens, iterations, hidden]`, but the C++ entry still
+accepted only two integers. Both the old two-integer form and PR518's
+three-integer form now work; invalid token counts and hidden sizes fail before
+pointer unpacking. A source-extracted host test exercises the actual entry.
 
-Two contracts share the projection, Sinkhorn and tail implementation:
+The new `_mhc_v41_call` / `run_mhc_v41` explicitly separates V4.1 math from
+the established fused contract:
 
 | Contract | Projection input | Collapse coefficient | Norm statistic |
 |---|---|---|---|
-| `legacy` | FP32 post result before storing BF16 | Newly computed pre mix | FP32 collapse before storing BF16 |
-| `v41` | BF16 post result converted to FP32 | Independent incoming pre mix | BF16 collapse converted to FP32 |
+| Legacy | FP32 post result before storing BF16 | Newly computed pre mix | FP32 collapse before storing BF16 |
+| V4.1 | BF16 post result converted to FP32 | Independent incoming pre mix | BF16 collapse converted to FP32 |
 
-V4.1 additionally returns the newly computed pre mix for the next sublayer.
-Its reference config uses projection/norm epsilon `1e-20`, Sinkhorn/pre epsilon
-`1e-6`, and post multiplier `2`. These are separate caller parameters, not a
-change to the GLM defaults. Merely accepting H=5120 under the legacy contract
-does **not** implement V4.1. The reference provenance, runtime limitations and
-validation receipts are in
-[`measurements/dsv41_mhc_20260910`](../../../measurements/dsv41_mhc_20260910/README.md).
+V4.1 additionally returns the current pre mix for the next sublayer. Its
+reference config uses projection/norm epsilon `1e-20`, Sinkhorn/pre epsilon
+`1e-6`, and post multiplier `2`. Merely accepting H5120 does **not** implement
+this contract. The model call site must own and forward the correct pre mix.
 
-New specializations use FP32 projection weights, ordinary stream ordering and
-geometry/contract-specific persistent scratch. Their cold workspace must be
-prepared before graph capture. MHC device ticket counters remain shared:
-**all MHC calls, including different geometries, must be serialized**. Distinct
-scratch allocations do not make concurrent streams safe. BF16 weight packing
-and AR-consumer PDL remain confined to the established 4096 legacy path.
+The V4.1 specialization uses FP32 projection weights, device-specific
+occupancy and geometry-specific persistent scratch prepared before capture.
+It also bounds token groups by the token count, removing weight loads for
+empty groups. The legacy schedule, BF16 packing and AR paths remain as in
+PR518. All MHC launches, including different contracts, must be serialized;
+the shared device ticket counters are not a concurrent-stream API.
 
-For new paths, token-group count is bounded by the token count, eliminating
-projection-weight loads for groups with no tokens. The resident grid and
-tail completion protocol are preserved. This removes redundant work at tiny
-batch sizes; GPU timing is required to quantify any benefit.
-
-`probes/mk_mhc_geometry_bench.py` keeps the legacy and V4.1 PyTorch oracles
-separate and validates eager calls and changed-input graph replay. It does not
-measure serving throughput. Its compile-only path needs no CUDA device. The current
-fleet policy does not admit standalone GPU probes; do not bypass it with a
-renamed onepass command. Full V4.1 serving integration and direct tok/s/TTFT
-validation remain separate gates.
+`probes/mk_mhc_geometry_bench.py` checks separate legacy and V4.1 references
+with nonzero projections, every output, and changed-input graph replay through
+the Python/native binding. Its compile-only path builds the whole extension
+without devices. The current fleet policy does not admit standalone GPU
+probes; no renamed onepass command bypasses that rule. No serving hook or
+profile enables the new V4.1 seam. Direct tok/s, TTFT, quality and GPU numerical
+acceptance remain required before adoption. See
+[the validation record](../../../measurements/dsv41_mhc_20260910/README.md).
 
 ## MK-GEMM is the W4 lane (the fp8 W8 arm was removed 2026-09-02)
 
