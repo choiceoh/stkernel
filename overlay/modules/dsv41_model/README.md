@@ -5,6 +5,11 @@ explicitly installed optimization of the official reference model's long-context
 decode path. This module does **not** yet implement or register a complete vLLM
 model, load a V4.1 checkpoint, or make `profiles/dsv41.env` bootable.
 
+The follow-up [packed index-key cache](PACKED_INDEX.md) removes the BF16 key
+buffers and provides direct packed dense/compact scoring across all eight
+indexers. It has a separate opt-in handle and cannot be installed alongside
+this BF16 adapter.
+
 ## Work removed
 
 The reference's layer 20 selects up to 2,048 candidate blocks, each containing

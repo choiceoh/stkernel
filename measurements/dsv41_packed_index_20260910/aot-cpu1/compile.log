@@ -1,0 +1,334 @@
+{
+  "schema": 1,
+  "passed": true,
+  "compiled": [
+    {
+      "label": "H8-dense",
+      "heads": 8,
+      "compact": false,
+      "entry": "_packed_scores_kernel",
+      "signature": {
+        "Q": "*bf16",
+        "PACKED": "*u8",
+        "SCALES": "*u8",
+        "W": "*bf16",
+        "IDS": "*bf16",
+        "OUT": "*bf16",
+        "WIDTH": "i32",
+        "OUT_COLS": "i32",
+        "QUERIES": "i32",
+        "Q_B": "i32",
+        "Q_Q": "i32",
+        "Q_H": "i32",
+        "Q_D": "i32",
+        "P_B": "i32",
+        "P_S": "i32",
+        "S_B": "i32",
+        "S_S": "i32",
+        "W_B": "i32",
+        "W_Q": "i32",
+        "W_H": "i32",
+        "I_B": "i32",
+        "I_Q": "i32",
+        "I_C": "i32"
+      },
+      "constants": {
+        "HEADS": 8,
+        "COMPACT": false,
+        "BLOCK_Q": 4,
+        "BLOCK_M": 32,
+        "BLOCK_C": 32
+      },
+      "runtime_example": {
+        "WIDTH": 131073,
+        "OUT_COLS": 131073,
+        "QUERIES": 7,
+        "Q_B": 7168,
+        "Q_Q": 1024,
+        "Q_H": 128,
+        "Q_D": 1,
+        "P_B": 67108864,
+        "P_S": 64,
+        "S_B": 4194304,
+        "S_S": 4,
+        "W_B": 56,
+        "W_Q": 8,
+        "W_H": 1,
+        "I_B": 0,
+        "I_Q": 0,
+        "I_C": 0
+      },
+      "options": {
+        "num_warps": 4,
+        "enable_fp_fusion": false
+      },
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "kernel_hash": "bf945c6ba3a8fd774f2fba12fbc31388bd3e6534237588b28a8c9994f49ab94c",
+      "shared_bytes": 16384,
+      "artifacts": [
+        {
+          "path": "H8-dense/kernel.ptx",
+          "bytes": 107609,
+          "sha256": "6ffa10e6689d74aa30b5f37c895603a19514975675e18ad3f880271ce7f3568f"
+        },
+        {
+          "path": "H8-dense/kernel.cubin",
+          "bytes": 135784,
+          "sha256": "73bc1a09049fdeb3d9d85ec8b378ec98b8e3e655759c8885ad64fa9fee5c975f"
+        }
+      ]
+    },
+    {
+      "label": "H8-compact",
+      "heads": 8,
+      "compact": true,
+      "entry": "_packed_scores_kernel",
+      "signature": {
+        "Q": "*bf16",
+        "PACKED": "*u8",
+        "SCALES": "*u8",
+        "W": "*bf16",
+        "IDS": "*i32",
+        "OUT": "*bf16",
+        "WIDTH": "i32",
+        "OUT_COLS": "i32",
+        "QUERIES": "i32",
+        "Q_B": "i32",
+        "Q_Q": "i32",
+        "Q_H": "i32",
+        "Q_D": "i32",
+        "P_B": "i32",
+        "P_S": "i32",
+        "S_B": "i32",
+        "S_S": "i32",
+        "W_B": "i32",
+        "W_Q": "i32",
+        "W_H": "i32",
+        "I_B": "i32",
+        "I_Q": "i32",
+        "I_C": "i32"
+      },
+      "constants": {
+        "HEADS": 8,
+        "COMPACT": true,
+        "BLOCK_Q": 1,
+        "BLOCK_M": 16,
+        "BLOCK_C": 32
+      },
+      "runtime_example": {
+        "WIDTH": 131073,
+        "OUT_COLS": 16384,
+        "QUERIES": 1,
+        "Q_B": 1024,
+        "Q_Q": 1024,
+        "Q_H": 128,
+        "Q_D": 1,
+        "P_B": 67108864,
+        "P_S": 64,
+        "S_B": 4194304,
+        "S_S": 4,
+        "W_B": 8,
+        "W_Q": 8,
+        "W_H": 1,
+        "I_B": 16384,
+        "I_Q": 16384,
+        "I_C": 1
+      },
+      "options": {
+        "num_warps": 4,
+        "enable_fp_fusion": false
+      },
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "kernel_hash": "5770df8859e18269a6442fa0ba9368c08ffdf75d2c76300daa3933ae1d12a195",
+      "shared_bytes": 12288,
+      "artifacts": [
+        {
+          "path": "H8-compact/kernel.ptx",
+          "bytes": 96642,
+          "sha256": "9c8a83bd7e089babe6e18d67c5dbd9a589dfab9b12973292360ec290d82ef652"
+        },
+        {
+          "path": "H8-compact/kernel.cubin",
+          "bytes": 120008,
+          "sha256": "ea7bfe502d0be66012c1f9487b9e224e8f4fb2c1516a04eb7c8f142ae05d0147"
+        }
+      ]
+    },
+    {
+      "label": "H32-dense",
+      "heads": 32,
+      "compact": false,
+      "entry": "_packed_scores_kernel",
+      "signature": {
+        "Q": "*bf16",
+        "PACKED": "*u8",
+        "SCALES": "*u8",
+        "W": "*bf16",
+        "IDS": "*bf16",
+        "OUT": "*bf16",
+        "WIDTH": "i32",
+        "OUT_COLS": "i32",
+        "QUERIES": "i32",
+        "Q_B": "i32",
+        "Q_Q": "i32",
+        "Q_H": "i32",
+        "Q_D": "i32",
+        "P_B": "i32",
+        "P_S": "i32",
+        "S_B": "i32",
+        "S_S": "i32",
+        "W_B": "i32",
+        "W_Q": "i32",
+        "W_H": "i32",
+        "I_B": "i32",
+        "I_Q": "i32",
+        "I_C": "i32"
+      },
+      "constants": {
+        "HEADS": 32,
+        "COMPACT": false,
+        "BLOCK_Q": 4,
+        "BLOCK_M": 128,
+        "BLOCK_C": 32
+      },
+      "runtime_example": {
+        "WIDTH": 131073,
+        "OUT_COLS": 131073,
+        "QUERIES": 7,
+        "Q_B": 28672,
+        "Q_Q": 4096,
+        "Q_H": 128,
+        "Q_D": 1,
+        "P_B": 67108864,
+        "P_S": 64,
+        "S_B": 4194304,
+        "S_S": 4,
+        "W_B": 224,
+        "W_Q": 32,
+        "W_H": 1,
+        "I_B": 0,
+        "I_Q": 0,
+        "I_C": 0
+      },
+      "options": {
+        "num_warps": 4,
+        "enable_fp_fusion": false
+      },
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "kernel_hash": "1269c2798092a941aef16e73146d876fea3c56d080b1860f9963c76ddf698316",
+      "shared_bytes": 40960,
+      "artifacts": [
+        {
+          "path": "H32-dense/kernel.ptx",
+          "bytes": 167648,
+          "sha256": "c900bad6390e3d0fee8448c79ddb5edb3c4364ccdeda90e436e7da0ae5e1ac56"
+        },
+        {
+          "path": "H32-dense/kernel.cubin",
+          "bytes": 194136,
+          "sha256": "ddfee7373af398ec1ce4faee85b037207cf1d56b6e5ba09342249d059673b88a"
+        }
+      ]
+    },
+    {
+      "label": "H32-compact",
+      "heads": 32,
+      "compact": true,
+      "entry": "_packed_scores_kernel",
+      "signature": {
+        "Q": "*bf16",
+        "PACKED": "*u8",
+        "SCALES": "*u8",
+        "W": "*bf16",
+        "IDS": "*i32",
+        "OUT": "*bf16",
+        "WIDTH": "i32",
+        "OUT_COLS": "i32",
+        "QUERIES": "i32",
+        "Q_B": "i32",
+        "Q_Q": "i32",
+        "Q_H": "i32",
+        "Q_D": "i32",
+        "P_B": "i32",
+        "P_S": "i32",
+        "S_B": "i32",
+        "S_S": "i32",
+        "W_B": "i32",
+        "W_Q": "i32",
+        "W_H": "i32",
+        "I_B": "i32",
+        "I_Q": "i32",
+        "I_C": "i32"
+      },
+      "constants": {
+        "HEADS": 32,
+        "COMPACT": true,
+        "BLOCK_Q": 1,
+        "BLOCK_M": 32,
+        "BLOCK_C": 32
+      },
+      "runtime_example": {
+        "WIDTH": 131073,
+        "OUT_COLS": 16384,
+        "QUERIES": 1,
+        "Q_B": 4096,
+        "Q_Q": 4096,
+        "Q_H": 128,
+        "Q_D": 1,
+        "P_B": 67108864,
+        "P_S": 64,
+        "S_B": 4194304,
+        "S_S": 4,
+        "W_B": 32,
+        "W_Q": 32,
+        "W_H": 1,
+        "I_B": 16384,
+        "I_Q": 16384,
+        "I_C": 1
+      },
+      "options": {
+        "num_warps": 4,
+        "enable_fp_fusion": false
+      },
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "kernel_hash": "899680575735ecf17bb4598621fef980e7f077931a20dbfd4b5c9b29fe14dd3e",
+      "shared_bytes": 16384,
+      "artifacts": [
+        {
+          "path": "H32-compact/kernel.ptx",
+          "bytes": 110702,
+          "sha256": "4f48f7ad9aed7cc2d6902118166c3547df558fe0fdcde8815253743318b131c2"
+        },
+        {
+          "path": "H32-compact/kernel.cubin",
+          "bytes": 141144,
+          "sha256": "e7a079741078ae7bf425109d5abf9b3d8fb684745ae9e74df5adab338dfcdedb"
+        }
+      ]
+    }
+  ],
+  "torch_version": "2.13.0+cu130",
+  "triton_version": "3.7.1",
+  "torch_cuda_version": "13.0",
+  "devices": [],
+  "cuda_initialized": false,
+  "gpu_numerics": false,
+  "gpu_performance": false,
+  "model_equivalence": false
+}

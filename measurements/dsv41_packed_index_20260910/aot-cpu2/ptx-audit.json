@@ -1,0 +1,1615 @@
+{
+  "schema": "dsv41-packed-index-ptx-audit-v1",
+  "status": "PASS_SCOPED_CODEGEN",
+  "source_revision": "40f6c0990f7ceff5b216edf69f7a4f30e4fc4d53",
+  "source_before_after_identical": true,
+  "local_source_hashes_match_execution": true,
+  "source_files": [
+    {
+      "path": "overlay/modules/dsv41_model/dsv41_indexer.py",
+      "bytes": 12221,
+      "sha256": "5c9a19b4a4a9007ca293205017481a873325aa739ef9ac8322561141c250d2d0"
+    },
+    {
+      "path": "overlay/modules/dsv41_model/dsv41_reference_adapter.py",
+      "bytes": 13944,
+      "sha256": "8bed06943405be212486dd4bf1e8f864a019ccd5912a7be54135950fe07a0e99"
+    },
+    {
+      "path": "overlay/modules/dsv41_model/dsv41_packed_index.py",
+      "bytes": 14412,
+      "sha256": "93960e9ac7eda0c4a51b5dac0b92312a44adf9d47f56f17df509e07ca4d232c5"
+    },
+    {
+      "path": "overlay/modules/dsv41_model/dsv41_packed_index_triton.py",
+      "bytes": 8935,
+      "sha256": "8de2ef1ec1d2c96498f214ad8718e478c9c3360faba4a2c4cadd755635e5101a"
+    },
+    {
+      "path": "overlay/modules/dsv41_model/dsv41_packed_reference_adapter.py",
+      "bytes": 22340,
+      "sha256": "7cc814d930d7fd5b70eebbb2aeb6feeb1ce4c07e0ae3dcc3aa814da1ec69e9b5"
+    },
+    {
+      "path": "probes/dsv41_packed_index_diff.py",
+      "bytes": 30089,
+      "sha256": "493a33f020c09b2f6de1135fad5664f09d72278adc011c08400f7d4f37c35b97"
+    },
+    {
+      "path": "tests/test_dsv41_packed_index.py",
+      "bytes": 8016,
+      "sha256": "c234af2357ad5a2e3e346b02a60884f4335464d433be35ff27a5a3245c90980a"
+    },
+    {
+      "path": "tests/test_dsv41_packed_reference_adapter.py",
+      "bytes": 16590,
+      "sha256": "5dbad8171a48427315c79f79afa1e18cc6fd9e4d241502a75b19c37f5b7bc65f"
+    },
+    {
+      "path": "measurements/dsv41_packed_index_20260910/cpu_compile_runner.py",
+      "bytes": 6791,
+      "sha256": "431360b8fcb2596d795fa80eacfe99bbc1ff9c1c6e256aa5abe228c50945b9fe"
+    }
+  ],
+  "aot_json_sha256": "7b1a8f2fbaec727f997fdee9f93586cb8bf3ff63a85adf9e322f1f958c6e613c",
+  "execution_json_sha256": "65dbd960a727e2f0040de6a236e378a2c0ef217ba0d2253408cd3a43b2669386",
+  "scope": "Read-only inspection of the four existing CPU2 AOT PTX files and their cubin hashes, with CPU1 static instruction comparison. Runtime dimensions, byte operands, integer BF16 bit construction, BF16 input MMA, three rounding boundaries and score-only global stores. No compilation or device execution performed by this audit.",
+  "cuda_initialized_in_aot": false,
+  "gpu_numerics": false,
+  "gpu_performance": false,
+  "model_equivalence": false,
+  "variants": [
+    {
+      "label": "H8-dense",
+      "heads": 8,
+      "compact": false,
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "constants": {
+        "HEADS": 8,
+        "COMPACT": false,
+        "BLOCK_Q": 4,
+        "BLOCK_M": 32,
+        "BLOCK_C": 32
+      },
+      "artifact_hashes_verified": [
+        {
+          "path": "H8-dense/kernel.ptx",
+          "bytes": 104591,
+          "sha256": "8e7508feca89f0b0a45c4a34cb2041d6af9722177f6a86fa7bf65fc055e63ac3"
+        },
+        {
+          "path": "H8-dense/kernel.cubin",
+          "bytes": 134488,
+          "sha256": "f186984e6a71095a5a7dcc94b1b3e3a4b02f0fc5035bd55cd169270671daeee1"
+        }
+      ],
+      "runtime_parameters": {
+        "WIDTH": {
+          "parameter": "_packed_scores_kernel_param_6",
+          "type": ".u32",
+          "load_line": 65,
+          "register": "%r146",
+          "use_lines": [
+            159,
+            161
+          ]
+        },
+        "OUT_COLS": {
+          "parameter": "_packed_scores_kernel_param_7",
+          "type": ".u32",
+          "load_line": 70,
+          "register": "%r149",
+          "use_lines": [
+            90,
+            157,
+            161
+          ]
+        },
+        "QUERIES": {
+          "parameter": "_packed_scores_kernel_param_8",
+          "type": ".u32",
+          "load_line": 73,
+          "register": "%r150",
+          "use_lines": [
+            79,
+            81,
+            154,
+            155,
+            2449
+          ]
+        }
+      },
+      "byte_loads": {
+        "packed_bytes": {
+          "source_line": 72,
+          "instruction_count": 32,
+          "distinct_address_operands": 32,
+          "same_operand_repetition_histogram": {
+            "1": 32
+          },
+          "example_address": "%rd33 + 0",
+          "example_lines": [
+            524
+          ]
+        },
+        "scale_bytes": {
+          "source_line": 77,
+          "instruction_count": 1,
+          "distinct_address_operands": 1,
+          "same_operand_repetition_histogram": {
+            "1": 1
+          },
+          "example_address": "%rd65 + 0",
+          "example_lines": [
+            658
+          ]
+        }
+      },
+      "integer_bit_dequant": {
+        "source_lines": [
+          24,
+          37
+        ],
+        "ptx_line_span": [
+          781,
+          2274
+        ],
+        "integer_opcode_counts": {
+          "and.b32": 133,
+          "setp.gt.u32": 96,
+          "shl.b32": 100,
+          "selp.b32": 128,
+          "or.b32": 100,
+          "cvt.u32.u16": 8,
+          "add.s32": 100,
+          "sub.s32": 32,
+          "shr.u32": 63,
+          "selp.b16": 96,
+          "shl.b16": 60,
+          "or.b16": 60,
+          "and.b16": 28,
+          "cvt.u64.u32": 1,
+          "setp.ne.b32": 30,
+          "shr.u64": 31,
+          "and.b64": 31,
+          "setp.ne.b64": 31,
+          "setp.eq.b32": 33,
+          "setp.eq.b16": 4,
+          "cvt.u16.u32": 32,
+          "xor.b32": 4,
+          "mov.b32": 1
+        },
+        "floating_arithmetic_or_numeric_conversion_count": 0
+      },
+      "bf16_input_fp32_accumulator_mma": {
+        "count": 16,
+        "lines": [
+          2282,
+          2288,
+          2291,
+          2294,
+          2297,
+          2300,
+          2303,
+          2306,
+          2309,
+          2312,
+          2315,
+          2318,
+          2321,
+          2324,
+          2327,
+          2330
+        ]
+      },
+      "bf16_rounding_boundaries": {
+        "dot": {
+          "source_line": 85,
+          "instructions": [
+            {
+              "line": 2364,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2365,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2366,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2367,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2368,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2369,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2370,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2371,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        },
+        "weighted_product": {
+          "source_line": 91,
+          "instructions": [
+            {
+              "line": 2409,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2410,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2411,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2412,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2413,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2414,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2415,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2416,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        },
+        "head_sum": {
+          "source_line": 94,
+          "instructions": [
+            {
+              "line": 2592,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 2594,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 2596,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 2598,
+              "opcode": "cvt.rn.bf16x2.f32"
+            }
+          ]
+        }
+      },
+      "weighted_product_multiply_lines": [
+        2400,
+        2401,
+        2402,
+        2403,
+        2404,
+        2405,
+        2406,
+        2407
+      ],
+      "ptx_fma_count": 0,
+      "global_stores": {
+        "count": 1,
+        "line": 2635,
+        "source_line": 100,
+        "instruction": "@%p9 st.global.b16 [ %rd68 + 0 ], { %rs102 };",
+        "address_64bit_def_use": [
+          {
+            "line": 2458,
+            "instruction": "mad.wide.u32 \t%rd68, %r175, 2, %rd193;"
+          },
+          {
+            "line": 2456,
+            "instruction": "add.s64 \t%rd193, %rd75, %rd192;"
+          },
+          {
+            "line": 2455,
+            "instruction": "shl.b64 \t%rd192, %rd191, 1;"
+          },
+          {
+            "line": 2453,
+            "instruction": "mul.lo.s64 \t%rd191, %rd190, %rd84;"
+          },
+          {
+            "line": 90,
+            "instruction": "cvt.s64.s32 \t%rd84, %r149;"
+          },
+          {
+            "line": 2451,
+            "instruction": "mad.lo.s64 \t%rd190, %rd80, %rd71, %rd189;"
+          },
+          {
+            "line": 2447,
+            "instruction": "cvt.u64.u32 \t%rd189, %r1065;"
+          },
+          {
+            "line": 56,
+            "instruction": "cvt.u64.u32 \t%rd71, %r143;"
+          },
+          {
+            "line": 79,
+            "instruction": "cvt.s64.s32 \t%rd80, %r150;"
+          },
+          {
+            "line": 64,
+            "instruction": "ld.param.b64 \t%rd75, [_packed_scores_kernel_param_5];"
+          }
+        ],
+        "root_pointer_parameters": [
+          "_packed_scores_kernel_param_5"
+        ],
+        "interpretation": "Only score OUT (parameter 5) global store; no separate full-prefix BF16 key-cache global store in this entry."
+      },
+      "compiler_shared_bytes": 16384
+    },
+    {
+      "label": "H8-compact",
+      "heads": 8,
+      "compact": true,
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "constants": {
+        "HEADS": 8,
+        "COMPACT": true,
+        "BLOCK_Q": 1,
+        "BLOCK_M": 16,
+        "BLOCK_C": 32
+      },
+      "artifact_hashes_verified": [
+        {
+          "path": "H8-compact/kernel.ptx",
+          "bytes": 94093,
+          "sha256": "ceeef14d9a2c80ed33322fa46182d24bcf064d6442ddf7e65ac36300991f03b9"
+        },
+        {
+          "path": "H8-compact/kernel.cubin",
+          "bytes": 119944,
+          "sha256": "3807badc86f2b10be518b0c7fe5969a87dcc21379c1390add2970734cffe4fe0"
+        }
+      ],
+      "runtime_parameters": {
+        "WIDTH": {
+          "parameter": "_packed_scores_kernel_param_6",
+          "type": ".u32",
+          "load_line": 69,
+          "register": "%r112",
+          "use_lines": [
+            185,
+            186,
+            187,
+            188
+          ]
+        },
+        "OUT_COLS": {
+          "parameter": "_packed_scores_kernel_param_7",
+          "type": ".u32",
+          "load_line": 73,
+          "register": "%r114",
+          "use_lines": [
+            94,
+            153,
+            154,
+            155,
+            156
+          ]
+        },
+        "QUERIES": {
+          "parameter": "_packed_scores_kernel_param_8",
+          "type": ".u32",
+          "load_line": 70,
+          "register": "%r113",
+          "use_lines": [
+            72,
+            74,
+            2325
+          ]
+        }
+      },
+      "byte_loads": {
+        "packed_bytes": {
+          "source_line": 72,
+          "instruction_count": 32,
+          "distinct_address_operands": 32,
+          "same_operand_repetition_histogram": {
+            "1": 32
+          },
+          "example_address": "%rd21 + 0",
+          "example_lines": [
+            411
+          ]
+        },
+        "scale_bytes": {
+          "source_line": 77,
+          "instruction_count": 1,
+          "distinct_address_operands": 1,
+          "same_operand_repetition_histogram": {
+            "1": 1
+          },
+          "example_address": "%rd53 + 0",
+          "example_lines": [
+            545
+          ]
+        }
+      },
+      "integer_bit_dequant": {
+        "source_lines": [
+          24,
+          37
+        ],
+        "ptx_line_span": [
+          667,
+          2158
+        ],
+        "integer_opcode_counts": {
+          "and.b32": 133,
+          "setp.gt.u32": 96,
+          "shl.b32": 100,
+          "selp.b32": 130,
+          "or.b32": 99,
+          "cvt.u32.u16": 8,
+          "add.s32": 99,
+          "sub.s32": 32,
+          "shr.u32": 63,
+          "selp.b16": 96,
+          "shl.b16": 60,
+          "or.b16": 60,
+          "and.b16": 28,
+          "cvt.u64.u32": 1,
+          "setp.ne.b32": 30,
+          "shr.u64": 31,
+          "and.b64": 31,
+          "setp.ne.b64": 31,
+          "setp.eq.b32": 35,
+          "setp.eq.b16": 4,
+          "cvt.u16.u32": 32,
+          "xor.b32": 3,
+          "mov.b32": 1
+        },
+        "floating_arithmetic_or_numeric_conversion_count": 0
+      },
+      "bf16_input_fp32_accumulator_mma": {
+        "count": 8,
+        "lines": [
+          2166,
+          2169,
+          2172,
+          2175,
+          2178,
+          2181,
+          2184,
+          2187
+        ]
+      },
+      "bf16_rounding_boundaries": {
+        "dot": {
+          "source_line": 85,
+          "instructions": [
+            {
+              "line": 2190,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2191,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        },
+        "weighted_product": {
+          "source_line": 91,
+          "instructions": [
+            {
+              "line": 2232,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2233,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        },
+        "head_sum": {
+          "source_line": 94,
+          "instructions": [
+            {
+              "line": 2314,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2315,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2316,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2317,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        }
+      },
+      "weighted_product_multiply_lines": [
+        2229,
+        2230
+      ],
+      "ptx_fma_count": 0,
+      "global_stores": {
+        "count": 1,
+        "line": 2357,
+        "source_line": 100,
+        "instruction": "@%p9 st.global.b16 [ %rd56 + 0 ], { %rs90 };",
+        "address_64bit_def_use": [
+          {
+            "line": 2334,
+            "instruction": "mad.wide.u32 \t%rd56, %r133, 2, %rd184;"
+          },
+          {
+            "line": 2332,
+            "instruction": "add.s64 \t%rd184, %rd64, %rd183;"
+          },
+          {
+            "line": 2331,
+            "instruction": "shl.b64 \t%rd183, %rd182, 1;"
+          },
+          {
+            "line": 2329,
+            "instruction": "mul.lo.s64 \t%rd182, %rd181, %rd77;"
+          },
+          {
+            "line": 94,
+            "instruction": "cvt.s64.s32 \t%rd77, %r114;"
+          },
+          {
+            "line": 2327,
+            "instruction": "mad.lo.s64 \t%rd181, %rd65, %rd59, %rd180;"
+          },
+          {
+            "line": 2323,
+            "instruction": "cvt.u64.u32 \t%rd180, %r1008;"
+          },
+          {
+            "line": 56,
+            "instruction": "cvt.u64.u32 \t%rd59, %r108;"
+          },
+          {
+            "line": 72,
+            "instruction": "cvt.s64.s32 \t%rd65, %r113;"
+          },
+          {
+            "line": 64,
+            "instruction": "ld.param.b64 \t%rd64, [_packed_scores_kernel_param_5];"
+          }
+        ],
+        "root_pointer_parameters": [
+          "_packed_scores_kernel_param_5"
+        ],
+        "interpretation": "Only score OUT (parameter 5) global store; no separate full-prefix BF16 key-cache global store in this entry."
+      },
+      "compiler_shared_bytes": 12288
+    },
+    {
+      "label": "H32-dense",
+      "heads": 32,
+      "compact": false,
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "constants": {
+        "HEADS": 32,
+        "COMPACT": false,
+        "BLOCK_Q": 4,
+        "BLOCK_M": 128,
+        "BLOCK_C": 32
+      },
+      "artifact_hashes_verified": [
+        {
+          "path": "H32-dense/kernel.ptx",
+          "bytes": 164313,
+          "sha256": "6501064cda775482c8504c09699dd9871e2aded081a9fcd474e0065fa221a2c7"
+        },
+        {
+          "path": "H32-dense/kernel.cubin",
+          "bytes": 192088,
+          "sha256": "1011270b84bd501b9d2549cf1de405932d8cc53141eadb56acf6ababf89a9141"
+        }
+      ],
+      "runtime_parameters": {
+        "WIDTH": {
+          "parameter": "_packed_scores_kernel_param_6",
+          "type": ".u32",
+          "load_line": 65,
+          "register": "%r374",
+          "use_lines": [
+            139,
+            141
+          ]
+        },
+        "OUT_COLS": {
+          "parameter": "_packed_scores_kernel_param_7",
+          "type": ".u32",
+          "load_line": 70,
+          "register": "%r377",
+          "use_lines": [
+            136,
+            137,
+            141
+          ]
+        },
+        "QUERIES": {
+          "parameter": "_packed_scores_kernel_param_8",
+          "type": ".u32",
+          "load_line": 71,
+          "register": "%r378",
+          "use_lines": [
+            127,
+            128,
+            132,
+            133,
+            134
+          ]
+        }
+      },
+      "byte_loads": {
+        "packed_bytes": {
+          "source_line": 72,
+          "instruction_count": 32,
+          "distinct_address_operands": 32,
+          "same_operand_repetition_histogram": {
+            "1": 32
+          },
+          "example_address": "%rd129 + 0",
+          "example_lines": [
+            1442
+          ]
+        },
+        "scale_bytes": {
+          "source_line": 77,
+          "instruction_count": 1,
+          "distinct_address_operands": 1,
+          "same_operand_repetition_histogram": {
+            "1": 1
+          },
+          "example_address": "%rd161 + 0",
+          "example_lines": [
+            1578
+          ]
+        }
+      },
+      "integer_bit_dequant": {
+        "source_lines": [
+          24,
+          37
+        ],
+        "ptx_line_span": [
+          1706,
+          2813
+        ],
+        "integer_opcode_counts": {
+          "and.b32": 104,
+          "add.s32": 102,
+          "setp.gt.u32": 96,
+          "shl.b32": 98,
+          "selp.b32": 128,
+          "or.b32": 99,
+          "sub.s32": 32,
+          "shr.u32": 32,
+          "setp.eq.b32": 32,
+          "cvt.u16.u32": 32,
+          "selp.b16": 32,
+          "xor.b32": 5,
+          "mov.b32": 1
+        },
+        "floating_arithmetic_or_numeric_conversion_count": 0
+      },
+      "bf16_input_fp32_accumulator_mma": {
+        "count": 64,
+        "lines": [
+          2821,
+          2828,
+          2835,
+          2842,
+          2849,
+          2856,
+          2863,
+          2869,
+          2872,
+          2875,
+          2878,
+          2881,
+          2884,
+          2887,
+          2890,
+          2893,
+          2896,
+          2899,
+          2902,
+          2905,
+          2908,
+          2911,
+          2914,
+          2917,
+          2920,
+          2923,
+          2926,
+          2929,
+          2932,
+          2935,
+          2938,
+          2941,
+          2944,
+          2947,
+          2950,
+          2953,
+          2956,
+          2959,
+          2962,
+          2965,
+          2968,
+          2971,
+          2974,
+          2977,
+          2980,
+          2983,
+          2986,
+          2989,
+          2992,
+          2995,
+          2998,
+          3001,
+          3004,
+          3007,
+          3010,
+          3013,
+          3016,
+          3019,
+          3022,
+          3025,
+          3028,
+          3031,
+          3034,
+          3037
+        ]
+      },
+      "bf16_rounding_boundaries": {
+        "dot": {
+          "source_line": 85,
+          "instructions": [
+            {
+              "line": 3076,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3077,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3103,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3104,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3126,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3127,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3149,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3150,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3172,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3173,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3195,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3196,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3218,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3219,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3241,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3242,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3264,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3265,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3291,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3292,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3314,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3315,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3337,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3338,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3360,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3361,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3383,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3384,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3406,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3407,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3429,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3430,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        },
+        "weighted_product": {
+          "source_line": 91,
+          "instructions": [
+            {
+              "line": 3096,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3097,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3119,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3120,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3142,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3143,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3165,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3166,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3188,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3189,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3211,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3212,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3234,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3235,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3257,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3258,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3284,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3285,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3307,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3308,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3330,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3331,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3353,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3354,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3376,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3377,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3399,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3400,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3422,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3423,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3445,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 3446,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        },
+        "head_sum": {
+          "source_line": 94,
+          "instructions": [
+            {
+              "line": 3994,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 4001,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 4008,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 4015,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 4027,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 4034,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 4041,
+              "opcode": "cvt.rn.bf16x2.f32"
+            },
+            {
+              "line": 4048,
+              "opcode": "cvt.rn.bf16x2.f32"
+            }
+          ]
+        }
+      },
+      "weighted_product_multiply_lines": [
+        3093,
+        3116,
+        3139,
+        3162,
+        3185,
+        3208,
+        3231,
+        3254,
+        3281,
+        3304,
+        3327,
+        3350,
+        3373,
+        3396,
+        3419,
+        3442
+      ],
+      "ptx_fma_count": 0,
+      "global_stores": {
+        "count": 1,
+        "line": 4068,
+        "source_line": 100,
+        "instruction": "@%p11 st.global.b16 [ %rd163 + 0 ], { %rs197 };",
+        "address_64bit_def_use": [
+          {
+            "line": 3984,
+            "instruction": "mad.wide.u32 \t%rd163, %r406, 2, %rd325;"
+          },
+          {
+            "line": 3982,
+            "instruction": "add.s64 \t%rd325, %rd170, %rd324;"
+          },
+          {
+            "line": 3981,
+            "instruction": "shl.b64 \t%rd324, %rd323, 1;"
+          },
+          {
+            "line": 3979,
+            "instruction": "mul.lo.s64 \t%rd323, %rd322, %rd185;"
+          },
+          {
+            "line": 136,
+            "instruction": "cvt.s64.s32 \t%rd185, %r377;"
+          },
+          {
+            "line": 3977,
+            "instruction": "mad.lo.s64 \t%rd322, %rd184, %rd166, %rd183;"
+          },
+          {
+            "line": 125,
+            "instruction": "cvt.u64.u32 \t%rd183, %r412;"
+          },
+          {
+            "line": 56,
+            "instruction": "cvt.u64.u32 \t%rd166, %r371;"
+          },
+          {
+            "line": 127,
+            "instruction": "cvt.s64.s32 \t%rd184, %r378;"
+          },
+          {
+            "line": 64,
+            "instruction": "ld.param.b64 \t%rd170, [_packed_scores_kernel_param_5];"
+          }
+        ],
+        "root_pointer_parameters": [
+          "_packed_scores_kernel_param_5"
+        ],
+        "interpretation": "Only score OUT (parameter 5) global store; no separate full-prefix BF16 key-cache global store in this entry."
+      },
+      "compiler_shared_bytes": 40960
+    },
+    {
+      "label": "H32-compact",
+      "heads": 32,
+      "compact": true,
+      "target": {
+        "backend": "cuda",
+        "arch": 121,
+        "warp_size": 32
+      },
+      "constants": {
+        "HEADS": 32,
+        "COMPACT": true,
+        "BLOCK_Q": 1,
+        "BLOCK_M": 32,
+        "BLOCK_C": 32
+      },
+      "artifact_hashes_verified": [
+        {
+          "path": "H32-compact/kernel.ptx",
+          "bytes": 108178,
+          "sha256": "2b573c6249b8b0bb636e3383ec357a2604abf88b84c71a2863d20af50531235d"
+        },
+        {
+          "path": "H32-compact/kernel.cubin",
+          "bytes": 135000,
+          "sha256": "7bd2abbfa3af41f82d2f98497ed3fb53cb6418e77a01d30d8bc357d57d14beae"
+        }
+      ],
+      "runtime_parameters": {
+        "WIDTH": {
+          "parameter": "_packed_scores_kernel_param_6",
+          "type": ".u32",
+          "load_line": 69,
+          "register": "%r163",
+          "use_lines": [
+            229,
+            230,
+            231,
+            232,
+            233,
+            234
+          ]
+        },
+        "OUT_COLS": {
+          "parameter": "_packed_scores_kernel_param_7",
+          "type": ".u32",
+          "load_line": 73,
+          "register": "%r165",
+          "use_lines": [
+            94,
+            183,
+            184,
+            185,
+            186,
+            187,
+            188
+          ]
+        },
+        "QUERIES": {
+          "parameter": "_packed_scores_kernel_param_8",
+          "type": ".u32",
+          "load_line": 70,
+          "register": "%r164",
+          "use_lines": [
+            72,
+            74
+          ]
+        }
+      },
+      "byte_loads": {
+        "packed_bytes": {
+          "source_line": 72,
+          "instruction_count": 32,
+          "distinct_address_operands": 32,
+          "same_operand_repetition_histogram": {
+            "1": 32
+          },
+          "example_address": "%rd39 + 0",
+          "example_lines": [
+            594
+          ]
+        },
+        "scale_bytes": {
+          "source_line": 77,
+          "instruction_count": 1,
+          "distinct_address_operands": 1,
+          "same_operand_repetition_histogram": {
+            "1": 1
+          },
+          "example_address": "%rd71 + 0",
+          "example_lines": [
+            728
+          ]
+        }
+      },
+      "integer_bit_dequant": {
+        "source_lines": [
+          24,
+          37
+        ],
+        "ptx_line_span": [
+          872,
+          2360
+        ],
+        "integer_opcode_counts": {
+          "setp.gt.u32": 96,
+          "shl.b32": 92,
+          "and.b32": 101,
+          "selp.b32": 129,
+          "or.b32": 100,
+          "cvt.u32.u16": 15,
+          "add.s32": 100,
+          "shl.b16": 53,
+          "sub.s32": 32,
+          "shr.u32": 61,
+          "selp.b16": 80,
+          "or.b16": 45,
+          "and.b16": 21,
+          "cvt.u64.u32": 1,
+          "setp.ne.b32": 28,
+          "shr.u64": 31,
+          "and.b64": 31,
+          "setp.ne.b64": 31,
+          "setp.eq.b32": 4,
+          "setp.eq.b16": 4,
+          "cvt.u16.u32": 32,
+          "xor.b32": 4,
+          "mov.b32": 1
+        },
+        "floating_arithmetic_or_numeric_conversion_count": 0
+      },
+      "bf16_input_fp32_accumulator_mma": {
+        "count": 16,
+        "lines": [
+          2368,
+          2374,
+          2377,
+          2380,
+          2383,
+          2386,
+          2389,
+          2392,
+          2395,
+          2398,
+          2401,
+          2404,
+          2407,
+          2410,
+          2413,
+          2416
+        ]
+      },
+      "bf16_rounding_boundaries": {
+        "dot": {
+          "source_line": 85,
+          "instructions": [
+            {
+              "line": 2435,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2436,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2465,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2466,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2488,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2489,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2511,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2512,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        },
+        "weighted_product": {
+          "source_line": 91,
+          "instructions": [
+            {
+              "line": 2458,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2459,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2481,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2482,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2504,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2505,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2527,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2528,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        },
+        "head_sum": {
+          "source_line": 94,
+          "instructions": [
+            {
+              "line": 2681,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2682,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2683,
+              "opcode": "cvt.rn.bf16.f32"
+            },
+            {
+              "line": 2684,
+              "opcode": "cvt.rn.bf16.f32"
+            }
+          ]
+        }
+      },
+      "weighted_product_multiply_lines": [
+        2455,
+        2478,
+        2501,
+        2524
+      ],
+      "ptx_fma_count": 0,
+      "global_stores": {
+        "count": 1,
+        "line": 2738,
+        "source_line": 100,
+        "instruction": "@%p13 st.global.b16 [ %rd74 + 0 ], { %rs106 };",
+        "address_64bit_def_use": [
+          {
+            "line": 2686,
+            "instruction": "mad.wide.u32 \t%rd74, %r187, 2, %rd118;"
+          },
+          {
+            "line": 132,
+            "instruction": "add.s64 \t%rd118, %rd82, %rd117;"
+          },
+          {
+            "line": 131,
+            "instruction": "shl.b64 \t%rd117, %rd116, 1;"
+          },
+          {
+            "line": 129,
+            "instruction": "mul.lo.s64 \t%rd116, %rd115, %rd96;"
+          },
+          {
+            "line": 94,
+            "instruction": "cvt.s64.s32 \t%rd96, %r165;"
+          },
+          {
+            "line": 127,
+            "instruction": "mad.lo.s64 \t%rd115, %rd83, %rd77, %rd80;"
+          },
+          {
+            "line": 62,
+            "instruction": "cvt.u64.u32 \t%rd80, %r160;"
+          },
+          {
+            "line": 56,
+            "instruction": "cvt.u64.u32 \t%rd77, %r159;"
+          },
+          {
+            "line": 72,
+            "instruction": "cvt.s64.s32 \t%rd83, %r164;"
+          },
+          {
+            "line": 64,
+            "instruction": "ld.param.b64 \t%rd82, [_packed_scores_kernel_param_5];"
+          }
+        ],
+        "root_pointer_parameters": [
+          "_packed_scores_kernel_param_5"
+        ],
+        "interpretation": "Only score OUT (parameter 5) global store; no separate full-prefix BF16 key-cache global store in this entry."
+      },
+      "compiler_shared_bytes": 16384
+    }
+  ],
+  "cpu1_comparison": {
+    "audit_path": "measurements/dsv41_packed_index_20260910/aot-cpu1/ptx-audit.json",
+    "audit_sha256": "bc8f7d50bd71b1abc0413b6ff7407cfac9364b404ce6a250a7cdf407a2cd73e8",
+    "source_revision": "7d3797f1e7e3c6a5c4828c4677b537abed157c3b",
+    "variants": [
+      {
+        "label": "H8-dense",
+        "scale_static_load_instructions": {
+          "cpu1": 32,
+          "cpu2": 1
+        },
+        "scale_distinct_address_operands": {
+          "cpu1": 4,
+          "cpu2": 1
+        },
+        "scale_same_operand_repetition_histogram": {
+          "cpu1": {
+            "8": 4
+          },
+          "cpu2": {
+            "1": 1
+          }
+        },
+        "payload_static_load_instructions": {
+          "cpu1": 32,
+          "cpu2": 32
+        },
+        "mma_count_unchanged": true,
+        "bf16_boundary_opcodes_and_counts_unchanged": true,
+        "output_global_store_count_unchanged": true,
+        "compiler_shared_bytes_unchanged": true
+      },
+      {
+        "label": "H8-compact",
+        "scale_static_load_instructions": {
+          "cpu1": 32,
+          "cpu2": 1
+        },
+        "scale_distinct_address_operands": {
+          "cpu1": 4,
+          "cpu2": 1
+        },
+        "scale_same_operand_repetition_histogram": {
+          "cpu1": {
+            "8": 4
+          },
+          "cpu2": {
+            "1": 1
+          }
+        },
+        "payload_static_load_instructions": {
+          "cpu1": 32,
+          "cpu2": 32
+        },
+        "mma_count_unchanged": true,
+        "bf16_boundary_opcodes_and_counts_unchanged": true,
+        "output_global_store_count_unchanged": true,
+        "compiler_shared_bytes_unchanged": true
+      },
+      {
+        "label": "H32-dense",
+        "scale_static_load_instructions": {
+          "cpu1": 32,
+          "cpu2": 1
+        },
+        "scale_distinct_address_operands": {
+          "cpu1": 4,
+          "cpu2": 1
+        },
+        "scale_same_operand_repetition_histogram": {
+          "cpu1": {
+            "8": 4
+          },
+          "cpu2": {
+            "1": 1
+          }
+        },
+        "payload_static_load_instructions": {
+          "cpu1": 32,
+          "cpu2": 32
+        },
+        "mma_count_unchanged": true,
+        "bf16_boundary_opcodes_and_counts_unchanged": true,
+        "output_global_store_count_unchanged": true,
+        "compiler_shared_bytes_unchanged": true
+      },
+      {
+        "label": "H32-compact",
+        "scale_static_load_instructions": {
+          "cpu1": 32,
+          "cpu2": 1
+        },
+        "scale_distinct_address_operands": {
+          "cpu1": 4,
+          "cpu2": 1
+        },
+        "scale_same_operand_repetition_histogram": {
+          "cpu1": {
+            "8": 4
+          },
+          "cpu2": {
+            "1": 1
+          }
+        },
+        "payload_static_load_instructions": {
+          "cpu1": 32,
+          "cpu2": 32
+        },
+        "mma_count_unchanged": true,
+        "bf16_boundary_opcodes_and_counts_unchanged": true,
+        "output_global_store_count_unchanged": true,
+        "compiler_shared_bytes_unchanged": true
+      }
+    ],
+    "interpretation": "Every entry reduces static scale ld.global.b8 instructions from 32 to 1. Payload loads remain 32. This counts PTX instruction sites, not physical bytes or transactions; no HBM traffic, SASS or speed reduction is inferred."
+  },
+  "limits": [
+    "PTX instruction counts are static, not executed instruction or memory-transaction measurements. Cache/coalescing effects, broadcast communication cost and cross-thread duplication are unmeasured.",
+    "Integer bit-dequant and BF16 rounding instructions are retained by code generation; this does not validate actual GPU results, official TileLang producer byte compatibility, nonfinite behavior, reductions, ties or end-to-end model equivalence.",
+    "Compiler shared memory is reported, not measured occupancy or performance. No SASS disassembly or runtime analysis is included."
+  ]
+}

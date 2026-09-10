@@ -10,3 +10,6 @@ dsv41_compressor.py	vllm/models/dsv41/dsv41_compressor.py	absent
 dsv41_rope.py	vllm/models/dsv41/dsv41_rope.py	absent
 dsv41_loader.py	vllm/models/dsv41/dsv41_loader.py	absent
 dsv41_sparse_contract.py	vllm/models/dsv41/dsv41_sparse_contract.py	absent
+dsv41_packed_index.py	vllm/models/dsv41/dsv41_packed_index.py	absent
+dsv41_packed_index_triton.py	vllm/models/dsv41/dsv41_packed_index_triton.py	absent
+dsv41_packed_reference_adapter.py	vllm/models/dsv41/dsv41_packed_reference_adapter.py	absent
