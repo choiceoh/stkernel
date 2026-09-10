@@ -16,7 +16,7 @@ from test_glm53_ep_tiled_proof import receipt, log
 from test_onepass_speculation_proof import BOOT, command
 
 KNOB = 'VLLM_GLM53_EP_DECODE_OPT'
-TAG = 'glm53_ep_static_sf6_q1_pair_v4'
+TAG = 'glm53_ep_static_sf6_q1_register_max_v5'
 
 
 def optimized_receipt():
@@ -83,13 +83,24 @@ class DecodeOptimizationProofTests(unittest.TestCase):
             changed=copy.deepcopy(record); mutate(changed)
             self.assertFalse(proof._startup_proof(KNOB, log(changed)))
         self.assertFalse(proof._startup_proof(KNOB, log()))
-        for stale_tag in ('glm53_ep_static_sf6_fc1_register_v2',
+        for stale_tag in ('glm53_ep_static_sf6_q1_pair_v4',
+                          'glm53_ep_static_sf6_fc1_register_v2',
                           'glm53_ep_static_sf6_fc2_out_of_place_v1'):
             changed=copy.deepcopy(record)
             for case in changed['cases']:
                 if case['rows'] <= 8:
                     case['cache_evidence']['keys'] = [
                         key.replace(TAG, stale_tag) for key in case['cache_evidence']['keys']]
+            self.assertFalse(proof._startup_proof(KNOB, log(changed)))
+
+        # A mixed cache generation cannot pass because the other native
+        # shapes used the new kernel: every low-row lane must carry v5.
+        for rows in (4, 6, 8):
+            changed = copy.deepcopy(record)
+            case = next(case for case in changed['cases'] if case['rows'] == rows)
+            case['cache_evidence']['keys'] = [
+                key.replace(TAG, 'glm53_ep_static_sf6_q1_pair_v4')
+                for key in case['cache_evidence']['keys']]
             self.assertFalse(proof._startup_proof(KNOB, log(changed)))
 
     def test_full_candidate_needs_both_kernel_and_workload_preparation(self):

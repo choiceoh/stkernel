@@ -414,7 +414,7 @@ class AdmissionTests(unittest.TestCase):
             kwargs = dict(route_mode='global',expert_map_len=288,expert_map_dtype='torch.int32')
             baseline = decode.native_key(rows,decode_opt=False,**kwargs)
             selected = decode.native_key(rows,**kwargs)
-            self.assertEqual(selected, baseline + (('glm53_ep_static_sf6_q1_pair_v4',)
+            self.assertEqual(selected, baseline + (('glm53_ep_static_sf6_q1_register_max_v5',)
                                                    if rows <= 8 else ()))
             decode._EP_TILED_KERNEL_CACHE = {baseline:object()}
             if rows <= 8:
@@ -425,7 +425,8 @@ class AdmissionTests(unittest.TestCase):
             self.assertEqual(evidence['keys'],[repr(selected)])
             self.assertIs(evidence['decode_opt'],rows<=8)
             if rows <= 8:
-                for stale_tag in ('glm53_ep_static_sf6_fc1_register_v2',
+                for stale_tag in ('glm53_ep_static_sf6_q1_pair_v4',
+                                  'glm53_ep_static_sf6_fc1_register_v2',
                                   'glm53_ep_static_sf6_fc2_out_of_place_v1'):
                     decode._EP_TILED_KERNEL_CACHE = {baseline + (stale_tag,): object()}
                     with self.assertRaises(AssertionError):

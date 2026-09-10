@@ -64,6 +64,7 @@ CONTRACT_PATHS = (
     'measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz',
     'measurements/glm53_ep_tiled_20260909/ep76_onepass1/source/moe_static_ep_tiled.py.gz',
     'measurements/glm53_ep_tiled_20260909/ep76_onepass3/source/moe_static_ep_tiled.py.gz',
+    'measurements/glm53_ep_tiled_20260909/ep76_onepass4/source/moe_static_ep_tiled.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz',
     'measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json',
 ) + tuple('tests/' + name for name in CPU_TESTS)
@@ -167,7 +168,7 @@ def opt_static_specialization(case, key, a_ring, word_unpack, scatter_bf16,
     """An optimized artifact preserves the old ABI and fits one resident CTA."""
     name, rows, mode = case
     assert case in OPT_STATIC_CASES
-    assert key[-1] == 'glm53_ep_static_sf6_q1_pair_v4'
+    assert key[-1] == 'glm53_ep_static_sf6_q1_register_max_v5'
     assert decode_opt is True and type(storage_bytes) is int and storage_bytes == 98304
     if mode == 'global':
         original = next(item for item in GLOBAL_STATIC_CASES if item[0] == name)
@@ -195,43 +196,54 @@ def opt_shared_capacity(passed):
                 total_bytes=dynamic_bytes+static_bytes, block_limit_bytes=101376)
 
 
-def opt_q1_pair_layout(kernel, key):
-    """Bind the actual CuTe physical-address witness and selected math mode."""
-    assert kernel.ep_decode_opt is True and kernel.ep_q1_pair_layout_proven is True
+def opt_q1_register_layout(kernel, key):
+    """Bind the actual CuTe partition_D/flat-register and physical-address witness."""
+    assert kernel.ep_decode_opt is True and kernel.ep_q1_register_layout_proven is True
     assert type(kernel.fast_math) is bool and kernel.fast_math is key[6]
-    return validate_q1_pair_layout(kernel.ep_q1_pair_layout_receipt, fast_math=kernel.fast_math)
+    assert key[-1] == 'glm53_ep_static_sf6_q1_register_max_v5'
+    return validate_q1_register_layout(kernel.ep_q1_register_layout_receipt,
+                                       fast_math=kernel.fast_math)
 
 
-def validate_q1_pair_layout(receipt, *, fast_math):
-    """Validate transported layout evidence; actual address equality is checked by CuTe setup.
+def validate_q1_register_layout(receipt, *, fast_math):
+    """Validate transported evidence produced by the source-bound CuTe setup guard.
 
     selected describes the compiled R<=8 branch, not a runtime branch counter.
-    The per-row digests preserve the real coordinate/address and thread-ownership
-    witnesses. Their hash format and counts do not replace the source-bound host
-    layout guard, startup numerics, or the canonical onepass execution proof.
+    The source mapping is obtained from actual identity partition_D and dense
+    register indices. Per-row digests preserve max scratch load/store ownership
+    and scalar-equivalent packed/scale addresses. Format/count checks alone do
+    not prove those mappings, GPU numerics, or execution in a timed request.
     """
     assert type(fast_math) is bool
     fixed = dict(proven=True, selected=True, math_mode='fast' if fast_math else 'precise',
-                 threads=128, subgroup_threads=2, max_rows=8, sf_values=16, stage=0,
-                 shuffle_collectives=3, shuffle_threads=128, consumer_layout_matches=True)
-    assert type(receipt) is dict and set(receipt) == set(fixed) | {'element_bits', 'layouts', 'rows'}
+                 threads=128, subgroup_threads=4, partner_warp_xor=2, max_rows=8,
+                 scratch_bytes=512, sc1_capacity_bytes=4096, source_values=2048,
+                 source_element_bits=16, max_shuffle_collectives=8,
+                 quant_shuffle_collectives=8)
+    assert type(receipt) is dict and set(receipt) == set(fixed) | {
+        'source_mapping_sha256', 'copy_shapes', 'layout', 'rows'}
     assert all(type(receipt[k]) is type(value) and receipt[k] == value for k, value in fixed.items())
-    bits = dict(sc1=16, a2=4, sfa2=8)
-    assert type(receipt['element_bits']) is dict and set(receipt['element_bits']) == set(bits)
-    assert all(type(receipt['element_bits'][k]) is int and receipt['element_bits'][k] == v for k,v in bits.items())
-    layouts = receipt['layouts']
-    assert type(layouts) is dict and set(layouts) == set(bits)
-    for value in layouts.values():
-        assert type(value) is dict and set(value) == {'shape', 'stride', 'swizzle'}
-        assert all(type(text) is str and 0 < len(text) <= 4096 for text in value.values())
-    assert layouts['a2']['swizzle'] == '(2, 4, 3)' and layouts['sfa2']['swizzle'] == 'none'
-    rows = receipt['rows']
-    hashes = ('source_sha256', 'packed_sha256', 'scales_sha256', 'ownership_sha256')
-    assert type(rows) is list and len(rows) == 9
+    digest = receipt['source_mapping_sha256']
+    assert type(digest) is str and re.fullmatch('[0-9a-f]{64}', digest)
     empty_digest = hashlib.sha256(b'[]').hexdigest()
+    assert digest != empty_digest
+    shapes = receipt['copy_shapes']
+    assert type(shapes) is list and shapes
+    assert all(type(value) is str and 0 < len(value) <= 4096 for value in shapes)
+    assert shapes == sorted(set(shapes))
+    layout = receipt['layout']
+    assert type(layout) is dict and set(layout) == {
+        'sc1_shape', 'sc1_stride', 'sc1_swizzle', 'a2_shape', 'a2_stride',
+        'a2_swizzle', 'sfa2_shape', 'sfa2_stride'}
+    assert all(type(value) is str and 0 < len(value) <= 4096 for value in layout.values())
+    assert layout['a2_swizzle'] == '(2, 4, 3)'
+    rows = receipt['rows']
+    hashes = ('max_stores_sha256', 'max_loads_sha256', 'packed_sha256',
+              'scales_sha256', 'ownership_sha256')
+    assert type(rows) is list and len(rows) == 9
     for r, row in enumerate(rows):
-        counts = dict(rows=r, active_pairs=r*8, sc1_elements=r*128, sc1_bytes=r*256,
-                      a2_bytes=r*64, sfa2_bytes=r*8, scale_owners=r*8)
+        counts = dict(rows=r, max_store_bytes=r*64, max_load_bytes=r*64,
+                      a2_bytes=r*64, sfa2_bytes=r*8, source_values=r*128)
         assert type(row) is dict and set(row) == set(counts) | set(hashes)
         assert all(type(row[k]) is int and row[k] == value for k,value in counts.items())
         assert all(type(row[k]) is str and re.fullmatch('[0-9a-f]{64}', row[k]) for k in hashes)
@@ -334,6 +346,10 @@ def compile_candidate(output, result):
                 topk_ids_dtype=integer_types[args[1].element_type],
                 expert_map_operand_dtype=integer_types[args[30].element_type],
                 expert_map_operand_shape=list(args[30].shape), compile_argument_count=len(args))
+        # A fresh compile must generate the actual layout witness. Constructor
+        # flags or a previous receipt must not stand in for CuTe partition_D.
+        assert not hasattr(kernel, 'ep_q1_register_layout_proven')
+        assert not hasattr(kernel, 'ep_q1_register_layout_receipt')
         cute.compile(kernel, *args, options='--opt-level 2 --enable-tvm-ffi')
         selected = opt_static_specialization(case, key, kernel.a_ring, kernel.word_unpack,
             kernel.scatter_bf16, output_types[args[21].element_type], route,
@@ -342,7 +358,7 @@ def compile_candidate(output, result):
         passed = preserve_pass(output, 'opt-static/' + name, key)
         passed['specialization'] = selected
         passed['shared_capacity'] = opt_shared_capacity(passed)
-        passed['q1_pair_layout'] = opt_q1_pair_layout(kernel, key)
+        passed['q1_register_layout'] = opt_q1_register_layout(kernel, key)
         result['opt_static_passes'].append(passed)
         assert not torch.cuda.is_initialized()
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md

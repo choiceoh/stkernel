@@ -57,6 +57,45 @@ fixed-1024 x3 decode >=76 tok/s, with the existing quality and direct
 the same-source EP baseline. Original cold-compile classifications and
 single-request long-prefill limitations remain visible.
 
+The current candidate targets the BF16 activation staging before Q1 for
+SF6 M1..8 with at most eight actual expert rows. It retains those BF16-rounded
+values in the original FC1 output registers, exchanging only per-half maxima
+through512 bytes of the existing sC1 storage. Four-lane subgroups compute
+eight-value maxima; the original publication barrier makes both warp halves
+visible. Each half leader joins the maxima and applies the original scale
+math, then each lane converts its own pair to the existing FP4 layout.
+One half owns the scale byte. Larger actual expert-row counts retain the
+full scalar staging path.
+
+The cache tag is `glm53_ep_static_sf6_q1_register_max_v5`. The actual CuTe
+setup must prove the r2s `partition_D` coordinates and flat BF16 register
+indices agree, then verify max-scratch and packed/scale ownership for R0..8.
+A source-bound `q1_register_layout` receipt replaces the earlier pair-layout
+receipt. Peer-max loads explicitly use volatile shared reads with side effects
+so persistent items cannot reuse a prior item's value through compiler CSE.
+The accepted FC1/FC2 SF6 expansions and all existing barriers remain.
+
+For R8, the affected shared staging accounts for6144→1024 bytes per tile;
+this is an instruction/byte budget, not a timing forecast. The path adds
+four live F32 values per thread, duplicates scale work across two half leaders
+and uses16 Q1 shuffles versus the preceding pair path's3. Actual compiler
+resources, GPU numerics and throughput must decide whether those costs win.
+This register-max path has not yet completed CPU admission or GPU measurement.
+
+Preparation keeps its first-use and every-64-step stock comparison. On
+the candidate's C=1/K5 verification steps it compares the cloned fused
+preimage directly with live stock views, eliminating only the second
+snapshot clone. Successful verification emits fresh workload checkpoints;
+turning the switch on alone does not prove this optimization ran.
+
+Both arms explicitly require EP and PREP proof even when their knob delta
+is empty. Candidate proof additionally requires the new native cache keys,
+unchanged large-shape selection and fresh verified clone-elimination
+checkpoints. The CPU gate includes the baseline's 19 lowerings plus four
+optimized local/global lowerings.
+
+### Q1 pair result (2026-09-10)
+
 The measured Q1 pair candidate restores the accepted in-place FC1 SF6 expansion and
 targets Q1, the FP4 conversion between FC1 and FC2. For at most eight valid
 expert rows, two adjacent warp lanes share each16-value scale block: each
@@ -72,22 +111,8 @@ existing selection. CuTe setup must verify the actual sC1, packed A2 and
 SFA2 physical addresses, unique writes and single scale owner for R0..8.
 The source-bound CPU receipt records those layouts and coordinate digests
 and verifies the actual selected math mode before and after transfer.
-The Q1 pair result below remains below the absolute target. The rejected
-FC1 register result belongs to the preceding, separately keyed implementation.
+This historical pair implementation is distinct from the current register-max path.
 
-Preparation keeps its first-use and every-64-step stock comparison. On
-the candidate's C=1/K5 verification steps it compares the cloned fused
-preimage directly with live stock views, eliminating only the second
-snapshot clone. Successful verification emits fresh workload checkpoints;
-turning the switch on alone does not prove this optimization ran.
-
-Both arms explicitly require EP and PREP proof even when their knob delta
-is empty. Candidate proof additionally requires the new native cache keys,
-unchanged large-shape selection and fresh verified clone-elimination
-checkpoints. The CPU gate includes the baseline's 19 lowerings plus four
-optimized local/global lowerings.
-
-### Q1 pair result (2026-09-10)
 
 Frozen source `4618859c90131b33c5d9ebd85a67f1537497a357`, session
 `epdecode76onepass0910v4`, completed B→A at13:05:11 KST with terminal rc0.

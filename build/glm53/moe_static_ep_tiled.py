@@ -19,7 +19,7 @@ That geometry restores four SF6 bytes per integer word, with the original
 volatile reads, in-place ownership and both expansion barriers unchanged.
 It also uses stock BF16 atomic scatter directly into the caller's BF16 output;
 raw modes and M9..32 retain the separate FP32 accumulation/output conversion.
-The separately keyed decode_opt experiment uses two lanes for each 16-value Q1
+The separately keyed decode_opt experiment exchanges only two F32 maxima per 16-value Q1
 block when at most eight expert rows are valid. It retains the original fast or
 precise scale arithmetic and the stock in-place FC1/FC2 SF6 paths and barriers.
 """
@@ -35,7 +35,7 @@ import cutlass.pipeline as pipeline
 import cutlass.utils as utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
 
-from cutlass.cutlass_dsl import Float32, Int32, Int64, Uint8, Uint32, Uint64, dsl_user_op
+from cutlass.cutlass_dsl import Float32, Int32, Int64, Uint8, Uint32, Uint64, T, dsl_user_op
 from cutlass._mlir.dialects import llvm
 from cutlass.cute.nvgpu import cpasync
 
@@ -124,7 +124,7 @@ EP_TILED_A_RING_CACHE_TAG = "glm53_ep_static_sf6_a_ring_v1"
 EP_TILED_SF6_WORD_CACHE_TAG = "glm53_ep_static_sf6_word_unpack_v1"
 EP_TILED_BF16_SCATTER_CACHE_TAG = "glm53_ep_static_bf16_scatter_v1"
 EP_TILED_ROUTE_CACHE_TAG = "glm53_ep_static_fused_route_v1"
-EP_TILED_DECODE_OPT_CACHE_TAG = "glm53_ep_static_sf6_q1_pair_v4"
+EP_TILED_DECODE_OPT_CACHE_TAG = "glm53_ep_static_sf6_q1_register_max_v5"
 _EP_TILED_DECODE_OPT = os.environ.get("VLLM_GLM53_EP_DECODE_OPT", "0").strip() == "1"
 
 
@@ -248,6 +248,28 @@ def scatter_add_v4_bf16x2_to_f32(addr, v0, v1, v2, v3, v4, v5, v6, v7,
     )
 
 
+@dsl_user_op
+def _ep_q1_ld_peer_max(addr, *, loc=None, ip=None):
+    # The same raw scratch slot is overwritten by every persistent item.
+    # A pure inline-asm load would permit CSE/hoisting across those writes.
+    return Float32(llvm.inline_asm(
+        T.f32(), [Int32(addr).ir_value(loc=loc, ip=ip)],
+        "ld.volatile.shared.f32 $0, [$1];", "=f,r",
+        has_side_effects=True, is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT, loc=loc, ip=ip))
+
+
+@dsl_user_op
+def _ep_q1_cvt_pair(v0, v1, *, loc=None, ip=None):
+    # Exactly one independent byte conversion from pinned cvt_e2m1x8_f32:
+    # high input first, low input second; no new rounding or saturation mode.
+    return Uint32(llvm.inline_asm(
+        T.i32(), [Float32(v0).ir_value(loc=loc, ip=ip), Float32(v1).ir_value(loc=loc, ip=ip)],
+        "{ .reg .b8 pair; cvt.rn.satfinite.e2m1x2.f32 pair, $2, $1; cvt.u32.u8 $0, pair; }",
+        "=r,f,f", has_side_effects=False, is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT, loc=loc, ip=ip))
+
+
 class MoEStaticEPTiledKernel(MoEStaticKernelV5):
     """Same 160-thread TP producer/consumer geometry, EP-local routing only."""
     def __init__(self, *, num_tokens, max_rows, max_active_clusters,
@@ -286,15 +308,15 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
             self._check_ep_q1_geometry()
 
     def _check_ep_q1_geometry(self):
-        # Ordinary host setup assertion. Each warp-local pair owns one
-        # 16-value block; R<=8 bounds the native path to at most 64 pairs.
+        # Ordinary host setup assertion. Two warps share each scale block.
+        # Only their half maxima cross warps, through 512 bytes of sC1.
         if (not self.decode_reform or not self.reform_sf_pack
                 or self.tile_m != 16 or self.fc1_tile_n != 128
                 or self.sf_vec_size != 16 or self.fc1_halves != 1
                 or self.num_mma_warps != 4 or self.num_threads_per_warp != 32):
             raise ValueError("EP Q1 pair geometry mismatch")
-        self.ep_q1_pair_geometry_proven = True
-        self.ep_q1_pair_geometry = dict(mma_threads=128, subgroup_threads=2,
+        self.ep_q1_register_geometry_proven = True
+        self.ep_q1_register_geometry = dict(mma_threads=128, subgroup_threads=4,
             sf_values=16, max_rows=8, max_blocks=64, fc1_tile_n=128,
             source='accepted_in_place_fc1')
 
@@ -334,163 +356,181 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                 enabled = Int32(1)
         return inv_scale, scale_byte, enabled
 
-    @cute.jit
-    def _ep_q1_quantize_eight(self, values, inv_scale):
-        q = cute.make_rmem_tensor((8,), Float32)
-        for i in cutlass.range_constexpr(8):
-            q[i] = values[i] * inv_scale
-        return cvt_e2m1x8_f32(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7])
+
 
     @cute.jit
-    def _ep_q1_pair(self, sC1, epi_rows, sf_blocks_per_half, h, tidx,
-                    gs_value, a2_base_addr, a2_smem_layout, sfa2_base_addr):
-        # One warp-local adjacent pair per 16-value block. All 128 MMA
-        # threads execute every shuffle, including inactive pairs; only
-        # memory reads/writes and lane-zero scale work are predicated.
-        pair_index = Int32(tidx) // Int32(2)
-        pair_lane = Int32(tidx) & Int32(1)
-        warp_lane = Int32(tidx) & Int32(31)
-        valid_pair = pair_index < epi_rows * sf_blocks_per_half
-        local_row = pair_index // sf_blocks_per_half
-        sfb_local = pair_index - local_row * sf_blocks_per_half
-        sf_block = Int32(h) * sf_blocks_per_half + sfb_local
-        block_start = sfb_local * Int32(16)
-        values = cute.make_rmem_tensor((8,), Float32)
-        half_max = Float32(0.0)
-        if valid_pair:
-            for elem_idx in cutlass.range_constexpr(8):
-                value = Float32(sC1[local_row,
-                    block_start + pair_lane * Int32(8) + elem_idx, 0])
-                values[elem_idx] = value
-                half_max = fmax_f32(half_max, fabs_f32(value))
-        other_max = cute.arch.shuffle_sync(half_max, warp_lane ^ Int32(1))
-        block_max = fmax_f32(half_max, other_max)
-        inv_scale = Float32(0.0)
-        scale_byte = Uint8(0)
-        enabled = Int32(0)
-        if valid_pair and pair_lane == Int32(0):
-            if cutlass.const_expr(self.fast_math):
-                inv_scale, scale_byte, enabled = self._ep_q1_scale_fast(block_max, gs_value)
-            else:
-                inv_scale, scale_byte, enabled = self._ep_q1_scale(block_max, gs_value)
-        # Explicit warp lane index, not thread-block index. Paired lanes
-        # reconverge here before broadcasting the precise scalar result.
-        leader_lane = warp_lane & Int32(30)
-        inv_scale = cute.arch.shuffle_sync(inv_scale, leader_lane)
-        enabled = cute.arch.shuffle_sync(enabled, leader_lane)
-        if valid_pair:
-            packed_half = Uint32(0)
-            if enabled != Int32(0):
-                packed_half = self._ep_q1_quantize_eight(values, inv_scale)
-            packed_base = sf_block * Int32(8) + pair_lane * Int32(4)
-            for byte_idx in cutlass.range_constexpr(4):
-                src_pcol = packed_base + Int32(byte_idx)
-                byte_val = Uint8((packed_half >> Uint32(byte_idx * 8)) & Uint32(0xFF))
-                fp4_offset = cute.crd2idx((local_row, src_pcol * Int32(2), 0),
-                                        a2_smem_layout.outer)
-                byte_offset = fp4_offset // Int32(2)
-                byte_offset = byte_offset ^ ((byte_offset >> Int32(3)) & Int32(0x30))
-                st_shared_u8(a2_base_addr + byte_offset, byte_val)
-            if pair_lane == Int32(0):
-                outer_m_idx = local_row % Int32(32)
-                inner_m_idx = local_row // Int32(32)
-                inner_k_idx = sf_block % Int32(4)
-                k_tile_idx = sf_block // Int32(4)
-                sf_raw_idx = (k_tile_idx * Int32(32 * 4 * 4)
-                    + outer_m_idx * Int32(4 * 4)
-                    + inner_m_idx * Int32(4) + inner_k_idx)
-                st_shared_u8(sfa2_base_addr + sf_raw_idx, scale_byte)
+    def _ep_q1_register_max(self, values_bf16, half_maxima, epi_rows, tidx, scratch):
+        lane = Int32(tidx) & Int32(31)
+        warp = Int32(tidx) // Int32(32)
+        row = lane // Int32(4)
+        group_lane = lane & Int32(3)
+        half = warp // Int32(2)
+        for k in cutlass.range_constexpr(4):
+            block = Int32(2 * k) + (warp & Int32(1))
+            local_max = Float32(0.0)
+            if row < epi_rows:
+                local_max = fmax_f32(local_max, fabs_f32(Float32(values_bf16[4 * k])))
+                local_max = fmax_f32(local_max, fabs_f32(Float32(values_bf16[4 * k + 1])))
+            other = cute.arch.shuffle_sync(local_max, lane ^ Int32(1))
+            local_max = fmax_f32(local_max, other)
+            other = cute.arch.shuffle_sync(local_max, lane ^ Int32(2))
+            local_max = fmax_f32(local_max, other)
+            half_maxima[k] = local_max
+            if row < epi_rows and group_lane == Int32(0):
+                slot = ((row * Int32(8) + block) * Int32(2) + half) * Int32(4)
+                _st_shared_f32(scratch + slot, local_max)
 
-    def _check_ep_q1_layout(self, sc1, a2, sfa2):
-        # Ordinary host/CuTe specialization: use actual static consumer layouts.
-        # A pointer swizzle acts on byte offsets, after FP4 nibble-to-byte conversion.
+    @cute.jit
+    def _ep_q1_register_quantize(self, values_bf16, half_maxima, epi_rows,
+                               tidx, gs_value, scratch, a2_base_addr,
+                               a2_smem_layout, sfa2_base_addr):
+        lane = Int32(tidx) & Int32(31)
+        warp = Int32(tidx) // Int32(32)
+        row = lane // Int32(4)
+        group_lane = lane & Int32(3)
+        half = warp // Int32(2)
+        for k in cutlass.range_constexpr(4):
+            block = Int32(2 * k) + (warp & Int32(1))
+            inv_scale = Float32(0.0)
+            scale_byte = Uint8(0)
+            enabled = Int32(0)
+            if row < epi_rows and group_lane == Int32(0):
+                slot = ((row * Int32(8) + block) * Int32(2)
+                        + (half ^ Int32(1))) * Int32(4)
+                peer_max = _ep_q1_ld_peer_max(scratch + slot)
+                block_max = fmax_f32(half_maxima[k], peer_max)
+                if cutlass.const_expr(self.fast_math):
+                    inv_scale, scale_byte, enabled = self._ep_q1_scale_fast(block_max, gs_value)
+                else:
+                    inv_scale, scale_byte, enabled = self._ep_q1_scale(block_max, gs_value)
+            inv_scale = cute.arch.shuffle_sync(inv_scale, lane & Int32(28))
+            enabled = cute.arch.shuffle_sync(enabled, lane & Int32(28))
+            if row < epi_rows:
+                packed_byte = Uint8(0)
+                if enabled != Int32(0):
+                    v0 = Float32(values_bf16[4 * k]) * inv_scale
+                    v1 = Float32(values_bf16[4 * k + 1]) * inv_scale
+                    packed_byte = Uint8(_ep_q1_cvt_pair(v0, v1))
+                col = block * Int32(16) + half * Int32(8) + group_lane * Int32(2)
+                nibble = cute.crd2idx((row, col, 0), a2_smem_layout.outer)
+                byte = nibble // Int32(2)
+                byte = byte ^ ((byte >> Int32(3)) & Int32(0x30))
+                st_shared_u8(a2_base_addr + byte, packed_byte)
+                if group_lane == Int32(0) and half == Int32(0):
+                    sf = (block // Int32(4)) * Int32(512) + row * Int32(16) + block % Int32(4)
+                    st_shared_u8(sfa2_base_addr + sf, scale_byte)
+
+
+    def _check_ep_q1_register_layout(self, tiled_mma1, sc1, a2, sfa2):
+        # Ordinary CuTe setup only. This witness must run in the real compiler;
+        # pure mock tests below do not establish the actual partition layout.
         import hashlib
         import json
-        if (not self.ep_q1_pair_geometry_proven or self.a_dtype.width != 4
-                or self.sf_dtype.width != 8):
-            raise ValueError("EP Q1 physical layout element ABI mismatch")
+        if (not self.ep_q1_register_geometry_proven or self.a_dtype.width != 4
+                or self.sf_dtype.width != 8 or self.buffer_align_bytes % 1024):
+            raise ValueError("EP register Q1 geometry/element/alignment mismatch")
+        def digest(x):
+            return hashlib.sha256(json.dumps(x, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         def index(layout, coord):
             value = cute.crd2idx(coord, layout)
             if type(value) is not int or value < 0:
-                raise ValueError("EP Q1 physical coordinate is not static/nonnegative")
+                raise ValueError("EP register Q1 coordinate is not a static nonnegative integer")
             return value
-        def swizzle_params(layout):
-            values = (layout.inner.num_bits, layout.inner.num_base, layout.inner.num_shift)
-            if (any(type(v) is not int or v < 0 for v in values)
+        def params(layout):
+            value = (layout.inner.num_bits, layout.inner.num_base, layout.inner.num_shift)
+            if (any(type(v) is not int or v < 0 for v in value)
                     or type(layout.offset) is not int or layout.offset != 0
-                    or self.buffer_align_bytes % (1 << sum(values)) != 0):
-                raise ValueError("EP Q1 pointer swizzle/base alignment is unsupported")
-            return values
-        csw, asw = swizzle_params(sc1), swizzle_params(a2)
-        if asw != (2, 4, 3) or csw[1] < 1:
-            raise ValueError("EP Q1 byte swizzle differs from accepted writer")
-        def swizzle(offset, params):
-            bits, base, shift = params
-            return offset ^ ((offset >> shift) & (((1 << bits) - 1) << base))
-        capacities = (cute.cosize(sc1.outer) * 2,
-                      (cute.cosize(a2.outer) + 1) // 2, cute.cosize(sfa2))
-        if any(type(n) is not int or n <= 0 for n in capacities):
-            raise ValueError("EP Q1 allocation extent is not static")
-        def source(row, col):
-            return swizzle(index(sc1.outer, (row, col, 0)) * 2, csw)
-        def packed(row, col):
-            nibble = index(a2.outer, (row, col * 2, 0))
-            if nibble % 2:
-                raise ValueError("EP Q1 packed pair crosses a physical byte")
-            byte = nibble // 2
-            actual = swizzle(byte, asw)
-            if actual != byte ^ ((byte >> 3) & 0x30):
-                raise ValueError("EP Q1 writer and consumer A2 address disagree")
-            return actual
-        def scale(row, block):
-            accepted = (block // 4) * 512 + (row % 32) * 16 + (row // 32) * 4 + block % 4
-            if any(index(sfa2, (row, block * 16 + i, 0)) != accepted for i in range(16)):
-                raise ValueError("EP Q1 writer and consumer SFA2 address disagree")
-            return accepted
-        def digest(records):
-            return hashlib.sha256(json.dumps(records, sort_keys=True,
-                separators=(",", ":")).encode()).hexdigest()
-        rows = []
+                    or self.buffer_align_bytes % (1 << sum(value))):
+                raise ValueError("EP register Q1 pointer swizzle unsupported")
+            return value
+        csw, asw = params(sc1), params(a2)
+        if asw != (2,4,3):
+            raise ValueError("EP register Q1 A2 pointer swizzle mismatch")
+        def swizzle(n, p):
+            bits, base, shift = p
+            return n ^ ((n >> shift) & (((1 << bits) - 1) << base))
+        capacity = cute.cosize(sc1.outer) * 2
+        if type(capacity) is not int or capacity != 4096:
+            raise ValueError("EP register Q1 requires the original 4096-byte sC1 allocation")
+        atom = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), cutlass.BFloat16)
+        matrix_atom = cute.make_copy_atom(
+            cute.nvgpu.warp.StMatrix8x8x16bOp(self.c_layout.is_m_major_c(), 2), cutlass.BFloat16)
+        copier = cute.make_tiled_copy_S(atom, cute.make_tiled_copy_C_atom(matrix_atom, tiled_mma1))
+        identity = cute.make_identity_tensor((16,128,1))
+        all_coords, physical, register_map = [], [], []
+        copied_shapes = set()
+        for tid in range(128):
+            thread = copier.get_slice(tid)
+            dst = thread.partition_D(identity)[None,None,None,0]
+            src_shape = cute.shape(thread.partition_S(identity))[:3]
+            if cute.shape(dst) != src_shape or cute.size(dst) != 16:
+                raise ValueError("EP register Q1 copy source/destination shape differs")
+            dense = cute.make_layout(src_shape)
+            lane, warp = tid % 32, tid // 32
+            copied_shapes.add(str(src_shape))
+            for i in range(16):
+                point = tuple(dst[i])
+                k, rem = divmod(i,4);j,e = divmod(rem,2)
+                expected = (lane//4+8*j,2*(lane%4)+16*(warp%2)+8*(warp//2)+32*k+e,0)
+                if (any(type(v) is not int for v in point) or point != expected
+                        or index(dense,i) != i):
+                    raise ValueError("EP register Q1 actual r2s/rmem ownership differs from formula")
+                row,col,_ = point
+                byte = swizzle(index(sc1.outer,point)*2,csw)
+                all_coords.append((row,col));physical.extend((byte,byte+1))
+                register_map.append((tid,i,row,col,byte))
+        if (sorted(all_coords) != [(r,c) for r in range(16) for c in range(128)]
+                or len(set(physical)) != 4096 or any(n < 0 or n >= capacity for n in physical)):
+            raise ValueError("EP register Q1 r2s mapping is incomplete/aliased")
+        rows=[]
         for r in range(9):
-            sources, packed_bytes, scales, owners = [], [], [], []
+            stores,loads,packed,scales,owners = [],[],[],[],[]
             for tid in range(128):
-                pair, lane = divmod(tid, 2)
-                if pair >= r * 8:
-                    continue
-                row, block = divmod(pair, 8)
-                load = [(row, block * 16 + lane * 8 + i,
-                         source(row, block * 16 + lane * 8 + i)) for i in range(8)]
-                stores = [(row, block * 8 + lane * 4 + i,
-                           packed(row, block * 8 + lane * 4 + i)) for i in range(4)]
-                sf = [(row, block, scale(row, block))] if lane == 0 else []
-                sources.extend(load);packed_bytes.extend(stores);scales.extend(sf)
-                owners.append((tid, pair, lane, load, stores, sf))
-            sources.sort();packed_bytes.sort();scales.sort()
-            expected_source = [(row, col, source(row, col)) for row in range(r) for col in range(128)]
-            expected_packed = [(row, col, packed(row, col)) for row in range(r) for col in range(64)]
-            expected_scales = [(row, block, scale(row, block)) for row in range(r) for block in range(8)]
-            if (sources != expected_source or packed_bytes != expected_packed
-                    or scales != expected_scales):
-                raise ValueError("EP Q1 pair ownership differs from scalar coordinates")
-            source_bytes = [offset + byte for _, _, offset in sources for byte in range(2)]
-            for values, limit in ((source_bytes, capacities[0]),
-                    ([x[2] for x in packed_bytes], capacities[1]),
-                    ([x[2] for x in scales], capacities[2])):
-                if len(set(values)) != len(values) or any(x < 0 or x >= limit for x in values):
-                    raise ValueError("EP Q1 physical mapping aliases or exceeds allocation")
-            rows.append(dict(rows=r, active_pairs=r*8, sc1_elements=r*128,
-                sc1_bytes=r*256, a2_bytes=r*64, sfa2_bytes=r*8, scale_owners=r*8,
-                source_sha256=digest(sources), packed_sha256=digest(packed_bytes),
-                scales_sha256=digest(scales), ownership_sha256=digest(owners)))
-        self.ep_q1_pair_layout_proven = True
-        self.ep_q1_pair_layout_receipt = dict(proven=True, selected=True,
-            math_mode="fast" if self.fast_math else "precise", threads=128,
-            subgroup_threads=2, max_rows=8, sf_values=16, stage=0,
-            shuffle_collectives=3, shuffle_threads=128, consumer_layout_matches=True,
-            element_bits=dict(sc1=16, a2=4, sfa2=8),
-            layouts=dict(sc1=dict(shape=str(sc1.outer.shape),stride=str(sc1.outer.stride),swizzle=str(csw)),
-                a2=dict(shape=str(a2.outer.shape),stride=str(a2.outer.stride),swizzle=str(asw)),
-                sfa2=dict(shape=str(sfa2.shape),stride=str(sfa2.stride),swizzle="none")), rows=rows)
+                lane,warp=tid%32,tid//32;row=lane//4;group_lane=lane%4;half=warp//2
+                if row >= r:continue
+                for k in range(4):
+                    block=2*k+warp%2;col=16*block+8*half+2*group_lane
+                    nibble=index(a2.outer,(row,col,0))
+                    if nibble%2 or index(a2.outer,(row,col+1,0)) != nibble+1:
+                        raise ValueError("EP register Q1 packed pair is not byte adjacent")
+                    byte=swizzle(nibble//2,asw);packed.append((row,col//2,byte))
+                    if group_lane==0:
+                        stores.append((tid,k,((row*8+block)*2+half)*4))
+                        loads.append((tid,k,((row*8+block)*2+(half^1))*4))
+                        if half==0:
+                            sf=(block//4)*512+row*16+block%4
+                            if any(index(sfa2,(row,block*16+i,0)) != sf for i in range(16)):
+                                raise ValueError("EP register Q1 scale consumer layout differs")
+                            scales.append((row,block,sf))
+                    owners.append((tid,k,row,col,block,half,byte))
+            expected_packed=[(row,col,swizzle(index(a2.outer,(row,col*2,0))//2,asw)) for row in range(r) for col in range(64)]
+            expected_scales=[(row,block,(block//4)*512+row*16+block%4) for row in range(r) for block in range(8)]
+            if sorted(packed)!=expected_packed or sorted(scales)!=expected_scales:
+                raise ValueError("EP register Q1 output ownership differs from scalar")
+            for values, limit in (([x[2] for x in packed], (cute.cosize(a2.outer)+1)//2),
+                                  ([x[2] for x in scales], cute.cosize(sfa2))):
+                if (type(limit) is not int or len(set(values)) != len(values)
+                        or any(n < 0 or n >= limit for n in values)):
+                    raise ValueError("EP register Q1 packed/scale allocation aliases or overflows")
+            sb=[offset+b for _,_,offset in stores for b in range(4)]
+            lb=[offset+b for _,_,offset in loads for b in range(4)]
+            if len(set(sb))!=64*r or sorted(sb)!=sorted(lb) or any(n>=512 for n in sb):
+                raise ValueError("EP register Q1 max scratch ownership is incomplete/aliased")
+            rows.append(dict(rows=r,max_store_bytes=64*r,max_load_bytes=64*r,
+                a2_bytes=64*r,sfa2_bytes=8*r,source_values=128*r,
+                max_stores_sha256=digest(stores),max_loads_sha256=digest(loads),
+                packed_sha256=digest(sorted(packed)),scales_sha256=digest(sorted(scales)),ownership_sha256=digest(owners)))
+        self.ep_q1_register_layout_proven=True
+        self.ep_q1_register_layout_receipt=dict(proven=True,selected=True,
+            threads=128,subgroup_threads=4,partner_warp_xor=2,max_rows=8,
+            scratch_bytes=512,sc1_capacity_bytes=capacity,source_values=2048,
+            source_mapping_sha256=digest(register_map),copy_shapes=sorted(copied_shapes),
+            source_element_bits=16,math_mode="fast" if self.fast_math else "precise",
+            max_shuffle_collectives=8,quant_shuffle_collectives=8,
+            layout=dict(sc1_shape=str(sc1.outer.shape),sc1_stride=str(sc1.outer.stride),sc1_swizzle=str(csw),
+                a2_shape=str(a2.outer.shape),a2_stride=str(a2.outer.stride),a2_swizzle=str(asw),
+                sfa2_shape=str(sfa2.shape),sfa2_stride=str(sfa2.stride)),rows=rows)
+
 
     def _smem_bytes_estimate(self):
         return super()._smem_bytes_estimate()
@@ -503,7 +543,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         # artifact gate must independently bound that compiled ELF allocation.
         if (actual != self.smem_bytes or actual + 1024 > self.smem_capacity
                 or actual != 98304 or self.threads_per_cta != 160):
-            raise ValueError("EP Q1 pair path changed the baseline resident CTA storage")
+            raise ValueError("EP register Q1 path changed the baseline resident CTA storage")
         self.ep_storage_bytes = actual
 
 
@@ -1023,7 +1063,7 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
 
         if cutlass.const_expr(self.ep_decode_opt):
             self._check_ep_storage(Storage)
-            self._check_ep_q1_layout(epi1_smem_staged, a2_smem_layout, sfa2_smem_layout)
+            self._check_ep_q1_register_layout(tiled_mma1, epi1_smem_staged, a2_smem_layout, sfa2_smem_layout)
         storage = smem.allocate(Storage)
 
         prod_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
@@ -1081,6 +1121,8 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
         sC = storage.sC.get_tensor(
             epi_smem_staged.outer, swizzle=epi_smem_staged.inner
         )
+        if cutlass.const_expr(self.ep_decode_opt):
+            q1_max_scratch = shared_ptr_to_u32(storage.sC1.data_ptr())
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
         a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())
         sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
@@ -1530,6 +1572,8 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
             tRS_rD1_layout = cute.make_layout(rD1_shape[:3])
             tRS_rD1 = cute.make_rmem_tensor(tRS_rD1_layout.shape, self.acc_dtype)
             tRS_rD1_out = cute.make_rmem_tensor(tRS_rD1_layout.shape, cutlass.BFloat16)
+            if cutlass.const_expr(self.ep_decode_opt):
+                tRS_q1_halfmax = cute.make_rmem_tensor((4,), Float32)
             mma_tile_m1 = self.tile_m // cute.size(tRS_rGate, mode=[1])
             mma_tile_n1 = self.fc1_tile_n // cute.size(tRS_rGate, mode=[2])
             MmaMPerEpiM1 = self.epi1_tile[0] // mma_tile_m1
@@ -1807,9 +1851,18 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                             acc_vec = tRS_rD1.load()
                             acc_vec = acc_vec.to(cutlass.BFloat16)
                             tRS_rD1_out.store(acc_vec)
-                            cute.copy(
-                                tiled_copy_r2s1, tRS_rD1_out, tRS_sD1[(None, None, None, 0)]
-                            )
+                            if cutlass.const_expr(self.ep_decode_opt):
+                                if epi_m_valid <= Int32(8):
+                                    self._ep_q1_register_max(tRS_rD1_out, tRS_q1_halfmax,
+                                        epi_m_valid, tidx, q1_max_scratch)
+                                else:
+                                    cute.copy(
+                                        tiled_copy_r2s1, tRS_rD1_out, tRS_sD1[(None, None, None, 0)]
+                                    )
+                            else:
+                                cute.copy(
+                                    tiled_copy_r2s1, tRS_rD1_out, tRS_sD1[(None, None, None, 0)]
+                                )
                             cute.arch.fence_proxy("async.shared", space="cta")
                         self.epilog_sync_barrier.arrive_and_wait()
 
@@ -1820,8 +1873,9 @@ class MoEStaticEPTiledKernel(MoEStaticKernelV5):
                             epi_rows = Int32(0)
                         if cutlass.const_expr(self.ep_decode_opt):
                             if epi_rows <= Int32(8):
-                                self._ep_q1_pair(sC1, epi_rows, sf_blocks_per_half, h, tidx,
-                                                 gs_value, a2_base_addr, a2_smem_layout, sfa2_base_addr)
+                                self._ep_q1_register_quantize(tRS_rD1_out, tRS_q1_halfmax,
+                                    epi_rows, tidx, gs_value, q1_max_scratch,
+                                    a2_base_addr, a2_smem_layout, sfa2_base_addr)
                             else:
                                 quant_idx = Int32(tidx)
                                 while quant_idx < epi_rows * sf_blocks_per_half:

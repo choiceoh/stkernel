@@ -59,24 +59,30 @@ def baseline_kernel_text():
     source=SOURCE.read_text(); node=function('kernel'); lines=source.splitlines(keepends=True)
     branches=[n for n in ast.walk(node) if isinstance(n,ast.If)
               and ast.unparse(n.test)=='cutlass.const_expr(self.ep_decode_opt)']
-    # The retired FC1-register branches are gone. Admit only the two exact
-    # Q1 additions: the host storage/layout guard and the bounded pair/scalar
-    # selection. Both scalar fallbacks must be the same complete AST.
-    assert len(branches)==2
-    setup, quant = sorted(branches, key=lambda n:n.lineno)
-    assert not setup.orelse and [ast.unparse(n) for n in setup.body] == [
-        'self._check_ep_storage(Storage)',
-        'self._check_ep_q1_layout(epi1_smem_staged, a2_smem_layout, sfa2_smem_layout)']
-    assert len(quant.body)==1 and isinstance(quant.body[0],ast.If)
-    pair=quant.body[0]
-    assert ast.unparse(pair.test)=='epi_rows <= Int32(8)'
-    assert [ast.unparse(n) for n in pair.body] == [
-        'self._ep_q1_pair(sC1, epi_rows, sf_blocks_per_half, h, tidx, '
-        'gs_value, a2_base_addr, a2_smem_layout, sfa2_base_addr)']
+    # Admit the exact five register-max additions, not just a branch count.
+    # Both staging and quantization keep the complete old fallback bodies.
+    assert len(branches)==5
+    setup, scratch, registers, staging, quant = sorted(branches, key=lambda n:n.lineno)
+    for branch, expected in ((setup, [
+            'self._check_ep_storage(Storage)',
+            'self._check_ep_q1_register_layout(tiled_mma1, epi1_smem_staged, a2_smem_layout, sfa2_smem_layout)']),
+            (scratch, ['q1_max_scratch = shared_ptr_to_u32(storage.sC1.data_ptr())']),
+            (registers, ['tRS_q1_halfmax = cute.make_rmem_tensor((4,), Float32)'])):
+        assert not branch.orelse and [ast.unparse(n) for n in branch.body] == expected
+    for branch, predicate, call in ((staging, 'epi_m_valid <= Int32(8)',
+            'self._ep_q1_register_max(tRS_rD1_out, tRS_q1_halfmax, epi_m_valid, tidx, q1_max_scratch)'),
+            (quant, 'epi_rows <= Int32(8)',
+            'self._ep_q1_register_quantize(tRS_rD1_out, tRS_q1_halfmax, epi_rows, tidx, gs_value, q1_max_scratch, a2_base_addr, a2_smem_layout, sfa2_base_addr)')):
+        assert len(branch.body)==1 and isinstance(branch.body[0],ast.If)
+        bounded = branch.body[0]
+        assert ast.unparse(bounded.test)==predicate
+        assert [ast.unparse(n) for n in bounded.body] == [call]
+        assert [ast.dump(n,include_attributes=False) for n in bounded.orelse] == [
+            ast.dump(n,include_attributes=False) for n in branch.orelse]
+    assert [ast.unparse(n) for n in staging.orelse] == [
+        'cute.copy(tiled_copy_r2s1, tRS_rD1_out, tRS_sD1[None, None, None, 0])']
     assert len(quant.orelse)==2 and isinstance(quant.orelse[1],ast.While)
     assert ast.unparse(quant.orelse[0])=='quant_idx = Int32(tidx)'
-    assert [ast.dump(n,include_attributes=False) for n in pair.orelse] == [
-        ast.dump(n,include_attributes=False) for n in quant.orelse]
     changes=[]
     for branch in branches:
         replacement=[]
