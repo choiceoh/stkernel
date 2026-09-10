@@ -9,6 +9,22 @@ PLAN = re.compile(r'\[prep-fused\] plan built: (.*)')
 STATS = re.compile(r'\[prep-fused\] (on|shadow): fused_steps=(\d+) stock_steps=(\d+) '
                    r'checks ok=(\d+) drift=(\d+)(?:\s|$)')
 
+# Only fixed diagnostic codes leave this module; exception text may contain paths.
+REJECTION_CODES = {
+    'exclusive context missing': 'exclusive_context_missing',
+    'preparation must be armed or shadow': 'unsupported_mode',
+    'actual launch differs': 'launch_mismatch',
+    'invalid preparation log': 'invalid_log',
+    'preparation log replaced or truncated': 'log_replaced_or_truncated',
+    'log prefix changed or did not advance': 'log_prefix_mismatch',
+    'preparation drift, failure or fallback': 'preparation_failure',
+    'plan missing': 'plan_missing',
+    'plan differs': 'plan_mismatch',
+    'invalid verification checkpoint': 'invalid_checkpoint',
+    'verification counters reset': 'counter_reset',
+    'no verified execution during onepass': 'no_fresh_checkpoint',
+}
+
 
 def _read(path):
     with open(path, 'rb') as stream:
@@ -59,6 +75,10 @@ def evidence(context, path):
                 or before.get('shadow_every') != '1'
                 or before.get('selfcheck_every') != '64'):
             raise ValueError('actual launch differs')
+        result.update(mode=mode, launch={key: before[key] for key in (
+            'method', 'num_speculative_tokens', 'config_sha256', 'command_sha256',
+            'node_rank', 'boot_id', 'image', 'environment_spec_k', 'preparation_mode',
+            'preparation_kernel', 'shadow_every', 'selfcheck_every')})
         raw, info = _read(path)
         prefix = context['log_prefix']
         if (not isinstance(prefix, dict) or type(prefix.get('bytes')) is not int
@@ -66,6 +86,8 @@ def evidence(context, path):
                 or (prefix.get('device'), prefix.get('inode')) != (info.st_dev, info.st_ino)
                 or hashlib.sha256(raw[:prefix['bytes']]).hexdigest() != prefix.get('sha256')):
             raise ValueError('log prefix changed or did not advance')
+        result.update(log_prefix={key: prefix[key] for key in ('bytes', 'sha256', 'device', 'inode')},
+                      log_after_sha256=hashlib.sha256(raw).hexdigest(), log_after_bytes=len(raw))
         text = raw.decode('utf-8', 'strict')
         lines = [line for line in text.splitlines() if '[prep-fused]' in line]
         if any(re.search(r'DISARM|DRIFT|plan build failed|fused prepare failed|'
@@ -95,9 +117,9 @@ def evidence(context, path):
             checkpoints.append(current)
         if not checkpoints:
             raise ValueError('no verified execution during onepass')
-        result.update(verdict='PASS', mode=mode, launch=before, last_checkpoint=checkpoints[-1],
-                      checkpoint_count=len(checkpoints), log_prefix=prefix,
-                      log_after_sha256=hashlib.sha256(raw).hexdigest(), log_after_bytes=len(raw))
+        result.update(verdict='PASS', last_checkpoint=checkpoints[-1],
+                      checkpoint_count=len(checkpoints))
     except (KeyError, TypeError, ValueError, OSError, UnicodeError) as error:
         result['reason'] = type(error).__name__
+        result['reason_code'] = REJECTION_CODES.get(str(error), 'invalid_evidence')
     return result

@@ -36,9 +36,10 @@ CPU_TESTS = ("test_glm53_ep_tiled_static.py", "test_glm53_ep_tiled_prefill.py",
              "test_glm53_ep_tiled_sf6_word_unpack.py",
              "test_onepass_speculation_proof.py",
              "test_glm53_ep_tiled_route_fusion.py",
-             "test_glm53_prep_fused_kv_integration.py", "test_onepass_prep_proof.py")
-CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (12, 12, 27, 13, 12, 12, 6, 7, 6, 5, 6, 10, 6, 10, 10)))
-EXPECTED_CPU_TESTS = 154
+             "test_glm53_prep_fused_kv_integration.py", "test_onepass_prep_proof.py",
+             "test_glm53_prep_checkpoint_logging.py")
+CPU_TEST_COUNTS = dict(zip(CPU_TESTS, (12, 12, 27, 13, 12, 12, 6, 7, 6, 5, 6, 10, 6, 10, 10, 4)))
+EXPECTED_CPU_TESTS = 158
 CONTRACT_PATHS = (
     'probes/glm53_ep_tiled_compile.py', 'probes/run_glm53_ep_tiled_cpu.py',
     'probes/glm53_ep_capsule_runtime.py', 'probes/glm53_ep_bindings_capsule.py',

@@ -1205,7 +1205,7 @@ def _patched_prepare_inputs(self, scheduler_output, batch_req_state, batch_desc)
         return stock
     st.checks_ok += 1
     st.plan_verified = True
-    if first_plan_check or st.checks_ok % 64 == 0 or st.mode == "shadow" and st.checks_ok % 16 == 0:
+    if first_plan_check or st.mode == "on" or st.checks_ok % 64 == 0 or st.mode == "shadow" and st.checks_ok % 16 == 0:
         logger.warning("[prep-fused] %s: fused_steps=%d stock_steps=%d checks ok=%d drift=%d first_plan_check=%s",
                        st.mode, st.steps_fused, st.steps_stock, st.checks_ok, st.checks_drift,
                        first_plan_check)

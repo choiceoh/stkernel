@@ -1,0 +1,192 @@
+{
+  "verdict": "ORIGINAL_CPU_EVIDENCE_VERIFIED",
+  "source": "96a8cab45a1eb049298315a77ed881ee74f04f9b",
+  "result_sha256": "343157796ece599120515d0f5fffa791e357979af37b9f84542c12f5c3e6c0f5",
+  "original_worker_files": 59,
+  "original_worker_bytes": 8616628,
+  "lowerings": 19,
+  "contracts": {
+    "tests_run": 154,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "mounted_sources": 22,
+  "contract_sources": 38,
+  "cuda_initialized": false,
+  "binding_runtime_rechecked": true,
+  "scatter_helper": {
+    "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py",
+    "sha256": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+    "size": 87909,
+    "helper": "scatter_add_v4_bf16x2"
+  },
+  "resources": [
+    {
+      "arm": "static/M4",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M6",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M8",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M12",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M16",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M24",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "static/M32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M4-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M8-map288-i32",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M12-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M16-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M24-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M32-map288-i32",
+      "REG": 118,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-map288-i64",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-offset216-i64",
+      "REG": 123,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "global-static/M6-empty-i64",
+      "REG": 126,
+      "STACK": 0,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M33",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    },
+    {
+      "arm": "dynamic/M8192",
+      "REG": 168,
+      "STACK": 112,
+      "SHARED": 1024,
+      "LOCAL": 0
+    }
+  ],
+  "failed_prerequisites": [
+    {
+      "cpu": 7,
+      "source": "66809847c78ac5338965c11a1164dde5849e8515",
+      "verdict": "FAIL",
+      "phase": "static-M4",
+      "error": "DSLUserCodeError('\\n\\x1b[91m\\x1b[1merror[UNSUP_EARLY_EXIT]:\\x1b[0m Early exit (raise) is not allowed in `__call__`. A staged for/while/if runs as a whole, so it cannot return/break/continue out early.\\n   \\x1b[94m-->\\x1b[0m /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_ep_tiled.py:319:17\\n    |\\n317 |             if (expert_map is None or tuple(expert_map.shape) != (expected_map_len,)\\n318 |                     or expert_map.element_type not in (cutlass.Int32, cutlass.Int64)):\\n319 |                 raise ValueError(\"EP tiled global map operand disagrees with declared bounds\")\\n    |                 \\x1b[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\x1b[0m\\n  \\x1b[92msuggestion:\\x1b[0m If the condition is decided at compile time, write `if const_expr(...)` or `for ... in\\n              range_constexpr(...)` -- then the early exit runs in Python and is allowed.\\n')",
+      "presence": {
+        "contracts": false,
+        "original_file_count": 1,
+        "result": true
+      },
+      "contracts_acceptance": false,
+      "gpu_acceptance": false
+    },
+    {
+      "cpu": 8,
+      "source": "4e93663900b6ced9b22c6b8abc0a877260d50e47",
+      "verdict": "FAIL",
+      "phase": "cpu-contracts",
+      "error": "CalledProcessError(1, ['/usr/bin/python3', '-B', '/repo/probes/glm53_ep_tiled_compile.py', '--output', '/evidence', '--capsule-root', '/opt/glm53-bindings-capsule', '--manifest-sha256', 'b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab', '--contracts-only'], None, None)",
+      "presence": {
+        "contracts": true,
+        "original_file_count": 59,
+        "result": true
+      },
+      "contracts_acceptance": false,
+      "gpu_acceptance": false
+    }
+  ],
+  "compile_only": true,
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false
+}

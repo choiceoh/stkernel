@@ -5,7 +5,7 @@ allocation between a dedicated static decode kernel and the EP-local prefill
 kernel. It is experimental and defaults off. Neither recovered decode speed
 nor retained prefill gains have been established for this implementation.
 
-The next combined candidate keeps DFlash K5 and SF6. Native M1..32 maps
+The combined candidate keeps DFlash K5 and SF6. Native M1..32 maps
 global expert IDs inside the existing route-publication kernel, removing the
 separate remap launch and its temporary-plane traffic. Dynamic prefill keeps
 the original remapper. The local-ID reference entry is retained; global
@@ -17,15 +17,51 @@ image's original preimage remains pinned separately. Captured runner source
 confirms that block zeroing runs in `update_requests`, before input/attention
 preparation. Every armed plan is compared with the original preparation
 chain on first use and then every 64 fused steps. DISARM remains sticky even
-after capture or wake. This is implemented, not yet a live performance result.
+after capture or wake.
 
-The planned consolidated onepass reservation first runs EP with full shadow
+The consolidated onepass reservation first ran EP with full shadow
 comparison, then same-source TP and EP with preparation armed. Every arm
 requires actual same-boot preparation execution proof; defaults keep
 `knobs={}` and carry an independent `required_proofs` declaration. Missing
 proof or drift rejects a row and excludes it from baseline reuse. Sparse log
 checkpoints are not fixed-request counters. The absolute goal remains pooled
 fixed-1024 x3 decode >=67 tok/s with existing quality and prefill gates.
+
+Session `eptiledprep0910v7` completed on frozen source
+`96a8cab45a1eb049298315a77ed881ee74f04f9b`. Armed EP measured
+**77.09304 tok/s**, with three complete repetitions at
+77.83371 / 75.66344 / 77.82287 tok/s, facts 18/18 and Korean 0/8.
+Its observed absolute throughput exceeds 67, but the canonical verdict is
+**UNPROVED**, so defaults remain TP. The preselected TP baseline measured
+76.49247 tok/s and failed Korean 1/8; it must not be treated as an accepted
+baseline. Neither armed row passed the new preparation evidence gate.
+
+| Metric | TP + SF6 + preparation B | EP + SF6 + preparation A |
+|---|---:|---:|
+| 2K best-warm prefill tok/s / TTFT | 2519.84 / 0.844 s | 3004.64 / 0.708 s |
+| 32K prefill tok/s / TTFT | 3046.68 / 10.682 s | 3259.87 / 9.984 s |
+| 128K prefill tok/s / TTFT | 3135.55 / 41.000 s | 3264.50 / 39.381 s |
+| Fixed-1024 pooled decode tok/s | 76.49247 | 77.09304 |
+| Fixed-window pooled engine step/s | 22.33787 | 19.72401 |
+| Facts / Korean-dirty responses | 18/18 / 1/8 | 18/18 / 0/8 |
+| Required serving proof | 0/1 | 1/2 |
+
+The preparation evidence failure is a logging integration defect. Armed
+preparation checks its first step and every 64 steps, but previously logged
+only its first successful check and each 64th successful check (step 4032).
+The sole successful checkpoint in each armed boot predates onepass. The
+proof correctly refuses to substitute startup evidence for workload evidence.
+Shadow S passed with 1808 successful comparisons and zero drift at its last
+logged checkpoint, facts 18/18, Korean 0/8 and proof 2/2. Its 58.30594 tok/s
+includes full shadow comparison and is excluded from performance comparison.
+All four ranks passed startup source, numerical and SF6 checks in each arm;
+completed-workload preparation counters were not captured on all four ranks.
+
+The follow-up changes only successful armed-check logging and rejection
+diagnostics, retaining actual check cadence, kernel arithmetic, K5 and SF6.
+It requires another normal TP/EP onepass with fresh preparation checkpoints.
+The original v7 rejection and failed TP quality result remain preserved in
+[the complete v7 evidence](../measurements/glm53_ep_tiled_20260909/prep_onepass7/README.md).
 
 The first full-model SF6 run completed on 2026-09-09. Its actual-weight
 canaries and SF6 release passed on all four ranks, but every arm failed the
