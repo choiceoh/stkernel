@@ -969,6 +969,21 @@ def maybe_free_fp8_dense_bf16(model, label: str = "") -> int:
         (label + ": ") if label else "", _FREE_BF16_ENV, freed / 1e9, kept_bias)
     return freed
 
+def _dev_free_gib():
+    """Free device memory in GiB, or None before CUDA is up.
+
+    is_initialized() first on purpose: touching mem_get_info earlier would
+    CREATE the context and move the boundary being measured (same rule the boot
+    stamps follow)."""
+    try:
+        if not torch.cuda.is_initialized():
+            return None
+        free, _total = torch.cuda.mem_get_info()
+        return free / (1 << 30)
+    except Exception:
+        return None
+
+
 def _host_mem_available() -> str:
     try:
         with open("/proc/meminfo") as fh:
@@ -1105,10 +1120,19 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     if raw in ("", "0", "false", "no", "off"):
         return _maybe_build_prefill_bproj(model, env)
     t_fold = time.perf_counter()  # 37차: this pass is ~45 s of the 118 s load
+    _pass_free0 = _dev_free_gib()
     from vllm.model_executor.layers.glm53_startup_cache import Fp8Cache
 
     fp8_cache = Fp8Cache()
     phase_seconds = dict(check=0.0, mk=0.0, empty_cache=0.0)
+    # 40차: this pass is the single largest device-memory phase of the boot --
+    # the load-model/post-quant stamp reads +13.83 GiB on the main model, which
+    # is far more than the 4.04 GB of bf16 sources it later releases. On GB10's
+    # unified pool those bytes are host RAM that earlyoom counts (it SIGTERMed
+    # the serving worker six times on 2026-09-08/09), so the peak has to be
+    # attributed before it can be aimed at. Same accounting as the seconds
+    # above, in GiB; None-safe so a CPU path prints nothing new.
+    phase_gib = dict(check=0.0, mk=0.0, empty_cache=0.0)
     # w4a8: weights one notch lower on the same kernel family
     # (fp8_fp4_gemm_nt, dense form of the MoE expert kernel); activations
     # stay fp8 -- the axis the literature blesses. 1/true keeps W8A8.
@@ -1126,10 +1150,14 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     # side is removed, not kept as a second setting to remember.
     def attach_mk(*args):
         started = time.perf_counter()
+        free0 = _dev_free_gib()
         try:
             return _attach_mk_pack(*args)
         finally:
             phase_seconds["mk"] += time.perf_counter() - started
+            free1 = _dev_free_gib()
+            if free0 is not None and free1 is not None:
+                phase_gib["mk"] += free0 - free1
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
     mk_packs = 0
@@ -1172,11 +1200,15 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             # one opaque op each (see _mk_or_fp8_dense_gemm)
             method._opaque = env == _DRAFTER_ENV
             t_check = time.perf_counter()
+            _check_free0 = _dev_free_gib()
             copy_ok = _copy_matches_source(
                 mod, method, weight,
                 got_fn=lambda xx: _fp8_dense_gemm_op(xx, q, ws, rows, cols),
             )
             phase_seconds["check"] += time.perf_counter() - t_check
+            _cf1 = _dev_free_gib()
+            if _check_free0 is not None and _cf1 is not None:
+                phase_gib["check"] += _check_free0 - _cf1
             if copy_ok is False:
                 fp8_cache.reject_last()
                 mod.quant_method = base
@@ -1333,12 +1365,25 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             # earlyoom (09-04) it became a deterministic SIGKILL. Freeing the
             # cache per linear bounds the pass at ONE transient at a time.
             t_empty = time.perf_counter()
+            _empty_free0 = _dev_free_gib()
             torch.cuda.empty_cache()
             phase_seconds["empty_cache"] += time.perf_counter() - t_empty
+            _ef1 = _dev_free_gib()
+            if _empty_free0 is not None and _ef1 is not None:
+                phase_gib["empty_cache"] += _empty_free0 - _ef1
     fp8_cache.report(type(model).__name__)
     logger.warning("[fp8-dense] %s host-seconds=%s (includes existing syncs)",
                    type(model).__name__,
                    " ".join(f"{k}={v:.3f}" for k, v in phase_seconds.items()))
+    if any(v for v in phase_gib.values()) or _dev_free_gib() is not None:
+        logger.warning(
+            "[fp8-dense] %s device-GiB=%s pass-total=%+.2f dev-free-now=%s "
+            "(what the load-model/post-quant stamp is made of)",
+            type(model).__name__,
+            " ".join(f"{k}={v:+.2f}" for k, v in phase_gib.items()),
+            (_pass_free0 - _dev_free_gib())
+            if (_pass_free0 is not None and _dev_free_gib() is not None) else float("nan"),
+            f"{_dev_free_gib():.2f}" if _dev_free_gib() is not None else "n/a")
     logger.warning(
         "[fp8-dense] %s (knob %s=%s): %d linears w4a8 (%.2f GB bf16), "
         "%d linears w8a8 (%.2f GB bf16), %d kept bf16, %d disarmed by the "
