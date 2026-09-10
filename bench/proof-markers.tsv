@@ -52,4 +52,5 @@ VLLM_GLM53_MK_MHC_BF16	[megakernel] mhc-bf16 CAPTURED	[megakernel] mhc-bf16 CAPT
 VLLM_GLM53_MK_INPUT_REUSE	[megakernel] input-reuse CAPTURED	[megakernel] input-reuse CAPTURED
 VLLM_GLM53_MK_INPUT_CTA	[megakernel] input-cta CAPTURED	[megakernel] input-cta CAPTURED
 VLLM_GLM53_SCHED_CHUNK_FILE	[decode-first] scheduler armed	VLLM_GLM53_SCHED_CHUNK_FILE
-VLLM_GLM53_EP_HYBRID_TP2	[ep-hybrid] LAUNCHED decode E144/H4096/I1024/top8 T=	glm53_ep_tiled.py
+VLLM_GLM53_EP_HYBRID_TP2	[ep-hybrid] LAUNCHED decode E144/H4096/I1024/top8 T=	[ep-hybrid] LAUNCHED {lane}
+VLLM_GLM53_DROP_WEIGHT_CACHE	weight page cache released:	weight page cache released:
