@@ -1,0 +1,2160 @@
+{
+  "verdict": "PASS",
+  "phase": "complete",
+  "started": 1789013983.1442437,
+  "compile_only": true,
+  "gpu_numerics_acceptance": false,
+  "performance_acceptance": false,
+  "scope": "seven local static, ten global-route static, four decode-optimized static and two dynamic EP tiled compiler variants plus CPU contracts; no GPU",
+  "binding_runtime": {
+    "schema": 1,
+    "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+    "binding_identity": {
+      "version": "13.0.3",
+      "root": "/opt/glm53-bindings-capsule",
+      "modules": {
+        "cuda.bindings.driver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e"
+        },
+        "cuda.bindings._bindings.cydriver": {
+          "path": "/opt/glm53-bindings-capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+          "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d"
+        }
+      },
+      "distributions": {
+        "cuda-bindings": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+          "sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+        },
+        "cuda-python": {
+          "version": "13.0.3",
+          "path": "/opt/glm53-bindings-capsule/cuda_python-13.0.3.dist-info/METADATA",
+          "sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+        }
+      }
+    },
+    "pathfinder": {
+      "version": "1.7.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+      "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+      "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+      "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+    }
+  },
+  "mounted_sources": {
+    "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py": "cfed03b8dfbd8fff466d143c0bee4e66f6f76f703a508461ffa8e301205a8204",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "40bdc0e9c38c3e406fd7dd7350e14077b80b5edf8b5e9fc31d323753b9bfbadf",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_sf6_q0.py": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py": "89bab8e22514d4ce036e4cc6755a5dcfaeb8b12277766394dcdd101db8751595",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py": "b577457ff566add86837c467e2062b715bc9b1f2d1d2bfbb2addc0b9520a9b11",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_local_selftest.py": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_tp_sf6_q0_selftest.py": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled.py": "133520fab17bffdf528791c5115c465a768a70b5812acf0e9213d94fdccc8fa0",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_ep_tiled.py": "39cc387e7ded15c77e94d72de9235e3d3f757bdbbc293b08823205e7931199ba",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_tiled_selftest.py": "fa696018d21c4f4dbd508faf91d94c0fbb35de7c8a4b6b32e2e9b9df77c2bcba",
+    "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py": "f0de294ebc0d10274aad08be8461d37973f7e3833f47fae8aa77c4eaf968b1c8"
+  },
+  "contract_sources": {
+    "probes/glm53_ep_tiled_compile.py": "c7cc3ac31825138f3df2f2fac30db6bcaf241d22b5bf00e7baea1e30315b11c1",
+    "probes/run_glm53_ep_tiled_cpu.py": "090c62555d3067c7885b23af177c9df7c6e6750ed9fae067069b29f3f41a9c8c",
+    "probes/glm53_ep_capsule_runtime.py": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+    "probes/glm53_ep_bindings_capsule.py": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+    "probes/glm53_ep_bindings_pair_check.py": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0",
+    "profiles/glm53.env": "3b32853ca36ff26ef44a0e14bb1922e82f662d5c267e7d01f9952e9b66a36467",
+    "bench/proof.py": "164a1f3f40c4b180e70248cad71e301b3a331d7455c4ce360f8e33dcecec3217",
+    "bench/proof-markers.tsv": "245a2764d9fac03888941714561fc130c2d81ee2c7b0a56553698b5df8f0a568",
+    "bench/onepass.py": "e21cbb2e0d9911e06027f1831f2c0ca7a79dc7730eba7cfa21856b713687caf2",
+    "bench/glm53_launch_metadata.py": "e24acbfcc43b64fff1a586c71e954de821f7b7b684350cb4be743606c1d0de13",
+    "bench/glm53_prep_proof.py": "461f300273c87d5565bf403b82e300054809e91ab8a0f8a59eed50f7da65e665",
+    "bench/baseline.py": "b64df502c8b2b60a2272b0608350d2feb3c085e409003986d0221274cf38c9de",
+    "bench/judge.py": "2c6acfe1f7e645ccddfac39744ebd8f760c318e2f50cd5ee78c5d42ed2f9fd3f",
+    "overlay/modules/glm53_runtime/glm53_prep_fused.py": "e66daae3f0dee55fb5f4f42ea7409cd62dc42e395f559db0d7266873b638371c",
+    "overlay/modules/glm53_runtime/kv_zero_worker_utils.py": "fd27b906f3363202a83ff79b451c69af305d806a60cda6905dc2ecdfa49bb49c",
+    "overlay/modules/glm53_runtime/manifest.tsv": "68e8023a5240bbc4316a5699bf0cc05eafe419a1f45d348aefa91be18bef0c31",
+    "tests/fixtures/glm53_prep_fused_runtime/identity.json": "eac6286d68d23c4f257a60243689fd8ee5a1f8c3eb53eedac7365adacbb9677e",
+    "tests/fixtures/glm53_prep_fused_runtime/model_runner.py.gz": "8202b1e8e8672c03a1be4be6835f25fd321aaf4cca9f66684fc6bcb28a23db76",
+    "tests/fixtures/glm53_prep_fused_runtime/worker_utils.image.py.gz": "5fc24d0e5813cc441965b7adea980a22242baf81e59b2ad6f80b14db56fc3dbc",
+    "overlay/modules/glm53_model/glm5next_model.py": "3ed3207b3767142326f75b33a712b3e990261a351d88802a4bb18945b0fa0b3f",
+    "measurements/glm53_ep_local_20260908/onepass20-completed/source/moe_dynamic_ep_local.py.gz": "55d1c3ea9543bec24f65196440b740bb56c71ad6e5c1addf58be85b26896c605",
+    "measurements/glm53_ep_tiled_20260909/ep76_onepass1/source/moe_static_ep_tiled.py.gz": "24db4ed00c49317d3b7c19f934fe78a3ff1caf4f01db44503d4971b1eb35341d",
+    "measurements/glm53_ep_tiled_20260909/ep76_onepass3/source/moe_static_ep_tiled.py.gz": "36fd2439fa10aa44c9ff3a5bca27f41f7162a05f82262092d6f7acf0083afd0b",
+    "measurements/glm53_ep_tiled_20260909/ep76_onepass4/source/moe_static_ep_tiled.py.gz": "3867de6f49d9909186f579647f23c2d5fd48f1eab2f111c7ce77e0bccdaec0a4",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/fp4_common.py.gz": "4df575b8bc6d8d71b7e364fc89913ef5fa151a170179d994dc8bf83788bf89fb",
+    "measurements/glm53_ep_local_20260908/micro-stock-oracle/identity.json": "8b23e618d5cf16281a535a6769515a542bfb79bf9aa70a503c90138679c3f775",
+    "tests/test_glm53_ep_tiled_static.py": "e816b1a4f89450005d8ae9c3de3ced29ba1407d9309dfc22f9a070d0cdc96409",
+    "tests/test_glm53_ep_tiled_prefill.py": "2a6cc96ff3474be8f71e89a220fb5076573680aafd13098429c1accab75f928d",
+    "tests/test_glm53_ep_tiled_owner.py": "f6e3c41f038c8218b0adb4cfd8eb744ddadd7cc9148a79b79e237795549eb81b",
+    "tests/test_glm53_ep_tiled_selftest.py": "ad875d62b66f1f50a50387bc9961b1ecc54022fc8da83651dcff98a0742425a8",
+    "tests/test_glm53_ep_tiled_proof.py": "66218d4c79886a45a9b381ee4ab1f72e8d60ea11063d38a4cb5b96f2e455a2a2",
+    "tests/test_moe_sf6_owner.py": "221c13318d505cc2a1c66d79bc25da0419cf769f24a2568b6060db90826fed1f",
+    "tests/test_moe_static_sf6_direct.py": "a6636beeff6880f62d096eb967cd44d6c6cc773d01877f567e62d464dc27c14e",
+    "tests/test_moe_dynamic_sf6.py": "72e12732a03af33c472f9704cff1afbcefafeb190b3da9d3d8b0724c601b9435",
+    "tests/test_moe_sf6_dispatch.py": "6747a7366e8b906db653f24204a4b3f186f95e72085a72d6cfcc1a74f0bc5c2f",
+    "tests/test_glm53_ep_tiled_a_ring.py": "ce145227c2b708d6a27d5117462fe2f198ea59399db2f12ae80fcb4d68c936b8",
+    "tests/test_glm53_ep_tiled_sf6_word_unpack.py": "56ed7cabfc780fc6c65fb602c70c059199dde1ceebcdb9eaaa3b2e48670ef8b7",
+    "tests/test_onepass_speculation_proof.py": "91a72dfffa3758da1445dd521d0fb67d7b496ece2aec8ab4cd31872b674d7419",
+    "tests/test_glm53_ep_tiled_route_fusion.py": "1176e6fc78514ac915be2b512507d86087b0f442b915cc5a7823805b3b68c057",
+    "tests/test_glm53_prep_fused_kv_integration.py": "e83b615b7a85526e0d09e6a666f4f4250c88c9bc39e057afcdb4cc7a43a0e70e",
+    "tests/test_onepass_prep_proof.py": "65e523860ea14abb96db6d936e354446f15a38ededa793da3c2a1db445cf13b8",
+    "tests/test_glm53_prep_checkpoint_logging.py": "91003fe683f294c108c6778f7ef2174d3bba013b088c9228882713dbe4b009bb",
+    "tests/test_glm53_ep_tiled_decode_opt.py": "4301d1d256fae4ad7411daab74fbceb6b8a65fdb9d40ea825922a45b327dfb3d",
+    "tests/test_glm53_prep_decode_opt.py": "2ce3a769eda31638d26babe99190bb6f891c08e649da84b179439c09d4a45719",
+    "tests/test_onepass_ep_default_proof.py": "ee0ad8184d432e0c50bb09c51b172050e7fcc4e1a8bcc712433b9fcfd1094814",
+    "tests/test_glm53_ep_decode_opt_proof.py": "717f031f25cc9c209946efd6262724f8421fc085909fcda5344c8cf3176d4009",
+    "tests/test_glm53_ep_q1_cpu_receipt.py": "6e509049f2c5c78d0002934cbe2e02102af11507e2b9f9fd75346102b743d578"
+  },
+  "scatter_helper": {
+    "path": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/fp4_common.py",
+    "sha256": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1",
+    "size": 87909,
+    "helper": "scatter_add_v4_bf16x2"
+  },
+  "static_passes": [
+    {
+      "arm": "static/M4",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        4,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M4/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.ptx",
+          "sha256": "ad3583c89a7922353b01efc75de3dfbc9d1ff0cb294feda6b8d7f6b630be17d6"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M4/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.cubin",
+          "sha256": "6d558f6ba5e649047102ef928b35daee6ec5036d33ad163802f481c1ebb3a3da",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o4409640961_tensorptri32gmemo321_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1"
+      }
+    },
+    {
+      "arm": "static/M6",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M6/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "9956ca79236fb0d939ec32a9ad25b9a8067ecfe2152da4d92873096bc61ba1af"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M6/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "c88e3364ed60119dfab547264dc419f5b690d488a28a3e3a8d7ece66cafc31d3",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1"
+      }
+    },
+    {
+      "arm": "static/M8",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        8,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M8/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.ptx",
+          "sha256": "3d7cdc9075310327d1906a729403ec50b60853399ad41edf891cac0319b0b51d"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M8/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.cubin",
+          "sha256": "95019b4f9eaeb1827b908835a78b6b10cf2bf3446028dacfbd1ae8577e119f3f",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1"
+      }
+    },
+    {
+      "arm": "static/M12",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        12,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M12/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1612409640961_FakeTensorInt32961_FakeTensorFloat3296.sm_121a.ptx",
+          "sha256": "6bd7c1a9825f408c2d9348661ffd8ffa4a4bb2910921a0c265007f35d6eb50fb"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M12/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1612409640961_FakeTensorInt32961_FakeTensorFloat3296.sm_121a.cubin",
+          "sha256": "8904342b2a7dd0e988e5d2f95aacd61f541f471c1e991375891786582035a600",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o12409640961_tensorptri32gmemo961_tensorptrf32_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter"
+      }
+    },
+    {
+      "arm": "static/M16",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        16,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1616409640961_FakeTensorInt321281_FakeTensorFloat321.sm_121a.ptx",
+          "sha256": "71b043668762e656fbfeeb8cdd09362e02f0574557fa6ce444cc977f66b9958a"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M16/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1616409640961_FakeTensorInt321281_FakeTensorFloat321.sm_121a.cubin",
+          "sha256": "3e56b23e295bd9491ebe264b7fc4afec2d86adce982a8ecd70559e8c73d45ea3",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter"
+      }
+    },
+    {
+      "arm": "static/M24",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        24,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M24/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1624409640961_FakeTensorInt321921_FakeTensorFloat321.sm_121a.ptx",
+          "sha256": "8f837a3e2a6fec3813782ebb44500c7f0d4420a2b8232c15544f723713d792e5"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M24/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1624409640961_FakeTensorInt321921_FakeTensorFloat321.sm_121a.cubin",
+          "sha256": "9846ce95c9e393f99361b5537d1b4b4fdbfa7d811299a56397eee724312181e8",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o24409640961_tensorptri32gmemo1921_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter"
+      }
+    },
+    {
+      "arm": "static/M32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        32,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter"
+      ],
+      "artifacts": [
+        {
+          "path": "static/M32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx",
+          "sha256": "4b77bf255edb31a4df4acee97f2e10d2130311352e9dc2772e897ae526956da8"
+        }
+      ],
+      "resources": [
+        {
+          "path": "static/M32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin",
+          "sha256": "eb942da60370c20b9717ba360197a95b24b9b576cd3168423087be5f77f56742",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o32409640961_tensorptri32gmemo2561_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter"
+      }
+    }
+  ],
+  "global_static_passes": [
+    {
+      "arm": "global-static/M4-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        4,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M4-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.ptx",
+          "sha256": "8cd3f469ed98ecbf31708c8eecb9db7ca46b0592aee3b21392cdbc7c9bab8c8f"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M4-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.cubin",
+          "sha256": "cb1c520f991a25506c90867cf3ddde9067a653da32a01001533c900e06af162c",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o4409640961_tensorptri32gmemo321_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M6-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "2101afce8704b15742124c25ae9a427a65526f0fc3997ffdb3b1d15b4b4e8ef7"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "6b8ec2f28e81fbc8858202789ad97003762e9825bae682c3ae6063aeaa6e61b3",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M8-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        8,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M8-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.ptx",
+          "sha256": "53a243353d1147f07e7396641c64b12062e75e81ee161262ef088ba0b700a56c"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M8-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.cubin",
+          "sha256": "869a86233ded0a46cb3e2ea84540d0824775149555c633c8a8a540df32646545",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M12-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        12,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M12-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1612409640961_FakeTensorInt32961_FakeTensorFloat3296.sm_121a.ptx",
+          "sha256": "ecdfa0d86969ccaece005c16ae84b1fe81a3bb89fdbb18c608a03c464de848ff"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M12-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1612409640961_FakeTensorInt32961_FakeTensorFloat3296.sm_121a.cubin",
+          "sha256": "729e00fb61a4ecce8b74137ea9a6cbeca3c6cb07a798aa74eb162eaf31849855",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o12409640961_tensorptri32gmemo961_tensorptrf32_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M16-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        16,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M16-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1616409640961_FakeTensorInt321281_FakeTensorFloat321.sm_121a.ptx",
+          "sha256": "d6961a736d1e24b21ad1c68aaaaddd6a66ed3114a22a6132c0fdd50eefb46391"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M16-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1616409640961_FakeTensorInt321281_FakeTensorFloat321.sm_121a.cubin",
+          "sha256": "bba26fc846e33227c0fa03232a41ce03efdd114b43b34641bacb5ed4f0c3009f",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M24-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        24,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M24-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1624409640961_FakeTensorInt321921_FakeTensorFloat321.sm_121a.ptx",
+          "sha256": "9b97ff1a5270cc63c8c479a98ef345cdd25aa0e4475efcf9feb8cd0dc88a3d5b"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M24-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1624409640961_FakeTensorInt321921_FakeTensorFloat321.sm_121a.cubin",
+          "sha256": "091ea8658680450fd9735d7cd9c9230699de43c8112314c6e591827485ba528b",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o24409640961_tensorptri32gmemo1921_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M32-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        32,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          32,
+          64,
+          512
+        ],
+        [
+          32,
+          128,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "fp32_scatter",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.ptx",
+          "sha256": "4b6f5fd15de591e1d052efe26410d7179d1413ace4db681143a10ccf0715bd06"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M32-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat1632409640961_FakeTensorInt322561_FakeTensorFloat322.sm_121a.cubin",
+          "sha256": "1c3e2fe7b2a5dabe43ef934f1213a2a4c48db370ad6c4c01ea3a6550d0204fe2",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o32409640961_tensorptri32gmemo2561_tensorptrf3_0:\n  REG:118 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": false,
+        "word_unpack": false,
+        "scatter_bf16": false,
+        "output_dtype": "float32",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "fp32_scatter",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M6-map288-i64",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int64",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int64",
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M6-map288-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "ffabd1274fc326b54dcfbd14e37f3c1cba58deb1d8a376d4764398cbe2604d98"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M6-map288-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "d2fb8e270069dc089d5e63930a08bc238591b4b71a440a26d75446e78b850965",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri64gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int64",
+          "expert_map_operand_dtype": "int64",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M6-offset216-i64",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int64",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        null,
+        null,
+        216
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M6-offset216-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "bad484aa7e0134ded69fe969f90c463f60c00363e89ef18151417268cca996ee"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M6-offset216-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "614dcb8da404ec79c9b6e24df7bd2e12321a71ecf0c3404994a085864182ec9c",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri64gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": null,
+          "local_expert_offset": 216,
+          "topk_ids_dtype": "int64",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            1
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    },
+    {
+      "arm": "global-static/M6-empty-i64",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int64",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        0,
+        null,
+        0
+      ],
+      "artifacts": [
+        {
+          "path": "global-static/M6-empty-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "8e41b9bd59ff913490986502321407401ee6bf7d46f3ed7ccf9befc1c77b7530"
+        }
+      ],
+      "resources": [
+        {
+          "path": "global-static/M6-empty-i64/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt64481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "8f83711c65e603c362b2b7ad190c213dbb814865ed84a97d026bcbdc9beff86a",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri64gmemo481_tensorptrf32g_0:\n  REG:126 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 0,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int64",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            1
+          ],
+          "compile_argument_count": 31
+        }
+      }
+    }
+  ],
+  "opt_static_passes": [
+    {
+      "arm": "opt-static/M6-local",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_sf6_q1_register_max_v5"
+      ],
+      "artifacts": [
+        {
+          "path": "opt-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "6efec1fd172007f530866eff37204edceefa6e327c6b70484ab183a70c6e4828"
+        }
+      ],
+      "resources": [
+        {
+          "path": "opt-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "ec7320451b42013074bc5940f5391214b0bd4c5ebe8b6c449174ae5fec3c983c",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:128 STACK:8 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "decode_opt": true,
+        "storage_bytes": 98304
+      },
+      "shared_capacity": {
+        "dynamic_bytes": 98304,
+        "static_bytes": 1024,
+        "total_bytes": 99328,
+        "block_limit_bytes": 101376
+      },
+      "q1_register_layout": {
+        "proven": true,
+        "selected": true,
+        "threads": 128,
+        "subgroup_threads": 4,
+        "partner_warp_xor": 2,
+        "max_rows": 8,
+        "scratch_bytes": 512,
+        "sc1_capacity_bytes": 4096,
+        "source_values": 2048,
+        "source_mapping_sha256": "7e44786c3b80f15dd4702d218d2ead03db120af1f71fb1239dd14cc96ce884e2",
+        "copy_shapes": [
+          "((1, (2, 2)), 1, 4)"
+        ],
+        "source_element_bits": 16,
+        "math_mode": "fast",
+        "max_shuffle_collectives": 8,
+        "quant_shuffle_collectives": 8,
+        "layout": {
+          "sc1_shape": "((8, 2), (64, 2), (1, 1))",
+          "sc1_stride": "((64, 512), (1, 1024), (0, 0))",
+          "sc1_swizzle": "(3, 4, 3)",
+          "a2_shape": "((8, 2), (128, 1), (1, 1))",
+          "a2_stride": "((128, 1024), (1, 0), (0, 0))",
+          "a2_swizzle": "(2, 4, 3)",
+          "sfa2_shape": "(((32, 4), 1), ((16, 4), 1, 2), 1)",
+          "sfa2_stride": "(((16, 4), 512), ((0, 1), 4, 512), 1024)"
+        },
+        "rows": [
+          {
+            "rows": 0,
+            "max_store_bytes": 0,
+            "max_load_bytes": 0,
+            "a2_bytes": 0,
+            "sfa2_bytes": 0,
+            "source_values": 0,
+            "max_stores_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "max_loads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "packed_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "scales_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ownership_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          },
+          {
+            "rows": 1,
+            "max_store_bytes": 64,
+            "max_load_bytes": 64,
+            "a2_bytes": 64,
+            "sfa2_bytes": 8,
+            "source_values": 128,
+            "max_stores_sha256": "ec1a30f84de188dda17bf62b18b748d02971de861364e80986f41437df66aa86",
+            "max_loads_sha256": "c1257d66a578eb44d932e4fd11fe2762906c847522ce743f3d72f7473e9f23ab",
+            "packed_sha256": "93192174dbfcda504d01f660f6a0f8d6fd0573f7968019e4d003cadd19bfb3de",
+            "scales_sha256": "5683d3cd822558867e4d83d275ae92a2d210d662f84c8b7429e287a81d9fca99",
+            "ownership_sha256": "9205064cac3aa9e8db3f942197873bab87f90c2bd3bcd60191400077952a724d"
+          },
+          {
+            "rows": 2,
+            "max_store_bytes": 128,
+            "max_load_bytes": 128,
+            "a2_bytes": 128,
+            "sfa2_bytes": 16,
+            "source_values": 256,
+            "max_stores_sha256": "b78e15afd67128706b99522d2bdfad2cc0d910670ba6cb25c619db9d1b6344ce",
+            "max_loads_sha256": "697a938549deebbf7e5fa4fe31ab5c78bff4df1c3bea63af4c18298459cf2773",
+            "packed_sha256": "b6934af296efecb2bddcf654fe01bcb298054f4061cf713da2a75e0a7cdf8fda",
+            "scales_sha256": "ce3cb56d08a0902e60de432266c61a6c22e42a7fb44a6f2f819b512a9fa39e28",
+            "ownership_sha256": "deab21788a6bdf4f48bcc275b8a93772b548c5deac2ca6d6c6d11da746768c54"
+          },
+          {
+            "rows": 3,
+            "max_store_bytes": 192,
+            "max_load_bytes": 192,
+            "a2_bytes": 192,
+            "sfa2_bytes": 24,
+            "source_values": 384,
+            "max_stores_sha256": "25e507cfc1b6dcd41466a6a3ef65b021256b89a96056b10b9d67ad868a89ec84",
+            "max_loads_sha256": "6b3494927efc9bc116a4966bea7db26e9fa5e634a88aeb7521c5e49917201da3",
+            "packed_sha256": "821c5126ea421599daef9b0e0f5180cc3c7fa23eb89cdaaa19385eb13f22e909",
+            "scales_sha256": "e04d15b61510cbbf0ae34b8bdd51e6ac9677d6996e4594ce9ed92e5aeb4b0b1b",
+            "ownership_sha256": "b28ca61da31930617e6df7c70277d782e7e3fe116193965c620beef69e79a11b"
+          },
+          {
+            "rows": 4,
+            "max_store_bytes": 256,
+            "max_load_bytes": 256,
+            "a2_bytes": 256,
+            "sfa2_bytes": 32,
+            "source_values": 512,
+            "max_stores_sha256": "acfa4e868a50af1796d830825f265a87b9dc8b64b5651d1528ecdb34e532150d",
+            "max_loads_sha256": "38b6f8fd47f8629c51fa7c6d1dc0b75d9d73b79f29fb1725a2bf269bc6c6be4e",
+            "packed_sha256": "f453e4bf9add1238478a43bb4e7b4d469d46db49abab27f56107271b68e37fd4",
+            "scales_sha256": "85ade3a4ce0404124b8ab215b24e915cb2576993495595c9fe643a040d063c75",
+            "ownership_sha256": "5c6c8730e85c2d4c6a5ad3c197948e03d16d271d2429614a125f2c8722422672"
+          },
+          {
+            "rows": 5,
+            "max_store_bytes": 320,
+            "max_load_bytes": 320,
+            "a2_bytes": 320,
+            "sfa2_bytes": 40,
+            "source_values": 640,
+            "max_stores_sha256": "cdd0e58e424e1f4c8856d3284b7cfc820a950ebe8e793cda030c98512c5aaf0d",
+            "max_loads_sha256": "ec28ac258d3ea525821cfe891bfda43bc3d9080763f49cdf59d6e19b3f90baca",
+            "packed_sha256": "33f8ff7bb448277069a64d035ff24def99db5d28e2e3555f70694815362dc604",
+            "scales_sha256": "98c13e6cb983fdbcc0c916bafbf81c199d3793ffd8d27bca1cb8f86d0ecabac4",
+            "ownership_sha256": "16035ae477b7028ebe0afa658672466763f9ad2584799f0017ae56427a54032f"
+          },
+          {
+            "rows": 6,
+            "max_store_bytes": 384,
+            "max_load_bytes": 384,
+            "a2_bytes": 384,
+            "sfa2_bytes": 48,
+            "source_values": 768,
+            "max_stores_sha256": "47377c9abbb9d0b1da2980372fd038497cabb29bd188a97854ae492f70413781",
+            "max_loads_sha256": "547cb422b7c714ad64595982d602df5e6d90fa17e741fe7a6c9bd39479196358",
+            "packed_sha256": "952c16139a7bf124ec59ee74001e43c45bfe31ae81efd6e12c6501bcc970d846",
+            "scales_sha256": "fbd373e689e911c775f5081a79de17534b2ecac69d990ce08bf8855cdfa3ea51",
+            "ownership_sha256": "75cdda261be9e72b3c0f76b7eb77c8bb4d172ffa188971a0a75ef1149a41b60b"
+          },
+          {
+            "rows": 7,
+            "max_store_bytes": 448,
+            "max_load_bytes": 448,
+            "a2_bytes": 448,
+            "sfa2_bytes": 56,
+            "source_values": 896,
+            "max_stores_sha256": "46ec37b441165202f6b0a21adafeadc6914dc5fdb4ef814a840718f2ab537cd3",
+            "max_loads_sha256": "53845390b35a13d63a1e54da6216d95bbcba0cd6e46091d973f2386bf2d5aa46",
+            "packed_sha256": "dca2e5e26119a1d290d0bad0b55366cda78209847feede21cfb7f07c9e61ed77",
+            "scales_sha256": "4fed714de3eb02a9f63d98cde54003cefc102bf7adc99a979387a54dee764507",
+            "ownership_sha256": "7792d75dc7c7b1df2c8224cceef5c3d00a7d6cb0504776af7533dd83f17e92b3"
+          },
+          {
+            "rows": 8,
+            "max_store_bytes": 512,
+            "max_load_bytes": 512,
+            "a2_bytes": 512,
+            "sfa2_bytes": 64,
+            "source_values": 1024,
+            "max_stores_sha256": "8b3beb4499ff7d5e630715afc0c845f02c2cabae7eb5beb04b65be36db24398a",
+            "max_loads_sha256": "102d22613c8f14fc3e08aba59c339a80344332a2e8ea38a790fd39d3da4364aa",
+            "packed_sha256": "a52f0b5b486235de775c521b70dd82df737af22c1a6b3bed29cc37a138fe489a",
+            "scales_sha256": "14bdbe8769734329f0380d4902425e2c4f58658b8162001107b46b88463f9091",
+            "ownership_sha256": "a145a002eb1fdc471853d7523a78bac67bcf5f0ab3da36e9cebc738f053a7d10"
+          }
+        ]
+      }
+    },
+    {
+      "arm": "opt-static/M4-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        4,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0,
+        "glm53_ep_static_sf6_q1_register_max_v5"
+      ],
+      "artifacts": [
+        {
+          "path": "opt-static/M4-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.ptx",
+          "sha256": "5732017b0691873ac727ae8274cfe9b5e86424a456cce3aaf785ee3188f8ddc8"
+        }
+      ],
+      "resources": [
+        {
+          "path": "opt-static/M4-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.cubin",
+          "sha256": "b31873307b39438aa0aeb842f3350c0e922a8beeb22b108b66cf2d0be45551fb",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o4409640961_tensorptri32gmemo321_tensorptrf32g_0:\n  REG:128 STACK:8 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        },
+        "decode_opt": true,
+        "storage_bytes": 98304
+      },
+      "shared_capacity": {
+        "dynamic_bytes": 98304,
+        "static_bytes": 1024,
+        "total_bytes": 99328,
+        "block_limit_bytes": 101376
+      },
+      "q1_register_layout": {
+        "proven": true,
+        "selected": true,
+        "threads": 128,
+        "subgroup_threads": 4,
+        "partner_warp_xor": 2,
+        "max_rows": 8,
+        "scratch_bytes": 512,
+        "sc1_capacity_bytes": 4096,
+        "source_values": 2048,
+        "source_mapping_sha256": "7e44786c3b80f15dd4702d218d2ead03db120af1f71fb1239dd14cc96ce884e2",
+        "copy_shapes": [
+          "((1, (2, 2)), 1, 4)"
+        ],
+        "source_element_bits": 16,
+        "math_mode": "fast",
+        "max_shuffle_collectives": 8,
+        "quant_shuffle_collectives": 8,
+        "layout": {
+          "sc1_shape": "((8, 2), (64, 2), (1, 1))",
+          "sc1_stride": "((64, 512), (1, 1024), (0, 0))",
+          "sc1_swizzle": "(3, 4, 3)",
+          "a2_shape": "((8, 2), (128, 1), (1, 1))",
+          "a2_stride": "((128, 1024), (1, 0), (0, 0))",
+          "a2_swizzle": "(2, 4, 3)",
+          "sfa2_shape": "(((32, 4), 1), ((16, 4), 1, 2), 1)",
+          "sfa2_stride": "(((16, 4), 512), ((0, 1), 4, 512), 1024)"
+        },
+        "rows": [
+          {
+            "rows": 0,
+            "max_store_bytes": 0,
+            "max_load_bytes": 0,
+            "a2_bytes": 0,
+            "sfa2_bytes": 0,
+            "source_values": 0,
+            "max_stores_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "max_loads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "packed_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "scales_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ownership_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          },
+          {
+            "rows": 1,
+            "max_store_bytes": 64,
+            "max_load_bytes": 64,
+            "a2_bytes": 64,
+            "sfa2_bytes": 8,
+            "source_values": 128,
+            "max_stores_sha256": "ec1a30f84de188dda17bf62b18b748d02971de861364e80986f41437df66aa86",
+            "max_loads_sha256": "c1257d66a578eb44d932e4fd11fe2762906c847522ce743f3d72f7473e9f23ab",
+            "packed_sha256": "93192174dbfcda504d01f660f6a0f8d6fd0573f7968019e4d003cadd19bfb3de",
+            "scales_sha256": "5683d3cd822558867e4d83d275ae92a2d210d662f84c8b7429e287a81d9fca99",
+            "ownership_sha256": "9205064cac3aa9e8db3f942197873bab87f90c2bd3bcd60191400077952a724d"
+          },
+          {
+            "rows": 2,
+            "max_store_bytes": 128,
+            "max_load_bytes": 128,
+            "a2_bytes": 128,
+            "sfa2_bytes": 16,
+            "source_values": 256,
+            "max_stores_sha256": "b78e15afd67128706b99522d2bdfad2cc0d910670ba6cb25c619db9d1b6344ce",
+            "max_loads_sha256": "697a938549deebbf7e5fa4fe31ab5c78bff4df1c3bea63af4c18298459cf2773",
+            "packed_sha256": "b6934af296efecb2bddcf654fe01bcb298054f4061cf713da2a75e0a7cdf8fda",
+            "scales_sha256": "ce3cb56d08a0902e60de432266c61a6c22e42a7fb44a6f2f819b512a9fa39e28",
+            "ownership_sha256": "deab21788a6bdf4f48bcc275b8a93772b548c5deac2ca6d6c6d11da746768c54"
+          },
+          {
+            "rows": 3,
+            "max_store_bytes": 192,
+            "max_load_bytes": 192,
+            "a2_bytes": 192,
+            "sfa2_bytes": 24,
+            "source_values": 384,
+            "max_stores_sha256": "25e507cfc1b6dcd41466a6a3ef65b021256b89a96056b10b9d67ad868a89ec84",
+            "max_loads_sha256": "6b3494927efc9bc116a4966bea7db26e9fa5e634a88aeb7521c5e49917201da3",
+            "packed_sha256": "821c5126ea421599daef9b0e0f5180cc3c7fa23eb89cdaaa19385eb13f22e909",
+            "scales_sha256": "e04d15b61510cbbf0ae34b8bdd51e6ac9677d6996e4594ce9ed92e5aeb4b0b1b",
+            "ownership_sha256": "b28ca61da31930617e6df7c70277d782e7e3fe116193965c620beef69e79a11b"
+          },
+          {
+            "rows": 4,
+            "max_store_bytes": 256,
+            "max_load_bytes": 256,
+            "a2_bytes": 256,
+            "sfa2_bytes": 32,
+            "source_values": 512,
+            "max_stores_sha256": "acfa4e868a50af1796d830825f265a87b9dc8b64b5651d1528ecdb34e532150d",
+            "max_loads_sha256": "38b6f8fd47f8629c51fa7c6d1dc0b75d9d73b79f29fb1725a2bf269bc6c6be4e",
+            "packed_sha256": "f453e4bf9add1238478a43bb4e7b4d469d46db49abab27f56107271b68e37fd4",
+            "scales_sha256": "85ade3a4ce0404124b8ab215b24e915cb2576993495595c9fe643a040d063c75",
+            "ownership_sha256": "5c6c8730e85c2d4c6a5ad3c197948e03d16d271d2429614a125f2c8722422672"
+          },
+          {
+            "rows": 5,
+            "max_store_bytes": 320,
+            "max_load_bytes": 320,
+            "a2_bytes": 320,
+            "sfa2_bytes": 40,
+            "source_values": 640,
+            "max_stores_sha256": "cdd0e58e424e1f4c8856d3284b7cfc820a950ebe8e793cda030c98512c5aaf0d",
+            "max_loads_sha256": "ec28ac258d3ea525821cfe891bfda43bc3d9080763f49cdf59d6e19b3f90baca",
+            "packed_sha256": "33f8ff7bb448277069a64d035ff24def99db5d28e2e3555f70694815362dc604",
+            "scales_sha256": "98c13e6cb983fdbcc0c916bafbf81c199d3793ffd8d27bca1cb8f86d0ecabac4",
+            "ownership_sha256": "16035ae477b7028ebe0afa658672466763f9ad2584799f0017ae56427a54032f"
+          },
+          {
+            "rows": 6,
+            "max_store_bytes": 384,
+            "max_load_bytes": 384,
+            "a2_bytes": 384,
+            "sfa2_bytes": 48,
+            "source_values": 768,
+            "max_stores_sha256": "47377c9abbb9d0b1da2980372fd038497cabb29bd188a97854ae492f70413781",
+            "max_loads_sha256": "547cb422b7c714ad64595982d602df5e6d90fa17e741fe7a6c9bd39479196358",
+            "packed_sha256": "952c16139a7bf124ec59ee74001e43c45bfe31ae81efd6e12c6501bcc970d846",
+            "scales_sha256": "fbd373e689e911c775f5081a79de17534b2ecac69d990ce08bf8855cdfa3ea51",
+            "ownership_sha256": "75cdda261be9e72b3c0f76b7eb77c8bb4d172ffa188971a0a75ef1149a41b60b"
+          },
+          {
+            "rows": 7,
+            "max_store_bytes": 448,
+            "max_load_bytes": 448,
+            "a2_bytes": 448,
+            "sfa2_bytes": 56,
+            "source_values": 896,
+            "max_stores_sha256": "46ec37b441165202f6b0a21adafeadc6914dc5fdb4ef814a840718f2ab537cd3",
+            "max_loads_sha256": "53845390b35a13d63a1e54da6216d95bbcba0cd6e46091d973f2386bf2d5aa46",
+            "packed_sha256": "dca2e5e26119a1d290d0bad0b55366cda78209847feede21cfb7f07c9e61ed77",
+            "scales_sha256": "4fed714de3eb02a9f63d98cde54003cefc102bf7adc99a979387a54dee764507",
+            "ownership_sha256": "7792d75dc7c7b1df2c8224cceef5c3d00a7d6cb0504776af7533dd83f17e92b3"
+          },
+          {
+            "rows": 8,
+            "max_store_bytes": 512,
+            "max_load_bytes": 512,
+            "a2_bytes": 512,
+            "sfa2_bytes": 64,
+            "source_values": 1024,
+            "max_stores_sha256": "8b3beb4499ff7d5e630715afc0c845f02c2cabae7eb5beb04b65be36db24398a",
+            "max_loads_sha256": "102d22613c8f14fc3e08aba59c339a80344332a2e8ea38a790fd39d3da4364aa",
+            "packed_sha256": "a52f0b5b486235de775c521b70dd82df737af22c1a6b3bed29cc37a138fe489a",
+            "scales_sha256": "14bdbe8769734329f0380d4902425e2c4f58658b8162001107b46b88463f9091",
+            "ownership_sha256": "a145a002eb1fdc471853d7523a78bac67bcf5f0ab3da36e9cebc738f053a7d10"
+          }
+        ]
+      }
+    },
+    {
+      "arm": "opt-static/M6-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        6,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0,
+        "glm53_ep_static_sf6_q1_register_max_v5"
+      ],
+      "artifacts": [
+        {
+          "path": "opt-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+          "sha256": "3efb8d89aa81c0f9b738e4389bb5532002ccb7349628ceeda8e0870cdde81369"
+        }
+      ],
+      "resources": [
+        {
+          "path": "opt-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.cubin",
+          "sha256": "17707c12595e4736e5b8c221242453a58aeaa8deb5b865f7babcfa0cacae4dde",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:128 STACK:8 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        },
+        "decode_opt": true,
+        "storage_bytes": 98304
+      },
+      "shared_capacity": {
+        "dynamic_bytes": 98304,
+        "static_bytes": 1024,
+        "total_bytes": 99328,
+        "block_limit_bytes": 101376
+      },
+      "q1_register_layout": {
+        "proven": true,
+        "selected": true,
+        "threads": 128,
+        "subgroup_threads": 4,
+        "partner_warp_xor": 2,
+        "max_rows": 8,
+        "scratch_bytes": 512,
+        "sc1_capacity_bytes": 4096,
+        "source_values": 2048,
+        "source_mapping_sha256": "7e44786c3b80f15dd4702d218d2ead03db120af1f71fb1239dd14cc96ce884e2",
+        "copy_shapes": [
+          "((1, (2, 2)), 1, 4)"
+        ],
+        "source_element_bits": 16,
+        "math_mode": "fast",
+        "max_shuffle_collectives": 8,
+        "quant_shuffle_collectives": 8,
+        "layout": {
+          "sc1_shape": "((8, 2), (64, 2), (1, 1))",
+          "sc1_stride": "((64, 512), (1, 1024), (0, 0))",
+          "sc1_swizzle": "(3, 4, 3)",
+          "a2_shape": "((8, 2), (128, 1), (1, 1))",
+          "a2_stride": "((128, 1024), (1, 0), (0, 0))",
+          "a2_swizzle": "(2, 4, 3)",
+          "sfa2_shape": "(((32, 4), 1), ((16, 4), 1, 2), 1)",
+          "sfa2_stride": "(((16, 4), 512), ((0, 1), 4, 512), 1024)"
+        },
+        "rows": [
+          {
+            "rows": 0,
+            "max_store_bytes": 0,
+            "max_load_bytes": 0,
+            "a2_bytes": 0,
+            "sfa2_bytes": 0,
+            "source_values": 0,
+            "max_stores_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "max_loads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "packed_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "scales_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ownership_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          },
+          {
+            "rows": 1,
+            "max_store_bytes": 64,
+            "max_load_bytes": 64,
+            "a2_bytes": 64,
+            "sfa2_bytes": 8,
+            "source_values": 128,
+            "max_stores_sha256": "ec1a30f84de188dda17bf62b18b748d02971de861364e80986f41437df66aa86",
+            "max_loads_sha256": "c1257d66a578eb44d932e4fd11fe2762906c847522ce743f3d72f7473e9f23ab",
+            "packed_sha256": "93192174dbfcda504d01f660f6a0f8d6fd0573f7968019e4d003cadd19bfb3de",
+            "scales_sha256": "5683d3cd822558867e4d83d275ae92a2d210d662f84c8b7429e287a81d9fca99",
+            "ownership_sha256": "9205064cac3aa9e8db3f942197873bab87f90c2bd3bcd60191400077952a724d"
+          },
+          {
+            "rows": 2,
+            "max_store_bytes": 128,
+            "max_load_bytes": 128,
+            "a2_bytes": 128,
+            "sfa2_bytes": 16,
+            "source_values": 256,
+            "max_stores_sha256": "b78e15afd67128706b99522d2bdfad2cc0d910670ba6cb25c619db9d1b6344ce",
+            "max_loads_sha256": "697a938549deebbf7e5fa4fe31ab5c78bff4df1c3bea63af4c18298459cf2773",
+            "packed_sha256": "b6934af296efecb2bddcf654fe01bcb298054f4061cf713da2a75e0a7cdf8fda",
+            "scales_sha256": "ce3cb56d08a0902e60de432266c61a6c22e42a7fb44a6f2f819b512a9fa39e28",
+            "ownership_sha256": "deab21788a6bdf4f48bcc275b8a93772b548c5deac2ca6d6c6d11da746768c54"
+          },
+          {
+            "rows": 3,
+            "max_store_bytes": 192,
+            "max_load_bytes": 192,
+            "a2_bytes": 192,
+            "sfa2_bytes": 24,
+            "source_values": 384,
+            "max_stores_sha256": "25e507cfc1b6dcd41466a6a3ef65b021256b89a96056b10b9d67ad868a89ec84",
+            "max_loads_sha256": "6b3494927efc9bc116a4966bea7db26e9fa5e634a88aeb7521c5e49917201da3",
+            "packed_sha256": "821c5126ea421599daef9b0e0f5180cc3c7fa23eb89cdaaa19385eb13f22e909",
+            "scales_sha256": "e04d15b61510cbbf0ae34b8bdd51e6ac9677d6996e4594ce9ed92e5aeb4b0b1b",
+            "ownership_sha256": "b28ca61da31930617e6df7c70277d782e7e3fe116193965c620beef69e79a11b"
+          },
+          {
+            "rows": 4,
+            "max_store_bytes": 256,
+            "max_load_bytes": 256,
+            "a2_bytes": 256,
+            "sfa2_bytes": 32,
+            "source_values": 512,
+            "max_stores_sha256": "acfa4e868a50af1796d830825f265a87b9dc8b64b5651d1528ecdb34e532150d",
+            "max_loads_sha256": "38b6f8fd47f8629c51fa7c6d1dc0b75d9d73b79f29fb1725a2bf269bc6c6be4e",
+            "packed_sha256": "f453e4bf9add1238478a43bb4e7b4d469d46db49abab27f56107271b68e37fd4",
+            "scales_sha256": "85ade3a4ce0404124b8ab215b24e915cb2576993495595c9fe643a040d063c75",
+            "ownership_sha256": "5c6c8730e85c2d4c6a5ad3c197948e03d16d271d2429614a125f2c8722422672"
+          },
+          {
+            "rows": 5,
+            "max_store_bytes": 320,
+            "max_load_bytes": 320,
+            "a2_bytes": 320,
+            "sfa2_bytes": 40,
+            "source_values": 640,
+            "max_stores_sha256": "cdd0e58e424e1f4c8856d3284b7cfc820a950ebe8e793cda030c98512c5aaf0d",
+            "max_loads_sha256": "ec28ac258d3ea525821cfe891bfda43bc3d9080763f49cdf59d6e19b3f90baca",
+            "packed_sha256": "33f8ff7bb448277069a64d035ff24def99db5d28e2e3555f70694815362dc604",
+            "scales_sha256": "98c13e6cb983fdbcc0c916bafbf81c199d3793ffd8d27bca1cb8f86d0ecabac4",
+            "ownership_sha256": "16035ae477b7028ebe0afa658672466763f9ad2584799f0017ae56427a54032f"
+          },
+          {
+            "rows": 6,
+            "max_store_bytes": 384,
+            "max_load_bytes": 384,
+            "a2_bytes": 384,
+            "sfa2_bytes": 48,
+            "source_values": 768,
+            "max_stores_sha256": "47377c9abbb9d0b1da2980372fd038497cabb29bd188a97854ae492f70413781",
+            "max_loads_sha256": "547cb422b7c714ad64595982d602df5e6d90fa17e741fe7a6c9bd39479196358",
+            "packed_sha256": "952c16139a7bf124ec59ee74001e43c45bfe31ae81efd6e12c6501bcc970d846",
+            "scales_sha256": "fbd373e689e911c775f5081a79de17534b2ecac69d990ce08bf8855cdfa3ea51",
+            "ownership_sha256": "75cdda261be9e72b3c0f76b7eb77c8bb4d172ffa188971a0a75ef1149a41b60b"
+          },
+          {
+            "rows": 7,
+            "max_store_bytes": 448,
+            "max_load_bytes": 448,
+            "a2_bytes": 448,
+            "sfa2_bytes": 56,
+            "source_values": 896,
+            "max_stores_sha256": "46ec37b441165202f6b0a21adafeadc6914dc5fdb4ef814a840718f2ab537cd3",
+            "max_loads_sha256": "53845390b35a13d63a1e54da6216d95bbcba0cd6e46091d973f2386bf2d5aa46",
+            "packed_sha256": "dca2e5e26119a1d290d0bad0b55366cda78209847feede21cfb7f07c9e61ed77",
+            "scales_sha256": "4fed714de3eb02a9f63d98cde54003cefc102bf7adc99a979387a54dee764507",
+            "ownership_sha256": "7792d75dc7c7b1df2c8224cceef5c3d00a7d6cb0504776af7533dd83f17e92b3"
+          },
+          {
+            "rows": 8,
+            "max_store_bytes": 512,
+            "max_load_bytes": 512,
+            "a2_bytes": 512,
+            "sfa2_bytes": 64,
+            "source_values": 1024,
+            "max_stores_sha256": "8b3beb4499ff7d5e630715afc0c845f02c2cabae7eb5beb04b65be36db24398a",
+            "max_loads_sha256": "102d22613c8f14fc3e08aba59c339a80344332a2e8ea38a790fd39d3da4364aa",
+            "packed_sha256": "a52f0b5b486235de775c521b70dd82df737af22c1a6b3bed29cc37a138fe489a",
+            "scales_sha256": "14bdbe8769734329f0380d4902425e2c4f58658b8162001107b46b88463f9091",
+            "ownership_sha256": "a145a002eb1fdc471853d7523a78bac67bcf5f0ab3da36e9cebc738f053a7d10"
+          }
+        ]
+      }
+    },
+    {
+      "arm": "opt-static/M8-map288-i32",
+      "cache_key": [
+        "glm53_ep_static_tiled_fp32_v1",
+        8,
+        256,
+        48,
+        "torch.int32",
+        false,
+        true,
+        [
+          16,
+          128,
+          256
+        ],
+        [
+          16,
+          256,
+          128
+        ],
+        "nvfp4",
+        "sf6_v1",
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1",
+        "glm53_ep_static_fused_route_v1",
+        288,
+        "torch.int32",
+        0,
+        "glm53_ep_static_sf6_q1_register_max_v5"
+      ],
+      "artifacts": [
+        {
+          "path": "opt-static/M8-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.ptx",
+          "sha256": "8f7d70a0cb926666938793b05ab4db13813598ed8e9c4fe2ec7606c006776899"
+        }
+      ],
+      "resources": [
+        {
+          "path": "opt-static/M8-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.cubin",
+          "sha256": "6e234ef35aa60e671b79e3b4ef55914bd6474c708778d2c1c67c76a309b3aec9",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32g_0:\n  REG:128 STACK:8 SHARED:1024 LOCAL:0 CONSTANT[0]:1904 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ],
+      "specialization": {
+        "a_ring": true,
+        "word_unpack": true,
+        "scatter_bf16": true,
+        "output_dtype": "bfloat16",
+        "scale_mode": "sf6_v1",
+        "cache_tag": "glm53_ep_static_bf16_scatter_v1",
+        "route": {
+          "route_mode": "global",
+          "expert_map_len": 288,
+          "local_expert_offset": 0,
+          "topk_ids_dtype": "int32",
+          "expert_map_operand_dtype": "int32",
+          "expert_map_operand_shape": [
+            288
+          ],
+          "compile_argument_count": 31
+        },
+        "decode_opt": true,
+        "storage_bytes": 98304
+      },
+      "shared_capacity": {
+        "dynamic_bytes": 98304,
+        "static_bytes": 1024,
+        "total_bytes": 99328,
+        "block_limit_bytes": 101376
+      },
+      "q1_register_layout": {
+        "proven": true,
+        "selected": true,
+        "threads": 128,
+        "subgroup_threads": 4,
+        "partner_warp_xor": 2,
+        "max_rows": 8,
+        "scratch_bytes": 512,
+        "sc1_capacity_bytes": 4096,
+        "source_values": 2048,
+        "source_mapping_sha256": "7e44786c3b80f15dd4702d218d2ead03db120af1f71fb1239dd14cc96ce884e2",
+        "copy_shapes": [
+          "((1, (2, 2)), 1, 4)"
+        ],
+        "source_element_bits": 16,
+        "math_mode": "fast",
+        "max_shuffle_collectives": 8,
+        "quant_shuffle_collectives": 8,
+        "layout": {
+          "sc1_shape": "((8, 2), (64, 2), (1, 1))",
+          "sc1_stride": "((64, 512), (1, 1024), (0, 0))",
+          "sc1_swizzle": "(3, 4, 3)",
+          "a2_shape": "((8, 2), (128, 1), (1, 1))",
+          "a2_stride": "((128, 1024), (1, 0), (0, 0))",
+          "a2_swizzle": "(2, 4, 3)",
+          "sfa2_shape": "(((32, 4), 1), ((16, 4), 1, 2), 1)",
+          "sfa2_stride": "(((16, 4), 512), ((0, 1), 4, 512), 1024)"
+        },
+        "rows": [
+          {
+            "rows": 0,
+            "max_store_bytes": 0,
+            "max_load_bytes": 0,
+            "a2_bytes": 0,
+            "sfa2_bytes": 0,
+            "source_values": 0,
+            "max_stores_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "max_loads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "packed_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "scales_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ownership_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          },
+          {
+            "rows": 1,
+            "max_store_bytes": 64,
+            "max_load_bytes": 64,
+            "a2_bytes": 64,
+            "sfa2_bytes": 8,
+            "source_values": 128,
+            "max_stores_sha256": "ec1a30f84de188dda17bf62b18b748d02971de861364e80986f41437df66aa86",
+            "max_loads_sha256": "c1257d66a578eb44d932e4fd11fe2762906c847522ce743f3d72f7473e9f23ab",
+            "packed_sha256": "93192174dbfcda504d01f660f6a0f8d6fd0573f7968019e4d003cadd19bfb3de",
+            "scales_sha256": "5683d3cd822558867e4d83d275ae92a2d210d662f84c8b7429e287a81d9fca99",
+            "ownership_sha256": "9205064cac3aa9e8db3f942197873bab87f90c2bd3bcd60191400077952a724d"
+          },
+          {
+            "rows": 2,
+            "max_store_bytes": 128,
+            "max_load_bytes": 128,
+            "a2_bytes": 128,
+            "sfa2_bytes": 16,
+            "source_values": 256,
+            "max_stores_sha256": "b78e15afd67128706b99522d2bdfad2cc0d910670ba6cb25c619db9d1b6344ce",
+            "max_loads_sha256": "697a938549deebbf7e5fa4fe31ab5c78bff4df1c3bea63af4c18298459cf2773",
+            "packed_sha256": "b6934af296efecb2bddcf654fe01bcb298054f4061cf713da2a75e0a7cdf8fda",
+            "scales_sha256": "ce3cb56d08a0902e60de432266c61a6c22e42a7fb44a6f2f819b512a9fa39e28",
+            "ownership_sha256": "deab21788a6bdf4f48bcc275b8a93772b548c5deac2ca6d6c6d11da746768c54"
+          },
+          {
+            "rows": 3,
+            "max_store_bytes": 192,
+            "max_load_bytes": 192,
+            "a2_bytes": 192,
+            "sfa2_bytes": 24,
+            "source_values": 384,
+            "max_stores_sha256": "25e507cfc1b6dcd41466a6a3ef65b021256b89a96056b10b9d67ad868a89ec84",
+            "max_loads_sha256": "6b3494927efc9bc116a4966bea7db26e9fa5e634a88aeb7521c5e49917201da3",
+            "packed_sha256": "821c5126ea421599daef9b0e0f5180cc3c7fa23eb89cdaaa19385eb13f22e909",
+            "scales_sha256": "e04d15b61510cbbf0ae34b8bdd51e6ac9677d6996e4594ce9ed92e5aeb4b0b1b",
+            "ownership_sha256": "b28ca61da31930617e6df7c70277d782e7e3fe116193965c620beef69e79a11b"
+          },
+          {
+            "rows": 4,
+            "max_store_bytes": 256,
+            "max_load_bytes": 256,
+            "a2_bytes": 256,
+            "sfa2_bytes": 32,
+            "source_values": 512,
+            "max_stores_sha256": "acfa4e868a50af1796d830825f265a87b9dc8b64b5651d1528ecdb34e532150d",
+            "max_loads_sha256": "38b6f8fd47f8629c51fa7c6d1dc0b75d9d73b79f29fb1725a2bf269bc6c6be4e",
+            "packed_sha256": "f453e4bf9add1238478a43bb4e7b4d469d46db49abab27f56107271b68e37fd4",
+            "scales_sha256": "85ade3a4ce0404124b8ab215b24e915cb2576993495595c9fe643a040d063c75",
+            "ownership_sha256": "5c6c8730e85c2d4c6a5ad3c197948e03d16d271d2429614a125f2c8722422672"
+          },
+          {
+            "rows": 5,
+            "max_store_bytes": 320,
+            "max_load_bytes": 320,
+            "a2_bytes": 320,
+            "sfa2_bytes": 40,
+            "source_values": 640,
+            "max_stores_sha256": "cdd0e58e424e1f4c8856d3284b7cfc820a950ebe8e793cda030c98512c5aaf0d",
+            "max_loads_sha256": "ec28ac258d3ea525821cfe891bfda43bc3d9080763f49cdf59d6e19b3f90baca",
+            "packed_sha256": "33f8ff7bb448277069a64d035ff24def99db5d28e2e3555f70694815362dc604",
+            "scales_sha256": "98c13e6cb983fdbcc0c916bafbf81c199d3793ffd8d27bca1cb8f86d0ecabac4",
+            "ownership_sha256": "16035ae477b7028ebe0afa658672466763f9ad2584799f0017ae56427a54032f"
+          },
+          {
+            "rows": 6,
+            "max_store_bytes": 384,
+            "max_load_bytes": 384,
+            "a2_bytes": 384,
+            "sfa2_bytes": 48,
+            "source_values": 768,
+            "max_stores_sha256": "47377c9abbb9d0b1da2980372fd038497cabb29bd188a97854ae492f70413781",
+            "max_loads_sha256": "547cb422b7c714ad64595982d602df5e6d90fa17e741fe7a6c9bd39479196358",
+            "packed_sha256": "952c16139a7bf124ec59ee74001e43c45bfe31ae81efd6e12c6501bcc970d846",
+            "scales_sha256": "fbd373e689e911c775f5081a79de17534b2ecac69d990ce08bf8855cdfa3ea51",
+            "ownership_sha256": "75cdda261be9e72b3c0f76b7eb77c8bb4d172ffa188971a0a75ef1149a41b60b"
+          },
+          {
+            "rows": 7,
+            "max_store_bytes": 448,
+            "max_load_bytes": 448,
+            "a2_bytes": 448,
+            "sfa2_bytes": 56,
+            "source_values": 896,
+            "max_stores_sha256": "46ec37b441165202f6b0a21adafeadc6914dc5fdb4ef814a840718f2ab537cd3",
+            "max_loads_sha256": "53845390b35a13d63a1e54da6216d95bbcba0cd6e46091d973f2386bf2d5aa46",
+            "packed_sha256": "dca2e5e26119a1d290d0bad0b55366cda78209847feede21cfb7f07c9e61ed77",
+            "scales_sha256": "4fed714de3eb02a9f63d98cde54003cefc102bf7adc99a979387a54dee764507",
+            "ownership_sha256": "7792d75dc7c7b1df2c8224cceef5c3d00a7d6cb0504776af7533dd83f17e92b3"
+          },
+          {
+            "rows": 8,
+            "max_store_bytes": 512,
+            "max_load_bytes": 512,
+            "a2_bytes": 512,
+            "sfa2_bytes": 64,
+            "source_values": 1024,
+            "max_stores_sha256": "8b3beb4499ff7d5e630715afc0c845f02c2cabae7eb5beb04b65be36db24398a",
+            "max_loads_sha256": "102d22613c8f14fc3e08aba59c339a80344332a2e8ea38a790fd39d3da4364aa",
+            "packed_sha256": "a52f0b5b486235de775c521b70dd82df737af22c1a6b3bed29cc37a138fe489a",
+            "scales_sha256": "14bdbe8769734329f0380d4902425e2c4f58658b8162001107b46b88463f9091",
+            "ownership_sha256": "a145a002eb1fdc471853d7523a78bac67bcf5f0ab3da36e9cebc738f053a7d10"
+          }
+        ]
+      }
+    }
+  ],
+  "dynamic_passes": [
+    {
+      "arm": "dynamic/M33",
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        72,
+        4096,
+        2048,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "dynamic/M33/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "784a2b15126f845b1335817c2515fcffcbcba353783d486351dada1b6da8006f"
+        }
+      ],
+      "resources": [
+        {
+          "path": "dynamic/M33/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "cca0bb84ccdf34bea259cc32a7ecef0356191a6790c14f326f19d74db6c74d67",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernelSF6_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32g_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ]
+    },
+    {
+      "arm": "dynamic/M8192",
+      "cache_key": [
+        "dynamic",
+        "fp4",
+        "nvfp4",
+        72,
+        4096,
+        2048,
+        8,
+        48,
+        [
+          128,
+          128
+        ],
+        "torch.int32",
+        false,
+        true,
+        "swigluoai_uninterleave",
+        1.0,
+        0.0,
+        10.0,
+        false,
+        true,
+        "glm53_ep_prefill_local_fp32_v2",
+        "glm53_ep_tiled_sf6_v1"
+      ],
+      "artifacts": [
+        {
+          "path": "dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx",
+          "sha256": "784a2b15126f845b1335817c2515fcffcbcba353783d486351dada1b6da8006f"
+        }
+      ],
+      "resources": [
+        {
+          "path": "dynamic/M8192/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.cubin",
+          "sha256": "cca0bb84ccdf34bea259cc32a7ecef0356191a6790c14f326f19d74db6c74d67",
+          "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_ep_localMoEGatedEPLocalKernelSF6_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32g_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+        }
+      ]
+    }
+  ],
+  "cuda_initialized": false,
+  "contracts": {
+    "tests_run": 183,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "selected_test_counts": {
+    "test_glm53_ep_tiled_static.py": 12,
+    "test_glm53_ep_tiled_prefill.py": 12,
+    "test_glm53_ep_tiled_owner.py": 27,
+    "test_glm53_ep_tiled_selftest.py": 14,
+    "test_glm53_ep_tiled_proof.py": 12,
+    "test_moe_sf6_owner.py": 12,
+    "test_moe_static_sf6_direct.py": 6,
+    "test_moe_dynamic_sf6.py": 7,
+    "test_moe_sf6_dispatch.py": 6,
+    "test_glm53_ep_tiled_a_ring.py": 5,
+    "test_glm53_ep_tiled_sf6_word_unpack.py": 6,
+    "test_onepass_speculation_proof.py": 10,
+    "test_glm53_ep_tiled_route_fusion.py": 6,
+    "test_glm53_prep_fused_kv_integration.py": 10,
+    "test_onepass_prep_proof.py": 10,
+    "test_glm53_prep_checkpoint_logging.py": 4,
+    "test_glm53_ep_tiled_decode_opt.py": 6,
+    "test_glm53_prep_decode_opt.py": 8,
+    "test_onepass_ep_default_proof.py": 4,
+    "test_glm53_ep_decode_opt_proof.py": 4,
+    "test_glm53_ep_q1_cpu_receipt.py": 2
+  },
+  "contracts_process_isolated": true,
+  "binding_runtime_rechecked": true,
+  "finished": 1789014129.0148375
+}

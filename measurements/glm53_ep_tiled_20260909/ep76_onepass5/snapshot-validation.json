@@ -1,0 +1,56 @@
+{
+  "missing_ready_arms": [
+    "ABASE"
+  ],
+  "results": [
+    {
+      "arm": "B",
+      "candidate_checks_per_rank": 72,
+      "capture_kind": "ready",
+      "completed_row_bound": false,
+      "configuration_only_prep": true,
+      "control_checks_per_rank": 72,
+      "directory_missing": null,
+      "event_source": "main-observer",
+      "index": 0,
+      "key_lengths": {
+        "12": 20,
+        "16": 20,
+        "24": 20,
+        "32": 20,
+        "4": 23,
+        "6": 23,
+        "8": 23
+      },
+      "phase": "ready",
+      "ready_four_rank_verified": true,
+      "returncode": 0,
+      "validation": "PASS"
+    },
+    {
+      "arm": "A",
+      "candidate_checks_per_rank": 72,
+      "capture_kind": "ready",
+      "completed_row_bound": false,
+      "configuration_only_prep": true,
+      "control_checks_per_rank": 72,
+      "directory_missing": null,
+      "event_source": "main-observer",
+      "index": 1,
+      "key_lengths": {
+        "12": 20,
+        "16": 20,
+        "24": 20,
+        "32": 20,
+        "4": 24,
+        "6": 24,
+        "8": 24
+      },
+      "phase": "ready",
+      "ready_four_rank_verified": true,
+      "returncode": 0,
+      "validation": "PASS"
+    }
+  ],
+  "scope": "Ready collection validation only; missing/rejected snapshots do not become PASS. No completed watcher or final worker counters are synthesized."
+}

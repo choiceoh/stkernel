@@ -31,6 +31,60 @@
 8. **그리디 텍스트 diff 로는 판정하지 않는다** — 같은 구성의 두 부팅에서도 온도 0 응답이
    갈린다(28차 §8). 판정은 게이트와 브래킷이다.
 
+## GLM53 EP76 register-max: 69.52 tok/s·한국어 게이트 실패, 미채택 (2026-09-10)
+
+고정 소스 `ca076d35e64a6a19e90dffe54054269d1a5e1887`, 정상 fleet
+`epdecode76onepass0910v5`에서 같은 소스 EP B→EP A를 완료했다.
+양쪽 EP4/SF6/K5/PREP를 유지하고 A만 `VLLM_GLM53_EP_DECODE_OPT=1`이다.
+`glm53_ep_static_sf6_q1_register_max_v5`는 FC1 BF16 값을 레지스터에
+유지하고 작은 Q1의 반쪽 최대값만 기존 shared512B로 교환하는 후보다.
+**합산 출력69.51989 tok/s로 목표76 미달이며, 한국어1/8 게이트도 실패했다.
+채택하지 않고 OPT 기본값0을 유지한다.**
+
+| 지표 | EP 기준선 B | EP 후보 A |
+|---|---:|---:|
+| fixed1024 ×3 합산 tok/s | 76.80574 | 69.51989 |
+| fixed 구간 합산 engine step/s | 19.99353 | 19.73476 |
+| 2K best-warm TTFT / 입력 tok/s | 0.711161s / 2992.29 | 0.747535s / 2846.69 |
+| 32K 단일 TTFT / 입력 tok/s | 11.705526s / 2780.31 | 10.148737s / 3206.80 |
+| 128K 단일 TTFT / 입력 tok/s | 66.927469s / 1920.87 | 39.210135s / 3278.72 |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 1/8 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B 세 요청74.59396/78.11939/77.80435, A80.99978/69.93406/60.57588을
+모두 보존했다. 첫 토큰을 제외한3069를 세 decode 시간 합으로 나눈 값이다.
+출력 속도 차이는 관측상−9.48607%, engine 차이는−1.29427%다. 한 쌍의
+관측을 통계적 유의성이나 native kernel 단독 효과로 해석하지 않는다.
+순서별 요청 해시는 같고8개 출력 해시는 모두 다르다. 전체 원패스 수용률
+54.05797%→48.90511%는 fixed별 수용률이 아니다. A fixed rep0의 reasoning에
+`Halvorsen博士`가 포함돼 한자2자, 한국어1/8로 판정됐으며 content는0자다.
+원본 judge `invalid` / `GATE FAIL: korean 1/8`,13:45:04 KST 종료코드4와
+점유 해제를 보존한다. 양쪽4rank canary/SF6 및 fresh PREP·OPT 증거 통과가
+품질 실패나 절대 목표 미달을 대신하지 않는다.
+
+긴 프리필의 B 지연은 별도 이상 관측이다. v4 B9.9659s/39.3263s 대비
+v5 B11.7055s/66.9275s로 늘었지만 입력 토큰과8개 요청 해시는 동일했다.
+보존된 B head 로그만 읽은 감사에서 해당 구간의 새 JIT·graph capture·PREP
+plan·ERROR/DISARM/DRIFT는 발견되지 않았다. head OSAR 대기 표본은
+1354.5–2629.1µs로, 이전29.2–63.3µs보다 컸다. 다만 OSAR 행에는 타임스탬프가
+없고 가중 대기 합0.279671s는128K 증가27.6011s를 설명하지 못한다.
+peer 대기 증상만 확인됐으며 원인·외부 간섭·정확한 요청별 귀속은 미입증이다.
+B의 `cold_compile=true`, A의 필드 없음과 긴 입력별 단일 표본을 유지한다.
+B를 제외하거나 재분류하지 않으며 matched warm-prefill 또는 후보의 프리필
+가속 주장으로 바꾸지 않는다. 감사 원본 B 로그의 SHA는
+`d61634daff8413786ce50cf000255f9c401b6da79e72ff490f47f533bf37d255`이고
+[v5 원패스 아카이브](measurements/glm53_ep_tiled_20260909/ep76_onepass5/README.md)에
+측정·실패 판정과 함께 보존됐다.
+
+[CPU7](measurements/glm53_ep_tiled_20260909/ep76_cpu7/README.md)은183 tests와
+23 lowering, 실제 CuTe `partition_D`/flat-register 및 R0..8 소유권 witness,
+CUDA 미초기화·마지막 runtime identity 대조를 통과했다. 네 OPT 변형 모두
+REG128·STACK8·LOCAL0, dynamic98304+static1024=shared99328B다.
+이전 global STACK0를 이번 결과로 옮겨 적지 않는다. staging byte budget을
+줄인 구조가 실제 decode 이득으로 이어지지 않았으며, 정적 증명을 성능
+증거로 대체하지 않는다. 더 큰 구조 변경의 가능성은 별도 검토 중이고 아직
+측정하지 않았다. 기존 채택 EP 기본값과 앞선 실측 기록은 그대로 유지한다.
+
 ## GLM53 EP76 Q1 pair: 72.68 tok/s, 긴 프리필 유지·목표76 미달 (2026-09-10)
 
 고정 소스 `4618859c90131b33c5d9ebd85a67f1537497a357`, 정상 fleet
