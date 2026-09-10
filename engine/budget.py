@@ -192,10 +192,20 @@ ALLOCATOR_SLACK_RATIO = 0.001
 # guess, still says so.
 CONSTRUCTION_UPPER_GIB = 8.77
 
-# Same table again: profile-run peaked at +9.17 GiB on GLM-5.3. DSv4.1 splits
-# encoder/decoder (CED), gathers engram rows, and carries three MTP layers, so
-# there is no reason its activation peak matches. Another guess, said so.
-ACTIVATION_PEAK_GIB = 9.17
+# Measured on dsv41 itself, 2026-09-11 (probes/dsv41_activation_peak.py): the
+# reference's own Block, built at world_size=4 rank=0 with the TileLang kernels
+# stubbed to allocate exactly their outputs, swept over 1K/2K/4K/8K tokens and
+# three layer kinds (window-only 0, kv+index source 8, MTP 40).
+#
+#   0.518 / 0.520 / 0.518 GiB per 1,024 tokens -- linear, and the same to three
+#   digits whether or not the layer owns a KV cache or an indexer.
+#
+# Blocks run one at a time and free as they go, so the model's peak is one
+# block's activation plus the residual stream, not 43 of them. This makes the
+# line a FUNCTION OF THE CHUNK (D2) rather than a constant: pick a bigger
+# chunk, pay for it here, and see it come out of KV.
+ACTIVATION_GIB_PER_1K = 0.520
+RESIDUAL_BYTES_PER_TOKEN = 4 * 5120 * 2      # hc_mult x dim, bf16
 
 # earlyoom sends SIGTERM at MemAvailable 5%. Six workers died there, all while
 # serving. Reserving exactly 5% means racing it, so the default is twice the
@@ -219,7 +229,8 @@ def for_dsv41(checkpoint: "str | Path", world_size: int = 4,
               box_gib: "float | None" = None,
               tenants_gib: float = 0.0,
               weights_gib: "float | None" = None,
-              weights_note: str = "") -> Budget:
+              weights_note: str = "",
+              chunk: int = 4096) -> Budget:
     if weights_gib is None:
         files = rank_files(checkpoint, world_size)
         sizes = [rank_weights(f) for f in files]
@@ -260,8 +271,11 @@ def for_dsv41(checkpoint: "str | Path", world_size: int = 4,
         Line("module construction (cuBLAS, init)", CONSTRUCTION_UPPER_GIB, ESTIMATED,
              "UPPER BOUND from GLM's 59.17-50.4 with expandable_segments already "
              "on; dsv41 has no pack/quant step so its share is smaller"),
-        Line("activation peak", ACTIVATION_PEAK_GIB, ESTIMATED,
-             "GLM profile-run +9.17 GiB -- dsv41 has CED, engram, MTP x3; not measured"),
+        Line(f"activation @ chunk {chunk:,}",
+             chunk / 1024 * ACTIVATION_GIB_PER_1K
+             + chunk * RESIDUAL_BYTES_PER_TOKEN / GIB, MEASURED,
+             f"{ACTIVATION_GIB_PER_1K} GiB/1K tokens, linear over 1K-8K and "
+             "identical across three layer kinds; + the residual stream"),
     ]
     return Budget(box_gib, lines, label=f"DSv4.1-Flash, rank of {world_size}, this box")
 
@@ -385,6 +399,9 @@ def _main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--repo", default="/home/choiceoh/models/DeepSeek-V4.1-Flash",
                         help="the HF checkpoint, for --layout reference")
     parser.add_argument("--wo-a", choices=("fp8", "bf16"), default="fp8")
+    parser.add_argument("--chunk", type=int, default=4096,
+                        help="prefill chunk in tokens; the activation line is a "
+                             "function of it (engine/shapes.py says what is legal)")
     parser.add_argument("--vision", action="store_true", help="keep the vision tower")
     parser.add_argument("--layout", choices=("disk", "tp", "tp-notext", "reference"),
                         default="disk",
@@ -436,7 +453,7 @@ def _main(argv: "list[str] | None" = None) -> int:
         note = ("preshard plan --dense tp --mtp ep: 121.4/rank - engram 47.2 on SSD "
                 "- vision 0.9 (text only)")
     budget = for_dsv41(args.checkpoint, args.world_size, args.box_gib or total,
-                       tenants, override, note)
+                       tenants, override, note, args.chunk)
     print(budget.table())
     print()
     print(f"  {budget.verdict()}")
