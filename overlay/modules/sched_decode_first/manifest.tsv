@@ -1,0 +1,6 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+# A NEW file under a RELATIVE path, so it lands wherever a profile's prefix
+# points -- the same property that lets glm53_megakernel mount on dsv4. Split
+# out of glm53_runtime because it is model-agnostic and a second profile needs
+# it: the repo's rule is that such a module has to be split, not overridden.
+glm53_decode_first.py	vllm/v1/core/sched/glm53_decode_first.py	absent
