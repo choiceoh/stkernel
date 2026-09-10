@@ -1,0 +1,710 @@
+{
+  "schema": 1,
+  "scope": "Read-only, no-device CPU1 PTX audit; no CUDA execution, GPU numerical or performance result.",
+  "verdict": "SCOPED_CODEGEN_PASS_WITH_CPU1_STANDALONE_TOPK_ADMISSION_FINDING",
+  "source_revision": "a413da924f16cea4e6af4973e352c510994cfacc",
+  "aot_sha256": "af7cb765803486602d7600c6d4d5f82e152ef970d403f02d8b65a46c3fb07df3",
+  "execution_sha256": "a0812f155f8afa61ee9fee83ced5e368b5ccbb142951ec37271c085624ea25f5",
+  "source_before_after_equal": true,
+  "frozen_source_files_verified_against_git": 15,
+  "artifact_hashes_verified": 8,
+  "variants": [
+    {
+      "variant": "H8",
+      "artifacts": [
+        {
+          "path": "H8/kernel.ptx",
+          "bytes": 186363,
+          "sha256": "b28eaba212a5a0432af1a43e718230e30e1e9fd6662f8eed358f78dae5b37e28"
+        },
+        {
+          "path": "H8/kernel.cubin",
+          "bytes": 303280,
+          "sha256": "f4ee7e80f149f3109c0454aa47de40e55014b02628df54ead2e619b2bbd8866d"
+        }
+      ],
+      "shared_bytes": 83968,
+      "shared_internal_budget_bytes": 98304,
+      "n_regs": null,
+      "n_spills": null,
+      "abi": {
+        "runtime_i32_parameters": [
+          7,
+          8,
+          9,
+          10
+        ],
+        "runtime_i64_stride_parameters": [
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "all_param_declarations_and_loads_verified": true
+      },
+      "grid": {
+        "ctaid_axes": [
+          "x",
+          "y"
+        ],
+        "flattened_query_division": {
+          "static_instruction_count": 1,
+          "first_line": 62,
+          "last_line": 62,
+          "first_instruction": "div.s32 \t%r150, %r149, %r148;"
+        },
+        "head_tile": 16,
+        "host_bound_batch_times_queries": 2147483647
+      },
+      "loads": {
+        "window": {
+          "static_instruction_count": 128,
+          "first_line": 2512,
+          "last_line": 3020,
+          "first_instruction": "@%p70 ld.global.b16 { %rs34 }, [ %rd214 + 0 ];",
+          "all_load_pointer_roots_verified": 1
+        },
+        "compressed": {
+          "static_instruction_count": 128,
+          "first_line": 3348,
+          "last_line": 3856,
+          "first_instruction": "@%p134 ld.global.b16 { %rs163 }, [ %rd342 + 0 ];",
+          "all_load_pointer_roots_verified": 2
+        }
+      },
+      "qk": {
+        "invalid_negative_infinity_seed": {
+          "first_line": 4373,
+          "first_instruction": "selp.f32 \t%r808, 0f00000000, 0fFF800000, %p463;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_instruction_count": 32,
+          "first_line": 4436,
+          "last_line": 4529,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r430, %r431, %r432, %r433 }, { %r424, %r425, %r426, %r427 }, { %r428, %r429 }, { %r430, %r431, %r432, %r433 };"
+        },
+        "note": "QK initial C is selected zero/-inf before the first MMA; first MMA uses the seeded accumulator as C and D."
+      },
+      "pv": {
+        "probability_bf16_rounding": {
+          "static_instruction_count": 2,
+          "first_line": 4734,
+          "last_line": 4735,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r868, %r846, %r844;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_instruction_count": 32,
+          "first_line": 4762,
+          "last_line": 4855,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r651, %r652, %r653, %r654 }, { %r631, %r632, %r633, %r634 }, { %r635, %r636 }, { %r651, %r652, %r653, %r654 };"
+        },
+        "note": "Probability BF16 conversion precedes shared stmatrix/ldmatrix and PV MMA; prior FP32 accumulator is correction-scaled and used as C/D."
+      },
+      "final_sink": {
+        "load": {
+          "static_instruction_count": 2,
+          "first_line": 4926,
+          "last_line": 4931,
+          "first_instruction": "@%p466 ld.global.b32 { %r870 }, [ %rd1310 + 0 ];"
+        },
+        "exp": {
+          "static_instruction_count": 2,
+          "first_line": 4938,
+          "last_line": 4940,
+          "first_instruction": "ex2.approx.f32 \t%r879, %r878;"
+        },
+        "denominator_add": {
+          "static_instruction_count": 2,
+          "first_line": 4942,
+          "last_line": 4943,
+          "first_instruction": "add.rn.f32 \t%r882, %r961, %r879;"
+        },
+        "note": "One epilogue after the tile loop. Two static sink fragments per thread, not two denominator contributions per output head."
+      },
+      "final_output": {
+        "fp32_division": {
+          "static_instruction_count": 32,
+          "first_line": 4945,
+          "last_line": 4976,
+          "first_instruction": "div.rn.f32 \t%r884, %r651, %r882;"
+        },
+        "bf16_rounding": {
+          "static_instruction_count": 16,
+          "first_line": 4978,
+          "last_line": 4993,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r916, %r885, %r884;"
+        },
+        "stores": {
+          "static_instruction_count": 32,
+          "first_line": 5080,
+          "last_line": 5173,
+          "first_instruction": "@%p466 st.global.b16 [ %rd1312 + 0 ], { %rs419 };"
+        },
+        "all_global_store_pointer_roots": [
+          5
+        ],
+        "whole_prefix_kv_global_store_present": false
+      },
+      "topk_loop": {
+        "increment_line": 4858,
+        "instructions": [
+          "\tadd.s32 \t%r956, %r956, 64;",
+          "\tsetp.lt.s32 \t%p465, %r956, %r115;",
+          "\t@%p465 bra \t$L__BB0_3;"
+        ],
+        "signed_i32_overflow_for_accepted_cpu1_topk_above": 2147483584
+      }
+    },
+    {
+      "variant": "H16",
+      "artifacts": [
+        {
+          "path": "H16/kernel.ptx",
+          "bytes": 186347,
+          "sha256": "941a46b946340f7723016ab4a6d82edc388dc9a576e8f62306d923896a12339b"
+        },
+        {
+          "path": "H16/kernel.cubin",
+          "bytes": 308352,
+          "sha256": "93abe51b618eab806358faba6ed138ef09a772bdd6edb5158c1fb3d53f348e2f"
+        }
+      ],
+      "shared_bytes": 83968,
+      "shared_internal_budget_bytes": 98304,
+      "n_regs": null,
+      "n_spills": null,
+      "abi": {
+        "runtime_i32_parameters": [
+          7,
+          8,
+          9,
+          10
+        ],
+        "runtime_i64_stride_parameters": [
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "all_param_declarations_and_loads_verified": true
+      },
+      "grid": {
+        "ctaid_axes": [
+          "x",
+          "y"
+        ],
+        "flattened_query_division": {
+          "static_instruction_count": 1,
+          "first_line": 62,
+          "last_line": 62,
+          "first_instruction": "div.s32 \t%r150, %r149, %r148;"
+        },
+        "head_tile": 16,
+        "host_bound_batch_times_queries": 2147483647
+      },
+      "loads": {
+        "window": {
+          "static_instruction_count": 128,
+          "first_line": 2511,
+          "last_line": 3019,
+          "first_instruction": "@%p69 ld.global.b16 { %rs34 }, [ %rd214 + 0 ];",
+          "all_load_pointer_roots_verified": 1
+        },
+        "compressed": {
+          "static_instruction_count": 128,
+          "first_line": 3347,
+          "last_line": 3855,
+          "first_instruction": "@%p133 ld.global.b16 { %rs163 }, [ %rd342 + 0 ];",
+          "all_load_pointer_roots_verified": 2
+        }
+      },
+      "qk": {
+        "invalid_negative_infinity_seed": {
+          "first_line": 4372,
+          "first_instruction": "selp.f32 \t%r808, 0f00000000, 0fFF800000, %p462;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_instruction_count": 32,
+          "first_line": 4435,
+          "last_line": 4528,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r430, %r431, %r432, %r433 }, { %r424, %r425, %r426, %r427 }, { %r428, %r429 }, { %r430, %r431, %r432, %r433 };"
+        },
+        "note": "QK initial C is selected zero/-inf before the first MMA; first MMA uses the seeded accumulator as C and D."
+      },
+      "pv": {
+        "probability_bf16_rounding": {
+          "static_instruction_count": 2,
+          "first_line": 4733,
+          "last_line": 4734,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r868, %r846, %r844;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_instruction_count": 32,
+          "first_line": 4761,
+          "last_line": 4854,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r651, %r652, %r653, %r654 }, { %r631, %r632, %r633, %r634 }, { %r635, %r636 }, { %r651, %r652, %r653, %r654 };"
+        },
+        "note": "Probability BF16 conversion precedes shared stmatrix/ldmatrix and PV MMA; prior FP32 accumulator is correction-scaled and used as C/D."
+      },
+      "final_sink": {
+        "load": {
+          "static_instruction_count": 2,
+          "first_line": 4925,
+          "last_line": 4929,
+          "first_instruction": "@%p465 ld.global.b32 { %r870 }, [ %rd1310 + 0 ];"
+        },
+        "exp": {
+          "static_instruction_count": 2,
+          "first_line": 4936,
+          "last_line": 4938,
+          "first_instruction": "ex2.approx.f32 \t%r879, %r878;"
+        },
+        "denominator_add": {
+          "static_instruction_count": 2,
+          "first_line": 4940,
+          "last_line": 4941,
+          "first_instruction": "add.rn.f32 \t%r882, %r961, %r879;"
+        },
+        "note": "One epilogue after the tile loop. Two static sink fragments per thread, not two denominator contributions per output head."
+      },
+      "final_output": {
+        "fp32_division": {
+          "static_instruction_count": 32,
+          "first_line": 4943,
+          "last_line": 4974,
+          "first_instruction": "div.rn.f32 \t%r884, %r651, %r882;"
+        },
+        "bf16_rounding": {
+          "static_instruction_count": 16,
+          "first_line": 4976,
+          "last_line": 4991,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r916, %r885, %r884;"
+        },
+        "stores": {
+          "static_instruction_count": 32,
+          "first_line": 5078,
+          "last_line": 5171,
+          "first_instruction": "@%p465 st.global.b16 [ %rd1312 + 0 ], { %rs419 };"
+        },
+        "all_global_store_pointer_roots": [
+          5
+        ],
+        "whole_prefix_kv_global_store_present": false
+      },
+      "topk_loop": {
+        "increment_line": 4857,
+        "instructions": [
+          "\tadd.s32 \t%r956, %r956, 64;",
+          "\tsetp.lt.s32 \t%p464, %r956, %r115;",
+          "\t@%p464 bra \t$L__BB0_3;"
+        ],
+        "signed_i32_overflow_for_accepted_cpu1_topk_above": 2147483584
+      }
+    },
+    {
+      "variant": "H32",
+      "artifacts": [
+        {
+          "path": "H32/kernel.ptx",
+          "bytes": 186347,
+          "sha256": "5708d74a36e6aeff74e6d42be25fe55b0b8bfa4c48c6650f8dc885e5a61483e3"
+        },
+        {
+          "path": "H32/kernel.cubin",
+          "bytes": 308352,
+          "sha256": "c1e3e25c7b3539650979b0bf4c4373568085c8eabcf0f408a04296ae1b8878eb"
+        }
+      ],
+      "shared_bytes": 83968,
+      "shared_internal_budget_bytes": 98304,
+      "n_regs": null,
+      "n_spills": null,
+      "abi": {
+        "runtime_i32_parameters": [
+          7,
+          8,
+          9,
+          10
+        ],
+        "runtime_i64_stride_parameters": [
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "all_param_declarations_and_loads_verified": true
+      },
+      "grid": {
+        "ctaid_axes": [
+          "x",
+          "y"
+        ],
+        "flattened_query_division": {
+          "static_instruction_count": 1,
+          "first_line": 62,
+          "last_line": 62,
+          "first_instruction": "div.s32 \t%r150, %r149, %r148;"
+        },
+        "head_tile": 16,
+        "host_bound_batch_times_queries": 2147483647
+      },
+      "loads": {
+        "window": {
+          "static_instruction_count": 128,
+          "first_line": 2511,
+          "last_line": 3019,
+          "first_instruction": "@%p69 ld.global.b16 { %rs34 }, [ %rd214 + 0 ];",
+          "all_load_pointer_roots_verified": 1
+        },
+        "compressed": {
+          "static_instruction_count": 128,
+          "first_line": 3347,
+          "last_line": 3855,
+          "first_instruction": "@%p133 ld.global.b16 { %rs163 }, [ %rd342 + 0 ];",
+          "all_load_pointer_roots_verified": 2
+        }
+      },
+      "qk": {
+        "invalid_negative_infinity_seed": {
+          "first_line": 4372,
+          "first_instruction": "selp.f32 \t%r808, 0f00000000, 0fFF800000, %p462;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_instruction_count": 32,
+          "first_line": 4435,
+          "last_line": 4528,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r430, %r431, %r432, %r433 }, { %r424, %r425, %r426, %r427 }, { %r428, %r429 }, { %r430, %r431, %r432, %r433 };"
+        },
+        "note": "QK initial C is selected zero/-inf before the first MMA; first MMA uses the seeded accumulator as C and D."
+      },
+      "pv": {
+        "probability_bf16_rounding": {
+          "static_instruction_count": 2,
+          "first_line": 4733,
+          "last_line": 4734,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r868, %r846, %r844;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_instruction_count": 32,
+          "first_line": 4761,
+          "last_line": 4854,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r651, %r652, %r653, %r654 }, { %r631, %r632, %r633, %r634 }, { %r635, %r636 }, { %r651, %r652, %r653, %r654 };"
+        },
+        "note": "Probability BF16 conversion precedes shared stmatrix/ldmatrix and PV MMA; prior FP32 accumulator is correction-scaled and used as C/D."
+      },
+      "final_sink": {
+        "load": {
+          "static_instruction_count": 2,
+          "first_line": 4925,
+          "last_line": 4929,
+          "first_instruction": "@%p465 ld.global.b32 { %r870 }, [ %rd1310 + 0 ];"
+        },
+        "exp": {
+          "static_instruction_count": 2,
+          "first_line": 4936,
+          "last_line": 4938,
+          "first_instruction": "ex2.approx.f32 \t%r879, %r878;"
+        },
+        "denominator_add": {
+          "static_instruction_count": 2,
+          "first_line": 4940,
+          "last_line": 4941,
+          "first_instruction": "add.rn.f32 \t%r882, %r961, %r879;"
+        },
+        "note": "One epilogue after the tile loop. Two static sink fragments per thread, not two denominator contributions per output head."
+      },
+      "final_output": {
+        "fp32_division": {
+          "static_instruction_count": 32,
+          "first_line": 4943,
+          "last_line": 4974,
+          "first_instruction": "div.rn.f32 \t%r884, %r651, %r882;"
+        },
+        "bf16_rounding": {
+          "static_instruction_count": 16,
+          "first_line": 4976,
+          "last_line": 4991,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r916, %r885, %r884;"
+        },
+        "stores": {
+          "static_instruction_count": 32,
+          "first_line": 5078,
+          "last_line": 5171,
+          "first_instruction": "@%p465 st.global.b16 [ %rd1312 + 0 ], { %rs419 };"
+        },
+        "all_global_store_pointer_roots": [
+          5
+        ],
+        "whole_prefix_kv_global_store_present": false
+      },
+      "topk_loop": {
+        "increment_line": 4857,
+        "instructions": [
+          "\tadd.s32 \t%r956, %r956, 64;",
+          "\tsetp.lt.s32 \t%p464, %r956, %r115;",
+          "\t@%p464 bra \t$L__BB0_3;"
+        ],
+        "signed_i32_overflow_for_accepted_cpu1_topk_above": 2147483584
+      }
+    },
+    {
+      "variant": "H64",
+      "artifacts": [
+        {
+          "path": "H64/kernel.ptx",
+          "bytes": 186347,
+          "sha256": "6e04398cceb8fd75af42ee9d403024036724c6efc3738e254c4c4ded2a9f8cb1"
+        },
+        {
+          "path": "H64/kernel.cubin",
+          "bytes": 308352,
+          "sha256": "94b338a4067181f6316981543f532dc459a975019f5d487f4b10e53d538f73ac"
+        }
+      ],
+      "shared_bytes": 83968,
+      "shared_internal_budget_bytes": 98304,
+      "n_regs": null,
+      "n_spills": null,
+      "abi": {
+        "runtime_i32_parameters": [
+          7,
+          8,
+          9,
+          10
+        ],
+        "runtime_i64_stride_parameters": [
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "all_param_declarations_and_loads_verified": true
+      },
+      "grid": {
+        "ctaid_axes": [
+          "x",
+          "y"
+        ],
+        "flattened_query_division": {
+          "static_instruction_count": 1,
+          "first_line": 62,
+          "last_line": 62,
+          "first_instruction": "div.s32 \t%r150, %r149, %r148;"
+        },
+        "head_tile": 16,
+        "host_bound_batch_times_queries": 2147483647
+      },
+      "loads": {
+        "window": {
+          "static_instruction_count": 128,
+          "first_line": 2511,
+          "last_line": 3019,
+          "first_instruction": "@%p69 ld.global.b16 { %rs34 }, [ %rd214 + 0 ];",
+          "all_load_pointer_roots_verified": 1
+        },
+        "compressed": {
+          "static_instruction_count": 128,
+          "first_line": 3347,
+          "last_line": 3855,
+          "first_instruction": "@%p133 ld.global.b16 { %rs163 }, [ %rd342 + 0 ];",
+          "all_load_pointer_roots_verified": 2
+        }
+      },
+      "qk": {
+        "invalid_negative_infinity_seed": {
+          "first_line": 4372,
+          "first_instruction": "selp.f32 \t%r808, 0f00000000, 0fFF800000, %p462;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_instruction_count": 32,
+          "first_line": 4435,
+          "last_line": 4528,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r430, %r431, %r432, %r433 }, { %r424, %r425, %r426, %r427 }, { %r428, %r429 }, { %r430, %r431, %r432, %r433 };"
+        },
+        "note": "QK initial C is selected zero/-inf before the first MMA; first MMA uses the seeded accumulator as C and D."
+      },
+      "pv": {
+        "probability_bf16_rounding": {
+          "static_instruction_count": 2,
+          "first_line": 4733,
+          "last_line": 4734,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r868, %r846, %r844;"
+        },
+        "fp32_accumulator_bf16_mma": {
+          "static_instruction_count": 32,
+          "first_line": 4761,
+          "last_line": 4854,
+          "first_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r651, %r652, %r653, %r654 }, { %r631, %r632, %r633, %r634 }, { %r635, %r636 }, { %r651, %r652, %r653, %r654 };"
+        },
+        "note": "Probability BF16 conversion precedes shared stmatrix/ldmatrix and PV MMA; prior FP32 accumulator is correction-scaled and used as C/D."
+      },
+      "final_sink": {
+        "load": {
+          "static_instruction_count": 2,
+          "first_line": 4925,
+          "last_line": 4929,
+          "first_instruction": "@%p465 ld.global.b32 { %r870 }, [ %rd1310 + 0 ];"
+        },
+        "exp": {
+          "static_instruction_count": 2,
+          "first_line": 4936,
+          "last_line": 4938,
+          "first_instruction": "ex2.approx.f32 \t%r879, %r878;"
+        },
+        "denominator_add": {
+          "static_instruction_count": 2,
+          "first_line": 4940,
+          "last_line": 4941,
+          "first_instruction": "add.rn.f32 \t%r882, %r961, %r879;"
+        },
+        "note": "One epilogue after the tile loop. Two static sink fragments per thread, not two denominator contributions per output head."
+      },
+      "final_output": {
+        "fp32_division": {
+          "static_instruction_count": 32,
+          "first_line": 4943,
+          "last_line": 4974,
+          "first_instruction": "div.rn.f32 \t%r884, %r651, %r882;"
+        },
+        "bf16_rounding": {
+          "static_instruction_count": 16,
+          "first_line": 4976,
+          "last_line": 4991,
+          "first_instruction": "cvt.rn.bf16x2.f32 \t%r916, %r885, %r884;"
+        },
+        "stores": {
+          "static_instruction_count": 32,
+          "first_line": 5078,
+          "last_line": 5171,
+          "first_instruction": "@%p465 st.global.b16 [ %rd1312 + 0 ], { %rs419 };"
+        },
+        "all_global_store_pointer_roots": [
+          5
+        ],
+        "whole_prefix_kv_global_store_present": false
+      },
+      "topk_loop": {
+        "increment_line": 4857,
+        "instructions": [
+          "\tadd.s32 \t%r956, %r956, 64;",
+          "\tsetp.lt.s32 \t%p464, %r956, %r115;",
+          "\t@%p464 bra \t$L__BB0_3;"
+        ],
+        "signed_i32_overflow_for_accepted_cpu1_topk_above": 2147483584
+      }
+    }
+  ],
+  "finding": {
+    "kind": "Signed 32-bit TOPK tile-loop overflow",
+    "affected_cpu1_public_api_range": [
+      2147483585,
+      2147483647
+    ],
+    "official_v41_topk_max": 640,
+    "official_model_domain_affected": false,
+    "mechanism": "The loop adds 64 to an s32 induction variable and compares it to runtime TOPK with setp.lt.s32. Above 2147483584 the final increment wraps negative, allowing negative IDS positions and continued iteration.",
+    "root_reported_fix_revision": "9027678bdd0f2fc40b622ecc0ecc843446ee52d0",
+    "fix": "Host TOPK admission capped at INT32_MAX-63. Triton kernel unchanged; CPU2 AOT is a separate receipt.",
+    "current_core_sha256": "f1a9516e75f176f954415208537ff01444d4ef4039e851c42bc7a3def83de0f3",
+    "current_core_guard_lines": [
+      {
+        "line": 60,
+        "text": "_integer(topk_idxs.shape[-1], \"selected slot count\", maximum=_INT32_MAX - (_SLOTS - 1))"
+      }
+    ]
+  },
+  "limits": [
+    "Static PTX instruction counts do not establish HBM traffic, cache behavior, SASS scheduling, latency, or speed.",
+    "BF16 boundaries and FP32 MMA accumulator use are code-generation facts; TileLang-versus-Triton reduction order and GPU numerics remain unverified.",
+    "No GPU execution, graph replay, concurrency, race checking, or hardware shared-memory limit was tested by this audit.",
+    "Register/spill counts are null because AOT metadata did not provide them without device initialization.",
+    "The 98304-byte shared threshold is an internal conservative budget, not a measured hardware limit."
+  ],
+  "cpu2_exact_ptx_carry_forward": {
+    "source_revision": "9027678bdd0f2fc40b622ecc0ecc843446ee52d0",
+    "aot_sha256": "351eb7bcfa560caec52bc86d2e8979e1dd82d52f4de2276a33e3d51f359724f6",
+    "execution_sha256": "bf8c36b2bc90552416e88bee37a69c7115c8335f19d8e717cb9f3a1b1886ffc2",
+    "source_before_after_equal": true,
+    "source_files_verified_against_git": 15,
+    "ptx_and_cubin_hashes_verified": 8,
+    "comparisons": [
+      {
+        "variant": "H8",
+        "ptx_sha256": "b28eaba212a5a0432af1a43e718230e30e1e9fd6662f8eed358f78dae5b37e28",
+        "ptx_identical": true,
+        "cpu1_cubin_sha256": "f4ee7e80f149f3109c0454aa47de40e55014b02628df54ead2e619b2bbd8866d",
+        "cpu2_cubin_sha256": "5402b9e880a99a15b277a274d06ae8e7ce23b5f18707d1d8f24bb18abef27acc",
+        "cubin_identical": false,
+        "cpu2_shared_bytes": 83968
+      },
+      {
+        "variant": "H16",
+        "ptx_sha256": "941a46b946340f7723016ab4a6d82edc388dc9a576e8f62306d923896a12339b",
+        "ptx_identical": true,
+        "cpu1_cubin_sha256": "93abe51b618eab806358faba6ed138ef09a772bdd6edb5158c1fb3d53f348e2f",
+        "cpu2_cubin_sha256": "46ac1f6925d3d4e8858d6bce725bb90b4b536b5b11ae7ed03cb8fa0d9b38d90e",
+        "cubin_identical": false,
+        "cpu2_shared_bytes": 83968
+      },
+      {
+        "variant": "H32",
+        "ptx_sha256": "5708d74a36e6aeff74e6d42be25fe55b0b8bfa4c48c6650f8dc885e5a61483e3",
+        "ptx_identical": true,
+        "cpu1_cubin_sha256": "c1e3e25c7b3539650979b0bf4c4373568085c8eabcf0f408a04296ae1b8878eb",
+        "cpu2_cubin_sha256": "21a2c29279c5900c84ef0edf5e462524ce811e496fa9a59261d9a37c69a561c5",
+        "cubin_identical": false,
+        "cpu2_shared_bytes": 83968
+      },
+      {
+        "variant": "H64",
+        "ptx_sha256": "6e04398cceb8fd75af42ee9d403024036724c6efc3738e254c4c4ded2a9f8cb1",
+        "ptx_identical": true,
+        "cpu1_cubin_sha256": "94b338a4067181f6316981543f532dc459a975019f5d487f4b10e53d538f73ac",
+        "cpu2_cubin_sha256": "0f18c3c05aff27522f0b01a6539136490d3751576ba69542809312817296ae0c",
+        "cubin_identical": false,
+        "cpu2_shared_bytes": 83968
+      }
+    ],
+    "scope": "Identical PTX carries this scoped code-generation audit to CPU2. Cubins differ; binary identity and causes of that difference are not asserted."
+  }
+}

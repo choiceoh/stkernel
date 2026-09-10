@@ -8,3 +8,6 @@ dsv41_reference_adapter.py	vllm/models/dsv41/dsv41_reference_adapter.py	absent
 dsv41_packed_index.py	vllm/models/dsv41/dsv41_packed_index.py	absent
 dsv41_packed_index_triton.py	vllm/models/dsv41/dsv41_packed_index_triton.py	absent
 dsv41_packed_reference_adapter.py	vllm/models/dsv41/dsv41_packed_reference_adapter.py	absent
+dsv41_dual_sparse.py	vllm/models/dsv41/dsv41_dual_sparse.py	absent
+dsv41_dual_sparse_triton.py	vllm/models/dsv41/dsv41_dual_sparse_triton.py	absent
+dsv41_dual_sparse_reference_adapter.py	vllm/models/dsv41/dsv41_dual_sparse_reference_adapter.py	absent

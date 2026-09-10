@@ -1,0 +1,2232 @@
+{
+  "schema": 1,
+  "scope": "static original-reference BF16 KV concatenation byte arithmetic per rank; not measured memory traffic, memory reservation, kernel latency or speedup",
+  "config_sha256": "2e84f45cf1dac8c7fcbb200e96667d4b913275690668ed496f24c7747207a809",
+  "model_sha256": "4e9ae23620edc8028ccc5d5fef552ab7fdc7dcd6f79608754fe9f67644056f65",
+  "kernel_sha256": "1236c3507019ed176f5dba5e04bcea58867cf654818c6cf138ed4845398c2455",
+  "geometry": {
+    "head_dim": 512,
+    "window_size": 128,
+    "dtype": "bfloat16",
+    "bytes_per_scalar": 2
+  },
+  "formula": "B * 512 * 2 * sum(window_rows + floor(context_tokens / ratio) for ratio > 0 across 40 layers)",
+  "rows": [
+    {
+      "mode": "decode",
+      "context_tokens": 2048,
+      "batch_size": 1,
+      "compressed_layers": 38,
+      "output_write_bytes": 65798144,
+      "logical_read_plus_write_bytes": 131596288,
+      "largest_single_concat_bytes": 2228224,
+      "layers": [
+        {
+          "layer": 2,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 3,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 4,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 5,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 6,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 7,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 8,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 9,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 10,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 11,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 12,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 13,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 14,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 15,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 16,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 17,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 18,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 19,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 1179648
+        },
+        {
+          "layer": 20,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 21,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 22,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 23,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 24,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 25,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 26,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 27,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 28,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 29,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 30,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 31,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 32,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 33,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 34,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 35,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 36,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 37,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 38,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        },
+        {
+          "layer": 39,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 2228224
+        }
+      ]
+    },
+    {
+      "mode": "decode",
+      "context_tokens": 32768,
+      "batch_size": 1,
+      "compressed_layers": 38,
+      "output_write_bytes": 978059264,
+      "logical_read_plus_write_bytes": 1956118528,
+      "largest_single_concat_bytes": 33685504,
+      "layers": [
+        {
+          "layer": 2,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 3,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 4,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 5,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 6,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 7,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 8,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 9,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 10,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 11,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 12,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 13,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 14,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 15,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 16,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 17,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 18,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 19,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 16908288
+        },
+        {
+          "layer": 20,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 21,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 22,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 23,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 24,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 25,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 26,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 27,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 28,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 29,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 30,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 31,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 32,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 33,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 34,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 35,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 36,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 37,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 38,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        },
+        {
+          "layer": 39,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 33685504
+        }
+      ]
+    },
+    {
+      "mode": "decode",
+      "context_tokens": 131072,
+      "batch_size": 1,
+      "compressed_layers": 38,
+      "output_write_bytes": 3897294848,
+      "logical_read_plus_write_bytes": 7794589696,
+      "largest_single_concat_bytes": 134348800,
+      "layers": [
+        {
+          "layer": 2,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 3,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 4,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 5,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 6,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 7,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 8,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 9,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 10,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 11,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 12,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 13,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 14,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 15,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 16,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 17,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 18,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 19,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 67239936
+        },
+        {
+          "layer": 20,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 21,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 22,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 23,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 24,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 25,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 26,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 27,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 28,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 29,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 30,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 31,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 32,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 33,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 34,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 35,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 36,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 37,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 38,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        },
+        {
+          "layer": 39,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 134348800
+        }
+      ]
+    },
+    {
+      "mode": "decode",
+      "context_tokens": 1048576,
+      "batch_size": 1,
+      "compressed_layers": 38,
+      "output_write_bytes": 31143493632,
+      "logical_read_plus_write_bytes": 62286987264,
+      "largest_single_concat_bytes": 1073872896,
+      "layers": [
+        {
+          "layer": 2,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 3,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 4,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 5,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 6,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 7,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 8,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 9,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 10,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 11,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 12,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 13,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 14,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 15,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 16,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 17,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 18,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 19,
+          "ratio": 2,
+          "window_rows": 128,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 537001984
+        },
+        {
+          "layer": 20,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 21,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 22,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 23,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 24,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 25,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 26,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 27,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 28,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 29,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 30,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 31,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 32,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 33,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 34,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 35,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 36,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 37,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 38,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        },
+        {
+          "layer": 39,
+          "ratio": 1,
+          "window_rows": 128,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 1073872896
+        }
+      ]
+    },
+    {
+      "mode": "prefill",
+      "context_tokens": 2048,
+      "batch_size": 1,
+      "compressed_layers": 38,
+      "output_write_bytes": 140509184,
+      "logical_read_plus_write_bytes": 281018368,
+      "largest_single_concat_bytes": 4194304,
+      "layers": [
+        {
+          "layer": 2,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 3,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 4,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 5,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 6,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 7,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 8,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 9,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 10,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 11,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 12,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 13,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 14,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 15,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 16,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 17,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 18,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 19,
+          "ratio": 2,
+          "window_rows": 2048,
+          "compressed_rows": 1024,
+          "kv_concat_output_bytes": 3145728
+        },
+        {
+          "layer": 20,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 21,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 22,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 23,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 24,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 25,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 26,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 27,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 28,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 29,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 30,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 31,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 32,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 33,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 34,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 35,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 36,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 37,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 38,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        },
+        {
+          "layer": 39,
+          "ratio": 1,
+          "window_rows": 2048,
+          "compressed_rows": 2048,
+          "kv_concat_output_bytes": 4194304
+        }
+      ]
+    },
+    {
+      "mode": "prefill",
+      "context_tokens": 32768,
+      "batch_size": 1,
+      "compressed_layers": 38,
+      "output_write_bytes": 2248146944,
+      "logical_read_plus_write_bytes": 4496293888,
+      "largest_single_concat_bytes": 67108864,
+      "layers": [
+        {
+          "layer": 2,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 3,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 4,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 5,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 6,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 7,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 8,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 9,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 10,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 11,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 12,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 13,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 14,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 15,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 16,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 17,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 18,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 19,
+          "ratio": 2,
+          "window_rows": 32768,
+          "compressed_rows": 16384,
+          "kv_concat_output_bytes": 50331648
+        },
+        {
+          "layer": 20,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 21,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 22,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 23,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 24,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 25,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 26,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 27,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 28,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 29,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 30,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 31,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 32,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 33,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 34,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 35,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 36,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 37,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 38,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        },
+        {
+          "layer": 39,
+          "ratio": 1,
+          "window_rows": 32768,
+          "compressed_rows": 32768,
+          "kv_concat_output_bytes": 67108864
+        }
+      ]
+    },
+    {
+      "mode": "prefill",
+      "context_tokens": 131072,
+      "batch_size": 1,
+      "compressed_layers": 38,
+      "output_write_bytes": 8992587776,
+      "logical_read_plus_write_bytes": 17985175552,
+      "largest_single_concat_bytes": 268435456,
+      "layers": [
+        {
+          "layer": 2,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 3,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 4,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 5,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 6,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 7,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 8,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 9,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 10,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 11,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 12,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 13,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 14,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 15,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 16,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 17,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 18,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 19,
+          "ratio": 2,
+          "window_rows": 131072,
+          "compressed_rows": 65536,
+          "kv_concat_output_bytes": 201326592
+        },
+        {
+          "layer": 20,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 21,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 22,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 23,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 24,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 25,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 26,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 27,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 28,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 29,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 30,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 31,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 32,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 33,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 34,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 35,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 36,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 37,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 38,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        },
+        {
+          "layer": 39,
+          "ratio": 1,
+          "window_rows": 131072,
+          "compressed_rows": 131072,
+          "kv_concat_output_bytes": 268435456
+        }
+      ]
+    },
+    {
+      "mode": "prefill",
+      "context_tokens": 1048576,
+      "batch_size": 1,
+      "compressed_layers": 38,
+      "output_write_bytes": 71940702208,
+      "logical_read_plus_write_bytes": 143881404416,
+      "largest_single_concat_bytes": 2147483648,
+      "layers": [
+        {
+          "layer": 2,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 3,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 4,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 5,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 6,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 7,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 8,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 9,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 10,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 11,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 12,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 13,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 14,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 15,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 16,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 17,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 18,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 19,
+          "ratio": 2,
+          "window_rows": 1048576,
+          "compressed_rows": 524288,
+          "kv_concat_output_bytes": 1610612736
+        },
+        {
+          "layer": 20,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 21,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 22,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 23,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 24,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 25,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 26,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 27,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 28,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 29,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 30,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 31,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 32,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 33,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 34,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 35,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 36,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 37,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 38,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        },
+        {
+          "layer": 39,
+          "ratio": 1,
+          "window_rows": 1048576,
+          "compressed_rows": 1048576,
+          "kv_concat_output_bytes": 2147483648
+        }
+      ]
+    }
+  ]
+}

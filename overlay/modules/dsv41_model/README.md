@@ -10,6 +10,11 @@ buffers and provides direct packed dense/compact scoring across all eight
 indexers. It has a separate opt-in handle and cannot be installed alongside
 this BF16 adapter.
 
+The separate [dual-pool sparse attention](DUAL_SPARSE.md) adapter removes the
+reference's full-prefix KV concatenation across the 38 compressed-attention
+layers. It composes with either indexer adapter and does not change KV storage,
+candidate selection or serving defaults.
+
 ## Work removed
 
 The reference's layer 20 selects up to 2,048 candidate blocks, each containing
