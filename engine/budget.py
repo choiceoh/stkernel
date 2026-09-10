@@ -424,6 +424,19 @@ def _main(argv: "list[str] | None" = None) -> int:
     print()
     print(f"  {budget.verdict()}")
 
+    if budget.kv_gib > 0:
+        try:
+            import sys
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from kv_plan import report as kv_report
+            print()
+            print("what that KV buys -- DSv4.1 caches five buffers, and only four")
+            print("of its forty layers produce KV at all (kv_source_layer_ids)")
+            print()
+            print(kv_report(args.repo, budget.kv_gib))
+        except Exception as exc:
+            print(f"\n  (kv_plan unavailable: {exc})")
+
     if args.replication:
         print()
         print("replication -- what every rank carries a copy of")
