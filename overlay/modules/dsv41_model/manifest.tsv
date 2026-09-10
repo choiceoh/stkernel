@@ -11,3 +11,6 @@ dsv41_packed_reference_adapter.py	vllm/models/dsv41/dsv41_packed_reference_adapt
 dsv41_dual_sparse.py	vllm/models/dsv41/dsv41_dual_sparse.py	absent
 dsv41_dual_sparse_triton.py	vllm/models/dsv41/dsv41_dual_sparse_triton.py	absent
 dsv41_dual_sparse_reference_adapter.py	vllm/models/dsv41/dsv41_dual_sparse_reference_adapter.py	absent
+dsv41_packed_kv.py	vllm/models/dsv41/dsv41_packed_kv.py	absent
+dsv41_packed_kv_triton.py	vllm/models/dsv41/dsv41_packed_kv_triton.py	absent
+dsv41_packed_kv_reference_adapter.py	vllm/models/dsv41/dsv41_packed_kv_reference_adapter.py	absent
