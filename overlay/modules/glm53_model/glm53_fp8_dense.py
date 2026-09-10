@@ -984,6 +984,21 @@ def _dev_free_gib():
         return None
 
 
+def _cached_scratch_gib() -> str:
+    """reserved - allocated: blocks torch holds but nothing is using.
+
+    That gap IS the per-layer scratch this pass leaves behind, and it is why
+    the single empty_cache() at the end hands 3.51 GiB back. Printing it says
+    whether the peak is live tensors or a caching artefact."""
+    try:
+        if not torch.cuda.is_initialized():
+            return "n/a"
+        gap = torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
+        return f"{gap / (1 << 30):.2f}"
+    except Exception:
+        return "n/a"
+
+
 def _host_mem_available() -> str:
     try:
         with open("/proc/meminfo") as fh:
@@ -1378,12 +1393,13 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     if any(v for v in phase_gib.values()) or _dev_free_gib() is not None:
         logger.warning(
             "[fp8-dense] %s device-GiB=%s pass-total=%+.2f dev-free-now=%s "
-            "(what the load-model/post-quant stamp is made of)",
+            "cached-scratch=%s (what the load-model/post-quant stamp is made of)",
             type(model).__name__,
             " ".join(f"{k}={v:+.2f}" for k, v in phase_gib.items()),
             (_pass_free0 - _dev_free_gib())
             if (_pass_free0 is not None and _dev_free_gib() is not None) else float("nan"),
-            f"{_dev_free_gib():.2f}" if _dev_free_gib() is not None else "n/a")
+            f"{_dev_free_gib():.2f}" if _dev_free_gib() is not None else "n/a",
+            _cached_scratch_gib())
     logger.warning(
         "[fp8-dense] %s (knob %s=%s): %d linears w4a8 (%.2f GB bf16), "
         "%d linears w8a8 (%.2f GB bf16), %d kept bf16, %d disarmed by the "
