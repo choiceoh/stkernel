@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "scope": "Read-only readiness; no weight contents/hash, GPU, inference, pull, container creation, restart or service changes",
+  "main_observed": "f99e06f3baec43b03e2eccc1707140ed150b4a96",
+  "pr518": "merged",
+  "pr519": "merged",
+  "pr520": "open docs/evidence at e7db322019b5f0b3b552e5846cda996fc52bb406",
+  "checkpoint": {
+    "node": "srv4",
+    "path": "/home/choiceoh/models/DeepSeek-V4.1-Flash",
+    "config_sha256": "8be45ce0476004a3f529fd896115a4a2e800a129ad2d3ec05b16050f52e21879",
+    "index_sha256": "74b0686a3d2891980d5e303251b075a3bccae2c2ff650747db2620a649b98fa8",
+    "present_shards": 46,
+    "expected_shards": 48,
+    "present_file_bytes": 307223630736,
+    "index_tensor_bytes": 510286023000,
+    "missing_shards": [
+      "model-00047-of-00048.safetensors",
+      "model-00048-of-00048.safetensors"
+    ],
+    "download_pid_exists": true,
+    "complete_or_integrity_verified": false
+  },
+  "runtime": {
+    "live_image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "container_binding_stable": true,
+    "builtin_registry_sha256": "4ec20f260e4c9b47d2e25c196b9ae4d0f792bb6efcfa9e8c608471d7b0298b64",
+    "builtin_registration": "DeepseekV4ForCausalLM present; DeepseekV41ForCausalLM absent from inspected registry source",
+    "builtin_config_registration": "deepseek_v4 present; deepseek_v41 absent from inspected config registry source",
+    "intended_dsv4_lineage_image": "sha256:b763d81b57f7611378a514fa0faf859c3b0d0ec1010f8c5115bea11a60d49ec3",
+    "intended_image_registry_scope": "unreadable through existing stopped mhcsweep2: obsolete bind mount /tmp/mhc_sweep2.py is not a directory. Earlier missing=true capture is read failure, not file absence. No mount repair attempted."
+  },
+  "repo_implementation": "profiles/dsv41.env prepared-only; dsv41_model manifest adds dsv41_layers.py only, no model class or registering .pth",
+  "fleet_gpu_scope": "canonical pair/chain/ab-lever/onepass/experiments or existing AR consumer campaign only; standalone dsv41 component probes not admitted",
+  "artifacts": [
+    {
+      "path": "/tmp/dsv41-next-readiness.json",
+      "sha256": "8d81c04dbbd42285498d7ad1e444d6ee1c31ea233c1c5ded214b48b9e59b024b"
+    },
+    {
+      "path": "/tmp/dsv41-next-live-runtime-registry2.json",
+      "sha256": "2c16604e28dc2310c76580903287371ffdb8ca6ea4ec6d91c41f0dcd8ec6f388"
+    }
+  ],
+  "recommendation": "Continue a source-bound CED/indexer or block component CPU oracle and full-TU AOT independently from incomplete full-model readiness. A future component GPU workload needs an explicitly reviewed canonical fleet entry; do not masquerade it as onepass or bypass admission."
+}
