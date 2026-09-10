@@ -1,0 +1,2119 @@
+{
+  "arms": {
+    "A": {
+      "cold_compile_field_present": false,
+      "cold_compile_raw": null,
+      "fixed": [
+        {
+          "channel_diagnostics": {
+            "channels": {
+              "content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              },
+              "reasoning": {
+                "gated_counts": {
+                  "cjk_mixed": 2,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 2835,
+                "raw_pieces": 291,
+                "selected_chars": 2835,
+                "selected_pieces": 291
+              },
+              "reasoning_content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              }
+            },
+            "combined_chars": 2835,
+            "combined_gated_counts": {
+              "cjk_mixed": 2,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "first_offending_channel": "reasoning",
+            "offenses": [
+              {
+                "channel": "reasoning",
+                "combined_offset": 1414,
+                "kind": "cjk_mixed",
+                "selected_channel_offset": 1414,
+                "snippet": "fo\n- Francis Crick biography\n- Halvorsen\u535a\u58eb signing tundra report\n- Carter Foundation (Jimmy Cart",
+                "snippet_start": 1374
+              }
+            ],
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "completion_tokens": 1024,
+          "decode_s": 16.286042727995664,
+          "decode_tok_s": 62.81452266126416,
+          "prompt_tokens": 2257,
+          "rep": 0,
+          "request_sha256": "17663bd85442793cb36280663a46b10af2945e17bea8801cb0723ae9cb504c09",
+          "ttft_s": 0.8050492429756559
+        },
+        {
+          "channel_diagnostics": {
+            "channels": {
+              "content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              },
+              "reasoning": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 3252,
+                "raw_pieces": 284,
+                "selected_chars": 3252,
+                "selected_pieces": 284
+              },
+              "reasoning_content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              }
+            },
+            "combined_chars": 3252,
+            "combined_gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "completion_tokens": 1024,
+          "decode_s": 15.587907166045625,
+          "decode_tok_s": 65.62779654143378,
+          "prompt_tokens": 2257,
+          "rep": 1,
+          "request_sha256": "c4cc52fd750e4a5fbc6bb1c91b980d43ddf1fef4bdd13b32e300d692bc08d130",
+          "ttft_s": 0.8109624849748798
+        },
+        {
+          "channel_diagnostics": {
+            "channels": {
+              "content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              },
+              "reasoning": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 3113,
+                "raw_pieces": 262,
+                "selected_chars": 3113,
+                "selected_pieces": 262
+              },
+              "reasoning_content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              }
+            },
+            "combined_chars": 3113,
+            "combined_gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "completion_tokens": 1024,
+          "decode_s": 14.413066955981776,
+          "decode_tok_s": 70.97725994920394,
+          "prompt_tokens": 2257,
+          "rep": 2,
+          "request_sha256": "1e04d15b571663bd16676d356aee0879ced9e5c8fdf19bfc05f98fc0fb72ed76",
+          "ttft_s": 0.8021381340222433
+        }
+      ],
+      "fixed_decode_formula": "sum(completion_tokens-1) / sum(decode_s)",
+      "fixed_decode_seconds": 46.287016850023065,
+      "fixed_decode_tokens_excluding_first": 3069,
+      "fixed_pooled_engine_steps_s": 18.21260891237707,
+      "korean": {
+        "dirty": 1,
+        "hits": [
+          [
+            "fixed2K rep0",
+            {
+              "cjk_mixed": 2
+            }
+          ]
+        ],
+        "kinds": {
+          "cjk_mixed": 2,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "n": 8
+      },
+      "name": "EPTILEDWORD4A",
+      "pooled_decode_tok_s": 66.30368964895759,
+      "prefill_raw": [
+        {
+          "cold_s": 1.8738352770451456,
+          "cold_tok_s": 1135.6387757602938,
+          "combined": false,
+          "ctx": 2000,
+          "tok": 2128,
+          "ttft_samples_s": [
+            1.8738352770451456,
+            0.7662086509517394,
+            0.7587762390030548
+          ],
+          "warm_s": 0.7587762390030548,
+          "warm_tok_s": 2804.5158646453515
+        },
+        {
+          "cold_s": 9.890685656049754,
+          "cold_tok_s": 3290.4695520369173,
+          "combined": true,
+          "ctx": 32000,
+          "tok": 32545,
+          "ttft_samples_s": [
+            9.890685656049754
+          ],
+          "warm_s": 9.890685656049754,
+          "warm_tok_s": 3290.4695520369173
+        },
+        {
+          "cold_s": 39.41308517399011,
+          "cold_tok_s": 3261.835490230538,
+          "combined": true,
+          "ctx": 128000,
+          "tok": 128559,
+          "ttft_samples_s": [
+            39.41308517399011
+          ],
+          "warm_s": 39.41308517399011,
+          "warm_tok_s": 3261.835490230538
+        }
+      ],
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "traffic": {
+        "after": {
+          "finished": 8.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "before": {
+          "finished": 0.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "issues": [],
+        "samples": [
+          {
+            "finished": 0.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          }
+        ]
+      }
+    },
+    "B": {
+      "cold_compile_field_present": true,
+      "cold_compile_raw": true,
+      "fixed": [
+        {
+          "channel_diagnostics": {
+            "channels": {
+              "content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              },
+              "reasoning": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 3165,
+                "raw_pieces": 305,
+                "selected_chars": 3165,
+                "selected_pieces": 305
+              },
+              "reasoning_content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              }
+            },
+            "combined_chars": 3165,
+            "combined_gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "completion_tokens": 1024,
+          "decode_s": 15.135431549977511,
+          "decode_tok_s": 67.58974771363688,
+          "prompt_tokens": 2257,
+          "rep": 0,
+          "request_sha256": "17663bd85442793cb36280663a46b10af2945e17bea8801cb0723ae9cb504c09",
+          "ttft_s": 0.9312394370208494
+        },
+        {
+          "channel_diagnostics": {
+            "channels": {
+              "content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              },
+              "reasoning": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 2562,
+                "raw_pieces": 290,
+                "selected_chars": 2562,
+                "selected_pieces": 290
+              },
+              "reasoning_content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              }
+            },
+            "combined_chars": 2562,
+            "combined_gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "completion_tokens": 1024,
+          "decode_s": 14.50587514298968,
+          "decode_tok_s": 70.52314940780322,
+          "prompt_tokens": 2257,
+          "rep": 1,
+          "request_sha256": "c4cc52fd750e4a5fbc6bb1c91b980d43ddf1fef4bdd13b32e300d692bc08d130",
+          "ttft_s": 0.9020464919740334
+        },
+        {
+          "channel_diagnostics": {
+            "channels": {
+              "content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              },
+              "reasoning": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 2549,
+                "raw_pieces": 288,
+                "selected_chars": 2549,
+                "selected_pieces": 288
+              },
+              "reasoning_content": {
+                "gated_counts": {
+                  "cjk_mixed": 0,
+                  "control": 0,
+                  "lone_jamo": 0,
+                  "replacement": 0
+                },
+                "non_text_fields": 0,
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0
+              }
+            },
+            "combined_chars": 2549,
+            "combined_gated_counts": {
+              "cjk_mixed": 0,
+              "control": 0,
+              "lone_jamo": 0,
+              "replacement": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "completion_tokens": 1024,
+          "decode_s": 14.320340721984394,
+          "decode_tok_s": 71.43684775806376,
+          "prompt_tokens": 2257,
+          "rep": 2,
+          "request_sha256": "1e04d15b571663bd16676d356aee0879ced9e5c8fdf19bfc05f98fc0fb72ed76",
+          "ttft_s": 0.9228470710222609
+        }
+      ],
+      "fixed_decode_formula": "sum(completion_tokens-1) / sum(decode_s)",
+      "fixed_decode_seconds": 43.961647414951585,
+      "fixed_decode_tokens_excluding_first": 3069,
+      "fixed_pooled_engine_steps_s": 20.47366556538369,
+      "korean": {
+        "dirty": 0,
+        "hits": [],
+        "kinds": {
+          "cjk_mixed": 0,
+          "control": 0,
+          "lone_jamo": 0,
+          "replacement": 0
+        },
+        "n": 8
+      },
+      "name": "EPTILEDWORD4B",
+      "pooled_decode_tok_s": 69.81085060420682,
+      "prefill_raw": [
+        {
+          "cold_s": 2.4025522849988192,
+          "cold_tok_s": 885.7247408461897,
+          "combined": false,
+          "ctx": 2000,
+          "tok": 2128,
+          "ttft_samples_s": [
+            2.4025522849988192,
+            0.8321626969845966,
+            0.8740548780187964
+          ],
+          "warm_s": 0.8321626969845966,
+          "warm_tok_s": 2557.1922506391675
+        },
+        {
+          "cold_s": 10.906609810015652,
+          "cold_tok_s": 2983.97032321754,
+          "combined": true,
+          "ctx": 32000,
+          "tok": 32545,
+          "ttft_samples_s": [
+            10.906609810015652
+          ],
+          "warm_s": 10.906609810015652,
+          "warm_tok_s": 2983.97032321754
+        },
+        {
+          "cold_s": 41.01240919501288,
+          "cold_tok_s": 3134.63662640996,
+          "combined": true,
+          "ctx": 128000,
+          "tok": 128559,
+          "ttft_samples_s": [
+            41.01240919501288
+          ],
+          "warm_s": 41.01240919501288,
+          "warm_tok_s": 3134.63662640996
+        }
+      ],
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "traffic": {
+        "after": {
+          "finished": 8.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "before": {
+          "finished": 0.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "issues": [],
+        "samples": [
+          {
+            "finished": 0.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 1.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 2.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 3.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 4.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 5.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 6.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "finished": 7.0,
+            "running": 1.0,
+            "waiting": 0.0
+          }
+        ]
+      }
+    }
+  },
+  "canonical_gate": "korean 1/8",
+  "canonical_status": "invalid",
+  "decode_A_vs_B_pct": -5.0238049313180655,
+  "engine_A_vs_B_pct": -11.043731498816467,
+  "objective": "canonical fixed1024 x3 pooled >=67 tok/s with unchanged quality gate",
+  "performance_acceptance": false,
+  "same_source_workload_request_hashes": true,
+  "schema": 1,
+  "scope": "Observed failed serving result; prefill raw observations have cold-compile mismatch and are not a matched-warm gain",
+  "target_67_met": false
+}

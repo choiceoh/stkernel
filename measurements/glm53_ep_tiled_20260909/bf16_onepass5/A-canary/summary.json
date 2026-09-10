@@ -1,0 +1,196 @@
+{
+  "captured_at_KST": "2026-09-10T00:33:33.190396+09:00",
+  "files_verified": 20,
+  "identity_sha256": "be204399d808e0bed972afb49772529beabe9cf32fda6e275009288dab80cfd4",
+  "nodes": {
+    "10.10.10.1": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B1": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B1": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B1": "1"
+        }
+      },
+      "finalized": {
+        "format": "sf6_v1",
+        "layers": 42,
+        "packed_bytes": 3604414464,
+        "packed_only": true,
+        "raw_bytes_released": 4756340736,
+        "storage_bytes_saved": 1151926272
+      },
+      "graph": true,
+      "id": "87160d0e64072137ef230c3156fcb97f465728cd6e49ebf89bace4f78a2e3ea9",
+      "m6_last_tags": [
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B1_source_image": true,
+      "started_at": "2026-09-09T15:26:32.090030091Z",
+      "static_keys": {
+        "6": 19,
+        "12": 16,
+        "24": 16,
+        "32": 16
+      },
+      "trim": 1
+    },
+    "10.10.10.3": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B1": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B1": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B1": "1"
+        }
+      },
+      "finalized": {
+        "format": "sf6_v1",
+        "layers": 42,
+        "packed_bytes": 3604414464,
+        "packed_only": true,
+        "raw_bytes_released": 4756340736,
+        "storage_bytes_saved": 1151926272
+      },
+      "graph": true,
+      "id": "cb04d5129d285feba47fd2543fa5cc033c746ab48e70607a33dec6a1876f9a82",
+      "m6_last_tags": [
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B1_source_image": true,
+      "started_at": "2026-09-09T15:26:32.1362998Z",
+      "static_keys": {
+        "6": 19,
+        "12": 16,
+        "24": 16,
+        "32": 16
+      },
+      "trim": 1
+    },
+    "10.10.10.4": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B1": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B1": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B1": "1"
+        }
+      },
+      "finalized": {
+        "format": "sf6_v1",
+        "layers": 42,
+        "packed_bytes": 3604414464,
+        "packed_only": true,
+        "raw_bytes_released": 4756340736,
+        "storage_bytes_saved": 1151926272
+      },
+      "graph": true,
+      "id": "c1d1b28ed122c4f8456139169a709807068a38e3ec2d313260d34606dc966afc",
+      "m6_last_tags": [
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B1_source_image": true,
+      "started_at": "2026-09-09T15:26:32.082947036Z",
+      "static_keys": {
+        "6": 19,
+        "12": 16,
+        "24": 16,
+        "32": 16
+      },
+      "trim": 1
+    },
+    "local": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B1": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B1": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B1": "1"
+        }
+      },
+      "finalized": {
+        "format": "sf6_v1",
+        "layers": 42,
+        "packed_bytes": 3604414464,
+        "packed_only": true,
+        "raw_bytes_released": 4756340736,
+        "storage_bytes_saved": 1151926272
+      },
+      "graph": true,
+      "id": "f5afed05d7f2b47803a01620cd9f1532fcd8818bf4b81e2221c27ea5a1350b4a",
+      "m6_last_tags": [
+        "bf16_scatter",
+        "glm53_ep_static_sf6_a_ring_v1",
+        "glm53_ep_static_sf6_word_unpack_v1",
+        "glm53_ep_static_bf16_scatter_v1"
+      ],
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B1_source_image": true,
+      "started_at": "2026-09-09T15:26:32.765534528Z",
+      "static_keys": {
+        "6": 19,
+        "12": 16,
+        "24": 16,
+        "32": 16
+      },
+      "trim": 1
+    }
+  },
+  "scope": "First eligible actual-weight layer per rank; startup numerical proof only, no serving/performance acceptance"
+}

@@ -1,0 +1,113 @@
+{
+  "files": {
+    "A-canary/10.10.10.1.PASS.json.gz": {
+      "format": "Exact original JSON substring, deterministic gzip",
+      "original_json_sha256": "50471c35c4f9e5eeeb96130bb365d8c2feb42e989a42243e6d1b75d5c08ab758",
+      "original_marker_line_sha256": "108e59436d578adac3d30c9e42d32c7b2fbee1cb926d595f72d64467fab0ca41",
+      "source_log_original_sha256": "a90e1d1cb96e1177c1abde0e193ecfda2b8060b39e0152ded70d3ec1b37b5356"
+    },
+    "A-canary/10.10.10.3.PASS.json.gz": {
+      "format": "Exact original JSON substring, deterministic gzip",
+      "original_json_sha256": "7339eed652debe5b56cca74777fde538324174067b1f657e74741672532bbece",
+      "original_marker_line_sha256": "e46dc8c86b415d15ca9351b8f49bbe701df38d2feb94edfa8696a4da0d2ae6e3",
+      "source_log_original_sha256": "d2e0a8cefefcb9f41f13a60a7be78ad1f3d10c1cfcfbe88cff80da5c8ddb276e"
+    },
+    "A-canary/10.10.10.4.PASS.json.gz": {
+      "format": "Exact original JSON substring, deterministic gzip",
+      "original_json_sha256": "4435d49c919ab3e20545850a2feb968ef82b45c3839b4b0344622f31067e67d3",
+      "original_marker_line_sha256": "7d4f0cba83e5deacd36e9f0df9cfa2fea67cac4c6cc45e58e38e50ff7e87af6b",
+      "source_log_original_sha256": "3e5f92e9e17fe3e53828f61249d500c34480bc21505184e6cb52c7e85eda7d52"
+    },
+    "A-canary/local.PASS.json.gz": {
+      "format": "Exact original JSON substring, deterministic gzip",
+      "original_json_sha256": "4d06f71231c6e37a4b80bff0594f0fc5797b0518bfc154b8b1c11a435b0f2488",
+      "original_marker_line_sha256": "2b91e61db9ea5df77e58e9f284ded841b5c9996f23c8306e93bf8b60fedf6112",
+      "source_log_original_sha256": "7b6f729a326042f41b9be245f072c99c3aa3e69c652133533c50eafca1d4e3d2"
+    },
+    "A-canary/summary.json": {
+      "private_derived_sha256": "7d1b808351747201e836d2770b137dca133c824c3b61fdc58c3881f9f220d17e"
+    },
+    "A-ready/10.10.10.1.serving.log.gz": {
+      "original_bytes": 147827,
+      "original_sha256": "a90e1d1cb96e1177c1abde0e193ecfda2b8060b39e0152ded70d3ec1b37b5356",
+      "private_identity_sha256": "39e679544fb86b0b236681288ea6b4530b987db8c7d45c6a8ac3cfd3279bb914"
+    },
+    "A-ready/10.10.10.3.serving.log.gz": {
+      "original_bytes": 149007,
+      "original_sha256": "d2e0a8cefefcb9f41f13a60a7be78ad1f3d10c1cfcfbe88cff80da5c8ddb276e",
+      "private_identity_sha256": "39e679544fb86b0b236681288ea6b4530b987db8c7d45c6a8ac3cfd3279bb914"
+    },
+    "A-ready/10.10.10.4.serving.log.gz": {
+      "original_bytes": 148365,
+      "original_sha256": "3e5f92e9e17fe3e53828f61249d500c34480bc21505184e6cb52c7e85eda7d52",
+      "private_identity_sha256": "39e679544fb86b0b236681288ea6b4530b987db8c7d45c6a8ac3cfd3279bb914"
+    },
+    "A-ready/local.serving.log.gz": {
+      "original_bytes": 163699,
+      "original_sha256": "7b6f729a326042f41b9be245f072c99c3aa3e69c652133533c50eafca1d4e3d2",
+      "private_identity_sha256": "39e679544fb86b0b236681288ea6b4530b987db8c7d45c6a8ac3cfd3279bb914"
+    },
+    "boot/boot-EPTILEDRING3A.log.gz": {
+      "original_bytes": 237801,
+      "original_path": "/home/choiceoh/glm53-logs/boot-EPTILEDRING3A.log",
+      "original_sha256": "c86073bec2c7e1bb283cdb031a57a55b3be70b5529344f56904fc0d4fd449cf4",
+      "private_stored_sha256": "eb333892f03795877848a57c6d7c4cc9cd1b584c2243b5a81247e3dc38477598"
+    },
+    "boot/boot-EPTILEDRING3B.log.gz": {
+      "original_bytes": 216398,
+      "original_path": "/home/choiceoh/glm53-logs/boot-EPTILEDRING3B.log",
+      "original_sha256": "6e8620f706bf176f209b7c4d222df6e23318904c2d669b36b98f1fc0d44b8cd1",
+      "private_stored_sha256": "048604661c04aea909d678d873f81d8a06426b5037c2292f038db7ed00c1dd6e"
+    },
+    "observer-events.jsonl": {
+      "original_sha256": "af60c1205084c214679f04277ab0ef58aaf59138a66b3b87b2782b3197401050"
+    },
+    "onepass.jsonl": {
+      "original_bytes": 127655,
+      "original_path": "/tmp/glm53-ep-ring-onepass-0909-3/onepass.jsonl",
+      "original_sha256": "4cdb6795a6af00d1d6b7966f924be778b8e512fa6da43253c40df71dbd5580be",
+      "private_stored_sha256": "4e5875babb47dfb6b46e9a9dc79ee428349dd216f9205052d8a387d7b0e98848"
+    },
+    "run.log.gz": {
+      "original_bytes": 8477,
+      "original_path": "/home/choiceoh/glm53-logs/fleet/run-logs/a1bff2c9c14221df36d5146b1ecfaa3aaa2d66fc04dd0caaf5082880b555c2b8.log",
+      "original_sha256": "da62cf79b973bf66854d1bdddead3ace8cd30f73f136df435efaf2daaeeaa5a6",
+      "private_stored_sha256": "c6ef2429b503ec9a6883e0e5e4632efe0a4bad5e165cd8d008518cfd3760c497"
+    },
+    "source/glm53_ep_tiled_selftest.py.gz": {
+      "original_bytes": 25489,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/glm53_ep_tiled_selftest.py",
+      "original_sha256": "f14b5fe6fd1a990dc29de9a47d21ce8edfcfea60cb1a7d7154359f04a1883b55",
+      "private_stored_sha256": "bdeb64617e6700bbf286211d9d4c5953ae66b1d40320f2da3cff856cf14587a6"
+    },
+    "source/manifest.tsv.gz": {
+      "original_bytes": 10046,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/manifest.tsv",
+      "original_sha256": "bf27adbeb9a4d7d30f2e2bb22840fa6c400d5a209e752522dd3ed1bbfc500192",
+      "private_stored_sha256": "3d2db019ba242b03a15cace2752233ea82db468d959fd45e0e45fb1300fa3aec"
+    },
+    "source/moe_static_ep_tiled.py.gz": {
+      "original_bytes": 108220,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/moe_static_ep_tiled.py",
+      "original_sha256": "3bbfabfbfac9f384220cca06312686621991f1d9252bc3b5ef29d175c911f15b",
+      "private_stored_sha256": "1fb7d15fb5de049d095c502521a95fb5b6a9fc48323681fe3e9605669539e2bb"
+    },
+    "submission.json": {
+      "original_bytes": 2889,
+      "original_path": "/tmp/glm53-ep-ring-onepass-0909-3/submission.json",
+      "original_sha256": "26bae95d0856e906cfa0f1c0024682686cca099d6fedea766ce7916abaf0f2df",
+      "private_stored_sha256": "74b55fb08142701f7ea3163910c7a090ddbbc9b8791ba272a00482affc6741f1"
+    },
+    "verdicts.jsonl": {
+      "original_bytes": 294,
+      "original_path": "/tmp/glm53-ep-ring-onepass-0909-3/verdicts.jsonl",
+      "original_sha256": "c7e8879766c464ffeb844588a758d7292edb10e0e3feccdba01d7ea7d3b17c89",
+      "private_stored_sha256": "ade568bea47563ae97ba13c2d5db4e7595de08c62e46c700f11f68bf11bec913"
+    }
+  },
+  "local_archive_script_sha256": "4dd98569bf6799b85207ff807f1e7397f97c7c4475042146195a0754f8d915c3",
+  "remote_capture_manifest_sha256": "74f5bc2628f3e1f807853b3f77699968da26651ced6ca65a2d98cf968c0dbc4f",
+  "remote_collector_sha256": "a9e2a311007f396cd4664e8f305338cd084e9c93e1b5e849987ab0bb06286662",
+  "schema": 1,
+  "source_revision": "57914a3f8bb01a76a20099b9c2605be3ea15b7f4"
+}

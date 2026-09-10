@@ -3,6 +3,9 @@
 Pinned stock M128 FC1/Q1/FC2 math and task descriptors are inherited.
 Weighted BF16 contributions accumulate in FP32 before one BF16 output cast.
 The entry point admits I2048 with uniformly bounded four-slice tasks.
+Row-major and in-place tile-major weights share the same compute body;
+the raw-scale lane changes only weight TMA views. The SF6 subclass instead
+restores packed expert scales directly into existing shared stages.
 Route/Q0 preparation changes: histogram valid local pairs, compact a
 warp's <=8 local routes into its existing shared cache, and quantize the
 original token once per block/scale. No expanded pair_x/pair_out, nonzero,
@@ -27,6 +30,7 @@ from flashinfer.cute_dsl.fp4_common import (
     ld_shared_i32_relaxed, st_global_f32, st_global_i32,
     st_shared_i32, st_shared_f32, st_global_v4_u32, st_global_u64,
 )
+from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6
 from ._moe_dynamic import gated as _stock
 from ._moe_dynamic.gated import (
     DynamicLaunchParams, MoEGatedDynamicKernel, _TASK_SLICE_CHUNK,
@@ -790,9 +794,9 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         task_tail: cute.Tensor,  # [1] int32
         task_expert: cute.Tensor,  # [max_tasks] int32
         task_valid_rows: cute.Tensor,  # [max_tasks] int32
-        b_w13: cute.Tensor,  # [2*I_tp, K, E] (gated) or [I_tp, K, E] (relu2)
+        b_w13: cute.Tensor,  # [4096,4096,72] or tiled [4096,512,8,72]
         sfb_w13_ptr: cute.Pointer,  # scale factors for w13
-        b_down: cute.Tensor,  # [K, I_tp, E]
+        b_down: cute.Tensor,  # [4096,2048,72] or tiled [4096,128,16,72]
         sfb_down_ptr: cute.Pointer,
         row_counts: cute.Tensor,  # expert row histogram [E]
         expert_write_rows: cute.Tensor,  # route/pack write cursors [E]
@@ -809,6 +813,22 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
     ):
         if cutlass.const_expr(scatter_output.element_type != cutlass.Float32):
             raise ValueError("expert-local v2 scatter requires FP32 accumulation storage")
+        # Match the stock tiled dynamic adapter: grouping is a view, retaining
+        # each packed tensor's pointer and strides. Both native K128 TMA boxes
+        # divide the inner K512/K128 modes, so no tile crosses a storage chunk.
+        # Reject mixed or different 4-D layouts before any TMA descriptor exists.
+        if cutlass.const_expr(len(b_w13.shape) == 4 or len(b_down.shape) == 4):
+            if cutlass.const_expr(
+                b_w13.shape != (4096, 512, 8, 72)
+                or b_down.shape != (4096, 128, 16, 72)
+            ):
+                raise ValueError("expert-local tiled weights require E72/H4096/I2048 v5 views")
+            b_w13 = cute.group_modes(b_w13, 1, 3)
+            b_down = cute.group_modes(b_down, 1, 3)
+        # Raw MMA scales keep their original logical shape, independent of the
+        # hierarchical weight K. In particular, do not tile or repack SFB here.
+        w13_logical_shape = (b_w13.shape[0], cute.size(b_w13.shape[1]), b_w13.shape[2])
+        down_logical_shape = (b_down.shape[0], cute.size(b_down.shape[1]), b_down.shape[2])
         self.a_dtype = packed_a.element_type
         self.b_dtype = b_w13.element_type
         self.sf_dtype = sfa_ptr.dtype
@@ -835,7 +855,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
 
         # SF tensor for w13 (gated: gate+up concatenated; relu2: single W1)
         sfb_w13_layout = blockscaled_utils.tile_atom_to_shape_SF(
-            b_w13.shape, self.sf_vec_size
+            w13_logical_shape, self.sf_vec_size
         )
         sfb_w13_tensor = cute.make_tensor(sfb_w13_ptr, sfb_w13_layout)
 
@@ -873,7 +893,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         )
         # B_down TMA
         sfb_down_layout = blockscaled_utils.tile_atom_to_shape_SF(
-            b_down.shape, self.sf_vec_size
+            down_logical_shape, self.sf_vec_size
         )
         sfb_down_tensor = cute.make_tensor(sfb_down_ptr, sfb_down_layout)
         tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
@@ -896,7 +916,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         # retaining four slices each. Never expand the inherited Q1 storage.
         if cutlass.const_expr(
             gate_tile_cnt_static != 16 or b_w13.shape[2] != 72
-            or b_down.shape[1] != 2048 or row_counts.shape[0] != 72
+            or down_logical_shape[1] != 2048 or row_counts.shape[0] != 72
         ):
             raise ValueError("expert-local wide entry point requires E72/I2048")
         gate_tile_cnt = Int32(gate_tile_cnt_static)
@@ -927,6 +947,184 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
             gB_down,
             tma_sfb_down,
             gSFB_down,
+            self.tiled_mma,
+            self.fc1_tiled_mma,
+            self.mma_atom,
+            self.mma_atom,
+            self.cta_layout_mnk,
+            self.a_smem_layout_staged,
+            self.b_smem_layout_staged,
+            self.phase2_b_smem_layout_staged,
+            self.fc1_b_smem_layout_staged,
+            self.sfa_smem_layout_staged,
+            self.sfb_smem_layout_staged,
+            self.phase2_sfb_smem_layout_staged,
+            self.fc1_sfb_smem_layout_staged,
+            self.fc1_sfb_smem_layout_storage,
+            self.epi_smem_layout_staged,
+            launch_params,
+            expert_write_rows,
+            expert_tile_base,
+            input_global_scale,
+            alpha,
+            down_alpha,
+            global_scale,
+            scatter_output,
+            token_map,
+            token_weights,
+        ).launch(
+            grid=grid,
+            block=[self.threads_per_cta, 1, 1],
+            cluster=[1, 1, 1],
+            cooperative=True,
+            stream=stream,
+        )
+
+
+class MoEGatedEPLocalKernelSF6(MoEGatedEPLocalKernel, MoEGatedDynamicKernelSF6):
+    """EP routing/FP32 scatter with the existing direct-SF6 load pipeline.
+
+    MRO intentionally selects EP setup/Q0/task/scatter and SF6 kernel/loaders.
+    Only the entry differs from stock SF6: exact tiled E72/I2048 permits sixteen
+    slices split into unchanged four-slice tasks. Legacy raw scale pointers are
+    ABI placeholders and are never made into descriptors or dereferenced here.
+    """
+
+    def __init__(self, *args, reform_sf_pack: bool = True, **kwargs):
+        if reform_sf_pack is not True:
+            raise ValueError("expert-local SF6 cannot fall back to raw scale storage")
+        super().__init__(*args, reform_sf_pack=True, **kwargs)
+
+    @cute.jit
+    def __call__(
+        self,
+        a_input: cute.Tensor,  # [num_tokens, K] bf16
+        topk_ids: cute.Tensor,  # [num_tokens * topk] int32
+        topk_weights: cute.Tensor,  # [num_tokens * topk] float32
+        packed_a: cute.Tensor,  # [rows_padded, K, 1] fp4x2 view for compute
+        sfa_ptr: cute.Pointer,
+        packed_a_storage: cute.Tensor,  # flat uint8 backing packed_a
+        scale_storage: cute.Tensor,  # flat uint8 backing sfa_ptr
+        barrier_count: cute.Tensor,  # [1] int32 (host-zeroed)
+        barrier_epoch: cute.Tensor,  # [1] int32 (host-zeroed)
+        pair_head: cute.Tensor,  # [1] int32
+        task_head: cute.Tensor,  # [1] int32
+        task_tail: cute.Tensor,  # [1] int32
+        task_expert: cute.Tensor,  # [max_tasks] int32
+        task_valid_rows: cute.Tensor,  # [max_tasks] int32
+        b_w13: cute.Tensor,  # [2*I_tp, K, E] (gated) or [I_tp, K, E] (relu2)
+        sfb_w13_ptr: cute.Pointer,  # scale factors for w13
+        b_down: cute.Tensor,  # [K, I_tp, E]
+        sfb_down_ptr: cute.Pointer,
+        row_counts: cute.Tensor,  # expert row histogram [E]
+        expert_write_rows: cute.Tensor,  # route/pack write cursors [E]
+        expert_tile_base: cute.Tensor,  # compact physical-tile prefix [E + 1]
+        input_global_scale: cute.Tensor,  # [E] per-expert FC1 input scale
+        alpha: cute.Tensor,
+        down_alpha: cute.Tensor,
+        global_scale: cute.Tensor,
+        scatter_output: cute.Tensor,  # [num_tokens, K]
+        token_map: cute.Tensor,
+        token_weights: cute.Tensor,
+        sfb1_packed: cute.Tensor,
+        sfb2_packed: cute.Tensor,
+        max_active_clusters: cutlass.Constexpr,
+        stream: cuda.CUstream,
+    ):
+        if cutlass.const_expr(scatter_output.element_type != cutlass.Float32):
+            raise ValueError("expert-local SF6 scatter requires FP32 accumulation storage")
+        if cutlass.const_expr(
+            b_w13.shape != (4096, 512, 8, 72)
+            or b_down.shape != (4096, 128, 16, 72)
+            or row_counts.shape[0] != 72
+        ):
+            raise ValueError("expert-local SF6 requires tiled E72/H4096/I2048 weights")
+        b_w13 = cute.group_modes(b_w13, 1, 3)
+        b_down = cute.group_modes(b_down, 1, 3)
+        self._check_sf6_shapes(b_w13, b_down, sfb1_packed, sfb2_packed)
+        self.a_dtype = packed_a.element_type
+        self.b_dtype = b_w13.element_type
+        self.sf_dtype = sfa_ptr.dtype
+        self.a_layout = utils.LayoutEnum.from_tensor(packed_a)
+        self.b_layout = utils.LayoutEnum.from_tensor(b_w13)
+        # Dynamic never materializes the intermediate C tensor. Preserve the
+        # original row-major epilogue layout without carrying a dead memref.
+        self.c_layout = utils.LayoutEnum.ROW_MAJOR
+
+        hidden_size = a_input.shape[1]
+        if cutlass.const_expr(
+            hidden_size > self.tile_shape_mnk[0] * self.tile_shape_mnk[1]
+        ):
+            raise ValueError(
+                "the gated dynamic kernel requires one BF16 input row to fit "
+                "in its 16384-element Q0 staging buffer"
+            )
+        self._setup_attributes(hidden_size=hidden_size)
+
+        sfa_layout = blockscaled_utils.tile_atom_to_shape_SF(
+            packed_a.shape, self.sf_vec_size
+        )
+        sfa_tensor = cute.make_tensor(sfa_ptr, sfa_layout)
+
+        # TMA descriptors
+        tma_a, gA = self._dense_cls._make_tma_atoms_and_tensors(
+            packed_a,
+            self.a_smem_layout_staged,
+            (self.tile_shape_mnk[0], self.tile_shape_mnk[2]),
+            1,
+        )
+        tma_sfa, gSFA = self._dense_cls._make_tma_atoms_and_tensors(
+            sfa_tensor,
+            self.sfa_smem_layout_staged,
+            (self.tile_shape_mnk[0], self.tile_shape_mnk[2]),
+            1,
+            internal_type=cutlass.Int16,
+        )
+        # FC1 B uses a true N64 descriptor.  Each logical N128 slice is two
+        # consecutive native B tiles; Up precedes Gate in global w13 storage.
+        tma_b_w13, gB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
+            b_w13,
+            self.fc1_b_smem_layout_staged,
+            (self.fc1_tile_shape_mnk[1], self.fc1_tile_shape_mnk[2]),
+            1,
+        )
+        # FC2 weight TMA; expert scales are loaded directly from SF6.
+        tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
+            b_down,
+            self.b_smem_layout_staged,
+            (self.tile_shape_mnk[1], self.tile_shape_mnk[2]),
+            1,
+        )
+        # W13 concatenates equally-sized Gate and Up branches along N.
+        gate_tile_cnt_static = b_w13.shape[0] // self.tile_shape_mnk[1] // 2
+        # The inherited EP publisher splits I2048's sixteen slices into four
+        # tasks of four. SF6 loads use each task's absolute slice_begin.
+        gate_tile_cnt = Int32(gate_tile_cnt_static)
+        launch_params = DynamicLaunchParams(row_counts, gate_tile_cnt)
+        grid = (*self.cluster_shape_mn, max_active_clusters)
+        self.kernel(
+            a_input,
+            topk_ids,
+            topk_weights,
+            packed_a_storage,
+            scale_storage,
+            barrier_count,
+            barrier_epoch,
+            pair_head,
+            task_head,
+            task_tail,
+            task_expert,
+            task_valid_rows,
+            tma_a,
+            gA,
+            tma_sfa,
+            gSFA,
+            tma_b_w13,
+            gB_w13,
+            sfb1_packed,
+            tma_b_down,
+            gB_down,
+            sfb2_packed,
             self.tiled_mma,
             self.fc1_tiled_mma,
             self.mma_atom,

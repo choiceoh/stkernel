@@ -1,0 +1,30 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-tiled-0909-ring",
+  "revision": "4e93663900b6ced9b22c6b8abc0a877260d50e47",
+  "session": "eptiledcpu0910prep8",
+  "output": "/home/choiceoh/glm53-ep-prep-8-cpu-evidence",
+  "command": [
+    "env",
+    "REPO=/home/choiceoh/stkernel-ep-tiled-0909-ring",
+    "bash",
+    "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/fleet.sh",
+    "run",
+    "--cpu",
+    "eptiledcpu0910prep8",
+    "5",
+    "EP SF6 native route fusion and preparation repair: 19 real lowerings and source-bound CPU contracts; no GPU devices",
+    "--",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "choiceoh@10.10.10.4",
+    "nice -n19 python3 -B /home/choiceoh/stkernel-ep-tiled-0909-ring/probes/run_glm53_ep_tiled_cpu.py --image sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 --output /home/choiceoh/glm53-ep-prep-8-cpu-evidence --capsule-root /home/choiceoh/glm53-ep-cpu-0909-21/capsule --manifest-sha256 b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "started": 1788996697.077987,
+  "log": "/tmp/glm53-ep-prep-cpu8.log",
+  "scope": "Normal fleet CPU admission; no GPU devices or workload",
+  "returncode": 1,
+  "finished": 1788996781.338932
+}

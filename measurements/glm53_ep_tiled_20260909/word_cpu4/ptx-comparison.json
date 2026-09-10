@@ -1,0 +1,268 @@
+{
+  "scope": "static emitted PTX only; each region strictly between successive read/write bar.sync 3,128; excludes loads before the first barrier; not SASS cycles, occupancy, numerical or speed acceptance",
+  "old_result_sha256": "247e41c1a72974886b0098e14892f1af53860575184c4bee235e271f423fd4b6",
+  "new_result_sha256": "453d1dd74340e9bcdb1be67ff2fd5f202c3cf5ab649cc708038a65395e990078",
+  "old": {
+    "sha256": "e16c78e26d6ab27842e51d2a500d49cc259882cd66a5ba007c48d697f6c6efa4",
+    "barrier3_count": 12,
+    "restore_regions": [
+      {
+        "read_barrier_line": 1013,
+        "write_barrier_line": 1156,
+        "instructions": 134,
+        "integer_alu_and_address": 130,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 36,
+          "and.b32": 42,
+          "or.b32": 12,
+          "shl.b32": 19,
+          "shr.u32": 21,
+          "st.shared.s32": 4
+        }
+      },
+      {
+        "read_barrier_line": 1301,
+        "write_barrier_line": 1444,
+        "instructions": 134,
+        "integer_alu_and_address": 130,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 36,
+          "and.b32": 42,
+          "or.b32": 12,
+          "shl.b32": 19,
+          "shr.u32": 21,
+          "st.shared.s32": 4
+        }
+      },
+      {
+        "read_barrier_line": 2427,
+        "write_barrier_line": 2571,
+        "instructions": 135,
+        "integer_alu_and_address": 131,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 37,
+          "and.b32": 42,
+          "or.b32": 12,
+          "shl.b32": 19,
+          "shr.u32": 21,
+          "st.shared.s32": 4
+        }
+      },
+      {
+        "read_barrier_line": 2961,
+        "write_barrier_line": 3104,
+        "instructions": 134,
+        "integer_alu_and_address": 130,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 36,
+          "and.b32": 42,
+          "or.b32": 12,
+          "shl.b32": 19,
+          "shr.u32": 21,
+          "st.shared.s32": 4
+        }
+      },
+      {
+        "read_barrier_line": 3409,
+        "write_barrier_line": 3548,
+        "instructions": 130,
+        "integer_alu_and_address": 126,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 32,
+          "and.b32": 42,
+          "or.b32": 12,
+          "shl.b32": 19,
+          "shr.u32": 21,
+          "st.shared.s32": 4
+        }
+      },
+      {
+        "read_barrier_line": 3853,
+        "write_barrier_line": 3992,
+        "instructions": 130,
+        "integer_alu_and_address": 126,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 32,
+          "and.b32": 42,
+          "or.b32": 12,
+          "shl.b32": 19,
+          "shr.u32": 21,
+          "st.shared.s32": 4
+        }
+      }
+    ],
+    "first_restore_excerpt": "\tbar.sync \t3, 128;\n\tand.b32 \t%r829, %r617, 15;\n\tadd.s32 \t%r830, %r623, %r829;\n\tshl.b32 \t%r831, %r621, 4;\n\tand.b32 \t%r832, %r831, 48;\n\tadd.s32 \t%r833, %r830, %r832;\n\tand.b32 \t%r834, %r833, 255;\n\tshr.u32 \t%r835, %r617, 4;\n\tand.b32 \t%r836, %r835, 15;\n\tadd.s32 \t%r837, %r623, %r836;\n\tshl.b32 \t%r838, %r621, 10;\n\tand.b32 \t%r839, %r838, 12288;\n\tshl.b32 \t%r840, %r837, 8;\n\tadd.s32 \t%r841, %r839, %r840;\n\tand.b32 \t%r842, %r841, 65280;\n\tshr.u32 \t%r843, %r617, 8;\n\tand.b32 \t%r844, %r843, 15;\n\tand.b32 \t%r845, %r621, 48;\n\tadd.s32 \t%r846, %r623, %r844;\n\tadd.s32 \t%r847, %r846, %r845;\n\tshl.b32 \t%r848, %r847, 16;\n\tand.b32 \t%r849, %r848, 16711680;\n\tshr.u32 \t%r850, %r617, 12;\n\tand.b32 \t%r851, %r850, 15;\n\tshr.u32 \t%r852, %r621, 6;\n\tadd.s32 \t%r853, %r623, %r851;\n\tshl.b32 \t%r854, %r621, 22;\n\tand.b32 \t%r855, %r854, 805306368;\n\tshl.b32 \t%r856, %r853, 24;\n\tadd.s32 \t%r857, %r855, %r856;\n\tor.b32 \t%r858, %r857, %r834;\n\tor.b32 \t%r859, %r858, %r849;\n\tor.b32 \t%r626, %r859, %r842;\n\tadd.s32 \t%r625, %r618, %r826;\n\t// begin inline asm\n\tst.shared.s32 [%r625], %r626;\n\t// end inline asm\n\tshr.u32 \t%r860, %r617, 16;\n\tand.b32 \t%r861, %r860, 15;\n\tshr.u32 \t%r862, %r621, 8;\n\tadd.s32 \t%r863, %r623, %r861;\n\tshr.u32 \t%r864, %r621, 4;\n\tand.b32 \t%r865, %r864, 48;\n\tadd.s32 \t%r866, %r863, %r865;\n\tand.b32 \t%r867, %r866, 255;\n\tshr.u32 \t%r868, %r617, 20;\n\tand.b32 \t%r869, %r868, 15;\n\tadd.s32 \t%r870, %r623, %r869;\n\tshl.b32 \t%r871, %r621, 2;\n\tand.b32 \t%r872, %r871, 12288;\n\tshl.b32 \t%r873, %r870, 8;\n\tadd.s32 \t%r874, %r872, %r873;\n\tand.b32 \t%r875, %r874, 65280;\n\tshr.u32 \t%r876, %r617, 24;\n\tand.b32 \t%r877, %r876, 15;\n\tshr.u32 \t%r878, %r621, 12;\n\tadd.s32 \t%r879, %r623, %r877;\n\tshl.b32 \t%r880, %r621, 8;\n\tand.b32 \t%r881, %r880, 3145728;\n\tshl.b32 \t%r882, %r879, 16;\n\tadd.s32 \t%r883, %r881, %r882;\n\tand.b32 \t%r884, %r883, 16711680;\n\tshr.u32 \t%r885, %r617, 28;\n\tshr.u32 \t%r886, %r621, 14;\n\tadd.s32 \t%r887, %r623, %r885;\n\tshl.b32 \t%r888, %r621, 14;\n\tand.b32 \t%r889, %r888, 805306368;\n\tshl.b32 \t%r890, %r887, 24;\n\tadd.s32 \t%r891, %r889, %r890;\n\tor.b32 \t%r892, %r891, %r884;\n\tor.b32 \t%r893, %r892, %r875;\n\tor.b32 \t%r628, %r893, %r867;\n\tadd.s32 \t%r627, %r625, 4;\n\t// begin inline asm\n\tst.shared.s32 [%r627], %r628;\n\t// end inline asm\n\tand.b32 \t%r894, %r619, 15;\n\tadd.s32 \t%r895, %r623, %r894;\n\tand.b32 \t%r896, %r878, 48;\n\tadd.s32 \t%r897, %r895, %r896;\n\tand.b32 \t%r898, %r897, 255;\n\tshr.u32 \t%r899, %r619, 4;\n\tand.b32 \t%r900, %r899, 15;\n\tadd.s32 \t%r901, %r623, %r900;\n\tand.b32 \t%r902, %r852, 12288;\n\tshl.b32 \t%r903, %r901, 8;\n\tadd.s32 \t%r904, %r902, %r903;\n\tand.b32 \t%r905, %r904, 65280;\n\tshr.u32 \t%r906, %r619, 8;\n\tand.b32 \t%r907, %r906, 15;\n\tand.b32 \t%r908, %r621, 3145728;\n\tadd.s32 \t%r909, %r623, %r907;\n\tshl.b32 \t%r910, %r909, 16;\n\tadd.s32 \t%r911, %r910, %r908;\n\tand.b32 \t%r912, %r911, 16711680;\n\tshr.u32 \t%r913, %r619, 12;\n\tand.b32 \t%r914, %r913, 15;\n\tadd.s32 \t%r915, %r623, %r914;\n\tshl.b32 \t%r916, %r621, 6;\n\tand.b32 \t%r917, %r916, 805306368;\n\tshl.b32 \t%r918, %r915, 24;\n\tadd.s32 \t%r919, %r917, %r918;\n\tor.b32 \t%r920, %r919, %r912;\n\tor.b32 \t%r921, %r920, %r905;\n\tor.b32 \t%r630, %r921, %r898;\n\tadd.s32 \t%r629, %r625, 8;\n\t// begin inline asm\n\tst.shared.s32 [%r629], %r630;\n\t// end inline asm\n\tshr.u32 \t%r922, %r619, 16;\n\tand.b32 \t%r923, %r922, 15;\n\tadd.s32 \t%r924, %r623, %r923;\n\tshr.u32 \t%r925, %r621, 20;\n\tand.b32 \t%r926, %r925, 48;\n\tadd.s32 \t%r927, %r924, %r926;\n\tand.b32 \t%r928, %r927, 255;\n\tshr.u32 \t%r929, %r619, 20;\n\tand.b32 \t%r930, %r929, 15;\n\tshr.u32 \t%r931, %r621, 26;\n\tadd.s32 \t%r932, %r623, %r930;\n\tand.b32 \t%r933, %r886, 12288;\n\tshl.b32 \t%r934, %r932, 8;\n\tadd.s32 \t%r935, %r933, %r934;\n\tand.b32 \t%r936, %r935, 65280;\n\tshr.u32 \t%r937, %r619, 24;\n\tand.b32 \t%r938, %r937, 15;\n\tadd.s32 \t%r939, %r623, %r938;\n\tand.b32 \t%r940, %r862, 3145728;\n\tshl.b32 \t%r941, %r939, 16;\n\tadd.s32 \t%r942, %r940, %r941;\n\tand.b32 \t%r943, %r942, 16711680;\n\tshr.u32 \t%r944, %r619, 28;\n\tadd.s32 \t%r945, %r623, %r944;\n\tand.b32 \t%r946, %r931, 48;\n\tadd.s32 \t%r947, %r945, %r946;\n\tshl.b32 \t%r948, %r947, 24;\n\tor.b32 \t%r949, %r936, %r948;\n\tor.b32 \t%r950, %r949, %r928;\n\tor.b32 \t%r632, %r950, %r943;\n\tadd.s32 \t%r631, %r625, 12;\n\t// begin inline asm\n\tst.shared.s32 [%r631], %r632;\n\t// end inline asm\n\tbar.sync \t3, 128;\n"
+  },
+  "new": {
+    "sha256": "5e60a92ff84ac287a9357f4c1b53adcd889dea858d2007c87fbe61ae6a176af2",
+    "barrier3_count": 12,
+    "restore_regions": [
+      {
+        "read_barrier_line": 1013,
+        "write_barrier_line": 1106,
+        "instructions": 84,
+        "integer_alu_and_address": 80,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 12,
+          "and.b32": 21,
+          "mul.lo.s32": 2,
+          "or.b32": 16,
+          "shl.b32": 20,
+          "shr.u32": 5,
+          "st.shared.s32": 4,
+          "xor.b32": 4
+        }
+      },
+      {
+        "read_barrier_line": 1251,
+        "write_barrier_line": 1344,
+        "instructions": 84,
+        "integer_alu_and_address": 80,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 12,
+          "and.b32": 21,
+          "mul.lo.s32": 2,
+          "or.b32": 16,
+          "shl.b32": 20,
+          "shr.u32": 5,
+          "st.shared.s32": 4,
+          "xor.b32": 4
+        }
+      },
+      {
+        "read_barrier_line": 2327,
+        "write_barrier_line": 2421,
+        "instructions": 85,
+        "integer_alu_and_address": 81,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 13,
+          "and.b32": 21,
+          "mul.lo.s32": 2,
+          "or.b32": 16,
+          "shl.b32": 20,
+          "shr.u32": 5,
+          "st.shared.s32": 4,
+          "xor.b32": 4
+        }
+      },
+      {
+        "read_barrier_line": 2811,
+        "write_barrier_line": 2904,
+        "instructions": 84,
+        "integer_alu_and_address": 80,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 12,
+          "and.b32": 21,
+          "mul.lo.s32": 2,
+          "or.b32": 16,
+          "shl.b32": 20,
+          "shr.u32": 5,
+          "st.shared.s32": 4,
+          "xor.b32": 4
+        }
+      },
+      {
+        "read_barrier_line": 3209,
+        "write_barrier_line": 3298,
+        "instructions": 80,
+        "integer_alu_and_address": 76,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 8,
+          "and.b32": 21,
+          "mul.lo.s32": 2,
+          "or.b32": 16,
+          "shl.b32": 20,
+          "shr.u32": 5,
+          "st.shared.s32": 4,
+          "xor.b32": 4
+        }
+      },
+      {
+        "read_barrier_line": 3603,
+        "write_barrier_line": 3692,
+        "instructions": 80,
+        "integer_alu_and_address": 76,
+        "stores": 4,
+        "opcodes": {
+          "add.s32": 8,
+          "and.b32": 21,
+          "mul.lo.s32": 2,
+          "or.b32": 16,
+          "shl.b32": 20,
+          "shr.u32": 5,
+          "st.shared.s32": 4,
+          "xor.b32": 4
+        }
+      }
+    ],
+    "first_restore_excerpt": "\tbar.sync \t3, 128;\n\tand.b32 \t%r829, %r623, 127;\n\tmul.lo.s32 \t%r830, %r829, 16843009;\n\tand.b32 \t%r831, %r623, 128;\n\tmul.lo.s32 \t%r832, %r831, 16843009;\n\tand.b32 \t%r833, %r617, 255;\n\tshl.b32 \t%r834, %r617, 8;\n\tor.b32 \t%r835, %r834, %r833;\n\tand.b32 \t%r836, %r835, 983055;\n\tshl.b32 \t%r837, %r835, 4;\n\tand.b32 \t%r838, %r837, 251662080;\n\tor.b32 \t%r839, %r838, %r836;\n\tand.b32 \t%r840, %r621, 255;\n\tshl.b32 \t%r841, %r621, 12;\n\tand.b32 \t%r842, %r841, 1044480;\n\tor.b32 \t%r843, %r842, %r840;\n\tshl.b32 \t%r844, %r843, 10;\n\tshl.b32 \t%r845, %r843, 4;\n\tor.b32 \t%r846, %r844, %r845;\n\tand.b32 \t%r847, %r846, 808464432;\n\tadd.s32 \t%r848, %r839, %r830;\n\tadd.s32 \t%r849, %r848, %r847;\n\txor.b32 \t%r626, %r849, %r832;\n\tadd.s32 \t%r625, %r618, %r826;\n\t// begin inline asm\n\tst.shared.s32 [%r625], %r626;\n\t// end inline asm\n\tshr.u32 \t%r850, %r617, 16;\n\tshr.u32 \t%r851, %r621, 8;\n\tshl.b32 \t%r852, %r850, 8;\n\tor.b32 \t%r853, %r852, %r850;\n\tand.b32 \t%r854, %r853, 983055;\n\tshl.b32 \t%r855, %r853, 4;\n\tand.b32 \t%r856, %r855, 251662080;\n\tor.b32 \t%r857, %r856, %r854;\n\tand.b32 \t%r858, %r851, 255;\n\tshl.b32 \t%r859, %r621, 4;\n\tand.b32 \t%r860, %r859, 1044480;\n\tor.b32 \t%r861, %r860, %r858;\n\tshl.b32 \t%r862, %r861, 10;\n\tshl.b32 \t%r863, %r861, 4;\n\tor.b32 \t%r864, %r862, %r863;\n\tand.b32 \t%r865, %r864, 808464432;\n\tadd.s32 \t%r866, %r857, %r830;\n\tadd.s32 \t%r867, %r866, %r865;\n\txor.b32 \t%r628, %r867, %r832;\n\tadd.s32 \t%r627, %r625, 4;\n\t// begin inline asm\n\tst.shared.s32 [%r627], %r628;\n\t// end inline asm\n\tshr.u32 \t%r868, %r621, 16;\n\tand.b32 \t%r869, %r619, 255;\n\tshl.b32 \t%r870, %r619, 8;\n\tor.b32 \t%r871, %r870, %r869;\n\tand.b32 \t%r872, %r871, 983055;\n\tshl.b32 \t%r873, %r871, 4;\n\tand.b32 \t%r874, %r873, 251662080;\n\tor.b32 \t%r875, %r874, %r872;\n\tshl.b32 \t%r876, %r868, 12;\n\tor.b32 \t%r877, %r876, %r868;\n\tshl.b32 \t%r878, %r877, 10;\n\tand.b32 \t%r879, %r878, 805318656;\n\tshl.b32 \t%r880, %r877, 4;\n\tand.b32 \t%r881, %r880, 3145776;\n\tor.b32 \t%r882, %r879, %r881;\n\tadd.s32 \t%r883, %r875, %r830;\n\tadd.s32 \t%r884, %r883, %r882;\n\txor.b32 \t%r630, %r884, %r832;\n\tadd.s32 \t%r629, %r625, 8;\n\t// begin inline asm\n\tst.shared.s32 [%r629], %r630;\n\t// end inline asm\n\tshr.u32 \t%r885, %r619, 16;\n\tshr.u32 \t%r886, %r621, 24;\n\tshl.b32 \t%r887, %r885, 8;\n\tor.b32 \t%r888, %r887, %r885;\n\tand.b32 \t%r889, %r888, 983055;\n\tshl.b32 \t%r890, %r888, 4;\n\tand.b32 \t%r891, %r890, 251662080;\n\tor.b32 \t%r892, %r891, %r889;\n\tshl.b32 \t%r893, %r886, 12;\n\tor.b32 \t%r894, %r893, %r886;\n\tshl.b32 \t%r895, %r894, 10;\n\tshl.b32 \t%r896, %r894, 4;\n\tor.b32 \t%r897, %r895, %r896;\n\tand.b32 \t%r898, %r897, 808464432;\n\tadd.s32 \t%r899, %r898, %r830;\n\tadd.s32 \t%r900, %r899, %r892;\n\txor.b32 \t%r632, %r900, %r832;\n\tadd.s32 \t%r631, %r625, 12;\n\t// begin inline asm\n\tst.shared.s32 [%r631], %r632;\n\t// end inline asm\n\tbar.sync \t3, 128;\n"
+  },
+  "old_resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+  "new_resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__tensorptrbf16gmemalign16o6409640961_tensorptri32gmemo481_tensorptrf32g_0:\n  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+  "old_cache_key": [
+    "glm53_ep_static_tiled_fp32_v1",
+    6,
+    256,
+    48,
+    "torch.int32",
+    false,
+    true,
+    [
+      16,
+      128,
+      256
+    ],
+    [
+      16,
+      256,
+      128
+    ],
+    "nvfp4",
+    "sf6_v1",
+    "swigluoai_uninterleave",
+    1.0,
+    0.0,
+    10.0,
+    "fp32_scatter",
+    "glm53_ep_static_sf6_a_ring_v1"
+  ],
+  "new_cache_key": [
+    "glm53_ep_static_tiled_fp32_v1",
+    6,
+    256,
+    48,
+    "torch.int32",
+    false,
+    true,
+    [
+      16,
+      128,
+      256
+    ],
+    [
+      16,
+      256,
+      128
+    ],
+    "nvfp4",
+    "sf6_v1",
+    "swigluoai_uninterleave",
+    1.0,
+    0.0,
+    10.0,
+    "fp32_scatter",
+    "glm53_ep_static_sf6_a_ring_v1",
+    "glm53_ep_static_sf6_word_unpack_v1"
+  ]
+}

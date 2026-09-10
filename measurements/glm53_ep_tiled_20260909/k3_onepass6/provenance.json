@@ -1,0 +1,146 @@
+{
+  "files": {
+    "A-canary/10.10.10.1.PASS.json.gz": {
+      "format": "Exact original JSON substring, deterministic gzip",
+      "original_json_sha256": "fd6863284d88c2673c46f2f7952b56686142f7a3407e3e94b223391fc6ee66b9",
+      "original_marker_line_sha256": "de97d4e7e69be7c5938a16040a068aef572cadd89828dcef805cad86e145a363",
+      "source_log_original_sha256": "f623c6a252c0481ec128a75de9586b5a579c03b589485cd75a9b3b364e94d15f"
+    },
+    "A-canary/10.10.10.3.PASS.json.gz": {
+      "format": "Exact original JSON substring, deterministic gzip",
+      "original_json_sha256": "6b546423f017bc52ca3d91ea8689b33230be493d0ed9c2d271b2b13318ffbdf2",
+      "original_marker_line_sha256": "c5a79be245b55df7ba7d928813b1c006b4e703a7821c63eadec5bdfb57510d3b",
+      "source_log_original_sha256": "b9dd85cf525ea07c8f2479eed418089665d639d91194a9a003522de76305de51"
+    },
+    "A-canary/10.10.10.4.PASS.json.gz": {
+      "format": "Exact original JSON substring, deterministic gzip",
+      "original_json_sha256": "f23351f3f2ec960fa912eab8f982ea097f30cee097b9b7b220f3a87b2ad803e6",
+      "original_marker_line_sha256": "ae9a360d52c80e4fe4813de416d472fbfd716295225105e7b0ea9b4a8bdec8ce",
+      "source_log_original_sha256": "ead8e209a4173ad27bcbe3084fadc03c00129eda4c1ad6d88322682bae14bb50"
+    },
+    "A-canary/local.PASS.json.gz": {
+      "format": "Exact original JSON substring, deterministic gzip",
+      "original_json_sha256": "2fd16861e6a6193a6281790efb6eff29ccf9b29a786079694eb9c38adf347db3",
+      "original_marker_line_sha256": "1d10ef46d509c535199540c8dcf26c9e45f8d1dfdad03030adaff1ae1c164d7c",
+      "source_log_original_sha256": "3b6e36ee9ff90a1d0e557624d59e7d120911d02a7e4445867772f947edf8135f"
+    },
+    "A-ready/10.10.10.1.serving.log.gz": {
+      "original_bytes": 183475,
+      "original_sha256": "f623c6a252c0481ec128a75de9586b5a579c03b589485cd75a9b3b364e94d15f",
+      "private_identity_sha256": "cca11fdc4181315384da002dfaea869c022070c6b0421533653ca6820a0baea5"
+    },
+    "A-ready/10.10.10.3.serving.log.gz": {
+      "original_bytes": 183270,
+      "original_sha256": "b9dd85cf525ea07c8f2479eed418089665d639d91194a9a003522de76305de51",
+      "private_identity_sha256": "cca11fdc4181315384da002dfaea869c022070c6b0421533653ca6820a0baea5"
+    },
+    "A-ready/10.10.10.4.serving.log.gz": {
+      "original_bytes": 183297,
+      "original_sha256": "ead8e209a4173ad27bcbe3084fadc03c00129eda4c1ad6d88322682bae14bb50",
+      "private_identity_sha256": "cca11fdc4181315384da002dfaea869c022070c6b0421533653ca6820a0baea5"
+    },
+    "A-ready/local.serving.log.gz": {
+      "original_bytes": 208767,
+      "original_sha256": "3b6e36ee9ff90a1d0e557624d59e7d120911d02a7e4445867772f947edf8135f",
+      "private_identity_sha256": "cca11fdc4181315384da002dfaea869c022070c6b0421533653ca6820a0baea5"
+    },
+    "boot/boot-EPTILEDK36A.log.gz": {
+      "original_bytes": 276166,
+      "original_path": "/home/choiceoh/glm53-logs/boot-EPTILEDK36A.log",
+      "original_sha256": "a0a5eba7206433ba9ce81839b1cb8d6383eb07d95ca7ed81e5902440ad5c4f1a",
+      "private_stored_sha256": "f5a9bc9a489b13d6416b7af7fe92f43951da96c35436ab435ba62c4079771e12"
+    },
+    "boot/boot-EPTILEDK36ABASE.log.gz": {
+      "original_bytes": 210907,
+      "original_path": "/home/choiceoh/glm53-logs/boot-EPTILEDK36ABASE.log",
+      "original_sha256": "e2fd31415cac81a611ae2ba543148e62b1042138a33b88f6095e61c0eb2fe99e",
+      "private_stored_sha256": "bd69bae8491e05e74e61963e3f8538f53902d2c7730544ccc29a0bad36129e77"
+    },
+    "boot/boot-EPTILEDK36B0.log.gz": {
+      "original_bytes": 217389,
+      "original_path": "/home/choiceoh/glm53-logs/boot-EPTILEDK36B0.log",
+      "original_sha256": "5fd14a459a0f27439285d8db43eac9db94801a9ab33ae205c7b5103e254cdf8a",
+      "private_stored_sha256": "51f870016c6377cc85c23ed161f8b3f13c5c1b9a76ef204854cef802b1c2004d"
+    },
+    "boot/boot-EPTILEDK36B1.log.gz": {
+      "original_bytes": 209797,
+      "original_path": "/home/choiceoh/glm53-logs/boot-EPTILEDK36B1.log",
+      "original_sha256": "553ddcd5167e20dbbac9a795d2c170a061209a1e0ba7453c2e669ce1dbecca36",
+      "private_stored_sha256": "027d84173079262dd88738ee0e625ae4065dce9c9b896be8c20cc8777329bcff"
+    },
+    "observer-events.jsonl": {
+      "original_sha256": "a4ab7cbac3d9ecc180326dc21563e1f8e4aa9a1812fbedd53d7210c4e1b8790e"
+    },
+    "onepass.jsonl": {
+      "original_bytes": 261680,
+      "original_path": "/tmp/glm53-ep-k3-onepass-0910-6/onepass.jsonl",
+      "original_sha256": "2cc3fdcf1f67f1875dd9beff107cc354676f3818a81c3e809cfda37bbff993bf",
+      "private_stored_sha256": "b22a6f1dc80709455c7197a5ed5cb83383fd9bb01c5e789b3afa64bb8353f34f"
+    },
+    "run.log.gz": {
+      "original_bytes": 12900,
+      "original_path": "/home/choiceoh/glm53-logs/fleet/run-logs/6419fcb4e4cb283ae85f556c570023398df294af6ad16664be460466d38d6789.log",
+      "original_sha256": "4c3e4db3c3f7c9e8d6b583bf3e240c60ab6fb4bbef8580c6f0798ea16d6bd143",
+      "private_stored_sha256": "a7880d3581a356e35e06b3aa923c75c7c42f9ac47c9763aa12c5f283e385a85a"
+    },
+    "source/baseline.py.gz": {
+      "original_bytes": 12372,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/baseline.py",
+      "original_sha256": "3e60386937824ca21cdd6205d6c629b9ba394f8b652c5a6b3d219c8e30f7c0ad",
+      "private_stored_sha256": "90a9fa11893e88d506e8d52f7524d9bf4dd7ee2d4a5bf9313ab72e3532935892"
+    },
+    "source/chain.sh.gz": {
+      "original_bytes": 3457,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/chain.sh",
+      "original_sha256": "0b89b41bae46a68e7f7c476a457aa5b998fc2c4a469043922c3b1864dfac65b3",
+      "private_stored_sha256": "9ac0c32f6ff1eff67861120f2d2df29d240157ea3b5f16db34b35145be32a769"
+    },
+    "source/glm53_ep_tiled_selftest.py.gz": {
+      "original_bytes": 25928,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/glm53_ep_tiled_selftest.py",
+      "original_sha256": "f9460cc1096d56d1b25b26acbe8dbcac2f54d2b0004995bf0f30156ab37dece6",
+      "private_stored_sha256": "f8a45a8ff87894e20211de8572c3004d194b9488b01e009edcfce1e686d60c3f"
+    },
+    "source/glm53_launch_metadata.py.gz": {
+      "original_bytes": 9042,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/glm53_launch_metadata.py",
+      "original_sha256": "e24acbfcc43b64fff1a586c71e954de821f7b7b684350cb4be743606c1d0de13",
+      "private_stored_sha256": "22afcb2ae8eba450738c6cd65b39edd75ba2665cd42a09990977269f103824f7"
+    },
+    "source/manifest.tsv.gz": {
+      "original_bytes": 10046,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/manifest.tsv",
+      "original_sha256": "bf27adbeb9a4d7d30f2e2bb22840fa6c400d5a209e752522dd3ed1bbfc500192",
+      "private_stored_sha256": "3d2db019ba242b03a15cace2752233ea82db468d959fd45e0e45fb1300fa3aec"
+    },
+    "source/moe_static_ep_tiled.py.gz": {
+      "original_bytes": 112542,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/build/glm53/moe_static_ep_tiled.py",
+      "original_sha256": "ff1c32c76f7ec193700248fc83d208251b186e30958e284d87e38fb15a35c87a",
+      "private_stored_sha256": "f3ea70335e660599f56e1fdccc46c48f683640998bfb7c3789512741241b88e3"
+    },
+    "source/proof.py.gz": {
+      "original_bytes": 21412,
+      "original_path": "/home/choiceoh/stkernel-ep-tiled-0909-ring/bench/proof.py",
+      "original_sha256": "93faa5dbf0f2ea982eafde8afbe28d30efec611daf6ffaf5cdf3da7cf0868636",
+      "private_stored_sha256": "cf874ab949fa5602140d5975b592fd9f8d18c8e546db323dd7e105c756f607e2"
+    },
+    "submission.json": {
+      "original_bytes": 2993,
+      "original_path": "/tmp/glm53-ep-k3-onepass-0910-6/submission.json",
+      "original_sha256": "561b6a95be57779053ffbe0f0a9c5fd1cb9e51bdec979040a69c94fea589afaf",
+      "private_stored_sha256": "9dd0d0ceeb91e3abbf6928bebcee2722227aef11bb11cc32b64af26be42272f3"
+    },
+    "verdicts.jsonl": {
+      "original_bytes": 828,
+      "original_path": "/tmp/glm53-ep-k3-onepass-0910-6/verdicts.jsonl",
+      "original_sha256": "dab9cf887c6977623d682aab390981b502248011534e4f009f631615a917ad81",
+      "private_stored_sha256": "459d58778889dfaa5653e8934c6e52e655840d6b758297f5750bfe3c1b5f5613"
+    }
+  },
+  "local_archive_script_sha256": "b24b0c7d51c6424aa96cd2392b10af5776f95e45de03009fb989abf81b6481bb",
+  "remote_capture_manifest_sha256": "d777246e4b5f755199b35c0f236068db8a8f0a48fc62716d1ee04a790deef376",
+  "remote_collector_sha256": "508a1de69b52f1b77d498eb71b39f7bbbe519ddb9d6901eba1f5c49552730d1e",
+  "schema": 1,
+  "source_revision": "6977199cf699f82696f925f77bc930d500135532"
+}

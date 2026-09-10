@@ -319,7 +319,10 @@ class Q0StorePolicyTests(unittest.TestCase):
         tree = ast.parse(path.read_text())
         method = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
                       and node.name == '_ep_local_prefill_kernel')
-        guard = method.body[0]
+        # The original row-major gate stays restricted to large chunks;
+        # the explicit tiled owner also needs a small-prefill implementation.
+        guard = next(node for node in ast.walk(method) if isinstance(node, ast.If)
+                     and '_GLM53_EP_PREFILL_LOCAL' in ast.unparse(node.test))
         self.assertIsInstance(guard, ast.If)
         self.assertEqual(ast.unparse(guard.body[0]), 'return None')
         expression = compile(ast.Expression(guard.test), str(path), 'eval')

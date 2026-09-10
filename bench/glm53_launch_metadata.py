@@ -161,3 +161,36 @@ def launch_parallelism(cmd):
                 serve_argv_sha256=_argv_digest(argv),
                 serve_argv_without_ep_sha256=_argv_digest(
                     argv if ep_index is None else argv[:ep_index] + argv[ep_index + 1:]))
+
+
+def launch_speculation(cmd):
+    """Configured DFlash K; execution still requires live counter evidence."""
+    launch = launch_parallelism(cmd)  # Keep the complete literal-shell grammar.
+    script = base64.b64decode(_WRAPPER.fullmatch(cmd[1])[1], validate=True).decode()
+    line = script[len(_GID_PRELUDE):].removesuffix("\n")
+    argv = _literal_argv(line[:-len(_REDIRECTION)])
+    values = []
+    for index, arg in enumerate(argv):
+        if arg == "--speculative-config":
+            if index + 1 >= len(argv):
+                raise ValueError("missing speculative configuration value")
+            values.append(argv[index + 1])
+        elif arg.startswith("--speculative-config="):
+            values.append(arg.split("=", 1)[1])
+    if len(values) != 1:
+        raise ValueError("missing or duplicate speculative configuration")
+    def unique(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError("duplicate speculative configuration key")
+            result[key] = value
+        return result
+    config = json.loads(values[0], object_pairs_hook=unique)
+    if (not isinstance(config, dict) or config.get("method") != "dflash"
+            or type(config.get("num_speculative_tokens")) is not int
+            or not 1 <= config["num_speculative_tokens"] <= 7):
+        raise ValueError("expected enabled DFlash K in 1..7")
+    return dict(method="dflash", num_speculative_tokens=config["num_speculative_tokens"],
+                config_sha256=_digest(json.dumps(config, sort_keys=True, separators=(",", ":"))),
+                command_sha256=launch["command_sha256"], node_rank=launch["node_rank"])

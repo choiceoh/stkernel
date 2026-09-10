@@ -1,0 +1,7 @@
+{
+  "source": "5663b1beb13e97116e6244af02a22ecc5074a263",
+  "cpu_result_sha256": "30a05469b124b567573d873ec03e27954398d732ba63879d04fced72a80b565e",
+  "mounted_and_contract_source_bytes_match": true,
+  "tests_run": 101,
+  "reason": "commit the generated snapshot with the exact bytes already compiled"
+}

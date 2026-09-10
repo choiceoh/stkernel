@@ -1,0 +1,125 @@
+{
+  "files": {
+    "B-ready/deployed-manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "56b5eb6f676d800c1cee985ab6db241c147b2c3e5c3408c58bd0295352bc6b60",
+      "stored_bytes": 2313,
+      "stored_sha256": "a57143d8756f9c233b04255aa8a84842332737a200566af5a227e5a691abe762"
+    },
+    "B-ready/identity.sanitized.json": {
+      "stored_bytes": 64333,
+      "stored_sha256": "b5e97a7a505b3f8bb2320a382e24a84d21b6a22b5bbbc9ef01c4190e2f02e9d1"
+    },
+    "B-ready/private-original-hashes.json": {
+      "stored_bytes": 5983,
+      "stored_sha256": "282fd585a616151f8cdb16db6bfc9004125bf4ded549578d578a7fa0cd26c343"
+    },
+    "README.md": {
+      "stored_bytes": 3277,
+      "stored_sha256": "0cd993e405b2540a855508a2f8fbabd5b583350ca78fc62267fa75cc86bcb1ef"
+    },
+    "canary/glm53.log.10.10.10.1.canary-fail.json.gz": {
+      "original_bytes": 41895,
+      "original_sha256": "0f366296a0c79430bb71240619bc4fed8e88a6edbcdf758cd26f26f03bc52315",
+      "stored_bytes": 9088,
+      "stored_sha256": "588cc9a4e3ca8647e97128a1a557e172c5147734e4744fecd6592bcbfb704a29"
+    },
+    "canary/glm53.log.10.10.10.3.canary-fail.json.gz": {
+      "original_bytes": 41895,
+      "original_sha256": "8414314a38616f11ae38115ab72cc760d8a9e5d8a5412873b9c2994d33466eeb",
+      "stored_bytes": 9043,
+      "stored_sha256": "084801ad7ec98f7af23f58c9f8924a1a96267ff47fc8566060b2051e8005a1ab"
+    },
+    "canary/glm53.log.10.10.10.4.canary-fail.json.gz": {
+      "original_bytes": 41882,
+      "original_sha256": "52043b8271a2c95537b972197114598c4c66b77c18ead542ffd72e0eef7acb90",
+      "stored_bytes": 9081,
+      "stored_sha256": "80f3063ad8bdaacc16bf418cffc3bd9a16203b82fd12137ea0227fe118599982"
+    },
+    "canary/glm53.log.srv2.canary-fail.json.gz": {
+      "original_bytes": 41880,
+      "original_sha256": "f28af013926f046ecbc3991d871277bc0cca6399807f806f5717f02dd09793cd",
+      "stored_bytes": 9024,
+      "stored_sha256": "2ab353db59fb1e428fd52a0a57e96d95bd84a468a6e4fff76ac593c67ca8b7d5"
+    },
+    "canary/source-binding.json": {
+      "stored_bytes": 7313,
+      "stored_sha256": "e4e059f0ed462d3f0cb7d4bb32d144599dcfcbd97eb9d86aa7d647b919176d4e"
+    },
+    "canary/summary.json": {
+      "stored_bytes": 4142,
+      "stored_sha256": "c95d5bc34bd5df95306e6b372943d3c934587b616fc574729d006e58d2fa25b4"
+    },
+    "failure/glm53.log.10.10.10.1.gz": {
+      "original_bytes": 133826,
+      "original_sha256": "6b001d32c2f8a1f7d62a0e0750595a28b89d84c1ba3268211f092450ac72eadb",
+      "stored_bytes": 20874,
+      "stored_sha256": "de1ec6ea31f842f402600ac0ab010f6d19f3b57322d848c036c85f24c12fa46c"
+    },
+    "failure/glm53.log.10.10.10.3.gz": {
+      "original_bytes": 146292,
+      "original_sha256": "42f42c86b4293d925d1881ad068eddc8ea78bad7b6a43abb9f1c65b1d1018ac5",
+      "stored_bytes": 21698,
+      "stored_sha256": "f38f1164ea0e4495318db7271db545d627aa8be8886f7195039842349cede83b"
+    },
+    "failure/glm53.log.10.10.10.4.gz": {
+      "original_bytes": 136853,
+      "original_sha256": "159985d2d1f744682529e9d11a3a4d4a01547bf3126b4599f916d03899564045",
+      "stored_bytes": 21037,
+      "stored_sha256": "1e42e861338cbecbb004943c626fc5c74783f3778abd5c1967c429838033aabd"
+    },
+    "failure/glm53.log.srv2.gz": {
+      "original_bytes": 159852,
+      "original_sha256": "6c0cb853813871ba1a19312df559f976e420506ad97964595a3907edd2f14de3",
+      "stored_bytes": 24384,
+      "stored_sha256": "735717867de86b2e97e8a43d5d4c7d0a93866a62d5d0573aa73ef16ff4648144"
+    },
+    "onepass.jsonl": {
+      "stored_bytes": 60104,
+      "stored_sha256": "70318a04a4af547f09ec4696b0fb10412d80a3aafd174a57a281d331fc2d056d"
+    },
+    "privacy-scan.json": {
+      "stored_bytes": 1367,
+      "stored_sha256": "934991672172a8345b308ce6368654e418526635bccc25955dbbd37744ac6c1c"
+    },
+    "provenance.json": {
+      "stored_bytes": 7275,
+      "stored_sha256": "e502c35d0671aa7a239b32d9bb8c722be3ad6cf07d3f92080e62d3d554fe0983"
+    },
+    "run.log.gz": {
+      "original_bytes": 7592,
+      "original_sha256": "5d3045e044ae4ed69eff33a93c594a438e8e4ebe54cbd81bb9b4591ce886d5cf",
+      "stored_bytes": 3287,
+      "stored_sha256": "4afa2c52994d4b032c3aa18bd7d944d95533c0dc359dcb37942b4d5a6ef28e4e"
+    },
+    "source/glm53_ep_tiled_selftest.py.gz": {
+      "original_bytes": 25399,
+      "original_sha256": "b085af5d8d9cb8fa118dea474a25a17809b4ae113949436b747b024b0415d664",
+      "stored_bytes": 7561,
+      "stored_sha256": "0f8426209a6fd79f57d00e560f301dd80a5dc4c827fefa9142077658acf7ebad"
+    },
+    "source/manifest.tsv.gz": {
+      "original_bytes": 10046,
+      "original_sha256": "bf27adbeb9a4d7d30f2e2bb22840fa6c400d5a209e752522dd3ed1bbfc500192",
+      "stored_bytes": 2273,
+      "stored_sha256": "3d2db019ba242b03a15cace2752233ea82db468d959fd45e0e45fb1300fa3aec"
+    },
+    "source/moe_static_ep_tiled.py.gz": {
+      "original_bytes": 108220,
+      "original_sha256": "3bbfabfbfac9f384220cca06312686621991f1d9252bc3b5ef29d175c911f15b",
+      "stored_bytes": 19628,
+      "stored_sha256": "1fb7d15fb5de049d095c502521a95fb5b6a9fc48323681fe3e9605669539e2bb"
+    },
+    "submission.json": {
+      "stored_bytes": 2886,
+      "stored_sha256": "4c18029a2e7b2daf64eefe1c73244194fbda20104158961cb7be58915e49e35a"
+    },
+    "terminal.json": {
+      "stored_bytes": 749,
+      "stored_sha256": "96eac36becd9be54bae66c6a52958b0764ee20a0087f755da36762b998d6228e"
+    }
+  },
+  "schema": 1,
+  "scope": "Incomplete failed A startup; no A performance or full numeric acceptance",
+  "source_revision": "5663b1beb13e97116e6244af02a22ecc5074a263"
+}

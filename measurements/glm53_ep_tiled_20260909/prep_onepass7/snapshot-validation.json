@@ -1,0 +1,92 @@
+{
+  "missing_completed_arms": [
+    "S",
+    "B",
+    "A",
+    "ABASE"
+  ],
+  "missing_ready_arms": [
+    "ABASE"
+  ],
+  "results": [
+    {
+      "arm": "S",
+      "candidate_checks_per_rank": 72,
+      "capture_kind": "ready",
+      "completed_prefix_sha256": null,
+      "completed_row_bound": false,
+      "configuration_only_prep": true,
+      "control_checks_per_rank": 72,
+      "directory_missing": null,
+      "event_source": "main-observer",
+      "index": 0,
+      "key_lengths": {
+        "12": 20,
+        "16": 20,
+        "24": 20,
+        "32": 20,
+        "4": 23,
+        "6": 23,
+        "8": 23
+      },
+      "phase": "ready",
+      "ready_four_rank_verified": true,
+      "returncode": 0,
+      "validation": "PASS"
+    },
+    {
+      "arm": "B",
+      "candidate_checks_per_rank": null,
+      "capture_kind": "ready",
+      "completed_prefix_sha256": null,
+      "completed_row_bound": false,
+      "configuration_only_prep": true,
+      "control_checks_per_rank": null,
+      "directory_missing": null,
+      "event_source": "main-observer",
+      "index": 1,
+      "key_lengths": null,
+      "phase": "ready",
+      "ready_four_rank_verified": true,
+      "returncode": 0,
+      "validation": "PASS"
+    },
+    {
+      "arm": "A",
+      "candidate_checks_per_rank": 72,
+      "capture_kind": "ready",
+      "completed_prefix_sha256": null,
+      "completed_row_bound": false,
+      "configuration_only_prep": true,
+      "control_checks_per_rank": 72,
+      "directory_missing": null,
+      "event_source": "main-observer",
+      "index": 2,
+      "key_lengths": {
+        "12": 20,
+        "16": 20,
+        "24": 20,
+        "32": 20,
+        "4": 23,
+        "6": 23,
+        "8": 23
+      },
+      "phase": "ready",
+      "ready_four_rank_verified": true,
+      "returncode": 0,
+      "validation": "PASS"
+    },
+    {
+      "arm": "S",
+      "capture_kind": "completed",
+      "completed_prefix_sha256": null,
+      "directory_missing": null,
+      "event_source": "manual-or-unconfirmed-directory",
+      "index": 3,
+      "phase": null,
+      "returncode": null,
+      "validation": "NOT_READY_OR_CAPTURE_FAILED"
+    }
+  ],
+  "scope": "Collection validation only; missing/rejected/manual-unconfirmed snapshots do not become PASS. No missing final worker counters are synthesized."
+}

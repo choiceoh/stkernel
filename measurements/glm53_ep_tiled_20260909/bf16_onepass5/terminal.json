@@ -1,0 +1,23 @@
+{
+  "original_sha256": "7fea57a051879fbff76dc9fa24e5d93db5165351b381587057768aaa1b17b83e",
+  "owned_holder_at_capture": false,
+  "record": {
+    "finished_at": 1788968185.811045,
+    "outcome": "succeeded",
+    "payload_finished_at": 1788968185.4048352,
+    "payload_returncode": 0,
+    "phase": "finished",
+    "pid": 2807226,
+    "recovery_deferred": true,
+    "recovery_policy": "idle-controller",
+    "returncode": 0,
+    "session": "eptiledbf160910v5",
+    "start": "46906571",
+    "started_at": 1788966675.6992307,
+    "state": "finished",
+    "ticket": "17889666752807226"
+  },
+  "schema": 1,
+  "scope": "Allowlisted terminal fields; raw pending kept private",
+  "source_revision": "e88f5fd368ef8c895000496101fc7fcf8e7fb344"
+}

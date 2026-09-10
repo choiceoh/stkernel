@@ -1,0 +1,456 @@
+{
+  "candidate_checks_per_rank": 72,
+  "cases_per_rank": 12,
+  "control_checks_per_rank": 72,
+  "key_lengths": {
+    "12": 16,
+    "16": 16,
+    "24": 16,
+    "32": 16,
+    "4": 19,
+    "6": 19,
+    "8": 19
+  },
+  "nodes": {
+    "10.10.10.1": {
+      "actual_weight_owner": true,
+      "caller_preserved": true,
+      "case_names": [
+        "mixed6",
+        "balanced12",
+        "concentrated24",
+        "zeros32",
+        "remote33",
+        "balanced2128",
+        "balanced4096",
+        "concentrated6912",
+        "balanced8192",
+        "mixed4",
+        "balanced8",
+        "concentrated16"
+      ],
+      "finalized": [
+        {
+          "line_sha256": "32a97e04294b598262bd6641a3da398876b9be2e14cd0370c8ef52ec410961c5",
+          "receipt": {
+            "format": "sf6_v1",
+            "layers": 42,
+            "packed_bytes": 3604414464,
+            "packed_only": true,
+            "raw_bytes_released": 4756340736,
+            "storage_bytes_saved": 1151926272
+          }
+        }
+      ],
+      "packed_after": {
+        "owner_id": 266261609779312,
+        "planes": {
+          "fc1": {
+            "data_ptr": 476265689088,
+            "dtype": "torch.uint8",
+            "sha256": "d5e8be392556a70849301dd0448ee2d4d427c3ebf8f8e987756104c8f1ec8d58",
+            "shape": [
+              72,
+              512,
+              1552
+            ]
+          },
+          "fc2": {
+            "data_ptr": 476327096320,
+            "dtype": "torch.uint8",
+            "sha256": "9170c6e5d86eb35eaeb0d3119dd8f63cebd4e601c7b8374a5778eeb9e0a5c259",
+            "shape": [
+              72,
+              256,
+              1552
+            ]
+          }
+        },
+        "preparation_contract": {
+          "both_planes_enabled": true,
+          "fc1_stages": 36864,
+          "fc2_stages": 18432,
+          "packed_bytes": 85819392,
+          "raw_bytes": 113246208,
+          "scope": "source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
+          "stage_packed_bytes": 1552,
+          "stage_raw_bytes": 2048
+        },
+        "raw_release_acceptance": false,
+        "raw_sources_retained": true,
+        "scales_id": 266252366210176
+      },
+      "packed_before": {
+        "owner_id": 266261609779312,
+        "planes": {
+          "fc1": {
+            "data_ptr": 476265689088,
+            "dtype": "torch.uint8",
+            "sha256": "d5e8be392556a70849301dd0448ee2d4d427c3ebf8f8e987756104c8f1ec8d58",
+            "shape": [
+              72,
+              512,
+              1552
+            ]
+          },
+          "fc2": {
+            "data_ptr": 476327096320,
+            "dtype": "torch.uint8",
+            "sha256": "9170c6e5d86eb35eaeb0d3119dd8f63cebd4e601c7b8374a5778eeb9e0a5c259",
+            "shape": [
+              72,
+              256,
+              1552
+            ]
+          }
+        },
+        "preparation_contract": {
+          "both_planes_enabled": true,
+          "fc1_stages": 36864,
+          "fc2_stages": 18432,
+          "packed_bytes": 85819392,
+          "raw_bytes": 113246208,
+          "scope": "source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
+          "stage_packed_bytes": 1552,
+          "stage_raw_bytes": 2048
+        },
+        "raw_release_acceptance": false,
+        "raw_sources_retained": true,
+        "scales_id": 266252366210176
+      },
+      "phase": "complete",
+      "verdict": "PASS"
+    },
+    "10.10.10.3": {
+      "actual_weight_owner": true,
+      "caller_preserved": true,
+      "case_names": [
+        "mixed6",
+        "balanced12",
+        "concentrated24",
+        "zeros32",
+        "remote33",
+        "balanced2128",
+        "balanced4096",
+        "concentrated6912",
+        "balanced8192",
+        "mixed4",
+        "balanced8",
+        "concentrated16"
+      ],
+      "finalized": [
+        {
+          "line_sha256": "e060b3bb36d2dd308e0c248cbc981e616344c252a4ae89658fcfdf8e4cac6623",
+          "receipt": {
+            "format": "sf6_v1",
+            "layers": 42,
+            "packed_bytes": 3604414464,
+            "packed_only": true,
+            "raw_bytes_released": 4756340736,
+            "storage_bytes_saved": 1151926272
+          }
+        }
+      ],
+      "packed_after": {
+        "owner_id": 263124231724816,
+        "planes": {
+          "fc1": {
+            "data_ptr": 469823238144,
+            "dtype": "torch.uint8",
+            "sha256": "80d2d1e6d897744c47a964c9c0fb0f45b3d154ce52cb38848ac1800766091cb7",
+            "shape": [
+              72,
+              512,
+              1552
+            ]
+          },
+          "fc2": {
+            "data_ptr": 469884645376,
+            "dtype": "torch.uint8",
+            "sha256": "1accd8c4acb4fa74f7823ffac8cbdac8b1fb106d9eae62f29dbc3bfc43a95e29",
+            "shape": [
+              72,
+              256,
+              1552
+            ]
+          }
+        },
+        "preparation_contract": {
+          "both_planes_enabled": true,
+          "fc1_stages": 36864,
+          "fc2_stages": 18432,
+          "packed_bytes": 85819392,
+          "raw_bytes": 113246208,
+          "scope": "source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
+          "stage_packed_bytes": 1552,
+          "stage_raw_bytes": 2048
+        },
+        "raw_release_acceptance": false,
+        "raw_sources_retained": true,
+        "scales_id": 263123055853392
+      },
+      "packed_before": {
+        "owner_id": 263124231724816,
+        "planes": {
+          "fc1": {
+            "data_ptr": 469823238144,
+            "dtype": "torch.uint8",
+            "sha256": "80d2d1e6d897744c47a964c9c0fb0f45b3d154ce52cb38848ac1800766091cb7",
+            "shape": [
+              72,
+              512,
+              1552
+            ]
+          },
+          "fc2": {
+            "data_ptr": 469884645376,
+            "dtype": "torch.uint8",
+            "sha256": "1accd8c4acb4fa74f7823ffac8cbdac8b1fb106d9eae62f29dbc3bfc43a95e29",
+            "shape": [
+              72,
+              256,
+              1552
+            ]
+          }
+        },
+        "preparation_contract": {
+          "both_planes_enabled": true,
+          "fc1_stages": 36864,
+          "fc2_stages": 18432,
+          "packed_bytes": 85819392,
+          "raw_bytes": 113246208,
+          "scope": "source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
+          "stage_packed_bytes": 1552,
+          "stage_raw_bytes": 2048
+        },
+        "raw_release_acceptance": false,
+        "raw_sources_retained": true,
+        "scales_id": 263123055853392
+      },
+      "phase": "complete",
+      "verdict": "PASS"
+    },
+    "10.10.10.4": {
+      "actual_weight_owner": true,
+      "caller_preserved": true,
+      "case_names": [
+        "mixed6",
+        "balanced12",
+        "concentrated24",
+        "zeros32",
+        "remote33",
+        "balanced2128",
+        "balanced4096",
+        "concentrated6912",
+        "balanced8192",
+        "mixed4",
+        "balanced8",
+        "concentrated16"
+      ],
+      "finalized": [
+        {
+          "line_sha256": "86155ece9c647d385c23696986ec950a367b451d3914b5d5d88a1719eb0c58e1",
+          "receipt": {
+            "format": "sf6_v1",
+            "layers": 42,
+            "packed_bytes": 3604414464,
+            "packed_only": true,
+            "raw_bytes_released": 4756340736,
+            "storage_bytes_saved": 1151926272
+          }
+        }
+      ],
+      "packed_after": {
+        "owner_id": 264134589446144,
+        "planes": {
+          "fc1": {
+            "data_ptr": 476265689088,
+            "dtype": "torch.uint8",
+            "sha256": "2ee93c59a8a42b9a520254c3b7cd658c0ba8be8dd8fa6f74c4550ca8d2f0160a",
+            "shape": [
+              72,
+              512,
+              1552
+            ]
+          },
+          "fc2": {
+            "data_ptr": 476327096320,
+            "dtype": "torch.uint8",
+            "sha256": "5c835fa605fc8e32164332f2c2760474b6f0746f7843bae59f65314acaeadb17",
+            "shape": [
+              72,
+              256,
+              1552
+            ]
+          }
+        },
+        "preparation_contract": {
+          "both_planes_enabled": true,
+          "fc1_stages": 36864,
+          "fc2_stages": 18432,
+          "packed_bytes": 85819392,
+          "raw_bytes": 113246208,
+          "scope": "source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
+          "stage_packed_bytes": 1552,
+          "stage_raw_bytes": 2048
+        },
+        "raw_release_acceptance": false,
+        "raw_sources_retained": true,
+        "scales_id": 264147010014960
+      },
+      "packed_before": {
+        "owner_id": 264134589446144,
+        "planes": {
+          "fc1": {
+            "data_ptr": 476265689088,
+            "dtype": "torch.uint8",
+            "sha256": "2ee93c59a8a42b9a520254c3b7cd658c0ba8be8dd8fa6f74c4550ca8d2f0160a",
+            "shape": [
+              72,
+              512,
+              1552
+            ]
+          },
+          "fc2": {
+            "data_ptr": 476327096320,
+            "dtype": "torch.uint8",
+            "sha256": "5c835fa605fc8e32164332f2c2760474b6f0746f7843bae59f65314acaeadb17",
+            "shape": [
+              72,
+              256,
+              1552
+            ]
+          }
+        },
+        "preparation_contract": {
+          "both_planes_enabled": true,
+          "fc1_stages": 36864,
+          "fc2_stages": 18432,
+          "packed_bytes": 85819392,
+          "raw_bytes": 113246208,
+          "scope": "source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
+          "stage_packed_bytes": 1552,
+          "stage_raw_bytes": 2048
+        },
+        "raw_release_acceptance": false,
+        "raw_sources_retained": true,
+        "scales_id": 264147010014960
+      },
+      "phase": "complete",
+      "verdict": "PASS"
+    },
+    "local": {
+      "actual_weight_owner": true,
+      "caller_preserved": true,
+      "case_names": [
+        "mixed6",
+        "balanced12",
+        "concentrated24",
+        "zeros32",
+        "remote33",
+        "balanced2128",
+        "balanced4096",
+        "concentrated6912",
+        "balanced8192",
+        "mixed4",
+        "balanced8",
+        "concentrated16"
+      ],
+      "finalized": [
+        {
+          "line_sha256": "7140083785e359346466bdb6aa50d927266e8f814e46c1413c78954169fbcf8e",
+          "receipt": {
+            "format": "sf6_v1",
+            "layers": 42,
+            "packed_bytes": 3604414464,
+            "packed_only": true,
+            "raw_bytes_released": 4756340736,
+            "storage_bytes_saved": 1151926272
+          }
+        }
+      ],
+      "packed_after": {
+        "owner_id": 253888338868032,
+        "planes": {
+          "fc1": {
+            "data_ptr": 469823238144,
+            "dtype": "torch.uint8",
+            "sha256": "1c2d96aaaa65b0b721b64eec0f53079b852ece69ee15d08540a565912f3e23c8",
+            "shape": [
+              72,
+              512,
+              1552
+            ]
+          },
+          "fc2": {
+            "data_ptr": 469884645376,
+            "dtype": "torch.uint8",
+            "sha256": "d4ad821e136419562e628070446923a8a8692aa2362887cad3ceb7668d29f819",
+            "shape": [
+              72,
+              256,
+              1552
+            ]
+          }
+        },
+        "preparation_contract": {
+          "both_planes_enabled": true,
+          "fc1_stages": 36864,
+          "fc2_stages": 18432,
+          "packed_bytes": 85819392,
+          "raw_bytes": 113246208,
+          "scope": "source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
+          "stage_packed_bytes": 1552,
+          "stage_raw_bytes": 2048
+        },
+        "raw_release_acceptance": false,
+        "raw_sources_retained": true,
+        "scales_id": 253888073137712
+      },
+      "packed_before": {
+        "owner_id": 253888338868032,
+        "planes": {
+          "fc1": {
+            "data_ptr": 469823238144,
+            "dtype": "torch.uint8",
+            "sha256": "1c2d96aaaa65b0b721b64eec0f53079b852ece69ee15d08540a565912f3e23c8",
+            "shape": [
+              72,
+              512,
+              1552
+            ]
+          },
+          "fc2": {
+            "data_ptr": 469884645376,
+            "dtype": "torch.uint8",
+            "sha256": "d4ad821e136419562e628070446923a8a8692aa2362887cad3ceb7668d29f819",
+            "shape": [
+              72,
+              256,
+              1552
+            ]
+          }
+        },
+        "preparation_contract": {
+          "both_planes_enabled": true,
+          "fc1_stages": 36864,
+          "fc2_stages": 18432,
+          "packed_bytes": 85819392,
+          "raw_bytes": 113246208,
+          "scope": "source-bound mandatory full device roundtrip in prepare_reform_scales; not an additional canary roundtrip",
+          "stage_packed_bytes": 1552,
+          "stage_raw_bytes": 2048
+        },
+        "raw_release_acceptance": false,
+        "raw_sources_retained": true,
+        "scales_id": 253888073137712
+      },
+      "phase": "complete",
+      "verdict": "PASS"
+    }
+  },
+  "schema": 1,
+  "scope": "Bounded first eligible actual-weight layer per rank; not all-layer or sanitizer acceptance",
+  "source_files_equal": true,
+  "source_revision": "6977199cf699f82696f925f77bc930d500135532"
+}

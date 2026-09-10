@@ -100,6 +100,25 @@ def is_baseline(rec: dict) -> tuple[bool, str]:
     return (name.startswith(LEGACY_BASE_PREFIXES), "name")
 
 
+def required_proofs(rec):
+    """Explicit execution requirements, independent of nondefault knobs."""
+    keys = rec.get("required_proofs", [])
+    if (not isinstance(keys, list) or len(keys) > 64
+            or any(not isinstance(key, str) or re.fullmatch(r"VLLM_[A-Z0-9_]+", key) is None
+                   for key in keys) or len(set(keys)) != len(keys)):
+        raise ValueError("invalid required proof declaration")
+    return frozenset(keys)
+
+
+def proof_complete(rec):
+    try:
+        keys = required_proofs(rec) | {key for key, value in (rec.get("knobs") or {}).items()
+                                      if value not in ("0", "", "off")}
+        return all((rec.get("proof") or {}).get(key) is True for key in keys)
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def comparison_scope(environ=None):
     """An explicit invocation scope, never a rewrite of production defaults."""
     env = os.environ if environ is None else environ
@@ -136,6 +155,14 @@ def comparison_baseline(rec, reference=None, *, scope=None, require_proof=True):
     that limitation; one-sided or differing runtime metadata never matches.
     Image/capacity/source launch attestation remains external to these rows.
     """
+    try:
+        if reference is not None and required_proofs(rec) != required_proofs(reference):
+            return False
+        required_proofs(rec)
+    except ValueError:
+        return False
+    if require_proof and not proof_complete(rec):
+        return False
     if scope is None:
         return is_baseline(rec)[0]
     def identified(row):
@@ -155,10 +182,6 @@ def comparison_baseline(rec, reference=None, *, scope=None, require_proof=True):
     if (rec.get("rehearsal") or rec.get("knobs") != scope["knobs"]
             or rec.get("session") != scope["session"]
             or not identified(rec)):
-        return False
-    if require_proof and any((rec.get("proof") or {}).get(key) is not True
-                             for key, value in scope["knobs"].items()
-                             if value not in ("0", "", "off")):
         return False
     if reference is not None:
         if (not identified(reference) or reference.get("session") != scope["session"]

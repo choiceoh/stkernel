@@ -1,0 +1,16 @@
+{
+  "files": {
+    "failure.private.log.gz": {
+      "original": {
+        "bytes": 154,
+        "sha256": "184d49f683ed7d967c0aa2d3ae27f783edff46b08a00e12fc8267405dcd46c7f"
+      },
+      "path": "/tmp/glm53-ep-prep-onepass7-live-S-completed-c4c5f0ffe074/failure.private.log",
+      "stored": {
+        "bytes": 132,
+        "sha256": "e2b167220d6e2fbe862af3f473d880c1ac03c961f5d056a9b2178ab760af8006"
+      }
+    }
+  },
+  "scope": "Hashes only; raw Docker Env/Cmd/inspect and failure logs remain private"
+}

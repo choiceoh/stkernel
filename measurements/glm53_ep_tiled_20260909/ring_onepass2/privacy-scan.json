@@ -1,0 +1,44 @@
+{
+  "credential_findings": 0,
+  "manual_allowlist": "Original submission is only the authorized fixed benchmark command; terminal and B live identities use explicit field allowlists.",
+  "nonsecret_literals_allowed": [
+    "None",
+    "null",
+    "false",
+    "<redacted>",
+    "[]"
+  ],
+  "patterns": [
+    "private_key",
+    "credential_assignment",
+    "bearer",
+    "hf_token",
+    "openai_token"
+  ],
+  "scanned_files": [
+    "B-ready/deployed-manifest.tsv.gz",
+    "B-ready/identity.sanitized.json",
+    "B-ready/private-original-hashes.json",
+    "README.md",
+    "canary/glm53.log.10.10.10.1.canary-fail.json.gz",
+    "canary/glm53.log.10.10.10.3.canary-fail.json.gz",
+    "canary/glm53.log.10.10.10.4.canary-fail.json.gz",
+    "canary/glm53.log.srv2.canary-fail.json.gz",
+    "canary/source-binding.json",
+    "canary/summary.json",
+    "failure/glm53.log.10.10.10.1.gz",
+    "failure/glm53.log.10.10.10.3.gz",
+    "failure/glm53.log.10.10.10.4.gz",
+    "failure/glm53.log.srv2.gz",
+    "onepass.jsonl",
+    "provenance.json",
+    "run.log.gz",
+    "source/glm53_ep_tiled_selftest.py.gz",
+    "source/manifest.tsv.gz",
+    "source/moe_static_ep_tiled.py.gz",
+    "submission.json",
+    "terminal.json"
+  ],
+  "schema": 1,
+  "scope": "Heuristic secret-pattern scan plus explicit exclusion of raw Docker Config/Env/HostConfig; not a universal absence proof"
+}

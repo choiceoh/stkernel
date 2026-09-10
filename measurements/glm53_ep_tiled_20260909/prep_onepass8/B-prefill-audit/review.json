@@ -1,0 +1,207 @@
+{
+  "schema": 1,
+  "source": "388aabdd79e874808262e15c0b974dc8ccca6f07",
+  "session": "eptiledprep0910v8",
+  "name": "EPTILEDPREP8B",
+  "boot_id": "9fc60c53bfedee0783e477311111a8bfff0367016956ece2a1da9d431347c300|2026-09-10T00:20:33.927252984Z",
+  "original_boot_sha256": "ce4ef4c0e3b33dd1efe7bb9a2e5ee3d2c4fdfda5106b65bb67789e6e21ce0e5f",
+  "original_record_prefix_sha256": "ec04c47e19b35b70cba8ffdb495d95b539df000c9e8e8ee0e0552291658428c9",
+  "cold_compile": true,
+  "last_pre_request_CuTe_persist": "(Worker_TP0 pid=338) 2026-09-10 00:28:25,513 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r640_tm32f2g2a32wutr16n128k256d256sf6v1_e134562065e5ebb3.o",
+  "CuTe_events_after_first_POST": 0,
+  "prefill_original": [
+    {
+      "ctx": 2000,
+      "tok": 2128,
+      "cold_s": 2.3882996150059626,
+      "warm_s": 0.8380855299765244,
+      "cold_tok_s": 891.010485715247,
+      "warm_tok_s": 2539.1203211199786,
+      "ttft_samples_s": [
+        2.3882996150059626,
+        0.8832276469911449,
+        0.8380855299765244
+      ],
+      "combined": false
+    },
+    {
+      "ctx": 32000,
+      "tok": 32545,
+      "cold_s": 10.67290787701495,
+      "warm_s": 10.67290787701495,
+      "cold_tok_s": 3049.309557903009,
+      "warm_tok_s": 3049.309557903009,
+      "ttft_samples_s": [
+        10.67290787701495
+      ],
+      "combined": true
+    },
+    {
+      "ctx": 128000,
+      "tok": 128559,
+      "cold_s": 41.16798106196802,
+      "warm_s": 41.16798106196802,
+      "cold_tok_s": 3122.7909818187786,
+      "warm_tok_s": 3122.7909818187786,
+      "ttft_samples_s": [
+        41.16798106196802
+      ],
+      "combined": true
+    }
+  ],
+  "request_intervals": [
+    {
+      "index": 0,
+      "ctx": 2000,
+      "question": 0,
+      "rep": null,
+      "byte_range": [
+        176981,
+        180516
+      ],
+      "request_sha256": "6892d85470c14a0fab53e11b46d18f9587587c82f0aa1ca3cde696ca75b47104",
+      "prompt_tokens": 2121,
+      "ttft_s": 2.3882996150059626,
+      "elapsed_s": 7.714952130976599,
+      "observed_JIT_events": [
+        "(Worker_TP0 pid=338) WARNING 09-10 00:28:55 [jit_monitor.py:135] TileLang JIT compilation during inference: mhc_pre_big_fuse_with_norm_tilelang. This causes a latency spike; consider extending warmup to cover this shape/config.",
+        "(Worker_TP0 pid=338) WARNING 09-10 00:28:55 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _finish. This causes a latency spike; consider extending warmup to cover this shape/config.",
+        "(Worker_TP0 pid=338) WARNING 09-10 00:28:55 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _copy_pad. This causes a latency spike; consider extending warmup to cover this shape/config.",
+        "(Worker_TP0 pid=338) WARNING 09-10 00:28:57 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _compute_local_logits_stats_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.",
+        "(Worker_TP0 pid=338) WARNING 09-10 00:28:57 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _rejection_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.",
+        "(Worker_TP0 pid=338) WARNING 09-10 00:28:57 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _resample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+      ],
+      "observed_static_scale_freeze_count": 0,
+      "static_scale_freeze_first": null
+    },
+    {
+      "index": 1,
+      "ctx": 2000,
+      "question": 1,
+      "rep": null,
+      "byte_range": [
+        180516,
+        181533
+      ],
+      "request_sha256": "e19da4e8cef976a067e90bf7bce933afa65a88a85c17be2218182fac2a4e2a8b",
+      "prompt_tokens": 2128,
+      "ttft_s": 0.8832276469911449,
+      "elapsed_s": 5.664702276990283,
+      "observed_JIT_events": [],
+      "observed_static_scale_freeze_count": 0,
+      "static_scale_freeze_first": null
+    },
+    {
+      "index": 2,
+      "ctx": 2000,
+      "question": 2,
+      "rep": null,
+      "byte_range": [
+        181533,
+        183145
+      ],
+      "request_sha256": "c36bfff63cfa297dd209f0c6b97e0fd430fe215696bed1cb080e89640aa06265",
+      "prompt_tokens": 2128,
+      "ttft_s": 0.8380855299765244,
+      "elapsed_s": 6.116679427970666,
+      "observed_JIT_events": [],
+      "observed_static_scale_freeze_count": 0,
+      "static_scale_freeze_first": null
+    },
+    {
+      "index": 3,
+      "ctx": 32000,
+      "question": "all",
+      "rep": null,
+      "byte_range": [
+        183145,
+        187789
+      ],
+      "request_sha256": "c3463c6e8116db5558e3b809b6b59a1f438fe68b0ad0be391ef96480da7de9ed",
+      "prompt_tokens": 32545,
+      "ttft_s": 10.67290787701495,
+      "elapsed_s": 23.701748247025535,
+      "observed_JIT_events": [],
+      "observed_static_scale_freeze_count": 0,
+      "static_scale_freeze_first": null
+    },
+    {
+      "index": 4,
+      "ctx": 128000,
+      "question": "all",
+      "rep": null,
+      "byte_range": [
+        187789,
+        234271
+      ],
+      "request_sha256": "ee7545109ae85229ab3c88185749ca056baf52f376547da4dd57b2fa18d70228",
+      "prompt_tokens": 128559,
+      "ttft_s": 41.16798106196802,
+      "elapsed_s": 48.585308979963884,
+      "observed_JIT_events": [],
+      "observed_static_scale_freeze_count": 202,
+      "static_scale_freeze_first": "(Worker_TP0 pid=338) WARNING 09-10 00:29:47 [glm53_fp8_dense.py:375] [fp8-dense] nvfp4 static scale frozen on model.layers.0.self_attn.in_proj_qkvbfg_a after 16 calls (headroom 2.00, check every 16)"
+    },
+    {
+      "index": 5,
+      "ctx": 2000,
+      "question": "fixed-all",
+      "rep": 0,
+      "byte_range": [
+        234271,
+        238090
+      ],
+      "request_sha256": "17663bd85442793cb36280663a46b10af2945e17bea8801cb0723ae9cb504c09",
+      "prompt_tokens": 2257,
+      "ttft_s": 0.9257167360046878,
+      "elapsed_s": 14.05423706601141,
+      "observed_JIT_events": [
+        "(Worker_TP0 pid=338) WARNING 09-10 00:30:27 [jit_monitor.py:135] Triton kernel JIT compilation during inference: _gumbel_sample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config."
+      ],
+      "observed_static_scale_freeze_count": 0,
+      "static_scale_freeze_first": null
+    },
+    {
+      "index": 6,
+      "ctx": 2000,
+      "question": "fixed-all",
+      "rep": 1,
+      "byte_range": [
+        238090,
+        240584
+      ],
+      "request_sha256": "c4cc52fd750e4a5fbc6bb1c91b980d43ddf1fef4bdd13b32e300d692bc08d130",
+      "prompt_tokens": 2257,
+      "ttft_s": 0.9024552759947255,
+      "elapsed_s": 13.309659613994882,
+      "observed_JIT_events": [],
+      "observed_static_scale_freeze_count": 0,
+      "static_scale_freeze_first": null
+    },
+    {
+      "index": 7,
+      "ctx": 2000,
+      "question": "fixed-all",
+      "rep": 2,
+      "byte_range": [
+        240584,
+        243475
+      ],
+      "request_sha256": "1e04d15b571663bd16676d356aee0879ced9e5c8fdf19bfc05f98fc0fb72ed76",
+      "prompt_tokens": 2257,
+      "ttft_s": 0.9234257569769397,
+      "elapsed_s": 13.51518909499282,
+      "observed_JIT_events": [],
+      "observed_static_scale_freeze_count": 0,
+      "static_scale_freeze_first": null
+    }
+  ],
+  "scope": "Head completed log only. Eight sequential canonical requests and matching8 finished support POST-order attribution; HTTP lines lack explicit timestamps. Byte intervals are log-order bounds, not precise kernel or TTFT subwindows. Absence of a log warning is not all-rank/all-compiler proof. No timing correction or gate rewrite.",
+  "limits": [
+    "First2K contains six observed inference JIT warnings; second/third2K are repeated warm requests.",
+    "32K/128K each have one request; warm_s aliases cold_s in existing schema.",
+    "No observed head JIT in32K/128K, but128K has202 first-use static-scale-freeze messages; no cost attributed without instrumentation.",
+    "Canonical prefill_ttft compatibility rejects differing cold_compile flags; retain incomplete/descriptive scope.",
+    "No extra GPU request or repeated baseline requested."
+  ]
+}

@@ -26,7 +26,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from baseline import (JSONL, deployed_git, for_build, is_baseline, load,
-                      comparison_scope, comparison_baseline)  # noqa: E402
+                      comparison_scope, comparison_baseline, required_proofs, proof_complete)  # noqa: E402
 
 VERDICTS = os.environ.get("ONEPASS_VERDICTS",
                           os.path.join(os.path.dirname(JSONL), "verdicts.jsonl"))
@@ -53,6 +53,11 @@ def baselines_on(rows, rec):
 
 
 def compatible(a, b):
+    try:
+        if required_proofs(a) != required_proofs(b):
+            return False
+    except ValueError:
+        return False
     if b.get("overlay") and a.get("overlay") != b["overlay"]:
         return False
     return all(a.get(k) == b.get(k) for k in ("harness", "doc_lang", "thinking", "workload", "runtime"))
@@ -77,8 +82,7 @@ def record_errors(rec):
 
 
 def unproved(rec):
-    knobs = {k for k, v in (rec.get("knobs") or {}).items() if v not in ("0", "", "off")}
-    return bool(knobs) and any((rec.get("proof") or {}).get(k) is not True for k in knobs)
+    return not proof_complete(rec)
 
 
 def floor_of(rows, rec, objective=None):
@@ -103,7 +107,7 @@ def floor_of(rows, rec, objective=None):
                 if is_baseline(x)[0] and not x.get("rehearsal")
                 and x.get("harness") == rec.get("harness")
                 and all(x.get(k) == rec.get(k) for k in ("doc_lang", "thinking", "workload", "runtime"))
-                and not record_errors(x)])
+                and not record_errors(x) and required_proofs(x) == required_proofs(rec)])
         scope = "same harness, across builds"
     if len(wins) < 2:
         return None, len(wins), scope

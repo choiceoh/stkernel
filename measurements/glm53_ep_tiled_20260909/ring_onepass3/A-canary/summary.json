@@ -1,0 +1,123 @@
+{
+  "captured_at_KST": "2026-09-09T23:16:10.201399+09:00",
+  "files_verified": 20,
+  "identity_sha256": "39e679544fb86b0b236681288ea6b4530b987db8c7d45c6a8ac3cfd3279bb914",
+  "nodes": {
+    "10.10.10.1": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B": "1"
+        }
+      },
+      "finalized": 1,
+      "graph": true,
+      "id": "6440886cf279061a9a1cebb4cfa2da481af07c0faa5e3eac81eeb2b80aaa3798",
+      "mixed6_a_ring_key": true,
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B_source_image": true,
+      "started_at": "2026-09-09T14:11:57.277030923Z",
+      "trim": 1
+    },
+    "10.10.10.3": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B": "1"
+        }
+      },
+      "finalized": 1,
+      "graph": true,
+      "id": "14cc943b2bf8bc9a1a8eea00ee0f299dbab9f37b5ae47d719787ea8b60e4c6ea",
+      "mixed6_a_ring_key": true,
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B_source_image": true,
+      "started_at": "2026-09-09T14:11:57.295207417Z",
+      "trim": 1
+    },
+    "10.10.10.4": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B": "1"
+        }
+      },
+      "finalized": 1,
+      "graph": true,
+      "id": "4456e331003c7d51dc14b9f8d0f4dcefc0df790c87ef1cbc781cbb3592494da4",
+      "mixed6_a_ring_key": true,
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B_source_image": true,
+      "started_at": "2026-09-09T14:11:57.281503068Z",
+      "trim": 1
+    },
+    "local": {
+      "all_bad_rows_zero": true,
+      "candidate_comparisons": 54,
+      "cases": 9,
+      "common_environment_differences": {
+        "VLLM_B12X_EP_COMPACT": {
+          "A": "1",
+          "B": null
+        },
+        "VLLM_GLM53_EP_TILED": {
+          "A": "1",
+          "B": "0"
+        },
+        "VLLM_GLM53_TP_SF6_Q0": {
+          "A": "0",
+          "B": "1"
+        }
+      },
+      "finalized": 1,
+      "graph": true,
+      "id": "c1461d02ff9a63c387e98872514ea110ba129ee273718c9b6c72a7af9b5df438",
+      "mixed6_a_ring_key": true,
+      "mounts": 71,
+      "packed_unchanged": true,
+      "reference_comparisons": 54,
+      "same_B_source_image": true,
+      "started_at": "2026-09-09T14:11:57.815922203Z",
+      "trim": 1
+    }
+  }
+}
