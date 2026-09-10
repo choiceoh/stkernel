@@ -8119,7 +8119,7 @@ M = 1,152 와 6,912 에서 재면 절편이 바로 나온다.
 동일이고, 부팅마다 두 번의 `cudaMemGetInfo` 뿐이다. 내 부팅이든 피어 부팅이든 다음 부팅이
 그대로 갱신한다.
 
-## ★42차 — DSv4.1-Flash 는 GB10 에 **안 들어간다**: 랭크 84.70 GiB, KV 전에 −4.68 (2026-09-11, srv4 로컬, 부팅 없음)
+## ★42차 — 지금 사전샤딩된 DSv4.1 은 GB10 에 **안 들어간다**(TP 를 안 해서다): 랭크 84.70 → TP 면 73.30 (2026-09-11, srv4 로컬, 부팅 없음)
 
 자체 엔진의 첫 컴포넌트 `engine/budget.py`(D1: 예산은 선언이지 발견이 아니다). vLLM 이 매
 부팅 36초(4부팅 36.1/36.2/37.2/36.5, 편차 1초 미만)와 피크 17.7 GiB 를 들여 알아내는 그
@@ -8167,5 +8167,34 @@ M = 1,152 와 6,912 에서 재면 절편이 바로 나온다.
 5.4 MB 였다 — 노름이 아니라 어텐션 투영과 공유 전문가였다. 복제 그룹은 **크기로 라벨하지 말고
 이름을 뜯어볼 것**.
 
-**다음**: 추정 두 줄(로드 스크래치·액티베이션 피크)을 dsv41 에서 실측한다. `engine/slice_load.py`
-로 층 슬라이스만 올리면 부팅·플릿 없이 잴 수 있다.
+### 정정 — "안 들어간다" 는 TP=4 가 아니라 **디스크에 있는 산출물**에 대한 것
+
+랭크 파일은 `tools/dsv41_preshard.py` 의 **기본값** `--dense replicate --mtp replicate` 로
+빌드됐다. 그 기본값은 **디스크 제약** 기준으로 옳게 골라진 것이고 도구가 그렇게 적어 놨다 —
+srv1 여유 153 GiB 에 대해 랭크당 131.9 GiB, "neither is needed to clear the bar". 비용도
+알고 있었다: *"replicating 17 GiB costs 13 GiB per node"*. **잴 대상(박스 예산)이 없었을 뿐이다.**
+
+`plan --dense tp --mtp ep`(48 샤드 헤더 전수) 실측: 랭크당 **121.4 GiB**, 그중 engram 47.2 는
+SSD → **상주 74.2**(비전 빼면 **73.30**).
+
+| 레이아웃 | 랭크 상주 | KV | 판정 |
+|---|---:|---:|---|
+| `disk` (오늘, dense·mtp 모두 replicate) | 84.70 | **−4.68** | DOES NOT FIT |
+| `tp` (`--dense tp --mtp ep`) | 74.20 | **+7.64** | 들어감 |
+| `tp-notext` (+ 비전 제거) | 73.30 | **+8.70** | 들어감 |
+
+재현: `python3 engine/budget.py --exclusive --layout {disk,tp,tp-notext}`.
+
+**두 기본값의 근거가 둘 다 vLLM 사정이고, 자체 엔진에는 해당되지 않는다**:
+- `--dense replicate` — *"a HYPOTHESIS until vLLM has DeepSeek-V4.1 model code to compare
+  against"*. 우리가 모델을 쓴다(D13). 축은 우리가 정하고, `dsv41_shapes.py` 가 모든 텐서를
+  예측하며 sha 핀된 레퍼런스가 대조 상대다(D14).
+- `--mtp replicate` — *"this fleet runs its drafter at `draft_tensor_parallel_size=1`"*.
+  vLLM 런타임 제약이지 모델 성질이 아니다(D6).
+
+**남은 일**: `--dense tp` 는 지금 `build` 에서 **ABORT** 한다(축이 가설이라 조용히 쓰지 않음 —
+D3 그대로다). 축을 확정하는 것이 곧 TP 규칙을 정하는 일이고, 그게 `shapes`(D2) 작업이다.
+
+**다음**: 추정 두 줄(로드 스크래치·액티베이션 피크, 합 21.92 GiB = 박스의 18%, 남는 KV 의
+2.5배)을 dsv41 에서 실측한다. `engine/slice_load.py` 로 층 슬라이스만 올리면 부팅·플릿 없이
+잴 수 있다.

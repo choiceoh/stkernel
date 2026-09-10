@@ -191,14 +191,34 @@ ACTIVATION_PEAK_GIB = 9.17
 OS_RESERVE_MULTIPLE = 2.0
 
 
+# `tools/dsv41_preshard.py plan --dense tp --mtp ep` over all 48 shard headers:
+# 121.4 GiB per rank, of which engram 47.2 lives on SSD. Resident is the rest.
+# The tool's default is `--dense replicate` and that default was chosen against
+# the DISK bar (srv1 has 153 GiB free; it says "neither is needed to clear the
+# bar"). This module measures the BOX bar, where the same choice costs 13 GiB a
+# node -- which the tool also says. Same numbers, different constraint.
+PLAN_TP_RESIDENT_GIB = 121.4 - 47.2          # 74.2, vision included
+PLAN_TP_RESIDENT_NOVISION_GIB = 74.2 - 0.9   # this fleet serves text only
+
+
 def for_dsv41(checkpoint: "str | Path", world_size: int = 4,
               box_gib: "float | None" = None,
-              tenants_gib: float = 0.0) -> Budget:
-    files = rank_files(checkpoint, world_size)
-    sizes = [rank_weights(f) for f in files]
-    weights_gib = max(g for g, _ in sizes)
-    tensors = max(n for _, n in sizes)
-    spread = weights_gib - min(g for g, _ in sizes)
+              tenants_gib: float = 0.0,
+              weights_gib: "float | None" = None,
+              weights_note: str = "") -> Budget:
+    if weights_gib is None:
+        files = rank_files(checkpoint, world_size)
+        sizes = [rank_weights(f) for f in files]
+        weights_gib = max(g for g, _ in sizes)
+        tensors = max(n for _, n in sizes)
+        spread = weights_gib - min(g for g, _ in sizes)
+        weights_line = Line(
+            "weights (this rank)", weights_gib, READ,
+            f"rank*of{world_size}: {tensors:,} tensors, spread across ranks "
+            f"{spread * 1024:.0f} MiB")
+    else:
+        weights_line = Line("weights (this rank)", weights_gib, LEDGER,
+                            weights_note or "supplied")
 
     if box_gib is None:
         box_gib, _free = probe_box()
@@ -218,9 +238,7 @@ def for_dsv41(checkpoint: "str | Path", world_size: int = 4,
              "six SIGTERMs happened at that floor, all while serving"),
         Line("runtime floor (CUDA ctx + NCCL)", RUNTIME_FLOOR_GIB, LEDGER,
              "40th boot table: init-device 2.29 + dist 1.00 + 2.25, NCCL 16 channels"),
-        Line("weights (this rank)", weights_gib, READ,
-             f"rank*of{world_size}: {tensors:,} tensors, spread across ranks "
-             f"{spread * 1024:.0f} MiB"),
+        weights_line,
         Line("load scratch (pack/quant/drafter/cuBLAS)",
              weights_gib * LOAD_SCRATCH_RATIO, ESTIMATED,
              f"GLM ratio {LOAD_SCRATCH_RATIO:.1%} of weights -- NOT measured on dsv41"),
@@ -346,6 +364,10 @@ def _main(argv: "list[str] | None" = None) -> int:
                         help="assume the box is ours alone (a real serving node)")
     parser.add_argument("--replication", action="store_true",
                         help="show what every rank carries a copy of")
+    parser.add_argument("--layout", choices=("disk", "tp", "tp-notext"), default="disk",
+                        help="disk: the rank files as built (dense=replicate, mtp=replicate). "
+                             "tp: what `preshard plan --dense tp --mtp ep` says. "
+                             "tp-notext: same, minus the vision tower.")
     args = parser.parse_args(argv)
 
     total, free = (None, None)
@@ -372,7 +394,16 @@ def _main(argv: "list[str] | None" = None) -> int:
     print()
 
     tenants = 0.0 if args.exclusive or total is None else total - free
-    budget = for_dsv41(args.checkpoint, args.world_size, args.box_gib or total, tenants)
+    override, note = None, ""
+    if args.layout == "tp":
+        override = PLAN_TP_RESIDENT_GIB
+        note = "preshard plan --dense tp --mtp ep: 121.4/rank - engram 47.2 on SSD"
+    elif args.layout == "tp-notext":
+        override = PLAN_TP_RESIDENT_NOVISION_GIB
+        note = ("preshard plan --dense tp --mtp ep: 121.4/rank - engram 47.2 on SSD "
+                "- vision 0.9 (text only)")
+    budget = for_dsv41(args.checkpoint, args.world_size, args.box_gib or total,
+                       tenants, override, note)
     print(budget.table())
     print()
     print(f"  {budget.verdict()}")
