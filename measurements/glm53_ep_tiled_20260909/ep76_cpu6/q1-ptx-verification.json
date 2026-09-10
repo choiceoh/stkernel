@@ -1,0 +1,122 @@
+{
+  "source": "4618859c90131b33c5d9ebd85a67f1537497a357",
+  "variants": [
+    {
+      "arm": "opt-static/M6-local",
+      "path": "opt-static/M6-local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+      "sha256": "57fb0fb6db38a70aa1346f3296af30bc2fa96f139aac3b3865503ca54f7b6d4f",
+      "total_shuffle_count": 6,
+      "preexisting_shuffle_count": 3,
+      "q1_shuffle_count": 3,
+      "op": "shfl.sync.idx.b32",
+      "mask_and_clamp": 31,
+      "membermask_hex": "0xffffffff",
+      "q1_instructions": [
+        {
+          "line": 2085,
+          "text": "shfl.sync.idx.b32 \t%r1868, %r3499, %r1869, 31, -1;"
+        },
+        {
+          "line": 2147,
+          "text": "shfl.sync.idx.b32 \t%r55, %r3500, %r1880, 31, -1;"
+        },
+        {
+          "line": 2148,
+          "text": "shfl.sync.idx.b32 \t%r56, %r3501, %r1880, 31, -1;"
+        }
+      ],
+      "context_first_line": 2076,
+      "context": "\t// end inline asm\n\t// begin inline asm\n\tmax.f32 %r3499, %r1865, %r1866;\n\t// end inline asm\n$L__BB0_91:\n\tsetp.ge.u32 \t%p160, %r53, %r52;\n\tand.b32 \t%r54, %r41, 1;\n\tsetp.ne.b32 \t%p161, %r54, 0;\n\txor.b32 \t%r1869, %r992, 1;\n\tshfl.sync.idx.b32 \t%r1868, %r3499, %r1869, 31, -1;\n\t// begin inline asm\n\tmax.f32 %r1867, %r3499, %r1868;\n\t// end inline asm\n\tor.pred \t%p162, %p161, %p160;\n\tsetp.eq.f32 \t%p163, %r50, 0f00000000;\n\tmov.b32 \t%r3501, 0;\n\tmov.b16 \t%rs99, 0;\n\tmov.b32 \t%r3500, 0f00000000;\n\tor.pred \t%p164, %p162, %p163;\n\t@%p164 bra \t$L__BB0_93;\n\tmov.b32 \t%r1871, 1086324736;\n\t// begin inline asm\n\trcp.approx.ftz.f32 %r1870, %r1871;\n\t// end inline asm\n\t// begin inline asm\n\trcp.approx.ftz.f32 %r1872, %r50;\n\t// end inline asm\n\tmul.f32 \t%r1878, %r1867, %r1870;\n\tmul.f32 \t%r1873, %r1872, %r1878;\n\tmov.b32 \t%r1874, 1138753536;\n\t// begin inline asm\n\tmin.f32 %r1875, %r1873, %r1874;\n\t// end inline asm\n\t// begin inline asm\n\t\n            {\n                .reg .b16 fp8_pair;\n                .reg .f32 zero;\n                mov.f32 zero, 0f00000000;\n                cvt.rn.satfinite.e4m3x2.f32 fp8_pair, zero, %r1875;\n                cvt.u32.u16 %r1877, fp8_pair;\n            }\n            \n\t// end inline asm\n\tcvt.u16.u32 \t%rs99, %r1877;\n\t// begin inline asm\n\t\n            {\n                .reg .pred p_zero;\n                .reg .b16 fp8_pair;\n                .reg .b32 h2_32;\n                .reg .b16 h_lo, h_hi;\n                .reg .f32 fp8_float, result;\n\n                cvt.u16.u32 fp8_pair, %r1877;\n                cvt.rn.f16x2.e4m3x2 h2_32, fp8_pair;\n                mov.b32 {h_lo, h_hi}, h2_32;\n                cvt.f32.f16 fp8_float, h_lo;\n                rcp.approx.ftz.f32 result, fp8_float;\n                setp.eq.f32 p_zero, fp8_float, 0f00000000;\n                selp.f32 %r1876, 0f00000000, result, p_zero;\n            }\n            \n\t// end inline asm\n\tsetp.neu.f32 \t%p165, %r1876, 0f00000000;\n\tselp.b32 \t%r3501, 1, 0, %p165;\n\tmul.f32 \t%r1879, %r1872, %r1876;\n\tselp.f32 \t%r3500, %r1879, 0f00000000, %p165;\n$L__BB0_93:\n\tsetp.ge.u32 \t%p166, %r53, %r52;\n\tand.b32 \t%r1880, %r41, 30;\n\tshfl.sync.idx.b32 \t%r55, %r3500, %r1880, 31, -1;\n\tshfl.sync.idx.b32 \t%r56, %r3501, %r1880, 31, -1;\n\t@%p166 bra \t$L__BB0_103;\n\tsetp.eq.b32 \t%p167, %r56, 0;\n\tmov.b32 \t%r3502, 0;\n\t@%p167 bra \t$L__BB0_96;",
+      "ptx_local_loads": 0,
+      "ptx_local_stores": 0
+    },
+    {
+      "arm": "opt-static/M4-map288-i32",
+      "path": "opt-static/M4-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat164409640961_FakeTensorInt32321_FakeTensorFloat32321.sm_121a.ptx",
+      "sha256": "212027afd0e9b16063b15722f7fdd97814494d6517f101199a7b500710273ba7",
+      "total_shuffle_count": 6,
+      "preexisting_shuffle_count": 3,
+      "q1_shuffle_count": 3,
+      "op": "shfl.sync.idx.b32",
+      "mask_and_clamp": 31,
+      "membermask_hex": "0xffffffff",
+      "q1_instructions": [
+        {
+          "line": 2095,
+          "text": "shfl.sync.idx.b32 \t%r1869, %r3501, %r1870, 31, -1;"
+        },
+        {
+          "line": 2157,
+          "text": "shfl.sync.idx.b32 \t%r55, %r3502, %r1881, 31, -1;"
+        },
+        {
+          "line": 2158,
+          "text": "shfl.sync.idx.b32 \t%r56, %r3503, %r1881, 31, -1;"
+        }
+      ],
+      "context_first_line": 2086,
+      "context": "\t// end inline asm\n\t// begin inline asm\n\tmax.f32 %r3501, %r1866, %r1867;\n\t// end inline asm\n$L__BB0_93:\n\tsetp.ge.u32 \t%p161, %r53, %r52;\n\tand.b32 \t%r54, %r41, 1;\n\tsetp.ne.b32 \t%p162, %r54, 0;\n\txor.b32 \t%r1870, %r993, 1;\n\tshfl.sync.idx.b32 \t%r1869, %r3501, %r1870, 31, -1;\n\t// begin inline asm\n\tmax.f32 %r1868, %r3501, %r1869;\n\t// end inline asm\n\tor.pred \t%p163, %p162, %p161;\n\tsetp.eq.f32 \t%p164, %r50, 0f00000000;\n\tmov.b32 \t%r3503, 0;\n\tmov.b16 \t%rs99, 0;\n\tmov.b32 \t%r3502, 0f00000000;\n\tor.pred \t%p165, %p163, %p164;\n\t@%p165 bra \t$L__BB0_95;\n\tmov.b32 \t%r1872, 1086324736;\n\t// begin inline asm\n\trcp.approx.ftz.f32 %r1871, %r1872;\n\t// end inline asm\n\t// begin inline asm\n\trcp.approx.ftz.f32 %r1873, %r50;\n\t// end inline asm\n\tmul.f32 \t%r1879, %r1868, %r1871;\n\tmul.f32 \t%r1874, %r1873, %r1879;\n\tmov.b32 \t%r1875, 1138753536;\n\t// begin inline asm\n\tmin.f32 %r1876, %r1874, %r1875;\n\t// end inline asm\n\t// begin inline asm\n\t\n            {\n                .reg .b16 fp8_pair;\n                .reg .f32 zero;\n                mov.f32 zero, 0f00000000;\n                cvt.rn.satfinite.e4m3x2.f32 fp8_pair, zero, %r1876;\n                cvt.u32.u16 %r1878, fp8_pair;\n            }\n            \n\t// end inline asm\n\tcvt.u16.u32 \t%rs99, %r1878;\n\t// begin inline asm\n\t\n            {\n                .reg .pred p_zero;\n                .reg .b16 fp8_pair;\n                .reg .b32 h2_32;\n                .reg .b16 h_lo, h_hi;\n                .reg .f32 fp8_float, result;\n\n                cvt.u16.u32 fp8_pair, %r1878;\n                cvt.rn.f16x2.e4m3x2 h2_32, fp8_pair;\n                mov.b32 {h_lo, h_hi}, h2_32;\n                cvt.f32.f16 fp8_float, h_lo;\n                rcp.approx.ftz.f32 result, fp8_float;\n                setp.eq.f32 p_zero, fp8_float, 0f00000000;\n                selp.f32 %r1877, 0f00000000, result, p_zero;\n            }\n            \n\t// end inline asm\n\tsetp.neu.f32 \t%p166, %r1877, 0f00000000;\n\tselp.b32 \t%r3503, 1, 0, %p166;\n\tmul.f32 \t%r1880, %r1873, %r1877;\n\tselp.f32 \t%r3502, %r1880, 0f00000000, %p166;\n$L__BB0_95:\n\tsetp.ge.u32 \t%p167, %r53, %r52;\n\tand.b32 \t%r1881, %r41, 30;\n\tshfl.sync.idx.b32 \t%r55, %r3502, %r1881, 31, -1;\n\tshfl.sync.idx.b32 \t%r56, %r3503, %r1881, 31, -1;\n\t@%p167 bra \t$L__BB0_105;\n\tsetp.eq.b32 \t%p168, %r56, 0;\n\tmov.b32 \t%r3504, 0;\n\t@%p168 bra \t$L__BB0_98;",
+      "ptx_local_loads": 0,
+      "ptx_local_stores": 0
+    },
+    {
+      "arm": "opt-static/M6-map288-i32",
+      "path": "opt-static/M6-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat166409640961_FakeTensorInt32481_FakeTensorFloat32481.sm_121a.ptx",
+      "sha256": "8ff301591e3a05208f71e9f0a751883b9d2e1ce94eb762fdff7dc2af3c3122d1",
+      "total_shuffle_count": 6,
+      "preexisting_shuffle_count": 3,
+      "q1_shuffle_count": 3,
+      "op": "shfl.sync.idx.b32",
+      "mask_and_clamp": 31,
+      "membermask_hex": "0xffffffff",
+      "q1_instructions": [
+        {
+          "line": 2095,
+          "text": "shfl.sync.idx.b32 \t%r1869, %r3501, %r1870, 31, -1;"
+        },
+        {
+          "line": 2157,
+          "text": "shfl.sync.idx.b32 \t%r55, %r3502, %r1881, 31, -1;"
+        },
+        {
+          "line": 2158,
+          "text": "shfl.sync.idx.b32 \t%r56, %r3503, %r1881, 31, -1;"
+        }
+      ],
+      "context_first_line": 2086,
+      "context": "\t// end inline asm\n\t// begin inline asm\n\tmax.f32 %r3501, %r1866, %r1867;\n\t// end inline asm\n$L__BB0_93:\n\tsetp.ge.u32 \t%p161, %r53, %r52;\n\tand.b32 \t%r54, %r41, 1;\n\tsetp.ne.b32 \t%p162, %r54, 0;\n\txor.b32 \t%r1870, %r993, 1;\n\tshfl.sync.idx.b32 \t%r1869, %r3501, %r1870, 31, -1;\n\t// begin inline asm\n\tmax.f32 %r1868, %r3501, %r1869;\n\t// end inline asm\n\tor.pred \t%p163, %p162, %p161;\n\tsetp.eq.f32 \t%p164, %r50, 0f00000000;\n\tmov.b32 \t%r3503, 0;\n\tmov.b16 \t%rs99, 0;\n\tmov.b32 \t%r3502, 0f00000000;\n\tor.pred \t%p165, %p163, %p164;\n\t@%p165 bra \t$L__BB0_95;\n\tmov.b32 \t%r1872, 1086324736;\n\t// begin inline asm\n\trcp.approx.ftz.f32 %r1871, %r1872;\n\t// end inline asm\n\t// begin inline asm\n\trcp.approx.ftz.f32 %r1873, %r50;\n\t// end inline asm\n\tmul.f32 \t%r1879, %r1868, %r1871;\n\tmul.f32 \t%r1874, %r1873, %r1879;\n\tmov.b32 \t%r1875, 1138753536;\n\t// begin inline asm\n\tmin.f32 %r1876, %r1874, %r1875;\n\t// end inline asm\n\t// begin inline asm\n\t\n            {\n                .reg .b16 fp8_pair;\n                .reg .f32 zero;\n                mov.f32 zero, 0f00000000;\n                cvt.rn.satfinite.e4m3x2.f32 fp8_pair, zero, %r1876;\n                cvt.u32.u16 %r1878, fp8_pair;\n            }\n            \n\t// end inline asm\n\tcvt.u16.u32 \t%rs99, %r1878;\n\t// begin inline asm\n\t\n            {\n                .reg .pred p_zero;\n                .reg .b16 fp8_pair;\n                .reg .b32 h2_32;\n                .reg .b16 h_lo, h_hi;\n                .reg .f32 fp8_float, result;\n\n                cvt.u16.u32 fp8_pair, %r1878;\n                cvt.rn.f16x2.e4m3x2 h2_32, fp8_pair;\n                mov.b32 {h_lo, h_hi}, h2_32;\n                cvt.f32.f16 fp8_float, h_lo;\n                rcp.approx.ftz.f32 result, fp8_float;\n                setp.eq.f32 p_zero, fp8_float, 0f00000000;\n                selp.f32 %r1877, 0f00000000, result, p_zero;\n            }\n            \n\t// end inline asm\n\tsetp.neu.f32 \t%p166, %r1877, 0f00000000;\n\tselp.b32 \t%r3503, 1, 0, %p166;\n\tmul.f32 \t%r1880, %r1873, %r1877;\n\tselp.f32 \t%r3502, %r1880, 0f00000000, %p166;\n$L__BB0_95:\n\tsetp.ge.u32 \t%p167, %r53, %r52;\n\tand.b32 \t%r1881, %r41, 30;\n\tshfl.sync.idx.b32 \t%r55, %r3502, %r1881, 31, -1;\n\tshfl.sync.idx.b32 \t%r56, %r3503, %r1881, 31, -1;\n\t@%p167 bra \t$L__BB0_105;\n\tsetp.eq.b32 \t%p168, %r56, 0;\n\tmov.b32 \t%r3504, 0;\n\t@%p168 bra \t$L__BB0_98;",
+      "ptx_local_loads": 0,
+      "ptx_local_stores": 0
+    },
+    {
+      "arm": "opt-static/M8-map288-i32",
+      "path": "opt-static/M8-map288-i32/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_static_ep_tiledMoEStaticEPTiledKernel_object_at__FakeTensorBFloat168409640961_FakeTensorInt32641_FakeTensorFloat32641.sm_121a.ptx",
+      "sha256": "260673b2c6cd16affddb1ec4c37ca31ba39d8cc8d7b5bb695db412745365c23f",
+      "total_shuffle_count": 6,
+      "preexisting_shuffle_count": 3,
+      "q1_shuffle_count": 3,
+      "op": "shfl.sync.idx.b32",
+      "mask_and_clamp": 31,
+      "membermask_hex": "0xffffffff",
+      "q1_instructions": [
+        {
+          "line": 2095,
+          "text": "shfl.sync.idx.b32 \t%r1869, %r3501, %r1870, 31, -1;"
+        },
+        {
+          "line": 2157,
+          "text": "shfl.sync.idx.b32 \t%r55, %r3502, %r1881, 31, -1;"
+        },
+        {
+          "line": 2158,
+          "text": "shfl.sync.idx.b32 \t%r56, %r3503, %r1881, 31, -1;"
+        }
+      ],
+      "context_first_line": 2086,
+      "context": "\t// end inline asm\n\t// begin inline asm\n\tmax.f32 %r3501, %r1866, %r1867;\n\t// end inline asm\n$L__BB0_93:\n\tsetp.ge.u32 \t%p161, %r53, %r52;\n\tand.b32 \t%r54, %r41, 1;\n\tsetp.ne.b32 \t%p162, %r54, 0;\n\txor.b32 \t%r1870, %r993, 1;\n\tshfl.sync.idx.b32 \t%r1869, %r3501, %r1870, 31, -1;\n\t// begin inline asm\n\tmax.f32 %r1868, %r3501, %r1869;\n\t// end inline asm\n\tor.pred \t%p163, %p162, %p161;\n\tsetp.eq.f32 \t%p164, %r50, 0f00000000;\n\tmov.b32 \t%r3503, 0;\n\tmov.b16 \t%rs99, 0;\n\tmov.b32 \t%r3502, 0f00000000;\n\tor.pred \t%p165, %p163, %p164;\n\t@%p165 bra \t$L__BB0_95;\n\tmov.b32 \t%r1872, 1086324736;\n\t// begin inline asm\n\trcp.approx.ftz.f32 %r1871, %r1872;\n\t// end inline asm\n\t// begin inline asm\n\trcp.approx.ftz.f32 %r1873, %r50;\n\t// end inline asm\n\tmul.f32 \t%r1879, %r1868, %r1871;\n\tmul.f32 \t%r1874, %r1873, %r1879;\n\tmov.b32 \t%r1875, 1138753536;\n\t// begin inline asm\n\tmin.f32 %r1876, %r1874, %r1875;\n\t// end inline asm\n\t// begin inline asm\n\t\n            {\n                .reg .b16 fp8_pair;\n                .reg .f32 zero;\n                mov.f32 zero, 0f00000000;\n                cvt.rn.satfinite.e4m3x2.f32 fp8_pair, zero, %r1876;\n                cvt.u32.u16 %r1878, fp8_pair;\n            }\n            \n\t// end inline asm\n\tcvt.u16.u32 \t%rs99, %r1878;\n\t// begin inline asm\n\t\n            {\n                .reg .pred p_zero;\n                .reg .b16 fp8_pair;\n                .reg .b32 h2_32;\n                .reg .b16 h_lo, h_hi;\n                .reg .f32 fp8_float, result;\n\n                cvt.u16.u32 fp8_pair, %r1878;\n                cvt.rn.f16x2.e4m3x2 h2_32, fp8_pair;\n                mov.b32 {h_lo, h_hi}, h2_32;\n                cvt.f32.f16 fp8_float, h_lo;\n                rcp.approx.ftz.f32 result, fp8_float;\n                setp.eq.f32 p_zero, fp8_float, 0f00000000;\n                selp.f32 %r1877, 0f00000000, result, p_zero;\n            }\n            \n\t// end inline asm\n\tsetp.neu.f32 \t%p166, %r1877, 0f00000000;\n\tselp.b32 \t%r3503, 1, 0, %p166;\n\tmul.f32 \t%r1880, %r1873, %r1877;\n\tselp.f32 \t%r3502, %r1880, 0f00000000, %p166;\n$L__BB0_95:\n\tsetp.ge.u32 \t%p167, %r53, %r52;\n\tand.b32 \t%r1881, %r41, 30;\n\tshfl.sync.idx.b32 \t%r55, %r3502, %r1881, 31, -1;\n\tshfl.sync.idx.b32 \t%r56, %r3503, %r1881, 31, -1;\n\t@%p167 bra \t$L__BB0_105;\n\tsetp.eq.b32 \t%p168, %r56, 0;\n\tmov.b32 \t%r3504, 0;\n\t@%p168 bra \t$L__BB0_98;",
+      "ptx_local_loads": 0,
+      "ptx_local_stores": 0
+    }
+  ],
+  "scope": "PTX opcode, operands, compiler resources and source-bound layout witness only; no GPU numerical or performance claim"
+}

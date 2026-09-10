@@ -48,7 +48,7 @@ remain separate from the subsequent production recovery verification.
 ## Follow-up: EP decode target 76 tok/s
 
 `VLLM_GLM53_EP_DECODE_OPT=1` is an experimental, separately keyed extension
-to the accepted EP path. Its default remains 0: both measured candidates
+to the accepted EP path. Its default remains 0: all three measured candidates
 missed the 76 tok/s target, and the FC1 follow-up failed the Korean gate.
 Both comparison arms retain EP4, SF6, K5 and verified preparation; the
 candidate adds only this switch. The new absolute target is pooled
@@ -57,7 +57,7 @@ fixed-1024 x3 decode >=76 tok/s, with the existing quality and direct
 the same-source EP baseline. Original cold-compile classifications and
 single-request long-prefill limitations remain visible.
 
-The next candidate restores the accepted in-place FC1 SF6 expansion and
+The measured Q1 pair candidate restores the accepted in-place FC1 SF6 expansion and
 targets Q1, the FP4 conversion between FC1 and FC2. For at most eight valid
 expert rows, two adjacent warp lanes share each16-value scale block: each
 loads and converts eight values, while the leader computes the original
@@ -72,8 +72,8 @@ existing selection. CuTe setup must verify the actual sC1, packed A2 and
 SFA2 physical addresses, unique writes and single scale owner for R0..8.
 The source-bound CPU receipt records those layouts and coordinate digests
 and verifies the actual selected math mode before and after transfer.
-This Q1 path is not yet measured. The rejected FC1 register result below
-belongs to the preceding, separately keyed implementation.
+The Q1 pair result below remains below the absolute target. The rejected
+FC1 register result belongs to the preceding, separately keyed implementation.
 
 Preparation keeps its first-use and every-64-step stock comparison. On
 the candidate's C=1/K5 verification steps it compares the cloned fused
@@ -86,6 +86,32 @@ is empty. Candidate proof additionally requires the new native cache keys,
 unchanged large-shape selection and fresh verified clone-elimination
 checkpoints. The CPU gate includes the baseline's 19 lowerings plus four
 optimized local/global lowerings.
+
+### Q1 pair result (2026-09-10)
+
+Frozen source `4618859c90131b33c5d9ebd85a67f1537497a357`, session
+`epdecode76onepass0910v4`, completed B→A at13:05:11 KST with terminal rc0.
+Pooled fixed1024×3 output was **70.57122→72.68329 tok/s** (+2.99282%), below76.
+Engine fixed-window speed was20.03988→20.12691 step/s (+0.43425%). Both arms
+passed facts18/18 and Korean0/8; execution proof was B2/2 and A3/3.
+A's three rates73.45801/74.31549/70.39480 are all retained. The original judge
+remains `incomplete`/`unresolved` with baseline n1, and the candidate is not adopted.
+
+32K input throughput was3265.63→3270.82 tok/s and128K3269.03→3258.77;
+TTFT was9.966→9.950s and39.326→39.450s. These long-prefill observations
+are nearly unchanged. B's `cold_compile=true`, A's absent field and each
+long context's single request prevent a matched warm-prefill claim.
+Ordered request hashes match, while all eight output hashes differ.
+The output-rate difference is not attributed entirely to Q1 kernel speed.
+
+CPU5 generated23 lowerings but failed two stale baseline-extractor tests.
+CPU6 corrected only that extractor and passed183 tests/23 no-device lowerings;
+the69 PTX/cubin/resource artifacts are byte-identical. Global M6 uses128
+registers and zero stack/local bytes, but local M6 retains8 stack bytes.
+Both original outcomes and actual CuTe Q1 address/ownership receipts remain
+in [CPU5](../measurements/glm53_ep_tiled_20260909/ep76_cpu5_failed/README.md),
+[CPU6](../measurements/glm53_ep_tiled_20260909/ep76_cpu6/README.md), and
+[the onepass archive](../measurements/glm53_ep_tiled_20260909/ep76_onepass4/README.md).
 
 ### FC1 register result (2026-09-10)
 

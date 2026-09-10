@@ -1,0 +1,269 @@
+{
+  "files": {
+    "10.10.10.1.docker.log.gz.gz": {
+      "original": {
+        "bytes": 20,
+        "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.1.docker.log.gz",
+      "stored": {
+        "bytes": 31,
+        "sha256": "80832e117441d3514ae339cd24869ecbfcb03afb2abb606ea4876abdae1b52de"
+      }
+    },
+    "10.10.10.1.inspect.after.json.gz.gz": {
+      "original": {
+        "bytes": 13297,
+        "sha256": "9a3b1d237a58aff142b5e74ac8f47aa3ac68656a17164303932c30f910f3033b"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.1.inspect.after.json.gz",
+      "stored": {
+        "bytes": 12910,
+        "sha256": "d668f1ed405d291888e1db1d012bc89b01b02e5e8e389a379a9548a6b2ea5830"
+      }
+    },
+    "10.10.10.1.inspect.before.json.gz.gz": {
+      "original": {
+        "bytes": 13280,
+        "sha256": "881fc3dbf19bb011fddde7be61e6b83d7acb4a026938750f0fc77fa51ddc4e6d"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.1.inspect.before.json.gz",
+      "stored": {
+        "bytes": 13303,
+        "sha256": "da9b0694b280a830ad3a7925dcee19ba6779c89c1af4f89ff568da99a98ab7ce"
+      }
+    },
+    "10.10.10.1.manifest.tsv.gz.gz": {
+      "original": {
+        "bytes": 2313,
+        "sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.1.manifest.tsv.gz",
+      "stored": {
+        "bytes": 2336,
+        "sha256": "9a67bdaa099e01a665233949b51da2133d33256e27027f2e27c96da5d766ff58"
+      }
+    },
+    "10.10.10.1.serving.log.gz.gz": {
+      "original": {
+        "bytes": 28602,
+        "sha256": "8b6f1f3552a7458018ba747858cabd4294c2fbfaa8537d9e745369be3510a189"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.1.serving.log.gz",
+      "stored": {
+        "bytes": 28486,
+        "sha256": "c695c4105fa58285ddcc6006ee85a398c0fe0505939dd1ec78faf5d6829fd88b"
+      }
+    },
+    "10.10.10.3.docker.log.gz.gz": {
+      "original": {
+        "bytes": 20,
+        "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.3.docker.log.gz",
+      "stored": {
+        "bytes": 31,
+        "sha256": "80832e117441d3514ae339cd24869ecbfcb03afb2abb606ea4876abdae1b52de"
+      }
+    },
+    "10.10.10.3.inspect.after.json.gz.gz": {
+      "original": {
+        "bytes": 13265,
+        "sha256": "f32d53f6de1becd77d491154db40a33241a93fb7e5a35176669a919432cf21fc"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.3.inspect.after.json.gz",
+      "stored": {
+        "bytes": 13288,
+        "sha256": "fd20ff38b90e69c35430b886d189162bf1fef7cfb194aa967a1442301cc3ac07"
+      }
+    },
+    "10.10.10.3.inspect.before.json.gz.gz": {
+      "original": {
+        "bytes": 13261,
+        "sha256": "714813759ab57c5ed5b4be8308450720a979cc57f8fe9aade90a87996d718ff5"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.3.inspect.before.json.gz",
+      "stored": {
+        "bytes": 13087,
+        "sha256": "c41dd7339c3cd8400a5281543ae73329e6ccd54573764f176777d38a78331ea2"
+      }
+    },
+    "10.10.10.3.manifest.tsv.gz.gz": {
+      "original": {
+        "bytes": 2313,
+        "sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.3.manifest.tsv.gz",
+      "stored": {
+        "bytes": 2336,
+        "sha256": "9a67bdaa099e01a665233949b51da2133d33256e27027f2e27c96da5d766ff58"
+      }
+    },
+    "10.10.10.3.serving.log.gz.gz": {
+      "original": {
+        "bytes": 29018,
+        "sha256": "827959157eeb510cf3a5dfc9fd3140b05d829636131db816c960060f7ad3266b"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.3.serving.log.gz",
+      "stored": {
+        "bytes": 28887,
+        "sha256": "2edaaf4cad4ecc3138ee4e50ddfffdebf15ed535cee52d21554fd546c1328e91"
+      }
+    },
+    "10.10.10.4.docker.log.gz.gz": {
+      "original": {
+        "bytes": 20,
+        "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.4.docker.log.gz",
+      "stored": {
+        "bytes": 31,
+        "sha256": "80832e117441d3514ae339cd24869ecbfcb03afb2abb606ea4876abdae1b52de"
+      }
+    },
+    "10.10.10.4.inspect.after.json.gz.gz": {
+      "original": {
+        "bytes": 12849,
+        "sha256": "79f0bc06e24cdf9608946238e8cd71237210fa2794293753752229d5f2876b17"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.4.inspect.after.json.gz",
+      "stored": {
+        "bytes": 12435,
+        "sha256": "99178455ff5e83bb5b9ddfe5e794b1d9009f419c1450bb7256c7bc90d74fa36b"
+      }
+    },
+    "10.10.10.4.inspect.before.json.gz.gz": {
+      "original": {
+        "bytes": 12857,
+        "sha256": "f6ae5bf0b112faf67a0c7a214baff36ea324afa2ad1f65e86fc54179d62bf6d1"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.4.inspect.before.json.gz",
+      "stored": {
+        "bytes": 12880,
+        "sha256": "1393ffb72d000419dff3c49a74ec9089b4fcdbebed5b25215734e9994ab4d023"
+      }
+    },
+    "10.10.10.4.manifest.tsv.gz.gz": {
+      "original": {
+        "bytes": 2313,
+        "sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.4.manifest.tsv.gz",
+      "stored": {
+        "bytes": 2336,
+        "sha256": "9a67bdaa099e01a665233949b51da2133d33256e27027f2e27c96da5d766ff58"
+      }
+    },
+    "10.10.10.4.serving.log.gz.gz": {
+      "original": {
+        "bytes": 29415,
+        "sha256": "ff376c123bfed8ae715bde6a74fc9e2aa86eea426e70c86b06dd5c619059b1d2"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/10.10.10.4.serving.log.gz",
+      "stored": {
+        "bytes": 29311,
+        "sha256": "ad514d13cc1ef0efde91932bc4658132290a4b70ee02cf1409a400cbd8ab7240"
+      }
+    },
+    "holder.after.private.gz": {
+      "original": {
+        "bytes": 163,
+        "sha256": "8a4dca774d4393f48f51dcd0511e92fc00bc2c2d635629b612b87c469fd53785"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/holder.after.private",
+      "stored": {
+        "bytes": 161,
+        "sha256": "16cc0fd9e7930b33dbbdfd6df9e5fdd488518085fba0ed6875d989d989ef49f2"
+      }
+    },
+    "holder.before.private.gz": {
+      "original": {
+        "bytes": 163,
+        "sha256": "8a4dca774d4393f48f51dcd0511e92fc00bc2c2d635629b612b87c469fd53785"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/holder.before.private",
+      "stored": {
+        "bytes": 161,
+        "sha256": "16cc0fd9e7930b33dbbdfd6df9e5fdd488518085fba0ed6875d989d989ef49f2"
+      }
+    },
+    "identity.json.gz": {
+      "original": {
+        "bytes": 78143,
+        "sha256": "becd8a3914351678f08a513dd674c90b13e538093b4eec42a7e70ac69c332622"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/identity.json",
+      "stored": {
+        "bytes": 9950,
+        "sha256": "6614d787f4d859edf8e8379ebe6a6a503e59752def8efed9dfc08f5bb49686c6"
+      }
+    },
+    "launch-parser.py.gz": {
+      "original": {
+        "bytes": 9042,
+        "sha256": "e24acbfcc43b64fff1a586c71e954de821f7b7b684350cb4be743606c1d0de13"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/launch-parser.py",
+      "stored": {
+        "bytes": 3333,
+        "sha256": "b68103a77f4aea865b872eabd7871797b63c40ef15cfc52f0f4d8b69868d6466"
+      }
+    },
+    "local.docker.log.gz.gz": {
+      "original": {
+        "bytes": 20,
+        "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/local.docker.log.gz",
+      "stored": {
+        "bytes": 31,
+        "sha256": "80832e117441d3514ae339cd24869ecbfcb03afb2abb606ea4876abdae1b52de"
+      }
+    },
+    "local.inspect.after.json.gz.gz": {
+      "original": {
+        "bytes": 13061,
+        "sha256": "c34f193cfb8218144db87c3cc26de12cd599fa442fc2cd2de9ffb30bff012279"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/local.inspect.after.json.gz",
+      "stored": {
+        "bytes": 12881,
+        "sha256": "8c880d95130e6feafd328f547e864ca9d76346c55047d9041c238620fc0f13ee"
+      }
+    },
+    "local.inspect.before.json.gz.gz": {
+      "original": {
+        "bytes": 13051,
+        "sha256": "65087fa9622826fb6de9116195df7ed6e52bb327e92313023d5f7ba13fa3c194"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/local.inspect.before.json.gz",
+      "stored": {
+        "bytes": 13074,
+        "sha256": "635d7c4c812e08df64b4cdfe08e205fbc8dd3d8df8dc55b9aedc2005dfd25940"
+      }
+    },
+    "local.manifest.tsv.gz.gz": {
+      "original": {
+        "bytes": 2313,
+        "sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/local.manifest.tsv.gz",
+      "stored": {
+        "bytes": 2336,
+        "sha256": "9a67bdaa099e01a665233949b51da2133d33256e27027f2e27c96da5d766ff58"
+      }
+    },
+    "local.serving.log.gz.gz": {
+      "original": {
+        "bytes": 34368,
+        "sha256": "0f7580c8d17146ff933f23049a652541d558559ba29d4fa12674c6d7fc8dff0d"
+      },
+      "path": "/tmp/glm53-ep76-onepass4-live-A-ready-6c3900356cf7/local.serving.log.gz",
+      "stored": {
+        "bytes": 34240,
+        "sha256": "16d97e480f9c86be109fb86f256c5d1e65c982f85184f2258342663db8d27c36"
+      }
+    }
+  },
+  "scope": "Hashes only; raw Docker Env/Cmd/inspect and failure logs remain private"
+}

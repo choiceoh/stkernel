@@ -31,6 +31,49 @@
 8. **그리디 텍스트 diff 로는 판정하지 않는다** — 같은 구성의 두 부팅에서도 온도 0 응답이
    갈린다(28차 §8). 판정은 게이트와 브래킷이다.
 
+## GLM53 EP76 Q1 pair: 72.68 tok/s, 긴 프리필 유지·목표76 미달 (2026-09-10)
+
+고정 소스 `4618859c90131b33c5d9ebd85a67f1537497a357`, 정상 fleet
+`epdecode76onepass0910v4`에서 EP B→EP A를 완료했다. 양쪽 EP4/SF6/K5/PREP를
+유지하고 A만 `VLLM_GLM53_EP_DECODE_OPT=1`이며, 작은 디코드 Q1의16값 블록을
+인접 두 lane이 나누는 `glm53_ep_static_sf6_q1_pair_v4` 후보다.
+**합산 출력72.68329 tok/s로 기준선70.57122 대비 관측상+2.99282%이나,
+절대 목표76은 미달했다. 기본값OPT=0을 유지한다.**
+
+| 지표 | EP 기준선 B | EP 후보 A |
+|---|---:|---:|
+| fixed1024 ×3 합산 tok/s | 70.57122 | 72.68329 |
+| fixed 구간 합산 engine step/s | 20.03988 | 20.12691 |
+| 2K best-warm TTFT / 입력 tok/s | 0.745s / 2856.03 | 0.710s / 2999.11 |
+| 32K 단일 TTFT / 입력 tok/s | 9.966s / 3265.63 | 9.950s / 3270.82 |
+| 128K 단일 TTFT / 입력 tok/s | 39.326s / 3269.03 | 39.450s / 3258.77 |
+| 사실 / 한국어 오염 | 18/18 / 0/8 | 18/18 / 0/8 |
+| 실제 serving proof | 2/2 EP/PREP | 3/3 EP/PREP/OPT |
+
+B 세 요청72.16725/69.95732/69.64218, A73.45801/74.31549/70.39480이며,
+3069를 세 decode 시간의 합으로 나눴다. engine 차이는+0.43425%로 작고,
+출력 속도 차이 전체를 Q1 커널 가속으로 귀속하지 않는다. 전체8요청의
+수용률은48.3513%→49.0519%이며 fixed별 수용률은 아니다. 순서별 요청 해시는
+동일하지만8개 출력 해시는 모두 달랐다. 원본 judge는 baseline n1의
+`incomplete`/`unresolved`이며 추가 표본을 요구했다. 이 상태를 통계적 개선
+판정으로 바꾸지 않는다.
+
+32K 관측+0.1590%,128K−0.3137%로 긴 프리필은 거의 유지됐다. 디코드 개선과
+프리필 손실이 필연적이라는 근거는 아니다. B `cold_compile=true`, A 필드 없음,
+각 긴 입력 단일 표본을 보존하며 matched warm-prefill 성능 주장으로 바꾸지 않는다.
+정상 종료코드0, GPU 점유 해제, 양쪽4rank ready 및 원본 판정/응답/구간은
+[원패스 원본](measurements/glm53_ep_tiled_20260909/ep76_onepass4/README.md)에 있다.
+
+CPU5(`48df5117`)는183 tests 중 baseline AST 추출기의 낡은 분기 수 검사2개가
+실패했다. 23 lowering 성공과 최종 CPU 실패를 분리해 보존한다.
+추출기를 실제 Q1 분기 구조에 맞춘 CPU6(`4618859c`)은183 tests·23 lowering,
+CUDA 미초기화 및 마지막 runtime identity 대조까지 통과했다. 두 실행69개
+PTX/cubin/resource는 바이트 동일하다. 실제 Q1 layout/소유권 receipt,128개
+참여 thread의3 shuffle, global M6 REG128·STACK0·LOCAL0을 확인했다.
+local M6 STACK8은 그대로 기록하며 모든 opt 경로가 stack0이라고 쓰지 않는다.
+[CPU5 실패](measurements/glm53_ep_tiled_20260909/ep76_cpu5_failed/README.md),
+[CPU6 통과](measurements/glm53_ep_tiled_20260909/ep76_cpu6/README.md).
+
 ## GLM53 EP76 FC1 후속: 68.53 tok/s·한국어 게이트 실패, 미채택 (2026-09-10)
 
 고정 소스 `3fab1ce81a79936b3b76fa4d87b447d9f55bacba`, 정상 fleet

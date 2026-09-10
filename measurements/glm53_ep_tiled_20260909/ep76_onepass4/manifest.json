@@ -1,0 +1,403 @@
+{
+  "files": {
+    "A-canary/10.10.10.1.PASS.json.gz": {
+      "original_bytes": 75431,
+      "original_sha256": "45351ec534b5d44d733e1775068ab55ba0d366a98f8453de549a800cd446f577",
+      "stored_bytes": 13063,
+      "stored_sha256": "a76206319e1f7d4883e36121cb34b03858c4f0d1001cd9d0f62829861970f9a5"
+    },
+    "A-canary/10.10.10.3.PASS.json.gz": {
+      "original_bytes": 75494,
+      "original_sha256": "c465385fe3a9c63e7affebb359233223f2902699df5ae6f1808e0b3f9e03f96d",
+      "stored_bytes": 13085,
+      "stored_sha256": "6e0c6bb17cde770e63a8744552b721c7b1fd9e6880b1fc57289d95117a05ae2f"
+    },
+    "A-canary/10.10.10.4.PASS.json.gz": {
+      "original_bytes": 75503,
+      "original_sha256": "594a2c36256320f85e8520d132969db0387f6adc3fd7c9b3f8d11d45ad2107bf",
+      "stored_bytes": 13060,
+      "stored_sha256": "c696b4394b585b64c1539c72742fda49f48bdd3db028ba5b86a04e2a172a0561"
+    },
+    "A-canary/local.PASS.json.gz": {
+      "original_bytes": 75493,
+      "original_sha256": "114c206773ab1371ffeffeb38049eddb3aae346f37b2ed529e84285a167c5d66",
+      "stored_bytes": 13191,
+      "stored_sha256": "061ff4128d51ac0bf149bdeff42d87ed49d292fbf36d08b0d8389549d720522d"
+    },
+    "A-ready/identity.sanitized.json": {
+      "original_bytes": 71179,
+      "original_sha256": "8a7073174e05d22b1d76b182477b24607f7b68224d3b4e77bfbfba44eb299054",
+      "stored_bytes": 71179,
+      "stored_sha256": "8a7073174e05d22b1d76b182477b24607f7b68224d3b4e77bfbfba44eb299054"
+    },
+    "B-canary/10.10.10.1.PASS.json.gz": {
+      "original_bytes": 75403,
+      "original_sha256": "325eb0b017123215507226ec8686c403b6708ad5ce50ca97f4bfff77b3a00899",
+      "stored_bytes": 13018,
+      "stored_sha256": "9af3f5829f5a6ec6c638bfb1818007700ddcda16f8f120f74b9aa5d9c9b38f90"
+    },
+    "B-canary/10.10.10.3.PASS.json.gz": {
+      "original_bytes": 75390,
+      "original_sha256": "711e8c7131cf02758a036d25126a1cba8000331a961d2af58bacd113a68146c0",
+      "stored_bytes": 13108,
+      "stored_sha256": "3454d01676e23e156be0da7a2b62306fd41011362aeab05eb7bef5b7bb8bb518"
+    },
+    "B-canary/10.10.10.4.PASS.json.gz": {
+      "original_bytes": 75388,
+      "original_sha256": "6c79c05ebe1c7bc8a8ba220c727125619a6b2903f65f53fce4860700963b0bae",
+      "stored_bytes": 13070,
+      "stored_sha256": "cf1b12ef6c498044c755352bd54f3a65ed4c1e7587f078da8bba4ba1e496a6e1"
+    },
+    "B-canary/local.PASS.json.gz": {
+      "original_bytes": 75418,
+      "original_sha256": "97109786ced272f3cc57cf5a24564d9b2a1d50516f839b932fd00ad2fadfb102",
+      "stored_bytes": 13069,
+      "stored_sha256": "dd32a50b3118f584baa3d33d1fbc389d2c845f040773251da009a5430687bc03"
+    },
+    "B-ready/identity.sanitized.json": {
+      "original_bytes": 71159,
+      "original_sha256": "127d7191a617a81cd8ac6cc726724c8fe2cbdafa6f7952ee7956742e71b5984d",
+      "stored_bytes": 71159,
+      "stored_sha256": "127d7191a617a81cd8ac6cc726724c8fe2cbdafa6f7952ee7956742e71b5984d"
+    },
+    "README.md": {
+      "original_bytes": 3282,
+      "original_sha256": "608097c2c549e742eba4affcc47a82c47dda28888cf79aa3e8610004d2246bbb",
+      "stored_bytes": 3282,
+      "stored_sha256": "608097c2c549e742eba4affcc47a82c47dda28888cf79aa3e8610004d2246bbb"
+    },
+    "boot/boot-EPDECODE76A.log.gz": {
+      "original_bytes": 290458,
+      "original_sha256": "7fd42a31b4de6d73189abd23b696f53d53a5e93a1c556eacbef98de00b8627a6",
+      "stored_bytes": 38543,
+      "stored_sha256": "5c5ce3baec3e46a094f613624232385aa8d44deefcd737c700e573da355f34ff"
+    },
+    "boot/boot-EPDECODE76B.log.gz": {
+      "original_bytes": 349998,
+      "original_sha256": "c6f5177b08136c3be7d42b4874cf41edb7d841593b04a13d16e882851713433c",
+      "stored_bytes": 41612,
+      "stored_sha256": "f8f7836960209cbf72fb93bf922cfa39017dafcd145ce0594efc396cb34e87e6"
+    },
+    "comparison.json": {
+      "original_bytes": 227086,
+      "original_sha256": "28bb370064be558d2a7b534116e3fbe9912d95b1050ee25264052712dcae84db",
+      "stored_bytes": 227086,
+      "stored_sha256": "28bb370064be558d2a7b534116e3fbe9912d95b1050ee25264052712dcae84db"
+    },
+    "fleet/run.log.gz": {
+      "original_bytes": 8881,
+      "original_sha256": "54ff03ceb7a18f1958cbe920c06b3ad449305531c813c3d1f9ab14ebb1a77955",
+      "stored_bytes": 1904,
+      "stored_sha256": "d6b2681af773af31cb8da8c94b29fdfebf847cc5cd95a66d82fb78b56520ded8"
+    },
+    "job/cpu-result-binding.json.gz": {
+      "original_bytes": 384,
+      "original_sha256": "3412f5f66c8c7973576fde34a6109362747167753510dc65f03fb67d616001d2",
+      "stored_bytes": 288,
+      "stored_sha256": "a0b96364b7c48daabc37751e784cb20e16bbd2b62ee82fbc903337f0714a95dc"
+    },
+    "job/cpu-result.json.gz": {
+      "original_bytes": 88954,
+      "original_sha256": "4e8af3e582017401e605ec7f5fdcc3bd3ccae0a7c1afda003aff2475776eff68",
+      "stored_bytes": 11076,
+      "stored_sha256": "767e61eb6f92c6548ff564cbe82328f38de0f71a2db4c32cfe62eacc53f1b289"
+    },
+    "job/onepass.jsonl.gz": {
+      "original_bytes": 131133,
+      "original_sha256": "11322c1db41aea58b493b42a06949f28185ac25a4f83074a334c6f7d07b15c89",
+      "stored_bytes": 44560,
+      "stored_sha256": "fe4a78c9a4f8a38f2cdc3fd8f1ecd50feaabfcd4117c22f96acd09b2aa1eab3c"
+    },
+    "job/submission.json.gz": {
+      "original_bytes": 4737,
+      "original_sha256": "0a040178783ecfd3fc0f89126080d6411512fdb2bbe830e6ad0af7d05dc19ab4",
+      "stored_bytes": 2153,
+      "stored_sha256": "711e71a37909336e0d1ea14b52ee3eadafaca2392e8806cbbcf40795d9942970"
+    },
+    "job/verdicts.jsonl.gz": {
+      "original_bytes": 1056,
+      "original_sha256": "e304971013556dcf1d30ca339560bee3efbd507fdfa81fcd92490e0307d02ec9",
+      "stored_bytes": 369,
+      "stored_sha256": "8f080f29eb54bd03493e1175b62b90ff06be472a551452be6d143a2728de6f35"
+    },
+    "observer/events.jsonl.gz": {
+      "original_bytes": 8613,
+      "original_sha256": "16dfca0d017107529601661563b467162e6a69615d0e0e59b7959198e1efd6d2",
+      "stored_bytes": 2001,
+      "stored_sha256": "1535e4e68cbb3a563211278f1b9e1aa9e83a740795d37e4dc96897bcd5bf7e84"
+    },
+    "provenance.json": {
+      "original_bytes": 22627,
+      "original_sha256": "fa694bd759619867defe0d65ec1ba89ac6dfbd9d28c0226ccfa241a6d8f404b5",
+      "stored_bytes": 22627,
+      "stored_sha256": "fa694bd759619867defe0d65ec1ba89ac6dfbd9d28c0226ccfa241a6d8f404b5"
+    },
+    "snapshot-0/10.10.10.1.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-0/10.10.10.1.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "e48b4d1ecc501eabd51fca10bedd78befba8a414f347f08d51e17c20a4c04089",
+      "stored_bytes": 2313,
+      "stored_sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+    },
+    "snapshot-0/10.10.10.1.serving.log.gz": {
+      "original_bytes": 255488,
+      "original_sha256": "8f216320316ba415cb4660faa2291f9fea2d955ba8fd0e63078e884a25a2f9fc",
+      "stored_bytes": 33610,
+      "stored_sha256": "7274484b861c685b4b404d72e77b97dd2f5f47217cc392dc1f1d0dc542f074ae"
+    },
+    "snapshot-0/10.10.10.3.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-0/10.10.10.3.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "e48b4d1ecc501eabd51fca10bedd78befba8a414f347f08d51e17c20a4c04089",
+      "stored_bytes": 2313,
+      "stored_sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+    },
+    "snapshot-0/10.10.10.3.serving.log.gz": {
+      "original_bytes": 258089,
+      "original_sha256": "77c3108562f49dcab6d4361913741b33261097a4485a7e0cf98c16ea1f61a97b",
+      "stored_bytes": 32618,
+      "stored_sha256": "f1a9a70d5b9d71fbd4f64db84d6acb24a1568ea5b754b6be37c68700aa7d4058"
+    },
+    "snapshot-0/10.10.10.4.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-0/10.10.10.4.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "e48b4d1ecc501eabd51fca10bedd78befba8a414f347f08d51e17c20a4c04089",
+      "stored_bytes": 2313,
+      "stored_sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+    },
+    "snapshot-0/10.10.10.4.serving.log.gz": {
+      "original_bytes": 258170,
+      "original_sha256": "597953681a5b598f7440e0db198c4b54f1c38d447ec4d41219ad6d6d4c6b2f89",
+      "stored_bytes": 32733,
+      "stored_sha256": "3ffe75a5b0e283df784fac871751d37182a19a435bff8a6c1594f452f09b2c02"
+    },
+    "snapshot-0/local.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-0/local.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "e48b4d1ecc501eabd51fca10bedd78befba8a414f347f08d51e17c20a4c04089",
+      "stored_bytes": 2313,
+      "stored_sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+    },
+    "snapshot-0/local.serving.log.gz": {
+      "original_bytes": 282636,
+      "original_sha256": "614ed1c6bfbcf52066b7fad68bc50202478da70ed74d10d711db62042c523eaa",
+      "stored_bytes": 37691,
+      "stored_sha256": "998c855b79bfe91c25a3e2bd0492c32682285ea3764bdb249467e0ff6f99162f"
+    },
+    "snapshot-0/private-original-hashes.json": {
+      "original_bytes": 9961,
+      "original_sha256": "274dc17ff4a6e5f93ac158d30bd5cd7ff9af18b81b4222581daca30cdcafcc67",
+      "stored_bytes": 9961,
+      "stored_sha256": "274dc17ff4a6e5f93ac158d30bd5cd7ff9af18b81b4222581daca30cdcafcc67"
+    },
+    "snapshot-1/10.10.10.1.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-1/10.10.10.1.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "e48b4d1ecc501eabd51fca10bedd78befba8a414f347f08d51e17c20a4c04089",
+      "stored_bytes": 2313,
+      "stored_sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+    },
+    "snapshot-1/10.10.10.1.serving.log.gz": {
+      "original_bytes": 191112,
+      "original_sha256": "207023561db8ca2a3e682d03ecca056614084f3b9364fb3ec3503a292c9f416a",
+      "stored_bytes": 28602,
+      "stored_sha256": "8b6f1f3552a7458018ba747858cabd4294c2fbfaa8537d9e745369be3510a189"
+    },
+    "snapshot-1/10.10.10.3.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-1/10.10.10.3.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "e48b4d1ecc501eabd51fca10bedd78befba8a414f347f08d51e17c20a4c04089",
+      "stored_bytes": 2313,
+      "stored_sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+    },
+    "snapshot-1/10.10.10.3.serving.log.gz": {
+      "original_bytes": 193809,
+      "original_sha256": "a08dcd4bac295d1293d2364129921e471a36a4a24ce2f8ca297bb195f23e90f6",
+      "stored_bytes": 29018,
+      "stored_sha256": "827959157eeb510cf3a5dfc9fd3140b05d829636131db816c960060f7ad3266b"
+    },
+    "snapshot-1/10.10.10.4.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-1/10.10.10.4.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "e48b4d1ecc501eabd51fca10bedd78befba8a414f347f08d51e17c20a4c04089",
+      "stored_bytes": 2313,
+      "stored_sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+    },
+    "snapshot-1/10.10.10.4.serving.log.gz": {
+      "original_bytes": 194784,
+      "original_sha256": "02b0f835240927ef5e92083144fb5a54f057586758e8b341858ad30634ff42bd",
+      "stored_bytes": 29415,
+      "stored_sha256": "ff376c123bfed8ae715bde6a74fc9e2aa86eea426e70c86b06dd5c619059b1d2"
+    },
+    "snapshot-1/local.docker.log.gz": {
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    "snapshot-1/local.manifest.tsv.gz": {
+      "original_bytes": 10103,
+      "original_sha256": "e48b4d1ecc501eabd51fca10bedd78befba8a414f347f08d51e17c20a4c04089",
+      "stored_bytes": 2313,
+      "stored_sha256": "3f0f5be46ec7b4fea96fc2359f2dfb5ff71311462bfbb520d1540612b794acd0"
+    },
+    "snapshot-1/local.serving.log.gz": {
+      "original_bytes": 215923,
+      "original_sha256": "ce911653d3ded905eb6798f71941560157ce73eb6408f16a4440adfc40ba74e1",
+      "stored_bytes": 34368,
+      "stored_sha256": "0f7580c8d17146ff933f23049a652541d558559ba29d4fa12674c6d7fc8dff0d"
+    },
+    "snapshot-1/private-original-hashes.json": {
+      "original_bytes": 9961,
+      "original_sha256": "98b65a70c2082c1944a5b005f172d032ab20e7463b79cbec7ef3bdda143f347f",
+      "stored_bytes": 9961,
+      "stored_sha256": "98b65a70c2082c1944a5b005f172d032ab20e7463b79cbec7ef3bdda143f347f"
+    },
+    "snapshot-validation.json": {
+      "original_bytes": 1365,
+      "original_sha256": "6e82ea10913d7fb748ac54e910546f3b3fd6d59ff0fde583b5664c963e0355b9",
+      "stored_bytes": 1365,
+      "stored_sha256": "6e82ea10913d7fb748ac54e910546f3b3fd6d59ff0fde583b5664c963e0355b9"
+    },
+    "source/bench/ab-lever.sh.gz": {
+      "original_bytes": 11205,
+      "original_sha256": "2fc19dfd44a10dc2e918f19fd25a890e487499951325b8053edab7ed1d204ebc",
+      "stored_bytes": 5155,
+      "stored_sha256": "d3b447dbb8c3aaaf8837ed28a444abc5f214275d3aaa00d95b3ec34e1b3155ab"
+    },
+    "source/bench/baseline.py.gz": {
+      "original_bytes": 13213,
+      "original_sha256": "b64df502c8b2b60a2272b0608350d2feb3c085e409003986d0221274cf38c9de",
+      "stored_bytes": 4742,
+      "stored_sha256": "629ed82292ce4244a9d1c336aeb275a5051cea036473312cfb69fd631cfc4ce5"
+    },
+    "source/bench/chain.sh.gz": {
+      "original_bytes": 3457,
+      "original_sha256": "0b89b41bae46a68e7f7c476a457aa5b998fc2c4a469043922c3b1864dfac65b3",
+      "stored_bytes": 1704,
+      "stored_sha256": "9ac0c32f6ff1eff67861120f2d2df29d240157ea3b5f16db34b35145be32a769"
+    },
+    "source/bench/glm53_launch_metadata.py.gz": {
+      "original_bytes": 9042,
+      "original_sha256": "e24acbfcc43b64fff1a586c71e954de821f7b7b684350cb4be743606c1d0de13",
+      "stored_bytes": 3333,
+      "stored_sha256": "22afcb2ae8eba450738c6cd65b39edd75ba2665cd42a09990977269f103824f7"
+    },
+    "source/bench/glm53_prep_proof.py.gz": {
+      "original_bytes": 9492,
+      "original_sha256": "461f300273c87d5565bf403b82e300054809e91ab8a0f8a59eed50f7da65e665",
+      "stored_bytes": 2777,
+      "stored_sha256": "09c45580ed0754e15274ae14919f26944842b2c454634f5f810ee2441514a8ba"
+    },
+    "source/bench/judge.py.gz": {
+      "original_bytes": 10536,
+      "original_sha256": "2c6acfe1f7e645ccddfac39744ebd8f760c318e2f50cd5ee78c5d42ed2f9fd3f",
+      "stored_bytes": 3790,
+      "stored_sha256": "cfdea10cc92d58b7ccfe95dffbc320df52f84d29814a0262180f3c08145a7a3b"
+    },
+    "source/bench/onepass.py.gz": {
+      "original_bytes": 35974,
+      "original_sha256": "e21cbb2e0d9911e06027f1831f2c0ca7a79dc7730eba7cfa21856b713687caf2",
+      "stored_bytes": 11964,
+      "stored_sha256": "bf4349966acacb82aa39f669d25a3bc36cad9c1be0758de2fbfe2846e08dda36"
+    },
+    "source/bench/proof.py.gz": {
+      "original_bytes": 24384,
+      "original_sha256": "5cbc1b1873022e766d3559f722c52c8d77578cb7d68f2bba1bf5de9c0c2b6afb",
+      "stored_bytes": 7272,
+      "stored_sha256": "33ba91b108fc7427a1523af1152b397517bdf32a101799a07bd40aee6855b30c"
+    },
+    "source/glm53_ep_tiled.py.gz": {
+      "original_bytes": 18344,
+      "original_sha256": "133520fab17bffdf528791c5115c465a768a70b5812acf0e9213d94fdccc8fa0",
+      "stored_bytes": 5033,
+      "stored_sha256": "a150a11c5008eb0d3868f2f19e3a2b7234ad98405f979e82c96bcb725fe7f8d8"
+    },
+    "source/glm53_ep_tiled_selftest.py.gz": {
+      "original_bytes": 26484,
+      "original_sha256": "46ddfab2f906fdd4e685180d0703c329d167884ce9d7632aa9ee7a885e1e2d67",
+      "stored_bytes": 7887,
+      "stored_sha256": "71ad6980bb5556b76f41ffc6f26adceaeb732aa04dbd1c8151a486b9ab653423"
+    },
+    "source/glm53_prep_fused.py.gz": {
+      "original_bytes": 64737,
+      "original_sha256": "e66daae3f0dee55fb5f4f42ea7409cd62dc42e395f559db0d7266873b638371c",
+      "stored_bytes": 18882,
+      "stored_sha256": "5efb050417fbbfb2ca5420e798a93979a3657888b54081b259c285d6be7590b1"
+    },
+    "source/manifest.tsv.gz": {
+      "original_bytes": 10046,
+      "original_sha256": "bf27adbeb9a4d7d30f2e2bb22840fa6c400d5a209e752522dd3ed1bbfc500192",
+      "stored_bytes": 2273,
+      "stored_sha256": "3d2db019ba242b03a15cace2752233ea82db468d959fd45e0e45fb1300fa3aec"
+    },
+    "source/moe_dynamic_ep_local.py.gz": {
+      "original_bytes": 53790,
+      "original_sha256": "89bab8e22514d4ce036e4cc6755a5dcfaeb8b12277766394dcdd101db8751595",
+      "stored_bytes": 11227,
+      "stored_sha256": "6f3b52696a6ab7737ba9f97784ee9155ff0d4f2b20fce02a323132397fdbe606"
+    },
+    "source/moe_static_ep_tiled.py.gz": {
+      "original_bytes": 146717,
+      "original_sha256": "7c610fa7659e85be4201907c08125e35f818d130113cbacfe26828c377649074",
+      "stored_bytes": 27791,
+      "stored_sha256": "3867de6f49d9909186f579647f23c2d5fd48f1eab2f111c7ce77e0bccdaec0a4"
+    },
+    "terminal.json": {
+      "original_bytes": 973,
+      "original_sha256": "30c8792c26c257ee1a8df7ada8b56807a599e5d97734ce18527f0a5283c9dd92",
+      "stored_bytes": 973,
+      "stored_sha256": "30c8792c26c257ee1a8df7ada8b56807a599e5d97734ce18527f0a5283c9dd92"
+    },
+    "utilities/observer.py.gz": {
+      "original_bytes": 31431,
+      "original_sha256": "857620966e203f821c62d4684b9a21ec3cd7be05062a22ac353be188216193e1",
+      "stored_bytes": 10072,
+      "stored_sha256": "d97c51c2e17979dd9a51b85d5ef96fd0e5380c5cac1cd030424683153443a183"
+    },
+    "utilities/snapshot.py.gz": {
+      "original_bytes": 31303,
+      "original_sha256": "cfceb69634816cc38a5c29bb24b419991bf7cd1ff0a8bad4ffd03473802b2500",
+      "stored_bytes": 10198,
+      "stored_sha256": "bf824e67fc2f7ccb336fcf65310cbf6a72297be59f641dba1c6384a62185ebbd"
+    }
+  },
+  "schema": 1,
+  "scope": "Original evidence plus descriptive derivation; no adoption or performance acceptance",
+  "source_revision": "4618859c90131b33c5d9ebd85a67f1537497a357"
+}

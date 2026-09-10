@@ -1,0 +1,45 @@
+diff --git a/tests/test_glm53_ep_tiled_static.py b/tests/test_glm53_ep_tiled_static.py
+index c3b981ad..1d14e174 100644
+--- a/tests/test_glm53_ep_tiled_static.py
++++ b/tests/test_glm53_ep_tiled_static.py
+@@ -59,15 +59,36 @@ def baseline_kernel_text():
+     source=SOURCE.read_text(); node=function('kernel'); lines=source.splitlines(keepends=True)
+     branches=[n for n in ast.walk(node) if isinstance(n,ast.If)
+               and ast.unparse(n.test)=='cutlass.const_expr(self.ep_decode_opt)']
+-    assert len(branches)==5
++    # The retired FC1-register branches are gone. Admit only the two exact
++    # Q1 additions: the host storage/layout guard and the bounded pair/scalar
++    # selection. Both scalar fallbacks must be the same complete AST.
++    assert len(branches)==2
++    setup, quant = sorted(branches, key=lambda n:n.lineno)
++    assert not setup.orelse and [ast.unparse(n) for n in setup.body] == [
++        'self._check_ep_storage(Storage)',
++        'self._check_ep_q1_layout(epi1_smem_staged, a2_smem_layout, sfa2_smem_layout)']
++    assert len(quant.body)==1 and isinstance(quant.body[0],ast.If)
++    pair=quant.body[0]
++    assert ast.unparse(pair.test)=='epi_rows <= Int32(8)'
++    assert [ast.unparse(n) for n in pair.body] == [
++        'self._ep_q1_pair(sC1, epi_rows, sf_blocks_per_half, h, tidx, '
++        'gs_value, a2_base_addr, a2_smem_layout, sfa2_base_addr)']
++    assert len(quant.orelse)==2 and isinstance(quant.orelse[1],ast.While)
++    assert ast.unparse(quant.orelse[0])=='quant_idx = Int32(tidx)'
++    assert [ast.dump(n,include_attributes=False) for n in pair.orelse] == [
++        ast.dump(n,include_attributes=False) for n in quant.orelse]
+     changes=[]
+     for branch in branches:
+         replacement=[]
+         if branch.orelse:
+-            replacement=[line[4:] for line in lines[branch.orelse[0].lineno-1:branch.end_lineno]]
++            replacement=[line[4:] if line.startswith('    ') else line
++                         for line in lines[branch.orelse[0].lineno-1:branch.end_lineno]]
+         changes.append((branch.lineno-1,branch.end_lineno,replacement))
+-    field=next(n for n in ast.walk(node) if isinstance(n,ast.AnnAssign)
+-               and ast.unparse(n.target)=='sf2_packed_source')
++    fields=[n for n in ast.walk(node) if isinstance(n,ast.AnnAssign)
++            and ast.unparse(n.target)=='sf2_packed_source']
++    assert len(fields)==1
++    field=fields[0]
++    assert ast.unparse(field.annotation)=='cute.struct.Align[cute.struct.MemRange[cutlass.Uint8, 16], 16]'
+     comments=lines[field.lineno-3:field.lineno-1]
+     assert 'zero-sized MemRange' in comments[0] and 'existing header padding' in comments[1]
+     changes.append((field.lineno-3,field.end_lineno,[]))
