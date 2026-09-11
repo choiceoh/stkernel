@@ -1,0 +1,10 @@
+test_finite_bf16_patterns_and_saturated_gates (test_engine_kda_norm.KdaOutputNormTests.test_finite_bf16_patterns_and_saturated_gates) ... ok
+test_glm128_rows_magnitudes_and_final_rounding (test_engine_kda_norm.KdaOutputNormTests.test_glm128_rows_magnitudes_and_final_rounding) ... ok
+test_graph_reads_changed_values_and_does_not_mutate_inputs (test_engine_kda_norm.KdaOutputNormTests.test_graph_reads_changed_values_and_does_not_mutate_inputs) ... ok
+test_independent_streams_and_invalid_layout (test_engine_kda_norm.KdaOutputNormTests.test_independent_streams_and_invalid_layout) ... ok
+test_other_dimensions_and_fp32_weight (test_engine_kda_norm.KdaOutputNormTests.test_other_dimensions_and_fp32_weight) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 5.116s
+
+OK
