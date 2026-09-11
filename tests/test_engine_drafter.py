@@ -49,7 +49,10 @@ class DrafterTests(unittest.TestCase):
         rand = lambda *shape: torch.randn(*shape, device=dev, generator=gen).bfloat16()
         hidden, logits = rand(4, 16), rand(3, 21).float()
         d.block = lambda *args: hidden
-        d.target.head = lambda h: logits.clone()
+        from engine.base.comm import Comm
+        d.target.head_local = lambda h: logits.clone()
+        d.target.comm, d.target.rank, d.target.vp = Comm(), 0, 21
+        d.target.head = lambda h: self.fail("drafter gathered full-vocabulary logits")
         prefix = "candidate_selector."
         d.p = {prefix + "hidden_projection.weight": rand(4, 16),
                prefix + "predecessor_codebook": rand(21, 4),

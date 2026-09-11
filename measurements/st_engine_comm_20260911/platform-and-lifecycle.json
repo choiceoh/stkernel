@@ -1,0 +1,328 @@
+[
+  {
+    "cuInit": 0,
+    "attributes": {
+      "GPU_DIRECT_RDMA_SUPPORTED": {
+        "value": 0,
+        "error": 0
+      },
+      "DMA_BUF_SUPPORTED": {
+        "value": 0,
+        "error": 0
+      }
+    },
+    "collected_utc": "2026-09-11T13:25:38.656368+00:00",
+    "events": [
+      {
+        "name": "glm53",
+        "action": "kill",
+        "time": 1789132922212690409,
+        "exit": null,
+        "signal": "9"
+      },
+      {
+        "name": "glm53",
+        "action": "die",
+        "time": 1789132925762925729,
+        "exit": "137",
+        "signal": null
+      },
+      {
+        "name": "glm53",
+        "action": "destroy",
+        "time": 1789132925858862639,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "start",
+        "time": 1789132929431093819,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "die",
+        "time": 1789132939199089376,
+        "exit": "0",
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "destroy",
+        "time": 1789132940535253679,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-glm53",
+        "action": "destroy",
+        "time": 1789132960390940378,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-glm53",
+        "action": "start",
+        "time": 1789132960679408471,
+        "exit": null,
+        "signal": null
+      }
+    ],
+    "lock": "choiceoh@srv4 st-glm53 2026-09-11 22:22:29\n",
+    "active_containers": [
+      "st-glm53"
+    ],
+    "node": "10.10.10.2"
+  },
+  {
+    "cuInit": 0,
+    "attributes": {
+      "GPU_DIRECT_RDMA_SUPPORTED": {
+        "value": 0,
+        "error": 0
+      },
+      "DMA_BUF_SUPPORTED": {
+        "value": 0,
+        "error": 0
+      }
+    },
+    "collected_utc": "2026-09-11T13:25:39.453392+00:00",
+    "events": [
+      {
+        "name": "glm53-worker",
+        "action": "kill",
+        "time": 1789132926197059527,
+        "exit": null,
+        "signal": "9"
+      },
+      {
+        "name": "glm53-worker",
+        "action": "die",
+        "time": 1789132928855782698,
+        "exit": "137",
+        "signal": null
+      },
+      {
+        "name": "glm53-worker",
+        "action": "destroy",
+        "time": 1789132929010709912,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "start",
+        "time": 1789132929939446364,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "die",
+        "time": 1789132939095616174,
+        "exit": "0",
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "destroy",
+        "time": 1789132940850547459,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-glm53",
+        "action": "destroy",
+        "time": 1789132967766533812,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-glm53",
+        "action": "start",
+        "time": 1789132967988618234,
+        "exit": null,
+        "signal": null
+      }
+    ],
+    "lock": null,
+    "active_containers": [
+      "st-glm53",
+      "grafana",
+      "prometheus",
+      "topbid-tunnel"
+    ],
+    "node": "10.10.10.1"
+  },
+  {
+    "cuInit": 0,
+    "attributes": {
+      "GPU_DIRECT_RDMA_SUPPORTED": {
+        "value": 0,
+        "error": 0
+      },
+      "DMA_BUF_SUPPORTED": {
+        "value": 0,
+        "error": 0
+      }
+    },
+    "collected_utc": "2026-09-11T13:25:40.221175+00:00",
+    "events": [
+      {
+        "name": "glm53-worker",
+        "action": "kill",
+        "time": 1789132929333198681,
+        "exit": null,
+        "signal": "9"
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "start",
+        "time": 1789132930395722865,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "glm53-worker",
+        "action": "die",
+        "time": 1789132932284659919,
+        "exit": "137",
+        "signal": null
+      },
+      {
+        "name": "glm53-worker",
+        "action": "destroy",
+        "time": 1789132932429109065,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "die",
+        "time": 1789132939108050106,
+        "exit": "0",
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "destroy",
+        "time": 1789132941236650150,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-glm53",
+        "action": "destroy",
+        "time": 1789132975323012941,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-glm53",
+        "action": "start",
+        "time": 1789132975475202301,
+        "exit": null,
+        "signal": null
+      }
+    ],
+    "lock": null,
+    "active_containers": [
+      "st-glm53"
+    ],
+    "node": "10.10.10.3"
+  },
+  {
+    "cuInit": 0,
+    "attributes": {
+      "GPU_DIRECT_RDMA_SUPPORTED": {
+        "value": 0,
+        "error": 0
+      },
+      "DMA_BUF_SUPPORTED": {
+        "value": 0,
+        "error": 0
+      }
+    },
+    "collected_utc": "2026-09-11T13:25:40.986906+00:00",
+    "events": [
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "start",
+        "time": 1789132930810256616,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "glm53-worker",
+        "action": "kill",
+        "time": 1789132932722543737,
+        "exit": null,
+        "signal": "9"
+      },
+      {
+        "name": "glm53-worker",
+        "action": "die",
+        "time": 1789132937881311613,
+        "exit": "137",
+        "signal": null
+      },
+      {
+        "name": "glm53-worker",
+        "action": "destroy",
+        "time": 1789132938017365194,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "die",
+        "time": 1789132939090575769,
+        "exit": "0",
+        "signal": null
+      },
+      {
+        "name": "st-tp4-lat-f4d7-r1-16",
+        "action": "destroy",
+        "time": 1789132941563178216,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-glm53",
+        "action": "destroy",
+        "time": 1789132984472968094,
+        "exit": null,
+        "signal": null
+      },
+      {
+        "name": "st-glm53",
+        "action": "start",
+        "time": 1789132984670304516,
+        "exit": null,
+        "signal": null
+      }
+    ],
+    "lock": null,
+    "active_containers": [
+      "st-glm53",
+      "nemotron-vllm",
+      "solarflow-engine",
+      "solarflow-web-ssr",
+      "solarflow-backend",
+      "sfpoc-auth",
+      "sfpoc-db",
+      "vaultwarden",
+      "sfpoc-gateway",
+      "sfpoc-rest",
+      "solarflow-tunnel",
+      "solarflow-caddy",
+      "solarflow-webhook",
+      "cloudflared-deneb",
+      "deneb-mailarchive",
+      "deneb-mailserver"
+    ],
+    "node": "10.10.10.4"
+  }
+]

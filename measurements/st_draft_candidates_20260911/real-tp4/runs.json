@@ -1,0 +1,78 @@
+[
+  {
+    "rank": 0,
+    "node": "10.10.10.2",
+    "exit": 0,
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-11T14:00:47.873206666Z",
+      "FinishedAt": "2026-09-11T14:01:20.275966097Z"
+    },
+    "image": "sha256:3f9b2c9c7c96e6fb03ed0fca9b14dd624d6791815ae3490ed8870f506b26935f"
+  },
+  {
+    "rank": 1,
+    "node": "10.10.10.1",
+    "exit": 0,
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-11T14:00:48.410568823Z",
+      "FinishedAt": "2026-09-11T14:01:20.082063902Z"
+    },
+    "image": "sha256:0d781f0a8f77d4735d0d09d57b081c9489b3a46131dc72773fd40fcbf267b446"
+  },
+  {
+    "rank": 2,
+    "node": "10.10.10.3",
+    "exit": 0,
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-11T14:00:48.97535628Z",
+      "FinishedAt": "2026-09-11T14:01:20.231422574Z"
+    },
+    "image": "sha256:9c9282e14e4d9fea97847f7933a7f5471accf7749c868ed56554a70e514fb270"
+  },
+  {
+    "rank": 3,
+    "node": "10.10.10.4",
+    "exit": 0,
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-11T14:00:49.453667464Z",
+      "FinishedAt": "2026-09-11T14:01:20.206712923Z"
+    },
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7"
+  }
+]
