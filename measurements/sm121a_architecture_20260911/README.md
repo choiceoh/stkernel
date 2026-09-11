@@ -193,6 +193,13 @@ transport를 실제 사용하는지는 NCCL 로그와 측정으로 확인해야 
 
 ## 재현과 증거
 
+2026-09-12 후속 [NVFP4 instruction audit](../st_gb10_nvfp4_instructions_20260912/README.md)은
+`nvdisasm` 13.0.85로 SASS까지 확인했다. 현 도구체인의 GB10에서는 3입력
+`max.abs.f32`가 `FMNMX` 두 개로, `mul.rn.f32x2`가 scalar `FMUL` 두 개로
+내려간다. 지원되는 PTX의 입력 폭이 실제 명령 한 개의 처리량을 뜻하지 않는다.
+현재 ST MoE의 native NVFP4 MMA는 `OMMA`로 확인했다. 후속 변경은 amax를
+독립 연산이 있는 트리로 바꾸며, 기계어 개수 감소나 FP4 peak 달성을 주장하지 않는다.
+
 - [srv4-device.json](srv4-device.json): context·allocation·kernel 없이 driver 조회.
 - [srv4-ptx.json](srv4-ptx.json): 25종 probe, 타깃 조합 47건.
   기대한 성공 43건 / 거부 4건. 거부 3종은 다른 지원 아키텍처에서 문법 통과를 확인했고,
