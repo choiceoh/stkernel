@@ -8623,3 +8623,13 @@ took 50.4" → **잔차 +2.0 GiB(3.9%)** = 로드가 체크포인트에서 파�
   규칙, GLOO ifname), world-1 항등 자가검증(GID 파서가 PORT 열을 INDEX 로 읽던 실수 한 번 잡음), one-shot AR 은
   레인으로 등록. `base/graphs.py` — 디코드 셰이프별 CUDA 그래프, 풀 하나, 미선언 셰이프 거부(D3), 재생 == eager,
   8-GEMM 스텝 eager 1.057 ms → 재생 **0.085 ms**. §5 표 갱신: 공통 부분은 한 스텝에 필요한 만큼 있다.
+
+### 재호스팅 계기 `profiles/glm53/hosting.py` — 서빙 경로 4파일의 vLLM 심볼 126개 중 56 우리 것(44%)
+
+`glm5next_model` 61(20 ours) · `glm5next_kda` 26(16) · `glm5next_attention` 27(12) · `mtp` 12(8). 남은 70 =
+**drop 22**(PP·SP·멀티모달·플랫폼 디스패치·인터페이스 믹스인 — 우리가 안 지는 일반성) + **shim 17**(다른
+이름의 우리 것: 활성화, prefix 헬퍼, 라우터 GateLinear = 리포의 moe_gate_sm121, fp8 LM head…) + **real 31**.
+drop+shim 뒤 계기는 **76%**. real 31 이 "3~5일"의 실체: MLA+희소 인덱서 어텐션(`MLAModules`·`Wrapper`·
+`FusedQkvAProj`·`IndexerCache`·`SparseAttnIndexerKpool`·`head_gate`·`fwht128`), KDA conv 커널
+(`causal_conv1d_*`)과 KDA 커널 셋(`chunk_kda`·`fused_recurrent_kda`·`fused_kda_gate` — 리포의 kda.py, 우리 것),
+MoE 팩토리(b12x 레인), mHC 다섯(`MHC*Op`·`hc_contract`·`hc_expand`).
