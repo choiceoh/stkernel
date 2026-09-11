@@ -8575,3 +8575,27 @@ srv4 공유 노드에서 잰 것이라 노이즈 포함; 판정은 같은 분 �
 - `base/tiered_kv.py` + `Runner.park/resume` — 시퀀스의 블록을 연속으로 내리고(아레나 반환) 새 블록에
   복귀: 300 블록(60 MiB) 왕복 바이트 동일. 살아 있는 시퀀스는 park 거부(D10). 이로써 D16 의 동사 둘이
   기본 층에 있다; 언제 park 할지는 스케줄러의 몫.
+
+## ★44차 — 방향 전환: GLM-5.3 이 공통 부분의 기준 모델 (운영자, 2026-09-11) + `profiles/glm53/plan.py` 현실 대조
+
+운영자: "qwen 최적화 하지 말고 glm 5.3 flash 구현 중 아직 우리 코드가 아닌 공통 부분을 작성". GLM 은
+프로덕션이고, 상수가 전부 실측이고, 커널(KDA·메가커널·mhc·드래프터)이 이미 우리 것이며, 레퍼런스가
+**살아 있다**(D4 의 이상 상황). vLLM 의존 인벤토리(glm53 오버레이 임포트, 파일 수): `v1.worker.gpu` 13 ·
+`v1.attention.backends` 10 + `backend` 5 · `v1.kv_cache_interface` 8 · `model_executor.layers.{fused_moe 7,
+quantization 6, mamba 6, linear 6, logits_processor 4, layernorm 4, rotary 3, attention 3}` · `distributed` 7 ·
+`v1.core.sched` 3. 오버라이드 대상: `models/glm5next` 5, `v1/worker` 4, `flashinfer/fused_moe` 3,
+`v1/attention` 2, `flash_linear_attention` 2, `parallel_state.py` 1.
+
+**배치 산수 대 vLLM 실보고**(체크포인트 184.24 GiB, TP=4+EP): routed experts EP 41.55 + KDA TP(15 성분,
+`v_proj`·`v_conv1d` 포함) 2.19 + MLA q_b/kv_b/o_proj TP 0.61 + 복제(indexer 0.17, q_a/kv_a 0.19, 라우터 0.09,
+MTP-45 0.06, 노름/hc 0.07) + 밀집 MLP 0-2 TP 0.21 + shared TP 0.50 + embed/head 0.59 = **46.2**, + DFlash2
+드래프터 **2.18**(bf16 5층, `DRAFT_TP=1` 이라 랭크마다 전부) = **48.4 GiB**. vLLM 40차 보고 "Model loading
+took 50.4" → **잔차 +2.0 GiB(3.9%)** = 로드가 체크포인트에서 파생해 상주시키는 것(FP8 fold, MK W4 팩 180개).
+잔차는 규칙에 접어 0 으로 만들지 않고 잔차로 보고한다 — 측정 대상.
+
+**함정 둘(내가 빠짐)**: ① 부분문자열 규칙 `"f_"` 가 `sel**f_**attn` 에 매치돼 MLA 규칙이 아무것도 못 잡고
+4.6 GiB 가 복제로 계산됐는데 우연히 vLLM 수치와 +0.3% 로 맞았다 — **일치가 검증이 아니다**; 토큰 매치로
+고치니 −5.1%. ② 층 0 샘플을 `[:24]` 로 잘라 `v_proj`/`v_conv1d`(34층 × 2 = 68 텐서 2.13 GiB)를 못 봤다.
+
+**상태/KV(fp8 KV)**: KDA 34층 × (conv q/k/v + 16헤드×128² fp32) = **34.8 MiB/시퀀스**, MLA 5.50 KiB +
+인덱서 0.69 KiB /토큰 → 40차 실제 KV 8.73 GiB 로 동시 4 에 364K, 동시 8 에 179K.
