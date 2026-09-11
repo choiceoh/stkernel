@@ -27,8 +27,9 @@ from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
 from engine.base.loader import RankLoader                        # noqa: E402
 from engine.base.params import total_bytes                       # noqa: E402
-from engine.base.record import Ring                              # noqa: E402
+from engine.base.record import DeathDump, Ring                   # noqa: E402
 from engine.base.runner import STEP_RECORD, Runner               # noqa: E402
+from engine.base.serve import Server                             # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
 from engine.profiles.glm53.caches import Glm53Caches, block_bytes, slot_bytes   # noqa: E402
 from engine.profiles.glm53.engine import Glm53Engine, NullDrafter              # noqa: E402
@@ -39,6 +40,18 @@ KV_GIB = 8.73                       # the 40th boot's KV (plan.py): what the box
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
 MAX_WAIT_S = 20.0                   # D10's one starvation valve
 MAX_SEQS = 4                        # launcher MAX_SEQS
+
+
+def tokenizer(ckpt=facts.CKPT):
+    from tokenizers import Tokenizer
+    return Tokenizer.from_file(str(Path(ckpt) / "tokenizer.json"))
+
+
+def eos_ids(ckpt=facts.CKPT) -> "list[int]":
+    import json
+    g = json.loads((Path(ckpt) / "generation_config.json").read_text())
+    e = g.get("eos_token_id", [])
+    return list(e) if isinstance(e, list) else [e]
 
 
 def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, drafter, recorder: Recorder,
@@ -58,7 +71,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, drafter,
             [s.name for s in specs], arena=arena, recorder=recorder)
         net.bind(views)
     caches = Glm53Caches(arena, F, net.layers, net.Hk, nb, ns, max_seqs=ns)
-    engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, temperature=temperature, seed=seed)
+    engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(), temperature=temperature, seed=seed)
     contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                               max_wait_s=MAX_WAIT_S, max_running=max_seqs)
     runner = Runner(engine, contract, caches.blocks, caches.slots, Ring(4096, STEP_RECORD.size), recorder)
@@ -98,6 +111,8 @@ def local(a) -> int:
         return {"rec": rec, "out": out, "steps": runner.steps, "ring": runner.ring.count, "secs": time.perf_counter() - t0,
                 "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.blocks.available, "slots": caches.slots.available}
 
+    if a.serve:
+        return local_serve(a, tp, lanes, layers, prompts)
     outs = tp.run(rank_main)
     r0 = outs[0]
     print(r0["rec"].table())
@@ -114,21 +129,101 @@ def local(a) -> int:
     return 0 if same else 1
 
 
+def local_serve(a, tp, lanes, layers, prompts) -> int:
+    """The serve loop itself, on four threads: rank 0 opens the door, a client
+    thread posts the prompts over HTTP, the loop ends when they are answered."""
+    import json
+    import urllib.request
+    port = a.port
+    results = {}
+
+    def rank_main(comm):
+        rec = Recorder(f"rank{comm.rank}")
+        F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, NullDrafter(), rec,
+                                               max_new=a.max_new, temperature=a.temperature, seed=a.seed)
+        server = Server(engine, runner, comm, port=port)
+        httpd = None
+        if comm.rank == 0:
+            httpd = server._serve_http()                       # the door opens before the loop
+            def client():
+                try:
+                    for seq, ids in prompts.items():
+                        req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/completions", method="POST",
+                                                     data=json.dumps({"ids": ids, "max_tokens": a.max_new}).encode(),
+                                                     headers={"Content-Type": "application/json"})
+                        with urllib.request.urlopen(req, timeout=3600) as r:
+                            results[seq] = json.loads(r.read())
+                except Exception as e:                        # noqa: BLE001
+                    results["error"] = repr(e)
+                server.alive = False                          # rank 0 stops after the last answer ...
+            threading.Thread(target=client, daemon=True).start()
+        # ... and tells the others through the same broadcast the arrivals travel on
+        while True:
+            stop = comm.broadcast_object(not server.alive if comm.rank == 0 else None)
+            if stop:
+                break
+            if not server.once():
+                time.sleep(0.002)
+        if httpd is not None:
+            httpd.shutdown()
+        if comm.rank == 0 and "error" in results:
+            raise RuntimeError(f"client: {results['error']}")
+        if comm.rank == 0 and server.pending:
+            raise RuntimeError("rank 0 stopped with answers pending")
+        return {"served": server.served, "steps": runner.steps}
+
+    import threading
+    t0 = time.perf_counter()
+    outs = tp.run(rank_main)
+    secs = time.perf_counter() - t0
+    ok = len(results) == len(prompts) and all(o["served"] == len(prompts) for o in outs) and all(len(r["ids"]) == a.max_new for r in results.values())
+    for seq, r in sorted(results.items()):
+        print(f"    seq {seq}: {r['completion_tokens']} tokens in {r['seconds']} s  {r['ids'][:8]}...")
+    print(f"  serve loop on four ranks: {outs[0]['steps']} steps, {outs[0]['served']} answered over HTTP in {secs:.1f} s")
+    print("\n  " + ("PASS: requests in at rank 0, tokens out, every rank in lockstep" if ok else "FAIL"))
+    return 0 if ok else 1
+
+
+def fleet(a) -> int:
+    """One rank per node, inside the glm53 image: served lanes (D3: all or nothing), every layer, then serve."""
+    print(f"  box: {facts.check_box()}")
+    comm = Comm.init()
+    lanes = lane_tables.served()
+    rec = Recorder(f"rank{comm.rank}")
+    F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, NullDrafter(), rec,
+                                           max_new=a.max_new, temperature=a.temperature, seed=a.seed)
+    dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
+    if comm.rank == 0:
+        print(rec.table())
+        print(f"  ST engine: GLM-5.3, TP={facts.TP}, lanes={lanes.name}, KV {a.kv_gib} GiB, serving on :{a.port}")
+    try:
+        Server(engine, runner, comm, port=a.port, tokenizer=tokenizer()).loop()
+    finally:
+        dump.close()
+        comm.close()
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--local", action="store_true", help="four ranks as threads on this box, reference lanes")
     ap.add_argument("--layers", default="0-4")
     ap.add_argument("--ranks", default=str(facts.RANKS))
-    ap.add_argument("--kv-gib", type=float, default=1.0)
+    ap.add_argument("--kv-gib", type=float, default=KV_GIB)
     ap.add_argument("--prompt", type=int, default=300)
     ap.add_argument("--seqs", type=int, default=2)
     ap.add_argument("--max-new", type=int, default=8)
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--serve", action="store_true", help="with --local: through the HTTP door and the lockstep loop")
+    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--dump-dir", default="/home/choiceoh/glm53-logs/st-dumps")
     a = ap.parse_args(argv)
     if a.local:
+        if a.kv_gib == KV_GIB:
+            a.kv_gib = 1.0                                      # a layer subset on one box
         return local(a)
-    raise SystemExit("fleet boot: comm + served lanes + serve loop -- next (see MEASUREMENTS 45차)")
+    return fleet(a)
 
 
 if __name__ == "__main__":

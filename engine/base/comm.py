@@ -101,6 +101,15 @@ class Comm:
             import torch.distributed as dist
             dist.barrier(group=self.group)
 
+    def broadcast_object(self, obj):
+        """rank 0's `obj` on every rank (the arrivals of a step)."""
+        if self.world_size == 1:
+            return obj
+        import torch.distributed as dist
+        box = [obj]
+        dist.broadcast_object_list(box, src=0, group=self.group)
+        return box[0]
+
     def close(self):
         if self.world_size > 1:
             import torch.distributed as dist
@@ -223,6 +232,15 @@ class _LocalRank:
     def barrier(self):
         self.tp._meet()
 
+    def broadcast_object(self, obj):
+        tp = self.tp
+        if self.rank == 0:
+            tp._slots[0] = obj
+        tp._meet()
+        out = tp._slots[0]
+        tp._meet()
+        return out
+
     def on_main(self, fn, *args, **kwargs):
         return self.tp.on_main(fn, *args, **kwargs)
 
@@ -263,6 +281,7 @@ mlx5_0  1       3       0000:0000:0000:0000:0000:ffff:0a0a:0a04 10.10.10.4      
         where = comm.on_main(lambda: threading.current_thread())
         return where is main and threading.current_thread() is not main
     assert all(LocalTP(4).run(needs_main, None)), "on_main must run on the calling thread of run()"
+    assert LocalTP(4).run(lambda comm, _: comm.broadcast_object({"from": comm.rank}), None) == [{"from": 0}] * 4
     def bad(comm, _):
         if comm.rank == 2:
             raise ValueError("rank 2 dies")

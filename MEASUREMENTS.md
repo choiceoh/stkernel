@@ -8855,3 +8855,22 @@ plan 이 빠뜨렸던 꼬리 링 11×2 KiB 를 채움). `check.py` 는 이제 Ch
   토큰 동일**. 디코드 스텝 0.6 s(참조 KDA 파이썬 루프 34→3 층분 + 스레드 4개 GIL). 토큰은 언어가 아니다(5층).
 - 간헐: 같은 명령이 한 번 "rank 1 failed"(추적 못 잡음) 뒤 두 번 PASS. 앞서 device-side assert 한 번과 같은 부류 —
   LocalTP 4 스레드 아래의 비결정 실패로 기록, 추적은 보류(운영자 지시).
+
+### 45차 §6 — 서브 루프와 문, 플릿 부팅 경로, 런처 (2026-09-11)
+
+- `base/serve.py` — `Server(engine, runner, comm, port)`: 랭크 0 만 문을 연다(HTTP 스레드, `POST /v1/completions` {prompt|ids,
+  max_tokens, temperature}, `GET /` 상태). 매 반복: 랭크 0 이 도착 큐를 비워 **한 번의 `comm.broadcast_object`** 로 모두에게
+  → submit → 스케줄러 한 스텝. 토큰은 랭크끼리 주고받지 않는다 — 로짓이 all-gather 로 동일하고 샘플러가 시드 고정이라
+  **같은 토큰을 각자 계산**. 시퀀스가 러너에서 빠지면 완료 → 랭크 0 이 기다리던 HTTP 호출에 답.
+- `base/comm` 에 `broadcast_object`(NCCL: `broadcast_object_list`, LocalTP: 슬롯 0 + 배리어 둘).
+- `boot.py`: `--local --serve` 는 네 스레드 위에서 **서브 루프 자체**를 돌린다(클라이언트 스레드가 HTTP 로 프롬프트를 보냄):
+  0~4층, 300토큰 2개, max_new 6 → **12 스텝, 2건 응답, 38.7 s, PASS**(문을 루프 전에 열지 않아 첫 시도는 연결 거부가 데몬
+  스레드에 삼켜져 300 s 정지 — 이제 클라이언트 오류는 표면화). 플릿 모드(`boot.py` 인자 없음): `Comm.init`(NCCL) → `lanes.served()`
+  (전부 아니면 죽음) → 45층 전부 → `DeathDump` → 토크나이저(`tokenizers`, 체크포인트 tokenizer.json, eos = generation_config)
+  → `Server.loop`. KV 8.73 GiB(40차 실측)를 블록/슬롯으로.
+- `launchers/start-st-glm53.sh` — 노드당 컨테이너 하나(판정 이미지, 엔진 트리 rsync → /repo, 랭크 파일, 오버레이 8종을 manifest
+  경로에, /cache, 프로덕션 런처의 NCCL/RoCE env 그대로), `stop`/`logs r`. **glm53*/q38*/vllm* 컨테이너가 떠 있으면 거부**(플릿 무단
+  점유 금지). `launchers/fanout-st-ranks.sh` — 랭크 r 파일을 노드 r 로(srv3 은 srv2 경유). srv2·srv3 fan-out 진행 중; **srv1 은
+  디스크 95%(52 GB 남음)** — 44.5 GiB 를 넣으면 98% 라 운영자 판단 뒤에.
+- 열린 항목: 서빙 레인 판정(한 상자, DeepGEMM 워커 스레드) — 플릿에선 문제 아님. DFlash2 드래프터 포팅이 다음(인터페이스는
+  `Drafter.propose` 하나; 대상 층 5·14·24·33·42 의 hidden 을 net 이 내줘야 함).

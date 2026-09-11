@@ -39,13 +39,14 @@ class Glm53Engine:
         self.max_new, self.eos = max_new, set(eos_ids)
         self.temperature, self.top_p = temperature, top_p
         self.gen = torch.Generator(device=caches.device).manual_seed(seed)
-        self.tokens, self.prompt_len, self.ctx, self.slot = {}, {}, {}, {}
+        self.tokens, self.prompt_len, self.ctx, self.slot, self.limits = {}, {}, {}, {}, {}
         self.accepted_total = 0
         self.steps = 0
 
     # -- the runner's protocol -------------------------------------------------------
-    def add(self, seq: int, ids: "list[int]") -> None:
+    def add(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None) -> None:
         self.tokens[seq] = list(ids); self.prompt_len[seq] = len(ids)
+        self.limits[seq] = (self.max_new if max_new is None else max_new, self.temperature if temperature is None else temperature)
 
     def open(self, seq: int, slot: int) -> None:
         self.slot[seq] = slot; self.ctx[seq] = 0
@@ -61,10 +62,9 @@ class Glm53Engine:
     def generated(self, seq: int) -> "list[int]":
         return self.tokens[seq][self.prompt_len[seq]:]
 
-    def _sample(self, logits: torch.Tensor) -> torch.Tensor:
-        n = logits.shape[0]
-        t = torch.full((n,), self.temperature, device=logits.device)
-        p = torch.full((n,), self.top_p, device=logits.device)
+    def _sample(self, logits: torch.Tensor, temps: "list[float]") -> torch.Tensor:
+        t = torch.tensor(temps, dtype=torch.float32, device=logits.device)
+        p = torch.full((logits.shape[0],), self.top_p, device=logits.device)
         return sample(logits, t, p, self.gen)
 
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> None:
@@ -73,7 +73,7 @@ class Glm53Engine:
         h = self.net.forward(Step.prefill(ids, start, seq, slot), self.caches)
         self.ctx[seq] = start + tokens
         if self.ctx[seq] == self.prompt_len[seq]:                         # the prompt is in: the first token comes from its last position
-            first = self._sample(self.net.head(h[-1:]))
+            first = self._sample(self.net.head(h[-1:]), [self.limits[seq][1]])
             self.tokens[seq].append(int(first.item()))
         self.steps += 1
 
@@ -86,7 +86,8 @@ class Glm53Engine:
             chunks.append((torch.tensor(ids, dtype=torch.int64, device=self.caches.device), self.ctx[seq], seq, slot))
         step = Step.decode(chunks)
         h = self.net.forward(step, self.caches)
-        sampled = self._sample(self.net.head(h)).tolist()
+        temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
+        sampled = self._sample(self.net.head(h), temps).tolist()
         finished = []
         for s in step.segments:
             picks = sampled[s.start: s.start + s.length]
@@ -99,7 +100,7 @@ class Glm53Engine:
             self.tokens[s.seq] += new
             self.ctx[s.seq] += accepted + 1
             self.accepted_total += accepted
-            done = any(t in self.eos for t in new) or len(self.generated(s.seq)) >= self.max_new
+            done = any(t in self.eos for t in new) or len(self.generated(s.seq)) >= self.limits[s.seq][0]
             finished.append(done)
         self.steps += 1
         return finished
