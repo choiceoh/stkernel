@@ -7,6 +7,7 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 | 레인 | ST 구현 | 외부 라이브러리 |
 | --- | --- | --- |
 | KDA chunk / recurrent | `kda/`의 기존 커널 두 파일과 FLA 보조 7파일(`op.py` 포함) | PyTorch, Triton |
+| KDA 출력 정규화 | `kda/output.py`에서 FP32 RMS norm·weight·sigmoid gate를 합치고 BF16으로 한 번 저장 | PyTorch, Triton |
 | causal conv | `causal_conv.py`의 prefill / update Triton 커널 | PyTorch, Triton, NumPy |
 | 상태 링 | `state.py`에서 물리 슬롯·위치로 필요한 이력을 읽고 변경된 위치만 쓰기 | PyTorch, Triton |
 | mHC pre / post | `mhc/`의 TileLang 혼합 커널과 작은 M의 prenorm 패딩 | PyTorch, TileLang, Triton, DeepGEMM |
@@ -57,6 +58,12 @@ API와 구분한다. GLM TP4의 16 heads·128×128·1~6토큰에서는 BV16·1 w
 입력은 그래프와 일반 실행의 합산 순서를 맞추기 위해 유지한다. 구형 경로와의 FP32 합산 순서는
 달라질 수 있으며, 측정된 수치 차이·전체 KDA 블록 시간·재현 절차는
 [GB10 KDA 상태 측정](../../measurements/st_gb10_kda_state_20260911/README.md)에 있다.
+
+KDA 출력 정규화는 128차원 head마다 한 warp가 FP32 reduction과 gate를 계산한다.
+FP32 임시 tensor를 없애며, sigmoid가 매우 작을 때도 BF16 subnormal을 보존하도록
+`div.rn.f32`를 사용한다. 일반 실행과 그래프에서 같은 커널을 호출하고 LocalTP의 main-thread
+dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·메모리 검사는
+[GB10 KDA 출력 정규화 측정](../../measurements/st_gb10_kda_norm_20260911/README.md)에 있다.
 
 ## 노브 (D11, 2026-09-12 정리)
 
