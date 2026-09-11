@@ -157,7 +157,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     expert_lane = "reference" if "expert" in reference_for else "b12x"
     from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
     from engine.kernels.kda.output import kda_output_norm
-    from engine.kernels.causal_conv import causal_conv1d_fn
+    from engine.kernels.causal_conv_single import causal_conv1d_single as conv_prefill
     from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
     from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
@@ -165,31 +165,6 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.kernels.indexer import pool_slots
     mk.configure_prefill(mla_prefill)
     ref = reference()
-
-    def conv_prefill(x, w, state):
-        """probes/conv_check.py's call, verbatim: a two-row state table with
-        our row at index 1 -- the served kernel treats cache index 0 as the
-        null block and silently skips a sequence that names it."""
-        t, c = x.shape
-        table = torch.zeros(2, c, w.shape[1] - 1, device=x.device, dtype=x.dtype)
-        if state is not None:
-            table[1] = state
-        # One sequence, known length: publish the launch map on device.
-        # The generic wrapper otherwise reads query lengths back to the CPU,
-        # which synchronizes eager decode and is forbidden during capture.
-        from types import SimpleNamespace
-        programs = -(-t // 8)
-        batch = torch.zeros(programs, device=x.device, dtype=torch.int32)
-        offsets = torch.arange(programs, device=x.device, dtype=torch.int32)
-        metadata = SimpleNamespace(batch_ptr=batch, token_chunk_offset_ptr=offsets,
-            nums_dict={8: dict(tot=programs, mlist=None, mlist_len=programs,
-                              offsetlist=None, batch_ptr=batch, token_chunk_offset_ptr=offsets)})
-        y = causal_conv1d_fn(x.T, w, None, table, torch.arange(2, device=x.device, dtype=torch.int32) * t,
-                             cache_indices=torch.ones(1, device=x.device, dtype=torch.int32),
-                             has_initial_state=torch.full((1,), state is not None, device=x.device, dtype=torch.bool),
-                             activation="silu", metadata=metadata)
-        y = y.T if y.shape[0] == c else y
-        return y, table[1]
 
     def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
         t = q.shape[1]
