@@ -152,6 +152,20 @@ class SchedulingTests(unittest.TestCase):
             sched.advance(s, step)
         self.assertEqual(sizes, [48, 48, 34])
 
+    def test_wake_cannot_take_the_paused_prefills_reserved_decode_place(self):
+        r = runner(blocks=32)
+        r.keep_idle = True
+        r.submit(2, 16, now=0)
+        r.model.done.add(2)
+        r.step(now=0); r.step(now=1)
+        r.submit(0, 16, now=2); r.submit(1, 178, now=2)
+        r.step(now=2); r.step(now=3); r.step(now=23)
+        before = copy.deepcopy(r.state)
+        with self.assertRaisesRegex(ValueError, "decode width"):
+            r.wake(2)
+        self.assertEqual(before, r.state)
+        self.assertIn(2, r.idle)
+
 
 class PoolTests(unittest.TestCase):
     def test_mapping_appends_within_epoch_and_release_invalidates_reuse(self):

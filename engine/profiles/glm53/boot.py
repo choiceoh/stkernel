@@ -402,15 +402,17 @@ def fleet(a) -> int:
         Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END)).loop()
     finally:
-        if dump is not None:
-            dump.close()
-        if engine is not None:
-            try:
-                if engine.memory is not None:
-                    engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
-            finally:
-                engine.close_decode()
-        comm.close()
+        try:
+            if dump is not None:
+                dump.close()
+            if engine is not None:
+                try:
+                    if engine.memory is not None:
+                        engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
+                finally:
+                    engine.close_decode()
+        finally:
+            comm.close()
     return 0
 
 

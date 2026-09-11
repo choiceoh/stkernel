@@ -537,6 +537,31 @@ class CudaCacheTests(unittest.TestCase):
                 self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
                 self.assertEqual(self.c.slots.available, 4)
 
+    def test_memory_prefill_preparation_covers_capacity_and_cleans_failed_warmup(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from engine.profiles.glm53.adapter import Glm53Engine
+        net = self.runtime().net
+        engine = Glm53Engine(net, self.c, self.F)
+        engine.prefill_chunk = 20
+        phases = []
+        engine.memory = SimpleNamespace(checkpoint=phases.append)
+        capacity = self.c.pool.num_blocks * self.F.block
+        with patch.object(net, "forward", wraps=net.forward) as forward:
+            engine._warmup_prefill_memory()
+        self.assertEqual([(call.args[0].segments[0].ctx, call.args[0].ids.numel())
+                          for call in forward.call_args_list], [(0, 20), (capacity-20, 20)])
+        self.assertEqual(len(phases), 4)
+        self.assertEqual(self.c.pool.rows_in_use, 0)
+        self.assertEqual(self.c.slots.available, 4)
+        self.assertTrue(torch.all(self.c.state == 0))
+        with patch.object(net, "forward", side_effect=MemoryError("workspace exhausted")):
+            with self.assertRaisesRegex(MemoryError, "workspace exhausted"):
+                engine._warmup_prefill_memory()
+        self.assertEqual(self.c.pool.rows_in_use, 0)
+        self.assertEqual(self.c.slots.available, 4)
+        self.assertTrue(torch.all(self.c.state == 0))
+
     def test_runtime_generates_exact_limits_and_releases_every_request(self):
         r = self.runtime()
         r.submit(0, torch.arange(20, device="cuda"), 3, now=0)

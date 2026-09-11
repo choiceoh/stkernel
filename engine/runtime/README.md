@@ -32,22 +32,38 @@ metadata directory containing config, tokenizer and generation configuration.
 `--ckpt-meta` and `--drafter-dir` reach all boot modes. The fleet order is
 srv2, srv1, srv3, srv4 for ranks 0, 1, 2, 3.
 
-The fleet boot captures target decode, DFlash proposal/context updates and
-sampling before opening HTTP admission. Graphs are explicitly released before
-NCCL shutdown. Full-model admission first advises the OS to release clean
-pages of the selected rank files and drafter, then checks immediately free
-host/device memory with 16 GiB spare. Every rank must pass before any rank
-allocates its arena. The spare is a conservative boot guard, not a measured
-upper bound on graph workspace. The loader releases consumed file-cache
-ranges after blocking uploads. It never invokes a machine-wide cache flush.
+Full-model admission releases clean pages of the selected rank/draft files,
+then requires the arena plus a **12 GiB workspace ceiling** and **4 GiB OS
+reserve** in immediately free host/device memory. Every rank must pass before
+any rank allocates its arena. These are byte limits, not measured workspace
+claims. KV remains an explicit budget. The native PyTorch allocator is capped
+at its existing reserved bytes plus the arena and workspace ceiling. Its
+fraction API only enforces that byte limit; it never chooses KV capacity.
+Direct CUDA allocations such as NCCL are outside that allocator, so boot also
+checks physical free memory.
+
+Before HTTP admission, preparation exercises the largest legal prefill at the
+start and end of KV capacity, then every target decode, DFlash proposal/context
+update and greedy/stochastic sampling graph. A per-phase ledger records current
+and peak allocated/reserved bytes and immediately free memory. Every TP rank
+must pass each checkpoint. `--dump-dir/memory-rankN.json` contains the limits
+and measured peaks; `ready` is set only after all preparation passes. Unseen
+prefill tail shapes remain under the allocator ceiling. Other processes can
+still consume the physical reserve after preparation.
+
+Graphs are released before NCCL shutdown, and cleanup restores the previous
+allocator limit. The loader releases consumed file-cache ranges after blocking
+uploads. It never invokes a machine-wide cache flush. Small allocator tests
+do not qualify the full-model workspace budget.
 
 The need for the guard was exposed by the first full-model validation boot:
 rank 0 failed the approximately 55.4 GiB arena allocation, and srv1/srv4 became
 unreachable over SSH. Their exact failure state was not retrievable at the
-time of this record. NVIDIA documents UMA memory reporting and buffer-cache
+time of that record. Access subsequently recovered; the new byte budget has
+not been used to restart the production fleet. NVIDIA documents UMA memory reporting and buffer-cache
 reclamation in its [Spark known issues](https://docs.nvidia.com/dgx/dgx-spark/known-issues.html).
 This source must not be described as a qualified full-model release until
-fleet recovery, successful boot and the complete quality/load gates are done.
+successful boot and the complete quality/load gates are done.
 
 See `measurements/st_engine_completion_20260911/README.md` for completed
 numerical checks and the explicit remaining gates.

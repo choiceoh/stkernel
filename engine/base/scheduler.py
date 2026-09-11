@@ -84,11 +84,11 @@ def plan(state: State, c: Contract, now: float) -> Step | None:
     """One step, or None when there is nothing to do."""
     if len(state.running) > c.max_running:
         raise ValueError("running sequences exceed the declared decode width")
+    if state.in_prefill is not None and len(state.running) == c.max_running:
+        raise ValueError("prefill has no reserved place in the decode batch")
     if state.running and state.decode_due:
         return _decode(state, c, "decode between prefill chunks")
     if state.in_prefill is not None:
-        if len(state.running) == c.max_running:
-            raise ValueError("prefill has no reserved place in the decode batch")
         return _prefill(state, c, "continue the admitted prefill after decode")
     if state.running:
         if state.waiting and len(state.running) < c.max_running:
