@@ -1,0 +1,9 @@
+test_empty_shapes_and_all_padding_overwrite (test_engine_pool_slots.PoolSlotTests.test_empty_shapes_and_all_padding_overwrite) ... ok
+test_exact_duplicates_invalid_pools_tails_and_strides (test_engine_pool_slots.PoolSlotTests.test_exact_duplicates_invalid_pools_tails_and_strides) ... ok
+test_graph_replay_reads_pools_lengths_and_recycled_blocks (test_engine_pool_slots.PoolSlotTests.test_graph_replay_reads_pools_lengths_and_recycled_blocks) ... ok
+test_large_integer_positions (test_engine_pool_slots.PoolSlotTests.test_large_integer_positions) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 37.306s
+
+OK
