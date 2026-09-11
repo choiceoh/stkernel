@@ -24,9 +24,18 @@ test_sparse_mla_padding_does_not_read_nan_from_an_unused_block (test_engine_glm5
 test_step_rejects_gaps_and_reused_state_slots (test_engine_glm53.CudaCacheTests.test_step_rejects_gaps_and_reused_state_slots) ... ok
 test_unchanged_mapping_still_checks_ownership_and_reservation (test_engine_glm53.CudaCacheTests.test_unchanged_mapping_still_checks_ownership_and_reservation) ... ok
 test_views_use_one_arena_and_map_noncontiguous_blocks_per_layer (test_engine_glm53.CudaCacheTests.test_views_use_one_arena_and_map_noncontiguous_blocks_per_layer) ... ok
+test_each_rank_writes_up_then_gate_with_matching_folded_scales (test_engine_glm53.ExpertPreshardTests.test_each_rank_writes_up_then_gate_with_matching_folded_scales) ... ok
+test_fp4_midpoints_round_to_even_mantissas (test_engine_glm53.ExpertPreshardTests.test_fp4_midpoints_round_to_even_mantissas) ... ok
 test_block_layout_keeps_every_typed_view_aligned_and_disjoint (test_engine_glm53.LayoutTests.test_block_layout_keeps_every_typed_view_aligned_and_disjoint) ... ok
 test_invalid_layers_and_partial_pools_fail_before_allocation (test_engine_glm53.LayoutTests.test_invalid_layers_and_partial_pools_fail_before_allocation) ... ok
 test_position_rings_retain_history_after_rejecting_all_drafts (test_engine_glm53.LayoutTests.test_position_rings_retain_history_after_rejecting_all_drafts) ... ok
+test_cuda_translation_unit_and_pinned_dynamic_helpers_are_unchanged (test_engine_kernels.KernelPackageTests.test_cuda_translation_unit_and_pinned_dynamic_helpers_are_unchanged) ... ok
+test_deep_gemm_initializes_on_execution_and_forwards_the_library_contract (test_engine_kernels.KernelPackageTests.test_deep_gemm_initializes_on_execution_and_forwards_the_library_contract) ... ok
+test_engine_never_imports_vllm_or_mounted_moe_kernels (test_engine_kernels.KernelPackageTests.test_engine_never_imports_vllm_or_mounted_moe_kernels) ... ok
+test_glm_rank_rejects_ambiguous_expert_layout_before_loading (test_engine_kernels.KernelPackageTests.test_glm_rank_rejects_ambiguous_expert_layout_before_loading) ... ok
+test_ported_functions_have_their_module_globals (test_engine_kernels.KernelPackageTests.test_ported_functions_have_their_module_globals) ... ok
+test_relative_imports_resolve_inside_the_vendored_package (test_engine_kernels.KernelPackageTests.test_relative_imports_resolve_inside_the_vendored_package) ... ok
+test_strided_kda_guard_tracks_the_ported_norm_source (test_engine_kernels.KernelPackageTests.test_strided_kda_guard_tracks_the_ported_norm_source) ... ok
 test_scalar_then_matrix_stays_aligned_in_one_upload (test_engine_loader.AlignedRankTests.test_scalar_then_matrix_stays_aligned_in_one_upload) ... ok
 test_short_writes_are_retried_and_zero_progress_fails (test_engine_loader.AlignedRankTests.test_short_writes_are_retried_and_zero_progress_fails) ... ok
 test_truncated_run_raises_instead_of_spinning_on_eof (test_engine_loader.ReadTests.test_truncated_run_raises_instead_of_spinning_on_eof) ... ok
@@ -96,6 +105,6 @@ test_resume_after_restart_uses_manifest (test_engine_tier.TierOwnershipTests.tes
 test_resume_rejects_a_row_reused_by_a_live_sequence (test_engine_tier.TierOwnershipTests.test_resume_rejects_a_row_reused_by_a_live_sequence) ... ok
 
 ----------------------------------------------------------------------
-Ran 96 tests in 1.767s
+Ran 105 tests in 4.378s
 
 OK

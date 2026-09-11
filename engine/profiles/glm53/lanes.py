@@ -4,10 +4,9 @@
                   judged against its served kernel in probes/ (44th ledger):
                   KDA chunk 6.3e-3, conv exact, mHC pre/post exact-ish,
                   MLA 2.2e-3, indexer logits 2.4e-3, kpool byte-identical
-    served()      the kernels that serve today: ours, in this repo's
-                  overlay, imported by the path they are MOUNTED at inside
-                  the glm53 image (vLLM's namespace is the mount point, not
-                  their home). All or nothing: a lane that will not import
+    served()      ST's kernels in engine/kernels, with direct library
+                  dependencies on Triton, TileLang, DeepGEMM and FlashInfer
+                  utilities. All or nothing: a lane that will not import
                   raises, the boot dies (D3) -- there is no per-lane
                   fallback to the reference.
 
@@ -36,7 +35,7 @@ class Lanes:
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
                               #  scale, ckv_scale) -> [T,H,512] bf16
-    moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8, w13_sf [E, 2I*H/16] e4m3 (folded, interleaved),
+    moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8 [up|gate], w13_sf [E, 2I*H/16] e4m3 (folded, interleaved),
                               #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit) -> [T,H] bf16: this rank's routed partial (shared expert excluded)
     indexer_quant: object     # contiguous [R,128] bf16 -> Hadamard-rotated [R,128] e4m3, per-row pow2 [R,1] f32 scale
     expand_pools: object      # pool ids [T,topk/pool] int32, seq_lens [T] int32, pool size -> [T,topk+pool-1] int32 tokens, -1 padded
@@ -114,9 +113,11 @@ def reference() -> Lanes:
             rows, k = (sel == e).nonzero(as_tuple=True)
             s13 = unswizzle_sf(w13_sf[e].view(torch.uint8), two_i, hidden // 16).view(torch.float8_e4m3fn)
             s2 = unswizzle_sf(w2_sf[e].view(torch.uint8), hidden, i_local // 16).view(torch.float8_e4m3fn)
-            xe = x[rows]
-            g = expert_gemm(xe, w13[e, :i_local], s13[:i_local], one, one, quantize_act=True)
-            u = expert_gemm(xe, w13[e, i_local:], s13[i_local:], one, one, quantize_act=True)
+            # CuTe keeps FC1 accumulators in FP32 through the activation,
+            # then rounds the activation to BF16 before its FP4 quantization.
+            xe = x[rows].float()
+            u = expert_gemm(xe, w13[e, :i_local], s13[:i_local], one, one, quantize_act=True)
+            g = expert_gemm(xe, w13[e, i_local:], s13[i_local:], one, one, quantize_act=True)
             y = expert_gemm(swiglu_clamped(g, u, limit), w2[e], s2, one, one, quantize_act=True)
             out.index_add_(0, rows, y.float() * w[rows, k][:, None])
         return out.to(x.dtype)
@@ -126,20 +127,20 @@ def reference() -> Lanes:
 
 
 def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
-    """Bound inside the glm53 image (probes/* run there the same way).
+    """Bind the ST kernel package without an overlay or vLLM installation.
 
     `reference_for` names lanes DECLARED to run on the torch reference in
     this table ("expert" and/or "kda_recurrent"). The table's name says so,
     boot prints it, proof can demand it: a declared choice, not a fallback
     (D3). Anything not named must bind or the call raises."""
     expert_lane = "reference" if "expert" in reference_for else "b12x"
-    from vllm.third_party.flash_linear_attention.ops.kda import chunk_kda_with_fused_gate          # ours: overlay/modules/glm53_kernels/kda.py
-    from vllm.model_executor.layers.mamba.ops.causal_conv1d import causal_conv1d_fn                # served op (judged: probes/conv_check.py)
-    import vllm.model_executor.layers.mhc  # noqa: F401  registers torch.ops.vllm.mhc_*_tilelang (ours: overlay dsv4_mhc_tilelang)
-    from vllm.utils.deep_gemm import fp8_fp4_mqa_logits                                             # served DeepGEMM op
-    from vllm.models.glm5next.nvidia.ops.kpool_compress import (
+    from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
+    from engine.kernels.causal_conv import causal_conv1d_fn
+    from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
+    from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
+    from engine.kernels.kpool import (
         expand_pools_and_append_tail, fwht128_quant_fp8, kpool_compress_and_write_cache)
-    from vllm.model_executor.layers import glm53_megakernel as mk                                   # ours: overlay/modules/glm53_megakernel
+    from engine.kernels import mla as mk
     ref = reference()
 
     def conv_prefill(x, w, state):
@@ -156,7 +157,6 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         y = y.T if y.shape[0] == c else y
         return y, table[1]
 
-    from vllm.third_party.flash_linear_attention.ops.kda import fused_recurrent_kda                  # ours, same file
     def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
         t = q.shape[1]
         out = torch.empty_like(v)
@@ -183,12 +183,12 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     def pre(res, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w, norm_eps):
         if fn.data_ptr() % 16:
             raise ValueError("mHC weight is not TMA-aligned; regenerate rank files with the aligned RankWriter")
-        post, comb, x = torch.ops.vllm.mhc_pre_tilelang(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult,
-                                                        sinkhorn, 1, norm_w, norm_eps)
+        post, comb, x = mhc_pre_tilelang(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult,
+                                       sinkhorn, 1, norm_w, norm_eps)
         return post, comb, x
 
     def post(x, res, p, comb):
-        return torch.ops.vllm.mhc_post_tilelang(x, res, p, comb)
+        return mhc_post_tilelang(x, res, p, comb)
 
     def logits(q8, k8, k_scale, w, ke):
         t = q8.shape[0]
@@ -206,7 +206,7 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     def mla(q_abs, latent, slots, valid, scale, ckv_scale):
         mk.maybe_arm()
         if not mk._ARMED.get("mla"):
-            raise RuntimeError("megakernel MLA lane did not arm (VLLM_GLM53_MK_MLA?)")
+            raise RuntimeError("ST MLA lane did not pass its boot self-test")
         cache = latent.view(torch.uint8)
         # the lane is built for this fleet's 16 heads per rank; at world 1 the 64 heads go through in fours (MQA: heads are independent)
         parts = [mk.mla_decode(q_abs[:, i:i + mk.MLA_H].contiguous(), cache, slots, valid, scale, ckv_scale)
@@ -218,7 +218,7 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     if expert_lane == "reference":
         moe = ref.moe
     else:
-        from flashinfer.fused_moe import b12x_fused_moe                                     # ours: overlay/modules/glm53_moe/b12x_moe.py
+        from engine.kernels.b12x import b12x_fused_moe
         from engine.modules.nvfp4_sf import mma_sf_view
         ones = {}
         scale_views = {}                            # stable arena aliases, one pair per bound MoE layer
@@ -235,7 +235,11 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
                 scale_views[key] = (mma_sf_view(w13_sf, w13.shape[1], w13.shape[2] * 2),
                                     mma_sf_view(w2_sf, w2.shape[1], w2.shape[2] * 2))
             sf13, sf2 = scale_views[key]
-            return b12x_fused_moe(x=x.contiguous(), w1_weight=w13, w1_weight_sf=sf13, w2_weight=w2, w2_weight_sf=sf2,
+            # The ST caller owns the output allocation, including the graph
+            # memory pool during capture; the b12x API requires an explicit out.
+            output = torch.empty_like(x, memory_format=torch.contiguous_format)
+            return b12x_fused_moe(x=x.contiguous(), output=output,
+                                  w1_weight=w13, w1_weight_sf=sf13, w2_weight=w2, w2_weight_sf=sf2,
                                   token_selected_experts=sel.contiguous(), token_final_scales=w.contiguous(),
                                   num_experts=E, num_local_experts=E, top_k=sel.shape[1],
                                   w1_alpha=ones[E], w2_alpha=ones[E], fc2_input_scale=ones[E], input_global_scale=None,

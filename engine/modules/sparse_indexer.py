@@ -101,7 +101,9 @@ def kpool_compress(k: torch.Tensor, slot_score: torch.Tensor, ape: torch.Tensor)
     score = score + ape.float()[None]                                     # [P, kpool, 128]
     prob = torch.softmax(score, dim=1)
     pooled = (prob * k.float()).sum(dim=1)                                # [P, 128]
-    return fwht128_quant(pooled)
+    # The served pool kernel materializes BF16 before the Hadamard transform,
+    # as well as after it. Keep both rounding boundaries in the reference.
+    return fwht128_quant(pooled.to(torch.bfloat16))
 
 
 def select_with_tail(pool_ids: torch.Tensor, seq_lens: torch.Tensor, pool_size: int) -> torch.Tensor:
@@ -142,7 +144,7 @@ def _selfcheck_pool() -> None:
     assert q8.shape == (P, 128) and s.shape == (P, 1) and (s == torch.exp2(torch.log2(s))).all()
     # a uniform gate (score 0, ape 0) is a plain mean
     q_mean, s_mean = kpool_compress(k, torch.zeros(P, kp, device=dev), torch.zeros(kp, 128, device=dev))
-    ref = fwht128_quant(k.float().mean(1))
+    ref = fwht128_quant(k.float().mean(1).to(torch.bfloat16))
     assert torch.equal(q_mean.view(torch.uint8), ref[0].view(torch.uint8))
     out = select_with_tail(torch.tensor([[3, 0, -1], [1, 2, 5]], device=dev), torch.tensor([15, 24], device=dev), 4)
     assert out.shape == (2, 12 + 3)

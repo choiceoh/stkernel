@@ -1,0 +1,5 @@
+**
+!engine/
+!engine/**
+**/__pycache__/
+**/*.pyc

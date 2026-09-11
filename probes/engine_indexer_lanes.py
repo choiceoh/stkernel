@@ -1,6 +1,6 @@
 """Qualify and time the GLM indexer's fused quantization/expansion lanes.
 
-Run through run_mk_probe.sh in the served image. --checkpoint supplies the
+Run through run_engine_probe.sh in the vLLM-free ST image. --checkpoint supplies the
 config.json directory; --rank-file is an existing aligned rank file. Only
 layer 3's replicated indexer weights are loaded. Real-weight checks use seeded
 synthetic activations; this is not a complete-model generation/quality gate.
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import sys
 from collections import Counter
@@ -19,11 +20,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 from engine.base.arena import Arena
 from engine.base.comm import Comm, LocalTP
-from engine.base.loader import RankLoader
 from engine.base.params import bind, total_bytes
 from engine.profiles.glm53 import facts, lanes
 from engine.profiles.glm53.caches import Glm53Caches, layout
 from engine.profiles.glm53.net import Glm53Net, Step
+from engine.profiles.glm53.weights import rank_loader
 from engine_decode_overhead import paired
 
 
@@ -74,6 +75,7 @@ def threaded_dispatch(fused):
 
 
 def real_indexer(checkpoint, rank_file, ref, fused):
+    loader = rank_loader(rank_file)
     F = facts.load(checkpoint)
     assert F.is_dsa(3)
     net = Glm53Net(F, Comm(4, 1), fused, layers=[3])
@@ -81,7 +83,7 @@ def real_indexer(checkpoint, rank_file, ref, fused):
     blocks, max_seqs = 160, 3
     cache_bytes = layout(F, [3]).nbytes(blocks, max_seqs)
     arena = Arena(total_bytes(specs) + 256 * (len(specs) + 10) + 2 * cache_bytes)
-    net.p = bind(specs, RankLoader(rank_file).load([s.name for s in specs], arena=arena, max_run=32 << 20))
+    net.p = bind(specs, loader.load([s.name for s in specs], arena=arena, max_run=32 << 20))
     caches = [Glm53Caches(arena, F, [3], blocks, max_seqs) for _ in range(2)]
     for cache in caches:
         cache.pool.reserve(1, F.block)             # force a nonidentity physical block mapping
@@ -150,11 +152,13 @@ def main():
     p.add_argument("--rank-file", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
+    assert importlib.util.find_spec("vllm") is None, "qualify in the standalone ST runtime"
     ref, fused = lanes.reference(), lanes.served()
-    import vllm.models.glm5next.nvidia.ops.kpool_compress as module
+    import engine.kernels.kpool as module
     report = {"scope": "fused indexer helpers and real-weight indexer checks; no whole-model quality/ITL claim",
               "torch": torch.__version__, "cuda": torch.version.cuda, "device": torch.cuda.get_device_name(),
               "served_module": module.__file__, "served_module_sha256": hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest(),
+              "vllm_installed": False,
               "protocol": {"rounds": 5, "samples_per_round": 100, "warmup": 40, "order": "alternating AB/BA"}}
     report["contracts"] = kernel_contracts(ref, fused)
     print("kernel contracts:", json.dumps(report["contracts"]), flush=True)
@@ -182,6 +186,8 @@ def main():
         item["operators"] = {key: operators(fn) for key, fn in zip(("baseline", "optimized"), fns)}
         print("kernel counts:", item["component"], item["tokens"],
               {key: value["cuda_kernel_count"] for key, value in item["operators"].items()}, flush=True)
+    assert not any(n == "vllm" or n.startswith("vllm.") for n in sys.modules)
+    report["vllm_loaded"] = False
     args.output.write_text(json.dumps(report, indent=2) + "\n")
 
 

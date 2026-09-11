@@ -13,7 +13,7 @@ because 16 divides every boundary here).
 Merges the served path does at load are done here instead, once: q|k|v|b|
 f_a|g_a into one KDA input projection, q_a|kv_a into one MLA down-projection,
 the three KDA convs into one [3HD, K] bank, gate|up into one dense/shared
-GEMM, and per-expert gate|up into `w13`. Dtype promotions likewise (A_log,
+GEMM, and per-expert up|gate into `w13` (b12x's row order). Dtype promotions likewise (A_log,
 dt_bias, mHC, indexer head-gate and k_norm to fp32: what the kernels read).
 The routed experts are written the way the served b12x lane eats them
 (flashinfer_b12x_moe.process_weights_after_loading): packed nibbles as is,
@@ -148,8 +148,8 @@ def layer_specs(F: Facts, L: int) -> "list[Spec]":
         w2_src = tuple(x + f"down_proj.{t}" for x in ex for t in ("weight_packed", "weight_scale", "weight_global_scale"))
 
         def w13_packed(s, r, W):
-            return torch.stack([torch.cat([_split(s[x + "gate_proj.weight_packed"], 0, r, W),
-                                           _split(s[x + "up_proj.weight_packed"], 0, r, W)], 0) for x in ex]).contiguous()
+            return torch.stack([torch.cat([_split(s[x + "up_proj.weight_packed"], 0, r, W),
+                                           _split(s[x + "gate_proj.weight_packed"], 0, r, W)], 0) for x in ex]).contiguous()
 
         def w2_packed(s, r, W):
             return torch.stack([_split(s[x + "down_proj.weight_packed"], 1, r, W) for x in ex]).contiguous()
@@ -162,7 +162,7 @@ def layer_specs(F: Facts, L: int) -> "list[Spec]":
             for x in ex:
                 g = fold(_split(s[x + "gate_proj.weight_scale"], 0, r, W), s[x + "gate_proj.weight_global_scale"])
                 u = fold(_split(s[x + "up_proj.weight_scale"], 0, r, W), s[x + "up_proj.weight_global_scale"])
-                rows.append(swizzle_sf(torch.cat([g, u], 0).view(torch.uint8)).view(E4))
+                rows.append(swizzle_sf(torch.cat([u, g], 0).view(torch.uint8)).view(E4))
             return torch.stack(rows).contiguous()
 
         def w2_sf(s, r, W):

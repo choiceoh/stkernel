@@ -44,9 +44,12 @@ def act_quant(x: torch.Tensor, block_size: int = 128, scale_fmt=None,
 
 
 def _fp4_encode(values: torch.Tensor) -> torch.Tensor:
-    """Nearest e2m1 index for each value, as uint8 nibbles."""
+    """Nearest e2m1 index, ties to even as in CUDA's cvt.rn.satfinite."""
     table = FP4_TABLE.to(values.device)
-    idx = (values.unsqueeze(-1) - table).abs().argmin(dim=-1)
+    # argmin picks the first equal distance. Place even mantissas first so
+    # BF16 values on FP4 midpoints (e.g. .75 or 1.75) round to 1 or 2.
+    codes = torch.tensor([0, 2, 4, 6, 8, 10, 12, 14, 1, 3, 5, 7, 9, 11, 13, 15], device=values.device)
+    idx = codes[(values.unsqueeze(-1) - table[codes]).abs().argmin(dim=-1)]
     # index 8 is a second zero; the encoder never emits it, matching convert.py
     # which only ever DECODES it.
     return idx.to(torch.uint8)
