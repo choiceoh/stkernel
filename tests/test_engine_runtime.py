@@ -118,6 +118,39 @@ class SchedulingTests(unittest.TestCase):
 
 
 class PoolTests(unittest.TestCase):
+    def test_mapping_appends_within_epoch_and_release_invalidates_reuse(self):
+        pool = BlockPool(4, 16, 2, 4)
+        pool.reserve(0, 1)
+        first = pool.row(0)[0]
+        epoch = pool.epochs[0]
+        pool.reserve_to([0], [16])
+        self.assertEqual(pool.epochs[0], epoch)
+        pool.reserve_to([0], [17])
+        self.assertEqual(pool.epochs[0], epoch)
+        self.assertEqual(pool.row(0)[0], first)
+        before = (pool_state(pool), list(pool.epochs))
+        with self.assertRaises(MemoryError):
+            pool.reserve_to([0, 1], [64, 64])
+        self.assertEqual((pool_state(pool), list(pool.epochs)), before)
+        pool.release(0)
+        self.assertGreater(pool.epochs[0], epoch)
+        epoch = pool.epochs[0]
+        pool.release(0)                        # releasing an empty row changes no mapping
+        self.assertEqual(pool.epochs[0], epoch)
+        pool.reserve(1, 16)
+        pool.reserve(0, 17)
+        self.assertEqual(pool.epochs[0], epoch)
+        self.assertNotEqual(pool.row(0)[1], first)
+
+    def test_mapping_and_epoch_views_reject_untracked_writes(self):
+        pool = BlockPool(4, 16, 2, 4)
+        pool.reserve(0, 17)
+        before = pool_state(pool)
+        for view in (pool.table, pool.row(0), pool.epochs):
+            with self.subTest(view=view.format), self.assertRaises(TypeError):
+                view[0] = 99
+        self.assertEqual(pool_state(pool), before)
+
     def test_absolute_horizons_reuse_draft_space_and_reserve_atomically(self):
         pool = BlockPool(3, 16, 2, 3)
         pool.reserve_many([0, 1], 16)
