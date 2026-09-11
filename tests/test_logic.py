@@ -10925,7 +10925,7 @@ def test_launcher_multiline_assignments_have_no_embedded_comments() -> None:
     `-e NCCL_...` lines as commands -- the boot died with "docker run requires
     at least 1 argument" AFTER clearing the compile cache. `bash -n` accepts
     it (the result is still valid syntax), so this check exists instead."""
-    for name in ("start-glm53-nvfp4-tp4.sh", "start-hy4-tp4.sh", "start-qwen38-nvfp4-tp4.sh"):
+    for name in ("start-glm53-nvfp4-tp4.sh", "start-hy4-tp4.sh", "start-qwen38-nvfp4-tep4.sh"):
         path = os.path.join(REPO, "launchers", name)
         if not os.path.exists(path):
             continue

@@ -8823,6 +8823,105 @@ W4A4 캘리브레이션 있음, 나머지 bf16)를 그대로 쥐고 NVFP4 를 1�
 
 이름: 운영자가 자체 엔진을 **ST 엔진**으로 명명(헌장 머리말, `engine/README.md`).
 
+## ★인시던트 — q38 rank 3 이 남의 방에 96 GiB 로 들어가 srv4 를 세웠다: 09-04 웻지의 세 번째 (2026-09-11 15:40~16:16 KST)
+
+운영자 "srv4 의 세션들이 왜 원격 해체됐지". 증상은 ssh 로 나타났다 — **핑은 깨끗한데 ssh 만
+안 됐다**(tailscale 10~21 ms, 내부 패브릭 0.2 ms, 손실 0%).
+
+### 진단 — 핑과 ssh 를 가르는 것은 유저스페이스다
+
+ICMP 는 커널이 softirq 에서 답한다. sshd 로그인은 fork → `~/.ssh/authorized_keys` 디스크 읽기 →
+PAM/NSS 다. 그래서 **어느 단계에서 멈추는지가 곧 진단이다**:
+
+| 단계 | 관측 | 뜻 |
+|---|---|---|
+| TCP 22 connect | OK | 커널·리스너 살아 있음 |
+| 배너(ConnectTimeout 8) | `timed out during banner exchange` | 자식이 fork 뒤 스톨 |
+| KEX(ConnectTimeout 60) | 통과 | CPU·상주 메모리는 돈다 |
+| publickey 응답 | 무한 정지 | 홈 디렉터리 읽기/PAM 경로가 회수에 갇힘 |
+
+랩탑(tailscale)과 srv1(0.2 ms 패브릭)에서 **동일하게** 막혔다 — 경로가 아니라 박스다. 네 랭크
+전부 torch master :29501 에 붙어 있었으므로(10.10.10.4 포함) 프로세스는 살아 있었다. 즉
+**이미 도는 것은 돌고, 새로 시작하는 것만 안 된다** = 메모리 압박의 교과서적 형태.
+
+### 우회로는 없었다
+
+srv4 안에서 명령을 실행시킬 경로를 전부 찔렀다: 8080 은 TCP 만 열리고 HTTP 응답 000(그 서비스도
+스톨), docker API 2375/2376·node_exporter 9100·dcgm 9400 닫힘, tailscale ssh 미활성(피어 JSON 에
+SSH 호스트키 없음), srv1 의 prometheus 는 localhost 타깃만 스크레이프. **유저스페이스가 안 도는
+박스에는 다른 문도 없다** — 밖에서 메모리를 빼주는 것이 유일한 레버였다.
+
+### 원인 — 박스 하나, 모델 서버 둘
+
+srv4 는 GPU 워커 전용이 아니다. `nemotron-vllm`, `solarflow-{engine,web-ssr,backend}`,
+`sfpoc-*`, `vaultwarden`, `deneb-{mailserver,mailarchive}`, `cloudflared-deneb` 가 상주한다.
+15:38 경 `nemotron-vllm` 이 떠 있는 상태에서 15:40 에 q38 TEP4 rank 3 이 들어왔다. GB10 은
+통합메모리라 GPU 몫이 곧 호스트 몫이다(42차: box 121.63 GiB, `mem_get_info` total == MemTotal).
+
+| | 16:15 (직전) | 16:16 (q38 워커 제거 직후) |
+|---|---:|---:|
+| MemAvailable | 9 GiB | **104 GiB** |
+| PSI memory `full avg10` | **95.41** | 0.10 |
+| load average | **217.33** | 69 (하강) |
+| ssh | 배너 정지 | 즉답 |
+
+rank 3 하나가 **96 GiB**(used 111 → 12)를 쥐고 있었다. 그래서 ① sshd 가 로그인을 못 끝내고
+② rank 3 이 진도를 못 빼 head 가 50분간 `No available shared memory broadcast block` 만 찍었다.
+
+### 산수 구멍 — 고정 KV 는 창(window) 밖에 있다
+
+부팅을 띄운 사본을 찾았다: head 의 `~/q38-stack`(브랜치 `ostcode/upgrade-glm-dsv4-flash-54ec28`,
+HEAD 043ca6d), **mtime 15:40:34 / atime 15:40:37** — 쓰여지고 3 초 뒤에 실행됐고 컨테이너 생성이
+15:40:43 이다. main 이 아니다(`~/stkernel` 은 #511 에 머물러 있고 이 런처 파일 자체가 없다).
+
+그 브랜치의 오늘 커밋이 원인을 말한다:
+
+    043ca6d launcher(qwen38): KV_CACHE_MEMORY knob -- fixed KV size instead of the utilization remainder
+
+`tp4-mem.sh gmu` 는 **TOTAL 의 분수**를 고른다(오늘 0.60). 고정 KV 는 그 분수 **밖에** 얹힌다 —
+vLLM 이 부팅 로그에서 그대로 말한다: "reserved 16.0 GiB memory for KV Cache as specified by
+`kv_cache_memory_bytes` config and skipped memory profiling. **This does not respect the
+gpu_memory_utilization config.**" 0.60 × 121.63 ≈ 73 + KV 16 + 오버헤드 ≈ **96 GiB** = 실측 해제량.
+창은 맞았고, 창이 전부가 아니었다. 그래서 새 가드는 창이 아니라 **실효 상주**를 비교한다
+(`_gmu_eff = GPU_MEM + KV_CACHE_MEMORY/TOTAL`; `KV_CACHE_MEMORY` 가 걸려 있으면 초과 시 ABORT).
+
+### 세션이 "원격 해체"된 경위 — 두 겹
+
+- **설계된 쪽**: 런처가 head 에서 각 워커로 ssh 해 컨테이너를 갈아끼운다
+  (`start-qwen38-nvfp4-tep4.sh` 의 `docker rm -f q38-worker`), 유휴 컨트롤러는 300 초 정적이면
+  스스로 복구 부팅을 한다(`fleet.sh` 머리말, `fleet_idle.py` `IDLE_SECONDS=300`). 오늘 08:15 의
+  복구 시도는 `ABORT: ... fleet/holder 없음` 으로 실패했고 glm53 서빙 로그는 08:42 에 끊겼다.
+- **사고 쪽**: 박스가 스톨하자 세션이 응답을 멈췄고, `~/.ssh/config` 의
+  `ServerAliveInterval 30 × ServerAliveCountMax 6` = **180 초**에 클라이언트가 먼저 끊는다.
+  이 리포의 원격 작업은 tmux 없이 ssh 페이로드로 도니까 그 순간 SIGHUP 이 프로세스 그룹째 간다.
+
+### 조치
+
+운영자 승인("깨버려")으로 멈춘 q38 부팅을 head 에서 해체 — `q38`(srv2), `q38-worker`(srv1·srv3·
+srv4). srv4 워커를 지우는 순간 96 GiB 가 풀리고 ssh 가 즉시 돌아왔다. 다른 테넌트는 건드리지
+않았다.
+
+### 고친 것 — 이름이 아니라 자리로 막는다
+
+**q38 레인만 `memfree-preflight.sh` 를 안 돌았다.** glm53 은 `GMU_SAFE` 로 핀된 값을 ABORT 하고
+hy4 도 같은 스크립트를 부르는데, q38 은 `GPU_MEM=auto` → `tp4-mem.sh gmu` 만 믿었다. 그런데
+gmu 는 **TOTAL 의 분수**지 "지금 그만큼 비어 있나" 가 아니다(오늘 0.60 을 골랐고, 그래도 96 GiB 였다).
+그래서 같은 가드를 이 레인에 붙였다(모델·이미지 확인 뒤 → 자기 레인의 이전 컨테이너만 회수 →
+`memfree-preflight.sh 10` → 핀된 값이면 ABORT, auto 면 실측 채택).
+
+**이름 기반 denylist 는 확장하지 않았다**(운영자 "nemotron vllm 은 막지마"). `ct_refuse_foreign_stacks`
+의 정규식을 넓히면 합법적인 동거 테넌트를 이름으로 쫓아내게 된다. 동거는 잘못이 아니다 —
+자리를 묻지 않고 부팅한 것이 잘못이다. 잴 수 있는 것으로만 막는다.
+
+### 남은 것
+
+- 가드는 main 의 런처에 들어갔고 부팅은 `~/q38-stack`(`ostcode/upgrade-glm-dsv4-flash-54ec28`)에서
+  나온다 — **그 브랜치에 닿기 전까지 효력이 없다.** 그리고 부팅이 어느 체크아웃에서 나왔는지
+  남는 기록이 없어 오늘도 파일 atime 으로 역추적했다. `[boot-stamp]` 에 소스 경로 + 리비전을
+  넣는 것이 다음 항목.
+- `nemotron-vllm` 이 16:15:27 에 **새로 떴다**(`RestartPolicy=no`, `RestartCount=0` — 재시작이
+  아니라 새 `docker run`). 이 상태에서 q38 을 다시 띄우면 같은 충돌이 재발한다. 새 가드가
+  그걸 ABORT 로 잡아야 한다 — 첫 재부팅이 이 패치의 판정이다.
 ### 45차 §4 — 서빙 커널은 메인 스레드에서만; 캐시는 프로필의 실물로 (2026-09-11)
 
 서빙 레인 판정 두 번째 실행은 랭크 0 의 mHC pre 레인(우리 tilelang 포크 → DeepGEMM `tf32_hc_prenorm_gemm`)이
