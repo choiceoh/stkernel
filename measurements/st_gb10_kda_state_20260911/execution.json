@@ -1,0 +1,32 @@
+{
+  "tune": {
+    "Status": "exited",
+    "ExitCode": 0,
+    "StartedAt": "2026-09-11T13:49:58.864970342Z",
+    "FinishedAt": "2026-09-11T13:50:04.827179237Z"
+  },
+  "adapter": {
+    "Status": "exited",
+    "ExitCode": 0,
+    "StartedAt": "2026-09-11T14:04:49.176688859Z",
+    "FinishedAt": "2026-09-11T14:04:54.270651883Z"
+  },
+  "real_block": {
+    "Status": "exited",
+    "ExitCode": 0,
+    "StartedAt": "2026-09-11T14:04:06.46339748Z",
+    "FinishedAt": "2026-09-11T14:04:23.872520115Z"
+  },
+  "legacy_profile": {
+    "Status": "exited",
+    "ExitCode": 0,
+    "StartedAt": "2026-09-11T14:04:54.397725776Z",
+    "FinishedAt": "2026-09-11T14:05:04.3772983Z"
+  },
+  "integrated_suite": {
+    "Status": "exited",
+    "ExitCode": 0,
+    "StartedAt": "2026-09-11T14:08:58.717997584Z",
+    "FinishedAt": "2026-09-11T14:09:21.202219567Z"
+  }
+}

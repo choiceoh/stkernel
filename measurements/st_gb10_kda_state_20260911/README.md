@@ -95,12 +95,19 @@ prefill 64→verify 6→4개 draft 거절 후 재검증→decode를 검사했고
 - 잘못된 배치·dtype·stride·in-place/varlen/인덱스 테이블 조합의 명시적 거절.
 - 기본 VK API는 원래 드라이버·커널과 9조건에서 출력·상태 비트가 동일함을 별도 검사.
 
+최신 main **`33f26afb` (PR #559/#560)** 을 통합한 소스에서 전체 GPU 회귀 검사
+**239개가 통과했으며 skip은 없었다** (`gpu-tests.log`). 각 프로브의 정상 종료 기록은
+`execution.json`에 있다. 통합 과정에서 KDA 커널·드라이버·레인 소스는 측정 당시와 바이트가
+같음을 확인했다. 이 파일들의 SHA256은 `perf.json`에 별도로 기록되어 있다.
+
 ## 재현
 
 테스트한 runtime은 `st-engine:9391`, image id는 `runtime-image.txt`에 있다.
 GPU는 GB10, Torch 2.13.0+cu130 / CUDA 13이다.
-baseline/source 해시는 `perf.json`, 엔진 전체는
-`engine-code-sha256.json`, 가중치와 checkpoint config는 `real.json`에 기록했다.
+baseline/source 해시는 `perf.json`, 측정 당시 엔진 전체는 `measured-engine-code-sha256.json`,
+main 통합 후 전체 suite를 실행한 엔진은 `engine-code-sha256.json`이다.
+통합한 엔진 전체 해시를 실제 mount된 소스와 대조했다.
+가중치와 checkpoint config는 `real.json`에 기록했다.
 
 ```bash
 mkdir -p /work/baseline
