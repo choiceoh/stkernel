@@ -25,12 +25,18 @@ _NAMES = {torch.uint8: "U8", torch.int8: "I8", torch.float8_e4m3fn: "F8_E4M3", t
           torch.float16: "F16", torch.float32: "F32", torch.int32: "I32", torch.int64: "I64", torch.bool: "BOOL"}
 
 
+ALIGN = 256          # every kernel-facing view must sit on a 256 B boundary (DeepGEMM's TMA refused a 12 B-off `fn`, 45th ledger)
+
+
 class RankWriter:
     def __init__(self, path: "str | Path", specs, metadata: "dict | None" = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         header, off = {}, 0
-        for s in specs:
+        # data order: every tensor whose size is a multiple of ALIGN first (they stay aligned back to back), then the
+        # few small odd ones (hc base/scale, A_log, router bias -- plain torch reads); the header maps names, order is free
+        ordered = [s for s in specs if s.nbytes() % ALIGN == 0] + [s for s in specs if s.nbytes() % ALIGN]
+        for s in ordered:
             n = s.nbytes()
             header[s.name] = {"dtype": _NAMES[s.dtype], "shape": list(s.shape), "data_offsets": [off, off + n]}
             off += n
@@ -107,10 +113,15 @@ def _selfcheck() -> None:
         for r in range(2):
             got = RankLoader(paths[r]).load(["w", "s"], device="cpu")
             assert torch.equal(got["w"], full["w"][r * 4:(r + 1) * 4]) and got["s"].item() == 0.5
+        # alignment: the 32 B `w` lands first, the 4 B scalar after it -- a 256-multiple tensor never follows an odd one
+        specs2 = [Spec("s", (), torch.float32, ("s",), lambda src, r, W: src["s"]), Spec("big", (64,), torch.float32, ("w",), lambda src, r, W: src["w"].float().reshape(-1)[:64] if src["w"].numel() >= 64 else torch.zeros(64))]
+        w = RankWriter(Path(d) / "align.safetensors", specs2)
+        assert w.offsets["big"][0] == 0 and w.offsets["s"][0] == 256, w.offsets
+        os.close(w.fd)
         from safetensors import safe_open
         with safe_open(str(paths[1]), "pt") as f:                     # the reference reader agrees
             assert torch.equal(f.get_tensor("w"), full["w"][4:8])
-    print("  preshard: streaming safetensors, two ranks, read back by RankLoader and safetensors OK")
+    print("  preshard: streaming safetensors, two ranks, read back by RankLoader and safetensors; 256 B-multiples first, odd tails last OK")
 
 
 if __name__ == "__main__":

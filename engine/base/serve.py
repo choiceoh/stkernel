@@ -34,7 +34,6 @@ class Server:
         self.next_seq = 0
         self.alive = True
         self.served = 0
-        self.turn_start = {}                      # seq -> generated tokens before this turn (the answer is the rest)
 
     # -- rank 0's door ---------------------------------------------------------------
     def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None):
@@ -102,17 +101,14 @@ class Server:
             return f"conversation {seq} is not idle (unknown, live, or evicted)"
         if r.tiered is not None and r.tiered.is_parked(seq):
             r.resume(seq)                                          # NVMe -> fresh blocks, off the step path
-        self.engine.extend(seq, ids)
-        self.engine.limits[seq] = (len(self.engine.generated(seq)) + max_new, temperature)
-        r.extend(seq, len(ids))
+        n = self.engine.extend(seq, ids, max_new=max_new, temperature=temperature)
+        r.extend(seq, n)                                           # the pending token and the new prompt, from the model's context
         return None
 
     def once(self) -> bool:
         """One iteration: broadcast arrivals, admit, one step. Returns whether a step ran."""
         arrivals = self.comm.broadcast_object(self._drain() if self.comm.rank == 0 else None)
         for seq, ids, max_new, temperature, continues in arrivals:
-            self.turn_start.setdefault(seq, 0)
-            self.turn_start[seq] = len(self.engine.generated(seq)) if continues and seq in self.engine.tokens else 0
             err = self._admit(seq, ids, max_new, temperature, continues)
             if err is not None:
                 self.served += 1
@@ -126,7 +122,7 @@ class Server:
         for seq in before - live:
             self.served += 1
             if self.comm.rank == 0 and seq in self.pending:
-                self.results[seq] = self.engine.generated(seq)[self.turn_start.get(seq, 0):]
+                self.results[seq] = self.engine.generated(seq)                   # this turn's tokens (extend resets the prompt boundary)
                 self.pending.pop(seq).set()
             if self.runner.keep_idle and self.runner.tiered is not None and seq in self.runner.idle:
                 self.runner.park(seq)                                  # idle turns leave the arena at once; the conversation keeps its KV

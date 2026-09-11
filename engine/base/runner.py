@@ -30,6 +30,7 @@ class Model(Protocol):
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> None: ...
     def decode(self, seqs, blocks, slots) -> "list[bool]": ...   # per seq: finished?
     def horizon(self, seq: int) -> int: ...                       # positions the next decode step writes up to (ctx + 1 + drafts)
+    def context(self, seq: int) -> int: ...                       # tokens computed so far (the next prefill starts here)
     def open(self, seq: int, slot: int) -> None: ...
     def close(self, seq: int) -> None: ...
 
@@ -109,10 +110,12 @@ class Runner:
         if self.tiered is not None and self.tiered.is_parked(seq):
             raise ValueError(f"seq {seq} is parked: resume it first")
         self.idle.pop(seq)
-        held = self.kv.tokens[seq]
+        held = self.model.context(seq)                             # NOT kv.tokens: reservations overshoot by the last horizon
         sched.arrive(self.state, seq, held + tokens, time.monotonic() if now is None else now)
         self.state.computed[seq] = held
-        self.kv.reserve(seq, tokens)
+        need = held + tokens - self.kv.tokens[seq]
+        if need > 0:
+            self.kv.reserve(seq, need)
 
     def step(self, now: float | None = None) -> "sched.Step | None":
         now = time.monotonic() if now is None else now
@@ -151,6 +154,7 @@ def _selfcheck() -> None:
         def open(self, seq, slot): self.left[seq] = 3; assert slot != 0
         def close(self, seq): self.left.pop(seq)
         def horizon(self, seq): return self.ctx[seq] + 1
+        def context(self, seq): return self.ctx[seq]
         def prefill(self, seq, start, tokens, blocks, slot):
             assert all(b != -1 for b in list(blocks)[: -(-(start + tokens) // 16)]), "prefill must see its blocks"
             self.calls.append(("prefill", seq, start, tokens)); self.ctx[seq] = start + tokens

@@ -92,6 +92,18 @@ def rank_main(comm, a, F, layers, lanes, ids, garbage):
 
     run("whole", [Step.prefill(ids, 0, 0, 1)])
     logits = net.head(runs["whole"]["h"][0][-1:])
+    if lanes.name.startswith("served"):                                    # the lane judge: the same composition, reference kernels
+        ref_net = Glm53Net(F, comm, lane_tables.reference(), layers); ref_net.p = net.p
+        ref_net.probe = net.probe
+        blocks.clear()
+        if caches.blocks.tokens[0]:
+            caches.release(0)
+        slot = caches.slots.take(0); caches.clear_slot(slot); caches.reserve(0, T + F.spec_k)
+        with rec.phase("whole (reference lanes)"):
+            h_ref = ref_net.forward(Step.prefill(ids, 0, 0, 1), caches)
+            torch.cuda.synchronize()
+        caches.slots.give(slot)
+        runs["whole_ref"] = {"h": [h_ref], "blocks": {k: list(v) for k, v in blocks.items()}}
     run("chunked", [Step.prefill(ids[: a.chunk], 0, 0, 1), Step.prefill(ids[a.chunk:], a.chunk, 0, 1)])
     run("verify", [Step.prefill(ids[: T - K1], 0, 0, 1), Step.decode([(ids[T - K1:], T - K1, 0, 1)])])
     c0 = T - 2 * K1                                                        # prefill to c0, verify 2 true + 4 garbage, accept 2, verify the truth
@@ -166,6 +178,18 @@ def main(argv=None) -> int:
                 rows.append(f"    {run_name:<9} step {i}  L{L:<3}{name:<6} p50 {p50:.1e} max {mx:.1e}  (floor p50 {f50:.1e} max {fmx:.1e}){'' if passed else '  <-- FAIL'}")
     print("  per block vs the whole prefill (per-token rel; floor = first chunk, no cache read):")
     print("\n".join(rows))
+    if "whole_ref" in r0["runs"]:
+        # served kernels vs reference kernels on the SAME composition and inputs: the lane adapters' judge (D4 at lane level)
+        print("  served lanes vs reference lanes, per block (per-token rel):")
+        for (name, L), outs_b in whole["blocks"].items():
+            r = tok_rel(outs_b[0], r0["runs"]["whole_ref"]["blocks"][(name, L)][0])
+            p50, mx = r.median().item(), r.max().item()
+            judged = name in ("kda", "dsa")
+            passed = p50 <= 3e-2 if judged else True
+            ok = ok and passed
+            print(f"    L{L:<3}{name:<6} p50 {p50:.1e} max {mx:.1e}{'' if passed else '  <-- FAIL'}")
+        r = tok_rel(h_whole, r0["runs"]["whole_ref"]["h"][0])
+        print(f"    final hidden p50 {r.median().item():.1e} max {r.max().item():.1e} (MoE router flips included)")
     print("\n  " + ("PASS: four ranks agree; chunked, verify and rollback steps read the caches and add nothing" if ok else "FAIL"))
     return 0 if ok else 1
 

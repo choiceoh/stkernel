@@ -9038,3 +9038,26 @@ fc2_input_scale=1, input_global_scale=None, "swigluoai_uninterleave" α1 β0 lim
 서브 루프: `POST {conversation: id, ids|prompt, max_tokens}` 로 파킹된 대화를 이어간다(루프가 resume + extend; idle 턴은 티어가
 있으면 **즉시 파킹** — 아레나는 늘 살아 있는 일만 쥔다). 부팅에 D11 `Config`(사실 7개, 노브 0: `STK_*` 미선언 env 는 부팅 사망).
 같은 시각 이미지 안 서빙 레인 판정은 세 GPU 작업 동시 실행으로 컨텍스트 생성에서 OOM — 순차로 다시 돈다(§11).
+
+### 45차 §11 — 정렬: 서빙 mHC 레인의 CUDA_ERROR_INVALID_VALUE 는 스레드가 아니라 12 바이트였다 (2026-09-11 밤)
+
+메인 스레드로 옮겨도(`on_main`) 이미지 안 판정이 같은 자리에서 죽었다 — 그런데 **층 0 의 attn 믹스는 지나가고 ffn 믹스에서**.
+랭크 파일은 spec 순서대로 텐서를 붙여 쓰는데 `hc.attn_base`(96 B) + `hc.attn_scale`(12 B) 뒤의 `hc.ffn_fn` 이 16 B 경계에서
+12 B 어긋난다; DeepGEMM 의 TMA 디스크립터가 그 주소를 거부한다(`runtime_utils.hpp:145` invalid argument). 격리 프로브는
+256 B·3840 B 오프셋(둘 다 16 정렬)만 시험해 "워커 스레드"를 원인으로 잘못 잡았었다 — 워커 스레드 실패도 진짜였으나
+(DeepGEMM JIT 스레드 가정), 그것만이 아니었다. 조치: `base/preshard.RankWriter` 가 **크기가 256 의 배수인 텐서를 먼저, 홀수
+꼬리(hc base/scale·A_log·라우터 bias — 평범한 torch 읽기)를 맨 뒤에** 쓴다 → 커널이 보는 뷰는 전부 256 B 정렬. 랭크 파일 세
+번째 재절단(v3), fan-out 은 `--whole-file`(재절단 파일에 델타 전송은 손해). 결과는 §12.
+
+HTTP 두 번째 턴(파킹된 대화 이어가기) 첫 시도는 **0 토큰**: `runner.extend` 가 `kv.tokens`(예약 = 마지막 horizon 만큼 초과)를
+컨텍스트로 써서 프리필 시작 위치가 틀렸고, 서브 루프가 턴 시작점을 잘못 빼서 답이 비었다. 조치: 프로토콜에 `model.context(seq)`,
+`adapter.extend` 가 "대기 중인 마지막 토큰 + 새 프롬프트" 수를 돌려주고 turn 경계는 prompt_len 이동으로만 표현. 재실행은 §12.
+
+### 45차 §12 — 정렬 뒤: 서빙 mHC·KDA 레인 통과, 파킹된 대화 HTTP 로 이어짐 (2026-09-11 밤)
+
+- 정렬 랭크 파일(v3)로 이미지 안 판정: 층 0~2(mHC pre/post·서빙 KDA chunk·conv)를 **지나** 층 3 의 MLA 레인에서 "megakernel MLA
+  lane did not arm" — 원인은 env: `VLLM_GLM53_MK_MLA=1` 만 주고 마스터 `VLLM_GLM53_MEGAKERNEL=1` 을 안 줬다(모듈 기본 0). 판정
+  러너와 플릿 런처 둘 다에 마스터 플래그 추가, 재실행.
+- `boot.py --local --serve --park --drafter`: 첫 턴 둘(6 토큰씩) → 대화 0 은 즉시 파킹 → `POST {conversation: 0, ids: 5개, max_tokens: 4}`
+  → 루프가 resume + extend(대기 중이던 마지막 토큰 + 새 5 토큰을 프리필) → **4 토큰, 7.05 s**(참조 레인, 5층). 네 랭크 락스텝,
+  16 스텝, 3건 응답. **PASS**.

@@ -11,5 +11,5 @@ for r in "${@:-0 1 2}"; do
   jump=""; [ "$ip" = 10.10.10.3 ] && jump="-J srv2"
   echo "== $f -> $ip"
   ssh -o BatchMode=yes $jump "choiceoh@$ip" "mkdir -p $SRC"
-  rsync -a --partial --inplace -e "ssh -o BatchMode=yes $jump" "$SRC/$f" "choiceoh@$ip:$SRC/$f"
+  rsync -a --partial --inplace --whole-file -e "ssh -o BatchMode=yes $jump" "$SRC/$f" "choiceoh@$ip:$SRC/$f"
 done
