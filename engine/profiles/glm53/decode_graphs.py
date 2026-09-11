@@ -132,26 +132,59 @@ class GraphCaches:
         return Glm53Caches.pool_slots(self, layer, seq, pool_ids)
 
 
+def capacity_ladder(pool_tokens: int, max_position: int, ceiling: "int | None") -> "list[int]":
+    """The context-capacity buckets to capture, smallest first.
+
+    A decode step runs the first bucket that covers its longest sequence, so the
+    ladder must reach the longest context the door will admit -- and no further:
+    every bucket above it is a graph captured for a request that cannot arrive.
+    `ceiling` is that served number (adapter.max_context); None means the
+    checkpoint's trained positions. The KV pool bounds both: a sequence cannot
+    hold more tokens than the pool has.
+    """
+    served = max_position if ceiling is None else int(ceiling)
+    if served <= 0 or pool_tokens <= 0 or max_position <= 0:
+        raise ValueError("served ceiling, pool capacity and trained positions must be positive")
+    total = min(pool_tokens, served, max_position)
+    ladder = [min(4096, total)]
+    while ladder[-1] < total:
+        ladder.append(min(total, ladder[-1] * 2))
+    return ladder
+
+
 class Glm53DecodeGraphs:
-    def __init__(self, net, caches, max_seqs, tokens, aux_layers=(), memory=None):
+    def __init__(self, net, caches, max_seqs, tokens, aux_layers=(), memory=None, ceiling=None):
         if any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("capture requires no live state slots")
         if tokens not in (1, net.F.spec_k + 1):
             raise ValueError("decode capture needs the declared target or verify width")
+        if not getattr(net.comm, "graph_capture_safe", True):
+            # base/comm.LocalTP crosses ranks through a host barrier: it leaves no node in
+            # the graph and its peer reads would race on replay. Die, never capture (D3).
+            raise ValueError(f"{type(net.comm).__name__} collectives cannot be captured: "
+                             "its ranks meet on a host barrier, which no replay performs")
         self.net, self.caches, self.tokens = net, caches, tokens
         self.memory = memory
         self.aux_layers = tuple(aux_layers)
-        # the ladder ends at the model's context ceiling: positions past it are never served (facts.max_position)
-        total = min(caches.block_table.shape[1] * net.F.block, net.F.max_position)
-        self.capacities = [min(4096, total)]
-        while self.capacities[-1] < total:
-            self.capacities.append(min(total, self.capacities[-1] * 2))
+        # The ladder ends where the door stops admitting. `ceiling` is that one served
+        # number (adapter.max_context, which serve.py refuses past); unset means the
+        # model's trained positions. Capping it is the only lever on the graph count:
+        # a bucket is captured whether or not any request will reach it, and each costs
+        # a warmup pair plus a capture (their seconds are memory rows, "target/<shape>/").
+        self.capacities = capacity_ladder(caches.block_table.shape[1] * net.F.block,
+                                         net.F.max_position, ceiling)
 
         # The rank-local logits go into a buffer this class owns, one per (n, tokens), instead of
         # into an allocation each capture makes for itself. The sampler depends on the logits shape
         # alone, so sharing the buffer across a row's capacity buckets is what lets one sampler graph
         # serve all of them: 72 sampling graphs become 8 (boot-time study, 2026-09-11).
         self.logits = {}
+        # Replay writes four small arrays per step. Staged through ONE pinned block so
+        # each is an async copy on the caller's stream instead of a fresh CPU tensor and
+        # a pageable (implicitly synchronizing) transfer. Safe to overwrite between
+        # steps: the sampler's readback synchronizes the stream before the next fill.
+        self.staging = torch.empty(3, max_seqs, dtype=torch.int64, pin_memory=True)
+        self.staged = self.staging.numpy()          # write through numpy: no per-element torch dispatch
 
         def logits_for(n, t):
             key = (n, t)
@@ -196,16 +229,22 @@ class Glm53DecodeGraphs:
                 return len(step.segments), self.tokens, capacity
         raise ValueError("decode context exceeds the captured cache capacity")
 
-    def run(self, step):
-        shape = self.shape(step)
+    def run(self, step, shape=None):
+        """`shape` is this step's, when the caller already asked for it (the sampler needs it too)."""
+        shape = self.shape(step) if shape is None else shape
         self.caches.prepare(step)
+        segments = step.segments
+        staged = self.staged
+        for i, s in enumerate(segments):
+            staged[0, i], staged[1, i], staged[2, i] = s.ctx, s.seq, s.slot
 
         def fill(inputs):
             target, seqs, slots, _, _ = inputs
-            target.ids.copy_(step.ids)
-            target.contexts.copy_(torch.tensor([s.ctx for s in step.segments], dtype=torch.int64))
-            seqs.copy_(torch.tensor([s.seq for s in step.segments], dtype=torch.int64))
-            slots.copy_(torch.tensor([s.slot for s in step.segments], dtype=torch.int64))
+            target.ids.copy_(step.ids, non_blocking=True)
+            n = len(segments)
+            target.contexts.copy_(self.staging[0, :n], non_blocking=True)
+            seqs.copy_(self.staging[1, :n], non_blocking=True)
+            slots.copy_(self.staging[2, :n], non_blocking=True)
 
         return self.graphs.run(shape, fill)
 
@@ -298,6 +337,9 @@ class SamplingGraphs:
             elif target.graphs.outputs[first[key]][2] is not logits:
                 raise ValueError(f"target shapes {first[key]} and {shape} must share one logits buffer")
         shapes = list(first)
+        # Same pinned staging as the target's replay path, for the one array this one writes.
+        self.temps = torch.empty(max(n * t for n, t in shapes), dtype=torch.float32, pin_memory=True)
+        self.staged = self.temps.numpy()
         saved = generator.get_state()
 
         def make_inputs(*shape):
@@ -336,7 +378,9 @@ class SamplingGraphs:
         shape = tuple(shape[:2])
         if all(t <= 0 for t in temperatures):
             return self.greedy.run(shape, lambda inputs: None)
-        return self.stochastic.run(shape, lambda inputs: inputs[1].copy_(torch.tensor(temperatures)))
+        rows = len(temperatures)
+        self.staged[:rows] = temperatures
+        return self.stochastic.run(shape, lambda inputs: inputs[1].copy_(self.temps[:rows], non_blocking=True))
 
     def close(self):
         self.greedy.close()

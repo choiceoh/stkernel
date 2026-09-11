@@ -111,6 +111,11 @@ def declared(a, comm_world: int) -> Config:
         Knob("mla_prefill", "stock", _dt.date(2026, 9, 30),
              "large-M MLA prefill candidates (39차: pair, pair4, tile32; production keeps them off pending numerics + a TTFT bracket)",
              "STK_mla_prefill=stock"),
+        Knob("context_ceiling", 0, _dt.date(2026, 9, 30),
+             "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. "
+             "0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's "
+             "'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken",
+             "STK_context_ceiling=0", int),
     ]
     cfg = Config(facts_, knobs=knobs)
     return cfg
@@ -123,6 +128,7 @@ def decodable_vocab(tok) -> int:
 
 def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
+          context_ceiling: "int | None" = None,
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
@@ -195,7 +201,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
         aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
         engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
-                             decodable=decodable, aux_layers=aux)
+                             decodable=decodable, aux_layers=aux, context_ceiling=context_ceiling)
         contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                                   max_wait_s=MAX_WAIT_S, max_running=max_seqs)
         engine.memory = memory
@@ -428,7 +434,8 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])   # every served lane, or the boot dies (D3)
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
-                                               ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
+                                               ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
+                                               context_ceiling=cfg["context_ceiling"] or None)
         with rec.phase("capture decode"):
             engine.capture_decode(MAX_SEQS)
         if engine.memory is None or not engine.memory.ready:

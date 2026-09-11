@@ -15,6 +15,17 @@ Shapes are declared up front from the contract (max_running x draft slots),
 so the set of graphs is finite and captured at boot -- a shape that arrives
 without a graph is a scheduler bug and raises (D3), it does not fall back to
 eager.
+
+TWO RULES BIND EVERY CALLER.
+
+`run()` returns this graph's own output tensors, which live in `pool` and are
+overwritten by the next replay of any graph sharing that pool. So (1) consume a
+result before replaying the same graph again, and (2) when one graph's output is
+still being read while ANOTHER graph replays -- GLM's decode loop reads the target
+step's auxiliary hidden states across segments while the drafter's observation
+graph replays between them -- the two must not share a pool. Each instance of this
+class takes a fresh pool, so distinct instances are safe; `pool` is exposed so a
+caller that depends on the separation can assert it instead of assuming it.
 """
 from __future__ import annotations
 
@@ -27,7 +38,9 @@ class DecodeGraphs:
         """step_fn(inputs) runs one decode step over static `inputs`;
         make_inputs(num_seqs, tokens_per_seq) allocates them once per shape."""
         self.graphs, self.inputs, self.outputs = {}, {}, {}
-        pool = torch.cuda.graph_pool_handle()          # one memory pool for every graph
+        # One memory pool for every graph of THIS instance, and a different pool from
+        # every other instance's: see the module docstring's second rule.
+        self.pool = pool = torch.cuda.graph_pool_handle()
         side = torch.cuda.Stream()
         try:
             for shape in shapes:
@@ -44,9 +57,15 @@ class DecodeGraphs:
                 g = torch.cuda.CUDAGraph()
                 for generator in generators:
                     g.register_generator_state(generator)
-                self.graphs[shape] = g
-                with torch.cuda.graph(g, pool=pool):
-                    out = step_fn(inp)
+                # Published only once the capture has completed: a graph whose capture
+                # raised is reset here, by the one reference that exists, and never
+                # reaches close() -- which would be resetting an uncaptured graph.
+                try:
+                    with torch.cuda.graph(g, pool=pool):
+                        out = step_fn(inp)
+                except BaseException:
+                    g.reset()
+                    raise
                 self.graphs[shape], self.inputs[shape], self.outputs[shape] = g, inp, out
                 if memory is not None:
                     memory.checkpoint(f"{label}/{shape}/captured")

@@ -83,6 +83,11 @@ class Comm:
         dist.init_process_group("nccl", world_size=world, rank=rank, timeout=timedelta(seconds=timeout_s))
         return cls(world, rank, dist.group.WORLD)
 
+    # A collective of this class is device work on the caller's stream (NCCL), or at
+    # world 1 no work at all, so a CUDA graph may capture it. LocalTP's cannot --
+    # see its own flag. Capture sites must read this before they begin.
+    graph_capture_safe = True
+
     def all_reduce(self, t):
         if self.world_size == 1:
             return t
@@ -155,6 +160,13 @@ class _LocalRun:
 
 
 class LocalTP:
+    # NOT capturable. Every collective below crosses ranks through a host
+    # threading.Barrier and a Python slot assignment: under capture the barrier runs
+    # once, at capture time, and leaves no node in the graph, while the peer tensors
+    # are read at whatever addresses they held then. A replay would race with no
+    # ordering at all. Graph capture must refuse this comm (D3: die, never fall back).
+    graph_capture_safe = False
+
     """TP=`world` inside one process: rank r runs on thread r, and every
     collective meets at a barrier. Sums are taken in fp32 in rank order by
     every rank alike, so the four copies of a reduced tensor are identical --
