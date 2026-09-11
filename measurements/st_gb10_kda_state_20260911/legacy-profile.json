@@ -1,0 +1,85 @@
+{
+  "legacy": [
+    {
+      "tokens": 1,
+      "case": 0,
+      "legacy_output_and_state_bits_exact": true
+    },
+    {
+      "tokens": 1,
+      "case": 1,
+      "legacy_output_and_state_bits_exact": true
+    },
+    {
+      "tokens": 1,
+      "case": 2,
+      "legacy_output_and_state_bits_exact": true
+    },
+    {
+      "tokens": 6,
+      "case": 0,
+      "legacy_output_and_state_bits_exact": true
+    },
+    {
+      "tokens": 6,
+      "case": 1,
+      "legacy_output_and_state_bits_exact": true
+    },
+    {
+      "tokens": 6,
+      "case": 2,
+      "legacy_output_and_state_bits_exact": true
+    },
+    {
+      "tokens": 12,
+      "case": 0,
+      "legacy_output_and_state_bits_exact": true
+    },
+    {
+      "tokens": 12,
+      "case": 1,
+      "legacy_output_and_state_bits_exact": true
+    },
+    {
+      "tokens": 12,
+      "case": 2,
+      "legacy_output_and_state_bits_exact": true
+    }
+  ],
+  "six_token_seeded_dense_adapter": {
+    "old": {
+      "peak_increment_bytes": 13656064,
+      "aten_ops": {
+        "aten::transpose": 2,
+        "aten::as_strided": 2,
+        "aten::contiguous": 2,
+        "aten::clone": 2,
+        "aten::empty_like": 3,
+        "aten::empty": 3,
+        "aten::copy_": 2,
+        "aten::reshape": 2,
+        "aten::view": 2,
+        "aten::empty_strided": 1,
+        "aten::new_empty": 1
+      },
+      "cuda_events": {
+        "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1})": 2,
+        "fused_recurrent_gated_delta_rule_fwd_kernel": 1
+      }
+    },
+    "new": {
+      "peak_increment_bytes": 6316032,
+      "aten_ops": {
+        "aten::reshape": 2,
+        "aten::view": 2,
+        "aten::empty_like": 1,
+        "aten::empty_strided": 1,
+        "aten::new_empty": 1,
+        "aten::empty": 1
+      },
+      "cuda_events": {
+        "fused_recurrent_gated_delta_rule_fwd_kernel": 1
+      }
+    }
+  }
+}
