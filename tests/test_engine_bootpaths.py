@@ -53,5 +53,26 @@ class BootPathTests(unittest.TestCase):
             draft_load.assert_called_once_with(Path("/alternate/draft"))
 
 
+class LauncherTests(unittest.TestCase):
+    """The fleet launcher's shape: the nodes prepare in parallel and fail together."""
+
+    def setUp(self):
+        self.text = (Path(__file__).resolve().parents[1] / "launchers/start-st-glm53.sh").read_text()
+
+    def test_nodes_start_in_parallel_and_report_in_rank_order(self):
+        self.assertIn('start_rank "$r" >"$stage/rank$r.log" 2>&1 &', self.text)
+        self.assertIn('pids[$r]=$!', self.text)
+        self.assertIn('wait "${pids[$r]}"', self.text)
+        # the buffered output is printed in the loop that waits, so rank order survives
+        self.assertLess(self.text.index('pids[$r]=$!'), self.text.index('cat "$stage/rank$r.log"'))
+
+    def test_a_node_that_fails_stops_the_rest(self):
+        self.assertIn('failed="$failed $r"', self.text)
+        self.assertIn('bash "$0" stop', self.text)
+        # a failing step inside a node returns, it does not exit the whole script mid-fleet
+        self.assertNotIn("exit 1; }", self.text.split("start_rank() {")[1].split("\npids=()")[0])
+        self.assertIn("return 1; }", self.text)
+
+
 if __name__ == "__main__":
     unittest.main()

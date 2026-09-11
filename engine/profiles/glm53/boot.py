@@ -414,13 +414,18 @@ def fleet(a) -> int:
     """One rank per node, inside the glm53 image: served lanes (D3: all or nothing), every layer, then serve."""
     print(f"  box: {facts.check_box()}")
     cfg = declared(a, facts.TP)
-    comm = Comm.init()
+    # The rendezvous and the kernel imports are boot time too: 15.6 s of a measured 90.2 s boot sat
+    # outside this table (boot-time study, 2026-09-11), so the recorder opens before them.
+    rec = Recorder("boot")
+    with rec.phase("comm"):
+        comm = Comm.init()
+    rec.root.name = f"rank{comm.rank}"
     engine = dump = None
     try:
         if comm.rank == 0:
             print(cfg.table())
-        lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])   # every served lane, or the boot dies (D3)
-        rec = Recorder(f"rank{comm.rank}")
+        with rec.phase("lanes"):
+            lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])   # every served lane, or the boot dies (D3)
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
@@ -436,9 +441,11 @@ def fleet(a) -> int:
             if runner.tiered is not None:
                 t = runner.tiered.tier
                 print(f"  NVMe tier: {sum(1 for k in t.index if t.has(int(k)))} conversations parked from before, {len(t.stale())} under another layout (kept, not resumable)")
-        tok = tokenizer(a.ckpt_meta)
+        with rec.phase("door"):
+            tok = tokenizer(a.ckpt_meta)
+            renderer = chat_renderer(a.ckpt_meta) if comm.rank == 0 else None
         from engine.profiles.glm53.tools import parse_tool_calls
-        Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
+        Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                tool_parser=parse_tool_calls).loop()
     finally:
