@@ -8522,3 +8522,12 @@ QSA 는 모듈이 생기면 재측정(빚으로 기록). 4K 청크 액티베이�
 동시 32 에 155,811, 동시 128 에 37,294. `shapes.py`: **청크 정렬 4**(QSA 압축 그룹), conv 히스토리 3 ·
 n-gram 히스토리 2 는 슬롯/컨텍스트로 이월, NVFP4 group 16, 잔차 폭 hc 4. `caches.py`: 시퀀스당 27.5 MiB
 + 토큰당 12.75 KiB, B=1 S=128K 총 1.62 GiB.
+
+### `modules/moe.py` — NVFP4(W4A4, group 16) 오라클, 실제 전문가 텐서로 검증
+
+Qwen3.8 의 유일한 NVFP4 텐서 = routed experts. 투영당 넷: `weight U8 [out, in/2]`(바이트당 e2m1 둘,
+짝수=하위 니블 — DSv4.1 fp4 와 같은 순서) · `weight_scale E4M3 [out, in/16]` · `weight_scale_2 F32` ·
+`input_scale F32`. DSv4.1 의 [32,32] 블록과 달리 **행 × 16그룹** 스케일 — b12x 디스패치가 맞춰야 하는
+바로 그 모양 차이(IMA 가 사는 곳). 층 0 전문가 0 gate_proj 역양자화: (640, 2560) finite, std 0.0135,
+|max| 0.18, scale_2 2.08e-4, input_scale 1.97e-3; e2m1 표 여덟 값 전부 사용. 활성 왕복 중앙 상대오차
+0.101(가수 1비트라 거친 게 정상), W4A4 GEMM finite.
