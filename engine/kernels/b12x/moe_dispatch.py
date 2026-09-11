@@ -4946,6 +4946,17 @@ _Sm120Workspace = Union[
 _WORKSPACE_CACHE: Dict[Tuple, _Sm120Workspace] = {}
 
 
+def cached_workspace_owners() -> tuple:
+    """Snapshot the allocation owners used by a warmed/captured workload.
+
+    Functional calls grow this cache, replacing smaller workspaces. A CUDA
+    graph caller must retain this snapshot after each capture until its graphs
+    are reset: CUDA holds raw pointers, including the grid barrier counters.
+    The eager cache can then grow without invalidating an earlier graph.
+    """
+    return tuple(_WORKSPACE_CACHE.values())
+
+
 def clear_sm120_moe_caches() -> None:
     """Release every module-level SM12x MoE cache.
 

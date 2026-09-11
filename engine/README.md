@@ -144,6 +144,12 @@ DFlash2를 연결하며, 드래프터 문맥 링도 같은 아레나의 상태 �
 구성요소 전후 측정과 회귀검사는
 [`measurements/st_engine_decode_20260911`](../measurements/st_engine_decode_20260911/README.md)에 있다.
 
+캡처 그래프는 커널 작업 버퍼의 **소유자도 보관**한다. MoE의 eager 캐시는 더 큰 배치나
+프리필을 만날 때 버퍼를 교체하므로, 작은 배치 그래프가 참조하는 이전 버퍼를 그 캐시에만
+맡길 수 없다. `DecodeGraphs(resources=...)`는 매 캡처 직후 소유자를 보관하고 모든 그래프를
+reset한 뒤 반납한다. 전체 모델의 첫 디코드 정지 재현과 수정 검증은
+[`engine_decode_replay_20260912`](../measurements/engine_decode_replay_20260912/README.md)에 있다.
+
 HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 64개의 미완료·미수거 요청까지
 보관하고, 빈 행과 각 요청의 최대 생성 길이를 담을 블록 예산이 있을 때 FIFO 순서로 입장시킨다.
 완료 결과를 복사한 뒤 일반 요청의 버퍼와 행을 반납한다. `keep_idle` 모드에서는 대화 ID와

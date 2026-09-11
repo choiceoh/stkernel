@@ -215,7 +215,8 @@ class Glm53DecodeGraphs:
         try:
             self.graphs = DecodeGraphs(forward, make_inputs,
                                        [(n, tokens, capacity) for capacity in self.capacities
-                                        for n in range(1, max_seqs + 1)], memory=memory, label="target")
+                                        for n in range(1, max_seqs + 1)], memory=memory, label="target",
+                                       resources=net.lanes.graph_resources)
         finally:
             # Warmup and capture execute real writes, before requests exist.
             caches.reset()

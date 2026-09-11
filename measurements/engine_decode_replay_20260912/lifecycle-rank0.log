@@ -1,0 +1,46 @@
+{"rank": 0, "stage": "target capture begin"}
+[W911 19:36:49.594764100 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+{"rank": 0, "stage": "target captured"}
+{"rank": 0, "stage": "draft captured"}
+{"rank": 0, "stage": "samplers captured"}
+{"rank": 0, "stage": "step 0 eager"}
+{"rank": 0, "stage": "step 0 draft"}
+{"rank": 0, "stage": "step 0 target"}
+{"rank": 0, "stage": "step 0 sampler"}
+{"rank": 0, "stage": "step 0 done"}
+{"rank": 0, "stage": "step 1 eager"}
+{"rank": 0, "stage": "step 1 draft"}
+{"rank": 0, "stage": "step 1 target"}
+{"rank": 0, "stage": "step 1 sampler"}
+{"rank": 0, "stage": "step 1 done"}
+{"rank": 0, "stage": "step 2 eager"}
+{"rank": 0, "stage": "step 2 draft"}
+{"rank": 0, "stage": "step 2 target"}
+{"rank": 0, "stage": "step 2 sampler"}
+{"rank": 0, "stage": "step 2 done"}
+{"rank": 0, "stage": "step 3 eager"}
+{"rank": 0, "stage": "step 3 draft"}
+{"rank": 0, "stage": "step 3 target"}
+{"rank": 0, "stage": "step 3 sampler"}
+{"rank": 0, "stage": "step 3 done"}
+{"rank": 0, "stage": "step 4 eager"}
+{"rank": 0, "stage": "step 4 draft"}
+{"rank": 0, "stage": "step 4 target"}
+{"rank": 0, "stage": "step 4 sampler"}
+{"rank": 0, "stage": "step 4 done"}
+{"rank": 0, "stage": "step 5 eager"}
+{"rank": 0, "stage": "step 5 draft"}
+{"rank": 0, "stage": "step 5 target"}
+{"rank": 0, "stage": "step 5 sampler"}
+{"rank": 0, "stage": "step 5 done"}
+{"rank": 0, "stage": "step 6 eager"}
+{"rank": 0, "stage": "step 6 draft"}
+{"rank": 0, "stage": "step 6 target"}
+{"rank": 0, "stage": "step 6 sampler"}
+{"rank": 0, "stage": "step 6 done"}
+{"rank": 0, "stage": "step 7 eager"}
+{"rank": 0, "stage": "step 7 draft"}
+{"rank": 0, "stage": "step 7 target"}
+{"rank": 0, "stage": "step 7 sampler"}
+{"rank": 0, "stage": "step 7 done"}
+{"rank": 0, "stage": "PASS"}

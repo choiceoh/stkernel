@@ -1,0 +1,18 @@
+Fri Sep 11 19:49:51 UTC 2026
+96 %
+Fri Sep 11 19:49:51 UTC 2026
+96 %
+Fri Sep 11 19:49:51 UTC 2026
+96 %
+Fri Sep 11 19:49:52 UTC 2026
+96 %
+Process 2462889: python3 -u /repo/probes/engine_decode_replay_check.py --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full --metadata /metadata --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2 --full --trace --kv-gib 2
+Python v3.12.3 (/usr/bin/python3.12)
+
+Thread 1 (active): "MainThread"
+    synchronize (torch/cuda/__init__.py:1219)
+    call (engine_decode_replay_check.py:47)
+    decode (engine/profiles/glm53/adapter.py:325)
+    step (engine/base/runner.py:359)
+    main (engine_decode_replay_check.py:98)
+    <module> (engine_decode_replay_check.py:119)

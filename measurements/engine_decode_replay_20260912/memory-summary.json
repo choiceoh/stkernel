@@ -1,0 +1,42 @@
+[
+  {
+    "rank": 0,
+    "ready": true,
+    "all_phases_passed": true,
+    "phases": 159,
+    "target_graphs": 36,
+    "allocated_gib": 56.741,
+    "peak_reserved_gib": 61.578,
+    "workspace_peak_gib": 5.575
+  },
+  {
+    "rank": 1,
+    "ready": true,
+    "all_phases_passed": true,
+    "phases": 159,
+    "target_graphs": 36,
+    "allocated_gib": 56.741,
+    "peak_reserved_gib": 61.578,
+    "workspace_peak_gib": 5.575
+  },
+  {
+    "rank": 2,
+    "ready": true,
+    "all_phases_passed": true,
+    "phases": 159,
+    "target_graphs": 36,
+    "allocated_gib": 56.741,
+    "peak_reserved_gib": 61.578,
+    "workspace_peak_gib": 5.575
+  },
+  {
+    "rank": 3,
+    "ready": true,
+    "all_phases_passed": true,
+    "phases": 159,
+    "target_graphs": 36,
+    "allocated_gib": 56.741,
+    "peak_reserved_gib": 61.578,
+    "workspace_peak_gib": 5.575
+  }
+]

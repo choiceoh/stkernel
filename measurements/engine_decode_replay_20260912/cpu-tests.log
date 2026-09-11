@@ -1,0 +1,12 @@
+..........sssssss.............ssssssssssssssssssssssssssssss...................ssss..ssss.ssssssssss.............s.ss...ssss....s..........ssss........................................s......sss......................................sss.......................s..ss...
+----------------------------------------------------------------------
+Ran 265 tests in 8.980s
+
+OK (skipped=77)
+  box: test
+<MagicMock name='declared().table()' id='140511608039152'>
+  box: test
+<MagicMock name='declared().table()' id='140511608546144'>
+  box: test
+<MagicMock name='declared().table()' id='140511610076096'>
+  expert_layout: tile-major bytes read back row-major per expert OK
