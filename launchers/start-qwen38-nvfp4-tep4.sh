@@ -180,7 +180,10 @@ mkdir -p "$LOGDIR" "$CACHE_DIR"
 # happened to notice (the first TEP=4 request's IMA surfaced in the QSA Triton
 # loader). Diagnostic only -- it serializes the whole step.
 _LB=""; [ "${LAUNCH_BLOCKING:-0}" = 1 ] && _LB="-e CUDA_LAUNCH_BLOCKING=1"
-ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH=sm_121a $_LB $_FST \
+# PROFILER_DIR=<host dir>: arm vLLM's torch profiler (bench/profile-step.py drives
+# /start_profile -> /stop_profile and reads the rank traces from this dir).
+_PROF=""; if [ -n "${PROFILER_DIR:-}" ]; then mkdir -p "$PROFILER_DIR"; _PROF="-e VLLM_TORCH_PROFILER_DIR=/prof -v $PROFILER_DIR:/prof"; fi
+ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH=sm_121a $_LB $_FST $_PROF \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
 -e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=enp1s0f0np0 -e TP_SOCKET_IFNAME=enp1s0f0np0 \
 -e MN_IF_NAME=enp1s0f0np0 -e NCCL_CROSS_NIC=1 -e NCCL_PROTO=LL,LL128,Simple -e NCCL_CUMEM_ENABLE=0 \
