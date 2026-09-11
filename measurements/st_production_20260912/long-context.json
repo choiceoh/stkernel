@@ -1,0 +1,31 @@
+{
+  "base": "http://10.10.10.2:8000",
+  "input_chars": 720134,
+  "started": 1789163380.4983504,
+  "passed": true,
+  "seconds": 60.67741537999973,
+  "response": {
+    "id": "chatcmpl-31",
+    "created": 1789163381,
+    "model": "glm-5.3-flash",
+    "object": "chat.completion",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "7349"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 132041,
+      "completion_tokens": 4,
+      "total_tokens": 132045,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    }
+  }
+}

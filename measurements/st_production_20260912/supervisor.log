@@ -1,0 +1,9 @@
+2026-09-12 06:42:18 === st-glm53 supervisor start ===
+2026-09-12 06:42:20 launching the ST fleet
+2026-09-12 06:44:49 door up after 135s
+2026-09-12 06:44:49 launch attempt 1/5 done; none before 60s unless it goes healthy
+2026-09-12 06:45:24 healthy again -- clearing 1 launch attempt(s)
+2026-09-12 06:47:35 === st-glm53 supervisor start ===
+2026-09-12 06:47:40 existing ST fleet healthy -- adopting
+2026-09-12 06:52:08 === st-glm53 supervisor start ===
+2026-09-12 06:52:09 existing ST fleet healthy -- adopting

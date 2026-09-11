@@ -1,0 +1,46 @@
+{
+  "base": "https://sensation-glider-unknotted.ngrok-free.dev",
+  "model": "glm-5.3-flash",
+  "started": 1789163250.3985455,
+  "cases": [
+    {
+      "name": "korean",
+      "id": "chatcmpl-24",
+      "model": "glm-5.3-flash",
+      "seconds": 0.602,
+      "content": "서울",
+      "reasoning": "",
+      "tools": [],
+      "usage": {
+        "prompt_tokens": 30,
+        "completion_tokens": 3,
+        "total_tokens": 33,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop"
+    },
+    {
+      "name": "stream-content",
+      "id": "chatcmpl-26",
+      "model": "glm-5.3-flash",
+      "seconds": 4.694,
+      "ttft": 4.606041373102926,
+      "content": "Paris",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 2,
+        "total_tokens": 29,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop",
+      "done": true
+    }
+  ],
+  "passed": true,
+  "finished": 1789163259.2738554
+}

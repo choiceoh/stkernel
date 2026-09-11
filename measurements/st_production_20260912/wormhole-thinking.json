@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "seconds": 5.06092192199867,
+  "response": {
+    "id": "chatcmpl-25",
+    "created": 1789163254,
+    "model": "glm-5.3-flash",
+    "object": "chat.completion",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "**42**",
+          "reasoning_content": "Simple: 42"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 23,
+      "completion_tokens": 9,
+      "total_tokens": 32,
+      "completion_tokens_details": {
+        "reasoning_tokens": 4
+      }
+    }
+  }
+}

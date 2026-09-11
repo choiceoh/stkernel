@@ -1,0 +1,164 @@
+{
+  "base": "http://10.10.10.2:8000",
+  "model": "glm-5.3-flash",
+  "started": 1789163096.8084095,
+  "cases": [
+    {
+      "name": "korean",
+      "seconds": 5.416,
+      "content": "서울",
+      "reasoning": "",
+      "tools": [],
+      "usage": {
+        "prompt_tokens": 30,
+        "completion_tokens": 3,
+        "total_tokens": 33,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop"
+    },
+    {
+      "name": "stream-content",
+      "seconds": 4.977,
+      "ttft": 4.880883044999791,
+      "content": "Paris",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 2,
+        "total_tokens": 29,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop",
+      "done": true
+    },
+    {
+      "name": "stream-thinking",
+      "seconds": 8.106,
+      "ttft": 4.841346834000433,
+      "content": "**17 + 25 = 42**\n\nBrief explanation: Add the ones digits (7 + 5 = 12), write down 2 and carry the 1. Then add the tens digits (1 + 2 + 1 = 4). This gives **42**.",
+      "reasoning": "The user wants me to compute 17 + 25 and explain briefly.\n\n17 + 25 = 42\n\nBrief explanation: I can break it down: 17 + 25 = 17 + 20 + 5 = 37 + 5 = 42. Or: 7 + 5 = 12, carry the 1, 1 + 2 + 1 = 4, giving 42.\n\nKeep it brief as requested.",
+      "usage": {
+        "prompt_tokens": 26,
+        "completion_tokens": 154,
+        "total_tokens": 180,
+        "completion_tokens_details": {
+          "reasoning_tokens": 94
+        }
+      },
+      "finish": "stop",
+      "done": true
+    },
+    {
+      "name": "tool-call",
+      "seconds": 6.093,
+      "content": "",
+      "reasoning": "",
+      "tools": [
+        {
+          "id": "call_11_0",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\": \"Seoul\"}"
+          }
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 173,
+        "completion_tokens": 12,
+        "total_tokens": 185,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "tool_calls"
+    },
+    {
+      "name": "concurrent-0",
+      "seconds": 12.838,
+      "content": "Tokyo is the capital of Japan.\n\nTokyo is a sprawling metropolis of nearly 14 million people, blending ultramodern skyscrapers with historic temples and shrines. It serves as Japan's political, economic, and cultural center, famous for its efficient public transit, vibrant districts like Shibuya and Shinjuku, and world-class cuisine.",
+      "reasoning": "",
+      "tools": [],
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 73,
+        "total_tokens": 100,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop"
+    },
+    {
+      "name": "concurrent-1",
+      "seconds": 10.484,
+      "content": "The capital of Italy is **Rome**.\n\nRome is a historic city in central Italy, known as the \"Eternal City\" for its nearly 3,000 years of history. It's home to iconic landmarks like the Colosseum, the Vatican, and the Trevi Fountain, and serves as Italy's political and cultural heart.",
+      "reasoning": "",
+      "tools": [],
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 72,
+        "total_tokens": 99,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop"
+    },
+    {
+      "name": "concurrent-2",
+      "seconds": 8.122,
+      "content": "The capital of Germany is **Berlin**.\n\nBerlin is Germany's largest city and political center, home to the Bundestag (parliament), the Chancellery, and the President's official residence. The city is renowned for its rich history, vibrant arts and culture scene, and iconic landmarks such as the Brandenburg Gate, the remains of the Berlin Wall, and Museum Island.",
+      "reasoning": "",
+      "tools": [],
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 78,
+        "total_tokens": 105,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop"
+    },
+    {
+      "name": "concurrent-3",
+      "seconds": 5.548,
+      "content": "The capital of Spain is **Madrid**.\n\nMadrid is Spain's largest city and its political, economic, and cultural center, located in the heart of the Iberian Peninsula. It's renowned for its world-class art museums like the Prado, grand architecture along the Gran Vía, and vibrant nightlife that often stretches into the early morning hours.",
+      "reasoning": "",
+      "tools": [],
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 73,
+        "total_tokens": 100,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop"
+    },
+    {
+      "name": "chunked-prefill-retrieval",
+      "seconds": 4.729,
+      "content": "7349",
+      "reasoning": "",
+      "tools": [],
+      "usage": {
+        "prompt_tokens": 9391,
+        "completion_tokens": 4,
+        "total_tokens": 9395,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop"
+    }
+  ],
+  "passed": true,
+  "finished": 1789163138.9725168
+}

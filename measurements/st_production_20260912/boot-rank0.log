@@ -1,0 +1,66 @@
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (106 free)
+[W911 21:42:26.208031108 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+  facts
+    model                    /repo/st-glm53-meta              [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /home/choiceoh/models/st-glm53-9391-up-gate-full [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    2304                             [launcher --block-size]
+    spec_k                   5                                [launcher SPEC_K with DFlash2]
+    kv_gib                   8.73                             [40th boot's measured KV]
+    port                     8000                             [--port]
+    prefix_snapshots         8                                [chunk-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)]
+    moe_static               stock                            [qualified production default]
+    mla_prefill              stock                            [qualified production default]
+    context_ceiling          0                                [qualified production default]
+    lanes                    served                           [qualified production default]
+    decode_eager             0                                [qualified production default]
+  knobs (every one expires)
+NCCL version 2.29.7+cuda13.2
+GLM-5.3-Flash on ST, one rank of TP=4, chunk 6,912, kv_gib 8.73 -> 580 blocks
+
+  box                                      119.69 GiB
+  -------------------------------------  --------
+  reserve for the OS                       -11.97 GiB   [declared] 2x earlyoom's 5% floor (5.98 GiB)
+  runtime floor (CUDA ctx + NCCL 16ch)      -5.54 GiB   [ledger] GLM 40th boot table -- re-measure on ST
+  weights (this rank, TP=4)                -44.50 GiB   [read] rank0of4.safetensors header: 1,376 tensors
+  drafter (DFlash2, replicated)             -2.18 GiB   [read] drafter.specs: every rank holds the whole drafter (DRAFT_TP=1 as served)
+  state slots (4 + null) x 247 MiB          -1.21 GiB   [read] caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring
+  prefix snapshots (8 x 75 MiB)             -0.59 GiB   [read] caches.snapshot_layout: chunk-boundary position rings for prefix reuse (boot.PREFIX_SNAPSHOTS)
+  workspace ceiling (outside the arena)    -12.00 GiB   [declared] base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses beyond it; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a 6,912-token chunk at 3.5 GiB, indexer selection bounded to 1,024 query rows per pass (net.SELECT_ROWS)
+  NVMe tier staging                         -0.12 GiB   [declared] kv_tier: pinned staging + device scratch
+  -------------------------------------  --------
+  KV (remainder)                            41.58 GiB
+
+  GATE: KV = 41.58 GiB, declared before load.
+  declared paged KV 7.52 GiB (7.52 in blocks of 13.28 MiB); unassigned +34.06 GiB
+  what the remainder buys at 6,043 B/token (paged, layout) + 247 MiB/sequence (slot):
+    concurrency   1: 1,048,576 tok each
+    concurrency   4: 1,048,576 tok each
+    concurrency   8:   880,634 tok each
+    concurrency  32:   187,982 tok each
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=55296 -> rows 92032/92032 tiles 719/719 tasks 2876/2876
+phase                                      seconds   dev GiB  counters
+comm                                         1.881     +0.00
+lanes                                        3.979     +0.15
+arena                                        2.143    +57.18
+load                                         5.543     +2.05  blocks=54 bytes=4.77863e+10
+load drafter                                 0.230     +0.00  blocks=3 bytes=2.34216e+09
+capture decode                             108.583     +3.33
+  ST engine: GLM-5.3, TP=4, lanes=served, KV 8.73 GiB, serving on :8000
+  NVMe tier: 8 conversations parked from before, 0 under another layout (kept, not resumable)
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+2026-09-11 21:44:57,034 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m30_k4096_n512_t8_r240_a7ad41bb54f83c25
+2026-09-11 21:45:01,806 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m30_k4096_n512_t8_r240_a7ad41bb54f83c25.o
+2026-09-11 21:45:02,520 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m27_k4096_n512_t8_r240_ffc115b179eb3742
+2026-09-11 21:45:06,870 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m27_k4096_n512_t8_r240_ffc115b179eb3742.o
+2026-09-11 21:45:07,486 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m26_k4096_n512_t8_r240_d1cecf5ffda6e64c
+2026-09-11 21:45:11,811 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m26_k4096_n512_t8_r240_d1cecf5ffda6e64c.o
+2026-09-11 21:45:17,220 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387
+2026-09-11 21:45:20,887 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387.o
+[b12x-bounds] state_E=288 n=512 tile_m=16 routed_rows=1384 -> rows 5984/5984 tiles 374/374 tasks 1496/1496
+2026-09-11 21:45:21,645 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m14_k4096_n512_t8_r240_dc30ac385e01138a
+2026-09-11 21:45:22,918 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m14_k4096_n512_t8_r240_dc30ac385e01138a.o
+[b12x-bounds] state_E=288 n=512 tile_m=64 routed_rows=19832 -> rows 38208/38208 tiles 597/597 tasks 2388/2388
+2026-09-11 21:47:34,801 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m23_k4096_n512_t8_r240_aa89a5b5d8a06f98
+2026-09-11 21:47:38,905 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m23_k4096_n512_t8_r240_aa89a5b5d8a06f98.o

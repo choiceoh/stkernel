@@ -1,0 +1,7 @@
+ExecStart={ path=/home/choiceoh/st-releases/5734b29fde84/launchers/st-glm53-supervisor.sh ; argv[]=/home/choiceoh/st-releases/5734b29fde84/launchers/st-glm53-supervisor.sh ; ignore_errors=no ; start_time=[Sat 2026-09-12 06:47:35 KST] ; stop_time=[n/a] ; pid=2147356 ; code=(null) ; status=0/0 }
+ActiveState=active
+SubState=running
+UnitFileState=enabled
+ActiveState=inactive
+UnitFileState=disabled
+Linger=yes

@@ -1,0 +1,18 @@
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (110 free)
+[W911 21:42:25.853856954 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=55296 -> rows 92032/92032 tiles 719/719 tasks 2876/2876
+2026-09-11 21:44:57,027 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m30_k4096_n512_t8_r240_a7ad41bb54f83c25
+2026-09-11 21:44:59,200 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m30_k4096_n512_t8_r240_a7ad41bb54f83c25.o
+2026-09-11 21:45:02,517 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m27_k4096_n512_t8_r240_ffc115b179eb3742
+2026-09-11 21:45:06,790 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m27_k4096_n512_t8_r240_ffc115b179eb3742.o
+2026-09-11 21:45:07,485 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m26_k4096_n512_t8_r240_d1cecf5ffda6e64c
+2026-09-11 21:45:11,592 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m26_k4096_n512_t8_r240_d1cecf5ffda6e64c.o
+2026-09-11 21:45:17,220 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387
+2026-09-11 21:45:20,544 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387.o
+[b12x-bounds] state_E=288 n=512 tile_m=16 routed_rows=1384 -> rows 5984/5984 tiles 374/374 tasks 1496/1496
+2026-09-11 21:45:21,650 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m14_k4096_n512_t8_r240_dc30ac385e01138a
+2026-09-11 21:45:24,147 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m14_k4096_n512_t8_r240_dc30ac385e01138a.o
+[b12x-bounds] state_E=288 n=512 tile_m=64 routed_rows=19832 -> rows 38208/38208 tiles 597/597 tasks 2388/2388
+2026-09-11 21:47:34,799 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m23_k4096_n512_t8_r240_aa89a5b5d8a06f98
+2026-09-11 21:47:38,871 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m23_k4096_n512_t8_r240_aa89a5b5d8a06f98.o
