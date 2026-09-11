@@ -9,6 +9,8 @@ qwen38_shared_fuse.py	/usr/local/lib/python3.12/dist-packages/qwen38_shared_fuse
 ple_layer.py	/usr/local/lib/python3.12/dist-packages/vllm/models/qwen3_8_flash_next/nvidia/ple_layer.py	a71144c1d36e06f22a2da1b1ada900076597fe5e824a911e7ada86249a0993e7
 weight_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/weight_utils.py	25bb3393105f9a642b7fa58bc277865db9976748be320787f8db2e03b16fd667
 qwen38_ple_ssd.py	/usr/local/lib/python3.12/dist-packages/vllm/models/qwen3_8_flash_next/nvidia/qwen38_ple_ssd.py	absent
+qwen38_ple_split.py	/usr/local/lib/python3.12/dist-packages/qwen38_ple_split.py	absent
+zz_qwen38_ple_split.pth	/usr/local/lib/python3.12/dist-packages/zz_qwen38_ple_split.pth	absent
 ops_qsa.py	/usr/local/lib/python3.12/dist-packages/vllm/models/qwen3_8_flash_next/nvidia/ops/qsa.py	c4ffe3674cafa0ce2dabc39a39f0ddbb4b594bc358ad210ffce9d04383350c7f
 gpu_model_runner.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_model_runner.py	ccd19277d570ea6f7611f72e27ef1f69dfc8835ae3eb1be30d4948401b8a46ee
 llm_base_proposer.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/spec_decode/llm_base_proposer.py	7edc6415162c39b46c991a4ea6fc3e87e13e865d0f154027a8fd40111b34c19a

@@ -780,6 +780,7 @@ class Qwen3_8FlashNextPLELayer(nn.Module, MambaBase):
         )
         self.prefix = prefix
         self.hidden_size = int(config.hidden_size)
+        self.ple_embed_dim = int(config.ple_embed_dim)
         self.hc_count = config.hc_count
         self.hc_hidden_size = self.hidden_size * self.hc_count
         self.conv_kernel_size = int(config.ple_conv_kernel_size)
@@ -1410,12 +1411,35 @@ class Qwen3_8FlashNextPLELayer(nn.Module, MambaBase):
                 f"token length, got {input_ids.shape[0]} and "
                 f"{hidden_states.shape[0]}"
             )
-        embeddings = self.ple_embedding(
-            hidden_states,
-            input_ids,
-            query_start_loc,
-            ngram_context,
-        )
+        if getattr(self.ple_embedding, "_is_cpu_offloaded", False):
+            embeddings = self.ple_embedding(
+                hidden_states,
+                input_ids,
+                query_start_loc,
+                ngram_context,
+            )
+        else:
+            # DENEB (2026-09-11): the on-device lookup is a SPLITTING custom op
+            # (qwen3_8_flash_next_ple_embed, registered as one of the
+            # compilation config's attention ops by qwen38_ple_split). Inside
+            # torch.compile it is a graph boundary, the way the short conv and
+            # the attention ops are, so forward_impl -- dynamo-disabled since
+            # the 2026-08-28 width patch -- runs eagerly instead of breaking
+            # the full-graph capture ("Skip inlining torch.compiler.disable()d
+            # function", the TEP=4 boot's first compile error), and the SSD
+            # path's host reads happen between graph pieces, never inside one.
+            embeddings = torch.empty(
+                (input_ids.shape[0], self.ple_embed_dim),
+                dtype=self.ple_embedding.ngram_embedding.weight.dtype,
+                device=hidden_states.device,
+            )
+            torch.ops.vllm.qwen3_8_flash_next_ple_embed(
+                input_ids,
+                query_start_loc,
+                ngram_context,
+                embeddings,
+                self.prefix,
+            )
         embeddings = self._dequantize_embeddings(embeddings, hidden_states.dtype)
         key, _ = self.key_proj(embeddings)
         value, _ = self.value_proj(embeddings)
@@ -1460,6 +1484,41 @@ direct_register_custom_op(
     op_func=qwen3_8_flash_next_ple_short_conv,
     mutates_args=["output"],
     fake_impl=qwen3_8_flash_next_ple_short_conv_fake,
+)
+
+
+def qwen3_8_flash_next_ple_embed(
+    input_ids: torch.Tensor,
+    query_start_loc: torch.Tensor,
+    ngram_context: torch.Tensor,
+    output: torch.Tensor,
+    layer_name: str,
+) -> None:
+    """The n-gram lookup as a splitting op: `output[:T] <- ple_embedding(ids)`."""
+    layer = get_forward_context().no_compile_layers[layer_name]
+    result = layer.ple_embedding.forward_impl(
+        None, input_ids, query_start_loc, ngram_context
+    )
+    if result.dtype != output.dtype:
+        result = result.to(output.dtype)
+    output[: result.shape[0]].copy_(result)
+
+
+def qwen3_8_flash_next_ple_embed_fake(
+    input_ids: torch.Tensor,
+    query_start_loc: torch.Tensor,
+    ngram_context: torch.Tensor,
+    output: torch.Tensor,
+    layer_name: str,
+) -> None:
+    return
+
+
+direct_register_custom_op(
+    op_name="qwen3_8_flash_next_ple_embed",
+    op_func=qwen3_8_flash_next_ple_embed,
+    mutates_args=["output"],
+    fake_impl=qwen3_8_flash_next_ple_embed_fake,
 )
 
 

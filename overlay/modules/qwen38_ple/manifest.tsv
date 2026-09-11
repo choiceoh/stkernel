@@ -6,3 +6,6 @@ weight_utils.py	vllm/model_executor/model_loader/weight_utils.py	25bb3393105f9a6
 # NEW: the SSD path's partition + row table; the layer's method imports it and
 # reads rows through dsv41_engram_io (hence `requires dsv41_engram`).
 qwen38_ple_ssd.py	vllm/models/qwen3_8_flash_next/nvidia/qwen38_ple_ssd.py	absent
+# NEW: the lookup as a splitting op -- hook on vllm.config.compilation + its .pth.
+qwen38_ple_split.py	qwen38_ple_split.py	absent
+zz_qwen38_ple_split.pth	zz_qwen38_ple_split.pth	absent
