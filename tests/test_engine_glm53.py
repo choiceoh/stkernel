@@ -314,6 +314,63 @@ class CudaCacheTests(unittest.TestCase):
         r.step(now=21)
         self.assertEqual(r.take_result(0), (10,))
 
+    def test_flat_decode_preserves_ragged_drafts_contexts_and_auxiliary_rows(self):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        from engine.profiles.glm53.net import Segment
+        from unittest.mock import patch
+
+        observed, steps = [], []
+        class Draft:
+            k = 2
+            aux_layers = ()
+            def propose(self, anchor, position, ring):
+                return {5: [6, 7], 21: [99], 30: []}[anchor]
+            def observe(self, ring, positions, aux):
+                observed.append((ring, positions.tolist(), aux[:, 0].tolist()))
+
+        net = self.runtime().net
+        def forward(step, caches, aux_layers=None):
+            steps.append(step)
+            return step.ids[:, None].float(), torch.arange(len(step.ids), device="cuda")[:, None]
+
+        engine = Glm53Engine(net, self.c, self.F, Draft())
+        jobs = [(2, [4], 2), (0, [18, 20], 4), (1, [0, 1, 29], 2)]
+        slots = []
+        with patch.object(net, "forward", side_effect=forward), patch.object(self.c, "draft_ring", side_effect=lambda slot: slot):
+            for seq, prompt, limit in jobs:
+                engine.add(seq, prompt, max_new=limit)
+                self.c.pool.reserve(seq, len(prompt) + 4)
+                slot = self.c.slots.take(seq)
+                slots.append(slot)
+                engine.open(seq, slot)
+                self.assertFalse(engine.prefill(seq, 0, len(prompt), None, slot))
+            observed.clear()
+            self.assertEqual(engine.decode([2, 0, 1], None, slots), [True, False, True])
+        self.assertEqual(steps[-1].ids.tolist(), [5, 6, 7, 21, 99, 30])
+        self.assertEqual(steps[-1].segments, (Segment(2, slots[0], 1, 0, 3),
+                                            Segment(0, slots[1], 2, 3, 2),
+                                            Segment(1, slots[2], 3, 5, 1)))
+        self.assertEqual(observed, [(slots[0], [1], [0]), (slots[1], [2], [3]), (slots[2], [3], [5])])
+        self.assertEqual([engine.context(s) for s in (2, 0, 1)], [2, 3, 4])
+        self.assertEqual([engine.generated(s) for s in (2, 0, 1)], [[5, 6], [21, 22], [30, 31]])
+        self.assertEqual((engine.accepted_total, engine.drafted_total), (1, 3))
+        result = engine.generated(2)
+        result.append(99)
+        self.assertEqual(engine.generated(2), [5, 6])  # result collection still returns an independent copy
+
+    def test_generation_count_resets_on_a_new_turn_after_long_history(self):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        engine.add(0, [1, 2])
+        engine.tokens[0].extend([3] * 65536)
+        engine.ctx[0] = len(engine.tokens[0]) - 1
+        self.assertEqual(engine._generated_count(0), 65536)
+        self.assertEqual(engine.extend(0, [4, 5], max_new=2), 3)
+        self.assertEqual(engine._generated_count(0), 0)
+        engine.tokens[0].append(6)
+        self.assertEqual(engine._generated_count(0), 1)
+        self.assertEqual(engine.generated(0), [6])
+
     def test_clipped_drafts_leave_the_last_emitted_token_pending_for_the_next_turn(self):
         from engine.base.record import Ring
         from engine.base.runner import Runner, STEP_RECORD
