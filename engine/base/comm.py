@@ -129,6 +129,31 @@ class RankLeft(RuntimeError):
     """A collective broke because another rank died; the cause is on that rank."""
 
 
+class _LocalRun:
+    """One invocation owns its barrier, exchange buffers and queued kernels."""
+
+    def __init__(self, world, timeout):
+        import queue
+        import threading
+        self.owner = threading.current_thread()
+        self.barrier = threading.Barrier(world, timeout=timeout)
+        self.slots, self.results = [None] * world, [None] * world
+        self.jobs = queue.Queue()
+        self.workers = ()
+        self.failed = False
+
+    def abort(self):
+        self.failed = True
+        self.barrier.abort()
+
+    def meet(self):
+        import threading
+        try:
+            self.barrier.wait()
+        except threading.BrokenBarrierError as e:
+            raise RankLeft("LocalTP: a rank left or timed out at the collective") from e
+
+
 class LocalTP:
     """TP=`world` inside one process: rank r runs on thread r, and every
     collective meets at a barrier. Sums are taken in fp32 in rank order by
@@ -136,86 +161,128 @@ class LocalTP:
     which is what the fleet's NCCL guarantees and what a check can assert."""
 
     def __init__(self, world: int = 4, timeout_s: float = 600.0):
-        import queue
+        import math
         import threading
+        if type(world) is not int or world <= 0 or not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError("LocalTP needs a positive world and finite positive timeout")
         self.world_size = world
         self.timeout = timeout_s
-        self._barrier = threading.Barrier(world)
-        self._slots = [None] * world
-        self._results = [None] * world
-        self._jobs = queue.Queue()                 # work the rank threads hand to the main thread
-        self._main = None
+        self._gate = threading.Lock()
+        self._active = None
 
     def on_main(self, fn, *args, **kwargs):
         """Run fn on the thread that called `run` and return its result.
         DeepGEMM's JIT runtime (the served mHC lane) raises
         CUDA_ERROR_INVALID_VALUE from any other thread -- measured in
         probes/mhc_lane_isolate.py -- so a served lane goes through here."""
+        return self._dispatch(self._active, fn, *args, **kwargs)
+
+    def _dispatch(self, run, fn, *args, **kwargs):
         import threading
-        if self._main is None or threading.current_thread() is self._main:
+        if run is None or run is not self._active:
+            raise RuntimeError("LocalTP dispatch requires its active run")
+        caller = threading.current_thread()
+        if caller is not run.owner and caller not in run.workers:
+            raise RuntimeError("LocalTP dispatch called from a foreign thread")
+        if run.failed:
+            raise RankLeft("LocalTP: this run has failed")
+        if caller is run.owner:
             return fn(*args, **kwargs)
         done, box = threading.Event(), {}
 
         def job():
             try:
+                if run.failed:
+                    raise RankLeft("LocalTP: queued kernel cancelled after run failure")
                 box["out"] = fn(*args, **kwargs)
             except BaseException as e:            # noqa: BLE001
+                run.abort()
                 box["err"] = e
-            done.set()
-        self._jobs.put(job)
+            finally:
+                done.set()
+        run.jobs.put(job)
         done.wait()
         if "err" in box:
             raise box["err"]
         return box["out"]
 
     def rank(self, r: int):
-        return _LocalRank(self, r)
-
-    def _meet(self):
-        try:
-            self._barrier.wait(timeout=self.timeout)
-        except Exception as e:                     # BrokenBarrierError: another rank died -- die too, loudly
-            raise RankLeft("LocalTP: a rank left the collective (see its traceback)") from e
+        if type(r) is not int or not 0 <= r < self.world_size:
+            raise ValueError("LocalTP rank is outside its world")
+        return _LocalRank(self, r, self._active)
 
     def run(self, fn, *args):
         """fn(rank_comm, *args) on every rank at once; returns the four results
         (any rank's exception is re-raised here)."""
-        import threading
-        errors = [None] * self.world_size
-
-        def body(r):
-            try:
-                self._results[r] = fn(self.rank(r), *args)
-            except BaseException as e:            # noqa: BLE001
-                errors[r] = e
-                self._barrier.abort()
-
         import queue
-        threads = [threading.Thread(target=body, args=(r,), name=f"rank{r}") for r in range(self.world_size)]
-        self._main = threading.current_thread()
-        for t in threads:
-            t.start()
-        while any(t.is_alive() for t in threads):  # serve the ranks' main-thread jobs until they are all done
+        import threading
+        if not self._gate.acquire(blocking=False):
+            raise RuntimeError("LocalTP.run is already active; overlapping or nested runs are forbidden")
+        run = None
+        try:
+            run = _LocalRun(self.world_size, self.timeout)
+            self._active = run
+            errors = [None] * self.world_size
+
+            def body(r):
+                try:
+                    run.results[r] = fn(self.rank(r), *args)
+                except BaseException as e:        # noqa: BLE001
+                    errors[r] = e
+                    run.abort()
+
+            def drain():
+                while any(t.is_alive() for t in run.workers):
+                    try:
+                        run.jobs.get(timeout=0.02)()
+                    except queue.Empty:
+                        pass
+                while not run.jobs.empty():
+                    run.jobs.get()()
+                for t in run.workers:
+                    if t.ident is not None:
+                        t.join()
+
+            run.workers = tuple(threading.Thread(target=body, args=(r,), name=f"rank{r}")
+                                for r in range(self.world_size))
             try:
-                self._jobs.get(timeout=0.02)()
-            except queue.Empty:
-                pass
-        while not self._jobs.empty():
-            self._jobs.get()()
-        for t in threads:
-            t.join()
-        self._main = None
-        culprits = [(r, e) for r, e in enumerate(errors) if e is not None and not isinstance(e, RankLeft)]
-        victims = [(r, e) for r, e in enumerate(errors) if isinstance(e, RankLeft)]
-        for r, e in culprits + victims:
-            raise RuntimeError(f"rank {r} failed") from e
-        return list(self._results)
+                for t in run.workers:
+                    t.start()
+                drain()
+            except BaseException:
+                run.abort()
+                drain()                         # release queued callers and join started ranks before retiring
+                raise
+            culprits = [(r, e) for r, e in enumerate(errors) if e is not None and not isinstance(e, RankLeft)]
+            victims = [(r, e) for r, e in enumerate(errors) if isinstance(e, RankLeft)]
+            for r, e in culprits + victims:
+                raise RuntimeError(f"rank {r} failed") from e
+            return list(run.results)
+        finally:
+            self._active = None
+            if run is not None:
+                run.slots.clear()
+                run.results.clear()
+                run.workers = ()
+            self._gate.release()
 
 
 class _LocalRank:
-    def __init__(self, tp: LocalTP, rank: int):
+    def __init__(self, tp: LocalTP, rank: int, run):
         self.tp, self.rank, self.world_size = tp, rank, tp.world_size
         self.group = None
+        self._run = run
+
+    def _state(self):
+        import threading
+        run = self._run
+        if run is None or run is not self.tp._active:
+            raise RuntimeError("LocalTP rank belongs to an inactive or completed run")
+        if threading.current_thread() is not run.workers[self.rank]:
+            raise RuntimeError("LocalTP rank used from a foreign thread")
+        if run.failed:
+            raise RankLeft("LocalTP: this run has failed")
+        return run
 
     def all_reduce(self, t):
         return self._reduce(t, maximum=False)
@@ -225,40 +292,40 @@ class _LocalRank:
 
     def _reduce(self, t, maximum):
         import torch
-        tp = self.tp
-        tp._slots[self.rank] = t
-        tp._meet()
-        total = tp._slots[0] if maximum else tp._slots[0].float()
-        for r in range(1, tp.world_size):
-            total = torch.maximum(total, tp._slots[r]) if maximum else total + tp._slots[r].float()
+        run = self._state()
+        run.slots[self.rank] = t
+        run.meet()
+        total = run.slots[0] if maximum else run.slots[0].float()
+        for r in range(1, self.world_size):
+            total = torch.maximum(total, run.slots[r]) if maximum else total + run.slots[r].float()
         out = total.to(t.dtype)
-        tp._meet()                                 # everyone has read; slots may be reused
+        run.meet()                                # everyone has read; slots may be reused
         t.copy_(out)
         return t
 
     def all_gather(self, t, dim=-1):
         import torch
-        tp = self.tp
-        tp._slots[self.rank] = t
-        tp._meet()
-        out = torch.cat(list(tp._slots), dim=dim)
-        tp._meet()
+        run = self._state()
+        run.slots[self.rank] = t
+        run.meet()
+        out = torch.cat(list(run.slots), dim=dim)
+        run.meet()
         return out
 
     def barrier(self):
-        self.tp._meet()
+        self._state().meet()
 
     def broadcast_object(self, obj):
-        tp = self.tp
+        run = self._state()
         if self.rank == 0:
-            tp._slots[0] = obj
-        tp._meet()
-        out = tp._slots[0]
-        tp._meet()
+            run.slots[0] = obj
+        run.meet()
+        out = run.slots[0]
+        run.meet()
         return out
 
     def on_main(self, fn, *args, **kwargs):
-        return self.tp.on_main(fn, *args, **kwargs)
+        return self.tp._dispatch(self._state(), fn, *args, **kwargs)
 
     def close(self):
         pass

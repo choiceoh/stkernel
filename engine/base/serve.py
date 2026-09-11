@@ -4,6 +4,18 @@ Public request IDs are independent of the runner's reusable KV rows. Every
 rank receives the same FIFO, admits only requests whose entire decode horizon
 fits the declared budget, and recycles rows after copying out results.
 Kernel failures remain fatal; waiting HTTP clients receive an error on exit.
+
+The door speaks two dialects: the engine's own (`POST /v1/completions` with
+ids or a prompt, and `conversation` for a further turn on retained caches)
+and the OpenAI chat one every client and bench here already speaks
+(`POST /v1/chat/completions`, streamed as SSE or not, `GET /v1/models`,
+`GET /metrics` in the bench's counter names, `GET /health`). Chat needs a
+`chat` renderer (messages -> prompt text; the profile supplies the
+checkpoint's template) and a tokenizer. A `reasoning_end` token id splits the
+generation into `reasoning_content` and `content`, the way the served model
+writes them. Streaming is by token: the step loop hands each request's new
+tokens to its queue and the HTTP thread turns them into text deltas, holding
+back a partial multi-byte character until its next token completes it.
 """
 from __future__ import annotations
 
@@ -25,14 +37,21 @@ class RequestError(Exception):
 
 class Server:
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
-                 host: str = "0.0.0.0", max_pending: int = 64):
+                 host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
+                 reasoning_end: "int | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if runner.slot_of:
             raise ValueError("the server requires an idle runner")
+        if reasoning_end is not None and (type(reasoning_end) is not int or reasoning_end < 0):
+            raise ValueError("reasoning_end must be a token id")
         self.engine, self.runner, self.comm = engine, runner, comm
         self.port, self.host, self.tok = port, host, tokenizer
+        self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.max_pending = max_pending
+        self._streams = {}                         # request id -> queue of ("tokens", ids) | ("end", finish) | ("error", text)
+        self._sent = {}                            # row -> generated tokens already handed to its stream
+        self.prompt_tokens_total = self.generation_tokens_total = 0
         self.arrivals = queue.Queue()
         self.pending, self.results = {}, {}
         self.next_seq, self.served = 0, 0
@@ -46,8 +65,9 @@ class Server:
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
 
-    def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None):
-        """Validate and enqueue on rank 0 without acquiring any model resources."""
+    def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None, stream: bool = False):
+        """Validate and enqueue on rank 0 without acquiring any model resources.
+        `stream`: the request also gets a token queue (see `_streams`)."""
         if self.comm.rank != 0:
             raise RequestError("requests must enter on rank 0")
         if conversation is not None:
@@ -84,6 +104,9 @@ class Server:
             self.next_seq += 1
             event = threading.Event()
             self.pending[request] = event
+            if stream:
+                self._streams[request] = queue.Queue()
+            self.prompt_tokens_total += len(ids)
             self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation))
         return request, event
 
@@ -94,13 +117,33 @@ class Server:
             raise result
         return result
 
+    def finish_reason(self, out) -> str:
+        """OpenAI's word for how a generation ended: at one of the model's end tokens, or at the limit."""
+        return "stop" if out and out[-1] in getattr(self.engine, "eos", ()) else "length"
+
+    def split(self, out):
+        """(reasoning ids, content ids): what came before `reasoning_end` and after it (the token itself
+        is neither). Without an end token everything generated so far is still reasoning."""
+        out = list(out)
+        if self.reasoning_end is None:
+            return [], out
+        if self.reasoning_end in out:
+            i = out.index(self.reasoning_end)
+            return out[:i], out[i + 1:]
+        return out, []
+
     def _answer(self, request, result):
         if self.comm.rank == 0:
             with self._lock:
                 event = self.pending.pop(request, None)
                 if event is not None:
                     self.results[request] = result
+                    if not isinstance(result, RequestError):
+                        self.generation_tokens_total += len(result)
                     event.set()
+            stream = self._streams.get(request)
+            if stream is not None:
+                stream.put(("error", str(result)) if isinstance(result, RequestError) else ("end", self.finish_reason(result)))
 
     def _drain(self):
         out = []
@@ -208,6 +251,25 @@ class Server:
                 event.set()
             self.pending.clear()
             self._drain()
+        for stream in list(self._streams.values()):
+            stream.put(("error", "engine stopped before completing the request"))
+        self._streams.clear()
+        self._sent.clear()
+
+    def metrics(self) -> str:
+        """Prometheus text in the names bench/window_metrics.py and bench/bracket.py read (the bench's
+        dialect, kept so the same onepass gate judges this engine and the one it replaces)."""
+        engine = self.engine
+        rows = [("vllm:request_success_total", self.served),
+                ("vllm:num_requests_running", len(self.runner.state.running)),
+                ("vllm:num_requests_waiting", len(self.runner.state.waiting) + len(self._waiting) + len(self.pending) - len(self._active)),
+                ("vllm:prompt_tokens_total", self.prompt_tokens_total),
+                ("vllm:generation_tokens_total", self.generation_tokens_total),
+                ("vllm:spec_decode_num_accepted_tokens_total", getattr(engine, "accepted_total", 0)),
+                ("vllm:spec_decode_num_draft_tokens_total", getattr(engine, "drafted_total", 0))]
+        if hasattr(engine, "drafts_total"):
+            rows.append(("vllm:spec_decode_num_drafts_total", engine.drafts_total))
+        return "".join(f'{name}{{engine="st"}} {max(0, value)}\n' for name, value in rows)
 
     def once(self) -> bool:
         """One ordered broadcast, bounded admission and homogeneous model step."""
@@ -221,10 +283,21 @@ class Server:
             self._waiting.extend(arrivals)
             self._admit()
             step = self.runner.step()
+            if self._streams:                                       # rank 0: hand each streaming request its new tokens
+                for row, (request, _) in self._active.items():
+                    stream = self._streams.get(request)
+                    if stream is None:
+                        continue
+                    generated = self.engine.generated(row)
+                    sent = self._sent.get(row, 0)
+                    if len(generated) > sent:
+                        stream.put(("tokens", list(generated[sent:])))
+                        self._sent[row] = len(generated)
             live = set(self.runner.state.running) | set(self.runner.state.waiting)
             for row in list(self._active):
                 if row not in live:
                     request, _ = self._active.pop(row)
+                    self._sent.pop(row, None)
                     result = list(self.engine.generated(row))
                     if self.runner.keep_idle:
                         if self.runner.tiered is not None:
@@ -261,20 +334,131 @@ class Server:
                 self.wfile.write(body)
 
             def do_GET(self):
-                self.reply(200, {"engine": "ST", "running": list(server.runner.state.running),
-                                 "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
-                                 "steps": server.runner.steps, "served": server.served})
+                if self.path == "/v1/models":
+                    self.reply(200, {"object": "list", "data": [{"id": server.model_name, "object": "model", "owned_by": "st"}]})
+                elif self.path == "/metrics":
+                    body = server.metrics().encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain; version=0.0.4")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/health":
+                    self.reply(200 if server.alive else 503, {"status": "ok" if server.alive else "stopping"})
+                else:
+                    self.reply(200, {"engine": "ST", "model": server.model_name, "running": list(server.runner.state.running),
+                                     "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
+                                     "steps": server.runner.steps, "served": server.served})
+
+            def body(self):
+                n = int(self.headers.get("Content-Length", "0"))
+                if not 0 < n <= 4 << 20:
+                    raise RequestError("request body must contain 1 to 4194304 bytes", 413)
+                req = json.loads(self.rfile.read(n))
+                if not isinstance(req, dict):
+                    raise RequestError("request must be a JSON object")
+                return req
+
+            def sse(self, payload):
+                self.wfile.write(b"data: " + json.dumps(payload).encode() + b"\n\n")
+                self.wfile.flush()
+
+            def chat(self, req):
+                """OpenAI chat completions over the engine: template -> ids -> submit; streamed by token or whole."""
+                if server.chat is None or server.tok is None:
+                    raise RequestError("this server has no chat template", 404)
+                messages = req.get("messages")
+                if (not isinstance(messages, list) or not messages
+                        or any(not isinstance(m, dict) or not isinstance(m.get("role"), str)
+                               or not isinstance(m.get("content"), str) for m in messages)):
+                    raise RequestError("messages must be a nonempty list of {role, content} objects")
+                kwargs = req.get("chat_template_kwargs") or {}
+                if not isinstance(kwargs, dict):
+                    raise RequestError("chat_template_kwargs must be an object")
+                options = req.get("stream_options")
+                if options is not None and not isinstance(options, dict):
+                    raise RequestError("stream_options must be an object")
+                stream = bool(req.get("stream", False))
+                include_usage = bool(options and options.get("include_usage"))
+                model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
+                ids = server.tok.encode(server.chat(messages, kwargs), add_special_tokens=False).ids
+                request, event = server.submit(ids, req.get("max_tokens", 256), req.get("temperature", 0.0), stream=stream)
+                head = {"id": f"chatcmpl-{request}", "created": int(time.time()), "model": model}
+                if not stream:
+                    event.wait()
+                    out = server.take_result(request)
+                    reasoning, content = server.split(out)
+                    message = {"role": "assistant", "content": server.tok.decode(content)}
+                    if reasoning:
+                        message["reasoning_content"] = server.tok.decode(reasoning)
+                    self.reply(200, {**head, "object": "chat.completion",
+                                     "choices": [{"index": 0, "message": message, "finish_reason": server.finish_reason(out)}],
+                                     "usage": {"prompt_tokens": len(ids), "completion_tokens": len(out), "total_tokens": len(ids) + len(out)}})
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+
+                def chunk(delta=None, finish=None, usage=None):
+                    self.sse({**head, "object": "chat.completion.chunk",
+                              "choices": [] if usage is not None else [{"index": 0, "delta": delta or {}, "finish_reason": finish}],
+                              **({"usage": usage} if usage is not None else {})})
+
+                chunk({"role": "assistant", "content": ""})
+                held = {"reasoning_content": [], "content": []}         # ids per channel
+                shown = {"reasoning_content": 0, "content": 0}          # characters already sent per channel
+                reasoning = server.reasoning_end is not None
+                total = 0
+
+                def flush(final=False):
+                    for channel, chan_ids in held.items():
+                        text = server.tok.decode(chan_ids)
+                        delta = text[shown[channel]:]
+                        if delta and (final or not delta.endswith("\ufffd")):   # a partial character waits for its next token
+                            chunk({channel: delta})
+                            shown[channel] = len(text)
+
+                stream_q = server._streams[request]
+                try:
+                    while True:
+                        kind, payload = stream_q.get()
+                        if kind == "tokens":
+                            for t in payload:
+                                total += 1
+                                if reasoning and t == server.reasoning_end:
+                                    reasoning = False
+                                    continue
+                                held["reasoning_content" if reasoning else "content"].append(t)
+                            flush()
+                        elif kind == "end":
+                            flush(final=True)
+                            chunk(finish=payload)
+                            if include_usage:
+                                chunk(usage={"prompt_tokens": len(ids), "completion_tokens": total, "total_tokens": len(ids) + total})
+                            self.wfile.write(b"data: [DONE]\n\n")
+                            self.wfile.flush()
+                            break
+                        else:
+                            self.sse({"error": {"message": payload, "type": "engine"}})
+                            break
+                finally:
+                    server._streams.pop(request, None)
+                    event.wait()
+                    try:
+                        server.take_result(request)
+                    except RequestError:
+                        pass
 
             def do_POST(self):
                 try:
+                    if self.path == "/v1/chat/completions":
+                        self.chat(self.body())
+                        return
                     if self.path != "/v1/completions":
                         raise RequestError("unknown endpoint", 404)
-                    n = int(self.headers.get("Content-Length", "0"))
-                    if not 0 < n <= 4 << 20:
-                        raise RequestError("request body must contain 1 to 4194304 bytes", 413)
-                    req = json.loads(self.rfile.read(n))
-                    if not isinstance(req, dict):
-                        raise RequestError("request must be a JSON object")
+                    req = self.body()
                     ids = req.get("ids")
                     if ids is None:
                         if server.tok is None:

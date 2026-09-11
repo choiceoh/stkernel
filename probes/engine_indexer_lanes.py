@@ -1,4 +1,4 @@
-"""Qualify and time the GLM indexer's fused quantization/expansion lanes.
+"""Qualify the GLM indexer and time its quantization/expansion helpers.
 
 Run through run_engine_probe.sh in the vLLM-free ST image. --checkpoint supplies the
 config.json directory; --rank-file is an existing aligned rank file. Only
@@ -15,6 +15,7 @@ import sys
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
@@ -28,7 +29,16 @@ from engine.profiles.glm53.weights import rank_loader
 from engine_decode_overhead import paired
 
 
+def legacy_lanes(table):
+    """Supply historical net.py contracts only to an explicitly loaded baseline."""
+    from engine.kernels.kpool import expand_pools_and_append_tail
+    from engine.kernels.indexer import indexer_slots
+    return SimpleNamespace(**vars(table), expand_pools=expand_pools_and_append_tail, indexer_slots=indexer_slots)
+
+
 def kernel_contracts(ref, fused):
+    from engine.modules.sparse_indexer import select_with_tail
+    from engine.kernels.kpool import expand_pools_and_append_tail
     g = torch.Generator(device="cuda").manual_seed(71)
     quant_cases = []
     for count in (1, 31, 32, 33, 192, 768, 16384):
@@ -51,7 +61,7 @@ def kernel_contracts(ref, fused):
         ids[:, 0] = 0
         if groups > 1:
             ids[:, 1] = lengths // 4                # incomplete/future pool: must be excluded
-        assert torch.equal(ref.expand_pools(ids, lengths, 4), fused.expand_pools(ids, lengths, 4))
+        assert torch.equal(select_with_tail(ids, lengths, 4), expand_pools_and_append_tail(ids, lengths, 4))
     return {"fp8_bytes_and_scales_exact": True, "random_quant_cases": quant_cases,
             "pattern_rows": 6, "expansion_exact": True, "expansion_lengths": lengths.tolist(),
             "expansion_group_widths": [1, 2, 512]}
@@ -61,20 +71,22 @@ def threaded_dispatch(fused):
     rows = torch.arange(32 * 128, device="cuda").reshape(32, 128).to(torch.bfloat16)
     pools = torch.tensor([[0, -1], [1, 0]], device="cuda", dtype=torch.int32)
     lengths = torch.tensor([3, 9], device="cuda", dtype=torch.int32)
-    expected = fused.indexer_quant(rows), fused.expand_pools(pools, lengths, 4)
+    def slots(table):
+        out = torch.empty((2, 11), device="cuda", dtype=torch.int32)
+        count = torch.empty(2, device="cuda", dtype=torch.int32)
+        table.pool_slots(pools, lengths, 4, None, 1, 1, 0, out, count)
+        return out, count
+    expected = fused.indexer_quant(rows), slots(fused)
     tp = LocalTP(4)
-    lanes.bind_tp(tp)
-    try:
-        outputs = tp.run(lambda comm: (fused.indexer_quant(rows), fused.expand_pools(pools, lengths, 4)))
-    finally:
-        lanes.bind_tp(None)
+    bound = lanes.served(tp=tp)
+    outputs = tp.run(lambda comm: (bound.indexer_quant(rows), slots(bound)))
     for (q, scale), expanded in outputs:
         assert torch.equal(q.view(torch.uint8), expected[0][0].view(torch.uint8))
-        assert torch.equal(scale, expected[0][1]) and torch.equal(expanded, expected[1])
+        assert torch.equal(scale, expected[0][1]) and all(torch.equal(a, b) for a, b in zip(expanded, expected[1]))
     return {"logical_ranks": 4, "main_thread_dispatch_exact": True}
 
 
-def real_indexer(checkpoint, rank_file, ref, fused, baseline=None):
+def real_indexer(checkpoint, rank_file, ref, fused, baseline=None, *, baseline_lanes=None):
     loader = rank_loader(rank_file)
     F = facts.load(checkpoint)
     assert F.is_dsa(3)
@@ -89,7 +101,12 @@ def real_indexer(checkpoint, rank_file, ref, fused, baseline=None):
         cache.pool.reserve(1, F.block)             # force a nonidentity physical block mapping
         cache.pool.reserve(0, 2080)
         cache.slots.take(0)
-    old = replace(fused, indexer_quant=ref.indexer_quant, expand_pools=ref.expand_pools) if baseline is None else fused
+    if baseline_lanes is not None:
+        old = baseline_lanes
+    elif baseline is not None:
+        old = legacy_lanes(fused)
+    else:
+        old = replace(fused, indexer_quant=ref.indexer_quant, pool_slots=ref.pool_slots)
     methods = (baseline or Glm53Net._indexer, Glm53Net._indexer)
     g = torch.Generator(device="cuda").manual_seed(23)
     x = torch.randn(2080, F.hidden, device="cuda", generator=g).to(torch.bfloat16)
@@ -175,8 +192,11 @@ def main():
         rows = torch.randn(tokens * 32, 128, device="cuda", dtype=torch.bfloat16, generator=g)
         pools = torch.randint(-1, 512, (tokens, 512), device="cuda", dtype=torch.int32, generator=g)
         lengths = torch.full((tokens,), 2047, device="cuda", dtype=torch.int32)
+        from engine.modules.sparse_indexer import select_with_tail
+        from engine.kernels.kpool import expand_pools_and_append_tail
         for name, fns in (("quant", [lambda table=t, rows=rows: table.indexer_quant(rows) for t in (ref, fused)]),
-                          ("expand", [lambda table=t, pools=pools, lengths=lengths: table.expand_pools(pools, lengths, 4) for t in (ref, fused)])):
+                          ("expand", [lambda fn=fn, pools=pools, lengths=lengths: fn(pools, lengths, 4)
+                                      for fn in (select_with_tail, expand_pools_and_append_tail)])):
             item = {"component": name, "tokens": tokens,
                     **paired(fns, rounds=5, samples=100, warmup=40)}
             report["measurements"].append(item)

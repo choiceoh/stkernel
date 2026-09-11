@@ -30,6 +30,14 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     bash launchers/start-st-glm53.sh             # 부팅; glm53*/q38* 컨테이너가 있으면 거부
     curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64}'
     curl -s http://10.10.10.2:8000/v1/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
+    bash launchers/start-st-glm53.sh stop        # 컨테이너 제거 + 잠금 해제. start 는 glm53*/q38*/vllm*/st-* 컨테이너나 srv2 의 `st-fleet.lock` 이 있으면 거부한다
+                                                 # (플릿을 쓰는 세션은 모두 이 잠금을 지킨다: 09-11 19:42 두 세션의 플릿이 같은 노드에서 충돌해 둘 다 죽었다)
+    curl -s http://10.10.10.2:8000/v1/chat/completions -d '{"messages":[{"role":"user","content":"..."}],"max_tokens":64,"stream":true}'   # OpenAI 방언(SSE), bench/onepass.py 가 쓰는 것
+    curl -s http://10.10.10.2:8000/v1/models; curl -s http://10.10.10.2:8000/metrics                                  # 모델 이름, 벤치 이름의 카운터
+
+문(`base/serve.py`): 엔진 방언(`POST /v1/completions` ids|prompt, `conversation` 으로 이어가기)과 OpenAI chat 방언(`POST /v1/chat/completions`,
+`stream` 이면 토큰 단위 SSE, `chat_template_kwargs` 통과, `</think>` 앞은 `reasoning_content` 뒤는 `content`; `GET /v1/models`, `/metrics`, `/health`).
+프로필이 템플릿(`chat_template_mm_v2.jinja`, 프로덕션과 같은 것)과 `</think>` id 를 넘긴다.
 
 GLM의 `served()`는 `engine/kernels`를 직접 호출한다. KDA·conv·mHC·kpool·MLA·b12x는
 이 패키지 안에 있고, 인덱서와 mHC prenorm GEMM은 독립 `deep_gemm` 라이브러리를 사용한다.
@@ -59,6 +67,19 @@ b12x는 이식 전 FlashInfer 커널과 직접 비교하며, PyTorch 참조와 �
 공통 실행부의 CPU 회귀 검증(PyTorch·GPU·체크포인트 없이 실행):
 
     python3 -m unittest discover -s tests -p 'test_engine_*.py' -v
+
+실행 소유권은 커널 표 → LocalTP → 개별 `run` 순서로 명시한다. `lanes.served(tp=tp)`가
+만든 표는 해당 실행기에 고정되며, 다른 표의 생성이나 실행이 이 연결을 바꾸지 않는다.
+플릿과 직접 워밍업은 `lanes.served()`로 호출한다. 전역 `bind_tp` 상태는 없다.
+
+- 각 `run`이 배리어·통신 버퍼·결과·커널 대기열을 새로 소유하고, 끝날 때 참조를 반납한다.
+- 같은 LocalTP의 중첩·중복 실행, 외부 스레드의 디스패치, 종료된 랭크 핸들의 재사용은 즉시 실패한다.
+- 독립 LocalTP 둘은 각자의 호출 스레드에서 커널을 실행하며 통신 상태를 공유하지 않는다.
+- 랭크·커널·스레드 시작 실패 시 대기 커널을 취소하고 시작된 랭크를 합류시킨 뒤 원인을 전달한다.
+  다음 명시적 실행은 새 제어 상태를 받는다. 모델/KV나 CUDA 문맥의 복구·자동 재시도는 별도 책임이다.
+
+부팅과 체인 검사도 이 소유권 경계를 따른다. 검증은
+[`measurements/st_engine_execution_20260911`](../measurements/st_engine_execution_20260911/README.md)에 있다.
 
 요청과 캐시의 소유권은 다음 경계에서 확정한다:
 
@@ -136,19 +157,29 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 recurrent 레인도 연결되어 검증 토큰마다 상태를 반환하고, 시작 상태를 보존한다.
 MLA 참조 레인은 선택된 fp8 행만 변환하며, 패딩 슬롯이 가리키는 미사용 블록의 NaN을 마스킹한다.
 
-인덱서의 Hadamard-128 변환·FP8 양자화와 pool→토큰 확장은 `indexer_quant`, `expand_pools`
-레인으로 실행한다. 서빙 표는 `engine.kernels.kpool`의 융합 Triton 커널에 연결하고, 참조 표는 기존 PyTorch
-수식을 유지한다. 두 레인도 LocalTP의 메인 스레드 경유 규칙을 따르며, 바인딩이나 실행 실패는
-그대로 전파한다. 실제 가중치 인덱서의 결과·캐시 일치와 구성요소 성능은
-[`measurements/st_engine_indexer_20260911`](../measurements/st_engine_indexer_20260911/README.md)에 기록했다.
+인덱서의 Hadamard-128 변환·FP8 양자화는 `indexer_quant` 레인으로 실행한다.
+키 풀링은 `kpool_compress` 레인이 `compress_pool_keys`를 직접 호출한다. GB10에서 128차원
+풀 하나를 1워프로 처리하며, XOR 짝을 이용한 Hadamard 회전은 공유 메모리를 사용하지 않는다.
+입력 스트라이드를 직접 받아 복사 없이 읽고, 결과 FP8 키와 스케일만 할당한다. 반환 전용
+경로에서 쓰지 않던 임시 캐시·위치 배열·쓰기 마스크를 만들지 않는다. BF16 반올림 경계와
+FP8 양자화 수식은 유지한다. 정확성 및 성능 근거는
+[`measurements/st_engine_warp_pooling_20260911`](../measurements/st_engine_warp_pooling_20260911/README.md)에 있다.
 
-선택 토큰의 최종 주소 변환은 `indexer_slots` 레인이 담당한다. PyTorch의 내림차순 정렬을
-유지하고, 유효 개수 집계·블록 주소 변환·패딩·출력 쓰기를 한 Triton 커널로 실행한다.
-캐시는 `token_map(layer, seq)`로 블록 행과 잠재 벡터 행 단위의 블록 크기·간격·레이어 오프셋을
-제공한다. 연속 캐시 검사의 `None` 블록 행은 위치와 슬롯이 같은 매핑이다. 모든 출력 칸을
-덮어쓰므로 별도의 초기화 커널이 필요 없고, LocalTP와 오류 전파 규칙은 다른 레인과 같다.
-검증과 변경 전후 측정은
-[`measurements/st_engine_slots_20260911`](../measurements/st_engine_slots_20260911/README.md)에 있다.
+선택한 풀의 최종 주소 생성은 `pool_slots` 레인 하나가 맡는다. GB10에서 토큰 2,051개를
+먼저 펼쳐 정렬하던 경로를, 풀 ID 512개를 정렬한 뒤 토큰을 생성하는 구조로 바꿨다.
+서빙 커널은 4워프 프로그램 하나가 한 행을 처리하며, 중간 GPU 텐서를 할당하지 않는다.
+
+KV 블록은 풀 크기의 정수 배수여야 한다. 이 계약 덕분에 풀마다 블록 주소를 한 번 읽고
+네 토큰의 주소를 레지스터에서 계산한다. 미완성 꼬리는 최신 토큰부터 앞에 배치하고,
+중복 풀은 토큰별 중복 횟수를 유지하며, 패딩과 유효 개수까지 같은 커널에서 쓴다.
+참조 레인은 기존 토큰 확장·정렬·매핑 수식을 유지해 정확한 정수 비교의 기준으로 쓴다.
+
+캐시는 `token_map(layer, seq)`로 블록 행과 잠재 벡터 행 단위의 블록 크기·간격·레이어
+오프셋을 제공한다. 연속 캐시 검사의 `None` 블록 행은 위치와 슬롯이 같은 매핑이다.
+LocalTP 소유권과 오류 전파 규칙은 다른 레인과 같다. 이전 `expand_pools`, `indexer_slots`
+서빙 레인은 제거했으며, 기존 함수는 구성요소 검사와 명시적인 과거 커밋 비교에만 사용한다.
+검증 범위와 변경 전후 측정은
+[`measurements/st_engine_pool_slots_20260911`](../measurements/st_engine_pool_slots_20260911/README.md)에 있다.
 
 네 노드 검증은 각 노드에서 같은 인자로 `check.py --distributed`를 실행한다.
 기본 노드 순서는 **rank 0=srv2, rank 1=srv1, rank 2=srv3, rank 3=srv4**다.

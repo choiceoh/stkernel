@@ -267,8 +267,8 @@ class Glm53Net:
                 pool_ids = topk_positions(logits[:, :n_cand].float(), F.topk // kp, valid=ke)
             else:
                 pool_ids = torch.full((s.length, F.topk // kp), -1, dtype=torch.int32, device=x.device)
-            tokens = self.lanes.expand_pools(pool_ids, seq_lens, kp)                 # positions, -1 padded
-            self.lanes.indexer_slots(tokens, *caches.token_map(L, s.seq), slots_out[sl], valid_out[sl])
+            self.lanes.pool_slots(pool_ids, seq_lens, kp, *caches.token_map(L, s.seq),
+                                  slots_out[sl], valid_out[sl])
         return slots_out.contiguous(), valid_out
 
     def _dsa(self, L: int, x: torch.Tensor, step: Step, caches: Caches) -> torch.Tensor:

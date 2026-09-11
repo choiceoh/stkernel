@@ -49,6 +49,21 @@ def _hadamard128(x):
     return x * 0.08838834764831845  # 1/sqrt(128)
 
 
+@triton.jit
+def _hadamard128_warp(x):
+    """Fixed XOR butterflies avoid reshape/transposition shared-memory traffic.
+
+    The return-only lane launches one warp: partners are warp exchanges or
+    registers within the same thread. Keep the original add/subtract order.
+    """
+    offsets = tl.arange(0, 128)
+    for stage in tl.static_range(7):
+        stride = 1 << stage
+        partner = tl.gather(x, offsets ^ stride, 0)
+        x = tl.where((offsets & stride) == 0, x + partner, partner - x)
+    return x * 0.08838834764831845
+
+
 def _hadamard128_torch(x: torch.Tensor) -> torch.Tensor:
     """Reference / fallback Hadamard-128 on the last dim (must be 128)."""
     import math
@@ -230,6 +245,10 @@ def _kpool_softmax_rotate_write_cache_kernel(
     RETURN_COMPRESSED: tl.constexpr,
     WRITE_CACHE: tl.constexpr,
     BLOCK_D: tl.constexpr,
+    slot_k_stride_2: tl.constexpr = 1,
+    slot_score_stride_2: tl.constexpr = 1,
+    ape_stride_1: tl.constexpr = 1,
+    WARP_LOCAL_ROTATION: tl.constexpr = False,
 ):
     """One program per pool. softmax(slot_score+ape)-weighted sum of slot_k ->
     Hadamard-128 -> per-vector fp8 absmax quant -> write to cache at ``loc``."""
@@ -248,11 +267,11 @@ def _kpool_softmax_rotate_write_cache_kernel(
             slot_score_ptr
             + row * slot_score_stride_0
             + slot * slot_score_stride_1
-            + offs,
+            + offs * slot_score_stride_2,
             mask=mask,
             other=0.0,
         ).to(tl.float32)
-        score += tl.load(ape_ptr + slot * ape_stride_0 + offs, mask=mask, other=0.0).to(
+        score += tl.load(ape_ptr + slot * ape_stride_0 + offs * ape_stride_1, mask=mask, other=0.0).to(
             tl.float32
         )
         max_score = tl.maximum(max_score, score)
@@ -265,17 +284,17 @@ def _kpool_softmax_rotate_write_cache_kernel(
             slot_score_ptr
             + row * slot_score_stride_0
             + slot * slot_score_stride_1
-            + offs,
+            + offs * slot_score_stride_2,
             mask=mask,
             other=0.0,
         ).to(tl.float32)
-        score += tl.load(ape_ptr + slot * ape_stride_0 + offs, mask=mask, other=0.0).to(
+        score += tl.load(ape_ptr + slot * ape_stride_0 + offs * ape_stride_1, mask=mask, other=0.0).to(
             tl.float32
         )
         prob = tl.exp(score - max_score)
         denom += prob
         k = tl.load(
-            slot_k_ptr + row * slot_k_stride_0 + slot * slot_k_stride_1 + offs,
+            slot_k_ptr + row * slot_k_stride_0 + slot * slot_k_stride_1 + offs * slot_k_stride_2,
             mask=mask,
             other=0.0,
         ).to(tl.float32)
@@ -287,7 +306,10 @@ def _kpool_softmax_rotate_write_cache_kernel(
     # Hadamard-128 rotation (spreads energy for uniform fp8 quant error).
     # Match sglang: bf16 round-trip after the Hadamard so the fp8 absmax/scale
     # sees the same precision as the unfused (bf16-stored) pooled-K path.
-    x = _hadamard128(x).to(tl.bfloat16).to(tl.float32)
+    if WARP_LOCAL_ROTATION:
+        x = _hadamard128_warp(x).to(tl.bfloat16).to(tl.float32)
+    else:
+        x = _hadamard128(x).to(tl.bfloat16).to(tl.float32)
 
     # --- per-vector absmax fp8 quant ---
     fp8_max = 448.0
@@ -325,6 +347,36 @@ def _kpool_softmax_rotate_write_cache_kernel(
             mask=offs < HEAD_DIM,
         )
         tl.store(compressed_scale_ptr + row, scale)
+
+
+def compress_pool_keys(slot_k: torch.Tensor, slot_score: torch.Tensor, ape: torch.Tensor):
+    """GLM's return-only pooling lane: one warp owns each 128-channel pool.
+
+    Four channels/thread keep the Hadamard exchanges inside one warp on GB10.
+    Cache writes have a separate caller; no dummy cache, locations, or write
+    mask are materialized here. Only the returned FP8 keys/scales are allocated.
+    Strides are explicit, including noncontiguous channel views.
+    """
+    assert slot_k.ndim == 3 and slot_k.shape[2] == INDEX_HEAD_DIM
+    assert slot_k.dtype == torch.bfloat16
+    assert slot_score.shape == slot_k.shape and slot_score.dtype in (torch.bfloat16, torch.float32)
+    assert ape.shape == slot_k.shape[1:] and ape.dtype == torch.float32
+    pools = slot_k.shape[0]
+    assert slot_k.shape[1] > 0
+    keys = torch.empty((pools, INDEX_HEAD_DIM), dtype=torch.float8_e4m3fn, device=slot_k.device)
+    scales = torch.empty((pools, 1), dtype=torch.float32, device=slot_k.device)
+    if pools:
+        # WRITE_CACHE and HAS_WRITE_MASK are compile-time false. These alias
+        # pointers cannot be read or written through the disabled branches.
+        _kpool_softmax_rotate_write_cache_kernel[(pools,)](
+            keys, scales, slot_k, slot_score, ape, keys, keys, keys, scales,
+            slot_k.stride(0), slot_k.stride(1), slot_score.stride(0), slot_score.stride(1), ape.stride(0),
+            PAGE_SIZE=1, BUF_NUMEL_PER_PAGE=1, POOL_SIZE=slot_k.shape[1], HEAD_DIM=INDEX_HEAD_DIM,
+            S_OFFSET_NBYTES_IN_PAGE=0, ROUND_SCALE=True, HAS_WRITE_MASK=False,
+            RETURN_COMPRESSED=True, WRITE_CACHE=False, BLOCK_D=INDEX_HEAD_DIM,
+            slot_k_stride_2=slot_k.stride(2), slot_score_stride_2=slot_score.stride(2), ape_stride_1=ape.stride(1),
+            WARP_LOCAL_ROTATION=True, num_warps=1)
+    return keys, scales
 
 
 def kpool_compress_and_write_cache(
