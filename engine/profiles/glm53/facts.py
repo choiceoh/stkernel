@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 CKPT = Path("/home/choiceoh/models/glm53-redhat-nvfp4")
-RANKS = Path("/home/choiceoh/models/glm53-redhat-nvfp4-tp4")          # preshard output, one file per rank
+RANKS = Path("/home/choiceoh/models/glm53-redhat-nvfp4-tp4-up-gate-v1")          # preshard output, one file per rank
 TP = 4                                                                # four Sparks: the only world this profile has
 BOX = {"name": "GB10 (DGX Spark)", "capability": (12, 1), "devices": 1, "unified": True}
 BLOCK = 2304                                                          # launcher --block-size (shapes.py's 6,912 law)

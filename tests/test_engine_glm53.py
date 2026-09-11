@@ -418,12 +418,12 @@ class CudaCacheTests(unittest.TestCase):
                     self.assertTrue(torch.equal(c.pool_keys(1)[ids].view(torch.uint8), expected_keys))
                     self.assertTrue(torch.equal(c.pool_scales(1)[ids], expected_scales))
 
-    def test_indexer_dispatches_quantization_and_pool_expansion_through_lanes(self):
+    def test_indexer_dispatches_quantization_and_pool_slots_through_lanes(self):
         from unittest.mock import Mock
         net, x, qr = self.indexer()
         quant = Mock(wraps=net.lanes.indexer_quant)
-        expand = Mock(wraps=net.lanes.expand_pools)
-        net.lanes = replace(net.lanes, indexer_quant=quant, expand_pools=expand)
+        finish = Mock(wraps=net.lanes.pool_slots)
+        net.lanes = replace(net.lanes, indexer_quant=quant, pool_slots=finish)
         self.c.pool.reserve(0, 24)
         self.c.slots.take(0)
         for ctx, length in ((0, 12), (12, 6)):
@@ -432,11 +432,11 @@ class CudaCacheTests(unittest.TestCase):
             self.assertEqual(rows.shape, (length * self.F.idx_heads, 128))
             self.assertEqual(rows.dtype, torch.bfloat16)
             self.assertTrue(rows.is_contiguous())
-            pools, seq_lens, size = expand.call_args.args
+            pools, seq_lens, size = finish.call_args.args[:3]
             self.assertEqual(pools.shape, (length, self.F.topk // self.F.kpool))
             self.assertEqual(seq_lens.tolist(), list(range(ctx + 1, ctx + length + 1)))
             self.assertEqual(size, self.F.kpool)
-        self.assertEqual((quant.call_count, expand.call_count), (2, 2))
+        self.assertEqual((quant.call_count, finish.call_count), (2, 2))
 
     def test_indexer_lane_failure_propagates_without_reference_fallback(self):
         from unittest.mock import Mock
@@ -444,12 +444,39 @@ class CudaCacheTests(unittest.TestCase):
         original = net.lanes
         self.c.pool.reserve(0, 16)
         self.c.slots.take(0)
-        for name in ("indexer_quant", "expand_pools"):
+        for name in ("indexer_quant", "pool_slots"):
             with self.subTest(lane=name):
                 self.c.reset()
                 net.lanes = replace(original, **{name: Mock(side_effect=RuntimeError("injected lane failure"))})
                 with self.assertRaisesRegex(RuntimeError, "injected lane failure"):
                     net._indexer(1, x[:12], qr[:12], self.step(0, 12), self.c)
+
+    def test_indexer_finalizes_each_segment_with_its_own_block_row(self):
+        from engine.modules.sparse_indexer import select_with_tail
+        from engine.profiles.glm53.net import Step
+        from unittest.mock import Mock
+        net, x, qr = self.indexer()
+        finish = Mock(wraps=net.lanes.pool_slots)
+        net.lanes = replace(net.lanes, pool_slots=finish)
+        chunks = []
+        for seq, length in ((2, 12), (0, 6)):
+            self.c.pool.reserve(seq, length)
+            slot = self.c.slots.take(seq)
+            chunks.append((torch.zeros(length, device="cuda", dtype=torch.int64), 0, seq, slot))
+        step = Step.decode(chunks)
+        self.c.prepare(step)
+        selected, counts = net._indexer(1, x[:18], qr[:18], step, self.c)
+        self.assertEqual(finish.call_count, 2)
+        for call, segment in zip(finish.call_args_list, step.segments):
+            pools, lengths, pool_size, row, size, stride, offset, out, valid = call.args
+            tokens = select_with_tail(pools, lengths, pool_size)
+            self.assertEqual(row.data_ptr(), self.c.block_table[segment.seq].data_ptr())
+            positions = tokens.sort(dim=1, descending=True).values
+            expected = self.c.token_slots(1, segment.seq, positions.clamp_min(0).flatten()).view_as(positions)
+            expected.masked_fill_(positions < 0, -1)
+            sl = slice(segment.start, segment.start + segment.length)
+            self.assertTrue(torch.equal(selected[sl], expected))
+            self.assertTrue(torch.equal(counts[sl], (positions >= 0).sum(1).int()))
 
     def test_long_prefill_ring_contains_only_the_latest_positions(self):
         net, x, qr = self.indexer()

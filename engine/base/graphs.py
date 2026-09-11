@@ -22,26 +22,33 @@ import torch
 
 
 class DecodeGraphs:
-    def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, int]]", warmup: int = 2):
+    def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup: int = 2, generators=()):
         """step_fn(inputs) runs one decode step over static `inputs`;
         make_inputs(num_seqs, tokens_per_seq) allocates them once per shape."""
-        self.step_fn, self.make_inputs = step_fn, make_inputs
         self.graphs, self.inputs, self.outputs = {}, {}, {}
         pool = torch.cuda.graph_pool_handle()          # one memory pool for every graph
         side = torch.cuda.Stream()
-        for shape in shapes:
-            inp = make_inputs(*shape)
-            with torch.cuda.stream(side):
-                for _ in range(warmup):
-                    step_fn(inp)
-            torch.cuda.current_stream().wait_stream(side)
-            g = torch.cuda.CUDAGraph()
-            with torch.cuda.graph(g, pool=pool):
-                out = step_fn(inp)
-            self.graphs[shape], self.inputs[shape], self.outputs[shape] = g, inp, out
-        torch.cuda.synchronize()
+        try:
+            for shape in shapes:
+                inp = make_inputs(*shape)
+                side.wait_stream(torch.cuda.current_stream())
+                with torch.cuda.stream(side):
+                    for _ in range(warmup):
+                        step_fn(inp)
+                torch.cuda.current_stream().wait_stream(side)
+                g = torch.cuda.CUDAGraph()
+                for generator in generators:
+                    g.register_generator_state(generator)
+                self.graphs[shape] = g
+                with torch.cuda.graph(g, pool=pool):
+                    out = step_fn(inp)
+                self.graphs[shape], self.inputs[shape], self.outputs[shape] = g, inp, out
+            torch.cuda.synchronize()
+        except BaseException:
+            self.close()
+            raise
 
-    def run(self, shape: "tuple[int, int]", fill):
+    def run(self, shape: "tuple[int, ...]", fill):
         """fill(inputs) copies this step's data into the static buffers; then replay."""
         if shape not in self.graphs:
             raise KeyError(f"no captured graph for decode shape {shape}: the scheduler produced a "
@@ -49,6 +56,14 @@ class DecodeGraphs:
         fill(self.inputs[shape])
         self.graphs[shape].replay()
         return self.outputs[shape]
+
+    def close(self):
+        """Release NCCL graph references before destroying its process group."""
+        for graph in self.graphs.values():
+            graph.reset()
+        self.graphs.clear()
+        self.inputs.clear()
+        self.outputs.clear()
 
 
 def _selfcheck() -> None:

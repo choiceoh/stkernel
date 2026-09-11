@@ -38,19 +38,8 @@ class Lanes:
     moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8 [up|gate], w13_sf [E, 2I*H/16] e4m3 (folded, interleaved),
                               #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit) -> [T,H] bf16: this rank's routed partial (shared expert excluded)
     indexer_quant: object     # contiguous [R,128] bf16 -> Hadamard-rotated [R,128] e4m3, per-row pow2 [R,1] f32 scale
-    expand_pools: object      # pool ids [T,topk/pool] int32, seq_lens [T] int32, pool size -> [T,topk+pool-1] int32 tokens, -1 padded
-
-
-_TP = {"active": None}
-
-
-def bind_tp(tp) -> None:
-    """Tell the served lanes which LocalTP run (if any) owns the main thread."""
-    _TP["active"] = tp
-
-
-def _active_tp():
-    return _TP["active"]
+    pool_slots: object        # (pool ids [T,G] int32, seq_lens [T] int32, pool size, block row | None, block size/stride,
+                              #  layer offset, out [T,G*pool+pool-1], counts [T]) -> None; descending token positions, mapped valid prefix
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -68,7 +57,7 @@ def reference() -> Lanes:
     from engine.modules.linear_attention import gated_delta_rule, kda_gate
     from engine.modules.moe import expert_gemm
     from engine.modules.sparse_attention import mla_sparse_mqa
-    from engine.modules.sparse_indexer import fwht128_quant, indexer_logits, kpool_compress, select_with_tail
+    from engine.modules.sparse_indexer import fwht128_quant, indexer_logits, kpool_compress, pool_slots
 
     def conv_prefill(x, w, state):
         return causal_conv1d(x, w, None, state, "silu")
@@ -123,24 +112,29 @@ def reference() -> Lanes:
         return out.to(x.dtype)
 
     return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
-                 mla_sparse_mqa, moe, fwht128_quant, select_with_tail)
+                 mla_sparse_mqa, moe, fwht128_quant, pool_slots)
 
 
-def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
+def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
     """Bind the ST kernel package without an overlay or vLLM installation.
 
     `reference_for` names lanes DECLARED to run on the torch reference in
     this table ("expert" and/or "kda_recurrent"). The table's name says so,
     boot prints it, proof can demand it: a declared choice, not a fallback
-    (D3). Anything not named must bind or the call raises."""
+    (D3). Anything not named must bind or the call raises.
+
+    `tp` explicitly owns dispatch for this table's lifetime. Bound tables may
+    run only inside that LocalTP invocation. Omit it for direct fleet calls
+    and warmup; constructing another table never rebinds an existing one.
+    """
     expert_lane = "reference" if "expert" in reference_for else "b12x"
     from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
     from engine.kernels.causal_conv import causal_conv1d_fn
     from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
-    from engine.kernels.kpool import (
-        expand_pools_and_append_tail, fwht128_quant_fp8, kpool_compress_and_write_cache)
+    from engine.kernels.kpool import fwht128_quant_fp8, kpool_compress_and_write_cache
     from engine.kernels import mla as mk
+    from engine.kernels.indexer import pool_slots
     ref = reference()
 
     def conv_prefill(x, w, state):
@@ -151,9 +145,20 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         table = torch.zeros(2, c, w.shape[1] - 1, device=x.device, dtype=x.dtype)
         if state is not None:
             table[1] = state
-        y = causal_conv1d_fn(x.T, w, None, table, torch.tensor([0, t], device=x.device, dtype=torch.int32),
-                             cache_indices=torch.tensor([1], device=x.device, dtype=torch.int32),
-                             has_initial_state=torch.tensor([state is not None], device=x.device), activation="silu")
+        # One sequence, known length: publish the launch map on device.
+        # The generic wrapper otherwise reads query lengths back to the CPU,
+        # which synchronizes eager decode and is forbidden during capture.
+        from types import SimpleNamespace
+        programs = -(-t // 8)
+        batch = torch.zeros(programs, device=x.device, dtype=torch.int32)
+        offsets = torch.arange(programs, device=x.device, dtype=torch.int32)
+        metadata = SimpleNamespace(batch_ptr=batch, token_chunk_offset_ptr=offsets,
+            nums_dict={8: dict(tot=programs, mlist=None, mlist_len=programs,
+                              offsetlist=None, batch_ptr=batch, token_chunk_offset_ptr=offsets)})
+        y = causal_conv1d_fn(x.T, w, None, table, torch.arange(2, device=x.device, dtype=torch.int32) * t,
+                             cache_indices=torch.ones(1, device=x.device, dtype=torch.int32),
+                             has_initial_state=torch.full((1,), state is not None, device=x.device, dtype=torch.bool),
+                             activation="silu", metadata=metadata)
         y = y.T if y.shape[0] == c else y
         return y, table[1]
 
@@ -251,14 +256,15 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         CUDA_ERROR_INVALID_VALUE from a worker (probes/mhc_lane_isolate.py), and
         triton's autotuner is not thread-safe either. base/comm.LocalTP hands
         the call over; on the fleet (one rank per process) it is a direct call."""
+        if tp is None:
+            return fn
         def run(*a, **k):
-            tp = _active_tp()
-            return fn(*a, **k) if tp is None else tp.on_main(fn, *a, **k)
+            return tp.on_main(fn, *a, **k)
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
     return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, moe,
-                                            fwht128_quant_fp8, expand_pools_and_append_tail)))
+                                            fwht128_quant_fp8, pool_slots)))
 
 
 def _selfcheck() -> None:

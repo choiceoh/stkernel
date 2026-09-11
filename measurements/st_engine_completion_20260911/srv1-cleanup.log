@@ -1,0 +1,10 @@
+{
+  "deleted": "/home/choiceoh/glm53-cache/glm53-fp8",
+  "files": 23247,
+  "allocated_bytes": 231812329472,
+  "free_before_bytes": 30213361664,
+  "free_after_bytes": 262028255232,
+  "freed_bytes": 231814893568
+}
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  916G  625G  245G  72% /

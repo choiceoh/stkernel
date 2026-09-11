@@ -1,0 +1,8 @@
+{"context": 0, "slot": 1, "proposal_equal": true, "unpadded_fp64_attention_relative": 0.0018518518190830946, "eager": [33101, 3756, 12720, 1003, 33075], "graph": [33101, 3756, 12720, 1003, 33075]}
+{"context": 1, "slot": 2, "proposal_equal": true, "unpadded_fp64_attention_relative": 0.0008445946150459349, "eager": [15876, 31614, 1122, 30461, 30461], "graph": [15876, 31614, 1122, 30461, 30461]}
+{"context": 5, "slot": 2, "proposal_equal": true, "unpadded_fp64_attention_relative": 0.0016339869471266866, "eager": [1736, 7664, 812, 37771, 37771], "graph": [1736, 7664, 812, 37771, 37771]}
+{"context": 17, "slot": 2, "proposal_equal": true, "unpadded_fp64_attention_relative": 0.0018248175038024783, "eager": [23292, 33554, 14450, 14450, 26593], "graph": [23292, 33554, 14450, 14450, 26593]}
+{"context": 2047, "slot": 2, "proposal_equal": true, "unpadded_fp64_attention_relative": 0.002439024392515421, "eager": [30, 8790, 678, 3667, 11376], "graph": [30, 8790, 678, 3667, 11376]}
+{"context": 2048, "slot": 1, "proposal_equal": true, "unpadded_fp64_attention_relative": 0.0024509804788976908, "eager": [2509, 1015, 2673, 3070, 64], "graph": [2509, 1015, 2673, 3070, 64]}
+{"context": 2057, "slot": 2, "proposal_equal": true, "unpadded_fp64_attention_relative": 0.005586592014878988, "eager": [11, 311, 363, 9103, 6005], "graph": [11, 311, 363, 9103, 6005]}
+{"passed": true, "proposals": 7, "accepted_prefixes": 42}

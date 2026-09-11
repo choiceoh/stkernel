@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import torch                                                     # noqa: E402
 
 from engine.base import scheduler as sched                       # noqa: E402
-from engine.base.arena import Arena                              # noqa: E402
+from engine.base.arena import Arena, prepare_allocation          # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.config import Config, Fact                      # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
@@ -83,13 +83,14 @@ def decodable_vocab(tok) -> int:
 
 def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
-          ckpt_meta: "str | Path" = facts.CKPT):
+          ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
     F = facts.load(ckpt_meta)
     net = Glm53Net(F, comm, lanes, layers)
     specs = net.specs()
-    D = drafter_mod.load() if use_drafter else None
+    drafter_dir = Path(drafter_dir)
+    D = drafter_mod.load(drafter_dir) if use_drafter else None
     dspecs = drafter_mod.specs(D) if D else []
     draft_shape = (D.layers, D.window, D.kv_heads, D.head_dim) if D else None
     cache_layout = layout(F, net.layers, draft_shape)
@@ -100,8 +101,28 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     if nb < 2:
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors")
+    arena_bytes = total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs)
+    if len(net.layers) == F.layers:
+        # Full-model admission must not rely on the page-cache-inclusive
+        # MemAvailable value. The spare 16 GiB is a conservative boot guard,
+        # not a measured graph-workspace/performance budget.
+        files = sorted(Path(ranks_dir).glob("rank*of4.safetensors"))
+        if D:
+            files.append(drafter_dir / "model.safetensors")
+        failure = None
+        try:
+            report = prepare_allocation(arena_bytes, files, 16 * GIB,
+                                        lambda: torch.cuda.mem_get_info()[0])
+        except (MemoryError, OSError) as exc:
+            failure = exc
+        # A failed rank must prevent peers from starting their large CUDA
+        # allocations; closing NCCL only after one rank fails is too late.
+        failed = comm.all_reduce(torch.tensor([int(failure is not None)], device="cuda"))
+        if int(failed.item()):
+            raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
+        recorder.gauge("boot_immediately_free_GiB", round(report["immediately_free"] / GIB, 3))
     with recorder.phase("arena"):
-        arena = Arena(total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs))
+        arena = Arena(arena_bytes)
     with recorder.phase("load"):
         views = rank.load(
             [s.name for s in specs], arena=arena, recorder=recorder)
@@ -111,7 +132,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     drafter = NullDrafter()
     if D:
         with recorder.phase("load drafter"):
-            dviews = RankLoader(drafter_mod.DRAFTER / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
+            dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
         drafter = drafter_mod.Drafter(D, net, decodable)
         drafter.bind(dviews)
     caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape)
@@ -150,7 +171,7 @@ def local(a) -> int:
     layers = [int(x) for x in a.layers.split("-")]; layers = list(range(layers[0], layers[-1] + 1))
     torch.manual_seed(a.seed)
     prompts = {seq: torch.randint(0, 100_000, (a.prompt + 7 * seq,)).tolist() for seq in range(a.seqs)}
-    tp = LocalTP(facts.TP); lane_tables.bind_tp(tp)
+    tp = LocalTP(facts.TP)
     lanes = lane_tables.reference()
     if a.park:                                            # a run-private tier: parked ids from an earlier smoke must not collide
         import tempfile
@@ -161,7 +182,8 @@ def local(a) -> int:
         rec = Recorder(f"rank{comm.rank}")
         F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, a.drafter, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed,
-                                               tier_dir=a.tier_dir if a.park else None)
+                                               tier_dir=a.tier_dir if a.park else None,
+                                               ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
         t0 = time.perf_counter()
         with rec.phase("generate"):
             out = run_prompts(engine, runner, prompts)
@@ -241,7 +263,8 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
         rec = Recorder(f"rank{comm.rank}")
         F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, a.drafter, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed,
-                                               tier_dir=a.tier_dir if a.park else None)
+                                               tier_dir=a.tier_dir if a.park else None,
+                                               ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
         server = Server(engine, runner, comm, port=port)
         httpd = None
         if comm.rank == 0:
@@ -299,24 +322,30 @@ def fleet(a) -> int:
     print(f"  box: {facts.check_box()}")
     cfg = declared(a, facts.TP)
     comm = Comm.init()
-    if comm.rank == 0:
-        print(cfg.table())
-    lanes = lane_tables.served()                                              # every served lane, or the boot dies (D3)
-    rec = Recorder(f"rank{comm.rank}")
-    F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
-                                           max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
-                                           ckpt_meta=a.ckpt_meta)
-    dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
-    if comm.rank == 0:
-        print(rec.table())
-        print(f"  ST engine: GLM-5.3, TP={facts.TP}, lanes={lanes.name}, KV {a.kv_gib} GiB, serving on :{a.port}")
-        if runner.tiered is not None:
-            t = runner.tiered.tier
-            print(f"  NVMe tier: {sum(1 for k in t.index if t.has(int(k)))} conversations parked from before, {len(t.stale())} under another layout (kept, not resumable)")
+    engine = dump = None
     try:
+        if comm.rank == 0:
+            print(cfg.table())
+        lanes = lane_tables.served()                                              # every served lane, or the boot dies (D3)
+        rec = Recorder(f"rank{comm.rank}")
+        F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
+                                               max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
+                                               ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
+        with rec.phase("capture decode"):
+            engine.capture_decode(MAX_SEQS)
+        dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
+        if comm.rank == 0:
+            print(rec.table())
+            print(f"  ST engine: GLM-5.3, TP={facts.TP}, lanes={lanes.name}, KV {a.kv_gib} GiB, serving on :{a.port}")
+            if runner.tiered is not None:
+                t = runner.tiered.tier
+                print(f"  NVMe tier: {sum(1 for k in t.index if t.has(int(k)))} conversations parked from before, {len(t.stale())} under another layout (kept, not resumable)")
         Server(engine, runner, comm, port=a.port, tokenizer=tokenizer(a.ckpt_meta)).loop()
     finally:
-        dump.close()
+        if dump is not None:
+            dump.close()
+        if engine is not None:
+            engine.close_decode()
         comm.close()
     return 0
 
@@ -337,6 +366,7 @@ def main(argv=None) -> int:
     ap.add_argument("--park", action="store_true", help="with --local: park a finished conversation on NVMe, resume, continue (D16)")
     ap.add_argument("--tier-dir", default="/home/choiceoh/glm53-logs/st-tier")
     ap.add_argument("--ckpt-meta", default=str(facts.CKPT), help="dir with config.json, tokenizer.json, generation_config.json")
+    ap.add_argument("--drafter-dir", default=str(drafter_mod.DRAFTER), help="DFlash2 config and model.safetensors directory")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--dump-dir", default="/home/choiceoh/glm53-logs/st-dumps")
     a = ap.parse_args(argv)

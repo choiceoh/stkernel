@@ -1,0 +1,18 @@
+[W911 10:42:04.919260514 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/probes/engine_full_check.py", line 158, in <module>
+[rank0]:     if __name__=='__main__':main()
+[rank0]:                             ^^^^^^
+[rank0]:   File "/repo/probes/engine_full_check.py", line 54, in main
+[rank0]:     _,net,caches,engine,runner=build(comm,None,served(),args.ranks,8.73,4,True,rec,
+[rank0]:                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 105, in build
+[rank0]:     arena = Arena(total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs))
+[rank0]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/base/arena.py", line 35, in __init__
+[rank0]:     self.buf = torch.empty(nbytes, dtype=torch.uint8, device=device)   # the one allocation
+[rank0]:                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]: torch.AcceleratorError: CUDA error: out of memory
+[rank0]: Search for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+[rank0]: For more detailed error information, run with CUDA_LOG_FILE=stderr
+

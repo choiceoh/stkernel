@@ -4,7 +4,7 @@
 # (rsync); ~44.5 GiB per file.
 #   bash launchers/fanout-st-ranks.sh [ranks...]      default: 0 1 2
 set -euo pipefail
-SRC=${RANKS_DIR:-/home/choiceoh/models/glm53-redhat-nvfp4-tp4}
+SRC=${RANKS_DIR:-/home/choiceoh/models/glm53-redhat-nvfp4-tp4-up-gate-v1}
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 if [ "$#" -eq 0 ]; then set -- 0 1 2; fi
 for r in "$@"; do

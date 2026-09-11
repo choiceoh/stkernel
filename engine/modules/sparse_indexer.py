@@ -133,6 +133,30 @@ def select_with_tail(pool_ids: torch.Tensor, seq_lens: torch.Tensor, pool_size: 
     return torch.cat([tokens, tail], dim=1).to(torch.int32)
 
 
+def indexer_slots(tokens, block_table, block_size, block_stride, layer_offset, out, counts):
+    """Write descending-position latent slots and valid-prefix counts in place.
+
+    A None block table is an identity map. Otherwise each block occupies
+    `block_stride` latent rows and this layer starts at `layer_offset` rows.
+    """
+    positions = tokens.sort(dim=1, descending=True).values
+    counts.copy_((positions >= 0).sum(1).to(torch.int32))
+    if block_table is None:
+        slots = positions
+    else:
+        safe = positions.clamp_min(0)
+        blocks = block_table[(safe // block_size).long()]
+        slots = blocks * block_stride + layer_offset + safe % block_size
+    out.copy_(slots.masked_fill(positions < 0, -1))
+
+
+def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
+               layer_offset, out, counts):
+    """Expanded-token oracle for the compressed-pool slot finalization lane."""
+    indexer_slots(select_with_tail(pool_ids, seq_lens, pool_size), block_table,
+                  block_size, block_stride, layer_offset, out, counts)
+
+
 def _selfcheck_pool() -> None:
     torch.manual_seed(0); dev = "cuda" if torch.cuda.is_available() else "cpu"
     # Hadamard is orthogonal: H H^T = I after the 1/sqrt(128) scale

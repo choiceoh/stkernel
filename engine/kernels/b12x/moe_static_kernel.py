@@ -126,6 +126,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
     Sm120B12xBlockScaledDenseGemmKernel as DenseGemmKernel,
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
+from .moe_micro_kernel import scatter_add_bf16x2_to_f32
 
 
 _SF_VEC_SIZE = 16
@@ -346,6 +347,7 @@ class MoEStaticKernel:
         mma_tiler_mn: Tuple[int, int],
         output_tile_count_n: int,
         *,
+        scatter_fp32: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -356,6 +358,7 @@ class MoEStaticKernel:
         if activation not in {"silu", "relu2", "gelu_tanh", "swigluoai_uninterleave"}:
             raise ValueError(f"unsupported activation {activation!r}")
         self._dense_cls = DenseGemmKernel
+        self.scatter_fp32 = scatter_fp32
         self.acc_dtype = cutlass.Float32
         self.sf_vec_size = sf_vec_size
         self.input_scales_are_reciprocal = input_scales_are_reciprocal
@@ -1011,7 +1014,10 @@ class MoEStaticKernel:
         scatter_total = num_tokens * cols
         j = flat_tid
         while j < scatter_total:
-            scatter_output[j // cols, j % cols] = cutlass.BFloat16(0.0)
+            if cutlass.const_expr(self.scatter_fp32):
+                scatter_output[j // cols, j % cols] = cutlass.Float32(0.0)
+            else:
+                scatter_output[j // cols, j % cols] = cutlass.BFloat16(0.0)
             j += flat_stride
         cute.arch.sync_threads()
         self._resident_grid_barrier(
@@ -2161,19 +2167,33 @@ class MoEStaticKernel:
                                     epi_buffer,
                                 ]
                             )
-                            scatter_add_v4_bf16x2(
-                                get_ptr_as_int64(
-                                    scatter_output, tok * scatter_N + global_col
-                                ),
-                                wv * sc_v0,
-                                wv * sc_v1,
-                                wv * sc_v2,
-                                wv * sc_v3,
-                                wv * sc_v4,
-                                wv * sc_v5,
-                                wv * sc_v6,
-                                wv * sc_v7,
-                            )
+                            if cutlass.const_expr(self.scatter_fp32):
+                                scatter_add_bf16x2_to_f32(
+                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(0)),
+                                    wv * sc_v0, wv * sc_v1)
+                                scatter_add_bf16x2_to_f32(
+                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(2)),
+                                    wv * sc_v2, wv * sc_v3)
+                                scatter_add_bf16x2_to_f32(
+                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
+                                    wv * sc_v4, wv * sc_v5)
+                                scatter_add_bf16x2_to_f32(
+                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(6)),
+                                    wv * sc_v6, wv * sc_v7)
+                            else:
+                                scatter_add_v4_bf16x2(
+                                    get_ptr_as_int64(
+                                        scatter_output, tok * scatter_N + global_col
+                                    ),
+                                    wv * sc_v0,
+                                    wv * sc_v1,
+                                    wv * sc_v2,
+                                    wv * sc_v3,
+                                    wv * sc_v4,
+                                    wv * sc_v5,
+                                    wv * sc_v6,
+                                    wv * sc_v7,
+                                )
                             vec_idx += Int32(self.num_threads_per_warp)
 
                         # Post-scatter barrier: needed to ensure all warps

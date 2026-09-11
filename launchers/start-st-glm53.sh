@@ -17,7 +17,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 IMAGE=${ST_IMAGE:-${IMAGE:-st-engine:glm53}}
 PORT=${PORT:-8000}
-RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/glm53-redhat-nvfp4-tp4}
+RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/glm53-redhat-nvfp4-tp4-up-gate-v1}
 CKPT=${CKPT:-/home/choiceoh/models/glm53-redhat-nvfp4}
 DRAFTER=${DRAFTER:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}
 ENGINE_DIR=/home/choiceoh/st-engine                     # the engine tree, rsynced to every node
@@ -54,7 +54,7 @@ NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
 -e DG_JIT_CACHE_DIR=/cache/deep_gemm -e ST_MLA_BUILD_ROOT=/cache/mla -e FLASHINFER_WORKSPACE_BASE=/cache"
 
 # the checkpoint's metadata travels with the engine tree: a node needs its rank file, the drafter and these few files,
-# not the 185 GB HF checkpoint (srv1 has 29 GB free)
+# not the full HF checkpoint
 META="$REPO/build/st-glm53-meta"; mkdir -p "$META"
 cp "$CKPT"/config.json "$CKPT"/tokenizer.json "$CKPT"/tokenizer_config.json "$CKPT"/generation_config.json "$META"/ 2>/dev/null
 cp "$CKPT"/chat_template*.jinja "$META"/ 2>/dev/null || true
@@ -73,6 +73,6 @@ for r in "${!NODES[@]}"; do
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 engine/profiles/glm53/boot.py --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 engine/profiles/glm53/boot.py --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER' >/dev/null && echo '$ip: started'"
 done
 echo "head: http://10.10.10.2:$PORT/v1/completions  (GET / for status)"

@@ -154,6 +154,11 @@ class RankLoader:
                     block.copy_(staged, non_blocking=False)
                 else:
                     block = staged.to(device, non_blocking=False)
+                # A blocking upload has consumed this run. Its clean file
+                # pages must not compete with the resident arena on UMA.
+                with self.path.open("rb") as stream:
+                    os.posix_fadvise(stream.fileno(), self.data_base + run.start,
+                                     run.nbytes, os.POSIX_FADV_DONTNEED)
                 blocks.append(block)
                 for name, offset, size in run.keys:
                     entry = self.header[name]

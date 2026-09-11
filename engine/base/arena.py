@@ -15,9 +15,36 @@ measured what the caching allocator costs when it is allowed to think --
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
+from pathlib import Path
 
 GIB = 1 << 30
 ALIGN = 256                       # every carve starts on a 256 B boundary (TMA-friendly)
+
+
+def prepare_allocation(nbytes: int, files, headroom: int, device_free) -> dict:
+    """Drop clean pages of the supplied weight files, then check physical headroom.
+
+    MemAvailable includes reclaimable page cache. A large CUDA allocation on
+    UMA can fail while that number still looks sufficient. This preflight
+    deliberately counts immediately free pages, without relying on swap or
+    invoking a machine-wide cache flush. It is a necessary admission check,
+    not a guarantee against another process allocating after the check.
+    """
+    for path in files:
+        with Path(path).open("rb") as stream:
+            os.posix_fadvise(stream.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
+    memory = {key: int(value.split()[0]) * 1024
+              for line in Path("/proc/meminfo").read_text().splitlines()
+              for key, value in [line.split(":", 1)]}
+    free = min(memory["MemFree"], device_free())
+    if nbytes + headroom > free:
+        raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus "
+                          f"headroom {headroom/GIB:.2f} GiB exceeds immediately free "
+                          f"memory {free/GIB:.2f} GiB; MemAvailable "
+                          f"{memory['MemAvailable']/GIB:.2f} GiB includes reclaimable pages")
+    return dict(allocation=nbytes, headroom=headroom, immediately_free=free,
+                available=memory["MemAvailable"])
 
 
 @dataclass(frozen=True)

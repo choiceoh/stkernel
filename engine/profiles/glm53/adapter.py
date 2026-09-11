@@ -52,6 +52,32 @@ class Glm53Engine:
         self.accepted_total = 0
         self.drafted_total = 0
         self.steps = 0
+        self.decode_graphs = None
+        self.sampling_graphs = None
+
+    def capture_decode(self, max_seqs: int) -> None:
+        """Bind the fleet's finite target decode graphs before admitting work."""
+        from engine.profiles.glm53.decode_graphs import Glm53DecodeGraphs
+        if self.tokens:
+            raise ValueError("capture must finish before requests are admitted")
+        self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
+                                              self.drafter.k + 1, self.aux_layers)
+        if self.drafter.k:
+            self.drafter.capture_decode(self.caches)
+        from engine.profiles.glm53.decode_graphs import SamplingGraphs
+        self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
+
+    def close_decode(self):
+        if self.sampling_graphs is not None:
+            self.sampling_graphs.close()
+            self.sampling_graphs = None
+        if self.decode_graphs is not None:
+            self.decode_graphs.graphs.close()
+            self.decode_graphs = None
+        if self.drafter.k and self.drafter.decode_graphs is not None:
+            self.drafter.decode_graphs.proposals.close()
+            self.drafter.decode_graphs.observations.close()
+            self.drafter.decode_graphs = None
 
     # -- the runner's protocol -------------------------------------------------------
     def validate(self, ids, max_new, temperature) -> None:
@@ -157,9 +183,16 @@ class Glm53Engine:
             segments.append(Segment(seq, slot, self.ctx[seq], len(flat), len(ids)))
             flat.extend(ids)
         step = Step(torch.tensor(flat, dtype=torch.int64, device=self.caches.device), tuple(segments))
-        h, aux = self._forward(step)
+        if self.decode_graphs is None:
+            h, aux = self._forward(step)
+            logits = self.net.head(h)
+        else:
+            h, aux, logits = self.decode_graphs.run(step)
         temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
-        sampled = self._sample(self.net.head(h), temps).tolist()
+        if self.sampling_graphs is None:
+            sampled = self._sample(logits, temps).tolist()
+        else:
+            sampled = self.sampling_graphs.run(self.decode_graphs.shape(step), temps).tolist()
         finished = []
         for s in step.segments:
             picks = sampled[s.start: s.start + s.length]
@@ -177,7 +210,8 @@ class Glm53Engine:
             committed = len(new)                            # clipped tokens must not enter the next turn's context
             if aux is not None:
                 rows = slice(s.start, s.start + committed)
-                self.drafter.observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + committed, device=h.device), aux[rows])
+                observe = self.drafter.observe_decode if self.decode_graphs is not None else self.drafter.observe
+                observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + committed, device=h.device), aux[rows])
             self.tokens[s.seq] += new
             self.ctx[s.seq] += committed
             self.accepted_total += min(accepted, committed)

@@ -60,6 +60,19 @@ b12x는 이식 전 FlashInfer 커널과 직접 비교하며, PyTorch 참조와 �
 
     python3 -m unittest discover -s tests -p 'test_engine_*.py' -v
 
+실행 소유권은 커널 표 → LocalTP → 개별 `run` 순서로 명시한다. `lanes.served(tp=tp)`가
+만든 표는 해당 실행기에 고정되며, 다른 표의 생성이나 실행이 이 연결을 바꾸지 않는다.
+플릿과 직접 워밍업은 `lanes.served()`로 호출한다. 전역 `bind_tp` 상태는 없다.
+
+- 각 `run`이 배리어·통신 버퍼·결과·커널 대기열을 새로 소유하고, 끝날 때 참조를 반납한다.
+- 같은 LocalTP의 중첩·중복 실행, 외부 스레드의 디스패치, 종료된 랭크 핸들의 재사용은 즉시 실패한다.
+- 독립 LocalTP 둘은 각자의 호출 스레드에서 커널을 실행하며 통신 상태를 공유하지 않는다.
+- 랭크·커널·스레드 시작 실패 시 대기 커널을 취소하고 시작된 랭크를 합류시킨 뒤 원인을 전달한다.
+  다음 명시적 실행은 새 제어 상태를 받는다. 모델/KV나 CUDA 문맥의 복구·자동 재시도는 별도 책임이다.
+
+부팅과 체인 검사도 이 소유권 경계를 따른다. 검증은
+[`measurements/st_engine_execution_20260911`](../measurements/st_engine_execution_20260911/README.md)에 있다.
+
 요청과 캐시의 소유권은 다음 경계에서 확정한다:
 
 - `Runner.submit`은 입력 검증 → KV·상태 슬롯 예약 → `Model.open` → 스케줄러 등록 순서다.
@@ -136,11 +149,22 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 recurrent 레인도 연결되어 검증 토큰마다 상태를 반환하고, 시작 상태를 보존한다.
 MLA 참조 레인은 선택된 fp8 행만 변환하며, 패딩 슬롯이 가리키는 미사용 블록의 NaN을 마스킹한다.
 
-인덱서의 Hadamard-128 변환·FP8 양자화와 pool→토큰 확장은 `indexer_quant`, `expand_pools`
-레인으로 실행한다. 서빙 표는 `engine.kernels.kpool`의 융합 Triton 커널에 연결하고, 참조 표는 기존 PyTorch
-수식을 유지한다. 두 레인도 LocalTP의 메인 스레드 경유 규칙을 따르며, 바인딩이나 실행 실패는
-그대로 전파한다. 실제 가중치 인덱서의 결과·캐시 일치와 구성요소 성능은
-[`measurements/st_engine_indexer_20260911`](../measurements/st_engine_indexer_20260911/README.md)에 기록했다.
+인덱서의 Hadamard-128 변환·FP8 양자화는 `indexer_quant` 레인으로 실행한다.
+선택한 풀의 최종 주소 생성은 `pool_slots` 레인 하나가 맡는다. GB10에서 토큰 2,051개를
+먼저 펼쳐 정렬하던 경로를, 풀 ID 512개를 정렬한 뒤 토큰을 생성하는 구조로 바꿨다.
+서빙 커널은 4워프 프로그램 하나가 한 행을 처리하며, 중간 GPU 텐서를 할당하지 않는다.
+
+KV 블록은 풀 크기의 정수 배수여야 한다. 이 계약 덕분에 풀마다 블록 주소를 한 번 읽고
+네 토큰의 주소를 레지스터에서 계산한다. 미완성 꼬리는 최신 토큰부터 앞에 배치하고,
+중복 풀은 토큰별 중복 횟수를 유지하며, 패딩과 유효 개수까지 같은 커널에서 쓴다.
+참조 레인은 기존 토큰 확장·정렬·매핑 수식을 유지해 정확한 정수 비교의 기준으로 쓴다.
+
+캐시는 `token_map(layer, seq)`로 블록 행과 잠재 벡터 행 단위의 블록 크기·간격·레이어
+오프셋을 제공한다. 연속 캐시 검사의 `None` 블록 행은 위치와 슬롯이 같은 매핑이다.
+LocalTP 소유권과 오류 전파 규칙은 다른 레인과 같다. 이전 `expand_pools`, `indexer_slots`
+서빙 레인은 제거했으며, 기존 함수는 구성요소 검사와 명시적인 과거 커밋 비교에만 사용한다.
+검증 범위와 변경 전후 측정은
+[`measurements/st_engine_pool_slots_20260911`](../measurements/st_engine_pool_slots_20260911/README.md)에 있다.
 
 네 노드 검증은 각 노드에서 같은 인자로 `check.py --distributed`를 실행한다.
 기본 노드 순서는 **rank 0=srv2, rank 1=srv1, rank 2=srv3, rank 3=srv4**다.
@@ -158,3 +182,11 @@ RoCE 인터페이스·GID는 실행기가 설정하고, `--ranks`에는 해당 �
 이는 2개 실제 층(KDA+dense, DSA+NVFP4 MoE)의 실행·캐시 계약 검사다. 통합 전 로그는
 참조 전문가를 사용했고, PR #534 통합 후 `check.py --lanes served`는 b12x 전문가를 포함한다.
 전체 45층 onepass 품질, 실제 DFlash2 수용률, 그래프 기반 요청 실행 및 처리량·ITL 판정은 별도다.
+
+
+디코드 그래프 연결과 실가중치 수치 안정성 후속 작업은
+[`measurements/st_engine_completion_20260911`](../measurements/st_engine_completion_20260911/README.md)에 기록했다.
+TP4의 두 층 검사에서 일반 실행·그래프 출력과 캐시가 일치하며, MoE BF16 누적의 반복 편차를
+FP32 합산으로 줄였다. 전체 모델 첫 부팅은 CUDA 아레나 할당 실패로 중단됐다. 따라서 전체
+45층 품질·DFlash2 수용률·NVMe 간섭 ITL과 최종 플릿 릴리스는 아직 통과한 상태가 아니다.
+독립 이미지의 버전·소스 식별 방법은 [`runtime/README.md`](runtime/README.md)를 따른다.

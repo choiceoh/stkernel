@@ -1,0 +1,893 @@
+{
+  "scope": "pool-slot kernel and optional real-weight L3 indexer; not full-model ITL",
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "cuda": "13.0",
+  "device": "NVIDIA GB10",
+  "sm_count": 48,
+  "max_threads_per_sm": 1536,
+  "shared_memory_per_sm": 102400,
+  "protocol": {
+    "rounds": 5,
+    "eager_samples": 100,
+    "graph_samples": 50,
+    "graph_repetitions": 100,
+    "order": "alternating AB/BA"
+  },
+  "measurements": [
+    {
+      "rows": 1,
+      "groups": 512,
+      "width": 2051,
+      "slots_and_counts_exact": true,
+      "eager": {
+        "baseline": {
+          "wall": {
+            "median_us": 197.12400000000002,
+            "p95_us": 213.96
+          },
+          "round_wall": [
+            {
+              "median_us": 199.38,
+              "p95_us": 214.856
+            },
+            {
+              "median_us": 197.404,
+              "p95_us": 215.305
+            },
+            {
+              "median_us": 195.531,
+              "p95_us": 211.559
+            },
+            {
+              "median_us": 196.812,
+              "p95_us": 213.304
+            },
+            {
+              "median_us": 196.9475,
+              "p95_us": 214.2
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 193.10399889945984,
+            "p95_us": 209.53600108623505
+          },
+          "peak_extra_cuda_bytes": 51200
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 55.558499999999995,
+            "p95_us": 71.123
+          },
+          "round_wall": [
+            {
+              "median_us": 54.43,
+              "p95_us": 71.283
+            },
+            {
+              "median_us": 54.991,
+              "p95_us": 66.13
+            },
+            {
+              "median_us": 55.078,
+              "p95_us": 71.443
+            },
+            {
+              "median_us": 56.7505,
+              "p95_us": 71.794
+            },
+            {
+              "median_us": 57.823,
+              "p95_us": 70.338
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 51.67999863624573,
+            "p95_us": 67.26399809122086
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_100_calls": {
+        "baseline": {
+          "wall": {
+            "median_us": 3007.617,
+            "p95_us": 3011.636
+          },
+          "round_wall": [
+            {
+              "median_us": 3007.3705,
+              "p95_us": 3011.236
+            },
+            {
+              "median_us": 3008.179,
+              "p95_us": 3011.54
+            },
+            {
+              "median_us": 3007.5609999999997,
+              "p95_us": 3011.107
+            },
+            {
+              "median_us": 3008.9134999999997,
+              "p95_us": 3012.722
+            },
+            {
+              "median_us": 3007.0485,
+              "p95_us": 3010.274
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 3003.200054168701,
+            "p95_us": 3007.3599815368652
+          },
+          "peak_extra_cuda_bytes": 0
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 532.8520000000001,
+            "p95_us": 535.965
+          },
+          "round_wall": [
+            {
+              "median_us": 532.796,
+              "p95_us": 535.244
+            },
+            {
+              "median_us": 532.803,
+              "p95_us": 536.332
+            },
+            {
+              "median_us": 533.6755,
+              "p95_us": 536.876
+            },
+            {
+              "median_us": 533.9155000000001,
+              "p95_us": 536.236
+            },
+            {
+              "median_us": 516.4705,
+              "p95_us": 519.528
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 528.9919972419739,
+            "p95_us": 532.8959822654724
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_device_us_per_call": {
+        "baseline": 30.03200054168701,
+        "optimized": 5.289919972419739
+      },
+      "operators": {
+        "baseline": {
+          "cuda_kernel_count": 4,
+          "cuda_copy_count": 3,
+          "cuda_kernels": {
+            "_expand_pools_and_append_tail_kernel": 1,
+            "void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, function_traits<at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>::result_type*)": 1,
+            "void at::native::radixSortKVInPlace<-2, -1, 128, 32, int, long, unsigned int>(at::cuda::detail::TensorInfo<int, unsigned int>, unsigned int, unsigned int, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, bool)": 1,
+            "_indexer_slots": 1
+          },
+          "aten_ops": {
+            "aten::empty": 2,
+            "aten::sort": 1,
+            "aten::copy_": 3,
+            "aten::arange": 2,
+            "aten::resize_": 1,
+            "aten::view": 1
+          }
+        },
+        "optimized": {
+          "cuda_kernel_count": 1,
+          "cuda_copy_count": 0,
+          "cuda_kernels": {
+            "_pool_slots": 1
+          },
+          "aten_ops": {}
+        }
+      }
+    },
+    {
+      "rows": 6,
+      "groups": 512,
+      "width": 2051,
+      "slots_and_counts_exact": true,
+      "eager": {
+        "baseline": {
+          "wall": {
+            "median_us": 201.013,
+            "p95_us": 219.465
+          },
+          "round_wall": [
+            {
+              "median_us": 202.077,
+              "p95_us": 220.938
+            },
+            {
+              "median_us": 201.26850000000002,
+              "p95_us": 218.681
+            },
+            {
+              "median_us": 200.0445,
+              "p95_us": 218.633
+            },
+            {
+              "median_us": 201.356,
+              "p95_us": 219.465
+            },
+            {
+              "median_us": 200.8365,
+              "p95_us": 219.145
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 196.8960016965866,
+            "p95_us": 216.12800657749176
+          },
+          "peak_extra_cuda_bytes": 215040
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 56.742999999999995,
+            "p95_us": 72.675
+          },
+          "round_wall": [
+            {
+              "median_us": 57.319,
+              "p95_us": 78.389
+            },
+            {
+              "median_us": 58.3115,
+              "p95_us": 67.826
+            },
+            {
+              "median_us": 55.182,
+              "p95_us": 76.26
+            },
+            {
+              "median_us": 54.991,
+              "p95_us": 71.923
+            },
+            {
+              "median_us": 57.135000000000005,
+              "p95_us": 70.531
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 53.039999678730965,
+            "p95_us": 68.64000111818314
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_100_calls": {
+        "baseline": {
+          "wall": {
+            "median_us": 3160.375,
+            "p95_us": 3164.648
+          },
+          "round_wall": [
+            {
+              "median_us": 3160.489,
+              "p95_us": 3165.242
+            },
+            {
+              "median_us": 3159.63,
+              "p95_us": 3163.528
+            },
+            {
+              "median_us": 3161.4790000000003,
+              "p95_us": 3164.024
+            },
+            {
+              "median_us": 3160.1189999999997,
+              "p95_us": 3164.776
+            },
+            {
+              "median_us": 3160.5505000000003,
+              "p95_us": 3164.231
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 3155.8879613876343,
+            "p95_us": 3160.383939743042
+          },
+          "peak_extra_cuda_bytes": 0
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 570.8525,
+            "p95_us": 574.181
+          },
+          "round_wall": [
+            {
+              "median_us": 570.077,
+              "p95_us": 573.894
+            },
+            {
+              "median_us": 571.0695000000001,
+              "p95_us": 574.534
+            },
+            {
+              "median_us": 570.4525,
+              "p95_us": 573.958
+            },
+            {
+              "median_us": 571.501,
+              "p95_us": 574.341
+            },
+            {
+              "median_us": 571.3405,
+              "p95_us": 574.421
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 566.7999982833862,
+            "p95_us": 571.071982383728
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_device_us_per_call": {
+        "baseline": 31.558879613876343,
+        "optimized": 5.667999982833862
+      },
+      "operators": {
+        "baseline": {
+          "cuda_kernel_count": 5,
+          "cuda_copy_count": 2,
+          "cuda_kernels": {
+            "_expand_pools_and_append_tail_kernel": 1,
+            "void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, function_traits<at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>::result_type*)": 1,
+            "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1})": 1,
+            "void at::native::radixSortKVInPlace<2, -1, 128, 32, int, long, unsigned int>(at::cuda::detail::TensorInfo<int, unsigned int>, unsigned int, unsigned int, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, bool)": 1,
+            "_indexer_slots": 1
+          },
+          "aten_ops": {
+            "aten::empty": 2,
+            "aten::sort": 1,
+            "aten::copy_": 3,
+            "aten::arange": 2,
+            "aten::resize_": 1,
+            "aten::view": 1
+          }
+        },
+        "optimized": {
+          "cuda_kernel_count": 1,
+          "cuda_copy_count": 0,
+          "cuda_kernels": {
+            "_pool_slots": 1
+          },
+          "aten_ops": {}
+        }
+      }
+    },
+    {
+      "rows": 24,
+      "groups": 512,
+      "width": 2051,
+      "slots_and_counts_exact": true,
+      "eager": {
+        "baseline": {
+          "wall": {
+            "median_us": 202.125,
+            "p95_us": 217.705
+          },
+          "round_wall": [
+            {
+              "median_us": 203.7735,
+              "p95_us": 217.705
+            },
+            {
+              "median_us": 202.804,
+              "p95_us": 217.88
+            },
+            {
+              "median_us": 201.5565,
+              "p95_us": 219.369
+            },
+            {
+              "median_us": 201.6125,
+              "p95_us": 217.161
+            },
+            {
+              "median_us": 200.82,
+              "p95_us": 215.833
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 198.11199605464935,
+            "p95_us": 213.59999477863312
+          },
+          "peak_extra_cuda_bytes": 805376
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 57.207,
+            "p95_us": 71.826
+          },
+          "round_wall": [
+            {
+              "median_us": 57.807,
+              "p95_us": 71.826
+            },
+            {
+              "median_us": 51.8935,
+              "p95_us": 68.706
+            },
+            {
+              "median_us": 58.1275,
+              "p95_us": 71.186
+            },
+            {
+              "median_us": 57.271,
+              "p95_us": 71.731
+            },
+            {
+              "median_us": 57.022999999999996,
+              "p95_us": 75.268
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 53.44000086188316,
+            "p95_us": 68.12799721956253
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_100_calls": {
+        "baseline": {
+          "wall": {
+            "median_us": 3281.1890000000003,
+            "p95_us": 3302.411
+          },
+          "round_wall": [
+            {
+              "median_us": 3281.406,
+              "p95_us": 3417.546
+            },
+            {
+              "median_us": 3280.6760000000004,
+              "p95_us": 3285.285
+            },
+            {
+              "median_us": 3280.652,
+              "p95_us": 3285.333
+            },
+            {
+              "median_us": 3282.0205,
+              "p95_us": 3472.182
+            },
+            {
+              "median_us": 3281.276,
+              "p95_us": 3294.167
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 3276.495933532715,
+            "p95_us": 3296.799898147583
+          },
+          "peak_extra_cuda_bytes": 0
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 572.3489999999999,
+            "p95_us": 575.766
+          },
+          "round_wall": [
+            {
+              "median_us": 571.8444999999999,
+              "p95_us": 574.677
+            },
+            {
+              "median_us": 572.549,
+              "p95_us": 575.397
+            },
+            {
+              "median_us": 572.733,
+              "p95_us": 575.766
+            },
+            {
+              "median_us": 572.053,
+              "p95_us": 576.886
+            },
+            {
+              "median_us": 572.797,
+              "p95_us": 575.702
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 568.5439705848694,
+            "p95_us": 572.3839998245239
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_device_us_per_call": {
+        "baseline": 32.76495933532715,
+        "optimized": 5.685439705848694
+      },
+      "operators": {
+        "baseline": {
+          "cuda_kernel_count": 5,
+          "cuda_copy_count": 2,
+          "cuda_kernels": {
+            "_expand_pools_and_append_tail_kernel": 1,
+            "void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, function_traits<at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>::result_type*)": 1,
+            "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1})": 1,
+            "void at::native::radixSortKVInPlace<2, -1, 128, 32, int, long, unsigned int>(at::cuda::detail::TensorInfo<int, unsigned int>, unsigned int, unsigned int, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, bool)": 1,
+            "_indexer_slots": 1
+          },
+          "aten_ops": {
+            "aten::empty": 2,
+            "aten::sort": 1,
+            "aten::copy_": 3,
+            "aten::arange": 2,
+            "aten::resize_": 1,
+            "aten::view": 1
+          }
+        },
+        "optimized": {
+          "cuda_kernel_count": 1,
+          "cuda_copy_count": 0,
+          "cuda_kernels": {
+            "_pool_slots": 1
+          },
+          "aten_ops": {}
+        }
+      }
+    },
+    {
+      "rows": 256,
+      "groups": 512,
+      "width": 2051,
+      "slots_and_counts_exact": true,
+      "eager": {
+        "baseline": {
+          "wall": {
+            "median_us": 258.9075,
+            "p95_us": 272.967
+          },
+          "round_wall": [
+            {
+              "median_us": 258.93949999999995,
+              "p95_us": 271.719
+            },
+            {
+              "median_us": 258.4275,
+              "p95_us": 271.975
+            },
+            {
+              "median_us": 258.331,
+              "p95_us": 273.079
+            },
+            {
+              "median_us": 259.452,
+              "p95_us": 274.088
+            },
+            {
+              "median_us": 258.988,
+              "p95_us": 270.694
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 254.96000051498413,
+            "p95_us": 268.8319981098175
+          },
+          "peak_extra_cuda_bytes": 8417792
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 58.543,
+            "p95_us": 72.419
+          },
+          "round_wall": [
+            {
+              "median_us": 57.087,
+              "p95_us": 70.546
+            },
+            {
+              "median_us": 57.719,
+              "p95_us": 78.068
+            },
+            {
+              "median_us": 58.3755,
+              "p95_us": 73.011
+            },
+            {
+              "median_us": 59.3435,
+              "p95_us": 70.131
+            },
+            {
+              "median_us": 59.3275,
+              "p95_us": 69.506
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 54.71999943256378,
+            "p95_us": 68.38399916887283
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_100_calls": {
+        "baseline": {
+          "wall": {
+            "median_us": 14105.946,
+            "p95_us": 14514.664
+          },
+          "round_wall": [
+            {
+              "median_us": 14103.326000000001,
+              "p95_us": 14536.07
+            },
+            {
+              "median_us": 14105.7175,
+              "p95_us": 14514.664
+            },
+            {
+              "median_us": 14104.742,
+              "p95_us": 14522.417
+            },
+            {
+              "median_us": 14115.456,
+              "p95_us": 14505.853
+            },
+            {
+              "median_us": 14102.962,
+              "p95_us": 14281.915
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 14098.144054412842,
+            "p95_us": 14506.688117980957
+          },
+          "peak_extra_cuda_bytes": 0
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 1434.7145,
+            "p95_us": 1464.664
+          },
+          "round_wall": [
+            {
+              "median_us": 1434.307,
+              "p95_us": 1463.659
+            },
+            {
+              "median_us": 1435.339,
+              "p95_us": 1438.084
+            },
+            {
+              "median_us": 1434.8580000000002,
+              "p95_us": 1459.033
+            },
+            {
+              "median_us": 1433.93,
+              "p95_us": 1469.051
+            },
+            {
+              "median_us": 1435.4,
+              "p95_us": 1484.909
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 1430.7680130004883,
+            "p95_us": 1457.919955253601
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_device_us_per_call": {
+        "baseline": 140.98144054412842,
+        "optimized": 14.307680130004883
+      },
+      "operators": {
+        "baseline": {
+          "cuda_kernel_count": 5,
+          "cuda_copy_count": 2,
+          "cuda_kernels": {
+            "_expand_pools_and_append_tail_kernel": 1,
+            "void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, function_traits<at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>::result_type*)": 1,
+            "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1})": 1,
+            "void at::native::radixSortKVInPlace<2, -1, 128, 32, int, long, unsigned int>(at::cuda::detail::TensorInfo<int, unsigned int>, unsigned int, unsigned int, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, bool)": 1,
+            "_indexer_slots": 1
+          },
+          "aten_ops": {
+            "aten::empty": 2,
+            "aten::sort": 1,
+            "aten::copy_": 3,
+            "aten::arange": 2,
+            "aten::resize_": 1,
+            "aten::view": 1
+          }
+        },
+        "optimized": {
+          "cuda_kernel_count": 1,
+          "cuda_copy_count": 0,
+          "cuda_kernels": {
+            "_pool_slots": 1
+          },
+          "aten_ops": {}
+        }
+      }
+    },
+    {
+      "rows": 512,
+      "groups": 512,
+      "width": 2051,
+      "slots_and_counts_exact": true,
+      "eager": {
+        "baseline": {
+          "wall": {
+            "median_us": 403.287,
+            "p95_us": 434.048
+          },
+          "round_wall": [
+            {
+              "median_us": 403.60749999999996,
+              "p95_us": 473.674
+            },
+            {
+              "median_us": 404.464,
+              "p95_us": 440.049
+            },
+            {
+              "median_us": 403.552,
+              "p95_us": 427.501
+            },
+            {
+              "median_us": 402.079,
+              "p95_us": 415.338
+            },
+            {
+              "median_us": 402.9595,
+              "p95_us": 413.69
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 399.26400780677795,
+            "p95_us": 429.0879964828491
+          },
+          "peak_extra_cuda_bytes": 16818688
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 67.049,
+            "p95_us": 76.82
+          },
+          "round_wall": [
+            {
+              "median_us": 67.0975,
+              "p95_us": 77.828
+            },
+            {
+              "median_us": 65.937,
+              "p95_us": 75.716
+            },
+            {
+              "median_us": 65.801,
+              "p95_us": 75.876
+            },
+            {
+              "median_us": 67.60900000000001,
+              "p95_us": 77.076
+            },
+            {
+              "median_us": 68.32900000000001,
+              "p95_us": 76.804
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 63.26399743556976,
+            "p95_us": 73.47200065851212
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_100_calls": {
+        "baseline": {
+          "wall": {
+            "median_us": 30780.5715,
+            "p95_us": 31306.321
+          },
+          "round_wall": [
+            {
+              "median_us": 30778.296000000002,
+              "p95_us": 31306.183
+            },
+            {
+              "median_us": 30780.8975,
+              "p95_us": 31331.437
+            },
+            {
+              "median_us": 30783.939,
+              "p95_us": 31264.687
+            },
+            {
+              "median_us": 30780.664,
+              "p95_us": 31287.511
+            },
+            {
+              "median_us": 30779.4985,
+              "p95_us": 31313.715
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 30768.92852783203,
+            "p95_us": 31294.240951538086
+          },
+          "peak_extra_cuda_bytes": 0
+        },
+        "optimized": {
+          "wall": {
+            "median_us": 2313.2200000000003,
+            "p95_us": 2387.131
+          },
+          "round_wall": [
+            {
+              "median_us": 2311.1515,
+              "p95_us": 2365.821
+            },
+            {
+              "median_us": 2315.0159999999996,
+              "p95_us": 2345.544
+            },
+            {
+              "median_us": 2312.036,
+              "p95_us": 2395.905
+            },
+            {
+              "median_us": 2311.772,
+              "p95_us": 2344.788
+            },
+            {
+              "median_us": 2336.4225,
+              "p95_us": 2388.668
+            }
+          ],
+          "cuda_stream": {
+            "median_us": 2309.1999292373657,
+            "p95_us": 2376.192092895508
+          },
+          "peak_extra_cuda_bytes": 0
+        }
+      },
+      "graph_device_us_per_call": {
+        "baseline": 307.6892852783203,
+        "optimized": 23.091999292373657
+      },
+      "operators": {
+        "baseline": {
+          "cuda_kernel_count": 5,
+          "cuda_copy_count": 2,
+          "cuda_kernels": {
+            "_expand_pools_and_append_tail_kernel": 1,
+            "void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, function_traits<at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>::result_type*)": 1,
+            "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1})": 1,
+            "void at::native::radixSortKVInPlace<2, -1, 128, 32, int, long, unsigned int>(at::cuda::detail::TensorInfo<int, unsigned int>, unsigned int, unsigned int, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, bool)": 1,
+            "_indexer_slots": 1
+          },
+          "aten_ops": {
+            "aten::empty": 2,
+            "aten::sort": 1,
+            "aten::copy_": 3,
+            "aten::arange": 2,
+            "aten::resize_": 1,
+            "aten::view": 1
+          }
+        },
+        "optimized": {
+          "cuda_kernel_count": 1,
+          "cuda_copy_count": 0,
+          "cuda_kernels": {
+            "_pool_slots": 1
+          },
+          "aten_ops": {}
+        }
+      }
+    }
+  ]
+}
