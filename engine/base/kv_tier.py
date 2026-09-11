@@ -71,7 +71,13 @@ class NvmeTier:
 
     def has(self, seq: int) -> bool:
         meta = self.index.get(str(seq))
-        return meta is not None and not meta.get("deleting", False)
+        return (meta is not None and not meta.get("deleting", False)
+                and meta.get("block_bytes", self.block_bytes) == self.block_bytes)
+
+    def stale(self) -> "list[str]":
+        """Foreign block layouts stay on disk and cannot be promoted."""
+        return [k for k, meta in self.index.items()
+                if meta.get("block_bytes", self.block_bytes) != self.block_bytes]
 
     def _sync_directory(self) -> None:
         fd = os.open(self.dir, os.O_RDONLY | os.O_DIRECTORY)
@@ -96,7 +102,7 @@ class NvmeTier:
         self._sync_directory()                   # persist the new generation before referring to it
         self._save_manifest({**self.index, str(seq): {
             "file": path.name, "blocks": blocks, "tokens": tokens,
-            "bytes": written, "at": time.time(), "retired": retired}})
+            "bytes": written, "block_bytes": self.block_bytes, "at": time.time(), "retired": retired}})
 
     def _prune_retired(self, seq):
         meta = self.index[str(seq)]
@@ -112,6 +118,8 @@ class NvmeTier:
             return self._demote(seq, storage, block_ids, tokens)
 
     def _demote(self, seq: int, storage, block_ids: "list[int]", tokens: int) -> int:
+        if str(seq) in self.stale():
+            raise ValueError(f"seq {seq} belongs to a different block layout")
         import torch
 
         table = storage.view(-1, self.block_bytes)
@@ -173,6 +181,8 @@ class NvmeTier:
         meta = self.index[str(seq)]
         if meta.get("deleting"):
             raise ValueError(f"seq {seq} is pending file cleanup, not promotion")
+        if meta.get("block_bytes", self.block_bytes) != self.block_bytes:
+            raise ValueError(f"seq {seq} was parked with {meta['block_bytes']} B blocks; this layout has {self.block_bytes}")
         if len(block_ids) != meta["blocks"]:
             raise ValueError(f"seq {seq}: {meta['blocks']} blocks on disk, {len(block_ids)} given")
         table = storage.view(-1, self.block_bytes)
@@ -228,12 +238,14 @@ class NvmeTier:
         """
         with self._transfer_lock:
             for seq, meta in list(self.index.items()):
-                if meta.get("deleting"):
+                if meta.get("deleting") and seq not in self.stale():
                     self._forget(int(seq))
             with self.lock:
                 for seq in list(self.index):
-                    self._prune_retired(int(seq))
+                    if seq not in self.stale():
+                        self._prune_retired(int(seq))
                 referenced = {self._path(int(seq)).name for seq in self.index}
+                referenced.update(name for meta in self.index.values() for name in meta.get("retired", ()))
                 for path in self.dir.glob("seq-*.kv"):
                     if path.name not in referenced and re.fullmatch(r"seq-\d+-[0-9a-f]{32}\.kv", path.name):
                         path.unlink(missing_ok=True)
@@ -286,7 +298,9 @@ def _selfcheck() -> None:
         storage.zero_()
         t0 = time.perf_counter(); got = tier.promote(7, storage, ids); torch.cuda.synchronize(); t_r = time.perf_counter() - t0
         assert wrote == got == n_blocks * block_bytes and torch.equal(storage, keep), "round trip must be exact"
-        tier2 = NvmeTier(d, block_bytes); assert tier2.has(7); tier2.forget(7); assert not tier2.has(7)
+        tier2 = NvmeTier(d, block_bytes); assert tier2.has(7)
+        other = NvmeTier(d, block_bytes * 2); assert not other.has(7) and other.stale() == ["7"]
+        tier2.forget(7); assert not tier2.has(7)
         print(f"  kv_tier v2: {wrote / GIB:.2f} GiB demote {t_w:.2f}s ({wrote / GIB / t_w:.2f} GiB/s), "
               f"promote {t_r:.2f}s ({got / GIB / t_r:.2f} GiB/s), scattered ids exact, own stream + pinned staging OK")
 

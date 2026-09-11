@@ -91,8 +91,26 @@ class Glm53Engine:
         for d in (self.ctx, self.slot):
             d.pop(seq, None)
 
+    def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None) -> int:
+        """A new turn: more prompt tokens on a conversation the caches still hold.
+        Returns the tokens to prefill -- the last sampled token (never fed) and
+        the new ones -- so `generated` counts this turn only from here on."""
+        max_new = self.max_new if max_new is None else max_new
+        temperature = self.temperature if temperature is None else temperature
+        self.validate(ids, max_new, temperature)
+        self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
+        self.limits[seq] = (max_new, temperature)
+        return len(self.tokens[seq]) - self.ctx[seq]
+
+    def extension_tokens(self, seq: int, ids) -> int:
+        """Inspect the next turn's prefill size before reserving its budget."""
+        return len(self.tokens[seq]) + len(ids) - self.ctx[seq]
+
     def horizon(self, seq: int) -> int:
         return self.ctx[seq] + 1 + self.drafter.k
+
+    def context(self, seq: int) -> int:
+        return self.ctx[seq]
 
     def generated(self, seq: int) -> "list[int]":
         return self.tokens[seq][self.prompt_len[seq]:]
@@ -147,12 +165,13 @@ class Glm53Engine:
                 if token in self.eos:
                     new = new[:i + 1]
                     break
-            if aux is not None:                                            # the fed tokens up to the last accepted draft become context
-                rows = slice(s.start, s.start + accepted + 1)
-                self.drafter.observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + accepted + 1, device=h.device), aux[rows])
+            committed = len(new)                            # clipped tokens must not enter the next turn's context
+            if aux is not None:
+                rows = slice(s.start, s.start + committed)
+                self.drafter.observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + committed, device=h.device), aux[rows])
             self.tokens[s.seq] += new
-            self.ctx[s.seq] += accepted + 1
-            self.accepted_total += accepted
+            self.ctx[s.seq] += committed
+            self.accepted_total += min(accepted, committed)
             self.drafted_total += len(drafts[s.seq])
             done = any(t in self.eos for t in new) or len(self.generated(s.seq)) >= self.limits[s.seq][0]
             finished.append(done)

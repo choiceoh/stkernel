@@ -143,6 +143,7 @@ class NvmeControlTests(unittest.TestCase):
     def tier(self, directory):
         tier = NvmeTier.__new__(NvmeTier)
         tier.dir = Path(directory)
+        tier.block_bytes = SECTOR
         tier.manifest = tier.dir / "manifest.json"
         tier.index = json.loads(tier.manifest.read_text()) if tier.manifest.exists() else {}
         tier.lock, tier._transfer_lock = threading.Lock(), threading.Lock()
@@ -160,6 +161,7 @@ class NvmeControlTests(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, 'manifest full'):
                     tier._publish(0, new, 1, 2, 9)
             self.assertEqual(tier._path(0).read_bytes(), b'original')
+
             self.assertEqual(tier.index, json.loads(tier.manifest.read_text()))
             unrelated = tier.dir / 'seq-99.kv'
             unrelated.write_bytes(b'legacy, not in manifest')
@@ -167,6 +169,21 @@ class NvmeControlTests(unittest.TestCase):
             self.assertFalse(new.exists())
             self.assertTrue(unrelated.exists())
             self.assertEqual(tier._path(0).read_bytes(), b'original')
+
+    def test_foreign_layout_cannot_be_replaced_and_cleanup_preserves_its_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            active = tier.dir / ('seq-0-' + 'a' * 32 + '.kv')
+            retired = tier.dir / ('seq-0-' + 'b' * 32 + '.kv')
+            active.write_bytes(b'active'); retired.write_bytes(b'retired')
+            tier._save_manifest({'0': {'file': active.name, 'retired': [retired.name], 'block_bytes': 2 * SECTOR}})
+            self.assertFalse(tier.has(0))
+            self.assertEqual(tier.stale(), ['0'])
+            with self.assertRaisesRegex(ValueError, 'different block layout'):
+                tier.demote(0, None, [], 1)
+            tier.cleanup()
+            self.assertEqual(active.read_bytes(), b'active')
+            self.assertEqual(retired.read_bytes(), b'retired')
 
     def test_failed_unlink_keeps_a_restartable_cleanup_tombstone(self):
         with tempfile.TemporaryDirectory() as d:
@@ -293,6 +310,7 @@ class NvmeControlTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             tier = NvmeTier.__new__(NvmeTier)
             tier.dir = Path(d)
+            tier.block_bytes = SECTOR
             tier.manifest = tier.dir / "manifest.json"
             tier.lock = threading.Lock()
             tier._transfer_lock = threading.Lock()

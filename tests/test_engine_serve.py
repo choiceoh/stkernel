@@ -45,6 +45,19 @@ class Engine:
     def horizon(self, seq):
         return self.ctx[seq] + 1
 
+    def context(self, seq):
+        return self.ctx[seq]
+
+    def extension_tokens(self, seq, ids):
+        return len(self.tokens[seq]) + len(self.output[seq]) + len(ids) - self.ctx[seq]
+
+    def extend(self, seq, ids, max_new, temperature):
+        n = self.extension_tokens(seq, ids)
+        self.tokens[seq] += self.output[seq] + list(ids)
+        self.output[seq] = []
+        self.limits[seq] = max_new
+        return n
+
     def prefill(self, seq, start, tokens, blocks, slot):
         self.ctx[seq] = start + tokens
         if self.ctx[seq] == len(self.tokens[seq]):
@@ -69,20 +82,30 @@ class Comm:
         return obj
 
 
-def server(*, rows=2, blocks=16, comm=None, max_pending=64):
+def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tiered=False):
     engine = Engine()
     runner = Runner(engine, Contract(4, 8, 0, 0, rows), BlockPool(blocks, 4, rows, blocks),
-                    SlotPool(rows + 1), Ring(16, STEP_RECORD.size))
+                    SlotPool(rows + 1), Ring(16, STEP_RECORD.size), keep_idle=keep_idle)
+    if tiered:
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        runner.kv.attach_storage(Storage(blocks * 4), 4)
+        runner.tiered = TieredKV(runner.kv, MemoryTier())
     return Server(engine, runner, comm or Comm(), host="127.0.0.1", port=0, max_pending=max_pending)
 
 
 class ServeTests(unittest.TestCase):
-    def drain(self, s):
+    def drain(self, s, retained=False):
         for _ in range(500):
             if not s.once() and not s._waiting:
                 break
         else:
             self.fail("server did not drain bounded requests")
+        if retained:
+            self.assertFalse(s._active)
+            self.assertFalse(s.runner.state.running or s.runner.state.waiting)
+            self.assertLessEqual(len(s.engine.tokens), s.runner.c.max_running)
+            return
         self.assertFalse(s.engine.tokens)
         self.assertFalse(s.engine.ctx)
         self.assertFalse(s.runner.state.waiting)
@@ -90,6 +113,94 @@ class ServeTests(unittest.TestCase):
         self.assertFalse(s.runner.slot_of)
         self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
         self.assertEqual(s.runner.slots.available, s.runner.c.max_running)
+
+    def test_continuation_reuses_context_but_has_an_independent_request_result(self):
+        s = server(keep_idle=True)
+        first, _ = s.submit([3], 2, 0)
+        self.drain(s, retained=True)
+        second, _ = s.submit([9], 3, 0, conversation=first)
+        self.drain(s, retained=True)
+        self.assertNotEqual(first, second)
+        self.assertEqual(s.take_result(first), [3, 3])
+        self.assertEqual(s.take_result(second), [9, 9, 9])
+        self.assertEqual(s.engine.opened, [0])
+        self.assertEqual(s._conversations, {first: 0})
+
+    def test_new_requests_evict_old_idle_conversations_without_exhausting_rows(self):
+        s = server(keep_idle=True)
+        jobs = [s.submit([i], 1, 0) for i in range(12)]
+        self.drain(s, retained=True)
+        self.assertEqual(set(s._conversations), {10, 11})
+        for i, (request, _) in enumerate(jobs):
+            self.assertEqual(s.take_result(request), [i])
+        bad, event = s.submit([1], 1, 0, conversation=0)
+        self.drain(s, retained=True)
+        self.assertTrue(event.is_set())
+        with self.assertRaises(RequestError) as error:
+            s.take_result(bad)
+        self.assertEqual(error.exception.status, 409)
+        s.alive = False
+        s.once()
+        self.assertFalse(s.engine.tokens or s.runner.slot_of or s.runner.idle)
+        self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+
+    def test_parked_conversation_resumes_before_extension_and_returns_to_disk(self):
+        s = server(keep_idle=True, tiered=True)
+        first, _ = s.submit([3], 2, 0)
+        self.drain(s, retained=True)
+        row = s._conversations[first]
+        self.assertTrue(s.runner.tiered.is_parked(row))
+        self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+        second, _ = s.submit([9], 2, 0, conversation=first)
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(second), [9, 9])
+        self.assertTrue(s.runner.tiered.is_parked(row))
+        self.assertEqual(s.engine.opened, [0])
+        s.alive = False
+        s.once()
+        self.assertFalse(s.runner.tiered.tier.index or s.runner.tiered.parked)
+        self.assertFalse(s.engine.tokens or s.runner.slot_of)
+
+    def test_oversized_continuation_preserves_the_previous_idle_context(self):
+        s = server(blocks=2, keep_idle=True)
+        first, _ = s.submit([3] * 4, 2, 0)
+        self.drain(s, retained=True)
+        before = list(s.engine.tokens[0])
+        bad, _ = s.submit([9] * 4, 2, 0, conversation=first)
+        self.drain(s, retained=True)
+        with self.assertRaises(RequestError):
+            s.take_result(bad)
+        self.assertEqual(s.engine.tokens[0], before)
+        good, _ = s.submit([7], 1, 0, conversation=first)
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(good), [7])
+
+    def test_failed_resume_wakes_client_and_releases_parked_conversation_ownership(self):
+        s = server(keep_idle=True, tiered=True)
+        first, _ = s.submit([3], 2, 0)
+        self.drain(s, retained=True)
+        s.runner.tiered.tier.fail_promote = True
+        request, event = s.submit([9], 2, 0, conversation=first)
+        with self.assertRaisesRegex(OSError, 'read failed'):
+            s.once()
+        self.assertTrue(event.is_set())
+        with self.assertRaises(RequestError):
+            s.take_result(request)
+        self.assertFalse(s.engine.tokens or s.runner.slot_of or s.runner.idle)
+        self.assertFalse(s.runner.tiered.parked or s.runner.tiered.tier.index)
+        self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+
+    def test_busy_continuation_does_not_replace_the_active_turns_event(self):
+        s = server(keep_idle=True)
+        first, event = s.submit([3], 4, 0)
+        s.once()
+        bad, _ = s.submit([9], 1, 0, conversation=first)
+        self.drain(s, retained=True)
+        with self.assertRaises(RequestError) as error:
+            s.take_result(bad)
+        self.assertEqual(error.exception.status, 409)
+        self.assertTrue(event.is_set())
+        self.assertEqual(s.take_result(first), [3] * 4)
 
     def test_public_ids_outlive_rows_and_uncollected_results_keep_their_tokens(self):
         s = server()
@@ -216,21 +327,27 @@ class ServeTests(unittest.TestCase):
         from engine.base.comm import LocalTP
         snapshots = []
         def rank_main(comm, _):
-            s = server(comm=comm)
+            s = server(comm=comm, keep_idle=True)
             if comm.rank == 0:
                 jobs = [s.submit([i], 1 + i % 3, 0) for i in range(12)]
             for _ in range(60):
                 s.once()
             if comm.rank == 0:
                 snapshots.append([s.take_result(i) for i, _ in jobs])
+                request, _ = s.submit([99], 2, 0, conversation=10)
+            for _ in range(20):
+                s.once()
+            if comm.rank == 0:
+                snapshots.append(s.take_result(request))
                 s.alive = False
             s.once()
             return s.served, s.engine.opened, s.alive, s.runner.kv.available
         out = LocalTP(4).run(rank_main, None)
         self.assertTrue(all(row == out[0] for row in out))
-        self.assertEqual(out[0][0], 12)
+        self.assertEqual(out[0][0], 13)
         self.assertFalse(out[0][2])
         self.assertEqual(snapshots[0], [[i] * (1 + i % 3) for i in range(12)])
+        self.assertEqual(snapshots[1], [99, 99])
 
 
 if __name__ == '__main__':
