@@ -394,20 +394,30 @@ D1~D15 에서 직접 따라 나오는 것만 만든다. 세 층으로.
 - **D14 가 만든 문제**: 게이트마다의 **띠 폭과 반복 횟수**. 지금 띠가 있는 것은 tok/step
   하나뿐이고, 나머지(프리필·디코드 사다리, 수용률)는 점으로 읽고 있다.
 
-## 5. 지금 하는 일 (Qwen3.8-Flash-Next)
+## 5. 지금 하는 일 — GLM-5.3 이 공통 부분의 기준 모델이다 (2026-09-11 운영자)
 
-계획 계층부터 다시 세운다 — DSv4.1 때와 같은 순서, 같은 이유(짓고 나서 알면 되돌려야 한다).
+> "qwen 최적화 하지 말고 glm 5.3 flash 구현 중 아직 우리 코드가 아닌 공통 부분을 작성"
 
-1. **`engine/models/qwen38/plan.py`** — 배치(EP 전문가 · vocab-parallel PLE/embed/head · 헤드별
-   TP GDN/attn · 복제) · 예산 · GDN/KV 상태. 출처 핀. ← 지금
-2. **추정 두 줄 실측** — 모듈 구성, 액티베이션(청크 함수). HF `Qwen4ExpTextDecoderLayer` 를
-   모양만으로 돌린다(DSv4.1 때 검증된 방법). 부팅·플릿 불필요.
-3. **로더** — `engine/loader.py` 그대로(연속 범위 읽기). 이름 매핑 불필요(HF 이름). dtype 규칙:
-   NVFP4 `U8 [out, in/2]` + `F8_E4M3 weight_scale [out, in/16]` + `F32 weight_scale_2`/`input_scale`.
-4. **커널** — vendored fla Triton(6,098줄: chunk/fused_recurrent gated delta rule) + `causal_conv1d`
-   Triton(1,289) + QSA Triton(1,115+508) + HC Triton(489) 을 이미지에서 들어낸다(D8 Triton 유지).
-   **NVFP4 MoE 는 b12x 레인 — IMA 미해결이 곧 블로커.**
-5. **오라클 배선** — HF 층 vs 우리 층, 실가중치, 차분.
-6. 그다음 `runner` · `scheduler` · `kv`(GDN 상태 + 페이지드 full-attn KV + QSA 캐시).
+GLM 은 프로덕션이고, 상수가 전부 실측이고, 커널이 이미 우리 것이고, 레퍼런스가 살아 있다. 그래서
+"아직 우리 코드가 아닌 것"의 목록이 곧 공통 부분의 목록이다 — glm53 오버레이가 vLLM 에서 임포트하는
+것을 세면 나온다(44차). 그 목록을 세 층으로 대응시키면:
 
-**성능 상수는 여전히 부팅 전에는 못 잰다**, 그리고 **한 부팅으로 기준선을 세우지 않는다**(D14).
+| GLM 이 vLLM 에서 가져오는 것 (파일 수) | 엔진의 자리 | 상태 |
+|---|---|---|
+| `v1.core.sched` (3) | `base/scheduler` — 균질 스텝·대기 상한 | ✅ 자가검증 |
+| `v1.worker.gpu` (13) — 러너·입력 배치·그래프 | `base/runner` (골격) · 입력 배치 · 그래프 디스패치 | 🟡 골격만 |
+| `v1.kv_cache_interface` (8) · `v1.attention.backends` (15) | `base/kv` (블록·슬롯) · `base/cache_spec` · 스텝 메타데이터 | 🟡 블록·슬롯만 |
+| `model_executor.layers.mamba` (6) / `flash_linear_attention` | `modules/linear_attention` — 델타 규칙 | ✅ HF 대비 4/4 (KDA 채널별 감쇠는 플래그) |
+| `model_executor.layers.fused_moe` (7) / `flashinfer/fused_moe` (3) | `modules/moe` — NVFP4 오라클; 커널은 b12x(우리 것) | 🟡 오라클만 |
+| `model_executor.layers.quantization` (6) | `modules/quant` · `modules/moe` | 🟡 |
+| `model_executor.layers.{linear, layernorm, rotary, logits_processor}` (17) | `modules/linear` · `norm` · `rotary` · `logits` | ❌ |
+| `distributed` (7) · `parallel_state.py` | `base/comm` — 4노드 고정 배선, `tp_oneshot_ar`(우리 것)가 레인 | ❌ |
+| `v1.worker.gpu` 샘플러 | `base/sampler` | ❌ |
+| `model_loader.weight_utils` (3) | `base/loader` + `base/arena` | ✅ 11~17배, 아레나 |
+| `config` (14) · `logger` (28) · `platforms` (12) | `base/config` · `instruments` · 없음(하드웨어 고정) | ✅ |
+
+순서는 표의 위에서 아래로가 아니라 **GLM 이 한 스텝을 돌리는 데 필요한 순서**다: cache_spec → 스텝
+메타데이터 → 층 라이브러리 → comm → 샘플러 → 그래프 디스패치. 각 조각은 GPU 없이 자가검증하거나
+torch 레퍼런스에 대조하고, GLM 의 살아 있는 vLLM 경로가 최종 판정이다(D4).
+
+**D16 은 그대로 판정 기준이다** — 이 조각들이 전부 아레나 안에서 산다.
