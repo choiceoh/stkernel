@@ -45,10 +45,20 @@ def main() -> int:
     scale = D ** -0.5
     o_r, s_r = gated_delta_rule(q, k, v, g, beta, initial_state=init, scale=scale, qk_l2norm=True,
                                 decay_per_channel=True)
+    snap = {n: t.clone() for n, t in (("q", q), ("k", k), ("v", v), ("raw_g", raw_g), ("beta_raw", beta_raw))}
+    def mutated(tag):
+        changed = [n for n, t in (("q", q), ("k", k), ("v", v), ("raw_g", raw_g), ("beta_raw", beta_raw))
+                   if not torch.equal(t, snap[n])]
+        if changed:
+            print(f"  !! {tag} MUTATED its inputs in place: {changed}")
+        for n, t in (("q", q), ("k", k), ("v", v), ("raw_g", raw_g), ("beta_raw", beta_raw)):
+            t.copy_(snap[n])                              # restore for the next call
     o_c, s_c = chunk_kda_with_fused_gate(q, k, v, raw_g, torch.sigmoid(beta_raw.float()), A_log, g_bias, scale,
                                          initial_state=init.clone(), output_final_state=True,
                                          use_qk_l2norm_in_kernel=True, cu_seqlens=cu,
-                                         safe_gate=True, lower_bound=-5.0)
+                                         safe_gate=True, lower_bound=-5.0,
+                                         out=torch.empty_like(v))   # served: out=ns_out. With out=None the kernel WRITES INTO v.
+    mutated("chunk_kda_with_fused_gate")
     # plain decode is the DENSE [B, T, H, D] form; cu_seqlens on the recurrent
     # kernel selects the spec-verify path, which also wants ssm_state_indices
     # and num_accepted_tokens (glm5next_kda.py:692-707)
@@ -56,6 +66,7 @@ def main() -> int:
                                    inplace_final_state=False, use_qk_l2norm_in_kernel=True,
                                    sigmoid_beta=True, a_log=A_log, g_bias=g_bias, compute_gate=True,
                                    lower_bound=-5.0)
+    mutated("fused_recurrent_kda")
     r_c, r_d, r_cd = rel(o_r, o_c), rel(o_r, o_d), rel(o_c, o_d)
     s_layout = min(rel(s_r, s_c), rel(s_r.transpose(-1, -2), s_c)) if s_c is not None and s_c.numel() == s_r.numel() else float("nan")
     print(f"  prefill (chunk_kda_with_fused_gate)  vs reference: o rel {r_c:.2e}")
