@@ -44,6 +44,7 @@ MAP = {
     "KpoolTailSpec": "base.cache_spec", "MLAAttentionSpec": "base.cache_spec",
     "gather_initial_states": "base.kv", "scatter_states": "base.kv", "eager_break_during_capture": "base.graphs",
     "FusedMoE": "modules.moe", "SharedFusedMoE": "modules.moe", "FusedMoEConfig": "modules.moe",
+    "FusedMoEFactory": "modules.moe.moe_reference (ours; the b12x lane is judged through the served layer, D4)",
     "SiluAndMul": None, "SiluAndMulWithClamp": None,
     "MLAModules": "modules.linear/norm + modules.sparse_attention.mla_sparse_mqa (judged vs mk lane)",
     "MultiHeadLatentAttentionWrapper": "profiles.glm53 (plain torch composition on the layer library)",
@@ -96,8 +97,10 @@ def meter() -> str:
     for f in FILES:
         path = ROOT / "overlay/modules/glm53_model" / f
         es = list(edges(path)); n_ours = sum(1 for _m, s in es if MAP.get(s))
+        from engine.profiles.glm53.shims import SHIMS
+        n_ours = sum(1 for _m, s in es if MAP.get(s) or s in SHIMS)
         for m, s in es:
-            if not MAP.get(s):
+            if not MAP.get(s) and s not in SHIMS:
                 todo.setdefault(f"{m}.{s}", []).append(f)
         total += len(es); ours += n_ours
         out.append(f"  {f:<24} {len(es):>3} vLLM symbols, {n_ours:>3} already ours")

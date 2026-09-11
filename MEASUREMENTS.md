@@ -8699,3 +8699,13 @@ softmax(score+ape) 가중합) 스케일 동일 — fp32 진값 대비 1 fp8 ulp 
 새로 배움: 선택된 풀 id 는 `seq_len // pool_size` 미만(완전한 풀)일 때만 유효하고 나머지 토큰은 꼬리로 온다 —
 내 첫 기대값이 틀렸고 커널이 맞았다. 계기: real 6 → **1**(`FusedMoEFactory` 만 남음), 전체 ours 63%,
 드롭·심 뒤 94%. 오늘 서빙 커널로 판정된 에지: KDA · mHC · MLA · conv · 인덱서(점수·양자화·풀링·꼬리).
+
+### 심 17개 + MoE 레퍼런스 — 계기 real 0, ours 76%
+
+`profiles/glm53/shims.py`: 모델 파일이 vLLM 에서 가져오던 이름 17개(활성화, prefix 헬퍼, LayerNorm,
+GroupShape/scaled_dequantize, yarn_get_mscale, 상태 복사, 전문가 파라미터 매핑, fp8 LM head, 라우터 GateLinear…)를
+우리 모듈 위에 몇 줄로. 자가검증이 계기의 shim 목록 전부를 제공하는지 확인. `modules/moe`: noaux_tc 라우터
+(시그모이드 fp32, 선택은 +바이어스, 가중치는 재정규화 × 2.5)와 NVFP4 SwiGLU 전문가 합산을 실제 층 3 전문가로
+dense 대비 rel 3.9e-3. **b12x 레인의 단독 판정은 접었다**: `b12x_fused_moe` 의 SF 레이아웃이 문서화돼 있지 않고
+서빙 백엔드가 `moe_sf_pack` 으로 스위즐한 팩을 먹인다 — 재현은 토끼굴이고 레인엔 자체 selftest 가 있으며 D4 의
+판정은 재호스팅 뒤 살아 있는 서빙 층으로 한다. 계기: **real 0**, ours 76%, drop 22 만 남음(모델 파일 편집 시 사라짐).
