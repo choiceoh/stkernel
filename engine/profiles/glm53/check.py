@@ -228,22 +228,21 @@ def main(argv=None) -> int:
         raise SystemExit(f"--layers must select layers inside 0..{F.layers - 1}")
     if a.chunk <= 0 or a.chunk % F.kpool or a.tokens <= max(a.chunk, 2 * (F.spec_k + 1)):
         raise SystemExit(f"--chunk must be a multiple of kpool {F.kpool} and below --tokens")
-    lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served()
     torch.manual_seed(a.seed)
     ids = torch.randint(0, 100_000, (a.tokens,), device="cuda")
     garbage = torch.randint(0, 100_000, (F.spec_k + 1 - 2,), device="cuda")
     comm = Comm.init(world=facts.TP) if a.distributed else None
     try:
-        return judge(a, F, layers, lanes, ids, garbage, comm)
+        return judge(a, F, layers, ids, garbage, comm)
     finally:
         if comm is not None:
             comm.close()
 
 
-def judge(a, F, layers, lanes, ids, garbage, comm):
+def judge(a, F, layers, ids, garbage, comm):
     t0 = time.perf_counter()
     tp = None if comm is not None else LocalTP(facts.TP)
-    lane_tables.bind_tp(tp)
+    lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served(tp=tp)
     outs = ([rank_main(comm, a, F, layers, lanes, ids, garbage)] if comm is not None
             else tp.run(rank_main, a, F, layers, lanes, ids, garbage))
     wall = time.perf_counter() - t0

@@ -1,0 +1,41 @@
+{
+  "passed": true,
+  "scope": "native execution ownership and LocalTP collectives; synthetic inputs",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "device": "NVIDIA GB10",
+  "vllm_installed": false,
+  "vllm_loaded": false,
+  "failure_propagated_and_next_run_exact": true,
+  "lanes": [
+    "conv_prefill",
+    "kda_recurrent",
+    "mhc_pre",
+    "mhc_post",
+    "indexer_quant",
+    "expand_pools",
+    "indexer_slots",
+    "indexer_logits",
+    "kpool_compress"
+  ],
+  "checks": [
+    {
+      "repeat": 0,
+      "ranks": 4,
+      "native_outputs_exact": true,
+      "tensor_collectives_exact": true
+    },
+    {
+      "repeat": 1,
+      "ranks": 4,
+      "native_outputs_exact": true,
+      "tensor_collectives_exact": true
+    },
+    {
+      "repeat": 2,
+      "ranks": 4,
+      "native_outputs_exact": true,
+      "tensor_collectives_exact": true
+    }
+  ]
+}

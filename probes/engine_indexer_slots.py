@@ -35,11 +35,8 @@ def local_tp(fused):
     fused.indexer_slots(tokens, table, 16, 512, 32, expected, valid)
     outputs = [(torch.full_like(tokens, -99), torch.full_like(valid, -99)) for _ in range(4)]
     tp = LocalTP(4)
-    lanes.bind_tp(tp)
-    try:
-        tp.run(lambda comm: fused.indexer_slots(tokens, table, 16, 512, 32, *outputs[comm.rank]))
-    finally:
-        lanes.bind_tp(None)
+    bound = lanes.served(tp=tp)
+    tp.run(lambda comm: bound.indexer_slots(tokens, table, 16, 512, 32, *outputs[comm.rank]))
     assert all(torch.equal(out, expected) and torch.equal(count, valid) for out, count in outputs)
     return {"ranks": 4, "outputs_and_counts_exact": True}
 

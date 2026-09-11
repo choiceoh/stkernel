@@ -1,0 +1,5 @@
+Measured revision: 80b82df6
+Integrated upstream: d4528459 (PR #542)
+147 engine/test/probe Python sources checked
+146 files byte-identical; specs.py has comments-only changes with identical AST
+No changed numerical kernel or execution-control implementation after qualification

@@ -1,6 +1,7 @@
 # GLM indexer slot finalization — 2026-09-11
 
 Baseline: `c1d8357aac6f00b01f3b16ffddfdea1a16a18e17` (merged PR #540).
+Measured implementation: `eb63e89e` (PR #543); source hashes are pinned to that revision.
 The integrated comparison executes the exact baseline `net.py` alongside the
 changed `_indexer` in the same process. Its source SHA256 is recorded in
 `slots.json` and checked against `git show`. All other kernels, real weights,

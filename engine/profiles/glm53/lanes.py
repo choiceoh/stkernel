@@ -42,18 +42,6 @@ class Lanes:
     indexer_slots: object     # (tokens [T,W] int32, block row | None, block size/stride, layer offset, out [T,W], counts [T]) -> None; sort/map/write valid prefix
 
 
-_TP = {"active": None}
-
-
-def bind_tp(tp) -> None:
-    """Tell the served lanes which LocalTP run (if any) owns the main thread."""
-    _TP["active"] = tp
-
-
-def _active_tp():
-    return _TP["active"]
-
-
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
     """GLM's gated activation everywhere (dense, shared, routed): the served
     dense path is SiluAndMulWithClamp and the served b12x lane runs
@@ -127,13 +115,18 @@ def reference() -> Lanes:
                  mla_sparse_mqa, moe, fwht128_quant, select_with_tail, indexer_slots)
 
 
-def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
+def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
     """Bind the ST kernel package without an overlay or vLLM installation.
 
     `reference_for` names lanes DECLARED to run on the torch reference in
     this table ("expert" and/or "kda_recurrent"). The table's name says so,
     boot prints it, proof can demand it: a declared choice, not a fallback
-    (D3). Anything not named must bind or the call raises."""
+    (D3). Anything not named must bind or the call raises.
+
+    `tp` explicitly owns dispatch for this table's lifetime. Bound tables may
+    run only inside that LocalTP invocation. Omit it for direct fleet calls
+    and warmup; constructing another table never rebinds an existing one.
+    """
     expert_lane = "reference" if "expert" in reference_for else "b12x"
     from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
     from engine.kernels.causal_conv import causal_conv1d_fn
@@ -253,9 +246,10 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         CUDA_ERROR_INVALID_VALUE from a worker (probes/mhc_lane_isolate.py), and
         triton's autotuner is not thread-safe either. base/comm.LocalTP hands
         the call over; on the fleet (one rank per process) it is a direct call."""
+        if tp is None:
+            return fn
         def run(*a, **k):
-            tp = _active_tp()
-            return fn(*a, **k) if tp is None else tp.on_main(fn, *a, **k)
+            return tp.on_main(fn, *a, **k)
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
