@@ -83,25 +83,26 @@ _LEVEL_TILE_N = 128
 # Must equal the kernel's task materialization granularity or the task
 # queue is mis-sized.
 _DYNAMIC_SLICE_CHUNK = _TASK_SLICE_CHUNK
+# Probe hook: pin the dynamic tile_m (16/32/64/128) for a shape cell under measurement
+# (Qwen3.8-Flash-Next lands at 40 rows per expert -> the table says 32, a tile GLM never
+# selects). Measure, then fix the cell in the table below; never an env read.
+_DYNAMIC_TILE_M_OVERRIDE: int | None = None
 SF_VEC_SIZE = 16
-_FORCE_MOE_W4A16_ENV = "FLASHINFER_B12X_FORCE_MOE_W4A16"
-_MICRO_SHARE_INPUT_ACROSS_EXPERTS = (
-    os.environ.get("FLASHINFER_B12X_MICRO_SHARE_INPUT", "1") != "0"
-)
+# D11 (2026-09-12, ST): nothing in this module reads the environment. Every
+# former knob is either the production value baked as a constant or a
+# profile-declared knob applied through configure_static_v2() /
+# configure_tp_sf6_q0() before any weight view exists (STK_moe_static).
+_MICRO_SHARE_INPUT_ACROSS_EXPERTS = True   # FLASHINFER_B12X_MICRO_SHARE_INPUT: never set, default on
 # The pinned M128 GLM prefill candidate leaves small dynamic tiles and all
 # decode backends on their original implementation. Exact 1 is intentional.
-_GLM53_B12X_PREFILL_REUSE = (
-    os.environ.get("ST_GLM53_B12X_PREFILL_REUSE") == "1"
-)
-_GLM53_B12X_PREFILL_FC1_N128 = (
-    os.environ.get("ST_GLM53_B12X_PREFILL_FC1_N128") == "1"
-)
-_GLM53_EP_PREFILL_LOCAL = os.environ.get("ST_GLM53_EP_PREFILL_LOCAL") == "1"
+_GLM53_B12X_PREFILL_REUSE = False           # production VLLM_GLM53_B12X_PREFILL_REUSE=0
+_GLM53_B12X_PREFILL_FC1_N128 = False        # production VLLM_GLM53_B12X_PREFILL_FC1_N128=0
+_GLM53_EP_PREFILL_LOCAL = False             # EP (E=72 local) is not the ST form (TP=4, E=288 local)
 
 
-_TP_SF6_Q0_ENABLED = os.environ.get("ST_GLM53_TP_SF6_Q0") == "1"
+_TP_SF6_Q0_ENABLED = False                  # configure_tp_sf6_q0(): STK_moe_static token q0
 _TP_SF6_Q0_LAUNCH_LOGGED = False
-_GLM53_EP_TILED = os.environ.get("ST_GLM53_EP_TILED") == "1"
+_GLM53_EP_TILED = False                     # the EP tiled owner (E=72) left the ST package with its knob
 
 
 def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
@@ -131,8 +132,7 @@ def _ep_local_prefill_kernel(*, E, m, k, n, num_topk, tile_m, activation,
         return None
     # This call can carry E72 as an invalid-ID sentinel. Once this geometry
     # is selected it MUST NOT silently run a stock kernel on those IDs.
-    if (_FORCED_BACKEND not in (None, "dynamic")
-            or os.environ.get(_FORCE_MOE_W4A16_ENV, "0") == "1"):
+    if _FORCED_BACKEND not in (None, "dynamic"):
         raise ValueError("expert-local prefill cannot use a forced incompatible backend")
     if (tiled and not tiled_ep) or tile_m != 128 or torch.cuda.get_device_capability() != (12, 1):
         raise ValueError("expert-local prefill requires row-major SM121 M128")
@@ -206,10 +206,7 @@ _MICRO_MAX_TOKENS = 8
 # full top-k=8 launch, then drops only its exact-zero pairs inside micro before
 # row materialization. Exact "1" is intentional: unset, aliases, and typos all
 # preserve the stock dispatcher and its cache artifacts.
-_B12X_EP_ZERO_WEIGHT_MICRO_ENV = "VLLM_B12X_EP_ZERO_WEIGHT_MICRO"
-_B12X_EP_ZERO_WEIGHT_MICRO = (
-    os.environ.get(_B12X_EP_ZERO_WEIGHT_MICRO_ENV) == "1"
-)
+_B12X_EP_ZERO_WEIGHT_MICRO = False          # production VLLM_B12X_EP_ZERO_WEIGHT_MICRO=0 (experimental EP lane)
 _B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS = 72
 _B12X_EP_ZERO_WEIGHT_MICRO_TOKENS = 8
 _B12X_EP_ZERO_WEIGHT_MICRO_TOPK = 8
@@ -314,95 +311,18 @@ _DYNAMIC_MAC_LADDER: Tuple[Tuple[int, int], ...] = (
 # GLM-specific tuning controls.  These are diagnostic inputs, not production
 # defaults: unset keeps the shipped selections and kernel cache keys. Parse
 # once at import so CUDA graph capture/replay never reads the environment.
-_GLM53_B12X_FORCE_BACKEND_ENV = "ST_GLM53_B12X_FORCE_BACKEND"
-_GLM53_B12X_STATIC_CUTOVER_ENV = "ST_GLM53_B12X_STATIC_CUTOVER_PAIRS"
-_GLM53_B12X_MICRO_MAC_LADDER_ENV = "ST_GLM53_B12X_MICRO_MAC_LADDER"
-_GLM53_B12X_STATIC_MAC_LADDER_ENV = "ST_GLM53_B12X_STATIC_MAC_LADDER"
-_GLM53_B12X_DYNAMIC_MAC_LADDER_ENV = "ST_GLM53_B12X_DYNAMIC_MAC_LADDER"
-
-
-def _parse_glm53_forced_backend(raw: str | None) -> str | None:
-    """Parse the optional GLM backend diagnostic without permissive aliases."""
-    if raw is None or not raw.strip() or raw.strip() == "auto":
-        return None
-    value = raw.strip()
-    if value not in ("micro", "static", "dynamic"):
-        raise ValueError(
-            f"{_GLM53_B12X_FORCE_BACKEND_ENV} must be auto, micro, static, "
-            f"or dynamic (got {raw!r})"
-        )
-    return value
-
-
-def _parse_glm53_static_cutover(raw: str | None) -> int | None:
-    """Parse an optional routed-pair cutover; zero deliberately forces dynamic."""
-    if raw is None or not raw.strip():
-        return None
-    try:
-        value = int(raw.strip())
-    except ValueError as exc:
-        raise ValueError(
-            f"{_GLM53_B12X_STATIC_CUTOVER_ENV} must be a non-negative integer "
-            f"(got {raw!r})"
-        ) from exc
-    if value < 0:
-        raise ValueError(
-            f"{_GLM53_B12X_STATIC_CUTOVER_ENV} must be non-negative "
-            f"(got {raw!r})"
-        )
-    return value
-
-
-def _parse_glm53_mac_ladder(
-    raw: str | None,
-    env_name: str,
-) -> Tuple[Tuple[int, int], ...] | None:
-    """Parse ``max_rows:mac`` cells with strictly increasing row bounds."""
-    if raw is None or not raw.strip():
-        return None
-    cells = []
-    prior_rows = 0
-    for cell in raw.split(","):
-        fields = cell.split(":")
-        if len(fields) != 2:
-            raise ValueError(
-                f"{env_name} must be comma-separated max_rows:mac cells "
-                f"(got {raw!r})"
-            )
-        try:
-            max_rows, mac = (int(field.strip()) for field in fields)
-        except ValueError as exc:
-            raise ValueError(
-                f"{env_name} cells must contain integers (got {cell!r})"
-            ) from exc
-        if max_rows <= prior_rows or mac <= 0:
-            raise ValueError(
-                f"{env_name} row bounds must increase strictly and MAC must be "
-                f"positive (got {raw!r})"
-            )
-        cells.append((max_rows, mac))
-        prior_rows = max_rows
-    return tuple(cells)
-
-
-_GLM53_B12X_FORCE_BACKEND = _parse_glm53_forced_backend(
-    os.environ.get(_GLM53_B12X_FORCE_BACKEND_ENV)
-)
-_GLM53_B12X_STATIC_CUTOVER_PAIRS = _parse_glm53_static_cutover(
-    os.environ.get(_GLM53_B12X_STATIC_CUTOVER_ENV)
-)
-_GLM53_B12X_MICRO_MAC_LADDER = _parse_glm53_mac_ladder(
-    os.environ.get(_GLM53_B12X_MICRO_MAC_LADDER_ENV),
-    _GLM53_B12X_MICRO_MAC_LADDER_ENV,
-)
-_GLM53_B12X_STATIC_MAC_LADDER = _parse_glm53_mac_ladder(
-    os.environ.get(_GLM53_B12X_STATIC_MAC_LADDER_ENV),
-    _GLM53_B12X_STATIC_MAC_LADDER_ENV,
-)
-_GLM53_B12X_DYNAMIC_MAC_LADDER = _parse_glm53_mac_ladder(
-    os.environ.get(_GLM53_B12X_DYNAMIC_MAC_LADDER_ENV),
-    _GLM53_B12X_DYNAMIC_MAC_LADDER_ENV,
-)
+# The GLM backend/cutover/MAC-ladder diagnostics were five env knobs
+# (ST_GLM53_B12X_FORCE_BACKEND, _STATIC_CUTOVER_PAIRS, _{MICRO,STATIC,DYNAMIC}_
+# MAC_LADDER); production glm53.env carried every one of them empty, so the
+# defaults below ARE the served configuration. Probes force a backend through
+# _FORCED_BACKEND (the module-level hook above), never through the environment.
+# Probe hooks: a probe assigns these module attributes directly (parsed values, before
+# its first launch), the way _FORCED_BACKEND and _STATIC_V2_OVERRIDE already work.
+_GLM53_B12X_FORCE_BACKEND: str | None = None
+_GLM53_B12X_STATIC_CUTOVER_PAIRS: int | None = None
+_GLM53_B12X_MICRO_MAC_LADDER: Tuple[Tuple[int, int], ...] | None = None
+_GLM53_B12X_STATIC_MAC_LADDER: Tuple[Tuple[int, int], ...] | None = None
+_GLM53_B12X_DYNAMIC_MAC_LADDER: Tuple[Tuple[int, int], ...] | None = None
 
 # The decode-streaming static kernel: v4 (moe_static_kernel_v4, 38차 `u`, the
 # profile default). Admitted for the exact GLM-5.3 TP geometry only; every
@@ -413,7 +333,7 @@ _GLM53_B12X_DYNAMIC_MAC_LADDER = _parse_glm53_mac_ladder(
 # compatibility, `m32`/`a32`. The v2 (`1`, `m..`, `d`) and v3 (`w`, `e`, `k`)
 # lanes were sunset in 34차 §8: those tokens are rejected, not remapped.
 # Parsed once at import.
-_GLM53_B12X_STATIC_V2_ENV = "ST_GLM53_B12X_STATIC_V2"
+_GLM53_B12X_STATIC_V2_ENV = "STK_moe_static"   # the profile knob this spec comes from (error messages)
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
     "wide": True, "skip_sf": False, "skip_a": False, "v4": True, "a_ring": False,
@@ -510,7 +430,11 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
     return cfg
 
 
-_GLM53_B12X_STATIC_V2 = _parse_glm53_static_v2(os.environ.get(_GLM53_B12X_STATIC_V2_ENV))
+# The served static-lane spec. No env read: the profile declares STK_moe_static
+# (engine/profiles/glm53/boot.declared) and applies it once through
+# configure_static_v2() before any weight view or launch exists. None = the
+# stock static kernel; "t,r,sf6" = production's 2026-09-09 adoption.
+_GLM53_B12X_STATIC_V2: dict | None = None
 # A tiled cell and the #368 prefill-reuse lane are mutually exclusive (the
 # reuse kernels read row-major storage). Diagnose it here, at import/boot,
 # instead of at the first m>=3456 prefill; the launch-time check below stays
@@ -522,12 +446,38 @@ if (
 ):
     raise ValueError(
         f"{_GLM53_B12X_STATIC_V2_ENV}: a tiled cell (t) cannot serve together "
-        "with ST_GLM53_B12X_PREFILL_REUSE/FC1_N128 -- the reuse lane reads "
-        "row-major expert weights; unset one of the knobs"
+        "with the prefill reuse lanes -- they read row-major expert weights"
     )
 # Probe hook: a config dict overrides the import-time env value; module-level
 # (a monkeypatch target), never read from the environment at launch time.
 _STATIC_V2_OVERRIDE: dict | None = None
+
+
+def configure_static_v2(spec: "str | None") -> "dict | None":
+    """Apply the profile's static-lane spec (D11 knob STK_moe_static) once per process.
+
+    Refused after any weight view exists: the tiled/row-major choice is keyed into
+    every cached view and into the in-place relayout of served weights, so a later
+    switch would misread bytes (see _get_weight_views)."""
+    global _GLM53_B12X_STATIC_V2
+    cfg = _parse_glm53_static_v2(spec)
+    if cfg == _GLM53_B12X_STATIC_V2:
+        return _GLM53_B12X_STATIC_V2          # the same spec: nothing to apply
+    if _WEIGHT_CACHE or _REFORM_SF_CACHE:
+        raise RuntimeError("configure_static_v2: weight views already exist in this process; "
+                           "the static-lane spec is fixed before the first MoE bind")
+    _GLM53_B12X_STATIC_V2 = cfg
+    return cfg
+
+
+def configure_tp_sf6_q0(enabled: bool) -> None:
+    """TP prefill Q0 metadata cache over packed SF6 scales (STK_moe_static token q0):
+    production's TP recipe (glm53.env: "Restore TP with ... TP_SF6_Q0=1"). Needs t,r,sf6."""
+    global _TP_SF6_Q0_ENABLED
+    if enabled and not (_GLM53_B12X_STATIC_V2 and _GLM53_B12X_STATIC_V2.get("tiled")
+                        and _GLM53_B12X_STATIC_V2.get("reform_sf_pack")):
+        raise ValueError("STK_moe_static: q0 needs the t,r,sf6 cells")
+    _TP_SF6_Q0_ENABLED = bool(enabled)
 _STATIC_V2_STAMPS: Dict[Tuple[int, str], "torch.Tensor"] = {}
 _STATIC_V2_COUNTERS: Dict[str, "torch.Tensor"] = {}
 
@@ -742,18 +692,8 @@ def _check_memref_limit(name: str, elements: int) -> None:
         )
 
 
-def _first_env(*names: str) -> str | None:
-    for name in names:
-        value = os.environ.get(name)
-        if value is not None:
-            return value
-    return None
-
-
 def _normalize_activation_precision(activation_precision: str) -> str:
     """Normalize public activation-precision names to internal modes."""
-    if os.environ.get(_FORCE_MOE_W4A16_ENV, "0") == "1":
-        return "bf16"
 
     normalized = str(activation_precision).lower()
     aliases = {
@@ -777,8 +717,6 @@ def _normalize_quant_mode(
     activation_precision: str | None = None,
 ) -> str:
     """Normalize public quantization names to the dispatch mode."""
-    if os.environ.get(_FORCE_MOE_W4A16_ENV, "0") == "1":
-        return "w4a16"
     if quant_mode is None:
         activation_precision = _normalize_activation_precision(
             activation_precision or "fp4"
@@ -854,12 +792,10 @@ def _select_dynamic_tile_m(
     # ~57 rows per expert, i.e. 64). Pinning it is how a cell for a new shape
     # starts: measure the tile, then fix it here rather than leave the model
     # on whichever branch the generic table happens to pick.
-    _forced = os.environ.get("DENEB_B12X_TILE_M", "").strip()
-    if _forced:
-        _t = int(_forced)
-        if _t not in (16, 32, 64, 128):
-            raise ValueError(f"DENEB_B12X_TILE_M must be 16/32/64/128, got {_t}")
-        return _t
+    if _DYNAMIC_TILE_M_OVERRIDE is not None:
+        if _DYNAMIC_TILE_M_OVERRIDE not in (16, 32, 64, 128):
+            raise ValueError(f"_DYNAMIC_TILE_M_OVERRIDE must be 16/32/64/128, got {_DYNAMIC_TILE_M_OVERRIDE}")
+        return _DYNAMIC_TILE_M_OVERRIDE
     if not is_gated_activation(activation):
         return _LEVEL_TILE_M
     routed_rows = max(1, int(routed_rows))
@@ -879,17 +815,9 @@ def _get_static_compact_cutover_pairs(activation_precision: str = "fp4") -> int:
     if cached is not None:
         return cached
 
-    cutover_names: tuple[str, ...] = (
-        "FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS",
-        "B12X_STATIC_COMPACT_CUTOVER_PAIRS",
-        "B12X_DYNAMIC_STATIC_CUTOVER_PAIRS",
-        "B12X_LEVEL10_STATIC_CUTOVER_PAIRS",
-    )
-    cutover = _first_env(*cutover_names)
-    if cutover is None:
-        cached = _STATIC_COMPACT_CUTOVER_PAIRS_DEFAULT
-    else:
-        cached = max(0, int(cutover))
+    # The cutover was four env aliases (FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS
+    # and three older names); production never set one, so the default is served.
+    cached = _STATIC_COMPACT_CUTOVER_PAIRS_DEFAULT
     _STATIC_COMPACT_CUTOVER_PAIRS_CACHE[activation_precision] = cached
     return cached
 
@@ -3078,7 +3006,7 @@ def launch_sm120_static_moe(
     if weights_tiled and forced_backend in ("micro", "direct_micro"):
         raise ValueError(
             f"forced {forced_backend} backend reads row-major expert weights; the "
-            "static lane serves tile-major weights (ST_GLM53_B12X_STATIC_V2 cell t)"
+            "static lane serves tile-major weights (STK_moe_static cell t)"
         )
     use_direct_micro = (
         not weights_tiled
@@ -3633,9 +3561,9 @@ def _dynamic_task_geometry(
 # nothing to do with it.
 #
 # Host-side arithmetic on integers already in hand: no device sync, no
-# allocation. DENEB_B12X_BOUNDS=0 restores the illegal address.
-_B12X_BOUNDS = os.environ.get("DENEB_B12X_BOUNDS", "1").strip() not in (
-    "0", "false", "no")
+# allocation. Always on: the DENEB_B12X_BOUNDS=0 escape restored the illegal
+# address and was never set anywhere.
+_B12X_BOUNDS = True
 
 
 def _check_dynamic_capacity(workspace, *, routed_rows: int, n: int,
@@ -5530,7 +5458,7 @@ def launch_sm120_moe(
         # the tiled layout is read by the v5 static kernel and the overlaid
         # gated dynamic kernel; every other lane reads row-major weights
         raise NotImplementedError(
-            "tiled expert weights (ST_GLM53_B12X_STATIC_V2 cell t) reached the "
+            "tiled expert weights (STK_moe_static cell t) reached the "
             f"{backend} backend, which reads the row-major layout"
         )
     if backend == "dynamic":

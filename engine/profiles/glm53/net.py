@@ -138,6 +138,16 @@ class Glm53Net:
     def bind(self, views: dict) -> None:
         from engine.base.params import bind
         self.p = bind(self.specs(), views)
+        prepare = getattr(self.lanes, "moe_prepare", None)
+        if prepare is not None:
+            # The served MoE lane fixes its weight views now, before any capture: the
+            # spec cell t re-lays the arena bytes tile-major in place (the reference lane
+            # reads them back row-major through engine.modules.expert_layout).
+            F, p = self.F, self.p
+            for L in self.layers:
+                if F.is_moe(L):
+                    n = f"L{L}.moe."
+                    prepare(p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"], F.topk_experts, F.swiglu_limit)
 
     # -- embed / head -------------------------------------------------------------
     def embed(self, ids: torch.Tensor) -> torch.Tensor:
