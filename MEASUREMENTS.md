@@ -8604,3 +8604,7 @@ took 50.4" → **잔차 +2.0 GiB(3.9%)** = 로드가 체크포인트에서 파�
   블록·슬롯 수로: qwen38 40 GiB → 201,181 블록(208,896 B, O_DIRECT 섹터 배수) + 32 슬롯 27.5 MiB, 동시 32 에
   100,576(프로필 산수 100,590 과 일치); glm53 8.73 GiB → 2304-토큰 블록 632개, 동시 4 에 364,032.
   `base/sampler.py` — 평평한 logits 위 greedy/온도/top-p, 시드로 재생 가능(D12), torch.multinomial 과 동일.
+- 층 라이브러리 `modules/{linear,norm,logits,rotary}.py` — glm53_model 이 호출하는 생성자 kwargs 와 `(out, bias)`
+  반환 그대로. 시뮬레이션 TP=2 로 전체 GEMM 대조(column 반쪽 concat, row 부분합, merged+복제 샤드, vocab 반쪽
+  합, LM head gather), RMSNorm 융합 잔차형 == torch rms_norm, get_rope(0)→None(서빙 GLM 은 rope 없음).
+- 운영자 범위 확정: **Spark(GB10) 4대 + NVFP4 만, 레거시 없음** → NVFP4 가 가중치의 기본 형(헌장 D5 추가).
