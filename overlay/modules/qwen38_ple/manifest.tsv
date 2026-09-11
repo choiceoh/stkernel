@@ -1,0 +1,5 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+# The 51 GiB PLE n-gram table path. Both OVERRIDE files the qwen38-flash-next
+# image ships, so both carry that image's preimage.
+ple_layer.py	vllm/models/qwen3_8_flash_next/nvidia/ple_layer.py	a71144c1d36e06f22a2da1b1ada900076597fe5e824a911e7ada86249a0993e7
+weight_utils.py	vllm/model_executor/model_loader/weight_utils.py	25bb3393105f9a642b7fa58bc277865db9976748be320787f8db2e03b16fd667

@@ -848,6 +848,18 @@ def _select_dynamic_tile_m(
     sizing and the kernel build must both derive the tile from this function,
     or the scratch is mis-sized for what the kernel indexes.
     """
+    # A shape cell, expressed as an override. Qwen3.8-Flash-Next lands at
+    # 20480/512 = 40 rows per expert, which the table below answers with
+    # tile_m 32 -- a tile GLM-5.3 never selects (288 experts at top-8 gives
+    # ~57 rows per expert, i.e. 64). Pinning it is how a cell for a new shape
+    # starts: measure the tile, then fix it here rather than leave the model
+    # on whichever branch the generic table happens to pick.
+    _forced = os.environ.get("DENEB_B12X_TILE_M", "").strip()
+    if _forced:
+        _t = int(_forced)
+        if _t not in (16, 32, 64, 128):
+            raise ValueError(f"DENEB_B12X_TILE_M must be 16/32/64/128, got {_t}")
+        return _t
     if not is_gated_activation(activation):
         return _LEVEL_TILE_M
     routed_rows = max(1, int(routed_rows))
@@ -3571,6 +3583,75 @@ def _dynamic_task_geometry(
     return max_m_tiles, gate_tile_cnt, max_tasks
 
 
+# --- capacity bounds, host-side ------------------------------------------
+# `launch_sm120_dynamic_moe` hands the kernel three CAPACITIES -- max_rows,
+# physical_tiles_capacity * tile_m, task_capacity -- and the kernel indexes
+# with them. A workspace sized for a different shape than this call means the
+# kernel walks off its own buffers, and the only symptom is
+# cudaErrorIllegalAddress, reported asynchronously at whichever kernel runs
+# NEXT. On Qwen3.8-Flash-Next that was the hyper-connection combine, which had
+# nothing to do with it.
+#
+# Host-side arithmetic on integers already in hand: no device sync, no
+# allocation. DENEB_B12X_BOUNDS=0 restores the illegal address.
+_B12X_BOUNDS = os.environ.get("DENEB_B12X_BOUNDS", "1").strip() not in (
+    "0", "false", "no")
+
+
+def _check_dynamic_capacity(workspace, *, routed_rows: int, n: int,
+                            where: str) -> None:
+    if not _B12X_BOUNDS:
+        return
+    want_tiles, _, want_tasks = _dynamic_task_geometry(
+        workspace.state_E, n, routed_rows,
+        tile_m=workspace.tile_m,
+        tile_n=_level_tile_n(workspace.activation_precision),
+    )
+    want_rows = want_tiles * workspace.tile_m
+    short = []
+    if routed_rows > workspace.routed_rows_capacity:
+        short.append(f"routed rows {routed_rows} > capacity "
+                     f"{workspace.routed_rows_capacity}")
+    if want_rows > workspace.max_rows:
+        short.append(f"padded rows {want_rows} > max_rows {workspace.max_rows}")
+    if want_tiles > workspace.physical_tiles_capacity:
+        short.append(f"tiles {want_tiles} > physical_tiles_capacity "
+                     f"{workspace.physical_tiles_capacity}")
+    if want_tasks > workspace.task_capacity:
+        short.append(f"tasks {want_tasks} > task_capacity "
+                     f"{workspace.task_capacity}")
+    _b12x_bounds_note(workspace, routed_rows, n, want_rows, want_tiles,
+                      want_tasks)
+    if short:
+        raise ValueError(
+            f"b12x dynamic MoE workspace too small [{where}]: "
+            + "; ".join(short)
+            + f". state_E={workspace.state_E} n={n} "
+              f"tile_m={workspace.tile_m} routed_rows={routed_rows}.")
+
+
+_B12X_NOTED = set()
+
+
+def _b12x_bounds_note(ws, routed_rows, n, want_rows, want_tiles, want_tasks):
+    """One line per distinct shape, so a passing check is still evidence."""
+    key = (ws.state_E, n, ws.tile_m, routed_rows)
+    if key in _B12X_NOTED or len(_B12X_NOTED) > 24:
+        return
+    _B12X_NOTED.add(key)
+    # stderr, not a logger: this file lives in flashinfer's namespace and the
+    # host process's logging config does not necessarily adopt it. A check
+    # whose passing leaves no trace is a check nobody can cite.
+    import sys as _sys
+
+    _sys.stderr.write(
+        f"[b12x-bounds] state_E={ws.state_E} n={n} tile_m={ws.tile_m} "
+        f"routed_rows={routed_rows} -> rows {want_rows}/{ws.max_rows} "
+        f"tiles {want_tiles}/{ws.physical_tiles_capacity} "
+        f"tasks {want_tasks}/{ws.task_capacity}\n")
+    _sys.stderr.flush()
+
+
 def allocate_sm120_dynamic_workspace(
     *,
     state_E: int,
@@ -4386,6 +4467,8 @@ def launch_sm120_dynamic_moe(
         workspace.physical_tiles_capacity * workspace.tile_m,
         workspace.task_capacity,
     )
+    _check_dynamic_capacity(workspace, routed_rows=num_tokens * top_k, n=n,
+                            where="launch_sm120_dynamic_moe")
     compiled(*runtime_args)
     # Canary overrides and graph capture are not a production launch witness.
     # Keep this after the actual call and emit once without adding a GPU sync.

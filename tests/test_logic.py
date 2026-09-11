@@ -8621,6 +8621,29 @@ def test_glm53_megakernel_contracts() -> None:
           "the probe walks the whole 8-bit E8M0 domain rather than asserting "
           "that a bare exponent must be representable")
 
+    # -- the row reader's width assumption. 256 divides the 512-byte logical
+    #    block, so a DeepSeek engram row never straddles a sector and one
+    #    aligned read per row is minimal. Qwen's PLE rows are 160 bytes and do
+    #    NOT divide it: a reader that keeps the assumption returns 32 real
+    #    bytes followed by 128 from whatever the reused buffer last held.
+    eng_io2 = open(os.path.join(REPO, "overlay/modules/dsv41_engram",
+                                "dsv41_engram_io.py"), encoding="utf-8").read()
+    check("def min_read_bytes(" in eng_io2
+          and "_gcd(row_bytes, block)" in eng_io2,
+          "the minimum read window is derived from gcd(row_bytes, block) "
+          "rather than assumed to be one sector")
+    check("row_bytes: int = EMB_ROW_BYTES" in eng_io2
+          and "self.n_rows = os.path.getsize(path) // self.row_bytes" in eng_io2,
+          "the reader takes the row width instead of hard-coding 256")
+    check("_align_down(row * self.row_bytes, _LOGICAL_BLOCK)" in eng_io2,
+          "windows align to the SECTOR, not to read_bytes: aligning to "
+          "read_bytes puts a straddling row off the end of its own window")
+    rows_probe = open(os.path.join(REPO, "probes/qwen38_ple_rows.py"),
+                      encoding="utf-8").read()
+    check("straddle" in rows_probe and "row_pattern" in rows_probe,
+          "the probe fills each row with a pattern identifying it, so a row "
+          "read from the wrong offset is visible rather than merely finite")
+
     # -- qwen38 shared-expert fusion. The shared expert has a routed expert's
     #    shape (both intermediates are 640), so a grouped GEMM can host it as
     #    one more slot -- which is also what keeps it ALIGNED: 640 stays 640
@@ -8745,7 +8768,9 @@ def test_glm53_megakernel_contracts() -> None:
           "52.6K IOPS against 92-95K for the strided form on the same drive")
     check("os.O_RDONLY | os.O_DIRECT" in eng_io
           and "_LOGICAL_BLOCK = 512" in eng_io
-          and "if start + EMB_ROW_BYTES > got:" in eng_io,
+          # width-generic since Qwen's 160-byte PLE rows: the guard is the
+          # same one, against `row_bytes` instead of the 256 constant.
+          and "if start + row_bytes > got:" in eng_io,
           "O_DIRECT with sector-granular reads, and a short tail read is "
           "refused rather than served from the reused buffer's stale bytes")
     # The partition is DeepSeek's `ParallelEngramEmbedding`: contiguous row

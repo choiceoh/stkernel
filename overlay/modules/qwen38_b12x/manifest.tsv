@@ -1,0 +1,6 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+# NEW files: a wrapper, not a replacement. This fleet's moe_dispatch.py
+# override is written against the GLM-5.3 image's FlashInfer (5,514 lines) and
+# cannot be mounted on this image's 0.6.17 (3,047 lines, different preimage).
+qwen38_b12x_bounds.py	qwen38_b12x_bounds.py	absent
+zz_qwen38_b12x_bounds.pth	zz_qwen38_b12x_bounds.pth	absent

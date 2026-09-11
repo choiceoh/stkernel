@@ -1,0 +1,2 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+ops_qsa.py	vllm/models/qwen3_8_flash_next/nvidia/ops/qsa.py	c4ffe3674cafa0ce2dabc39a39f0ddbb4b594bc358ad210ffce9d04383350c7f

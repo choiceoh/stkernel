@@ -30,6 +30,7 @@ from __future__ import annotations
 import mmap
 import os
 import threading
+from math import gcd as _gcd
 from concurrent.futures import ThreadPoolExecutor
 
 # One table row: engram_head_dim 256 stored F8_E4M3, so one byte per element.
@@ -40,6 +41,26 @@ EMB_ROW_BYTES = 256
 SCALE_ROW_BYTES = 8
 
 _LOGICAL_BLOCK = 512
+
+
+def min_read_bytes(row_bytes: int, block: int = _LOGICAL_BLOCK) -> int:
+    """The smallest legal O_DIRECT read that always covers one row.
+
+    A row lives at `r * row_bytes`, so its offset inside a sector cycles
+    through the multiples of `gcd(row_bytes, block)`, and the worst start is
+    `block - gcd` bytes into one. Covering the row from there needs
+    `block - gcd + row_bytes`, rounded up to the block.
+
+        row_bytes 256   gcd 256   never straddles   ->   512
+        row_bytes 160   gcd  32   straddles         ->  1024
+
+    256 divides 512, which is why this path could assume one sector per row.
+    Qwen3.8-Flash-Next's PLE rows are 160 bytes and do not divide it, so a row
+    can span two sectors -- and a reader that assumes it cannot hands back a
+    row completed from whatever the reused buffer last held: real bytes from
+    the right file, at the wrong place.
+    """
+    return -(-(block - _gcd(row_bytes, block) + row_bytes) // block) * block
 
 
 def _align_down(value: int, to: int) -> int:
@@ -88,15 +109,25 @@ class ShardReader:
     """
 
     def __init__(self, path: str, *, queue_depth: int = 32,
-                 read_bytes: int = _LOGICAL_BLOCK) -> None:
-        if read_bytes < EMB_ROW_BYTES or read_bytes % _LOGICAL_BLOCK:
+                 read_bytes: "int | None" = None,
+                 row_bytes: int = EMB_ROW_BYTES) -> None:
+        if row_bytes <= 0:
+            raise ValueError(f"row_bytes must be positive, got {row_bytes}")
+        self.row_bytes = int(row_bytes)
+        need = min_read_bytes(self.row_bytes)
+        if read_bytes is None:
+            read_bytes = need
+        if read_bytes < need or read_bytes % _LOGICAL_BLOCK:
             raise ValueError(
-                f"read_bytes must be a multiple of {_LOGICAL_BLOCK} and at least "
-                f"{EMB_ROW_BYTES}, got {read_bytes}")
+                f"read_bytes must be a multiple of {_LOGICAL_BLOCK} and at "
+                f"least {need} for {self.row_bytes}-byte rows, got "
+                f"{read_bytes}. Below that, a row whose offset lands near the "
+                f"end of a sector is only partly inside the window and the "
+                f"bytes completing it come from whatever the buffer held.")
         self.path = path
         self.read_bytes = read_bytes
         self.queue_depth = max(1, int(queue_depth))
-        self.n_rows = os.path.getsize(path) // EMB_ROW_BYTES
+        self.n_rows = os.path.getsize(path) // self.row_bytes
         # Each worker owns an fd and a page-aligned buffer for its whole life.
         # A shared fd would still be correct -- pread carries its own offset --
         # but per-thread fds keep the kernel's per-file lock off the hot path.
@@ -132,8 +163,13 @@ class ShardReader:
         for row in rows:
             if not 0 <= row < self.n_rows:
                 raise IndexError(f"row {row} outside shard of {self.n_rows} rows")
-            windows.setdefault(_align_down(row * EMB_ROW_BYTES, self.read_bytes),
-                               []).append(row)
+            # Align the window to the SECTOR, not to read_bytes. Aligning to
+            # read_bytes coalesces more when rows cannot straddle, and is
+            # wrong when they can: a 160-byte row at offset 1000 with
+            # read_bytes 1024 would take base 0 and fall off the window's end.
+            windows.setdefault(
+                _align_down(row * self.row_bytes, _LOGICAL_BLOCK),
+                []).append(row)
 
         # ONE task per thread, not one per read. This is the whole difference
         # between 52.6K and the drive's 157K IOPS: a step asks for ~384 rows, and
@@ -158,21 +194,23 @@ class ShardReader:
         return self.submit(rows).wait()
 
     def _read_chunk(self, windows) -> dict:
-        fd, buf, width = self._local.fd, self._local.buf, self.read_bytes
+        fd, buf, row_bytes = self._local.fd, self._local.buf, self.row_bytes
         out = {}
         for base, rows in windows:
             got = os.preadv(fd, [buf], base)
             if got <= 0:
                 raise OSError(f"O_DIRECT read at {base} returned {got}")
             for row in rows:
-                start = row * EMB_ROW_BYTES - base
-                # The buffer is reused, so a short tail read would otherwise hand
-                # back whatever the previous read left in those bytes.
-                if start + EMB_ROW_BYTES > got:
+                start = row * row_bytes - base
+                # The buffer is reused, so a short tail read would otherwise
+                # hand back whatever the previous read left in those bytes.
+                # This is also what turns a straddling row into an error rather
+                # than into plausible bytes from the wrong offset.
+                if start + row_bytes > got:
                     raise OSError(
-                        f"row {row} wants bytes {start}..{start + EMB_ROW_BYTES} "
+                        f"row {row} wants bytes {start}..{start + row_bytes} "
                         f"of a {got}-byte read at {base}")
-                out[row] = buf[start:start + EMB_ROW_BYTES]
+                out[row] = buf[start:start + row_bytes]
         return out
 
     def close(self) -> None:
