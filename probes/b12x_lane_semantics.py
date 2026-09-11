@@ -1,8 +1,16 @@
 """Which side is wrong at the MoE: the served b12x lane or the torch reference?
-Layer-3 real experts, ONE token, the same call the engine makes, against
-dequant + torch on the same bytes -- and variants that flip one assumption
-each (gate/up halves swapped; activation quant off) so the mismatch names
-its cause. Inside the glm53 image: bash probes/run_mk_probe.sh probes/b12x_lane_semantics.py
+Layer-3 real experts, the same call the engine makes, against dequant + torch
+on the same bytes -- and variants that flip one assumption each (gate/up
+halves swapped; activation quant off) so the mismatch names its cause.
+
+Verdict (45th ledger §15): the kernel gates on the SECOND half of w13 --
+flashinfer's CuTe-DSL order is [up; gate], which vLLM reaches by swapping
+its [gate; up] at load (reorder_w13_to_w31_for_flashinfer_cutedsl). Rank
+files written before that finding held [gate; up]; specs.py now writes
+[up; gate] and the reference lane gates on the second half, so on current
+files the direct comparison is the right one and "halves swapped" is the
+wrong order. Inside the glm53 image (models mounted):
+    MK_PROBE_DOCKER_ARGS="--mount type=bind,src=/home/choiceoh/models,dst=/home/choiceoh/models,readonly" bash probes/run_mk_probe.sh probes/b12x_lane_semantics.py
 """
 from __future__ import annotations
 
@@ -56,6 +64,24 @@ def main() -> int:
     sf_swapped = torch.stack([swizzle_sf(sf_swapped[e]) for e in range(E)]).view(torch.float8_e4m3fn).contiguous()
     served_sw = lanes.moe(x, sel, w, w13_swapped, sf_swapped, w2, w2_sf, F.swiglu_limit).float()
     print(f"  served[halves swapped] vs reference: rel {rel(served_sw, ref):.3e}")
+    # with the halves in the kernel's order, what remains: activation quant, the combine, atomics
+    served2 = lanes.moe(x, sel, w, w13, w13_sf, w2, w2_sf, F.swiglu_limit).float()
+    print(f"  served repeat (same inputs, atomics): rel {rel(served2, served):.3e}")
+    print(f"  served vs reference[halves swapped, no activation quant]: rel {rel(served, variant(swap_halves=True, act_quant=False)):.3e}")
+    sel1 = torch.tensor([[3]] * 4, device=dev, dtype=torch.int32); w1 = torch.ones(4, 1, device=dev)
+    s1 = lanes.moe(x, sel1, w1, w13, w13_sf, w2, w2_sf, F.swiglu_limit).float()
+    one_expert = []
+    for aq in (True, False):
+        s13 = unswizzle_sf(w13_sf[3].view(torch.uint8), two_i, hidden // 16).view(torch.float8_e4m3fn)
+        s2 = unswizzle_sf(w2_sf[3].view(torch.uint8), hidden, i_local // 16).view(torch.float8_e4m3fn)
+        g = expert_gemm(x, w13[3, i_local:], s13[i_local:], one, one, quantize_act=aq)
+        u = expert_gemm(x, w13[3, :i_local], s13[:i_local], one, one, quantize_act=aq)
+        one_expert.append(expert_gemm(swiglu_clamped(g, u, F.swiglu_limit), w2[3], s2, one, one, quantize_act=aq).float())
+    print(f"  ONE expert, weight 1 (no combine): served vs reference[swapped, act quant]: rel {rel(s1, one_expert[0]):.3e}; "
+          f"[swapped, no act quant]: rel {rel(s1, one_expert[1]):.3e}; |served| {s1.abs().mean():.4f} |ref| {one_expert[0].abs().mean():.4f}")
+    # per-token view: is it a few rows or everywhere?
+    tr = ((s1 - one_expert[0]).abs().amax(-1) / one_expert[0].abs().amax(-1)).tolist()
+    print(f"  ONE expert per-token rel: {[round(v, 3) for v in tr]}")
     return 0
 
 

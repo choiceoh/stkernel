@@ -22,12 +22,15 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     bash probes/run_engine_check.sh --layers 0-4                                  # 서빙 커널 레인, 판정 이미지 안
     PYTHONPATH=. python3 engine/profiles/glm53/boot.py --local --layers 0-4       # 러너가 돈다 (+ --drafter DFlash2, --park NVMe 파킹, --serve HTTP 문)
 
-플릿(스파크 4대, 판정 이미지 안, 노드당 컨테이너):
+플릿(스파크 4대, 판정 이미지 안, 노드당 컨테이너; 랭크 순서 srv2=0(rendezvous), srv1=1, srv3=2, srv4=3):
 
     bash launchers/fanout-st-ranks.sh            # 랭크 r 파일을 노드 r 로
     bash launchers/start-st-glm53.sh             # 부팅; glm53*/q38* 컨테이너가 있으면 거부
     curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64}'
     curl -s http://10.10.10.2:8000/v1/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
+
+랭크 파일 규약(둘 다 틀리면 조용히 틀린 모델이 된다): 텐서는 256 B 정렬(DeepGEMM TMA), 전문가 `w13` 은 **[up; gate]** 순서
+(b12x 커널이 둘째 반을 게이트; 스케일은 전역을 접어 128×4 인터리브). `probes/b12x_lane_semantics*.py` 가 그 판정.
 
 측정과 판정은 `MEASUREMENTS.md` 44~45차.
 

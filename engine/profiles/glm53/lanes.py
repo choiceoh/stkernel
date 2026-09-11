@@ -36,7 +36,7 @@ class Lanes:
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
                               #  scale, ckv_scale) -> [T,H,512] bf16
-    moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8, w13_sf [E, 2I*H/16] e4m3 (folded, interleaved),
+    moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8 rows [up; gate], w13_sf [E, 2I*H/16] e4m3 (folded, interleaved),
                               #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit) -> [T,H] bf16: this rank's routed partial (shared expert excluded)
 
 
@@ -113,8 +113,8 @@ def reference() -> Lanes:
             s13 = unswizzle_sf(w13_sf[e].view(torch.uint8), two_i, hidden // 16).view(torch.float8_e4m3fn)
             s2 = unswizzle_sf(w2_sf[e].view(torch.uint8), hidden, i_local // 16).view(torch.float8_e4m3fn)
             xe = x[rows]
-            g = expert_gemm(xe, w13[e, :i_local], s13[:i_local], one, one, quantize_act=True)
-            u = expert_gemm(xe, w13[e, i_local:], s13[i_local:], one, one, quantize_act=True)
+            u = expert_gemm(xe, w13[e, :i_local], s13[:i_local], one, one, quantize_act=True)     # w13 rows are [up; gate]
+            g = expert_gemm(xe, w13[e, i_local:], s13[i_local:], one, one, quantize_act=True)
             y = expert_gemm(swiglu_clamped(g, u, limit), w2[e], s2, one, one, quantize_act=True)
             out.index_add_(0, rows, y.float() * w[rows, k][:, None])
         return out.to(x.dtype)
