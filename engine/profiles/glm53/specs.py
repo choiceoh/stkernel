@@ -147,6 +147,8 @@ def layer_specs(F: Facts, L: int) -> "list[Spec]":
         w13_src = tuple(x + f"{g}_proj.{t}" for x in ex for g in ("gate", "up") for t in ("weight_packed", "weight_scale", "weight_global_scale"))
         w2_src = tuple(x + f"down_proj.{t}" for x in ex for t in ("weight_packed", "weight_scale", "weight_global_scale"))
 
+        # w13 rows are [up; gate]: the order the b12x (flashinfer CuTe-DSL) kernel gates on -- vLLM swaps its [gate; up]
+        # to that at load (reorder_w13_to_w31_for_flashinfer_cutedsl); here the file is written that way once
         def w13_packed(s, r, W):
             return torch.stack([torch.cat([_split(s[x + "up_proj.weight_packed"], 0, r, W),
                                            _split(s[x + "gate_proj.weight_packed"], 0, r, W)], 0) for x in ex]).contiguous()
@@ -174,8 +176,8 @@ def layer_specs(F: Facts, L: int) -> "list[Spec]":
             Spec(n + "moe.bias", (E,), F32, (m + "gate.e_score_correction_bias",), _whole(m + "gate.e_score_correction_bias", F32)),
             Spec(n + "moe.sh_gate_up", (2 * Is, H), BF, gu, _cat_rows(gu)),
             Spec(n + "moe.sh_down", (H, Is), BF, (m + "shared_experts.down_proj.weight",), _cols(m + "shared_experts.down_proj.weight")),
-            Spec(n + "moe.w13", (E, 2 * Is, H // 2), U8, w13_src, w13_packed),
-            Spec(n + "moe.w13_sf", (E, 2 * Is * (H // 16)), E4, w13_src, w13_sf),        # folded + 128x4 interleaved (b12x layout)
+            Spec(n + "moe.w13", (E, 2 * Is, H // 2), U8, w13_src, w13_packed),          # rows [up; gate] (the kernel's order)
+            Spec(n + "moe.w13_sf", (E, 2 * Is * (H // 16)), E4, w13_src, w13_sf),        # folded + 128x4 interleaved (b12x layout), same order
             Spec(n + "moe.w2", (E, H, Is // 2), U8, w2_src, w2_packed),
             Spec(n + "moe.w2_sf", (E, H * (Is // 16)), E4, w2_src, w2_sf),
         ]
