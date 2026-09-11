@@ -30,11 +30,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from concurrent.futures import Future
 from contextlib import nullcontext
 from pathlib import Path
+from uuid import uuid4
 
 SECTOR = 4096
 
@@ -65,15 +67,49 @@ class NvmeTier:
         self.bytes_written = self.bytes_read = 0
 
     def _path(self, seq: int) -> Path:
-        return self.dir / f"seq-{seq}.kv"
+        return self.dir / self.index.get(str(seq), {}).get("file", f"seq-{seq}.kv")
 
     def has(self, seq: int) -> bool:
-        return str(seq) in self.index
+        meta = self.index.get(str(seq))
+        return (meta is not None and not meta.get("deleting", False)
+                and meta.get("block_bytes", self.block_bytes) == self.block_bytes)
+
+    def stale(self) -> "list[str]":
+        """Foreign block layouts stay on disk and cannot be promoted."""
+        return [k for k, meta in self.index.items()
+                if meta.get("block_bytes", self.block_bytes) != self.block_bytes]
+
+    def _sync_directory(self) -> None:
+        fd = os.open(self.dir, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
     def _save_manifest(self, index: dict) -> None:
         tmp = self.manifest.with_suffix(".tmp")
-        tmp.write_text(json.dumps(index)); os.replace(tmp, self.manifest)
+        with tmp.open("w") as f:
+            json.dump(index, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self.manifest)
         self.index = index                       # publish only after the disk commit succeeds
+        self._sync_directory()
+
+    def _publish(self, seq, path, blocks, tokens, written):
+        old = self.index.get(str(seq))
+        retired = list(old.get("retired", ())) + [self._path(seq).name] if old else []
+        self._sync_directory()                   # persist the new generation before referring to it
+        self._save_manifest({**self.index, str(seq): {
+            "file": path.name, "blocks": blocks, "tokens": tokens,
+            "bytes": written, "block_bytes": self.block_bytes, "at": time.time(), "retired": retired}})
+
+    def _prune_retired(self, seq):
+        meta = self.index[str(seq)]
+        for name in meta.get("retired", ()):
+            (self.dir / name).unlink(missing_ok=True)
+        if meta.get("retired"):
+            self._save_manifest({**self.index, str(seq): {**meta, "retired": []}})
 
     def demote(self, seq: int, storage, block_ids: "list[int]", tokens: int) -> int:
         """Write blocks `block_ids` of `storage` ([num_blocks * block_bytes] uint8)
@@ -82,12 +118,17 @@ class NvmeTier:
             return self._demote(seq, storage, block_ids, tokens)
 
     def _demote(self, seq: int, storage, block_ids: "list[int]", tokens: int) -> int:
+        if str(seq) in self.stale():
+            raise ValueError(f"seq {seq} belongs to a different block layout")
         import torch
 
         table = storage.view(-1, self.block_bytes)
         ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device)
         self.stream.wait_stream(torch.cuda.current_stream(table.device))
-        fd = os.open(self._path(seq), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_DIRECT, 0o644)
+        # The published generation stays untouched through write/fsync/manifest
+        # failures. The manifest rename is the sole publication point.
+        path = self.dir / f"seq-{seq}-{uuid4().hex}.kv"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_DIRECT, 0o644)
         written = 0
         try:
             for i in range(0, len(block_ids), self.per):
@@ -105,11 +146,27 @@ class NvmeTier:
                     off += got
                 written += n
             os.fsync(fd)
-        finally:
             os.close(fd)
-        with self.lock:
-            self._save_manifest({**self.index, str(seq): {
-                "blocks": len(block_ids), "tokens": tokens, "bytes": written, "at": time.time()}})
+            fd = None
+            with self.lock:
+                self._publish(seq, path, len(block_ids), tokens, written)
+        except BaseException:
+            # A directory fsync may fail after the manifest was already
+            # replaced. Never delete a generation which is now published.
+            if self.index.get(str(seq), {}).get("file") != path.name:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass                          # unreferenced generation; prior snapshot is intact
+            raise
+        finally:
+            if fd is not None:
+                os.close(fd)
+        try:
+            with self.lock:
+                self._prune_retired(seq)
+        except OSError:
+            pass                                  # retired filenames remain in the manifest for retry
         self.bytes_written += written
         return written
 
@@ -122,6 +179,10 @@ class NvmeTier:
         import torch
 
         meta = self.index[str(seq)]
+        if meta.get("deleting"):
+            raise ValueError(f"seq {seq} is pending file cleanup, not promotion")
+        if meta.get("block_bytes", self.block_bytes) != self.block_bytes:
+            raise ValueError(f"seq {seq} was parked with {meta['block_bytes']} B blocks; this layout has {self.block_bytes}")
         if len(block_ids) != meta["blocks"]:
             raise ValueError(f"seq {seq}: {meta['blocks']} blocks on disk, {len(block_ids)} given")
         table = storage.view(-1, self.block_bytes)
@@ -150,14 +211,45 @@ class NvmeTier:
 
     def forget(self, seq: int) -> None:
         with self._transfer_lock:
+            self._forget(seq)
+
+    def _forget(self, seq):
+        with self.lock:
+            meta = self.index.get(str(seq))
+            if meta is None:
+                return
+            if not meta.get("deleting"):
+                self._save_manifest({**self.index, str(seq): {**meta, "deleting": True}})
+            # The tombstone survives partial unlink and final manifest
+            # failures. A retry (including after restart) finishes it.
+            self._path(seq).unlink(missing_ok=True)
+            for name in meta.get("retired", ()):
+                (self.dir / name).unlink(missing_ok=True)
+            index = dict(self.index)
+            index.pop(str(seq), None)
+            self._save_manifest(index)
+
+    def cleanup(self) -> None:
+        """Retry recorded deletions and reclaim unpublished generations.
+
+        Call off the decode path, including after reopening this tier. This
+        directory belongs to one NvmeTier; transfers serialize with cleanup.
+        Legacy files without a manifest entry are deliberately left alone.
+        """
+        with self._transfer_lock:
+            for seq, meta in list(self.index.items()):
+                if meta.get("deleting") and seq not in self.stale():
+                    self._forget(int(seq))
             with self.lock:
-                index = dict(self.index)
-                index.pop(str(seq), None)
-                self._save_manifest(index)
-            try:
-                os.unlink(self._path(seq))
-            except FileNotFoundError:
-                pass
+                for seq in list(self.index):
+                    if seq not in self.stale():
+                        self._prune_retired(int(seq))
+                referenced = {self._path(int(seq)).name for seq in self.index}
+                referenced.update(name for meta in self.index.values() for name in meta.get("retired", ()))
+                for path in self.dir.glob("seq-*.kv"):
+                    if path.name not in referenced and re.fullmatch(r"seq-\d+-[0-9a-f]{32}\.kv", path.name):
+                        path.unlink(missing_ok=True)
+                self._sync_directory()
 
     def run_async(self, fn, *args) -> Future:
         """Off-thread I/O. Poll `.done()`, then `.result()` to surface failures.
@@ -206,7 +298,9 @@ def _selfcheck() -> None:
         storage.zero_()
         t0 = time.perf_counter(); got = tier.promote(7, storage, ids); torch.cuda.synchronize(); t_r = time.perf_counter() - t0
         assert wrote == got == n_blocks * block_bytes and torch.equal(storage, keep), "round trip must be exact"
-        tier2 = NvmeTier(d, block_bytes); assert tier2.has(7); tier2.forget(7); assert not tier2.has(7)
+        tier2 = NvmeTier(d, block_bytes); assert tier2.has(7)
+        other = NvmeTier(d, block_bytes * 2); assert not other.has(7) and other.stale() == ["7"]
+        tier2.forget(7); assert not tier2.has(7)
         print(f"  kv_tier v2: {wrote / GIB:.2f} GiB demote {t_w:.2f}s ({wrote / GIB / t_w:.2f} GiB/s), "
               f"promote {t_r:.2f}s ({got / GIB / t_r:.2f} GiB/s), scattered ids exact, own stream + pinned staging OK")
 

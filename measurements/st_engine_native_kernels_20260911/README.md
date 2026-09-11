@@ -72,3 +72,17 @@ seed 29와 입력은 동일하다.
 
 전체 45층의 실가중치 품질, TP4 전체 모델 부팅, 실제 DFlash2 수용률,
 처리량·ITL은 이번 커널 이식 검사에 포함하지 않았다.
+
+## PR 머지 전 main 통합
+
+`origin/main`의 `0af79ecc`까지 통합해 요청 수명·NVMe 복구·디코드 개선을 보존했다.
+통합 후 `integration-gpu-tests.log`에서 **95개 통과, skip 없음**,
+`integration-cpu-tests.log`에서 **68개 통과, 27개 skip**을 확인했다.
+통합 소스는 `integration-source-sha256.json`에 기록했다. 이식 커널과 레인 코드는
+위 GPU 수치 검사 시점의 소스 해시와 동일하다.
+
+플릿 실행기는 기본 `st-engine:glm53` 이미지와 ST JIT 캐시를 사용하며,
+overlay 합성·전송·패키지 내부 마운트를 제거했다. 모든 노드의 이미지 존재를 먼저
+확인하고 `RANKS_DIR`를 엔진에 전달한다. 새 MoE 진단 프로브도 up|gate 계약과
+랭크 메타데이터 검사를 사용한다. 실행기 셸 문법과 Python 컴파일 검사를 통과했으며,
+플릿을 실제로 시작하거나 기존 서비스를 변경하지 않았다.

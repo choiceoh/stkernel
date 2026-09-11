@@ -173,6 +173,13 @@ def rank_main(comm, a, F, layers, lanes, ids, garbage):
     net.lanes = replace(lanes, moe=paired)
     run("whole", [Step.prefill(ids, 0, 0, 1)], cache=chain)
     logits = net.head(runs["whole"]["h"][0][-1:])
+    if lanes.name.startswith("served"):                                    # the lane judge: the same composition, reference kernels
+        ref_net = Glm53Net(F, comm, lane_tables.reference(), layers); ref_net.p = net.p; ref_net.probe = net.probe
+        blocks.clear(); chain.reset()
+        with rec.phase("whole (reference lanes)"):
+            h_ref = ref_net.forward(Step.prefill(ids, 0, 0, 1), chain)
+            torch.cuda.synchronize()
+        runs["whole_ref"] = {"h": [h_ref], "blocks": {k: list(v) for k, v in blocks.items()}}
     paired.replaying = True
     run("paged", [Step.prefill(ids, 0, 0, 1)])
     assert paired.position == len(paired.records), "paged pass skipped an expert layer"
@@ -266,6 +273,16 @@ def judge(a, F, layers, lanes, ids, garbage, comm):
     print(f"  paged KV == contiguous oracle (exact MoE inputs, first expert outputs forwarded): {paged_exact}; "
           f"runner generated {list(map(len, r0['generated']))} tokens, ranks agree: {generated_agree}, all resources returned")
     print(f"  actual expert lane executed in both paired passes; max relative repeat difference: {r0['moe_repeat_rel']:.3e}")
+    if "whole_ref" in r0["runs"]:
+        # served kernels vs reference kernels on the SAME composition and inputs (D4 at lane level): informational for MoE
+        # (b12x vs the torch dequant differ by design), judged for the attention blocks
+        print("  served lanes vs reference lanes, per block (per-token rel):")
+        for (name, L), outs_b in whole["blocks"].items():
+            r = tok_rel(outs_b[0], r0["runs"]["whole_ref"]["blocks"][(name, L)][0])
+            p50, mx = r.median().item(), r.max().item()
+            print(f"    L{L:<3}{name:<6} p50 {p50:.1e} max {mx:.1e}")
+        r = tok_rel(h_whole, r0["runs"]["whole_ref"]["h"][0])
+        print(f"    final hidden p50 {r.median().item():.1e} max {r.max().item():.1e}")
     # every other run against the whole prefill, per block, per token, against the first chunk's own noise floor
     T, K1 = a.tokens, F.spec_k + 1
     windows = {"chunked": [(0, a.chunk), (a.chunk, T)],

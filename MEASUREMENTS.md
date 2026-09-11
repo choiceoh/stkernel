@@ -9014,3 +9014,80 @@ plan 이 빠뜨렸던 꼬리 링 11×2 KiB 를 채움). `check.py` 는 이제 Ch
 활성화 양자화**(전역 1, 서빙과 같은 형), 서빙은 `b12x_fused_moe(x, w13, w13_sf, w2, w2_sf, sel, w, E, top_k, α=1, α2=1,
 fc2_input_scale=1, input_global_scale=None, "swigluoai_uninterleave" α1 β0 limit 10, nvfp4)`. `served()` 에 참조 레인이 더 이상
 없다 — 전부 바인딩되거나 죽는다(D3). 랭크 파일 재절단(백그라운드) 뒤 fan-out 을 다시 한다.
+
+### 45차 §9 — 간판(D16)을 실물 캐시에: 다중 영역 티어, 대화가 턴을 넘어 산다 (2026-09-11 밤)
+
+- `base/kv_tier.NvmeTier.demote/promote` 가 **영역 목록** `[(storage, block_bytes), …]` 을 받는다: 시퀀스 파일 하나에 영역별 세그먼트
+  (세그먼트 안에서 블록 연속), 매니페스트에 영역 크기 기록·promote 때 대조. GLM 블록은 11 층 × (latent 1,179,648 + 풀 키 73,728
+  + 풀 스케일) 의 33 영역. 풀 스케일 블록(576 × 4 B = 2,304 B)은 O_DIRECT 가 안 되므로 **섹터(4,096 B)로 패딩**(`caches.ps_block`,
+  블록 13.17 → 13.19 MiB, 0.1%); 스케일은 `caches.read/write_scales(layer, slots)` 로만 만진다(레이아웃은 캐시 안에). 자가검증:
+  1 GiB 단일 영역 demote 1.05 GiB/s·promote 4.0 GiB/s, 3 영역(288·18·1 섹터) 블록 64개 왕복 바이트 동일, 영역 불일치 거부.
+- `base/tiered_kv.TieredKV(pool, tier, regions=caches.regions(), on_resume=caches.sync_row)`.
+- `base/runner`: **대화가 턴을 넘어 산다** — `keep_idle` 이면 끝난 시퀀스는 블록·슬롯을 쥔 채 `idle` 로 남고, `park`(idle 만)·
+  `resume`·`wake`(다음 토큰은 어댑터에 대기 중이라 바로 디코드)·`extend`(새 턴: 쥔 토큰 위에 프롬프트 추가, computed 부터 프리필)·
+  `evict`(진짜 끝: 블록·슬롯·버퍼 반환). 자가검증에 다섯 동사 전부.
+- `boot.py --local --park`: 대화 0 을 파킹(아레나 블록 회수) → 재개 → wake → 4 토큰 더 → **같은 프롬프트를 max_new+4 로 한 번에
+  돌린 꼬리와 비교**(캐시가 바이트 동일해야 같다). 결과는 §10.
+
+### 45차 §10 — 간판이 돈다: park → 아레나 회수 → resume → 이어서 디코드 = 한 번에 돌린 것과 같다 (2026-09-11 밤)
+
+`boot.py --local --drafter --park`(0~4층, TP=4 스레드, 재절단 랭크 파일): 대화 0 이 첫 턴을 마치고 idle 로 블록을 쥔 채 남음 →
+`park` **12 ms**, 1.2 MiB(5층 체인의 DSA 한 층분 블록 하나), 아레나 free 583 → 584 → `resume` → `wake` → 4 토큰 더
+`[55908, 20172, 60100, 30502]` == 같은 프롬프트를 max_new+4 로 **한 번에** 돌린 꼬리 — 캐시가 바이트 동일하다는 뜻. 네 랭크
+동일. 재절단 파일로 `check.py` 도 그대로 PASS(랭크 동일, 캐시 판정 잡음 바닥). 드래프터 K=5: 0/145(5층 체인).
+서브 루프: `POST {conversation: id, ids|prompt, max_tokens}` 로 파킹된 대화를 이어간다(루프가 resume + extend; idle 턴은 티어가
+있으면 **즉시 파킹** — 아레나는 늘 살아 있는 일만 쥔다). 부팅에 D11 `Config`(사실 7개, 노브 0: `STK_*` 미선언 env 는 부팅 사망).
+같은 시각 이미지 안 서빙 레인 판정은 세 GPU 작업 동시 실행으로 컨텍스트 생성에서 OOM — 순차로 다시 돈다(§11).
+
+### 45차 §11 — 정렬: 서빙 mHC 레인의 CUDA_ERROR_INVALID_VALUE 는 스레드가 아니라 12 바이트였다 (2026-09-11 밤)
+
+메인 스레드로 옮겨도(`on_main`) 이미지 안 판정이 같은 자리에서 죽었다 — 그런데 **층 0 의 attn 믹스는 지나가고 ffn 믹스에서**.
+랭크 파일은 spec 순서대로 텐서를 붙여 쓰는데 `hc.attn_base`(96 B) + `hc.attn_scale`(12 B) 뒤의 `hc.ffn_fn` 이 16 B 경계에서
+12 B 어긋난다; DeepGEMM 의 TMA 디스크립터가 그 주소를 거부한다(`runtime_utils.hpp:145` invalid argument). 격리 프로브는
+256 B·3840 B 오프셋(둘 다 16 정렬)만 시험해 "워커 스레드"를 원인으로 잘못 잡았었다 — 워커 스레드 실패도 진짜였으나
+(DeepGEMM JIT 스레드 가정), 그것만이 아니었다. 조치: `base/preshard.RankWriter` 가 **크기가 256 의 배수인 텐서를 먼저, 홀수
+꼬리(hc base/scale·A_log·라우터 bias — 평범한 torch 읽기)를 맨 뒤에** 쓴다 → 커널이 보는 뷰는 전부 256 B 정렬. 랭크 파일 세
+번째 재절단(v3), fan-out 은 `--whole-file`(재절단 파일에 델타 전송은 손해). 결과는 §12.
+
+HTTP 두 번째 턴(파킹된 대화 이어가기) 첫 시도는 **0 토큰**: `runner.extend` 가 `kv.tokens`(예약 = 마지막 horizon 만큼 초과)를
+컨텍스트로 써서 프리필 시작 위치가 틀렸고, 서브 루프가 턴 시작점을 잘못 빼서 답이 비었다. 조치: 프로토콜에 `model.context(seq)`,
+`adapter.extend` 가 "대기 중인 마지막 토큰 + 새 프롬프트" 수를 돌려주고 turn 경계는 prompt_len 이동으로만 표현. 재실행은 §12.
+
+### 45차 §12 — 정렬 뒤: 서빙 mHC·KDA 레인 통과, 파킹된 대화 HTTP 로 이어짐 (2026-09-11 밤)
+
+- 정렬 랭크 파일(v3)로 이미지 안 판정: 층 0~2(mHC pre/post·서빙 KDA chunk·conv)를 **지나** 층 3 의 MLA 레인에서 "megakernel MLA
+  lane did not arm" — 원인은 env: `VLLM_GLM53_MK_MLA=1` 만 주고 마스터 `VLLM_GLM53_MEGAKERNEL=1` 을 안 줬다(모듈 기본 0). 판정
+  러너와 플릿 런처 둘 다에 마스터 플래그 추가, 재실행.
+- `boot.py --local --serve --park --drafter`: 첫 턴 둘(6 토큰씩) → 대화 0 은 즉시 파킹 → `POST {conversation: 0, ids: 5개, max_tokens: 4}`
+  → 루프가 resume + extend(대기 중이던 마지막 토큰 + 새 5 토큰을 프리필) → **4 토큰, 7.05 s**(참조 레인, 5층). 네 랭크 락스텝,
+  16 스텝, 3건 응답. **PASS**.
+
+### 45차 §13 — PR #535(codex) 평가와 병합; 서빙 레인 전 구간 판정에서 b12x 만 참조와 다르다 (2026-09-12 새벽)
+
+**PR #535**(`codex/st-engine-runtime-hardening`, main 머지됨)을 diff 로 평가했다. 맞게 잡은 것 셋: (1) **인덱서 꼬리 링** — 내
+`[kpool=4]` 링은 K=5 드래프트가 4 칸 떨어진 위치끼리 충돌해 거부된 드래프트가 수락 위치의 raw key 를 덮어썼다; `kpool-1+K=8` 칸
++ 셀당 한 번 쓰기로 고침. 내 롤백 판정이 못 본 이유: ≤2048 토큰이면 풀이 전부 선택돼 키 내용이 어텐션에 안 보인다(그들은 18/20
+→ 20/20 으로 정량화). (2) **rank 0 = srv2** — `env://` 초기화는 rank 0 이 MASTER_ADDR 에 TCPStore 를 연다; 내 순서(srv1=0)는
+NCCL 초기화가 불가능한 배치였다. GID 도 컨테이너 안 `CT_GID_PRELUDE`. (3) **256 B 정렬**을 나와 독립적으로 같은 12 B 원인으로
+찾아 패딩 텐서로 해결(spec 순서 보존, 내 "홀수 꼬리 뒤로"와 동치). 그 외: 참조 MLA 의 latent 전체 fp32 변환(호출마다 O(S))을
+gather 뒤 변환으로, `reserve_to`·트랜잭션 submit·디코드 폭 초과 사망(D3)·티어 Future/잠금. 증거: 네 노드 각 한 프로세스 NCCL/RoCE
+로 층 0·3 참조·서빙 레인 PASS(격리 체크아웃, 프로덕션 미접촉) — **첫 ST 엔진 플릿 실행**. 마찰: `runtime.py` 가 `adapter.py` 와
+중복(접을 것), 원장 대신 로그 3천 줄 커밋, b12x 수치는 paired 오라클(자기 자신과 비교, 반복 오차 2.7e-2)이라 미판정.
+
+**병합**: #535 의 블록-메이저 페이지드 캐시(한 물리 블록에 모든 층 → 블록 = NVMe 단위, 내 33-영역 티어 확장 불필요), 강화된
+러너/스케줄러/kv, 정렬 라이터, KDA 고정 전치, `mma_sf_view` 를 채택; 내 것 중 대화 동사(park/resume/wake/extend/evict, extend 는
+`model.context` 와 `reserve_to` 로), 서브 루프 이어가기, `--ckpt-meta`·메타 배포, 서빙-대-참조 레인 판정을 다시 얹음. 자가검증 9종 OK.
+
+**서빙 레인 전 구간 판정**(내 정렬 랭크 파일, 0~4층, b12x 포함, 한 상자): 네 랭크 동일, 청크/verify 잡음 바닥 안(롤백 L0 kda
+p50 4.4e-3 vs 바닥 2.7e-3 는 1.5× 기준의 경계 — 서빙 KDA 의 바닥이 참조보다 낮아서), **서빙-대-참조**: mHC·KDA(chunk/recurrent)·
+conv·인덱서·kpool·MLA 가 층 0~3 어텐션 블록에서 p50 ≤ 1.1e-2 로 일치, **L3 MoE 만 p50 0.49** — 서빙 b12x 와 참조 MoE 중 하나가
+틀렸다(후보: 활성화 동적 양자화 세부, gate/up 반 순서, α 의미). #535 의 오라클은 이걸 볼 수 없다. 다음 판정 대상.
+
+### 45차 §14 — 병합본 검증 (2026-09-12 새벽)
+
+#535 병합본(페이지드 캐시 + 강화 러너 + 내 대화 동사·서브·메타 부팅·레인 판정): 자가검증 9종 OK. `check.py --layers 0-4`(참조):
+네 랭크 동일, **페이지드 == 연속 오라클(정확 일치)**, 러너 생성 [3, 1], 청크/verify/롤백 PASS. `boot --local --drafter --park`:
+32 스텝, park 1.3 MiB(블록-메이저 블록 하나) → 아레나 542 → 543 → resume → 이어서 4 토큰 == 한 번에 돌린 꼬리, 네 랭크 동일, PASS.
+첫 시도는 이전 스모크가 같은 티어 디렉터리에 파킹한 seq 0 을 #535 의 트랜잭션 submit 이 거부해 죽었다 — 옳은 거부. 조치: 파킹
+파일은 **쓴 블록 레이아웃에서만 재개**(매니페스트에 block_bytes, 다르면 stale 로 남기고 부팅 때 개수만 보고), 로컬 스모크는
+실행별 티어 디렉터리. srv2 에 rank0(새 순서) 복사 완료.

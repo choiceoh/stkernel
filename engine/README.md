@@ -17,11 +17,19 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
     kernels/    ST가 소유하는 Triton·TileLang·CuTe DSL·CUDA 커널과 필요한 보조 코드
 
-빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드):
+빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드; 랭크 파일은 `profiles/glm53/preshard.py` 가 한 번 자른다):
 
-    PYTHONPATH=. python3 engine/profiles/glm53/check.py --layers 0-4          # 참조 레인
-    bash engine/runtime/build.sh                                             # vLLM이 제거된 ST 이미지
-    bash probes/run_engine_check.sh --layers 0-4                              # ST 서빙 커널 레인
+    PYTHONPATH=. python3 engine/profiles/glm53/check.py --layers 0-4              # 참조 레인: 랭크 동일 + 청크/verify/롤백 판정
+    bash engine/runtime/build.sh                                                # vLLM이 제거된 ST 이미지
+    bash probes/run_engine_check.sh --layers 0-4                                  # ST 서빙 커널 레인
+    PYTHONPATH=. python3 engine/profiles/glm53/boot.py --local --layers 0-4       # 러너가 돈다 (+ --drafter DFlash2, --park NVMe 파킹, --serve HTTP 문)
+
+플릿(스파크 4대, 각 노드에 ST 이미지를 빌드한 뒤 노드당 컨테이너):
+
+    bash launchers/fanout-st-ranks.sh            # 랭크 r 파일을 노드 r 로
+    bash launchers/start-st-glm53.sh             # 부팅; glm53*/q38* 컨테이너가 있으면 거부
+    curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64}'
+    curl -s http://10.10.10.2:8000/v1/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
 
 GLM의 `served()`는 `engine/kernels`를 직접 호출한다. KDA·conv·mHC·kpool·MLA·b12x는
 이 패키지 안에 있고, 인덱서와 mHC prenorm GEMM은 독립 `deep_gemm` 라이브러리를 사용한다.
@@ -77,6 +85,29 @@ GLM 조합을 실제 요청 실행에 연결하는 경로는 `profiles/glm53/run
 EOS나 생성 한도에 도달하면 그 스텝에서 KV와 상태 슬롯을 반납한다. 이 간단한 검증 경로는
 `draft_slots=0` 계약을 사용한다. PR #534의 `Glm53Engine`·`boot.py`는 같은 캐시와 러너 위에서
 DFlash2를 연결하며, 드래프터 문맥 링도 같은 아레나의 상태 슬롯 예산에 포함한다.
+
+`Glm53Engine`은 전체 행의 temperature가 0인 스텝에서 유효 어휘 뷰의 argmax만 실행한다.
+이 스텝은 RNG를 소비하지 않는다. 확률·혼합 스텝은 기존 base sampler를 사용하며, 같은
+시작 RNG 상태에서 토큰과 종료 RNG 상태를 보존한다. 이전 버전의 greedy 스텝은 버릴 난수도
+소비했으므로, greedy 이후 확률 생성까지 포함한 버전 간 출력 일치는 보장하지 않는다.
+디코드 입력은 모든 시퀀스와 draft를 평탄화해 한 번 업로드하고, 생성 한도 판정은 토큰 버퍼의
+길이 차이로 계산한다. 결과를 수거할 때만 생성 이력의 독립 사본을 만든다.
+구성요소 전후 측정과 회귀검사는
+[`measurements/st_engine_decode_20260911`](../measurements/st_engine_decode_20260911/README.md)에 있다.
+
+HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 64개의 미완료·미수거 요청까지
+보관하고, 빈 행과 각 요청의 최대 생성 길이를 담을 블록 예산이 있을 때 FIFO 순서로 입장시킨다.
+완료 결과를 복사한 뒤 일반 요청의 버퍼와 행을 반납한다. `keep_idle` 모드에서는 대화 ID와
+요청 ID를 분리해 문맥을 보존하고, 새 요청에 공간이 필요하면 가장 오래된 유휴 대화를 정리한다.
+이어가기 요청은 전체 문맥 예산을 확인한 뒤 NVMe에서 복원하며, 알 수 없거나 실행 중·정리된
+대화는 기존 요청을 건드리지 않고 409로 응답한다. 누적 요청 수는 KV 행 수에 제한되지 않는다.
+잘못된 입력은 400, 대기열 초과와 종료된 엔진은 503으로 응답한다. 종료 신호는 모든 랭크로
+전달하며, 실행·대기 중 요청의 자원을 정리하고 기다리는 HTTP 호출을 깨운다.
+
+`NvmeTier`는 완성된 새 파일의 이름을 manifest에 원자적으로 게시한다. 이전 세대는 그때까지
+보존하며, 삭제 실패는 manifest의 `retired` 또는 `deleting` 기록으로 남긴다. 재시작 후 또는
+디코드 경로 밖에서 `tier.cleanup()`을 호출하면 미완료 삭제와 게시되지 않은 세대 파일을 정리한다.
+`deleting` 상태는 재승격할 수 없으며, 같은 저장 디렉터리는 하나의 `NvmeTier`가 소유한다.
 
 `Glm53Caches`는 하나의 아레나에 다음 영역을 선언한다:
 

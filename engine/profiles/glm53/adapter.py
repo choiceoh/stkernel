@@ -15,11 +15,12 @@ all K+1 positions; the next step overwrites what was rejected (net.py).
 from __future__ import annotations
 
 import torch
+from math import isfinite
 
 from engine.base.sampler import sample
 from engine.profiles.glm53.caches import Glm53Caches
 from engine.profiles.glm53.facts import Facts
-from engine.profiles.glm53.net import Glm53Net, Step
+from engine.profiles.glm53.net import Glm53Net, Segment, Step
 
 
 class NullDrafter:
@@ -53,9 +54,34 @@ class Glm53Engine:
         self.steps = 0
 
     # -- the runner's protocol -------------------------------------------------------
+    def validate(self, ids, max_new, temperature) -> None:
+        if not ids or any(type(t) is not int or not 0 <= t < self.F.vocab for t in ids):
+            raise ValueError("prompt token id is outside the model vocabulary")
+        if type(max_new) is not int or max_new <= 0:
+            raise ValueError("generation limit must be a positive integer")
+        if type(temperature) not in (int, float):
+            raise ValueError("temperature must be finite and nonnegative")
+        try:
+            valid = isfinite(temperature) and temperature >= 0
+        except OverflowError:
+            valid = False
+        if not valid:
+            raise ValueError("temperature must be finite and nonnegative")
+
     def add(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None) -> None:
+        max_new = self.max_new if max_new is None else max_new
+        temperature = self.temperature if temperature is None else temperature
+        self.validate(ids, max_new, temperature)
+        if seq in self.tokens:
+            raise ValueError(f"seq {seq} is live or has an uncollected result")
         self.tokens[seq] = list(ids); self.prompt_len[seq] = len(ids)
-        self.limits[seq] = (self.max_new if max_new is None else max_new, self.temperature if temperature is None else temperature)
+        self.limits[seq] = (max_new, temperature)
+
+    def forget(self, seq: int) -> None:
+        if seq in self.slot:
+            raise ValueError(f"seq {seq} is still live")
+        for rows in (self.tokens, self.prompt_len, self.limits):
+            rows.pop(seq, None)
 
     def open(self, seq: int, slot: int) -> None:
         self.slot[seq] = slot; self.ctx[seq] = 0
@@ -65,13 +91,39 @@ class Glm53Engine:
         for d in (self.ctx, self.slot):
             d.pop(seq, None)
 
+    def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None) -> int:
+        """A new turn: more prompt tokens on a conversation the caches still hold.
+        Returns the tokens to prefill -- the last sampled token (never fed) and
+        the new ones -- so `generated` counts this turn only from here on."""
+        max_new = self.max_new if max_new is None else max_new
+        temperature = self.temperature if temperature is None else temperature
+        self.validate(ids, max_new, temperature)
+        self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
+        self.limits[seq] = (max_new, temperature)
+        return len(self.tokens[seq]) - self.ctx[seq]
+
+    def extension_tokens(self, seq: int, ids) -> int:
+        """Inspect the next turn's prefill size before reserving its budget."""
+        return len(self.tokens[seq]) + len(ids) - self.ctx[seq]
+
     def horizon(self, seq: int) -> int:
         return self.ctx[seq] + 1 + self.drafter.k
+
+    def context(self, seq: int) -> int:
+        return self.ctx[seq]
 
     def generated(self, seq: int) -> "list[int]":
         return self.tokens[seq][self.prompt_len[seq]:]
 
+    def _generated_count(self, seq: int) -> int:
+        return len(self.tokens[seq]) - self.prompt_len[seq]
+
     def _sample(self, logits: torch.Tensor, temps: "list[float]") -> torch.Tensor:
+        # Temperatures already live on the host: no device predicate or random
+        # draw is needed for an entirely greedy step. Such steps leave the RNG
+        # untouched; stochastic/mixed steps retain the base sampler's draws.
+        if all(t <= 0 for t in temps):
+            return logits[:, :self.decodable].argmax(dim=-1)
         if self.decodable is not None and logits.shape[-1] > self.decodable:
             logits = logits.clone(); logits[:, self.decodable:] = float("-inf")
         t = torch.tensor(temps, dtype=torch.float32, device=logits.device)
@@ -94,16 +146,17 @@ class Glm53Engine:
             first = self._sample(self.net.head(h[-1:]), [self.limits[seq][1]])
             self.tokens[seq].append(int(first.item()))
         self.steps += 1
-        generated = self.generated(seq)
-        return bool(generated) and (generated[-1] in self.eos or len(generated) >= self.limits[seq][0])
+        generated = self._generated_count(seq)
+        return generated > 0 and (self.tokens[seq][-1] in self.eos or generated >= self.limits[seq][0])
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
-        chunks, drafts = [], {}
+        flat, segments, drafts = [], [], {}
         for seq, slot in zip(seqs, slots):
             drafts[seq] = self.drafter.propose(self.tokens[seq][-1], self.ctx[seq], self.caches.draft_ring(slot) if self.drafter.k else None)
             ids = [self.tokens[seq][-1]] + drafts[seq]
-            chunks.append((torch.tensor(ids, dtype=torch.int64, device=self.caches.device), self.ctx[seq], seq, slot))
-        step = Step.decode(chunks)
+            segments.append(Segment(seq, slot, self.ctx[seq], len(flat), len(ids)))
+            flat.extend(ids)
+        step = Step(torch.tensor(flat, dtype=torch.int64, device=self.caches.device), tuple(segments))
         h, aux = self._forward(step)
         temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
         sampled = self._sample(self.net.head(h), temps).tolist()
@@ -116,19 +169,20 @@ class Glm53Engine:
                     break
                 accepted += 1
             new = picks[: accepted + 1]                                    # the accepted drafts' confirmations, then the correction
-            new = new[:max(0, self.limits[s.seq][0] - len(self.generated(s.seq)))]
+            new = new[:max(0, self.limits[s.seq][0] - self._generated_count(s.seq))]
             for i, token in enumerate(new):
                 if token in self.eos:
                     new = new[:i + 1]
                     break
-            if aux is not None:                                            # the fed tokens up to the last accepted draft become context
-                rows = slice(s.start, s.start + accepted + 1)
-                self.drafter.observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + accepted + 1, device=h.device), aux[rows])
+            committed = len(new)                            # clipped tokens must not enter the next turn's context
+            if aux is not None:
+                rows = slice(s.start, s.start + committed)
+                self.drafter.observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + committed, device=h.device), aux[rows])
             self.tokens[s.seq] += new
-            self.ctx[s.seq] += accepted + 1
-            self.accepted_total += accepted
+            self.ctx[s.seq] += committed
+            self.accepted_total += min(accepted, committed)
             self.drafted_total += len(drafts[s.seq])
-            done = any(t in self.eos for t in new) or len(self.generated(s.seq)) >= self.limits[s.seq][0]
+            done = any(t in self.eos for t in new) or self._generated_count(s.seq) >= self.limits[s.seq][0]
             finished.append(done)
         self.steps += 1
         return finished

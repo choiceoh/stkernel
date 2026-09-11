@@ -349,6 +349,142 @@ class CudaCacheTests(unittest.TestCase):
         r.step(now=21)
         self.assertEqual(r.take_result(0), (10,))
 
+    def test_flat_decode_preserves_ragged_drafts_contexts_and_auxiliary_rows(self):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        from engine.profiles.glm53.net import Segment
+        from unittest.mock import patch
+
+        observed, steps = [], []
+        class Draft:
+            k = 2
+            aux_layers = ()
+            def propose(self, anchor, position, ring):
+                return {5: [6, 7], 21: [99], 30: []}[anchor]
+            def observe(self, ring, positions, aux):
+                observed.append((ring, positions.tolist(), aux[:, 0].tolist()))
+
+        net = self.runtime().net
+        def forward(step, caches, aux_layers=None):
+            steps.append(step)
+            return step.ids[:, None].float(), torch.arange(len(step.ids), device="cuda")[:, None]
+
+        engine = Glm53Engine(net, self.c, self.F, Draft())
+        jobs = [(2, [4], 2), (0, [18, 20], 4), (1, [0, 1, 29], 2)]
+        slots = []
+        with patch.object(net, "forward", side_effect=forward), patch.object(self.c, "draft_ring", side_effect=lambda slot: slot):
+            for seq, prompt, limit in jobs:
+                engine.add(seq, prompt, max_new=limit)
+                self.c.pool.reserve(seq, len(prompt) + 4)
+                slot = self.c.slots.take(seq)
+                slots.append(slot)
+                engine.open(seq, slot)
+                self.assertFalse(engine.prefill(seq, 0, len(prompt), None, slot))
+            observed.clear()
+            self.assertEqual(engine.decode([2, 0, 1], None, slots), [True, False, True])
+        self.assertEqual(steps[-1].ids.tolist(), [5, 6, 7, 21, 99, 30])
+        self.assertEqual(steps[-1].segments, (Segment(2, slots[0], 1, 0, 3),
+                                            Segment(0, slots[1], 2, 3, 2),
+                                            Segment(1, slots[2], 3, 5, 1)))
+        self.assertEqual(observed, [(slots[0], [1], [0]), (slots[1], [2], [3]), (slots[2], [3], [5])])
+        self.assertEqual([engine.context(s) for s in (2, 0, 1)], [2, 3, 4])
+        self.assertEqual([engine.generated(s) for s in (2, 0, 1)], [[5, 6], [21, 22], [30, 31]])
+        self.assertEqual((engine.accepted_total, engine.drafted_total), (1, 3))
+        result = engine.generated(2)
+        result.append(99)
+        self.assertEqual(engine.generated(2), [5, 6])  # result collection still returns an independent copy
+
+    def test_generation_count_resets_on_a_new_turn_after_long_history(self):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        engine.add(0, [1, 2])
+        engine.tokens[0].extend([3] * 65536)
+        engine.ctx[0] = len(engine.tokens[0]) - 1
+        self.assertEqual(engine._generated_count(0), 65536)
+        self.assertEqual(engine.extend(0, [4, 5], max_new=2), 3)
+        self.assertEqual(engine._generated_count(0), 0)
+        engine.tokens[0].append(6)
+        self.assertEqual(engine._generated_count(0), 1)
+        self.assertEqual(engine.generated(0), [6])
+
+    def test_clipped_drafts_leave_the_last_emitted_token_pending_for_the_next_turn(self):
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.profiles.glm53.adapter import Glm53Engine
+        from unittest.mock import patch
+        class Draft:
+            k = 2
+            aux_layers = ()
+            def propose(self, anchor, position, ring):
+                return [anchor + 1, anchor + 2]
+        engine = Glm53Engine(self.runtime().net, self.c, self.F, Draft(), max_new=2)
+        runner = Runner(engine, Contract(4, 8, 2, 0., 2), self.c.pool, self.c.slots,
+                        Ring(8, STEP_RECORD.size), keep_idle=True)
+        engine.add(0, [4]); runner.submit(0, 1)
+        with patch.object(self.c, "draft_ring", return_value=None):
+            while runner.step() is not None:
+                pass
+            self.assertEqual(engine.generated(0), [5, 6])
+            self.assertEqual(engine.context(0), 2)
+            self.assertEqual(engine.extension_tokens(0, [9]), 2)
+            runner.extend(0, engine.extend(0, [9], max_new=1))
+            while runner.step() is not None:
+                pass
+        self.assertEqual(engine.generated(0), [10])
+        self.assertEqual(engine.context(0), len(engine.tokens[0]) - 1)
+        runner.cancel(0)
+        engine.forget(0)
+
+    def test_http_engine_adapter_recycles_rows_and_releases_token_buffers(self):
+        from engine.base.comm import Comm
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.base.serve import Server
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        runner = Runner(engine, Contract(4, 8, 0, 0., 2), self.c.pool, self.c.slots, Ring(8, STEP_RECORD.size))
+        server = Server(engine, runner, Comm(1, 0))
+        jobs = [server.submit([i], 2, 0) for i in range(25)]
+        for _ in range(100):
+            if not server.once() and not server._waiting:
+                break
+        for i, (request, event) in enumerate(jobs):
+            self.assertTrue(event.is_set())
+            self.assertEqual(server.take_result(request), [i + 1, i + 2])
+        self.assertFalse(engine.tokens or engine.prompt_len or engine.limits or engine.ctx or engine.slot)
+        self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
+        self.assertEqual(self.c.slots.available, 4)
+
+    def test_serving_adapter_extends_cached_context_and_cancel_releases_idle_state(self):
+        from engine.base.comm import Comm
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.base.serve import Server
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        runner = Runner(engine, Contract(4, 8, 0, 0., 2), self.c.pool, self.c.slots,
+                        Ring(8, STEP_RECORD.size), keep_idle=True)
+        server = Server(engine, runner, Comm(1, 0))
+        first, _ = server.submit([4], 2, 0)
+        while server.once():
+            pass
+        self.assertEqual(server.take_result(first), [5, 6])
+        row = server._conversations[first]
+        self.assertEqual(engine.context(row), 2)
+        second, _ = server.submit([9, 10], 2, 0, conversation=first)
+        while server.once():
+            pass
+        self.assertEqual(server.take_result(second), [11, 12])
+        self.assertEqual(engine.tokens[row], [4, 5, 6, 9, 10, 11, 12])
+        self.assertEqual(engine.context(row), 6)
+        server.alive = False
+        server.once()
+        self.assertFalse(engine.tokens or engine.ctx or engine.slot or runner.idle)
+        self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
+        self.assertEqual(self.c.slots.available, 4)
+
     def test_runtime_can_stop_on_the_first_eos_without_decode(self):
         r = self.runtime(eos_ids=(7,))
         r.submit(0, torch.arange(7, device="cuda"), 20, now=0)

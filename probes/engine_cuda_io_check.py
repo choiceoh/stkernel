@@ -9,6 +9,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -55,10 +56,44 @@ def main():
         assert [job.result(timeout=30) for job in jobs] == [100 * block_bytes] * 2
         assert all(bool((block == 73).all()) for block in pool.blocks_of(0))
         assert all(bool((block == 0).all()) for block in pool.blocks_of(1))
+        # Replacing an existing snapshot must leave its published generation
+        # readable through data-write, fsync and manifest failures.
+        for operation in ("pwritev", "fsync", "replace"):
+            before = dict(tier.index["0"])
+            pool.storage.fill_(41)
+            with patch(f"engine.base.kv_tier.os.{operation}", side_effect=OSError("injected replacement failure")):
+                try:
+                    tier.demote(0, pool.storage, ids0, 1600)
+                except OSError as exc:
+                    assert "injected replacement failure" in str(exc)
+                else:
+                    raise AssertionError(f"{operation} failure did not reach the caller")
+            assert tier.index["0"] == before
+            pool.storage.zero_()
+            tier.promote(0, pool.storage, ids0)
+            assert all(bool((block == 73).all()) for block in pool.blocks_of(0))
+        pool.storage.fill_(105)
+        tier.demote(0, pool.storage, ids0, 1600)
+        pool.storage.zero_()
+        tier.promote(0, pool.storage, ids0)
+        assert all(bool((block == 105).all()) for block in pool.blocks_of(0))
+        with patch("pathlib.Path.unlink", side_effect=PermissionError("injected cleanup failure")):
+            try:
+                tier.forget(0)
+            except PermissionError:
+                pass
+            else:
+                raise AssertionError("unlink failure did not reach the caller")
+        assert tier.index["0"]["deleting"] and not tier.has(0)
+        reopened = NvmeTier(d, block_bytes, stage_bytes=2 << 20)
+        reopened.cleanup()
+        assert "0" not in reopened.index and reopened.has(1)
+        assert len(list(Path(d).glob("seq-*.kv"))) == 1
         print(json.dumps({"passed": True, "kv_bytes": arena.nbytes, "staging_bytes": tier.stage_bytes,
                           "bytes_written": tier.bytes_written, "bytes_read": tier.bytes_read,
                           "producer_stream": True, "async_producer_stream": True,
-                          "concurrent_roundtrip": True}))
+                          "concurrent_roundtrip": True, "replacement_failures_retryable": True,
+                          "cleanup_after_restart": True}))
 
 
 if __name__ == "__main__":

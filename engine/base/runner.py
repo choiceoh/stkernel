@@ -30,15 +30,19 @@ class Model(Protocol):
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> "bool | None": ...  # finished on the prompt's first sample?
     def decode(self, seqs, blocks, slots) -> "list[bool]": ...   # per seq: finished?
     def horizon(self, seq: int) -> int: ...  # exclusive end of the next decode writes
+    def context(self, seq: int) -> int: ...  # tokens computed so far (a new turn prefills from here)
     def open(self, seq: int, slot: int) -> None: ...
     def close(self, seq: int) -> None: ...           # must also clean up a partially failed open
 
 
 class Runner:
     def __init__(self, model: Model, contract: sched.Contract, kv: BlockPool,
-                 slots: SlotPool, ring: Ring, recorder: "Recorder | None" = None, tiered=None):
+                 slots: SlotPool, ring: Ring, recorder: "Recorder | None" = None, tiered=None,
+                 keep_idle: bool = False):
         self.model, self.c, self.kv, self.slots, self.ring = model, contract, kv, slots, ring
         self.tiered = tiered                                # base.tiered_kv.TieredKV, optional
+        self.keep_idle = keep_idle                          # a finished turn keeps its blocks and slot: the conversation lives (D16)
+        self.idle = {}                                      # seq -> True: finished, not released, parkable
         self.state = sched.State()
         self.slot_of = {}
         self.rec = recorder or Recorder("runner")
@@ -76,21 +80,83 @@ class Runner:
 
     def _finish(self, seq: int) -> None:
         sched.finish(self.state, seq)
-        self.kv.release(seq)
+        if self.keep_idle:
+            self.idle[seq] = True
+            return
+        self._release(seq)
+
+    def _release(self, seq: int) -> None:
+        if self.kv.tokens[seq]:
+            self.kv.release(seq)
         self.slots.give(self.slot_of.pop(seq))
         self.model.close(seq)
 
+    def cancel(self, seq: int) -> None:
+        """Release a live or idle conversation, including its parked disk copy."""
+        if seq not in self.slot_of:
+            return
+        if seq in self.state.running or seq in self.state.waiting:
+            sched.finish(self.state, seq)
+        self.idle.pop(seq, None)
+        try:
+            if self.tiered is not None:
+                if self.tiered.is_parked(seq) or str(seq) in self.tiered.tier.index:
+                    self.tiered.tier.forget(seq)
+        finally:
+            if self.tiered is not None:
+                self.tiered.parked.pop(seq, None)
+            self._release(seq)
+
+    def evict(self, seq: int) -> None:
+        """The idle conversation is over: blocks, disk copy and slot go."""
+        if seq not in self.idle:
+            raise ValueError(f"seq {seq} is not idle")
+        self.cancel(seq)
+
+
     def park(self, seq: int) -> int:
         """An idle conversation leaves the arena but keeps its KV (D16).
-        Only a sequence that is not running: parking a live one would make the
-        next decode wait on disk, which D10 forbids."""
-        if seq in self.state.running or seq in self.state.waiting:
-            raise ValueError(f"seq {seq} is live; only idle sequences park")
+        Only an idle one: parking a live one would make the next decode wait
+        on disk, which D10 forbids."""
+        if seq not in self.idle:
+            raise ValueError(f"seq {seq} is not idle; only idle conversations park")
         return self.tiered.park(seq)
 
     def resume(self, seq: int) -> int:
         """Bring a parked conversation back into fresh blocks, off the step path."""
+        if seq not in self.idle:
+            raise ValueError(f"seq {seq} is not idle")
         return self.tiered.resume(seq)
+
+    def wake(self, seq: int) -> None:
+        """An idle conversation decodes again (its next token is pending in the
+        model); a parked one must be resumed first."""
+        if seq not in self.idle:
+            raise ValueError(f"seq {seq} is not idle")
+        if self.tiered is not None and self.tiered.is_parked(seq):
+            raise ValueError(f"seq {seq} is parked: resume it first")
+        if len(self.state.running) >= self.c.max_running:
+            raise ValueError("decode width is full; wake it later")
+        self.idle.pop(seq)
+        self.state.running.append(seq)
+
+    def extend(self, seq: int, tokens: int, now: "float | None" = None) -> None:
+        """A new turn on an idle conversation: `tokens` more prompt tokens to
+        prefill on top of what the caches already hold (from the model's
+        context, not kv.tokens: reservations overshoot by the last horizon)."""
+        if seq not in self.idle:
+            raise ValueError(f"seq {seq} is not idle")
+        if self.tiered is not None and self.tiered.is_parked(seq):
+            raise ValueError(f"seq {seq} is parked: resume it first")
+        if not isinstance(tokens, int) or tokens <= 0:
+            raise ValueError("a turn adds at least one token to prefill")
+        held = self.model.context(seq)
+        now = time.monotonic() if now is None else now
+        sched.validate_arrival(self.state, seq, held + tokens, now)
+        self.kv.reserve_to((seq,), (held + tokens,))
+        self.idle.pop(seq)
+        sched.arrive(self.state, seq, held + tokens, now)
+        self.state.computed[seq] = held
 
     def step(self, now: float | None = None) -> "sched.Step | None":
         now = time.monotonic() if now is None else now
@@ -132,6 +198,7 @@ def _selfcheck() -> None:
         def open(self, seq, slot): self.left[seq] = 3; assert slot != 0
         def close(self, seq): self.left.pop(seq)
         def horizon(self, seq): return self.ctx[seq] + 1
+        def context(self, seq): return self.ctx[seq]
         def prefill(self, seq, start, tokens, blocks, slot):
             assert all(b != -1 for b in list(blocks)[: -(-(start + tokens) // 16)]), "prefill must see its blocks"
             self.calls.append(("prefill", seq, start, tokens)); self.ctx[seq] = start + tokens
@@ -156,9 +223,21 @@ def _selfcheck() -> None:
                      "prefill", "decode", "decode", "decode"], kinds
     assert r.state.running == [] and r.kv.available == 64 and r.slots.available == 8   # 8 usable of 9
     assert r.ring.count == len(kinds)
+    # conversations that live on: a finished turn keeps blocks and slot, wakes to decode more, extends, is evicted
+    r2 = Runner(Fake(), c, BlockPool(64, 16, 8, 32), SlotPool(9), Ring(16, STEP_RECORD.size), keep_idle=True)
+    r2.submit(5, 40, now=0.0)
+    while r2.step(now=0.0) is not None:
+        pass
+    assert 5 in r2.idle and r2.kv.available < 64 and r2.slots.available == 7
+    r2.model.left[5] = 2; r2.wake(5)
+    assert r2.step(now=0.0).kind == "decode" and r2.step(now=0.0).kind == "decode" and 5 in r2.idle
+    r2.extend(5, 20, now=0.0); r2.model.left[5] = 1
+    assert r2.step(now=0.0).kind == "prefill" and r2.state.computed[5] == r2.state.prompt_len[5]
+    assert r2.step(now=0.0).kind == "decode" and 5 in r2.idle
+    r2.evict(5); assert r2.kv.available == 64 and r2.slots.available == 8 and 5 not in r2.idle
     last = STEP_RECORD.unpack(r.ring.ordered()[-1])
     assert last[2] == KIND[sched.DECODE]
-    print(f"  runner: {len(kinds)} steps ({kinds.count('prefill')} prefill, {kinds.count('decode')} decode), all homogeneous, kv/slots returned, ring recorded OK")
+    print(f"  runner: {len(kinds)} steps ({kinds.count('prefill')} prefill, {kinds.count('decode')} decode), all homogeneous, kv/slots returned, ring recorded; keep_idle: finish keeps blocks, wake/extend/evict OK")
 
 
 if __name__ == "__main__":

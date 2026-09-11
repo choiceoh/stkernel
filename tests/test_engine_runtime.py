@@ -283,6 +283,20 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(r.state.running, [0])
         self.assertEqual(r.ring.count, 1)
 
+    def test_decode_failure_retries_reuse_the_same_reserved_horizon(self):
+        for bad in (lambda *a: [], lambda *a: (_ for _ in ()).throw(RuntimeError('decode failed'))):
+            r = runner(blocks=2)
+            r.submit(0, 16, now=0)
+            r.step(now=0)
+            r.model.decode = bad
+            for tick in range(10):
+                with self.assertRaises((RuntimeError, ValueError)):
+                    r.step(now=tick + 1)
+                self.assertEqual(r.kv.tokens[0], 17)
+                self.assertEqual(r.kv.available, 0)
+            r.cancel(0)
+            self.assert_empty(r)
+
     def test_metadata_uses_committed_context_after_batch_reservation(self):
         r = runner(contract=replace(CONTRACT, draft_slots=3))
         r.submit(0, 16, now=0)
