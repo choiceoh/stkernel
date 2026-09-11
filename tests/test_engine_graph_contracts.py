@@ -142,5 +142,75 @@ class ReplayStagingTests(unittest.TestCase):
         self.assertIn("def run(self, step, shape=None):", DECODE_GRAPHS.read_text())
 
 
+class WarmupDeclarationTests(unittest.TestCase):
+    """The family-aware warmup is only correct if the shapes arrive family by family."""
+
+    def setUp(self):
+        self.text = DECODE_GRAPHS.read_text()
+
+    def test_the_target_shapes_are_ordered_by_family_and_declare_their_warmup(self):
+        self.assertIn("warmup=warmup_for", self.text)
+        seqs = self.text.index("for n in range(1, max_seqs + 1)")
+        caps = self.text.index("for capacity in self.capacities", seqs)
+        # capacity-major order would give two passes to the first four shapes and one to every
+        # family after them, which is not what "the first shape of a family" means
+        self.assertLess(seqs, caps)
+
+    def test_the_policy_gives_the_first_shape_of_each_family_two_passes(self):
+        body = self.text[self.text.index("def warmup_for"):self.text.index("self.graphs = DecodeGraphs")]
+        self.assertIn("key = shape[:2]", body)
+        self.assertIn("return 2 if first else 1", body)
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "requires CUDA")
+class WarmupPolicyTests(unittest.TestCase):
+    """A declared warmup count per shape, and a graph that still replays what eager computes."""
+
+    def capture(self, warmup):
+        from engine.base.graphs import DecodeGraphs
+        weight = torch.randn(32, 32, device="cuda")
+        runs = {}
+
+        def make_inputs(n, t, capacity):
+            return {"x": torch.zeros(n * t, 32, device="cuda"), "cap": float(capacity)}
+
+        def step(inputs):
+            runs[inputs["cap"]] = runs.get(inputs["cap"], 0) + 1
+            h = inputs["x"]
+            for _ in range(3):
+                h = torch.tanh(h @ weight) + inputs["cap"] * 1e-6
+            return h
+
+        shapes = [(n, 2, cap) for n in (1, 2) for cap in (4, 8, 16)]
+        return DecodeGraphs(step, make_inputs, shapes, warmup=warmup), step, runs, weight
+
+    def test_a_family_warms_twice_then_once_and_replays_what_eager_computes(self):
+        warmed = set()
+
+        def policy(shape):
+            first = shape[:2] not in warmed
+            warmed.add(shape[:2])
+            return 2 if first else 1
+
+        graphs, step, runs, weight = self.capture(policy)
+        try:
+            self.assertEqual(len(graphs.graphs), 6)
+            # cap 4 is each family's first: two warmups plus the capture, twice over; the rest one plus one
+            self.assertEqual(runs[4.0], 2 * (2 + 1))
+            self.assertEqual(runs[8.0], 2 * (1 + 1))
+            self.assertEqual(runs[16.0], 2 * (1 + 1))
+            for shape in graphs.graphs:
+                x = torch.randn(shape[0] * shape[1], 32, device="cuda")
+                replay = graphs.run(shape, lambda inputs: inputs["x"].copy_(x))
+                eager = step({"x": x, "cap": float(shape[2])})
+                self.assertTrue(torch.allclose(replay, eager, atol=1e-5), shape)
+        finally:
+            graphs.close()
+
+    def test_a_policy_that_asks_for_no_warmup_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "at least one warmup pass"):
+            self.capture(lambda shape: 0)
+
+
 if __name__ == "__main__":
     unittest.main()
