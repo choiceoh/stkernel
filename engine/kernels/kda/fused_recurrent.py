@@ -65,6 +65,7 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     COMPUTE_GATE: tl.constexpr,  # g holds raw logits; KDA gate computed in-kernel
     SAFE_GATE: tl.constexpr,  # bounded gate variant (only branch implemented)
     LOWER_BOUND: tl.constexpr,
+    STATE_KV: tl.constexpr = False,
 ):
     i_k, i_v, i_nh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_n, i_hv = i_nh // HV, i_nh % HV
@@ -109,6 +110,12 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     mask_k = o_k < K
     mask_v = o_v < V
     mask_h = mask_v[:, None] & mask_k[None, :]
+    # The engine's recurrent ring is [K,V]. Address it directly when requested;
+    # the recurrence still computes the same [BV,BK] register tile.
+    if STATE_KV:
+        state_offsets = o_k[None, :] * V + o_v[:, None]
+    else:
+        state_offsets = o_v[:, None] * K + o_k[None, :]
 
     b_h = tl.zeros([BV, BK], dtype=tl.float32)
     if USE_INITIAL_STATE:
@@ -127,7 +134,7 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
             p_h0 = h0 + state_idx * stride_init_state_token
         else:
             p_h0 = h0 + bos * HV * V * K
-        p_h0 = p_h0 + i_hv * V * K + o_v[:, None] * K + o_k[None, :]
+        p_h0 = p_h0 + i_hv * V * K + state_offsets
         b_h += tl.load(p_h0, mask=mask_h, other=0).to(tl.float32)
 
     for i_t in range(0, T):
@@ -144,7 +151,7 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
             b_g = tl.load(p_g).to(tl.float32)
             b_h *= exp(b_g)
         else:
-            b_gk = tl.load(p_gk).to(tl.float32)
+            b_gk = tl.load(p_gk, mask=mask_k, other=0).to(tl.float32)
             if COMPUTE_GATE:
                 # Replicates kda_gate_fwd_kernel's SAFE_GATE branch
                 # bit-for-bit (same tl.exp, same fp32 math; the intermediate
@@ -182,11 +189,11 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
             # Only store if state index is valid (not NULL_BLOCK_ID=0)
             if final_state_idx > 0:
                 p_ht = ht + final_state_idx * stride_final_state_token
-                p_ht = p_ht + i_hv * V * K + o_v[:, None] * K + o_k[None, :]
+                p_ht = p_ht + i_hv * V * K + state_offsets
                 tl.store(p_ht, b_h.to(p_ht.dtype.element_ty), mask=mask_h)
         else:
             p_ht = ht + (bos + i_t) * stride_final_state_token
-            p_ht = p_ht + i_hv * V * K + o_v[:, None] * K + o_k[None, :]
+            p_ht = p_ht + i_hv * V * K + state_offsets
             tl.store(p_ht, b_h.to(p_ht.dtype.element_ty), mask=mask_h)
 
         p_q += H * K

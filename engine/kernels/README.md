@@ -50,6 +50,14 @@ FP32 부분값을 합치므로 이 경로는 전역 partial 버퍼와 grid 전�
 토큰 수의 32배다. [GB10 양자화 측정](../../measurements/st_gb10_indexer_quant_20260911/README.md)에
 레지스터·shared memory, 실제 가중치 검사와 형상별 시간을 기록했다.
 
+KDA recurrent는 엔진의 `[H,K,V]` 상태를 직접 읽고 모든 토큰의 상태를 같은 배치로 쓴다.
+`state_layout="kv"`는 dense 단일 sequence·별도 출력 상태 계약이며, 기존 `vk` 상태 테이블
+API와 구분한다. GLM TP4의 16 heads·128×128·1~6토큰에서는 BV16·1 warp를 사용한다.
+초기 상태와 draft 롤백 위치를 보존하면서 두 번의 전치 복사를 제거한다. context 0의 영 상태
+입력은 그래프와 일반 실행의 합산 순서를 맞추기 위해 유지한다. 구형 경로와의 FP32 합산 순서는
+달라질 수 있으며, 측정된 수치 차이·전체 KDA 블록 시간·재현 절차는
+[GB10 KDA 상태 측정](../../measurements/st_gb10_kda_state_20260911/README.md)에 있다.
+
 ## 노브 (D11, 2026-09-12 정리)
 
 이 패키지는 환경 변수를 읽지 않는다(예외는 `ST_MLA_BUILD_ROOT` 캐시 경로 하나, `TRITON_CACHE_DIR` 와 같은 부류).

@@ -290,11 +290,29 @@ def fused_recurrent_kda_fwd(
     g_bias: torch.Tensor | None = None,
     compute_gate: bool = False,
     lower_bound: float | None = -5.0,
+    state_layout: str = "vk",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     B, T, H, K, V = *k.shape, v.shape[-1]
     HV = v.shape[2]
     N = B if cu_seqlens is None else len(cu_seqlens) - 1
+    if state_layout not in ("vk", "kv"):
+        raise ValueError("state_layout must be 'vk' or 'kv'")
+    state_kv = state_layout == "kv"
+    if state_kv:
+        # The engine owns a dense, one-sequence [H,K,V] rollback ring. Keep
+        # this API separate from the legacy indexed/in-place state tables.
+        if (B != 1 or inplace_final_state or cu_seqlens is not None
+                or ssm_state_indices is not None or num_accepted_tokens is not None):
+            raise ValueError("kv state requires one dense sequence and separate output states")
+        if initial_state is not None and (
+                initial_state.shape != (1, HV, K, V) or not initial_state.is_contiguous()
+                or initial_state.dtype != torch.float32 or initial_state.device != q.device):
+            raise ValueError("kv initial_state must be contiguous FP32 [1,HV,K,V] on the input device")
     BK, BV = next_power_of_2(K), min(next_power_of_2(V), 8)
+    # GB10/TP4 decode and six-token verification: 128 CTAs at BV=16,
+    # one warp per CTA. Larger/other shapes retain the conservative tile.
+    if state_kv and H == HV == 16 and K == V == 128 and 1 <= T <= 6:
+        BV = 16
     NK, NV = cdiv(K, BK), cdiv(V, BV)
     assert NK == 1, "NK > 1 is not supported yet"
     num_stages = 3
@@ -310,20 +328,23 @@ def fused_recurrent_kda_fwd(
         a_log = a_log.reshape(-1).contiguous()
         g_bias = g_bias.reshape(-1).contiguous()
 
+    output_like = v if state_kv else k
     if out is None:
-        o = torch.empty_like(k)
+        o = torch.empty_like(output_like)
     else:
         # Caller-provided output buffer; must be layout-compatible with the
-        # tensor the kernel indexes (contiguous, same shape/dtype as k).
-        assert out.shape == k.shape and out.dtype == k.dtype
+        # tensor the kernel indexes (v for kv, legacy k for vk).
+        assert out.shape == output_like.shape and out.dtype == output_like.dtype
         assert out.is_contiguous()
         o = out
     if inplace_final_state:
         final_state = initial_state
+    elif state_kv:
+        final_state = q.new_empty(T, HV, K, V, dtype=torch.float32)
     else:
         final_state = q.new_empty(T, HV, V, K, dtype=initial_state.dtype)
 
-    stride_init_state_token = initial_state.stride(0)
+    stride_init_state_token = initial_state.stride(0) if initial_state is not None else HV * K * V
     stride_final_state_token = final_state.stride(0)
 
     if ssm_state_indices is None:
@@ -370,6 +391,7 @@ def fused_recurrent_kda_fwd(
         COMPUTE_GATE=compute_gate,
         SAFE_GATE=True,
         LOWER_BOUND=lower_bound if lower_bound is not None else -5.0,
+        STATE_KV=state_kv,
         num_warps=num_warps,
         num_stages=num_stages,
     )
@@ -396,8 +418,15 @@ def fused_recurrent_kda(
     g_bias: torch.Tensor | None = None,
     compute_gate: bool = False,
     lower_bound: float | None = -5.0,
+    state_layout: str = "vk",
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Recurrent KDA; ``kv`` returns every FP32 [H,K,V] token snapshot.
+
+    The default ``vk`` retains the ported state-table API. ``kv`` accepts
+    only one dense sequence, separate output states, and a contiguous FP32
+    [1,HV,K,V] initial state (or None for zero state). It never mutates it.
+    """
     if cu_seqlens is not None and q.shape[0] != 1:
         raise ValueError(
             f"The batch size is expected to be 1 rather than {q.shape[0]} when using `cu_seqlens`."
@@ -425,6 +454,7 @@ def fused_recurrent_kda(
         g_bias=g_bias,
         compute_gate=compute_gate,
         lower_bound=lower_bound,
+        state_layout=state_layout,
     )
     return o, final_state
 
