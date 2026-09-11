@@ -138,6 +138,10 @@ ASYNC="${ASYNC:-0}";  ASYNC_FLAG=""; [ "$ASYNC" = 1 ] && ASYNC_FLAG="--async-sch
 AUTOTUNE="${AUTOTUNE:-1}"; AUTOTUNE_FLAG=""; [ "$AUTOTUNE" = 0 ] && AUTOTUNE_FLAG="--no-enable-flashinfer-autotune"
 ALL2ALL="${ALL2ALL:-}"; A2A_FLAG=""; [ -n "$ALL2ALL" ] && A2A_FLAG="--all2all-backend $ALL2ALL"
 LOAD_FORMAT="${LOAD_FORMAT:-}"; LOAD_FLAG=""; [ -n "$LOAD_FORMAT" ] && LOAD_FLAG="--load-format $LOAD_FORMAT"
+# fastsafetensors on this fleet means the overlay's LOCAL mode (see the profile):
+# without DENEB_FST_LOCAL=1 the loader partitions reads across ranks and
+# redistributes over its own NCCL, which dies in ncclSystemError on 4-node RoCE.
+_FST=""; [ "$LOAD_FORMAT" = fastsafetensors ] && _FST="-e DENEB_FST_LOCAL=${FST_LOCAL:-1}"
 # Knobs the overlays read. With these at 0 the overlays' added branches are
 # dead code identical to upstream, so mounting them unconditionally is safe.
 ADAPTIVE_SPEC="${ADAPTIVE_SPEC:-0}"
@@ -164,7 +168,12 @@ mkdir -p "$LOGDIR" "$CACHE_DIR"
 
 # Same fabric wiring as the proven dsv4 stack: RoCE via NCCL_NET=IB on the
 # CX-7 HCAs, cuMem off, NVLS off (no NVLink between Sparks).
-ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH=sm_121a \
+# LAUNCH_BLOCKING=1: every kernel launch synchronous, so an asynchronous fault
+# is reported at the kernel that raised it rather than at the next launch that
+# happened to notice (the first TEP=4 request's IMA surfaced in the QSA Triton
+# loader). Diagnostic only -- it serializes the whole step.
+_LB=""; [ "${LAUNCH_BLOCKING:-0}" = 1 ] && _LB="-e CUDA_LAUNCH_BLOCKING=1"
+ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH=sm_121a $_LB $_FST \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
 -e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=enp1s0f0np0 -e TP_SOCKET_IFNAME=enp1s0f0np0 \
 -e MN_IF_NAME=enp1s0f0np0 -e NCCL_CROSS_NIC=1 -e NCCL_PROTO=LL,LL128,Simple -e NCCL_CUMEM_ENABLE=0 \
