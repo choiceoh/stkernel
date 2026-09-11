@@ -185,6 +185,10 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e DENEB_QSA_MAX_SPLITS=$QSA_MAX_SPLITS -e DENEB_NGRAM_FIX=$NGRAM_FIX \
 -e DENEB_Q38_SHARED_FUSE=$SHARED_FUSE"
 COMMON="--runtime nvidia --gpus all --ipc host --network host --cap-add IPC_LOCK --ulimit memlock=-1:-1 --shm-size 32g"
+# EXTRA_DOCKER_ARGS: appended verbatim to every container's docker run (head and
+# workers) -- diagnostic mounts and envs such as a PYTHONPATH hook that dumps
+# kernel arguments. Empty in production; whatever it names must exist on every node.
+COMMON="$COMMON ${EXTRA_DOCKER_ARGS:-}"
 RDMA_FLAGS="--device /dev/infiniband"
 MOUNTS="-v $MODEL_PATH:$MODEL_PATH:ro -v $CACHE_DIR:/root/.cache/vllm -v $LOGDIR:/q38logs $OVMOUNTS"
 # PLE on SSD: each rank reads its own block (tools/qwen38_ple_shard.py) from
