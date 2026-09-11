@@ -7,7 +7,6 @@
 # the following copyright notice:
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
-import os
 
 import triton
 import triton.language as tl
@@ -15,16 +14,12 @@ from triton.language.extra.cuda import libdevice as tldevice
 
 from .utils import is_gather_supported
 
-if os.environ.get("FLA_USE_FAST_OPS", "0") == "1":
-    exp = tldevice.fast_expf
-    exp2 = tl.exp2
-    log = tldevice.fast_logf
-    log2 = tldevice.fast_log2f
-else:
-    exp = tl.exp
-    exp2 = tl.exp2
-    log = tl.log
-    log2 = tl.log2
+# D11 (ST): exact exp/log are the served arithmetic; the FLA_USE_FAST_OPS
+# alternative (libdevice fast_expf/fast_logf) was never set on the fleet.
+exp = tl.exp
+exp2 = tl.exp2
+log = tl.log
+log2 = tl.log2
 
 
 if not is_gather_supported:

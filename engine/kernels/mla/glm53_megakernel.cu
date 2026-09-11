@@ -2948,19 +2948,13 @@ int g_mla_grid = 0;
 // way, and 6-8% SLOWER, so q stays in shared memory.
 constexpr int MLA_GRID_CAP = 192;
 
-// VLLM_GLM53_MK_PDL=1: launch with programmatic stream serialization so
-// each MK kernel may begin on the SMs its predecessor frees and prefetch
-// its weights during the predecessor's tail (the kernels trigger at entry
-// and wait before their first dependent read). Default off: the serving
-// profile flips it after its bracket, the probe sets it.
-bool mk_pdl_enabled() {
-  static int v = -1;
-  if (v < 0) {
-    const char* e = getenv("VLLM_GLM53_MK_PDL");
-    v = (e != nullptr && e[0] == '1') ? 1 : 0;
-  }
-  return v == 1;
-}
+// Programmatic stream serialization on every MK launch: each kernel may begin
+// on the SMs its predecessor frees and prefetch its weights during the
+// predecessor's tail (the kernels trigger at entry and wait before their
+// first dependent read). ST (D11, 2026-09-12): this is the served form, not a
+// knob -- production glm53.env promoted VLLM_GLM53_MK_PDL=1 (27차: 58.0 ->
+// 53.6 us per launch, graph replay bitwise); no environment read remains.
+bool mk_pdl_enabled() { return true; }
 
 template <int THREADS=MK_THREADS, typename K, typename A>
 void mk_launch(K kernel, int grid, int smem, cudaStream_t stream,
@@ -2980,19 +2974,14 @@ void mk_launch(K kernel, int grid, int smem, cudaStream_t stream,
 
 int g_input_cta_mode = -1;
 int mk_gemm_input_cta_mode() {
-  if (g_input_cta_mode < 0) {
-    const char* value=std::getenv("VLLM_GLM53_MK_INPUT_CTA");
-    g_input_cta_mode=value && value[0]>='1' && value[0]<='4' && value[1]=='\0'
-        ? value[0]-'0' : 0;
-  }
+  // production VLLM_GLM53_MK_INPUT_CTA=4 baked (ST, D11); set_input_cta() overrides
+  if (g_input_cta_mode < 0) g_input_cta_mode = 4;
   return g_input_cta_mode;
 }
 int g_input_reuse_mode = -1;
 int mk_gemm_input_mode() {
-  if (g_input_reuse_mode < 0) {
-    const char* value = getenv("VLLM_GLM53_MK_INPUT_REUSE");
-    g_input_reuse_mode = value && value[0] == '1' && value[1] == '\0' ? 1 : 0;
-  }
+  // production VLLM_GLM53_MK_INPUT_REUSE=1 baked (ST, D11); set_gemm_input() overrides
+  if (g_input_reuse_mode < 0) g_input_reuse_mode = 1;
   return g_input_reuse_mode;
 }
 bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
@@ -3023,10 +3012,7 @@ bool mk_use_compact_m8(int m, int n, int k, bool lr = false) {
 
 int mk_choose_ksr2(int m, int n, int k, bool lr = false) {
   const int nblk = n / SMEM_W_ROWS, kblk = k / KSTEP;
-  if (g_probe_ksr2 < 0) {
-    const char* e = getenv("VLLM_GLM53_MK_KSR2");
-    g_probe_ksr2 = e ? atoi(e) : 0;
-  }
+  if (g_probe_ksr2 < 0) g_probe_ksr2 = 0;  // the env probe knob is gone (ST); mk_set_gemm2() forces a slice count
   int ksr;
   if (g_probe_ksr2 > 0) {
     ksr = g_probe_ksr2;
@@ -3422,8 +3408,8 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints) {
   set_kernel_attrs();
   MKMlaArgs a{};
-  TORCH_CHECK(ptrs.size() == 8 && ints.size() == 3 && scalars.size() == 2,
-              "run_mla arg contract");
+  TORCH_CHECK(ptrs.size() == 8 && (ints.size() == 3 || ints.size() == 4) && scalars.size() == 2,
+              "run_mla arg contract (ints: T, W, splits[, probe])");
   a.q = (const __nv_bfloat16*)ptrs[0];
   a.ckv = (const uint8_t*)ptrs[1];
   a.slots = (const int*)ptrs[2];
@@ -3440,11 +3426,9 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   TORCH_CHECK(a.splits >= 1 && a.splits <= MLA_SPLITS_MAX, "mla: split count");
   a.sm_scale = (float)scalars[0];
   a.ckv_scale = (float)scalars[1];
-  {  // roofline probe knob (never set in serving)
-    static int pv = -1;
-    if (pv < 0) { const char* e = getenv("VLLM_GLM53_MK_MLA_PROBE"); pv = e ? atoi(e) : 0; }
-    a.probe = pv;
-  }
+  // roofline probe mode (1 = streams only, 2 = + the dot): an explicit argument of the
+  // Python driver (mla_decode(probe=)), never an environment read; serving passes 0
+  a.probe = ints.size() > 3 ? (int)ints[3] : 0;
   auto stream = c10::cuda::getCurrentCUDAStream();
   a.grid = mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
   mk_launch(mk_mla_kernel, a.grid, MLA_SMEM, stream, a);

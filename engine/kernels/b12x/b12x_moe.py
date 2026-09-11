@@ -80,8 +80,13 @@ def b12x_fused_moe(
     activation_precision: str = "fp4",
     quant_mode: Optional[str] = None,
     source_format: str = "modelopt",
+    _weight_views=None,
 ) -> torch.Tensor:
     r"""Run fused MoE on SM120/SM121 using b12x CuTe-DSL kernels.
+
+    ST: ``_weight_views`` passes weight views prepared at bind time (tile-major
+    storage, packed SF6 scales) straight to the dispatcher; the raw scale
+    arguments are then only lifetime anchors.
 
     The kernel takes bf16 input and runs routing, FC1, activation, FC2, and
     scatter through the selected backend.  Automatically selects the micro
@@ -228,6 +233,7 @@ def b12x_fused_moe(
         activation_precision=activation_precision,
         quant_mode=quant_mode,
         source_format=source_format,
+        _weight_views=_weight_views,
     )
 
 

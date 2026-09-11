@@ -9210,3 +9210,45 @@ accepted·draft), `/health`. 프로필은 프로덕션과 같은 `chat_template_
 넘긴다(이미지 안 검증: 렌더 결과를 `tokenizers` 로 인코딩한 id 가 transformers 와 동일, 22 토큰). `tests/test_engine_serve.py` 20 tests OK
 (문 4종 추가: 목록·카운터·health, 통째 답, 토큰 스트림 + 추론 분리, 엔진 사망 시 스트림 클라이언트 해제). `boot --local --serve` 는 스트림
 chat 한 턴을 더 판정한다(GPU 창 없어 미실행). **다음**: 플릿 창(프로덕션 정지, 한 세션만) → 부팅 → chat 한 요청 → `bench/onepass.py`.
+
+### 45차 §20 — 커널 패키지 노브 43개의 D11 정리: 채택값은 코드로, 후보 둘은 선언된 노브로, 나머지는 폐기 (2026-09-12 새벽, srv4, GPU 없음)
+
+**출발점**(§17 잔여 "노브 35개"의 실측): `engine/kernels` 가 `os.environ`/`getenv` 로 읽던 이름은 **43개**(b12x 20, kda 10, mla 11 = 파이썬 6 + `.cu` 5, mhc 2)였고,
+어느 것도 `base/config` 의 `STK_` 게이트를 지나지 않았다(프로필은 `knobs=[]`). 그중 넷은 프로덕션 `profiles/glm53.env` 가 켜 둔 채택값인데 ST 는 하나도 안
+넘겨 **스톡·off 로 돌고 있었다**: `B12X_STATIC_V2=t,r,sf6`(09-09 채택, 38차 v4 +9.7~11.6%, sf6 스케일 4.43→3.36 GiB/랭크), `MK_PDL=1`(27차 발사당 58.0→53.6 µs),
+`KDA_PREFILL_QK_NORM=1`(09-06), `EP_TILED=1`(E=72 EP 기하라 TP4 ST 엔 무관). 운영자(09-12 새벽): "기존 채택 노브 중 살릴 수 있는 건 최대한 살리고, 어떤 건
+노브로 하고 어떤 건 엔진이나 커널에 그대로 박자".
+
+**세 갈래**(환경 읽기 43 → 0; `tests/test_engine_kernels.py` 가 AST 로 강제, 예외는 `ST_MLA_BUILD_ROOT` 캐시 경로 하나):
+- **박기(코드 기본값 = 프로덕션 값)**: `.cu` `mk_pdl_enabled()` → true, `MK_INPUT_CTA` 4, `MK_INPUT_REUSE` 1(GEMM 전용, ST 미사용이나 충실히); KDA strided Q/K norm on;
+  `_MICRO_SHARE_INPUT` on, 컷오버 640(런처가 안 넘기던 네 별칭), 경계 검사 on; FLA 라이브러리 8개는 기본값 고정(ieee tril·정확 exp/log·TMA/그래프 off·kernel2 norm).
+- **선언된 만료 노브**(`boot.declared`, 만료 09-30, `STK_*` 미선언·만료 = 사망; 런처·프로브 러너가 `STK_*` 를 통과시킨다):
+  `STK_moe_static` 기본 `stock`(§15~18 이 판정한 구성), 후보 `t,r,sf6[,q0]`(프로덕션 채택값 + TP 레시피 `TP_SF6_Q0=1`);
+  `STK_mla_prefill` 기본 `stock`, 후보 `tile32|pair|pair4`(프로덕션 off, "numerics·TTFT 브래킷 대기").
+- **폐기**: EP 타일 계열 5파일 4,248줄(`glm53_ep_*`, `moe_static_ep_tiled`; 임포트 그래프 도달 불가, TP=4 형태가 아님)과 그 노브 3, 강제 W4A16, 백엔드·컷오버·MAC 사다리
+  강제 5, `DENEB_B12X_TILE_M`, KDA regime, mHC pass/big-fuse, MLA `SPLITS`/`PAIR_STATS`, `.cu` `MK_KSR2`/`MK_MLA_PROBE`(프로브는 `mk_set_gemm2` 등 pybind 로), `base/instruments`
+  의 미선언 `STK_INSTRUMENT_MEMORY`.
+
+**`t,r,sf6` 를 ST 에서 살리는 배관**(이번에 코드로, GPU 판정은 미실행): `lanes.served(moe_static=…)` 가 `moe_dispatch.configure_static_v2()` 를 한 번 적용(뷰가 생긴
+뒤엔 거부 — 타일/행 우선 선택은 프로세스당 하나), 새 `Lanes.moe_prepare` 를 `Glm53Net.bind()` 가 층마다 캡처 전에 부른다: 셀 `t` 는 `tile_expert_weights_inplace` 로
+**아레나 바이트를 제자리 타일 우선으로**(층당 임시 사본 하나, 45층 두 벌 없음), `sf6` 는 `_get_weight_views(packed_only=True)` 로 packed 스케일 소유자만(스케일 메모리:
+지금 스톡 경로 raw 4.43 + 변환 사본 4.43 → sf6 raw 4.43(아레나, 못 지움) + packed 3.36 GiB/랭크, 즉 −1.1 GiB). 호출은 `b12x_fused_moe(_weight_views=)` 로 뷰를 넘긴다.
+판정기는 `ref_net.p = net.p` 로 같은 텐서를 읽으므로 참조 레인은 `engine/modules/expert_layout.row_major_expert` 로 타일 바이트를 전문가별 행 우선 사본으로
+되읽는다(CPU 검증: 제자리 재배치 → 되읽기 바이트 동일, 멱등). 바인딩 없는 프로브 호출은 사본 경로(호출자의 행 우선 텐서 보존).
+**끝 모양**은 사전샤딩이 타일 우선·packed 스케일을 직접 쓰는 것(랭크 파일 재절단 = 운영자 판단).
+
+**검증**: 이미지 안 CPU 스위트 `test_engine_*.py` 178 tests OK(46 skip = GPU), 새 `tests/test_engine_knobs.py`(선언·파싱·재설정 거부·타일 되읽기·prefill 모드) 포함;
+`engine_kernel_check.py --imports-only` 48 모듈 임포트·served 테이블 바인딩 OK. `.cu` 편집(getenv 5→0) 은 JIT 키를 바꾸므로 다음 부팅에 노드마다 nvcc 41~63 s(§17 ninja 로그).
+**미실행**: GPU 판정(`run_engine_check.sh --layers 0-4 --moe-static t,r,sf6` 와 stock, `--mla-prefill`) — srv4 는 프로덕션 vLLM 서빙 중 가용 20 GB 라 창 없음.
+따라서 `STK_moe_static` 기본값은 판정된 `stock` 이고, 후보가 판정을 통과하면 기본값을 `t,r,sf6` 로 바꾸고 노브를 지운다(D11 승격 = 노브 제거).
+
+**§20 보충 — 폐기 재검토(운영자 "폐기가 되게 많네. 더 살릴 수 있는 건 없어?")**: 폐기 목록을 원장 판정으로 다시 갈랐다.
+**측정돼서 진 것(그대로 폐기, D11 "진 쪽을 지운다")**: prefill reuse(39차 MOER NEUTRAL(−), −1.9~−2.0%), FC1 N128(기각, −71%), KDA regime(KREG NEUTRAL, 승격 안 함),
+mHC big-fuse(GLM in-graph +0.1%, 9/1 트레이스 "아님"), 강제 W4A16(운영자 "억지 W4A16 금지"; API 인자 경로는 그대로). EP 타일 계열은 프로덕션이 09-10 절대 목표
+67 tok/s 로 채택했으나 **디코드는 TP 보다 9.8% 느리고**(72.6 vs 80.5 tok/s, PR #511) 프리필 입력 tok/s 만 +4~15% — TP=4 형태의 ST 엔 잃은 승자가 아니며, EP 레인은
+사전샤딩(E=72)·토큰 교환까지 포함한 형태 결정이라 별건이다(복구는 `git checkout` 한 줄).
+**한 번도 안 잰 것·프로브 도구(env 없는 훅으로 되살림)**: MLA 분할 강제 `mla_decode(splits=)`, MLA 루프라인 모드 `mla_decode(probe=)`(`.cu` `run_mla` 넷째 int; 옛
+`mk_mla_bench.py` 의 "streams only / + the dot"), 쌍 프리필 겹침 통계 `mla.PAIR_STATS`(39차에 env 함정으로 미기록이던 통계, `STK_mla_prefill=pair` 브래킷의 계기),
+동적 tile_m 고정 `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(Qwen3.8 40행/전문가 셀 측정용), 백엔드·컷오버·MAC 사다리(모듈 속성 직접 대입), mHC TileLang 패스(TMA·WS)
+`engine.kernels.configure_mhc_passes()`(mhc 임포트 전; 순환 임포트 때문에 패키지 밖에 둠; mHC 는 프리필 스텝의 11.4% 인데 GLM 에선 미측정). 검증: 이미지 CPU 스위트
+181 tests OK(46 skip), 임포트 프로브 48 모듈 OK. 노브 수는 그대로 둘(`STK_moe_static`, `STK_mla_prefill`).

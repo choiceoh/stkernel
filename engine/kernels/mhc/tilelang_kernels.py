@@ -15,7 +15,6 @@
 # The stock kernel bodies are otherwise untouched.
 import contextlib
 import math
-import os
 from functools import cache
 from typing import TYPE_CHECKING, Any
 
@@ -130,24 +129,11 @@ def _deneb_parse_mhc_passes(raw: str):
     return picked["tma"], picked["ws"]
 
 
-_raw_mhc_passes = (os.environ.get(_MHC_PASSES_ENV) or "").strip()
-_DENEB_MHC_PASSES = (
-    _deneb_parse_mhc_passes(_raw_mhc_passes) if _raw_mhc_passes else None
-)
-
-if _DENEB_MHC_PASSES is not None:
-    # Boot-log anchor so a bracket boot can prove which pass set compiled
-    # (engine-confirmed value discipline -- the env alone proves nothing).
-    import logging
-
-    logging.getLogger("engine.kernels.mhc").warning(
-        "[deneb] %s=%s -> TL_DISABLE_TMA_LOWER=%s "
-        "TL_DISABLE_WARP_SPECIALIZED=%s (every mhc kernel this process)",
-        _MHC_PASSES_ENV,
-        _raw_mhc_passes,
-        not _DENEB_MHC_PASSES[0],
-        not _DENEB_MHC_PASSES[1],
-    )
+# D11 (2026-09-12, ST): the offline TMA/warp-specialised pass A/B
+# (ST_GLM53_MHC_PASSES) was never adopted; the stock pass set is served and
+# nothing here reads the environment.
+import engine.kernels as _kernels_pkg
+_DENEB_MHC_PASSES = _kernels_pkg.MHC_PASSES   # engine.kernels.configure_mhc_passes(), set before this import
 
 
 @cache
