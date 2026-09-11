@@ -47,6 +47,7 @@ class Glm53Engine:
         self.max_new, self.eos = max_new, set(eos_ids)
         self.temperature, self.top_p = temperature, top_p
         self.decodable = decodable                          # logits past this id are the tokenizer's orphans: masked (as served)
+        self.max_context = getattr(F, "max_position", 2**31 - 1)   # the door refuses a horizon past the trained positions
         self.gen = torch.Generator(device=caches.device).manual_seed(seed)
         self.tokens, self.prompt_len, self.ctx, self.slot, self.limits = {}, {}, {}, {}, {}
         self.accepted_total = 0

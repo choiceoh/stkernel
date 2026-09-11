@@ -7,9 +7,12 @@ Kernel failures remain fatal; waiting HTTP clients receive an error on exit.
 
 With a tier, a conversation is its first request's id and lives on NVMe
 between turns: a finished turn is parked (blocks, state slot, host record)
-and its row and slot are free at once, a continuation resumes into whichever
-row is free. Retained conversations are bounded by the disk, not by rows;
-when the tier is full the least recently parked conversation is forgotten.
+and its row and slot are free once the write is done, a continuation resumes
+into whichever row is free once the read is done. Both run on the tier's
+thread; the step loop only asks whether they are done, and every rank agrees
+on that answer before acting (the ranks stay in lockstep). Retained
+conversations are bounded by the disk, not by rows; when the tier is full
+the least recently parked conversation is forgotten.
 
 The door speaks two dialects: the engine's own (`POST /v1/completions` with
 ids or a prompt, and `conversation` for a further turn on retained caches)
@@ -57,6 +60,7 @@ class Server:
         self.port, self.host, self.tok = port, host, tokenizer
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.max_pending = max_pending
+        self.max_context = int(getattr(engine, "max_context", 2**31 - 1))   # the model's trained positions; the door refuses beyond
         self._streams = {}                         # request id -> queue of ("tokens", ids) | ("end", finish) | ("error", text)
         self._sent = {}                            # row -> generated tokens already handed to its stream
         self.prompt_tokens_total = self.generation_tokens_total = 0
@@ -70,6 +74,8 @@ class Server:
         self._active = {}                          # reusable row -> (request id, promised blocks)
         self._conversations, self._conversation_of = {}, {}   # resident (idle or live) conversations <-> rows
         self._idle_order = {}                      # resident idle rows, least recently completed turn first (no tier)
+        self._retiring = {}                        # row -> conversation: its park is on the tier's thread (D10: no step waits on it)
+        self._resuming = {}                        # row -> (conversation, request, ids, limit, temperature, promised): its resume is in flight
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
@@ -104,6 +110,8 @@ class Server:
         blocks = self.runner.kv.blocks_for(horizon)
         if horizon >= 2**31 or blocks > min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq):
             raise RequestError("prompt and generation limit exceed the KV capacity")
+        if horizon > self.max_context:
+            raise RequestError("prompt and generation limit exceed the model's context")
         with self._lock:
             if not self.alive:
                 raise RequestError("engine is stopping", 503)
@@ -184,6 +192,9 @@ class Server:
             parked = False
             if conversation is not None:
                 row = self._conversations.get(conversation)
+                if row is None and (conversation in self._retiring.values()
+                                    or any(c == conversation for c, *_ in self._resuming.values())):
+                    break                                     # its park/resume is still on the tier's thread: next step
                 parked = row is None and self.runner.is_parked(conversation)
                 if (row is None and not parked) or (row is not None and row not in self.runner.idle):
                     self._waiting.popleft()
@@ -202,6 +213,10 @@ class Server:
                     self._waiting.popleft()
                     self._answer(request, RequestError("conversation and generation limit exceed the KV capacity"))
                     continue
+                if horizon > self.max_context:
+                    self._waiting.popleft()
+                    self._answer(request, RequestError("conversation and generation limit exceed the model's context"))
+                    continue
                 promised = max(promised, held)       # rejected-draft reservations may exceed the new turn
             if row is None and not self._free_rows:
                 if self._evict_idle():
@@ -209,8 +224,8 @@ class Server:
                 break
             # Future decode growth already belongs to admitted requests even
             # though the block pool acquires those blocks only when written.
-            future = sum(b - self.runner.kv.blocks_for(self.runner.kv.tokens[r])
-                         for r, (_, b) in self._active.items())
+            future = (sum(b - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, (_, b) in self._active.items())
+                      + sum(b - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, (*_, b) in self._resuming.items()))
             if promised > self.runner.kv.available - future + resident:
                 if self._evict_idle(exclude=row):
                     continue
@@ -231,18 +246,88 @@ class Server:
                 if parked:
                     row = heapq.heappop(self._free_rows)
                     try:
-                        self.runner.resume(row, key=conversation)     # blocks + slot back from NVMe, the row is idle
+                        self.runner.resume_begin(row, key=conversation)   # blocks + slot back from NVMe on the tier's thread
                     except BaseException:
-                        heapq.heappush(self._free_rows, row)          # the disk copy survives a failed read
+                        heapq.heappush(self._free_rows, row)              # the disk copy survives
                         raise
-                    self._conversations[conversation] = row
-                    self._conversation_of[row] = conversation
-                else:
-                    self._idle_order.pop(row)
+                    self._resuming[row] = (conversation, request, ids, limit, temperature, promised)
+                    self._waiting.popleft()
+                    continue                                              # admitted when every rank's read is done (_settle)
+                self._idle_order.pop(row)
                 tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature)
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
+
+    def _votes(self, flags) -> "list[int]":
+        """How many ranks say yes to each flag. Every rank must call this with the same flags in the
+        same order (the transfers are submitted in lockstep); a single rank answers itself."""
+        world = int(getattr(self.comm, "world_size", 1) or 1)
+        if world <= 1 or not flags:
+            return [int(bool(f)) for f in flags]
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        votes = torch.tensor([int(bool(f)) for f in flags], dtype=torch.int32, device=device)
+        return [int(v) for v in self.comm.all_reduce(votes).tolist()]
+
+    def _settle(self):
+        """Finish the transfers every rank agrees are done. Nothing here waits on the disk (D10):
+        a park or resume that is still writing/reading is simply looked at again next step.
+        Outcomes are agreed too, so the ranks keep the same set of conversations."""
+        rows = self.runner.transfers()
+        if not rows:
+            return
+        world = int(getattr(self.comm, "world_size", 1) or 1)
+        done = self._votes([self.runner.transfer_done(r) for r in rows])
+        outcomes = []                                         # (row, ok, full)
+        for row, votes in zip(rows, done):
+            if votes < world:
+                continue
+            ok, full = True, False
+            try:
+                if row in self._retiring:
+                    self.runner.park_finish(row)
+                else:
+                    self.runner.resume_finish(row)
+            except TierFull:
+                ok, full = False, True
+            except Exception:                                 # noqa: BLE001 -- a failed transfer is the conversation's loss, not the engine's
+                ok = False
+            outcomes.append((row, ok, full))
+        if not outcomes:
+            return
+        agreed = self._votes([ok for _, ok, _ in outcomes] + [full for _, _, full in outcomes])
+        for (row, ok, full), all_ok, all_full in zip(outcomes, agreed[:len(outcomes)], agreed[len(outcomes):]):
+            if row in self._retiring:
+                conversation = self._retiring.pop(row)
+                if all_ok == world:                           # parked everywhere: the row is free
+                    heapq.heappush(self._free_rows, row)
+                elif all_full == world and self.runner.forget_oldest_parked() is not None:
+                    self.runner.park_begin(row, key=conversation)   # room was made on every rank: write again
+                    self._retiring[row] = conversation
+                else:                                         # dropped everywhere: forget where it landed, evict where it stayed
+                    if ok:
+                        self.runner.forget_parked(conversation)
+                    else:
+                        self.runner.evict(row)
+                        self.engine.forget(row)
+                    heapq.heappush(self._free_rows, row)
+            else:
+                conversation, request, ids, limit, temperature, promised = self._resuming.pop(row)
+                if all_ok == world:                           # resident everywhere: the turn proceeds
+                    tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature)
+                    self.runner.extend(row, tokens)
+                    self._conversations[conversation] = row
+                    self._conversation_of[row] = conversation
+                    self._active[row] = (request, promised)
+                else:                                         # a rank could not read it back: the conversation is gone everywhere
+                    if ok:
+                        self.runner.evict(row)
+                        self.engine.forget(row)
+                    else:
+                        self.runner.forget_parked(conversation)
+                    heapq.heappush(self._free_rows, row)
+                    self._answer(request, RequestError("conversation could not be restored from the tier", 503))
 
     def _retire(self, row):
         """A finished turn leaves its row: parked with a tier, resident idle without, released otherwise."""
@@ -255,16 +340,8 @@ class Server:
             return
         conversation = self._conversation_of.pop(row)
         self._conversations.pop(conversation)
-        while True:
-            try:
-                self.runner.park(row, key=conversation)
-                break
-            except TierFull:
-                if self.runner.forget_oldest_parked() is None:      # nothing left to forget: this conversation is not retained
-                    self.runner.evict(row)
-                    self.engine.forget(row)
-                    break
-        heapq.heappush(self._free_rows, row)
+        self.runner.park_begin(row, key=conversation)         # the write runs on the tier's thread; the row frees in _settle
+        self._retiring[row] = conversation
 
     def _abort(self):
         self.alive = False
@@ -272,6 +349,10 @@ class Server:
         # even if a model's close hook also fails. Parked conversations are
         # on disk and stay there (D16: they outlive this process).
         error = None
+        try:
+            self.runner.settle()
+        except BaseException as exc:                          # noqa: BLE001
+            error = exc
         for row in list(self.runner.slot_of):
             try:
                 try:
@@ -282,6 +363,8 @@ class Server:
                 error = error or exc
         self._active.clear()
         self._waiting.clear()
+        self._retiring.clear()
+        self._resuming.clear()
         self._idle_order.clear()
         self._conversations.clear()
         self._conversation_of.clear()
@@ -326,6 +409,7 @@ class Server:
                 self._fail_pending()
                 return False
             self._waiting.extend(arrivals)
+            self._settle()
             self._admit()
             step = self.runner.step()
             if self._streams:                                       # rank 0: hand each streaming request its new tokens
@@ -388,6 +472,7 @@ class Server:
                     self.reply(200, {"engine": "ST", "model": server.model_name, "running": list(server.runner.state.running),
                                      "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
                                      "parked": len(server.runner.parked_keys()),
+                                     "parking": len(server._retiring), "resuming": len(server._resuming),
                                      "steps": server.runner.steps, "served": server.served})
 
             def body(self):

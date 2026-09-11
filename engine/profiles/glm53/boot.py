@@ -147,6 +147,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
         recorder.gauge("boot_immediately_free_GiB", round(report["immediately_free"] / GIB, 3))
         recorder.gauge("boot_reclaimed_GiB", round(report["reclaimed"] / GIB, 3))
+        # D1: the box declared, with every line's provenance, before the arena is allocated
+        from engine.profiles.glm53 import budget as budget_mod
+        b = budget_mod.budget(kv_gib, max_seqs, chunk=sched.chunk_for(F.block, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
+                              ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None)
+        recorder.gauge("budget_unassigned_GiB", round(b.kv_gib - b.kv_declared_gib, 2))
+        if comm.rank == 0:
+            print(budget_mod.report(b))
     try:
         with recorder.phase("arena"):
             arena = Arena(arena_bytes)

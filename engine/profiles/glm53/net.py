@@ -45,6 +45,8 @@ from engine.profiles.glm53.lanes import Lanes, swiglu_clamped
 BF16, F32, E4M3 = torch.bfloat16, torch.float32, torch.float8_e4m3fn
 O_NORM_EPS = 1e-6           # FusedRMSNormGated(head_dim, activation="sigmoid") default; a fact to hold the layer judge to
 K_NORM_EPS = 1e-6           # indexer LayerNorm(head_dim, eps=1e-6)
+SELECT_ROWS = 1024          # query rows per indexer selection pass: the [rows, candidates] fp32 logits are the prefill's
+                            # largest transient (6,912 x 32,768 x 4 B = 0.84 GiB per DSA layer at 128K, x2 with a masked copy)
 
 
 @dataclass(frozen=True)
@@ -262,14 +264,26 @@ class Glm53Net:
             seq_lens = (new_pos + 1).to(torch.int32)
             if n_cand:
                 cand = caches.pool_slots(L, s.seq, torch.arange(n_cand, device=x.device)).long()
-                ke = seq_lens // kp
-                logits = self.lanes.indexer_logits(q8[sl], keys[cand], scales[cand], w_eff[sl], ke)
-                pool_ids = topk_positions(logits[:, :n_cand].float(), F.topk // kp, valid=ke)
+                pool_ids = self._select_pools(q8[sl], w_eff[sl], keys[cand], scales[cand], seq_lens // kp, n_cand, F.topk // kp)
             else:
                 pool_ids = torch.full((s.length, F.topk // kp), -1, dtype=torch.int32, device=x.device)
             self.lanes.pool_slots(pool_ids, seq_lens, kp, *caches.token_map(L, s.seq),
                                   slots_out[sl], valid_out[sl])
         return slots_out.contiguous(), valid_out
+
+    def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int) -> torch.Tensor:
+        """Top-k complete pools per query, in passes of SELECT_ROWS rows: every row's
+        selection is independent, so the passes are exact and the transient is bounded."""
+        rows = q8.shape[0]
+        if rows <= SELECT_ROWS:
+            logits = self.lanes.indexer_logits(q8, keys, scales, w_eff, ke)
+            return topk_positions(logits[:, :n_cand].float(), k, valid=ke, inplace=True)
+        out = torch.empty((rows, k), dtype=torch.int32, device=q8.device)
+        for r0 in range(0, rows, SELECT_ROWS):
+            r1 = min(rows, r0 + SELECT_ROWS)
+            logits = self.lanes.indexer_logits(q8[r0:r1], keys, scales, w_eff[r0:r1], ke[r0:r1])
+            out[r0:r1] = topk_positions(logits[:, :n_cand].float(), k, valid=ke[r0:r1], inplace=True)
+        return out
 
     def _dsa(self, L: int, x: torch.Tensor, step: Step, caches: Caches) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.mla."

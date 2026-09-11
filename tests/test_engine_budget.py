@@ -1,0 +1,43 @@
+"""The GLM-5.3 budget (D1): every line carries provenance, the remainder is the KV room."""
+import importlib.util
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+
+CONFIG = Path("/home/choiceoh/models/glm53-redhat-nvfp4/config.json")
+
+
+@unittest.skipUnless(CONFIG.exists() and importlib.util.find_spec("torch") is not None, "needs the GLM-5.3 config and torch")
+class BudgetTests(unittest.TestCase):
+    def test_lines_are_all_provenanced_and_the_declared_kv_leaves_room(self):
+        from engine.base.budget import ESTIMATED
+        from engine.profiles.glm53 import budget
+        b = budget.budget(8.73, 4, box_gib=121.6, drafter_dir=None)
+        self.assertFalse([l for l in b.lines if l.source == ESTIMATED])
+        self.assertTrue(b.is_gate())
+        names = [l.name for l in b.lines]
+        self.assertIn("weights (this rank, TP=4)", names)
+        weights = next(l for l in b.lines if l.name.startswith("weights"))
+        self.assertAlmostEqual(weights.gib, 44.50, places=1)
+        self.assertGreater(b.kv_gib, b.kv_declared_gib)                 # the box holds more KV than the boot declares
+        self.assertGreater(b.kv_gib - b.kv_declared_gib, 30)
+        text = budget.report(b)
+        self.assertIn("unassigned +", text)
+        self.assertIn("concurrency   4", text)
+
+    def test_a_boot_ledger_puts_the_measured_workspace_peak_on_the_line(self):
+        from engine.profiles.glm53 import budget
+        with tempfile.TemporaryDirectory() as d:
+            ledger = Path(d) / "memory-rank0.json"
+            ledger.write_text(json.dumps({"phases": [{"phase": "prefill/6912/0/prepared", "peak_workspace_bytes": 3 << 30},
+                                                     {"phase": "target/(4, 6, 4096)/captured", "peak_workspace_bytes": 5 << 30}]}))
+            b = budget.budget(8.73, 4, box_gib=121.6, drafter_dir=None, ledger=ledger)
+        workspace = next(l for l in b.lines if l.name.startswith("workspace"))
+        self.assertEqual(workspace.gib, budget.WORKSPACE_GIB)
+        self.assertIn("measured peak 5.00 GiB at target/(4, 6, 4096)/captured", workspace.evidence)
+
+
+if __name__ == "__main__":
+    unittest.main()

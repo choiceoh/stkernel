@@ -13,10 +13,15 @@ record because everything the scheduler decided is in it.
 
 Conversations outlive rows (D16). A finished turn is `idle`: it keeps its
 row, blocks and state slot and can `wake`, `extend` or be `evict`ed. With a
-tier it can also `park` under a conversation KEY: blocks and slot bytes go
+tier it can also park under a conversation KEY: blocks and slot bytes go
 to NVMe with the model's host record, and the row AND slot are returned --
 so the number of retained conversations is the disk's, not `max_seqs`.
-`resume(row, key)` brings one back into any free row and any free slot.
+Resuming brings one back into any free row and any free slot.
+
+Both run on the tier's thread in two halves (D10: a step never waits on the
+disk): `park_begin` / `park_finish` and `resume_begin` / `resume_finish`,
+with `transfer_done(row)` in between. A row in flight is `retiring` or
+`resuming`: neither idle nor free. `park`/`resume` are the halves back to back.
 """
 from __future__ import annotations
 
@@ -56,6 +61,8 @@ class Runner:
         self.keep_idle = keep_idle                          # a finished turn keeps its blocks and slot: the conversation lives (D16)
         self.idle = {}                                      # seq -> True: finished, not released, parkable
         self.parked = {}                                    # key -> record, for conversations this process parked (the tier has the rest)
+        self.retiring = {}                                  # row -> (key, record, slot): its park is on the tier's thread
+        self.resuming = {}                                  # row -> (key, record, slot): its resume is on the tier's thread
         self.state = sched.State()
         self.slot_of = {}
         self.rec = recorder or Recorder("runner")
@@ -103,8 +110,12 @@ class Runner:
         self.model.close(seq)
 
     def cancel(self, seq: int) -> None:
-        """Release a live or idle row. Parked conversations are not rows: see `forget_parked`."""
+        """Release a live or idle row (a transfer in flight is settled first, which waits).
+        Parked conversations are not rows: see `forget_parked`."""
         if seq not in self.slot_of:
+            return
+        self._settle_row(seq)
+        if seq not in self.slot_of:                          # its park finished: the row is free already
             return
         if seq in self.state.running or seq in self.state.waiting:
             sched.finish(self.state, seq)
@@ -117,19 +128,18 @@ class Runner:
             raise ValueError(f"seq {seq} is not idle")
         self.cancel(seq)
 
-    # -- the tier: conversations leave their rows (D16) -----------------------------------------
-    def park(self, seq: int, key: "int | None" = None) -> int:
-        """An idle conversation leaves the arena but keeps its KV (D16): blocks
-        and slot bytes to NVMe under `key` (the row id by default), the model's
-        host record beside them; the row and the slot are free afterwards.
-        Only an idle one: parking a live one would make the next decode wait
-        on disk, which D10 forbids. A failed write leaves it idle and resident."""
+    # -- the tier: conversations leave their rows (D16), off the step path (D10) -----------------
+    def park_begin(self, seq: int, key: "int | None" = None) -> None:
+        """An idle conversation starts leaving the arena: the model's host record is taken and the
+        blocks + slot bytes are handed to the tier's thread under `key` (the row id by default).
+        The row is `retiring` until `park_finish`: not idle, not free. Only an idle one: parking a
+        live one would make the next decode wait on disk, which D10 forbids."""
         if self.tiered is None:
             raise ValueError("this runner has no tier to park on")
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle; only idle conversations park")
         key = seq if key is None else key
-        if self.is_parked(key):
+        if self.is_parked(key) or any(k == key for k, _, _ in self.retiring.values()):
             raise ValueError(f"conversation {key} is already parked")
         slot = self.slot_of[seq]
         record = self.model.park(seq)
@@ -137,24 +147,42 @@ class Runner:
             self.model.resume(seq, slot, record)
             raise ValueError("a park record must be a dict with integer 'context' and 'pending'")
         try:
-            wrote = self.tiered.park(seq, key, extra=self.model.state_bytes(slot), record=record)
+            self.tiered.park_begin(seq, key, extra=self.model.state_bytes(slot), record=record)
         except BaseException:
             self.model.resume(seq, slot, record)           # nothing left the arena: the row stays idle and resident
             raise
         self.idle.pop(seq)
+        self.retiring[seq] = (key, record, slot)
+
+    def park_finish(self, seq: int) -> int:
+        """The write is done: the blocks, the slot and the row are free. A failed write (TierFull,
+        OSError) leaves the row idle and resident again, and raises."""
+        key, record, slot = self.retiring.pop(seq)
+        try:
+            wrote = self.tiered.park_finish(seq)
+        except BaseException:
+            self.model.resume(seq, slot, record)
+            self.idle[seq] = True
+            raise
         self.slots.give(self.slot_of.pop(seq))
         self.parked[key] = record
         return wrote
 
-    def resume(self, seq: int, key: "int | None" = None) -> int:
-        """Bring a parked conversation back into the free row `seq` (idle
-        afterwards), off the step path. A failed read frees what it took and
-        keeps the disk copy."""
+    def park(self, seq: int, key: "int | None" = None) -> int:
+        """Both halves, waiting in between: for callers that may wait (a local check, shutdown)."""
+        self.park_begin(seq, key)
+        return self.park_finish(seq)
+
+    def resume_begin(self, seq: int, key: "int | None" = None) -> None:
+        """A parked conversation starts coming back into the free row `seq`: blocks reserved, a slot
+        taken, the read handed to the tier's thread. The row is `resuming` until `resume_finish`."""
         if self.tiered is None:
             raise ValueError("this runner has no tier to resume from")
         key = seq if key is None else key
         if not self.is_parked(key):
             raise ValueError(f"conversation {key} is not parked")
+        if any(k == key for k, _, _ in self.resuming.values()):
+            raise ValueError(f"conversation {key} is already resuming")
         self.kv.row(seq)
         if self.kv.tokens[seq] or seq in self.slot_of or seq in self.state.prompt_len:
             raise ValueError(f"row {seq} is not free")
@@ -165,15 +193,49 @@ class Runner:
             raise ValueError(f"conversation {key} has no record on the tier: it cannot be reopened")
         slot = self.slots.take(seq)
         try:
-            got = self.tiered.resume(seq, key, extra=self.model.state_bytes(slot))
+            self.tiered.resume_begin(seq, key, extra=self.model.state_bytes(slot))
         except BaseException:
             self.slots.give(slot)
             raise
-        self.model.resume(seq, slot, record)
         self.slot_of[seq] = slot
+        self.resuming[seq] = (key, record, slot)
+
+    def resume_finish(self, seq: int) -> int:
+        """The read is done: the row is idle with the conversation's state. A failed read frees
+        the row, the slot and the blocks it took, keeps the disk copy, and raises."""
+        key, record, slot = self.resuming.pop(seq)
+        try:
+            got = self.tiered.resume_finish(seq)
+        except BaseException:
+            self.slots.give(self.slot_of.pop(seq))
+            raise
+        self.model.resume(seq, slot, record)
         self.idle[seq] = True
         self.parked.pop(key, None)
         return got
+
+    def resume(self, seq: int, key: "int | None" = None) -> int:
+        self.resume_begin(seq, key)
+        return self.resume_finish(seq)
+
+    def transfer_done(self, seq: int) -> bool:
+        """Whether the row's park/resume has finished on the tier's thread (never blocks)."""
+        return self.tiered.done(seq)
+
+    def _settle_row(self, seq: int) -> None:
+        """Wait for the row's transfer and finish it, swallowing its failure (shutdown only)."""
+        try:
+            if seq in self.retiring:
+                self.park_finish(seq)
+            elif seq in self.resuming:
+                self.resume_finish(seq)
+        except Exception:                                    # noqa: BLE001 -- the row is idle/free either way
+            pass
+
+    def settle(self) -> None:
+        """Every transfer in flight, finished (shutdown/abort path: this waits)."""
+        for seq in list(self.retiring) + list(self.resuming):
+            self._settle_row(seq)
 
     def is_parked(self, key: int) -> bool:
         return self.tiered is not None and (key in self.parked or self.tiered.is_parked(key))
@@ -202,6 +264,10 @@ class Runner:
         if key is not None:
             self.forget_parked(key)
         return key
+
+    def transfers(self) -> "list[int]":
+        """Rows with a park or resume in flight, in a fixed order (the same on every rank)."""
+        return sorted(self.retiring) + sorted(self.resuming)
 
     def wake(self, seq: int) -> None:
         """An idle conversation decodes again (its next token is pending in the model)."""

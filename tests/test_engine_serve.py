@@ -113,8 +113,11 @@ def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tie
 class ServeTests(unittest.TestCase):
     def drain(self, s, retained=False):
         for _ in range(500):
-            if not s.once() and not s._waiting:
+            ran = s.once()
+            if not ran and not s._waiting and not s._retiring and not s._resuming:
                 break
+            if not ran and (s._retiring or s._resuming):
+                threading.Event().wait(0.001)                  # the tier's thread needs the GIL to finish its transfer
         else:
             self.fail("server did not drain bounded requests")
         if retained:
@@ -226,6 +229,89 @@ class ServeTests(unittest.TestCase):
         self.drain(s, retained=True)
         self.assertEqual(s.take_result(kept), [7])
 
+    def test_the_step_loop_never_waits_on_a_park_or_resume(self):
+        from test_engine_tier import MemoryTier
+        gate = threading.Event()
+        s = server(rows=2, keep_idle=True, tier=MemoryTier(gate=gate))
+        first, _ = s.submit([3], 2, 0)
+        self.drain_steps(s)
+        self.assertIn(0, s._retiring)                          # the write is on the tier's thread ...
+        self.assertNotIn(0, s._free_rows)
+        other, _ = s.submit([5], 3, 0)                         # ... and the loop keeps serving on the other row
+        for _ in range(6):
+            s.once()
+        self.assertEqual(s.take_result(other), [5, 5, 5])
+        self.assertIn(0, s._retiring)
+        gate.set()
+        self.drain(s, retained=True)
+        self.assertTrue(s.runner.is_parked(first))
+        self.assertEqual(sorted(s._free_rows), [0, 1])
+        gate.clear()
+        turn, _ = s.submit([9], 1, 0, conversation=first)     # the read is on the tier's thread: the request waits, the loop does not
+        s.once()
+        self.assertEqual(len(s._resuming), 1)
+        again, _ = s.submit([6], 1, 0)                         # a fresh request is admitted on the remaining row meanwhile
+        for _ in range(4):
+            s.once()
+        self.assertEqual(s.take_result(again), [6])
+        self.assertEqual(len(s._resuming), 1)
+        gate.set()
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(turn), [9])
+
+    def test_a_continuation_arriving_during_its_park_waits_and_then_resumes(self):
+        from test_engine_tier import MemoryTier
+        gate = threading.Event()
+        s = server(rows=2, keep_idle=True, tier=MemoryTier(gate=gate))
+        first, _ = s.submit([3], 1, 0)
+        self.drain_steps(s)
+        self.assertIn(0, s._retiring)
+        turn, event = s.submit([9], 1, 0, conversation=first)
+        for _ in range(3):
+            s.once()
+        self.assertFalse(event.is_set())                       # not 409: it waits for the park to land
+        gate.set()
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(turn), [9])
+
+    def test_a_failed_read_in_flight_answers_503_and_drops_the_conversation_everywhere(self):
+        from test_engine_tier import MemoryTier
+        tier = MemoryTier(gate=threading.Event())
+        s = server(rows=2, keep_idle=True, tier=tier)
+        tier.gate.set()
+        first, _ = s.submit([3], 1, 0)
+        self.drain(s, retained=True)
+        tier.fail_promote = True
+        turn, _ = s.submit([9], 1, 0, conversation=first)
+        self.drain(s, retained=True)
+        with self.assertRaises(RequestError) as error:
+            s.take_result(turn)
+        self.assertEqual(error.exception.status, 503)
+        self.assertFalse(s.runner.is_parked(first))            # dropped everywhere after the agreed failure
+        self.assertEqual(sorted(s._free_rows), [0, 1])
+        self.assertFalse(s.runner.slot_of or s.runner.resuming)
+
+    def test_stopping_with_a_park_in_flight_settles_it(self):
+        from test_engine_tier import MemoryTier
+        gate = threading.Event()
+        s = server(rows=2, keep_idle=True, tier=MemoryTier(gate=gate, delay=0.05))
+        first, _ = s.submit([3], 1, 0)
+        self.drain_steps(s)
+        self.assertIn(0, s._retiring)
+        gate.set()
+        s.alive = False
+        s.once()
+        self.assertTrue(s.runner.is_parked(first))
+        self.assertFalse(s.runner.retiring or s.runner.slot_of or s._retiring)
+
+    def drain_steps(self, s):
+        """Run until nothing is scheduled: transfers may still be in flight."""
+        for _ in range(500):
+            if not s.once() and not s._waiting:
+                return
+            threading.Event().wait(0.001)
+        self.fail("server did not drain")
+
     def test_conversations_survive_a_restart_of_server_and_runner(self):
         from test_engine_tier import MemoryTier
         tier = MemoryTier()
@@ -258,21 +344,25 @@ class ServeTests(unittest.TestCase):
         self.drain(s, retained=True)
         self.assertEqual(s.take_result(good), [7])
 
-    def test_failed_resume_wakes_client_and_keeps_the_parked_conversation_on_disk(self):
+    def test_failed_resume_answers_503_and_the_engine_lives(self):
         s = server(keep_idle=True, tiered=True)
         first, _ = s.submit([3], 2, 0)
         self.drain(s, retained=True)
         s.runner.tiered.tier.fail_promote = True
         request, event = s.submit([9], 2, 0, conversation=first)
-        with self.assertRaisesRegex(OSError, 'read failed'):
-            s.once()
+        self.drain(s, retained=True)
         self.assertTrue(event.is_set())
-        with self.assertRaises(RequestError):
+        with self.assertRaises(RequestError) as error:
             s.take_result(request)
+        self.assertEqual(error.exception.status, 503)
+        self.assertTrue(s.alive)
         self.assertFalse(s.engine.tokens or s.runner.slot_of or s.runner.idle)
-        self.assertTrue(s.runner.is_parked(first))              # a failed read keeps the disk copy
         self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
         self.assertEqual(s.runner.slots.available, s.runner.c.max_running)
+        s.runner.tiered.tier.fail_promote = False
+        later, _ = s.submit([4], 1, 0)                          # the door still serves
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(later), [4])
 
     def test_busy_continuation_does_not_replace_the_active_turns_event(self):
         s = server(keep_idle=True)
@@ -405,6 +495,36 @@ class ServeTests(unittest.TestCase):
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+    @unittest.skipUnless(importlib.util.find_spec('torch') is not None, 'requires PyTorch for LocalTP')
+    def test_four_ranks_park_and_resume_in_lockstep_at_different_disk_speeds(self):
+        from engine.base.comm import LocalTP
+        from test_engine_tier import MemoryTier
+        snapshots = []
+        def rank_main(comm, _):
+            s = server(comm=comm, rows=2, keep_idle=True, tier=MemoryTier(delay=0.01 * (comm.rank + 1)))
+            if comm.rank == 0:
+                jobs = [s.submit([i], 1 + i % 2, 0) for i in range(5)]
+            for _ in range(120):
+                s.once()
+                threading.Event().wait(0.002)
+            if comm.rank == 0:
+                snapshots.append([s.take_result(i) for i, _ in jobs])
+                turns = [s.submit([20 + i], 1, 0, conversation=i) for i in range(5)]
+            for _ in range(200):
+                s.once()
+                threading.Event().wait(0.002)
+            if comm.rank == 0:
+                snapshots.append([s.take_result(r) for r, _ in turns])
+                s.alive = False
+            s.once()
+            return sorted(s.runner.parked_keys()), s.served, s.runner.kv.available, len(s.runner.retiring), len(s.runner.resuming)
+        out = LocalTP(4).run(rank_main, None)
+        self.assertTrue(all(row == out[0] for row in out), out)
+        self.assertEqual(out[0][0], [0, 1, 2, 3, 4])          # five conversations retained on two rows, on every rank
+        self.assertEqual(out[0][1], 10)
+        self.assertEqual(snapshots[0], [[i] * (1 + i % 2) for i in range(5)])
+        self.assertEqual(snapshots[1], [[20 + i] for i in range(5)])
 
     @unittest.skipUnless(importlib.util.find_spec('torch') is not None, 'requires PyTorch for LocalTP')
     def test_four_ranks_admit_reuse_and_stop_in_the_same_order(self):

@@ -157,3 +157,17 @@ recurrent 링 204.0 (K+1=6 상태 × 34 층) + 드래프터 링 40.0 + conv 링 
   sudo 로 한다 — 3.1 의 페이지 캐시 문제를 플릿 복구 경로는 이미 알고 있었다). 두 번째 스모크(`--serve --park`, 12 스텝, HTTP 3 건,
   파킹된 대화 0 의 둘째 턴 4 토큰, 네 랭크 락스텝 PASS)는 워커가 죽은 뒤의 빈 상자에서 돈 결과라 **프로덕션을 세운 대가로 얻은
   수치**다. 첫 스모크(`--park` 왕복 == 한 번에 돌린 꼬리)는 죽어서 미완. 재현 규칙은 메모리 `feedback-no-gpu-smoke-beside-production`.
+
+## 6. 남은 순서의 2·3·4 (2026-09-11 밤, 같은 브랜치)
+
+- **3.4 예산**: `profiles/glm53/budget.py` — 줄마다 출처(OS 예비 declared, 바닥 ledger, 가중치·드래프터·슬롯 read, 작업공간 상한 12 GiB
+  declared = `runtime_memory` 가 강제하는 값, 부팅 원장을 주면 실측 피크를 증거에 적음). 121.6 GiB 상자: 남는 자리 **43.9 GiB**, 선언 KV 8.73 은
+  그중 7.5 → **36.4 GiB 미할당**. 전체 모델 부팅이 rank 0 에서 표를 찍고 `budget_unassigned_GiB` 를 게이지로 남긴다. KV·max_seqs 의 새 값은
+  운영자 결정(동시성/컨텍스트/보존 대화) — 표가 그 결정의 근거.
+- **3.3 D10**: 파킹·복원이 `Runner.park_begin/park_finish`, `resume_begin/resume_finish` 두 반쪽이 되어 티어 스레드에서 돌고, `Server._settle` 이
+  매 스텝 `transfer_done` 만 묻는다. 완료·성패를 `all_reduce` 로 네 랭크가 합의한 뒤 적용(락스텝 유지): 한 랭크라도 실패 → 그 대화는 모든 랭크에서
+  버림(복원 실패는 503, 엔진은 살아 있음), 모두 TierFull → 가장 오래된 파킹 대화를 잊고 재시도. 정지 때는 진행 중 전송을 기다려 마무리.
+  게이트(플릿 창): `probes/kv_tier_interference.py` 를 서브 루프 경로로 — 128K 파킹·복원 중 디코더 p50 비 ≤ 1.01.
+- **3.5 인덱서 과도**: `net._select_pools` 가 질의 1,024 행씩 선택(정확히 같은 top-k; `topk_positions(inplace=True)` 로 마스크 사본 제거).
+  6,912 청크 × 128K: 층당 1.69 GiB → 0.13 GiB. **캡처 사다리**는 `facts.max_position`(1,048,576) 에서 끝나고 문은 그 너머 문맥을 400 으로 거부.
+- 검증: CPU 스위트 178 통과(새 테스트: 예산 2, 선택 청킹 2, 티어 반쪽 1, 서브 비동기 4 + 4랭크 락스텝 1).
