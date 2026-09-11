@@ -1,25 +1,4 @@
-"""Where every DSv4.1 tensor goes at TP=4, read out of the reference converter.
-
-``tools/dsv41_preshard.py`` calls the tp/replicate split for the ~17 GiB of
-dense and attention weights "a HYPOTHESIS until vLLM has DeepSeek-V4.1 model
-code to compare against", and defaults to replicating because slicing on the
-wrong axis produces a checkpoint that loads and computes garbage. That caution
-is right and the conclusion is now stale twice over: we are writing the model
-ourselves (CHARTER D13), and the axis was never a hypothesis -- the shipped
-reference converter states it.
-
-    inference/convert.py::mapping = {name -> (new_name, dim)}
-
-Seven keys carry a dim; everything else is replicated. Three placements are
-special-cased in the same file: routed experts go whole to one rank, engram
-tables split into contiguous row blocks, and an MTP layer's embed/head are
-tied to the backbone's and dropped.
-
-The mapping is EXTRACTED, not copied. Copying it here would drift the first
-time DeepSeek changes it and nothing would say so. This module pins the file
-by SHA-256 and reads the dict out of its AST, so a vendor change FAILS rather
-than drifts -- the same contract dsv41_sparse_contract.py holds the TileLang
-kernel to.
+"""DSv4.1-Flash's TP axes, extracted from the pinned reference converter (profile).
 """
 from __future__ import annotations
 
@@ -29,13 +8,10 @@ import json
 import struct
 from pathlib import Path
 
-GIB = 1 << 30
+from engine.base.placement import GIB, _ITEMSIZE, _headers
 
-# inference/convert.py as shipped with DeepSeek-V4.1-Flash.
+
 REFERENCE_SHA256 = "035028340479145594a81d6084a8424e57363adf83c0d5983914783d95614d76"
-
-# dtype -> bytes per element, for the dtypes this checkpoint actually uses.
-_ITEMSIZE = {"I8": 1, "F8_E4M3": 1, "F8_E8M0": 1, "BF16": 2, "F32": 4, "F16": 2}
 
 
 def reference_mapping(reference: "str | Path") -> "dict[str, int]":
@@ -66,8 +42,6 @@ def reference_mapping(reference: "str | Path") -> "dict[str, int]":
     raise ValueError("convert.py has no top-level `mapping` assignment")
 
 
-# --- the three special cases convert.py handles outside `mapping` ------------
-
 def component(name: str) -> str:
     """convert.py's own key rule, applied to an already-stripped name."""
     if any(x in name for x in ("hc", "attn_sink", "tie2eid", "tid2eid", "ape", "image_")):
@@ -91,19 +65,6 @@ def placement(name: str, mapping: "dict[str, int]") -> "tuple[str, int | None]":
         return "engram", 0             # contiguous row blocks
     dim = mapping.get(component(canonical))
     return ("tp", dim) if dim is not None else ("replicate", None)
-
-
-# --- applying it to the real checkpoint --------------------------------------
-
-def _headers(repo: Path):
-    index = json.loads((repo / "model.safetensors.index.json").read_text())
-    for shard in sorted(set(index["weight_map"].values())):
-        path = repo / shard
-        with path.open("rb") as handle:
-            size = struct.unpack("<Q", handle.read(8))[0]
-            header = json.loads(handle.read(size))
-        header.pop("__metadata__", None)
-        yield header
 
 
 def rank_plan(repo: "str | Path", world_size: int = 4,

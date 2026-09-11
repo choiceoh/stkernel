@@ -49,8 +49,7 @@ def reference(world: int = 4, rank: int = 0):
 
     import torch.distributed as dist
 
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import kernels as our_kernels
+    from engine.profiles.dsv41 import kernels as our_kernels
 
     our_kernels.install()
     if not dist.is_initialized():
@@ -104,7 +103,7 @@ def _tp_narrow(name: str, src, param, world: int, rank: int):
     converter, so the slice happens here instead of requiring a 293 GiB rebuild
     before anything can run.
     """
-    import tp_plan
+    from engine.profiles.dsv41 import placement as tp_plan
 
     mapping = tp_plan.reference_mapping(REF / "convert.py")
     kind, dim = tp_plan.placement(name, mapping)
@@ -121,7 +120,7 @@ def load_block(block, layer: int, rank_file: "str | Path" = None, device: str = 
     """Fill `block` from this rank's shard. Returns a report, never silence."""
     import torch
 
-    from loader import RankLoader
+    from engine.base.loader import RankLoader
 
     loader = RankLoader(rank_file or RANKS / "rank0of4.safetensors")
     # convert.py strips `model.` and keeps MTP layers under their own prefix,
@@ -206,7 +205,7 @@ def load_full(net, rank_file: "str | Path", world: int = 4, rank: int = 0,
     """
     import torch
 
-    from loader import RankLoader
+    from engine.base.loader import RankLoader
 
     loader = RankLoader(rank_file)
     keys = loader.keys()

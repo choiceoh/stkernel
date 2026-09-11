@@ -1,37 +1,12 @@
-"""The batch shapes DSv4.1's kernels support, as data.
-
-D2: the scheduler builds batches only out of shapes the kernels already accept.
-On GLM-5.3 that rule was learned the expensive way -- it took several holds to
-find out why a prefill chunk was 6,912, and the answer turned out to be three
-side effects deep: `floor((MAX_BATCHED - draft_slots) / 2304) * 2304`, where
-2304 was a Mamba block size nobody had written down as a constraint. Raising
-`MAX_BATCHED` to 9,216 did not move it, because it missed by five tokens.
-
-So this file exists before the scheduler does. Every constraint carries where
-it came from, and nothing here is a preference -- a shape that violates one of
-these does not run slower, it computes the wrong thing or reads out of bounds.
-
-Sources, in descending order of how badly a violation bites:
-
-  config.json                      facts about the architecture
-  dsv41_sparse_contract.py         what the TileLang kernel requires of indices
-  dsv41_window.py                  the ring invariant `p % window_size`
-  overlay dsv41_* module defaults  tile bounds the existing code already holds
+"""DSv4.1-Flash's shape constraints (profile).
 """
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from math import gcd
 from pathlib import Path
 
-
-@dataclass(frozen=True)
-class Constraint:
-    name: str
-    value: object
-    source: str
-    bites: str          # what goes wrong when a shape violates it
+from engine.base.shapes import Constraint, chunk_for as base_chunk_for
 
 
 def constraints(repo: "str | Path") -> "list[Constraint]":
@@ -88,10 +63,7 @@ def chunk_for(repo: "str | Path", token_budget: int, draft_slots: int = 0) -> in
     again -- if a chunk is not what you expected, print this.
     """
     align = next(c.value for c in constraints(repo) if c.name == "chunk alignment")
-    usable = token_budget - draft_slots
-    if usable < align:
-        return 0
-    return (usable // align) * align
+    return base_chunk_for(align, token_budget, draft_slots)
 
 
 def report(repo: "str | Path", budgets=(2048, 4096, 8192, 9216, 16384)) -> str:

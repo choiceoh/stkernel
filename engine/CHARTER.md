@@ -18,7 +18,7 @@
 
 ---
 
-## 1. 열네 개 결정
+## 1. 열다섯 개 결정
 
 ### D1. 메모리 — 엔진이 상자를 소유한다
 
@@ -259,58 +259,95 @@ GLM 의 KDA 와 Qwen 의 GatedDeltaNet 은 같은 델타 규칙 계열이라 **�
 **금지**: 단일 부팅 단일 표본으로 NEUTRAL·PASS 를 선언하는 것, 그리고 **단일 부팅으로 기준선을
 세우는 것**.
 
+### D15. 구조 — 기본 · 모듈 · 프로필, 세 층 (2026-09-11 운영자 지시)
+
+> "엔진의 공통 부분 위주로 만들어. 3계층: 기본 — 모듈(특정 특징의 모델들에만 적용) — 각 모델별 프로필"
+
+| 층 | 무엇 | 예 |
+|---|---|---|
+| **기본** `engine/base/` | 모든 모델이 쓰는 것. 모델 이름이 나오면 안 된다 | budget · loader · instruments · shapes · caches · placement · kv · scheduler · record · config |
+| **모듈** `engine/modules/` | 특정 **특징**을 가진 모델들만 쓰는 것. 모델이 아니라 특징 이름 | lookup_table(engram·PLE) · hyper_connection · sparse_attention · quant · (linear_attention: KDA·GDN) |
+| **프로필** `engine/profiles/<model>/` | 한 모델의 사실 + 어느 모듈을 쓰나 + **실측 상수** | dsv41 · qwen38 · glm53 |
+
+> **근거 — 세 모델의 특징 행렬이 이미 그렇게 생겼다**:
+>
+> | 특징 | GLM-5.3 | DSv4.1 | Qwen3.8 |
+> |---|:-:|:-:|:-:|
+> | 델타 규칙 선형 어텐션 | KDA | — | GDN |
+> | MoE (+ spec/MTP) | ✓ | ✓ | ✓ |
+> | 희소 인덱서 | ✓ | CED | QSA |
+> | 하이퍼커넥션 | — | hc 4 | hc 4 |
+> | 거대 조회표 | — | engram 189 GiB | PLE 47.7 GiB |
+> | 양자화 | NVFP4 | fp8·fp4 [32,32] | NVFP4 group 16 |
+>
+> 어느 행도 세 모델 전부에 같지 않고, 어느 행도 한 모델에만 있지 않다. 그래서 "공유 = 커널만"(D6)은
+> 너무 거칠었다 — 공유 단위는 **특징**이다. D6 은 이렇게 정정된다: *구현은 프로필마다 따로, 특징은
+> 모듈로 공유, 커널은 모듈 아래.*
+
+**규칙**: 기본 층에 모델 이름이 들어가면 되돌린다. 모듈은 특징 이름을 갖고 둘 이상의 프로필이
+쓸 수 있어야 한다. 상수(실측)는 프로필에만 산다 — D13 의 "결정은 옮겨 가고 상수는 안 옮겨 간다"가
+구조로 강제된다.
+
+**공통 부분을 먼저 짓는다.** 프로필은 그 위에 얇게 올라간다.
+
 ---
 
 ## 2. 그래서 무엇이 존재하나
 
-D1~D8 에서 직접 따라 나오는 것만 만든다.
+D1~D15 에서 직접 따라 나오는 것만 만든다. 세 층으로.
 
-| 구성요소 | 소유 | 근거 결정 |
+**기본** (`engine/base/`, 모델 이름 금지)
+
+| 구성요소 | 소유 | 근거 |
 |---|---|---|
-| `instruments` | 스텝·단계별 시간/메모리/카운터, 상시 켬 | 측정이 비쌌다(홀드 6개) |
-| `budget` | 상자 전체의 메모리 예산, 예약·핀·페이지 캐시·OOM 제외 | D1 |
-| `shapes` | 커널이 지원하는 모양 집합(데이터) | D2 |
-| `scheduler` | 균질 스텝만, 그 집합 안에서만 배치를 구성 | D2, D9, D10, I2 |
-| `kv` | 블록·페이지드 KV·접두사 재사용 | D1, I2 |
-| `runner` | 스텝 루프, 그래프 캡처 경계(디코드 모양만) | D9, I1, I2 |
-| `models/dsv41` 먼저, `models/glm53` 은 골격 | 각자 구체 구현 | D5, D6, D13 |
-| `kernels` | `.cu` / CuTe-DSL / Triton, 두 모델이 공유 | D6, D8 |
-| `config` | 사실만 받는 입력 + 만료일 붙은 실험 노브 선언 | D11 |
-| `record` | 직전 N 스텝의 레코드와 사망 시 덤프, 오프라인 재생 | D12 |
-| `proof` | 모든 레인의 "서빙했다" 보고와 그 검증 | D3 |
-| `conformance` | 커널 허용오차 + onepass 게이트(띠 · 반복 횟수) | D4, D14 |
+| `instruments` | 스텝·단계별 시간/메모리/카운터, 상시 켬 | 측정이 비쌌다 |
+| `budget` | 상자의 예산: 출처 붙은 줄, 추정이 있으면 "게이트 아님" | D1 |
+| `loader` | 연속 범위 읽기, 블록 뷰 = 아레나 | D1, 로더 30배 |
+| `shapes` | 제약 레지스트리 + `chunk_for` | D2 |
+| `caches` | 캐시 비용 법칙 → 컨텍스트×동시 | D1 |
+| `placement` | 헤더 걷기·바이트 산수 | D13 |
+| `kv` | 블록 테이블·상태 슬롯, 평평한 배열 | D1, I2 |
+| `scheduler` | 균질 스텝, 대기 상한, 모양 안에서만 | D2, D9, D10, I2 |
+| `record` | 직전 N 스텝 링 + 사망 덤프 | D12 |
+| `config` | 사실 + 만료일 붙은 노브 | D11 |
+| `runner` | 스텝 루프, 그래프 캡처 경계 | D9, I1, I2 |
+| `proof` · `conformance` | "서빙했다" 보고 · 띠+반복 게이트 | D3, D14 |
+
+**모듈** (`engine/modules/`, 특징 이름): `lookup_table` · `hyper_connection` · `sparse_attention` · `quant` ·
+`linear_attention`(KDA·GDN, 공유 커널) · `moe` · `spec_decode`.
+
+**프로필** (`engine/profiles/<model>/`): 사실(config) + 모듈 목록 + 배치 규칙의 출처 핀 + **실측 상수**.
 
 **빌리는 것**(엔진이 소유하지 않음): 토크나이저, HTTP/OpenAI 표면, safetensors 읽기.
-하드웨어 특수성이 없는 곳이고, 여기서 이길 것이 없다.
 
 ---
 
 ## 3. 이미 있는 것
 
-- `engine/instruments.py` — 계측 평면. 중첩 단계·카운터·표/JSON. 메모리 표본은
+- `engine/base/instruments.py` — 계측 평면. 중첩 단계·카운터·표/JSON. 메모리 표본은
   `torch.cuda.is_initialized()` 를 먼저 묻는다(그전에 만지면 컨텍스트를 만들어 측정 대상
   경계를 옮긴다 — 40차에 실제로 당했다).
-- `engine/checkpoint.py` — 샤드 인덱스에서 층 단위로 골라 읽는다. 148,498 텐서 / 11 샤드 /
+- `engine/base/checkpoint.py` — 샤드 인덱스에서 층 단위로 골라 읽는다. 148,498 텐서 / 11 샤드 /
   46층.
-- `engine/budget.py` — D1 의 구현. 상자를 **선언**한다: 줄마다 출처(measured / read /
+- `engine/base/budget.py`(틀) + `engine/profiles/dsv41/budget.py`(줄) — D1 의 구현. 상자를 **선언**한다: 줄마다 출처(measured / read /
   ledger / declared / estimated)를 지고 다니고, `estimated` 가 하나라도 있으면 스스로
   "게이트 아님" 이라고 말한다. `--replication` 은 네 랭크가 똑같이 지고 있는 것을 실측한다.
   첫 판정: **DSv4.1 은 안 들어간다**(전용 노드에서도 KV 전에 −4.68 GiB) — 원장 42차.
-- `engine/tp_plan.py` — TP 축. 레퍼런스 `inference/convert.py` 를 sha 로 핀하고 **AST 에서
+- `engine/profiles/dsv41/placement.py` — TP 축. 레퍼런스 `inference/convert.py` 를 sha 로 핀하고 **AST 에서
   `mapping` 을 뽑는다**(손으로 옮기면 드리프트한다). 랭크 상주 74.15 GiB, preshard 도구와
   독립적으로 일치.
-- `engine/kv_plan.py` — KV 는 다섯 버퍼이고 길이 규칙이 넷이다. 40층 중 **4층만** KV 를
+- `engine/base/caches.py`(틀) + `engine/profiles/dsv41/caches.py` — KV 는 다섯 버퍼이고 길이 규칙이 넷이다. 40층 중 **4층만** KV 를
   만든다(CED). 예산을 **컨텍스트 × 동시**로 뒤집는다. 레버 하나: `freqs_cis` 가 B=1 KV 의
   77% 인데 표는 2종뿐이고 41개가 사본이다.
-- `engine/shapes.py` — **D2 의 레지스트리**. 제약마다 출처와 "어기면 무엇이 깨지는가"를
+- `engine/base/shapes.py`(틀) + `engine/profiles/dsv41/shapes.py` — **D2 의 레지스트리**. 제약마다 출처와 "어기면 무엇이 깨지는가"를
   지고 다닌다. DSv4.1 청크 정렬 = 16. `chunk_for()` 하나로 계산해서 청크가 세 겹의
   부수효과로 정해지는 일이 다시 없게 한다.
-- `engine/models/qwen38/plan.py` — Qwen3.8 의 배치·예산·상태 산수. 규칙의 출처(이미지의
+- `engine/profiles/qwen38/plan.py` — Qwen3.8 의 배치·예산·상태 산수. 규칙의 출처(이미지의
   vLLM 모델 파일 넷, HF `modeling_qwen4_exp.py`)를 sha 로 핀한다.
-- DSv4.1 계층(`tp_plan`·`kv_plan`·`engram_ssd`·`dist_run`·`model.py`·`kernels.py`) — 계획 변경으로
+- DSv4.1 프로필(`profiles/dsv41/`: placement·caches·engram·dist_run·reference·kernels) 과 거기서 뽑은 모듈(`modules/`: quant·sparse_attention·hyper_connection·lookup_table) — 계획 변경으로
   **중단, 보존**. 마지막 상태: 커널 7/7 PASS, 층 0/2/8/20→24/40 실가중치 포워드 finite, 4노드
   랭크 파일 fan-out 완료(srv3 까지 바이트 일치), 절단 모델 dist_run 예행 exit 0.
-- `engine/slice_load.py` — 층 슬라이스를 한 GPU 에 올린다. 층 0(dense) **0.27초**,
+- `engine/base/slice_load.py` — 층 슬라이스를 한 GPU 에 올린다. 층 0(dense) **0.27초**,
   층 3(sparse, 3,483 텐서 4.08 GiB) 9.3초. 4~8분짜리 4노드 부팅과 플릿 턴 대신이다.
 
 ---

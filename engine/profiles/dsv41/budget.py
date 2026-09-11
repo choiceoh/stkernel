@@ -1,227 +1,36 @@
-"""The box, declared -- not discovered.
-
-vLLM spends 36 s of every boot answering one question: how much is left for KV.
-Four boots measured it at 36.1 / 36.2 / 37.2 / 36.5 s -- a spread under one
-second, because the answer is the same every time. It gets that answer by
-running a synthetic max-shape batch, which costs a 17.7 GiB peak
-(``profile-run`` +9.17, ``profile/determine-memory`` +8.56 in the 40th
-campaign's boot table). Peak is what earlyoom kills on: six workers died at
-``MemAvailable`` 5%, all of them while serving.
-
-So D1 says the engine owns the box. This module is what that means: a budget is
-a list of claims on a fixed number, every claim carries where it came from, and
-KV is what is left -- known before anything is allocated.
-
-The provenance tag is the point, not decoration:
-
-    measured    read off this machine, right now (mem_get_info, /proc/meminfo)
-    read        read out of a file that is a constant (a safetensors header)
-    ledger      measured on a previous boot and written down in MEASUREMENTS.md
-    declared    a number we choose and then hold ourselves to
-    estimated   a guess, usually scaled from a different model
-
-A budget with an ``estimated`` line is not a boot gate. It says so itself.
+"""DSv4.1-Flash's budget lines and replication census (profile).
 """
 from __future__ import annotations
 
 import json
 import struct
-from dataclasses import dataclass
 from pathlib import Path
 
-GIB = 1 << 30
-
-MEASURED = "measured"
-READ = "read"
-LEDGER = "ledger"
-DECLARED = "declared"
-ESTIMATED = "estimated"
-
-_ORDER = (MEASURED, READ, LEDGER, DECLARED, ESTIMATED)
+from engine.base.budget import (GIB, MEASURED, READ, LEDGER, DECLARED, ESTIMATED,
+                                Line, Budget, probe_box, host_box, rank_weights, rank_files)
 
 
-@dataclass(frozen=True)
-class Line:
-    """One claim on the box."""
-
-    name: str
-    gib: float
-    source: str
-    evidence: str
-
-    def __post_init__(self):
-        if self.source not in _ORDER:
-            raise ValueError(f"unknown provenance {self.source!r}")
-
-
-class Budget:
-    """A box, the claims on it, and whatever is left for KV."""
-
-    def __init__(self, box_gib: float, lines: "list[Line]", label: str = ""):
-        self.box_gib = box_gib
-        self.lines = list(lines)
-        self.label = label
-
-    @property
-    def claimed_gib(self) -> float:
-        return sum(line.gib for line in self.lines)
-
-    @property
-    def kv_gib(self) -> float:
-        return self.box_gib - self.claimed_gib
-
-    @property
-    def estimated(self) -> "list[Line]":
-        return [line for line in self.lines if line.source == ESTIMATED]
-
-    def is_gate(self) -> bool:
-        """A budget can gate a boot only when nothing in it is a guess."""
-        return not self.estimated and self.kv_gib > 0
-
-    def table(self) -> str:
-        width = max((len(line.name) for line in self.lines), default=0)
-        width = max(width, len("box"), len("KV (remainder)"))
-        out = [f"{self.label}" if self.label else "", ""]
-        out.append(f"  {'box':<{width}}  {self.box_gib:>8.2f} GiB")
-        out.append(f"  {'-' * width}  {'-' * 8}")
-        for line in self.lines:
-            out.append(
-                f"  {line.name:<{width}}  {-line.gib:>8.2f} GiB   "
-                f"[{line.source}] {line.evidence}"
-            )
-        out.append(f"  {'-' * width}  {'-' * 8}")
-        out.append(f"  {'KV (remainder)':<{width}}  {self.kv_gib:>8.2f} GiB")
-        return "\n".join(x for x in out if x is not None)
-
-    def verdict(self) -> str:
-        if self.kv_gib <= 0:
-            return (
-                f"DOES NOT FIT: claims exceed the box by {-self.kv_gib:.2f} GiB. "
-                "Something must leave the box before KV gets anything."
-            )
-        guesses = self.estimated
-        if guesses:
-            names = ", ".join(line.name for line in guesses)
-            total = sum(line.gib for line in guesses)
-            return (
-                f"NOT A GATE: {len(guesses)} estimated line(s) -- {names} -- "
-                f"own {total:.2f} GiB, {total / self.box_gib:.0%} of the box and "
-                f"{total / max(self.kv_gib, 1e-9):.1f}x the KV they leave. "
-                "This budget's conclusion is theirs, not the measurements'."
-            )
-        return f"GATE: KV = {self.kv_gib:.2f} GiB, declared before load."
-
-
-# --------------------------------------------------------------------------
-# probes -- each returns a Line whose provenance is honest about its origin
-# --------------------------------------------------------------------------
-
-def probe_box() -> "tuple[float, float]":
-    """(total device GiB, free GiB after our own context).
-
-    Asking costs a CUDA context, so the difference is a real measurement of
-    what a context costs on this node -- and the reason instruments.py asks
-    ``is_initialized()`` first when it must NOT pay that cost.
-    """
-    import torch
-
-    free, total = torch.cuda.mem_get_info()
-    return total / GIB, free / GIB
-
-
-def host_box() -> "tuple[float, float]":
-    """(MemTotal GiB, MemAvailable GiB) -- what earlyoom actually counts."""
-    fields = {}
-    for raw in Path("/proc/meminfo").read_text().splitlines():
-        key, _, rest = raw.partition(":")
-        fields[key] = float(rest.strip().split()[0]) / (1 << 20)
-    return fields["MemTotal"], fields["MemAvailable"]
-
-
-def rank_weights(path: "str | Path") -> "tuple[float, int]":
-    """(GiB, tensor count) read out of a safetensors header.
-
-    The header is a constant of the checkpoint, so this is a `read`, not a
-    measurement and not an estimate. It is also cheap: one 8-byte read plus
-    the header, never the 84 GiB behind it.
-    """
-    path = Path(path)
-    with path.open("rb") as handle:
-        size = struct.unpack("<Q", handle.read(8))[0]
-        header = json.loads(handle.read(size))
-    header.pop("__metadata__", None)
-    end = max(entry["data_offsets"][1] for entry in header.values())
-    return end / GIB, len(header)
-
-
-def rank_files(checkpoint: "str | Path", world_size: int) -> "list[Path]":
-    root = Path(checkpoint)
-    files = [root / f"rank{i}of{world_size}.safetensors" for i in range(world_size)]
-    missing = [f.name for f in files if not f.exists()]
-    if missing:
-        raise FileNotFoundError(f"presharded ranks missing: {', '.join(missing)}")
-    return files
-
-
-# --------------------------------------------------------------------------
-# the DSv4.1 budget
-# --------------------------------------------------------------------------
-
-# 40th campaign, boot phase table (GLM-5.3, A9221 boot, PR #504).
-# init-device 2.29 + dist-group-ep 1.00 + dist-model-parallel 2.25.
-# NCCL is configured with 16 channels; that setting's memory cost lives here.
 RUNTIME_FLOOR_GIB = 5.54
 
-# Measured on dsv41's own rank file, 2026-09-11 (probes/dsv41_load_scratch.py,
-# 13 runs across three load paths and three sizes):
-#
-#   torch's peak allocation equals the tensor bytes EXACTLY, every run. There
-#   is no repack, no requantize, no staging tensor held alongside. Whatever
-#   GLM's loader does, dsv41's does not.
-#
-#   The caching allocator's block rounding is the only torch-side overhead, and
-#   it is 16.1% without `expandable_segments` and 0.1% with. Both launchers on
-#   this fleet already pass it (start-glm53-nvfp4-tp4.sh:434, start-hy4:227),
-#   so it is a floor to hold, not a lever to pull.
+
 ALLOCATOR_SLACK_RATIO = 0.001
 
-# What is left in GLM's load-model above its weights -- 59.17 vs 50.4 = 8.77 --
-# WITH expandable_segments already on. So that 8.77 is real work: pack/quant
-# scratch, the drafter, cuBLAS init. dsv41 has no pack/quant step, so this is
-# an upper bound on its module construction, not an estimate of it. Still a
-# guess, still says so.
+
 CONSTRUCTION_UPPER_GIB = 8.77
 
-# Measured on dsv41 itself, 2026-09-11 (probes/dsv41_activation_peak.py): the
-# reference's own Block, built at world_size=4 rank=0 with the TileLang kernels
-# stubbed to allocate exactly their outputs, swept over 1K/2K/4K/8K tokens and
-# three layer kinds (window-only 0, kv+index source 8, MTP 40).
-#
-#   0.518 / 0.520 / 0.518 GiB per 1,024 tokens -- linear, and the same to three
-#   digits whether or not the layer owns a KV cache or an indexer.
-#
-# Blocks run one at a time and free as they go, so the model's peak is one
-# block's activation plus the residual stream, not 43 of them. This makes the
-# line a FUNCTION OF THE CHUNK (D2) rather than a constant: pick a bigger
-# chunk, pay for it here, and see it come out of KV.
+
 ACTIVATION_GIB_PER_1K = 0.520
+
+
 RESIDUAL_BYTES_PER_TOKEN = 4 * 5120 * 2      # hc_mult x dim, bf16
 
-# earlyoom sends SIGTERM at MemAvailable 5%. Six workers died there, all while
-# serving. Reserving exactly 5% means racing it, so the default is twice the
-# floor -- a CHOICE, which is why it prints as `declared` and not as a fact.
-# The mechanism that makes the reserve binding (cgroup / oom_score_adj / mlock)
-# is still open; see CHARTER.md section 4.
+
 OS_RESERVE_MULTIPLE = 2.0
 
 
-# `tools/dsv41_preshard.py plan --dense tp --mtp ep` over all 48 shard headers:
-# 121.4 GiB per rank, of which engram 47.2 lives on SSD. Resident is the rest.
-# The tool's default is `--dense replicate` and that default was chosen against
-# the DISK bar (srv1 has 153 GiB free; it says "neither is needed to clear the
-# bar"). This module measures the BOX bar, where the same choice costs 13 GiB a
-# node -- which the tool also says. Same numbers, different constraint.
 PLAN_TP_RESIDENT_GIB = 121.4 - 47.2          # 74.2, vision included
+
+
 PLAN_TP_RESIDENT_NOVISION_GIB = 74.2 - 0.9   # this fleet serves text only
 
 
@@ -280,18 +89,6 @@ def for_dsv41(checkpoint: "str | Path", world_size: int = 4,
     return Budget(box_gib, lines, label=f"DSv4.1-Flash, rank of {world_size}, this box")
 
 
-# --------------------------------------------------------------------------
-# replication -- the part of a rank that every other rank also carries
-# --------------------------------------------------------------------------
-
-# A tensor identical in name, dtype and shape on all four ranks is paid four
-# times. Some of that is correct (norms are tiny and every rank needs them);
-# some of it is a presharding choice that can be revisited. The classifier
-# below says which is which, and what it would take to stop paying.
-# `certain` levers need no rule that does not already exist. `candidate` ones
-# need a TP rule for DSv4.1, and dsv41_layers.py has only `expert_rank` -- EP.
-# That is the finding: this checkpoint is presharded EP-only, so every rank
-# carries the whole attention stack and the whole shared expert.
 _LEVERS = (
     ("mtp experts", lambda k: k.startswith("mtp.") and ".experts." in k,
      "certain", "EP-shard them the way the main 384 routed experts already are"),
@@ -441,9 +238,7 @@ def _main(argv: "list[str] | None" = None) -> int:
         override = PLAN_TP_RESIDENT_GIB
         note = "preshard plan --dense tp --mtp ep: 121.4/rank - engram 47.2 on SSD"
     elif args.layout == "reference":
-        import sys
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from tp_plan import rank_plan, resident_gib
+        from engine.profiles.dsv41.placement import rank_plan, resident_gib
         plan = rank_plan(args.repo, args.world_size)
         override = resident_gib(plan, True, args.vision, args.wo_a)
         note = (f"inference/convert.py axes over the real shard headers: "
@@ -460,9 +255,7 @@ def _main(argv: "list[str] | None" = None) -> int:
 
     if budget.kv_gib > 0:
         try:
-            import sys
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
-            from kv_plan import report as kv_report
+            from engine.profiles.dsv41.caches import report as kv_report
             print()
             print("what that KV buys -- DSv4.1 caches five buffers, and only four")
             print("of its forty layers produce KV at all (kv_source_layer_ids)")

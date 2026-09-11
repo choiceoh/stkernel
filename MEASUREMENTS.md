@@ -8462,3 +8462,13 @@ gated delta rule, kda.py 1,685), `mamba/ops/causal_conv1d.py` 1,289, QSA Triton 
 TP 0.97 + embed/head 0.59 + attn q/o 0.29 + 라우터 0.12 + shared 0.11 + k/v 복제 0.10 + MTP
 0.06 + PLE 기타 0.06; vision 0.84 제거. GDN 상태 27.5 MiB/시퀀스, full-attn KV 12 KiB/토큰 +
 인덱서 0.75. 로더에 `U8`(NVFP4 두 개/바이트) dtype 추가.
+
+
+### 엔진 3계층 재구성 — 기본 / 모듈 / 프로필 (운영자 지시, 2026-09-11)
+
+`engine/*.py` 를 AST 로 갈라 옮겼다: **base**(instruments·loader·checkpoint·budget 틀·shapes 틀·
+caches 틀·placement 틀·slice_load), **modules**(quant·sparse_attention·hyper_connection·lookup_table —
+DSv4.1 커널 여섯을 특징별로), **profiles/dsv41**(budget 줄·shapes·caches·placement·engram·reference·
+dist_run·kernels 조립), **profiles/qwen38**(plan). 검증: 전 모듈 import OK, dsv41 budget(KV 19.60)·
+placement(74.15)·shapes(정렬 16)·qwen38 plan(32.41)·커널 검사 7/7 전부 재구성 전과 동일.
+헌장 D15 + §2 표 재작성. 규칙: 기본 층에 모델 이름이 들어가면 되돌린다; 상수는 프로필에만.

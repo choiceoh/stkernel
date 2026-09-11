@@ -1,51 +1,15 @@
-"""What DSv4.1 actually caches, and therefore what a KV budget buys.
-
-`budget.py` ends at "KV = 8.76 GiB". That is not an answer an operator can use.
-The answer is a context length at a concurrency, and getting there needs to
-know that DSv4.1 does not have "a KV cache" -- it has five buffers with four
-different length rules, and only FOUR of its forty layers produce KV at all
-(`kv_source_layer_ids = [2, 8, 14, 20]`; that is the CED split).
-
-The rules are read off the reference's `__init__`s, not guessed:
-
-  window_kv_cache     model.py:664  [B, window_size, head_dim]        every block
-  compress_kv_cache   model.py:670  [B, S // ratio, head_dim]         kv_source only
-  Indexer.k_cache     model.py:521  [B, S // ratio, index_head_dim]   kv_source AND index_source
-  Compressor states   model.py:453  [B, ratio, head_dim] fp32, x2     kv_source, ratio > 1
-  freqs_cis           model.py:697  [S, rope_head_dim // 2] complex64 every block, NO batch term
-
-Two of these surprise:
-
-  freqs_cis is per BLOCK and full length. 43 blocks x S x 256 B is 1.34 GiB at
-  128K and 10.75 GiB at the config's 1,048,576 -- with no batch term at all, so
-  it is pure overhead that a shared table would erase.
-
-  none of it divides by world_size. MLA's compressed KV is shared across heads,
-  so every rank holds the WHOLE cache. `head_dim` here is 512 (the latent), not
-  n_heads * per_head, which is why that is affordable.
-
-The reference is pinned; a vendor change to these buffers fails rather than
-drifts, the same contract tp_plan.py holds convert.py to.
+"""DSv4.1-Flash's five cache buffers and the freqs_cis lever (profile).
 """
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
 from pathlib import Path
 
-GIB = 1 << 30
+from engine.base.caches import GIB, Cache, total_bytes, max_seq
+
+
 REFERENCE_SHA256 = "4e9ae23620edc8028ccc5d5fef552ab7fdc7dcd6f79608754fe9f67644056f65"
-
-
-@dataclass(frozen=True)
-class Cache:
-    name: str
-    blocks: int          # how many layers carry one
-    per_batch_per_token: float   # bytes per sequence per token of context
-    per_batch: float             # bytes per sequence, independent of context
-    per_token: float             # bytes per token of context, independent of batch
-    note: str
 
 
 def _cfg(repo: Path) -> dict:
@@ -116,20 +80,6 @@ def shared_freqs(cs: "list[Cache]", repo: "str | Path") -> "list[Cache]":
                       f"{distinct} distinct tables instead of {blocks} copies")
         out.append(c)
     return out
-
-
-def total_bytes(cs: "list[Cache]", batch: int, seq: int) -> float:
-    return sum(c.per_batch_per_token * batch * seq + c.per_batch * batch
-               + c.per_token * seq for c in cs)
-
-
-def max_seq(cs: "list[Cache]", budget_gib: float, batch: int) -> int:
-    """Longest context that fits, at this concurrency."""
-    per_token = sum(c.per_batch_per_token * batch + c.per_token for c in cs)
-    fixed = sum(c.per_batch * batch for c in cs)
-    if per_token <= 0:
-        return 0
-    return int((budget_gib * GIB - fixed) / per_token)
 
 
 def report(repo: "str | Path", budget_gib: float,

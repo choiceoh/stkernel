@@ -12,8 +12,11 @@ from pathlib import Path
 
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine"))
-import kernels as K
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from engine.modules import quant as _q, sparse_attention as _s, hyper_connection as _h
+import types as _t
+K = _t.SimpleNamespace(**{n: getattr(_q, n) for n in dir(_q) if not n.startswith("__")},
+                      sparse_attn=_s.sparse_attn, hc_split_sinkhorn=_h.hc_split_sinkhorn)
 
 
 def check(name, ok, detail=""):

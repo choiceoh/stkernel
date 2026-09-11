@@ -64,11 +64,11 @@ def main() -> int:
     torch.cuda.memory._set_allocator_settings("expandable_segments:True")
     torch.set_num_threads(8)
 
-    sys.path.insert(0, str(HERE))
-    import engram_ssd
-    import instruments
-    import kernels
-    import model as bridge
+    sys.path.insert(0, str(HERE.parents[2]))
+    from engine.profiles.dsv41 import engram as engram_ssd
+    from engine.base import instruments
+    from engine.profiles.dsv41 import kernels
+    from engine.profiles.dsv41 import reference as bridge
 
     rec = instruments.Recorder(f"rank{rank}")
     phases = []
