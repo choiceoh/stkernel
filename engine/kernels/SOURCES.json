@@ -4,10 +4,12 @@
   "files": {
     "kda/kda.py": {
       "source": "overlay/modules/glm53_kernels/kda.py",
-      "sha256": "eab1d4a81a845737639e4c2d5f6b66759c388b30a5b42a105118e31a76599fc7",
+      "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
       "origin": "repository",
-      "source_sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "eab1d4a81a845737639e4c2d5f6b66759c388b30a5b42a105118e31a76599fc7",
+      "local_modifications": [
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)"
+      ]
     },
     "kda/chunk_delta_h.py": {
       "source": "overlay/modules/glm53_kernels/chunk_delta_h.py",
@@ -31,31 +33,39 @@
     },
     "kda/l2norm.py": {
       "source": "vllm/third_party/flash_linear_attention/ops/l2norm.py",
-      "sha256": "203ff42abe4b30b6c28df3c07817fa4ed51ed93ae92da1c3fcfe460862cc4057",
+      "sha256": "520f4513ef4fc97e6b88dc07877cca8e29da0d34e44673fe989e3af002d86381",
       "origin": "image",
-      "source_sha256": "520f4513ef4fc97e6b88dc07877cca8e29da0d34e44673fe989e3af002d86381",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "203ff42abe4b30b6c28df3c07817fa4ed51ed93ae92da1c3fcfe460862cc4057",
+      "local_modifications": [
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults"
+      ]
     },
     "kda/op.py": {
       "source": "vllm/third_party/flash_linear_attention/ops/op.py",
-      "sha256": "55b2f20d193728f4a2b72210637e43fb034eaaba2993e8c76754fccab279ee17",
+      "sha256": "456da84fd12411cf53c96a90dd4f78f49afb454c3d51d2c524ea8e7106fe8ae5",
       "origin": "image",
-      "source_sha256": "456da84fd12411cf53c96a90dd4f78f49afb454c3d51d2c524ea8e7106fe8ae5",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "55b2f20d193728f4a2b72210637e43fb034eaaba2993e8c76754fccab279ee17",
+      "local_modifications": [
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults"
+      ]
     },
     "kda/solve_tril.py": {
       "source": "vllm/third_party/flash_linear_attention/ops/solve_tril.py",
-      "sha256": "f4bc2b9ab7cf811b931b95a3304b4abe922e0c78752f9c9c3f9be218c3c6d9dd",
+      "sha256": "d1a4ff27623a938825052500afa7e2aa24fadd2fa4c9be6376c9128824f86f82",
       "origin": "image",
-      "source_sha256": "d1a4ff27623a938825052500afa7e2aa24fadd2fa4c9be6376c9128824f86f82",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "f4bc2b9ab7cf811b931b95a3304b4abe922e0c78752f9c9c3f9be218c3c6d9dd",
+      "local_modifications": [
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults"
+      ]
     },
     "kda/utils.py": {
       "source": "vllm/third_party/flash_linear_attention/ops/utils.py",
-      "sha256": "318136c0b5b587d89e79ab726242f1b4d0f28c8716aedcfcdf92a56ae7a18b04",
+      "sha256": "d6c90d36505e02086954c23ca4dd2fea82a69416d68ff1d0501e16b3148b5b0c",
       "origin": "image",
-      "source_sha256": "d6c90d36505e02086954c23ca4dd2fea82a69416d68ff1d0501e16b3148b5b0c",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "318136c0b5b587d89e79ab726242f1b4d0f28c8716aedcfcdf92a56ae7a18b04",
+      "local_modifications": [
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults"
+      ]
     },
     "causal_conv.py": {
       "source": "vllm/model_executor/layers/mamba/ops/causal_conv1d.py",
@@ -94,10 +104,12 @@
     },
     "b12x/moe_dispatch.py": {
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
-      "sha256": "d85de113e79bd2949e4b449bbf96bfe5ad60dbadf4dd12959a671a8be60d03e7",
+      "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "source_sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "d85de113e79bd2949e4b449bbf96bfe5ad60dbadf4dd12959a671a8be60d03e7",
+      "local_modifications": [
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook"
+      ]
     },
     "b12x/moe_dynamic_kernel.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py",
@@ -156,10 +168,12 @@
     },
     "b12x/b12x_moe.py": {
       "source": "overlay/modules/glm53_moe/b12x_moe.py",
-      "sha256": "348cbd7bf9d8462ca8b5dff3d2b3f7f237e4bef78a2d0403b62b6d0b5eaf991c",
+      "sha256": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
       "origin": "repository",
-      "source_sha256": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "348cbd7bf9d8462ca8b5dff3d2b3f7f237e4bef78a2d0403b62b6d0b5eaf991c",
+      "local_modifications": [
+        "2026-09-12: _weight_views passthrough for bind-time prepared views (ST served lane)"
+      ]
     },
     "b12x/moe_dynamic_ep_local.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_ep_local.py",
@@ -218,34 +232,42 @@
     },
     "mhc/__init__.py": {
       "source": "overlay/modules/glm53_kernels/tilelang.py",
-      "sha256": "c32a6ad884173f13c68bf6c02a09c128fab776fa231e232c791b571c765da0cd",
+      "sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
       "origin": "repository",
-      "source_sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "c32a6ad884173f13c68bf6c02a09c128fab776fa231e232c791b571c765da0cd",
+      "local_modifications": [
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults"
+      ]
     },
     "mhc/tilelang_kernels.py": {
       "source": "overlay/modules/glm53_kernels/tilelang_kernels.py",
-      "sha256": "d1a322e698cefd2389e90c454169b40505b80f4e3c8c1bf5b671e97658a6e214",
+      "sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
       "origin": "repository",
-      "source_sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "d1a322e698cefd2389e90c454169b40505b80f4e3c8c1bf5b671e97658a6e214",
+      "local_modifications": [
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; TileLang pass hook read from engine.kernels.MHC_PASSES"
+      ]
     },
     "mla/glm53_megakernel.cu": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
-      "sha256": "b654664f9b80c14d0907b78779ebc4f8390e9b929e32b5715930ac6dc2186e68",
+      "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "source_sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "f72c35b05ea82115d70e0fb32bb3db8a60d22fb2848d8a124fa9cd4e1ab82fac",
+      "local_modifications": [
+        "SM121 integer warp max reduction",
+        "Cluster-local MLA split reduction with reused shared memory",
+        "Correct GB10 shared memory, cluster and PDL documentation",
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (PDL on, MK_INPUT_CTA 4, MK_INPUT_REUSE 1; probe mode = run_mla's 4th int)"
+      ]
     },
     "mla/__init__.py": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
-      "sha256": "4479a0b7e16037217ecd6bb4d097e02a3d867e19565b9595cd294efc5bc0184d",
+      "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "source_sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
-      "st_edits": "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code"
+      "local_sha256": "0bf06de1ae33d107e1d2d9a89168b4b65852a216fe476f909380302542c76f43",
+      "local_modifications": [
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on"
+      ]
     }
-  },
-  "st_knob_sunset": "2026-09-12: engine/kernels reads no environment knob (except the ST_MLA_BUILD_ROOT cache path). Production-adopted values are code defaults; never-adopted knobs are gone; the two axes still under measurement on ST are the profile's declared D11 knobs STK_moe_static and STK_mla_prefill (engine/profiles/glm53/boot.declared). The EP tiled family (E=72 expert parallel, not the TP=4 form) left the package: b12x/glm53_ep_tiled.py, b12x/glm53_ep_tiled_selftest.py, b12x/glm53_ep_local_selftest.py, b12x/glm53_ep_route_remap.py, b12x/moe_static_ep_tiled.py",
-  "repository_files": 20,
-  "image_files": 24
+  }
 }

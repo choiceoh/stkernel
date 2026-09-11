@@ -7,9 +7,12 @@ Kernel failures remain fatal; waiting HTTP clients receive an error on exit.
 
 With a tier, a conversation is its first request's id and lives on NVMe
 between turns: a finished turn is parked (blocks, state slot, host record)
-and its row and slot are free at once, a continuation resumes into whichever
-row is free. Retained conversations are bounded by the disk, not by rows;
-when the tier is full the least recently parked conversation is forgotten.
+and its row and slot are free once the write is done, a continuation resumes
+into whichever row is free once the read is done. Both run on the tier's
+thread; the step loop only asks whether they are done, and every rank agrees
+on that answer before acting (the ranks stay in lockstep). Retained
+conversations are bounded by the disk, not by rows; when the tier is full
+the least recently parked conversation is forgotten.
 
 The door speaks two dialects: the engine's own (`POST /v1/completions` with
 ids or a prompt, and `conversation` for a further turn on retained caches)
@@ -29,6 +32,8 @@ import heapq
 import json
 import math
 import queue
+import select
+import socket
 import threading
 import time
 from collections import deque
@@ -46,9 +51,11 @@ class RequestError(Exception):
 class Server:
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
-                 reasoning_end: "int | None" = None):
+                 reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
+        if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
+            raise ValueError("request_timeout_s must be positive")
         if runner.slot_of:
             raise ValueError("the server requires an idle runner")
         if reasoning_end is not None and (type(reasoning_end) is not int or reasoning_end < 0):
@@ -56,7 +63,14 @@ class Server:
         self.engine, self.runner, self.comm = engine, runner, comm
         self.port, self.host, self.tok = port, host, tokenizer
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
+        self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
         self.max_pending = max_pending
+        self.max_context = int(getattr(engine, "max_context", 2**31 - 1))   # the model's trained positions; the door refuses beyond
+        self.request_timeout_s = float(request_timeout_s)
+        self.clock = time.monotonic                # injectable for tests
+        self._cancels = set()                      # (request id, reason) asked by HTTP threads / the timeout scan; rank 0 broadcasts them
+        self._deadline = {}                        # request id -> clock() by which it must have finished (rank 0)
+        self.cancelled = 0
         self._streams = {}                         # request id -> queue of ("tokens", ids) | ("end", finish) | ("error", text)
         self._sent = {}                            # row -> generated tokens already handed to its stream
         self.prompt_tokens_total = self.generation_tokens_total = 0
@@ -70,13 +84,16 @@ class Server:
         self._active = {}                          # reusable row -> (request id, promised blocks)
         self._conversations, self._conversation_of = {}, {}   # resident (idle or live) conversations <-> rows
         self._idle_order = {}                      # resident idle rows, least recently completed turn first (no tier)
+        self._retiring = {}                        # row -> conversation: its park is on the tier's thread (D10: no step waits on it)
+        self._resuming = {}                        # row -> (conversation, request, ids, limit, temperature, promised): its resume is in flight
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
 
-    def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None, stream: bool = False):
+    def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None, stream: bool = False,
+               min_new: int = 0):
         """Validate and enqueue on rank 0 without acquiring any model resources.
-        `stream`: the request also gets a token queue (see `_streams`)."""
+        `stream`: the request also gets a token queue (see `_streams`). `min_new`: no end token before this many."""
         if self.comm.rank != 0:
             raise RequestError("requests must enter on rank 0")
         if conversation is not None:
@@ -88,6 +105,8 @@ class Server:
             raise RequestError("ids must be a nonempty list of nonnegative token integers")
         if type(max_new) is not int or max_new <= 0:
             raise RequestError("max_tokens must be a positive integer")
+        if type(min_new) is not int or not 0 <= min_new <= max_new:
+            raise RequestError("min_tokens must be an integer between 0 and max_tokens")
         if type(temperature) not in (int, float):
             raise RequestError("temperature must be finite and nonnegative")
         try:
@@ -104,6 +123,8 @@ class Server:
         blocks = self.runner.kv.blocks_for(horizon)
         if horizon >= 2**31 or blocks > min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq):
             raise RequestError("prompt and generation limit exceed the KV capacity")
+        if horizon > self.max_context:
+            raise RequestError("prompt and generation limit exceed the model's context")
         with self._lock:
             if not self.alive:
                 raise RequestError("engine is stopping", 503)
@@ -115,9 +136,62 @@ class Server:
             self.pending[request] = event
             if stream:
                 self._streams[request] = queue.Queue()
+            self._deadline[request] = self.clock() + self.request_timeout_s
             self.prompt_tokens_total += len(ids)
-            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation))
+            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new))
         return request, event
+
+    def cancel(self, request: int, reason: str = "client closed") -> None:
+        """Ask the loop to drop `request` wherever it is (waiting, prefilling, decoding); every rank
+        applies it in the same iteration. Reasons: "client closed", "timeout", "stop"."""
+        with self._lock:
+            self._cancels.add((int(request), str(reason)))
+
+    def _expire(self) -> None:
+        """Rank 0: requests past their deadline are cancelled as timeouts."""
+        now = self.clock()
+        for request, deadline in list(self._deadline.items()):
+            if now > deadline:
+                self._cancels.add((request, "timeout"))
+
+    def _drain_cancels(self):
+        with self._lock:
+            out = sorted(self._cancels)
+            self._cancels.clear()
+        return out
+
+    def _cancel(self, request: int, reason: str) -> None:
+        """Applied on every rank: the request leaves the FIFO or its row, and rank 0 answers the client."""
+        for i, entry in enumerate(self._waiting):
+            if entry[0] == request:
+                del self._waiting[i]
+                break
+        else:
+            row = next((row for row, (req, _) in self._active.items() if req == request), None)
+            if row is None:
+                resuming = next((r for r, e in self._resuming.items() if e["request"] == request), None)
+                if resuming is not None and self._resuming[resuming]["cancelled"] is None:
+                    self._resuming[resuming]["cancelled"] = reason        # its conversation parks again once the read lands
+                    self.cancelled += 1
+                    self._deadline.pop(request, None)
+                    self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
+                    return
+                self._deadline.pop(request, None)
+                return                                     # finished already (or unknown): nothing to drop
+            self._active.pop(row)
+            self._sent.pop(row, None)
+            try:
+                self.runner.cancel(row)
+            finally:
+                self.engine.forget(row)
+                if self.runner.keep_idle:
+                    self._conversations.pop(self._conversation_of.pop(row, None), None)
+                    self._idle_order.pop(row, None)
+                heapq.heappush(self._free_rows, row)
+        self.cancelled += 1
+        self._deadline.pop(request, None)
+        status = 504 if reason == "timeout" else 499
+        self._answer(request, RequestError(f"request cancelled: {reason}", status))
 
     def take_result(self, request):
         with self._lock:
@@ -178,12 +252,15 @@ class Server:
 
     def _admit(self):
         while self._waiting:
-            request, ids, limit, temperature, promised, conversation = self._waiting[0]
+            request, ids, limit, temperature, promised, conversation, min_new = self._waiting[0]
             row = None
             resident = held = 0
             parked = False
             if conversation is not None:
                 row = self._conversations.get(conversation)
+                if row is None and (conversation in self._retiring.values()
+                                    or any(e["conversation"] == conversation for e in self._resuming.values())):
+                    break                                     # its park/resume is still on the tier's thread: next step
                 parked = row is None and self.runner.is_parked(conversation)
                 if (row is None and not parked) or (row is not None and row not in self.runner.idle):
                     self._waiting.popleft()
@@ -202,6 +279,10 @@ class Server:
                     self._waiting.popleft()
                     self._answer(request, RequestError("conversation and generation limit exceed the KV capacity"))
                     continue
+                if horizon > self.max_context:
+                    self._waiting.popleft()
+                    self._answer(request, RequestError("conversation and generation limit exceed the model's context"))
+                    continue
                 promised = max(promised, held)       # rejected-draft reservations may exceed the new turn
             if row is None and not self._free_rows:
                 if self._evict_idle():
@@ -209,8 +290,8 @@ class Server:
                 break
             # Future decode growth already belongs to admitted requests even
             # though the block pool acquires those blocks only when written.
-            future = sum(b - self.runner.kv.blocks_for(self.runner.kv.tokens[r])
-                         for r, (_, b) in self._active.items())
+            future = (sum(b - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, (_, b) in self._active.items())
+                      + sum(e["promised"] - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, e in self._resuming.items()))
             if promised > self.runner.kv.available - future + resident:
                 if self._evict_idle(exclude=row):
                     continue
@@ -218,8 +299,8 @@ class Server:
             if conversation is None:
                 row = heapq.heappop(self._free_rows)
                 try:
-                    self.engine.add(row, ids, max_new=limit, temperature=temperature)
-                    self.runner.submit(row, len(ids))
+                    self.engine.add(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}))
+                    self.runner.submit(row, len(ids), ids=ids)
                 except BaseException:
                     self.engine.forget(row)
                     heapq.heappush(self._free_rows, row)
@@ -231,18 +312,96 @@ class Server:
                 if parked:
                     row = heapq.heappop(self._free_rows)
                     try:
-                        self.runner.resume(row, key=conversation)     # blocks + slot back from NVMe, the row is idle
+                        self.runner.resume_begin(row, key=conversation)   # blocks + slot back from NVMe on the tier's thread
                     except BaseException:
-                        heapq.heappush(self._free_rows, row)          # the disk copy survives a failed read
+                        heapq.heappush(self._free_rows, row)              # the disk copy survives
                         raise
-                    self._conversations[conversation] = row
-                    self._conversation_of[row] = conversation
-                else:
-                    self._idle_order.pop(row)
-                tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature)
+                    self._resuming[row] = dict(conversation=conversation, request=request, ids=ids, limit=limit,
+                                               temperature=temperature, promised=promised, min_new=min_new, cancelled=None)
+                    self._waiting.popleft()
+                    continue                                              # admitted when every rank's read is done (_settle)
+                self._idle_order.pop(row)
+                tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}))
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
+
+    def _votes(self, flags) -> "list[int]":
+        """How many ranks say yes to each flag. Every rank must call this with the same flags in the
+        same order (the transfers are submitted in lockstep); a single rank answers itself."""
+        world = int(getattr(self.comm, "world_size", 1) or 1)
+        if world <= 1 or not flags:
+            return [int(bool(f)) for f in flags]
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        votes = torch.tensor([int(bool(f)) for f in flags], dtype=torch.int32, device=device)
+        return [int(v) for v in self.comm.all_reduce(votes).tolist()]
+
+    def _settle(self):
+        """Finish the transfers every rank agrees are done. Nothing here waits on the disk (D10):
+        a park or resume that is still writing/reading is simply looked at again next step.
+        Outcomes are agreed too, so the ranks keep the same set of conversations."""
+        rows = self.runner.transfers()
+        if not rows:
+            return
+        world = int(getattr(self.comm, "world_size", 1) or 1)
+        done = self._votes([self.runner.transfer_done(r) for r in rows])
+        outcomes = []                                         # (row, ok, full)
+        for row, votes in zip(rows, done):
+            if votes < world:
+                continue
+            ok, full = True, False
+            try:
+                if row in self._retiring:
+                    self.runner.park_finish(row)
+                else:
+                    self.runner.resume_finish(row)
+            except TierFull:
+                ok, full = False, True
+            except Exception:                                 # noqa: BLE001 -- a failed transfer is the conversation's loss, not the engine's
+                ok = False
+            outcomes.append((row, ok, full))
+        if not outcomes:
+            return
+        agreed = self._votes([ok for _, ok, _ in outcomes] + [full for _, _, full in outcomes])
+        for (row, ok, full), all_ok, all_full in zip(outcomes, agreed[:len(outcomes)], agreed[len(outcomes):]):
+            if row in self._retiring:
+                conversation = self._retiring.pop(row)
+                if all_ok == world:                           # parked everywhere: the row is free
+                    heapq.heappush(self._free_rows, row)
+                elif all_full == world and self.runner.forget_oldest_parked() is not None:
+                    self.runner.park_begin(row, key=conversation)   # room was made on every rank: write again
+                    self._retiring[row] = conversation
+                else:                                         # dropped everywhere: forget where it landed, evict where it stayed
+                    if ok:
+                        self.runner.forget_parked(conversation)
+                    else:
+                        self.runner.evict(row)
+                        self.engine.forget(row)
+                    heapq.heappush(self._free_rows, row)
+            else:
+                e = self._resuming.pop(row)
+                conversation, request = e["conversation"], e["request"]
+                if all_ok == world and e["cancelled"] is None:   # resident everywhere: the turn proceeds
+                    tokens = self.engine.extend(row, e["ids"], max_new=e["limit"], temperature=e["temperature"],
+                                                **({"min_new": e["min_new"]} if e["min_new"] else {}))
+                    self.runner.extend(row, tokens)
+                    self._conversations[conversation] = row
+                    self._conversation_of[row] = conversation
+                    self._active[row] = (request, e["promised"])
+                elif all_ok == world:                         # the client left while its conversation was coming back: park it again
+                    self._conversations[conversation] = row
+                    self._conversation_of[row] = conversation
+                    self._retire(row)
+                else:                                         # a rank could not read it back: the conversation is gone everywhere
+                    if ok:
+                        self.runner.evict(row)
+                        self.engine.forget(row)
+                    else:
+                        self.runner.forget_parked(conversation)
+                    heapq.heappush(self._free_rows, row)
+                    if e["cancelled"] is None:
+                        self._answer(request, RequestError("conversation could not be restored from the tier", 503))
 
     def _retire(self, row):
         """A finished turn leaves its row: parked with a tier, resident idle without, released otherwise."""
@@ -255,16 +414,8 @@ class Server:
             return
         conversation = self._conversation_of.pop(row)
         self._conversations.pop(conversation)
-        while True:
-            try:
-                self.runner.park(row, key=conversation)
-                break
-            except TierFull:
-                if self.runner.forget_oldest_parked() is None:      # nothing left to forget: this conversation is not retained
-                    self.runner.evict(row)
-                    self.engine.forget(row)
-                    break
-        heapq.heappush(self._free_rows, row)
+        self.runner.park_begin(row, key=conversation)         # the write runs on the tier's thread; the row frees in _settle
+        self._retiring[row] = conversation
 
     def _abort(self):
         self.alive = False
@@ -272,6 +423,10 @@ class Server:
         # even if a model's close hook also fails. Parked conversations are
         # on disk and stay there (D16: they outlive this process).
         error = None
+        try:
+            self.runner.settle()
+        except BaseException as exc:                          # noqa: BLE001
+            error = exc
         for row in list(self.runner.slot_of):
             try:
                 try:
@@ -282,6 +437,8 @@ class Server:
                 error = error or exc
         self._active.clear()
         self._waiting.clear()
+        self._retiring.clear()
+        self._resuming.clear()
         self._idle_order.clear()
         self._conversations.clear()
         self._conversation_of.clear()
@@ -300,6 +457,7 @@ class Server:
             stream.put(("error", "engine stopped before completing the request"))
         self._streams.clear()
         self._sent.clear()
+        self._deadline.clear()
 
     def metrics(self) -> str:
         """Prometheus text in the names bench/window_metrics.py and bench/bracket.py read (the bench's
@@ -314,18 +472,24 @@ class Server:
                 ("vllm:spec_decode_num_draft_tokens_total", getattr(engine, "drafted_total", 0))]
         if hasattr(engine, "drafts_total"):
             rows.append(("vllm:spec_decode_num_drafts_total", engine.drafts_total))
+        rows.append(("st:requests_cancelled_total", self.cancelled))
         return "".join(f'{name}{{engine="st"}} {max(0, value)}\n' for name, value in rows)
 
     def once(self) -> bool:
         """One ordered broadcast, bounded admission and homogeneous model step."""
         try:
-            alive, arrivals = self.comm.broadcast_object(
-                (self.alive, self._drain()) if self.comm.rank == 0 else None)
+            if self.comm.rank == 0:
+                self._expire()
+            alive, arrivals, cancels = self.comm.broadcast_object(
+                (self.alive, self._drain(), self._drain_cancels()) if self.comm.rank == 0 else None)
             if not alive:
                 self._abort()
                 self._fail_pending()
                 return False
             self._waiting.extend(arrivals)
+            for request, reason in cancels:
+                self._cancel(request, reason)
+            self._settle()
             self._admit()
             step = self.runner.step()
             if self._streams:                                       # rank 0: hand each streaming request its new tokens
@@ -346,6 +510,7 @@ class Server:
                     result = list(self.engine.generated(row))
                     self._retire(row)
                     self.served += 1
+                    self._deadline.pop(request, None)
                     self._answer(request, result)
             return step is not None
         except BaseException:
@@ -388,6 +553,7 @@ class Server:
                     self.reply(200, {"engine": "ST", "model": server.model_name, "running": list(server.runner.state.running),
                                      "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
                                      "parked": len(server.runner.parked_keys()),
+                                     "parking": len(server._retiring), "resuming": len(server._resuming),
                                      "steps": server.runner.steps, "served": server.served})
 
             def body(self):
@@ -403,14 +569,34 @@ class Server:
                 self.wfile.write(b"data: " + json.dumps(payload).encode() + b"\n\n")
                 self.wfile.flush()
 
+            def gone(self) -> bool:
+                """The client hung up: its socket reads EOF without our having sent anything."""
+                try:
+                    readable, _, _ = select.select([self.connection], [], [], 0)
+                    return bool(readable) and self.connection.recv(1, socket.MSG_PEEK) == b""
+                except (OSError, ValueError):
+                    return True
+
+            def wait_result(self, request, event):
+                """Block for a whole answer, cancelling the request if the client leaves first."""
+                while not event.wait(0.25):
+                    if self.gone():
+                        server.cancel(request, "client closed")
+                        event.wait()
+                        break
+                return server.take_result(request)
+
             def chat(self, req):
-                """OpenAI chat completions over the engine: template -> ids -> submit; streamed by token or whole."""
+                """OpenAI chat completions over the engine: template -> ids -> submit; the tokens come back
+                through the request's queue whether the reply streams or not, so `stop` strings and a client
+                that hangs up end the generation early in both modes."""
                 if server.chat is None or server.tok is None:
                     raise RequestError("this server has no chat template", 404)
                 messages = req.get("messages")
                 if (not isinstance(messages, list) or not messages
                         or any(not isinstance(m, dict) or not isinstance(m.get("role"), str)
-                               or not isinstance(m.get("content"), str) for m in messages)):
+                               or not (m.get("content") is None or isinstance(m.get("content"), (str, list)))
+                               for m in messages)):
                     raise RequestError("messages must be a nonempty list of {role, content} objects")
                 kwargs = req.get("chat_template_kwargs") or {}
                 if not isinstance(kwargs, dict):
@@ -418,52 +604,86 @@ class Server:
                 options = req.get("stream_options")
                 if options is not None and not isinstance(options, dict):
                     raise RequestError("stream_options must be an object")
+                if req.get("n", 1) != 1:
+                    raise RequestError("n must be 1: one generation per request")
+                if req.get("logprobs"):
+                    raise RequestError("logprobs are not served")
+                stop = req.get("stop")
+                stop = [stop] if isinstance(stop, str) else (stop or [])
+                if not isinstance(stop, list) or len(stop) > 4 or any(not isinstance(x, str) or not x for x in stop):
+                    raise RequestError("stop must be a nonempty string or up to four of them")
+                tools = req.get("tools")
+                if req.get("tool_choice") == "none":
+                    tools = None
+                if tools is not None and (not isinstance(tools, list) or any(not isinstance(t, dict) for t in tools)):
+                    raise RequestError("tools must be a list of objects")
+                min_tokens = req.get("min_tokens", 0) or 0
+                if type(min_tokens) is not int or min_tokens < 0:
+                    raise RequestError("min_tokens must be a nonnegative integer")
                 stream = bool(req.get("stream", False))
                 include_usage = bool(options and options.get("include_usage"))
                 model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
-                ids = server.tok.encode(server.chat(messages, kwargs), add_special_tokens=False).ids
-                request, event = server.submit(ids, req.get("max_tokens", 256), req.get("temperature", 0.0), stream=stream)
+                try:
+                    prompt = server.chat(messages, dict(kwargs, tools=tools) if tools else kwargs)
+                except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
+                    raise RequestError(f"chat template rejected the request: {exc}") from exc
+                ids = server.tok.encode(prompt, add_special_tokens=False).ids
+                request, event = server.submit(ids, req.get("max_tokens", 256), req.get("temperature", 0.0), stream=True,
+                                               min_new=min_tokens)
                 head = {"id": f"chatcmpl-{request}", "created": int(time.time()), "model": model}
-                if not stream:
-                    event.wait()
-                    out = server.take_result(request)
-                    reasoning, content = server.split(out)
-                    message = {"role": "assistant", "content": server.tok.decode(content)}
-                    if reasoning:
-                        message["reasoning_content"] = server.tok.decode(reasoning)
-                    self.reply(200, {**head, "object": "chat.completion",
-                                     "choices": [{"index": 0, "message": message, "finish_reason": server.finish_reason(out)}],
-                                     "usage": {"prompt_tokens": len(ids), "completion_tokens": len(out), "total_tokens": len(ids) + len(out)}})
-                    return
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-cache")
-                self.send_header("Connection", "close")
-                self.end_headers()
+                chunks_out = []                                          # SSE payloads, written now (stream) or never (whole)
 
                 def chunk(delta=None, finish=None, usage=None):
-                    self.sse({**head, "object": "chat.completion.chunk",
-                              "choices": [] if usage is not None else [{"index": 0, "delta": delta or {}, "finish_reason": finish}],
-                              **({"usage": usage} if usage is not None else {})})
+                    payload = {**head, "object": "chat.completion.chunk",
+                               "choices": [] if usage is not None else [{"index": 0, "delta": delta or {}, "finish_reason": finish}],
+                               **({"usage": usage} if usage is not None else {})}
+                    if stream:
+                        self.sse(payload)
 
-                chunk({"role": "assistant", "content": ""})
+                if stream:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    chunk({"role": "assistant", "content": ""})
                 held = {"reasoning_content": [], "content": []}         # ids per channel
                 shown = {"reasoning_content": 0, "content": 0}          # characters already sent per channel
+                text = {"reasoning_content": "", "content": ""}         # decoded so far per channel
                 reasoning = server.reasoning_end is not None
                 total = 0
+                finish = None
 
                 def flush(final=False):
+                    """Decode each channel, send what is new; a stop string ends the content channel."""
+                    nonlocal finish
                     for channel, chan_ids in held.items():
-                        text = server.tok.decode(chan_ids)
-                        delta = text[shown[channel]:]
-                        if delta and (final or not delta.endswith("\ufffd")):   # a partial character waits for its next token
+                        decoded = server.tok.decode(chan_ids)
+                        if channel == "content" and stop:
+                            cut = min((decoded.find(x) for x in stop if x in decoded), default=-1)
+                            if cut >= 0:
+                                decoded = decoded[:cut]
+                                finish = "stop"
+                        delta = decoded[shown[channel]:]
+                        if delta and (final or finish == "stop" or not delta.endswith("\ufffd")):   # a partial character waits
                             chunk({channel: delta})
-                            shown[channel] = len(text)
+                            shown[channel] = len(decoded)
+                        text[channel] = decoded[:shown[channel]]
+                    return finish == "stop"
 
                 stream_q = server._streams[request]
+                error = None
                 try:
                     while True:
-                        kind, payload = stream_q.get()
+                        try:
+                            kind, payload = stream_q.get(timeout=0.25)
+                        except queue.Empty:
+                            kind, payload = None, None
+                        if self.gone():
+                            server.cancel(request, "client closed")
+                            return
+                        if kind is None:
+                            continue
                         if kind == "tokens":
                             for t in payload:
                                 total += 1
@@ -471,18 +691,48 @@ class Server:
                                     reasoning = False
                                     continue
                                 held["reasoning_content" if reasoning else "content"].append(t)
-                            flush()
+                            if flush():
+                                server.cancel(request, "stop")            # the loop drops the row; the answer is complete here
+                                break
                         elif kind == "end":
                             flush(final=True)
-                            chunk(finish=payload)
-                            if include_usage:
-                                chunk(usage={"prompt_tokens": len(ids), "completion_tokens": total, "total_tokens": len(ids) + total})
-                            self.wfile.write(b"data: [DONE]\n\n")
-                            self.wfile.flush()
+                            finish = finish or payload
                             break
                         else:
-                            self.sse({"error": {"message": payload, "type": "engine"}})
+                            error = payload
                             break
+                    if error is not None:
+                        if stream:
+                            self.sse({"error": {"message": error, "type": "engine"}})
+                        else:
+                            self.reply(503, {"error": error})
+                        return
+                    calls = server.tool_parser(text["content"]) if server.tool_parser is not None and text["content"] else None
+                    usage = {"prompt_tokens": len(ids), "completion_tokens": total, "total_tokens": len(ids) + total,
+                             "completion_tokens_details": {"reasoning_tokens": len(held["reasoning_content"])}}
+                    if calls:
+                        finish = "tool_calls"
+                        tool_calls = [{"id": f"call_{request}_{i}", "type": "function", "function": {"name": name, "arguments": args}}
+                                      for i, (name, args) in enumerate(calls)]
+                        content = text["content"][:text["content"].find("<tool_call>")] if "<tool_call>" in text["content"] else ""
+                    else:
+                        tool_calls, content = None, text["content"]
+                    if stream:
+                        chunk({"tool_calls": tool_calls} if tool_calls else None, finish=finish)
+                        if include_usage:
+                            chunk(usage=usage)
+                        self.wfile.write(b"data: [DONE]\n\n")
+                        self.wfile.flush()
+                    else:
+                        message = {"role": "assistant", "content": content or None}
+                        if held["reasoning_content"]:
+                            message["reasoning_content"] = text["reasoning_content"]
+                        if tool_calls:
+                            message["tool_calls"] = tool_calls
+                        self.reply(200, {**head, "object": "chat.completion",
+                                         "choices": [{"index": 0, "message": message, "finish_reason": finish}], "usage": usage})
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    server.cancel(request, "client closed")
                 finally:
                     server._streams.pop(request, None)
                     event.wait()
@@ -510,8 +760,7 @@ class Server:
                     t0 = time.perf_counter()
                     conversation = req.get("conversation")
                     request, event = server.submit(ids, req.get("max_tokens", 64), req.get("temperature", 0.0), conversation)
-                    event.wait()
-                    out = server.take_result(request)
+                    out = self.wait_result(request, event)
                     text = server.tok.decode(out) if server.tok is not None else None
                     conversation = (request if conversation is None else conversation) if server.runner.keep_idle else None
                     self.reply(200, {"seq": request, "conversation": conversation, "ids": out, "text": text, "prompt_tokens": len(ids),

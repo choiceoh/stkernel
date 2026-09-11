@@ -4,6 +4,7 @@ from __future__ import annotations
 import concurrent.futures
 import importlib.util
 import json
+import socket
 import threading
 import unittest
 import urllib.error
@@ -41,8 +42,9 @@ class Engine:
         if any(t >= 256 for t in ids):
             raise ValueError("token outside vocabulary")
 
-    def add(self, seq, ids, max_new, temperature):
+    def add(self, seq, ids, max_new, temperature, min_new=0):
         self.tokens[seq], self.limits[seq], self.output[seq] = list(ids), max_new, []
+        self.min_new = getattr(self, "min_new", {}); self.min_new[seq] = min_new
 
     def open(self, seq, slot):
         self.ctx[seq] = 0
@@ -113,8 +115,11 @@ def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tie
 class ServeTests(unittest.TestCase):
     def drain(self, s, retained=False):
         for _ in range(500):
-            if not s.once() and not s._waiting:
+            ran = s.once()
+            if not ran and not s._waiting and not s._retiring and not s._resuming:
                 break
+            if not ran and (s._retiring or s._resuming):
+                threading.Event().wait(0.001)                  # the tier's thread needs the GIL to finish its transfer
         else:
             self.fail("server did not drain bounded requests")
         if retained:
@@ -226,6 +231,89 @@ class ServeTests(unittest.TestCase):
         self.drain(s, retained=True)
         self.assertEqual(s.take_result(kept), [7])
 
+    def test_the_step_loop_never_waits_on_a_park_or_resume(self):
+        from test_engine_tier import MemoryTier
+        gate = threading.Event()
+        s = server(rows=2, keep_idle=True, tier=MemoryTier(gate=gate))
+        first, _ = s.submit([3], 2, 0)
+        self.drain_steps(s)
+        self.assertIn(0, s._retiring)                          # the write is on the tier's thread ...
+        self.assertNotIn(0, s._free_rows)
+        other, _ = s.submit([5], 3, 0)                         # ... and the loop keeps serving on the other row
+        for _ in range(6):
+            s.once()
+        self.assertEqual(s.take_result(other), [5, 5, 5])
+        self.assertIn(0, s._retiring)
+        gate.set()
+        self.drain(s, retained=True)
+        self.assertTrue(s.runner.is_parked(first))
+        self.assertEqual(sorted(s._free_rows), [0, 1])
+        gate.clear()
+        turn, _ = s.submit([9], 1, 0, conversation=first)     # the read is on the tier's thread: the request waits, the loop does not
+        s.once()
+        self.assertEqual(len(s._resuming), 1)
+        again, _ = s.submit([6], 1, 0)                         # a fresh request is admitted on the remaining row meanwhile
+        for _ in range(4):
+            s.once()
+        self.assertEqual(s.take_result(again), [6])
+        self.assertEqual(len(s._resuming), 1)
+        gate.set()
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(turn), [9])
+
+    def test_a_continuation_arriving_during_its_park_waits_and_then_resumes(self):
+        from test_engine_tier import MemoryTier
+        gate = threading.Event()
+        s = server(rows=2, keep_idle=True, tier=MemoryTier(gate=gate))
+        first, _ = s.submit([3], 1, 0)
+        self.drain_steps(s)
+        self.assertIn(0, s._retiring)
+        turn, event = s.submit([9], 1, 0, conversation=first)
+        for _ in range(3):
+            s.once()
+        self.assertFalse(event.is_set())                       # not 409: it waits for the park to land
+        gate.set()
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(turn), [9])
+
+    def test_a_failed_read_in_flight_answers_503_and_drops_the_conversation_everywhere(self):
+        from test_engine_tier import MemoryTier
+        tier = MemoryTier(gate=threading.Event())
+        s = server(rows=2, keep_idle=True, tier=tier)
+        tier.gate.set()
+        first, _ = s.submit([3], 1, 0)
+        self.drain(s, retained=True)
+        tier.fail_promote = True
+        turn, _ = s.submit([9], 1, 0, conversation=first)
+        self.drain(s, retained=True)
+        with self.assertRaises(RequestError) as error:
+            s.take_result(turn)
+        self.assertEqual(error.exception.status, 503)
+        self.assertFalse(s.runner.is_parked(first))            # dropped everywhere after the agreed failure
+        self.assertEqual(sorted(s._free_rows), [0, 1])
+        self.assertFalse(s.runner.slot_of or s.runner.resuming)
+
+    def test_stopping_with_a_park_in_flight_settles_it(self):
+        from test_engine_tier import MemoryTier
+        gate = threading.Event()
+        s = server(rows=2, keep_idle=True, tier=MemoryTier(gate=gate, delay=0.05))
+        first, _ = s.submit([3], 1, 0)
+        self.drain_steps(s)
+        self.assertIn(0, s._retiring)
+        gate.set()
+        s.alive = False
+        s.once()
+        self.assertTrue(s.runner.is_parked(first))
+        self.assertFalse(s.runner.retiring or s.runner.slot_of or s._retiring)
+
+    def drain_steps(self, s):
+        """Run until nothing is scheduled: transfers may still be in flight."""
+        for _ in range(500):
+            if not s.once() and not s._waiting:
+                return
+            threading.Event().wait(0.001)
+        self.fail("server did not drain")
+
     def test_conversations_survive_a_restart_of_server_and_runner(self):
         from test_engine_tier import MemoryTier
         tier = MemoryTier()
@@ -258,21 +346,25 @@ class ServeTests(unittest.TestCase):
         self.drain(s, retained=True)
         self.assertEqual(s.take_result(good), [7])
 
-    def test_failed_resume_wakes_client_and_keeps_the_parked_conversation_on_disk(self):
+    def test_failed_resume_answers_503_and_the_engine_lives(self):
         s = server(keep_idle=True, tiered=True)
         first, _ = s.submit([3], 2, 0)
         self.drain(s, retained=True)
         s.runner.tiered.tier.fail_promote = True
         request, event = s.submit([9], 2, 0, conversation=first)
-        with self.assertRaisesRegex(OSError, 'read failed'):
-            s.once()
+        self.drain(s, retained=True)
         self.assertTrue(event.is_set())
-        with self.assertRaises(RequestError):
+        with self.assertRaises(RequestError) as error:
             s.take_result(request)
+        self.assertEqual(error.exception.status, 503)
+        self.assertTrue(s.alive)
         self.assertFalse(s.engine.tokens or s.runner.slot_of or s.runner.idle)
-        self.assertTrue(s.runner.is_parked(first))              # a failed read keeps the disk copy
         self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
         self.assertEqual(s.runner.slots.available, s.runner.c.max_running)
+        s.runner.tiered.tier.fail_promote = False
+        later, _ = s.submit([4], 1, 0)                          # the door still serves
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(later), [4])
 
     def test_busy_continuation_does_not_replace_the_active_turns_event(self):
         s = server(keep_idle=True)
@@ -407,6 +499,36 @@ class ServeTests(unittest.TestCase):
             httpd.server_close()
 
     @unittest.skipUnless(importlib.util.find_spec('torch') is not None, 'requires PyTorch for LocalTP')
+    def test_four_ranks_park_and_resume_in_lockstep_at_different_disk_speeds(self):
+        from engine.base.comm import LocalTP
+        from test_engine_tier import MemoryTier
+        snapshots = []
+        def rank_main(comm, _):
+            s = server(comm=comm, rows=2, keep_idle=True, tier=MemoryTier(delay=0.01 * (comm.rank + 1)))
+            if comm.rank == 0:
+                jobs = [s.submit([i], 1 + i % 2, 0) for i in range(5)]
+            for _ in range(120):
+                s.once()
+                threading.Event().wait(0.002)
+            if comm.rank == 0:
+                snapshots.append([s.take_result(i) for i, _ in jobs])
+                turns = [s.submit([20 + i], 1, 0, conversation=i) for i in range(5)]
+            for _ in range(200):
+                s.once()
+                threading.Event().wait(0.002)
+            if comm.rank == 0:
+                snapshots.append([s.take_result(r) for r, _ in turns])
+                s.alive = False
+            s.once()
+            return sorted(s.runner.parked_keys()), s.served, s.runner.kv.available, len(s.runner.retiring), len(s.runner.resuming)
+        out = LocalTP(4).run(rank_main, None)
+        self.assertTrue(all(row == out[0] for row in out), out)
+        self.assertEqual(out[0][0], [0, 1, 2, 3, 4])          # five conversations retained on two rows, on every rank
+        self.assertEqual(out[0][1], 10)
+        self.assertEqual(snapshots[0], [[i] * (1 + i % 2) for i in range(5)])
+        self.assertEqual(snapshots[1], [[20 + i] for i in range(5)])
+
+    @unittest.skipUnless(importlib.util.find_spec('torch') is not None, 'requires PyTorch for LocalTP')
     def test_four_ranks_admit_reuse_and_stop_in_the_same_order(self):
         from engine.base.comm import LocalTP
         snapshots = []
@@ -451,7 +573,7 @@ class Tokenizer:
 def chat_server(**kw):
     s = server(**kw)
     s.tok = Tokenizer()
-    s.chat = lambda messages, kwargs: "".join(m["content"] for m in messages) + ("!" if kwargs.get("thinking") else "")
+    s.chat = lambda messages, kwargs: "".join(m.get("content") or "" for m in messages) + ("!" if kwargs.get("thinking") else "")
     s.model_name = "fake"
     return s
 
@@ -498,7 +620,8 @@ class ChatDoorTests(unittest.TestCase):
             # the fake engine runs to its limit regardless of eos; the door names the ending by the last token
             self.assertEqual(out['choices'][0]['message'], {'role': 'assistant', 'content': 'bbb'})
             self.assertEqual(out['choices'][0]['finish_reason'], 'stop')
-            self.assertEqual(out['usage'], {'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5})
+            self.assertEqual(out['usage'], {'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5,
+                                            'completion_tokens_details': {'reasoning_tokens': 0}})
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 3}))
             self.assertEqual(out['choices'][0]['message']['content'], 'yyy')
@@ -542,7 +665,8 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual(''.join(d.get('content', '') for d in deltas), '')
             self.assertGreaterEqual(sum(1 for d in deltas if d.get('reasoning_content')), 2)
             self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'length')
-            self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7})
+            self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7,
+                                                   'completion_tokens_details': {'reasoning_tokens': 4}})
             self.assertFalse(s._streams or s._sent or s.pending or s.results)
             # reasoning: prompt "xy" repeats 'y' = reasoning_end -> the first token closes the (empty) reasoning, then content 'yyy'
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
@@ -578,6 +702,142 @@ class ChatDoorTests(unittest.TestCase):
                 lines = future.result(timeout=5)
             self.assertTrue(any('"error"' in l for l in lines), lines)
             self.assertFalse(s._streams or s.pending)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+
+class CancelTests(unittest.TestCase):
+    """A request leaves wherever it is: the FIFO, a prefill, a decode; the client that asked, or the clock, or a stop string."""
+
+    def test_cancel_waiting_and_active_requests_release_rows_and_blocks(self):
+        s = server(rows=1, blocks=16)
+        a, ea = s.submit([1], 6, 0)
+        b, eb = s.submit([2], 6, 0)                 # waits: one row
+        s.once()                                    # a prefills
+        self.assertEqual(list(s._active), [0])
+        s.cancel(b, "client closed")
+        s.once()                                    # b leaves the FIFO before admission
+        self.assertTrue(eb.is_set())
+        with self.assertRaisesRegex(RequestError, "client closed"):
+            s.take_result(b)
+        self.assertEqual(len(s._waiting), 0)
+        s.cancel(a, "client closed")
+        s.once()
+        self.assertTrue(ea.is_set())
+        with self.assertRaisesRegex(RequestError, "cancelled"):
+            s.take_result(a)
+        self.assertFalse(s._active or s.runner.slot_of or s.engine.tokens)
+        self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+        self.assertEqual(s._free_rows, [0])
+        self.assertEqual(s.cancelled, 2)
+        c, ec = s.submit([3], 2, 0)                 # the row serves again
+        for _ in range(5):
+            s.once()
+        self.assertEqual(s.take_result(c), [3, 3])
+        self.assertIn('st:requests_cancelled_total{engine="st"} 2\n', s.metrics())
+
+    def test_timeout_cancels_with_504_and_a_conversation_row_is_freed(self):
+        s = server(rows=2, keep_idle=True)
+        clock = [100.0]
+        s.clock = lambda: clock[0]
+        s.request_timeout_s = 5.0
+        a, ea = s.submit([1], 50, 0)
+        s.once()
+        clock[0] = 104.0
+        s.once()
+        self.assertFalse(ea.is_set())
+        clock[0] = 106.0
+        s.once()
+        self.assertTrue(ea.is_set())
+        with self.assertRaises(RequestError) as error:
+            s.take_result(a)
+        self.assertEqual(error.exception.status, 504)
+        self.assertFalse(s._active or s._conversations or s._conversation_of or s.runner.slot_of)
+        self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+
+    def test_stop_string_ends_generation_early_in_both_modes(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        url = f'http://127.0.0.1:{httpd.server_port}/v1/chat/completions'
+        def post(body):
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)
+        def stream(body):
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return [json.loads(l.decode()[5:]) for l in r if l.startswith(b'data:') and b'[DONE]' not in l]
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:      # prompt "ab" repeats 'b': "bb" stops it at 2 tokens of 50
+                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 50, "stop": ["bb"]}))
+            self.assertEqual(out['choices'][0]['finish_reason'], 'stop')
+            self.assertEqual(out['choices'][0]['message']['content'], None)      # the text before the stop string is empty
+            self.assertLess(out['usage']['completion_tokens'], 50)
+            self.assertFalse(s._active or s.runner.slot_of, "the row was dropped, not run to the limit")
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                chunks = drive(s, pool.submit(stream, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 50, "stop": "yyy", "stream": True}))
+            content = ''.join(c['choices'][0]['delta'].get('content', '') for c in chunks if c['choices'])
+            self.assertEqual(content, 'yy')
+            self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'stop')
+            self.assertFalse(s._active or s._streams or s.pending or s.results)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_client_hangup_cancels_a_running_request(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        try:
+            sock = socket.create_connection(('127.0.0.1', httpd.server_port), timeout=5)
+            body = json.dumps({"messages": [{"role": "user", "content": "ab"}], "max_tokens": 40}).encode()
+            sock.sendall(b"POST /v1/chat/completions HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                         + f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+            for _ in range(2000):
+                s.once()
+                if s._active:
+                    break
+                threading.Event().wait(0.001)
+            self.assertTrue(s._active)
+            sock.close()                                              # the client leaves mid-generation
+            for _ in range(4000):
+                s.once()
+                if not s._active:
+                    break
+                threading.Event().wait(0.001)
+            self.assertFalse(s._active or s.runner.slot_of, "hang-up must drop the row")
+            self.assertEqual(s.cancelled, 1)
+            self.assertLess(s.generation_tokens_total, 40)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_min_tokens_n_logprobs_and_tools_reach_the_engine_and_the_parser(self):
+        s = chat_server()
+        s.tool_parser = lambda text: [("f", '{"a": 1}')] if "<tool_call>" in text else None
+        seen = {}
+        def render(messages, kwargs):
+            seen["kwargs"] = kwargs
+            return "ab"
+        s.chat = render
+        httpd = s._serve_http()
+        url = f'http://127.0.0.1:{httpd.server_port}/v1/chat/completions'
+        def post(body):
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)
+        try:
+            for body in ({"messages": [{"role": "user", "content": "a"}], "n": 2}, {"messages": [{"role": "user", "content": "a"}], "logprobs": True},
+                         {"messages": [{"role": "user", "content": "a"}], "stop": ["", "x"]}, {"messages": [{"role": "user", "content": "a"}], "min_tokens": 9, "max_tokens": 4}):
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    post(body)
+                self.assertEqual(error.exception.code, 400)
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 3, "min_tokens": 2,
+                                                  "tools": [{"type": "function", "function": {"name": "f"}}]}))
+            self.assertEqual(seen["kwargs"]["tools"][0]["function"]["name"], "f")
+            self.assertEqual(s.engine.min_new[0], 2)
+            self.assertEqual(out['choices'][0]['finish_reason'], 'length')
+            s.tok.decode = lambda ids, skip_special_tokens=True: "<tool_call>f<arg_key>a</arg_key><arg_value>1</arg_value></tool_call>"
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2}))
+            self.assertEqual(out['choices'][0]['finish_reason'], 'tool_calls')
+            self.assertEqual(out['choices'][0]['message']['tool_calls'][0]['function'], {'name': 'f', 'arguments': '{"a": 1}'})
+            self.assertEqual(out['choices'][0]['message']['content'], None)
         finally:
             httpd.shutdown(); httpd.server_close()
 

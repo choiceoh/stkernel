@@ -14,7 +14,7 @@ if importlib.util.find_spec("torch") is not None:
 
 
 def tiny_facts():
-    return Facts(hidden=128, layers=3, kinds=("kda", "dsa", "dsa"), dense=(0, 1, 2),
+    return Facts(max_position=1 << 20, hidden=128, layers=3, kinds=("kda", "dsa", "dsa"), dense=(0, 1, 2),
                  vocab=256, rms_eps=1e-5, kda_heads=4, kda_dim=8, conv=4, lower_bound=-5,
                  heads=4, qk_nope=16, v_dim=16, q_lora=16, kv_lora=16,
                  idx_heads=4, idx_dim=128, topk=8, kpool=4, experts=4,

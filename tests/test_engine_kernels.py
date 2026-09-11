@@ -134,12 +134,15 @@ class KernelPackageTests(unittest.TestCase):
         self.assertEqual((fc1 // 2, fc2 // 2), (expert_layout.W13_K_IN_BYTES, expert_layout.W2_K_IN_BYTES))
         expert_layout._selfcheck()
 
-    def test_cuda_translation_unit_and_pinned_dynamic_helpers_match_the_manifest(self):
-        """The CUDA TU is pinned to SOURCES.json (the ST copy as served: since 2026-09-12 it differs from the
-        overlay original only by the D11 knob sunset, recorded there as st_edits/source_sha256)."""
+    def test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance(self):
         manifest = json.loads((KERNELS / "SOURCES.json").read_text())["files"]
         for name in ("mla/glm53_megakernel.cu", "b12x/_moe_dynamic/gated.py"):
-            self.assertEqual(hashlib.sha256((KERNELS / name).read_bytes()).hexdigest(), manifest[name]["sha256"])
+            record = manifest[name]
+            expected = record.get("local_sha256", record["sha256"])
+            self.assertEqual(hashlib.sha256((KERNELS / name).read_bytes()).hexdigest(), expected)
+            if "local_sha256" in record:
+                self.assertTrue(record["local_modifications"])
+                self.assertNotEqual(record["local_sha256"], record["sha256"])
 
     def test_strided_kda_guard_tracks_the_ported_norm_source(self):
         tree = ast.parse((KERNELS / "kda/kda.py").read_text())

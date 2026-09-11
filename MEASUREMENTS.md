@@ -9211,9 +9211,34 @@ accepted·draft), `/health`. 프로필은 프로덕션과 같은 `chat_template_
 (문 4종 추가: 목록·카운터·health, 통째 답, 토큰 스트림 + 추론 분리, 엔진 사망 시 스트림 클라이언트 해제). `boot --local --serve` 는 스트림
 chat 한 턴을 더 판정한다(GPU 창 없어 미실행). **다음**: 플릿 창(프로덕션 정지, 한 세션만) → 부팅 → chat 한 요청 → `bench/onepass.py`.
 
-### 45차 §20 — 커널 패키지 노브 43개의 D11 정리: 채택값은 코드로, 후보 둘은 선언된 노브로, 나머지는 폐기 (2026-09-12 새벽, srv4, GPU 없음)
+### 45차 §20 — 운영자 지시 넷: prefix 재사용, 취소·타임아웃, 문의 나머지, 슈퍼바이저 (2026-09-11 밤)
 
-**출발점**(§17 잔여 "노브 35개"의 실측): `engine/kernels` 가 `os.environ`/`getenv` 로 읽던 이름은 **43개**(b12x 20, kda 10, mla 11 = 파이썬 6 + `.cu` 5, mhc 2)였고,
+플릿 창이 없어(프로덕션 vLLM 20:31 복귀) 모두 CPU 판정(가짜 엔진·실물 풀·러너)까지, GPU 판정은 프로브로 준비했다.
+
+**취소·타임아웃**(`base/serve.py`): 취소는 rank 0 이 도착과 같은 브로드캐스트에 실어 네 랭크가 같은 반복에서 같은 행을 버린다(FIFO 에 있으면
+빼고, 행이면 `runner.cancel` → 블록·슬롯·모델 상태 반납 → 클라이언트에 499/504). 근거 셋: 클라이언트 소켓 EOF·broken pipe(토큰 묶음마다
+`select`+`MSG_PEEK`), `REQUEST_TIMEOUT_S`=3600 초과, `stop` 문자열(내용 채널에서 잘라 조기 종료). chat 요청은 스트림이 아니어도 토큰 큐로
+흐른다(끊김·stop 이 양쪽에서 같이 먹힌다).
+**문의 나머지**: `min_tokens` 는 어댑터에서 뽑힌 뒤 고침(끝 토큰이 최소 전에 뽑히면 그 자리의 차선 토큰; 캡처된 샘플링 그래프 무변경),
+`tools` 는 템플릿 렌더 + `<tool_call>{name}<arg_key>k</arg_key><arg_value>v</arg_value>…</tool_call>` 파서(`profiles/glm53/tools.py`) →
+`tool_calls`, `finish_reason` `tool_calls`; `n`≠1·`logprobs` 는 400; `usage.completion_tokens_details.reasoning_tokens`(게이트웨이가 읽음).
+게이트웨이(`deneb/gateway-go`)는 비스트리밍 chat + tools 를 쓴다.
+**슈퍼바이저**(`launchers/st-glm53-supervisor.sh` + `st-glm53.service`, dsv4-tp4-supervisor 의 형): 30 s 마다 4 토큰 chat(문이 살아도 링은
+죽을 수 있다), 3 회 실패 → 포렌식(네 랭크 로그·free·nvidia-smi·metrics) → stop → start, 백오프 60 s ×2 ≤ 30 min, 5 회 뒤 정지. 프로덕션·
+q38 컨테이너가 보이면 절대 안 띄움. 한 사이클 판정(`ST_SUPERVISOR_ONCE=1`): 지금은 "fleet taken: 10.10.10.2:glm53".
+**prefix 재사용**(`base/prefix.py`, `base/kv.py` 소유 개수, `runner.submit(ids)`/`_checkpoint`, `scheduler.arrive(computed)`, GLM
+`caches.snapshot_layout/checkpoint/restore`, `adapter.checkpoint/restore`, boot `PREFIX_SNAPSHOTS`=8): 단위는 프리필 청크(6,912 = 블록 3개)
+— 선형 어텐션의 상태는 프리필이 멈춘 자리에만 있으므로 청크 경계마다 링 상태를 스냅샷(KDA conv 탭 3 + 재귀 1 × 34층 = 35.4 MiB,
+드래프터 링 41.9 MB; 꼬리 링은 경계에서 비어 제외)하고 앞 블록들을 핀. 새 프롬프트는 자기 길이보다 짧은 가장 긴 경계를 입양(공유 블록은
+완결·읽기 전용, 상태는 슬롯에 복원)해 거기서 프리필 — 토큰 하나는 늘 계산. 회수는 LRU, 풀이 부족할 때 콜백으로. vLLM 의 APC 와 다른 점:
+블록 단위가 아니라 청크 단위(2K 프롬프트는 이득 없음; 6,912 이상의 공유 문서·시스템 프롬프트가 대상), 세션 간 대화 이어가기는 D16 이 맡는다.
+**판정**: `tests/test_engine_prefix.py` 8(소유 개수·입양·핀·회수·해시 사슬·경계 캐시/입양·LRU·실패 반납), serve 25(취소 5 종 추가),
+tools 3, glm53 32, runtime 28, bootpaths 2, tier 16 — 전부 OK. GPU: `probes/engine_prefix_check.py`(공유 두 청크 + 다른 꼬리 두 프롬프트의
+토큰 동일·프리필 시간 비) — srv4 는 프로덕션이 GPU 100 GB 를 쥐고 있어(가용 21 GiB) 돌리지 않았다. 남은 것: 창에서 프로브 → 45층.
+
+### 45차 §21 — 커널 패키지 노브 43개의 D11 정리: 채택값은 코드로, 후보 둘은 선언된 노브로, 나머지는 폐기 (2026-09-12 새벽, srv4, GPU 없음)
+
+**출발점**(§17 잔여 "노브 35개"의 실측; main 의 §20 과 나란히 붙는 절이라 §21): `engine/kernels` 가 `os.environ`/`getenv` 로 읽던 이름은 **43개**(b12x 20, kda 10, mla 11 = 파이썬 6 + `.cu` 5, mhc 2)였고,
 어느 것도 `base/config` 의 `STK_` 게이트를 지나지 않았다(프로필은 `knobs=[]`). 그중 넷은 프로덕션 `profiles/glm53.env` 가 켜 둔 채택값인데 ST 는 하나도 안
 넘겨 **스톡·off 로 돌고 있었다**: `B12X_STATIC_V2=t,r,sf6`(09-09 채택, 38차 v4 +9.7~11.6%, sf6 스케일 4.43→3.36 GiB/랭크), `MK_PDL=1`(27차 발사당 58.0→53.6 µs),
 `KDA_PREFILL_QK_NORM=1`(09-06), `EP_TILED=1`(E=72 EP 기하라 TP4 ST 엔 무관). 운영자(09-12 새벽): "기존 채택 노브 중 살릴 수 있는 건 최대한 살리고, 어떤 건
@@ -9242,7 +9267,7 @@ chat 한 턴을 더 판정한다(GPU 창 없어 미실행). **다음**: 플릿 �
 **미실행**: GPU 판정(`run_engine_check.sh --layers 0-4 --moe-static t,r,sf6` 와 stock, `--mla-prefill`) — srv4 는 프로덕션 vLLM 서빙 중 가용 20 GB 라 창 없음.
 따라서 `STK_moe_static` 기본값은 판정된 `stock` 이고, 후보가 판정을 통과하면 기본값을 `t,r,sf6` 로 바꾸고 노브를 지운다(D11 승격 = 노브 제거).
 
-**§20 보충 — 폐기 재검토(운영자 "폐기가 되게 많네. 더 살릴 수 있는 건 없어?")**: 폐기 목록을 원장 판정으로 다시 갈랐다.
+**§21 보충 — 폐기 재검토(운영자 "폐기가 되게 많네. 더 살릴 수 있는 건 없어?")**: 폐기 목록을 원장 판정으로 다시 갈랐다.
 **측정돼서 진 것(그대로 폐기, D11 "진 쪽을 지운다")**: prefill reuse(39차 MOER NEUTRAL(−), −1.9~−2.0%), FC1 N128(기각, −71%), KDA regime(KREG NEUTRAL, 승격 안 함),
 mHC big-fuse(GLM in-graph +0.1%, 9/1 트레이스 "아님"), 강제 W4A16(운영자 "억지 W4A16 금지"; API 인자 경로는 그대로). EP 타일 계열은 프로덕션이 09-10 절대 목표
 67 tok/s 로 채택했으나 **디코드는 TP 보다 9.8% 느리고**(72.6 vs 80.5 tok/s, PR #511) 프리필 입력 tok/s 만 +4~15% — TP=4 형태의 ST 엔 잃은 승자가 아니며, EP 레인은
