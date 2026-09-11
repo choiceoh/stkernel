@@ -96,7 +96,12 @@ API, 전체 수치 검사를 다시 검증한다. 이미지 빌드·프로브는
     bash probes/run_engine_check.sh --layers 0-4
 
 GPU 검사는 사용 가능한 GB10에서 실행한다. JIT 캐시는 기본 `$HOME/.cache/st`에 두며
-`ST_CACHE`로 변경한다. `--lanes conv,kda,mhc`처럼 일부 레인을 골라 재현할 수 있다.
+`ST_CACHE`로 변경한다. JIT 캐시 지도(2026-09-12 실측): Triton `/cache/triton`, TileLang `/cache/tilelang`,
+DeepGEMM `/cache/deep_gemm`, MLA nvcc 빌드 `/cache/mla`, b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
+`/cache/.cache/flashinfer/<버전>/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/*.o` 로 내보내고 적중 시 DSL 컴파일 없이 로드한다
+(키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
+`cute.compile` 에서 꺼지므로(`compile_only` → `no_cache`) ST 에는 무효다. 유일하게 디스크에 안 남는 것은 direct micro 커널의
+`cute.compile`(프로세스 안 캐시, 실제 스트림 규약)이다. `--lanes conv,kda,mhc`처럼 일부 레인을 골라 재현할 수 있다.
 b12x는 `--lanes moe --moe-experts 288`로 실제 TP4 형상(288 experts, top-k 8,
 hidden 4096, rank intermediate 512)을 추가 검사한다. 이 검사에서만 seed의 원본
 FlashInfer API를 호출해 이식 전후를 비교한다. 엔진은 항상 자체 b12x를 호출한다.
