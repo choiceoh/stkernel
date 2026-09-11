@@ -99,10 +99,15 @@ class KernelPackageTests(unittest.TestCase):
                         child = module / alias.name
                         self.assertTrue(child.with_suffix(".py").is_file() or (child / "__init__.py").is_file(), (path, base, alias.name))
 
-    def test_cuda_translation_unit_and_pinned_dynamic_helpers_are_unchanged(self):
+    def test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance(self):
         manifest = json.loads((KERNELS / "SOURCES.json").read_text())["files"]
         for name in ("mla/glm53_megakernel.cu", "b12x/_moe_dynamic/gated.py"):
-            self.assertEqual(hashlib.sha256((KERNELS / name).read_bytes()).hexdigest(), manifest[name]["sha256"])
+            record = manifest[name]
+            expected = record.get("local_sha256", record["sha256"])
+            self.assertEqual(hashlib.sha256((KERNELS / name).read_bytes()).hexdigest(), expected)
+            if "local_sha256" in record:
+                self.assertTrue(record["local_modifications"])
+                self.assertNotEqual(record["local_sha256"], record["sha256"])
 
     def test_strided_kda_guard_tracks_the_ported_norm_source(self):
         tree = ast.parse((KERNELS / "kda/kda.py").read_text())

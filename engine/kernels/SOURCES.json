@@ -240,7 +240,13 @@
     "mla/glm53_megakernel.cu": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "52de53ada86de8c4f6534a34cf2917c49c01d40b37849f0918a1dad7d6da82b7",
+      "local_modifications": [
+        "SM121 integer warp max reduction",
+        "Cluster-local MLA split reduction with reused shared memory",
+        "Correct GB10 shared memory, cluster and PDL documentation"
+      ]
     },
     "mla/__init__.py": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
