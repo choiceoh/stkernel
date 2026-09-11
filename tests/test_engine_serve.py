@@ -434,5 +434,153 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(snapshots[1], [99, 99])
 
 
+class Encoded:
+    def __init__(self, ids):
+        self.ids = ids
+
+
+class Tokenizer:
+    """A vocabulary of 256: a character is its code point (below 256), a token decodes to its character."""
+    def encode(self, text, add_special_tokens=True):
+        return Encoded([ord(c) % 256 for c in text])
+
+    def decode(self, ids, skip_special_tokens=True):
+        return "".join(chr(i) for i in ids)
+
+
+def chat_server(**kw):
+    s = server(**kw)
+    s.tok = Tokenizer()
+    s.chat = lambda messages, kwargs: "".join(m["content"] for m in messages) + ("!" if kwargs.get("thinking") else "")
+    s.model_name = "fake"
+    return s
+
+
+def drive(s, future, steps=2000):
+    for _ in range(steps):
+        s.once()
+        if future.done():
+            return future.result(timeout=3)
+        threading.Event().wait(0.001)
+    return future.result(timeout=3)
+
+
+class ChatDoorTests(unittest.TestCase):
+    """The OpenAI dialect over the fake engine (which repeats the prompt's last token)."""
+
+    def test_models_metrics_and_health(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            models = json.load(urllib.request.urlopen(base + '/v1/models', timeout=3))
+            self.assertEqual([m['id'] for m in models['data']], ['fake'])
+            self.assertEqual(json.load(urllib.request.urlopen(base + '/health', timeout=3)), {'status': 'ok'})
+            text = urllib.request.urlopen(base + '/metrics', timeout=3).read().decode()
+            self.assertIn('vllm:request_success_total{engine="st"} 0\n', text)
+            self.assertIn('vllm:num_requests_running{engine="st"} 0\n', text)
+            self.assertIn('vllm:spec_decode_num_draft_tokens_total{engine="st"} 0\n', text)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_chat_completion_whole(self):
+        s = chat_server()
+        s.engine.eos = {ord('b')}                    # 'b' ends a generation
+        httpd = s._serve_http()
+        url = f'http://127.0.0.1:{httpd.server_port}/v1/chat/completions'
+        def post(body):
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=3) as r:
+                return json.load(r)
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(post, {"model": "m", "messages": [{"role": "user", "content": "ab"}], "max_tokens": 3}))
+            self.assertEqual(out['object'], 'chat.completion')
+            # the fake engine runs to its limit regardless of eos; the door names the ending by the last token
+            self.assertEqual(out['choices'][0]['message'], {'role': 'assistant', 'content': 'bbb'})
+            self.assertEqual(out['choices'][0]['finish_reason'], 'stop')
+            self.assertEqual(out['usage'], {'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5})
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 3}))
+            self.assertEqual(out['choices'][0]['message']['content'], 'yyy')
+            self.assertEqual(out['choices'][0]['finish_reason'], 'length')
+            for body in ({"messages": []}, {"messages": [{"role": "user"}]}, {"messages": "hi"}, {"messages": [{"role": "user", "content": "a"}], "chat_template_kwargs": 3}):
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    post(body)
+                self.assertEqual(error.exception.code, 400)
+            self.assertFalse(s.pending or s.results or s._streams)
+            self.assertIn('vllm:request_success_total{engine="st"} 2\n', s.metrics())
+            self.assertIn('vllm:generation_tokens_total{engine="st"} 6\n', s.metrics())
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_chat_completion_streams_by_token_with_reasoning_split(self):
+        s = chat_server()
+        s.reasoning_end = ord('y')                  # the fake engine repeats the last prompt token: 'y'... so with
+        httpd = s._serve_http()                     # reasoning_end = 'y' the first token closes the reasoning and the rest is content
+        url = f'http://127.0.0.1:{httpd.server_port}/v1/chat/completions'
+        def stream(body):
+            events = []
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                self.assertEqual(r.headers['Content-Type'], 'text/event-stream')
+                for raw in r:
+                    line = raw.decode().strip()
+                    if line.startswith('data:'):
+                        events.append(line[5:].strip())
+            return events
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                events = drive(s, pool.submit(stream, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 4, "stream": True,
+                                                       "stream_options": {"include_usage": True}, "chat_template_kwargs": {"thinking": True}}))
+            self.assertEqual(events[-1], '[DONE]')
+            chunks = [json.loads(e) for e in events[:-1]]
+            self.assertTrue(all(c['object'] == 'chat.completion.chunk' for c in chunks))
+            deltas = [c['choices'][0]['delta'] for c in chunks if c['choices']]
+            self.assertEqual(deltas[0], {'role': 'assistant', 'content': ''})
+            # the rendered prompt is "xy!" (thinking kwarg honoured), so the engine repeats '!': 4 tokens; the reasoning end
+            # ('y') never comes, so all of it is still reasoning -- each token in its own chunk as the loop steps
+            self.assertEqual(''.join(d.get('reasoning_content', '') for d in deltas), '!!!!')
+            self.assertEqual(''.join(d.get('content', '') for d in deltas), '')
+            self.assertGreaterEqual(sum(1 for d in deltas if d.get('reasoning_content')), 2)
+            self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'length')
+            self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7})
+            self.assertFalse(s._streams or s._sent or s.pending or s.results)
+            # reasoning: prompt "xy" repeats 'y' = reasoning_end -> the first token closes the (empty) reasoning, then content 'yyy'
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                events = drive(s, pool.submit(stream, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 4, "stream": True}))
+            chunks = [json.loads(e) for e in events[:-1]]
+            deltas = [c['choices'][0]['delta'] for c in chunks if c['choices']]
+            self.assertEqual(''.join(d.get('content', '') for d in deltas), 'yyy')
+            self.assertEqual(''.join(d.get('reasoning_content', '') for d in deltas), '')
+            self.assertEqual(s.split([1, ord('y'), 2, 3]), ([1], [2, 3]))
+            self.assertEqual(s.split([1, 2]), ([1, 2], []))
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_streaming_client_is_released_when_the_engine_dies(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        url = f'http://127.0.0.1:{httpd.server_port}/v1/chat/completions'
+        def stream():
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps({"messages": [{"role": "user", "content": "ab"}], "max_tokens": 5, "stream": True}).encode()), timeout=5) as r:
+                return [l.decode().strip() for l in r if l.strip()]
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                future = pool.submit(stream)
+                for _ in range(200):
+                    if s._streams:
+                        break
+                    threading.Event().wait(0.001)
+                s.once()
+                s.engine.fail_decode = True
+                with self.assertRaisesRegex(RuntimeError, 'kernel failed'):
+                    for _ in range(3):
+                        s.once()
+                lines = future.result(timeout=5)
+            self.assertTrue(any('"error"' in l for l in lines), lines)
+            self.assertFalse(s._streams or s.pending)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+
 if __name__ == '__main__':
     unittest.main()

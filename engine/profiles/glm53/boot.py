@@ -27,6 +27,7 @@ import torch                                                     # noqa: E402
 
 from engine.base import scheduler as sched                       # noqa: E402
 from engine.base.arena import Arena, prepare_allocation          # noqa: E402
+from engine.base.runtime_memory import RuntimeMemory           # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.config import Config, Fact                      # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
@@ -54,6 +55,22 @@ MAX_SEQS = 4                        # launcher MAX_SEQS
 def tokenizer(ckpt=facts.CKPT):
     from tokenizers import Tokenizer
     return Tokenizer.from_file(str(Path(ckpt) / "tokenizer.json"))
+
+
+CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
+REASONING_END = "</think>"                       # the model closes its reasoning with this token; the door splits content there
+
+
+def chat_renderer(ckpt=facts.CKPT):
+    """messages -> prompt text through the checkpoint's chat template (the door's OpenAI chat endpoint). transformers'
+    template engine renders it (the template needs its filters); chat_template_kwargs (`thinking`, ...) pass through."""
+    from transformers import AutoTokenizer
+    t = AutoTokenizer.from_pretrained(str(ckpt))
+    t.chat_template = (Path(ckpt) / CHAT_TEMPLATE).read_text()
+
+    def render(messages, kwargs):
+        return t.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **kwargs)
+    return render
 
 
 def eos_ids(ckpt=facts.CKPT) -> "list[int]":
@@ -106,56 +123,69 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors")
     arena_bytes = total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs)
+    memory = None
     if len(net.layers) == F.layers:
-        # Full-model admission must not rely on the page-cache-inclusive
-        # MemAvailable value. The spare 16 GiB is a conservative boot guard,
-        # not a measured graph-workspace/performance budget.
+        # Fixed byte ceilings, not a measured workspace claim. Preparation
+        # records peaks for the largest prefill and every declared graph.
+        workspace_bytes, os_reserve_bytes = 12 * GIB, 4 * GIB
         files = sorted(Path(ranks_dir).glob("rank*of4.safetensors"))
         if D:
             files.append(drafter_dir / "model.safetensors")
         failure = None
         try:
-            report = prepare_allocation(arena_bytes, files, 16 * GIB,
+            report = prepare_allocation(arena_bytes, files, workspace_bytes + os_reserve_bytes,
                                         lambda: torch.cuda.mem_get_info()[0])
-        except (MemoryError, OSError) as exc:
+            memory = RuntimeMemory(arena_bytes, workspace_bytes, os_reserve_bytes, comm=comm)
+        except (MemoryError, OSError, RuntimeError) as exc:
             failure = exc
         # A failed rank must prevent peers from starting their large CUDA
         # allocations; closing NCCL only after one rank fails is too late.
         failed = comm.all_reduce(torch.tensor([int(failure is not None)], device="cuda"))
         if int(failed.item()):
+            if memory is not None:
+                memory.close()
             raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
         recorder.gauge("boot_immediately_free_GiB", round(report["immediately_free"] / GIB, 3))
         recorder.gauge("boot_reclaimed_GiB", round(report["reclaimed"] / GIB, 3))
-    with recorder.phase("arena"):
-        arena = Arena(arena_bytes)
-    recorder.gauge("arena_expandable", int(arena.expandable))
-    with recorder.phase("load"):
-        views = rank.load(
-            [s.name for s in specs], arena=arena, recorder=recorder)
-        net.bind(views)
-    tok = tokenizer(ckpt_meta)
-    decodable = decodable_vocab(tok)
-    drafter = NullDrafter()
-    if D:
-        with recorder.phase("load drafter"):
-            dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
-        drafter = drafter_mod.Drafter(D, net, decodable)
-        drafter.bind(dviews)
-    caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape)
-    # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
-    aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
-    engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
-                         decodable=decodable, aux_layers=aux)
-    contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
-                              max_wait_s=MAX_WAIT_S, max_running=max_seqs)
-    tiered = None
-    if tier_dir:                                                                    # D16: idle conversations park on NVMe, per rank
-        tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
-        tiered = TieredKV(caches.pool, tier)
-    runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
-                    keep_idle=tiered is not None)                                  # with a tier, conversations live on and park
-    recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
-    return F, net, caches, engine, runner
+    try:
+        with recorder.phase("arena"):
+            arena = Arena(arena_bytes)
+        recorder.gauge("arena_expandable", int(arena.expandable))
+        with recorder.phase("load"):
+            views = rank.load(
+                [s.name for s in specs], arena=arena, recorder=recorder)
+            net.bind(views)
+        tok = tokenizer(ckpt_meta)
+        decodable = decodable_vocab(tok)
+        drafter = NullDrafter()
+        if D:
+            with recorder.phase("load drafter"):
+                dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
+            drafter = drafter_mod.Drafter(D, net, decodable)
+            drafter.bind(dviews)
+        caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape)
+        # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
+        aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
+        engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
+                             decodable=decodable, aux_layers=aux)
+        contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
+                                  max_wait_s=MAX_WAIT_S, max_running=max_seqs)
+        engine.memory = memory
+        engine.prefill_chunk = sched.chunk_for(contract.chunk_align, contract.token_budget, contract.draft_slots)
+        if memory is not None:
+            memory.checkpoint("loaded")
+        tiered = None
+        if tier_dir:                                                                    # D16: idle conversations park on NVMe, per rank
+            tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
+            tiered = TieredKV(caches.pool, tier)
+        runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
+                        keep_idle=tiered is not None)                                  # with a tier, conversations live on and park
+        recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
+        return F, net, caches, engine, runner
+    except BaseException:
+        if memory is not None:
+            memory.close()
+        raise
 
 
 def run_prompts(engine: Glm53Engine, runner: Runner, prompts: "dict[int, list[int]]"):
@@ -271,15 +301,34 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                                tier_dir=a.tier_dir if a.park else None,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
-        server = Server(engine, runner, comm, port=port)
+        tok = tokenizer(a.ckpt_meta)
+        server = Server(engine, runner, comm, port=port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
+                        model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END))
         httpd = None
         if comm.rank == 0:
             httpd = server._serve_http()                       # the door opens before the loop
-            def post(body):
-                req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/completions", method="POST",
+            def post(body, path="/v1/completions"):
+                req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method="POST",
                                              data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
                 with urllib.request.urlopen(req, timeout=3600) as r:
                     return json.loads(r.read())
+
+            def stream_chat(body):                            # the bench's dialect: SSE chunks, usage at the end
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", method="POST",
+                                             data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+                text, usage, finish = [], {}, None
+                with urllib.request.urlopen(req, timeout=3600) as r:
+                    for raw in r:
+                        line = raw.decode("utf-8", "replace").strip()
+                        if not line.startswith("data:") or line[5:].strip() == "[DONE]":
+                            continue
+                        obj = json.loads(line[5:])
+                        usage = obj.get("usage") or usage
+                        for ch in obj.get("choices") or []:
+                            d = ch.get("delta") or {}
+                            text.append(d.get("content") or d.get("reasoning_content") or "")
+                            finish = ch.get("finish_reason") or finish
+                return {"text": "".join(text), "usage": usage, "finish_reason": finish}
 
             def client():
                 try:
@@ -287,6 +336,9 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                         results[seq] = post({"ids": ids, "max_tokens": a.max_new})
                     if a.park:                                # a second turn on conversation 0: parked on NVMe after its first, resumed here
                         results["turn2"] = post({"conversation": results[0]["conversation"], "ids": prompts[0][:5], "max_tokens": 4})
+                    results["chat"] = stream_chat({"messages": [{"role": "user", "content": "안녕? 한 줄로 답해."}], "max_tokens": 6,
+                                                   "stream": True, "stream_options": {"include_usage": True},
+                                                   "chat_template_kwargs": {"thinking": True}})
                 except Exception as e:                        # noqa: BLE001
                     results["error"] = repr(e)
                 server.alive = False                          # rank 0 stops after the last answer ...
@@ -310,7 +362,7 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
     t0 = time.perf_counter()
     outs = tp.run(rank_main)
     secs = time.perf_counter() - t0
-    answers = {k: v for k, v in results.items() if k != "turn2"}
+    answers = {k: v for k, v in results.items() if k not in ("turn2", "chat")}
     ok = len(answers) == len(prompts) and all(len(r["ids"]) == a.max_new for r in answers.values())
     for seq, r in sorted(answers.items()):
         print(f"    seq {seq}: {r['completion_tokens']} tokens in {r['seconds']} s  {r['ids'][:8]}...")
@@ -318,6 +370,9 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
         t2 = results.get("turn2", {})
         print(f"    turn 2 on conversation {t2.get('conversation')}: {t2.get('completion_tokens')} tokens in {t2.get('seconds')} s (resumed from NVMe, 5 new prompt tokens)")
         ok = ok and t2.get("completion_tokens") == 4
+    chat = results.get("chat", {})
+    print(f"    chat (v2 template, streamed): {chat.get('usage', {}).get('completion_tokens')} tokens, finish {chat.get('finish_reason')}, text {chat.get('text', '')[:60]!r}")
+    ok = ok and chat.get("usage", {}).get("completion_tokens") == 6 and chat.get("finish_reason") in ("stop", "length")
     print(f"  serve loop on four ranks: {outs[0]['steps']} steps, {outs[0]['served']} answered over HTTP in {secs:.1f} s")
     print("\n  " + ("PASS: requests in at rank 0, tokens out, every rank in lockstep" if ok else "FAIL"))
     return 0 if ok else 1
@@ -339,6 +394,9 @@ def fleet(a) -> int:
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
         with rec.phase("capture decode"):
             engine.capture_decode(MAX_SEQS)
+        if engine.memory is None or not engine.memory.ready:
+            raise RuntimeError("full-model serving requires runtime memory qualification")
+        engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
         dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
         if comm.rank == 0:
             print(rec.table())
@@ -346,13 +404,21 @@ def fleet(a) -> int:
             if runner.tiered is not None:
                 t = runner.tiered.tier
                 print(f"  NVMe tier: {sum(1 for k in t.index if t.has(int(k)))} conversations parked from before, {len(t.stale())} under another layout (kept, not resumable)")
-        Server(engine, runner, comm, port=a.port, tokenizer=tokenizer(a.ckpt_meta)).loop()
+        tok = tokenizer(a.ckpt_meta)
+        Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
+               model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END)).loop()
     finally:
-        if dump is not None:
-            dump.close()
-        if engine is not None:
-            engine.close_decode()
-        comm.close()
+        try:
+            if dump is not None:
+                dump.close()
+            if engine is not None:
+                try:
+                    if engine.memory is not None:
+                        engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
+                finally:
+                    engine.close_decode()
+        finally:
+            comm.close()
     return 0
 
 

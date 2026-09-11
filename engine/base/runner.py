@@ -207,7 +207,7 @@ class Runner:
         """An idle conversation decodes again (its next token is pending in the model)."""
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle")
-        if len(self.state.running) >= self.c.max_running:
+        if len(self.state.running) + int(self.state.in_prefill is not None) >= self.c.max_running:
             raise ValueError("decode width is full; wake it later")
         self.idle.pop(seq)
         self.state.running.append(seq)

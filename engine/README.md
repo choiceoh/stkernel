@@ -30,6 +30,14 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     bash launchers/start-st-glm53.sh             # 부팅; glm53*/q38* 컨테이너가 있으면 거부
     curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64}'
     curl -s http://10.10.10.2:8000/v1/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
+    bash launchers/start-st-glm53.sh stop        # 컨테이너 제거 + 잠금 해제. start 는 glm53*/q38*/vllm*/st-* 컨테이너나 srv2 의 `st-fleet.lock` 이 있으면 거부한다
+                                                 # (플릿을 쓰는 세션은 모두 이 잠금을 지킨다: 09-11 19:42 두 세션의 플릿이 같은 노드에서 충돌해 둘 다 죽었다)
+    curl -s http://10.10.10.2:8000/v1/chat/completions -d '{"messages":[{"role":"user","content":"..."}],"max_tokens":64,"stream":true}'   # OpenAI 방언(SSE), bench/onepass.py 가 쓰는 것
+    curl -s http://10.10.10.2:8000/v1/models; curl -s http://10.10.10.2:8000/metrics                                  # 모델 이름, 벤치 이름의 카운터
+
+문(`base/serve.py`): 엔진 방언(`POST /v1/completions` ids|prompt, `conversation` 으로 이어가기)과 OpenAI chat 방언(`POST /v1/chat/completions`,
+`stream` 이면 토큰 단위 SSE, `chat_template_kwargs` 통과, `</think>` 앞은 `reasoning_content` 뒤는 `content`; `GET /v1/models`, `/metrics`, `/health`).
+프로필이 템플릿(`chat_template_mm_v2.jinja`, 프로덕션과 같은 것)과 `</think>` id 를 넘긴다.
 
 GLM의 `served()`는 `engine/kernels`를 직접 호출한다. KDA·conv·mHC·kpool·MLA·b12x는
 이 패키지 안에 있고, 인덱서와 mHC prenorm GEMM은 독립 `deep_gemm` 라이브러리를 사용한다.
@@ -82,6 +90,8 @@ b12x는 이식 전 FlashInfer 커널과 직접 비교하며, PyTorch 참조와 �
   블록 풀과 러너 상태는 러너를 소유한 스레드에서 갱신한다.
 - 대기 상한은 디코드 폭에 여유가 있을 때 프리필을 허용한다. `max_running`이 꽉 차면 기존 요청이
   끝날 때까지 기다린다. 이미 실행 폭을 넘긴 상태는 오류이며, 앞쪽 요청만 잘라 실행하지 않는다.
+  입장한 긴 프리필은 청크 사이에 실행 중인 디코드를 한 번씩 처리한다. 프리필 중인 요청의
+  디코드 자리도 예약으로 취급하므로 유휴 대화 깨우기가 그 자리를 가져갈 수 없다.
 - 파킹의 단위는 **대화**이지 행이 아니다. `Runner.park(row, key)`는 유휴 행의 블록과 상태 슬롯 바이트, 모델의 호스트
   기록(`Model.park`: 토큰 이력·문맥, `"context"`·`"pending"` 필수)을 `key` 아래 NVMe 로 내리고 **행과 슬롯을 즉시 반납**한다.
   `Runner.resume(row, key)`는 빈 행 아무 곳, 빈 슬롯 아무 곳으로 복귀한다(`Model.resume`은 슬롯을 지우지 않는다: 바이트는
@@ -104,7 +114,10 @@ EOS나 생성 한도에 도달하면 그 스텝에서 KV와 상태 슬롯을 반
 `draft_slots=0` 계약을 사용한다. PR #534의 `Glm53Engine`·`boot.py`는 같은 캐시와 러너 위에서
 DFlash2를 연결하며, 드래프터 문맥 링도 같은 아레나의 상태 슬롯 예산에 포함한다.
 
-`Glm53Engine`은 전체 행의 temperature가 0인 스텝에서 유효 어휘 뷰의 argmax만 실행한다.
+`Glm53Engine`은 전체 행의 temperature가 0인 스텝에서 rank별 유효 어휘 최댓값과 토큰 ID를
+하나의 int64 후보로 부호화하고 NCCL MAX로 선택한다. 전체 로짓을 모으지 않으며, 동점은
+가장 작은 전역 토큰 ID로 결정한다. 타깃 그래프는 rank별 로짓만 보관하고, 확률·혼합
+샘플링 그래프가 필요할 때 전체 로짓을 모은다. DFlash의 후보 top-k는 기존 경로다.
 이 스텝은 RNG를 소비하지 않는다. 확률·혼합 스텝은 기존 base sampler를 사용하며, 같은
 시작 RNG 상태에서 토큰과 종료 RNG 상태를 보존한다. 이전 버전의 greedy 스텝은 버릴 난수도
 소비했으므로, greedy 이후 확률 생성까지 포함한 버전 간 출력 일치는 보장하지 않는다.
@@ -165,6 +178,13 @@ recurrent 레인도 연결되어 검증 토큰마다 상태를 반환하고, 시
 MLA 참조 레인은 선택된 fp8 행만 변환하며, 패딩 슬롯이 가리키는 미사용 블록의 NaN을 마스킹한다.
 
 인덱서의 Hadamard-128 변환·FP8 양자화는 `indexer_quant` 레인으로 실행한다.
+키 풀링은 `kpool_compress` 레인이 `compress_pool_keys`를 직접 호출한다. GB10에서 128차원
+풀 하나를 1워프로 처리하며, XOR 짝을 이용한 Hadamard 회전은 공유 메모리를 사용하지 않는다.
+입력 스트라이드를 직접 받아 복사 없이 읽고, 결과 FP8 키와 스케일만 할당한다. 반환 전용
+경로에서 쓰지 않던 임시 캐시·위치 배열·쓰기 마스크를 만들지 않는다. BF16 반올림 경계와
+FP8 양자화 수식은 유지한다. 정확성 및 성능 근거는
+[`measurements/st_engine_warp_pooling_20260911`](../measurements/st_engine_warp_pooling_20260911/README.md)에 있다.
+
 선택한 풀의 최종 주소 생성은 `pool_slots` 레인 하나가 맡는다. GB10에서 토큰 2,051개를
 먼저 펼쳐 정렬하던 경로를, 풀 ID 512개를 정렬한 뒤 토큰을 생성하는 구조로 바꿨다.
 서빙 커널은 4워프 프로그램 하나가 한 행을 처리하며, 중간 GPU 텐서를 할당하지 않는다.
@@ -205,3 +225,9 @@ TP4의 두 층 검사에서 일반 실행·그래프 출력과 캐시가 일치�
 FP32 합산으로 줄였다. 전체 모델 첫 부팅은 CUDA 아레나 할당 실패로 중단됐다. 따라서 전체
 45층 품질·DFlash2 수용률·NVMe 간섭 ITL과 최종 플릿 릴리스는 아직 통과한 상태가 아니다.
 독립 이미지의 버전·소스 식별 방법은 [`runtime/README.md`](runtime/README.md)를 따른다.
+
+SM121a·TP4 후속 변경은 [`st_engine_four_optimizations_20260911`](../measurements/st_engine_four_optimizations_20260911/README.md)에 있다.
+타깃 그래프는 물리 슬롯 ID를 Triton 상태 커널에 전달한다. KDA는 이전 recurrent 상태 하나와
+conv 이력만 읽고 새 토큰 위치만 쓴다. 작은 인덱서 꼬리의 읽기 버퍼는 유지하며, 상태 링 전체의
+gather/commit은 하지 않는다. 전체 모델 부팅은 별도의 작업공간 상한과 OS 여유를 선언하고,
+최대 프리필·모든 그래프 형상의 준비 중 관측한 메모리 최대치를 저장한다.

@@ -1,0 +1,9 @@
+test_exact_random_shapes_dtypes_and_scales (test_engine_kpool_compress.PoolCompressTests.test_exact_random_shapes_dtypes_and_scales) ... ok
+test_graph_replay_reads_changed_keys_scores_and_bias (test_engine_kpool_compress.PoolCompressTests.test_graph_replay_reads_changed_keys_scores_and_bias) ... ok
+test_strided_views_match_without_materializing_inputs (test_engine_kpool_compress.PoolCompressTests.test_strided_views_match_without_materializing_inputs) ... ok
+test_uniform_pool_matches_independent_quantization_reference (test_engine_kpool_compress.PoolCompressTests.test_uniform_pool_matches_independent_quantization_reference) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 4.566s
+
+OK

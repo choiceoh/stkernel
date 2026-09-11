@@ -100,6 +100,8 @@ recurrent 링 204.0 (K+1=6 상태 × 34 층) + 드래프터 링 40.0 + conv 링 
   시퀀스당 207 MiB × (읽기+쓰기) × (gather+commit) = 828 MiB → n=4 에서 **3.3 GiB/스텝 ≈ 12 ms** (273 GB/s).
 - 커널은 이미 인덱스를 받는다: `fused_recurrent_kda(ssm_state_indices=…)`(IS_CONTINUOUS_BATCHING), `causal_conv1d_fn(cache_indices=…)`.
   슬롯 id 를 커널에 넘기면 복사가 사라진다(vLLM 방식). 게이트: 기존 17 케이스 그래프==eager 바이트 동일.
+- **main #549(codex, 같은 날)가 이미 이렇게 바꿨다**: 타깃 그래프가 물리 슬롯 id 를 Triton 상태 커널에 넘기고 상태 링 전체의 gather/commit 을 하지 않는다
+  (`measurements/st_engine_four_optimizations_20260911`). 이 항목은 병합으로 닫힌다.
 - 캡처 사다리는 4096→1,336,320 의 10 단 × 4 = 40 개 전체 모델 그래프. 서빙 최대 컨텍스트로 사다리를 자르면 그래프 수와
   인덱서 gather 상한이 같이 준다. 그래프 인스턴스 메모리는 `capture decode` 페이즈 델타로 먼저 읽는다.
 

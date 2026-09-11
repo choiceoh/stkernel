@@ -132,7 +132,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
     from engine.kernels.causal_conv import causal_conv1d_fn
     from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
-    from engine.kernels.kpool import fwht128_quant_fp8, kpool_compress_and_write_cache
+    from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
     from engine.kernels import mla as mk
     from engine.kernels.indexer import pool_slots
     ref = reference()
@@ -200,14 +200,6 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
         return fp8_fp4_mqa_logits((q8, None), (k8, k_scale.contiguous()), w.contiguous(),
                                   torch.zeros(t, device=q8.device, dtype=torch.int32), ke.contiguous(), clean_logits=False)
 
-    def kpool(k, score, ape):
-        pn = k.shape[0]
-        dummy = torch.zeros(1, 64, 132, device=k.device, dtype=torch.uint8)
-        res = kpool_compress_and_write_cache(dummy, k, score, ape, torch.arange(pn, device=k.device, dtype=torch.int64),
-                                             k.shape[1], return_compressed=True, write_cache=False)
-        q8 = res[0].view(torch.uint8).reshape(pn, -1)[:, :128].contiguous().view(torch.float8_e4m3fn)
-        return q8, res[1].reshape(pn, 1).float()
-
     def mla(q_abs, latent, slots, valid, scale, ckv_scale):
         mk.maybe_arm()
         if not mk._ARMED.get("mla"):
@@ -263,7 +255,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
-    return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, moe,
+    return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots)))
 
 
