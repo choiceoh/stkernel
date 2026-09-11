@@ -668,12 +668,14 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7,
                                                    'completion_tokens_details': {'reasoning_tokens': 4}})
             self.assertFalse(s._streams or s._sent or s.pending or s.results)
-            # reasoning: prompt "xy" repeats 'y' = reasoning_end -> the first token closes the (empty) reasoning, then content 'yyy'
+            # thinking off: the rendered prompt "xy" ENDS with 'y' = reasoning_end (the template closed the think block),
+            # so the door starts in content mode and every generated 'y' is content (45차 §22: an answer used to land in
+            # reasoning_content with thinking off, which the gateway's -low route never reads)
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 events = drive(s, pool.submit(stream, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 4, "stream": True}))
             chunks = [json.loads(e) for e in events[:-1]]
             deltas = [c['choices'][0]['delta'] for c in chunks if c['choices']]
-            self.assertEqual(''.join(d.get('content', '') for d in deltas), 'yyy')
+            self.assertEqual(''.join(d.get('content', '') for d in deltas), 'yyyy')
             self.assertEqual(''.join(d.get('reasoning_content', '') for d in deltas), '')
             self.assertEqual(s.split([1, ord('y'), 2, 3]), ([1], [2, 3]))
             self.assertEqual(s.split([1, 2]), ([1, 2], []))

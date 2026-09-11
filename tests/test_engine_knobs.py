@@ -43,7 +43,9 @@ class KnobDeclarationTests(unittest.TestCase):
         self.assertIn('Knob("moe_static"', src)
         self.assertIn('Knob("mla_prefill"', src)
         self.assertIn('Knob("context_ceiling"', src)
-        self.assertEqual(src.count("Knob("), 3)     # every axis still under measurement, and no more
+        self.assertIn('Knob("decode_eager"', src)         # 45차 §23: the fleet's decode-graph stall bisect, expires 2026-09-25
+        self.assertIn('Knob("lanes"', src)                # 45차 §23: served-vs-reference table bisect of the garbage output, expires 2026-09-25
+        self.assertEqual(src.count("Knob("), 5)     # every axis still under measurement, and no more
         self.assertIn('lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])', src)
 
 
