@@ -4,6 +4,7 @@ from __future__ import annotations
 import concurrent.futures
 import importlib.util
 import json
+import socket
 import threading
 import unittest
 import urllib.error
@@ -41,8 +42,9 @@ class Engine:
         if any(t >= 256 for t in ids):
             raise ValueError("token outside vocabulary")
 
-    def add(self, seq, ids, max_new, temperature):
+    def add(self, seq, ids, max_new, temperature, min_new=0):
         self.tokens[seq], self.limits[seq], self.output[seq] = list(ids), max_new, []
+        self.min_new = getattr(self, "min_new", {}); self.min_new[seq] = min_new
 
     def open(self, seq, slot):
         self.ctx[seq] = 0
@@ -571,7 +573,7 @@ class Tokenizer:
 def chat_server(**kw):
     s = server(**kw)
     s.tok = Tokenizer()
-    s.chat = lambda messages, kwargs: "".join(m["content"] for m in messages) + ("!" if kwargs.get("thinking") else "")
+    s.chat = lambda messages, kwargs: "".join(m.get("content") or "" for m in messages) + ("!" if kwargs.get("thinking") else "")
     s.model_name = "fake"
     return s
 
@@ -618,7 +620,8 @@ class ChatDoorTests(unittest.TestCase):
             # the fake engine runs to its limit regardless of eos; the door names the ending by the last token
             self.assertEqual(out['choices'][0]['message'], {'role': 'assistant', 'content': 'bbb'})
             self.assertEqual(out['choices'][0]['finish_reason'], 'stop')
-            self.assertEqual(out['usage'], {'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5})
+            self.assertEqual(out['usage'], {'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5,
+                                            'completion_tokens_details': {'reasoning_tokens': 0}})
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 3}))
             self.assertEqual(out['choices'][0]['message']['content'], 'yyy')
@@ -662,7 +665,8 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual(''.join(d.get('content', '') for d in deltas), '')
             self.assertGreaterEqual(sum(1 for d in deltas if d.get('reasoning_content')), 2)
             self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'length')
-            self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7})
+            self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7,
+                                                   'completion_tokens_details': {'reasoning_tokens': 4}})
             self.assertFalse(s._streams or s._sent or s.pending or s.results)
             # reasoning: prompt "xy" repeats 'y' = reasoning_end -> the first token closes the (empty) reasoning, then content 'yyy'
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
@@ -698,6 +702,142 @@ class ChatDoorTests(unittest.TestCase):
                 lines = future.result(timeout=5)
             self.assertTrue(any('"error"' in l for l in lines), lines)
             self.assertFalse(s._streams or s.pending)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+
+class CancelTests(unittest.TestCase):
+    """A request leaves wherever it is: the FIFO, a prefill, a decode; the client that asked, or the clock, or a stop string."""
+
+    def test_cancel_waiting_and_active_requests_release_rows_and_blocks(self):
+        s = server(rows=1, blocks=16)
+        a, ea = s.submit([1], 6, 0)
+        b, eb = s.submit([2], 6, 0)                 # waits: one row
+        s.once()                                    # a prefills
+        self.assertEqual(list(s._active), [0])
+        s.cancel(b, "client closed")
+        s.once()                                    # b leaves the FIFO before admission
+        self.assertTrue(eb.is_set())
+        with self.assertRaisesRegex(RequestError, "client closed"):
+            s.take_result(b)
+        self.assertEqual(len(s._waiting), 0)
+        s.cancel(a, "client closed")
+        s.once()
+        self.assertTrue(ea.is_set())
+        with self.assertRaisesRegex(RequestError, "cancelled"):
+            s.take_result(a)
+        self.assertFalse(s._active or s.runner.slot_of or s.engine.tokens)
+        self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+        self.assertEqual(s._free_rows, [0])
+        self.assertEqual(s.cancelled, 2)
+        c, ec = s.submit([3], 2, 0)                 # the row serves again
+        for _ in range(5):
+            s.once()
+        self.assertEqual(s.take_result(c), [3, 3])
+        self.assertIn('st:requests_cancelled_total{engine="st"} 2\n', s.metrics())
+
+    def test_timeout_cancels_with_504_and_a_conversation_row_is_freed(self):
+        s = server(rows=2, keep_idle=True)
+        clock = [100.0]
+        s.clock = lambda: clock[0]
+        s.request_timeout_s = 5.0
+        a, ea = s.submit([1], 50, 0)
+        s.once()
+        clock[0] = 104.0
+        s.once()
+        self.assertFalse(ea.is_set())
+        clock[0] = 106.0
+        s.once()
+        self.assertTrue(ea.is_set())
+        with self.assertRaises(RequestError) as error:
+            s.take_result(a)
+        self.assertEqual(error.exception.status, 504)
+        self.assertFalse(s._active or s._conversations or s._conversation_of or s.runner.slot_of)
+        self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+
+    def test_stop_string_ends_generation_early_in_both_modes(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        url = f'http://127.0.0.1:{httpd.server_port}/v1/chat/completions'
+        def post(body):
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)
+        def stream(body):
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return [json.loads(l.decode()[5:]) for l in r if l.startswith(b'data:') and b'[DONE]' not in l]
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:      # prompt "ab" repeats 'b': "bb" stops it at 2 tokens of 50
+                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 50, "stop": ["bb"]}))
+            self.assertEqual(out['choices'][0]['finish_reason'], 'stop')
+            self.assertEqual(out['choices'][0]['message']['content'], None)      # the text before the stop string is empty
+            self.assertLess(out['usage']['completion_tokens'], 50)
+            self.assertFalse(s._active or s.runner.slot_of, "the row was dropped, not run to the limit")
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                chunks = drive(s, pool.submit(stream, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 50, "stop": "yyy", "stream": True}))
+            content = ''.join(c['choices'][0]['delta'].get('content', '') for c in chunks if c['choices'])
+            self.assertEqual(content, 'yy')
+            self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'stop')
+            self.assertFalse(s._active or s._streams or s.pending or s.results)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_client_hangup_cancels_a_running_request(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        try:
+            sock = socket.create_connection(('127.0.0.1', httpd.server_port), timeout=5)
+            body = json.dumps({"messages": [{"role": "user", "content": "ab"}], "max_tokens": 40}).encode()
+            sock.sendall(b"POST /v1/chat/completions HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                         + f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+            for _ in range(2000):
+                s.once()
+                if s._active:
+                    break
+                threading.Event().wait(0.001)
+            self.assertTrue(s._active)
+            sock.close()                                              # the client leaves mid-generation
+            for _ in range(4000):
+                s.once()
+                if not s._active:
+                    break
+                threading.Event().wait(0.001)
+            self.assertFalse(s._active or s.runner.slot_of, "hang-up must drop the row")
+            self.assertEqual(s.cancelled, 1)
+            self.assertLess(s.generation_tokens_total, 40)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_min_tokens_n_logprobs_and_tools_reach_the_engine_and_the_parser(self):
+        s = chat_server()
+        s.tool_parser = lambda text: [("f", '{"a": 1}')] if "<tool_call>" in text else None
+        seen = {}
+        def render(messages, kwargs):
+            seen["kwargs"] = kwargs
+            return "ab"
+        s.chat = render
+        httpd = s._serve_http()
+        url = f'http://127.0.0.1:{httpd.server_port}/v1/chat/completions'
+        def post(body):
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)
+        try:
+            for body in ({"messages": [{"role": "user", "content": "a"}], "n": 2}, {"messages": [{"role": "user", "content": "a"}], "logprobs": True},
+                         {"messages": [{"role": "user", "content": "a"}], "stop": ["", "x"]}, {"messages": [{"role": "user", "content": "a"}], "min_tokens": 9, "max_tokens": 4}):
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    post(body)
+                self.assertEqual(error.exception.code, 400)
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 3, "min_tokens": 2,
+                                                  "tools": [{"type": "function", "function": {"name": "f"}}]}))
+            self.assertEqual(seen["kwargs"]["tools"][0]["function"]["name"], "f")
+            self.assertEqual(s.engine.min_new[0], 2)
+            self.assertEqual(out['choices'][0]['finish_reason'], 'length')
+            s.tok.decode = lambda ids, skip_special_tokens=True: "<tool_call>f<arg_key>a</arg_key><arg_value>1</arg_value></tool_call>"
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2}))
+            self.assertEqual(out['choices'][0]['finish_reason'], 'tool_calls')
+            self.assertEqual(out['choices'][0]['message']['tool_calls'][0]['function'], {'name': 'f', 'arguments': '{"a": 1}'})
+            self.assertEqual(out['choices'][0]['message']['content'], None)
         finally:
             httpd.shutdown(); httpd.server_close()
 

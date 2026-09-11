@@ -1,0 +1,17 @@
+[Unit]
+Description=ST engine GLM-5.3 TP=4 supervisor (4x GB10; boot-start + crash recovery; launchers/st-glm53-supervisor.sh)
+After=network-online.target docker.service
+Wants=network-online.target
+# One serving stack per fleet: production vLLM and the DSv4 stacks want :8000 and the whole GPU.
+Conflicts=dsv4-tp4.service dsv4-hybrid.service dsv4-nvfp4.service fleet-idle-recovery.timer
+
+[Service]
+Type=simple
+ExecStart=/home/choiceoh/st-engine/launchers/st-glm53-supervisor.sh
+Restart=always
+RestartSec=15
+StandardOutput=append:/home/choiceoh/glm53-logs/st-supervisor.log
+StandardError=append:/home/choiceoh/glm53-logs/st-supervisor.log
+
+[Install]
+WantedBy=default.target

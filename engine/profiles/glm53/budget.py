@@ -22,7 +22,7 @@ from pathlib import Path
 from engine.base.budget import (GIB, MEASURED, READ, LEDGER, DECLARED, Line, Budget, host_box, rank_weights)
 from engine.profiles.glm53 import facts, specs as specs_mod
 from engine.profiles.glm53 import drafter as drafter_mod
-from engine.profiles.glm53.caches import layout
+from engine.profiles.glm53.caches import layout, snapshot_layout
 
 RUNTIME_FLOOR_GIB = 5.54            # ledger 40th boot table (vLLM): CUDA context + NCCL 16 channels -- re-measure on ST
 WORKSPACE_GIB = 12.0                # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
@@ -44,7 +44,8 @@ def ledger_peak(path: "str | Path | None") -> "tuple[float, str] | None":
 
 def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | None" = None,
            ckpt: "str | Path" = facts.CKPT, ranks_dir: "str | Path | None" = None, rank: int = 0,
-           drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None) -> Budget:
+           drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
+           snapshots: int = 8) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave."""
     host_total, _ = host_box()
     if box_gib is None:
@@ -65,6 +66,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         drafter_gib = sum(s.nbytes() for s in drafter_mod.specs(D)) / GIB
     lay = layout(F, range(F.layers), draft_shape)
     slots_gib = (max_seqs + 1) * lay.slot_bytes / GIB
+    snapshot_bytes = snapshot_layout(F, range(F.layers), draft_shape)[0]
     blocks_at_kv = int((kv_gib * GIB - (max_seqs + 1) * lay.slot_bytes) // (lay.block_bytes + max_seqs * 4))
     peak = ledger_peak(ledger)
     workspace_evidence = "base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses beyond it"
@@ -80,6 +82,8 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         Line("drafter (DFlash2, replicated)", drafter_gib, READ, "drafter.specs: every rank holds the whole drafter (DRAFT_TP=1 as served)"),
         Line(f"state slots ({max_seqs} + null) x {lay.slot_bytes / 2**20:.0f} MiB", slots_gib, READ,
              "caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring"),
+        Line(f"prefix snapshots ({snapshots} x {snapshot_bytes / 2**20:.0f} MiB)", snapshots * snapshot_bytes / GIB, READ,
+             "caches.snapshot_layout: chunk-boundary position rings for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
         Line("workspace ceiling (outside the arena)", WORKSPACE_GIB, DECLARED, workspace_evidence),
         Line("NVMe tier staging", NVME_STAGING_BYTES / GIB, DECLARED, "kv_tier: pinned staging + device scratch"),
     ]
@@ -114,8 +118,9 @@ def main(argv=None) -> int:
     ap.add_argument("--box-gib", type=float, default=None)
     ap.add_argument("--ranks", default=str(facts.RANKS))
     ap.add_argument("--ledger", default=None, help="a boot's memory-rankN.json (RuntimeMemory.write)")
+    ap.add_argument("--snapshots", type=int, default=boot.PREFIX_SNAPSHOTS)
     a = ap.parse_args(argv)
-    b = budget(a.kv_gib, a.max_seqs, a.chunk, a.box_gib, ranks_dir=a.ranks, ledger=a.ledger)
+    b = budget(a.kv_gib, a.max_seqs, a.chunk, a.box_gib, ranks_dir=a.ranks, ledger=a.ledger, snapshots=a.snapshots)
     print(report(b))
     return 0
 
