@@ -136,7 +136,12 @@ def arrive(state: State, seq: int, prompt_len: int, now: float) -> None:
 
 
 def finish(state: State, seq: int) -> None:
-    state.running.remove(seq)
+    if seq in state.running:
+        state.running.remove(seq)
+    else:
+        state.waiting.remove(seq)
+    if state.in_prefill == seq:
+        state.in_prefill = None
     for d in (state.arrived_at, state.prompt_len, state.computed):
         d.pop(seq, None)
 

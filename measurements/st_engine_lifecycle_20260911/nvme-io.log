@@ -1,0 +1,1 @@
+{"passed": true, "kv_bytes": 16777216, "staging_bytes": 2097152, "bytes_written": 26214400, "bytes_read": 45875200, "producer_stream": true, "async_producer_stream": true, "concurrent_roundtrip": true, "replacement_failures_retryable": true, "cleanup_after_restart": true}

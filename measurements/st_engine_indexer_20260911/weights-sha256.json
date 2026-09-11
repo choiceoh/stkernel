@@ -1,0 +1,63 @@
+{
+  "L3.idx.wq_b": {
+    "shape": [
+      4096,
+      1536
+    ],
+    "dtype": "BF16",
+    "bytes": 12582912,
+    "sha256": "c58d21a544ee15d63714d1a5df296f31df5e98f37059a9f821108ad8f2ecba4e"
+  },
+  "L3.idx.wk": {
+    "shape": [
+      128,
+      4096
+    ],
+    "dtype": "BF16",
+    "bytes": 1048576,
+    "sha256": "e8e880132db835332f6ac1d16f93fc80c349006ec115e348bf118048a4ecbe72"
+  },
+  "L3.idx.w_heads": {
+    "shape": [
+      32,
+      4096
+    ],
+    "dtype": "F32",
+    "bytes": 524288,
+    "sha256": "71276d390f21717dee9c6a05a4400aedfb699a4488fcf794ec7259e5ea56a065"
+  },
+  "L3.idx.k_norm_w": {
+    "shape": [
+      128
+    ],
+    "dtype": "F32",
+    "bytes": 512,
+    "sha256": "bb34bf9c39f586cfa403be0783d00ee637caf623ed6d76b553add8ad75dcf258"
+  },
+  "L3.idx.k_norm_b": {
+    "shape": [
+      128
+    ],
+    "dtype": "F32",
+    "bytes": 512,
+    "sha256": "7e51e8ef1705cb037f0de5f5e3437c9d2871356ba0fb650661a17dab34ee6370"
+  },
+  "L3.idx.gate": {
+    "shape": [
+      128,
+      4096
+    ],
+    "dtype": "BF16",
+    "bytes": 1048576,
+    "sha256": "9c3c68e1e4098f9ee510a11b0b84dfb5a73af97c901320e215bf954cbb81dbed"
+  },
+  "L3.idx.ape": {
+    "shape": [
+      4,
+      128
+    ],
+    "dtype": "F32",
+    "bytes": 2048,
+    "sha256": "92cfe49a7e3c587ed9bc3fb2cb5e6b83a459e478c6081810394c6f3b02750a36"
+  }
+}

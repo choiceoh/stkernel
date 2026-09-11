@@ -35,7 +35,12 @@ class BlockPool:
         self.num_blocks = num_blocks
         # free stack: block ids, top at the end. int32 so it can be handed to a kernel.
         self.free = array("i", range(num_blocks - 1, -1, -1))
-        self.table = array("i", [EMPTY]) * (max_seqs * max_blocks_per_seq)
+        self._table = array("i", [EMPTY]) * (max_seqs * max_blocks_per_seq)
+        self.table = memoryview(self._table).toreadonly()
+        # Within one epoch a row only appends blocks. Release starts a new
+        # epoch, even if its next owner reserves the same number of blocks.
+        self._epochs = array("Q", [0]) * max_seqs
+        self.epochs = memoryview(self._epochs).toreadonly()
         self.max_blocks_per_seq = max_blocks_per_seq
         self.max_seqs = max_seqs
         self.tokens = array("i", [0]) * max_seqs           # tokens held per row
@@ -66,10 +71,11 @@ class BlockPool:
         return -(-tokens // self.block_size)
 
     def row(self, seq: int) -> memoryview:
+        """Read-only block ids; only reserve/release may change the mapping."""
         if not 0 <= seq < self.max_seqs:
             raise IndexError(f"row {seq} outside {self.max_seqs}")
         base = seq * self.max_blocks_per_seq
-        return memoryview(self.table)[base:base + self.max_blocks_per_seq]
+        return self.table[base:base + self.max_blocks_per_seq]
 
     def reserve(self, seq: int, tokens: int) -> int:
         """Grow `seq` to hold `tokens` more. Returns blocks newly taken."""
@@ -120,9 +126,9 @@ class BlockPool:
                 f"batch needs {grow} more blocks, {self.available} free: the "
                 "scheduler admitted more than the budget declared")
         for seq, have, need, tokens in growth:
-            row = self.row(seq)
+            base = seq * self.max_blocks_per_seq
             for i in range(have, need):
-                row[i] = self.free.pop()
+                self._table[base + i] = self.free.pop()
             if self.tokens[seq] == 0 and tokens:
                 self.rows_in_use += 1
             self.tokens[seq] += tokens
@@ -131,13 +137,16 @@ class BlockPool:
     def release(self, seq: int) -> int:
         """Give every block of `seq` back. Returns how many."""
         row = self.row(seq)
+        base = seq * self.max_blocks_per_seq
         n = 0
         for i in range(self.max_blocks_per_seq):
             if row[i] == EMPTY:
                 break
             self.free.append(row[i])
-            row[i] = EMPTY
+            self._table[base + i] = EMPTY
             n += 1
+        if n:
+            self._epochs[seq] += 1
         if self.tokens[seq]:
             self.rows_in_use -= 1
         self.tokens[seq] = 0

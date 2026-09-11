@@ -91,16 +91,28 @@ class Runner:
         self.slots.give(self.slot_of.pop(seq))
         self.model.close(seq)
 
+    def cancel(self, seq: int) -> None:
+        """Release a live or idle conversation, including its parked disk copy."""
+        if seq not in self.slot_of:
+            return
+        if seq in self.state.running or seq in self.state.waiting:
+            sched.finish(self.state, seq)
+        self.idle.pop(seq, None)
+        try:
+            if self.tiered is not None:
+                if self.tiered.is_parked(seq) or str(seq) in self.tiered.tier.index:
+                    self.tiered.tier.forget(seq)
+        finally:
+            if self.tiered is not None:
+                self.tiered.parked.pop(seq, None)
+            self._release(seq)
+
     def evict(self, seq: int) -> None:
-        """The conversation is over: blocks, slot and the model's buffers go."""
+        """The idle conversation is over: blocks, disk copy and slot go."""
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle")
-        self.idle.pop(seq)
-        if self.tiered is not None and self.tiered.is_parked(seq):
-            self.tiered.tier.forget(seq)
-            self.slots.give(self.slot_of.pop(seq)); self.model.close(seq)
-            return
-        self._release(seq)
+        self.cancel(seq)
+
 
     def park(self, seq: int) -> int:
         """An idle conversation leaves the arena but keeps its KV (D16).

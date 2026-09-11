@@ -118,6 +118,39 @@ class SchedulingTests(unittest.TestCase):
 
 
 class PoolTests(unittest.TestCase):
+    def test_mapping_appends_within_epoch_and_release_invalidates_reuse(self):
+        pool = BlockPool(4, 16, 2, 4)
+        pool.reserve(0, 1)
+        first = pool.row(0)[0]
+        epoch = pool.epochs[0]
+        pool.reserve_to([0], [16])
+        self.assertEqual(pool.epochs[0], epoch)
+        pool.reserve_to([0], [17])
+        self.assertEqual(pool.epochs[0], epoch)
+        self.assertEqual(pool.row(0)[0], first)
+        before = (pool_state(pool), list(pool.epochs))
+        with self.assertRaises(MemoryError):
+            pool.reserve_to([0, 1], [64, 64])
+        self.assertEqual((pool_state(pool), list(pool.epochs)), before)
+        pool.release(0)
+        self.assertGreater(pool.epochs[0], epoch)
+        epoch = pool.epochs[0]
+        pool.release(0)                        # releasing an empty row changes no mapping
+        self.assertEqual(pool.epochs[0], epoch)
+        pool.reserve(1, 16)
+        pool.reserve(0, 17)
+        self.assertEqual(pool.epochs[0], epoch)
+        self.assertNotEqual(pool.row(0)[1], first)
+
+    def test_mapping_and_epoch_views_reject_untracked_writes(self):
+        pool = BlockPool(4, 16, 2, 4)
+        pool.reserve(0, 17)
+        before = pool_state(pool)
+        for view in (pool.table, pool.row(0), pool.epochs):
+            with self.subTest(view=view.format), self.assertRaises(TypeError):
+                view[0] = 99
+        self.assertEqual(pool_state(pool), before)
+
     def test_absolute_horizons_reuse_draft_space_and_reserve_atomically(self):
         pool = BlockPool(3, 16, 2, 3)
         pool.reserve_many([0, 1], 16)
@@ -282,6 +315,20 @@ class RunnerTests(unittest.TestCase):
             r.step(now=1)
         self.assertEqual(r.state.running, [0])
         self.assertEqual(r.ring.count, 1)
+
+    def test_decode_failure_retries_reuse_the_same_reserved_horizon(self):
+        for bad in (lambda *a: [], lambda *a: (_ for _ in ()).throw(RuntimeError('decode failed'))):
+            r = runner(blocks=2)
+            r.submit(0, 16, now=0)
+            r.step(now=0)
+            r.model.decode = bad
+            for tick in range(10):
+                with self.assertRaises((RuntimeError, ValueError)):
+                    r.step(now=tick + 1)
+                self.assertEqual(r.kv.tokens[0], 17)
+                self.assertEqual(r.kv.available, 0)
+            r.cancel(0)
+            self.assert_empty(r)
 
     def test_metadata_uses_committed_context_after_batch_reservation(self):
         r = runner(contract=replace(CONTRACT, draft_slots=3))

@@ -37,7 +37,7 @@ import torch                                                     # noqa: E402
 from engine.base.arena import Arena                              # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
-from engine.base.loader import RankLoader                        # noqa: E402
+from engine.profiles.glm53.weights import rank_loader             # noqa: E402
 from engine.base.params import total_bytes                       # noqa: E402
 from engine.base.scheduler import Contract                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
@@ -141,10 +141,11 @@ def rank_main(comm, a, F, layers, lanes, ids, garbage):
     cap = -(-a.tokens // F.block) * F.block
     num_blocks = cap // F.block + 2
     cache_bytes = layout(F, layers).nbytes(num_blocks, 2)
+    rank = rank_loader(Path(a.ranks) / f"rank{comm.rank}of{facts.TP}.safetensors")
     with rec.phase("arena"):
         arena = Arena(total_bytes(specs) + 256 * len(specs) + len(layers) * (64 << 20) + cap * 8192 + cache_bytes)
     with rec.phase("load"):
-        views = RankLoader(Path(a.ranks) / f"rank{comm.rank}of{facts.TP}.safetensors").load(
+        views = rank.load(
             [s.name for s in specs], arena=arena, recorder=rec, max_run=128 << 20)
         net.bind(views)
     chain = ChainCaches(arena, F, net, cap)

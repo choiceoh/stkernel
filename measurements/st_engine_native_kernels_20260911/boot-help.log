@@ -1,0 +1,24 @@
+usage: boot.py [-h] [--local] [--layers LAYERS] [--ranks RANKS]
+               [--kv-gib KV_GIB] [--prompt PROMPT] [--seqs SEQS]
+               [--max-new MAX_NEW] [--temperature TEMPERATURE] [--seed SEED]
+               [--serve] [--drafter] [--port PORT] [--dump-dir DUMP_DIR]
+
+Boot GLM-5.3 on the ST engine (profile): facts -> comm -> arena -> loader
+
+options:
+  -h, --help            show this help message and exit
+  --local               four ranks as threads on this box, reference lanes
+  --layers LAYERS
+  --ranks RANKS
+  --kv-gib KV_GIB
+  --prompt PROMPT
+  --seqs SEQS
+  --max-new MAX_NEW
+  --temperature TEMPERATURE
+  --seed SEED
+  --serve               with --local: through the HTTP door and the lockstep
+                        loop
+  --drafter             with --local: DFlash2 drafts (aux layers clipped to
+                        the chain: plumbing, not quality)
+  --port PORT
+  --dump-dir DUMP_DIR

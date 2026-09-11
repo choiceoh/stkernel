@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "engine_root": "/opt/st/engine",
+  "kernel_modules": 51,
+  "served_table": "served",
+  "vllm_installed": false,
+  "vllm_loaded": false,
+  "weight_layout": "st-glm53-b12x-up-gate-v1",
+  "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+  "cuda": "13.0",
+  "packages": {
+    "torch": "2.13.0+cu130",
+    "triton": "3.7.1",
+    "flashinfer-python": "0.6.18.dev20260819",
+    "tilelang": "0.1.12",
+    "nvidia-cutlass-dsl": "4.6.2"
+  },
+  "deep_gemm_path": "/usr/local/lib/python3.12/dist-packages/deep_gemm/__init__.py",
+  "deep_gemm_source_files": 879,
+  "gpu": "NVIDIA GB10",
+  "capability": [
+    12,
+    1
+  ],
+  "sms": 48
+}

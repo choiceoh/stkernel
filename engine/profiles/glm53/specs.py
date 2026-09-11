@@ -13,7 +13,7 @@ because 16 divides every boundary here).
 Merges the served path does at load are done here instead, once: q|k|v|b|
 f_a|g_a into one KDA input projection, q_a|kv_a into one MLA down-projection,
 the three KDA convs into one [3HD, K] bank, gate|up into one dense/shared
-GEMM, and per-expert gate|up into `w13`. Dtype promotions likewise (A_log,
+GEMM, and per-expert up|gate into `w13` (b12x's row order). Dtype promotions likewise (A_log,
 dt_bias, mHC, indexer head-gate and k_norm to fp32: what the kernels read).
 The routed experts are written the way the served b12x lane eats them
 (flashinfer_b12x_moe.process_weights_after_loading): packed nibbles as is,

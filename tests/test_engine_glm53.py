@@ -57,6 +57,41 @@ class LayoutTests(unittest.TestCase):
             layout(replace(F, block=15), [1])
 
 
+@unittest.skipUnless(torch is not None, "requires PyTorch")
+class ExpertPreshardTests(unittest.TestCase):
+    def test_fp4_midpoints_round_to_even_mantissas(self):
+        from engine.modules.quant import _fp4_encode, FP4_TABLE
+        values = torch.tensor([.25, .75, 1.25, 1.75, 2.5, 3.5, 5.])
+        expected = torch.tensor([0., 1., 1., 2., 2., 4., 4.])
+        for sign in (1, -1):
+            actual = FP4_TABLE[_fp4_encode(sign*values).long()]
+            self.assertTrue(torch.equal(actual, sign*expected))
+
+    def test_each_rank_writes_up_then_gate_with_matching_folded_scales(self):
+        from engine.profiles.glm53.specs import layer_specs
+        from engine.modules.nvfp4_sf import unswizzle_sf
+        F = replace(tiny_facts(), dense=(0, 1), moe_inter=512)
+        specs = {s.name: s for s in layer_specs(F, 2)}
+        source = {}
+        for expert in range(F.experts):
+            prefix = f"model.language_model.layers.2.mlp.experts.{expert}."
+            rank_rows = torch.arange(F.moe_inter) // F.moe_inter_local
+            for projection, value in (("up", 16), ("gate", 64)):
+                key = prefix + projection + "_proj."
+                source[key + "weight_packed"] = (value + rank_rows[:, None]).expand(-1, F.hidden//2).to(torch.uint8)
+                source[key + "weight_scale"] = torch.full((F.moe_inter, F.hidden//16), value/16).to(torch.float8_e4m3fn)
+                source[key + "weight_global_scale"] = torch.tensor(2.)
+        for rank in range(4):
+            packed = specs["L2.moe.w13"].build(source, rank, 4)
+            sf = specs["L2.moe.w13_sf"].build(source, rank, 4)
+            self.assertTrue(torch.all(packed[:, :F.moe_inter_local] == 16 + rank))
+            self.assertTrue(torch.all(packed[:, F.moe_inter_local:] == 64 + rank))
+            for expert in range(F.experts):
+                plain = unswizzle_sf(sf[expert].view(torch.uint8), 2*F.moe_inter_local, F.hidden//16).view(torch.float8_e4m3fn).float()
+                self.assertTrue(torch.all(plain[:F.moe_inter_local] == .5))
+                self.assertTrue(torch.all(plain[F.moe_inter_local:] == 2.))
+
+
 @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA PyTorch")
 class CudaCacheTests(unittest.TestCase):
     def test_paired_cache_oracle_checks_inputs_before_isolating_expert_rounding(self):
@@ -194,6 +229,152 @@ class CudaCacheTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.c.prepare(Step.prefill(ids, 0, 0, slot))
 
+    def test_prepare_publishes_growth_reuse_and_reset_without_stale_blocks(self):
+        c = self.c
+        c.pool.reserve(0, 16)
+        c.slots.take(0)
+        self.step(0, 6)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        c.pool.reserve_to([0], [32])
+        self.step(0, 6, 16)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        old = c.block_table[0].clone()
+        # Same-sized row, different physical blocks; its old epoch cannot win.
+        c.pool.release(0)
+        c.pool.reserve(1, 16)
+        c.pool.reserve(0, 32)
+        self.step(0, 6)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        self.assertFalse(torch.equal(c.block_table[0], old))
+        # A shorter new owner must clear the old suffix, not expose stale ids.
+        c.pool.release(0)
+        c.pool.reserve(0, 16)
+        self.step(0, 6)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        c.reset()                              # same owners/epochs, cleared device contents
+        self.step(0, 6)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+
+    def test_unchanged_mapping_still_checks_ownership_and_reservation(self):
+        from engine.profiles.glm53.net import Step
+        c = self.c
+        c.pool.reserve(0, 16)
+        slot = c.slots.take(0)
+        step = self.step(0, 6)
+        c.prepare(step)
+        c.pool.reserve_to([0], [15])            # rejected draft horizon reuses the same blocks
+        c.prepare(step)
+        c.slots.give(slot)
+        c.slots.take(1)
+        with self.assertRaisesRegex(ValueError, "does not own"):
+            c.prepare(step)
+        c.slots.give(slot)
+        c.slots.take(0)
+        with self.assertRaisesRegex(ValueError, "reserved context"):
+            c.prepare(Step.prefill(step.ids, 15, 0, slot))
+
+    def test_failed_table_upload_can_retry_the_same_mapping(self):
+        from engine.profiles.glm53.net import Step
+        from unittest.mock import patch
+        c = self.c
+        c.pool.reserve(0, 16)
+        slot = c.slots.take(0)
+        self.step(0, 6)
+        for replacement in (False, True):
+            with self.subTest(replacement=replacement):
+                if replacement:
+                    c.pool.release(0)
+                    c.pool.reserve(1, 16)
+                c.pool.reserve_to([0], [32])
+                step = Step.prefill(torch.zeros(6, dtype=torch.int64, device="cuda"), 16, 0, slot)
+                with patch.object(torch.Tensor, "copy_", side_effect=RuntimeError("injected upload failure")):
+                    with self.assertRaisesRegex(RuntimeError, "injected upload failure"):
+                        c.prepare(step)
+                c.prepare(step)
+                self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+
+    def test_cache_table_tracks_parking_and_failed_promotion_into_new_blocks(self):
+        from engine.base.tiered_kv import TieredKV
+        c = self.c
+        class Tier:
+            block_bytes = c.pool.block_bytes
+            fail = False
+            def demote(self, seq, storage, ids, tokens):
+                self.data = torch.cat([c.pool.block(i) for i in ids]).clone()
+                return self.data.numel()
+            def promote(self, seq, storage, ids):
+                for j, block in enumerate(ids):
+                    c.pool.block(block).copy_(self.data[j * self.block_bytes:(j + 1) * self.block_bytes])
+                    if self.fail:
+                        raise OSError("injected promotion failure")
+                return self.data.numel()
+            def forget(self, seq):
+                pass
+
+        tier = Tier()
+        kv = TieredKV(c.pool, tier)
+        c.pool.reserve(0, 32)
+        c.slots.take(0)
+        self.step(0, 6)
+        for i, block in enumerate(c.pool.blocks_of(0)):
+            block.fill_(i + 7)
+        old = c.block_table[0].clone()
+        kv.park(0)
+        tier.fail = True
+        with self.assertRaisesRegex(OSError, "promotion failure"):
+            kv.resume(0)
+        c.pool.reserve(1, 16)                   # another row occupies a formerly used block
+        tier.fail = False
+        kv.resume(0)
+        self.step(0, 6, 16)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        self.assertFalse(torch.equal(c.block_table[0], old))
+        self.assertTrue(torch.equal(torch.cat(c.pool.blocks_of(0)), tier.data))
+
+    def test_partial_replacement_upload_retries_and_clears_stale_suffix(self):
+        from engine.profiles.glm53.net import Step
+        from unittest.mock import patch
+        c = self.c
+        c.pool.reserve(0, 32)
+        slot = c.slots.take(0)
+        self.step(0, 6)
+        c.pool.release(0)
+        c.pool.reserve(0, 16)
+        step = Step.prefill(torch.zeros(6, dtype=torch.int64, device="cuda"), 0, 0, slot)
+        copy = torch.Tensor.copy_
+        def partial_copy(dst, src):
+            copy(dst[:1], src[:1])
+            raise RuntimeError("injected partial copy failure")
+        with patch.object(torch.Tensor, "copy_", partial_copy):
+            with self.assertRaisesRegex(RuntimeError, "injected partial copy failure"):
+                c.prepare(step)
+        self.assertEqual(c.block_table[0, 0].item(), c.pool.row(0)[0])
+        c.prepare(step)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+
+    def test_incremental_publication_matches_full_rows_across_random_lifetimes(self):
+        import random
+        from engine.profiles.glm53.net import Step
+        c = self.c
+        slots = [c.slots.take(seq) for seq in range(3)]
+        rng = random.Random(143)
+        ids = torch.zeros(1, dtype=torch.int64, device="cuda")
+        for tick in range(200):
+            seq = rng.randrange(3)
+            if rng.randrange(3) == 0:
+                c.pool.release(seq)
+            else:
+                try:
+                    c.pool.reserve(seq, rng.randrange(1, 18))
+                except MemoryError:
+                    pass
+            if tick % 23 == 0:
+                c.reset()
+            for s in range(3):
+                if c.pool.tokens[s]:
+                    c.prepare(Step.prefill(ids, c.pool.tokens[s] - 1, s, slots[s]))
+                    self.assertEqual(c.block_table[s].tolist(), list(c.pool.row(s)))
+
     def indexer(self):
         from engine.base.comm import Comm
         from engine.profiles.glm53 import lanes
@@ -236,6 +417,39 @@ class CudaCacheTests(unittest.TestCase):
                     net._indexer(1, x[ctx + accepted:end], qr[ctx + accepted:end], self.step(0, 6, ctx + accepted), c)
                     self.assertTrue(torch.equal(c.pool_keys(1)[ids].view(torch.uint8), expected_keys))
                     self.assertTrue(torch.equal(c.pool_scales(1)[ids], expected_scales))
+
+    def test_indexer_dispatches_quantization_and_pool_expansion_through_lanes(self):
+        from unittest.mock import Mock
+        net, x, qr = self.indexer()
+        quant = Mock(wraps=net.lanes.indexer_quant)
+        expand = Mock(wraps=net.lanes.expand_pools)
+        net.lanes = replace(net.lanes, indexer_quant=quant, expand_pools=expand)
+        self.c.pool.reserve(0, 24)
+        self.c.slots.take(0)
+        for ctx, length in ((0, 12), (12, 6)):
+            net._indexer(1, x[ctx:ctx + length], qr[ctx:ctx + length], self.step(0, length, ctx), self.c)
+            rows = quant.call_args.args[0]
+            self.assertEqual(rows.shape, (length * self.F.idx_heads, 128))
+            self.assertEqual(rows.dtype, torch.bfloat16)
+            self.assertTrue(rows.is_contiguous())
+            pools, seq_lens, size = expand.call_args.args
+            self.assertEqual(pools.shape, (length, self.F.topk // self.F.kpool))
+            self.assertEqual(seq_lens.tolist(), list(range(ctx + 1, ctx + length + 1)))
+            self.assertEqual(size, self.F.kpool)
+        self.assertEqual((quant.call_count, expand.call_count), (2, 2))
+
+    def test_indexer_lane_failure_propagates_without_reference_fallback(self):
+        from unittest.mock import Mock
+        net, x, qr = self.indexer()
+        original = net.lanes
+        self.c.pool.reserve(0, 16)
+        self.c.slots.take(0)
+        for name in ("indexer_quant", "expand_pools"):
+            with self.subTest(lane=name):
+                self.c.reset()
+                net.lanes = replace(original, **{name: Mock(side_effect=RuntimeError("injected lane failure"))})
+                with self.assertRaisesRegex(RuntimeError, "injected lane failure"):
+                    net._indexer(1, x[:12], qr[:12], self.step(0, 12), self.c)
 
     def test_long_prefill_ring_contains_only_the_latest_positions(self):
         net, x, qr = self.indexer()
@@ -313,6 +527,142 @@ class CudaCacheTests(unittest.TestCase):
         r.submit(0, torch.tensor([9], device="cuda"), 1, now=21)
         r.step(now=21)
         self.assertEqual(r.take_result(0), (10,))
+
+    def test_flat_decode_preserves_ragged_drafts_contexts_and_auxiliary_rows(self):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        from engine.profiles.glm53.net import Segment
+        from unittest.mock import patch
+
+        observed, steps = [], []
+        class Draft:
+            k = 2
+            aux_layers = ()
+            def propose(self, anchor, position, ring):
+                return {5: [6, 7], 21: [99], 30: []}[anchor]
+            def observe(self, ring, positions, aux):
+                observed.append((ring, positions.tolist(), aux[:, 0].tolist()))
+
+        net = self.runtime().net
+        def forward(step, caches, aux_layers=None):
+            steps.append(step)
+            return step.ids[:, None].float(), torch.arange(len(step.ids), device="cuda")[:, None]
+
+        engine = Glm53Engine(net, self.c, self.F, Draft())
+        jobs = [(2, [4], 2), (0, [18, 20], 4), (1, [0, 1, 29], 2)]
+        slots = []
+        with patch.object(net, "forward", side_effect=forward), patch.object(self.c, "draft_ring", side_effect=lambda slot: slot):
+            for seq, prompt, limit in jobs:
+                engine.add(seq, prompt, max_new=limit)
+                self.c.pool.reserve(seq, len(prompt) + 4)
+                slot = self.c.slots.take(seq)
+                slots.append(slot)
+                engine.open(seq, slot)
+                self.assertFalse(engine.prefill(seq, 0, len(prompt), None, slot))
+            observed.clear()
+            self.assertEqual(engine.decode([2, 0, 1], None, slots), [True, False, True])
+        self.assertEqual(steps[-1].ids.tolist(), [5, 6, 7, 21, 99, 30])
+        self.assertEqual(steps[-1].segments, (Segment(2, slots[0], 1, 0, 3),
+                                            Segment(0, slots[1], 2, 3, 2),
+                                            Segment(1, slots[2], 3, 5, 1)))
+        self.assertEqual(observed, [(slots[0], [1], [0]), (slots[1], [2], [3]), (slots[2], [3], [5])])
+        self.assertEqual([engine.context(s) for s in (2, 0, 1)], [2, 3, 4])
+        self.assertEqual([engine.generated(s) for s in (2, 0, 1)], [[5, 6], [21, 22], [30, 31]])
+        self.assertEqual((engine.accepted_total, engine.drafted_total), (1, 3))
+        result = engine.generated(2)
+        result.append(99)
+        self.assertEqual(engine.generated(2), [5, 6])  # result collection still returns an independent copy
+
+    def test_generation_count_resets_on_a_new_turn_after_long_history(self):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        engine.add(0, [1, 2])
+        engine.tokens[0].extend([3] * 65536)
+        engine.ctx[0] = len(engine.tokens[0]) - 1
+        self.assertEqual(engine._generated_count(0), 65536)
+        self.assertEqual(engine.extend(0, [4, 5], max_new=2), 3)
+        self.assertEqual(engine._generated_count(0), 0)
+        engine.tokens[0].append(6)
+        self.assertEqual(engine._generated_count(0), 1)
+        self.assertEqual(engine.generated(0), [6])
+
+    def test_clipped_drafts_leave_the_last_emitted_token_pending_for_the_next_turn(self):
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.profiles.glm53.adapter import Glm53Engine
+        from unittest.mock import patch
+        class Draft:
+            k = 2
+            aux_layers = ()
+            def propose(self, anchor, position, ring):
+                return [anchor + 1, anchor + 2]
+        engine = Glm53Engine(self.runtime().net, self.c, self.F, Draft(), max_new=2)
+        runner = Runner(engine, Contract(4, 8, 2, 0., 2), self.c.pool, self.c.slots,
+                        Ring(8, STEP_RECORD.size), keep_idle=True)
+        engine.add(0, [4]); runner.submit(0, 1)
+        with patch.object(self.c, "draft_ring", return_value=None):
+            while runner.step() is not None:
+                pass
+            self.assertEqual(engine.generated(0), [5, 6])
+            self.assertEqual(engine.context(0), 2)
+            self.assertEqual(engine.extension_tokens(0, [9]), 2)
+            runner.extend(0, engine.extend(0, [9], max_new=1))
+            while runner.step() is not None:
+                pass
+        self.assertEqual(engine.generated(0), [10])
+        self.assertEqual(engine.context(0), len(engine.tokens[0]) - 1)
+        runner.cancel(0)
+        engine.forget(0)
+
+    def test_http_engine_adapter_recycles_rows_and_releases_token_buffers(self):
+        from engine.base.comm import Comm
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.base.serve import Server
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        runner = Runner(engine, Contract(4, 8, 0, 0., 2), self.c.pool, self.c.slots, Ring(8, STEP_RECORD.size))
+        server = Server(engine, runner, Comm(1, 0))
+        jobs = [server.submit([i], 2, 0) for i in range(25)]
+        for _ in range(100):
+            if not server.once() and not server._waiting:
+                break
+        for i, (request, event) in enumerate(jobs):
+            self.assertTrue(event.is_set())
+            self.assertEqual(server.take_result(request), [i + 1, i + 2])
+        self.assertFalse(engine.tokens or engine.prompt_len or engine.limits or engine.ctx or engine.slot)
+        self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
+        self.assertEqual(self.c.slots.available, 4)
+
+    def test_serving_adapter_extends_cached_context_and_cancel_releases_idle_state(self):
+        from engine.base.comm import Comm
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.base.serve import Server
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        runner = Runner(engine, Contract(4, 8, 0, 0., 2), self.c.pool, self.c.slots,
+                        Ring(8, STEP_RECORD.size), keep_idle=True)
+        server = Server(engine, runner, Comm(1, 0))
+        first, _ = server.submit([4], 2, 0)
+        while server.once():
+            pass
+        self.assertEqual(server.take_result(first), [5, 6])
+        row = server._conversations[first]
+        self.assertEqual(engine.context(row), 2)
+        second, _ = server.submit([9, 10], 2, 0, conversation=first)
+        while server.once():
+            pass
+        self.assertEqual(server.take_result(second), [11, 12])
+        self.assertEqual(engine.tokens[row], [4, 5, 6, 9, 10, 11, 12])
+        self.assertEqual(engine.context(row), 6)
+        server.alive = False
+        server.once()
+        self.assertFalse(engine.tokens or engine.ctx or engine.slot or runner.idle)
+        self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
+        self.assertEqual(self.c.slots.available, 4)
 
     def test_runtime_can_stop_on_the_first_eos_without_decode(self):
         r = self.runtime(eos_ids=(7,))

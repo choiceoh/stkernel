@@ -18,6 +18,22 @@ KERNELS = ROOT / "engine/kernels"
 
 
 class KernelPackageTests(unittest.TestCase):
+    def test_glm_rank_rejects_ambiguous_expert_layout_before_loading(self):
+        from engine.profiles.glm53.weights import WEIGHT_LAYOUT, rank_loader
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rank.safetensors"
+            for marker in (None, "gate-up-v0", WEIGHT_LAYOUT):
+                header = {"L3.moe.w13": {"dtype": "U8", "shape": [0], "data_offsets": [0, 0]}}
+                if marker:
+                    header["__metadata__"] = {"weight_layout": marker}
+                raw = json.dumps(header).encode()
+                path.write_bytes(struct.pack("<Q", len(raw)) + raw)
+                if marker == WEIGHT_LAYOUT:
+                    self.assertEqual(rank_loader(path).keys(), ["L3.moe.w13"])
+                else:
+                    with self.assertRaisesRegex(ValueError, "regenerate rank files"):
+                        rank_loader(path)
+
     def test_ported_functions_have_their_module_globals(self):
         # Catch globals lost when extracting MLA/mHC from larger overlay files,
         # even in optional kernel branches that import-only checks cannot run.

@@ -9165,3 +9165,11 @@ mHC 는 `torch.ops.vllm` 등록 없이 pre/post 함수 직접 호출, MLA 는 �
 **잔여(헌장 D11/레거시)**: 커널 소스 안 환경 노브 35 개(b12x 21 — 정적 v2 사다리·EP tiled·W4A16 강제·prefill reuse; fla 8; mla 5; mhc 2;
 이름 `ST_GLM53_*`/`FLA_*`/`DENEB_*`) — 기본값이 서빙 경로, 정리는 다음 단계. .cu 는 MLA 만 바인딩하지만 통째. 런처는 노드마다 rsync →
 `build.sh` → run 으로 바꿨다(플릿 창 미확보라 미실행, `bash -n` 만). srv1 디스크는 그대로 열린 문제.
+
+**추기(19:10)**: 위를 쓰는 사이 codex 의 **PR #541**(`codex/st-engine-native-kernels`, +67,544)이 18:35 에 main 에 머지되어 있었다 — 같은
+패키지 + `weights.py` 표식(`weight_layout=st-glm53-b12x-up-gate-v1`, 없는 랭크 파일은 부팅·판정이 거부) + 자기 런처 + `measurements/
+st_engine_native_kernels_20260911`. 이 브랜치는 main 을 병합하며 커널·런타임·런처·프로브 러너·테스트·lanes·README 는 **main 을 택했고**,
+런처엔 노드마다 `build.sh` 한 줄(main 은 이미지가 없으면 중단만 한다), 프로브엔 §15 판정 주석만 되살렸다. 이 브랜치의 몫은 원장 §15~§17,
+`b12x_lane_semantics*` 판정, ST 이미지 안 판정 기록이다. **랭크 파일**: 표식이 있는 것은 codex 의 재절단본 `~/models/st-glm53-9391-up-gate-full`
+(19:04 완성, 4 × 44.5 GiB) 뿐이고, `facts.RANKS`(`glm53-redhat-nvfp4-tp4`, 내 v4)와 srv2·srv3 의 사본에는 없다 — 표식본을 제자리로 옮기고
+다시 fan-out 해야 main 의 엔진이 그 파일을 연다(운영자 판단: 178 GB 이동). 병합본 판정은 §18.
