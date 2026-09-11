@@ -13,13 +13,15 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 | 인덱서 로짓 | `deep_gemm.py`에서 `deep_gemm.fp8_fp4_mqa_logits` 직접 호출 | DeepGEMM |
 | kpool | `kpool.py`의 1워프 반환 전용 압축·회전·FP8 변환, 별도 캐시 쓰기 진입점 | PyTorch, Triton |
 | 인덱서 슬롯 | `indexer.py`의 풀 ID 정렬·토큰 확장·페이지 주소 변환·유효 개수·출력 쓰기를 한 커널에서 처리 | PyTorch, Triton |
-| MLA | `mla/`의 전용 Python 드라이버와 원본 그대로인 `glm53_megakernel.cu` | PyTorch, CUDA 13 nvcc |
+| MLA | `mla/`의 전용 Python 드라이버, warp max reduction과 DSMEM split 병합을 적용한 `glm53_megakernel.cu` | PyTorch, CUDA 13 nvcc |
 | b12x MoE | `b12x/`의 API·디스패치·CuTe 커널·내부 보조 모듈 | PyTorch, CUTLASS DSL, CUDA bindings, FlashInfer 유틸/JIT |
 
 `SOURCES.json`은 이식 전 파일의 경로와 SHA256을 기록한다. 저장소의 기존 overlay가
 소유하는 구현을 우선했고, 없는 FLA/b12x 보조 파일과 conv/kpool은 같은 플릿 이미지에서
 가져왔다. b12x의 stock `_moe_dynamic/gated.py`는 바이트를 유지해 기존 소스 검증도
 그대로 유효하다. KDA의 L2norm 소스 검증 값은 임포트가 바뀐 로컬 파일의 SHA256이다.
+MLA CUDA의 `sha256`은 이식 원본을 보존하고, `local_sha256`과 `local_modifications`는
+ST의 하드웨어 최적화가 반영된 파일과 변경 내용을 검증한다.
 라이선스와 출처는 `THIRD_PARTY_NOTICES.md`에 있다.
 
 mHC는 GLM 레인이 호출하는 pre/post를 직접 제공한다. vLLM의 CustomOp 등록, 모델 후크,
@@ -31,6 +33,15 @@ GB10 플릿 이미지의 PDL 정책을 유지한다: conv·TileLang·DeepGEMM에
 DeepGEMM 설정은 첫 실행에 한 번 적용해 CPU에서의 패키지 검사와 장치 배정 전 임포트가
 CUDA 문맥을 만들지 않게 한다. MLA는 첫 eager 호출에 JIT와 수치 판정을 끝내야 한다.
 그래프 캡처 중 처음 부르면 명시적으로 실패한다.
+
+MLA는 GB10에서 실측한 thread-block cluster와 distributed shared memory(DSMEM)를
+사용한다. 기본 split 계획과 합산 순서를 유지하면서 `32 <= T <= 64`, `1 <= W <= 2176`,
+split 2 또는 3인 호출만 cluster로 실행한다. 각 split의 기존 shared memory를 재사용해
+FP32 부분값을 합치므로 이 경로는 전역 partial 버퍼와 grid 전체 ticket barrier를 사용하지
+않는다. 다른 형상은 기존 경로를 사용한다. `ST_GLM53_MK_MLA_CLUSTER=0`으로 cluster를
+끄고 비교할 수 있으며, 부팅 시 실제 커널의 cluster 수용량과 수치 결과를 확인한다.
+측정에서 느렸던 4~8-block cluster는 기본 디스패치에 포함하지 않았다.
+결과와 재현 절차는 [GB10 MLA 측정](../../measurements/st_gb10_mla_20260911/README.md)에 있다.
 
 이식한 Python 실험 변수는 `ST_GLM53_*` 이름을 사용한다. 예를 들어 KDA strided norm은
 `ST_GLM53_KDA_PREFILL_QK_NORM`, mHC big-fuse 설정은 `ST_GLM53_MHC_BIGFUSE`다.

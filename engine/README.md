@@ -38,6 +38,22 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 문(`base/serve.py`): 엔진 방언(`POST /v1/completions` ids|prompt, `conversation` 으로 이어가기)과 OpenAI chat 방언(`POST /v1/chat/completions`,
 `stream` 이면 토큰 단위 SSE, `chat_template_kwargs` 통과, `</think>` 앞은 `reasoning_content` 뒤는 `content`; `GET /v1/models`, `/metrics`, `/health`).
 프로필이 템플릿(`chat_template_mm_v2.jinja`, 프로덕션과 같은 것)과 `</think>` id 를 넘긴다.
+요청은 `stop`(문자열 ≤4, 내용 채널에서 잘라 조기 종료), `min_tokens`(그 전엔 끝 토큰 불가), `tools`(템플릿이 렌더, 답의
+`<tool_call>` 은 `tool_calls` 로 파싱, finish `tool_calls`), `n`=1 만, `logprobs` 는 400. 클라이언트가 끊으면(소켓 EOF·broken pipe) 요청을
+취소해 행을 돌려주고, `REQUEST_TIMEOUT_S`(3600) 를 넘긴 요청은 504 로 취소한다 — 취소는 rank 0 이 도착과 같은 브로드캐스트로 실어 네 랭크가
+같은 반복에서 같은 행을 버린다(`/metrics` 의 `st:requests_cancelled_total`).
+
+운영(`launchers/st-glm53-supervisor.sh` + `st-glm53.service`, 헤드 srv2 의 사용자 유닛): 30 s 마다 진짜 4 토큰 chat 으로 건강을 재고(문이
+열려 있어도 링은 죽어 있을 수 있다), 3 회 연속 실패면 포렌식(네 랭크 로그·free·nvidia-smi·metrics → `~/glm53-logs/st-forensics/`) → stop →
+start. 재시작 간격은 60 s 부터 두 배씩 30 분까지, 5 회 실패 뒤엔 멈추고 사람을 부른다. 프로덕션 vLLM·q38 컨테이너가 보이면 절대 띄우지 않는다.
+`ST_SUPERVISOR_ONCE=1` 로 한 사이클만 판정할 수 있다.
+
+Prefix 재사용(`base/prefix.py`): 프롬프트를 프리필 청크(6,912 = 블록 3개) 단위로 해시 사슬을 만들고, 청크 경계마다 모델의 위치 링 상태
+(KDA conv 탭 3개 + 재귀 상태 1개 × 34층, 드래프터 문맥 링; 인덱서 꼬리는 경계에서 비어 있어 제외)를 아레나의 스냅샷 슬롯(`PREFIX_SNAPSHOTS`
+= 8, 랭크당 ~77 MiB 씩)에 두고 그 앞 블록들을 고정한다. 새 프롬프트는 자기 길이보다 짧은 가장 긴 캐시 경계를 **입양**(읽기 전용 공유
+블록 + 슬롯에 상태 복원)하고 거기서부터 프리필한다 — 토큰 하나는 반드시 계산한다. 블록 소유는 개수(행 참조 + 캐시 핀)로, 예약이 모자라면
+풀이 캐시에 LRU 회수를 요청한다. 랭크 넷이 같은 승인을 같은 순서로 하므로 메시지 없이 같은 캐시 상태다. 판정: `tests/test_engine_prefix.py`
+(가짜 모델), GPU 는 `probes/engine_prefix_check.py`(같은 두 청크를 공유하는 두 프롬프트가 같은 토큰을 내야 한다).
 
 GLM의 `served()`는 `engine/kernels`를 직접 호출한다. KDA·conv·mHC·kpool·MLA·b12x는
 이 패키지 안에 있고, 인덱서와 mHC prenorm GEMM은 독립 `deep_gemm` 라이브러리를 사용한다.
