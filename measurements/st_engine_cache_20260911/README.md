@@ -1,6 +1,7 @@
 # Incremental GLM block-table publication — 2026-09-11
 
 Baseline: PR #539 merge `0af79ecc2996304933b726310ffbe1fe7fc8add9`.
+Measured implementation: `c28b047672be0477d9bdedf39a8a5184dc91d172`.
 This second optimization removes repeated full-capacity host block-table
 construction and CUDA copies from `Glm53Caches.prepare`.
 

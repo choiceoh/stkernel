@@ -383,6 +383,39 @@ class CudaCacheTests(unittest.TestCase):
                     self.assertTrue(torch.equal(c.pool_keys(1)[ids].view(torch.uint8), expected_keys))
                     self.assertTrue(torch.equal(c.pool_scales(1)[ids], expected_scales))
 
+    def test_indexer_dispatches_quantization_and_pool_expansion_through_lanes(self):
+        from unittest.mock import Mock
+        net, x, qr = self.indexer()
+        quant = Mock(wraps=net.lanes.indexer_quant)
+        expand = Mock(wraps=net.lanes.expand_pools)
+        net.lanes = replace(net.lanes, indexer_quant=quant, expand_pools=expand)
+        self.c.pool.reserve(0, 24)
+        self.c.slots.take(0)
+        for ctx, length in ((0, 12), (12, 6)):
+            net._indexer(1, x[ctx:ctx + length], qr[ctx:ctx + length], self.step(0, length, ctx), self.c)
+            rows = quant.call_args.args[0]
+            self.assertEqual(rows.shape, (length * self.F.idx_heads, 128))
+            self.assertEqual(rows.dtype, torch.bfloat16)
+            self.assertTrue(rows.is_contiguous())
+            pools, seq_lens, size = expand.call_args.args
+            self.assertEqual(pools.shape, (length, self.F.topk // self.F.kpool))
+            self.assertEqual(seq_lens.tolist(), list(range(ctx + 1, ctx + length + 1)))
+            self.assertEqual(size, self.F.kpool)
+        self.assertEqual((quant.call_count, expand.call_count), (2, 2))
+
+    def test_indexer_lane_failure_propagates_without_reference_fallback(self):
+        from unittest.mock import Mock
+        net, x, qr = self.indexer()
+        original = net.lanes
+        self.c.pool.reserve(0, 16)
+        self.c.slots.take(0)
+        for name in ("indexer_quant", "expand_pools"):
+            with self.subTest(lane=name):
+                self.c.reset()
+                net.lanes = replace(original, **{name: Mock(side_effect=RuntimeError("injected lane failure"))})
+                with self.assertRaisesRegex(RuntimeError, "injected lane failure"):
+                    net._indexer(1, x[:12], qr[:12], self.step(0, 12), self.c)
+
     def test_long_prefill_ring_contains_only_the_latest_positions(self):
         net, x, qr = self.indexer()
         self.c.pool.reserve(0, 40)

@@ -1,4 +1,4 @@
-"""The nine kernel lanes GLM-5.3 runs on (profile), bound two ways.
+"""The kernel lanes GLM-5.3 runs on (profile), bound two ways.
 
     reference()   the engine's torch references in modules/* -- each one
                   judged against its served kernel in probes/ (44th ledger):
@@ -11,7 +11,7 @@
                   raises, the boot dies (D3) -- there is no per-lane
                   fallback to the reference.
 
-The model (net.py) calls only these nine names; everything else it does is
+The model (net.py) calls only these names; everything else it does is
 plain torch on views. One contract per lane, spelled in the docstrings.
 """
 from __future__ import annotations
@@ -38,6 +38,8 @@ class Lanes:
                               #  scale, ckv_scale) -> [T,H,512] bf16
     moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8, w13_sf [E, 2I*H/16] e4m3 (folded, interleaved),
                               #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit) -> [T,H] bf16: this rank's routed partial (shared expert excluded)
+    indexer_quant: object     # contiguous [R,128] bf16 -> Hadamard-rotated [R,128] e4m3, per-row pow2 [R,1] f32 scale
+    expand_pools: object      # pool ids [T,topk/pool] int32, seq_lens [T] int32, pool size -> [T,topk+pool-1] int32 tokens, -1 padded
 
 
 _TP = {"active": None}
@@ -67,7 +69,7 @@ def reference() -> Lanes:
     from engine.modules.linear_attention import gated_delta_rule, kda_gate
     from engine.modules.moe import expert_gemm
     from engine.modules.sparse_attention import mla_sparse_mqa
-    from engine.modules.sparse_indexer import indexer_logits, kpool_compress
+    from engine.modules.sparse_indexer import fwht128_quant, indexer_logits, kpool_compress, select_with_tail
 
     def conv_prefill(x, w, state):
         return causal_conv1d(x, w, None, state, "silu")
@@ -120,7 +122,7 @@ def reference() -> Lanes:
         return out.to(x.dtype)
 
     return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
-                 mla_sparse_mqa, moe)
+                 mla_sparse_mqa, moe, fwht128_quant, select_with_tail)
 
 
 def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
@@ -135,7 +137,8 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     from vllm.model_executor.layers.mamba.ops.causal_conv1d import causal_conv1d_fn                # served op (judged: probes/conv_check.py)
     import vllm.model_executor.layers.mhc  # noqa: F401  registers torch.ops.vllm.mhc_*_tilelang (ours: overlay dsv4_mhc_tilelang)
     from vllm.utils.deep_gemm import fp8_fp4_mqa_logits                                             # served DeepGEMM op
-    from vllm.models.glm5next.nvidia.ops.kpool_compress import kpool_compress_and_write_cache        # served op (byte-identical to ours)
+    from vllm.models.glm5next.nvidia.ops.kpool_compress import (
+        expand_pools_and_append_tail, fwht128_quant_fp8, kpool_compress_and_write_cache)
     from vllm.model_executor.layers import glm53_megakernel as mk                                   # ours: overlay/modules/glm53_megakernel
     ref = reference()
 
@@ -250,7 +253,8 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
-    return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, moe)))
+    return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, moe,
+                                            fwht128_quant_fp8, expand_pools_and_append_tail)))
 
 
 def _selfcheck() -> None:

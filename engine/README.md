@@ -111,6 +111,12 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 recurrent 레인도 연결되어 검증 토큰마다 상태를 반환하고, 시작 상태를 보존한다.
 MLA 참조 레인은 선택된 fp8 행만 변환하며, 패딩 슬롯이 가리키는 미사용 블록의 NaN을 마스킹한다.
 
+인덱서의 Hadamard-128 변환·FP8 양자화와 pool→토큰 확장은 `indexer_quant`, `expand_pools`
+레인으로 실행한다. 서빙 표는 이미지의 융합 Triton 커널에 연결하고, 참조 표는 기존 PyTorch
+수식을 유지한다. 두 레인도 LocalTP의 메인 스레드 경유 규칙을 따르며, 바인딩이나 실행 실패는
+그대로 전파한다. 실제 가중치 인덱서의 결과·캐시 일치와 구성요소 성능은
+[`measurements/st_engine_indexer_20260911`](../measurements/st_engine_indexer_20260911/README.md)에 기록했다.
+
 네 노드 검증은 각 노드에서 같은 인자로 `check.py --distributed`를 실행한다.
 기본 노드 순서는 **rank 0=srv2, rank 1=srv1, rank 2=srv3, rank 3=srv4**다.
 `MASTER_ADDR`은 rank 0 서버를 가리켜야 한다. `RANK`, `WORLD_SIZE=4`, 격리된 `MASTER_PORT`,
