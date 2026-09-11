@@ -11,6 +11,7 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 | 상태 링 | `state.py`에서 물리 슬롯·위치로 필요한 이력을 읽고 변경된 위치만 쓰기 | PyTorch, Triton |
 | mHC pre / post | `mhc/`의 TileLang 혼합 커널과 작은 M의 prenorm 패딩 | PyTorch, TileLang, Triton, DeepGEMM |
 | 인덱서 로짓 | `deep_gemm.py`에서 `deep_gemm.fp8_fp4_mqa_logits` 직접 호출 | DeepGEMM |
+| 인덱서 query 양자화 | `kpool.py`의 Hadamard-128·FP8 커널, GB10 행 수별 1/8/32행 tile | PyTorch, Triton |
 | kpool | `kpool.py`의 1워프 반환 전용 압축·회전·FP8 변환, 별도 캐시 쓰기 진입점 | PyTorch, Triton |
 | 인덱서 슬롯 | `indexer.py`의 풀 ID 정렬·토큰 확장·페이지 주소 변환·유효 개수·출력 쓰기를 한 커널에서 처리 | PyTorch, Triton |
 | MLA | `mla/`의 전용 Python 드라이버, warp max reduction과 DSMEM split 병합을 적용한 `glm53_megakernel.cu` | PyTorch, CUDA 13 nvcc |
@@ -42,6 +43,12 @@ FP32 부분값을 합치므로 이 경로는 전역 partial 버퍼와 grid 전�
 않는다. 다른 형상은 기존 경로를 사용한다. A/B 는 `maybe_arm()` 전에 모듈 속성 `mla.ENABLE_MLA_CLUSTER=False` 로 끄고 비교하며(env 아님), 부팅 시 실제 커널의 cluster 수용량과 수치 결과를 확인한다.
 측정에서 느렸던 4~8-block cluster는 기본 디스패치에 포함하지 않았다.
 결과와 재현 절차는 [GB10 MLA 측정](../../measurements/st_gb10_mla_20260911/README.md)에 있다.
+
+인덱서 query 양자화는 회전·BF16 반올림·FP8 scale 계산을 유지하면서 launch 크기를
+선택한다. 1,024행 이하는 1행·1 warp, 1,025~65,536행은 8행·1 warp를 사용하며,
+더 큰 입력은 기존 32행·2 warp를 사용한다. GLM의 인덱서 head는 32개이므로 행 수는
+토큰 수의 32배다. [GB10 양자화 측정](../../measurements/st_gb10_indexer_quant_20260911/README.md)에
+레지스터·shared memory, 실제 가중치 검사와 형상별 시간을 기록했다.
 
 ## 노브 (D11, 2026-09-12 정리)
 
@@ -89,7 +96,12 @@ API, 전체 수치 검사를 다시 검증한다. 이미지 빌드·프로브는
     bash probes/run_engine_check.sh --layers 0-4
 
 GPU 검사는 사용 가능한 GB10에서 실행한다. JIT 캐시는 기본 `$HOME/.cache/st`에 두며
-`ST_CACHE`로 변경한다. `--lanes conv,kda,mhc`처럼 일부 레인을 골라 재현할 수 있다.
+`ST_CACHE`로 변경한다. JIT 캐시 지도(2026-09-12 실측): Triton `/cache/triton`, TileLang `/cache/tilelang`,
+DeepGEMM `/cache/deep_gemm`, MLA nvcc 빌드 `/cache/mla`, b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
+`/cache/.cache/flashinfer/<버전>/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/*.o` 로 내보내고 적중 시 DSL 컴파일 없이 로드한다
+(키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
+`cute.compile` 에서 꺼지므로(`compile_only` → `no_cache`) ST 에는 무효다. 유일하게 디스크에 안 남는 것은 direct micro 커널의
+`cute.compile`(프로세스 안 캐시, 실제 스트림 규약)이다. `--lanes conv,kda,mhc`처럼 일부 레인을 골라 재현할 수 있다.
 b12x는 `--lanes moe --moe-experts 288`로 실제 TP4 형상(288 experts, top-k 8,
 hidden 4096, rank intermediate 512)을 추가 검사한다. 이 검사에서만 seed의 원본
 FlashInfer API를 호출해 이식 전후를 비교한다. 엔진은 항상 자체 b12x를 호출한다.

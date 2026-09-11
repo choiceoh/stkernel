@@ -86,7 +86,8 @@ def threaded_dispatch(fused):
     return {"logical_ranks": 4, "main_thread_dispatch_exact": True}
 
 
-def real_indexer(checkpoint, rank_file, ref, fused, baseline=None, *, baseline_lanes=None):
+def real_indexer(checkpoint, rank_file, ref, fused, baseline=None, *, baseline_lanes=None,
+                 graph_measurements=False):
     loader = rank_loader(rank_file)
     F = facts.load(checkpoint)
     assert F.is_dsa(3)
@@ -145,6 +146,29 @@ def real_indexer(checkpoint, rank_file, ref, fused, baseline=None, *, baseline_l
                              **paired(fns, rounds=5, samples=50, warmup=10)})
         assert all(torch.equal(a, b) for a, b in zip(fns[0](), fns[1]()))
         assert torch.equal(caches[0].paged, caches[1].paged) and torch.equal(caches[0].state, caches[1].state)
+        if graph_measurements:
+            import statistics
+            graphs, graph_outputs = [], []
+            for fn in fns:
+                graph = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(graph):
+                    result = fn()
+                graphs.append(graph)
+                graph_outputs.append(result)
+            samples = [[], []]
+            for tick in range(9):
+                for index in ((0, 1) if tick % 2 == 0 else (1, 0)):
+                    graphs[index].replay()
+                    begin, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+                    begin.record(); graphs[index].replay(); end.record(); end.synchronize()
+                    samples[index].append(begin.elapsed_time(end) * 1000)
+                assert all(torch.equal(a, b) for a, b in zip(*graph_outputs))
+                assert torch.equal(caches[0].paged, caches[1].paged)
+                assert torch.equal(caches[0].state, caches[1].state)
+            measurements[-1]["cuda_graph"] = {
+                key: {"samples_us": values, "median_us": statistics.median(values)}
+                for key, values in zip(("baseline", "optimized"), samples)}
+            measurements[-1]["graph_slots_counts_cache_exact"] = True
     return {"layer": 3, "weights": [s.name for s in specs], "weight_bytes": total_bytes(specs),
             "rank_file": str(rank_file), "config_sha256": hashlib.sha256((checkpoint / "config.json").read_bytes()).hexdigest(),
             "synthetic_activations": True, "selected_slots_counts_and_cache_bytes_exact": True, "checks": checked,

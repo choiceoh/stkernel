@@ -9277,3 +9277,12 @@ mHC big-fuse(GLM in-graph +0.1%, 9/1 트레이스 "아님"), 강제 W4A16(운영
 동적 tile_m 고정 `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(Qwen3.8 40행/전문가 셀 측정용), 백엔드·컷오버·MAC 사다리(모듈 속성 직접 대입), mHC TileLang 패스(TMA·WS)
 `engine.kernels.configure_mhc_passes()`(mhc 임포트 전; 순환 임포트 때문에 패키지 밖에 둠; mHC 는 프리필 스텝의 11.4% 인데 GLM 에선 미측정). 검증: 이미지 CPU 스위트
 181 tests OK(46 skip), 임포트 프로브 48 모듈 OK. 노브 수는 그대로 둘(`STK_moe_static`, `STK_mla_prefill`).
+
+**§21 보충 2 — JIT 캐시 지도 정정(운영자 "CUTE_DSL_CACHE_DIR 진행" 에 대한 답)**: 그 env 는 ST 에 무효라 넣지 않았다. 실측: (1) b12x 다섯 가족 중 넷(static·micro·dynamic·sf6 계열)은
+flashinfer 래퍼 `build_and_load_cute_dsl_kernel` 로 컴파일되고 `.o` 를 `/cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/` 아래(숨김 디렉터리, 앞선 `ls` 가 놓침)에
+내보낸다 — 프로덕션 캐시에 CuTe 계열 `.o` 75개 80 MB, ST 모듈 `st_b12x_moe_sm121a_cute_dsl` 10개; 적중이면 `cute.runtime.load_module` 로 로드하고 DSL 컴파일은 없다.
+(2) CuTe DSL 자체 파일 캐시는 `cute.compile` 경로에서 꺼진다(`dsl.py`: `if not no_cache and compile_only: no_cache = True`) — 토이 커널 두 번 컴파일에도 `CUTE_DSL_CACHE_DIR`
+에 파일 0개, 프로덕션 컨테이너 `/tmp/root/cutlass_python_cache` 도 36분 서빙 뒤 0개인 이유. (3) 디스크에 안 남는 것은 direct micro 커널 하나(`cute.compile` + 프로세스 안 dict,
+실제 스트림·자체 block-dim 프로브라 래퍼의 TVM-FFI 규약과 다름) — 래퍼로 옮기는 것은 GPU 검증이 필요한 후속; `STK_moe_static=t,r,sf6` 이면 이 경로는 안 탄다.
+(4) #555 의 `moe_dispatch.py` 편집은 `_kernel_source_files()` 해시에 들어가 다음 부팅에 ST 모듈 `.o` 10개가 한 번 재컴파일된다.
+
