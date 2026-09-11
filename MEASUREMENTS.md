@@ -8608,3 +8608,14 @@ took 50.4" → **잔차 +2.0 GiB(3.9%)** = 로드가 체크포인트에서 파�
   반환 그대로. 시뮬레이션 TP=2 로 전체 GEMM 대조(column 반쪽 concat, row 부분합, merged+복제 샤드, vocab 반쪽
   합, LM head gather), RMSNorm 융합 잔차형 == torch rms_norm, get_rope(0)→None(서빙 GLM 은 rope 없음).
 - 운영자 범위 확정: **Spark(GB10) 4대 + NVFP4 만, 레거시 없음** → NVFP4 가 가중치의 기본 형(헌장 D5 추가).
+
+### `modules/nvfp4_linear.py` — NVFP4 를 기본 형으로; **전역 스케일의 방향이 형식마다 반대다**
+
+투영 하나 = 디스크의 네 텐서 그대로(U8 packed · E4M3 16그룹 스케일 · F32 전역 둘), TP 는 packed 바이트
+위에서(column = 행, row = in/2 열 + 스케일 in/16 열). 실제 GLM 층 3 전문가 0 `gate_proj [2048, 4096]` 로
+검증: column 반쪽 concat == 전체, row 반쪽 합 == 전체(fp32 상대 1e-7), W4A4 finite, |W| std 0.0199.
+
+**함정(잡음)**: modelopt(Qwen) 의 `weight_scale_2` 는 **곱**(2.08e-4)인데 compressed-tensors(GLM) 의
+`weight_global_scale` 은 **나눗셈**(1.728e4 = 448·6/amax)이다. 곱으로 읽으면 투영이 3e8 배 커지고
+**아무 오류도 없다** — column 검사는 양쪽이 같은 실수를 공유해 통과했고, row 검사의 절대 허용오차만
+그걸 드러냈다. 교훈: 분할 일치는 검증이 아니다, **크기(std 1e-3~0.2)를 단언**해야 한다.
