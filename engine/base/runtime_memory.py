@@ -3,8 +3,15 @@
 The allocator's fraction API only enforces this byte ceiling; it never sets
 KV capacity. Direct CUDA allocations are outside that allocator, so boot
 also checks node-wide immediately free memory. Other processes can consume it.
+
+Each row also carries when it was taken and how long the step before it ran.
+That costs nothing -- the row already synchronizes CUDA to read its peaks --
+and it is what splits a boot's phases by time: the 45-layer boot's capture is
+28.2 s over 115 graphs and two prefill warmups (boot-time study, 2026-09-11),
+and until the rows had a clock nobody could say which of them it was.
 """
 import json
+import time
 from pathlib import Path
 
 
@@ -27,6 +34,9 @@ class RuntimeMemory:
         self.arena_bytes, self.workspace_bytes = arena_bytes, workspace_bytes
         self.os_reserve_bytes = os_reserve_bytes
         self.phases, self.ready, self.closed = [], False, False
+        self.clock = time.monotonic                 # injectable for tests
+        self.started = self.clock()
+        self.last = self.started
         self.status = None
         if comm is not None:
             import torch
@@ -47,9 +57,11 @@ class RuntimeMemory:
     def checkpoint(self, phase):
         """Boot only: retain transient peaks and require every TP rank to pass."""
         cuda = self.cuda
-        cuda.synchronize()
+        cuda.synchronize()                          # the row's peaks and its clock read the same instant
+        now = self.clock()
         free, _ = cuda.mem_get_info()
-        row = dict(phase=phase, allocated_bytes=cuda.memory_allocated(),
+        row = dict(phase=phase, at_seconds=round(now - self.started, 4),
+                   seconds=round(now - self.last, 4), allocated_bytes=cuda.memory_allocated(),
                    reserved_bytes=cuda.memory_reserved(),
                    peak_allocated_bytes=cuda.max_memory_allocated(),
                    peak_reserved_bytes=cuda.max_memory_reserved(),
@@ -66,10 +78,21 @@ class RuntimeMemory:
                 error = "a TP peer failed runtime memory qualification"
         row["passed"] = error is None
         self.phases.append(row)
+        self.last = now
         if error:
             self.ready = False
             raise MemoryError(f"{phase}: {error}")
         return row
+
+    def spend(self, top: int = 8) -> "list[tuple[str, float]]":
+        """Where a boot's checkpointed time went: the phase prefixes, most expensive first.
+        `target/(4, 6, 4096)/warmup` counts under `target`, so the ladder, the samplers and
+        the prefill warmups are separable without reading 351 rows."""
+        totals = {}
+        for row in self.phases:
+            key = row["phase"].split("/")[0]
+            totals[key] = totals.get(key, 0.0) + row.get("seconds", 0.0)
+        return sorted(totals.items(), key=lambda kv: -kv[1])[:top]
 
     def report(self):
         return dict(ready=self.ready, arena_bytes=self.arena_bytes,
@@ -77,6 +100,8 @@ class RuntimeMemory:
                     os_reserve_bytes=self.os_reserve_bytes,
                     baseline_reserved_bytes=self.baseline_reserved,
                     allocator_limit_bytes=self.allocator_limit_bytes,
+                    seconds=round(self.last - self.started, 4),
+                    spend=dict(self.spend()),
                     phases=self.phases)
 
     def write(self, path):

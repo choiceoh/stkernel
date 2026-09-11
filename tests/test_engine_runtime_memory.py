@@ -69,6 +69,24 @@ class RuntimeMemoryTests(unittest.TestCase):
                 self.budget(cuda, lambda: free)
             self.assertEqual(cuda.fraction, previous)
 
+    def test_rows_carry_a_clock_and_the_report_splits_the_spend_by_phase(self):
+        """The boot-time study's missing field: which phases the seconds went to."""
+        ticks = iter([101.5, 103.5, 103.6, 110.6, 111.0])        # the clock reads once per checkpoint
+        memory = self.budget()
+        memory.clock = lambda: next(ticks)
+        memory.started = memory.last = 100.0
+        for phase in ("loaded", "prefill/6912/0/prepared", "target/(1, 6, 4096)/warmup",
+                      "target/(1, 6, 4096)/captured", "sampling/greedy/(1, 6)/captured"):
+            memory.checkpoint(phase)
+        rows = memory.phases
+        self.assertEqual([r["at_seconds"] for r in rows], [1.5, 3.5, 3.6, 10.6, 11.0])
+        self.assertEqual([r["seconds"] for r in rows], [1.5, 2.0, 0.1, 7.0, 0.4])
+        self.assertEqual(memory.spend(), [("target", 7.1), ("prefill", 2.0), ("loaded", 1.5), ("sampling", 0.4)])
+        report = memory.report()
+        self.assertEqual(report["seconds"], 11.0)
+        self.assertEqual(report["spend"]["target"], 7.1)
+        memory.close()
+
     def test_report_preserves_declared_limits_and_measured_phases(self):
         memory = self.budget()
         memory.checkpoint("loaded")
