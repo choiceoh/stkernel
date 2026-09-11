@@ -8486,3 +8486,9 @@ placement(74.15)·shapes(정렬 16)·qwen38 plan(32.41)·커널 검사 7/7 전�
   레코드가 남고 rc = −SIGTERM 인 것까지 확인.
 - `base/config.py` — 사실은 env 로 못 덮고, 노브는 만료일·측정 대상·롤백을 지니며 만료되면 부팅
   사망, 선언 안 된 `STK_*` env 도 사망(D11·D3).
+- `base/proof.py` — 선언된 레인이 서빙 보고를 안 하면 `ProofError`, 선언 안 된 레인이 보고해도 사망(D3).
+- `base/conformance.py` — 게이트 = 띠 + 반복 횟수; 표본이 모자라면 PASS/FAIL 이 아니라 **INSUFFICIENT**
+  (DEF40 의 3.597 단일 부팅이 정확히 그 경우, D14).
+- `base/runner.py` — 스텝 루프: scheduler → kv → `Model` 프로토콜(prefill/decode 분리) → record 링 →
+  instruments. 가짜 모델로 자가검증: 두 요청이 `prefill, prefill, decode×3, prefill, decode×3` —
+  **디코더 옆에 프리필이 한 번도 안 선다**(D9·D10 순차 그대로), 끝나면 블록·슬롯 전부 반환.
