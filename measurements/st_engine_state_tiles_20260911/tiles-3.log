@@ -1,0 +1,4 @@
+case 1 1 {'baseline': 8.58, 'optimized': 8.54}
+case 1 4 {'baseline': 23.68, 'optimized': 23.55}
+case 34 1 {'baseline': 445.65, 'optimized': 437.28}
+case 34 4 {'baseline': 1777.54, 'optimized': 1771.55}

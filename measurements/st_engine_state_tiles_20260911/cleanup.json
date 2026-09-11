@@ -1,0 +1,59 @@
+{
+  "containers": [
+    {
+      "container": "st-state-tiles-f4d7",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-09-11T12:55:30.604867585Z",
+        "FinishedAt": "2026-09-11T12:55:56.578054981Z"
+      },
+      "image": "sha256:0d781f0a8f77d4735d0d09d57b081c9489b3a46131dc72773fd40fcbf267b446",
+      "removed": true
+    },
+    {
+      "container": "st-state-tiles512-f4d7",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-09-11T13:01:05.793896371Z",
+        "FinishedAt": "2026-09-11T13:01:29.762633798Z"
+      },
+      "image": "sha256:0d781f0a8f77d4735d0d09d57b081c9489b3a46131dc72773fd40fcbf267b446",
+      "removed": true
+    },
+    {
+      "container": "st-state-final-f4d7",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-09-11T13:02:26.110046247Z",
+        "FinishedAt": "2026-09-11T13:03:08.794842639Z"
+      },
+      "image": "sha256:0d781f0a8f77d4735d0d09d57b081c9489b3a46131dc72773fd40fcbf267b446",
+      "removed": true
+    }
+  ],
+  "lock": "owned lock released"
+}

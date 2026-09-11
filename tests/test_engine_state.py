@@ -9,6 +9,42 @@ if importlib.util.find_spec("torch"):
 
 @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
 class StateGraphTests(unittest.TestCase):
+    def test_history_masks_partial_tiles_and_zero_context_in_padded_slots(self):
+        from engine.kernels.state import kda_history
+        for width in (64, 1089, 16*128*128):
+            storage = torch.randn(5*(6*width+64)+64, device="cuda")
+            rec = storage.as_strided((5,6,1,width), (6*width+64,width,width,1), 64)
+            conv = torch.randn(5,11,8, device="cuda", dtype=torch.bfloat16)
+            slot = torch.tensor([3], device="cuda")
+            for context in (0,1,6,32768):
+                ctx = torch.tensor(context, device="cuda")
+                hist, initial = kda_history(conv, rec, slot, ctx, 3)
+                positions = context + torch.arange(-3,0, device="cuda")
+                expected_hist = conv[3,:,positions.clamp_min(0)%8].masked_fill((positions<0)[None,:],0)
+                expected_state = rec[3,(context-1)%6][None] if context else torch.zeros_like(initial)
+                self.assertTrue(torch.equal(hist, expected_hist))
+                self.assertTrue(torch.equal(initial, expected_state))
+            rec.fill_(float("nan"))
+            _, initial = kda_history(conv, rec, slot, torch.tensor(0, device="cuda"), 3)
+            self.assertTrue(torch.equal(initial, torch.zeros_like(initial)))
+
+    def test_ring_write_preserves_padding_with_strided_rows_and_long_inputs(self):
+        from engine.kernels.state import write_ring
+        width = 1089
+        for tokens in (1,6,17):
+            storage = torch.randn(5*(6*width+64)+64, device="cuda")
+            expected = storage.clone()
+            shape, stride = (5,6,width), (6*width+64,width,1)
+            target = storage.as_strided(shape,stride,64)
+            reference = expected.as_strided(shape,stride,64)
+            source = torch.randn(tokens*2,width, device="cuda")[::2]
+            slot = torch.tensor([3], device="cuda")
+            ctx = torch.tensor(32768, device="cuda")
+            for i in range(max(0,tokens-6), tokens):
+                reference[3,(32768+i)%6].copy_(source[i])
+            write_ring(source,target,slot,ctx)
+            self.assertTrue(torch.equal(storage.view(torch.uint8), expected.view(torch.uint8)))
+
     def test_slot_remapping_zero_context_wrap_and_rejected_future_writes(self):
         from engine.base.arena import Arena
         from engine.profiles.glm53.caches import Glm53Caches, layout
