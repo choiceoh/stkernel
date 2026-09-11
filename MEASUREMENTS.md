@@ -8715,3 +8715,67 @@ dense 대비 rel 3.9e-3. **b12x 레인의 단독 판정은 접었다**: `b12x_fu
 계기의 MAP+shims 로 `from vllm…` 을 엔진 경로로 자동 치환: model 40 / kda 24 / attention 25 / mtp 10 줄이
 엔진으로, DROP 마커 21/2/2/2(PP·SP·멀티모달·플랫폼 디스패치 — 손으로 지울 코드 경로). `glm5next_multimodal.py`
 는 텍스트 전용이라 집합에서 제외(vLLM 잔여 14줄 전부 거기). 이제 "vLLM 없이 임포트되나"가 파일별 이정표다.
+
+## ★45차 — 엔진 네이티브 GLM-5.3: 서빙 4파일 재호스팅 대신 우리 계약으로 다시 씀 (2026-09-11)
+
+44차 끝에서 "vLLM 없이 임포트되나"를 파일별 이정표로 삼았는데, 자동 치환된 4파일이 여전히 요구한 이름이 44개
+(`VllmConfig`·`get_forward_context`·`AutoWeightsLoader`·`FusedMoEFactory`·`MambaStateShapeCalculator`…)였다. 그 44개를
+`base/`에 채우면 vLLM 의 추상을 엔진 안에 다시 짓는 것이고, 운영자 지시("특정 하드웨어·NVFP4만, 레거시 없이 처음부터")와
+D7(전방 컨텍스트 없음, 플랫 메타)·D11(사실 + 만료 노브)·D16(아레나만이 할당)에 정면으로 어긋난다. 그래서 4파일을 지우고
+(`git rm`, 3adc8d47 의 산물), GLM-5.3 을 엔진의 계약으로 **다시 썼다**. 서빙 파일은 대수(algebra)의 출처로만 읽었다.
+
+### 무엇이 생겼나
+
+- `profiles/glm53/facts.py` — 상수 전부를 config.json 에서 읽고 **코드가 기대는 가정을 로드 시 단언**(nope·noaux_tc·
+  sigmoid·fp32 라우터·NVFP4 대상 = 3~44층 전문가뿐·kpool 4·hc 4…). vLLM `Glm5NextTextConfig` 가 파생하던 값
+  (post_mult 2.0, sinkhorn 20, mla_nope)은 판정 이미지에서 읽어 박았다. **런처 사실**: ENABLE_EP=0 → 전문가는 TP
+  (중간차원 분할). `plan.py` 의 "EP" 라벨은 종류가 틀렸었다(바이트는 같음) — 고침. MTP(45층, fp8 전문가)는 **서빙되지
+  않는다**(DFlash2 드래프터) → 프로필 범위 밖.
+- `base/params.py` — `Spec(name, shape, dtype, sources, build)` 와 `bind(specs, views)`: 모델은 가중치를 선언만 하고
+  로더가 아레나에서 깎은 뷰에 묶인다. 캐스트·리셰이프 없이, 이름·모양·dtype 불일치는 예외.
+- `base/preshard.py` — safetensors 를 **스트리밍**으로 쓰는 `RankWriter`(헤더 선계산, 텐서는 제 오프셋에 pwrite)
+  + `write_ranks`(층 단위로 소스를 한 번 읽어 4랭크에 동시에 씀). `RankLoader` 와 safetensors 둘 다로 읽어 확인.
+- `profiles/glm53/specs.py` — 랭크가 쥐는 가중치 지도. 서빙 로더가 로드 때 하던 병합을 여기서 한 번(q|k|v|b|f_a|g_a
+  → `in_proj`, q_a|kv_a → `qkv_a`, 세 conv → `[3HD,K]`, gate|up, 전문가별 gate|up → `w13`), dtype 승격도(A_log·dt_bias·
+  mHC·인덱서 head-gate/k_norm → fp32), 전역 스케일은 **곱셈자로 저장**(`*_mult`, 압축텐서의 제수를 뒤집음). 자가검증:
+  랭크당 1,288 텐서 **44.50 GiB = plan 인구조사 44.48**(MTP 전문가 제외, 나머지 0.02 는 승격), 체크포인트의 텍스트 텐서
+  전부가 정확히 한 spec 의 소스.
+- `profiles/glm53/lanes.py` — 커널 레인 여덟(conv·kda_chunk·mhc_pre·mhc_post·indexer_logits·kpool·mla_sparse·expert)을
+  `reference()`(modules 의 판정된 참조) 또는 `served()`(오버레이 커널, 이미지 안 마운트 경로로 임포트, 전부 아니면 예외)
+  로 묶는 표. 활성화는 `swiglu_clamped` 하나: 서빙 dense 는 SiluAndMulWithClamp, 서빙 b12x 는 "swigluoai α1 β0 limit
+  10" — **같은 식**이다(flashinfer_b12x_moe 1380: "whose math reduces to clamped SiLU").
+- `profiles/glm53/net.py` — 조합. 임베드 → 45층 [mHC pre(+in_norm) → KDA | DSA → mHC post/pre(+post_norm) → dense |
+  MoE] → contract(mean) → norm → 헤드. 뷰 위의 평범한 함수, 상태는 `Caches` 프로토콜(층별 플랫 latent/pool-key/
+  pool-scale, 슬롯별 KDA conv·recurrent·tail 링, 호출자의 블록표가 슬롯을 준다)로 받는다. KDA: in_proj → conv(상태
+  carry) → q,k,v / raw gate / beta=sigmoid / 출력 게이트 → 레인 → o_norm(rmsnorm·sigmoid) → o_proj → all_reduce.
+  DSA: qkv_a → q_a_norm → q_b; kv_a_norm → **latent fp8 쓰기(스케일 1, 체크포인트에 kv 스케일 없음)** → 인덱서(wq_b·
+  wk+LayerNorm·fp32 head-gate·gate score → FWHT-fp8 q, 완성 풀 압축·쓰기, 꼬리 링, 후보 풀 = seq_len//4 미만, top-512
+  풀 → 꼬리 포함 토큰 → 슬롯) → W_UK 흡수 MQA(레인) → W_UV → o_proj. MoE: noaux_tc 라우터(fp32 sigmoid, 선택은 +bias,
+  가중치는 재정규화×2.5) → 전문가별 레인(W4A4, gate/up 전역 스케일 따로) → 공유 전문가 → all_reduce 한 번.
+- `profiles/glm53/preshard.py --world 1 --layers 0-4` → dev 랭크파일 12.17 GiB, **14 s**. `--world 4` 전체는 백그라운드로.
+- `profiles/glm53/check.py` — 진짜 가중치로 0~4층(KDA 4, DSA 1, MoE 2)을 한 아레나(12.21 GiB, 25 영역)에서 돌림.
+  로드 **2.5 s**(13 런, 5.2 GiB/s), 512 토큰 프리필 8.0 s(참조 레인, KDA 참조가 파이썬 루프). 유한, |h| mean 1.10.
+
+### 판정 설계에서 배운 것 — "두 청크 = 한 프리필"은 MoE 를 지나면 토큰 단위로 성립하지 않는다
+
+처음 판정(최종 hidden 의 rel)이 2.4e-1 로 실패했고, **첫 청크**(캐시를 읽지 않는)도 똑같이 틀렸다. 블록별 추적:
+M=512 와 M=256 의 bf16 GEMM 은 누적 순서가 달라 1 ulp(p50 4.6e-3)씩 다르고, 3층을 지나 1e-2 가 되며, 3층 라우터가
+그 차이로 **256 토큰 중 30 토큰의 top-8 을 바꾼다**(인덱서의 슬롯 집합은 256/256 동일). 뒤집힌 토큰은 4.6e-1 까지
+벌어진다. 어느 엔진이든 배치 크기가 다르면 MoE 뒤의 토큰은 다르다 — 서빙 경로도 같다. 그래서 판정은 **어텐션 블록의
+둘째 청크 출력(KDA 상태·latent·풀·꼬리를 읽는 유일한 곳)이 첫 청크의 잡음 바닥을 넘지 않는가**로 바꿨다(블록별
+p50·max ≤ 1.5×, 상류 MoE 의 뒤집힘은 물려받는다): L3 dsa 첫 7.4e-3/1.6e-2 vs 둘째 6.7e-3/1.3e-2, L4 kda 3.7e-2/1.4e-1
+vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS. 이 판정은 조합이 GLM 의 대수인지는 말하지 않는다;
+그것은 서빙 층을 옆에 놓는 다음 판정의 몫이다.
+
+### 계기
+
+`hosting.py` 를 엔진 네이티브 지도로 다시 씀(서빙 3파일; mtp 는 서빙 안 됨): **114 심볼 = 89 ours(78%) + 25 drop, real 0**.
+"ours" 의 뜻이 바뀌었다 — 이름을 우리 모듈로 바꾼 것이 아니라 **그 자리에 엔진이 무엇을 두었는가**(대개 `net.py` 의
+한 줄이거나 `specs.py` 의 분할 규칙, 혹은 "사실이라 필요 없음": rope·yarn·fp8 dense·kv 스케일).
+
+### 남은 것(순서대로)
+
+1. `check.py --lanes served` 를 판정 이미지 안에서 — 같은 조합 위에서 참조 레인 vs 서빙 커널(레인 어댑터 판정).
+2. 서빙 `Glm5NextDecoderLayer` 를 옆에 놓는 층 판정(조합 판정, D4).  3. 디코드 경로(recurrent KDA·conv update·
+   드래프트 슬롯 K=5 의 희소 MLA·꼬리 링 갱신).  4. 러너 결합(`cache_spec` 으로 아레나에서 캐시를 깎고 블록표로 슬롯을
+   주는 `Caches`).  5. b12x 전문가 레인 바인딩, DFlash2 드래프터, 4노드.

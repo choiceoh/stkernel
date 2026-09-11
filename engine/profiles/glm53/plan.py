@@ -10,7 +10,7 @@ to vLLM's own report of 50.4 GiB of weights per rank: if the rules below
 are wrong, that comparison says so before anything is built on them.
 
 Placement sources are this repo's own overlay (overlay/modules/glm53_model/,
-which is the served model file) and the launcher (TP=4, ENABLE_EP=1,
+which is the served model file) and the launcher (TP=4, ENABLE_EP=0,
 --block-size 2304, kv fp8_e4m3, SPEC_K=5 with the DFlash2 drafter).
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ MLA_REP = {"q_a_proj", "q_a_layernorm", "kv_a_proj_with_mqa", "kv_a_layernorm"}
 
 # (label, matcher on the stripped name, divisor at TP=4 [0 = dropped], source)
 RULES = [
-    ("routed experts (EP)", lambda n: ".mlp.experts." in n, TP, "launcher ENABLE_EP=1: an expert lives whole on one rank"),
+    ("routed experts (TP on the intermediate dim)", lambda n: ".mlp.experts." in n, TP, "launcher ENABLE_EP=0 (EP is EXP-1, an experiment): every rank holds a quarter of every expert -- same bytes as EP, different kernel geometry"),
     ("vision (dropped)", lambda n: n.startswith("visual."), 0, "text only (memory: vision hangs)"),
     ("embed / lm_head (vocab-parallel)", lambda n: n.endswith(("embed_tokens.weight", "lm_head.weight")), TP, "VocabParallelEmbedding / ParallelLMHead"),
     ("indexer (replicated)", lambda n: ".indexer." in n, 1, "index_n_heads 32, kpool compress; served replicated"),
