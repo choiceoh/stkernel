@@ -25,7 +25,7 @@ file, the module was never model-agnostic and has to be split, not overridden.
 |---|---|---|---|
 | `dsv4` | DeepSeek-V4-Flash-0731 | 18 | production |
 | `glm53` | GLM-5.3-Flash NVFP4 | 25 | kernel campaign -- boots daily; the megakernel set is its default (ledger 28차 §8) |
-| `qwen38` | Qwen3.8-Flash-Next NVFP4 | 5 | TEP=4 (TP=4 + EP) bring-up |
+| `qwen38` | Qwen3.8-Flash-Next NVFP4 | 6 | TEP=4 (TP=4 + EP) bring-up |
 
 `glm53` carries its own modules and can load none of `dsv4`'s: its image
 installs to dist-packages rather than the venv site-packages, and one of its
@@ -139,6 +139,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `qwen38_ple` | Qwen3.8-Flash-Next 전용 (51 GiB PLE n-gram 표: 호스트 RAM 오프로드 + NVFP4 체크포인트용 온디바이스 FP8 임베딩; TP>1 필수) | 2 | — | · | · | · | ● |
 | `qwen38_qsa` | Qwen3.8-Flash-Next 전용 (GB10 48 SM 용 QSA split-K 상한; 상위는 GB300 튜닝) | 1 | — | · | · | · | ● |
 | `qwen38_spec` | Qwen3.8-Flash-Next 전용 (MTP 스펙: n-gram 순서 수정, 적응 K) | 2 | — | · | · | · | ● |
+| `qwen38_b12x` | Qwen3.8-Flash-Next 전용 (b12x 워크스페이스 용량 바운드 체크 래퍼; IMA 를 숫자 적힌 부등식으로) | 2 | ✓ | · | · | · | ● |
 
 | `sched_decode_first` | 어느 모델이든 (AsyncScheduler 서브클래스; 모델·커널·형상 임포트 0) | 1 | ✓ | · | ● | ● | · |
 | `boot_stamps` | 어느 모델이든 (부팅 단계 계측) | 2 | ✓ | · | ● | ● | · |
