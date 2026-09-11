@@ -43,7 +43,8 @@ from engine.profiles.glm53.facts import TP, Facts
 from engine.profiles.glm53.lanes import Lanes, swiglu_clamped
 
 BF16, F32, E4M3 = torch.bfloat16, torch.float32, torch.float8_e4m3fn
-O_NORM_EPS = 1e-6           # FusedRMSNormGated(head_dim, activation="sigmoid") default; a fact to hold the layer judge to
+O_NORM_EPS = 1e-5           # FusedRMSNormGated(head_dim, activation="sigmoid") constructor default
+                            # Its lower-level rms_norm_gated helper defaults to 1e-6; GLM uses the class value.
 K_NORM_EPS = 1e-6           # indexer LayerNorm(head_dim, eps=1e-6)
 SELECT_ROWS = 1024          # query rows per indexer selection pass: the [rows, candidates] fp32 logits are the prefill's
                             # largest transient (6,912 x 32,768 x 4 B = 0.84 GiB per DSA layer at 128K, x2 with a masked copy)
