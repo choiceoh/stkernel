@@ -8628,8 +8628,8 @@ took 50.4" → **잔차 +2.0 GiB(3.9%)** = 로드가 체크포인트에서 파�
 
 `glm5next_model` 61(20 ours) · `glm5next_kda` 26(16) · `glm5next_attention` 27(12) · `mtp` 12(8). 남은 70 =
 **drop 22**(PP·SP·멀티모달·플랫폼 디스패치·인터페이스 믹스인 — 우리가 안 지는 일반성) + **shim 17**(다른
-이름의 우리 것: 활성화, prefix 헬퍼, 라우터 GateLinear = 리포의 moe_gate_sm121, fp8 LM head…) + **real 31**.
-drop+shim 뒤 계기는 **76%**. real 31 이 "3~5일"의 실체: MLA+희소 인덱서 어텐션(`MLAModules`·`Wrapper`·
+이름의 우리 것: 활성화, prefix 헬퍼, 라우터 GateLinear = 리포의 moe_gate_sm121, fp8 LM head…) + **real 23**.
+drop+shim 뒤 계기는 **75%**. real 23 이 "3~5일"의 실체: MLA+희소 인덱서 어텐션(`MLAModules`·`Wrapper`·
 `FusedQkvAProj`·`IndexerCache`·`SparseAttnIndexerKpool`·`head_gate`·`fwht128`), KDA conv 커널
 (`causal_conv1d_*`)과 KDA 커널 셋(`chunk_kda`·`fused_recurrent_kda`·`fused_kda_gate` — 리포의 kda.py, 우리 것),
 MoE 팩토리(b12x 레인), mHC 다섯(`MHC*Op`·`hc_contract`·`hc_expand`).
