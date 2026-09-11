@@ -75,6 +75,45 @@ class SSDEngramLookup:
         return vals.index_select(0, inverse).view(*local_indices.shape, -1)
 
 
+def prepare(ref):
+    """Make `ParallelEngramEmbedding.__init__` cheap, BEFORE the model is built.
+
+    Swapping after construction is too late: `Transformer.__init__` allocates
+    both tables on the device as it walks the layers, and 47.21 GiB on top of
+    73.25 does not survive to the line that would have freed it. So the class
+    is patched to allocate a zero-row weight and keep only the scale, and
+    `attach` fills in the readers afterwards.
+    """
+    import torch
+    from torch import nn
+
+    cls = ref.ParallelEngramEmbedding
+    if getattr(cls, "_ssd_patched", False):
+        return cls
+    original = cls.__init__
+
+    def __init__(self, num_embeddings, dim):
+        original(self, num_embeddings, dim)
+        self.weight = nn.Parameter(
+            torch.empty(0, dim, dtype=torch.float8_e4m3fn,
+                        device=self.weight.device), requires_grad=False)
+
+    cls.__init__ = __init__
+    cls._ssd_patched = True
+    return cls
+
+
+def _load_scale(path: "str | Path", rows: int, width: int, device):
+    """The resident half of a table, read once."""
+    import torch
+
+    raw = torch.frombuffer(bytearray(Path(path).read_bytes()), dtype=torch.uint8)
+    if raw.numel() != rows * width:
+        raise ValueError(f"{Path(path).name}: {raw.numel():,} bytes, expected "
+                         f"{rows * width:,} ({rows:,} x {width})")
+    return raw.view(rows, width).to(device).view(torch.float8_e8m0fnu)
+
+
 def attach(model, rank: int, world: int, engram_dir: "str | Path" = ENGRAM_DIR):
     """Swap every ParallelEngramEmbedding for an SSD-backed lookup.
 
@@ -102,17 +141,18 @@ def attach(model, rank: int, world: int, engram_dir: "str | Path" = ENGRAM_DIR):
         path = engram_dir / f"engram-l{layer}-r{rank}of{world}.weight"
         if not path.exists():
             raise FileNotFoundError(path)
-        lookup = SSDEngramLookup(path, module.scale.data, module.block_size)
+        scale_path = path.with_suffix(".scale")
+        io = _io_module()
+        n_rows = path.stat().st_size // io.EMB_ROW_BYTES
+        scale = _load_scale(scale_path, n_rows, io.SCALE_ROW_BYTES,
+                            module.scale.device)
+        module.scale = nn.Parameter(scale, requires_grad=False)
+        lookup = SSDEngramLookup(path, scale, module.block_size)
         if lookup.reader.n_rows != module.part_num_embeddings:
             raise ValueError(
                 f"{path.name} holds {lookup.reader.n_rows:,} rows, the module "
                 f"wants {module.part_num_embeddings:,}")
 
-        # Drop the resident table. Assigning a 0-row parameter keeps every
-        # state_dict / .to() / named_parameters walk working.
-        module.weight = nn.Parameter(
-            torch.empty(0, module.dim, dtype=torch.float8_e4m3fn,
-                        device=module.scale.device), requires_grad=False)
         module.ssd = lookup
 
         def forward(self, indices, _lookup=lookup):

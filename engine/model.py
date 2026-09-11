@@ -196,6 +196,69 @@ def load_block(block, layer: int, rank_file: "str | Path" = None, device: str = 
             "sharded": sharded, "tensors": len(keys)}
 
 
+def load_full(net, rank_file: "str | Path", world: int = 4, rank: int = 0,
+              device: str = "cuda", recorder=None) -> dict:
+    """Every tensor of a whole rank, with the same conversions load_block does.
+
+    The engram tables are NOT here: the preshard excluded them
+    (`"engram": "excluded"` in its metadata) and engram_ssd owns them. Anything
+    else absent is a real miss and comes back in `missing`.
+    """
+    import torch
+
+    from loader import RankLoader
+
+    loader = RankLoader(rank_file)
+    keys = loader.keys()
+    tensors = loader.load(keys, device=device, recorder=recorder)
+    have = dict(tensors)
+
+    expected = set(net.state_dict())
+    loaded, promoted, dequantized, missing, sharded = [], [], [], [], []
+    axes = {}
+    with torch.no_grad():
+        for name, param in list(net.named_parameters()) + list(net.named_buffers()):
+            src = have.pop(name, None)
+            if src is None:
+                if name in expected and ".engram." not in name:
+                    missing.append(name)
+                continue
+            if src.shape != param.shape:
+                narrowed, axis = _tp_narrow(name, src, param, world, rank)
+                if narrowed is None:
+                    missing.append(f"{name} shape {tuple(src.shape)} vs "
+                                   f"{tuple(param.shape)}")
+                    continue
+                src, axes[name] = narrowed, axis
+            if src.dtype == param.dtype:
+                param.copy_(src)
+                loaded.append(name)
+            elif src.dtype == torch.float8_e4m3fn and param.dtype in (
+                    torch.bfloat16, torch.float32):
+                scale = have.pop(name.replace(".weight", ".scale"), None)
+                if scale is None:
+                    missing.append(name + " (.scale)")
+                    continue
+                axis = axes.get(name)
+                if axis is not None:
+                    step = scale.shape[axis] // world
+                    scale = scale.narrow(axis, rank * step, step).contiguous()
+                param.copy_(_dequant(src, scale).to(param.dtype))
+                dequantized.append(name)
+            elif src.dtype == torch.int8 and param.dtype == torch.float4_e2m1fn_x2:
+                param.copy_(src.view(torch.float4_e2m1fn_x2))
+                loaded.append(name)
+            elif src.dtype == torch.bfloat16 and param.dtype == torch.float32:
+                param.copy_(src.float())
+                promoted.append(name)
+            else:
+                raise TypeError(f"{name}: {src.dtype} -> {param.dtype} is not a "
+                                "conversion this loader knows.")
+    return {"loaded": len(loaded), "dequantized": dequantized, "promoted": promoted,
+            "missing": missing, "sharded": sharded,
+            "unused": [k for k in have if not k.endswith(".scale")]}
+
+
 def _main(argv=None) -> int:
     import argparse
     import time
