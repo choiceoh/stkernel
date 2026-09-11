@@ -1,0 +1,251 @@
+{
+  "image": "glm53:v13-b12x-it",
+  "image_id": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "files": {
+    "kda/kda.py": {
+      "source": "overlay/modules/glm53_kernels/kda.py",
+      "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
+      "origin": "repository"
+    },
+    "kda/chunk_delta_h.py": {
+      "source": "overlay/modules/glm53_kernels/chunk_delta_h.py",
+      "sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
+      "origin": "repository"
+    },
+    "kda/cumsum.py": {
+      "source": "vllm/third_party/flash_linear_attention/ops/cumsum.py",
+      "sha256": "d818215669b451868823202ac0bcea77e7a9d75957254c7c1060a73a55dc39b6",
+      "origin": "image"
+    },
+    "kda/fused_recurrent.py": {
+      "source": "vllm/third_party/flash_linear_attention/ops/fused_recurrent.py",
+      "sha256": "371e7d733e90a7147fbca8dbfe67e62503ba663bd1570424bc0efa22c54f3e2b",
+      "origin": "image"
+    },
+    "kda/index.py": {
+      "source": "vllm/third_party/flash_linear_attention/ops/index.py",
+      "sha256": "1fa36b77833c56cdc1ec1af3ea38225d8ae9e1faec5b218cf48af5482ddf15a0",
+      "origin": "image"
+    },
+    "kda/l2norm.py": {
+      "source": "vllm/third_party/flash_linear_attention/ops/l2norm.py",
+      "sha256": "520f4513ef4fc97e6b88dc07877cca8e29da0d34e44673fe989e3af002d86381",
+      "origin": "image"
+    },
+    "kda/op.py": {
+      "source": "vllm/third_party/flash_linear_attention/ops/op.py",
+      "sha256": "456da84fd12411cf53c96a90dd4f78f49afb454c3d51d2c524ea8e7106fe8ae5",
+      "origin": "image"
+    },
+    "kda/solve_tril.py": {
+      "source": "vllm/third_party/flash_linear_attention/ops/solve_tril.py",
+      "sha256": "d1a4ff27623a938825052500afa7e2aa24fadd2fa4c9be6376c9128824f86f82",
+      "origin": "image"
+    },
+    "kda/utils.py": {
+      "source": "vllm/third_party/flash_linear_attention/ops/utils.py",
+      "sha256": "d6c90d36505e02086954c23ca4dd2fea82a69416d68ff1d0501e16b3148b5b0c",
+      "origin": "image"
+    },
+    "causal_conv.py": {
+      "source": "vllm/model_executor/layers/mamba/ops/causal_conv1d.py",
+      "sha256": "044d005cfe59fd0818ed421274e04f3e8dd679b8cdb64fca9f4422f2643484b2",
+      "origin": "image"
+    },
+    "kpool.py": {
+      "source": "vllm/models/glm5next/nvidia/ops/kpool_compress.py",
+      "sha256": "52959ea33234db6e7cfa94289dd263a15add3be4d2107285418c830b5c19e472",
+      "origin": "image"
+    },
+    "b12x/_moe_dynamic/__init__.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/__init__.py",
+      "sha256": "a2c19aa9794c30cbcf3029d145e11801575db53f7d9cf24c12e83424d0cdc2fd",
+      "origin": "image"
+    },
+    "b12x/_moe_dynamic/gated.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py",
+      "sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+      "origin": "image"
+    },
+    "b12x/_moe_dynamic/generic.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py",
+      "sha256": "38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da",
+      "origin": "image"
+    },
+    "b12x/moe_activation.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_activation.py",
+      "sha256": "ce4c28f512c7d8cff08e7dfe8a2717713bde112752a137ef09acddd77f420b2b",
+      "origin": "image"
+    },
+    "b12x/moe_direct_micro_kernel.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py",
+      "sha256": "9b18f54588c3f24cab74dff07545f323e2af8235a4532233655a5a75498e89cc",
+      "origin": "image"
+    },
+    "b12x/moe_dispatch.py": {
+      "source": "overlay/modules/glm53_moe/moe_dispatch.py",
+      "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
+      "origin": "repository"
+    },
+    "b12x/moe_dynamic_kernel.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py",
+      "sha256": "7532e1338df8e80c4b8f0bd6473c2ffeda9a5028018c77775c4e9fe2fa47b072",
+      "origin": "image"
+    },
+    "b12x/moe_micro_kernel.py": {
+      "source": "overlay/modules/glm53_moe/moe_micro_kernel.py",
+      "sha256": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
+      "origin": "repository"
+    },
+    "b12x/moe_static_kernel.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py",
+      "sha256": "b87e2b80f706e1db91b95c8a619806af37f7be25021b33a1da7f117ff4d87610",
+      "origin": "image"
+    },
+    "b12x/moe_w4a16_activations.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_activations.py",
+      "sha256": "d95ae610cd28d8ceba67f259e842d42d284fa9657e9a24721cc8f72358a9e7e8",
+      "origin": "image"
+    },
+    "b12x/moe_w4a16_compiler.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_compiler.py",
+      "sha256": "83e0e32a82f99dcdd28a9bfdacecf34cd868a3f4f8fbb3f6da4f63b765a0018f",
+      "origin": "image"
+    },
+    "b12x/moe_w4a16_fp4_helpers.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_fp4_helpers.py",
+      "sha256": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+      "origin": "image"
+    },
+    "b12x/moe_w4a16_host.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_host.py",
+      "sha256": "49622d643b9acc602715bfbfbfa4ffc75b000fbc26ffcb8247326554edec0e43",
+      "origin": "image"
+    },
+    "b12x/moe_w4a16_kernel.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py",
+      "sha256": "1e3e587333d03afe598a454573cb6c9bbb63ed6af3bfe76cdd77af67ba8d839d",
+      "origin": "image"
+    },
+    "b12x/moe_w4a16_prepare.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_prepare.py",
+      "sha256": "85d8a930939705db01a748380753283cdeff187e87a5febaad7363e5dd24c8e4",
+      "origin": "image"
+    },
+    "b12x/moe_w4a16_route_pack.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_route_pack.py",
+      "sha256": "ecf89b722084ab65b8877f7f7c3f6072de659b29c9436707edc05f86f47d1b24",
+      "origin": "image"
+    },
+    "b12x/triton_compact.py": {
+      "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/triton_compact.py",
+      "sha256": "bbcb7762850773f1608729cb1e651029c489930b7ea0973452896a337c17ee2a",
+      "origin": "image"
+    },
+    "b12x/b12x_moe.py": {
+      "source": "overlay/modules/glm53_moe/b12x_moe.py",
+      "sha256": "a256863e9b45ea206bd7b40cf4283d7d45634529f43473fe5ef743f010fde7f3",
+      "origin": "repository"
+    },
+    "b12x/glm53_ep_local_selftest.py": {
+      "source": "overlay/modules/glm53_moe/glm53_ep_local_selftest.py",
+      "sha256": "1bab68c0a7a9890951aab788cc402b9969fc910de5446c297b1ef4b5ba1d60ad",
+      "origin": "repository"
+    },
+    "b12x/glm53_ep_route_remap.py": {
+      "source": "overlay/modules/glm53_moe/glm53_ep_route_remap.py",
+      "sha256": "b577457ff566add86837c467e2062b715bc9b1f2d1d2bfbb2addc0b9520a9b11",
+      "origin": "repository"
+    },
+    "b12x/glm53_ep_tiled.py": {
+      "source": "overlay/modules/glm53_moe/glm53_ep_tiled.py",
+      "sha256": "133520fab17bffdf528791c5115c465a768a70b5812acf0e9213d94fdccc8fa0",
+      "origin": "repository"
+    },
+    "b12x/glm53_ep_tiled_selftest.py": {
+      "source": "overlay/modules/glm53_moe/glm53_ep_tiled_selftest.py",
+      "sha256": "e1e0b457499f5ef0858fbd121cc07608cc35c3f16d1f93ffd73d15bc6ce39c5a",
+      "origin": "repository"
+    },
+    "b12x/moe_dynamic_ep_local.py": {
+      "source": "overlay/modules/glm53_moe/moe_dynamic_ep_local.py",
+      "sha256": "89bab8e22514d4ce036e4cc6755a5dcfaeb8b12277766394dcdd101db8751595",
+      "origin": "repository"
+    },
+    "b12x/moe_dynamic_gated_sf6.py": {
+      "source": "overlay/modules/glm53_moe/moe_dynamic_gated_sf6.py",
+      "sha256": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+      "origin": "repository"
+    },
+    "b12x/moe_dynamic_gated_sf6_q0.py": {
+      "source": "overlay/modules/glm53_moe/moe_dynamic_gated_sf6_q0.py",
+      "sha256": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
+      "origin": "repository"
+    },
+    "b12x/moe_dynamic_gated_tiled.py": {
+      "source": "overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py",
+      "sha256": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+      "origin": "repository"
+    },
+    "b12x/moe_dynamic_prefill.py": {
+      "source": "overlay/modules/glm53_moe/moe_dynamic_prefill.py",
+      "sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
+      "origin": "repository"
+    },
+    "b12x/moe_dynamic_prefill_n128.py": {
+      "source": "overlay/modules/glm53_moe/moe_dynamic_prefill_n128.py",
+      "sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
+      "origin": "repository"
+    },
+    "b12x/moe_reform_sf_pack.py": {
+      "source": "overlay/modules/glm53_moe/moe_reform_sf_pack.py",
+      "sha256": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+      "origin": "repository"
+    },
+    "b12x/moe_sf_pack.py": {
+      "source": "overlay/modules/glm53_moe/moe_sf_pack.py",
+      "sha256": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+      "origin": "repository"
+    },
+    "b12x/moe_static_common.py": {
+      "source": "overlay/modules/glm53_moe/moe_static_common.py",
+      "sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+      "origin": "repository"
+    },
+    "b12x/moe_static_ep_tiled.py": {
+      "source": "overlay/modules/glm53_moe/moe_static_ep_tiled.py",
+      "sha256": "9288110d2c77b43e0ea08ad1edb4e0bfd5ef1ffd1ce9ba6bf2a469eb22815f21",
+      "origin": "repository"
+    },
+    "b12x/moe_static_kernel_v4.py": {
+      "source": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
+      "sha256": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
+      "origin": "repository"
+    },
+    "b12x/moe_static_kernel_v5.py": {
+      "source": "overlay/modules/glm53_moe/moe_static_kernel_v5.py",
+      "sha256": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+      "origin": "repository"
+    },
+    "mhc/__init__.py": {
+      "source": "overlay/modules/glm53_kernels/tilelang.py",
+      "sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
+      "origin": "repository"
+    },
+    "mhc/tilelang_kernels.py": {
+      "source": "overlay/modules/glm53_kernels/tilelang_kernels.py",
+      "sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
+      "origin": "repository"
+    },
+    "mla/glm53_megakernel.cu": {
+      "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
+      "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
+      "origin": "repository"
+    },
+    "mla/__init__.py": {
+      "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
+      "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
+      "origin": "repository"
+    }
+  }
+}

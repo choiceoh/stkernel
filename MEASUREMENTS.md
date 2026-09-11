@@ -9124,4 +9124,44 @@ CuTe-DSL 커널의 [up; gate] 로 로드 때 바꾼다(`reorder_w13_to_w31_for_f
 
 참조 체크(v4 파일, 참조 레인, 109.3 s): 네 랭크 동일, 오라클 정확 일치, 청크/verify/롤백 전 블록 바닥 안(L3 moe verify step 1 p50 6.4e-2, 바닥 7.3e-2;
 롤백 step 2 7.4e-2, 바닥 7.3e-2). **판정: b12x 전문가 레인 바인딩 끝** — §13 의 0.75 는 반 순서 하나였고(§15), 남는 것은 W4A4 고유 잡음이다.
+**정정(§17 에서 발견)**: 서빙 판정 스크립트의 종합 줄은 **FAIL** 이다 — 판정 대상 25 행(kda·dsa 의 청크/verify/롤백) 중 한 행,
+`rollback step 2 L0 kda p50 4.4e-3`(바닥 2.7e-3 의 1.63×, 규칙 1.5×; max 7.2e-3 는 통과). 참조 레인의 같은 행은 정확히 0(토치 경로는 형상 무관)이고,
+서빙의 층 0 바닥 2.7e-3 은 청크 커널의 형상 잡음, 4.4e-3 은 그 위에 얹힌 **재귀 커널 vs 청크 커널** 산술 차이다(코덱스 측정: 재귀 출력 rel 6.2e-4, 청크 6.5e-3).
+캐시 불일치라면 1e-1 대로 나온다. 서빙 verify/롤백 행의 바닥은 재귀 경로로 따로 재야 한다 — 열린 항목, 게이트를 늘리지는 않았다.
 MoE 뒤 블록의 max 0.5~0.8 은 라우터 top-8 뒤집힘(§5)이라 어느 엔진에서도 같다. 층 0-4 판정에 든 시간: 사전샤딩 483 s + fan-out + 판정 82 s + 참조 109 s.
+
+### 45차 §17 — 커널 패키징: vLLM 이름공간을 떠난 엔진, ST 이미지 안에서 판정 (2026-09-11 저녁)
+
+**발견**: 운영자의 "진행" 뒤 시작하려던 A단계(engine/kernels)가 **codex 세션의 손에서 이미 이미지까지 되어 있었다** — `st-engine:9391`(17:25,
+빌드 컨텍스트 `/tmp/st-engine-9391`, git 아님, 어느 브랜치에도 없음): `engine/kernels/{kda,causal_conv,kpool,mhc,mla,b12x,deep_gemm}`
+(49 파일, 출처·이식 전 sha256 은 `SOURCES.json`, repository 25 / image 24) + `engine/runtime/{Dockerfile,build.sh,promote_deep_gemm.py,
+dependencies.json}` + `probes/run_engine_probe.sh` + `tests/test_engine_kernels.py`. 이미지의 나머지 엔진 파일은 #537 이전 스냅샷(내 대화
+동사·메타 부팅·레인 판정이 없음). 다시 만들지 않고 **들여와 판정**했다(중복 구현 금지). 판정 중 codex 는 더 새 트리(`/tmp/st-engine-completion`,
+18:44: LICENSE·THIRD_PARTY_NOTICES·kernels/README·dockerignore·`weights.py` 레이아웃 표식·자기 런처)로 넘어갔고 45층 전체를 [up; gate] 로
+`~/models/st-glm53-9391-up-gate-full`(4 × 44.5 GiB, srv4 디스크 505 GB 여유)에 재절단 중이다. 그쪽 저위험 파일(라이선스 셋, dockerignore,
+`moe_static_ep_tiled.py` 의 `_SF_STAGE_BYTES` NameError 수정, `_CUTE_DSL_MODULE = "st_b12x_moe"`, 전역 검사 테스트)은 접어 넣었고, 레이아웃
+표식(랭크 파일 재절단 필요)과 런처 재작성은 그쪽 PR 에 맡긴다.
+
+**형태**: 서빙 레인은 `engine.kernels.*` 만 임포트(`tests/test_engine_kernels.py` 가 `vllm`·`flashinfer.fused_moe` 임포트를 AST 로 막고, symtable 로
+이식된 함수의 전역 누락을 잡는다). 진짜 의존은 Triton 3.7.1·TileLang 0.1.12·CUTLASS DSL 4.6.2·FlashInfer 0.6.18 유틸/JIT·DeepGEMM 2.6.1.
+DeepGEMM 은 시드의 `vllm/third_party/deep_gemm`(확장 .so + JIT 헤더 879 파일)을 `deep_gemm` 로 승격(sha256 검증), 그 뒤 `pip uninstall vllm`.
+mHC 는 `torch.ops.vllm` 등록 없이 pre/post 함수 직접 호출, MLA 는 메가커널 .py 3,041 줄 중 MLA 드라이버 367 줄만(.cu 4,066 줄은 그대로,
+빌드 루트 `ST_MLA_BUILD_ROOT=/cache/mla`), 마스터 플래그 없이 **필수 레인**(부팅 자가검증 실패 = 부팅 실패). 이미지 `st-engine:glm53`:
+`bash engine/runtime/build.sh`(시드 ID 핀, `--network none`) — 시드 위 층 둘(34.7 MB + 4 MB), `docker system df` UNIQUE 4 MB.
+**31.5 GB 는 시드의 것**(dist-packages 16 GB: flashinfer_cubin 6.8·nvidia wheels 3.1·torch 0.9·vllm 0.7·triton 0.65; cuda-13.0 2.6; /root 2.2);
+`pip uninstall` 은 층 위의 whiteout 이라 크기를 못 줄인다. 자체 베이스로 다시 쌓으면(B단계 본편) flashinfer_cubin·vllm·cupy 를 빼 10 GB 안팎.
+
+**첫 실행에서 잡은 것**: `kernels/mla/__init__.py` 의 `_rel_err` 가 `math` 없이 `math.isfinite` — 자가검증 경로가 한 번도 GPU 를 안 탄 채
+이미지가 구워졌다(NameError → "rank 0 failed"). `import math` 한 줄; codex 의 새 트리도 같은 수정을 했다.
+
+**ST 이미지 안 판정**(오버레이 마운트 0, vLLM 없음, `ST_CACHE=~/glm53-cache`):
+- 참조 레인 `check.py --layers 0-4`: **PASS** — 네 랭크 동일, 페이지드 == 연속 오라클, 러너 [3, 1], 청크/verify/롤백 전부 바닥 안, wall 85.1 s.
+- `boot.py --local --layers 0-4 --drafter --park`: **PASS** — 32 스텝 65.9 s, 네 랭크 토큰 동일, DFlash2 K=5 0/145 수용(5층 사슬이라 품질 아님),
+  park 1.3 MiB(아레나 542 → 543) → resume → 이어서 4 토큰 == 한 번에 돌린 꼬리, 541/1 자원 반납.
+- 서빙 레인 `run_engine_check.sh --layers 0-4`: 옛 판정 이미지의 §16 수치와 **소수점 그대로 같다**(서빙 vs 참조 L3 moe p50 9.5e-2, L0 kda
+  4.7e-3 …, 반복 오차 2.2e-2, wall 54.3 s — JIT 캐시 웜 뒤 82 → 54 s). 종합 줄은 두 이미지 모두 **FAIL 한 행**(§16 정정 참조): 패키징의
+  회귀가 아니라 서빙 레인의 성질이다.
+
+**잔여(헌장 D11/레거시)**: 커널 소스 안 환경 노브 35 개(b12x 21 — 정적 v2 사다리·EP tiled·W4A16 강제·prefill reuse; fla 8; mla 5; mhc 2;
+이름 `ST_GLM53_*`/`FLA_*`/`DENEB_*`) — 기본값이 서빙 경로, 정리는 다음 단계. .cu 는 MLA 만 바인딩하지만 통째. 런처는 노드마다 rsync →
+`build.sh` → run 으로 바꿨다(플릿 창 미확보라 미실행, `bash -n` 만). srv1 디스크는 그대로 열린 문제.

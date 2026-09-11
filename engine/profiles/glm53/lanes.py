@@ -4,10 +4,10 @@
                   judged against its served kernel in probes/ (44th ledger):
                   KDA chunk 6.3e-3, conv exact, mHC pre/post exact-ish,
                   MLA 2.2e-3, indexer logits 2.4e-3, kpool byte-identical
-    served()      the kernels that serve today: ours, in this repo's
-                  overlay, imported by the path they are MOUNTED at inside
-                  the glm53 image (vLLM's namespace is the mount point, not
-                  their home). All or nothing: a lane that will not import
+    served()      the kernels that serve today, from engine/kernels (ours,
+                  packaged with their real dependencies: Triton, TileLang,
+                  DeepGEMM, FlashInfer's CuTe-DSL utilities; no vLLM). All
+                  or nothing: a lane that will not import
                   raises, the boot dies (D3) -- there is no per-lane
                   fallback to the reference.
 
@@ -124,19 +124,19 @@ def reference() -> Lanes:
 
 
 def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
-    """Bound inside the glm53 image (probes/* run there the same way).
+    """Bound in the ST image (engine/runtime; probes/run_engine_probe.sh runs there).
 
     `reference_for` names lanes DECLARED to run on the torch reference in
     this table ("expert" and/or "kda_recurrent"). The table's name says so,
     boot prints it, proof can demand it: a declared choice, not a fallback
     (D3). Anything not named must bind or the call raises."""
     expert_lane = "reference" if "expert" in reference_for else "b12x"
-    from vllm.third_party.flash_linear_attention.ops.kda import chunk_kda_with_fused_gate          # ours: overlay/modules/glm53_kernels/kda.py
-    from vllm.model_executor.layers.mamba.ops.causal_conv1d import causal_conv1d_fn                # served op (judged: probes/conv_check.py)
-    import vllm.model_executor.layers.mhc  # noqa: F401  registers torch.ops.vllm.mhc_*_tilelang (ours: overlay dsv4_mhc_tilelang)
-    from vllm.utils.deep_gemm import fp8_fp4_mqa_logits                                             # served DeepGEMM op
-    from vllm.models.glm5next.nvidia.ops.kpool_compress import kpool_compress_and_write_cache        # served op (byte-identical to ours)
-    from vllm.model_executor.layers import glm53_megakernel as mk                                   # ours: overlay/modules/glm53_megakernel
+    from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda   # fla fork (kernels/SOURCES.json names every origin)
+    from engine.kernels.causal_conv import causal_conv1d_fn                            # judged: probes/conv_check.py
+    from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang                 # TileLang mixing + DeepGEMM prenorm, plain functions
+    from engine.kernels.deep_gemm import fp8_fp4_mqa_logits                            # the DeepGEMM library, promoted out of vLLM's tree
+    from engine.kernels.kpool import kpool_compress_and_write_cache                    # byte-identical to engine.modules.sparse_indexer's
+    from engine.kernels import mla as mk                                               # the megakernel's MLA lane, its .cu unchanged
     ref = reference()
 
     def conv_prefill(x, w, state):
@@ -153,7 +153,6 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         y = y.T if y.shape[0] == c else y
         return y, table[1]
 
-    from vllm.third_party.flash_linear_attention.ops.kda import fused_recurrent_kda                  # ours, same file
     def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
         t = q.shape[1]
         out = torch.empty_like(v)
@@ -180,12 +179,12 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     def pre(res, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w, norm_eps):
         if fn.data_ptr() % 16:
             raise ValueError("mHC weight is not TMA-aligned; regenerate rank files with the aligned RankWriter")
-        post, comb, x = torch.ops.vllm.mhc_pre_tilelang(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult,
-                                                        sinkhorn, 1, norm_w, norm_eps)
+        post, comb, x = mhc_pre_tilelang(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult,
+                                         sinkhorn, 1, norm_w, norm_eps)
         return post, comb, x
 
     def post(x, res, p, comb):
-        return torch.ops.vllm.mhc_post_tilelang(x, res, p, comb)
+        return mhc_post_tilelang(x, res, p, comb)
 
     def logits(q8, k8, k_scale, w, ke):
         t = q8.shape[0]
@@ -203,7 +202,7 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     def mla(q_abs, latent, slots, valid, scale, ckv_scale):
         mk.maybe_arm()
         if not mk._ARMED.get("mla"):
-            raise RuntimeError("megakernel MLA lane did not arm (VLLM_GLM53_MK_MLA?)")
+            raise RuntimeError("ST MLA lane did not pass its boot self-test")
         cache = latent.view(torch.uint8)
         # the lane is built for this fleet's 16 heads per rank; at world 1 the 64 heads go through in fours (MQA: heads are independent)
         parts = [mk.mla_decode(q_abs[:, i:i + mk.MLA_H].contiguous(), cache, slots, valid, scale, ckv_scale)
@@ -215,7 +214,7 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     if expert_lane == "reference":
         moe = ref.moe
     else:
-        from flashinfer.fused_moe import b12x_fused_moe                                     # ours: overlay/modules/glm53_moe/b12x_moe.py
+        from engine.kernels.b12x import b12x_fused_moe                                      # ours (CuTe-DSL), FlashInfer supplies the JIT/utilities
         from engine.modules.nvfp4_sf import mma_sf_view
         ones = {}
         scale_views = {}                            # stable arena aliases, one pair per bound MoE layer

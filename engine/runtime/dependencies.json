@@ -1,0 +1,11 @@
+{
+  "seed_image_id": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "python": "3.12",
+  "cuda": "13.0",
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "flashinfer-python": "0.6.18.dev20260819",
+  "tilelang": "0.1.12",
+  "nvidia-cutlass-dsl": "4.6.2",
+  "deep_gemm": "2.6.1 (extension and JIT headers extracted byte-for-byte from the seed; ST_SOURCE.json records every SHA256)"
+}

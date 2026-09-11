@@ -15,17 +15,25 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
                 스텝 메타, 러너, 기록/사망 덤프, 설정(사실+만료 노브), 증명·판정, 그래프, comm(플릿 / LocalTP)
     modules/    특징 모듈: 선형 어텐션(KDA), 희소 인덱서·희소 MLA, NVFP4 선형·MoE·양자화, 하이퍼커넥션, 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
+    kernels/    서빙 커널 패키지: kda/(fla 포크), causal_conv, kpool, mhc/(TileLang + DeepGEMM prenorm), mla/(메가커널의 MLA 레인,
+                .cu 그대로), b12x/(CuTe-DSL MoE 가족), deep_gemm(라이브러리 진입점 둘). 진짜 의존은 Triton·TileLang·DeepGEMM·
+                FlashInfer 의 유틸리티뿐이고 vLLM 이름공간은 없다(`tests/test_engine_kernels.py` 가 지킨다). 파일마다 출처와
+                sha256 은 `kernels/SOURCES.json`(repository 25 / image 24).
+    runtime/    ST 이미지: 플릿의 고정 시드 이미지(ID 핀)에서 vLLM 을 지우고 DeepGEMM 을 `deep_gemm` 라이브러리로 승격, 엔진 트리를
+                COPY. `bash engine/runtime/build.sh` (초 단위, 시드 위 얇은 층 둘) → `st-engine:glm53`.
 
-빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드; 랭크 파일은 `profiles/glm53/preshard.py` 가 한 번 자른다):
+빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드; 랭크 파일은 `profiles/glm53/preshard.py` 가 한 번 자른다). 서빙 레인은
+ST 이미지 안에서 돈다(`probes/run_engine_probe.sh`: 오버레이 마운트 없이 트리를 /repo 에, JIT 캐시는 `ST_CACHE`, 기본 `~/.cache/st`):
 
-    PYTHONPATH=. python3 engine/profiles/glm53/check.py --layers 0-4              # 참조 레인: 랭크 동일 + 청크/verify/롤백 판정
-    bash probes/run_engine_check.sh --layers 0-4                                  # 서빙 커널 레인, 판정 이미지 안
-    PYTHONPATH=. python3 engine/profiles/glm53/boot.py --local --layers 0-4       # 러너가 돈다 (+ --drafter DFlash2, --park NVMe 파킹, --serve HTTP 문)
+    PYTHONPATH=. python3 engine/profiles/glm53/check.py --layers 0-4              # 참조 레인: 랭크 동일 + 청크/verify/롤백 판정 (torch 만)
+    bash engine/runtime/build.sh                                                  # ST 이미지 (한 번; 시드 이미지 ID 가 다르면 거부)
+    bash probes/run_engine_check.sh --layers 0-4                                  # 서빙 커널 레인 + 서빙 vs 참조 레인 판정, ST 이미지 안
+    bash probes/run_engine_probe.sh engine/profiles/glm53/boot.py --local --layers 0-4 --drafter --park   # 러너·DFlash2·NVMe 파킹 (+ --serve HTTP 문)
 
-플릿(스파크 4대, 판정 이미지 안, 노드당 컨테이너; 랭크 순서 srv2=0(rendezvous), srv1=1, srv3=2, srv4=3):
+플릿(스파크 4대, ST 이미지, 노드당 컨테이너; 랭크 순서 srv2=0(rendezvous), srv1=1, srv3=2, srv4=3):
 
     bash launchers/fanout-st-ranks.sh            # 랭크 r 파일을 노드 r 로
-    bash launchers/start-st-glm53.sh             # 부팅; glm53*/q38* 컨테이너가 있으면 거부
+    bash launchers/start-st-glm53.sh             # 트리 rsync → 노드마다 이미지 빌드 → 부팅; glm53*/q38*/vllm* 컨테이너가 있으면 거부
     curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64}'
     curl -s http://10.10.10.2:8000/v1/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
 
@@ -91,7 +99,7 @@ RoCE 인터페이스·GID는 실행기가 설정하고, `--ranks`에는 해당 �
 
 추가 장치 검사:
 
-    bash probes/run_mk_probe.sh probes/engine_kda_check.py
+    bash probes/run_engine_probe.sh probes/engine_kda_check.py
     python3 probes/engine_cuda_io_check.py
 
 검사 결과와 실제 사용한 네 노드 실행기는
