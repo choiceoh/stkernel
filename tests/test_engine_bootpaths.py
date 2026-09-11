@@ -27,7 +27,6 @@ class BootPathTests(unittest.TestCase):
                  patch.object(boot, "declared"), \
                  patch.object(boot, "LocalTP", return_value=tp), \
                  patch.object(boot.Comm, "init", return_value=comm), \
-                 patch.object(boot.lane_tables, "bind_tp"), \
                  patch.object(boot.lane_tables, "reference"), \
                  patch.object(boot.lane_tables, "served"), \
                  patch.object(boot, "build", side_effect=StopAtBuild) as build:

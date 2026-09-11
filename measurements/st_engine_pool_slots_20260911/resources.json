@@ -1,0 +1,13 @@
+{
+  "device": "NVIDIA GB10",
+  "capability": [
+    12,
+    1
+  ],
+  "triton": "3.7.1",
+  "registers_per_thread": 55,
+  "spills": 0,
+  "shared_bytes": 2048,
+  "warps": 4,
+  "global_scratch_bytes": 0
+}

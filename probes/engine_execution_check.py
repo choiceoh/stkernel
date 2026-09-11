@@ -51,12 +51,12 @@ def main():
         pre = table.mhc_pre(*mhc_args)
         post = table.mhc_post(post_x, res, *pre[:2])
         quant = table.indexer_quant(quant_x)
-        expanded = table.expand_pools(pool_ids, lengths, 4)
-        slots, count = torch.empty_like(expanded), torch.empty(3, device="cuda", dtype=torch.int32)
-        table.indexer_slots(expanded, block_row, 16, 512, 32, slots, count)
+        slots = torch.empty((3, 15), device="cuda", dtype=torch.int32)
+        count = torch.empty(3, device="cuda", dtype=torch.int32)
+        table.pool_slots(pool_ids, lengths, 4, block_row, 16, 512, 32, slots, count)
         score = table.indexer_logits(score_q, score_k, score_scale, score_w, ends)[:, :64]
         pooled = table.kpool_compress(pool_k, pool_score, ape)
-        return (*conv, *kda, *pre, post, *quant, expanded, slots, count, score, *pooled)
+        return (*conv, *kda, *pre, post, *quant, slots, count, score, *pooled)
 
     expected = kernels(direct)  # JIT/warmup on the dispatch owner
     torch.cuda.synchronize()
@@ -93,7 +93,7 @@ def main():
               "torch": torch.__version__, "cuda": torch.version.cuda, "device": torch.cuda.get_device_name(),
               "vllm_installed": False, "vllm_loaded": False, "failure_propagated_and_next_run_exact": True,
               "lanes": ["conv_prefill", "kda_recurrent", "mhc_pre", "mhc_post", "indexer_quant",
-                        "expand_pools", "indexer_slots", "indexer_logits", "kpool_compress"], "checks": checks}
+                        "pool_slots", "indexer_logits", "kpool_compress"], "checks": checks}
     args.output.write_text(json.dumps(report, indent=2) + "\n")
 
 

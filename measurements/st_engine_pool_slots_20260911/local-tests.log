@@ -1,0 +1,10 @@
+----------------------------------------------------------------------
+Ran 134 tests in 2.178s
+
+OK (skipped=38)
+  box: test
+<MagicMock name='declared().table()' id='124719764620208'>
+  box: test
+<MagicMock name='declared().table()' id='124719770817296'>
+  box: test
+<MagicMock name='declared().table()' id='124719758664784'>
