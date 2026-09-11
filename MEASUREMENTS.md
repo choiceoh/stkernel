@@ -8492,3 +8492,12 @@ placement(74.15)·shapes(정렬 16)·qwen38 plan(32.41)·커널 검사 7/7 전�
 - `base/runner.py` — 스텝 루프: scheduler → kv → `Model` 프로토콜(prefill/decode 분리) → record 링 →
   instruments. 가짜 모델로 자가검증: 두 요청이 `prefill, prefill, decode×3, prefill, decode×3` —
   **디코더 옆에 프리필이 한 번도 안 선다**(D9·D10 순차 그대로), 끝나면 블록·슬롯 전부 반환.
+
+### `modules/linear_attention.py` — GLM(KDA)·Qwen(GDN)이 공유하는 델타 규칙, HF 로 판정 4/4
+
+첫 특징 모듈. 게이트 델타 규칙 재귀를 한 번 적고, 관례는 **추정하지 않고 격자로 찾았다**: q/k l2 정규화 ·
+scale=Dk^-0.5(1.0 이면 0.98 어긋남) · 헤드별 감쇠. HF transformers 5.16.1 의 chunked(프리필 형)와
+recurrent(디코드 형) **둘 다** 대비 o 9.8e-4 / state 2.3e-3 (bf16 입력, T=129, 청크 64 의 배수 아님).
+러너가 기대는 성질도 검증: 프리필 상태에서 디코드 1 스텝 = 통째 실행(1e-5 이내), 그리고 **HF 디코드가
+우리 프리필 상태를 그대로 이어받는다** — 상태가 교환 가능하다. 재현: `~/venvs/chronos/bin/python
+probes/linear_attention_check.py`.
