@@ -1,0 +1,29 @@
+{
+  "base_commit": "9e5b082ef72d01bc37f5e75da040fa4da8c3df36",
+  "implementation_commit": "99ad1337a9de8b819b4b9e559a48572366802c64",
+  "source_hashes_verified": 138,
+  "probe_test_sha256": {
+    "probes/engine_kda_ring_perf.py": "8e5b5e9b6355e525bc6655d1b441d690e17798529f409dca94decbec86974ae2",
+    "probes/engine_kda_state_real.py": "5ab90ee92ac58041de6c40dbbb0132c1547883c258067409c55cf7c51116906b",
+    "probes/engine_kda_state_perf.py": "d51749b285aebcd5d8fff6a9ee5c4c6c06adcaa19f8e04d3257829143df14ec5",
+    "probes/engine_kda_strides_perf.py": "6de6b09f1f90d4e9fb161b31b1f7634c3264acd06f75c04b141050f462d894c1",
+    "probes/engine_causal_conv_perf.py": "66761d684217b16d45582244e70c84d182fbc8782f5303d4b2ea6e1439632eab",
+    "tests/test_engine_kda_ring.py": "ab71bb1bbc52d53296a5a08bea15d9da842445adec1553d90d0d85dc64dd975f"
+  },
+  "baseline_sha256": {
+    "baseline-net.py": "38f6eff80c7c381c28cf2a178a57e50f26767e3b57cf01c97683daf4e39f7ded",
+    "baseline/kda.py": "b125f61cf10f2d6c9b576b82e628998fb81bbe5d337ebc490936e5a317211a74",
+    "baseline/fused_recurrent.py": "bbc7d371dcc24400469d7d475104e9defd7c01e342423482d3dd7718ce1e7a55"
+  },
+  "tests": {
+    "run": 283,
+    "failures": 0,
+    "skipped": 0,
+    "seconds": 115.73
+  },
+  "gpu_allocator_cap_gib": {
+    "suite": 2,
+    "real": 1,
+    "perf": 1.5
+  }
+}
