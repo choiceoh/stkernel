@@ -162,11 +162,15 @@ class Glm53Caches:
         self._table_blocks = array("i", [0]) * self.pool.max_seqs
         self._table_epochs = array("Q", self.pool.epochs)
 
-    def reset_slot(self, slot: int):
+    def slot_bytes(self, slot: int):
+        """A real slot's bytes as one contiguous uint8 arena view: what the tier parks and restores."""
         if not 0 < slot < self.slots.num_slots:
-            raise IndexError("only a real state slot may be reset")
+            raise IndexError("only a real state slot has bytes to move")
         n = self.layout.slot_bytes
-        self.state[slot * n:(slot + 1) * n].zero_()
+        return self.state[slot * n:(slot + 1) * n]
+
+    def reset_slot(self, slot: int):
+        self.slot_bytes(slot).zero_()
 
     def prepare(self, step):
         """Publish changed block mappings before a step, after its reservation.

@@ -55,18 +55,63 @@ class Glm53Engine:
         self.steps = 0
         self.decode_graphs = None
         self.sampling_graphs = None
+        self.memory = None
+        self.prefill_chunk = None
 
     def capture_decode(self, max_seqs: int) -> None:
         """Bind the fleet's finite target decode graphs before admitting work."""
         from engine.profiles.glm53.decode_graphs import Glm53DecodeGraphs
         if self.tokens:
             raise ValueError("capture must finish before requests are admitted")
-        self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
-                                              self.drafter.k + 1, self.aux_layers)
-        if self.drafter.k:
-            self.drafter.capture_decode(self.caches)
-        from engine.profiles.glm53.decode_graphs import SamplingGraphs
-        self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
+        if self.decode_graphs is not None:
+            raise ValueError("decode graphs are already prepared")
+        try:
+            if self.memory is not None:
+                self._warmup_prefill_memory()
+            self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
+                                                  self.drafter.k + 1, self.aux_layers, memory=self.memory)
+            if self.drafter.k:
+                self.drafter.capture_decode(self.caches, memory=self.memory)
+            from engine.profiles.glm53.decode_graphs import SamplingGraphs
+            self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
+            if self.memory is not None:
+                self.memory.checkpoint("ready")
+                self.memory.ready = True
+        except BaseException:
+            self.close_decode()
+            raise
+
+    def _warmup_prefill_memory(self):
+        """Exercise the largest legal prefill at both ends of the KV capacity.
+
+        Inputs are synthetic; this qualifies memory preparation, not quality.
+        Unseen tail shapes remain subject to the same allocator byte ceiling.
+        """
+        if self.prefill_chunk is None:
+            raise ValueError("full-model memory preparation requires the scheduler's prefill chunk")
+        caches = self.caches
+        if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
+            raise ValueError("memory preparation requires empty request and state slots")
+        capacity = caches.pool.num_blocks * self.F.block
+        length = min(self.prefill_chunk, capacity)
+        slot = caches.slots.take(0)
+        try:
+            caches.pool.reserve(0, capacity)
+            for context in sorted({0, capacity-length}):
+                self.memory.checkpoint(f"prefill/{length}/{context}/before")
+                ids = torch.zeros(length, device=caches.device, dtype=torch.int64)
+                step = Step.prefill(ids, context, 0, slot)
+                h, aux = self._forward(step)
+                self.net.head(h[-1:])
+                if aux is not None:
+                    self.drafter.observe(caches.draft_ring(slot),
+                                         torch.arange(context, context+length, device=caches.device), aux)
+                del h, aux, step, ids
+                self.memory.checkpoint(f"prefill/{length}/{context}/prepared")
+        finally:
+            caches.pool.release(0)
+            caches.slots.give(slot)
+            caches.reset()
 
     def close_decode(self):
         if self.sampling_graphs is not None:
@@ -79,6 +124,8 @@ class Glm53Engine:
             self.drafter.decode_graphs.proposals.close()
             self.drafter.decode_graphs.observations.close()
             self.drafter.decode_graphs = None
+        if self.memory is not None:
+            self.memory.close()
 
     # -- the runner's protocol -------------------------------------------------------
     def validate(self, ids, max_new, temperature) -> None:
@@ -131,6 +178,30 @@ class Glm53Engine:
         self.caches.restore(self.slot[seq], position, snap)
         self.ctx[seq] = position
 
+    # -- parking (D16): the host side of a conversation travels as a record, the slot's bytes with the tier --
+    def park(self, seq: int) -> dict:
+        """Close the row and hand back everything the host held for it."""
+        if seq not in self.slot:
+            raise ValueError(f"seq {seq} is not open")
+        record = {"context": self.ctx[seq], "pending": len(self.tokens[seq]) - self.ctx[seq],
+                  "tokens": list(self.tokens[seq]), "prompt_len": self.prompt_len[seq],
+                  "limits": [self.limits[seq][0], self.limits[seq][1]], "min_new": self.min_new.get(seq, 0)}
+        self.close(seq)
+        self.forget(seq)
+        return record
+
+    def resume(self, seq: int, slot: int, record: dict) -> None:
+        """Reopen the row in `slot` from a record; the slot's bytes were restored by the tier, so no reset."""
+        if seq in self.tokens or seq in self.slot:
+            raise ValueError(f"seq {seq} is live or has an uncollected result")
+        self.tokens[seq] = list(record["tokens"]); self.prompt_len[seq] = int(record["prompt_len"])
+        self.limits[seq] = (int(record["limits"][0]), float(record["limits"][1]))
+        self.min_new[seq] = int(record.get("min_new", 0))
+        self.slot[seq] = slot; self.ctx[seq] = int(record["context"])
+
+    def state_bytes(self, slot: int):
+        return self.caches.slot_bytes(slot)
+
     def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None,
                min_new: int = 0) -> int:
         """A new turn: more prompt tokens on a conversation the caches still hold.
@@ -174,17 +245,18 @@ class Glm53Engine:
         p = torch.full((logits.shape[0],), self.top_p, device=logits.device)
         return sample(logits, t, p, self.gen)
 
-    def _no_end_yet(self, seq: int, picks: "list[int]", logits: torch.Tensor, rows: slice) -> "list[int]":
+    def _no_end_yet(self, seq: int, picks: "list[int]", hidden: torch.Tensor) -> "list[int]":
         """OpenAI min_tokens: while fewer than `min_new` tokens are generated, an end token cannot be
         chosen -- the position takes its best other token instead (the same as masking the end tokens
-        before the pick, applied only where a pick was an end token, so the graphs stay as captured)."""
+        before the pick, applied only where a pick was an end token, so the fused/captured samplers
+        stay as they are; `hidden` rows correspond to `picks`)."""
         need = self.min_new.get(seq, 0) - self._generated_count(seq)
         if need <= 0 or not self.eos:
             return picks
         fixed = list(picks)
         for i, token in enumerate(picks[:need]):
             if token in self.eos:
-                row = logits[rows][i].clone()
+                row = self.net.head(hidden[i:i + 1])[0].clone()
                 row[list(self.eos)] = float("-inf")
                 if self.decodable is not None and row.shape[-1] > self.decodable:
                     row[self.decodable:] = float("-inf")
@@ -197,6 +269,11 @@ class Glm53Engine:
             return self.net.forward(step, self.caches, aux_layers=self.aux_layers)
         return self.net.forward(step, self.caches), None
 
+    def _sample_hidden(self, hidden, temps):
+        if all(t <= 0 for t in temps):
+            return self.net.head_tokens(hidden, self.decodable)
+        return self._sample(self.net.head(hidden), temps)
+
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> bool:
         ids = torch.tensor(self.tokens[seq][start: start + tokens], dtype=torch.int64, device=self.caches.device)
         h, aux = self._forward(Step.prefill(ids, start, seq, slot))
@@ -204,9 +281,8 @@ class Glm53Engine:
         if aux is not None:                                                 # every prompt token is context for the drafter
             self.drafter.observe(self.caches.draft_ring(slot), torch.arange(start, start + tokens, device=ids.device), aux)
         if self.ctx[seq] == self.prompt_len[seq]:                         # the prompt is in: the first token comes from its last position
-            logits = self.net.head(h[-1:])
-            first = self._sample(logits, [self.limits[seq][1]])
-            self.tokens[seq].append(self._no_end_yet(seq, [int(first.item())], logits, slice(0, 1))[0])
+            first = self._sample_hidden(h[-1:], [self.limits[seq][1]])
+            self.tokens[seq].append(self._no_end_yet(seq, [int(first.item())], h[-1:])[0])
         self.steps += 1
         generated = self._generated_count(seq)
         return generated > 0 and (self.tokens[seq][-1] in self.eos or generated >= self.limits[seq][0])
@@ -219,19 +295,16 @@ class Glm53Engine:
             segments.append(Segment(seq, slot, self.ctx[seq], len(flat), len(ids)))
             flat.extend(ids)
         step = Step(torch.tensor(flat, dtype=torch.int64, device=self.caches.device), tuple(segments))
+        temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
         if self.decode_graphs is None:
             h, aux = self._forward(step)
-            logits = self.net.head(h)
+            sampled = self._sample_hidden(h, temps).tolist()
         else:
             h, aux, logits = self.decode_graphs.run(step)
-        temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
-        if self.sampling_graphs is None:
-            sampled = self._sample(logits, temps).tolist()
-        else:
             sampled = self.sampling_graphs.run(self.decode_graphs.shape(step), temps).tolist()
         finished = []
         for s in step.segments:
-            picks = self._no_end_yet(s.seq, sampled[s.start: s.start + s.length], logits, slice(s.start, s.start + s.length))
+            picks = self._no_end_yet(s.seq, sampled[s.start: s.start + s.length], h[s.start: s.start + s.length])
             accepted = 0
             for d, got in zip(drafts[s.seq], picks):
                 if d != got:

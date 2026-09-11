@@ -5,10 +5,9 @@ Three charter decisions, made mechanical:
   D9   a step is all-prefill or all-decode. The two kinds are separate
        functions below and there is no third; `Step.kind` is one of two strings
        and a test that finds anything else has found a bug.
-  D10  a request that is already answering keeps its ITL no matter what
-       arrives. Prefill runs only when nothing is decoding -- or when the
-       oldest waiting request has waited past `max_wait_s`, which is the ONE
-       starvation valve and is a contract value (D11), not a knob.
+  D10  waiting requests enter prefill after `max_wait_s`. Once admitted,
+       their prefill chunks alternate with decode while decoders are live.
+       A decoder can wait for one prefill chunk, never an entire prompt.
   D2   the prefill chunk is `shapes.chunk_for(align, budget, draft)` and
        nothing else: a chunk that is not what you expected is explained by
        printing that one call.
@@ -58,6 +57,7 @@ class State:
     computed: dict = field(default_factory=dict)    # seq -> tokens prefilled so far
     running: list = field(default_factory=list)     # decoding seq ids
     in_prefill: int | None = None                   # sequential mode: one at a time
+    decode_due: bool = False                       # a completed prefill chunk delayed live decoders
 
 
 @dataclass(frozen=True)
@@ -84,10 +84,12 @@ def plan(state: State, c: Contract, now: float) -> Step | None:
     """One step, or None when there is nothing to do."""
     if len(state.running) > c.max_running:
         raise ValueError("running sequences exceed the declared decode width")
+    if state.in_prefill is not None and len(state.running) == c.max_running:
+        raise ValueError("prefill has no reserved place in the decode batch")
+    if state.running and state.decode_due:
+        return _decode(state, c, "decode between prefill chunks")
     if state.in_prefill is not None:
-        if len(state.running) == c.max_running:
-            raise ValueError("prefill has no reserved place in the decode batch")
-        return _prefill(state, c, "prefill in progress: a request is never split across decoders")
+        return _prefill(state, c, "continue the admitted prefill after decode")
     if state.running:
         if state.waiting and len(state.running) < c.max_running:
             waited = now - state.arrived_at[state.waiting[0]]
@@ -102,6 +104,7 @@ def plan(state: State, c: Contract, now: float) -> Step | None:
 def advance(state: State, step: Step) -> None:
     """Apply a step's bookkeeping. Kernels are not this function's business."""
     if step.kind == PREFILL:
+        state.decode_due = bool(state.running)
         (seq,) = step.seqs
         state.computed[seq] = state.computed.get(seq, 0) + step.tokens
         state.in_prefill = seq
@@ -110,7 +113,7 @@ def advance(state: State, step: Step) -> None:
             state.running.append(seq)
             state.in_prefill = None
     elif step.kind == DECODE:
-        pass                    # finished sequences leave via `finish`
+        state.decode_due = False                    # finished sequences leave via `finish`
     else:
         raise ValueError(f"a step is prefill or decode, never {step.kind!r}")
 
@@ -147,6 +150,8 @@ def finish(state: State, seq: int) -> None:
         state.in_prefill = None
     for d in (state.arrived_at, state.prompt_len, state.computed):
         d.pop(seq, None)
+    if not state.running:
+        state.decode_due = False
 
 
 def _selfcheck() -> None:

@@ -86,7 +86,7 @@ def threaded_dispatch(fused):
     return {"logical_ranks": 4, "main_thread_dispatch_exact": True}
 
 
-def real_indexer(checkpoint, rank_file, ref, fused, baseline=None):
+def real_indexer(checkpoint, rank_file, ref, fused, baseline=None, *, baseline_lanes=None):
     loader = rank_loader(rank_file)
     F = facts.load(checkpoint)
     assert F.is_dsa(3)
@@ -101,7 +101,12 @@ def real_indexer(checkpoint, rank_file, ref, fused, baseline=None):
         cache.pool.reserve(1, F.block)             # force a nonidentity physical block mapping
         cache.pool.reserve(0, 2080)
         cache.slots.take(0)
-    old = replace(fused, indexer_quant=ref.indexer_quant, pool_slots=ref.pool_slots) if baseline is None else legacy_lanes(fused)
+    if baseline_lanes is not None:
+        old = baseline_lanes
+    elif baseline is not None:
+        old = legacy_lanes(fused)
+    else:
+        old = replace(fused, indexer_quant=ref.indexer_quant, pool_slots=ref.pool_slots)
     methods = (baseline or Glm53Net._indexer, Glm53Net._indexer)
     g = torch.Generator(device="cuda").manual_seed(23)
     x = torch.randn(2080, F.hidden, device="cuda", generator=g).to(torch.bfloat16)
