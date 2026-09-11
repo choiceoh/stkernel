@@ -44,7 +44,9 @@ MAP = {
     "KpoolTailSpec": "base.cache_spec", "MLAAttentionSpec": "base.cache_spec",
     "gather_initial_states": "base.kv", "scatter_states": "base.kv", "eager_break_during_capture": "base.graphs",
     "FusedMoE": "modules.moe", "SharedFusedMoE": "modules.moe", "FusedMoEConfig": "modules.moe",
-    "SiluAndMul": None, "SiluAndMulWithClamp": None, "MLAModules": None, "MultiHeadLatentAttentionWrapper": None,
+    "SiluAndMul": None, "SiluAndMulWithClamp": None,
+    "MLAModules": "modules.linear/norm + modules.sparse_attention.mla_sparse_mqa (judged vs mk lane)",
+    "MultiHeadLatentAttentionWrapper": "profiles.glm53 (plain torch composition on the layer library)",
     "SparseAttnIndexerKpool": None, "AttentionSpec": "base.cache_spec", "SharedHead": "modules.logits",
     "DeepseekV2MixtureOfExperts": "modules.moe", "_get_moe_router_dtype": None,
 }

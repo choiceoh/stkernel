@@ -8661,3 +8661,13 @@ spec-verify 경로라 `ssm_state_indices` 등을 요구). 맞추자 프리필 **
 pre(post 3.0e-4 · comb 2.8e-4 · layer_input 4.4e-3), post 1.6e-3. 두 함정: 패키지 `__init__` 이 `torch` 이름을
 가려 `from ...mhc import torch` 가 진짜 torch 를 줬고, CustomOp 인스턴스화는 vLLM config 컨텍스트를 요구해
 등록 op 를 직접 불렀다. 계기: real 15 → **10**, 전체 56% ours(드롭·심 뒤 87%).
+
+### 희소 MLA 레퍼런스 == 서빙 메가커널 레인 — 셋째 real 에지 종결
+
+`modules/sparse_attention.mla_sparse_mqa`(q_abs [T,16,512] · fp8 latent × ckv_scale · top-k 2048 슬롯 · valid
+마스크 · sink 없음)를 glm53 이미지 안에서 우리 `glm53_megakernel.{py,cu}` 를 대상 경로에, `~/glm53-cache` 를
+`/cache` 에 마운트해 판정: 메가커널의 torch 쌍둥이 `mla_decode_ref` 대비 **2.79e-4**, 무장된 CUDA 레인
+`mla_decode` 대비 **2.23e-3**(첫 런치 포함 0.4 ms — 빌드 캐시가 살아 있다). vLLM `layers/mla.py` 의
+`MultiHeadLatentAttentionWrapper` 는 투영·노름·인덱서·attn·o_proj 의 순수 torch 합성이라 우리 층 라이브러리
+위에 그대로 올라간다(rope 없음, q_lora 1536 / kv_lora 512). 계기: real 10 → **8**(남은 것: kpool 인덱서 셋 +
+`DeepseekV32IndexerCache`·`FusedQkvAProj`, `causal_conv1d` 둘, `FusedMoEFactory`).
