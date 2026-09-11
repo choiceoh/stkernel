@@ -5,8 +5,8 @@ The ST composition used `O_NORM_EPS = 1e-6`. The GLM model constructs
 that **class** defaults to **1e-5**. The lower-level `rms_norm_gated` function
 defaults to 1e-6, but the class explicitly passes its own epsilon to it.
 
-This mismatch is shared by the reference and served lanes because output
-normalization lives in `engine/profiles/glm53/net.py`, outside the lane table.
+This mismatch is shared by the reference and served lanes because the
+profile's output-normalization epsilon lives in `engine/profiles/glm53/net.py`.
 It therefore survives replacing all attention kernels with torch references.
 Small core activations can be amplified by nearly sqrt(10) by the wrong
 epsilon. The model has 34 KDA layers, so this is not a harmless tolerance
@@ -130,3 +130,18 @@ For the distributed full trace, omit `--local` and run one process per node
 with ranks 0–3 (srv2, srv1, srv3, srv4) and a shared NCCL rendezvous.
 `--kda-o-norm-eps` permits the legacy-value negative control inside the
 diagnostic only. No production configuration knob was added.
+
+## Merge integration with the fused output kernel
+
+PR #564 (`e5bc42f4`) moved output normalization into a lane while retaining
+the profile's epsilon argument. PR #565 preserves that fused implementation
+and passes the corrected 1e-5 to both lanes. The two independently added
+test classes are retained in `tests/test_engine_kda_norm.py`.
+
+The merged tests run the native 128-channel kernel's magnitude/rounding
+cases with `O_NORM_EPS` and include 1e-5 in the variable-dimension cases.
+All **6 test methods passed on srv4 GB10** in `st-engine:9391`, including
+CUDA graph replay, stream/layout checks, and the independent class-contract
+regression's 9 subcases. See `merge565-gb10-tests.log` (10.267 seconds).
+This is bounded kernel/composition validation; the four-node service and
+multi-token acceptance limitation above remains unchanged.

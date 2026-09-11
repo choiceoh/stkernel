@@ -216,9 +216,7 @@ class Glm53Net:
                     for i in range(s.length):
                         rec_ring[(s.ctx + i) % wr] = states[i]
             core[sl] = o[0]
-        of = core.float()                                                              # o_norm: rmsnorm(o) * w * sigmoid(g)
-        out = (of * torch.rsqrt(of.pow(2).mean(-1, keepdim=True) + O_NORM_EPS) * p[n + "o_norm"].float()
-               * torch.sigmoid(g_out.float())).to(x.dtype)
+        out = self.lanes.kda_output_norm(core, g_out, p[n + "o_norm"], O_NORM_EPS)
         return self.comm.all_reduce(Fn.linear(out.reshape(N, Hl * D), p[n + "o_proj"]))
 
     # -- sparse MLA + kpool indexer ------------------------------------------------------

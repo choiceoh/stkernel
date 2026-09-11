@@ -2,9 +2,11 @@
 import argparse
 from dataclasses import replace
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import statistics
+import sys
 
 import torch
 from engine.base.arena import Arena
@@ -29,7 +31,9 @@ def relative(x, y):
 @torch.inference_mode()
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--baseline-dir", type=Path, required=True)
+    baseline = ap.add_mutually_exclusive_group(required=True)
+    baseline.add_argument("--baseline-dir", type=Path)
+    baseline.add_argument("--baseline-net", type=Path, help="frozen net.py for comparing the complete KDA method")
     ap.add_argument("--checkpoint", type=Path, required=True)
     ap.add_argument("--rank-file", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
@@ -38,7 +42,16 @@ def main():
     torch.manual_seed(93812)
     F = facts.load(a.checkpoint)
     current = lanes.served(reference_for=("expert",))
-    tables = [replace(current,kda_recurrent=baseline_lane(a.baseline_dir)),current]
+    methods = [Glm53Net._kda,Glm53Net._kda]
+    if a.baseline_net:
+        spec = importlib.util.spec_from_file_location("engine.profiles.glm53.baseline_net",a.baseline_net)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        methods[0] = module.Glm53Net._kda
+        tables = [current,current]
+    else:
+        tables = [replace(current,kda_recurrent=baseline_lane(a.baseline_dir)),current]
     net = Glm53Net(F,IsolatedRank(),current,layers=[0])
     specs = [s for s in net.specs() if s.name.startswith("L0.kda.")]
     loader = rank_loader(a.rank_file)
@@ -51,15 +64,18 @@ def main():
         state_error = relative(caches[1]._fields["rec",0],caches[0]._fields["rec",0])
         assert output_error < .008 and state_error < 2e-6,(label,output_error,state_error)
         assert torch.equal(caches[1]._fields["conv",0],caches[0]._fields["conv",0]),label
-        checked.append({"case":label,"output_relative_max":output_error,"ring_relative_max":state_error})
+        exact = torch.equal(outputs[1],outputs[0]) and torch.equal(caches[1].state,caches[0].state)
+        if a.baseline_net: assert exact,label
+        checked.append({"case":label,"output_relative_max":output_error,"ring_relative_max":state_error,
+                        "output_and_state_bits_exact":exact})
     for cache in caches: cache.reset()
     for name,ctx,t in (("prefill",0,64),("verify",64,6),("reject_four",66,6),("decode",72,1)):
         x = torch.randn(t,F.hidden,device="cuda",dtype=torch.bfloat16)*.1
         step = Step.prefill(torch.zeros(t,device="cuda",dtype=torch.int64),ctx,0,1)
         outputs=[]
-        for table,cache in zip(tables,caches):
+        for table,cache,method in zip(tables,caches,methods):
             net.lanes=table
-            outputs.append(net._kda(0,x,step,cache))
+            outputs.append(method(net,0,x,step,cache))
         compare(outputs,name)
     for t in (1,6):
         x=torch.randn(t,F.hidden,device="cuda",dtype=torch.bfloat16)*.1
@@ -68,12 +84,12 @@ def main():
         seq=torch.zeros(1,device="cuda",dtype=torch.int64)
         step=DeviceStep(torch.zeros(t,device="cuda",dtype=torch.int64),ctx,t)
         graphs,outputs=[],[]
-        for table,cache in zip(tables,caches):
+        for table,cache,method in zip(tables,caches,methods):
             view=GraphCaches(cache,seq,slot,4096)
             net.lanes=table
-            net._kda(0,x,step,view)
+            method(net,0,x,step,view)
             graph=torch.cuda.CUDAGraph()
-            with torch.cuda.graph(graph): out=net._kda(0,x,step,view)
+            with torch.cuda.graph(graph): out=method(net,0,x,step,view)
             graphs.append(graph);outputs.append(out)
         for position,physical in ((0,2),(1,1),(7,2),(8,1),(4095,2),(4096,1)):
             x.normal_(std=.1)
@@ -110,6 +126,7 @@ def main():
             stream.seek(loader.data_base+lo)
             weights[s.name] = {"sha256":hashlib.sha256(stream.read(hi-lo)).hexdigest(),"bytes":hi-lo}
     result={"passed":True,"rank":0,"real_weight_bytes":total_bytes(specs),"weights":weights,
+        "baseline_net_sha256":hashlib.sha256(a.baseline_net.read_bytes()).hexdigest() if a.baseline_net else None,
         "config_sha256":hashlib.sha256((a.checkpoint/"config.json").read_bytes()).hexdigest(),
         "synthetic_activations":True,"collectives":False,"graph_eager_bytes_exact":True,
         "checks":checked,"measurements":measurements}
