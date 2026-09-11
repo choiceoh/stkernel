@@ -150,6 +150,13 @@ def indexer_slots(tokens, block_table, block_size, block_stride, layer_offset, o
     out.copy_(slots.masked_fill(positions < 0, -1))
 
 
+def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
+               layer_offset, out, counts):
+    """Expanded-token oracle for the compressed-pool slot finalization lane."""
+    indexer_slots(select_with_tail(pool_ids, seq_lens, pool_size), block_table,
+                  block_size, block_stride, layer_offset, out, counts)
+
+
 def _selfcheck_pool() -> None:
     torch.manual_seed(0); dev = "cuda" if torch.cuda.is_available() else "cpu"
     # Hadamard is orthogonal: H H^T = I after the 1/sqrt(128) scale

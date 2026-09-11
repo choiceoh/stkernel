@@ -149,19 +149,22 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 recurrent 레인도 연결되어 검증 토큰마다 상태를 반환하고, 시작 상태를 보존한다.
 MLA 참조 레인은 선택된 fp8 행만 변환하며, 패딩 슬롯이 가리키는 미사용 블록의 NaN을 마스킹한다.
 
-인덱서의 Hadamard-128 변환·FP8 양자화와 pool→토큰 확장은 `indexer_quant`, `expand_pools`
-레인으로 실행한다. 서빙 표는 `engine.kernels.kpool`의 융합 Triton 커널에 연결하고, 참조 표는 기존 PyTorch
-수식을 유지한다. 두 레인도 LocalTP의 메인 스레드 경유 규칙을 따르며, 바인딩이나 실행 실패는
-그대로 전파한다. 실제 가중치 인덱서의 결과·캐시 일치와 구성요소 성능은
-[`measurements/st_engine_indexer_20260911`](../measurements/st_engine_indexer_20260911/README.md)에 기록했다.
+인덱서의 Hadamard-128 변환·FP8 양자화는 `indexer_quant` 레인으로 실행한다.
+선택한 풀의 최종 주소 생성은 `pool_slots` 레인 하나가 맡는다. GB10에서 토큰 2,051개를
+먼저 펼쳐 정렬하던 경로를, 풀 ID 512개를 정렬한 뒤 토큰을 생성하는 구조로 바꿨다.
+서빙 커널은 4워프 프로그램 하나가 한 행을 처리하며, 중간 GPU 텐서를 할당하지 않는다.
 
-선택 토큰의 최종 주소 변환은 `indexer_slots` 레인이 담당한다. PyTorch의 내림차순 정렬을
-유지하고, 유효 개수 집계·블록 주소 변환·패딩·출력 쓰기를 한 Triton 커널로 실행한다.
-캐시는 `token_map(layer, seq)`로 블록 행과 잠재 벡터 행 단위의 블록 크기·간격·레이어 오프셋을
-제공한다. 연속 캐시 검사의 `None` 블록 행은 위치와 슬롯이 같은 매핑이다. 모든 출력 칸을
-덮어쓰므로 별도의 초기화 커널이 필요 없고, LocalTP와 오류 전파 규칙은 다른 레인과 같다.
-검증과 변경 전후 측정은
-[`measurements/st_engine_slots_20260911`](../measurements/st_engine_slots_20260911/README.md)에 있다.
+KV 블록은 풀 크기의 정수 배수여야 한다. 이 계약 덕분에 풀마다 블록 주소를 한 번 읽고
+네 토큰의 주소를 레지스터에서 계산한다. 미완성 꼬리는 최신 토큰부터 앞에 배치하고,
+중복 풀은 토큰별 중복 횟수를 유지하며, 패딩과 유효 개수까지 같은 커널에서 쓴다.
+참조 레인은 기존 토큰 확장·정렬·매핑 수식을 유지해 정확한 정수 비교의 기준으로 쓴다.
+
+캐시는 `token_map(layer, seq)`로 블록 행과 잠재 벡터 행 단위의 블록 크기·간격·레이어
+오프셋을 제공한다. 연속 캐시 검사의 `None` 블록 행은 위치와 슬롯이 같은 매핑이다.
+LocalTP 소유권과 오류 전파 규칙은 다른 레인과 같다. 이전 `expand_pools`, `indexer_slots`
+서빙 레인은 제거했으며, 기존 함수는 구성요소 검사와 명시적인 과거 커밋 비교에만 사용한다.
+검증 범위와 변경 전후 측정은
+[`measurements/st_engine_pool_slots_20260911`](../measurements/st_engine_pool_slots_20260911/README.md)에 있다.
 
 네 노드 검증은 각 노드에서 같은 인자로 `check.py --distributed`를 실행한다.
 기본 노드 순서는 **rank 0=srv2, rank 1=srv1, rank 2=srv3, rank 3=srv4**다.

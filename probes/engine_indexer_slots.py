@@ -29,14 +29,16 @@ def load_baseline(path):
 
 
 def local_tp(fused):
-    tokens = torch.tensor([[31, -1, 0, 16, 16]], device="cuda", dtype=torch.int32)
+    tokens = torch.tensor([[7, -1, 0, 4, 4]], device="cuda", dtype=torch.int32)
+    lengths = torch.tensor([35], device="cuda", dtype=torch.int32)
     table = torch.tensor([7, 2], device="cuda", dtype=torch.int32)
-    expected, valid = torch.empty_like(tokens), torch.empty(1, device="cuda", dtype=torch.int32)
-    fused.indexer_slots(tokens, table, 16, 512, 32, expected, valid)
-    outputs = [(torch.full_like(tokens, -99), torch.full_like(valid, -99)) for _ in range(4)]
+    table = torch.cat([table, table[:1]])
+    expected, valid = torch.empty((1, 23), device="cuda", dtype=torch.int32), torch.empty(1, device="cuda", dtype=torch.int32)
+    fused.pool_slots(tokens, lengths, 4, table, 16, 512, 32, expected, valid)
+    outputs = [(torch.full_like(expected, -99), torch.full_like(valid, -99)) for _ in range(4)]
     tp = LocalTP(4)
     bound = lanes.served(tp=tp)
-    tp.run(lambda comm: bound.indexer_slots(tokens, table, 16, 512, 32, *outputs[comm.rank]))
+    tp.run(lambda comm: bound.pool_slots(tokens, lengths, 4, table, 16, 512, 32, *outputs[comm.rank]))
     assert all(torch.equal(out, expected) and torch.equal(count, valid) for out, count in outputs)
     return {"ranks": 4, "outputs_and_counts_exact": True}
 
@@ -52,6 +54,8 @@ def main():
     assert importlib.util.find_spec("vllm") is None
     baseline = load_baseline(args.baseline_net)
     ref, fused = lanes.reference(), lanes.served()
+    from engine.modules.sparse_indexer import indexer_slots as ref_slots
+    from engine.kernels.indexer import indexer_slots as old_slots
     report = {"scope": "slot finalization and real-weight L3 indexer; no full-model ITL claim",
               "torch": torch.__version__, "cuda": torch.version.cuda, "device": torch.cuda.get_device_name(),
               "baseline_net_sha256": hashlib.sha256(args.baseline_net.read_bytes()).hexdigest(),
@@ -69,7 +73,7 @@ def main():
         results = [(torch.empty_like(tokens), torch.empty(rows, device="cuda", dtype=torch.int32)) for _ in range(2)]
         fns = [lambda fn=fn, tokens=tokens, out=out, counts=counts:
                fn(tokens, table, 64, 2112, 512, out, counts)
-               for fn, (out, counts) in zip((ref.indexer_slots, fused.indexer_slots), results)]
+               for fn, (out, counts) in zip((ref_slots, old_slots), results)]
         for fn in fns:
             fn()
         assert all(torch.equal(a, b) for a, b in zip(*results))
