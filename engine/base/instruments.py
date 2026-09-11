@@ -26,12 +26,13 @@ measured. That cost 40차 a wrong reading before it was understood.
 from __future__ import annotations
 
 import json
-import os
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-_MEM = os.environ.get("STK_INSTRUMENT_MEMORY", "1").strip() != "0"
+# D11: no undeclared STK_* read here (base/config would kill a boot that set it);
+# sampling already waits for torch.cuda.is_initialized(), so it is simply on.
+_MEM = True
 
 
 def _dev_free_bytes():

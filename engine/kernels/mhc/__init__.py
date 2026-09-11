@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """ST mHC pre/post: TileLang mixing and standalone DeepGEMM prenorm."""
-import os
 import torch
 from . import tilelang_kernels  # Required compiler dependency, checked when the lane binds.
 
@@ -267,4 +266,7 @@ def mhc_post_tilelang(
     return out
 
 
-_DENEB_BIGFUSE = _deneb_parse_bigfuse(os.environ.get("ST_GLM53_MHC_BIGFUSE", ""))
+# D11 (2026-09-12, ST): the dsv4-era big-fuse override (ST_GLM53_MHC_BIGFUSE) was
+# never adopted for GLM (production unset = stock); nothing here reads the env.
+_DENEB_BIGFUSE = None
+

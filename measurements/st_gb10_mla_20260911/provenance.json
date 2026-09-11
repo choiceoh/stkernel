@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-11",
+  "host": "srv4",
+  "baseline_commit": "879b8942ce09990efbd49e59bc779d573509d98c",
+  "gpu": {
+    "name": "NVIDIA GB10",
+    "compute_capability": "12.1",
+    "sms": 48,
+    "driver": "580.159.03"
+  },
+  "nvcc": "13.0.88",
+  "image_id": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+  "gpu_clocks_locked": false,
+  "existing_services_running": true,
+  "torch_allocator_cap_bytes": 536870912,
+  "kernel_container_memory_limit_bytes": 4294967296,
+  "integration_container_memory_limit_bytes": 6442450944,
+  "kernel_info_fields": [
+    "resident_grid",
+    "ordinary_registers_per_thread",
+    "cluster_registers_per_thread",
+    "dynamic_shared_bytes_per_block"
+  ],
+  "file_sha256": {
+    "engine/kernels/mla/__init__.py": "49ec93f199ca43b702f679adf3c96c92eee304198e319c42248b15c0e93e89e8",
+    "engine/kernels/mla/glm53_megakernel.cu": "52de53ada86de8c4f6534a34cf2917c49c01d40b37849f0918a1dad7d6da82b7",
+    "engine/kernels/SOURCES.json": "3dc3aee431f555be374b524ff2edfae19a4e31c9b9d0e5533d6ddd48cfa68ea1",
+    "probes/engine_mla_hardware_check.py": "fae326bfe14dc8a34dae46dab1dc89bd75c99876ec76be979357a5f8f5c3cc7b",
+    "probes/engine_mla_integration_check.py": "33efb35518227e0f9440facd31c1296d5e517f1df04da72bc305409d15f7726f",
+    "tests/test_engine_mla_hardware.py": "0fa734b83064c283c62a900813704ebbae915a903df185715f60db119f3331c2",
+    "tests/test_engine_kernels.py": "3ca0465af6c9bb55993e11109a65c70748577258be00c716d9b0de04fa35b5c3"
+  },
+  "validation": {
+    "kernel_shapes": 33,
+    "fixtures_per_shape": 4,
+    "graph_replays_per_shape": 3,
+    "bf16_comparison": "int16 storage equality including signed zeros",
+    "production_eager_shapes": 14,
+    "production_graph_replays": 70,
+    "production_concurrent_streams": 2,
+    "production_calls_per_stream": 8,
+    "cpu_unittest_total": 172,
+    "cpu_unittest_passed": 111,
+    "cpu_unittest_skipped": 61,
+    "image_targeted_unittest_passed": 11,
+    "compute_sanitizer_available": false,
+    "end_to_end_tp4_model_benchmark": false
+  },
+  "timing_caveats": [
+    "Kernel-only measurements with seven samples per variant/mode; median reported.",
+    "T=64/W=2048 evicted baseline varied from 409 to 631 us; exclude this percentage from representative gains."
+  ]
+}

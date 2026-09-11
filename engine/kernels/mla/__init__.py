@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""ST sparse MLA driver for the unchanged GB10 CUDA megakernel."""
+"""ST sparse MLA with GB10 warp MMA and cluster-local split reduction."""
 import hashlib
 import logging
 import math
@@ -15,10 +15,38 @@ MLA_WS_ROWS = 3 * MLA_MAX_SPLIT_ROWS
 _MLA_WS = None
 _WS = None
 _EXT = None
+_MLA_CLUSTER_MAX = 0
 _ARMED = {"mla": False}
-ENABLE_MLA_PREFILL32 = os.environ.get("ST_GLM53_MK_MLA_PREFILL32") == "1"
-ENABLE_MLA_PREFILL_PAIR = os.environ.get("ST_GLM53_MK_MLA_PREFILL_PAIR") == "1"
-MLA_PREFILL_GROUP = 4 if os.environ.get("ST_GLM53_MK_MLA_PREFILL_GROUP") == "4" else 2
+# Large-M prefill candidates (39차). Production keeps all three off
+# (VLLM_GLM53_MK_MLA_PREFILL32=0, _PREFILL_PAIR=0, _PREFILL_GROUP=2, "pending
+# numerics/sanitizer and a matched TTFT bracket"). D11 (2026-09-12, ST): the
+# profile's STK_mla_prefill knob selects one through configure_prefill()
+# before the lane arms; nothing in this module reads the environment except
+# the build root (a cache path, like TRITON_CACHE_DIR).
+PREFILL_MODES = ("stock", "tile32", "pair", "pair4")
+# Probe hooks (never env, never serving): mla_decode(splits=, probe=) overrides the
+# split rule and selects the kernel's roofline mode (1 = streams only, 2 = + the dot,
+# probes/mk_mla_bench.py); PAIR_STATS logs the adjacent-row selection overlap that the
+# pair candidate's forecast rests on (39차: never recorded in vLLM -- an env trap).
+PAIR_STATS = False
+# GB10 cluster-local split reduction (measurements/st_gb10_mla_20260911: wins for
+# 32 <= T <= 64 at split 2/3, adopted as the default dispatch). D11: the served form,
+# not an env switch -- an A/B flips this module attribute before maybe_arm().
+ENABLE_MLA_CLUSTER = True
+ENABLE_MLA_PREFILL32 = False
+ENABLE_MLA_PREFILL_PAIR = False
+MLA_PREFILL_GROUP = 2
+
+
+def configure_prefill(mode: str) -> None:
+    """Select the served large-M prefill path once, before maybe_arm()."""
+    global ENABLE_MLA_PREFILL32, ENABLE_MLA_PREFILL_PAIR, MLA_PREFILL_GROUP
+    if mode not in PREFILL_MODES:
+        raise ValueError(f"STK_mla_prefill must be one of {PREFILL_MODES}, got {mode!r}")
+    want = (mode == "tile32", mode in ("pair", "pair4"), 4 if mode == "pair4" else 2)
+    if want != (ENABLE_MLA_PREFILL32, ENABLE_MLA_PREFILL_PAIR, MLA_PREFILL_GROUP) and _ARMED["mla"]:
+        raise RuntimeError("configure_prefill: the MLA lane is already armed with another prefill mode")
+    ENABLE_MLA_PREFILL32, ENABLE_MLA_PREFILL_PAIR, MLA_PREFILL_GROUP = want
 
 
 def _build():
@@ -49,6 +77,7 @@ def _ensure_workspace(device):
 
 def maybe_arm():
     """Compile and judge the mandatory MLA lane once, before graph capture."""
+    global _MLA_CLUSTER_MAX
     if _ARMED["mla"]:
         return
     import torch
@@ -58,6 +87,7 @@ def maybe_arm():
     major, minor, sms, _ = ext.probe_device()
     if (major, minor, sms) != (12, 1, 48):
         raise RuntimeError(f"ST MLA requires GB10 SM121/48 SMs, got {major}.{minor}/{sms}")
+    _MLA_CLUSTER_MAX = int(ext.mla_cluster_max()) if ENABLE_MLA_CLUSTER else 0
     if not _selftest_mla():
         raise RuntimeError("ST MLA numerical self-test failed")
     _ARMED["mla"] = True
@@ -98,19 +128,14 @@ def _mla_workspace(device, T: int, splits: int):
 
 
 
-def mla_splits(T: int) -> int:
+def mla_splits(T: int, forced: "int | None" = None) -> int:
     """Slot-axis splits for this row count.
 
-    Measured rule (grid 48, W=2048): the best split is the smallest s with
-    T*s a multiple of the resident grid -- every block then gets the same
-    number of items and the same slot count per item. T=8 -> 6 (94 us),
-    16 -> 3 (162), 24 -> 2 (235), 32 -> 3 (330; 1 and 2 leave a third of the
-    blocks walking a second item alone and cost 40%).
-
-    Bounded by the fixed scratch: T*s <= MLA_WS_ROWS. The decode shapes
-    above are untouched (48/48/48/96 rows); rows that the rule would have
-    split 48 ways (T=37: 1,776 rows for 43 slots a split) take the direct
-    path instead, which is what they are -- a prefill chunk."""
+    Prefer the smallest s making T*s a multiple of the measured resident
+    grid. If the fixed scratch budget prevents that, use the nearest split
+    count within the budget. Rows above MLA_MAX_SPLIT_ROWS are unsplit
+    prefill. Cluster reduction uses this same plan and numerical order.
+    """
     if _EXT is None or T <= 0:
         return 1
     if T > MLA_MAX_SPLIT_ROWS:
@@ -119,8 +144,7 @@ def mla_splits(T: int) -> int:
         return 1
     grid = int(_EXT.mla_grid())
     budget = max(1, min(MLA_SPLITS_MAX, MLA_WS_ROWS // T))
-    forced = os.environ.get("ST_GLM53_MK_MLA_SPLITS")   # probe knob, never set in serving
-    if forced:
+    if forced:                                           # probe hook
         return max(1, min(budget, int(forced)))
     for s in range(1, budget + 1):
         if (T * s) % grid == 0:
@@ -129,8 +153,19 @@ def mla_splits(T: int) -> int:
 
 
 
+def _mla_uses_cluster(T: int, W: int, splits: int) -> bool:
+    """Use only the small clusters that win on GB10, preserving split order.
+
+    Larger clusters lose SM occupancy/packing efficiency. The existing split
+    planner remains authoritative: this changes the reduction's storage and
+    synchronization, not attention selection or floating point summation order.
+    """
+    return (ENABLE_MLA_CLUSTER and 32 <= T <= MLA_MAX_SPLIT_ROWS
+            and 1 <= W <= 2176 and 2 <= splits <= min(3, _MLA_CLUSTER_MAX))
+
+
 def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
-               out=None):
+               out=None, *, splits: "int | None" = None, probe: int = 0):
     """Sparse MLA decode over the indexer's top-k slots.
 
     q_nope [T, H, D] bf16 (never quantised -- the sparse backend forbids it);
@@ -160,8 +195,18 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
             and ckv.element_size() == 1 and lens.is_contiguous()
             and not torch.cuda.is_current_stream_capturing()):
         return _mla_prefill_pair(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out)
+    splits = mla_splits(T, splits)
+    if (probe == 0 and _mla_uses_cluster(T, slots.shape[1], splits)
+            and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
+            and ckv.element_size() == 1 and lens.is_contiguous()):
+        if out is None:
+            out = torch.empty_like(q_nope)
+        _EXT.run_mla_cluster(
+            [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(), out.data_ptr()],
+            [float(sm_scale), float(ckv_scale)], [int(T), int(slots.shape[1]), int(splits)],
+        )
+        return out
     ws = _ensure_workspace(q_nope.device)
-    splits = mla_splits(T)
     assert splits == 1 or T * splits <= MLA_WS_ROWS, (T, splits)
     mw = (_mla_workspace(q_nope.device, T, splits) if splits > 1
           else {"part": ws["barrier"], "pml": ws["barrier"]})   # unused when splits == 1
@@ -172,7 +217,7 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
          out.data_ptr(), mw["part"].data_ptr(), mw["pml"].data_ptr(),
          ws["barrier_mla"].data_ptr()],
         [float(sm_scale), float(ckv_scale)],
-        [int(T), int(slots.shape[1]), int(splits)],
+        [int(T), int(slots.shape[1]), int(splits), int(probe)],
     )
     return out
 
@@ -216,11 +261,10 @@ def _mla_prefill_pair(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out=None):
         if _lg is not None:
             _lg.warning("[megakernel] mla prefill pair engaged (T=%d, W=%d, group=%d)", T, W, width)
     groups = (T + width - 1) // width
-    if os.environ.get("ST_GLM53_MLA_PAIR_STATS") == "1" and getattr(_fn, "_stats_calls", 0) < 6:
-        # 39차 diagnostic (operator: "제안대로 개선"): how much of the sparse
-        # selection adjacent rows really share. The forecast assumed 75 %
-        # common selection; the pair kernel's work is the UNION of the
-        # group's selections, so union/W is the traffic ratio it can reach.
+    if PAIR_STATS and getattr(_fn, "_stats_calls", 0) < 6:
+        # 39차 diagnostic: how much of the sparse selection adjacent rows really
+        # share. The forecast assumed 75 % common selection; the pair kernel's work
+        # is the UNION of the group's selections, so union/W is the traffic ratio.
         _fn._stats_calls = getattr(_fn, "_stats_calls", 0) + 1
         try:
             with torch.no_grad():
@@ -233,21 +277,16 @@ def _mla_prefill_pair(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out=None):
                 la = (a >= 0).sum(-1).float(); lb = (b >= 0).sum(-1).float()
                 union = la + lb - inter
                 jac = (inter / union.clamp_min(1)).mean().item()
-                # the group's union of all `width` rows vs the sum of their lengths
                 flat = g.reshape(g.shape[0], -1)
                 srt, _ = flat.sort(-1)
                 uniq = ((srt[:, 1:] != srt[:, :-1]) & (srt[:, 1:] >= 0)).sum(-1).float() + (srt[:, :1] >= 0).sum(-1).float()
                 lsum = (flat >= 0).sum(-1).float()
                 ratio = (uniq / lsum.clamp_min(1)).mean().item()
-                _lg = globals().get("logger")
-                if _lg is not None:
-                    _lg.warning("[megakernel] mla pair stats: T=%d W=%d group=%d mean len=%.0f | adjacent-row jaccard=%.3f "
-                                "| group union/sum-of-lengths=%.3f (forecast assumed 0.4375 traffic at 75%% common)",
-                                T, W, width, lsum.mean().item() / width, jac, ratio)
+                logger.warning("[megakernel] mla pair stats: T=%d W=%d group=%d mean len=%.0f | adjacent-row jaccard=%.3f "
+                               "| group union/sum-of-lengths=%.3f (forecast assumed 0.4375 traffic at 75%% common)",
+                               T, W, width, lsum.mean().item() / width, jac, ratio)
         except Exception as e:  # noqa: BLE001 -- a diagnostic must never take the lane down
-            _lg = globals().get("logger")
-            if _lg is not None:
-                _lg.warning("[megakernel] mla pair stats failed: %r", e)
+            logger.warning("[megakernel] mla pair stats failed: %r", e)
     schedule = torch.empty((groups, width * W), dtype=torch.int32, device=q_nope.device)
     membership = torch.empty_like(schedule)
     lengths = torch.empty(groups, dtype=torch.int32, device=q_nope.device)
@@ -296,10 +335,11 @@ def _selftest_mla() -> bool:
     torch.manual_seed(0)
     dev = "cuda"
     worst = 0.0
-    # 40 and 100 rows take the direct path (splits == 1: v5's prefill
-    # store), which the decode shapes never exercise.
+    # Include awkward split grids and the unsplit prefill store.
     cases = [(8, 2048, False), (16, 2048, True), (32, 512, True), (1, 64, False),
              (40, 2048, True), (100, 2048, True)]
+    if _MLA_CLUSTER_MAX:
+        cases += [(32, 1, True), (48, 33, True), (64, 2176, True)]
     if ENABLE_MLA_PREFILL32 and not ENABLE_MLA_PREFILL_PAIR:
         cases += [(128, 1, True), (129, 33, True), (131, 2176, True)]
     if ENABLE_MLA_PREFILL_PAIR:
@@ -320,6 +360,9 @@ def _selftest_mla() -> bool:
             lens = torch.randint(1, W + 1, (T,), dtype=torch.int32, device=dev)
         else:
             lens = torch.full((T,), W, dtype=torch.int32, device=dev)
+        if _mla_uses_cluster(T, W, mla_splits(T)):
+            lens[0] = 0
+            slots[0].fill_(-1)
         if ENABLE_MLA_PREFILL32 and T >= 128:
             lens[0] = 0
             slots[0].fill_(-1)

@@ -99,10 +99,50 @@ class KernelPackageTests(unittest.TestCase):
                         child = module / alias.name
                         self.assertTrue(child.with_suffix(".py").is_file() or (child / "__init__.py").is_file(), (path, base, alias.name))
 
-    def test_cuda_translation_unit_and_pinned_dynamic_helpers_are_unchanged(self):
+    def test_kernels_read_no_environment_knobs(self):
+        """D11 (2026-09-12): the kernel package has no env knob. The only os.environ read left is the
+        MLA build root (a cache path, the same class as TRITON_CACHE_DIR); the CUDA TU has no getenv."""
+        allowed = {("mla/__init__.py", "ST_MLA_BUILD_ROOT")}
+        found = set()
+        for path in KERNELS.rglob("*.py"):
+            rel = str(path.relative_to(KERNELS))
+            for node in ast.walk(ast.parse(path.read_text())):
+                if not isinstance(node, ast.Call):
+                    continue
+                f = node.func
+                is_env = (isinstance(f, ast.Attribute) and f.attr in ("get", "getenv")
+                          and ast.unparse(f.value) in ("os.environ", "os"))
+                if is_env:
+                    name = node.args[0].value if node.args and isinstance(node.args[0], ast.Constant) else ast.unparse(node.args[0]) if node.args else "?"
+                    found.add((rel, name))
+            self.assertNotIn("os.environ[", path.read_text(), rel)
+        self.assertEqual(found, allowed)
+        self.assertNotIn("getenv(", (KERNELS / "mla/glm53_megakernel.cu").read_text())
+
+    def test_tile_major_layout_contract_is_shared_with_the_reference_module(self):
+        """The served bind re-lays expert bytes in place; the reference lane reads them back through
+        engine.modules.expert_layout, which must agree with the kernel package on marker and tile widths."""
+        from engine.modules import expert_layout
+        dispatch = (KERNELS / "b12x/moe_dispatch.py").read_text()
+        v5 = (KERNELS / "b12x/moe_static_kernel_v5.py").read_text()
+        v4 = (KERNELS / "b12x/moe_static_kernel_v4.py").read_text()
+        self.assertIn(f'_TILE_MAJOR_ATTR = "{expert_layout.TILE_MAJOR_ATTR}"', dispatch)
+        self.assertIn("TILED_W13_K_IN = _FC1_TILE_K", v5)
+        self.assertIn("TILED_W2_K_IN = _FC2_TILE_K", v5)
+        fc1 = int(next(l for l in v4.splitlines() if l.startswith("_FC1_TILE_K =")).split("=")[1].split("#")[0])
+        fc2 = int(next(l for l in v4.splitlines() if l.startswith("_FC2_TILE_K =")).split("=")[1].split("#")[0])
+        self.assertEqual((fc1 // 2, fc2 // 2), (expert_layout.W13_K_IN_BYTES, expert_layout.W2_K_IN_BYTES))
+        expert_layout._selfcheck()
+
+    def test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance(self):
         manifest = json.loads((KERNELS / "SOURCES.json").read_text())["files"]
         for name in ("mla/glm53_megakernel.cu", "b12x/_moe_dynamic/gated.py"):
-            self.assertEqual(hashlib.sha256((KERNELS / name).read_bytes()).hexdigest(), manifest[name]["sha256"])
+            record = manifest[name]
+            expected = record.get("local_sha256", record["sha256"])
+            self.assertEqual(hashlib.sha256((KERNELS / name).read_bytes()).hexdigest(), expected)
+            if "local_sha256" in record:
+                self.assertTrue(record["local_modifications"])
+                self.assertNotEqual(record["local_sha256"], record["sha256"])
 
     def test_strided_kda_guard_tracks_the_ported_norm_source(self):
         tree = ast.parse((KERNELS / "kda/kda.py").read_text())
