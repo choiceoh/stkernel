@@ -8690,3 +8690,12 @@ pre(post 3.0e-4 · comb 2.8e-4 · layer_input 4.4e-3), post 1.6e-3. 두 함정: 
 식이다. 남은 kpool 조각: 풀링(gate softmax + APE → FWHT-fp8 쓰기), `top_k_per_row`(풀 단위 select_k =
 2048/4), `expand_pools_and_append_tail`(꼬리 항상 포함). 오늘 서빙 커널로 판정된 에지 다섯: KDA · mHC ·
 MLA · conv · 인덱서 점수.
+
+### kpool 인덱서 전부 판정 — 여섯째 real 에지 종결
+
+`modules/sparse_indexer`: 점수식 rel 2.4e-3(서빙 DeepGEMM), 키 양자화 FWHT-128+fp8 **바이트 동일**, 풀링(채널별
+softmax(score+ape) 가중합) 스케일 동일 — fp32 진값 대비 1 fp8 ulp 초과가 **우리 0.0, 서빙 커널 3.4e-3**(둘의
+원소 차이 5.8% 는 커널 쪽 누적 순서의 반올림), 꼬리 확장 `expand_pools_and_append_tail` 과 **동일**. 규칙 하나
+새로 배움: 선택된 풀 id 는 `seq_len // pool_size` 미만(완전한 풀)일 때만 유효하고 나머지 토큰은 꼬리로 온다 —
+내 첫 기대값이 틀렸고 커널이 맞았다. 계기: real 6 → **1**(`FusedMoEFactory` 만 남음), 전체 ours 63%,
+드롭·심 뒤 94%. 오늘 서빙 커널로 판정된 에지: KDA · mHC · MLA · conv · 인덱서(점수·양자화·풀링·꼬리).

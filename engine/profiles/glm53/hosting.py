@@ -47,7 +47,11 @@ MAP = {
     "SiluAndMul": None, "SiluAndMulWithClamp": None,
     "MLAModules": "modules.linear/norm + modules.sparse_attention.mla_sparse_mqa (judged vs mk lane)",
     "MultiHeadLatentAttentionWrapper": "profiles.glm53 (plain torch composition on the layer library)",
-    "SparseAttnIndexerKpool": None,   # scoring judged (modules.sparse_indexer); pooling/top-k/tail pending "AttentionSpec": "base.cache_spec", "SharedHead": "modules.logits",
+    "SparseAttnIndexerKpool": "modules.sparse_indexer (logits/quantiser/pooling/tail judged vs served)",
+    "fwht128_quant_fp8": "modules.sparse_indexer.fwht128_quant (byte-identical)",
+    "head_gate": "modules.sparse_indexer (the per-head weights; glm53_indexer_gate.py is ours)",
+    "DeepseekV32IndexerCache": "base.cache_spec / base.kv (the indexer's paged key cache)",
+    "DeepSeekV2FusedQkvAProjLinear": "modules.linear.MergedColumnParallelLinear (q_a + kv_a fused)", "AttentionSpec": "base.cache_spec", "SharedHead": "modules.logits",
     "DeepseekV2MixtureOfExperts": "modules.moe", "_get_moe_router_dtype": None,
 }
 
