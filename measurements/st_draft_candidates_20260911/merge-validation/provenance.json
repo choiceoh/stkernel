@@ -1,0 +1,24 @@
+{
+  "checked_at": "2026-09-11T14:17:34.400945+00:00",
+  "revision": "99160a296aa81398a66cdac2b27260b6102925e4",
+  "integrated_main": "b0e50398",
+  "native_cpu": {
+    "discovered": 246,
+    "passed": 182,
+    "skipped": 64
+  },
+  "rtx_cuda": {
+    "passed": 20,
+    "skipped": 0
+  },
+  "fused_gb10_tp4": "pending: another task owns the shared fleet lock",
+  "source_sha256": {
+    "engine/kernels/vocab_candidates.py": "1a01cb6da070494d116ba5cde3f612392527d2bfe620feb6f754b8bcce866e88",
+    "engine/modules/vocab.py": "179bc3cda48e23528b431df180ded42d1621f5353767f69ddd2e2d8fd04bc24d",
+    "engine/profiles/glm53/drafter.py": "a6c281a65d73e7af5f0b91703ae23f9a35e57c60f9c18d6bf3e17849e3f78425",
+    "engine/profiles/glm53/decode_graphs.py": "66c394ba0de4fef09cbfe5701884c372dca8773123331796b54982c91364cf6d",
+    "tests/test_engine_vocab_topk.py": "7e11ab5e6bbe24d883f13aa59f0c7276e190a776abd8dfc53af63cef4be24ea0",
+    "tests/test_engine_state.py": "f4689dab76ccc043da585ebf349e94be04df80283720611caad035083672e31b",
+    "tests/test_engine_sampling.py": "7df335eb8887871654414cf125539a68a041b05c6f72a9d070f1cecaba24b9a2"
+  }
+}

@@ -110,10 +110,17 @@ def main():
     for log, count, suffix in (('cpu-native-final.log', 231, ' (skipped=57)'),
                                ('rtx-fused-tests.log', 10, '')):
         assert re.search(rf'Ran {count} tests in .*\n\nOK{re.escape(suffix)}\n', (HERE/log).read_text()), log
+    integration = json.loads((HERE/'merge-validation/provenance.json').read_text())
+    for path, sha in integration['source_sha256'].items():
+        assert source_sha(integration['revision'], path) == sha, path
+    for log, count, suffix in (('native-cpu-tests.log', 246, ' (skipped=64)'), ('rtx-tests.log', 20, '')):
+        assert re.search(rf'Ran {count} tests in .*\n\nOK{re.escape(suffix)}\n',
+                         (HERE/'merge-validation'/log).read_text()), log
     old_bytes, new_bytes = 5*154880*2, 5*4*16*8
     result = dict(
         status='Implemented; fused revision still needs GB10/TP4 qualification. No full-model speedup claim.',
         unfused_revision=UNFUSED, fused_revision=FUSED,
+        merge_validation=integration,
         payload=dict(legacy_gathered_bytes=old_bytes, candidate_gathered_bytes=new_bytes,
                      reduction_percent=100*(1-new_bytes/old_bytes)),
         tests=dict(final_native_cpu_passed=174, final_native_cpu_skipped=57, final_rtx_passed=10,

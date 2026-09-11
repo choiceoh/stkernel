@@ -148,3 +148,18 @@ timing sample/median, rank and case counts, pass flags, logical byte counts,
 memory ceilings and successful cleanup. `summary.json` keeps the unfused TP4
 and fused RTX results in distinct fields. Model weights, the temporary local
 Torch environment and copied weights are outside the repository.
+
+## PR integration validation
+
+Before opening the PR, main through #561 (`b0e50398`) was merged without
+conflicts. `merge-validation/provenance.json` identifies the exact integration
+revision and source hashes. Its fresh native CPU suite discovered **246 tests:
+182 passed, 64 skipped** because CUDA is unavailable in that container. The
+RTX CUDA vocabulary/drafter/state/sampling regressions passed **20/20 with no
+skips**, including main's shared sampling-graph change. See the two logs in
+`merge-validation/`.
+
+All four measurement summarizers were rerun against their recorded revisions.
+The fused GB10/TP4 qualification remains pending under another task's fleet
+lock; this PR integration check does not convert the earlier unfused fleet
+measurements into results for the final fused kernels.
