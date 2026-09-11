@@ -1,0 +1,17 @@
+# Line endings are part of this repo's contract, not a display preference.
+#
+# Overlay sources are mounted onto the runner and their exact sha256 is pinned
+# (PREIMAGES in glm53_prep_fused.py and glm53_drafter_prep.py); launchers/ run
+# under bash on the Linux boxes; deploy-overlays.sh copies working-tree bytes
+# and verifies them with sha256sum. A checkout that rewrites LF to CRLF flips
+# every one of those digests -- check_preimages() then reports drift and the
+# overlay disarms to the stock path -- so source is never EOL-converted, on any
+# platform. Without this file Git for Windows applies core.autocrlf=true from
+# its system gitconfig and does exactly that.
+* text=auto eol=lf
+
+# Captured evidence and build outputs keep the bytes they were captured with.
+measurements/** -text
+*.log -text
+*.gz -text
+*.cubin -text
