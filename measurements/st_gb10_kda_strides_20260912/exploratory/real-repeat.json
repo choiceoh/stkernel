@@ -1,0 +1,222 @@
+{
+  "passed": true,
+  "rank": 0,
+  "real_weight_bytes": 70492480,
+  "weights": {
+    "L0.kda.in_proj": {
+      "sha256": "b4643fc6d73d1d6270cf50c778326a55e07fb769803513cd887e3cc6ccdacbe0",
+      "bytes": 52559872
+    },
+    "L0.kda.f_b": {
+      "sha256": "0f5faaadb93f74b5516e53beee8428c3a240ef896aca7615ded2d189b37e90ee",
+      "bytes": 524288
+    },
+    "L0.kda.g_b": {
+      "sha256": "06eddbce2bc038d2eaa984bbbfbe80bd1f12fe9277e97f3c61234a6af4c0335d",
+      "bytes": 524288
+    },
+    "L0.kda.conv": {
+      "sha256": "464ec25a38f012636d84f9871049ae0fa67d88adf59e8110c552c3e5c5c48dd2",
+      "bytes": 98304
+    },
+    "L0.kda.A_log": {
+      "sha256": "253580a9211bceafa0e54f1f18922fbc7f869a84b1c31cb39fda4ed36c8903a1",
+      "bytes": 64
+    },
+    "L0.kda.dt_bias": {
+      "sha256": "5967fa07fcb3190309ce3ccf6663375395227c2d7951d16cb22352536eb1a7ad",
+      "bytes": 8192
+    },
+    "L0.kda.o_norm": {
+      "sha256": "5827105a7348f193adb1a267f88f5451488b97a34fe9663e350c1f2585c9ded0",
+      "bytes": 256
+    },
+    "L0.kda.o_proj": {
+      "sha256": "6dcdccf3cb3d42bf8c5084fc65a2ef989f7aea2792ce9e6d88d33fc74d93355e",
+      "bytes": 16777216
+    }
+  },
+  "baseline_net_sha256": null,
+  "baseline_lanes_sha256": null,
+  "baseline_strides_sha256": {
+    "kda.py": "0adac7cefaeaa249cb3bb1c3b4342719976305dd20e93248fe475daa694f29a8",
+    "fused_recurrent.py": "04ef53a25293f2672f7ab715419bd9503a66aecb25e6573a052f0566a6c486be"
+  },
+  "config_sha256": "29c9f4171196910e99b9c069d6b76c56e3cdcd0f436dc1bacbc9513c9a7529ac",
+  "timing_replays": 8,
+  "synthetic_activations": true,
+  "collectives": false,
+  "graph_eager_bytes_exact": true,
+  "checks": [
+    {
+      "case": "prefill",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "verify",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "reject_four",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "decode",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx0_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx1_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx7_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx8_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx4095_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx4096_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx0_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx1_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx7_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx8_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx4095_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx4096_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    }
+  ],
+  "measurements": [
+    {
+      "tokens": 1,
+      "context": 4096,
+      "samples_us": [
+        [
+          464.35999870300293,
+          460.9279930591583,
+          461.67200803756714,
+          460.96399426460266,
+          468.9759910106659,
+          419.4279909133911,
+          453.72799038887024,
+          420.3200042247772,
+          448.92799854278564,
+          421.2520122528076,
+          449.75998997688293
+        ],
+        [
+          461.02800965309143,
+          467.2119915485382,
+          460.7720077037811,
+          462.8559947013855,
+          510.43200492858887,
+          477.83198952674866,
+          421.860009431839,
+          450.40398836135864,
+          421.18799686431885,
+          448.3799934387207,
+          418.25199127197266
+        ]
+      ],
+      "median_us": [
+        453.72799038887024,
+        460.7720077037811
+      ]
+    },
+    {
+      "tokens": 6,
+      "context": 4096,
+      "samples_us": [
+        [
+          469.46001052856445,
+          479.203999042511,
+          476.3759970664978,
+          492.26000905036926,
+          480.79198598861694,
+          481.00799322128296,
+          484.8160147666931,
+          479.84400391578674,
+          480.1520109176636,
+          477.6639938354492,
+          481.4159870147705
+        ],
+        [
+          472.4160134792328,
+          472.1519947052002,
+          471.2640047073364,
+          470.17601132392883,
+          469.4719910621643,
+          469.46001052856445,
+          472.42000699043274,
+          472.53599762916565,
+          471.9240069389343,
+          472.6639986038208,
+          470.8240032196045
+        ]
+      ],
+      "median_us": [
+        480.1520109176636,
+        471.9240069389343
+      ]
+    }
+  ]
+}

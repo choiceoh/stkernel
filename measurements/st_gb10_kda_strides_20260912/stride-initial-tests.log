@@ -1,0 +1,9 @@
+test_channel_head_token_strides_and_vector_beta (test_engine_kda_strides.KdaStridesTests.test_channel_head_token_strides_and_vector_beta) ... ok
+test_conv_and_beta_views_match_materialized_values (test_engine_kda_strides.KdaStridesTests.test_conv_and_beta_views_match_materialized_values) ... ok
+test_graph_replay_mutable_inputs_and_accepted_prefix (test_engine_kda_strides.KdaStridesTests.test_graph_replay_mutable_inputs_and_accepted_prefix) ... ok
+test_separate_destination_and_reject_alias_or_malformed_inputs (test_engine_kda_strides.KdaStridesTests.test_separate_destination_and_reject_alias_or_malformed_inputs) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 7.362s
+
+OK

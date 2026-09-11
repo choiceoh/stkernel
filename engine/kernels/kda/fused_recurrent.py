@@ -66,6 +66,7 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     SAFE_GATE: tl.constexpr,  # bounded gate variant (only branch implemented)
     LOWER_BOUND: tl.constexpr,
     STATE_KV: tl.constexpr = False,
+    INPUT_STRIDES: tl.constexpr = None,
 ):
     i_k, i_v, i_nh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_n, i_hv = i_nh // HV, i_nh % HV
@@ -88,18 +89,30 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     o_k = i_k * BK + tl.arange(0, BK)
     o_v = i_v * BV + tl.arange(0, BV)
 
-    p_q = q + (bos * H + i_h) * K + o_k
-    p_k = k + (bos * H + i_h) * K + o_k
-    p_v = v + (bos * HV + i_hv) * V + o_v
-    if IS_BETA_HEADWISE:
-        p_beta = beta + (bos * HV + i_hv) * V + o_v
+    if INPUT_STRIDES is not None:
+        # One-sequence engine views: Q/K/V may share a merged conv output,
+        # and beta may be a narrow slice of the larger input projection.
+        # Keep all recurrence/reduction arithmetic and register tiles intact.
+        p_q = q + bos * INPUT_STRIDES[0][0] + i_h * INPUT_STRIDES[0][1] + o_k * INPUT_STRIDES[0][2]
+        p_k = k + bos * INPUT_STRIDES[1][0] + i_h * INPUT_STRIDES[1][1] + o_k * INPUT_STRIDES[1][2]
+        p_v = v + bos * INPUT_STRIDES[2][0] + i_hv * INPUT_STRIDES[2][1] + o_v * INPUT_STRIDES[2][2]
+        p_gk = g + bos * INPUT_STRIDES[3][0] + i_hv * INPUT_STRIDES[3][1] + o_k * INPUT_STRIDES[3][2]
+        p_beta = beta + bos * INPUT_STRIDES[4][0] + i_hv * INPUT_STRIDES[4][1]
+        if IS_BETA_HEADWISE:
+            p_beta += o_v * INPUT_STRIDES[4][2]
     else:
-        p_beta = beta + bos * HV + i_hv
+        p_q = q + (bos * H + i_h) * K + o_k
+        p_k = k + (bos * H + i_h) * K + o_k
+        p_v = v + (bos * HV + i_hv) * V + o_v
+        if IS_BETA_HEADWISE:
+            p_beta = beta + (bos * HV + i_hv) * V + o_v
+        else:
+            p_beta = beta + bos * HV + i_hv
 
-    if not IS_KDA:
-        p_g = g + bos * HV + i_hv
-    else:
-        p_gk = g + (bos * HV + i_hv) * K + o_k
+        if not IS_KDA:
+            p_g = g + bos * HV + i_hv
+        else:
+            p_gk = g + (bos * HV + i_hv) * K + o_k
 
     # Per-head gate amplitude, hoisted out of the token loop (COMPUTE_GATE).
     if COMPUTE_GATE:
@@ -196,15 +209,23 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
             p_ht = p_ht + i_hv * V * K + state_offsets
             tl.store(p_ht, b_h.to(p_ht.dtype.element_ty), mask=mask_h)
 
-        p_q += H * K
-        p_k += H * K
-        p_o += HV * V
-        p_v += HV * V
-        if not IS_KDA:
-            p_g += HV
+        if INPUT_STRIDES is not None:
+            p_o += HV * V
+            p_q += INPUT_STRIDES[0][0]
+            p_k += INPUT_STRIDES[1][0]
+            p_v += INPUT_STRIDES[2][0]
+            p_gk += INPUT_STRIDES[3][0]
+            p_beta += INPUT_STRIDES[4][0]
         else:
-            p_gk += HV * K
-        p_beta += HV * (V if IS_BETA_HEADWISE else 1)
+            p_q += H * K
+            p_k += H * K
+            p_o += HV * V
+            p_v += HV * V
+            if not IS_KDA:
+                p_g += HV
+            else:
+                p_gk += HV * K
+            p_beta += HV * (V if IS_BETA_HEADWISE else 1)
 
 
 def fused_recurrent_gated_delta_rule_fwd(

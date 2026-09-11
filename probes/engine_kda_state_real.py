@@ -18,6 +18,7 @@ from engine.profiles.glm53.net import Glm53Net, Step
 from engine.profiles.glm53.weights import rank_loader
 from engine_kda_state_perf import baseline_lane
 from engine_causal_conv_perf import baseline_conv
+from engine_kda_strides_perf import baseline_strides, paired_timing
 
 
 class IsolatedRank:
@@ -41,10 +42,13 @@ def main():
     baseline.add_argument("--baseline-dir", type=Path)
     baseline.add_argument("--baseline-net", type=Path, help="frozen net.py for comparing the complete KDA method")
     baseline.add_argument("--baseline-lanes", type=Path, help="frozen lanes.py for comparing the conv adapter")
+    baseline.add_argument("--baseline-strides", type=Path, help="frozen canonical driver and recurrent kernel directory")
     ap.add_argument("--checkpoint", type=Path, required=True)
     ap.add_argument("--rank-file", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument("--timing-replays", type=int, default=1, help="graph replays per timed sample")
     a = ap.parse_args()
+    if a.timing_replays < 1: ap.error("--timing-replays must be positive")
     torch.cuda.set_per_process_memory_fraction((1024*2**20)/torch.cuda.get_device_properties(0).total_memory)
     torch.manual_seed(93812)
     F = facts.load(a.checkpoint)
@@ -59,6 +63,8 @@ def main():
         tables = [current,current]
     elif a.baseline_lanes:
         tables = [replace(current,conv_prefill=baseline_conv(a.baseline_lanes)),current]
+    elif a.baseline_strides:
+        tables = [replace(current,kda_recurrent=baseline_strides(a.baseline_strides)),current]
     else:
         tables = [replace(current,kda_recurrent=baseline_lane(a.baseline_dir)),current]
     net = Glm53Net(F,IsolatedRank(),current,layers=[0])
@@ -74,7 +80,7 @@ def main():
         assert output_error < .008 and state_error < 2e-6,(label,output_error,state_error)
         assert torch.equal(caches[1]._fields["conv",0],caches[0]._fields["conv",0]),label
         exact = same_bits(outputs[1],outputs[0]) and torch.equal(caches[1].state,caches[0].state)
-        if a.baseline_net or a.baseline_lanes: assert exact,label
+        if a.baseline_net or a.baseline_lanes or a.baseline_strides: assert exact,label
         checked.append({"case":label,"output_relative_max":output_error,"ring_relative_max":state_error,
                         "output_and_state_bits_exact":exact})
     for cache in caches: cache.reset()
@@ -119,13 +125,16 @@ def main():
                 "output_relative":relative(eager,expected_out),
                 "state_byte_differences":int((caches[1].state!=expected_state).sum())}
         samples=[[],[]]
-        for iteration in range(11):
+        for iteration in range(12):
             for index in ((0,1) if iteration%2==0 else (1,0)):
                 graphs[index].replay()
                 start,end=torch.cuda.Event(enable_timing=True),torch.cuda.Event(enable_timing=True)
-                start.record();graphs[index].replay();end.record();end.synchronize()
-                samples[index].append(start.elapsed_time(end)*1000)
+                start.record()
+                for _ in range(a.timing_replays): graphs[index].replay()
+                end.record();end.synchronize()
+                samples[index].append(start.elapsed_time(end)*1000/a.timing_replays)
         measurements.append({"tokens":t,"context":4096,"samples_us":samples,
+                             "paired":paired_timing(samples),
                              "median_us":[statistics.median(s) for s in samples]})
         for graph in graphs: graph.reset()
     weights={}
@@ -137,7 +146,9 @@ def main():
     result={"passed":True,"rank":0,"real_weight_bytes":total_bytes(specs),"weights":weights,
         "baseline_net_sha256":hashlib.sha256(a.baseline_net.read_bytes()).hexdigest() if a.baseline_net else None,
         "baseline_lanes_sha256":hashlib.sha256(a.baseline_lanes.read_bytes()).hexdigest() if a.baseline_lanes else None,
+        "baseline_strides_sha256":{p:hashlib.sha256((a.baseline_strides/p).read_bytes()).hexdigest() for p in ("kda.py","fused_recurrent.py")} if a.baseline_strides else None,
         "config_sha256":hashlib.sha256((a.checkpoint/"config.json").read_bytes()).hexdigest(),
+        "timing_replays":a.timing_replays,
         "synthetic_activations":True,"collectives":False,"graph_eager_bytes_exact":True,
         "checks":checked,"measurements":measurements}
     a.output.write_text(json.dumps(result,indent=2)+"\n")

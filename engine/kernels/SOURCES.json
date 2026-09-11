@@ -6,10 +6,11 @@
       "source": "overlay/modules/glm53_kernels/kda.py",
       "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
       "origin": "repository",
-      "local_sha256": "0adac7cefaeaa249cb3bb1c3b4342719976305dd20e93248fe475daa694f29a8",
+      "local_sha256": "b125f61cf10f2d6c9b576b82e628998fb81bbe5d337ebc490936e5a317211a74",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)",
-        "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry"
+        "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry",
+        "2026-09-12 GB10 recurrent: read kv input views directly, allocate dense outputs, validate tensor shapes and reject output/input aliases."
       ]
     },
     "kda/chunk_delta_h.py": {
@@ -26,9 +27,10 @@
       "source": "vllm/third_party/flash_linear_attention/ops/fused_recurrent.py",
       "sha256": "371e7d733e90a7147fbca8dbfe67e62503ba663bd1570424bc0efa22c54f3e2b",
       "origin": "image",
-      "local_sha256": "04ef53a25293f2672f7ab715419bd9503a66aecb25e6573a052f0566a6c486be",
+      "local_sha256": "bbc7d371dcc24400469d7d475104e9defd7c01e342423482d3dd7718ce1e7a55",
       "local_modifications": [
-        "2026-09-11 GB10 recurrent: direct canonical K,V state addressing and masked gate loads at padded K boundaries"
+        "2026-09-11 GB10 recurrent: direct canonical K,V state addressing and masked gate loads at padded K boundaries",
+        "2026-09-12 GB10 recurrent: constexpr token/head/channel strides for canonical KDA inputs; preserve legacy dense addressing and recurrence arithmetic."
       ]
     },
     "kda/index.py": {

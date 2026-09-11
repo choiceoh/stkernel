@@ -6,7 +6,7 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 
 | 레인 | ST 구현 | 외부 라이브러리 |
 | --- | --- | --- |
-| KDA chunk / recurrent | `kda/`의 기존 커널 두 파일과 FLA 보조 7파일(`op.py` 포함) | PyTorch, Triton |
+| KDA chunk / recurrent | `kda/`의 커널과 FLA 보조 파일; recurrent는 Q/K/V·gate·beta stride를 직접 읽음 | PyTorch, Triton |
 | KDA 출력 정규화 | `kda/output.py`에서 FP32 RMS norm·weight·sigmoid gate를 합치고 BF16으로 한 번 저장 | PyTorch, Triton |
 | causal conv | `causal_conv_single.py`의 단일 시퀀스 conv·상태 반환 커널; 범용 prefill / update는 `causal_conv.py` | PyTorch, Triton (범용 커널은 NumPy 추가) |
 | 상태 링 | `state.py`에서 물리 슬롯·위치로 필요한 이력을 읽고 변경된 위치만 쓰기 | PyTorch, Triton |

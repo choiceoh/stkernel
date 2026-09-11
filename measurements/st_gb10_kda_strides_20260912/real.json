@@ -1,0 +1,296 @@
+{
+  "passed": true,
+  "rank": 0,
+  "real_weight_bytes": 70492480,
+  "weights": {
+    "L0.kda.in_proj": {
+      "sha256": "b4643fc6d73d1d6270cf50c778326a55e07fb769803513cd887e3cc6ccdacbe0",
+      "bytes": 52559872
+    },
+    "L0.kda.f_b": {
+      "sha256": "0f5faaadb93f74b5516e53beee8428c3a240ef896aca7615ded2d189b37e90ee",
+      "bytes": 524288
+    },
+    "L0.kda.g_b": {
+      "sha256": "06eddbce2bc038d2eaa984bbbfbe80bd1f12fe9277e97f3c61234a6af4c0335d",
+      "bytes": 524288
+    },
+    "L0.kda.conv": {
+      "sha256": "464ec25a38f012636d84f9871049ae0fa67d88adf59e8110c552c3e5c5c48dd2",
+      "bytes": 98304
+    },
+    "L0.kda.A_log": {
+      "sha256": "253580a9211bceafa0e54f1f18922fbc7f869a84b1c31cb39fda4ed36c8903a1",
+      "bytes": 64
+    },
+    "L0.kda.dt_bias": {
+      "sha256": "5967fa07fcb3190309ce3ccf6663375395227c2d7951d16cb22352536eb1a7ad",
+      "bytes": 8192
+    },
+    "L0.kda.o_norm": {
+      "sha256": "5827105a7348f193adb1a267f88f5451488b97a34fe9663e350c1f2585c9ded0",
+      "bytes": 256
+    },
+    "L0.kda.o_proj": {
+      "sha256": "6dcdccf3cb3d42bf8c5084fc65a2ef989f7aea2792ce9e6d88d33fc74d93355e",
+      "bytes": 16777216
+    }
+  },
+  "baseline_net_sha256": null,
+  "baseline_lanes_sha256": null,
+  "baseline_strides_sha256": {
+    "kda.py": "0adac7cefaeaa249cb3bb1c3b4342719976305dd20e93248fe475daa694f29a8",
+    "fused_recurrent.py": "04ef53a25293f2672f7ab715419bd9503a66aecb25e6573a052f0566a6c486be"
+  },
+  "config_sha256": "29c9f4171196910e99b9c069d6b76c56e3cdcd0f436dc1bacbc9513c9a7529ac",
+  "timing_replays": 8,
+  "synthetic_activations": true,
+  "collectives": false,
+  "graph_eager_bytes_exact": true,
+  "checks": [
+    {
+      "case": "prefill",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "verify",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "reject_four",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "decode",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx0_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx1_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx7_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx8_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx4095_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx4096_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx0_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx1_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx7_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx8_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx4095_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx4096_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    }
+  ],
+  "measurements": [
+    {
+      "tokens": 1,
+      "context": 4096,
+      "samples_us": [
+        [
+          756.8719983100891,
+          760.9120011329651,
+          742.1360015869141,
+          745.1840043067932,
+          741.051971912384,
+          735.1599931716919,
+          732.0079803466797,
+          742.3719763755798,
+          741.0879731178284,
+          754.4199824333191,
+          738.4759783744812,
+          736.8519902229309
+        ],
+        [
+          737.9159927368164,
+          736.6080284118652,
+          733.5360050201416,
+          745.1080083847046,
+          792.2800183296204,
+          747.1039891242981,
+          738.4240031242371,
+          741.4759993553162,
+          736.4839911460876,
+          747.54798412323,
+          743.7400221824646,
+          739.5560145378113
+        ]
+      ],
+      "paired": {
+        "samples_per_order": 6,
+        "cycle_mean_us": [
+          [
+            758.8919997215271,
+            743.6600029468536,
+            738.105982542038,
+            737.1899783611298,
+            747.7539777755737,
+            737.663984298706
+          ],
+          [
+            737.2620105743408,
+            739.3220067024231,
+            769.6920037269592,
+            739.9500012397766,
+            742.0159876346588,
+            741.6480183601379
+          ]
+        ],
+        "median_cycle_us": [
+          740.8829927444458,
+          740.7990097999573
+        ],
+        "cycle_delta_us": [
+          21.62998914718628,
+          4.337996244430542,
+          -31.586021184921265,
+          -2.7600228786468506,
+          5.737990140914917,
+          -3.9840340614318848
+        ],
+        "median_delta_us": 0.7889866828918457,
+        "median_percent_reduction": 0.10446640477617891
+      },
+      "median_us": [
+        741.6119873523712,
+        740.5160069465637
+      ]
+    },
+    {
+      "tokens": 6,
+      "context": 4096,
+      "samples_us": [
+        [
+          746.5599775314331,
+          733.5079908370972,
+          735.3479862213135,
+          728.0399799346924,
+          732.1320176124573,
+          733.299970626831,
+          1101.3840436935425,
+          731.3519716262817,
+          728.3679842948914,
+          733.6879968643188,
+          735.319972038269,
+          733.7960004806519
+        ],
+        [
+          718.3079719543457,
+          727.3960113525391,
+          729.315996170044,
+          729.8319935798645,
+          731.436014175415,
+          732.1320176124573,
+          716.6000008583069,
+          718.6200022697449,
+          711.2560272216797,
+          712.8360271453857,
+          718.2919979095459,
+          728.547990322113
+        ]
+      ],
+      "paired": {
+        "samples_per_order": 6,
+        "cycle_mean_us": [
+          [
+            740.0339841842651,
+            731.6939830780029,
+            732.7159941196442,
+            916.3680076599121,
+            731.0279905796051,
+            734.5579862594604
+          ],
+          [
+            722.8519916534424,
+            729.5739948749542,
+            731.7840158939362,
+            717.6100015640259,
+            712.0460271835327,
+            723.4199941158295
+          ]
+        ],
+        "median_cycle_us": [
+          733.6369901895523,
+          723.1359928846359
+        ],
+        "cycle_delta_us": [
+          17.181992530822754,
+          2.119988203048706,
+          0.9319782257080078,
+          198.75800609588623,
+          18.981963396072388,
+          11.137992143630981
+        ],
+        "median_delta_us": 14.159992337226868,
+        "median_percent_reduction": 1.919034599321665
+      },
+      "median_us": [
+        733.597993850708,
+        723.008006811142
+      ]
+    }
+  ]
+}
