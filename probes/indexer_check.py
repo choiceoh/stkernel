@@ -40,6 +40,15 @@ def main() -> int:
     rel = ((ours - served_f).abs().max() / served_f.abs().max().clamp_min(1e-6)).item()
     print(f"  indexer logits vs served fp8_fp4_mqa_logits: rel {rel:.2e}  (|logits| max {served_f.abs().max().item():.1f})")
     ok = rel < 3e-2
+    # the key quantiser, byte for byte, against the served fwht128_quant_fp8
+    from vllm.models.glm5next.nvidia.ops.kpool_compress import fwht128_quant_fp8
+    from engine.modules.sparse_indexer import fwht128_quant
+    rows = torch.randn(512, 128, device=dev, dtype=torch.bfloat16)
+    q8_s, s_s = fwht128_quant_fp8(rows); q8_o, s_o = fwht128_quant(rows)
+    byte_eq = torch.equal(q8_s.view(torch.uint8), q8_o.view(torch.uint8)); scale_eq = torch.equal(s_s.view(-1), s_o.view(-1))
+    frac = (q8_s.view(torch.uint8) != q8_o.view(torch.uint8)).float().mean().item()
+    print(f"  fwht128 fp8 keys vs served: bytes identical={byte_eq} (differing {frac:.2e}), scales identical={scale_eq}")
+    ok = ok and scale_eq and frac < 1e-3
     print("\n  " + ("indexer reference == served op" if ok else "MISMATCH"))
     return 0 if ok else 1
 

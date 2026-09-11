@@ -13,8 +13,16 @@ per-row scale, and one shared key per position (MQA). The top-k over `n`
 is then taken per query. `indexer_logits` is the bf16 reference of that
 formula; probes/indexer_check.py judges it against the served op.
 
-Pooling (GLM's kpool: `index_kpool` consecutive keys become one, gated) and
-the tail rule live beside it once read off the served kernels.
+Pooling, GLM's kpool (kpool_compress.py `_kpool_softmax_rotate_write_cache_kernel`):
+one program per pool of `kpool` consecutive keys --
+
+    p[slot, :] = softmax_slot( slot_score[slot] + ape[slot, :] )      per channel
+    pooled     = sum_slot p[slot, :] * k[slot, :]
+    key        = fp8( hadamard128(pooled) )                          per-row absmax, ue8m0 scale
+
+and the fp8 step is `fwht128_quant_fp8`: butterflies in fp32 with the exact
+1/sqrt(128), round to bf16, absmax clamp 1e-4, scale = exp2(ceil(log2(absmax/448))),
+clamp +-448. Both are below, judged in probes/indexer_check.py.
 """
 from __future__ import annotations
 
@@ -57,3 +65,54 @@ def _selfcheck() -> None:
 
 if __name__ == "__main__":
     _selfcheck()
+
+
+def hadamard128(x: torch.Tensor) -> torch.Tensor:
+    """Walsh-Hadamard over the last dim (128), scaled by 1/sqrt(128), fp32 butterflies."""
+    assert x.shape[-1] == 128
+    h = x.float()
+    n = 128; step = 1
+    while step < n:
+        h = h.view(*h.shape[:-1], n // (2 * step), 2, step)
+        a, b = h[..., 0, :], h[..., 1, :]
+        h = torch.stack([a + b, a - b], dim=-2).reshape(*h.shape[:-3], n)
+        step *= 2
+    return h * 0.08838834764831845
+
+
+def fwht128_quant(rows: torch.Tensor):
+    """(fp8 [R, 128], scale [R, 1] fp32): rotate, round to bf16, absmax quant with pow2 scale."""
+    x = hadamard128(rows).to(torch.bfloat16).float()
+    absmax = x.abs().amax(dim=-1, keepdim=True).clamp_min(1e-4)
+    scale = torch.exp2(torch.ceil(torch.log2(absmax / 448.0)))
+    y = (x / scale).clamp(-448.0, 448.0)
+    return y.to(torch.float8_e4m3fn), scale
+
+
+def kpool_compress(k: torch.Tensor, slot_score: torch.Tensor, ape: torch.Tensor):
+    """k [P, kpool, 128] bf16, slot_score [P, kpool] (bf16/fp32), ape [kpool, 128] fp32
+    -> (pooled fp8 [P, 128], scale [P, 1]) -- one compressed key per pool."""
+    score = slot_score.float()[..., None] + ape.float()[None]             # [P, kpool, 128]
+    prob = torch.softmax(score, dim=1)
+    pooled = (prob * k.float()).sum(dim=1)                                # [P, 128]
+    return fwht128_quant(pooled)
+
+
+def _selfcheck_pool() -> None:
+    torch.manual_seed(0); dev = "cuda" if torch.cuda.is_available() else "cpu"
+    # Hadamard is orthogonal: H H^T = I after the 1/sqrt(128) scale
+    x = torch.randn(5, 128, device=dev)
+    assert torch.allclose(hadamard128(hadamard128(x)), x, atol=1e-4)
+    P, kp = 7, 4
+    k = torch.randn(P, kp, 128, device=dev, dtype=torch.bfloat16); sc = torch.randn(P, kp, device=dev); ape = torch.randn(kp, 128, device=dev)
+    q8, s = kpool_compress(k, sc, ape)
+    assert q8.shape == (P, 128) and s.shape == (P, 1) and (s == torch.exp2(torch.log2(s))).all()
+    # a uniform gate (score 0, ape 0) is a plain mean
+    q_mean, s_mean = kpool_compress(k, torch.zeros(P, kp, device=dev), torch.zeros(kp, 128, device=dev))
+    ref = fwht128_quant(k.float().mean(1))
+    assert torch.equal(q_mean.view(torch.uint8), ref[0].view(torch.uint8))
+    print("  sparse_indexer: hadamard128 orthogonal, kpool_compress pow2 scale, uniform gate == mean OK")
+
+
+if __name__ == "__main__":
+    _selfcheck_pool()
