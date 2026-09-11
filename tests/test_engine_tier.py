@@ -19,40 +19,71 @@ class Storage(bytearray):
 
 
 class MemoryTier:
-    """Byte storage with failures after partial I/O, exercising real pool ownership."""
+    """Byte storage with failures after partial I/O, exercising real pool ownership.
+
+    Mirrors NvmeTier's contract: blocks, optional slot bytes (`extra`), a host
+    `record`, a capacity that raises TierFull, `keys()` and `oldest()`."""
     block_bytes = 4
 
-    def __init__(self):
+    def __init__(self, capacity=None):
         self.index = {}
-        self.data = {}
+        self.data, self.extra, self.records = {}, {}, {}
+        self.capacity = capacity                    # conversations, not bytes: enough for the policy
+        self.order = []
         self.fail_demote = self.fail_promote = self.fail_forget = False
 
     def has(self, seq):
         return str(seq) in self.index
 
-    def demote(self, seq, storage, ids, tokens):
+    def keys(self):
+        return sorted(int(k) for k in self.index)
+
+    def oldest(self):
+        return self.order[0] if self.order else None
+
+    def record(self, seq):
+        return self.records.get(seq)
+
+    def demote(self, seq, storage, ids, tokens, extra=None, record=None):
+        from engine.base.kv_tier import TierFull
         if self.fail_demote:
             raise OSError("disk write failed")
+        if self.capacity is not None and len(self.index) >= self.capacity:
+            raise TierFull("memory tier full")
         data = b"".join(storage[i * 4:(i + 1) * 4] for i in ids)
         self.data[seq] = data
-        self.index[str(seq)] = {"tokens": tokens, "blocks": len(ids), "bytes": len(data)}
-        return len(data)
+        if extra is not None:
+            self.extra[seq] = bytes(extra)
+        if record is not None:
+            self.records[seq] = json.loads(json.dumps(record))    # what a JSON file would give back
+        self.index[str(seq)] = {"tokens": tokens, "blocks": len(ids), "bytes": len(data) + len(self.extra.get(seq, b"")),
+                                "extra": len(self.extra.get(seq, b""))}
+        self.order.append(seq)
+        return self.index[str(seq)]["bytes"]
 
-    def promote(self, seq, storage, ids):
+    def promote(self, seq, storage, ids, extra=None):
         data = self.data[seq]
         if len(ids) != self.index[str(seq)]["blocks"]:
             raise ValueError("wrong block count")
+        want = len(self.extra.get(seq, b""))
+        if (len(extra) if extra is not None else 0) != want:
+            raise ValueError("slot bytes on disk do not match the view given")
         for j, i in enumerate(ids):
             storage[i * 4:(i + 1) * 4] = data[j * 4:(j + 1) * 4]
             if self.fail_promote:
                 raise OSError("disk read failed")
-        return len(data)
+        if want:
+            extra[:] = self.extra[seq]
+        return self.index[str(seq)]["bytes"]
 
     def forget(self, seq):
         if self.fail_forget:
             raise OSError("manifest write failed")
         self.index.pop(str(seq))
         self.data.pop(seq)
+        self.extra.pop(seq, None)
+        self.records.pop(seq, None)
+        self.order.remove(seq)
 
 
 def make_tier():
@@ -137,6 +168,46 @@ class TierOwnershipTests(unittest.TestCase):
             kv.resume(0)
         self.assertEqual(kv.pool.tokens[0], 17)
         self.assertEqual(b"".join(kv.pool.blocks_of(0)), expected)
+
+    def test_conversation_key_slot_bytes_and_record_travel_between_rows(self):
+        kv = make_tier()
+        kv.pool.reserve(3, 17)
+        slots = [bytearray(b"....") for _ in range(3)]
+        slots[2][:] = b"abcd"
+        before = b"".join(kv.pool.blocks_of(3))
+        kv.park(3, key=42, extra=memoryview(slots[2]), record={"context": 17, "pending": 1, "tokens": [1, 2]})
+        self.assertTrue(kv.is_parked(42) and not kv.is_parked(3))
+        self.assertEqual(kv.pool.tokens[3], 0)
+        self.assertEqual(kv.record(42), {"context": 17, "pending": 1, "tokens": [1, 2]})
+        self.assertEqual((kv.blocks(42), kv.keys(), kv.oldest()), (2, [42], 42))
+        kv.pool.reserve(3, 5)                       # the old row is someone else's now
+        slots[2][:] = b"zzzz"
+        got = kv.resume(0, key=42, extra=memoryview(slots[1]))   # a different row, a different slot
+        self.assertEqual(got, 8 + 4)
+        self.assertEqual(b"".join(kv.pool.blocks_of(0)), before)
+        self.assertEqual(bytes(slots[1]), b"abcd")
+        self.assertEqual(kv.pool.tokens[0], 17)
+        self.assertFalse(kv.is_parked(42) or kv.tier.index)
+
+    def test_slot_bytes_on_disk_require_a_slot_view_to_resume(self):
+        kv = make_tier()
+        kv.pool.reserve(0, 17)
+        kv.park(0, key=7, extra=memoryview(bytearray(b"wxyz")))
+        with self.assertRaisesRegex(ValueError, "slot bytes"):
+            kv.resume(0, key=7)
+        self.assertTrue(kv.is_parked(7))
+        self.assertEqual(kv.pool.available, 4)
+
+    def test_a_key_cannot_be_parked_twice(self):
+        kv = make_tier()
+        kv.pool.reserve(0, 17)
+        kv.pool.reserve(1, 3)
+        kv.park(0, key=5)
+        with self.assertRaisesRegex(ValueError, "already parked"):
+            kv.park(1, key=5)
+        self.assertEqual(kv.pool.tokens[1], 3)
+        kv.forget(5)
+        self.assertFalse(kv.is_parked(5))
 
 
 class NvmeControlTests(unittest.TestCase):

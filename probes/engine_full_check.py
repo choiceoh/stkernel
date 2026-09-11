@@ -98,9 +98,9 @@ def main():
         engine.decode,engine.prefill=decode,prefill
         for name in ('park','resume'):
             original=getattr(runner,name)
-            def measured(seq,original=original,name=name):
-                t0=time.perf_counter(); n=original(seq); end=time.perf_counter()
-                if comm.rank==0: phases.append(dict(kind=name,seq=seq,bytes=n,start=t0,end=end))
+            def measured(seq,*args,original=original,name=name,**kwargs):
+                t0=time.perf_counter(); n=original(seq,*args,**kwargs); end=time.perf_counter()
+                if comm.rank==0: phases.append(dict(kind=name,seq=seq,key=kwargs.get('key',args[0] if args else seq),bytes=n,start=t0,end=end))
                 return n
             setattr(runner,name,measured)
         def post(ids,limit=360,conversation=None):

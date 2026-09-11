@@ -1,7 +1,7 @@
 """The step loop (base): scheduler -> kv -> model -> record, instrumented.
 
 This is the one place the pieces meet, and it knows nothing about a model
-beyond a four-method protocol. A step is homogeneous by construction (D9):
+beyond a small protocol. A step is homogeneous by construction (D9):
 `Model.prefill` and `Model.decode` are different methods and the runner
 never calls both in one step.
 
@@ -10,6 +10,13 @@ promises that a decode step's inputs arrive as flat arrays whose shapes are
 from `shapes`, so a captured graph can be replayed against them. That promise
 is what `record` writes down per step -- a step is replayable from its
 record because everything the scheduler decided is in it.
+
+Conversations outlive rows (D16). A finished turn is `idle`: it keeps its
+row, blocks and state slot and can `wake`, `extend` or be `evict`ed. With a
+tier it can also `park` under a conversation KEY: blocks and slot bytes go
+to NVMe with the model's host record, and the row AND slot are returned --
+so the number of retained conversations is the disk's, not `max_seqs`.
+`resume(row, key)` brings one back into any free row and any free slot.
 """
 from __future__ import annotations
 
@@ -33,6 +40,11 @@ class Model(Protocol):
     def context(self, seq: int) -> int: ...  # tokens computed so far (a new turn prefills from here)
     def open(self, seq: int, slot: int) -> None: ...
     def close(self, seq: int) -> None: ...           # must also clean up a partially failed open
+    # -- parking (only with a tier) --
+    def park(self, seq: int) -> dict: ...            # close the row and return its host record: JSON-serialisable, with
+                                                     # "context" (tokens computed) and "pending" (tokens held but not fed)
+    def resume(self, seq: int, slot: int, record: dict) -> None: ...   # reopen the row in `slot` from a record; the slot's bytes are restored by the tier
+    def state_bytes(self, slot: int): ...            # the slot's bytes as a contiguous uint8 device view (what a tier moves)
 
 
 class Runner:
@@ -43,6 +55,7 @@ class Runner:
         self.tiered = tiered                                # base.tiered_kv.TieredKV, optional
         self.keep_idle = keep_idle                          # a finished turn keeps its blocks and slot: the conversation lives (D16)
         self.idle = {}                                      # seq -> True: finished, not released, parkable
+        self.parked = {}                                    # key -> record, for conversations this process parked (the tier has the rest)
         self.state = sched.State()
         self.slot_of = {}
         self.rec = recorder or Recorder("runner")
@@ -59,8 +72,6 @@ class Runner:
         self.kv.row(seq)                                   # reject invalid row before indexing tokens
         if self.kv.tokens[seq] or seq in self.slot_of:
             raise ValueError(f"seq {seq} already owns resident resources")
-        if self.tiered is not None and self.tiered.is_parked(seq):
-            raise ValueError(f"seq {seq} is parked; resume it before reusing its id")
         self.kv.reserve(seq, prompt_len)                   # the whole prompt is admitted or nothing (D3)
         slot = None
         try:
@@ -92,50 +103,111 @@ class Runner:
         self.model.close(seq)
 
     def cancel(self, seq: int) -> None:
-        """Release a live or idle conversation, including its parked disk copy."""
+        """Release a live or idle row. Parked conversations are not rows: see `forget_parked`."""
         if seq not in self.slot_of:
             return
         if seq in self.state.running or seq in self.state.waiting:
             sched.finish(self.state, seq)
         self.idle.pop(seq, None)
-        try:
-            if self.tiered is not None:
-                if self.tiered.is_parked(seq) or str(seq) in self.tiered.tier.index:
-                    self.tiered.tier.forget(seq)
-        finally:
-            if self.tiered is not None:
-                self.tiered.parked.pop(seq, None)
-            self._release(seq)
+        self._release(seq)
 
     def evict(self, seq: int) -> None:
-        """The idle conversation is over: blocks, disk copy and slot go."""
+        """The idle conversation is over: blocks and slot go."""
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle")
         self.cancel(seq)
 
-
-    def park(self, seq: int) -> int:
-        """An idle conversation leaves the arena but keeps its KV (D16).
+    # -- the tier: conversations leave their rows (D16) -----------------------------------------
+    def park(self, seq: int, key: "int | None" = None) -> int:
+        """An idle conversation leaves the arena but keeps its KV (D16): blocks
+        and slot bytes to NVMe under `key` (the row id by default), the model's
+        host record beside them; the row and the slot are free afterwards.
         Only an idle one: parking a live one would make the next decode wait
-        on disk, which D10 forbids."""
+        on disk, which D10 forbids. A failed write leaves it idle and resident."""
+        if self.tiered is None:
+            raise ValueError("this runner has no tier to park on")
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle; only idle conversations park")
-        return self.tiered.park(seq)
+        key = seq if key is None else key
+        if self.is_parked(key):
+            raise ValueError(f"conversation {key} is already parked")
+        slot = self.slot_of[seq]
+        record = self.model.park(seq)
+        if not isinstance(record, dict) or not all(isinstance(record.get(k), int) for k in ("context", "pending")):
+            self.model.resume(seq, slot, record)
+            raise ValueError("a park record must be a dict with integer 'context' and 'pending'")
+        try:
+            wrote = self.tiered.park(seq, key, extra=self.model.state_bytes(slot), record=record)
+        except BaseException:
+            self.model.resume(seq, slot, record)           # nothing left the arena: the row stays idle and resident
+            raise
+        self.idle.pop(seq)
+        self.slots.give(self.slot_of.pop(seq))
+        self.parked[key] = record
+        return wrote
 
-    def resume(self, seq: int) -> int:
-        """Bring a parked conversation back into fresh blocks, off the step path."""
-        if seq not in self.idle:
-            raise ValueError(f"seq {seq} is not idle")
-        return self.tiered.resume(seq)
+    def resume(self, seq: int, key: "int | None" = None) -> int:
+        """Bring a parked conversation back into the free row `seq` (idle
+        afterwards), off the step path. A failed read frees what it took and
+        keeps the disk copy."""
+        if self.tiered is None:
+            raise ValueError("this runner has no tier to resume from")
+        key = seq if key is None else key
+        if not self.is_parked(key):
+            raise ValueError(f"conversation {key} is not parked")
+        self.kv.row(seq)
+        if self.kv.tokens[seq] or seq in self.slot_of or seq in self.state.prompt_len:
+            raise ValueError(f"row {seq} is not free")
+        record = self.parked.get(key)
+        if record is None:
+            record = self.tiered.record(key)
+        if record is None:
+            raise ValueError(f"conversation {key} has no record on the tier: it cannot be reopened")
+        slot = self.slots.take(seq)
+        try:
+            got = self.tiered.resume(seq, key, extra=self.model.state_bytes(slot))
+        except BaseException:
+            self.slots.give(slot)
+            raise
+        self.model.resume(seq, slot, record)
+        self.slot_of[seq] = slot
+        self.idle[seq] = True
+        self.parked.pop(key, None)
+        return got
+
+    def is_parked(self, key: int) -> bool:
+        return self.tiered is not None and (key in self.parked or self.tiered.is_parked(key))
+
+    def parked_record(self, key: int) -> "dict | None":
+        if not self.is_parked(key):
+            return None
+        record = self.parked.get(key)
+        return record if record is not None else self.tiered.record(key)
+
+    def parked_blocks(self, key: int) -> int:
+        return self.tiered.blocks(key)
+
+    def parked_keys(self) -> "list[int]":
+        return self.tiered.keys() if self.tiered is not None else []
+
+    def forget_parked(self, key: int) -> None:
+        """A parked conversation is over: its disk copy and record go."""
+        if self.tiered is not None:
+            self.tiered.forget(key)
+        self.parked.pop(key, None)
+
+    def forget_oldest_parked(self) -> "int | None":
+        """Make room on the tier: forget the least recently parked conversation. Returns its key."""
+        key = self.tiered.oldest() if self.tiered is not None else None
+        if key is not None:
+            self.forget_parked(key)
+        return key
 
     def wake(self, seq: int) -> None:
-        """An idle conversation decodes again (its next token is pending in the
-        model); a parked one must be resumed first."""
+        """An idle conversation decodes again (its next token is pending in the model)."""
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle")
-        if self.tiered is not None and self.tiered.is_parked(seq):
-            raise ValueError(f"seq {seq} is parked: resume it first")
-        if len(self.state.running) >= self.c.max_running:
+        if len(self.state.running) + int(self.state.in_prefill is not None) >= self.c.max_running:
             raise ValueError("decode width is full; wake it later")
         self.idle.pop(seq)
         self.state.running.append(seq)
@@ -146,8 +218,6 @@ class Runner:
         context, not kv.tokens: reservations overshoot by the last horizon)."""
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle")
-        if self.tiered is not None and self.tiered.is_parked(seq):
-            raise ValueError(f"seq {seq} is parked: resume it first")
         if not isinstance(tokens, int) or tokens <= 0:
             raise ValueError("a turn adds at least one token to prefill")
         held = self.model.context(seq)

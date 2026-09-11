@@ -3,8 +3,9 @@
 Active sequence count, tokens per sequence and a declared context-capacity
 bucket select a graph. Exact context lengths and physical cache ownership
 are replay inputs, including rollback.
-Paged writes go directly to the arena; recurrent rings transfer only the
-predecessor and new states inside the graph. No request may be live during capture.
+Paged and recurrent writes go directly to the arena using device slot ids.
+Only the conv history, initial recurrent state and small indexer tail are
+read into temporary buffers. No request may be live during capture.
 """
 from dataclasses import dataclass
 
@@ -13,7 +14,6 @@ import triton
 import triton.language as tl
 
 from engine.base.graphs import DecodeGraphs
-from engine.kernels.state_cache import gather_ring, commit_ring
 from engine.profiles.glm53.net import Segment
 
 
@@ -57,10 +57,7 @@ def complete_pools(net, layer, segment, tail, k, gate, caches):
     slots = caches.pool_slots(layer, segment.seq, pids).long()
     scatter_rows(pk.view(torch.uint8), caches.pool_keys(layer).view(torch.uint8), slots, count)
     scatter_rows(ps.reshape(-1, 1), caches.pool_scales(layer).unsqueeze(-1), slots, count)
-    keep = min(length, tail.shape[0])
-    positions = ctx + torch.arange(length - keep, length, device=k.device)
-    tail[positions % tail.shape[0], 0] = k[-keep:]
-    tail[positions % tail.shape[0], 1] = gate[-keep:]
+    caches.write_tail(layer, segment.slot, ctx, k, gate)
     return caches.candidate_capacity
 
 
@@ -82,9 +79,8 @@ class DeviceStep:
 
 
 class GraphCaches:
-    def __init__(self, real, sequence_ids, slots, capacity, step):
+    def __init__(self, real, sequence_ids, slots, capacity):
         self.real, self.sequence_ids, self.slots = real, sequence_ids, slots
-        self.contexts, self.tokens = step.contexts, step.tokens
         self.F, self.layout = real.F, real.layout
         self.candidate_capacity = capacity // real.F.kpool
 
@@ -92,25 +88,27 @@ class GraphCaches:
         # Unreserved pages are masked out of attention by valid pool counts.
         # Translate them to a readable page so padded gathers stay in bounds.
         self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min(0)
-        # _kda reads only (ctx-1) % ring, then writes tokens consecutive states.
-        # All other scratch recurrence positions stay uninitialized. Commit
-        # must not write them back: rejected drafts and other owners survive.
-        self.fields = {key: (gather_ring(value, self.slots, self.contexts)
-                             if key[0] == "rec" else value.index_select(0, self.slots))
-                       for key, value in self.real._fields.items() if key[0] != "draft"}
 
-    def commit(self):
-        for key, value in self.fields.items():
-            if key[0] == "rec":
-                commit_ring(value, self.real._fields[key], self.slots, self.contexts, self.tokens)
-            else:
-                self.real._fields[key].index_copy_(0, self.slots, value)
+    def kda_history(self, layer, slot, context):
+        from engine.kernels.state import kda_history
+        return kda_history(self.real._fields["conv", layer], self.real._fields["rec", layer],
+                           self.slots[slot:slot+1], context, self.F.conv - 1)
 
-    def kda(self, layer, slot):
-        return self.fields["conv", layer][slot], self.fields["rec", layer][slot]
+    def write_conv(self, layer, slot, context, inputs):
+        from engine.kernels.state import write_conv
+        write_conv(inputs, self.real._fields["conv", layer], self.slots[slot:slot+1], context)
+
+    def write_rec(self, layer, slot, context, states):
+        from engine.kernels.state import write_ring
+        write_ring(states, self.real._fields["rec", layer], self.slots[slot:slot+1], context)
 
     def tail(self, layer, slot):
-        return self.fields["tail", layer][slot]
+        return self.real._fields["tail", layer].index_select(0, self.slots[slot:slot+1])[0]
+
+    def write_tail(self, layer, slot, context, keys, gates):
+        from engine.kernels.state import write_ring
+        write_ring(torch.stack((keys, gates), dim=1), self.real._fields["tail", layer],
+                   self.slots[slot:slot+1], context)
 
     def latent(self, layer):
         return self.real.latent(layer)
@@ -135,12 +133,13 @@ class GraphCaches:
 
 
 class Glm53DecodeGraphs:
-    def __init__(self, net, caches, max_seqs, tokens, aux_layers=()):
+    def __init__(self, net, caches, max_seqs, tokens, aux_layers=(), memory=None):
         if any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("capture requires no live state slots")
         if tokens not in (1, net.F.spec_k + 1):
             raise ValueError("decode capture needs the declared target or verify width")
         self.net, self.caches, self.tokens = net, caches, tokens
+        self.memory = memory
         self.aux_layers = tuple(aux_layers)
         total = caches.block_table.shape[1] * net.F.block
         self.capacities = [min(4096, total)]
@@ -153,7 +152,7 @@ class Glm53DecodeGraphs:
             slots = seqs + 1
             contexts = torch.zeros(n, device=device, dtype=torch.int64)
             step = DeviceStep(torch.zeros(n * t, device=device, dtype=torch.int64), contexts, t)
-            return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity, step)
+            return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity)
 
         def forward(inputs):
             step, _, _, scratch = inputs
@@ -161,20 +160,15 @@ class Glm53DecodeGraphs:
             try:
                 result = net.forward(step, scratch, aux_layers=self.aux_layers)
                 h, aux = result if self.aux_layers else (result, None)
-                logits = net.head(h)
-                scratch.commit()
+                logits = net.head_local(h)
                 return h, aux, logits
             finally:
-                # These are graph intermediates. Retaining each shape's copy
-                # would pin a separate set of recurrent states per bucket,
-                # defeating the shared graph pool on the full model.
-                scratch.fields.clear()
                 del scratch.block_table
 
         try:
             self.graphs = DecodeGraphs(forward, make_inputs,
                                        [(n, tokens, capacity) for capacity in self.capacities
-                                        for n in range(1, max_seqs + 1)])
+                                        for n in range(1, max_seqs + 1)], memory=memory, label="target")
         finally:
             # Warmup and capture execute real writes, before requests exist.
             caches.reset()
@@ -204,7 +198,7 @@ class Glm53DecodeGraphs:
 
 class DrafterDecodeGraphs:
     """One proposal graph and the finite accepted-prefix context updates."""
-    def __init__(self, drafter, caches):
+    def __init__(self, drafter, caches, memory=None):
         self.field = caches._fields["draft", -1]
         self.drafter = drafter
         device = caches.device
@@ -230,9 +224,15 @@ class DrafterDecodeGraphs:
             self.field.index_copy_(0, inputs["slot"], rings)
 
         try:
-            self.proposals = DecodeGraphs(propose, propose_inputs, [(1, drafter.k + 1)])
+            self.proposals = DecodeGraphs(propose, propose_inputs, [(1, drafter.k + 1)],
+                                          memory=memory, label="drafter/propose")
             self.observations = DecodeGraphs(observe, observe_inputs,
-                                             [(1, t) for t in range(1, drafter.k + 2)])
+                                             [(1, t) for t in range(1, drafter.k + 2)],
+                                             memory=memory, label="drafter/observe")
+        except BaseException:
+            if hasattr(self, "proposals"):
+                self.proposals.close()
+            raise
         finally:
             caches.reset()
 
@@ -269,6 +269,7 @@ class SamplingGraphs:
     """
     def __init__(self, target, generator, decodable, top_p):
         from engine.base.sampler import sample
+        from engine.modules.vocab import argmax
         self.tokens = target.tokens
         shapes = list(target.graphs.outputs)
         saved = generator.get_state()
@@ -282,18 +283,25 @@ class SamplingGraphs:
             return logits, torch.ones(n*t, device=logits.device), torch.full((n*t,), top_p, device=logits.device)
 
         def greedy(inputs):
-            return inputs[0][:, :decodable].argmax(-1)
+            return argmax(inputs[0], target.net.comm, target.net.rank * target.net.vp, decodable)
 
         def stochastic(inputs):
-            logits, temps, p = inputs
+            local_logits, temps, p = inputs
+            logits = target.net.comm.all_gather(local_logits, dim=-1)
             if decodable is not None and logits.shape[-1] > decodable:
                 logits = logits.clone()
                 logits[:, decodable:] = float("-inf")
             return sample(logits, temps, p, generator, top_p_enabled=top_p < 1.)
 
         try:
-            self.greedy = DecodeGraphs(greedy, make_inputs, shapes)
-            self.stochastic = DecodeGraphs(stochastic, make_inputs, shapes, generators=(generator,))
+            memory = getattr(target, "memory", None)
+            self.greedy = DecodeGraphs(greedy, make_inputs, shapes, memory=memory, label="sampling/greedy")
+            self.stochastic = DecodeGraphs(stochastic, make_inputs, shapes, generators=(generator,),
+                                          memory=memory, label="sampling/stochastic")
+        except BaseException:
+            if hasattr(self, "greedy"):
+                self.greedy.close()
+            raise
         finally:
             generator.set_state(saved)
 

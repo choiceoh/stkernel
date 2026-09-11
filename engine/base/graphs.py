@@ -22,7 +22,8 @@ import torch
 
 
 class DecodeGraphs:
-    def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup: int = 2, generators=()):
+    def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup: int = 2, generators=(),
+                 memory=None, label="decode"):
         """step_fn(inputs) runs one decode step over static `inputs`;
         make_inputs(num_seqs, tokens_per_seq) allocates them once per shape."""
         self.graphs, self.inputs, self.outputs = {}, {}, {}
@@ -30,12 +31,16 @@ class DecodeGraphs:
         side = torch.cuda.Stream()
         try:
             for shape in shapes:
+                if memory is not None:
+                    memory.checkpoint(f"{label}/{shape}/before")
                 inp = make_inputs(*shape)
                 side.wait_stream(torch.cuda.current_stream())
                 with torch.cuda.stream(side):
                     for _ in range(warmup):
                         step_fn(inp)
                 torch.cuda.current_stream().wait_stream(side)
+                if memory is not None:
+                    memory.checkpoint(f"{label}/{shape}/warmup")
                 g = torch.cuda.CUDAGraph()
                 for generator in generators:
                     g.register_generator_state(generator)
@@ -43,6 +48,8 @@ class DecodeGraphs:
                 with torch.cuda.graph(g, pool=pool):
                     out = step_fn(inp)
                 self.graphs[shape], self.inputs[shape], self.outputs[shape] = g, inp, out
+                if memory is not None:
+                    memory.checkpoint(f"{label}/{shape}/captured")
             torch.cuda.synchronize()
         except BaseException:
             self.close()

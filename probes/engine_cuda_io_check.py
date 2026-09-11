@@ -23,9 +23,10 @@ from engine.base.tiered_kv import TieredKV
 
 def main():
     block_bytes, blocks = 64 << 10, 256
-    arena = Arena(block_bytes * blocks)
+    slot_bytes = 4096 * 5 + 300                                    # odd-sized state slots: sector padding on disk
+    arena = Arena(block_bytes * blocks + 3 * slot_bytes + 256)
     pool = BlockPool(blocks, 16, 4, blocks)
-    pool.attach_storage(arena.carve(arena.nbytes, "KV"), block_bytes)
+    pool.attach_storage(arena.carve(block_bytes * blocks, "KV"), block_bytes)
     with tempfile.TemporaryDirectory(prefix="st-engine-io-", dir=str(Path.home())) as d:
         tier = NvmeTier(d, block_bytes, stage_bytes=2 << 20)
         kv = TieredKV(pool, tier)
@@ -89,11 +90,32 @@ def main():
         reopened.cleanup()
         assert "0" not in reopened.index and reopened.has(1)
         assert len(list(Path(d).glob("seq-*.kv"))) == 1
-        print(json.dumps({"passed": True, "kv_bytes": arena.nbytes, "staging_bytes": tier.stage_bytes,
+        # A conversation is blocks + its state slot + a host record, under its own key, into any row and slot.
+        slots = arena.carve(3 * slot_bytes, "slots").view(3, slot_bytes)
+        slots[1].copy_(torch.randint(0, 256, slots[1].shape, dtype=torch.uint8, device="cuda"))
+        slot_before, blocks_before = slots[1].clone(), torch.cat(pool.blocks_of(1)).clone()
+        wrote = kv.park(1, key=77, extra=slots[1], record={"context": 1599, "pending": 1, "tokens": list(range(1600))})
+        assert kv.is_parked(77) and pool.tokens[1] == 0 and reopened.has(77) is False        # row 1's own key stays: its earlier direct demote is still published
+        again = NvmeTier(d, block_bytes, stage_bytes=2 << 20)                                 # after a "reboot": key, record, sizes are on disk
+        assert again.has(77) and again.record(77)["context"] == 1599 and again.index["77"]["extra"] == slots[1].numel()
+        slots[1].zero_(); pool.storage.zero_()
+        got = kv.resume(3, key=77, extra=slots[2])                                            # a different row and slot
+        assert wrote == got and torch.equal(slots[2], slot_before) and torch.equal(torch.cat(pool.blocks_of(3)), blocks_before)
+        assert not kv.is_parked(77) and not list(Path(d).glob("seq-77-*"))
+        small = NvmeTier(d, block_bytes, stage_bytes=2 << 20, capacity_bytes=block_bytes)     # room for nothing real
+        from engine.base.kv_tier import TierFull
+        try:
+            small.demote(78, pool.storage, [b for b in pool.row(3) if b >= 0], 1600)
+        except TierFull:
+            pass
+        else:
+            raise AssertionError("a full tier must refuse before writing")
+        assert not list(Path(d).glob("seq-78-*"))
+        print(json.dumps({"passed": True, "kv_bytes": block_bytes * blocks, "staging_bytes": tier.stage_bytes,
                           "bytes_written": tier.bytes_written, "bytes_read": tier.bytes_read,
                           "producer_stream": True, "async_producer_stream": True,
                           "concurrent_roundtrip": True, "replacement_failures_retryable": True,
-                          "cleanup_after_restart": True}))
+                          "cleanup_after_restart": True, "keyed_slot_record_roundtrip": True, "tier_full_refused": True}))
 
 
 if __name__ == "__main__":

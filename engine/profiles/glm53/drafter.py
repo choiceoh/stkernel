@@ -129,9 +129,9 @@ class Drafter:
         self.p = None
         self.decode_graphs = None
 
-    def capture_decode(self, caches):
+    def capture_decode(self, caches, memory=None):
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
-        self.decode_graphs = DrafterDecodeGraphs(self, caches)
+        self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory)
 
     def observe_decode(self, ring, positions, aux):
         if self.decode_graphs is None:

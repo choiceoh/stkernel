@@ -146,7 +146,14 @@ class Glm53Net:
         return self.comm.all_reduce(h)
 
     def head(self, h: torch.Tensor) -> torch.Tensor:
-        return self.comm.all_gather(Fn.linear(h, self.p["head"]), dim=-1)
+        return self.comm.all_gather(self.head_local(h), dim=-1)
+
+    def head_local(self, h: torch.Tensor) -> torch.Tensor:
+        return Fn.linear(h, self.p["head"])
+
+    def head_tokens(self, h: torch.Tensor, decodable=None) -> torch.Tensor:
+        from engine.modules.vocab import argmax
+        return argmax(self.head_local(h), self.comm, self.rank * self.vp, decodable)
 
     # -- mHC -----------------------------------------------------------------------
     def _hc_pre(self, L: int, res: torch.Tensor, side: str):
@@ -166,32 +173,34 @@ class Glm53Net:
         beta_all = b_all                                                             # raw logits: each lane sigmoids as its kernel wants
         core = torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
         wc, wr = self.conv_ring, self.rec_ring
+        captured = getattr(step, "captured", False)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
-            conv_ring, rec_ring = caches.kda(L, s.slot)
-            # conv: the K-1 inputs before ctx from the ring (positions < 0 are zero), then this segment's inputs
-            hist_pos = s.ctx + torch.arange(-(K - 1), 0, device=x.device)
-            hist = conv_ring[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0)
-            y, _ = self.lanes.conv_prefill(qkv_all[sl], p[n + "conv"], hist if getattr(step, "captured", False) or s.ctx > 0 else None)
-            keep = min(s.length, wc)
-            pos = s.ctx + torch.arange(s.length - keep, s.length, device=x.device)
-            conv_ring[:, pos % wc] = qkv_all[sl][-keep:].T
+            if captured:
+                hist, state0 = caches.kda_history(L, s.slot, s.ctx)
+            else:
+                conv_ring, rec_ring = caches.kda(L, s.slot)
+                hist_pos = s.ctx + torch.arange(-(K - 1), 0, device=x.device)
+                hist = conv_ring[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0)
+                state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
+            y, _ = self.lanes.conv_prefill(qkv_all[sl], p[n + "conv"], hist if captured or s.ctx > 0 else None)
+            if captured:
+                caches.write_conv(L, s.slot, s.ctx, qkv_all[sl])
+            else:
+                keep = min(s.length, wc)
+                pos = s.ctx + torch.arange(s.length - keep, s.length, device=x.device)
+                conv_ring[:, pos % wc] = qkv_all[sl][-keep:].T
             q, k, v = (t.reshape(1, s.length, Hl, D) for t in y.split(Hl * D, dim=-1))
             g_raw, beta = g_raw_all[sl][None], beta_all[sl][None]
-            if getattr(step, "captured", False):
-                state0 = rec_ring.index_select(0, ((s.ctx - 1) % wr).reshape(1))
-                state0 = state0.masked_fill(s.ctx <= 0, 0)
-            else:
-                state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
             if s.length > wr:                                                       # a prefill chunk: only the final state is kept
                 o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
                 rec_ring[(s.ctx + s.length - 1) % wr] = state[0]
             else:                                                                   # a decode/verify step: one state per position
                 o, states = self.lanes.kda_recurrent(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
-                for i in range(s.length):
-                    if getattr(step, "captured", False):
-                        rec_ring.index_copy_(0, ((s.ctx + i) % wr).reshape(1), states[i:i+1])
-                    else:
+                if captured:
+                    caches.write_rec(L, s.slot, s.ctx, states)
+                else:
+                    for i in range(s.length):
                         rec_ring[(s.ctx + i) % wr] = states[i]
             core[sl] = o[0]
         of = core.float()                                                              # o_norm: rmsnorm(o) * w * sigmoid(g)

@@ -106,6 +106,42 @@ class SchedulingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sched.plan(state, CONTRACT, 0)
 
+    def test_long_waiter_yields_between_chunks_without_losing_progress(self):
+        r = runner(blocks=32)
+        r.submit(0, 16, now=0)
+        r.submit(1, 178, now=0)
+        r.step(now=0)
+        steps = [r.step(now=20 + i) for i in range(7)]
+        self.assertEqual([s.kind for s in steps],
+                         [sched.DECODE, sched.PREFILL, sched.DECODE,
+                          sched.PREFILL, sched.DECODE, sched.PREFILL, sched.DECODE])
+        self.assertEqual([c for c in r.model.calls if c[:2] == ("prefill", 1)],
+                         [("prefill", 1, 0, 64), ("prefill", 1, 64, 64), ("prefill", 1, 128, 50)])
+        self.assertEqual(steps[-1].seqs, (0, 1))
+
+    def test_prefill_continues_without_yields_after_last_decoder_finishes(self):
+        r = runner(blocks=32)
+        r.submit(0, 16, now=0)
+        r.submit(1, 178, now=0)
+        r.step(now=0)
+        r.step(now=20)
+        r.step(now=21)
+        r.model.done.add(0)
+        self.assertEqual(r.step(now=23).kind, sched.DECODE)
+        self.assertEqual(r.step(now=24).kind, sched.PREFILL)
+        self.assertEqual(r.step(now=25).kind, sched.PREFILL)
+        self.assertEqual(r.state.running, [1])
+
+    def test_cancelling_partial_prefill_preserves_decoder_and_fifo_waiter(self):
+        r = runner(blocks=32)
+        for seq, length in [(0, 16), (1, 178), (2, 32)]:
+            r.submit(seq, length, now=0)
+        r.step(now=0); r.step(now=20); r.step(now=21)
+        r.cancel(1)
+        self.assertEqual(r.step(now=23).seqs, (0,))
+        self.assertEqual(r.step(now=24).seqs, (2,))
+        self.assertEqual(r.state.running, [0, 2])
+
     def test_prefill_tail_stays_inside_budget(self):
         c = replace(CONTRACT, draft_slots=3)
         s = sched.State()
@@ -115,6 +151,20 @@ class SchedulingTests(unittest.TestCase):
             sizes.append(step.tokens)
             sched.advance(s, step)
         self.assertEqual(sizes, [48, 48, 34])
+
+    def test_wake_cannot_take_the_paused_prefills_reserved_decode_place(self):
+        r = runner(blocks=32)
+        r.keep_idle = True
+        r.submit(2, 16, now=0)
+        r.model.done.add(2)
+        r.step(now=0); r.step(now=1)
+        r.submit(0, 16, now=2); r.submit(1, 178, now=2)
+        r.step(now=2); r.step(now=3); r.step(now=23)
+        before = copy.deepcopy(r.state)
+        with self.assertRaisesRegex(ValueError, "decode width"):
+            r.wake(2)
+        self.assertEqual(before, r.state)
+        self.assertIn(2, r.idle)
 
 
 class PoolTests(unittest.TestCase):

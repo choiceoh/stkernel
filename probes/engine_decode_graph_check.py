@@ -14,6 +14,7 @@ class IsolatedRank:
     rank=0
     world_size=4
     def all_reduce(self,x): return x
+    def all_reduce_max(self,x): return x
     def all_gather(self,x,dim=-1): return x
 
 def main():

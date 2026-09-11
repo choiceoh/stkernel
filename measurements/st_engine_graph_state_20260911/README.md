@@ -1,5 +1,12 @@
 # Recurrent graph-state transfers — 2026-09-11
 
+**Historical proposal, superseded during this task.** PR #549 reached main
+with a better direct-state architecture that also removes the full scratch
+rings. The final branch preserves that implementation and removes this
+proposal's production kernel and adapter changes. The measurements below
+belong to `7068978c`, not the current main implementation. Historical probes
+are under `historical/`; they require that measured checkout.
+
 GLM target graphs now gather only the KDA predecessor state and commit only the
 states produced by this step. The transfer workload improves substantially;
 the shared-fleet measurements do **not** establish an overall TP4 or full-model
@@ -9,7 +16,7 @@ Implementation: `7068978c13f064c23f1ee2de3c0a1e0356c3b912`.
 Baseline: main `b18c97f4`, after PR #547/#548. The paired probe imports an exact
 `git show b18c97f4:engine/profiles/glm53/decode_graphs.py` export; its SHA-256 is
 recorded in every paired report. `summarize.py` checks the measured engine Python
-hashes against the checkout, the runtime manifest, and evidence completeness.
+hashes against that immutable Git revision, the runtime manifest, and evidence completeness.
 
 ## Change and preserved contracts
 
@@ -154,7 +161,15 @@ NVMe interference, throughput, final fleet admission or full-model ITL.
 
 ## Reproduction
 
-Export the baseline, mount this source at `/repo`, native cache at `/cache`,
+Restore the measured revision and copy the historical probes into its `probes/`
+directory before reproducing this superseded proposal:
+
+```bash
+git worktree add /tmp/st-state-706 7068978c
+cp measurements/st_engine_graph_state_20260911/historical/*.py /tmp/st-state-706/probes/
+```
+
+Export the baseline, mount that checkout at `/repo`, native cache at `/cache`,
 rank files at `/ranks`, metadata at `/meta`, and a writable `/evidence`:
 
 ```bash

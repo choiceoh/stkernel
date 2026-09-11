@@ -4,9 +4,20 @@ import json
 from pathlib import Path
 import re
 import statistics
+import subprocess
+from functools import cache
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+MEASURED = '7068978c13f064c23f1ee2de3c0a1e0356c3b912'
+
+
+@cache
+def source_digest(path):
+    # This proposal was superseded by the direct-state implementation in #549.
+    # Validate historical measurements against their immutable source revision.
+    data = subprocess.check_output(['git', 'show', f'{MEASURED}:{path}'], cwd=ROOT)
+    return hashlib.sha256(data).hexdigest()
 
 
 def read(name):
@@ -19,7 +30,7 @@ def paired(names):
         report = read(name)
         assert len(report['results']) == 4, name
         for path, digest in report['source_sha256'].items():
-            assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, (name, path)
+            assert source_digest(path) == digest, (name, path)
         for case in report['results']:
             assert all(case['hidden_logits_state_paged_exact']), (name, case)
             a,b = [case['timing'][k]['median_us'] for k in ('baseline', 'optimized')]
@@ -64,7 +75,7 @@ for rank in range(4):
 runtime = read('runtime-final.json')
 assert runtime['passed'] and not runtime['vllm_present']
 for path, digest in runtime['source_files'].items():
-    assert hashlib.sha256((ROOT / 'engine' / path).read_bytes()).hexdigest() == digest, path
+    assert source_digest('engine/' + path) == digest, path
 summary = dict(
     scope='recurrent transfer improvement; no qualified full-model or TP4 speedup claim',
     gpu_tests=145, graph_checks_per_rank=graph_checks,

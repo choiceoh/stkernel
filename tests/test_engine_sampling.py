@@ -71,9 +71,11 @@ class GraphSamplingTests(unittest.TestCase):
     def test_graph_matches_seeded_eager_sampling_and_preserves_greedy_rng(self):
         from engine.profiles.glm53.decode_graphs import SamplingGraphs
         from engine.profiles.glm53.adapter import Glm53Engine
+        from engine.base.comm import Comm
         for top_p in (1., .8):
             outputs = {(n, 1): (None, None, torch.empty(n, 64, device="cuda")) for n in (1, 3)}
-            target = SimpleNamespace(tokens=1, graphs=SimpleNamespace(outputs=outputs))
+            target = SimpleNamespace(tokens=1, graphs=SimpleNamespace(outputs=outputs),
+                                     net=SimpleNamespace(comm=Comm(), rank=0, vp=64))
             generator = torch.Generator(device="cuda").manual_seed(19)
             before = generator.get_state().clone()
             graphs = SamplingGraphs(target, generator, 61, top_p)
