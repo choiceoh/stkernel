@@ -9187,3 +9187,26 @@ st_engine_native_kernels_20260911`. 이 브랜치는 main 을 병합하며 커�
 
 즉 #541 의 커널 패키지·표식 계약 위에서도 엔진의 판정 결과는 §16~§17 과 같다(패키징 전후, 옛 판정 이미지/ST 이미지, 내 v4/codex 재절단본 —
 네 조합 모두 같은 수치, 같은 한 행). 같은 GPU 에서 codex 의 `engine_decode_graph_check.py --distributed`(st-completion-9391)가 동시에 돌았다.
+
+### 45차 §19 — 첫 45층 4노드 부팅: 돌았으나 다른 세션의 플릿과 충돌해 죽었다; 문(chat)·잠금 (2026-09-11 밤)
+
+**부팅**(19:38, `RANKS_DIR=~/models/st-glm53-9391-up-gate-full`, codex 재절단 표식본; 노드마다 rsync → `build.sh` → 컨테이너): 네 컨테이너
+19:38:56~19:39:04 시작. 로그엔 NCCL 경고 한 줄뿐 — `python3` 이 `-u` 없이 돌아 stdout 이 블록 버퍼링됐고, 죽을 때 버퍼가 사라졌다(런처 수정:
+`python3 -u`). 그래도 **rank 0 의 사망 줄이 부팅 성공을 증언한다**: `Watchdog caught collective operation timeout: WorkNCCL(SeqNum=91482,
+OpType=BROADCAST, NumelIn=17)` — 서브 루프의 `broadcast_object` 가 **91,482 번** 돌았다(유휴 2 ms 루프 ≈ 3 분). 즉 45층 로드·JIT·자가검증·
+NCCL 초기화를 지나 서빙 루프에 들어가 있었다(19:41 께). 요청은 못 보냈다(문 대기 태스크가 세션과 함께 끊김).
+**충돌**: 19:42:01 codex 세션의 `st-full-completion-9391` 컨테이너가 srv1·srv4 에 떴고(그쪽 첫 45층 부팅), 19:42:25 내 rank 2(srv3)가 137 로
+죽고(cgroup OOM 아님) 19:44:08 rank 0 의 브로드캐스트가 120 s 타임아웃 → 19:45:13 rank 0 종료. codex 쪽은 "55.4 GiB 아레나 할당 실패,
+srv1/srv4 SSH 응답 없음"(PR #545 본문) — 같은 노드에서 내 플릿이 55 GiB 를 쥔 뒤였다. 20:19~20:22 남은 컨테이너가 모두 255 로 정리되고
+20:31 프로덕션 vLLM 이 다시 떴다(플릿 창 닫힘). **두 세션 모두 결과 없음.** 조치: 런처가 `st-*` 컨테이너도 거부하고 rank 0 노드의
+`~/st-fleet.lock` 을 잡는다(`stop` 이 푼다) — 플릿을 쓰는 모든 세션이 지켜야 한다(README).
+**main 병합**(#543~#546, codex: 인덱서 슬롯 융합, 실행 소유권 분리, 디코드 그래프·TP4 MoE fp32 누적, 풀 슬롯 커널; 13 커밋, 충돌 없음).
+`facts.RANKS` 가 `glm53-redhat-nvfp4-tp4-up-gate-v1` 로 바뀌었는데 **그 디렉터리는 어느 노드에도 없다** — 표식본은 네 노드 모두
+`st-glm53-9391-up-gate-full` 에 있다(RANKS_DIR 로 넘기거나 심링크).
+**문**: `base/serve.py` 에 OpenAI chat 방언 — `POST /v1/chat/completions`(토큰 단위 SSE 스트리밍: 스텝 루프가 요청별 큐에 새 토큰을 넘기고
+HTTP 스레드가 텍스트 델타로; 불완전 멀티바이트는 다음 토큰까지 보류; `</think>` 앞 `reasoning_content` 뒤 `content`; `stream_options.
+include_usage`), `GET /v1/models`, `GET /metrics`(벤치가 읽는 `vllm:` 이름의 카운터: success/running/waiting/prompt/generation/spec_decode
+accepted·draft), `/health`. 프로필은 프로덕션과 같은 `chat_template_mm_v2.jinja`(transformers 렌더, `thinking` kwarg 통과)와 `</think>`=154842 를
+넘긴다(이미지 안 검증: 렌더 결과를 `tokenizers` 로 인코딩한 id 가 transformers 와 동일, 22 토큰). `tests/test_engine_serve.py` 20 tests OK
+(문 4종 추가: 목록·카운터·health, 통째 답, 토큰 스트림 + 추론 분리, 엔진 사망 시 스트림 클라이언트 해제). `boot --local --serve` 는 스트림
+chat 한 턴을 더 판정한다(GPU 창 없어 미실행). **다음**: 플릿 창(프로덕션 정지, 한 세션만) → 부팅 → chat 한 요청 → `bench/onepass.py`.

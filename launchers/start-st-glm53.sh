@@ -29,18 +29,24 @@ node_sh() { local ip=$1; shift; ssh $SSHOPT "choiceoh@$ip" "$@"; }
 
 case "${1:-start}" in
   stop)
-    for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done; exit 0 ;;
+    for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
+    node_sh "${NODES[0]}" "rm -f /home/choiceoh/st-fleet.lock"; exit 0 ;;
   logs)
     r=${2:-0}; node_sh "${NODES[$r]}" "docker logs --tail 60 $NAME"; exit 0 ;;
   start) ;;
   *) echo "usage: $0 [start|stop|logs r]" >&2; exit 2 ;;
 esac
 
-# refuse to share the fleet
+# refuse to share the fleet: a serving/other container on any node, or another runner's lock on the head
+# (the lock is a file on rank 0's node; `stop` removes it; every fleet runner -- every session -- honours it)
+LOCK=/home/choiceoh/st-fleet.lock
 for ip in "${NODES[@]}"; do
-  busy=$(node_sh "$ip" "docker ps --format '{{.Names}}' | grep -E '^(glm53|q38|vllm)' || true")
+  busy=$(node_sh "$ip" "docker ps --format '{{.Names}}' | grep -E '^(glm53|q38|vllm|st-)' || true")
   [ -z "$busy" ] || { echo "ABORT: $ip runs $busy -- the fleet is taken (hand off the queue, do not squat)" >&2; exit 1; }
 done
+held=$(node_sh "${NODES[0]}" "cat $LOCK 2>/dev/null || true")
+[ -z "$held" ] || { echo "ABORT: the fleet is locked by '$held' ($LOCK on ${NODES[0]}); wait or 'stop' from that side" >&2; exit 1; }
+node_sh "${NODES[0]}" "echo '$(whoami)@$(hostname) st-glm53 $(date '+%F %T')' > $LOCK"
 
 NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
@@ -73,6 +79,6 @@ for r in "${!NODES[@]}"; do
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 engine/profiles/glm53/boot.py --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER' >/dev/null && echo '$ip: started'"
 done
 echo "head: http://10.10.10.2:$PORT/v1/completions  (GET / for status)"
