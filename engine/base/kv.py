@@ -16,6 +16,15 @@ int32 stack. No Python object graph sits between the scheduler and the launch.
 Running out is an error, not a fallback (D3): the budget declared how many
 blocks exist before the model loaded, so exhaustion means the scheduler broke
 its contract, and hiding that behind an eviction would hide the bug.
+
+Blocks are owned by count: a row references the blocks in its table, a prefix
+cache pins the blocks of a boundary it keeps (base/prefix.py), and a block
+returns to the free stack when its count reaches zero. A row may adopt a
+cached prefix (read-only, already complete blocks) ahead of its own
+reservation. When the free stack cannot cover a reservation, the pool first
+asks the cache to reclaim -- that is the one place an eviction happens, and it
+frees blocks nobody but the cache holds; a shortage after that is still the
+scheduler's error.
 """
 from __future__ import annotations
 
@@ -47,6 +56,9 @@ class BlockPool:
         self.rows_in_use = 0
         self.storage = None                                # arena view, once attached
         self.block_bytes = 0
+        self.refs = array("i", [0]) * num_blocks           # owners per block: rows + cache pins
+        self.reclaim = None                                # cache callback: free at least n blocks, returns how many
+        self.reclaimable = None                            # cache callback: blocks only the cache holds
 
     def attach_storage(self, view, block_bytes: int) -> None:
         """Bind the pool to `num_blocks * block_bytes` of arena (D16)."""
@@ -65,7 +77,8 @@ class BlockPool:
 
     @property
     def available(self) -> int:
-        return len(self.free)
+        """Free now plus what the cache would give back on demand."""
+        return len(self.free) + (self.reclaimable() if self.reclaimable is not None else 0)
 
     def blocks_for(self, tokens: int) -> int:
         return -(-tokens // self.block_size)
@@ -121,28 +134,73 @@ class BlockPool:
                 raise MemoryError(f"seq {seq} would exceed {self.max_blocks_per_seq} blocks")
             growth.append((seq, have, need, tokens))
         grow = sum(need - have for _, have, need, _ in growth)
-        if grow > self.available:
+        if grow > len(self.free) and self.reclaim is not None:
+            self.reclaim(grow - len(self.free))            # the cache gives back least recently used boundaries
+        if grow > len(self.free):
             raise MemoryError(
-                f"batch needs {grow} more blocks, {self.available} free: the "
+                f"batch needs {grow} more blocks, {len(self.free)} free: the "
                 "scheduler admitted more than the budget declared")
         for seq, have, need, tokens in growth:
             base = seq * self.max_blocks_per_seq
             for i in range(have, need):
-                self._table[base + i] = self.free.pop()
+                block = self.free.pop()
+                self._table[base + i] = block
+                self.refs[block] = 1
             if self.tokens[seq] == 0 and tokens:
                 self.rows_in_use += 1
             self.tokens[seq] += tokens
         return grow
 
+    def adopt(self, seq: int, blocks, tokens: int) -> None:
+        """Seat a cached prefix -- `tokens` whole blocks that are complete and shared -- at the head of
+        an empty row; the row's own reservation continues after them."""
+        blocks = tuple(blocks)
+        self.row(seq)
+        if self.tokens[seq] or self.row(seq)[0] != EMPTY:
+            raise ValueError(f"seq {seq} already holds blocks; a prefix is adopted into an empty row")
+        if type(tokens) is not int or tokens <= 0 or tokens % self.block_size or len(blocks) != tokens // self.block_size:
+            raise ValueError("an adopted prefix is whole blocks with exactly their token count")
+        if len(blocks) > self.max_blocks_per_seq or any(not 0 <= b < self.num_blocks or self.refs[b] <= 0 for b in blocks):
+            raise ValueError("adopted blocks must be live cached blocks that fit the row")
+        base = seq * self.max_blocks_per_seq
+        for i, block in enumerate(blocks):
+            self._table[base + i] = block
+            self.refs[block] += 1
+        self.tokens[seq] = tokens
+        self.rows_in_use += 1
+
+    def pin(self, blocks) -> None:
+        """One more owner for each block (a cache entry)."""
+        for b in blocks:
+            if not 0 <= b < self.num_blocks or self.refs[b] <= 0:
+                raise ValueError("only a live block can be pinned")
+        for b in blocks:
+            self.refs[b] += 1
+
+    def unpin(self, blocks) -> int:
+        """Drop the cache's ownership; blocks nobody else holds go back to the free stack. Returns how many did."""
+        freed = 0
+        for b in blocks:
+            if self.refs[b] <= 0:
+                raise ValueError("unpin of a block with no owner")
+            self.refs[b] -= 1
+            if self.refs[b] == 0:
+                self.free.append(b)
+                freed += 1
+        return freed
+
     def release(self, seq: int) -> int:
-        """Give every block of `seq` back. Returns how many."""
+        """Give every block of `seq` back (to the free stack when the row was its last owner). Returns how many."""
         row = self.row(seq)
         base = seq * self.max_blocks_per_seq
         n = 0
         for i in range(self.max_blocks_per_seq):
             if row[i] == EMPTY:
                 break
-            self.free.append(row[i])
+            block = row[i]
+            self.refs[block] -= 1
+            if self.refs[block] == 0:
+                self.free.append(block)
             self._table[base + i] = EMPTY
             n += 1
         if n:
