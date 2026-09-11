@@ -8501,3 +8501,24 @@ recurrent(디코드 형) **둘 다** 대비 o 9.8e-4 / state 2.3e-3 (bf16 입력
 러너가 기대는 성질도 검증: 프리필 상태에서 디코드 1 스텝 = 통째 실행(1e-5 이내), 그리고 **HF 디코드가
 우리 프리필 상태를 그대로 이어받는다** — 상태가 교환 가능하다. 재현: `~/venvs/chronos/bin/python
 probes/linear_attention_check.py`.
+
+### Qwen3.8 프로필 — 액티베이션 실측, budget/shapes/caches (HF 층, 모양만, 부팅 없음)
+
+HF `Qwen4ExpTextDecoderLayer` 를 cuda 에 미초기화로 세워(층당 bf16 4.83 GiB — 512 전문가가 지배,
+**구성 0.2~0.5 s**) 잔차 폭 **10,240**(hc 4 × 2560) 입력으로 돌렸다. 레이블은 `linear_attention` 36 /
+**`qwen_sparse_attention`** 12.
+
+| 층 | 1K | 2K | 4K | 판정 |
+|---|---:|---:|---:|---|
+| GDN(0) | 0.289 | 0.572 | 1.137 | **선형, 0.286 GiB/1K** |
+| QSA(3) | 0.290 | 1.053 | 3.996 | **2차** — HF eager 가 top-k 전에 T×T 인덱스 점수를 실체화 |
+
+QSA 의 2차 곡선은 **오라클의 비용이지 커널의 비용이 아니다**(vLLM Triton `qsa_pre_indexer` 는 커널
+안에서 선택) — DSv4.1 TileLang 스텁 때와 같은 논리를 거꾸로 적용. 예산 줄은 GDN 값(0.286/1K)을 쓰고
+QSA 는 모듈이 생기면 재측정(빚으로 기록). 4K 청크 액티베이션 1.22 GiB.
+
+**예산**(`profiles/qwen38/budget.py`): 121.63 − OS 12.16 − 바닥 5.54 − 가중치 **32.41** − 할당자 0.03
+− 구성 8.77(상한, 유일한 추정) − 액티베이션 1.22 = **KV 61.49 GiB** → 동시 8 까지 모델 상한 262,144,
+동시 32 에 155,811, 동시 128 에 37,294. `shapes.py`: **청크 정렬 4**(QSA 압축 그룹), conv 히스토리 3 ·
+n-gram 히스토리 2 는 슬롯/컨텍스트로 이월, NVFP4 group 16, 잔차 폭 hc 4. `caches.py`: 시퀀스당 27.5 MiB
++ 토큰당 12.75 KiB, B=1 S=128K 총 1.62 GiB.
