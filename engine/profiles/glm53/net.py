@@ -61,6 +61,20 @@ class Step:
     ids: torch.Tensor           # [N] int64
     segments: "tuple[Segment, ...]"
 
+    def __post_init__(self):
+        if self.ids.ndim != 1 or self.ids.dtype != torch.int64 or not self.segments:
+            raise ValueError("a step needs a flat int64 token vector and nonempty segments")
+        end, seqs, slots = 0, set(), set()
+        for s in self.segments:
+            if s.start != end or s.length <= 0 or s.ctx < 0 or s.seq < 0 or s.slot <= 0:
+                raise ValueError("segments must cover tokens contiguously with valid contexts and state slots")
+            if s.seq in seqs or s.slot in slots:
+                raise ValueError("a sequence and its state slot may appear only once per step")
+            seqs.add(s.seq); slots.add(s.slot)
+            end += s.length
+        if end != self.ids.numel():
+            raise ValueError("segment lengths must cover every token exactly once")
+
     @property
     def positions(self) -> torch.Tensor:
         return torch.cat([torch.arange(s.ctx, s.ctx + s.length, device=self.ids.device) for s in self.segments])
@@ -72,6 +86,8 @@ class Step:
     @staticmethod
     def decode(chunks: "list[tuple[torch.Tensor, int, int, int]]") -> "Step":
         """chunks: (ids, ctx, seq, slot) per sequence, 1 + K draft tokens each."""
+        if not chunks:
+            raise ValueError("decode needs at least one sequence")
         segs, start = [], 0
         for ids, ctx, seq, slot in chunks:
             segs.append(Segment(seq, slot, ctx, start, ids.shape[0])); start += ids.shape[0]
@@ -85,9 +101,9 @@ class Caches(Protocol):
     def latent(self, layer: int) -> torch.Tensor: ...            # [S, 512] e4m3, all slots of the box
     def pool_keys(self, layer: int) -> torch.Tensor: ...         # [P, 128] e4m3 (FWHT-rotated, per-row scaled)
     def pool_scales(self, layer: int) -> torch.Tensor: ...       # [P] f32
-    def tail(self, layer: int, slot: int) -> torch.Tensor: ...   # [kpool, 2, 128] bf16: raw k (0) and gate score (1), by pos % kpool
-    def token_slots(self, seq: int, positions: torch.Tensor) -> torch.Tensor: ...   # int32 latent slots
-    def pool_slots(self, seq: int, pool_ids: torch.Tensor) -> torch.Tensor: ...     # int32 pool slots
+    def tail(self, layer: int, slot: int) -> torch.Tensor: ...   # [kpool-1+K, 2, 128] bf16: enough raw keys/gates to reject K drafts
+    def token_slots(self, layer: int, seq: int, positions: torch.Tensor) -> torch.Tensor: ...   # int32 absolute latent slots
+    def pool_slots(self, layer: int, seq: int, pool_ids: torch.Tensor) -> torch.Tensor: ...     # int32 absolute pool slots
 
 
 def rmsnorm(x: torch.Tensor, w: torch.Tensor, eps: float) -> torch.Tensor:
@@ -102,6 +118,8 @@ class Glm53Net:
         self.F, self.comm, self.lanes = F, comm, lanes
         self.rank = comm.rank
         self.layers = list(range(F.layers)) if layers is None else list(layers)
+        if not self.layers or len(set(self.layers)) != len(self.layers) or any(not 0 <= L < F.layers for L in self.layers):
+            raise ValueError("model layers must be nonempty, unique and inside the profile")
         self.Hl = F.heads_local                      # MLA heads on this rank (16)
         self.Hk = F.kda_heads_local                  # KDA heads on this rank (16)
         self.vp = F.vocab_local
@@ -192,30 +210,36 @@ class Glm53Net:
         width = F.topk + kp - 1
         slots_out = torch.full((N, width), -1, dtype=torch.int32, device=x.device)
         valid_out = torch.zeros(N, dtype=torch.int32, device=x.device)
-        keys, scales, tail_all = caches.pool_keys(L), caches.pool_scales(L), None
+        keys, scales = caches.pool_keys(L), caches.pool_scales(L)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
             tail = caches.tail(L, s.slot)
+            tail_width = kp - 1 + F.spec_k
+            if tail.shape[0] != tail_width:
+                raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
             end = s.ctx + s.length
             pool0 = (s.ctx // kp) * kp                                              # the pool ctx sits in may be half-built
             lead = s.ctx - pool0                                                    # its earlier tokens are in the tail ring
             lead_pos = torch.arange(pool0, s.ctx, device=x.device)
-            k_win = torch.cat([tail[lead_pos % kp, 0], k[sl]]) if lead else k[sl]
-            g_win = torch.cat([tail[lead_pos % kp, 1], gate[sl]]) if lead else gate[sl]
+            k_win = torch.cat([tail[lead_pos % tail_width, 0], k[sl]]) if lead else k[sl]
+            g_win = torch.cat([tail[lead_pos % tail_width, 1], gate[sl]]) if lead else gate[sl]
             n_full = (end - pool0) // kp
             if n_full:
                 pk8, ps = self.lanes.kpool_compress(k_win[: n_full * kp].view(n_full, kp, d), g_win[: n_full * kp].view(n_full, kp, d), p[n + "ape"])
-                pslots = caches.pool_slots(s.seq, pool0 // kp + torch.arange(n_full, device=x.device)).long()
+                pslots = caches.pool_slots(L, s.seq, pool0 // kp + torch.arange(n_full, device=x.device)).long()
                 keys[pslots] = pk8
                 scales[pslots] = ps.view(-1)
-            new_pos = torch.arange(s.ctx, end, device=x.device)                     # every new token goes to the ring (pos % kp)
-            tail[new_pos % kp, 0] = k[sl]
-            tail[new_pos % kp, 1] = gate[sl]
+            new_pos = torch.arange(s.ctx, end, device=x.device)
+            # Repeated scatter indices have no defined last-writer order on
+            # CUDA. Write each ring cell once, retaining only the newest window.
+            keep = min(s.length, tail_width)
+            tail[new_pos[-keep:] % tail_width, 0] = k[sl][-keep:]
+            tail[new_pos[-keep:] % tail_width, 1] = gate[sl][-keep:]
             # -- selection -----------------------------------------------------------
             seq_lens = (new_pos + 1).to(torch.int32)
             n_cand = end // kp                                                       # complete pools before the last query
             if n_cand:
-                cand = caches.pool_slots(s.seq, torch.arange(n_cand, device=x.device)).long()
+                cand = caches.pool_slots(L, s.seq, torch.arange(n_cand, device=x.device)).long()
                 ke = seq_lens // kp
                 logits = self.lanes.indexer_logits(q8[sl], keys[cand], scales[cand], w_eff[sl], ke)
                 pool_ids = topk_positions(logits[:, :n_cand].float(), F.topk // kp, valid=ke)
@@ -224,7 +248,7 @@ class Glm53Net:
             tokens = select_with_tail(pool_ids, seq_lens, kp)                        # positions, -1 padded
             tokens = tokens.sort(dim=1, descending=True).values                      # valid prefix first (set semantics)
             valid_out[sl] = (tokens >= 0).sum(1).to(torch.int32)
-            ts = caches.token_slots(s.seq, tokens.clamp_min(0).reshape(-1)).view_as(tokens)
+            ts = caches.token_slots(L, s.seq, tokens.clamp_min(0).reshape(-1)).view_as(tokens)
             slots_out[sl] = ts.masked_fill(tokens < 0, -1)
         return slots_out.contiguous(), valid_out
 
@@ -238,7 +262,7 @@ class Glm53Net:
         latent = caches.latent(L)
         for s in step.segments:                                                     # fp8 KV, scale 1 (no kv scales in the checkpoint)
             sl = slice(s.start, s.start + s.length)
-            latent[caches.token_slots(s.seq, torch.arange(s.ctx, s.ctx + s.length, device=x.device)).long()] = kv_n[sl].to(E4M3)
+            latent[caches.token_slots(L, s.seq, torch.arange(s.ctx, s.ctx + s.length, device=x.device)).long()] = kv_n[sl].to(E4M3)
         slots, valid = self._indexer(L, x, qr, step, caches)
         kv_b = p[n + "kv_b"].view(Hl, F.qk_nope + F.v_dim, F.kv_lora)
         w_uk, w_uv = kv_b[:, : F.qk_nope, :], kv_b[:, F.qk_nope:, :]

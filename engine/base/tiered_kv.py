@@ -35,10 +35,23 @@ class TieredKV:
         return wrote
 
     def resume(self, seq: int) -> int:
-        tokens = self.parked.pop(seq) if seq in self.parked else self.tier.index[str(seq)]["tokens"]
+        """Restore into an empty row; a failed read keeps the disk copy retryable.
+
+        Once promotion completes, the resident copy is committed. A subsequent
+        failure to forget the disk copy must not release that restored memory.
+        """
+        self.pool.row(seq)                                # bounds before indexing tokens
+        if self.pool.tokens[seq]:
+            raise ValueError(f"seq {seq} already has resident KV")
+        tokens = self.parked[seq] if seq in self.parked else self.tier.index[str(seq)]["tokens"]
         self.pool.reserve(seq, tokens)                     # MemoryError if the arena is full: no fallback
         ids = [b for b in self.pool.row(seq) if b != EMPTY]
-        got = self.tier.promote(seq, self.pool.storage, ids)
+        try:
+            got = self.tier.promote(seq, self.pool.storage, ids)
+        except BaseException:
+            self.pool.release(seq)
+            raise
+        self.parked.pop(seq, None)
         self.tier.forget(seq)
         return got
 

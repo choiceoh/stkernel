@@ -1,0 +1,6 @@
+  E=3 [1024, 4096] (sf [1024, 256]): identical to flashinfer True (786432 vs 786432 bytes), inverse True, MMA view True
+  E=2 [4096, 512] (sf [4096, 32]): identical to flashinfer True (262144 vs 262144 bytes), inverse True, MMA view True
+  E=1 [256, 2048] (sf [256, 128]): identical to flashinfer True (32768 vs 32768 bytes), inverse True, MMA view True
+  E=2 [200, 1024] (sf [200, 64]): identical to flashinfer True (32768 vs 32768 bytes), inverse True, MMA view True
+
+  swizzle == flashinfer block_scale_interleave

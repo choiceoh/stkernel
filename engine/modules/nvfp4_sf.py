@@ -43,6 +43,18 @@ def unswizzle_sf(packed: torch.Tensor, m: int, s: int) -> torch.Tensor:
     return t.reshape(mp, sp)[:m, :s]
 
 
+def mma_sf_view(packed: torch.Tensor, m: int, k: int) -> torch.Tensor:
+    """Expose presharded [E, bytes] scales in b12x's six-dimensional layout.
+
+    The bytes are already interleaved; this only changes shape and strides.
+    Keep the view alive alongside its weights because b12x caches by pointer
+    and registers the scale tensor's lifetime with its cache entry.
+    """
+    experts = packed.shape[0]
+    return packed.view(experts, _pad(m, 128) // 128, _pad(_pad(k, 16) // 16, 4) // 4,
+                       32, 4, 4).permute(3, 4, 1, 5, 2, 0)
+
+
 def _selfcheck() -> None:
     torch.manual_seed(0)
     for m, s in ((1024, 256), (4096, 32), (100, 6)):

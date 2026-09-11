@@ -31,7 +31,7 @@ from engine.base.record import DeathDump, Ring                   # noqa: E402
 from engine.base.runner import STEP_RECORD, Runner               # noqa: E402
 from engine.base.serve import Server                             # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
-from engine.profiles.glm53.caches import Glm53Caches, block_bytes, slot_bytes   # noqa: E402
+from engine.profiles.glm53.caches import Glm53Caches, layout   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
@@ -67,14 +67,16 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     specs = net.specs()
     D = drafter_mod.load() if use_drafter else None
     dspecs = drafter_mod.specs(D) if D else []
-    bb, sb = block_bytes(F, net.layers), slot_bytes(F, net.layers, net.Hk)
+    draft_shape = (D.layers, D.window, D.kv_heads, D.head_dim) if D else None
+    cache_layout = layout(F, net.layers, draft_shape)
+    bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes
     ns = max_seqs + 1
-    ring = drafter_mod.ring_bytes(D) if D else 0
-    nb = int((kv_gib * GIB - ns * (sb + ring)) // bb)
+    # The persistent int32 block table is part of the same declared budget.
+    nb = int((kv_gib * GIB - ns * sb) // (bb + max_seqs * 4))
     if nb < 2:
-        raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {(sb + ring) / 2**20:.0f} MiB")
+        raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
     with recorder.phase("arena"):
-        arena = Arena(total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + nb * bb + ns * (sb + ring))
+        arena = Arena(total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs))
     with recorder.phase("load"):
         views = RankLoader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors").load(
             [s.name for s in specs], arena=arena, recorder=recorder)
@@ -82,21 +84,20 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     tok = tokenizer()
     decodable = decodable_vocab(tok)
     drafter = NullDrafter()
-    draft_shape = None
     if D:
         with recorder.phase("load drafter"):
             dviews = RankLoader(drafter_mod.DRAFTER / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
         drafter = drafter_mod.Drafter(D, net, decodable)
         drafter.bind(dviews)
         draft_shape = (D.layers, D.window, D.kv_heads, D.head_dim)
-    caches = Glm53Caches(arena, F, net.layers, net.Hk, nb, ns, max_seqs=ns, draft=draft_shape)
+    caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape)
     # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
     aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
     engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(), temperature=temperature, seed=seed,
                          decodable=decodable, aux_layers=aux)
     contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                               max_wait_s=MAX_WAIT_S, max_running=max_seqs)
-    runner = Runner(engine, contract, caches.blocks, caches.slots, Ring(4096, STEP_RECORD.size), recorder)
+    runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder)
     recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
     return F, net, caches, engine, runner
 
@@ -131,7 +132,7 @@ def local(a) -> int:
             out = run_prompts(engine, runner, prompts)
             torch.cuda.synchronize()
         return {"rec": rec, "out": out, "steps": runner.steps, "ring": runner.ring.count, "secs": time.perf_counter() - t0,
-                "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.blocks.available, "slots": caches.slots.available,
+                "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.pool.available, "slots": caches.slots.available,
                 "accepted": engine.accepted_total, "drafted": engine.drafted_total, "k": engine.drafter.k}
 
     if a.serve:

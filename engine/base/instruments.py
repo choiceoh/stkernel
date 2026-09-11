@@ -56,9 +56,12 @@ class Span:
     dev_bytes: int | None = None          # + means the phase consumed
     counters: dict = field(default_factory=dict)
     children: list = field(default_factory=list)
+    calls: int = 0
 
     def as_dict(self) -> dict:
         out = {"name": self.name, "seconds": round(self.seconds, 6)}
+        if self.calls > 1:
+            out["calls"] = self.calls
         if self.dev_bytes is not None:
             out["dev_gib"] = round(self.dev_bytes / (1 << 30), 3)
         if self.counters:
@@ -76,21 +79,35 @@ class Recorder:
     def __init__(self, name: str = "run"):
         self.root = Span(name)
         self._stack = [self.root]
+        self._aggregate_spans = {}
 
     @contextmanager
-    def phase(self, name: str):
-        span = Span(name)
-        self._stack[-1].children.append(span)
+    def phase(self, name: str, *, aggregate: bool = False):
+        """Measure one phase, optionally accumulating repeated calls in one span.
+
+        The runner aggregates its two step kinds so a long-lived engine keeps
+        bounded instrumentation instead of retaining one object per step.
+        Boot and diagnostic phases keep their individual timing by default.
+        """
+        parent = self._stack[-1]
+        key = (id(parent), name)
+        span = self._aggregate_spans.get(key) if aggregate else None
+        if span is None:
+            span = Span(name)
+            parent.children.append(span)
+            if aggregate:
+                self._aggregate_spans[key] = span
         self._stack.append(span)
         free0 = _dev_free_bytes()
         t0 = time.perf_counter()
         try:
             yield span
         finally:
-            span.seconds = time.perf_counter() - t0
+            span.seconds += time.perf_counter() - t0
+            span.calls += 1
             free1 = _dev_free_bytes()
             if free0 is not None and free1 is not None:
-                span.dev_bytes = free0 - free1
+                span.dev_bytes = (span.dev_bytes or 0) + free0 - free1
             self._stack.pop()
 
     def count(self, name: str, n: int = 1) -> None:
@@ -109,6 +126,8 @@ class Recorder:
             mem = "" if span.dev_bytes is None else f"{span.dev_bytes / (1 << 30):+9.2f}"
             cs = " ".join(f"{k}={v:g}" if isinstance(v, (int, float)) else f"{k}={v}"
                           for k, v in span.counters.items())
+            if span.calls > 1:
+                cs = f"calls={span.calls} {cs}".rstrip()
             lines.append(f"{label:<40} {span.seconds:>9.3f} {mem:>9}  {cs}")
             for child in span.children:
                 walk(child, depth + 1)

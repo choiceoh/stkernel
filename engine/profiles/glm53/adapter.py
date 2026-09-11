@@ -59,7 +59,7 @@ class Glm53Engine:
 
     def open(self, seq: int, slot: int) -> None:
         self.slot[seq] = slot; self.ctx[seq] = 0
-        self.caches.clear_slot(slot)
+        self.caches.reset_slot(slot)
 
     def close(self, seq: int) -> None:
         for d in (self.ctx, self.slot):
@@ -79,12 +79,12 @@ class Glm53Engine:
         return sample(logits, t, p, self.gen)
 
     def _forward(self, step: Step):
+        self.caches.prepare(step)
         if self.drafter.k:
             return self.net.forward(step, self.caches, aux_layers=self.aux_layers)
         return self.net.forward(step, self.caches), None
 
-    def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> None:
-        self.caches.sync_row(seq)
+    def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> bool:
         ids = torch.tensor(self.tokens[seq][start: start + tokens], dtype=torch.int64, device=self.caches.device)
         h, aux = self._forward(Step.prefill(ids, start, seq, slot))
         self.ctx[seq] = start + tokens
@@ -94,11 +94,12 @@ class Glm53Engine:
             first = self._sample(self.net.head(h[-1:]), [self.limits[seq][1]])
             self.tokens[seq].append(int(first.item()))
         self.steps += 1
+        generated = self.generated(seq)
+        return bool(generated) and (generated[-1] in self.eos or len(generated) >= self.limits[seq][0])
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
         chunks, drafts = [], {}
         for seq, slot in zip(seqs, slots):
-            self.caches.sync_row(seq)
             drafts[seq] = self.drafter.propose(self.tokens[seq][-1], self.ctx[seq], self.caches.draft_ring(slot) if self.drafter.k else None)
             ids = [self.tokens[seq][-1]] + drafts[seq]
             chunks.append((torch.tensor(ids, dtype=torch.int64, device=self.caches.device), self.ctx[seq], seq, slot))
@@ -115,6 +116,11 @@ class Glm53Engine:
                     break
                 accepted += 1
             new = picks[: accepted + 1]                                    # the accepted drafts' confirmations, then the correction
+            new = new[:max(0, self.limits[s.seq][0] - len(self.generated(s.seq)))]
+            for i, token in enumerate(new):
+                if token in self.eos:
+                    new = new[:i + 1]
+                    break
             if aux is not None:                                            # the fed tokens up to the last accepted draft become context
                 rows = slice(s.start, s.start + accepted + 1)
                 self.drafter.observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + accepted + 1, device=h.device), aux[rows])

@@ -1,0 +1,46 @@
+/home/choiceoh/st-engine-f4d7-20260911/build/glm53  (71 overlays from 11 modules)
+profile=glm53 image=glm53:v13-b12x-it probe=engine/profiles/glm53/check.py files=23 args=--lanes served --layers 0,3 --tokens 64 --chunk 32 --ranks /ranks
+forwarded: VLLM_GLM53_MK_MLA=1
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (89 free)
+INFO 09-11 07:16:16 [import_utils.py:464] DeepEP v2 requires NCCL >= 2.30.4 but found 2.29.7. deepep_v2 backend will not be available.
+  NOTE: served lanes with the REFERENCE expert lane (b12x is not bound yet) -- a lane judge, not a boot
+INFO 09-11 07:16:21 [deep_gemm.py:191] deep_gemm not found in site-packages, trying vendored vllm.third_party.deep_gemm
+/usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+Traceback (most recent call last):
+  File "/repo/engine/base/comm.py", line 148, in body
+    self._results[r] = fn(self.rank(r), *args)
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/check.py", line 138, in rank_main
+    run("whole", [Step.prefill(ids, 0, 0, 1)], cache=chain)
+  File "/repo/engine/profiles/glm53/check.py", line 134, in run
+    hs.append(net.forward(st, cache))
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/net.py", line 317, in forward
+    x = self._dsa(L, x, step, caches) if F.is_dsa(L) else self._kda(L, x, step, caches)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/net.py", line 270, in _dsa
+    ctx_lat = self.lanes.mla_sparse(q_abs.contiguous(), latent, slots, valid, F.mla_scale, 1.0)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/lanes.py", line 193, in run
+    return fn(*a, **k)
+           ^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/lanes.py", line 163, in mla
+    raise RuntimeError("megakernel MLA lane did not arm (VLLM_GLM53_MK_MLA?)")
+RuntimeError: megakernel MLA lane did not arm (VLLM_GLM53_MK_MLA?)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/repo/engine/profiles/glm53/check.py", line 260, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/repo/engine/profiles/glm53/check.py", line 190, in main
+    return judge(a, F, layers, lanes, ids, garbage, comm)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/check.py", line 199, in judge
+    else LocalTP(facts.TP).run(rank_main, a, F, layers, lanes, ids, garbage))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/base/comm.py", line 161, in run
+    raise RuntimeError(f"rank {r} failed") from e
+RuntimeError: rank 0 failed

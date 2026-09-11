@@ -32,6 +32,8 @@ import json
 import os
 import threading
 import time
+from concurrent.futures import Future
+from contextlib import nullcontext
 from pathlib import Path
 
 SECTOR = 4096
@@ -39,8 +41,10 @@ SECTOR = 4096
 
 class NvmeTier:
     def __init__(self, directory: "str | Path", block_bytes: int, stage_bytes: int = 64 << 20):
-        if block_bytes % SECTOR:
-            raise ValueError(f"block_bytes {block_bytes} must be a multiple of {SECTOR} for O_DIRECT")
+        if not isinstance(block_bytes, int) or block_bytes <= 0 or block_bytes % SECTOR:
+            raise ValueError(f"block_bytes {block_bytes} must be a positive multiple of {SECTOR} for O_DIRECT")
+        if not isinstance(stage_bytes, int) or stage_bytes < block_bytes:
+            raise ValueError("stage_bytes must hold at least one complete block")
         if stage_bytes % block_bytes:
             stage_bytes = (stage_bytes // block_bytes) * block_bytes
         import torch
@@ -57,6 +61,7 @@ class NvmeTier:
         self.manifest = self.dir / "manifest.json"
         self.index = json.loads(self.manifest.read_text()) if self.manifest.exists() else {}
         self.lock = threading.Lock()
+        self._transfer_lock = threading.Lock()    # one staging buffer/stream, even across async callers
         self.bytes_written = self.bytes_read = 0
 
     def _path(self, seq: int) -> Path:
@@ -65,17 +70,23 @@ class NvmeTier:
     def has(self, seq: int) -> bool:
         return str(seq) in self.index
 
-    def _save_manifest(self) -> None:
+    def _save_manifest(self, index: dict) -> None:
         tmp = self.manifest.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.index)); os.replace(tmp, self.manifest)
+        tmp.write_text(json.dumps(index)); os.replace(tmp, self.manifest)
+        self.index = index                       # publish only after the disk commit succeeds
 
     def demote(self, seq: int, storage, block_ids: "list[int]", tokens: int) -> int:
         """Write blocks `block_ids` of `storage` ([num_blocks * block_bytes] uint8)
         contiguously. Returns bytes. Device work runs on the tier stream only."""
+        with self._transfer_lock:
+            return self._demote(seq, storage, block_ids, tokens)
+
+    def _demote(self, seq: int, storage, block_ids: "list[int]", tokens: int) -> int:
         import torch
 
         table = storage.view(-1, self.block_bytes)
         ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device)
+        self.stream.wait_stream(torch.cuda.current_stream(table.device))
         fd = os.open(self._path(seq), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_DIRECT, 0o644)
         written = 0
         try:
@@ -88,20 +99,26 @@ class NvmeTier:
                 self.stream.synchronize()
                 off = 0
                 while off < n:
-                    off += os.pwritev(fd, [self.stage[off:n]], written + off)
+                    got = os.pwritev(fd, [self.stage[off:n]], written + off)
+                    if got <= 0:
+                        raise OSError(f"short write at {written + off}")
+                    off += got
                 written += n
             os.fsync(fd)
         finally:
             os.close(fd)
         with self.lock:
-            self.index[str(seq)] = {"blocks": len(block_ids), "tokens": tokens, "bytes": written,
-                                    "at": time.time()}
-            self._save_manifest()
+            self._save_manifest({**self.index, str(seq): {
+                "blocks": len(block_ids), "tokens": tokens, "bytes": written, "at": time.time()}})
         self.bytes_written += written
         return written
 
     def promote(self, seq: int, storage, block_ids: "list[int]") -> int:
         """Read the sequence back into blocks `block_ids` of `storage`. Returns bytes."""
+        with self._transfer_lock:
+            return self._promote(seq, storage, block_ids)
+
+    def _promote(self, seq: int, storage, block_ids: "list[int]") -> int:
         import torch
 
         meta = self.index[str(seq)]
@@ -109,6 +126,7 @@ class NvmeTier:
             raise ValueError(f"seq {seq}: {meta['blocks']} blocks on disk, {len(block_ids)} given")
         table = storage.view(-1, self.block_bytes)
         ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device)
+        self.stream.wait_stream(torch.cuda.current_stream(table.device))
         fd = os.open(self._path(seq), os.O_RDONLY | os.O_DIRECT)
         read = 0
         try:
@@ -131,17 +149,44 @@ class NvmeTier:
         return read
 
     def forget(self, seq: int) -> None:
-        with self.lock:
-            self.index.pop(str(seq), None); self._save_manifest()
-        try:
-            os.unlink(self._path(seq))
-        except FileNotFoundError:
-            pass
+        with self._transfer_lock:
+            with self.lock:
+                index = dict(self.index)
+                index.pop(str(seq), None)
+                self._save_manifest(index)
+            try:
+                os.unlink(self._path(seq))
+            except FileNotFoundError:
+                pass
 
-    def run_async(self, fn, *args):
-        """A demotion/promotion on its own thread; the runner polls `.done()`."""
-        t = threading.Thread(target=fn, args=args, daemon=True); t.start()
-        return t
+    def run_async(self, fn, *args) -> Future:
+        """Off-thread I/O. Poll `.done()`, then `.result()` to surface failures.
+
+        Transfers on this tier serialize on its one staging buffer. Running
+        decoders do not acquire that lock or wait on these futures.
+        Preserve the caller's CUDA stream in the worker so a transfer waits
+        for its producer even when submission came from a nondefault stream.
+        """
+        future = Future()
+        context = nullcontext
+        if hasattr(self, "stream"):
+            import torch
+            producer = torch.cuda.current_stream(self.stream.device)
+            context = lambda: torch.cuda.stream(producer)
+
+        def work():
+            if not future.set_running_or_notify_cancel():
+                return
+            try:
+                with context():
+                    result = fn(*args)
+            except BaseException as exc:
+                future.set_exception(exc)
+            else:
+                future.set_result(result)
+
+        threading.Thread(target=work, daemon=True).start()
+        return future
 
 
 def _selfcheck() -> None:

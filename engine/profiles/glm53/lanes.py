@@ -1,4 +1,4 @@
-"""The eight kernel lanes GLM-5.3 runs on (profile), bound two ways.
+"""The nine kernel lanes GLM-5.3 runs on (profile), bound two ways.
 
     reference()   the engine's torch references in modules/* -- each one
                   judged against its served kernel in probes/ (44th ledger):
@@ -11,7 +11,7 @@
                   raises, the boot dies (D3) -- there is no per-lane
                   fallback to the reference.
 
-The model (net.py) calls only these eight names; everything else it does is
+The model (net.py) calls only these nine names; everything else it does is
 plain torch on views. One contract per lane, spelled in the docstrings.
 """
 from __future__ import annotations
@@ -154,68 +154,32 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         return y, table[1]
 
     from vllm.third_party.flash_linear_attention.ops.kda import fused_recurrent_kda                  # ours, same file
-    layout = {}                                 # kernel -> whether its state is [v, k] (transposed against the reference's [k, v])
-
-    def _state_layout(name, run):
-        """Armed != serving: the kernel's state layout is measured once against
-        the reference on tiny inputs, not assumed (the 44th ledger found the two
-        served kernels disagree). `run(q, k, v, g_raw, beta_raw, A_log, dt_bias)`
-        returns the kernel's final state [H, D, D]."""
-        if name in layout:
-            return layout[name]
-        torch.manual_seed(0)
-        H, D, T = 2, 128, 6
-        mk = lambda *shape: torch.randn(*shape, device="cuda", dtype=torch.bfloat16)
-        q, k, v, g_raw = mk(1, T, H, D), mk(1, T, H, D), mk(1, T, H, D), mk(1, T, H, D) * 0.5
-        beta_raw, A_log, dt_bias = mk(1, T, H), (torch.randn(H, device="cuda") * 0.3), torch.randn(H * D, device="cuda") * 0.1
-        _o, ref_state = ref.kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, None, -5.0)
-        got = run(q, k, v, g_raw, beta_raw, A_log, dt_bias).float()
-        r_same = ((got - ref_state[0]).abs().max() / ref_state.abs().max()).item()
-        r_t = ((got.transpose(-1, -2) - ref_state[0]).abs().max() / ref_state.abs().max()).item()
-        if min(r_same, r_t) > 5e-2:
-            raise RuntimeError(f"{name}: final state matches the reference in neither layout (rel {r_same:.2e} / {r_t:.2e})")
-        layout[name] = r_t < r_same
-        return layout[name]
-
-    def _chunk_state(q, k, v, g_raw, beta_raw, A_log, dt_bias):
-        t = q.shape[1]
-        _o, st = chunk_kda_with_fused_gate(q=q, k=k, v=v, raw_g=g_raw, beta=torch.sigmoid(beta_raw.float()), A_log=A_log.view(1, 1, -1, 1),
-                                          g_bias=dt_bias, initial_state=None, output_final_state=True, use_qk_l2norm_in_kernel=True,
-                                          cu_seqlens=torch.tensor([0, t], dtype=torch.int32, device=q.device), safe_gate=True,
-                                          lower_bound=-5.0, out=torch.empty_like(v))
-        return st[0]
-
     def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
         t = q.shape[1]
-        tr = _state_layout("chunk_kda_with_fused_gate", _chunk_state)
-        init = None if state0 is None else (state0.transpose(-1, -2).contiguous() if tr else state0.contiguous())
+        out = torch.empty_like(v)
         o, state = chunk_kda_with_fused_gate(
             q=q, k=k, v=v, raw_g=g_raw, beta=torch.sigmoid(beta_raw.float()), A_log=A_log.view(1, 1, -1, 1), g_bias=dt_bias,
-            initial_state=init, output_final_state=True, use_qk_l2norm_in_kernel=True,
+            initial_state=state0.transpose(-1, -2).contiguous() if state0 is not None else None,
+            output_final_state=True, use_qk_l2norm_in_kernel=True,
             cu_seqlens=torch.tensor([0, t], dtype=torch.int32, device=q.device),
-            safe_gate=True, lower_bound=lower_bound, out=torch.empty_like(v))
-        return o, (state.transpose(-1, -2) if tr else state)
-
-    def _rec_state(q, k, v, g_raw, beta_raw, A_log, dt_bias):
-        H, D = q.shape[2], q.shape[3]
-        _o, st = fused_recurrent_kda(q, k, v, g_raw, beta_raw, None, initial_state=torch.zeros(1, H, D, D, device=q.device),
-                                     inplace_final_state=False, use_qk_l2norm_in_kernel=True, sigmoid_beta=True,
-                                     a_log=A_log, g_bias=dt_bias, compute_gate=True, lower_bound=-5.0)
-        return st[-1]
+            safe_gate=True, lower_bound=lower_bound, out=out)
+        # The kernel stores [H,V,K]; the engine/reference contract is [H,K,V].
+        return o, state.transpose(-1, -2).contiguous()
 
     def kda_recurrent(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
-        """fused_recurrent_kda in its dense, non-inplace form: gate and sigmoid
-        in-kernel, l2norm in-kernel, and `final_state` [T, H, D, D] is the
-        state after EVERY token -- the ring's rows."""
-        H, D = q.shape[2], q.shape[3]
-        tr = _state_layout("fused_recurrent_kda", _rec_state)
-        init = torch.zeros(1, H, D, D, device=q.device) if state0 is None else (state0.transpose(-1, -2).contiguous() if tr else state0.contiguous())
-        o, states = fused_recurrent_kda(q, k, v, g_raw, beta_raw, None, initial_state=init, inplace_final_state=False,
-                                        use_qk_l2norm_in_kernel=True, sigmoid_beta=True, a_log=A_log, g_bias=dt_bias,
-                                        compute_gate=True, lower_bound=lower_bound)
-        return o, (states.transpose(-1, -2) if tr else states)
+        # Dense one-sequence form, separate output states: no NULL slot indices,
+        # no in-place overwrite of the initial state needed by rejected drafts.
+        initial = (state0.transpose(-1, -2).contiguous() if state0 is not None
+                   else torch.zeros(1, v.shape[2], v.shape[-1], k.shape[-1], device=q.device, dtype=torch.float32))
+        out, states = fused_recurrent_kda(
+            q, k, v, g_raw, beta_raw, scale=k.shape[-1] ** -0.5, initial_state=initial,
+            inplace_final_state=False, use_qk_l2norm_in_kernel=True,
+            sigmoid_beta=True, a_log=A_log, g_bias=dt_bias, compute_gate=True, lower_bound=lower_bound)
+        return out, states.transpose(-1, -2).contiguous()
 
     def pre(res, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w, norm_eps):
+        if fn.data_ptr() % 16:
+            raise ValueError("mHC weight is not TMA-aligned; regenerate rank files with the aligned RankWriter")
         post, comb, x = torch.ops.vllm.mhc_pre_tilelang(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult,
                                                         sinkhorn, 1, norm_w, norm_eps)
         return post, comb, x
@@ -252,7 +216,9 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         moe = ref.moe
     else:
         from flashinfer.fused_moe import b12x_fused_moe                                     # ours: overlay/modules/glm53_moe/b12x_moe.py
+        from engine.modules.nvfp4_sf import mma_sf_view
         ones = {}
+        scale_views = {}                            # stable arena aliases, one pair per bound MoE layer
 
         def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit):
             """The served call (flashinfer_b12x_moe._apply_*): packed nibbles, folded
@@ -261,7 +227,12 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
             E = w13.shape[0]
             if E not in ones:
                 ones[E] = torch.ones(E, device=x.device, dtype=torch.float32)
-            return b12x_fused_moe(x=x.contiguous(), w1_weight=w13, w1_weight_sf=w13_sf, w2_weight=w2, w2_weight_sf=w2_sf,
+            key = (w13_sf.data_ptr(), w2_sf.data_ptr())
+            if key not in scale_views:
+                scale_views[key] = (mma_sf_view(w13_sf, w13.shape[1], w13.shape[2] * 2),
+                                    mma_sf_view(w2_sf, w2.shape[1], w2.shape[2] * 2))
+            sf13, sf2 = scale_views[key]
+            return b12x_fused_moe(x=x.contiguous(), w1_weight=w13, w1_weight_sf=sf13, w2_weight=w2, w2_weight_sf=sf2,
                                   token_selected_experts=sel.contiguous(), token_final_scales=w.contiguous(),
                                   num_experts=E, num_local_experts=E, top_k=sel.shape[1],
                                   w1_alpha=ones[E], w2_alpha=ones[E], fc2_input_scale=ones[E], input_global_scale=None,
