@@ -1,0 +1,103 @@
+[W911 19:51:06.643533528 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+{"rank": 1, "seconds": 1.173, "stage": "load/begin"}
+{"rank": 1, "seconds": 18.262, "stage": "load/done", "layers": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]}
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{"rank": 1, "seconds": 26.259, "stage": "capture/begin"}
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+{"rank": 1, "seconds": 39.279, "stage": "workspace/new", "owner": 260392205882848, "rows": 1024, "backend": "dynamic"}
+2026-09-11 19:51:46,311 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-11 19:51:46,311 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387
+2026-09-11 19:51:47,835 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387.o
+[b12x-bounds] state_E=288 n=512 tile_m=16 routed_rows=1024 -> rows 5616/5616 tiles 351/351 tasks 1404/1404
+{"rank": 1, "seconds": 44.25, "stage": "workspace/new", "owner": 260392062507232, "rows": 48, "backend": "static"}
+2026-09-11 19:51:51,210 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m6_k4096_n512_t8_r48_bdad4d91e110b76d
+2026-09-11 19:51:52,550 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m6_k4096_n512_t8_r48_bdad4d91e110b76d.o
+{"rank": 1, "seconds": 47.863, "stage": "workspace/new", "owner": 260392059167248, "rows": 96, "backend": "static"}
+2026-09-11 19:51:54,823 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m12_k4096_n512_t8_r96_c6386138d54980fa
+2026-09-11 19:51:55,994 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m12_k4096_n512_t8_r96_c6386138d54980fa.o
+{"rank": 1, "seconds": 51.278, "stage": "workspace/new", "owner": 260392062972848, "rows": 144, "backend": "static"}
+2026-09-11 19:51:58,237 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m18_k4096_n512_t8_r144_ee5290d8844ecfd1
+2026-09-11 19:52:00,178 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m18_k4096_n512_t8_r144_ee5290d8844ecfd1.o
+{"rank": 1, "seconds": 56.262, "stage": "workspace/new", "owner": 260392191858192, "rows": 192, "backend": "static"}
+2026-09-11 19:52:03,224 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m24_k4096_n512_t8_r192_6a2470bba8dde50f
+2026-09-11 19:52:05,166 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m24_k4096_n512_t8_r192_6a2470bba8dde50f.o
+{"rank": 1, "seconds": 62.067, "stage": "capture/done", "shapes": [[1, 6, 4096], [2, 6, 4096], [3, 6, 4096], [4, 6, 4096]]}
+{"rank": 1, "seconds": 62.068, "stage": "runner/begin", "batch": 1, "step": 0}
+{"rank": 1, "seconds": 62.093, "stage": "workspace/new", "owner": 260392060559072, "rows": 240, "backend": "static"}
+2026-09-11 19:52:09,052 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m30_k4096_n512_t8_r240_a7ad41bb54f83c25
+2026-09-11 19:52:11,088 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m30_k4096_n512_t8_r240_a7ad41bb54f83c25.o
+{"rank": 1, "seconds": 66.399, "stage": "runner/done", "batch": 1, "step": 0, "generated": [[785]]}
+{"rank": 1, "seconds": 66.399, "stage": "runner/begin", "batch": 1, "step": 1}
+{"rank": 1, "seconds": 66.4, "stage": "draft/begin"}
+{"rank": 1, "seconds": 66.419, "stage": "draft/done"}
+{"rank": 1, "seconds": 66.419, "stage": "target/begin"}
+{"rank": 1, "seconds": 66.488, "stage": "target/done"}
+{"rank": 1, "seconds": 66.488, "stage": "sampler/begin"}
+{"rank": 1, "seconds": 66.489, "stage": "sampler/done"}
+{"rank": 1, "seconds": 66.489, "stage": "observe/begin"}
+{"rank": 1, "seconds": 66.492, "stage": "observe/done"}
+{"rank": 1, "seconds": 66.492, "stage": "runner/done", "batch": 1, "step": 1, "generated": [[785, 1196, 374, 10156, 304, 16120, 25]]}
+{"rank": 1, "seconds": 66.492, "stage": "runner/begin", "batch": 1, "step": 2}
+{"rank": 1, "seconds": 66.492, "stage": "draft/begin"}
+{"rank": 1, "seconds": 66.511, "stage": "draft/done"}
+{"rank": 1, "seconds": 66.511, "stage": "target/begin"}
+{"rank": 1, "seconds": 66.58, "stage": "target/done"}
+{"rank": 1, "seconds": 66.58, "stage": "sampler/begin"}
+{"rank": 1, "seconds": 66.58, "stage": "sampler/done"}
+{"rank": 1, "seconds": 66.58, "stage": "observe/begin"}
+{"rank": 1, "seconds": 66.583, "stage": "observe/done"}
+{"rank": 1, "seconds": 66.583, "stage": "runner/done", "batch": 1, "step": 2, "generated": [[785, 1196, 374, 10156, 304, 16120, 25, 330, 16127]]}
+{"rank": 1, "seconds": 66.583, "stage": "runner/begin", "batch": 1, "step": 3}
+{"rank": 1, "seconds": 66.583, "stage": "draft/begin"}
+{"rank": 1, "seconds": 66.602, "stage": "draft/done"}
+{"rank": 1, "seconds": 66.602, "stage": "target/begin"}
+{"rank": 1, "seconds": 66.671, "stage": "target/done"}
+{"rank": 1, "seconds": 66.671, "stage": "sampler/begin"}
+{"rank": 1, "seconds": 66.672, "stage": "sampler/done"}
+{"rank": 1, "seconds": 66.672, "stage": "observe/begin"}
+{"rank": 1, "seconds": 66.674, "stage": "observe/done"}
+{"rank": 1, "seconds": 66.674, "stage": "runner/done", "batch": 1, "step": 3, "generated": [[785, 1196, 374, 10156, 304, 16120, 25, 330, 16127, 279, 6722, 315, 4882]]}
+{"rank": 1, "seconds": 66.675, "stage": "runner/begin", "batch": 1, "step": 4}
+{"rank": 1, "seconds": 66.675, "stage": "draft/begin"}
+{"rank": 1, "seconds": 66.693, "stage": "draft/done"}
+{"rank": 1, "seconds": 66.693, "stage": "target/begin"}
+{"rank": 1, "seconds": 66.763, "stage": "target/done"}
+{"rank": 1, "seconds": 66.763, "stage": "sampler/begin"}
+{"rank": 1, "seconds": 66.764, "stage": "sampler/done"}
+{"rank": 1, "seconds": 66.764, "stage": "observe/begin"}
+{"rank": 1, "seconds": 66.766, "stage": "observe/done"}
+{"rank": 1, "seconds": 66.766, "stage": "runner/done", "batch": 1, "step": 4, "generated": [[785, 1196, 374, 10156, 304, 16120, 25, 330, 16127, 279, 6722, 315, 4882, 11856, 304, 825, 3409, 2217, 785]]}
+{"rank": 1, "seconds": 66.766, "stage": "runner/begin", "batch": 1, "step": 5}
+{"rank": 1, "seconds": 66.766, "stage": "draft/begin"}
+{"rank": 1, "seconds": 66.785, "stage": "draft/done"}
+{"rank": 1, "seconds": 66.785, "stage": "target/begin"}
+{"rank": 1, "seconds": 66.854, "stage": "target/done"}
+{"rank": 1, "seconds": 66.854, "stage": "sampler/begin"}
+{"rank": 1, "seconds": 66.855, "stage": "sampler/done"}
+{"rank": 1, "seconds": 66.855, "stage": "observe/begin"}
+{"rank": 1, "seconds": 66.857, "stage": "observe/done"}
+{"rank": 1, "seconds": 66.857, "stage": "runner/done", "batch": 1, "step": 5, "generated": [[785, 1196, 374, 10156, 304, 16120, 25, 330, 16127, 279, 6722, 315, 4882, 11856, 304, 825, 3409, 2217, 785, 6722, 315]]}
+{"rank": 1, "seconds": 66.857, "stage": "runner/begin", "batch": 1, "step": 6}
+{"rank": 1, "seconds": 66.857, "stage": "draft/begin"}
+{"rank": 1, "seconds": 66.876, "stage": "draft/done"}
+{"rank": 1, "seconds": 66.876, "stage": "target/begin"}
+{"rank": 1, "seconds": 66.943, "stage": "target/done"}
+{"rank": 1, "seconds": 66.943, "stage": "sampler/begin"}
+{"rank": 1, "seconds": 66.944, "stage": "sampler/done"}
+{"rank": 1, "seconds": 66.944, "stage": "observe/begin"}
+{"rank": 1, "seconds": 66.947, "stage": "observe/done"}
+{"rank": 1, "seconds": 66.947, "stage": "runner/done", "batch": 1, "step": 6, "generated": [[785, 1196, 374, 10156, 304, 16120, 25, 330, 16127, 279, 6722, 315, 4882, 11856, 304, 825, 3409, 2217, 785, 6722, 315, 4882, 11856, 374]]}
+{"rank": 1, "seconds": 66.947, "stage": "result", "batch": 1, "seq": 0, "ids": [785, 1196, 374, 10156, 304, 16120, 25, 330, 16127, 279, 6722, 315, 4882, 11856, 304, 825, 3409, 2217, 785, 6722, 315, 4882, 11856, 374], "text": "The user is asking in Korean: \"Answer the capital of South Korea in one word.\"\n\nThe capital of South Korea is"}
+{"rank": 1, "seconds": 66.961, "stage": "workspace/freed", "owner": 260392062507232, "rows": 48}
+{"rank": 1, "seconds": 66.961, "stage": "workspace/freed", "owner": 260392059167248, "rows": 96}
+{"rank": 1, "seconds": 66.961, "stage": "workspace/freed", "owner": 260392062972848, "rows": 144}
+{"rank": 1, "seconds": 66.961, "stage": "workspace/freed", "owner": 260392191858192, "rows": 192}
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/repo/probes/engine_decode_replay_check.py", line 119, in <module>
+[rank1]:     main()
+[rank1]:   File "/repo/probes/engine_decode_replay_check.py", line 108, in main
+[rank1]:     assert '서울' in text, f'full-model answer did not contain Seoul: {text!r}'
+[rank1]:            ^^^^^^^^^^^^^^
+[rank1]: AssertionError: full-model answer did not contain Seoul: 'The user is asking in Korean: "Answer the capital of South Korea in one word."\n\nThe capital of South Korea is'
+{"rank": 1, "seconds": 67.468, "stage": "workspace/freed", "owner": 260392060559072, "rows": 240}
+{"rank": 1, "seconds": 67.468, "stage": "workspace/freed", "owner": 260392205882848, "rows": 1024}
