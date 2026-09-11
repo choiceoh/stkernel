@@ -1,10 +1,10 @@
-"""One allocation for the box (base). Everything else is a view into it.
+"""One allocation for persistent weights and caches (base).
 
-D16 in code: the arena is the ONLY device allocation the engine makes for
-long-lived memory. Weights (the loader's blocks), KV block storage, state
+D16 in code: weights (the loader's blocks), KV block storage, state
 slots and resident table scales are carved from it in order, each carve
 named and accounted, so `table()` is the budget's ledger at runtime and
-`remaining` is what KV gets.
+`remaining` is uncarved space. Kernel workspaces and graph pools are separate
+allocations governed by base/runtime_memory's byte ceiling and peak ledger.
 
 Carving is a bump allocator on purpose: nothing long-lived is ever freed
 (sequences free BLOCKS inside the KV region, not the region), so there is

@@ -18,9 +18,9 @@ which is how the base self-checks run on one node. A PROFILE, though, is
 written for TP=4 and should be checked at TP=4 on one node too: `LocalTP`
 runs the four ranks as four threads on the one GB10, and its collectives are
 the real thing (barrier, sum, broadcast) -- so a wrong row/column split shows
-up on one box, not on the fleet. The one-shot all-reduce (tp_oneshot_ar,
-ours) is a LANE: registered here by name so proof can demand it reported
-serving; its kernel is not ported into this file.
+up on one box, not on the fleet. NCCL supplies sum and integer MAX.
+Vocabulary-parallel greedy selection uses one MAX candidate per token;
+the legacy one-shot all-reduce is not part of this execution path.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from datetime import timedelta
 NODES = ("10.10.10.2", "10.10.10.1", "10.10.10.3", "10.10.10.4")   # rank 0 owns the rendezvous store
 HEAD = NODES[0]
 GLOO_IFNAME = "enP2p1s0f0np0"
-LANES = {"tp.allreduce.oneshot": "tp_oneshot_ar (ours): one-shot AR over RoCE, prefetch-hinted"}
+LANES = {"tp.allreduce.nccl": "NCCL sum/MAX over the TP process group"}
 
 
 def pick_gid_index(show_gids: str) -> "int | None":
@@ -98,6 +98,12 @@ class Comm:
         parts = [torch.empty_like(t) for _ in range(self.world_size)]
         dist.all_gather(parts, t, group=self.group)
         return torch.cat(parts, dim=dim)
+
+    def all_reduce_max(self, t):
+        if self.world_size > 1:
+            import torch.distributed as dist
+            dist.all_reduce(t, op=dist.ReduceOp.MAX, group=self.group)
+        return t
 
     def barrier(self):
         if self.world_size > 1:
@@ -212,12 +218,19 @@ class _LocalRank:
         self.group = None
 
     def all_reduce(self, t):
+        return self._reduce(t, maximum=False)
+
+    def all_reduce_max(self, t):
+        return self._reduce(t, maximum=True)
+
+    def _reduce(self, t, maximum):
+        import torch
         tp = self.tp
         tp._slots[self.rank] = t
         tp._meet()
-        total = tp._slots[0].float()
+        total = tp._slots[0] if maximum else tp._slots[0].float()
         for r in range(1, tp.world_size):
-            total = total + tp._slots[r].float()
+            total = torch.maximum(total, tp._slots[r]) if maximum else total + tp._slots[r].float()
         out = total.to(t.dtype)
         tp._meet()                                 # everyone has read; slots may be reused
         t.copy_(out)
@@ -267,7 +280,7 @@ mlx5_0  1       3       0000:0000:0000:0000:0000:ffff:0a0a:0a04 10.10.10.4      
     assert torch.equal(c.all_reduce(x.clone()), x) and torch.equal(c.all_gather(x), x)
     env = fleet_env(3)
     assert env["MASTER_ADDR"] == HEAD and env["RANK"] == "3" and env["GLOO_SOCKET_IFNAME"] == GLOO_IFNAME
-    assert "tp.allreduce.oneshot" in LANES
+    assert "tp.allreduce.nccl" in LANES
     # TP=4 on one box: four threads, real sums, identical copies
     tp = LocalTP(4)
     def rank_fn(comm, base):

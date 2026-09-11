@@ -501,6 +501,8 @@ class CudaCacheTests(unittest.TestCase):
             def head(self, hidden):
                 logits = torch.full((len(hidden), F.vocab), -100., device=hidden.device)
                 return logits.scatter_(1, (hidden.long() + 1) % F.vocab, 100.)
+            def head_tokens(self, hidden, decodable=None):
+                return self.head(hidden)[:, :decodable].argmax(-1)
 
         return Glm53Runtime(NextTokenNet(), self.c, Contract(4, 8, 0, 0., 2), eos_ids=eos_ids)
 

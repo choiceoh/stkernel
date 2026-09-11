@@ -61,7 +61,7 @@ class Glm53Runtime:
             rows.pop(seq, None)
 
     def _sample(self, hidden, seqs):
-        tokens = self.net.head(hidden).argmax(-1)
+        tokens = self.net.head_tokens(hidden)
         values = tokens.tolist()                   # one host transfer for the entire batch
         done = []
         for i, (seq, token) in enumerate(zip(seqs, values)):
