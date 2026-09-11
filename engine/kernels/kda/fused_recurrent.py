@@ -24,7 +24,7 @@ from .op import exp, log
         "IS_SPEC_DECODING": lambda args: args["num_accepted_tokens"] is not None,
     }
 )
-@triton.jit(do_not_specialize=["N", "T"])
+@triton.jit(do_not_specialize=["N", "T", "ring_slot", "ring_context"])
 def fused_recurrent_gated_delta_rule_fwd_kernel(
     q,
     k,
@@ -67,6 +67,11 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     LOWER_BOUND: tl.constexpr,
     STATE_KV: tl.constexpr = False,
     INPUT_STRIDES: tl.constexpr = None,
+    ring_slot=None,
+    ring_context=None,
+    RING_SIZE: tl.constexpr = 0,
+    RING_SLOT_STRIDE: tl.constexpr = 0,
+    RING_DEVICE_INDICES: tl.constexpr = False,
 ):
     i_k, i_v, i_nh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_n, i_hv = i_nh // HV, i_nh % HV
@@ -131,7 +136,15 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
         state_offsets = o_v[:, None] * K + o_k[None, :]
 
     b_h = tl.zeros([BV, BK], dtype=tl.float32)
-    if USE_INITIAL_STATE:
+    if RING_SIZE:
+        if RING_DEVICE_INDICES:
+            slot, context = tl.load(ring_slot).to(tl.int64), tl.load(ring_context).to(tl.int64)
+        else:
+            slot, context = ring_slot.to(tl.int64), ring_context.to(tl.int64)
+        ring_base = slot * RING_SLOT_STRIDE + i_hv * V * K + state_offsets
+        p_h0 = h0 + ring_base + (tl.maximum(context - 1, 0) % RING_SIZE) * stride_init_state_token
+        b_h += tl.load(p_h0, mask=mask_h & (context > 0), other=0).to(tl.float32)
+    elif USE_INITIAL_STATE:
         if IS_CONTINUOUS_BATCHING:
             if IS_SPEC_DECODING:
                 i_t = tl.load(num_accepted_tokens + i_n).to(tl.int64) - 1
@@ -194,7 +207,13 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
         tl.store(p_o, b_o.to(p_o.dtype.element_ty), mask=mask_v)
 
         # keep the states for multi-query tokens
-        if INPLACE_FINAL_STATE:
+        if RING_SIZE:
+            # Each CTA owns disjoint [head,K,V] cells for every ring row.
+            # Even when T == RING_SIZE, only this CTA can overwrite its
+            # initial cells, already loaded into registers before the loop.
+            p_ht = ht + ring_base + ((context + i_t) % RING_SIZE) * stride_final_state_token
+            tl.store(p_ht, b_h.to(p_ht.dtype.element_ty), mask=mask_h)
+        elif INPLACE_FINAL_STATE:
             # Load state index and check for invalid entries
             final_state_idx = tl.load(
                 ssm_state_indices + i_n * stride_indices_seq + i_t

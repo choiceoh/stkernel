@@ -49,14 +49,20 @@ def _write_ring(SRC, DST, SLOT, CTX, SS: tl.constexpr, DS: tl.constexpr,
     tl.store(DST + slot * DS + ((ctx + FIRST + row) % RING) * RS + col, value, col < WIDTH)
 
 
-def kda_history(conv, rec, slot, context, history):
-    """Only K-1 conv rows and one recurrent state; context zero reads zeros."""
+def conv_history(conv, slot, context, history):
+    """Gather only K-1 convolution rows, masking positions before context zero."""
     channels = conv.shape[1]
     hist = torch.empty((channels, history), dtype=conv.dtype, device=conv.device)
-    state = torch.empty((1, *rec.shape[2:]), dtype=rec.dtype, device=rec.device)
-    width = state.numel()
     _read_conv[(triton.cdiv(hist.numel(), 256),)](
         conv, slot, context, hist, conv.stride(0), conv.stride(1), conv.shape[2], channels, history, 256)
+    return hist
+
+
+def kda_history(conv, rec, slot, context, history):
+    """Only K-1 conv rows and one recurrent state; context zero reads zeros."""
+    hist = conv_history(conv, slot, context, history)
+    state = torch.empty((1, *rec.shape[2:]), dtype=rec.dtype, device=rec.device)
+    width = state.numel()
     _read_rec[(triton.cdiv(width, 256),)](
         rec, slot, context, state, rec.stride(0), rec.stride(1), rec.shape[1], width, 256)
     return hist, state

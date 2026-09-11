@@ -4,8 +4,9 @@ Active sequence count, tokens per sequence and a declared context-capacity
 bucket select a graph. Exact context lengths and physical cache ownership
 are replay inputs, including rollback.
 Paged and recurrent writes go directly to the arena using device slot ids.
-Only the conv history, initial recurrent state and small indexer tail are
-read into temporary buffers. No request may be live during capture.
+Only conv history and the small indexer tail need temporary buffers on the
+served ring lane; the functional lane also gathers initial recurrent state.
+No request may be live during capture.
 """
 from dataclasses import dataclass
 
@@ -93,6 +94,12 @@ class GraphCaches:
         from engine.kernels.state import kda_history
         return kda_history(self.real._fields["conv", layer], self.real._fields["rec", layer],
                            self.slots[slot:slot+1], context, self.F.conv - 1)
+
+    def kda_ring_history(self, layer, slot, context):
+        from engine.kernels.state import conv_history
+        physical = self.slots[slot:slot+1]
+        hist = conv_history(self.real._fields["conv", layer], physical, context, self.F.conv - 1)
+        return hist, self.real._fields["rec", layer], physical
 
     def write_conv(self, layer, slot, context, inputs):
         from engine.kernels.state import write_conv
