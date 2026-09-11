@@ -9173,3 +9173,17 @@ st_engine_native_kernels_20260911`. 이 브랜치는 main 을 병합하며 커�
 `b12x_lane_semantics*` 판정, ST 이미지 안 판정 기록이다. **랭크 파일**: 표식이 있는 것은 codex 의 재절단본 `~/models/st-glm53-9391-up-gate-full`
 (19:04 완성, 4 × 44.5 GiB) 뿐이고, `facts.RANKS`(`glm53-redhat-nvfp4-tp4`, 내 v4)와 srv2·srv3 의 사본에는 없다 — 표식본을 제자리로 옮기고
 다시 fan-out 해야 main 의 엔진이 그 파일을 연다(운영자 판단: 178 GB 이동). 병합본 판정은 §18.
+
+### 45차 §18 — 병합본(main #541 + 이 브랜치) 판정: 표식 랭크 파일로, ST 이미지 안 (2026-09-11 저녁)
+
+`engine/runtime/build.sh` 로 병합 트리에서 `st-engine:glm53` 재빌드(캐시 히트, 층 둘) 뒤 `--ranks ~/models/st-glm53-9391-up-gate-full`(codex 재절단,
+`weight_layout` 표식 있음):
+
+| 검사 | 결과 | wall |
+|---|---|---|
+| `check.py --lanes served --layers 0-4` | 네 랭크 동일, 오라클 정확 일치, 러너 [3, 1]; 서빙 vs 참조 L3 moe p50 **9.3e-2**(§16 9.5e-2), 최종 hidden 7.7e-2, 반복 2.5e-2; 종합 **FAIL 한 행**(`rollback step 2 L0 kda` 4.4e-3, §16 정정과 같은 행·같은 값) | 49.3 s |
+| `check.py --lanes reference --layers 0-4` | **PASS** | 90.2 s |
+| `boot.py --local --layers 0-4 --drafter --park` | **PASS** — 32 스텝, 네 랭크 토큰 동일, park 1.3 MiB → resume → 이어서 4 토큰 == 한 번에 돌린 꼬리, 541/1 반납 | 71.3 s |
+
+즉 #541 의 커널 패키지·표식 계약 위에서도 엔진의 판정 결과는 §16~§17 과 같다(패키징 전후, 옛 판정 이미지/ST 이미지, 내 v4/codex 재절단본 —
+네 조합 모두 같은 수치, 같은 한 행). 같은 GPU 에서 codex 의 `engine_decode_graph_check.py --distributed`(st-completion-9391)가 동시에 돌았다.
