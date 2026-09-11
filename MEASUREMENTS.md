@@ -8709,3 +8709,9 @@ GroupShape/scaled_dequantize, yarn_get_mscale, 상태 복사, 전문가 파라�
 dense 대비 rel 3.9e-3. **b12x 레인의 단독 판정은 접었다**: `b12x_fused_moe` 의 SF 레이아웃이 문서화돼 있지 않고
 서빙 백엔드가 `moe_sf_pack` 으로 스위즐한 팩을 먹인다 — 재현은 토끼굴이고 레인엔 자체 selftest 가 있으며 D4 의
 판정은 재호스팅 뒤 살아 있는 서빙 층으로 한다. 계기: **real 0**, ours 79%, drop 22 만 남음(모델 파일 편집 시 사라짐).
+
+### 재호스팅 시작 — 서빙 4파일을 `profiles/glm53/model/` 로, vLLM 임포트 0줄
+
+계기의 MAP+shims 로 `from vllm…` 을 엔진 경로로 자동 치환: model 40 / kda 24 / attention 25 / mtp 10 줄이
+엔진으로, DROP 마커 21/2/2/2(PP·SP·멀티모달·플랫폼 디스패치 — 손으로 지울 코드 경로). `glm5next_multimodal.py`
+는 텍스트 전용이라 집합에서 제외(vLLM 잔여 14줄 전부 거기). 이제 "vLLM 없이 임포트되나"가 파일별 이정표다.
