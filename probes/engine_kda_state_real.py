@@ -64,8 +64,10 @@ def main():
     elif a.baseline_lanes:
         tables = [replace(current,conv_prefill=baseline_conv(a.baseline_lanes)),current]
     elif a.baseline_strides:
+        current = replace(current,kda_recurrent_ring=None)
         tables = [replace(current,kda_recurrent=baseline_strides(a.baseline_strides)),current]
     else:
+        current = replace(current,kda_recurrent_ring=None)
         tables = [replace(current,kda_recurrent=baseline_lane(a.baseline_dir)),current]
     net = Glm53Net(F,IsolatedRank(),current,layers=[0])
     specs = [s for s in net.specs() if s.name.startswith("L0.kda.")]
@@ -137,6 +139,37 @@ def main():
                              "paired":paired_timing(samples),
                              "median_us":[statistics.median(s) for s in samples]})
         for graph in graphs: graph.reset()
+    # Two simultaneous sequences exercise distinct physical slots, strided
+    # projection slices and independent zero/nonzero contexts in one graph.
+    # Run this correctness-only extension after timing to keep its JIT separate.
+    for t in (1,6):
+        x=torch.randn(2*t,F.hidden,device="cuda",dtype=torch.bfloat16)*.1
+        ctx=torch.tensor([0,5],device="cuda",dtype=torch.int64)
+        slot=torch.tensor([1,2],device="cuda",dtype=torch.int64)
+        seq=torch.tensor([0,1],device="cuda",dtype=torch.int64)
+        step=DeviceStep(torch.zeros(2*t,device="cuda",dtype=torch.int64),ctx,t)
+        graphs,outputs=[],[]
+        for table,cache,method in zip(tables,caches,methods):
+            view=GraphCaches(cache,seq,slot,4096)
+            net.lanes=table
+            method(net,0,x,step,view)
+            graph=torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):out=method(net,0,x,step,view)
+            graphs.append(graph);outputs.append(out)
+        for contexts,physical in (((0,5),(1,2)),((2,4096),(2,1)),((1,4095),(1,2))):
+            ctx.copy_(torch.tensor(contexts,device="cuda"));slot.copy_(torch.tensor(physical,device="cuda"))
+            x.normal_(std=.1)
+            for field in caches[0]._fields.values():field.normal_(std=.1)
+            caches[1].state.copy_(caches[0].state)
+            original=caches[1].state.clone()
+            for graph in graphs:graph.replay()
+            compare(outputs,f"two_seq_graph_t{t}_ctx{contexts}_slots{physical}")
+            expected_state=caches[1].state.clone();expected_out=outputs[1].clone()
+            caches[1].state.copy_(original);net.lanes=current
+            eager_step=Step.decode([(step.ids[i*t:(i+1)*t],contexts[i],i,physical[i]) for i in range(2)])
+            eager=net._kda(0,x,eager_step,caches[1])
+            assert same_bits(eager,expected_out) and torch.equal(caches[1].state,expected_state)
+        for graph in graphs:graph.reset()
     weights={}
     with a.rank_file.open("rb") as stream:
         for s in specs:

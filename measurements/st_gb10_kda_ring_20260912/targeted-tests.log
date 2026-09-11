@@ -1,0 +1,37 @@
+test_every_snapshot_and_padding_with_wrapping_initial_row (test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) ... ok
+test_graph_mutable_slot_context_and_rejected_drafts (test_engine_kda_ring.KdaRingTests.test_graph_mutable_slot_context_and_rejected_drafts) ... ok
+test_invalid_layout_indices_and_overlapping_inputs (test_engine_kda_ring.KdaRingTests.test_invalid_layout_indices_and_overlapping_inputs) ... ok
+test_reference_bisect_disables_direct_ring_lane (test_engine_kda_ring.KdaRingTests.test_reference_bisect_disables_direct_ring_lane) ... ok
+test_tail_dimensions_grouped_heads_and_float_types (test_engine_kda_ring.KdaRingTests.test_tail_dimensions_grouped_heads_and_float_types) ... ERROR
+test_zero_context_masks_nan_and_device_int32 (test_engine_kda_ring.KdaRingTests.test_zero_context_masks_nan_and_device_int32) ... ok
+
+======================================================================
+ERROR: test_tail_dimensions_grouped_heads_and_float_types (test_engine_kda_ring.KdaRingTests.test_tail_dimensions_grouped_heads_and_float_types)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_engine_kda_ring.py", line 83, in test_tail_dimensions_grouped_heads_and_float_types
+    ref,ref_states = self.reference(*args,initial,-5.)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/engine/profiles/glm53/lanes.py", line 79, in kda_recurrent
+    g = kda_gate(g_raw, A_log, dt_bias, lower_bound, safe_gate=True)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/engine/modules/linear_attention.py", line 64, in kda_gate
+    g = g + g_bias.float().view(1, 1, *raw_g.shape[-2:])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: shape '[1, 1, 4, 33]' is invalid for input of size 66
+
+----------------------------------------------------------------------
+Ran 6 tests in 8.248s
+
+FAILED (errors=1)
+test_every_snapshot_and_padding_with_wrapping_initial_row (test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) ... ok
+test_graph_mutable_slot_context_and_rejected_drafts (test_engine_kda_ring.KdaRingTests.test_graph_mutable_slot_context_and_rejected_drafts) ... ok
+test_invalid_layout_indices_and_overlapping_inputs (test_engine_kda_ring.KdaRingTests.test_invalid_layout_indices_and_overlapping_inputs) ... ok
+test_reference_bisect_disables_direct_ring_lane (test_engine_kda_ring.KdaRingTests.test_reference_bisect_disables_direct_ring_lane) ... ok
+test_tail_dimensions_grouped_heads_and_float_types (test_engine_kda_ring.KdaRingTests.test_tail_dimensions_grouped_heads_and_float_types) ... ok
+test_zero_context_masks_nan_and_device_int32 (test_engine_kda_ring.KdaRingTests.test_zero_context_masks_nan_and_device_int32) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 3.921s
+
+OK

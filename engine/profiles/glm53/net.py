@@ -191,13 +191,20 @@ class Glm53Net:
         captured = getattr(step, "captured", False)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
+            direct_ring = self.lanes.kda_recurrent_ring is not None and s.length <= wr
             if captured:
-                hist, state0 = caches.kda_history(L, s.slot, s.ctx)
+                if direct_ring:
+                    hist, ring, physical = caches.kda_ring_history(L, s.slot, s.ctx)
+                else:
+                    hist, state0 = caches.kda_history(L, s.slot, s.ctx)
             else:
                 conv_ring, rec_ring = caches.kda(L, s.slot)
                 hist_pos = s.ctx + torch.arange(-(K - 1), 0, device=x.device)
                 hist = conv_ring[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0)
-                state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
+                if direct_ring:
+                    ring, physical = rec_ring[None], 0
+                else:
+                    state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
             y, _ = self.lanes.conv_prefill(qkv_all[sl], p[n + "conv"], hist if captured or s.ctx > 0 else None)
             if captured:
                 caches.write_conv(L, s.slot, s.ctx, qkv_all[sl])
@@ -207,7 +214,10 @@ class Glm53Net:
                 conv_ring[:, pos % wc] = qkv_all[sl][-keep:].T
             q, k, v = (t.reshape(1, s.length, Hl, D) for t in y.split(Hl * D, dim=-1))
             g_raw, beta = g_raw_all[sl][None], beta_all[sl][None]
-            if s.length > wr:                                                       # a prefill chunk: only the final state is kept
+            if direct_ring:
+                o = self.lanes.kda_recurrent_ring(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"],
+                                                  ring, physical, s.ctx, F.lower_bound)
+            elif s.length > wr:                                                     # a prefill chunk: only the final state is kept
                 o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
                 rec_ring[(s.ctx + s.length - 1) % wr] = state[0]
             else:                                                                   # a decode/verify step: one state per position

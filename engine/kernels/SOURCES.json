@@ -27,10 +27,11 @@
       "source": "vllm/third_party/flash_linear_attention/ops/fused_recurrent.py",
       "sha256": "371e7d733e90a7147fbca8dbfe67e62503ba663bd1570424bc0efa22c54f3e2b",
       "origin": "image",
-      "local_sha256": "bbc7d371dcc24400469d7d475104e9defd7c01e342423482d3dd7718ce1e7a55",
+      "local_sha256": "b02f5acac2d50b0c6d713395d6ada6762b09a365529587cf01d3e14ba73650b8",
       "local_modifications": [
         "2026-09-11 GB10 recurrent: direct canonical K,V state addressing and masked gate loads at padded K boundaries",
-        "2026-09-12 GB10 recurrent: constexpr token/head/channel strides for canonical KDA inputs; preserve legacy dense addressing and recurrence arithmetic."
+        "2026-09-12 GB10 recurrent: constexpr token/head/channel strides for canonical KDA inputs; preserve legacy dense addressing and recurrence arithmetic.",
+        "2026-09-12 GB10 recurrent: optional direct canonical ring state loads and per-token writes with runtime slot/context; no staging states."
       ]
     },
     "kda/index.py": {
