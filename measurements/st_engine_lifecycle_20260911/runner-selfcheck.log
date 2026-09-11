@@ -1,0 +1,1 @@
+  runner: 9 steps (3 prefill, 6 decode), all homogeneous, kv/slots returned, ring recorded; keep_idle: finish keeps blocks, wake/extend/evict OK

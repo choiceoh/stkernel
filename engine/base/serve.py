@@ -1,88 +1,107 @@
-"""The serve loop and its one door (base): requests arrive on rank 0, every
-rank steps in lockstep, tokens come out where they came in.
+"""Bounded request admission and the rank-0 HTTP door.
 
-    Server(engine, runner, comm, port).loop()
-
-Rank 0 listens (a small HTTP server on its own thread) and puts arrivals on a
-queue; each iteration of `loop` broadcasts the drained queue to every rank
-(one collective, `comm.broadcast_object`), submits them, and runs one
-scheduler step. Sampling is seeded and the logits are identical on every
-rank (all-gathered), so the ranks never exchange tokens: they compute the
-same ones. A request completes when its sequence leaves the runner; rank 0
-then answers the waiting HTTP call.
-
-The API is deliberately tiny -- POST /v1/completions with `prompt` (text,
-when a tokenizer is given) or `ids`, `max_tokens`, `temperature` -- because
-the point of this file is the loop, not the door.
+Public request IDs are independent of the runner's reusable KV rows. Every
+rank receives the same FIFO, admits only requests whose entire decode horizon
+fits the declared budget, and recycles rows after copying out results.
+Kernel failures remain fatal; waiting HTTP clients receive an error on exit.
 """
 from __future__ import annotations
 
+import heapq
 import json
+import math
 import queue
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
+class RequestError(Exception):
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
+
+
 class Server:
-    def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None, host: str = "0.0.0.0"):
+    def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
+                 host: str = "0.0.0.0", max_pending: int = 64):
+        if type(max_pending) is not int or max_pending <= 0:
+            raise ValueError("max_pending must be a positive integer")
+        if runner.slot_of:
+            raise ValueError("the server requires an idle runner")
         self.engine, self.runner, self.comm = engine, runner, comm
         self.port, self.host, self.tok = port, host, tokenizer
-        self.arrivals = queue.Queue()             # rank 0: (seq, ids, max_new, temperature)
-        self.pending = {}                         # rank 0: seq -> Event
-        self.results = {}
-        self.next_seq = 0
+        self.max_pending = max_pending
+        self.arrivals = queue.Queue()
+        self.pending, self.results = {}, {}
+        self.next_seq, self.served = 0, 0
         self.alive = True
-        self.served = 0
+        self._lock = threading.Lock()
+        self._waiting = deque()                    # request id, tokens, limit, temperature, promised blocks
+        self._active = {}                          # reusable row -> (request id, promised blocks)
+        self._conversations, self._conversation_of = {}, {}
+        self._idle_order = {}                      # least recently completed turn first
+        self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
+        if not self._free_rows:
+            raise ValueError("the server needs at least one request row and state slot")
 
-    # -- rank 0's door ---------------------------------------------------------------
     def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None):
-        """A new conversation, or one more turn on `conversation` (its caches are
-        held idle, or parked on NVMe -- the loop resumes them; D16)."""
-        if conversation is None:
-            seq = self.next_seq; self.next_seq += 1
-        else:
-            seq = int(conversation)
-        ev = threading.Event(); self.pending[seq] = ev
-        self.arrivals.put((seq, list(ids), int(max_new), float(temperature), conversation is not None))
-        return seq, ev
+        """Validate and enqueue on rank 0 without acquiring any model resources."""
+        if self.comm.rank != 0:
+            raise RequestError("requests must enter on rank 0")
+        if conversation is not None:
+            if type(conversation) is not int or conversation < 0:
+                raise RequestError("conversation must be a nonnegative integer")
+            if not self.runner.keep_idle:
+                raise RequestError("this server does not retain conversations", 409)
+        if not isinstance(ids, (list, tuple)) or not ids or any(type(t) is not int or t < 0 for t in ids):
+            raise RequestError("ids must be a nonempty list of nonnegative token integers")
+        if type(max_new) is not int or max_new <= 0:
+            raise RequestError("max_tokens must be a positive integer")
+        if type(temperature) not in (int, float):
+            raise RequestError("temperature must be finite and nonnegative")
+        try:
+            temperature = float(temperature)
+        except OverflowError as exc:
+            raise RequestError("temperature must be finite and nonnegative") from exc
+        if not math.isfinite(temperature) or temperature < 0:
+            raise RequestError("temperature must be finite and nonnegative")
+        try:
+            self.engine.validate(ids, max_new, temperature)
+        except ValueError as exc:
+            raise RequestError(str(exc)) from exc
+        horizon = len(ids) + max_new - 1 + (self.runner.c.draft_slots if max_new > 1 else 0)
+        blocks = self.runner.kv.blocks_for(horizon)
+        if horizon >= 2**31 or blocks > min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq):
+            raise RequestError("prompt and generation limit exceed the KV capacity")
+        with self._lock:
+            if not self.alive:
+                raise RequestError("engine is stopping", 503)
+            if len(self.pending) + len(self.results) >= self.max_pending:
+                raise RequestError("request queue is full", 503)
+            request = self.next_seq
+            self.next_seq += 1
+            event = threading.Event()
+            self.pending[request] = event
+            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation))
+        return request, event
 
-    def _serve_http(self):
-        server = self
+    def take_result(self, request):
+        with self._lock:
+            result = self.results.pop(request)
+        if isinstance(result, RequestError):
+            raise result
+        return result
 
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
+    def _answer(self, request, result):
+        if self.comm.rank == 0:
+            with self._lock:
+                event = self.pending.pop(request, None)
+                if event is not None:
+                    self.results[request] = result
+                    event.set()
 
-            def do_GET(self):
-                body = json.dumps({"engine": "ST", "running": list(server.runner.state.running), "waiting": list(server.runner.state.waiting),
-                                   "steps": server.runner.steps, "served": server.served}).encode()
-                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
-
-            def do_POST(self):
-                n = int(self.headers.get("Content-Length", "0"))
-                req = json.loads(self.rfile.read(n) or b"{}")
-                ids = req.get("ids")
-                if ids is None:
-                    if server.tok is None:
-                        self.send_response(400); self.end_headers(); self.wfile.write(b'{"error":"no tokenizer: send ids"}'); return
-                    ids = server.tok.encode(req.get("prompt", "")).ids
-                t0 = time.perf_counter()
-                seq, ev = server.submit(ids, req.get("max_tokens", 64), req.get("temperature", 0.0), req.get("conversation"))
-                ev.wait()
-                out = server.results.pop(seq)
-                if isinstance(out, str):
-                    self.send_response(409); self.end_headers(); self.wfile.write(json.dumps({"error": out}).encode()); return
-                text = server.tok.decode(out) if server.tok is not None else None
-                body = json.dumps({"seq": seq, "conversation": seq, "ids": out, "text": text, "prompt_tokens": len(ids),
-                                   "completion_tokens": len(out), "seconds": round(time.perf_counter() - t0, 3)}).encode()
-                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
-
-        httpd = ThreadingHTTPServer((self.host, self.port), Handler)
-        threading.Thread(target=httpd.serve_forever, daemon=True, name="http").start()
-        return httpd
-
-    # -- every rank's loop ---------------------------------------------------------------
     def _drain(self):
         out = []
         while True:
@@ -91,49 +110,208 @@ class Server:
             except queue.Empty:
                 return out
 
-    def _admit(self, seq, ids, max_new, temperature, continues):
-        r = self.runner
-        if not continues:
-            self.engine.add(seq, ids, max_new=max_new, temperature=temperature)
-            r.submit(seq, len(ids))
-            return None
-        if seq not in r.idle:
-            return f"conversation {seq} is not idle (unknown, live, or evicted)"
-        if r.tiered is not None and r.tiered.is_parked(seq):
-            r.resume(seq)                                          # NVMe -> fresh blocks, off the step path
-        n = self.engine.extend(seq, ids, max_new=max_new, temperature=temperature)
-        r.extend(seq, n)                                           # the pending token and the new prompt, from the model's context
-        return None
+    def _evict_idle(self, exclude=None):
+        row = next((s for s in self._idle_order if s != exclude), None)
+        if row is None:
+            return False
+        try:
+            self.runner.evict(row)
+        finally:
+            self.engine.forget(row)
+        self._idle_order.pop(row)
+        self._conversations.pop(self._conversation_of.pop(row))
+        heapq.heappush(self._free_rows, row)
+        return True
+
+    def _admit(self):
+        while self._waiting:
+            request, ids, limit, temperature, promised, conversation = self._waiting[0]
+            row = None
+            resident = 0
+            if conversation is not None:
+                row = self._conversations.get(conversation)
+                if row is None or row not in self.runner.idle:
+                    self._waiting.popleft()
+                    self._answer(request, RequestError("conversation is unknown, live or evicted", 409))
+                    continue
+                end = self.engine.context(row) + self.engine.extension_tokens(row, ids)
+                horizon = end + limit - 1 + (self.runner.c.draft_slots if limit > 1 else 0)
+                promised = self.runner.kv.blocks_for(horizon)
+                if horizon >= 2**31 or promised > min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq):
+                    self._waiting.popleft()
+                    self._answer(request, RequestError("conversation and generation limit exceed the KV capacity"))
+                    continue
+                resident = self.runner.kv.blocks_for(self.runner.kv.tokens[row])
+                held = resident
+                if self.runner.tiered is not None and self.runner.tiered.is_parked(row):
+                    held = self.runner.tiered.tier.index[str(row)]["blocks"]
+                promised = max(promised, held)       # rejected-draft reservations may exceed the new turn
+            elif not self._free_rows:
+                if self._evict_idle():
+                    continue
+                break
+            # Future decode growth already belongs to admitted requests even
+            # though the block pool acquires those blocks only when written.
+            future = sum(b - self.runner.kv.blocks_for(self.runner.kv.tokens[row])
+                         for row, (_, b) in self._active.items())
+            if promised > self.runner.kv.available - future + resident:
+                if self._evict_idle(exclude=row):
+                    continue
+                break
+            if conversation is None:
+                row = heapq.heappop(self._free_rows)
+                try:
+                    self.engine.add(row, ids, max_new=limit, temperature=temperature)
+                    self.runner.submit(row, len(ids))
+                except BaseException:
+                    self.engine.forget(row)
+                    heapq.heappush(self._free_rows, row)
+                    raise
+                if self.runner.keep_idle:
+                    self._conversations[request] = row
+                    self._conversation_of[row] = request
+            else:
+                if self.runner.tiered is not None and self.runner.tiered.is_parked(row):
+                    self.runner.resume(row)
+                tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature)
+                self.runner.extend(row, tokens)
+                self._idle_order.pop(row)
+            self._waiting.popleft()
+            self._active[row] = (request, promised)
+
+    def _abort(self):
+        self.alive = False
+        # Preserve the original engine exception; cleanup must wake clients
+        # even if a model's close hook also fails.
+        error = None
+        for row in list(self.runner.slot_of):
+            try:
+                try:
+                    self.runner.cancel(row)
+                finally:
+                    self.engine.forget(row)
+            except BaseException as exc:
+                error = error or exc
+        self._active.clear()
+        self._waiting.clear()
+        self._idle_order.clear()
+        self._conversations.clear()
+        self._conversation_of.clear()
+        if error is not None:
+            raise error
+
+    def _fail_pending(self):
+        with self._lock:
+            self.alive = False
+            for request, event in self.pending.items():
+                self.results[request] = RequestError("engine stopped before completing the request", 503)
+                event.set()
+            self.pending.clear()
+            self._drain()
 
     def once(self) -> bool:
-        """One iteration: broadcast arrivals, admit, one step. Returns whether a step ran."""
-        arrivals = self.comm.broadcast_object(self._drain() if self.comm.rank == 0 else None)
-        for seq, ids, max_new, temperature, continues in arrivals:
-            err = self._admit(seq, ids, max_new, temperature, continues)
-            if err is not None:
-                self.served += 1
-                if self.comm.rank == 0 and seq in self.pending:
-                    self.results[seq] = err; self.pending.pop(seq).set()
-        before = set(self.runner.state.running) | set(self.runner.state.waiting)
-        step = self.runner.step()
-        if step is None:
-            return False
-        live = set(self.runner.state.running) | set(self.runner.state.waiting)
-        for seq in before - live:
-            self.served += 1
-            if self.comm.rank == 0 and seq in self.pending:
-                self.results[seq] = self.engine.generated(seq)                   # this turn's tokens (extend resets the prompt boundary)
-                self.pending.pop(seq).set()
-            if self.runner.keep_idle and self.runner.tiered is not None and seq in self.runner.idle:
-                self.runner.park(seq)                                  # idle turns leave the arena at once; the conversation keeps its KV
-        return True
+        """One ordered broadcast, bounded admission and homogeneous model step."""
+        try:
+            alive, arrivals = self.comm.broadcast_object(
+                (self.alive, self._drain()) if self.comm.rank == 0 else None)
+            if not alive:
+                self._abort()
+                self._fail_pending()
+                return False
+            self._waiting.extend(arrivals)
+            self._admit()
+            step = self.runner.step()
+            live = set(self.runner.state.running) | set(self.runner.state.waiting)
+            for row in list(self._active):
+                if row not in live:
+                    request, _ = self._active.pop(row)
+                    result = list(self.engine.generated(row))
+                    if self.runner.keep_idle:
+                        if self.runner.tiered is not None:
+                            self.runner.park(row)
+                        self._idle_order[row] = None
+                    else:
+                        self.engine.forget(row)
+                        heapq.heappush(self._free_rows, row)
+                    self.served += 1
+                    self._answer(request, result)
+            return step is not None
+        except BaseException:
+            try:
+                self._abort()
+            except BaseException:
+                pass                                  # re-raise the original engine/transport failure
+            finally:
+                self._fail_pending()
+            raise
+
+    def _serve_http(self):
+        server = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def reply(self, status, payload):
+                body = json.dumps(payload).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                self.reply(200, {"engine": "ST", "running": list(server.runner.state.running),
+                                 "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
+                                 "steps": server.runner.steps, "served": server.served})
+
+            def do_POST(self):
+                try:
+                    if self.path != "/v1/completions":
+                        raise RequestError("unknown endpoint", 404)
+                    n = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < n <= 4 << 20:
+                        raise RequestError("request body must contain 1 to 4194304 bytes", 413)
+                    req = json.loads(self.rfile.read(n))
+                    if not isinstance(req, dict):
+                        raise RequestError("request must be a JSON object")
+                    ids = req.get("ids")
+                    if ids is None:
+                        if server.tok is None:
+                            raise RequestError("no tokenizer: send ids")
+                        prompt = req.get("prompt", "")
+                        if not isinstance(prompt, str):
+                            raise RequestError("prompt must be text")
+                        ids = server.tok.encode(prompt).ids
+                    t0 = time.perf_counter()
+                    conversation = req.get("conversation")
+                    request, event = server.submit(ids, req.get("max_tokens", 64), req.get("temperature", 0.0), conversation)
+                    event.wait()
+                    out = server.take_result(request)
+                    text = server.tok.decode(out) if server.tok is not None else None
+                    conversation = (request if conversation is None else conversation) if server.runner.keep_idle else None
+                    self.reply(200, {"seq": request, "conversation": conversation, "ids": out, "text": text, "prompt_tokens": len(ids),
+                                     "completion_tokens": len(out), "seconds": round(time.perf_counter() - t0, 3)})
+                except RequestError as exc:
+                    self.reply(exc.status, {"error": str(exc)})
+                except (ValueError, TypeError, UnicodeError) as exc:
+                    self.reply(400, {"error": str(exc)})
+
+        httpd = ThreadingHTTPServer((self.host, self.port), Handler)
+        threading.Thread(target=httpd.serve_forever, daemon=True, name="http").start()
+        return httpd
 
     def loop(self, idle_sleep: float = 0.002):
         httpd = self._serve_http() if self.comm.rank == 0 else None
         try:
-            while self.alive:
-                if not self.once():
-                    time.sleep(idle_sleep)              # every rank sleeps the same idle tick; the next broadcast realigns them
+            while True:                              # rank 0 broadcasts the stop before leaving
+                ran = self.once()
+                if not self.alive:
+                    break
+                if not ran:
+                    time.sleep(idle_sleep)
         finally:
+            self._fail_pending()
             if httpd is not None:
                 httpd.shutdown()
+                httpd.server_close()

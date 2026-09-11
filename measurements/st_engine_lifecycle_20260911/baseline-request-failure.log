@@ -1,0 +1,5 @@
+request 0: completed, free blocks=16
+request 1: completed, free blocks=16
+Baseline server with 2 KV rows: request 2 fails with row 2 outside 2
+Both preceding requests completed and returned all physical KV blocks.
+Diagnostic uses the baseline Server with the same synthetic engine and real current runner/pools as the regression suite.

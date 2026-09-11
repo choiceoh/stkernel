@@ -314,6 +314,85 @@ class CudaCacheTests(unittest.TestCase):
         r.step(now=21)
         self.assertEqual(r.take_result(0), (10,))
 
+    def test_clipped_drafts_leave_the_last_emitted_token_pending_for_the_next_turn(self):
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.profiles.glm53.adapter import Glm53Engine
+        from unittest.mock import patch
+        class Draft:
+            k = 2
+            aux_layers = ()
+            def propose(self, anchor, position, ring):
+                return [anchor + 1, anchor + 2]
+        engine = Glm53Engine(self.runtime().net, self.c, self.F, Draft(), max_new=2)
+        runner = Runner(engine, Contract(4, 8, 2, 0., 2), self.c.pool, self.c.slots,
+                        Ring(8, STEP_RECORD.size), keep_idle=True)
+        engine.add(0, [4]); runner.submit(0, 1)
+        with patch.object(self.c, "draft_ring", return_value=None):
+            while runner.step() is not None:
+                pass
+            self.assertEqual(engine.generated(0), [5, 6])
+            self.assertEqual(engine.context(0), 2)
+            self.assertEqual(engine.extension_tokens(0, [9]), 2)
+            runner.extend(0, engine.extend(0, [9], max_new=1))
+            while runner.step() is not None:
+                pass
+        self.assertEqual(engine.generated(0), [10])
+        self.assertEqual(engine.context(0), len(engine.tokens[0]) - 1)
+        runner.cancel(0)
+        engine.forget(0)
+
+    def test_http_engine_adapter_recycles_rows_and_releases_token_buffers(self):
+        from engine.base.comm import Comm
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.base.serve import Server
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        runner = Runner(engine, Contract(4, 8, 0, 0., 2), self.c.pool, self.c.slots, Ring(8, STEP_RECORD.size))
+        server = Server(engine, runner, Comm(1, 0))
+        jobs = [server.submit([i], 2, 0) for i in range(25)]
+        for _ in range(100):
+            if not server.once() and not server._waiting:
+                break
+        for i, (request, event) in enumerate(jobs):
+            self.assertTrue(event.is_set())
+            self.assertEqual(server.take_result(request), [i + 1, i + 2])
+        self.assertFalse(engine.tokens or engine.prompt_len or engine.limits or engine.ctx or engine.slot)
+        self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
+        self.assertEqual(self.c.slots.available, 4)
+
+    def test_serving_adapter_extends_cached_context_and_cancel_releases_idle_state(self):
+        from engine.base.comm import Comm
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.base.serve import Server
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        runner = Runner(engine, Contract(4, 8, 0, 0., 2), self.c.pool, self.c.slots,
+                        Ring(8, STEP_RECORD.size), keep_idle=True)
+        server = Server(engine, runner, Comm(1, 0))
+        first, _ = server.submit([4], 2, 0)
+        while server.once():
+            pass
+        self.assertEqual(server.take_result(first), [5, 6])
+        row = server._conversations[first]
+        self.assertEqual(engine.context(row), 2)
+        second, _ = server.submit([9, 10], 2, 0, conversation=first)
+        while server.once():
+            pass
+        self.assertEqual(server.take_result(second), [11, 12])
+        self.assertEqual(engine.tokens[row], [4, 5, 6, 9, 10, 11, 12])
+        self.assertEqual(engine.context(row), 6)
+        server.alive = False
+        server.once()
+        self.assertFalse(engine.tokens or engine.ctx or engine.slot or runner.idle)
+        self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
+        self.assertEqual(self.c.slots.available, 4)
+
     def test_runtime_can_stop_on_the_first_eos_without_decode(self):
         r = self.runtime(eos_ids=(7,))
         r.submit(0, torch.arange(7, device="cuda"), 20, now=0)
