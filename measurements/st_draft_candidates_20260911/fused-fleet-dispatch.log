@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/tmp/fleet_check.py", line 114, in <module>
+    if __name__ == '__main__': main()
+                               ^^^^^^
+  File "/tmp/fleet_check.py", line 54, in main
+    ssh(NODES[0], ['python3', '-c', acquire, lock, OWNER])
+  File "/tmp/fleet_check.py", line 31, in ssh
+    return subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ip, shlex.join(args)],
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '10.10.10.2', 'python3 -c \'from pathlib import Path; import sys; p=Path(sys.argv[1]); f=p.open("x"); f.write(sys.argv[2]); f.close()\' /home/choiceoh/st-fleet.lock \'st-draft-topk-f4d7-1789135472 bounded correctness probe\'']' returned non-zero exit status 1.

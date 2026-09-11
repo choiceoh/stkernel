@@ -1,0 +1,3 @@
+acquired st-draft-topk-f4d7-1789135237 bounded correctness probe output /home/choiceoh/st-draft-topk-fleet-f4d7/collected/st-draft-topk-f4d7-1789135237
+[(0, 0), (1, 0), (2, 0), (3, 0)]
+removed owned containers and released owned lock

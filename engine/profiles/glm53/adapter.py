@@ -38,7 +38,7 @@ class NullDrafter:
 class Glm53Engine:
     def __init__(self, net: Glm53Net, caches: Glm53Caches, F: Facts, drafter=None, max_new: int = 256,
                  eos_ids=(), temperature: float = 0.0, top_p: float = 1.0, seed: int = 0, decodable: "int | None" = None,
-                 aux_layers=None):
+                 aux_layers=None, context_ceiling: "int | None" = None):
         self.net, self.caches, self.F = net, caches, F
         self.drafter = drafter or NullDrafter()
         if self.drafter.k > F.spec_k:
@@ -47,7 +47,12 @@ class Glm53Engine:
         self.max_new, self.eos = max_new, set(eos_ids)
         self.temperature, self.top_p = temperature, top_p
         self.decodable = decodable                          # logits past this id are the tokenizer's orphans: masked (as served)
-        self.max_context = getattr(F, "max_position", 2**31 - 1)   # the door refuses a horizon past the trained positions
+        # One served ceiling: the door refuses a horizon past it (base/serve reads this)
+        # and the decode ladder captures no bucket above it. Unset = the trained positions.
+        trained = getattr(F, "max_position", 2**31 - 1)
+        if context_ceiling is not None and not 0 < int(context_ceiling) <= trained:
+            raise ValueError(f"served context ceiling must be in 1..{trained}")
+        self.max_context = trained if context_ceiling is None else int(context_ceiling)
         self.gen = torch.Generator(device=caches.device).manual_seed(seed)
         self.tokens, self.prompt_len, self.ctx, self.slot, self.limits = {}, {}, {}, {}, {}
         self.min_new = {}                                   # seq -> no end token before this many generated (OpenAI min_tokens)
@@ -70,9 +75,11 @@ class Glm53Engine:
             if self.memory is not None:
                 self._warmup_prefill_memory()
             self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
-                                                  self.drafter.k + 1, self.aux_layers, memory=self.memory)
+                                                  self.drafter.k + 1, self.aux_layers, memory=self.memory,
+                                                  ceiling=self.max_context)
             if self.drafter.k:
                 self.drafter.capture_decode(self.caches, memory=self.memory)
+                self._check_graph_pools()
             from engine.profiles.glm53.decode_graphs import SamplingGraphs
             self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
             if self.memory is not None:
@@ -81,6 +88,19 @@ class Glm53Engine:
         except BaseException:
             self.close_decode()
             raise
+
+    def _check_graph_pools(self) -> None:
+        """The decode loop reads this step's auxiliary hidden states, which live in the
+        target graphs' memory pool, while the drafter's observation graph replays between
+        segments. Sharing one pool would let that replay's own allocations land on top of
+        them -- finite numbers, wrong drafter context, no test that could see it. The
+        separation is what makes the loop correct, so it is asserted, not assumed."""
+        target = self.decode_graphs.graphs.pool
+        drafter = self.drafter.decode_graphs
+        for name, other in (("proposals", drafter.proposals), ("observations", drafter.observations)):
+            if other.pool == target:
+                raise ValueError(f"the drafter's {name} graphs share the target graphs' memory pool: "
+                                 "a replay between segments would overwrite the auxiliary hidden states")
 
     def _warmup_prefill_memory(self):
         """Exercise the largest legal prefill at both ends of the KV capacity.
@@ -301,8 +321,9 @@ class Glm53Engine:
             h, aux = self._forward(step)
             sampled = self._sample_hidden(h, temps).tolist()
         else:
-            h, aux, logits = self.decode_graphs.run(step)
-            sampled = self.sampling_graphs.run(self.decode_graphs.shape(step), temps).tolist()
+            shape = self.decode_graphs.shape(step)                         # the sampler names itself from it too
+            h, aux, logits = self.decode_graphs.run(step, shape)
+            sampled = self.sampling_graphs.run(shape, temps).tolist()
         finished = []
         for s in step.segments:
             picks = self._no_end_yet(s.seq, sampled[s.start: s.start + s.length], h[s.start: s.start + s.length])

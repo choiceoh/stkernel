@@ -1,0 +1,17 @@
+test_actual_vocabulary_ties_and_masks_match_dense_cuda_topk (test_engine_vocab_topk.VocabTopkTests.test_actual_vocabulary_ties_and_masks_match_dense_cuda_topk) ... skipped 'requires CUDA'
+test_capture_replays_changing_candidates_without_rng_or_host_reads (test_engine_vocab_topk.VocabTopkTests.test_capture_replays_changing_candidates_without_rng_or_host_reads) ... skipped 'requires CUDA'
+test_invalid_arguments_fail_before_a_collective (test_engine_vocab_topk.VocabTopkTests.test_invalid_arguments_fail_before_a_collective) ... ok
+test_padding_and_nonfinite_scores_never_produce_invalid_ids (test_engine_vocab_topk.VocabTopkTests.test_padding_and_nonfinite_scores_never_produce_invalid_ids) ... ok
+test_unique_strided_values_and_empty_shards_use_one_small_packet (test_engine_vocab_topk.VocabTopkTests.test_unique_strided_values_and_empty_shards_use_one_small_packet) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 1.978s
+
+OK (skipped=2)
+test_device_selector_matches_the_scalar_greedy_walk (test_engine_drafter.DrafterTests.test_device_selector_matches_the_scalar_greedy_walk) ... ok
+test_long_observation_retains_the_newest_window (test_engine_drafter.DrafterTests.test_long_observation_retains_the_newest_window) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.033s
+
+OK

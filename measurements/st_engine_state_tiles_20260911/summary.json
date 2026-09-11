@@ -1,0 +1,728 @@
+{
+  "decision": "retain main's 256-element tile; neither candidate promoted",
+  "scope": "direct-state transfers only; no full-model or TP4 speedup claim",
+  "gpu_tests": 170,
+  "isolated_real_weight_graph_conditions": 17,
+  "cases": [
+    {
+      "tile": 1024,
+      "kda_layers": 1,
+      "active_sequences": 1,
+      "operation": "history",
+      "reduction_range_percent": [
+        -0.6313179567111415,
+        8.789061234345752
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 8.191999979317188,
+          "candidate_us": 7.4720000848174095,
+          "reduction_percent": 8.789061234345752
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 12.671999633312225,
+          "candidate_us": 12.752000242471695,
+          "reduction_percent": -0.6313179567111415
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 8.576000109314919,
+          "candidate_us": 8.54399986565113,
+          "reduction_percent": 0.37313716483085013
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 1,
+      "active_sequences": 1,
+      "operation": "1",
+      "reduction_range_percent": [
+        0.6550204743543175,
+        6.392689755484627
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 7.007999811321497,
+          "candidate_us": 6.560000125318766,
+          "reduction_percent": 6.392689755484627
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 12.35199999064207,
+          "candidate_us": 12.128000147640705,
+          "reduction_percent": 1.8134702329263952
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 7.327999919652939,
+          "candidate_us": 7.280000019818544,
+          "reduction_percent": 0.6550204743543175
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 1,
+      "active_sequences": 1,
+      "operation": "6",
+      "reduction_range_percent": [
+        -13.097716141928428,
+        -1.5306140126233325
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 15.39199985563755,
+          "candidate_us": 17.263999208807945,
+          "reduction_percent": -12.162158073856455
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 18.81599985063076,
+          "candidate_us": 19.1040001809597,
+          "reduction_percent": -1.5306140126233325
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 15.39199985563755,
+          "candidate_us": 17.40800030529499,
+          "reduction_percent": -13.097716141928428
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 1,
+      "active_sequences": 4,
+      "operation": "history",
+      "reduction_range_percent": [
+        0.4054006327172788,
+        7.650268009705097
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 23.423999547958374,
+          "candidate_us": 21.63200080394745,
+          "reduction_percent": 7.650268009705097
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 23.679999634623528,
+          "candidate_us": 23.584000766277313,
+          "reduction_percent": 0.4054006327172788
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 23.679999634623528,
+          "candidate_us": 23.552000522613525,
+          "reduction_percent": 0.5405367989231302
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 1,
+      "active_sequences": 4,
+      "operation": "1",
+      "reduction_range_percent": [
+        2.071247527621156,
+        10.325583863429133
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 17.20000058412552,
+          "candidate_us": 15.424000099301338,
+          "reduction_percent": 10.325583863429133
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 19.311999902129173,
+          "candidate_us": 18.912000581622124,
+          "reduction_percent": 2.071247527621156
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 17.44000054895878,
+          "candidate_us": 16.01599995046854,
+          "reduction_percent": 8.165140789374892
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 1,
+      "active_sequences": 4,
+      "operation": "6",
+      "reduction_range_percent": [
+        2.3801372033531165,
+        3.8668566975650354
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 236.4320009946823,
+          "candidate_us": 229.37600314617157,
+          "reduction_percent": 2.9843666757569887
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 233.93599689006805,
+          "candidate_us": 228.36799919605255,
+          "reduction_percent": 2.3801372033531165
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 243.71199309825897,
+          "candidate_us": 234.28799957036972,
+          "reduction_percent": 3.8668566975650354
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 34,
+      "active_sequences": 1,
+      "operation": "history",
+      "reduction_range_percent": [
+        0.5667877754494399,
+        1.8777152359765736
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 448.84800910949707,
+          "candidate_us": 446.30399346351624,
+          "reduction_percent": 0.5667877754494399
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 445.3760087490082,
+          "candidate_us": 442.27200746536255,
+          "reduction_percent": 0.6969394899299375
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 445.6479996442795,
+          "candidate_us": 437.27999925613403,
+          "reduction_percent": 1.8777152359765736
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 34,
+      "active_sequences": 1,
+      "operation": "1",
+      "reduction_range_percent": [
+        0.419120067111034,
+        0.5746654008194962
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 358.8480055332184,
+          "candidate_us": 357.34400153160095,
+          "reduction_percent": 0.419120067111034
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 356.3840091228485,
+          "candidate_us": 354.3359935283661,
+          "reduction_percent": 0.5746654008194962
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 359.23200845718384,
+          "candidate_us": 357.232004404068,
+          "reduction_percent": 0.5567443897066426
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 34,
+      "active_sequences": 1,
+      "operation": "6",
+      "reduction_range_percent": [
+        3.3661123557842676,
+        3.8379388463844477
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 1965.1039838790894,
+          "candidate_us": 1894.3519592285156,
+          "reduction_percent": 3.6004214143879665
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 1962.719976902008,
+          "candidate_us": 1887.391984462738,
+          "reduction_percent": 3.8379388463844477
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 1968.8000082969666,
+          "candidate_us": 1902.5279879570007,
+          "reduction_percent": 3.3661123557842676
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 34,
+      "active_sequences": 4,
+      "operation": "history",
+      "reduction_range_percent": [
+        0.18818822767464605,
+        0.3366495981202644
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 1774.9279737472534,
+          "candidate_us": 1769.648015499115,
+          "reduction_percent": 0.29747450748613957
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 1776.9439816474915,
+          "candidate_us": 1773.5999822616577,
+          "reduction_percent": 0.18818822767464605
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 1777.5360345840454,
+          "candidate_us": 1771.5519666671753,
+          "reduction_percent": 0.3366495981202644
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 34,
+      "active_sequences": 4,
+      "operation": "1",
+      "reduction_range_percent": [
+        0.12108551093031883,
+        0.5278712304115807
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 1427.0399808883667,
+          "candidate_us": 1425.3120422363281,
+          "reduction_percent": 0.12108551093031883
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 1415.503978729248,
+          "candidate_us": 1408.031940460205,
+          "reduction_percent": 0.5278712304115807
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 1430.5599927902222,
+          "candidate_us": 1424.1280555725098,
+          "reduction_percent": 0.44960975073595755
+        }
+      ]
+    },
+    {
+      "tile": 1024,
+      "kda_layers": 34,
+      "active_sequences": 4,
+      "operation": "6",
+      "reduction_range_percent": [
+        3.0930581260829593,
+        3.1848740506081774
+      ],
+      "runs": [
+        {
+          "file": "tiles-1.json",
+          "baseline_us": 7932.30414390564,
+          "candidate_us": 7682.496070861816,
+          "reduction_percent": 3.1492498082760667
+        },
+        {
+          "file": "tiles-2.json",
+          "baseline_us": 7909.327983856201,
+          "candidate_us": 7664.687871932983,
+          "reduction_percent": 3.0930581260829593
+        },
+        {
+          "file": "tiles-3.json",
+          "baseline_us": 7932.496070861816,
+          "candidate_us": 7679.856061935425,
+          "reduction_percent": 3.1848740506081774
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 1,
+      "active_sequences": 1,
+      "operation": "history",
+      "reduction_range_percent": [
+        -0.37173920805126937,
+        6.455265847010949
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 14.128000009804964,
+          "candidate_us": 13.21600005030632,
+          "reduction_percent": 6.455265847010949
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 8.608000352978706,
+          "candidate_us": 8.63999966531992,
+          "reduction_percent": -0.37173920805126937
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 8.608000352978706,
+          "candidate_us": 8.608000352978706,
+          "reduction_percent": 0.0
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 1,
+      "active_sequences": 1,
+      "operation": "1",
+      "reduction_range_percent": [
+        0.4385998224028187,
+        3.303964319985464
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 14.527999795973301,
+          "candidate_us": 14.047999866306782,
+          "reduction_percent": 3.303964319985464
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 7.296000141650438,
+          "candidate_us": 7.2639998979866505,
+          "reduction_percent": 0.4385998224028187
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 7.327999919652939,
+          "candidate_us": 7.2639998979866505,
+          "reduction_percent": 0.8733627506551489
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 1,
+      "active_sequences": 1,
+      "operation": "6",
+      "reduction_range_percent": [
+        -2.0833371228946795,
+        -0.8316011209270835
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 19.58400011062622,
+          "candidate_us": 19.967999309301376,
+          "reduction_percent": -1.960780210917168
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 15.39199985563755,
+          "candidate_us": 15.519999898970127,
+          "reduction_percent": -0.8316011209270835
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 15.359999611973763,
+          "candidate_us": 15.680000185966492,
+          "reduction_percent": -2.0833371228946795
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 1,
+      "active_sequences": 4,
+      "operation": "history",
+      "reduction_range_percent": [
+        -1.216217629952343,
+        0.6747611188219427
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 23.711999878287315,
+          "candidate_us": 23.552000522613525,
+          "reduction_percent": 0.6747611188219427
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 23.552000522613525,
+          "candidate_us": 23.584000766277313,
+          "reduction_percent": -0.13587059678035196
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 23.679999634623528,
+          "candidate_us": 23.96799996495247,
+          "reduction_percent": -1.216217629952343
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 1,
+      "active_sequences": 4,
+      "operation": "1",
+      "reduction_range_percent": [
+        0.0,
+        2.56012548650133
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 20.62400057911873,
+          "candidate_us": 20.096000283956528,
+          "reduction_percent": 2.56012548650133
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 17.424000427126884,
+          "candidate_us": 17.40800030529499,
+          "reduction_percent": 0.0918280615224476
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 17.376000061631203,
+          "candidate_us": 17.376000061631203,
+          "reduction_percent": 0.0
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 1,
+      "active_sequences": 4,
+      "operation": "6",
+      "reduction_range_percent": [
+        1.368026806501621,
+        1.7626518833636307
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 238.5919988155365,
+          "candidate_us": 235.32799631357193,
+          "reduction_percent": 1.368026806501621
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 247.80799448490143,
+          "candidate_us": 243.44000220298767,
+          "reduction_percent": 1.7626518833636307
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 240.4320016503334,
+          "candidate_us": 236.25600337982178,
+          "reduction_percent": 1.7368728962232294
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 34,
+      "active_sequences": 1,
+      "operation": "history",
+      "reduction_range_percent": [
+        0.4635795545328225,
+        1.2277436771300887
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 446.27198576927185,
+          "candidate_us": 442.0800060033798,
+          "reduction_percent": 0.9393329403516115
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 445.23200392723083,
+          "candidate_us": 443.1679993867874,
+          "reduction_percent": 0.4635795545328225
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 445.69599628448486,
+          "candidate_us": 440.2239918708801,
+          "reduction_percent": 1.2277436771300887
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 34,
+      "active_sequences": 1,
+      "operation": "1",
+      "reduction_range_percent": [
+        -0.5863021704440197,
+        1.538467017391676
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 359.8400056362152,
+          "candidate_us": 354.3039858341217,
+          "reduction_percent": 1.538467017391676
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 360.22400856018066,
+          "candidate_us": 362.33600974082947,
+          "reduction_percent": -0.5863021704440197
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 357.7919900417328,
+          "candidate_us": 355.53599894046783,
+          "reduction_percent": 0.6305314719320054
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 34,
+      "active_sequences": 1,
+      "operation": "6",
+      "reduction_range_percent": [
+        1.6817974898007737,
+        1.9810397830039794
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 1967.4240350723267,
+          "candidate_us": 1934.3359470367432,
+          "reduction_percent": 1.6817974898007737
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 1980.3040027618408,
+          "candidate_us": 1941.5359497070312,
+          "reduction_percent": 1.9576819014020863
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 1982.800006866455,
+          "candidate_us": 1943.519949913025,
+          "reduction_percent": 1.9810397830039794
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 34,
+      "active_sequences": 4,
+      "operation": "history",
+      "reduction_range_percent": [
+        0.8275782684892152,
+        1.3136288446844113
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 1774.623990058899,
+          "candidate_us": 1751.312017440796,
+          "reduction_percent": 1.3136288446844113
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 1770.9439992904663,
+          "candidate_us": 1756.2880516052246,
+          "reduction_percent": 0.8275782684892152
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 1773.6960053443909,
+          "candidate_us": 1753.8719773292542,
+          "reduction_percent": 1.1176677376170563
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 34,
+      "active_sequences": 4,
+      "operation": "1",
+      "reduction_range_percent": [
+        0.31760036139431014,
+        0.5070712029990765
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 1432.5439929962158,
+          "candidate_us": 1425.279974937439,
+          "reduction_percent": 0.5070712029990765
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 1430.3359985351562,
+          "candidate_us": 1424.351990222931,
+          "reduction_percent": 0.4183638192951644
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 1360.207974910736,
+          "candidate_us": 1355.8879494667053,
+          "reduction_percent": 0.31760036139431014
+        }
+      ]
+    },
+    {
+      "tile": 512,
+      "kda_layers": 34,
+      "active_sequences": 4,
+      "operation": "6",
+      "reduction_range_percent": [
+        1.46239944740294,
+        1.62904193179092
+      ],
+      "runs": [
+        {
+          "file": "tiles512-1.json",
+          "baseline_us": 7854.480028152466,
+          "candidate_us": 7739.61615562439,
+          "reduction_percent": 1.46239944740294
+        },
+        {
+          "file": "tiles512-2.json",
+          "baseline_us": 7863.263845443726,
+          "candidate_us": 7735.167980194092,
+          "reduction_percent": 1.62904193179092
+        },
+        {
+          "file": "tiles512-3.json",
+          "baseline_us": 7927.775859832764,
+          "candidate_us": 7803.51996421814,
+          "reduction_percent": 1.5673487471332903
+        }
+      ]
+    }
+  ]
+}

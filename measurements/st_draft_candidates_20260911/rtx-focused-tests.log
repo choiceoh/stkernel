@@ -1,0 +1,19 @@
+/tmp/st-draft-topk-venv/lib/python3.12/site-packages/torch/_subclasses/functional_tensor.py:368: UserWarning: Failed to initialize NumPy: No module named 'numpy' (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:84.)
+  cpu = _conversion_method_template(device=torch.device("cpu"))
+{"torch": "2.13.0+cu130", "git": "cf30153c4c131c8164ee7798e5022d810682e2cb", "cuda": "13.0", "device": "NVIDIA GeForce RTX 5050", "capability": [12, 0]}
+test_actual_vocabulary_ties_and_masks_match_dense_cuda_topk (test_engine_vocab_topk.VocabTopkTests.test_actual_vocabulary_ties_and_masks_match_dense_cuda_topk) ... ok
+test_capture_replays_changing_candidates_without_rng_or_host_reads (test_engine_vocab_topk.VocabTopkTests.test_capture_replays_changing_candidates_without_rng_or_host_reads) ... ok
+test_invalid_arguments_fail_before_a_collective (test_engine_vocab_topk.VocabTopkTests.test_invalid_arguments_fail_before_a_collective) ... ok
+test_padding_and_nonfinite_scores_never_produce_invalid_ids (test_engine_vocab_topk.VocabTopkTests.test_padding_and_nonfinite_scores_never_produce_invalid_ids) ... ok
+test_unique_strided_values_and_empty_shards_use_one_small_packet (test_engine_vocab_topk.VocabTopkTests.test_unique_strided_values_and_empty_shards_use_one_small_packet) ... ok
+test_device_selection_is_graph_safe_and_does_not_consume_rng (test_engine_vocab.VocabTests.test_device_selection_is_graph_safe_and_does_not_consume_rng) ... ok
+test_random_strided_and_masked_shards (test_engine_vocab.VocabTests.test_random_strided_and_masked_shards) ... ok
+test_ties_signed_zero_infinity_and_nan_match_argmax (test_engine_vocab.VocabTests.test_ties_signed_zero_infinity_and_nan_match_argmax) ... ok
+test_device_selector_matches_the_scalar_greedy_walk (test_engine_drafter.DrafterTests.test_device_selector_matches_the_scalar_greedy_walk) ... ok
+test_long_observation_retains_the_newest_window (test_engine_drafter.DrafterTests.test_long_observation_retains_the_newest_window) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 3.948s
+
+OK
+peak_reserved_bytes 94371840

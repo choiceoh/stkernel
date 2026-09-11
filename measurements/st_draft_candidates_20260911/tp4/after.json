@@ -1,0 +1,132 @@
+[
+  {
+    "node": "10.10.10.2",
+    "services": [],
+    "memory": "MemTotal:       125507892 kB\nMemFree:        103858260 kB\nMemAvailable:   102003200 kB\nBuffers:          248368 kB\nCached:          9336492 kB\nSwapCached:            0 kB\nActive:          7570276 kB\nInactive:        2291208 kB\nActive(anon):     310428 kB\nInactive(anon):        0 kB\nActive(file):    7259848 kB\nInactive(file):  2291208 kB\nUnevictable:       22900 kB\nMlocked:           22900 kB\nSwapTotal:      16777212 kB\nSwapFree:       16777212 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:             13828 kB\nWriteback:             0 kB\nAnonPages:        300036 kB\nMapped:           391340 kB\nShmem:             30060 kB\nKReclaimable:     296772 kB\nSlab:            1578800 kB\nSReclaimable:     296772 kB\nSUnreclaim:      1282028 kB\nKernelStack:       10976 kB\nShadowCallStack:    2808 kB\nPageTables:        17888 kB\nSecPageTables:     29512 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    79531156 kB\nCommitted_AS:    2282788 kB\nVmallocTotal:   135288315904 kB\nVmallocUsed:      105740 kB\nVmallocChunk:          0 kB\nPercpu:            21440 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:         0 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:      4096 kB\nFilePmdMapped:         0 kB\nCmaTotal:         131072 kB\nCmaFree:           69320 kB\nBalloon:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\n",
+    "gpu": "NVIDIA GB10, 0 %\n",
+    "processes": ""
+  },
+  {
+    "node": "10.10.10.1",
+    "services": [
+      {
+        "name": "grafana",
+        "id": "dab63147d51695e024e6bc6774ac85a88e366bd8addea36e7bfa099f7d48c050",
+        "started": "2026-09-11T11:19:46.18647192Z"
+      },
+      {
+        "name": "prometheus",
+        "id": "a652c0520183bdcf599affcac7df4b8686215a15e704c745f05cf9c8a8ece8c8",
+        "started": "2026-09-11T11:19:46.186887472Z"
+      },
+      {
+        "name": "topbid-tunnel",
+        "id": "60627d1bc65dbaaf1745fbc4e7ed64be0f696606f510967bc7b00266109213da",
+        "started": "2026-09-11T11:19:46.187794912Z"
+      }
+    ],
+    "memory": "MemTotal:       127541452 kB\nMemFree:        106295796 kB\nMemAvailable:   102653744 kB\nBuffers:          203008 kB\nCached:         11915024 kB\nSwapCached:            0 kB\nActive:          6881172 kB\nInactive:        5933064 kB\nActive(anon):     746776 kB\nInactive(anon):        0 kB\nActive(file):    6134396 kB\nInactive(file):  5933064 kB\nUnevictable:       30296 kB\nMlocked:           26524 kB\nSwapTotal:      16777212 kB\nSwapFree:       16777212 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:              2456 kB\nWriteback:             0 kB\nAnonPages:        726372 kB\nMapped:           891000 kB\nShmem:             39328 kB\nKReclaimable:     231076 kB\nSlab:            1550444 kB\nSReclaimable:     231076 kB\nSUnreclaim:      1319368 kB\nKernelStack:       17200 kB\nShadowCallStack:    4320 kB\nPageTables:        20420 kB\nSecPageTables:     31140 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    137941588 kB\nCommitted_AS:    5824416 kB\nVmallocTotal:   135288315904 kB\nVmallocUsed:      106420 kB\nVmallocChunk:          0 kB\nPercpu:            21840 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:         0 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:         0 kB\nFilePmdMapped:         0 kB\nCmaTotal:         131072 kB\nCmaFree:           69336 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\n",
+    "gpu": "NVIDIA GB10, 0 %\n",
+    "processes": ""
+  },
+  {
+    "node": "10.10.10.3",
+    "services": [],
+    "memory": "MemTotal:       125441420 kB\nMemFree:        110082448 kB\nMemAvailable:   107236872 kB\nBuffers:          167104 kB\nCached:          7538848 kB\nSwapCached:            0 kB\nActive:          5726304 kB\nInactive:        2161156 kB\nActive(anon):     204240 kB\nInactive(anon):        0 kB\nActive(file):    5522064 kB\nInactive(file):  2161156 kB\nUnevictable:       38744 kB\nMlocked:           22744 kB\nSwapTotal:      16777212 kB\nSwapFree:       16777212 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:             13504 kB\nWriteback:             0 kB\nAnonPages:        220628 kB\nMapped:           306836 kB\nShmem:             18996 kB\nKReclaimable:     183576 kB\nSlab:             622600 kB\nSReclaimable:     183576 kB\nSUnreclaim:       439024 kB\nKernelStack:       10368 kB\nShadowCallStack:    2660 kB\nPageTables:        11408 kB\nSecPageTables:     24820 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    79497920 kB\nCommitted_AS:    2106076 kB\nVmallocTotal:   135288315904 kB\nVmallocUsed:      104428 kB\nVmallocChunk:          0 kB\nPercpu:            20480 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:         0 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:      4096 kB\nFilePmdMapped:         0 kB\nCmaTotal:         131072 kB\nCmaFree:           69320 kB\nBalloon:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\n",
+    "gpu": "NVIDIA GB10, 0 %\n",
+    "processes": ""
+  },
+  {
+    "node": "10.10.10.4",
+    "services": [
+      {
+        "name": "determined_cartwright",
+        "id": "cefb93d9a13f9c20ebda8ebd4ecd5be37edd1b79db14cb3dd0bdb915f3ee2fca",
+        "started": "2026-09-11T13:56:58.438442551Z"
+      },
+      {
+        "name": "st-gb10-kda-check-9391",
+        "id": "acaf77330f08c427c284f5b8bea2f809d5b5d19988da0881c50ac0101b230f8a",
+        "started": "2026-09-11T13:57:27.344447817Z"
+      },
+      {
+        "name": "nemotron-vllm",
+        "id": "3fefc64cde3ead78136ea482d1219a3a9a3cda8e8e348a5779b9564629ef6b79",
+        "started": "2026-09-11T11:25:27.812711712Z"
+      },
+      {
+        "name": "solarflow-engine",
+        "id": "1037d13a29e44a678a94483b32714e1e9c026c33148b08945aa790f005a2ffdd",
+        "started": "2026-09-11T11:25:26.392036992Z"
+      },
+      {
+        "name": "solarflow-web-ssr",
+        "id": "ea4d64e5124c59e926ea28495032d315761b1d1c9ebf5777c7b2e990bd82f089",
+        "started": "2026-09-11T11:25:26.404263264Z"
+      },
+      {
+        "name": "solarflow-backend",
+        "id": "99e14dc896622ddd5dbe64c90b4675a4ae3f50b19bb9312cedc019f76489bdf3",
+        "started": "2026-09-11T11:25:26.393112448Z"
+      },
+      {
+        "name": "sfpoc-auth",
+        "id": "f2492683b6aab24098afea41cb0a28ef98bbbee0787036ecf7369ebe11b87ae6",
+        "started": "2026-09-11T11:25:27.681331776Z"
+      },
+      {
+        "name": "sfpoc-db",
+        "id": "9d7e759329ca3411f5d96cfda93fc73195debdc3bee26c58fc6e639ea9a36054",
+        "started": "2026-09-11T11:25:26.413724896Z"
+      },
+      {
+        "name": "vaultwarden",
+        "id": "d8c0a26922f38adac8bbc1f0c98f9df96cb107536d974cb551d45822cd7a02db",
+        "started": "2026-09-11T11:25:26.390250464Z"
+      },
+      {
+        "name": "sfpoc-gateway",
+        "id": "36ce582b1cd9353dd43f19bfa86091866dd6902d55ef2c2b19a942a3eae1c5c4",
+        "started": "2026-09-11T11:25:26.394345872Z"
+      },
+      {
+        "name": "sfpoc-rest",
+        "id": "a04ff3eef6d8e5473ea24beb6fdba601c2d40de26c3c08a6c58c774293a25bb4",
+        "started": "2026-09-11T11:25:26.401356064Z"
+      },
+      {
+        "name": "solarflow-tunnel",
+        "id": "928b86e91b1ef24825763bb553e73c2c233ded0a378b34232d006df670807d11",
+        "started": "2026-09-11T11:25:26.413725824Z"
+      },
+      {
+        "name": "solarflow-caddy",
+        "id": "d9f5253cc82f8e610f749e7c47d8cec498562428de1cfe5dbdc1e2be9a6f9cba",
+        "started": "2026-09-11T11:25:26.396280576Z"
+      },
+      {
+        "name": "solarflow-webhook",
+        "id": "d8cf192ac1e2ce1610397115572c1d1a09621ddcc3279ab42b06d31ecaa62440",
+        "started": "2026-09-11T11:25:26.402805408Z"
+      },
+      {
+        "name": "cloudflared-deneb",
+        "id": "f61aeaacc9cd76894300f35c005f288c674785237001c0ef7eddb974a09b48be",
+        "started": "2026-09-11T11:25:28.11954768Z"
+      },
+      {
+        "name": "deneb-mailarchive",
+        "id": "79ee51a0aef673e2482e456dc39a05274307a03e8f7ba398f2318c33325bb8c8",
+        "started": "2026-09-11T11:25:26.40369888Z"
+      },
+      {
+        "name": "deneb-mailserver",
+        "id": "058484c3f2c7f20ae9c6f3945b8012d3daea444209ebf6dc51fafbc2e9702a69",
+        "started": "2026-09-11T11:25:26.403171984Z"
+      }
+    ],
+    "memory": "MemTotal:       127535316 kB\nMemFree:        79984116 kB\nMemAvailable:   100575564 kB\nBuffers:          461660 kB\nCached:         23540816 kB\nSwapCached:            0 kB\nActive:         28087672 kB\nInactive:        7279828 kB\nActive(anon):   12265344 kB\nInactive(anon):  1789780 kB\nActive(file):   15822328 kB\nInactive(file):  5490048 kB\nUnevictable:       28388 kB\nMlocked:           24616 kB\nSwapTotal:      16777212 kB\nSwapFree:       16777212 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:             24956 kB\nWriteback:             0 kB\nAnonPages:      11393860 kB\nMapped:          4895932 kB\nShmem:           2684588 kB\nKReclaimable:     452992 kB\nSlab:            1095364 kB\nSReclaimable:     452992 kB\nSUnreclaim:       642372 kB\nKernelStack:       33616 kB\nShadowCallStack:    8524 kB\nPageTables:        88816 kB\nSecPageTables:     48548 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    80544868 kB\nCommitted_AS:   37944764 kB\nVmallocTotal:   135288315904 kB\nVmallocUsed:      174048 kB\nVmallocChunk:          0 kB\nPercpu:            27680 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:    229376 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:    284672 kB\nFilePmdMapped:         0 kB\nCmaTotal:         131072 kB\nCmaFree:           69320 kB\nBalloon:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\n",
+    "gpu": "NVIDIA GB10, 0 %\n",
+    "processes": "2435, /home/choiceoh/nemotron-eval/venv/bin/python\n2433, /home/choiceoh/venvs/chronos/bin/python\n10845, VLLM::EngineCore\n882921, python3\n"
+  }
+]

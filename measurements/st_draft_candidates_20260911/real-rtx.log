@@ -1,0 +1,8 @@
+/tmp/st-draft-topk-venv/lib/python3.12/site-packages/torch/_subclasses/functional_tensor.py:368: UserWarning: Failed to initialize NumPy: No module named 'numpy' (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:84.)
+  cpu = _conversion_method_template(device=torch.device("cpu"))
+0 [33101, 3756, 12720, 1003, 33075] {'legacy': 14379.94, 'candidate': 14648.03}
+1 [8835, 8211, 6419, 25264, 1003] {'legacy': 14406.7, 'candidate': 14555.2}
+17 [15437, 15779, 7955, 19629, 37617] {'legacy': 14631.89, 'candidate': 14646.5}
+2047 [51, 19818, 21643, 84, 264] {'legacy': 14465.44, 'candidate': 14559.41}
+2048 [2987, 11, 12244, 31546, 7443] {'legacy': 14480.45, 'candidate': 14729.86}
+2057 [11, 374, 320, 2145, 7037] {'legacy': 14485.09, 'candidate': 14625.02}

@@ -1,0 +1,100 @@
+[
+  {
+    "rank": 0,
+    "time": "2026-09-11T12:20:28+00:00",
+    "action": "die",
+    "name": "glm53",
+    "exit_code": "0"
+  },
+  {
+    "rank": 0,
+    "time": "2026-09-11T12:25:54+00:00",
+    "action": "destroy",
+    "name": "glm53",
+    "exit_code": null
+  },
+  {
+    "rank": 0,
+    "time": "2026-09-11T12:26:02+00:00",
+    "action": "create",
+    "name": "glm53",
+    "exit_code": null
+  },
+  {
+    "rank": 0,
+    "time": "2026-09-11T12:26:03+00:00",
+    "action": "start",
+    "name": "glm53",
+    "exit_code": null
+  },
+  {
+    "rank": 1,
+    "time": "2026-09-11T12:25:54+00:00",
+    "action": "kill",
+    "name": "glm53-worker",
+    "exit_code": null
+  },
+  {
+    "rank": 1,
+    "time": "2026-09-11T12:25:57+00:00",
+    "action": "die",
+    "name": "glm53-worker",
+    "exit_code": "137"
+  },
+  {
+    "rank": 1,
+    "time": "2026-09-11T12:25:57+00:00",
+    "action": "destroy",
+    "name": "glm53-worker",
+    "exit_code": null
+  },
+  {
+    "rank": 1,
+    "time": "2026-09-11T12:26:02+00:00",
+    "action": "create",
+    "name": "glm53-worker",
+    "exit_code": null
+  },
+  {
+    "rank": 1,
+    "time": "2026-09-11T12:26:02+00:00",
+    "action": "start",
+    "name": "glm53-worker",
+    "exit_code": null
+  },
+  {
+    "rank": 2,
+    "time": "2026-09-11T12:25:54+00:00",
+    "action": "kill",
+    "name": "glm53-worker",
+    "exit_code": null
+  },
+  {
+    "rank": 2,
+    "time": "2026-09-11T12:25:58+00:00",
+    "action": "die",
+    "name": "glm53-worker",
+    "exit_code": "137"
+  },
+  {
+    "rank": 2,
+    "time": "2026-09-11T12:25:58+00:00",
+    "action": "destroy",
+    "name": "glm53-worker",
+    "exit_code": null
+  },
+  {
+    "rank": 2,
+    "time": "2026-09-11T12:26:02+00:00",
+    "action": "create",
+    "name": "glm53-worker",
+    "exit_code": null
+  },
+  {
+    "rank": 2,
+    "time": "2026-09-11T12:26:02+00:00",
+    "action": "start",
+    "name": "glm53-worker",
+    "exit_code": null
+  }
+]
