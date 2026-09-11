@@ -197,7 +197,13 @@ COMMON="--runtime nvidia --gpus all --ipc host --network host --cap-add IPC_LOCK
 # kernel arguments. Empty in production; whatever it names must exist on every node.
 COMMON="$COMMON ${EXTRA_DOCKER_ARGS:-}"
 RDMA_FLAGS="--device /dev/infiniband"
-MOUNTS="-v $MODEL_PATH:$MODEL_PATH:ro -v $CACHE_DIR:/root/.cache/vllm -v $LOGDIR:/q38logs $OVMOUNTS"
+# The FlashInfer CuTe-DSL kernel cache persists next to vLLM's compile cache:
+# without it every boot re-JITs the b12x kernels, and every NEW prefill shape
+# (static_m<rows>) compiles at request time -- host RAM and a fresh device
+# module load under a serving process. Boot 8's rank 3 died exactly there
+# (NV_ERR_NO_MEMORY with 23 GB still free: the driver wants contiguous pages).
+mkdir -p "$CACHE_DIR/flashinfer"
+MOUNTS="-v $MODEL_PATH:$MODEL_PATH:ro -v $CACHE_DIR:/root/.cache/vllm -v $CACHE_DIR/flashinfer:/root/.cache/flashinfer -v $LOGDIR:/q38logs $OVMOUNTS"
 # PLE on SSD: each rank reads its own block (tools/qwen38_ple_shard.py) from
 # PLE_SSD_DIR; the dir is mounted read-only and every node must hold its rank's file.
 if [ "${PLE_SSD:-0}" = 1 ]; then
@@ -221,6 +227,18 @@ for ip in $HEAD_IP $_wips; do
   run "docker image inspect $IMAGE >/dev/null 2>&1" || { echo "ABORT: $ip missing image $IMAGE" >&2; exit 1; }
 done
 echo "  all nodes have the model and the image"
+# PREBOOT_MEM=1 (default): drop the page cache and compact physical memory on
+# every node before the containers start. GB10 unified memory is one pool, the
+# driver fails device allocations (NV_ERR_NO_MEMORY) when contiguous pages run
+# out even with tens of GB "available", and a node that has churned for days
+# is fragmented. Needs passwordless sudo on the node; skipped quietly without.
+if [ "${PREBOOT_MEM:-1}" = 1 ]; then
+  for ip in $HEAD_IP $_wips; do
+    if [ "$ip" = "$HEAD_IP" ]; then run() { bash -c "$1"; }; else run() { ssh $SSHOPT choiceoh@"$ip" "$1"; }; fi
+    run "sudo -n sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches; echo 1 > /proc/sys/vm/compact_memory' 2>/dev/null" \
+      && echo "  $ip: caches dropped, memory compacted" || echo "  $ip: (no passwordless sudo -- skipped)"
+  done
+fi
 if [ "${PLE_SSD:-0}" = 1 ]; then
   # (set -e trap: a `[ .. ] && echo` loop ends false on a non-matching last
   # worker, which under -e killed the script silently inside $(...).)
