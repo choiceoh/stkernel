@@ -63,7 +63,7 @@ def declared(a, comm_world: int) -> Config:
     in the environment kills the boot. No knobs today -- every value below is
     a fact with a source, and there is nothing to tune by env."""
     facts_ = [
-        Fact("model", str(facts.CKPT), "profiles/glm53/facts.CKPT"),
+        Fact("model", str(a.ckpt_meta), "the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)"),
         Fact("ranks", str(a.ranks), "preshard output"),
         Fact("world", comm_world, "facts.TP: four Sparks"),
         Fact("block", facts.BLOCK, "launcher --block-size"),
@@ -81,8 +81,11 @@ def decodable_vocab(tok) -> int:
 
 
 def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
-          max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None):
-    F = facts.load()
+          max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
+          ckpt_meta: "str | Path" = facts.CKPT):
+    """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
+    copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
+    F = facts.load(ckpt_meta)
     net = Glm53Net(F, comm, lanes, layers)
     specs = net.specs()
     D = drafter_mod.load() if use_drafter else None
@@ -99,7 +102,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         views = RankLoader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors").load(
             [s.name for s in specs], arena=arena, recorder=recorder)
         net.bind(views)
-    tok = tokenizer()
+    tok = tokenizer(ckpt_meta)
     decodable = decodable_vocab(tok)
     drafter = NullDrafter()
     draft_shape = None
@@ -112,7 +115,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     caches = Glm53Caches(arena, F, net.layers, net.Hk, nb, ns, max_seqs=ns, draft=draft_shape)
     # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
     aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
-    engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(), temperature=temperature, seed=seed,
+    engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
                          decodable=decodable, aux_layers=aux)
     contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                               max_wait_s=MAX_WAIT_S, max_running=max_seqs)
@@ -287,13 +290,14 @@ def fleet(a) -> int:
     lanes = lane_tables.served()                                              # every served lane, or the boot dies (D3)
     rec = Recorder(f"rank{comm.rank}")
     F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
-                                           max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir)
+                                           max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
+                                           ckpt_meta=a.ckpt_meta)
     dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
     if comm.rank == 0:
         print(rec.table())
         print(f"  ST engine: GLM-5.3, TP={facts.TP}, lanes={lanes.name}, KV {a.kv_gib} GiB, serving on :{a.port}")
     try:
-        Server(engine, runner, comm, port=a.port, tokenizer=tokenizer()).loop()
+        Server(engine, runner, comm, port=a.port, tokenizer=tokenizer(a.ckpt_meta)).loop()
     finally:
         dump.close()
         comm.close()
@@ -315,6 +319,7 @@ def main(argv=None) -> int:
     ap.add_argument("--drafter", action="store_true", help="with --local: DFlash2 drafts (aux layers clipped to the chain: plumbing, not quality)")
     ap.add_argument("--park", action="store_true", help="with --local: park a finished conversation on NVMe, resume, continue (D16)")
     ap.add_argument("--tier-dir", default="/home/choiceoh/glm53-logs/st-tier")
+    ap.add_argument("--ckpt-meta", default=str(facts.CKPT), help="dir with config.json, tokenizer.json, generation_config.json")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--dump-dir", default="/home/choiceoh/glm53-logs/st-dumps")
     a = ap.parse_args(argv)

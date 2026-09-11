@@ -68,18 +68,23 @@ NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=1 -e VLLM_GLM53_MEGAKERNEL=1 -e VLLM_GLM53_MK_MLA=1 \
 -e TRITON_CACHE_DIR=/cache/triton -e VLLM_CACHE_ROOT=/cache/vllm -e FLASHINFER_WORKSPACE_BASE=/cache"
 
+# the checkpoint's metadata travels with the engine tree: a node needs its rank file, the drafter and these few files,
+# not the 185 GB HF checkpoint (srv1 has 29 GB free)
+META="$REPO/build/st-glm53-meta"; mkdir -p "$META"
+cp "$CKPT"/config.json "$CKPT"/tokenizer.json "$CKPT"/tokenizer_config.json "$CKPT"/generation_config.json "$META"/ 2>/dev/null
+cp "$CKPT"/chat_template*.jinja "$META"/ 2>/dev/null || true
 for r in "${!NODES[@]}"; do
   ip=${NODES[$r]}
   echo "== rank $r on $ip"
-  rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/overlay" "choiceoh@$ip:$ENGINE_DIR/"
+  rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/overlay" "$META" "choiceoh@$ip:$ENGINE_DIR/"
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; exit 1; }
-  node_sh "$ip" "test -s $DRAFTER/model.safetensors && test -f $CKPT/tokenizer.json" || { echo "ABORT: $ip lacks the drafter or the tokenizer" >&2; exit 1; }
+  node_sh "$ip" "test -s $DRAFTER/model.safetensors" || { echo "ABORT: $ip lacks the DFlash2 drafter at $DRAFTER" >&2; exit 1; }
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \
     --network host --ipc host --shm-size 32g --ulimit memlock=-1:-1 --ulimit nofile=524288:524288 --cap-add IPC_LOCK \
     --device /dev/infiniband:/dev/infiniband \
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
-    -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $CKPT:$CKPT:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
+    -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs $mounts \
-    --entrypoint /bin/bash $IMAGE -lc 'cd /repo && PYTHONPATH=/repo exec python3 engine/profiles/glm53/boot.py --port $PORT' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'cd /repo && PYTHONPATH=/repo exec python3 engine/profiles/glm53/boot.py --port $PORT --ckpt-meta /repo/st-glm53-meta' >/dev/null && echo '$ip: started'"
 done
 echo "head: http://10.10.10.2:$PORT/v1/completions  (GET / for status)"
