@@ -143,3 +143,16 @@ memory preflight are prerequisites. `probes/engine_full_check.py` supplies
 an ST transport adapter for canonical Korean documents, a target-only eager
 comparison, graph/DFlash execution, HTTP concurrency and tier timing; it has
 not reached its inference tests in the failed boot.
+
+## Integration with the later main branch
+
+The candidate also incorporates main `d4528459` (PRs #542/#543 and their cache
+metadata/indexer work). Graph caches expose the fused indexer's block mapping
+contract. The integrated source passes the isolated-rank 17-case real-weight
+graph probe with exact eager outputs/state/cache bytes. All 117 GPU unit tests pass
+with zero skips (`gpu-tests-merged.log`). The rebuilt image also passes ABI/
+provenance/device verification (`runtime-merged-srv2.json`), and its complete
+engine source manifest matches the integrated working tree. This integration
+has not been rerun on full TP4
+because srv1/srv4 remain unreachable. Historical numerical manifests above
+identify the pre-integration files; the integrated source manifest is separate.

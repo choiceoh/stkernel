@@ -229,6 +229,152 @@ class CudaCacheTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.c.prepare(Step.prefill(ids, 0, 0, slot))
 
+    def test_prepare_publishes_growth_reuse_and_reset_without_stale_blocks(self):
+        c = self.c
+        c.pool.reserve(0, 16)
+        c.slots.take(0)
+        self.step(0, 6)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        c.pool.reserve_to([0], [32])
+        self.step(0, 6, 16)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        old = c.block_table[0].clone()
+        # Same-sized row, different physical blocks; its old epoch cannot win.
+        c.pool.release(0)
+        c.pool.reserve(1, 16)
+        c.pool.reserve(0, 32)
+        self.step(0, 6)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        self.assertFalse(torch.equal(c.block_table[0], old))
+        # A shorter new owner must clear the old suffix, not expose stale ids.
+        c.pool.release(0)
+        c.pool.reserve(0, 16)
+        self.step(0, 6)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        c.reset()                              # same owners/epochs, cleared device contents
+        self.step(0, 6)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+
+    def test_unchanged_mapping_still_checks_ownership_and_reservation(self):
+        from engine.profiles.glm53.net import Step
+        c = self.c
+        c.pool.reserve(0, 16)
+        slot = c.slots.take(0)
+        step = self.step(0, 6)
+        c.prepare(step)
+        c.pool.reserve_to([0], [15])            # rejected draft horizon reuses the same blocks
+        c.prepare(step)
+        c.slots.give(slot)
+        c.slots.take(1)
+        with self.assertRaisesRegex(ValueError, "does not own"):
+            c.prepare(step)
+        c.slots.give(slot)
+        c.slots.take(0)
+        with self.assertRaisesRegex(ValueError, "reserved context"):
+            c.prepare(Step.prefill(step.ids, 15, 0, slot))
+
+    def test_failed_table_upload_can_retry_the_same_mapping(self):
+        from engine.profiles.glm53.net import Step
+        from unittest.mock import patch
+        c = self.c
+        c.pool.reserve(0, 16)
+        slot = c.slots.take(0)
+        self.step(0, 6)
+        for replacement in (False, True):
+            with self.subTest(replacement=replacement):
+                if replacement:
+                    c.pool.release(0)
+                    c.pool.reserve(1, 16)
+                c.pool.reserve_to([0], [32])
+                step = Step.prefill(torch.zeros(6, dtype=torch.int64, device="cuda"), 16, 0, slot)
+                with patch.object(torch.Tensor, "copy_", side_effect=RuntimeError("injected upload failure")):
+                    with self.assertRaisesRegex(RuntimeError, "injected upload failure"):
+                        c.prepare(step)
+                c.prepare(step)
+                self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+
+    def test_cache_table_tracks_parking_and_failed_promotion_into_new_blocks(self):
+        from engine.base.tiered_kv import TieredKV
+        c = self.c
+        class Tier:
+            block_bytes = c.pool.block_bytes
+            fail = False
+            def demote(self, seq, storage, ids, tokens):
+                self.data = torch.cat([c.pool.block(i) for i in ids]).clone()
+                return self.data.numel()
+            def promote(self, seq, storage, ids):
+                for j, block in enumerate(ids):
+                    c.pool.block(block).copy_(self.data[j * self.block_bytes:(j + 1) * self.block_bytes])
+                    if self.fail:
+                        raise OSError("injected promotion failure")
+                return self.data.numel()
+            def forget(self, seq):
+                pass
+
+        tier = Tier()
+        kv = TieredKV(c.pool, tier)
+        c.pool.reserve(0, 32)
+        c.slots.take(0)
+        self.step(0, 6)
+        for i, block in enumerate(c.pool.blocks_of(0)):
+            block.fill_(i + 7)
+        old = c.block_table[0].clone()
+        kv.park(0)
+        tier.fail = True
+        with self.assertRaisesRegex(OSError, "promotion failure"):
+            kv.resume(0)
+        c.pool.reserve(1, 16)                   # another row occupies a formerly used block
+        tier.fail = False
+        kv.resume(0)
+        self.step(0, 6, 16)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+        self.assertFalse(torch.equal(c.block_table[0], old))
+        self.assertTrue(torch.equal(torch.cat(c.pool.blocks_of(0)), tier.data))
+
+    def test_partial_replacement_upload_retries_and_clears_stale_suffix(self):
+        from engine.profiles.glm53.net import Step
+        from unittest.mock import patch
+        c = self.c
+        c.pool.reserve(0, 32)
+        slot = c.slots.take(0)
+        self.step(0, 6)
+        c.pool.release(0)
+        c.pool.reserve(0, 16)
+        step = Step.prefill(torch.zeros(6, dtype=torch.int64, device="cuda"), 0, 0, slot)
+        copy = torch.Tensor.copy_
+        def partial_copy(dst, src):
+            copy(dst[:1], src[:1])
+            raise RuntimeError("injected partial copy failure")
+        with patch.object(torch.Tensor, "copy_", partial_copy):
+            with self.assertRaisesRegex(RuntimeError, "injected partial copy failure"):
+                c.prepare(step)
+        self.assertEqual(c.block_table[0, 0].item(), c.pool.row(0)[0])
+        c.prepare(step)
+        self.assertEqual(c.block_table[0].tolist(), list(c.pool.row(0)))
+
+    def test_incremental_publication_matches_full_rows_across_random_lifetimes(self):
+        import random
+        from engine.profiles.glm53.net import Step
+        c = self.c
+        slots = [c.slots.take(seq) for seq in range(3)]
+        rng = random.Random(143)
+        ids = torch.zeros(1, dtype=torch.int64, device="cuda")
+        for tick in range(200):
+            seq = rng.randrange(3)
+            if rng.randrange(3) == 0:
+                c.pool.release(seq)
+            else:
+                try:
+                    c.pool.reserve(seq, rng.randrange(1, 18))
+                except MemoryError:
+                    pass
+            if tick % 23 == 0:
+                c.reset()
+            for s in range(3):
+                if c.pool.tokens[s]:
+                    c.prepare(Step.prefill(ids, c.pool.tokens[s] - 1, s, slots[s]))
+                    self.assertEqual(c.block_table[s].tolist(), list(c.pool.row(s)))
+
     def indexer(self):
         from engine.base.comm import Comm
         from engine.profiles.glm53 import lanes
@@ -271,6 +417,64 @@ class CudaCacheTests(unittest.TestCase):
                     net._indexer(1, x[ctx + accepted:end], qr[ctx + accepted:end], self.step(0, 6, ctx + accepted), c)
                     self.assertTrue(torch.equal(c.pool_keys(1)[ids].view(torch.uint8), expected_keys))
                     self.assertTrue(torch.equal(c.pool_scales(1)[ids], expected_scales))
+
+    def test_indexer_dispatches_quantization_and_pool_expansion_through_lanes(self):
+        from unittest.mock import Mock
+        net, x, qr = self.indexer()
+        quant = Mock(wraps=net.lanes.indexer_quant)
+        expand = Mock(wraps=net.lanes.expand_pools)
+        net.lanes = replace(net.lanes, indexer_quant=quant, expand_pools=expand)
+        self.c.pool.reserve(0, 24)
+        self.c.slots.take(0)
+        for ctx, length in ((0, 12), (12, 6)):
+            net._indexer(1, x[ctx:ctx + length], qr[ctx:ctx + length], self.step(0, length, ctx), self.c)
+            rows = quant.call_args.args[0]
+            self.assertEqual(rows.shape, (length * self.F.idx_heads, 128))
+            self.assertEqual(rows.dtype, torch.bfloat16)
+            self.assertTrue(rows.is_contiguous())
+            pools, seq_lens, size = expand.call_args.args
+            self.assertEqual(pools.shape, (length, self.F.topk // self.F.kpool))
+            self.assertEqual(seq_lens.tolist(), list(range(ctx + 1, ctx + length + 1)))
+            self.assertEqual(size, self.F.kpool)
+        self.assertEqual((quant.call_count, expand.call_count), (2, 2))
+
+    def test_indexer_lane_failure_propagates_without_reference_fallback(self):
+        from unittest.mock import Mock
+        net, x, qr = self.indexer()
+        original = net.lanes
+        self.c.pool.reserve(0, 16)
+        self.c.slots.take(0)
+        for name in ("indexer_quant", "expand_pools", "indexer_slots"):
+            with self.subTest(lane=name):
+                self.c.reset()
+                net.lanes = replace(original, **{name: Mock(side_effect=RuntimeError("injected lane failure"))})
+                with self.assertRaisesRegex(RuntimeError, "injected lane failure"):
+                    net._indexer(1, x[:12], qr[:12], self.step(0, 12), self.c)
+
+    def test_indexer_finalizes_each_segment_with_its_own_block_row(self):
+        from engine.profiles.glm53.net import Step
+        from unittest.mock import Mock
+        net, x, qr = self.indexer()
+        finish = Mock(wraps=net.lanes.indexer_slots)
+        net.lanes = replace(net.lanes, indexer_slots=finish)
+        chunks = []
+        for seq, length in ((2, 12), (0, 6)):
+            self.c.pool.reserve(seq, length)
+            slot = self.c.slots.take(seq)
+            chunks.append((torch.zeros(length, device="cuda", dtype=torch.int64), 0, seq, slot))
+        step = Step.decode(chunks)
+        self.c.prepare(step)
+        selected, counts = net._indexer(1, x[:18], qr[:18], step, self.c)
+        self.assertEqual(finish.call_count, 2)
+        for call, segment in zip(finish.call_args_list, step.segments):
+            tokens, row, size, stride, offset, out, valid = call.args
+            self.assertEqual(row.data_ptr(), self.c.block_table[segment.seq].data_ptr())
+            positions = tokens.sort(dim=1, descending=True).values
+            expected = self.c.token_slots(1, segment.seq, positions.clamp_min(0).flatten()).view_as(positions)
+            expected.masked_fill_(positions < 0, -1)
+            sl = slice(segment.start, segment.start + segment.length)
+            self.assertTrue(torch.equal(selected[sl], expected))
+            self.assertTrue(torch.equal(counts[sl], (positions >= 0).sum(1).int()))
 
     def test_long_prefill_ring_contains_only_the_latest_positions(self):
         net, x, qr = self.indexer()

@@ -8,6 +8,7 @@ KDA and indexer rings live together in a second, slot-major arena region.
 """
 from __future__ import annotations
 
+from array import array
 from dataclasses import dataclass
 from math import lcm, prod
 
@@ -122,6 +123,8 @@ class Glm53Caches:
         self.paged.zero_()
         self.state.zero_()
         self.block_table.fill_(-1)
+        self._table_blocks = array("i", [0]) * self.pool.max_seqs
+        self._table_epochs = array("Q", self.pool.epochs)
 
     def reset_slot(self, slot: int):
         if not 0 < slot < self.slots.num_slots:
@@ -130,10 +133,12 @@ class Glm53Caches:
         self.state[slot * n:(slot + 1) * n].zero_()
 
     def prepare(self, step):
-        """Publish host block rows once before a step, after its reservation.
+        """Publish changed block mappings before a step, after its reservation.
 
         Segment bounds and slot ownership are checked without device reads.
-        Address translation in the model then only gathers from this table.
+        Rows append within an allocator epoch: upload only their new suffix.
+        Release/reuse or NVMe resume changes the epoch, requiring a fresh prefix
+        and clearing any stale suffix. Unchanged rows perform no CUDA work.
         """
         import torch
 
@@ -143,7 +148,19 @@ class Glm53Caches:
                 raise ValueError(f"seq {s.seq} does not own state slot {s.slot}")
             if s.ctx < 0 or s.length <= 0 or s.ctx + s.length > self.pool.tokens[s.seq]:
                 raise ValueError(f"seq {s.seq} step exceeds its reserved context")
-            self.block_table[s.seq].copy_(torch.tensor(row, dtype=torch.int32))
+            count = self.pool.blocks_for(self.pool.tokens[s.seq])
+            previous = self._table_blocks[s.seq]
+            epoch = self.pool.epochs[s.seq]
+            if epoch == self._table_epochs[s.seq] and count == previous:
+                continue
+            start = previous if epoch == self._table_epochs[s.seq] else 0
+            # A released row already contains -1 after its active prefix. Send
+            # that padding with the new ids to clear stale entries in one copy.
+            end = max(count, previous)
+            self.block_table[s.seq, start:end].copy_(torch.tensor(row[start:end], dtype=torch.int32))
+            # Commit only after the copy succeeds, so a failed update retries.
+            self._table_blocks[s.seq] = count
+            self._table_epochs[s.seq] = epoch
 
     def kda(self, layer, slot):
         return self._fields["conv", layer][slot], self._fields["rec", layer][slot]
@@ -168,6 +185,11 @@ class Glm53Caches:
         blocks = self.block_table[seq][(positions // F.block).long()]
         return (blocks * (p.block_bytes // F.kv_lora)
                 + p.token_offsets[layer] // F.kv_lora + positions % F.block).to(blocks.dtype)
+
+    def token_map(self, layer, seq):
+        """Block row and scalar strides, measured in latent rows, for a lane."""
+        F, p = self.F, self.layout
+        return self.block_table[seq], F.block, p.block_bytes // F.kv_lora, p.token_offsets[layer] // F.kv_lora
 
     def pool_slots(self, layer, seq, pool_ids):
         F, p = self.F, self.layout

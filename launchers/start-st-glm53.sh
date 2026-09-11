@@ -3,7 +3,7 @@
 # inside the standalone ST image, the engine tree mounted at /repo,
 # this node's rank file, /cache for the JIT builds, and the production
 # launcher's NCCL/RoCE environment (start-glm53-nvfp4-tp4.sh 431-445).
-# Build engine/runtime/build.sh on each node before starting the fleet.
+# The image is built on each node from the rsynced tree (engine/runtime/build.sh) before the container starts.
 #
 #   bash launchers/start-st-glm53.sh            # start all four (rank 0=srv2, rank 1=srv1, then srv3/srv4)
 #   bash launchers/start-st-glm53.sh stop       # docker rm -f st-glm53 on every node
@@ -40,7 +40,6 @@ esac
 for ip in "${NODES[@]}"; do
   busy=$(node_sh "$ip" "docker ps --format '{{.Names}}' | grep -E '^(glm53|q38|vllm)' || true")
   [ -z "$busy" ] || { echo "ABORT: $ip runs $busy -- the fleet is taken (hand off the queue, do not squat)" >&2; exit 1; }
-  node_sh "$ip" "docker image inspect $IMAGE >/dev/null" || { echo "ABORT: $ip lacks $IMAGE (build engine/runtime/build.sh)" >&2; exit 1; }
 done
 
 NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
@@ -63,6 +62,9 @@ for r in "${!NODES[@]}"; do
   ip=${NODES[$r]}
   echo "== rank $r on $ip"
   rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/launchers" "$META" "choiceoh@$ip:$ENGINE_DIR/"
+  # the ST image is built on the node from the tree just rsynced: seconds (two thin layers on the seed every node has); the seed ID is pinned in build.sh
+  node_sh "$ip" "ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh >/dev/null 2>&1 || ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh 2>&1 | tail -5" \
+    || { echo "ABORT: $ip could not build $IMAGE (engine/runtime/build.sh)" >&2; exit 1; }
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; exit 1; }
   node_sh "$ip" "test -s $DRAFTER/model.safetensors" || { echo "ABORT: $ip lacks the DFlash2 drafter at $DRAFTER" >&2; exit 1; }
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \

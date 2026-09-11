@@ -116,6 +116,10 @@ class GraphCaches:
         from engine.profiles.glm53.caches import Glm53Caches
         return Glm53Caches.token_slots(self, layer, seq, positions)
 
+    def token_map(self, layer, seq):
+        from engine.profiles.glm53.caches import Glm53Caches
+        return Glm53Caches.token_map(self, layer, seq)
+
     def pool_slots(self, layer, seq, pool_ids):
         from engine.profiles.glm53.caches import Glm53Caches
         return Glm53Caches.pool_slots(self, layer, seq, pool_ids)

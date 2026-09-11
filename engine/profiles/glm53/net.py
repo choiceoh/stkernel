@@ -26,7 +26,7 @@ weight loader, no cache spec discovery, no graph-capture breaks. The model
 is plain functions over VIEWS (`bind` takes the rank file's tensors as the
 loader carved them from the arena, specs.py says which) and over CACHES it
 is handed (the `Caches` protocol). Kernels come from a `Lanes` table
-(lanes.py): the same nine names bound to judged torch references or to the
+(lanes.py): the same names bound to judged torch references or to the
 served kernels; the composition does not know which.
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ from typing import Protocol
 import torch
 import torch.nn.functional as Fn
 
-from engine.modules.sparse_indexer import fwht128_quant, select_with_tail, topk_positions
+from engine.modules.sparse_indexer import topk_positions
 from engine.profiles.glm53 import specs
 from engine.profiles.glm53.facts import TP, Facts
 from engine.profiles.glm53.lanes import Lanes, swiglu_clamped
@@ -103,6 +103,7 @@ class Caches(Protocol):
     def pool_scales(self, layer: int) -> torch.Tensor: ...       # [P] f32
     def tail(self, layer: int, slot: int) -> torch.Tensor: ...   # [kpool-1+K, 2, 128] bf16: enough raw keys/gates to reject K drafts
     def token_slots(self, layer: int, seq: int, positions: torch.Tensor) -> torch.Tensor: ...   # int32 absolute latent slots
+    def token_map(self, layer: int, seq: int) -> tuple: ...     # (block row | None for identity, block size, block stride, layer offset), in latent rows
     def pool_slots(self, layer: int, seq: int, pool_ids: torch.Tensor) -> torch.Tensor: ...     # int32 absolute pool slots
 
 
@@ -211,12 +212,12 @@ class Glm53Net:
         k = Fn.layer_norm(k.float(), (d,), p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS).to(x.dtype)
         w = x.float() @ p[n + "w_heads"].T                                           # fp32 head gate, as served
         gate = Fn.linear(x, p[n + "gate"])                                           # [N, 128] per-channel pool score
-        q8, qs = fwht128_quant(q.reshape(-1, d))
+        q8, qs = self.lanes.indexer_quant(q.reshape(-1, d))
         q8 = q8.view(N, nh, d)
         w_eff = (w * qs.view(N, nh) * F.idx_scale).contiguous()                     # q's scale folds into the head gate, as served
         width = F.topk + kp - 1
-        slots_out = torch.full((N, width), -1, dtype=torch.int32, device=x.device)
-        valid_out = torch.zeros(N, dtype=torch.int32, device=x.device)
+        slots_out = torch.empty((N, width), dtype=torch.int32, device=x.device)
+        valid_out = torch.empty(N, dtype=torch.int32, device=x.device)
         keys, scales = caches.pool_keys(L), caches.pool_scales(L)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
@@ -257,11 +258,8 @@ class Glm53Net:
                 pool_ids = topk_positions(logits[:, :n_cand].float(), F.topk // kp, valid=ke)
             else:
                 pool_ids = torch.full((s.length, F.topk // kp), -1, dtype=torch.int32, device=x.device)
-            tokens = select_with_tail(pool_ids, seq_lens, kp)                        # positions, -1 padded
-            tokens = tokens.sort(dim=1, descending=True).values                      # valid prefix first (set semantics)
-            valid_out[sl] = (tokens >= 0).sum(1).to(torch.int32)
-            ts = caches.token_slots(L, s.seq, tokens.clamp_min(0).reshape(-1)).view_as(tokens)
-            slots_out[sl] = ts.masked_fill(tokens < 0, -1)
+            tokens = self.lanes.expand_pools(pool_ids, seq_lens, kp)                 # positions, -1 padded
+            self.lanes.indexer_slots(tokens, *caches.token_map(L, s.seq), slots_out[sl], valid_out[sl])
         return slots_out.contiguous(), valid_out
 
     def _dsa(self, L: int, x: torch.Tensor, step: Step, caches: Caches) -> torch.Tensor:

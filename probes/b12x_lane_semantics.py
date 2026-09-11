@@ -3,6 +3,14 @@ Layer-3 real experts, ONE token, the same call the engine makes, against
 dequant + torch on the same bytes -- and variants that flip one assumption
 each (gate/up halves swapped; activation quant off) so the mismatch names
 its cause. Inside the ST image: bash probes/run_engine_probe.sh probes/b12x_lane_semantics.py
+
+Verdict (45th ledger §15): the kernel gates on the SECOND half of w13 --
+flashinfer's CuTe-DSL order is [up; gate], which vLLM reaches by swapping
+its [gate; up] at load (reorder_w13_to_w31_for_flashinfer_cutedsl). Rank
+files written before that finding held [gate; up]; specs.py writes
+[up; gate] (main marks such files weight_layout=st-glm53-b12x-up-gate-v1)
+and the reference lane gates on the second half, so on current files the
+direct comparison is the right one and "halves swapped" is the wrong order.
 """
 from __future__ import annotations
 

@@ -116,7 +116,15 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 - 시퀀스 상태 슬롯마다 KDA conv·recurrent 링과 인덱서 꼬리 링을 둔다.
   인덱서 링은 `kpool - 1 + spec_k`개 위치를 보존해 드래프트 거절 후에도 앞선 풀을 복원한다.
   긴 프리필은 최신 창만 한 번씩 기록하여 CUDA의 중복 scatter 순서에 의존하지 않는다.
-- 블록표도 아레나에 상주하며 `prepare(step)`이 예약된 문맥과 상태 슬롯 소유권을 확인하고 갱신한다.
+- 블록표도 아레나에 상주하며 `prepare(step)`이 매번 예약 문맥과 상태 슬롯 소유권을 확인한다.
+  블록 매핑이 같으면 전송을 생략하고, 늘어나면 새 구간만 게시한다. `BlockPool.release`가
+  행의 세대 번호를 바꾸므로, 행 재사용이나 NVMe 복원은 블록 개수가 같아도 다시 게시한다.
+  이전보다 짧은 행의 남은 항목은 같은 전송에서 `-1`로 지우며, 캐시 전체 reset도 게시 상태를 초기화한다.
+
+`BlockPool.table`, `row(seq)`, `epochs`는 읽기 전용 뷰다. 매핑 변경은 `reserve*`와 `release`를
+통해야 하며, 이를 통해 같은 세대의 블록표가 뒤에만 늘어난다는 조건을 지킨다. 2차 최적화의
+회귀검사와 구성요소 측정은
+[`measurements/st_engine_cache_20260911`](../measurements/st_engine_cache_20260911/README.md)에 있다.
 
 사전샤딩은 `RankWriter`가 모든 실제 가중치의 데이터 오프셋을 256바이트 경계에 맞춘다.
 작은 스케일 뒤의 행렬도 TMA 정렬을 유지하도록 safetensors의 명시적 U8 패딩 텐서를 사용한다.
@@ -127,6 +135,20 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 서빙 KDA 어댑터는 엔진의 `[H,K,V]` 상태와 커널의 `[H,V,K]` 상태를 경계에서 변환한다.
 recurrent 레인도 연결되어 검증 토큰마다 상태를 반환하고, 시작 상태를 보존한다.
 MLA 참조 레인은 선택된 fp8 행만 변환하며, 패딩 슬롯이 가리키는 미사용 블록의 NaN을 마스킹한다.
+
+인덱서의 Hadamard-128 변환·FP8 양자화와 pool→토큰 확장은 `indexer_quant`, `expand_pools`
+레인으로 실행한다. 서빙 표는 `engine.kernels.kpool`의 융합 Triton 커널에 연결하고, 참조 표는 기존 PyTorch
+수식을 유지한다. 두 레인도 LocalTP의 메인 스레드 경유 규칙을 따르며, 바인딩이나 실행 실패는
+그대로 전파한다. 실제 가중치 인덱서의 결과·캐시 일치와 구성요소 성능은
+[`measurements/st_engine_indexer_20260911`](../measurements/st_engine_indexer_20260911/README.md)에 기록했다.
+
+선택 토큰의 최종 주소 변환은 `indexer_slots` 레인이 담당한다. PyTorch의 내림차순 정렬을
+유지하고, 유효 개수 집계·블록 주소 변환·패딩·출력 쓰기를 한 Triton 커널로 실행한다.
+캐시는 `token_map(layer, seq)`로 블록 행과 잠재 벡터 행 단위의 블록 크기·간격·레이어 오프셋을
+제공한다. 연속 캐시 검사의 `None` 블록 행은 위치와 슬롯이 같은 매핑이다. 모든 출력 칸을
+덮어쓰므로 별도의 초기화 커널이 필요 없고, LocalTP와 오류 전파 규칙은 다른 레인과 같다.
+검증과 변경 전후 측정은
+[`measurements/st_engine_slots_20260911`](../measurements/st_engine_slots_20260911/README.md)에 있다.
 
 네 노드 검증은 각 노드에서 같은 인자로 `check.py --distributed`를 실행한다.
 기본 노드 순서는 **rank 0=srv2, rank 1=srv1, rank 2=srv3, rank 3=srv4**다.

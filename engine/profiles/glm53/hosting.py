@@ -47,7 +47,7 @@ MAP = {
     "chunk_kda": "lanes.kda_chunk", "chunk_kda_with_fused_gate": "lanes.kda_chunk", "fused_recurrent_kda": "lanes (decode, next)",
     "fused_kda_gate": "modules/linear_attention.kda_gate", "divide": "net (// W)",
     "MLAModules": "net._dsa", "MultiHeadLatentAttentionWrapper": "net._dsa (absorbed MQA on the latent)",
-    "SparseAttnIndexerKpool": "net._indexer", "fwht128_quant_fp8": "modules/sparse_indexer.fwht128_quant", "head_gate": "net._indexer (fp32 matmul)",
+    "SparseAttnIndexerKpool": "net._indexer", "fwht128_quant_fp8": "lanes.indexer_quant", "head_gate": "net._indexer (fp32 matmul)",
     "DeepseekV32IndexerCache": "net.Caches pool_keys/pool_scales", "KpoolTailSpec": "net.Caches tail", "MLAAttentionSpec": "net.Caches latent",
     "AttentionSpec": "base/cache_spec", "MambaStateShapeCalculator": "net.Caches kda", "MambaStateDtypeCalculator": "net.Caches kda (bf16 conv, f32 state)",
     "MambaStateCopyFunc": "base/tiered_kv (park/resume)", "MambaStateCopyFuncCalculator": "base/tiered_kv",
