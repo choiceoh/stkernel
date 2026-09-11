@@ -245,9 +245,9 @@ class Drafter:
         ids = torch.cat([anchor.reshape(1), torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
         positions = position + torch.arange(K + 1, device=dev)
         h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions
-        logits = self.target.head(h).float()
-        logits[:, self.decodable:] = float("-inf")
-        unary, cand = logits.topk(F.sel_top_k, dim=-1)                                       # [K, 16]
+        from engine.modules.vocab import topk
+        unary, cand = topk(self.target.head_local(h), self.target.comm,
+                           self.target.rank * self.target.vp, F.sel_top_k, self.decodable)  # [K, 16]
         proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()        # [K, 256]
         pred_ids = torch.cat([anchor.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])   # [K, 16]
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()                # [K, 16, 256]
