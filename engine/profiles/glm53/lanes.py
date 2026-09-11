@@ -46,6 +46,7 @@ class Lanes:
     graph_resources: object = None  # () -> external workspace owners to retain until the captured graphs close
     kda_recurrent_ring: object = None  # recurrent inputs, then (ring [slots,R,H,K,V] f32, slot, context, lower_bound)
                                      # -> output only; writes each token state into the selected ring. None uses the functional lane.
+    conv_ring: object = None  # (x [T,C], w [C,K], ring [slots,C,R], slot, context) -> y; writes raw inputs into ring, T<=8
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -162,6 +163,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.kernels.kda.output import kda_output_norm
     from engine.kernels.kda.ring import recurrent_kda_ring
     from engine.kernels.causal_conv_single import causal_conv1d_single as conv_prefill
+    from engine.kernels.causal_conv_ring import causal_conv1d_ring
     from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
     from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
@@ -304,7 +306,8 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
                   moe_prepare=None if moe_prepare is None else on_main(moe_prepare),
                   graph_resources=graph_resources,
-                  kda_recurrent_ring=None if recurrent_kda_ring is None else on_main(recurrent_kda_ring))
+                  kda_recurrent_ring=None if recurrent_kda_ring is None else on_main(recurrent_kda_ring),
+                  conv_ring=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring))
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table
     # (the served output is garbage while every self-consistency judge passes -- which lane, if any, is found by
     # swapping them one at a time; "expert" and "kda_recurrent" are the two the kernels already know how to declare).

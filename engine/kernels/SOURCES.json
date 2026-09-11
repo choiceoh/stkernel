@@ -84,9 +84,10 @@
       "source": "engine/kernels/causal_conv.py @ b7a6e44c",
       "sha256": "5a768e68031ffe92f79fe1fbe4e1cd7615f6305ecc8d145e9125c382b716dd65",
       "origin": "repository",
-      "local_sha256": "1dca96f7df20f8a432fc5e8fea3eb52f9498e90157e50a01a0ad510f8458acec",
+      "local_sha256": "bc1e742c128ebae0bef9e6874dd6d91cd026499cb4d7e4115ac4265153744d1d",
       "local_modifications": [
-        "2026-09-12 GB10: specialize the forward recurrence for one sequence; remove batching metadata and mutable state table; use 128 channels and eight tokens per CTA; preserve arithmetic order and rounded history."
+        "2026-09-12 GB10: specialize the forward recurrence for one sequence; remove batching metadata and mutable state table; use 128 channels and eight tokens per CTA; preserve arithmetic order and rounded history.",
+        "2026-09-12 GB10 short conv: optional direct raw-input ring history loads and writes; one time tile, no history buffers."
       ]
     },
     "kpool.py": {

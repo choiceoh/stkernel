@@ -1,0 +1,12 @@
+test_declared_reference_conv_disables_direct_ring (test_engine_conv_ring.ConvRingTests.test_declared_reference_conv_disables_direct_ring) ... ok
+test_disjoint_slots_on_two_streams (test_engine_conv_ring.ConvRingTests.test_disjoint_slots_on_two_streams) ... ok
+test_graph_slot_context_and_rejected_suffix (test_engine_conv_ring.ConvRingTests.test_graph_slot_context_and_rejected_suffix) ... ok
+test_projection_slices_all_short_lengths_and_ring_wrap (test_engine_conv_ring.ConvRingTests.test_projection_slices_all_short_lengths_and_ring_wrap) ... ok
+test_reject_invalid_contract_and_input_aliases (test_engine_conv_ring.ConvRingTests.test_reject_invalid_contract_and_input_aliases) ... ok
+test_strides_tails_widths_types_and_independent_reference (test_engine_conv_ring.ConvRingTests.test_strides_tails_widths_types_and_independent_reference) ... ok
+test_zero_context_nan_and_bf16_patterns (test_engine_conv_ring.ConvRingTests.test_zero_context_nan_and_bf16_patterns) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 13.108s
+
+OK

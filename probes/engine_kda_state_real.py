@@ -62,6 +62,7 @@ def main():
         methods[0] = module.Glm53Net._kda
         tables = [current,current]
     elif a.baseline_lanes:
+        current = replace(current,conv_ring=None)
         tables = [replace(current,conv_prefill=baseline_conv(a.baseline_lanes)),current]
     elif a.baseline_strides:
         current = replace(current,kda_recurrent_ring=None)
