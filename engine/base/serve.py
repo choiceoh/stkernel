@@ -49,6 +49,36 @@ class RequestError(Exception):
 
 
 class Server:
+    @staticmethod
+    def _agree_on_parked(comm, parked) -> None:
+        """Every rank's tier must hold the same conversations before the first request (D3).
+
+        The tier is per rank and per node, so one node's leftovers are invisible to the others:
+        that rank starts numbering conversations after them, hands the same turn a different row,
+        and the collectives then mix two different states -- the answer is garbage and nothing
+        raises until a retire hits a key that rank already parked. 45th 21: srv4 still carried a
+        local run's seq-0/seq-1, rank 3 died with "conversation 0 is already parked" and the other
+        three spun at 96% GPU in the next all-reduce. Disagreement kills the boot on every rank.
+        """
+        if int(getattr(comm, "world_size", 1)) <= 1:
+            return
+        import torch
+        checksum = 0
+        for key in parked:
+            checksum = (checksum * 1000003 + int(key) + 1) % (1 << 40)
+        device = "cuda" if torch.cuda.is_available() else "cpu"      # the same channel _votes uses
+        mine = torch.tensor([len(parked), int(parked[-1]) if parked else -1, checksum],
+                            dtype=torch.int64, device=device)
+        highest = comm.all_reduce_max(mine.clone())
+        disagree = torch.tensor([0 if bool(torch.equal(highest, mine)) else 1], dtype=torch.int64, device=device)
+        if int(comm.all_reduce_max(disagree).item()):
+            raise RuntimeError(
+                f"the ranks' NVMe tiers hold different conversations: this rank has {len(parked)} "
+                f"{parked[:8]}{'...' if len(parked) > 8 else ''}, the fleet's highest is "
+                f"{[int(x) for x in highest.tolist()]} (count, last key, checksum). Clear "
+                f"glm53-logs/st-tier on every node, or fan the same tier out -- a boot cannot start "
+                f"with the ranks numbering conversations differently.")
+
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None):
@@ -77,7 +107,9 @@ class Server:
         self.arrivals = queue.Queue()
         self.pending, self.results = {}, {}
         # conversation ids are request ids; parked conversations from an earlier boot keep theirs
-        self.next_seq, self.served = 1 + max(runner.parked_keys(), default=-1), 0
+        parked = sorted(runner.parked_keys())
+        self._agree_on_parked(comm, parked)
+        self.next_seq, self.served = 1 + max(parked, default=-1), 0
         self.alive = True
         self._lock = threading.Lock()
         self._waiting = deque()                    # request id, tokens, limit, temperature, promised blocks
@@ -650,7 +682,10 @@ class Server:
                 held = {"reasoning_content": [], "content": []}         # ids per channel
                 shown = {"reasoning_content": 0, "content": 0}          # characters already sent per channel
                 text = {"reasoning_content": "", "content": ""}         # decoded so far per channel
-                reasoning = server.reasoning_end is not None
+                # thinking off: the template already closed the think block (the rendered prompt ends with the reasoning-end
+                # token), so everything generated is content -- otherwise a whole answer lands in reasoning_content
+                # (45차 §22: the gateway's -low route asks thinkingMode off and reads content)
+                reasoning = server.reasoning_end is not None and not (ids and ids[-1] == server.reasoning_end)
                 total = 0
                 finish = None
 

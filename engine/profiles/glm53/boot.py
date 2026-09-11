@@ -57,8 +57,15 @@ PREFIX_SNAPSHOTS = 8                # chunk-boundary checkpoints kept for prefix
 
 
 def tokenizer(ckpt=facts.CKPT):
+    """The checkpoint's tokenizer, and nothing else it carries: this tokenizer.json ships a truncation rule
+    (max_length 2048, direction Right) that `Tokenizer.from_file` honours and transformers' AutoTokenizer -- what
+    vLLM tokenizes with -- ignores. Left in, the door silently cut every prompt to its first 2,048 tokens and
+    answered about the head of a document whose question sat at the end (45차 §23: onepass 32K/128K 0/3)."""
     from tokenizers import Tokenizer
-    return Tokenizer.from_file(str(Path(ckpt) / "tokenizer.json"))
+    tok = Tokenizer.from_file(str(Path(ckpt) / "tokenizer.json"))
+    tok.no_truncation()
+    tok.no_padding()
+    return tok
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
@@ -88,10 +95,11 @@ def eos_ids(ckpt=facts.CKPT) -> "list[int]":
 def declared(a, comm_world: int) -> Config:
     """D11: the only inputs are facts and expiring knobs; an undeclared STK_*
     in the environment kills the boot, and so does an expired knob. The two
-    knobs are the kernel package's only remaining axes under measurement on
+    kernel knobs are the package's only remaining axes under measurement on
     ST (2026-09-12: 43 env knobs left engine/kernels; production's adopted
     values are code, the never-adopted ones are gone, these two are the
-    candidates a bracket still has to judge on this engine)."""
+    candidates a bracket still has to judge on this engine). The third knob
+    bisects a serving stall (45th 21) and expires with it."""
     import datetime as _dt
     facts_ = [
         Fact("model", str(a.ckpt_meta), "the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)"),
@@ -116,6 +124,17 @@ def declared(a, comm_world: int) -> Config:
              "0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's "
              "'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken",
              "STK_context_ceiling=0", int),
+        Knob("lanes", "served", _dt.date(2026, 9, 25),
+             "45차 §21: the fleet's served output is garbage from the first token while every self-consistency judge "
+             "passes; 'reference' boots the torch reference table on all 45 layers (slow, correct algebra by construction), "
+             "'expert' / 'kda_recurrent' / 'expert,kda_recurrent' keep the served table with those lanes on the reference -- "
+             "which table talks sense says whether a kernel lane or the composition is wrong",
+             "delete once the served table's text is judged by onepass"),
+        Knob("decode_eager", 0, _dt.date(2026, 9, 25),
+             "45차 §23: the first replay of a captured decode graph stalled on the fleet (four ranks at 96% GPU, 3/3 boots) -- "
+             "PR #567 found the cause (MoE workspaces freed under recorded graph addresses) and retains them; this knob keeps "
+             "an eager decode as the bisect against the graph path while that fix is judged by onepass",
+             "delete once the captured decode path is the judged one", parse=int),
     ]
     cfg = Config(facts_, knobs=knobs)
     return cfg
@@ -431,13 +450,24 @@ def fleet(a) -> int:
         if comm.rank == 0:
             print(cfg.table())
         with rec.phase("lanes"):
-            lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])   # every served lane, or the boot dies (D3)
+            if cfg["lanes"] == "served":
+                lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])   # every served lane, or the boot dies (D3)
+            elif cfg["lanes"] == "reference":
+                lanes = lane_tables.reference()                                                          # declared (STK_lanes), not a fallback
+            else:
+                lanes = lane_tables.served(reference_for=tuple(cfg["lanes"].split(",")),
+                                           moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
                                                context_ceiling=cfg["context_ceiling"] or None)
+        # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
+        Server._agree_on_parked(comm, sorted(runner.parked_keys()))
         with rec.phase("capture decode"):
-            engine.capture_decode(MAX_SEQS)
+            if cfg["decode_eager"]:
+                engine.qualify_eager_decode(warmup=cfg["lanes"] == "served")   # no graphs: the step runs in Python, the lanes are the same
+            else:
+                engine.capture_decode(MAX_SEQS)
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
