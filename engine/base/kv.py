@@ -39,6 +39,23 @@ class BlockPool:
         self.max_seqs = max_seqs
         self.tokens = array("i", [0]) * max_seqs           # tokens held per row
         self.rows_in_use = 0
+        self.storage = None                                # arena view, once attached
+        self.block_bytes = 0
+
+    def attach_storage(self, view, block_bytes: int) -> None:
+        """Bind the pool to `num_blocks * block_bytes` of arena (D16)."""
+        if view.numel() < self.num_blocks * block_bytes:
+            raise ValueError(f"storage holds {view.numel()} B, pool needs "
+                             f"{self.num_blocks} x {block_bytes}")
+        self.storage, self.block_bytes = view, block_bytes
+
+    def block(self, block_id: int):
+        """The bytes of one block -- a view, never a copy."""
+        return self.storage[block_id * self.block_bytes:(block_id + 1) * self.block_bytes]
+
+    def blocks_of(self, seq: int) -> "list":
+        """A sequence's blocks in order, as views (what a tier demotes)."""
+        return [self.block(b) for b in self.row(seq) if b != EMPTY]
 
     @property
     def available(self) -> int:
@@ -127,6 +144,16 @@ def _selfcheck() -> None:
         pass
     assert pool.release(1) == 7 and pool.available == 7 and pool.tokens[1] == 0
     assert pool.release(0) == 3 and pool.available == 10 and pool.rows_in_use == 0
+    # storage: attach a fake arena and read a sequence's blocks back as views
+    import array as _a
+    fake = memoryview(bytearray(10 * 64))
+    class _View:                    # duck-typed like a uint8 torch view for the check
+        def __init__(s, mv): s.mv = mv
+        def numel(s): return len(s.mv)
+        def __getitem__(s, sl): return _View(s.mv[sl])
+    pool2 = BlockPool(10, 16, 2, 4); pool2.attach_storage(_View(fake), 64)
+    pool2.reserve(0, 40)
+    assert len(pool2.blocks_of(0)) == 3 and all(b.numel() == 64 for b in pool2.blocks_of(0))
     slots = SlotPool(2)
     a, b = slots.take(7), slots.take(9)
     assert slots.owner[a] == 7 and slots.available == 0

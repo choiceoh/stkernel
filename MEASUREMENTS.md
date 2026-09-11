@@ -8531,3 +8531,11 @@ Qwen3.8 의 유일한 NVFP4 텐서 = routed experts. 투영당 넷: `weight U8 [
 바로 그 모양 차이(IMA 가 사는 곳). 층 0 전문가 0 gate_proj 역양자화: (640, 2560) finite, std 0.0135,
 |max| 0.18, scale_2 2.08e-4, input_scale 1.97e-3; e2m1 표 여덟 값 전부 사용. 활성 왕복 중앙 상대오차
 0.101(가수 1비트라 거친 게 정상), W4A4 GEMM finite.
+
+### D16 첫 조각 — `base/arena.py`: 할당 하나, 나머지는 전부 뷰
+
+3 GiB 아레나를 한 번 `torch.empty` 하고(할당 정확히 3 GiB), 로더가 dsv41 층 0 의 606 텐서를
+**아레나에서 잘라** 채웠다 — 그 뒤 `memory_allocated` 가 **1 바이트도 안 늘었다**(엔진이 아레나 밖에
+가진 할당이 없다). safetensors 와 40/40 바이트 동일. KV 블록 저장소도 같은 아레나에서 잘라
+`BlockPool.attach_storage` 로 묶는다(블록 = 뷰, 시퀀스의 블록 목록 = 2층이 내리는 단위). 넘치면
+`MemoryError`, 두 번째 할당은 없다(D3).

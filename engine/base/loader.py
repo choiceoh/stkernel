@@ -121,8 +121,13 @@ class RankLoader:
     # -- the whole thing -----------------------------------------------------
 
     def load(self, keys, device: str = "cuda", max_run: int = 1 << 30,
-             recorder=None) -> dict:
-        """{name: tensor} with every tensor a view into an uploaded block."""
+             recorder=None, arena=None) -> dict:
+        """{name: tensor} with every tensor a view into an uploaded block.
+
+        With `arena`, the block is carved from it and filled with one H2D
+        copy -- the engine then holds NO allocation the arena does not know
+        about (D16). Without it, the block is its own allocation.
+        """
         import torch
 
         runs = self.runs(keys, max_run=max_run)
@@ -140,8 +145,12 @@ class RankLoader:
                 if i + 1 < len(runs):
                     # the next read cannot reuse this buffer, hence two.
                     pending = pool.submit(read, i + 1)
-                block = torch.frombuffer(host, dtype=torch.uint8).to(device,
-                                                                    non_blocking=False)
+                staged = torch.frombuffer(host, dtype=torch.uint8)
+                if arena is not None:
+                    block = arena.carve(run.nbytes, f"weights/{run.start}")
+                    block.copy_(staged, non_blocking=False)
+                else:
+                    block = staged.to(device, non_blocking=False)
                 blocks.append(block)
                 for name, offset, size in run.keys:
                     entry = self.header[name]
