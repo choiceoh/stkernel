@@ -114,7 +114,7 @@ def main(argv=None) -> int:
     layers = parse_layers(a.layers)
     if a.chunk % F.kpool or a.tokens <= a.chunk:
         raise SystemExit(f"--chunk must be a multiple of kpool {F.kpool} and below --tokens")
-    lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served(reference_for=("expert",))
+    lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served()
     tp = LocalTP(facts.TP)
     lane_tables.bind_tp(tp)
     if a.lanes == "served":

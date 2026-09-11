@@ -45,8 +45,11 @@ done
 # the overlay manifest (composed here) says which files go where
 bash "$REPO/launchers/compose-overlays.sh" glm53 >&2
 MANIFEST="$REPO/build/glm53/manifest.tsv"
+# the served kernels the lanes bind: KDA (fla fork), megakernel MLA, tilelang mHC, the kpool indexer, and the whole
+# b12x MoE family on the flashinfer side (the lane calls flashinfer.fused_moe.b12x_fused_moe directly)
 sources=(glm53_megakernel.py glm53_megakernel.cu kda.py chunk_delta_h.py tilelang.py tilelang_kernels.py
-         sparse_attn_indexer_kpool.py glm53_kpool_indexer.py)
+         sparse_attn_indexer_kpool.py glm53_kpool_indexer.py
+         moe_micro_kernel.py moe_dispatch.py b12x_moe.py moe_static_common.py moe_sf_pack.py moe_static_kernel_v4.py moe_static_kernel_v5.py moe_dynamic_gated_tiled.py moe_dynamic_gated_sf6.py moe_dynamic_gated_sf6_q0.py moe_dynamic_prefill.py moe_dynamic_prefill_n128.py moe_dynamic_ep_local.py glm53_ep_route_remap.py moe_reform_sf_pack.py glm53_ep_local_selftest.py glm53_tp_sf6_q0_selftest.py glm53_ep_tiled.py moe_static_ep_tiled.py glm53_ep_tiled_selftest.py)
 mounts=""
 for src in "${sources[@]}"; do
   target=$(awk -F '\t' -v s="$src" '$1 == s {print $2}' "$MANIFEST")

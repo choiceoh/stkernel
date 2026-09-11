@@ -211,7 +211,7 @@ def fleet(a) -> int:
     """One rank per node, inside the glm53 image: served lanes (D3: all or nothing), every layer, then serve."""
     print(f"  box: {facts.check_box()}")
     comm = Comm.init()
-    lanes = lane_tables.served(reference_for=("expert",))       # declared, printed, until b12x and the recurrent rows are bound
+    lanes = lane_tables.served()                                              # every served lane, or the boot dies (D3)
     rec = Recorder(f"rank{comm.rank}")
     F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                            max_new=a.max_new, temperature=a.temperature, seed=a.seed)

@@ -36,8 +36,8 @@ class Lanes:
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
                               #  scale, ckv_scale) -> [T,H,512] bf16
-    expert: object            # (x [n,H] bf16, w13 [2I,H/2] u8, w13_s [2I,H/16] e4m3, w13_mult [2] f32, a13_mult [] f32,
-                              #  w2 [H,I/2] u8, w2_s [H,I/16] e4m3, w2_mult [], a2_mult [], limit) -> [n,H] bf16 (this rank's partial)
+    moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8, w13_sf [E, 2I*H/16] e4m3 (folded, interleaved),
+                              #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit) -> [T,H] bf16: this rank's routed partial (shared expert excluded)
 
 
 _TP = {"active": None}
@@ -99,27 +99,37 @@ def reference() -> Lanes:
         x = (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + norm_eps)).to(x.dtype) * norm_w
         return post, comb, x
 
-    def expert(x, w13, w13_s, w13_mult, a13_mult, w2, w2_s, w2_mult, a2_mult, limit):
-        half = w13.shape[0] // 2
-        g = expert_gemm(x, w13[:half], w13_s[:half], w13_mult[0], a13_mult, quantize_act=True)
-        u = expert_gemm(x, w13[half:], w13_s[half:], w13_mult[1], a13_mult, quantize_act=True)
-        h = swiglu_clamped(g, u, limit)
-        return expert_gemm(h, w2, w2_s, w2_mult, a2_mult, quantize_act=True)
+    def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit):
+        """Per selected expert: unswizzle its folded scales, dequantise, W4A4 with
+        the kernel's DYNAMIC activation quant (per-16 scales under a global of 1,
+        no calibrated input scale -- what the served SM12x lane does)."""
+        from engine.modules.nvfp4_sf import unswizzle_sf
+        E, two_i, half_h = w13.shape
+        i_local, hidden = two_i // 2, half_h * 2
+        one = torch.ones((), device=x.device)
+        out = torch.zeros(x.shape[0], hidden, dtype=torch.float32, device=x.device)
+        for e in sel.unique().tolist():
+            rows, k = (sel == e).nonzero(as_tuple=True)
+            s13 = unswizzle_sf(w13_sf[e].view(torch.uint8), two_i, hidden // 16).view(torch.float8_e4m3fn)
+            s2 = unswizzle_sf(w2_sf[e].view(torch.uint8), hidden, i_local // 16).view(torch.float8_e4m3fn)
+            xe = x[rows]
+            g = expert_gemm(xe, w13[e, :i_local], s13[:i_local], one, one, quantize_act=True)
+            u = expert_gemm(xe, w13[e, i_local:], s13[i_local:], one, one, quantize_act=True)
+            y = expert_gemm(swiglu_clamped(g, u, limit), w2[e], s2, one, one, quantize_act=True)
+            out.index_add_(0, rows, y.float() * w[rows, k][:, None])
+        return out.to(x.dtype)
 
     return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
-                 mla_sparse_mqa, expert)
+                 mla_sparse_mqa, moe)
 
 
 def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     """Bound inside the glm53 image (probes/* run there the same way).
 
     `reference_for` names lanes DECLARED to run on the torch reference in
-    this table -- today "expert" (the b12x lane eats moe_sf_pack-swizzled
-    packs and is bound through the served layer, not here yet) and
-    "kda_recurrent" (fused_recurrent_kda's per-token state rows are not
-    bound yet). The table's name says so, boot prints it, proof can demand
-    it: a declared choice, not a fallback (D3). Anything not named must bind
-    or the call raises."""
+    this table ("expert" and/or "kda_recurrent"). The table's name says so,
+    boot prints it, proof can demand it: a declared choice, not a fallback
+    (D3). Anything not named must bind or the call raises."""
     expert_lane = "reference" if "expert" in reference_for else "b12x"
     from vllm.third_party.flash_linear_attention.ops.kda import chunk_kda_with_fused_gate          # ours: overlay/modules/glm53_kernels/kda.py
     from vllm.model_executor.layers.mamba.ops.causal_conv1d import causal_conv1d_fn                # served op (judged: probes/conv_check.py)
@@ -239,10 +249,24 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent
     if expert_lane == "reference":
-        expert = ref.expert
+        moe = ref.moe
     else:
-        def expert(*a, **k):
-            raise NotImplementedError("the b12x expert lane eats moe_sf_pack-swizzled packs; it is bound through the served layer (44th ledger), not here yet")
+        from flashinfer.fused_moe import b12x_fused_moe                                     # ours: overlay/modules/glm53_moe/b12x_moe.py
+        ones = {}
+
+        def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit):
+            """The served call (flashinfer_b12x_moe._apply_*): packed nibbles, folded
+            interleaved scales, alpha 1, fc2 input scale 1, no input scale (dynamic
+            per-block activation quant), clamped SiLU spelled the kernel's way."""
+            E = w13.shape[0]
+            if E not in ones:
+                ones[E] = torch.ones(E, device=x.device, dtype=torch.float32)
+            return b12x_fused_moe(x=x.contiguous(), w1_weight=w13, w1_weight_sf=w13_sf, w2_weight=w2, w2_weight_sf=w2_sf,
+                                  token_selected_experts=sel.contiguous(), token_final_scales=w.contiguous(),
+                                  num_experts=E, num_local_experts=E, top_k=sel.shape[1],
+                                  w1_alpha=ones[E], w2_alpha=ones[E], fc2_input_scale=ones[E], input_global_scale=None,
+                                  activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0, swiglu_limit=float(limit),
+                                  activation_precision="fp4", quant_mode="nvfp4")
 
     def on_main(fn):
         """Served kernels run on the main thread: DeepGEMM's JIT runtime raises
@@ -255,7 +279,7 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
-    return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, expert)))
+    return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, moe)))
 
 
 def _selfcheck() -> None:

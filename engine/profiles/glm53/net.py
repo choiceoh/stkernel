@@ -264,14 +264,8 @@ class Glm53Net:
 
     def _moe(self, L: int, x: torch.Tensor) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
-        N = x.shape[0]
         sel, w = self.route(L, x)
-        out = torch.zeros(N, F.hidden, dtype=F32, device=x.device)
-        for e in sel.unique().tolist():
-            rows, k = (sel == e).nonzero(as_tuple=True)
-            y = self.lanes.expert(x[rows], p[n + "w13"][e], p[n + "w13_s"][e], p[n + "w13_mult"][e], p[n + "a13_mult"][e],
-                                  p[n + "w2"][e], p[n + "w2_s"][e], p[n + "w2_mult"][e], p[n + "a2_mult"][e], F.swiglu_limit)
-            out.index_add_(0, rows, y.float() * w[rows, k][:, None])
+        out = self.lanes.moe(x, sel, w, p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"], F.swiglu_limit).float()
         g, u = Fn.linear(x, p[n + "sh_gate_up"]).chunk(2, dim=-1)
         out += Fn.linear(swiglu_clamped(g, u, F.swiglu_limit), p[n + "sh_down"]).float()
         return self.comm.all_reduce(out.to(x.dtype))

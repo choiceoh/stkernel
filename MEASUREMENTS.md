@@ -8895,3 +8895,23 @@ plan 이 빠뜨렸던 꼬리 링 11×2 KiB 를 채움). `check.py` 는 이제 Ch
 - 이름 충돌 함정: `profiles/glm53/engine.py` 가 스크립트 실행 시 `engine` 패키지를 가렸다 → `adapter.py`.
 - 16:14 이 박스에서 다른 세션의 q38 vLLM 이 nvidia 드라이버 rwsem 에서 D 상태로 죽고(journal 정지·재시작, 서비스 KILL),
   내 스모크와 자가검증이 137 로 죽었다. 재실행 정상. 기록만.
+
+### 45차 §8 — b12x 전문가 레인: 서빙이 로드 때 하던 팩을 사전샤딩이 한 번 (2026-09-11 저녁)
+
+서빙 `flashinfer_b12x_moe.process_weights_after_loading` 이 하는 일 셋: (1) 블록 스케일에 전문가별 전역 스케일을 접는다
+(`block *= scale_2 = 1/w_gs`, 이후 α = 1), (2) fc2 입력 스케일을 1 로 강제하고 fc1 입력 전역 스케일은 아예 안 넘긴다 —
+**SM12x 커널은 활성화를 블록마다 동적으로 양자화**하므로 체크포인트의 `input_global_scale` 은 읽지 않는다, (3) 스케일을
+`flashinfer_convert_sf_to_mma_layout`(= `flashinfer.fp4_quantization.block_scale_interleave`, 128×4 타일 인터리브)로 바꾼다 —
+랭크당 42층 × 288 전문가 = **4.75 GiB 의 스케일을 부팅마다 재배치**. ST 엔진은 이 셋을 `specs.py` 의 build 로 옮겨 사전샤딩이
+한 번 한다(D1: 로더는 재패킹하지 않는다): `moe.w13_sf [E, 2I·H/16]`, `moe.w2_sf [E, H·I/16]` = 접고 인터리브한 e4m3;
+`*_mult`·`a*_mult` 는 사라짐(spec 1,288 → 1,120 텐서, 바이트 동일 44.50 GiB).
+
+인터리브 식은 `modules/nvfp4_sf.py` 에 torch 로: `(m, s) → ((m//128)·(Sp//4) + s//4)·512 + (m%32)·16 + ((m%128)//32)·4 + s%4`.
+`probes/sf_swizzle_check.py`(이미지 안): 네 형상([1024,4096]·[4096,512]·[256,2048]·[200,1024], E=1~3)에서 flashinfer 와
+**바이트 동일**, 역변환 정확. (`flashinfer.fused_moe.utils.swizzle_sf` 가 부르는 `torch.ops.trtllm.block_scale_interleave` 는
+이 이미지에 없다 — 서빙 층이 진짜 쓰는 것은 `fp4_quantization.block_scale_interleave` 다.)
+
+레인: `expert`(전문가 하나) 대신 **`moe`(이 랭크의 라우팅된 전문가 전체)** 하나 — 참조는 언스위즐 + 전문가 루프 + **동적
+활성화 양자화**(전역 1, 서빙과 같은 형), 서빙은 `b12x_fused_moe(x, w13, w13_sf, w2, w2_sf, sel, w, E, top_k, α=1, α2=1,
+fc2_input_scale=1, input_global_scale=None, "swigluoai_uninterleave" α1 β0 limit 10, nvfp4)`. `served()` 에 참조 레인이 더 이상
+없다 — 전부 바인딩되거나 죽는다(D3). 랭크 파일 재절단(백그라운드) 뒤 fan-out 을 다시 한다.
