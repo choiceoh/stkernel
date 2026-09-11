@@ -125,4 +125,4 @@ if [ -n "$failed" ]; then
   bash "$0" stop >/dev/null 2>&1 || true
   exit 1
 fi
-echo "head: http://10.10.10.2:$PORT/v1/completions  (GET / for status)"
+echo "head: http://10.10.10.2:$PORT/v1/chat/completions (OpenAI), /v1/engine/completions (engine dialect), GET / for status"

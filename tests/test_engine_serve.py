@@ -4,6 +4,7 @@ from __future__ import annotations
 import concurrent.futures
 import importlib.util
 import json
+import queue
 import socket
 import threading
 import unittest
@@ -42,9 +43,13 @@ class Engine:
         if any(t >= 256 for t in ids):
             raise ValueError("token outside vocabulary")
 
-    def add(self, seq, ids, max_new, temperature, min_new=0):
+    def add(self, seq, ids, max_new, temperature, min_new=0, options=None):
         self.tokens[seq], self.limits[seq], self.output[seq] = list(ids), max_new, []
         self.min_new = getattr(self, "min_new", {}); self.min_new[seq] = min_new
+        self.options = getattr(self, "options", {}); self.options[seq] = dict(options or {})
+
+    def history(self, seq):
+        return self.tokens[seq] + self.output[seq]
 
     def open(self, seq, slot):
         self.ctx[seq] = 0
@@ -69,7 +74,7 @@ class Engine:
     def extension_tokens(self, seq, ids):
         return len(self.tokens[seq]) + len(self.output[seq]) + len(ids) - self.ctx[seq]
 
-    def extend(self, seq, ids, max_new, temperature):
+    def extend(self, seq, ids, max_new, temperature, min_new=0, options=None):
         n = self.extension_tokens(seq, ids)
         self.tokens[seq] += self.output[seq] + list(ids)
         self.output[seq] = []
@@ -475,7 +480,7 @@ class ServeTests(unittest.TestCase):
     def test_http_bad_json_and_invalid_requests_return_errors_then_valid_request_succeeds(self):
         s = server()
         httpd = s._serve_http()
-        url = f'http://127.0.0.1:{httpd.server_port}/v1/completions'
+        url = f'http://127.0.0.1:{httpd.server_port}/v1/engine/completions'
         def post(body):
             with urllib.request.urlopen(urllib.request.Request(url, data=body), timeout=3) as response:
                 return json.load(response)
@@ -847,3 +852,111 @@ class CancelTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OpenAIDialectTests(unittest.TestCase):
+    """45차 §23 A/B: the request surface the gateway uses -- reasoning_effort, sampling options, n, tool-call
+    streaming, legacy completions, tokenize/detokenize -- and the multi-turn continuation (B1), over the fake engine."""
+
+    def _post(self, base, path, body):
+        req = urllib.request.Request(base + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.load(r)
+
+    def _serve(self, s, fn):
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                return drive(s, pool.submit(fn, base))
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_reasoning_effort_and_enable_thinking_reach_the_template(self):
+        s = chat_server()
+        seen = {}
+        def chat(messages, kwargs):
+            seen.update(kwargs)
+            return "".join(m.get("content") or "" for m in messages)
+        s.chat = chat
+        out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                     {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                                                      "reasoning_effort": "high", "chat_template_kwargs": {"enable_thinking": False}}))
+        self.assertEqual(out["choices"][0]["message"]["content"], "b")
+        self.assertEqual((seen["reasoning_effort"], seen["thinking"], seen["enable_thinking"]), ("high", False, False))
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                   {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                                                    "reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "low"}}))
+        self.assertEqual(err.exception.code, 400)
+
+    def test_sampling_options_are_validated_and_travel_to_the_engine(self):
+        s = chat_server()
+        body = {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1, "temperature": 0.7, "top_p": 0.9, "top_k": 40,
+                "seed": 7, "presence_penalty": 0.5, "frequency_penalty": -0.5, "repetition_penalty": 1.1, "logit_bias": {"98": -5},
+                "stop": ["1", "2", "3", "4", "5", "6"], "stop_token_ids": [3]}
+        out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+        self.assertEqual(out["choices"][0]["finish_reason"], "length")
+        opts = s.engine.options[0]
+        self.assertEqual(opts, {"top_p": 0.9, "top_k": 40, "presence_penalty": 0.5, "frequency_penalty": -0.5,
+                                "repetition_penalty": 1.1, "seed": 7, "logit_bias": {98: -5.0}, "stop_token_ids": [3]})
+        for bad in ({"top_p": 1.5}, {"top_k": -2}, {"presence_penalty": 3}, {"logit_bias": {"x": 1}}, {"seed": -1}, {"n": 9},
+                    {"tool_choice": "required"}, {"response_format": {"type": "xml"}}):
+            with self.assertRaises(urllib.error.HTTPError) as err:
+                self._serve(s, lambda base, bad=bad: self._post(base, "/v1/chat/completions",
+                                                                {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1, **bad}))
+            self.assertEqual(err.exception.code, 400, bad)
+
+    def test_n_choices_share_the_prompt_and_come_back_indexed(self):
+        s = chat_server()
+        out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                     {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2, "n": 2, "seed": 3}))
+        self.assertEqual([c["index"] for c in out["choices"]], [0, 1])
+        self.assertEqual([c["message"]["content"] for c in out["choices"]], ["bb", "bb"])
+        self.assertEqual(out["usage"]["completion_tokens"], 4)
+        self.assertEqual([s.engine.options[i]["seed"] for i in (0, 1)], [3, 4])
+
+    def test_tool_calls_stream_as_complete_blocks_and_content_stops_before_them(self):
+        from engine.base.serve import _Choice
+        tok = Tokenizer()
+        parser = lambda text: [("f", '{"a": 1}')] if "<tool_call>" in text else None
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=tok, stop=[], reasoning=False, tool_parser=parser)
+        text = "hi <tool_call>f<arg_key>a</arg_key><arg_value>1</arg_value></tool_call> tail"
+        ids = [ord(ch) for ch in text]
+        c.feed(ids[:8], None, None)                          # "hi <tool" -- the block has begun: content waits
+        deltas = c.flush()
+        self.assertEqual(deltas, [{"content": "hi "}])
+        c.feed(ids[8:], None, None)
+        deltas = c.flush(final=True)
+        self.assertEqual(deltas, [{"tool_calls": [{"index": 0, "id": "call_1_0", "type": "function",
+                                                   "function": {"name": "f", "arguments": '{"a": 1}'}}]}])
+        self.assertEqual(c.text["content"], "hi ")
+        self.assertEqual(c.finish_reason(), "tool_calls")
+
+    def test_legacy_completions_tokenize_and_detokenize(self):
+        s = chat_server()
+        out = self._serve(s, lambda base: self._post(base, "/v1/completions", {"prompt": "xy", "max_tokens": 2, "echo": True, "n": 1}))
+        self.assertEqual(out["object"], "text_completion")
+        self.assertEqual(out["choices"][0]["text"], "xyyy")
+        self.assertEqual(out["choices"][0]["finish_reason"], "length")
+        self.assertEqual(out["usage"], {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4})
+        out = self._serve(s, lambda base: self._post(base, "/v1/completions", {"prompt": [[120, 121]], "max_tokens": 1}))
+        self.assertEqual(out["choices"][0]["text"], "y")
+        tk = self._serve(s, lambda base: self._post(base, "/tokenize", {"prompt": "abc"}))
+        self.assertEqual((tk["count"], tk["tokens"]), (3, [97, 98, 99]))
+        dt = self._serve(s, lambda base: self._post(base, "/detokenize", {"tokens": [97, 98, 99]}))
+        self.assertEqual(dt["prompt"], "abc")
+
+    def test_a_chat_that_resends_its_history_continues_the_retained_conversation(self):
+        s = chat_server(keep_idle=True)
+        first = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                       {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2}))
+        self.assertEqual(first["choices"][0]["message"]["content"], "bb")
+        opened = list(s.engine.opened)
+        # the next turn re-sends the whole chat: prompt "ab" + the answer "bb" + the new user text "c"
+        second = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                        {"messages": [{"role": "user", "content": "abbbc"}], "max_tokens": 2}))
+        self.assertEqual(second["choices"][0]["message"]["content"], "cc")
+        self.assertEqual(second["usage"]["prompt_tokens"], 5)
+        self.assertEqual(s.engine.opened, opened)          # no new row was opened: the conversation was extended
+        self.assertEqual(s.engine.history(0), [97, 98, 98, 98, 99, 99, 99])

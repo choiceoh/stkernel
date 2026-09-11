@@ -259,6 +259,35 @@ class Drafter:
             out.append(cand[s].index_select(0, prev))
         return torch.cat(out)
 
+    def propose_sampled(self, anchor: int, position: int, ring: torch.Tensor, temperature: float, generator,
+                        vocab: int) -> "tuple[list[int], torch.Tensor]":
+        """The same walk drawn at `temperature` instead of argmax (production's DRAFT_SAMPLE=probabilistic): returns the K
+        draft ids and the distribution each was drawn from, [K, vocab] fp32 (zero outside the 16 candidates) -- what
+        rejection sampling divides by (base/sampler.speculative_pick). Eager, for stochastic rows only."""
+        F, p = self.F, self.p
+        K = self.k
+        dev = ring.device
+        anchor_t = torch.full((1,), anchor, dtype=torch.int64, device=dev)
+        ids = torch.cat([anchor_t, torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
+        positions = position + torch.arange(K + 1, device=dev)
+        h = self.block(ids, positions, ring, position)[1:]
+        from engine.modules.vocab import topk
+        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
+        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()
+        pred_ids = torch.cat([anchor_t.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])
+        pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
+        succ = p["candidate_selector.successor_codebook"][cand].float()
+        scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
+        drafts, dists = [], torch.zeros(K, vocab, device=dev, dtype=torch.float32)
+        prev = 0
+        for s in range(K):
+            probs = torch.softmax(scores[s][prev].float() / max(temperature, 1e-5), dim=-1)          # over the 16 candidates
+            pick = int(torch.multinomial(probs, 1, generator=generator).item())
+            dists[s].index_add_(0, cand[s], probs)                                                 # duplicates (if any) add up
+            drafts.append(int(cand[s][pick].item()))
+            prev = pick
+        return drafts, dists
+
 
 def ring_bytes(F: DrafterFacts) -> int:
     return F.layers * 2 * F.window * F.kv_heads * F.head_dim * 2

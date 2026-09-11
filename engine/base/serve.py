@@ -32,6 +32,7 @@ import heapq
 import json
 import math
 import queue
+import re
 import select
 import socket
 import threading
@@ -46,6 +47,190 @@ class RequestError(Exception):
     def __init__(self, message: str, status: int = 400):
         super().__init__(message)
         self.status = status
+
+
+_TOOL_CALL = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
+_SAMPLING_RANGES = {"presence_penalty": (-2.0, 2.0), "frequency_penalty": (-2.0, 2.0)}
+
+
+def sampling_options(req: dict, defaults: "dict | None" = None) -> "tuple[float, dict]":
+    """(temperature, options) of an OpenAI-dialect request, validated the way the served model's door spells them.
+
+    `defaults` are the checkpoint's generation_config values (temperature 1.0 for GLM-5.3: what vLLM applies when a
+    request says nothing). Options beyond temperature travel to the engine, which enforces them (base/serve never
+    drops a field silently -- an option the engine cannot serve is refused at submit, D3)."""
+    defaults = defaults or {}
+    temperature = req.get("temperature", defaults.get("temperature", 0.0))
+    if temperature is None:
+        temperature = defaults.get("temperature", 0.0)
+    if type(temperature) not in (int, float) or not math.isfinite(temperature) or temperature < 0:
+        raise RequestError("temperature must be finite and nonnegative")
+    options = {}
+    top_p = req.get("top_p", defaults.get("top_p"))
+    if top_p is not None:
+        if type(top_p) not in (int, float) or not 0 < top_p <= 1:
+            raise RequestError("top_p must be in (0, 1]")
+        if top_p < 1:
+            options["top_p"] = float(top_p)
+    top_k = req.get("top_k", defaults.get("top_k"))
+    if top_k is not None and top_k != -1 and top_k != 0:
+        if type(top_k) is not int or top_k < 1:
+            raise RequestError("top_k must be a positive integer (or -1 for all)")
+        options["top_k"] = top_k
+    for key, (lo, hi) in _SAMPLING_RANGES.items():
+        v = req.get(key)
+        if v is not None and v != 0:
+            if type(v) not in (int, float) or not lo <= v <= hi:
+                raise RequestError(f"{key} must be between {lo} and {hi}")
+            options[key] = float(v)
+    rp = req.get("repetition_penalty", defaults.get("repetition_penalty"))
+    if rp is not None and rp != 1:
+        if type(rp) not in (int, float) or not 0 < rp <= 2:
+            raise RequestError("repetition_penalty must be in (0, 2]")
+        options["repetition_penalty"] = float(rp)
+    seed = req.get("seed")
+    if seed is not None:
+        if type(seed) is not int or not 0 <= seed < 2**63:
+            raise RequestError("seed must be a nonnegative integer")
+        options["seed"] = seed
+    bias = req.get("logit_bias")
+    if bias:
+        if not isinstance(bias, dict):
+            raise RequestError("logit_bias must be an object of token id -> bias")
+        out = {}
+        for k, v in bias.items():
+            try:
+                tid = int(k)
+            except (TypeError, ValueError):
+                raise RequestError("logit_bias keys must be token ids") from None
+            if type(v) not in (int, float) or not -100 <= v <= 100:
+                raise RequestError("logit_bias values must be between -100 and 100")
+            out[tid] = float(v)
+        options["logit_bias"] = out
+    stop_ids = req.get("stop_token_ids")
+    if stop_ids:
+        if not isinstance(stop_ids, list) or any(type(t) is not int or t < 0 for t in stop_ids):
+            raise RequestError("stop_token_ids must be a list of token ids")
+        options["stop_token_ids"] = list(stop_ids)
+    return float(temperature), options
+
+
+def stop_strings(req: dict) -> "list[str]":
+    stop = req.get("stop")
+    stop = [stop] if isinstance(stop, str) else (stop or [])
+    if not isinstance(stop, list) or any(not isinstance(x, str) or not x for x in stop):
+        raise RequestError("stop must be a nonempty string or a list of them")
+    return stop
+
+
+def response_format_grammar(req: dict) -> "dict | None":
+    """OpenAI response_format -> the engine's grammar spec (enforced by the engine's grammar sampler)."""
+    fmt = req.get("response_format")
+    if fmt is None:
+        return None
+    if not isinstance(fmt, dict) or not isinstance(fmt.get("type"), str):
+        raise RequestError("response_format must be an object with a type")
+    kind = fmt["type"]
+    if kind == "text":
+        return None
+    if kind == "json_object":
+        return {"type": "json_object"}
+    if kind == "json_schema":
+        spec = fmt.get("json_schema")
+        schema = spec.get("schema") if isinstance(spec, dict) else None
+        if not isinstance(schema, dict):
+            raise RequestError("response_format.json_schema.schema must be an object")
+        try:
+            return {"type": "json_schema", "schema": json.dumps(schema, sort_keys=True)}
+        except (TypeError, ValueError) as exc:
+            raise RequestError(f"json_schema is not JSON: {exc}") from exc
+    raise RequestError("response_format.type must be text, json_object or json_schema")
+
+
+class _Choice:
+    """One generation inside an OpenAI response: its request, its token queue and the per-channel text it has
+    shown so far. Chat answers split at the reasoning-end token into reasoning_content / content; a content that
+    reaches a stop string ends there; complete <tool_call> blocks become tool_calls (streamed as they complete)."""
+
+    def __init__(self, index: int, request: int, event, q, *, tok, stop, reasoning: bool, tool_parser=None,
+                 want_logprobs: "int | None" = None):
+        self.index, self.request, self.event, self.q = index, request, event, q
+        self.tok, self.stop, self.reasoning, self.tool_parser = tok, list(stop), reasoning, tool_parser
+        self.want_logprobs = want_logprobs
+        self.held = {"reasoning_content": [], "content": []}
+        self.shown = {"reasoning_content": 0, "content": 0}
+        self.text = {"reasoning_content": "", "content": ""}
+        self.logprobs = []                           # per generated token: (id, logprob, [(id, logprob), ...])
+        self.total = 0
+        self.finish = None
+        self.done = False
+        self.error = None
+        self.tool_calls = []
+        self._tool_seen = 0
+
+    def feed(self, tokens, logprobs, reasoning_end) -> None:
+        for i, t in enumerate(tokens):
+            self.total += 1
+            if logprobs is not None and i < len(logprobs):
+                self.logprobs.append(logprobs[i])
+            if self.reasoning and t == reasoning_end:
+                self.reasoning = False
+                continue
+            self.held["reasoning_content" if self.reasoning else "content"].append(t)
+
+    def flush(self, final: bool = False) -> "list[dict]":
+        """Decode each channel; what is new becomes a delta. Returns the deltas in order."""
+        deltas = []
+        for channel, ids in self.held.items():
+            decoded = self.tok.decode(ids)
+            if channel == "content":
+                if self.stop:
+                    cut = min((decoded.find(x) for x in self.stop if x in decoded), default=-1)
+                    if cut >= 0:
+                        decoded = decoded[:cut]
+                        self.finish = "stop"
+                if self.tool_parser is not None:
+                    if not final:                                   # a partial "<tool_call>" prefix waits for the rest
+                        for cut in range(min(len("<tool_call>") - 1, len(decoded)), 0, -1):
+                            if decoded.endswith("<tool_call>"[:cut]):
+                                decoded = decoded[:-cut]
+                                break
+                    start = decoded.find("<tool_call>")
+                    if start >= 0:
+                        blocks = _TOOL_CALL.findall(decoded)
+                        for body in blocks[self._tool_seen:]:
+                            for name, args in (self.tool_parser(f"<tool_call>{body}</tool_call>") or []):
+                                i = len(self.tool_calls)
+                                call = {"index": i, "id": f"call_{self.request}_{i}", "type": "function",
+                                        "function": {"name": name, "arguments": args}}
+                                self.tool_calls.append(call)
+                                deltas.append({"tool_calls": [call]})
+                        self._tool_seen = len(blocks)
+                        decoded = decoded[:start]
+            delta = decoded[self.shown[channel]:]
+            if delta and (final or self.finish == "stop" or not delta.endswith("�")):   # a partial character waits
+                deltas.append({channel: delta})
+                self.shown[channel] = len(decoded)
+            self.text[channel] = decoded[:self.shown[channel]]
+        return deltas
+
+    def finish_reason(self) -> str:
+        if self.tool_calls:
+            return "tool_calls"
+        return self.finish or "length"
+
+    def logprobs_payload(self, offset: int = 0) -> "dict | None":
+        """OpenAI chat `logprobs.content`: the shown tokens' log-probabilities (content channel, chosen + top)."""
+        if self.want_logprobs is None:
+            return None
+        rows = []
+        for tid, lp, top in self.logprobs[offset:]:
+            token = self.tok.decode([tid])
+            rows.append({"token": token, "logprob": lp, "bytes": list(token.encode()),
+                         "top_logprobs": [{"token": self.tok.decode([i]), "logprob": v, "bytes": list(self.tok.decode([i]).encode())}
+                                          for i, v in top[: self.want_logprobs]]})
+        return {"content": rows}
+
 
 
 class Server:
@@ -81,7 +266,8 @@ class Server:
 
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
-                 reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None):
+                 reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
+                 generation: "dict | None" = None, max_choices: int = 4):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -94,6 +280,9 @@ class Server:
         self.port, self.host, self.tok = port, host, tokenizer
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
+        self.generation = dict(generation or {})   # the checkpoint's generation_config defaults (temperature ...) a request may omit
+        self.max_choices = int(max_choices)        # n / best_of ceiling: one row each, never more than the decode width
+        self._stop_ids = {}                        # request id -> stop_token_ids: an end by one of them is finish_reason "stop"
         self.max_pending = max_pending
         self.max_context = int(getattr(engine, "max_context", 2**31 - 1))   # the model's trained positions; the door refuses beyond
         self.request_timeout_s = float(request_timeout_s)
@@ -123,11 +312,25 @@ class Server:
             raise ValueError("the server needs at least one request row and state slot")
 
     def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None, stream: bool = False,
-               min_new: int = 0):
+               min_new: int = 0, options: "dict | None" = None, continue_history: bool = False):
         """Validate and enqueue on rank 0 without acquiring any model resources.
-        `stream`: the request also gets a token queue (see `_streams`). `min_new`: no end token before this many."""
+        `stream`: the request also gets a token queue (see `_streams`). `min_new`: no end token before this many.
+        `options`: the request's sampling/behaviour options beyond temperature (the engine validates them).
+        `continue_history`: the OpenAI path re-sends a whole chat every turn -- when a retained conversation's history
+        (prompt + what it generated) is a proper prefix of `ids`, continue it with the new suffix instead of
+        prefilling everything again (45차 §23 B1). The hint is taken here, on rank 0; admission re-checks it and
+        falls back to a fresh prompt if the conversation left in between."""
         if self.comm.rank != 0:
             raise RequestError("requests must enter on rank 0")
+        options = dict(options or {})
+        if options and hasattr(self.engine, "validate_options"):
+            try:
+                self.engine.validate_options(options)
+            except ValueError as exc:
+                raise RequestError(str(exc)) from exc
+        hint = None
+        if continue_history and conversation is None and self.runner.keep_idle:
+            hint = self._continuation(ids)
         if conversation is not None:
             if type(conversation) is not int or conversation < 0:
                 raise RequestError("conversation must be a nonnegative integer")
@@ -170,8 +373,30 @@ class Server:
                 self._streams[request] = queue.Queue()
             self._deadline[request] = self.clock() + self.request_timeout_s
             self.prompt_tokens_total += len(ids)
-            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new))
+            if options.get("stop_token_ids"):
+                self._stop_ids[request] = set(options["stop_token_ids"])
+            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint))
         return request, event
+
+    def _continuation(self, ids) -> "tuple[int, int] | None":
+        """(conversation, prefix length) of the retained conversation whose history is the longest proper prefix of
+        `ids`: a resident idle row, or a parked one (its record carries the tokens). None if nothing matches."""
+        best = None
+        n = len(ids)
+        def consider(key, history):
+            nonlocal best
+            m = len(history)
+            if 0 < m < n and (best is None or m > best[1]) and ids[:m] == list(history):
+                best = (key, m)
+        for row in list(self._idle_order):
+            key = self._conversation_of.get(row)
+            if key is not None and hasattr(self.engine, "history"):
+                consider(key, self.engine.history(row))
+        for key in self.runner.parked_keys():
+            record = self.runner.parked_record(key)
+            if record is not None and "tokens" in record:
+                consider(key, record["tokens"])
+        return best
 
     def cancel(self, request: int, reason: str = "client closed") -> None:
         """Ask the loop to drop `request` wherever it is (waiting, prefilling, decoding); every rank
@@ -232,9 +457,11 @@ class Server:
             raise result
         return result
 
-    def finish_reason(self, out) -> str:
-        """OpenAI's word for how a generation ended: at one of the model's end tokens, or at the limit."""
-        return "stop" if out and out[-1] in getattr(self.engine, "eos", ()) else "length"
+    def finish_reason(self, out, request=None) -> str:
+        """OpenAI's word for how a generation ended: at one of the model's end tokens (or the request's stop_token_ids),
+        or at the limit."""
+        ends = set(getattr(self.engine, "eos", ())) | self._stop_ids.get(request, set())
+        return "stop" if out and out[-1] in ends else "length"
 
     def split(self, out):
         """(reasoning ids, content ids): what came before `reasoning_end` and after it (the token itself
@@ -258,7 +485,8 @@ class Server:
                     event.set()
             stream = self._streams.get(request)
             if stream is not None:
-                stream.put(("error", str(result)) if isinstance(result, RequestError) else ("end", self.finish_reason(result)))
+                stream.put(("error", str(result)) if isinstance(result, RequestError) else ("end", self.finish_reason(result, request)))
+            self._stop_ids.pop(request, None)
 
     def _drain(self):
         out = []
@@ -284,10 +512,20 @@ class Server:
 
     def _admit(self):
         while self._waiting:
-            request, ids, limit, temperature, promised, conversation, min_new = self._waiting[0]
+            request, ids, limit, temperature, promised, conversation, min_new, options, hint = self._waiting[0]
             row = None
             resident = held = 0
             parked = False
+            if conversation is None and hint is not None:
+                key, prefix = hint
+                row_ = self._conversations.get(key)
+                if (row_ is not None and row_ in self.runner.idle) or (row_ is None and self.runner.is_parked(key)):
+                    conversation, ids = key, ids[prefix:]         # continue the retained conversation with the new turn
+                elif row_ is not None or key in self._retiring.values() or any(e["conversation"] == key for e in self._resuming.values()):
+                    break                                         # it is mid-park/resume or live: decide next step
+                else:
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None)   # gone: fresh prompt
+                    continue
             if conversation is not None:
                 row = self._conversations.get(conversation)
                 if row is None and (conversation in self._retiring.values()
@@ -331,7 +569,8 @@ class Server:
             if conversation is None:
                 row = heapq.heappop(self._free_rows)
                 try:
-                    self.engine.add(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}))
+                    self.engine.add(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}),
+                                    **({"options": options} if options else {}))
                     self.runner.submit(row, len(ids), ids=ids)
                 except BaseException:
                     self.engine.forget(row)
@@ -349,11 +588,13 @@ class Server:
                         heapq.heappush(self._free_rows, row)              # the disk copy survives
                         raise
                     self._resuming[row] = dict(conversation=conversation, request=request, ids=ids, limit=limit,
-                                               temperature=temperature, promised=promised, min_new=min_new, cancelled=None)
+                                               temperature=temperature, promised=promised, min_new=min_new, options=options,
+                                               cancelled=None)
                     self._waiting.popleft()
                     continue                                              # admitted when every rank's read is done (_settle)
                 self._idle_order.pop(row)
-                tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}))
+                tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}),
+                                            **({"options": options} if options else {}))
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
@@ -416,7 +657,8 @@ class Server:
                 conversation, request = e["conversation"], e["request"]
                 if all_ok == world and e["cancelled"] is None:   # resident everywhere: the turn proceeds
                     tokens = self.engine.extend(row, e["ids"], max_new=e["limit"], temperature=e["temperature"],
-                                                **({"min_new": e["min_new"]} if e["min_new"] else {}))
+                                                **({"min_new": e["min_new"]} if e["min_new"] else {}),
+                                                **({"options": e["options"]} if e.get("options") else {}))
                     self.runner.extend(row, tokens)
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
@@ -535,7 +777,9 @@ class Server:
                     generated = self.engine.generated(row)
                     sent = self._sent.get(row, 0)
                     if len(generated) > sent:
-                        stream.put(("tokens", list(generated[sent:])))
+                        lp = getattr(self.engine, "logprobs", None)
+                        entries = lp(row) if lp is not None else None
+                        stream.put(("tokens", (list(generated[sent:]), list(entries[sent:]) if entries else None)))
                         self._sent[row] = len(generated)
             live = set(self.runner.state.running) | set(self.runner.state.waiting)
             for row in list(self._active):
@@ -621,10 +865,76 @@ class Server:
                         break
                 return server.take_result(request)
 
+            # ---- the OpenAI dialect ------------------------------------------------------------------------------
+            def choices_for(self, ids, count, max_new, temperature, options, stop, *, reasoning, tool_parser=None,
+                            want_logprobs=None, min_new=0, continue_history=False):
+                """Submit `count` generations of one prompt; each is a _Choice fed by its own token queue.
+                With a seed, choice i draws from seed + i so the n answers differ but stay reproducible."""
+                choices = []
+                for i in range(count):
+                    opts = dict(options)
+                    if count > 1 and "seed" in opts:
+                        opts["seed"] = opts["seed"] + i
+                    request, event = server.submit(ids, max_new, temperature, stream=True, min_new=min_new,
+                                                   options=opts, continue_history=continue_history)
+                    choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
+                                           reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs))
+                return choices
+
+            def run_choices(self, choices, on_delta) -> bool:
+                """Drive every choice's queue until all have ended; `on_delta(choice, deltas)` receives each flush.
+                False when the client left (every live generation is cancelled)."""
+                live = {c.request: c for c in choices}
+                while live:
+                    progressed = False
+                    for c in list(live.values()):
+                        try:
+                            kind, payload = c.q.get_nowait()
+                        except queue.Empty:
+                            continue
+                        progressed = True
+                        if kind == "tokens":
+                            ids, lps = payload if isinstance(payload, tuple) else (payload, None)
+                            c.feed(ids, lps, server.reasoning_end)
+                            deltas = c.flush()
+                            if deltas:
+                                on_delta(c, deltas)
+                            if c.finish == "stop":
+                                server.cancel(c.request, "stop")            # the loop drops the row; the answer is complete here
+                                c.done = True
+                                live.pop(c.request)
+                        elif kind == "end":
+                            deltas = c.flush(final=True)
+                            if deltas:
+                                on_delta(c, deltas)
+                            c.finish = c.finish or payload
+                            c.done = True
+                            live.pop(c.request)
+                        else:
+                            c.error = payload
+                            c.done = True
+                            live.pop(c.request)
+                    if not progressed:
+                        if self.gone():
+                            for c in live.values():
+                                server.cancel(c.request, "client closed")
+                            return False
+                        time.sleep(0.02)
+                return True
+
+            def release(self, choices):
+                for c in choices:
+                    server._streams.pop(c.request, None)
+                    c.event.wait()
+                    try:
+                        server.take_result(c.request)
+                    except RequestError:
+                        pass
+
             def chat(self, req):
-                """OpenAI chat completions over the engine: template -> ids -> submit; the tokens come back
-                through the request's queue whether the reply streams or not, so `stop` strings and a client
-                that hangs up end the generation early in both modes."""
+                """OpenAI chat completions over the engine: template -> ids -> n generations; the tokens come back
+                through each request's queue whether the reply streams or not, so `stop` strings and a client that
+                hangs up end the generation early in both modes."""
                 if server.chat is None or server.tok is None:
                     raise RequestError("this server has no chat template", 404)
                 messages = req.get("messages")
@@ -636,173 +946,316 @@ class Server:
                 kwargs = req.get("chat_template_kwargs") or {}
                 if not isinstance(kwargs, dict):
                     raise RequestError("chat_template_kwargs must be an object")
-                options = req.get("stream_options")
-                if options is not None and not isinstance(options, dict):
+                kwargs = dict(kwargs)
+                # the production middleware's contract (glm53_chat.py): thinking/enable_thinking agree, and the
+                # top-level reasoning_effort reaches the template (which otherwise defaults to max)
+                if "thinking" in kwargs and "enable_thinking" in kwargs and kwargs["thinking"] != kwargs["enable_thinking"]:
+                    raise RequestError("thinking and enable_thinking must agree")
+                if "enable_thinking" in kwargs and "thinking" not in kwargs:
+                    kwargs["thinking"] = kwargs["enable_thinking"]
+                effort = req.get("reasoning_effort")
+                if effort is not None:
+                    if effort not in ("low", "high", "max"):
+                        raise RequestError("reasoning_effort must be low, high, or max")
+                    if kwargs.get("reasoning_effort", effort) != effort:
+                        raise RequestError("top-level and template reasoning_effort must agree")
+                    kwargs["reasoning_effort"] = effort
+                options_stream = req.get("stream_options")
+                if options_stream is not None and not isinstance(options_stream, dict):
                     raise RequestError("stream_options must be an object")
-                if req.get("n", 1) != 1:
-                    raise RequestError("n must be 1: one generation per request")
+                n = req.get("n", 1)
+                if n is None:
+                    n = 1
+                if type(n) is not int or not 1 <= n <= server.max_choices:
+                    raise RequestError(f"n must be an integer between 1 and {server.max_choices}")
+                want_logprobs = None
                 if req.get("logprobs"):
-                    raise RequestError("logprobs are not served")
-                stop = req.get("stop")
-                stop = [stop] if isinstance(stop, str) else (stop or [])
-                if not isinstance(stop, list) or len(stop) > 4 or any(not isinstance(x, str) or not x for x in stop):
-                    raise RequestError("stop must be a nonempty string or up to four of them")
+                    top = req.get("top_logprobs", 0) or 0
+                    if type(top) is not int or not 0 <= top <= 20:
+                        raise RequestError("top_logprobs must be an integer between 0 and 20")
+                    want_logprobs = top
+                stop = stop_strings(req)
                 tools = req.get("tools")
-                if req.get("tool_choice") == "none":
+                choice = req.get("tool_choice")
+                if choice == "none":
                     tools = None
+                elif choice not in (None, "auto"):
+                    raise RequestError("tool_choice: only auto and none are served (required/named calls are not enforced)")
                 if tools is not None and (not isinstance(tools, list) or any(not isinstance(t, dict) for t in tools)):
                     raise RequestError("tools must be a list of objects")
                 min_tokens = req.get("min_tokens", 0) or 0
                 if type(min_tokens) is not int or min_tokens < 0:
                     raise RequestError("min_tokens must be a nonnegative integer")
+                max_tokens = req.get("max_tokens")
+                if max_tokens is None:
+                    max_tokens = req.get("max_completion_tokens", 256)
                 stream = bool(req.get("stream", False))
-                include_usage = bool(options and options.get("include_usage"))
+                include_usage = bool(options_stream and options_stream.get("include_usage"))
                 model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
+                temperature, options = sampling_options(req, server.generation)
+                if want_logprobs is not None:
+                    options["logprobs"] = want_logprobs
+                grammar = response_format_grammar(req)
+                if grammar is not None:
+                    options["grammar"] = grammar
                 try:
                     prompt = server.chat(messages, dict(kwargs, tools=tools) if tools else kwargs)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
                     raise RequestError(f"chat template rejected the request: {exc}") from exc
                 ids = server.tok.encode(prompt, add_special_tokens=False).ids
-                request, event = server.submit(ids, req.get("max_tokens", 256), req.get("temperature", 0.0), stream=True,
-                                               min_new=min_tokens)
-                head = {"id": f"chatcmpl-{request}", "created": int(time.time()), "model": model}
-                chunks_out = []                                          # SSE payloads, written now (stream) or never (whole)
-
-                def chunk(delta=None, finish=None, usage=None):
-                    payload = {**head, "object": "chat.completion.chunk",
-                               "choices": [] if usage is not None else [{"index": 0, "delta": delta or {}, "finish_reason": finish}],
-                               **({"usage": usage} if usage is not None else {})}
-                    if stream:
-                        self.sse(payload)
-
-                if stream:
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/event-stream")
-                    self.send_header("Cache-Control", "no-cache")
-                    self.send_header("Connection", "close")
-                    self.end_headers()
-                    chunk({"role": "assistant", "content": ""})
-                held = {"reasoning_content": [], "content": []}         # ids per channel
-                shown = {"reasoning_content": 0, "content": 0}          # characters already sent per channel
-                text = {"reasoning_content": "", "content": ""}         # decoded so far per channel
                 # thinking off: the template already closed the think block (the rendered prompt ends with the reasoning-end
                 # token), so everything generated is content -- otherwise a whole answer lands in reasoning_content
                 # (45차 §22: the gateway's -low route asks thinkingMode off and reads content)
                 reasoning = server.reasoning_end is not None and not (ids and ids[-1] == server.reasoning_end)
-                total = 0
-                finish = None
+                choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
+                                           tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
+                                           continue_history=True)
+                head = {"id": f"chatcmpl-{choices[0].request}", "created": int(time.time()), "model": model}
 
-                def flush(final=False):
-                    """Decode each channel, send what is new; a stop string ends the content channel."""
-                    nonlocal finish
-                    for channel, chan_ids in held.items():
-                        decoded = server.tok.decode(chan_ids)
-                        if channel == "content" and stop:
-                            cut = min((decoded.find(x) for x in stop if x in decoded), default=-1)
-                            if cut >= 0:
-                                decoded = decoded[:cut]
-                                finish = "stop"
-                        delta = decoded[shown[channel]:]
-                        if delta and (final or finish == "stop" or not delta.endswith("\ufffd")):   # a partial character waits
-                            chunk({channel: delta})
-                            shown[channel] = len(decoded)
-                        text[channel] = decoded[:shown[channel]]
-                    return finish == "stop"
+                def chunk(index, delta=None, finish=None, usage=None, logprobs=None):
+                    payload = {**head, "object": "chat.completion.chunk",
+                               "choices": [] if usage is not None else
+                               [{"index": index, "delta": delta or {}, "finish_reason": finish,
+                                 **({"logprobs": logprobs} if logprobs is not None else {})}],
+                               **({"usage": usage} if usage is not None else {})}
+                    self.sse(payload)
 
-                stream_q = server._streams[request]
-                error = None
                 try:
-                    while True:
-                        try:
-                            kind, payload = stream_q.get(timeout=0.25)
-                        except queue.Empty:
-                            kind, payload = None, None
-                        if self.gone():
-                            server.cancel(request, "client closed")
-                            return
-                        if kind is None:
-                            continue
-                        if kind == "tokens":
-                            for t in payload:
-                                total += 1
-                                if reasoning and t == server.reasoning_end:
-                                    reasoning = False
-                                    continue
-                                held["reasoning_content" if reasoning else "content"].append(t)
-                            if flush():
-                                server.cancel(request, "stop")            # the loop drops the row; the answer is complete here
-                                break
-                        elif kind == "end":
-                            flush(final=True)
-                            finish = finish or payload
-                            break
-                        else:
-                            error = payload
-                            break
-                    if error is not None:
-                        if stream:
-                            self.sse({"error": {"message": error, "type": "engine"}})
-                        else:
-                            self.reply(503, {"error": error})
-                        return
-                    calls = server.tool_parser(text["content"]) if server.tool_parser is not None and text["content"] else None
-                    usage = {"prompt_tokens": len(ids), "completion_tokens": total, "total_tokens": len(ids) + total,
-                             "completion_tokens_details": {"reasoning_tokens": len(held["reasoning_content"])}}
-                    if calls:
-                        finish = "tool_calls"
-                        tool_calls = [{"id": f"call_{request}_{i}", "type": "function", "function": {"name": name, "arguments": args}}
-                                      for i, (name, args) in enumerate(calls)]
-                        content = text["content"][:text["content"].find("<tool_call>")] if "<tool_call>" in text["content"] else ""
-                    else:
-                        tool_calls, content = None, text["content"]
                     if stream:
-                        chunk({"tool_calls": tool_calls} if tool_calls else None, finish=finish)
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/event-stream")
+                        self.send_header("Cache-Control", "no-cache")
+                        self.send_header("Connection", "close")
+                        self.end_headers()
+                        for c in choices:
+                            chunk(c.index, {"role": "assistant", "content": ""})
+
+                    def on_delta(c, deltas):
+                        if stream:
+                            for d in deltas:
+                                chunk(c.index, d)
+
+                    if not self.run_choices(choices, on_delta):
+                        return
+                    errors = [c.error for c in choices if c.error]
+                    if errors:
+                        if stream:
+                            self.sse({"error": {"message": errors[0], "type": "engine"}})
+                        else:
+                            self.reply(503, {"error": errors[0]})
+                        return
+                    usage = {"prompt_tokens": len(ids), "completion_tokens": sum(c.total for c in choices),
+                             "total_tokens": len(ids) + sum(c.total for c in choices),
+                             "completion_tokens_details": {"reasoning_tokens": sum(len(c.held["reasoning_content"]) for c in choices)}}
+                    if stream:
+                        for c in choices:
+                            chunk(c.index, None, finish=c.finish_reason(), logprobs=c.logprobs_payload())
                         if include_usage:
-                            chunk(usage=usage)
+                            chunk(0, usage=usage)
                         self.wfile.write(b"data: [DONE]\n\n")
                         self.wfile.flush()
                     else:
-                        message = {"role": "assistant", "content": content or None}
-                        if held["reasoning_content"]:
-                            message["reasoning_content"] = text["reasoning_content"]
-                        if tool_calls:
-                            message["tool_calls"] = tool_calls
-                        self.reply(200, {**head, "object": "chat.completion",
-                                         "choices": [{"index": 0, "message": message, "finish_reason": finish}], "usage": usage})
+                        out = []
+                        for c in choices:
+                            message = {"role": "assistant", "content": c.text["content"] or None}
+                            if c.held["reasoning_content"]:
+                                message["reasoning_content"] = c.text["reasoning_content"]
+                            if c.tool_calls:
+                                message["tool_calls"] = c.tool_calls
+                            entry = {"index": c.index, "message": message, "finish_reason": c.finish_reason()}
+                            if c.want_logprobs is not None:
+                                entry["logprobs"] = c.logprobs_payload()
+                            out.append(entry)
+                        self.reply(200, {**head, "object": "chat.completion", "choices": out, "usage": usage})
                 except (BrokenPipeError, ConnectionResetError, OSError):
-                    server.cancel(request, "client closed")
+                    for c in choices:
+                        server.cancel(c.request, "client closed")
                 finally:
-                    server._streams.pop(request, None)
-                    event.wait()
+                    self.release(choices)
+
+            def completions(self, req):
+                """OpenAI (legacy) completions: prompt text or ids, n choices, echo, logprobs; no template, no reasoning split."""
+                if server.tok is None:
+                    raise RequestError("no tokenizer: use /v1/engine/completions with ids")
+                prompt = req.get("prompt", "")
+                if isinstance(prompt, str):
+                    prompts = [server.tok.encode(prompt, add_special_tokens=True).ids]
+                elif isinstance(prompt, list) and prompt and all(type(t) is int for t in prompt):
+                    prompts = [list(prompt)]
+                elif isinstance(prompt, list) and prompt and all(isinstance(p, str) for p in prompt):
+                    prompts = [server.tok.encode(p, add_special_tokens=True).ids for p in prompt]
+                elif isinstance(prompt, list) and prompt and all(isinstance(p, list) and p and all(type(t) is int for t in p) for p in prompt):
+                    prompts = [list(p) for p in prompt]
+                else:
+                    raise RequestError("prompt must be a string, a list of strings, token ids, or lists of token ids")
+                if any(not p for p in prompts):
+                    raise RequestError("prompt must not be empty")
+                n = req.get("n", 1) or 1
+                if type(n) is not int or not 1 <= n <= server.max_choices:
+                    raise RequestError(f"n must be an integer between 1 and {server.max_choices}")
+                best_of = req.get("best_of")
+                if best_of is not None and (type(best_of) is not int or best_of < n or best_of > server.max_choices):
+                    raise RequestError(f"best_of must be an integer between n and {server.max_choices}")
+                if req.get("suffix"):
+                    raise RequestError("suffix (insertion) is not served")
+                want_logprobs = req.get("logprobs")
+                if want_logprobs is not None and (type(want_logprobs) is not int or not 0 <= want_logprobs <= 20):
+                    raise RequestError("logprobs must be an integer between 0 and 20")
+                echo = bool(req.get("echo", False))
+                stop = stop_strings(req)
+                max_tokens = req.get("max_tokens", 16)
+                stream = bool(req.get("stream", False))
+                options_stream = req.get("stream_options")
+                include_usage = bool(isinstance(options_stream, dict) and options_stream.get("include_usage"))
+                model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
+                temperature, options = sampling_options(req, server.generation)
+                count = best_of or n
+                if want_logprobs is not None or best_of:
+                    options["logprobs"] = want_logprobs if want_logprobs is not None else 0
+                lp_want = want_logprobs if want_logprobs is not None else (0 if best_of else None)
+                choices, prompt_of = [], {}
+                for ids in prompts:
+                    group = self.choices_for(ids, count, max_tokens, temperature, options, stop, reasoning=False,
+                                             want_logprobs=lp_want)
+                    for c in group:
+                        c.index = len(choices)
+                        prompt_of[c.request] = ids
+                        choices.append(c)
+                head = {"id": f"cmpl-{choices[0].request}", "created": int(time.time()), "model": model}
+
+                def legacy_logprobs(c, ids_prompt):
+                    if want_logprobs is None:
+                        return None
+                    tokens, lps, tops, offsets = [], [], [], []
+                    pos = len(server.tok.decode(ids_prompt)) if echo else 0
+                    for tid, lp, top in c.logprobs:
+                        text = server.tok.decode([tid])
+                        tokens.append(text); lps.append(lp); offsets.append(pos); pos += len(text)
+                        tops.append({server.tok.decode([i]): v for i, v in top[:want_logprobs]} if want_logprobs else None)
+                    return {"tokens": tokens, "token_logprobs": lps, "top_logprobs": tops, "text_offset": offsets}
+
+                def chunk(index, text=None, finish=None, usage=None):
+                    self.sse({**head, "object": "text_completion",
+                              "choices": [] if usage is not None else [{"index": index, "text": text or "", "logprobs": None, "finish_reason": finish}],
+                              **({"usage": usage} if usage is not None else {})})
+
+                try:
+                    if stream:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/event-stream")
+                        self.send_header("Cache-Control", "no-cache")
+                        self.send_header("Connection", "close")
+                        self.end_headers()
+                        if echo:
+                            for c in choices:
+                                chunk(c.index, server.tok.decode(prompt_of[c.request]))
+
+                    def on_delta(c, deltas):
+                        if stream:
+                            for d in deltas:
+                                if "content" in d:
+                                    chunk(c.index, d["content"])
+
+                    if not self.run_choices(choices, on_delta):
+                        return
+                    errors = [c.error for c in choices if c.error]
+                    if errors:
+                        if stream:
+                            self.sse({"error": {"message": errors[0], "type": "engine"}})
+                        else:
+                            self.reply(503, {"error": errors[0]})
+                        return
+                    kept = choices
+                    if best_of and best_of > n:                           # the n best of best_of by mean token log-probability
+                        by_prompt = {}
+                        for c in choices:
+                            by_prompt.setdefault(c.request in prompt_of and tuple(prompt_of[c.request]), []).append(c)
+                        kept = []
+                        for group in by_prompt.values():
+                            group.sort(key=lambda c: -(sum(lp for _, lp, _ in c.logprobs) / max(1, len(c.logprobs))))
+                            kept += group[:n]
+                        for i, c in enumerate(kept):
+                            c.index = i
+                    usage = {"prompt_tokens": sum(len(p) for p in prompts), "completion_tokens": sum(c.total for c in choices),
+                             "total_tokens": sum(len(p) for p in prompts) + sum(c.total for c in choices)}
+                    if stream:
+                        for c in kept:
+                            chunk(c.index, None, finish=c.finish or "length")
+                        if include_usage:
+                            chunk(0, usage=usage)
+                        self.wfile.write(b"data: [DONE]\n\n")
+                        self.wfile.flush()
+                    else:
+                        out = []
+                        for c in kept:
+                            text = (server.tok.decode(prompt_of[c.request]) if echo else "") + c.text["content"]
+                            out.append({"index": c.index, "text": text, "logprobs": legacy_logprobs(c, prompt_of[c.request]),
+                                        "finish_reason": c.finish or "length"})
+                        self.reply(200, {**head, "object": "text_completion", "choices": out, "usage": usage})
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    for c in choices:
+                        server.cancel(c.request, "client closed")
+                finally:
+                    self.release(choices)
+
+            def tokenize(self, req):
+                if server.tok is None:
+                    raise RequestError("no tokenizer", 404)
+                if "messages" in req:
+                    if server.chat is None:
+                        raise RequestError("this server has no chat template", 404)
+                    kwargs = req.get("chat_template_kwargs") or {}
+                    tools = req.get("tools")
                     try:
-                        server.take_result(request)
-                    except RequestError:
-                        pass
+                        prompt = server.chat(req["messages"], dict(kwargs, tools=tools) if tools else dict(kwargs))
+                    except Exception as exc:                              # noqa: BLE001
+                        raise RequestError(f"chat template rejected the request: {exc}") from exc
+                    add_special = bool(req.get("add_special_tokens", False))
+                else:
+                    prompt = req.get("prompt")
+                    if not isinstance(prompt, str):
+                        raise RequestError("prompt must be text")
+                    add_special = bool(req.get("add_special_tokens", True))
+                ids = server.tok.encode(prompt, add_special_tokens=add_special).ids
+                self.reply(200, {"count": len(ids), "max_model_len": server.max_context, "tokens": ids})
+
+            def detokenize(self, req):
+                if server.tok is None:
+                    raise RequestError("no tokenizer", 404)
+                tokens = req.get("tokens")
+                if not isinstance(tokens, list) or any(type(t) is not int or t < 0 for t in tokens):
+                    raise RequestError("tokens must be a list of token ids")
+                self.reply(200, {"prompt": server.tok.decode(tokens)})
+
+            def engine_completions(self, req):
+                """The engine's own dialect: ids or a raw prompt, `conversation` continues a retained one."""
+                ids = req.get("ids")
+                if ids is None:
+                    if server.tok is None:
+                        raise RequestError("no tokenizer: send ids")
+                    prompt = req.get("prompt", "")
+                    if not isinstance(prompt, str):
+                        raise RequestError("prompt must be text")
+                    ids = server.tok.encode(prompt).ids
+                t0 = time.perf_counter()
+                conversation = req.get("conversation")
+                temperature, options = sampling_options(req, {})
+                request, event = server.submit(ids, req.get("max_tokens", 64), temperature, conversation, options=options)
+                out = self.wait_result(request, event)
+                text = server.tok.decode(out) if server.tok is not None else None
+                conversation = (request if conversation is None else conversation) if server.runner.keep_idle else None
+                self.reply(200, {"seq": request, "conversation": conversation, "ids": out, "text": text, "prompt_tokens": len(ids),
+                                 "completion_tokens": len(out), "seconds": round(time.perf_counter() - t0, 3)})
 
             def do_POST(self):
                 try:
-                    if self.path == "/v1/chat/completions":
-                        self.chat(self.body())
-                        return
-                    if self.path != "/v1/completions":
+                    routes = {"/v1/chat/completions": self.chat, "/v1/completions": self.completions,
+                              "/v1/engine/completions": self.engine_completions, "/tokenize": self.tokenize,
+                              "/detokenize": self.detokenize}
+                    handler = routes.get(self.path)
+                    if handler is None:
                         raise RequestError("unknown endpoint", 404)
-                    req = self.body()
-                    ids = req.get("ids")
-                    if ids is None:
-                        if server.tok is None:
-                            raise RequestError("no tokenizer: send ids")
-                        prompt = req.get("prompt", "")
-                        if not isinstance(prompt, str):
-                            raise RequestError("prompt must be text")
-                        ids = server.tok.encode(prompt).ids
-                    t0 = time.perf_counter()
-                    conversation = req.get("conversation")
-                    request, event = server.submit(ids, req.get("max_tokens", 64), req.get("temperature", 0.0), conversation)
-                    out = self.wait_result(request, event)
-                    text = server.tok.decode(out) if server.tok is not None else None
-                    conversation = (request if conversation is None else conversation) if server.runner.keep_idle else None
-                    self.reply(200, {"seq": request, "conversation": conversation, "ids": out, "text": text, "prompt_tokens": len(ids),
-                                     "completion_tokens": len(out), "seconds": round(time.perf_counter() - t0, 3)})
+                    handler(self.body())
                 except RequestError as exc:
                     self.reply(exc.status, {"error": str(exc)})
                 except (ValueError, TypeError, UnicodeError) as exc:
