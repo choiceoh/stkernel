@@ -1,0 +1,9 @@
+[10:35:51] : Warning: T.vectorized loop over `i_hci` with extent 4 is lowered as a serial loop because TileLang could not find a valid vectorization plan. Scalar accumulator updates inside the loop are a common cause; move reductions to T.unroll or T.serial if this is intended.
+2026-09-11 10:35:41  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+2026-09-11 10:35:50  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+2026-09-11 10:35:51  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_post_tilelang` with `out_idx=None`
+2026-09-11 10:35:52  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_post_tilelang`
+direct native kernels ready
+{"repeat": 0, "ranks": 4, "native_outputs_exact": true, "tensor_collectives_exact": true}
+{"repeat": 1, "ranks": 4, "native_outputs_exact": true, "tensor_collectives_exact": true}
+{"repeat": 2, "ranks": 4, "native_outputs_exact": true, "tensor_collectives_exact": true}

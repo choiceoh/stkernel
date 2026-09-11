@@ -60,6 +60,19 @@ b12x는 이식 전 FlashInfer 커널과 직접 비교하며, PyTorch 참조와 �
 
     python3 -m unittest discover -s tests -p 'test_engine_*.py' -v
 
+실행 소유권은 커널 표 → LocalTP → 개별 `run` 순서로 명시한다. `lanes.served(tp=tp)`가
+만든 표는 해당 실행기에 고정되며, 다른 표의 생성이나 실행이 이 연결을 바꾸지 않는다.
+플릿과 직접 워밍업은 `lanes.served()`로 호출한다. 전역 `bind_tp` 상태는 없다.
+
+- 각 `run`이 배리어·통신 버퍼·결과·커널 대기열을 새로 소유하고, 끝날 때 참조를 반납한다.
+- 같은 LocalTP의 중첩·중복 실행, 외부 스레드의 디스패치, 종료된 랭크 핸들의 재사용은 즉시 실패한다.
+- 독립 LocalTP 둘은 각자의 호출 스레드에서 커널을 실행하며 통신 상태를 공유하지 않는다.
+- 랭크·커널·스레드 시작 실패 시 대기 커널을 취소하고 시작된 랭크를 합류시킨 뒤 원인을 전달한다.
+  다음 명시적 실행은 새 제어 상태를 받는다. 모델/KV나 CUDA 문맥의 복구·자동 재시도는 별도 책임이다.
+
+부팅과 체인 검사도 이 소유권 경계를 따른다. 검증은
+[`measurements/st_engine_execution_20260911`](../measurements/st_engine_execution_20260911/README.md)에 있다.
+
 요청과 캐시의 소유권은 다음 경계에서 확정한다:
 
 - `Runner.submit`은 입력 검증 → KV·상태 슬롯 예약 → `Model.open` → 스케줄러 등록 순서다.

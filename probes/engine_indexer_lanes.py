@@ -63,11 +63,8 @@ def threaded_dispatch(fused):
     lengths = torch.tensor([3, 9], device="cuda", dtype=torch.int32)
     expected = fused.indexer_quant(rows), fused.expand_pools(pools, lengths, 4)
     tp = LocalTP(4)
-    lanes.bind_tp(tp)
-    try:
-        outputs = tp.run(lambda comm: (fused.indexer_quant(rows), fused.expand_pools(pools, lengths, 4)))
-    finally:
-        lanes.bind_tp(None)
+    bound = lanes.served(tp=tp)
+    outputs = tp.run(lambda comm: (bound.indexer_quant(rows), bound.expand_pools(pools, lengths, 4)))
     for (q, scale), expanded in outputs:
         assert torch.equal(q.view(torch.uint8), expected[0][0].view(torch.uint8))
         assert torch.equal(scale, expected[0][1]) and torch.equal(expanded, expected[1])

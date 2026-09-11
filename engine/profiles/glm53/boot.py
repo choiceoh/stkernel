@@ -150,7 +150,7 @@ def local(a) -> int:
     layers = [int(x) for x in a.layers.split("-")]; layers = list(range(layers[0], layers[-1] + 1))
     torch.manual_seed(a.seed)
     prompts = {seq: torch.randint(0, 100_000, (a.prompt + 7 * seq,)).tolist() for seq in range(a.seqs)}
-    tp = LocalTP(facts.TP); lane_tables.bind_tp(tp)
+    tp = LocalTP(facts.TP)
     lanes = lane_tables.reference()
     if a.park:                                            # a run-private tier: parked ids from an earlier smoke must not collide
         import tempfile
