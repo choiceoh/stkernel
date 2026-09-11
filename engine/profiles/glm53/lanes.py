@@ -40,6 +40,7 @@ class Lanes:
     indexer_quant: object     # contiguous [R,128] bf16 -> Hadamard-rotated [R,128] e4m3, per-row pow2 [R,1] f32 scale
     pool_slots: object        # (pool ids [T,G] int32, seq_lens [T] int32, pool size, block row | None, block size/stride,
                               #  layer offset, out [T,G*pool+pool-1], counts [T]) -> None; descending token positions, mapped valid prefix
+    kda_output_norm: object   # (core/gate [T,H,D] bf16, weight [D] bf16/f32, eps) -> [T,H,D] bf16; FP32 RMS norm and sigmoid gate
     moe_prepare: object = None  # (w13, w13_sf, w2, w2_sf, top_k, limit) -> None, once per bound MoE layer BEFORE any capture:
                               #  the served lane's weight views (in-place tile-major relayout, packed SF6 owner); reference: None
 
@@ -56,7 +57,7 @@ def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tens
 def reference() -> Lanes:
     from engine.modules.causal_conv import causal_conv1d
     from engine.modules.hyper_connection import mhc_pre, mhc_post
-    from engine.modules.linear_attention import gated_delta_rule, kda_gate
+    from engine.modules.linear_attention import gated_delta_rule, kda_gate, kda_output_norm
     from engine.modules.moe import expert_gemm
     from engine.modules.sparse_attention import mla_sparse_mqa
     from engine.modules.sparse_indexer import fwht128_quant, indexer_logits, kpool_compress, pool_slots
@@ -116,7 +117,7 @@ def reference() -> Lanes:
         return out.to(x.dtype)
 
     return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
-                 mla_sparse_mqa, moe, fwht128_quant, pool_slots)
+                 mla_sparse_mqa, moe, fwht128_quant, pool_slots, kda_output_norm)
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
@@ -155,6 +156,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     """
     expert_lane = "reference" if "expert" in reference_for else "b12x"
     from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
+    from engine.kernels.kda.output import kda_output_norm
     from engine.kernels.causal_conv import causal_conv1d_fn
     from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
@@ -317,7 +319,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
     return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
-                                            fwht128_quant_fp8, pool_slots)),
+                                            fwht128_quant_fp8, pool_slots, kda_output_norm)),
                  moe_prepare=None if moe_prepare is None else on_main(moe_prepare))
 
 

@@ -39,6 +39,14 @@ def l2norm(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     return x * torch.rsqrt((x * x).sum(-1, keepdim=True) + eps)
 
 
+def kda_output_norm(core: torch.Tensor, gate: torch.Tensor, weight: torch.Tensor,
+                    eps: float = 1e-6) -> torch.Tensor:
+    """Per-head RMS norm, weight and sigmoid gate; round to BF16 only at output."""
+    x = core.float()
+    return (x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps) * weight.float()
+            * torch.sigmoid(gate.float())).to(core.dtype)
+
+
 def kda_gate(raw_g: torch.Tensor, A_log: torch.Tensor, g_bias: "torch.Tensor | None",
              lower_bound: float = -5.0, safe_gate: bool = True) -> torch.Tensor:
     """GLM-5.3's per-channel log-decay, as its served kernel computes it
