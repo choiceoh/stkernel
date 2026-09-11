@@ -33,6 +33,19 @@ def same_bits(actual, expected):
         assert torch.equal(x.contiguous().view(torch.uint8),y.contiguous().view(torch.uint8))
 
 
+def paired_timing(samples):
+    """Pair adjacent AB/BA rounds so first/second-order cost is balanced."""
+    if len(samples) != 2 or not samples[0] or len(samples[0]) % 2 or len(samples[0]) != len(samples[1]):
+        raise ValueError("paired timing needs equal, positive, even sample counts")
+    cycles=[[statistics.mean(s[i:i+2]) for i in range(0,len(s),2)] for s in samples]
+    deltas=[old-new for old,new in zip(*cycles)]
+    percentages=[100*(old-new)/old for old,new in zip(*cycles)]
+    return {"samples_per_order":len(cycles[0]),"cycle_mean_us":cycles,
+            "median_cycle_us":[statistics.median(s) for s in cycles],
+            "cycle_delta_us":deltas,"median_delta_us":statistics.median(deltas),
+            "median_percent_reduction":statistics.median(percentages)}
+
+
 def kernel_stats(fn, args):
     driver=getattr(fn,"driver",None) or importlib.import_module("engine.kernels.kda.kda")
     kernel=driver.fused_recurrent_gated_delta_rule_fwd_kernel
@@ -41,7 +54,10 @@ def kernel_stats(fn, args):
         def __getitem__(self,grid):
             def launch(*values,**kwargs):
                 compiled=kernel[grid](*values,**kwargs)
-                result.update(registers=compiled.n_regs,shared=compiled.metadata.shared,
+                ptx = "\n".join(line.strip() for line in compiled.asm["ptx"].splitlines()
+                                if line.strip() and not line.strip().startswith((".file", ".loc", "//")))
+                result.update(ptx_without_debug_sha256=hashlib.sha256(ptx.encode()).hexdigest(),
+                              registers=compiled.n_regs,shared=compiled.metadata.shared,
                               spills=compiled.n_spills,BK=kwargs["BK"],BV=kwargs["BV"],
                               warps=kwargs["num_warps"],grid=list(grid))
                 return compiled
@@ -86,7 +102,7 @@ def main():
                         for _ in range(count):result=fn(*args)
                     graphs[name,count]=(graph,result)
             samples={r:{n:[] for n in ("old","new")} for r in ("warm","evicted")}
-            for iteration in range(11):
+            for iteration in range(12):
                 for regime,count in (("warm",8),("evicted",1)):
                     for name in (("old","new") if iteration%2==0 else ("new","old")):
                         graph,_=graphs[name,count]
@@ -97,6 +113,7 @@ def main():
                         samples[regime][name].append(start.elapsed_time(end)*1000/count)
             for graph,result in graphs.values():same_bits(result,expected);graph.reset()
             cases.append({"tokens":tokens,"initialized":initialized,"bits_exact":True,"samples_us":samples,
+                          "paired":{r:paired_timing([ns["old"],ns["new"]]) for r,ns in samples.items()},
                           "median_us":{r:{n:statistics.median(s) for n,s in ns.items()} for r,ns in samples.items()}})
             print(json.dumps({k:v for k,v in cases[-1].items() if k!='samples_us'}),flush=True)
     operators={}

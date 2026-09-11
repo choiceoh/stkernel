@@ -18,7 +18,7 @@ from engine.profiles.glm53.net import Glm53Net, Step
 from engine.profiles.glm53.weights import rank_loader
 from engine_kda_state_perf import baseline_lane
 from engine_causal_conv_perf import baseline_conv
-from engine_kda_strides_perf import baseline_strides
+from engine_kda_strides_perf import baseline_strides, paired_timing
 
 
 class IsolatedRank:
@@ -125,7 +125,7 @@ def main():
                 "output_relative":relative(eager,expected_out),
                 "state_byte_differences":int((caches[1].state!=expected_state).sum())}
         samples=[[],[]]
-        for iteration in range(11):
+        for iteration in range(12):
             for index in ((0,1) if iteration%2==0 else (1,0)):
                 graphs[index].replay()
                 start,end=torch.cuda.Event(enable_timing=True),torch.cuda.Event(enable_timing=True)
@@ -134,6 +134,7 @@ def main():
                 end.record();end.synchronize()
                 samples[index].append(start.elapsed_time(end)*1000/a.timing_replays)
         measurements.append({"tokens":t,"context":4096,"samples_us":samples,
+                             "paired":paired_timing(samples),
                              "median_us":[statistics.median(s) for s in samples]})
         for graph in graphs: graph.reset()
     weights={}

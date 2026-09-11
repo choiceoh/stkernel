@@ -1,0 +1,243 @@
+{
+  "st-strides-check-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "check.py"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:17:45.583124245Z",
+    "finished_at": "2026-09-11T21:17:52.738624469Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-perf-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "probes/engine_kda_strides_perf.py",
+      "--baseline-dir",
+      "/work/baseline",
+      "--output",
+      "/work/perf.json"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:19:56.656152237Z",
+    "finished_at": "2026-09-11T21:20:07.122871821Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-tests-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_engine_kda_strides.py",
+      "-v"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:21:11.76706829Z",
+    "finished_at": "2026-09-11T21:21:21.508494948Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-real-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "probes/engine_kda_state_real.py",
+      "--baseline-strides",
+      "/work/baseline",
+      "--checkpoint",
+      "/meta",
+      "--rank-file",
+      "/ranks/rank0of4.safetensors",
+      "--output",
+      "/work/real.json"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:22:08.703253308Z",
+    "finished_at": "2026-09-11T21:23:04.501513027Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-perf-final-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "probes/engine_kda_strides_perf.py",
+      "--baseline-dir",
+      "/work/baseline",
+      "--output",
+      "/work/perf-final.json"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:24:03.775483177Z",
+    "finished_at": "2026-09-11T21:24:12.418399041Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-real-repeat-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "probes/engine_kda_state_real.py",
+      "--baseline-strides",
+      "/work/baseline",
+      "--checkpoint",
+      "/meta",
+      "--rank-file",
+      "/ranks/rank0of4.safetensors",
+      "--timing-replays",
+      "8",
+      "--output",
+      "/work/real-repeat.json"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:25:11.517795789Z",
+    "finished_at": "2026-09-11T21:25:29.171456059Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-suite-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "suite.py"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 1,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:28:14.00216372Z",
+    "finished_at": "2026-09-11T21:28:51.252969115Z",
+    "memory_limit_bytes": 6442450944,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-suite-final-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "suite.py"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:30:24.997262346Z",
+    "finished_at": "2026-09-11T21:30:49.214391801Z",
+    "memory_limit_bytes": 6442450944,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-qualified-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "bash",
+      "/work/qualify.sh"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:31:24.834138224Z",
+    "finished_at": "2026-09-11T21:32:42.576800761Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-real-monitored-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "probes/engine_kda_state_real.py",
+      "--baseline-strides",
+      "/work/baseline",
+      "--checkpoint",
+      "/meta",
+      "--rank-file",
+      "/ranks/rank0of4.safetensors",
+      "--timing-replays",
+      "8",
+      "--output",
+      "/work/real-monitored.json"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:34:26.945489178Z",
+    "finished_at": "2026-09-11T21:34:44.285100715Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-strides-balanced-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "bash",
+      "/work/qualify.sh"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T21:37:23.751427102Z",
+    "finished_at": "2026-09-11T21:37:58.636083612Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  }
+}
