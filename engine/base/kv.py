@@ -106,10 +106,21 @@ class BlockPool:
 
 
 class SlotPool:
-    """One fixed slot per live sequence, for state that does not grow."""
+    """One fixed slot per live sequence, for state that does not grow.
+
+    Slot 0 is never issued. The served conv/state kernels (vLLM's
+    causal_conv1d and the KDA state kernels) treat index 0 as the NULL block
+    and SKIP a sequence that names it -- no error, no output, state untouched.
+    Three diagnostics in the 44th ledger read that silence as a layout bug.
+    Reserving 0 here makes the mistake unrepresentable (D3).
+    """
+
+    NULL = 0
 
     def __init__(self, num_slots: int):
-        self.free = array("i", range(num_slots - 1, -1, -1))
+        if num_slots < 2:
+            raise ValueError("a slot pool needs slot 0 (null) plus at least one real slot")
+        self.free = array("i", range(num_slots - 1, 0, -1))      # 1..n-1, never 0
         self.num_slots = num_slots
         self.owner = array("i", [EMPTY]) * num_slots
 
@@ -125,6 +136,8 @@ class SlotPool:
         return slot
 
     def give(self, slot: int) -> None:
+        if slot == self.NULL:
+            raise ValueError("slot 0 is the null slot and is never taken")
         if self.owner[slot] == EMPTY:
             raise ValueError(f"slot {slot} is not taken")
         self.owner[slot] = EMPTY
@@ -154,9 +167,9 @@ def _selfcheck() -> None:
     pool2 = BlockPool(10, 16, 2, 4); pool2.attach_storage(_View(fake), 64)
     pool2.reserve(0, 40)
     assert len(pool2.blocks_of(0)) == 3 and all(b.numel() == 64 for b in pool2.blocks_of(0))
-    slots = SlotPool(2)
+    slots = SlotPool(3)                                     # slot 0 reserved: two usable
     a, b = slots.take(7), slots.take(9)
-    assert slots.owner[a] == 7 and slots.available == 0
+    assert a != 0 and b != 0 and slots.owner[a] == 7 and slots.available == 0
     try:
         slots.take(11); raise AssertionError("slot exhaustion must raise")
     except MemoryError:
