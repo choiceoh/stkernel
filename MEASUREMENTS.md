@@ -8472,3 +8472,17 @@ DSv4.1 커널 여섯을 특징별로), **profiles/dsv41**(budget 줄·shapes·ca
 dist_run·kernels 조립), **profiles/qwen38**(plan). 검증: 전 모듈 import OK, dsv41 budget(KV 19.60)·
 placement(74.15)·shapes(정렬 16)·qwen38 plan(32.41)·커널 검사 7/7 전부 재구성 전과 동일.
 헌장 D15 + §2 표 재작성. 규칙: 기본 층에 모델 이름이 들어가면 되돌린다; 상수는 프로필에만.
+
+### 기본 층 공통 부품 넷 — kv · scheduler · record · config (GPU 없이 자가검증)
+
+- `base/kv.py` — 블록 테이블 `[max_seqs, max_blocks] int32(-1)` + 자유 스택, 상태 슬롯 풀
+  (선형 어텐션 상태는 컨텍스트와 무관하니 시퀀스당 고정 슬롯). 고갈 = `MemoryError`, 폴백 없음(D3).
+- `base/scheduler.py` — 순수 함수 `plan(state, contract, now)`: 스텝은 prefill 아니면 decode 뿐(D9),
+  돌던 디코더는 대기 상한 하나로만 양보(D10), 청크는 `shapes.chunk_for` 한 곳(D2). 자가검증:
+  10,000 토큰 프롬프트 → 4,080 + 4,080 + 1,840(정렬 16, 마지막 꼬리는 참 길이), 디코더 보호 5스텝,
+  20 s 넘으면 밸브.
+- `base/record.py` — 부팅 때 잡은 bytearray 링 + 미리 연 fd, SIGTERM 핸들러가 `os.write` 만 하고
+  같은 시그널로 죽는다. 자가검증에 **실제 자식 프로세스에 SIGTERM** 을 보내 파일에 마지막 3
+  레코드가 남고 rc = −SIGTERM 인 것까지 확인.
+- `base/config.py` — 사실은 env 로 못 덮고, 노브는 만료일·측정 대상·롤백을 지니며 만료되면 부팅
+  사망, 선언 안 된 `STK_*` env 도 사망(D11·D3).
