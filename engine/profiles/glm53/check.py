@@ -38,7 +38,7 @@ from engine.base.instruments import Recorder                     # noqa: E402
 from engine.base.loader import RankLoader                        # noqa: E402
 from engine.base.params import total_bytes                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
-from engine.profiles.glm53.net import BF16, E4M3, F32, Glm53Net  # noqa: E402
+from engine.profiles.glm53.net import BF16, E4M3, F32, Glm53Net, Step  # noqa: E402
 
 GIB = 1 << 30
 
@@ -57,9 +57,9 @@ class ChainCaches:
                 self._ps[L] = arena.carve(capacity // kp * 4, f"L{L} pool scales").view(F32)
                 self._tail[L] = arena.carve(slots * kp * 2 * F.idx_dim * 2, f"L{L} tail").view(BF16).view(slots, kp, 2, F.idx_dim)
             else:
-                c = 3 * net.Hk * F.kda_dim
-                conv = arena.carve(slots * c * (F.conv - 1) * 2, f"L{L} conv state").view(BF16).view(slots, c, F.conv - 1)
-                rec = arena.carve(slots * net.Hk * F.kda_dim * F.kda_dim * 4, f"L{L} recurrent state").view(F32).view(slots, net.Hk, F.kda_dim, F.kda_dim)
+                c, wc, wr = 3 * net.Hk * F.kda_dim, net.conv_ring, net.rec_ring
+                conv = arena.carve(slots * c * wc * 2, f"L{L} conv ring").view(BF16).view(slots, c, wc)
+                rec = arena.carve(slots * wr * net.Hk * F.kda_dim * F.kda_dim * 4, f"L{L} recurrent ring").view(F32).view(slots, wr, net.Hk, F.kda_dim, F.kda_dim)
                 self._kda[L] = (conv, rec)
 
     def reset(self):
@@ -93,8 +93,10 @@ def tok_rel(x, y):
     return (x.float() - y.float()).abs().amax(-1) / y.float().abs().amax(-1).clamp_min(1e-6)
 
 
-def rank_main(comm, a, F, layers, lanes, ids):
-    """One rank's whole check: bind, prefill whole, prefill in two chunks."""
+def rank_main(comm, a, F, layers, lanes, ids, garbage):
+    """One rank's whole check: bind, then four runs -- whole prefill; two
+    chunks; prefill + one verify step; prefill + a verify step whose last four
+    drafts are garbage, 'accept 2', and the next verify step on the truth."""
     rec = Recorder(f"rank{comm.rank}")
     net = Glm53Net(F, comm, lanes, layers)
     specs = net.specs()
@@ -107,18 +109,24 @@ def rank_main(comm, a, F, layers, lanes, ids):
     caches = ChainCaches(arena, F, net, cap)
     blocks = {}
     net.probe = lambda name, L, out: blocks.setdefault((name, L), []).append(out)
-    with rec.phase("prefill whole"):
-        h_whole = net.prefill(ids, 0, seq=0, slot=1, caches=caches)
-        torch.cuda.synchronize()
-    logits = net.head(h_whole[-1:])
-    whole = {k: v[0] for k, v in blocks.items()}
-    blocks.clear(); caches.reset()
-    with rec.phase("prefill chunked"):
-        h_a = net.prefill(ids[: a.chunk], 0, seq=0, slot=1, caches=caches)
-        h_b = net.prefill(ids[a.chunk:], a.chunk, seq=0, slot=1, caches=caches)
-        torch.cuda.synchronize()
-    return {"rec": rec, "arena": arena, "h_whole": h_whole, "logits": logits, "whole": whole,
-            "chunked": {k: v for k, v in blocks.items()}, "h_a": h_a, "h_b": h_b}
+    T, K1 = a.tokens, F.spec_k + 1
+    runs = {}
+
+    def run(name, steps):
+        blocks.clear(); caches.reset()
+        with rec.phase(name):
+            hs = [net.forward(st, caches) for st in steps]
+            torch.cuda.synchronize()
+        runs[name] = {"h": hs, "blocks": {k: list(v) for k, v in blocks.items()}}
+
+    run("whole", [Step.prefill(ids, 0, 0, 1)])
+    logits = net.head(runs["whole"]["h"][0][-1:])
+    run("chunked", [Step.prefill(ids[: a.chunk], 0, 0, 1), Step.prefill(ids[a.chunk:], a.chunk, 0, 1)])
+    run("verify", [Step.prefill(ids[: T - K1], 0, 0, 1), Step.decode([(ids[T - K1:], T - K1, 0, 1)])])
+    c0 = T - 2 * K1                                                        # prefill to c0, verify 2 true + 4 garbage, accept 2, verify the truth
+    drafts = torch.cat([ids[c0: c0 + 2], garbage])
+    run("rollback", [Step.prefill(ids[: c0], 0, 0, 1), Step.decode([(drafts, c0, 0, 1)]), Step.decode([(ids[c0 + 2: c0 + 2 + K1], c0 + 2, 0, 1)])])
+    return {"rec": rec, "arena": arena, "logits": logits, "runs": runs}
 
 
 def main(argv=None) -> int:
@@ -140,37 +148,52 @@ def main(argv=None) -> int:
         print("  NOTE: served lanes with the REFERENCE expert lane (b12x is not bound yet) -- a lane judge, not a boot")
     torch.manual_seed(a.seed)
     ids = torch.randint(0, 100_000, (a.tokens,), device="cuda")
+    garbage = torch.randint(0, 100_000, (F.spec_k + 1 - 2,), device="cuda")
     t0 = time.perf_counter()
-    outs = LocalTP(facts.TP).run(rank_main, a, F, layers, lanes, ids)
+    outs = LocalTP(facts.TP).run(rank_main, a, F, layers, lanes, ids, garbage)
     wall = time.perf_counter() - t0
     r0 = outs[0]
     print(r0["rec"].table())
     print(f"  chain {layers[0]}-{layers[-1]} ({len(layers)} layers: {sum(F.is_dsa(L) for L in layers)} dsa, "
           f"{sum(not F.is_dsa(L) for L in layers)} kda; {sum(F.is_moe(L) for L in layers)} moe), TP={facts.TP} in-process, lanes={lanes.name}, "
           f"{a.tokens} tokens, arena {r0['arena'].used / GIB:.2f} GiB per rank x {facts.TP}, wall {wall:.1f} s")
-    finite = all(bool(torch.isfinite(o["h_whole"]).all() and torch.isfinite(o["logits"]).all()) for o in outs)
+    whole = r0["runs"]["whole"]
+    h_whole = whole["h"][0]
+    finite = all(bool(torch.isfinite(o["runs"]["whole"]["h"][0]).all() and torch.isfinite(o["logits"]).all()) for o in outs)
     top = r0["logits"][0].float().topk(5)
-    print(f"  hidden |h| mean {r0['h_whole'].float().abs().mean().item():.4f} max {r0['h_whole'].float().abs().max().item():.3f}, "
+    print(f"  hidden |h| mean {h_whole.float().abs().mean().item():.4f} max {h_whole.float().abs().max().item():.3f}, "
           f"finite {finite}; last-token top-5 ids {top.indices.tolist()} logits {[round(v, 2) for v in top.values.tolist()]}")
     # ranks agree: replicated activations must be identical on every rank
-    agree = all(torch.equal(o["h_whole"], r0["h_whole"]) and torch.equal(o["logits"], r0["logits"]) for o in outs[1:])
-    max_dev = max((o["h_whole"].float() - r0["h_whole"].float()).abs().max().item() for o in outs[1:])
+    agree = all(torch.equal(o["runs"]["whole"]["h"][0], h_whole) and torch.equal(o["logits"], r0["logits"]) for o in outs[1:])
+    max_dev = max((o["runs"]["whole"]["h"][0].float() - h_whole.float()).abs().max().item() for o in outs[1:])
     print(f"  ranks agree (hidden and logits identical on all {facts.TP}): {agree} (max |diff| {max_dev:.1e})")
-    # two chunks == one prefill, per block, against the first chunk's own noise floor
-    rows, worst_first, worst_second, ok = [], 0.0, 0.0, finite and agree
-    for (name, L), pair in r0["chunked"].items():
-        first, second = tok_rel(pair[0], r0["whole"][(name, L)][: a.chunk]), tok_rel(pair[1], r0["whole"][(name, L)][a.chunk:])
-        f50, s50 = first.median().item(), second.median().item()
-        rows.append(f"    L{L:<3}{name:<6} first chunk p50 {f50:.1e} max {first.max().item():.1e} | second chunk (via caches) p50 {s50:.1e} max {second.max().item():.1e}")
-        if name in ("kda", "dsa"):
-            worst_first, worst_second = max(worst_first, first.max().item()), max(worst_second, second.max().item())
-            ok = ok and second.max().item() <= max(1.5 * first.max().item(), 3e-2) and s50 <= max(1.5 * f50, 3e-3)
-    print("  per block, chunked vs whole (per-token rel):")
+    # every other run against the whole prefill, per block, per token, against the first chunk's own noise floor
+    T, K1 = a.tokens, F.spec_k + 1
+    windows = {"chunked": [(0, a.chunk), (a.chunk, T)],
+               "verify": [(0, T - K1), (T - K1, T)],
+               "rollback": [(0, T - 2 * K1), None, (T - 2 * K1 + 2, T - K1 + 2)]}       # None: the garbage step is not comparable
+    floor = {}
+    ok = finite and agree
+    rows = []
+    for run_name, wins in windows.items():
+        for (name, L), outs_b in r0["runs"][run_name]["blocks"].items():
+            ref = whole["blocks"][(name, L)][0]
+            for i, win in enumerate(wins):
+                if win is None:
+                    continue
+                r = tok_rel(outs_b[i], ref[win[0]: win[1]])
+                p50, mx = r.median().item(), r.max().item()
+                if run_name == "chunked" and i == 0:
+                    floor[(name, L)] = (p50, mx)                                   # the first chunk: no cache was read
+                    continue
+                f50, fmx = floor[(name, L)]
+                judged = name in ("kda", "dsa")
+                passed = (mx <= max(1.5 * fmx, 3e-2) and p50 <= max(1.5 * f50, 3e-3)) if judged else True
+                ok = ok and passed
+                rows.append(f"    {run_name:<9} step {i}  L{L:<3}{name:<6} p50 {p50:.1e} max {mx:.1e}  (floor p50 {f50:.1e} max {fmx:.1e}){'' if passed else '  <-- FAIL'}")
+    print("  per block vs the whole prefill (per-token rel; floor = first chunk, no cache read):")
     print("\n".join(rows))
-    print(f"  attention blocks, second chunk through every cache: worst {worst_second:.2e} (first-chunk noise floor {worst_first:.2e})")
-    r_tail = tok_rel(r0["h_b"], r0["h_whole"][a.chunk:])
-    print(f"  final hidden, second chunk: p50 {r_tail.median().item():.1e}, {(r_tail > 5e-2).sum().item()} of {a.tokens - a.chunk} tokens over 5e-2 (router flips)")
-    print("\n  " + ("PASS: four ranks agree, and the caches add nothing a whole prefill does not have" if ok else "FAIL"))
+    print("\n  " + ("PASS: four ranks agree; chunked, verify and rollback steps read the caches and add nothing" if ok else "FAIL"))
     return 0 if ok else 1
 
 

@@ -27,6 +27,7 @@ class Lanes:
     conv_prefill: object      # (x [T,C] bf16, w [C,K] f32, state [C,K-1] | None) -> (y [T,C] bf16, state' [C,K-1])
     kda_chunk: object         # (q,k,v [1,T,H,D] bf16, g_raw [1,T,H,D] bf16, beta [1,T,H] f32 sigmoided, A_log [H] f32,
                               #  dt_bias [H*D] f32, state0 [1,H,D,D] f32 | None, lower_bound) -> (o [1,T,H,D] bf16, state [1,H,D,D] f32)
+    kda_recurrent: object     # same inputs for a decode/verify step (T <= spec_k+1) -> (o [1,T,H,D], states [T,H,D,D] f32: after EVERY token)
     mhc_pre: object           # (res [T,hc,H] bf16, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w [H], norm_eps)
                               #   -> (post [T,hc,1] f32, comb [T,hc,hc] f32, x [T,H] bf16 = rmsnorm(sum_i pre_i res_i) * norm_w)
     mhc_post: object          # (x [T,H] bf16, res [T,hc,H], post, comb) -> res' [T,hc,H] bf16
@@ -64,6 +65,18 @@ def reference() -> Lanes:
         return gated_delta_rule(q, k, v, g, beta, state0, scale=q.shape[-1] ** -0.5,
                                 qk_l2norm=True, decay_per_channel=True)
 
+    def kda_recurrent(q, k, v, g_raw, beta, A_log, dt_bias, state0, lower_bound):
+        """The recurrence one token at a time, keeping every state: what a
+        verify step needs so a rejected draft rolls back by position."""
+        g = kda_gate(g_raw, A_log, dt_bias, lower_bound, safe_gate=True)
+        t = q.shape[1]
+        outs, states, state = [], [], state0
+        for i in range(t):
+            o, state = gated_delta_rule(q[:, i:i + 1], k[:, i:i + 1], v[:, i:i + 1], g[:, i:i + 1], beta[:, i:i + 1],
+                                        state, scale=q.shape[-1] ** -0.5, qk_l2norm=True, decay_per_channel=True)
+            outs.append(o); states.append(state[0])
+        return torch.cat(outs, dim=1), torch.stack(states)
+
     def logits(q8, k8, k_scale, w, ke):
         return indexer_logits(q8.float(), k8.float() * k_scale[:, None], w)     # relu(c x) = c relu(x): scales fold
 
@@ -80,7 +93,7 @@ def reference() -> Lanes:
         h = swiglu_clamped(g, u, limit)
         return expert_gemm(h, w2, w2_s, w2_mult, a2_mult, quantize_act=True)
 
-    return Lanes("reference", conv_prefill, kda_chunk, pre, mhc_post, logits, kpool_compress,
+    return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
                  mla_sparse_mqa, expert)
 
 
@@ -150,13 +163,26 @@ def served(expert_lane: str = "b12x") -> Lanes:
                  for i in range(0, q_abs.shape[1], mk.MLA_H)]
         return torch.cat(parts, dim=1)
 
+    def kda_recurrent(q, k, v, g_raw, beta, A_log, dt_bias, state0, lower_bound):
+        raise NotImplementedError("served fused_recurrent_kda with per-token state rows: bound after its kernel's index contract is read")
+
     if expert_lane == "reference":
         expert = reference().expert
     else:
         def expert(*a, **k):
             raise NotImplementedError("the b12x expert lane eats moe_sf_pack-swizzled packs; it is bound through the served layer (44th ledger), not here yet")
 
-    return Lanes("served" if expert_lane != "reference" else "served (experts: reference)", conv_prefill, kda_chunk, pre, post, logits, kpool, mla, expert)
+    import threading
+    lock = threading.Lock()                      # triton's autotuner keeps per-call state on the kernel object: one caller at a time
+
+    def locked(fn):
+        def run(*a, **k):
+            with lock:
+                return fn(*a, **k)
+        return run
+
+    return Lanes("served" if expert_lane != "reference" else "served (experts: reference)",
+                 *(locked(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, expert)))
 
 
 def _selfcheck() -> None:

@@ -92,12 +92,17 @@ def text_config(ckpt=CKPT) -> dict:
     c = json.loads((Path(ckpt) / "config.json").read_text()); return c.get("text_config", c)
 
 
-def state_bytes(cfg: dict, tp: int = TP, kv_bytes: int = 1):
-    """(KDA state per sequence, MLA KV per token [fp8 -> 1 B], indexer cache per token)."""
+def state_bytes(cfg: dict, tp: int = TP, kv_bytes: int = 1, spec_k: int = 5):
+    """(KDA state per sequence, MLA KV per token [fp8 -> 1 B], indexer cache per token).
+
+    With DFlash2 verifying K=5 drafts a step, a sequence keeps K+1 recurrent
+    states (one per draft position, so a rejection rolls back by index) and a
+    conv window of K + kernel-1 inputs -- the served kda_state_shape(num_spec)
+    and the engine's position rings alike. 34.8 MiB/seq was the K=0 number."""
     la = cfg["linear_attn_config"]; heads, hd, k = la["num_heads"], la["head_dim"], la["short_conv_kernel_size"]
     n_kda = len(la["kda_layers"]); n_full = len(la["full_attn_layers"])
-    conv = (2 * heads * hd // tp) * (k - 1) * 2                 # q and k conv states, bf16
-    recurrent = (heads // tp) * hd * hd * 4                     # fp32
+    conv = (3 * heads * hd // tp) * (k - 1 + spec_k) * 2        # q|k|v conv ring, bf16
+    recurrent = (spec_k + 1) * (heads // tp) * hd * hd * 4      # fp32, one state per draft position
     per_seq = n_kda * (conv + recurrent)
     kv_tok = n_full * cfg["kv_lora_rank"] * kv_bytes            # MLA latent, nope-only (rope dim 0)
     idx_tok = n_full * cfg["index_head_dim"] * 2 // 4           # kpool compress 4 (index_kpool_compress), bf16
