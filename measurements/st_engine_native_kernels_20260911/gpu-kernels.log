@@ -1,0 +1,78 @@
+{"lane": "imports", "modules": 51, "table": "served", "vllm_loaded": false}
+{"lane": "conv", "tokens": 1, "seeded": false, "output": 0.0, "state": 0.0}
+{"lane": "conv", "tokens": 1, "seeded": true, "output": 0.0, "state": 0.0}
+{"lane": "conv", "tokens": 6, "seeded": false, "output": 0.0, "state": 0.0}
+{"lane": "conv", "tokens": 6, "seeded": true, "output": 0.0, "state": 0.0}
+{"lane": "conv", "tokens": 96, "seeded": false, "output": 0.0, "state": 0.0}
+{"lane": "conv", "tokens": 96, "seeded": true, "output": 0.0, "state": 0.0}
+{
+  "passed": true,
+  "cases": [
+    {
+      "tokens": 1,
+      "seeded": false,
+      "recurrent_output": 0.0,
+      "every_state": 1.8491535058728914e-07,
+      "chunk_output": 0.0038759689778089523,
+      "chunk_final_state": 0.005482832435518503
+    },
+    {
+      "tokens": 1,
+      "seeded": true,
+      "recurrent_output": 4.461634262042935e-08,
+      "every_state": 1.602063690597788e-07,
+      "chunk_output": 0.005847953259944916,
+      "chunk_final_state": 0.005247505847364664
+    },
+    {
+      "tokens": 6,
+      "seeded": false,
+      "recurrent_output": 4.595588325173594e-05,
+      "every_state": 1.418138566577909e-07,
+      "chunk_output": 0.0058823530562222,
+      "chunk_final_state": 0.004932897165417671
+    },
+    {
+      "tokens": 6,
+      "seeded": true,
+      "recurrent_output": 0.000405844155466184,
+      "every_state": 2.0300340963785857e-07,
+      "chunk_output": 0.006493506487458944,
+      "chunk_final_state": 0.0034516050945967436
+    },
+    {
+      "tokens": 64,
+      "seeded": false,
+      "recurrent_output": 0.000621890532784164,
+      "every_state": 1.7340394720122276e-07,
+      "chunk_output": 0.004975124262273312,
+      "chunk_final_state": 0.004203877877444029
+    },
+    {
+      "tokens": 64,
+      "seeded": true,
+      "recurrent_output": 0.0005411255406215787,
+      "every_state": 1.870413228743928e-07,
+      "chunk_output": 0.0043290043249726295,
+      "chunk_final_state": 0.004209515172988176
+    }
+  ]
+}
+{"lane": "kda", "passed": true, "cases": 6, "every_verify_state": true}
+{"lane": "mhc", "tokens": 1, "pre": [1.6810068359518482e-07, 1.4163174455461558e-07, 0.0043668122962117195], "post": 0.0}
+{"lane": "mhc", "tokens": 6, "pre": [3.1547634193884733e-07, 3.739353360288078e-07, 0.0037313431967049837], "post": 3.98596930608619e-05}
+{"lane": "mhc", "tokens": 8, "pre": [3.098166416748427e-07, 2.1790104653973685e-07, 0.003355704713612795], "post": 7.689468475291505e-06}
+{"lane": "mhc", "tokens": 65, "pre": [7.273781079675246e-07, 6.263625778046844e-07, 0.004830917809158564], "post": 0.0015151514671742916}
+{"lane": "indexer", "valid_logits": 1.0676648543039846e-07}
+{"lane": "kpool", "pools": 1, "bytes_equal": true, "scales_equal": true}
+{"lane": "kpool", "pools": 3, "bytes_equal": true, "scales_equal": true}
+{"lane": "kpool", "pools": 17, "bytes_equal": true, "scales_equal": true}
+[megakernel] selftest mla rel=2.70e-03 pair_prefill=False group=2 prefill32=False -> ARM
+{"lane": "mla", "boot_selftest": true, "graph_replays": 3, "output": 0.006289307959377766}
+{"lane": "moe", "tokens": 1, "experts": 8, "topk": 2, "original_kernel": 0.0, "torch_oracle_relative": 0.058139536529779434}
+{"lane": "moe_graph", "replays": 3, "output": 0.0}
+{"lane": "moe", "tokens": 8, "experts": 8, "topk": 2, "original_kernel": 0.0, "torch_oracle_relative": 0.050698138773441315}
+2026-09-11 08:48:18,607 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m129_k4096_n512_t2_r258_2d912ca3b010f811
+2026-09-11 08:48:22,940 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m129_k4096_n512_t2_r258_2d912ca3b010f811.o
+{"lane": "moe", "tokens": 129, "experts": 8, "topk": 2, "original_kernel": 0.008928571827709675, "torch_oracle_relative": 0.06913717091083527}
+{"passed": true, "vllm_loaded": false, "checks": [{"lane": "imports", "modules": 51, "table": "served", "vllm_loaded": false}, {"lane": "conv", "tokens": 1, "seeded": false, "output": 0.0, "state": 0.0}, {"lane": "conv", "tokens": 1, "seeded": true, "output": 0.0, "state": 0.0}, {"lane": "conv", "tokens": 6, "seeded": false, "output": 0.0, "state": 0.0}, {"lane": "conv", "tokens": 6, "seeded": true, "output": 0.0, "state": 0.0}, {"lane": "conv", "tokens": 96, "seeded": false, "output": 0.0, "state": 0.0}, {"lane": "conv", "tokens": 96, "seeded": true, "output": 0.0, "state": 0.0}, {"lane": "kda", "passed": true, "cases": 6, "every_verify_state": true}, {"lane": "mhc", "tokens": 1, "pre": [1.6810068359518482e-07, 1.4163174455461558e-07, 0.0043668122962117195], "post": 0.0}, {"lane": "mhc", "tokens": 6, "pre": [3.1547634193884733e-07, 3.739353360288078e-07, 0.0037313431967049837], "post": 3.98596930608619e-05}, {"lane": "mhc", "tokens": 8, "pre": [3.098166416748427e-07, 2.1790104653973685e-07, 0.003355704713612795], "post": 7.689468475291505e-06}, {"lane": "mhc", "tokens": 65, "pre": [7.273781079675246e-07, 6.263625778046844e-07, 0.004830917809158564], "post": 0.0015151514671742916}, {"lane": "indexer", "valid_logits": 1.0676648543039846e-07}, {"lane": "kpool", "pools": 1, "bytes_equal": true, "scales_equal": true}, {"lane": "kpool", "pools": 3, "bytes_equal": true, "scales_equal": true}, {"lane": "kpool", "pools": 17, "bytes_equal": true, "scales_equal": true}, {"lane": "mla", "boot_selftest": true, "graph_replays": 3, "output": 0.006289307959377766}, {"lane": "moe", "tokens": 1, "experts": 8, "topk": 2, "original_kernel": 0.0, "torch_oracle_relative": 0.058139536529779434}, {"lane": "moe_graph", "replays": 3, "output": 0.0}, {"lane": "moe", "tokens": 8, "experts": 8, "topk": 2, "original_kernel": 0.0, "torch_oracle_relative": 0.050698138773441315}, {"lane": "moe", "tokens": 129, "experts": 8, "topk": 2, "original_kernel": 0.008928571827709675, "torch_oracle_relative": 0.06913717091083527}]}

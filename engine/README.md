@@ -9,19 +9,44 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
   아니다: 체크포인트가 bf16 으로 가진 것은 bf16 으로 쥔다.
 - **레거시 없음** — 폴백·옵션·플랫폼 디스패치·전방 컨텍스트·가중치 로더 추상이 없다. 사실과 만료 노브만(D11).
 
-설계 원칙은 `CHARTER.md`(D1~D16). 세 계층(D15):
+설계 원칙은 `CHARTER.md`(D1~D16). 세 조합 계층(D15)과 실행 커널:
 
     base/       모델 이름이 없는 것: 아레나, 로더(사전샤딩된 랭크 파일의 범위 읽기), KV 블록/슬롯, NVMe 티어, 스케줄러,
                 스텝 메타, 러너, 기록/사망 덤프, 설정(사실+만료 노브), 증명·판정, 그래프, comm(플릿 / LocalTP)
     modules/    특징 모듈: 선형 어텐션(KDA), 희소 인덱서·희소 MLA, NVFP4 선형·MoE·양자화, 하이퍼커넥션, 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
+    kernels/    ST가 소유하는 Triton·TileLang·CuTe DSL·CUDA 커널과 필요한 보조 코드
 
 빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드):
 
     PYTHONPATH=. python3 engine/profiles/glm53/check.py --layers 0-4          # 참조 레인
-    bash probes/run_engine_check.sh --layers 0-4                              # 서빙 커널 레인, 판정 이미지 안
+    bash engine/runtime/build.sh                                             # vLLM이 제거된 ST 이미지
+    bash probes/run_engine_check.sh --layers 0-4                              # ST 서빙 커널 레인
 
-측정과 판정은 `MEASUREMENTS.md` 44~45차.
+GLM의 `served()`는 `engine/kernels`를 직접 호출한다. KDA·conv·mHC·kpool·MLA·b12x는
+이 패키지 안에 있고, 인덱서와 mHC prenorm GEMM은 독립 `deep_gemm` 라이브러리를 사용한다.
+vLLM 설치나 overlay 마운트는 필요하지 않다. 이식 출처, 라이브러리 버전과 빌드 계약은
+[`kernels/README.md`](kernels/README.md), [`runtime/dependencies.json`](runtime/dependencies.json)에 있다.
+
+가중치 없이 전체 커널 패키지와 GPU 수치 계약을 검사한다:
+
+    ST_PROBE_NO_GPU=1 bash probes/run_engine_probe.sh probes/engine_kernel_check.py --imports-only
+    bash probes/run_engine_probe.sh probes/engine_kernel_check.py
+
+검사는 vLLM 임포트를 차단한다. GPU 검사는 KDA의 시작 상태·매 토큰 상태, conv 상태,
+mHC pre/post, 유효 인덱서 로짓, kpool 바이트, MLA 부팅 판정·그래프 재생, b12x 출력을 확인한다.
+b12x는 이식 전 FlashInfer 커널과 직접 비교하며, PyTorch 참조와 남은 오차는 별도로
+기록한다. `--lanes moe --moe-experts 288`은 실제 TP4 전문가 형상을 검사한다.
+커널 수치 검사는 실제 모델의 품질·처리량·ITL 판정과 별개다.
+
+**이전 GLM 랭크 파일은 사전 샤딩을 다시 실행해야 한다.** b12x가 읽는 routed FC1은
+`up | gate` 순서다. packed 가중치와 접힌 스케일을 이 순서로 저장하며, 파일 메타데이터의
+`weight_layout=st-glm53-b12x-up-gate-v1`을 부팅·실가중치 검사에서 아레나 할당 전에 확인한다.
+이전 `gate | up` 파일을 그대로 읽어 다른 모델을 실행하는 일은 허용하지 않는다.
+
+커널 이식 검증은
+[`st_engine_native_kernels_20260911`](../measurements/st_engine_native_kernels_20260911/README.md)에 있다.
+이전 측정과 판정은 `MEASUREMENTS.md` 44~45차.
 
 공통 실행부의 CPU 회귀 검증(PyTorch·GPU·체크포인트 없이 실행):
 
@@ -80,7 +105,7 @@ RoCE 인터페이스·GID는 실행기가 설정하고, `--ranks`에는 해당 �
 
 추가 장치 검사:
 
-    bash probes/run_mk_probe.sh probes/engine_kda_check.py
+    bash probes/run_engine_probe.sh probes/engine_kda_check.py
     python3 probes/engine_cuda_io_check.py
 
 검사 결과와 실제 사용한 네 노드 실행기는
