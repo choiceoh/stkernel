@@ -1,6 +1,11 @@
 # ST execution ownership — 2026-09-11
 
 Base: `73fa7dabbb4200952b57769660d4373be7118165`, merged PR #543.
+Measured implementation: `80b82df6`. Latest main at `d4528459` (PR #542) was
+subsequently integrated without conflicts. Within the 147 measured Python
+files, only comments in `specs.py` changed; its AST is identical and the other
+146 file hashes still match. The upstream launcher/ledger changes are retained.
+
 This change makes kernel dispatch and LocalTP invocation lifetime explicit.
 It is an execution-architecture qualification, with no throughput or full-model
 quality claim.
@@ -92,7 +97,9 @@ reference-only local boot no longer changes unrelated process-wide state.
 ## Evidence and reproduction
 
 `source-sha256.json` records **147 engine/test/probe Python files**, verified
-against the submitted source. `engine-tests.log`, `cpu-tests.log`,
+against measured revision `80b82df6`. `integration-source-sha256.json` and
+`integration-check.log` record the final source after the comments-only Python
+integration from main. `engine-tests.log`, `cpu-tests.log`,
 `ownership-stress.log`, `execution.log`, `execution.json` and `environment.log`
 retain the checks and environment; log cleanup removes trailing whitespace only.
 
