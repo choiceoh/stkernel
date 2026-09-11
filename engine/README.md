@@ -144,3 +144,11 @@ RoCE 인터페이스·GID는 실행기가 설정하고, `--ranks`에는 해당 �
 이는 2개 실제 층(KDA+dense, DSA+NVFP4 MoE)의 실행·캐시 계약 검사다. 통합 전 로그는
 참조 전문가를 사용했고, PR #534 통합 후 `check.py --lanes served`는 b12x 전문가를 포함한다.
 전체 45층 onepass 품질, 실제 DFlash2 수용률, 그래프 기반 요청 실행 및 처리량·ITL 판정은 별도다.
+
+
+디코드 그래프 연결과 실가중치 수치 안정성 후속 작업은
+[`measurements/st_engine_completion_20260911`](../measurements/st_engine_completion_20260911/README.md)에 기록했다.
+TP4의 두 층 검사에서 일반 실행·그래프 출력과 캐시가 일치하며, MoE BF16 누적의 반복 편차를
+FP32 합산으로 줄였다. 전체 모델 첫 부팅은 CUDA 아레나 할당 실패로 중단됐다. 따라서 전체
+45층 품질·DFlash2 수용률·NVMe 간섭 ITL과 최종 플릿 릴리스는 아직 통과한 상태가 아니다.
+독립 이미지의 버전·소스 식별 방법은 [`runtime/README.md`](runtime/README.md)를 따른다.

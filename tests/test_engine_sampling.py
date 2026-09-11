@@ -66,5 +66,33 @@ class SamplingTests(unittest.TestCase):
             self.assertTrue(torch.equal(a._sample(logits, [1.]), b._sample(logits, [1.])))
 
 
+@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
+class GraphSamplingTests(unittest.TestCase):
+    def test_graph_matches_seeded_eager_sampling_and_preserves_greedy_rng(self):
+        from engine.profiles.glm53.decode_graphs import SamplingGraphs
+        from engine.profiles.glm53.adapter import Glm53Engine
+        for top_p in (1., .8):
+            outputs = {(n, 1): (None, None, torch.empty(n, 64, device="cuda")) for n in (1, 3)}
+            target = SimpleNamespace(tokens=1, graphs=SimpleNamespace(outputs=outputs))
+            generator = torch.Generator(device="cuda").manual_seed(19)
+            before = generator.get_state().clone()
+            graphs = SamplingGraphs(target, generator, 61, top_p)
+            try:
+                self.assertTrue(torch.equal(before, generator.get_state()), "capture consumed serving RNG")
+                eager = Glm53Engine(None, SimpleNamespace(device="cuda"), SimpleNamespace(spec_k=5),
+                                     decodable=61, top_p=top_p, seed=19)
+                inputs = torch.Generator(device="cuda").manual_seed(73)
+                for temperatures in ([0.], [1.], [0., 0., 0.], [0., .7, 1.], [.5, 1., 1.2], [1.]):
+                    shape = (len(temperatures), 1)
+                    logits = torch.randn(len(temperatures), 64, device="cuda", generator=inputs)
+                    outputs[shape][2].copy_(logits)
+                    actual = graphs.run(shape, temperatures)
+                    expected = eager._sample(logits, temperatures)
+                    self.assertTrue(torch.equal(actual, expected), (top_p, temperatures))
+                    self.assertTrue(torch.equal(generator.get_state(), eager.gen.get_state()))
+            finally:
+                graphs.close()
+
+
 if __name__ == "__main__":
     unittest.main()

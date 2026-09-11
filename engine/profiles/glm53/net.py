@@ -169,22 +169,29 @@ class Glm53Net:
             sl = slice(s.start, s.start + s.length)
             conv_ring, rec_ring = caches.kda(L, s.slot)
             # conv: the K-1 inputs before ctx from the ring (positions < 0 are zero), then this segment's inputs
-            hist_pos = torch.arange(s.ctx - (K - 1), s.ctx, device=x.device)
+            hist_pos = s.ctx + torch.arange(-(K - 1), 0, device=x.device)
             hist = conv_ring[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0)
-            y, _ = self.lanes.conv_prefill(qkv_all[sl], p[n + "conv"], hist if s.ctx > 0 else None)
+            y, _ = self.lanes.conv_prefill(qkv_all[sl], p[n + "conv"], hist if getattr(step, "captured", False) or s.ctx > 0 else None)
             keep = min(s.length, wc)
-            pos = torch.arange(s.ctx + s.length - keep, s.ctx + s.length, device=x.device)
+            pos = s.ctx + torch.arange(s.length - keep, s.length, device=x.device)
             conv_ring[:, pos % wc] = qkv_all[sl][-keep:].T
             q, k, v = (t.reshape(1, s.length, Hl, D) for t in y.split(Hl * D, dim=-1))
             g_raw, beta = g_raw_all[sl][None], beta_all[sl][None]
-            state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
+            if getattr(step, "captured", False):
+                state0 = rec_ring.index_select(0, ((s.ctx - 1) % wr).reshape(1))
+                state0 = state0.masked_fill(s.ctx <= 0, 0)
+            else:
+                state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
             if s.length > wr:                                                       # a prefill chunk: only the final state is kept
                 o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
                 rec_ring[(s.ctx + s.length - 1) % wr] = state[0]
             else:                                                                   # a decode/verify step: one state per position
                 o, states = self.lanes.kda_recurrent(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
                 for i in range(s.length):
-                    rec_ring[(s.ctx + i) % wr] = states[i]
+                    if getattr(step, "captured", False):
+                        rec_ring.index_copy_(0, ((s.ctx + i) % wr).reshape(1), states[i:i+1])
+                    else:
+                        rec_ring[(s.ctx + i) % wr] = states[i]
             core[sl] = o[0]
         of = core.float()                                                              # o_norm: rmsnorm(o) * w * sigmoid(g)
         out = (of * torch.rsqrt(of.pow(2).mean(-1, keepdim=True) + O_NORM_EPS) * p[n + "o_norm"].float()
@@ -218,26 +225,31 @@ class Glm53Net:
             if tail.shape[0] != tail_width:
                 raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
             end = s.ctx + s.length
-            pool0 = (s.ctx // kp) * kp                                              # the pool ctx sits in may be half-built
-            lead = s.ctx - pool0                                                    # its earlier tokens are in the tail ring
-            lead_pos = torch.arange(pool0, s.ctx, device=x.device)
-            k_win = torch.cat([tail[lead_pos % tail_width, 0], k[sl]]) if lead else k[sl]
-            g_win = torch.cat([tail[lead_pos % tail_width, 1], gate[sl]]) if lead else gate[sl]
-            n_full = (end - pool0) // kp
-            if n_full:
-                pk8, ps = self.lanes.kpool_compress(k_win[: n_full * kp].view(n_full, kp, d), g_win[: n_full * kp].view(n_full, kp, d), p[n + "ape"])
-                pslots = caches.pool_slots(L, s.seq, pool0 // kp + torch.arange(n_full, device=x.device)).long()
-                keys[pslots] = pk8
-                scales[pslots] = ps.view(-1)
-            new_pos = torch.arange(s.ctx, end, device=x.device)
-            # Repeated scatter indices have no defined last-writer order on
-            # CUDA. Write each ring cell once, retaining only the newest window.
-            keep = min(s.length, tail_width)
-            tail[new_pos[-keep:] % tail_width, 0] = k[sl][-keep:]
-            tail[new_pos[-keep:] % tail_width, 1] = gate[sl][-keep:]
+            if getattr(step, "captured", False):
+                from engine.profiles.glm53.decode_graphs import complete_pools
+                n_cand = complete_pools(self, L, s, tail, k[sl], gate[sl], caches)
+            else:
+                pool0 = (s.ctx // kp) * kp                                              # the pool ctx sits in may be half-built
+                lead = s.ctx - pool0                                                    # its earlier tokens are in the tail ring
+                lead_pos = torch.arange(pool0, s.ctx, device=x.device)
+                k_win = torch.cat([tail[lead_pos % tail_width, 0], k[sl]]) if lead else k[sl]
+                g_win = torch.cat([tail[lead_pos % tail_width, 1], gate[sl]]) if lead else gate[sl]
+                n_full = (end - pool0) // kp
+                if n_full:
+                    pk8, ps = self.lanes.kpool_compress(k_win[: n_full * kp].view(n_full, kp, d), g_win[: n_full * kp].view(n_full, kp, d), p[n + "ape"])
+                    pslots = caches.pool_slots(L, s.seq, pool0 // kp + torch.arange(n_full, device=x.device)).long()
+                    keys[pslots] = pk8
+                    scales[pslots] = ps.view(-1)
+                new_pos = torch.arange(s.ctx, end, device=x.device)
+                # Repeated scatter indices have no defined last-writer order on
+                # CUDA. Write each ring cell once, retaining only the newest window.
+                keep = min(s.length, tail_width)
+                tail[new_pos[-keep:] % tail_width, 0] = k[sl][-keep:]
+                tail[new_pos[-keep:] % tail_width, 1] = gate[sl][-keep:]
+                n_cand = end // kp
+            new_pos = s.ctx + torch.arange(s.length, device=x.device)
             # -- selection -----------------------------------------------------------
             seq_lens = (new_pos + 1).to(torch.int32)
-            n_cand = end // kp                                                       # complete pools before the last query
             if n_cand:
                 cand = caches.pool_slots(L, s.seq, torch.arange(n_cand, device=x.device)).long()
                 ke = seq_lens // kp
@@ -262,7 +274,7 @@ class Glm53Net:
         latent = caches.latent(L)
         for s in step.segments:                                                     # fp8 KV, scale 1 (no kv scales in the checkpoint)
             sl = slice(s.start, s.start + s.length)
-            latent[caches.token_slots(L, s.seq, torch.arange(s.ctx, s.ctx + s.length, device=x.device)).long()] = kv_n[sl].to(E4M3)
+            latent[caches.token_slots(L, s.seq, (s.ctx + torch.arange(s.length, device=x.device))).long()] = kv_n[sl].to(E4M3)
         slots, valid = self._indexer(L, x, qr, step, caches)
         kv_b = p[n + "kv_b"].view(Hl, F.qk_nope + F.v_dim, F.kv_lora)
         w_uk, w_uv = kv_b[:, : F.qk_nope, :], kv_b[:, F.qk_nope:, :]

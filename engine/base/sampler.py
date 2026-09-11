@@ -13,12 +13,17 @@ import torch
 
 
 def sample(logits: torch.Tensor, temperature: torch.Tensor, top_p: torch.Tensor,
-           generator: "torch.Generator | None" = None) -> torch.Tensor:
-    """[N] token ids. temperature 0 means greedy for that row."""
+           generator: "torch.Generator | None" = None, *, top_p_enabled=None) -> torch.Tensor:
+    """[N] token ids. temperature 0 means greedy for that row.
+
+    A graph caller may supply the known top-p policy without reading a
+    device predicate; ordinary callers retain the per-row tensor policy.
+    """
     greedy = temperature <= 0
     scaled = logits.float() / temperature.clamp_min(1e-5).unsqueeze(-1)
     probs = torch.softmax(scaled, dim=-1)
-    if (top_p < 1).any():
+    use_nucleus = bool((top_p < 1).any()) if top_p_enabled is None else top_p_enabled
+    if use_nucleus:
         srt, idx = probs.sort(dim=-1, descending=True)
         cum = srt.cumsum(dim=-1)
         # keep the smallest prefix whose mass reaches top_p (always at least one)
