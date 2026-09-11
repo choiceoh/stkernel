@@ -1,0 +1,429 @@
+{
+  "ptxas_version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Aug_20_01:53:56_PM_PDT_2025\nCuda compilation tools, release 13.0, V13.0.88\nBuild cuda_13.0.r13.0/compiler.36424714_0\n",
+  "method": "compile only; optional disassembly; no kernel launches",
+  "results": [
+    {
+      "probe": "mma_bf16",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_tf32",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_fp8",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_fp6",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_fp6",
+      "target": "sm_120a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_nvfp4",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_nvfp4",
+      "target": "sm_120a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_nvfp4",
+      "target": "sm_121",
+      "returncode": 255,
+      "assembled": false,
+      "diagnostics": "ptxas <tmp>/mma_nvfp4-sm_121.ptx, line 19; error   : Instruction 'mma with block scale' not supported on .target 'sm_121'\nptxas <tmp>/mma_nvfp4-sm_121.ptx, line 19; error   : Feature '.kind::mxf4nvf4' not supported on .target 'sm_121'\nptxas <tmp>/mma_nvfp4-sm_121.ptx, line 19; error   : Feature '.block_scale' not supported on .target 'sm_121'\nptxas <tmp>/mma_nvfp4-sm_121.ptx, line 19; error   : Feature '.scale_vec::4X' not supported on .target 'sm_121'\nptxas fatal   : Ptx assembly aborted due to errors\n",
+      "disassembly_status": "not assembled",
+      "sass": ""
+    },
+    {
+      "probe": "mma_nvfp4",
+      "target": "sm_120f",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_nvfp4",
+      "target": "sm_121f",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_mxfp4",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mma_mxfp4",
+      "target": "sm_120a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cp_async",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "tma_load_2d",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "tma_load_2d",
+      "target": "sm_90a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "tma_store_2d",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "tma_store_2d",
+      "target": "sm_90a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mbarrier",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "mbarrier",
+      "target": "sm_90a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "async_proxy_fence",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "async_proxy_fence",
+      "target": "sm_90a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "ldmatrix_b16",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "ldmatrix_b8",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "ldmatrix_b8",
+      "target": "sm_120a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "stmatrix_b8",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "stmatrix_b8",
+      "target": "sm_120a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cvt_fp4_pack",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cvt_fp4_pack",
+      "target": "sm_120a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cvt_fp4_unpack",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cvt_fp4_unpack",
+      "target": "sm_120a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "pdl",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "pdl",
+      "target": "sm_90a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cluster_barrier",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cluster_barrier",
+      "target": "sm_90a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cluster_shared_load",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cluster_shared_load",
+      "target": "sm_90a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cluster_launch_control",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cluster_launch_control",
+      "target": "sm_100a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "atomic_bf16x2",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "atomic_bf16x2",
+      "target": "sm_90a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "warp_reduce",
+      "target": "sm_121a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "wgmma",
+      "target": "sm_121a",
+      "returncode": 255,
+      "assembled": false,
+      "diagnostics": "ptxas <tmp>/wgmma-sm_121a.ptx, line 19; error   : Instruction 'wgmma.mma_async with floating point types' not supported on .target 'sm_121a'\nptxas <tmp>/wgmma-sm_121a.ptx, line 19; error   : Instruction 'wgmma.mma_async with floating point types' cannot be compiled for architecture 'sm_121a'\nptxas <tmp>/wgmma-sm_121a.ptx, line 19; error   : Instruction 'wgmma.commit_group' not supported on .target 'sm_121a'\nptxas <tmp>/wgmma-sm_121a.ptx, line 19; error   : Instruction 'wgmma.commit_group' cannot be compiled for architecture 'sm_121a'\nptxas <tmp>/wgmma-sm_121a.ptx, line 19; error   : Instruction 'wgmma.wait_group' not supported on .target 'sm_121a'\nptxas <tmp>/wgmma-sm_121a.ptx, line 19; error   : Instruction 'wgmma.wait_group' cannot be compiled for architecture 'sm_121a'\nptxas fatal   : Ptx assembly aborted due to errors\n",
+      "disassembly_status": "not assembled",
+      "sass": ""
+    },
+    {
+      "probe": "wgmma",
+      "target": "sm_90a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "ptxas info    : (C7519) warpgroup.arrive is injected in around line 19 by compiler to allow use of registers in GMMA in function 'probe'\n",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "tcgen05_tmem",
+      "target": "sm_121a",
+      "returncode": 255,
+      "assembled": false,
+      "diagnostics": "ptxas <tmp>/tcgen05_tmem-sm_121a.ptx, line 19; error   : Instruction 'tcgen05.alloc' not supported on .target 'sm_121a'\nptxas <tmp>/tcgen05_tmem-sm_121a.ptx, line 19; error   : Feature '.cta_group::1' not supported on .target 'sm_121a'\nptxas fatal   : Ptx assembly aborted due to errors\n",
+      "disassembly_status": "not assembled",
+      "sass": ""
+    },
+    {
+      "probe": "tcgen05_tmem",
+      "target": "sm_100a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    },
+    {
+      "probe": "cvt_stochastic_fp4",
+      "target": "sm_121a",
+      "returncode": 255,
+      "assembled": false,
+      "diagnostics": "ptxas <tmp>/cvt_stochastic_fp4-sm_121a.ptx, line 19; error   : Feature '.rs' not supported on .target 'sm_121a'\nptxas fatal   : Ptx assembly aborted due to errors\n",
+      "disassembly_status": "not assembled",
+      "sass": ""
+    },
+    {
+      "probe": "cvt_stochastic_fp4",
+      "target": "sm_100a",
+      "returncode": 0,
+      "assembled": true,
+      "diagnostics": "",
+      "disassembly_status": "nvdisasm absent from this image",
+      "sass": ""
+    }
+  ]
+}

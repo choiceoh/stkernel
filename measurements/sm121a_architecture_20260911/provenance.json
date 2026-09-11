@@ -1,0 +1,19 @@
+{
+  "captured_at_utc": "2026-09-11T12:34:35.608449+00:00",
+  "host": "srv4",
+  "source_head": "179e8bb6888273ad994c6476d50307e335b14910",
+  "runtime": [
+    "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "NVIDIA GB10, 12.1, 580.159.03"
+  ],
+  "ptx_total_target_cases": 47,
+  "ptx_cases_matching_expectation": 47,
+  "sha256": {
+    "cluster_probe.cu": "f86f505673eb30038bdca6e2f12985aff9bb85eb3ee8f613d14798c0e79b4f27",
+    "device_attributes.py": "36fa5b23b6a270952a67b19f11ec6ec5fe28acb9e12d46343f48128f440f65fb",
+    "ptx_compile_probe.py": "2cf08351e2edb04280fc9312d4fdc8b0f5b04a38b928fba377e785b057143a52",
+    "srv4-cluster.log": "60fbf1548e9988c525f034b5420dce20056ad1ed3423d5ceb9bf3266efa8730f",
+    "srv4-device.json": "4e8f9d8e19db789c523c4019224d62d9e510987e177e5021c76488e188647e2e",
+    "srv4-ptx.json": "2564df6485cc79c6c816bca278b9e3d537069a88a1e364124d399f9314e5bd62"
+  }
+}

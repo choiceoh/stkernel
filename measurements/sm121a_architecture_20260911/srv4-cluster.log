@@ -1,0 +1,19 @@
+COMMAND ['nvcc', '-std=c++17', '-arch=sm_121a', '/tmp/tmpb3hl0ezl/probe.cu', '-o', '/tmp/tmpb3hl0ezl/probe']
+COMMAND ['/tmp/tmpb3hl0ezl/probe']
+max_potential_cluster_size=8 status=no error
+cluster_size=1 active_clusters=48 occupancy_status=no error
+cluster_size=1 execution_status=no error
+cluster_size=1 neighbor_read=PASS
+cluster_size=1 distinct_sms=PASS smids=0
+cluster_size=2 active_clusters=24 occupancy_status=no error
+cluster_size=2 execution_status=no error
+cluster_size=2 neighbor_read=PASS
+cluster_size=2 distinct_sms=PASS smids=0,1
+cluster_size=4 active_clusters=12 occupancy_status=no error
+cluster_size=4 execution_status=no error
+cluster_size=4 neighbor_read=PASS
+cluster_size=4 distinct_sms=PASS smids=0,1,8,9
+cluster_size=8 active_clusters=4 occupancy_status=no error
+cluster_size=8 execution_status=no error
+cluster_size=8 neighbor_read=PASS
+cluster_size=8 distinct_sms=PASS smids=0,1,8,9,16,17,24,25
