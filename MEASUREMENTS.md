@@ -8779,3 +8779,26 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 2. 서빙 `Glm5NextDecoderLayer` 를 옆에 놓는 층 판정(조합 판정, D4).  3. 디코드 경로(recurrent KDA·conv update·
    드래프트 슬롯 K=5 의 희소 MLA·꼬리 링 갱신).  4. 러너 결합(`cache_spec` 으로 아레나에서 캐시를 깎고 블록표로 슬롯을
    주는 `Caches`).  5. b12x 전문가 레인 바인딩, DFlash2 드래프터, 4노드.
+
+### 45차 §2 — 네 기본값을 형태로: TP=4·GB10·NVFP4 기본형·레거시 없음 (운영자, 2026-09-11 오후)
+
+운영자: "TP=4, dgx spark, nvfp4, 레거시 없음의 4가지 요소를 디폴트로 해서 아주 잘 써봐" — 그리고 정정: NVFP4 는 **유일형이
+아니라 기본형**(가장 잘 지원하는 형태). 그래서 dense 투영의 강제 W4A16 양자화는 하지 않는다; 체크포인트의 형태(전문가
+W4A4 캘리브레이션 있음, 나머지 bf16)를 그대로 쥐고 NVFP4 를 1급으로 지원한다(packed 바이트 그대로 상주, packed 위에서 TP,
+전역 스케일은 곱셈자, 서빙 커널이 레인).
+
+- **TP=4 가 코드의 형상**: `facts.TP = 4`, 랭크-로컬 크기가 사실(`heads_local 16, kda_heads_local 16, moe_inter_local 512,
+  dense_inter_local 3072, vocab_local 38,720`). `specs`/`preshard`/`net` 에서 `W` 인자와 `// W` 제거; `Glm53Net` 은 world≠4 를
+  거부. `preshard.py` 도 `--world` 없음(출력 기본 `facts.RANKS`).
+- **GB10 단언**: `facts.check_box()` — 장치 1개, SM121, `mem_get_info` 총량 == `/proc/meminfo`(통합 메모리)를 부팅·검증 때
+  단언. 오늘 박스: "SM121, unified 122 GiB".
+- **한 노드에서 TP=4 를 진짜로**: `base/comm.LocalTP(4)` — 네 랭크를 네 스레드로, all_reduce/all_gather 는 배리어에서
+  만나 fp32 로 랭크 순서대로 합산(네 사본이 **동일**, NCCL 이 보장하는 것과 같은 성질). 죽은 랭크는 원인 랭크로 표면화.
+  world-1 항등은 base 자가검증에만 남는다(프로필 경로에는 없음).
+- **검증 입력은 실제 랭크 파일**: 사전샤딩 전체 완료 — **176.09 GiB 읽고 4 × 44.50 GiB 씀, 343 s**(0.51 GiB/s, 층당 6~9 s).
+  `check.py` 는 dev 슬라이스 대신 `RANKS/rank{r}of4` 에서 0~4층 키만 골라 랭크별 아레나(3.10 GiB)에 적재: **로드 2.9 s
+  (4 런, 1.1 GiB/s — 4 스레드가 한 NVMe 를 나눔)**, 512 토큰 프리필 12.9 s(참조 레인, 스레드 4개가 GIL 을 나눔).
+- 판정 둘: **네 랭크의 hidden·logits 바이트 동일(max |diff| 0.0)** — 행/열 분할 규칙과 리덕션 배치가 맞다는 뜻(world-1
+  검증은 이걸 절대 못 본다); 캐시 경로는 첫 청크 잡음 바닥 안(L3 dsa 둘째 9.4e-3/1.8e-2 vs 첫 1.1e-2/2.0e-2). **PASS**.
+- 아까 한 번 본 device-side assert 는 재현되지 않았다(같은 코드로 4회 통과). 원인을 못 봤으니 "고쳤다"가 아니라 "재발
+  감시"로 적는다.

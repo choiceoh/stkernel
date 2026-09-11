@@ -4,8 +4,11 @@
 comb), of a KDA linear-attention block or a sparse-MLA block (nope, kpool
 indexer), then a dense MLP (layers 0-2) or the NVFP4 MoE (288 experts top-8
 plus one shared, noaux_tc router). Vocab-parallel embed and head. TP=4 by
-heads; every collective is one `comm.all_reduce` at a block's row-parallel
-output, exactly where the served path reduces.
+heads is the shape of the code, not a parameter: every rank-local size is a
+fact (facts.py) and `comm` must be one rank of four -- base/comm.Comm on the
+fleet, base/comm.LocalTP on one box. Every collective is one
+`comm.all_reduce` at a block's row-parallel output, exactly where the served
+path reduces.
 
 What is NOT here, by design: no config object, no forward context, no
 weight loader, no cache spec discovery, no graph-capture breaks. The model
@@ -31,7 +34,7 @@ import torch.nn.functional as Fn
 
 from engine.modules.sparse_indexer import fwht128_quant, select_with_tail, topk_positions
 from engine.profiles.glm53 import specs
-from engine.profiles.glm53.facts import Facts
+from engine.profiles.glm53.facts import TP, Facts
 from engine.profiles.glm53.lanes import Lanes, swiglu_clamped
 
 BF16, F32, E4M3 = torch.bfloat16, torch.float32, torch.float8_e4m3fn
@@ -58,18 +61,20 @@ def rmsnorm(x: torch.Tensor, w: torch.Tensor, eps: float) -> torch.Tensor:
 
 class Glm53Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None):
+        if comm.world_size != TP:
+            raise ValueError(f"glm53 is written for TP={TP}; comm has world {comm.world_size}")
         self.F, self.comm, self.lanes = F, comm, lanes
-        self.W, self.rank = comm.world_size, comm.rank
+        self.rank = comm.rank
         self.layers = list(range(F.layers)) if layers is None else list(layers)
-        self.Hl = F.heads // self.W                 # MLA heads on this rank
-        self.Hk = F.kda_heads // self.W             # KDA heads on this rank
-        self.vp = F.vocab // self.W
+        self.Hl = F.heads_local                      # MLA heads on this rank (16)
+        self.Hk = F.kda_heads_local                  # KDA heads on this rank (16)
+        self.vp = F.vocab_local
         self.p = None
         self.probe = None                           # probe(block, layer, out) after every block, for judges
 
     # -- binding ----------------------------------------------------------------
     def specs(self):
-        return specs.all_specs(self.F, self.W, self.layers)
+        return specs.all_specs(self.F, self.layers)
 
     def bind(self, views: dict) -> None:
         from engine.base.params import bind
@@ -81,11 +86,10 @@ class Glm53Net:
         local = ids - start
         mask = (local < 0) | (local >= self.vp)
         h = Fn.embedding(local.masked_fill(mask, 0), self.p["embed"]).masked_fill(mask[:, None], 0)
-        return self.comm.all_reduce(h) if self.W > 1 else h
+        return self.comm.all_reduce(h)
 
     def head(self, h: torch.Tensor) -> torch.Tensor:
-        local = Fn.linear(h, self.p["head"])
-        return self.comm.all_gather(local, dim=-1) if self.W > 1 else local
+        return self.comm.all_gather(Fn.linear(h, self.p["head"]), dim=-1)
 
     def _hc_pre(self, L: int, res: torch.Tensor, side: str):
         F, p, n = self.F, self.p, f"L{L}."
@@ -128,8 +132,8 @@ class Glm53Net:
         w = x.float() @ p[n + "w_heads"].T                                           # fp32 head gate, as served
         gate = Fn.linear(x, p[n + "gate"])                                           # [T, 128] per-channel pool score
         q8, qs = fwht128_quant(q.reshape(-1, d))
-        q_rot = q8.float().view(T, nh, d)
-        w_eff = w * qs.view(T, nh) * F.idx_scale
+        q8 = q8.view(T, nh, d)
+        w_eff = (w * qs.view(T, nh) * F.idx_scale).contiguous()                     # q's scale folds into the head gate, as served
         # -- this chunk's pools ------------------------------------------------
         n_full = T // kp
         if n_full:
@@ -148,9 +152,9 @@ class Glm53Net:
         n_cand = int(seq_lens[-1].item()) // kp                                     # complete pools before the last query
         if n_cand:
             cand = caches.pool_slots(seq, torch.arange(n_cand, device=x.device)).long()
-            kd = caches.pool_keys(L)[cand].float() * caches.pool_scales(L)[cand][:, None]
-            logits = self.lanes.indexer_logits(q_rot, kd, w_eff)                    # [T, n_cand]
-            pool_ids = topk_positions(logits, F.topk // kp, valid=seq_lens // kp)
+            ke = seq_lens // kp                                                       # complete pools before each query
+            logits = self.lanes.indexer_logits(q8, caches.pool_keys(L)[cand], caches.pool_scales(L)[cand], w_eff, ke)
+            pool_ids = topk_positions(logits[:, :n_cand].float(), F.topk // kp, valid=ke)
         else:
             pool_ids = torch.full((T, F.topk // kp), -1, dtype=torch.int32, device=x.device)
         tokens = select_with_tail(pool_ids, seq_lens, kp)                            # positions, -1 padded
@@ -236,14 +240,18 @@ class Glm53Net:
 
 
 def _selfcheck() -> None:
-    from engine.base.comm import Comm
+    from engine.base.comm import Comm, LocalTP
     from engine.profiles.glm53 import facts, lanes
     F = facts.load()
-    net = Glm53Net(F, Comm.init(rank=0, world=1), lanes.reference(), layers=range(0, 5))
+    net = Glm53Net(F, LocalTP(4).rank(3), lanes.reference(), layers=range(0, 5))
     names = [s.name for s in net.specs()]
     assert names[:3] == ["embed", "norm", "head"] and "L3.moe.w13" in names and "L4.kda.in_proj" in names
-    assert net.Hl == 64 and net.Hk == 64 and net.vp == F.vocab
-    print(f"  net: glm53 layers 0-4 at world 1 declares {len(names)} tensors; embed/norm/head + kda/dsa/moe/dense blocks composed OK")
+    assert net.Hl == 16 and net.Hk == 16 and net.vp == 38720 and net.rank == 3
+    try:
+        Glm53Net(F, Comm.init(rank=0, world=1), lanes.reference()); raise AssertionError("world 1 must be refused")
+    except ValueError:
+        pass
+    print(f"  net: glm53 layers 0-4 declares {len(names)} tensors per rank (16 heads, vocab 38,720); world != 4 refused OK")
 
 
 if __name__ == "__main__":

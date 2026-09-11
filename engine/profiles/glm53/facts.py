@@ -22,6 +22,8 @@ from pathlib import Path
 
 CKPT = Path("/home/choiceoh/models/glm53-redhat-nvfp4")
 RANKS = Path("/home/choiceoh/models/glm53-redhat-nvfp4-tp4")          # preshard output, one file per rank
+TP = 4                                                                # four Sparks: the only world this profile has
+BOX = {"name": "GB10 (DGX Spark)", "capability": (12, 1), "devices": 1, "unified": True}
 BLOCK = 2304                                                          # launcher --block-size (shapes.py's 6,912 law)
 SPEC_K = 5                                                            # DFlash2 draft slots per decode step
 KV_DTYPE = "fp8_e4m3"                                                 # launcher KV_DTYPE
@@ -66,6 +68,27 @@ class Facts:
     # serving
     block: int = BLOCK
     spec_k: int = SPEC_K
+
+    # -- what one of the four ranks holds (TP by heads / intermediate / vocab) --
+    @property
+    def heads_local(self) -> int:
+        return self.heads // TP
+
+    @property
+    def kda_heads_local(self) -> int:
+        return self.kda_heads // TP
+
+    @property
+    def moe_inter_local(self) -> int:
+        return self.moe_inter // TP
+
+    @property
+    def dense_inter_local(self) -> int:
+        return self.dense_inter // TP
+
+    @property
+    def vocab_local(self) -> int:
+        return self.vocab // TP
 
     @property
     def dsa_layers(self) -> "list[int]":
@@ -123,8 +146,26 @@ def load(ckpt: "str | Path" = CKPT) -> Facts:
     q = c["quantization_config"]["config_groups"]["group_0"]
     assert q["format"] == "nvfp4-pack-quantized" and q["weights"]["group_size"] == 16 and q["input_activations"]["group_size"] == 16
     assert q["targets"] == ["re:.*\\.layers\\.(?:[3-9]|[1-3][0-9]|4[0-4])\\.mlp\\.experts\\..*(gate|up|down)_proj$"], "NVFP4 is exactly the routed experts of layers 3-44"
-    assert f.kda_heads % 4 == 0 and f.heads % 4 == 0 and f.moe_inter % (4 * 16) == 0 and f.dense_inter % 4 == 0, "TP=4 splits"
+    assert f.kda_heads % TP == 0 and f.heads % TP == 0 and f.moe_inter % (TP * 16) == 0 and f.dense_inter % TP == 0 and f.vocab % TP == 0, "TP=4 splits"
     return f
+
+
+def check_box() -> str:
+    """The node this profile is written for, asserted (D3): one GB10, unified memory."""
+    import torch
+    if torch.cuda.device_count() != BOX["devices"]:
+        raise SystemExit(f"box: {torch.cuda.device_count()} devices, this profile is written for {BOX['devices']} ({BOX['name']})")
+    cap = torch.cuda.get_device_capability(0)
+    if cap != BOX["capability"]:
+        raise SystemExit(f"box: capability {cap}, this profile's kernels are SM{BOX['capability'][0]}{BOX['capability'][1]} ({BOX['name']})")
+    free, total = torch.cuda.mem_get_info()
+    mem_total = 0
+    for line in open("/proc/meminfo"):
+        if line.startswith("MemTotal:"):
+            mem_total = int(line.split()[1]) * 1024
+    if abs(total - mem_total) > mem_total // 64:
+        raise SystemExit(f"box: device total {total / 2**30:.1f} GiB != host {mem_total / 2**30:.1f} GiB: not unified memory")
+    return f"{BOX['name']}: SM{cap[0]}{cap[1]}, unified {total / 2**30:.0f} GiB ({free / 2**30:.0f} free)"
 
 
 def _selfcheck() -> None:
@@ -133,6 +174,8 @@ def _selfcheck() -> None:
     assert f.dense == (0, 1, 2) and f.is_moe(3) and not f.is_moe(2) and f.is_dsa(3) and not f.is_dsa(4)
     assert (f.hidden, f.heads, f.kv_lora, f.q_lora, f.experts, f.topk_experts) == (4096, 64, 512, 1536, 288, 8)
     assert f.mla_scale == 256 ** -0.5 and abs(f.idx_scale - 128 ** -0.5 * 32 ** -0.5) < 1e-12
+    assert (f.heads_local, f.kda_heads_local, f.moe_inter_local, f.dense_inter_local, f.vocab_local) == (16, 16, 512, 3072, 38720)
+    print(f"  box: {check_box()}")
     print(f"  facts: glm53 {f.layers} layers ({len(f.kda_layers)} kda + {len(f.dsa_layers)} dsa), dense {f.dense}, "
           f"{f.experts}x top-{f.topk_experts} NVFP4 experts ({EXPERTS}), hc {f.hc} post_mult {f.post_mult}, "
           f"topk {f.topk}/kpool {f.kpool}, block {f.block}, spec {f.spec_k} OK")

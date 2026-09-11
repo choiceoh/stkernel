@@ -30,7 +30,8 @@ class Lanes:
     mhc_pre: object           # (res [T,hc,H] bf16, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w [H], norm_eps)
                               #   -> (post [T,hc,1] f32, comb [T,hc,hc] f32, x [T,H] bf16 = rmsnorm(sum_i pre_i res_i) * norm_w)
     mhc_post: object          # (x [T,H] bf16, res [T,hc,H], post, comb) -> res' [T,hc,H] bf16
-    indexer_logits: object    # (q [T,h,128] f32 (rotated, unscaled), k [N,128] f32 (dequant), w [T,h] f32) -> [T,N] f32
+    indexer_logits: object    # (q8 [T,h,128] e4m3 (rotated), k8 [N,128] e4m3, k_scale [N] f32, w [T,h] f32 (q scale folded),
+                              #  ke [T] int32: keys [0, ke[m]) count for query m) -> [T,N] f32, garbage past ke
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
                               #  scale, ckv_scale) -> [T,H,512] bf16
@@ -63,6 +64,9 @@ def reference() -> Lanes:
         return gated_delta_rule(q, k, v, g, beta, state0, scale=q.shape[-1] ** -0.5,
                                 qk_l2norm=True, decay_per_channel=True)
 
+    def logits(q8, k8, k_scale, w, ke):
+        return indexer_logits(q8.float(), k8.float() * k_scale[:, None], w)     # relu(c x) = c relu(x): scales fold
+
     def pre(res, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w, norm_eps):
         post, comb, x = mhc_pre(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult, sinkhorn)
         xf = x.float()
@@ -76,12 +80,14 @@ def reference() -> Lanes:
         h = swiglu_clamped(g, u, limit)
         return expert_gemm(h, w2, w2_s, w2_mult, a2_mult, quantize_act=True)
 
-    return Lanes("reference", conv_prefill, kda_chunk, pre, mhc_post, indexer_logits, kpool_compress,
+    return Lanes("reference", conv_prefill, kda_chunk, pre, mhc_post, logits, kpool_compress,
                  mla_sparse_mqa, expert)
 
 
-def served() -> Lanes:
-    """Bound inside the glm53 image (probes/* run there the same way)."""
+def served(expert_lane: str = "b12x") -> Lanes:
+    """Bound inside the glm53 image (probes/* run there the same way).
+    `expert_lane="reference"` is for the lane judge only (check.py says so
+    out loud): the b12x expert lane is not bound yet."""
     from vllm.third_party.flash_linear_attention.ops.kda import chunk_kda_with_fused_gate          # ours: overlay/modules/glm53_kernels/kda.py
     from vllm.model_executor.layers.mamba.ops.causal_conv1d import causal_conv1d_fn                # served op (judged: probes/conv_check.py)
     import vllm.model_executor.layers.mhc  # noqa: F401  registers torch.ops.vllm.mhc_*_tilelang (ours: overlay dsv4_mhc_tilelang)
@@ -121,20 +127,36 @@ def served() -> Lanes:
     def post(x, res, p, comb):
         return torch.ops.vllm.mhc_post_tilelang(x, res, p, comb)
 
-    def indexer_logits(q, k, w):
-        raise NotImplementedError("served indexer logits take fp8 operands; bind through check.py --lanes served (probes/indexer_check.py has the call)")
+    def logits(q8, k8, k_scale, w, ke):
+        t = q8.shape[0]
+        return fp8_fp4_mqa_logits((q8, None), (k8, k_scale.contiguous()), w.contiguous(),
+                                  torch.zeros(t, device=q8.device, dtype=torch.int32), ke.contiguous(), clean_logits=False)
 
     def kpool(k, score, ape):
-        raise NotImplementedError("served kpool writes its own cache layout; bind through check.py --lanes served")
+        pn = k.shape[0]
+        dummy = torch.zeros(1, 64, 132, device=k.device, dtype=torch.uint8)
+        res = kpool_compress_and_write_cache(dummy, k, score, ape, torch.arange(pn, device=k.device, dtype=torch.int64),
+                                             k.shape[1], return_compressed=True, write_cache=False)
+        q8 = res[0].view(torch.uint8).reshape(pn, -1)[:, :128].contiguous().view(torch.float8_e4m3fn)
+        return q8, res[1].reshape(pn, 1).float()
 
     def mla(q_abs, latent, slots, valid, scale, ckv_scale):
         mk.maybe_arm()
-        return mk.mla_decode(q_abs.contiguous(), latent.view(torch.uint8), slots.contiguous(), valid.contiguous(), scale, ckv_scale)
+        if not mk._ARMED.get("mla"):
+            raise RuntimeError("megakernel MLA lane did not arm (VLLM_GLM53_MK_MLA?)")
+        cache = latent.view(torch.uint8)
+        # the lane is built for this fleet's 16 heads per rank; at world 1 the 64 heads go through in fours (MQA: heads are independent)
+        parts = [mk.mla_decode(q_abs[:, i:i + mk.MLA_H].contiguous(), cache, slots, valid, scale, ckv_scale)
+                 for i in range(0, q_abs.shape[1], mk.MLA_H)]
+        return torch.cat(parts, dim=1)
 
-    def expert(*a, **k):
-        raise NotImplementedError("the b12x expert lane eats moe_sf_pack-swizzled packs; it is bound through the served layer (44th ledger), not here yet")
+    if expert_lane == "reference":
+        expert = reference().expert
+    else:
+        def expert(*a, **k):
+            raise NotImplementedError("the b12x expert lane eats moe_sf_pack-swizzled packs; it is bound through the served layer (44th ledger), not here yet")
 
-    return Lanes("served", conv_prefill, kda_chunk, pre, post, indexer_logits, kpool, mla, expert)
+    return Lanes("served" if expert_lane != "reference" else "served (experts: reference)", conv_prefill, kda_chunk, pre, post, logits, kpool, mla, expert)
 
 
 def _selfcheck() -> None:

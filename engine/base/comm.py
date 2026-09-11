@@ -14,9 +14,13 @@ launchers do it (lib/common-tp4.sh, 44th ledger):
     MASTER_ADDR/PORT    the head
 
 World size 1 is a real mode, not a stub: every collective is the identity,
-which is how every self-check in this tree runs on one node. The one-shot
-all-reduce (tp_oneshot_ar, ours) is a LANE: registered here by name so proof
-can demand it reported serving; its kernel is not ported into this file.
+which is how the base self-checks run on one node. A PROFILE, though, is
+written for TP=4 and should be checked at TP=4 on one node too: `LocalTP`
+runs the four ranks as four threads on the one GB10, and its collectives are
+the real thing (barrier, sum, broadcast) -- so a wrong row/column split shows
+up on one box, not on the fleet. The one-shot all-reduce (tp_oneshot_ar,
+ours) is a LANE: registered here by name so proof can demand it reported
+serving; its kernel is not ported into this file.
 """
 from __future__ import annotations
 
@@ -103,6 +107,91 @@ class Comm:
             dist.destroy_process_group()
 
 
+class RankLeft(RuntimeError):
+    """A collective broke because another rank died; the cause is on that rank."""
+
+
+class LocalTP:
+    """TP=`world` inside one process: rank r runs on thread r, and every
+    collective meets at a barrier. Sums are taken in fp32 in rank order by
+    every rank alike, so the four copies of a reduced tensor are identical --
+    which is what the fleet's NCCL guarantees and what a check can assert."""
+
+    def __init__(self, world: int = 4, timeout_s: float = 600.0):
+        import threading
+        self.world_size = world
+        self.timeout = timeout_s
+        self._barrier = threading.Barrier(world)
+        self._slots = [None] * world
+        self._results = [None] * world
+
+    def rank(self, r: int):
+        return _LocalRank(self, r)
+
+    def _meet(self):
+        try:
+            self._barrier.wait(timeout=self.timeout)
+        except Exception as e:                     # BrokenBarrierError: another rank died -- die too, loudly
+            raise RankLeft("LocalTP: a rank left the collective (see its traceback)") from e
+
+    def run(self, fn, *args):
+        """fn(rank_comm, *args) on every rank at once; returns the four results
+        (any rank's exception is re-raised here)."""
+        import threading
+        errors = [None] * self.world_size
+
+        def body(r):
+            try:
+                self._results[r] = fn(self.rank(r), *args)
+            except BaseException as e:            # noqa: BLE001
+                errors[r] = e
+                self._barrier.abort()
+
+        threads = [threading.Thread(target=body, args=(r,), name=f"rank{r}") for r in range(self.world_size)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        culprits = [(r, e) for r, e in enumerate(errors) if e is not None and not isinstance(e, RankLeft)]
+        victims = [(r, e) for r, e in enumerate(errors) if isinstance(e, RankLeft)]
+        for r, e in culprits + victims:
+            raise RuntimeError(f"rank {r} failed") from e
+        return list(self._results)
+
+
+class _LocalRank:
+    def __init__(self, tp: LocalTP, rank: int):
+        self.tp, self.rank, self.world_size = tp, rank, tp.world_size
+        self.group = None
+
+    def all_reduce(self, t):
+        tp = self.tp
+        tp._slots[self.rank] = t
+        tp._meet()
+        total = tp._slots[0].float()
+        for r in range(1, tp.world_size):
+            total = total + tp._slots[r].float()
+        out = total.to(t.dtype)
+        tp._meet()                                 # everyone has read; slots may be reused
+        t.copy_(out)
+        return t
+
+    def all_gather(self, t, dim=-1):
+        import torch
+        tp = self.tp
+        tp._slots[self.rank] = t
+        tp._meet()
+        out = torch.cat(list(tp._slots), dim=dim)
+        tp._meet()
+        return out
+
+    def barrier(self):
+        self.tp._meet()
+
+    def close(self):
+        pass
+
+
 def _selfcheck() -> None:
     import torch
     sample = """DEV     PORT    INDEX   GID                                     IPv4            VER     DEV
@@ -120,8 +209,26 @@ mlx5_0  1       3       0000:0000:0000:0000:0000:ffff:0a0a:0a04 10.10.10.4      
     env = fleet_env(3)
     assert env["MASTER_ADDR"] == HEAD and env["RANK"] == "3" and env["GLOO_SOCKET_IFNAME"] == GLOO_IFNAME
     assert "tp.allreduce.oneshot" in LANES
+    # TP=4 on one box: four threads, real sums, identical copies
+    tp = LocalTP(4)
+    def rank_fn(comm, base):
+        mine = base + comm.rank                            # rank r holds base + r
+        red = comm.all_reduce(mine.clone())
+        gat = comm.all_gather(torch.full((2,), float(comm.rank)), dim=0)
+        return red, gat
+    outs = tp.run(rank_fn, torch.ones(3))
+    assert all(torch.equal(o[0], torch.full((3,), 4.0 + 6.0)) for o in outs), [o[0] for o in outs]   # 4*1 + (0+1+2+3)
+    assert all(torch.equal(o[1], torch.tensor([0., 0., 1., 1., 2., 2., 3., 3.])) for o in outs)
+    def bad(comm, _):
+        if comm.rank == 2:
+            raise ValueError("rank 2 dies")
+        return comm.all_reduce(torch.ones(1))
+    try:
+        LocalTP(4).run(bad, None); raise AssertionError("a dead rank must surface")
+    except RuntimeError as e:
+        assert "rank 2" in str(e)
     print(f"  comm: GID rule picks index 3 from a RoCE v2 IPv4-mapped line, world-1 identity, fleet env for rank 3 "
-          f"(GID detected: {env.get('NCCL_IB_GID_INDEX', 'n/a')}) OK")
+          f"(GID detected: {env.get('NCCL_IB_GID_INDEX', 'n/a')}); LocalTP(4): sums and gathers identical on all four ranks, a dead rank surfaces OK")
 
 
 if __name__ == "__main__":

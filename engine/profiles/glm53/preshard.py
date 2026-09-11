@@ -1,7 +1,7 @@
 """Cut the HF checkpoint into rank files in the engine's layout (profile tool).
 
-    python3 engine/profiles/glm53/preshard.py --world 4 --out /home/choiceoh/models/glm53-redhat-nvfp4-tp4
-    python3 engine/profiles/glm53/preshard.py --world 1 --layers 0-4 --out /home/choiceoh/models/glm53-redhat-nvfp4-dev
+    python3 engine/profiles/glm53/preshard.py                       # -> facts.RANKS/rank{0..3}of4.safetensors
+    python3 engine/profiles/glm53/preshard.py --layers 0-4 --out /some/dev/dir
 
 Runs once, offline. What the fleet boots from afterwards is `rank{r}of{W}.safetensors`
 read by base/loader.RankLoader with coalesced range reads into the arena --
@@ -35,19 +35,18 @@ def parse_layers(spec: str, n: int):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--world", type=int, default=4)
     ap.add_argument("--layers", default="all")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", default=str(facts.RANKS))
     ap.add_argument("--ckpt", default=str(facts.CKPT))
     a = ap.parse_args(argv)
     F = facts.load(a.ckpt)
     layers = parse_layers(a.layers, F.layers)
     ck = Checkpoint(a.ckpt)
     out = Path(a.out)
-    paths = [out / f"rank{r}of{a.world}.safetensors" for r in range(a.world)]
-    print(f"  glm53 preshard: world {a.world}, layers {layers[0]}..{layers[-1]} ({len(layers)}), -> {out}")
-    sizes = write_ranks(specs.groups(F, a.world, layers), paths, lambda keys: ck.load(keys), a.world,
-                        metadata={"model": "glm53", "world": a.world, "layers": a.layers, "layout": "engine.profiles.glm53.specs"})
+    paths = [out / f"rank{r}of{facts.TP}.safetensors" for r in range(facts.TP)]
+    print(f"  glm53 preshard: TP {facts.TP}, layers {layers[0]}..{layers[-1]} ({len(layers)}), -> {out}")
+    sizes = write_ranks(specs.groups(F, layers), paths, lambda keys: ck.load(keys), facts.TP,
+                        metadata={"model": "glm53", "world": facts.TP, "layers": a.layers, "layout": "engine.profiles.glm53.specs"})
     print(f"  done: {sizes[0] / 2**30:.2f} GiB per rank")
     return 0
 

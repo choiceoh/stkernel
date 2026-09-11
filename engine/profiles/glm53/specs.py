@@ -25,7 +25,7 @@ from __future__ import annotations
 import torch
 
 from engine.base.params import Spec
-from engine.profiles.glm53.facts import Facts
+from engine.profiles.glm53.facts import TP, Facts
 
 CK = "model.language_model."
 BF, F32, U8, E4 = torch.bfloat16, torch.float32, torch.uint8, torch.float8_e4m3fn
@@ -58,10 +58,8 @@ def _cat_rows(keys, dtype=None):
     return build
 
 
-def top_specs(F: Facts, W: int) -> "list[Spec]":
-    if F.vocab % W:
-        raise ValueError(f"vocab {F.vocab} does not split {W} ways")
-    vp = F.vocab // W
+def top_specs(F: Facts) -> "list[Spec]":
+    vp = F.vocab_local
     return [
         Spec("embed", (vp, F.hidden), BF, (CK + "embed_tokens.weight",), _rows(CK + "embed_tokens.weight")),
         Spec("norm", (F.hidden,), BF, (CK + "norm.weight",), _whole(CK + "norm.weight")),
@@ -69,7 +67,7 @@ def top_specs(F: Facts, W: int) -> "list[Spec]":
     ]
 
 
-def layer_specs(F: Facts, L: int, W: int) -> "list[Spec]":
+def layer_specs(F: Facts, L: int) -> "list[Spec]":
     p = f"{CK}layers.{L}."
     n = f"L{L}."
     H = F.hidden
@@ -86,7 +84,7 @@ def layer_specs(F: Facts, L: int, W: int) -> "list[Spec]":
         ]
     a = p + "self_attn."
     if F.is_dsa(L):
-        Hl = F.heads // W
+        Hl = F.heads_local
         qkv_a = (a + "q_a_proj.weight", a + "kv_a_proj_with_mqa.weight")
         out += [
             Spec(n + "mla.qkv_a", (F.q_lora + F.kv_lora, H), BF, qkv_a, lambda s, r, W, k=qkv_a: torch.cat([s[k[0]], s[k[1]]], 0).contiguous()),
@@ -107,7 +105,7 @@ def layer_specs(F: Facts, L: int, W: int) -> "list[Spec]":
             Spec(n + "idx.ape", (F.kpool, F.idx_dim), F32, (i + "index_kpool_compress_ape",), _whole(i + "index_kpool_compress_ape", F32)),
         ]
     else:
-        Hl, D, K = F.kda_heads // W, F.kda_dim, F.conv
+        Hl, D, K = F.kda_heads_local, F.kda_dim, F.conv
         proj = tuple(a + s for s in ("q_proj.weight", "k_proj.weight", "v_proj.weight", "b_proj.weight"))
         rep = (a + "f_a_proj.weight", a + "g_a_proj.weight")
         convs = tuple(a + s for s in ("q_conv1d.weight", "k_conv1d.weight", "v_conv1d.weight"))
@@ -130,14 +128,14 @@ def layer_specs(F: Facts, L: int, W: int) -> "list[Spec]":
         ]
     m = p + "mlp."
     if not F.is_moe(L):
-        Il = F.dense_inter // W
+        Il = F.dense_inter_local
         gu = (m + "gate_proj.weight", m + "up_proj.weight")
         out += [
             Spec(n + "mlp.gate_up", (2 * Il, H), BF, gu, _cat_rows(gu)),
             Spec(n + "mlp.down", (H, Il), BF, (m + "down_proj.weight",), _cols(m + "down_proj.weight")),
         ]
     else:
-        Is = F.moe_inter // W
+        Is = F.moe_inter_local
         E = F.experts
         gu = (m + "shared_experts.gate_proj.weight", m + "shared_experts.up_proj.weight")
         ex = [m + f"experts.{e}." for e in range(E)]
@@ -184,30 +182,30 @@ def layer_specs(F: Facts, L: int, W: int) -> "list[Spec]":
     return out
 
 
-def all_specs(F: Facts, W: int, layers=None) -> "list[Spec]":
+def all_specs(F: Facts, layers=None) -> "list[Spec]":
     layers = range(F.layers) if layers is None else layers
-    out = top_specs(F, W)
+    out = top_specs(F)
     for L in layers:
-        out += layer_specs(F, L, W)
+        out += layer_specs(F, L)
     return out
 
 
-def groups(F: Facts, W: int, layers=None):
+def groups(F: Facts, layers=None):
     """(label, source keys, specs_of(rank)) per preshard group: the top-level
     trio, then one group per layer, so a layer's sources are read once."""
     layers = range(F.layers) if layers is None else list(layers)
-    yield "top", sorted({k for s in top_specs(F, W) for k in s.sources}), lambda r: top_specs(F, W)
+    yield "top", sorted({k for s in top_specs(F) for k in s.sources}), lambda r: top_specs(F)
     for L in layers:
-        keys = sorted({k for s in layer_specs(F, L, W) for k in s.sources})
-        yield f"layer {L}", keys, (lambda r, L=L: layer_specs(F, L, W))
+        keys = sorted({k for s in layer_specs(F, L) for k in s.sources})
+        yield f"layer {L}", keys, (lambda r, L=L: layer_specs(F, L))
 
 
 def _selfcheck() -> None:
     from engine.base.params import total_bytes
     from engine.profiles.glm53 import facts, plan
     F = facts.load()
-    W = 4
-    specs = all_specs(F, W)
+    W = TP
+    specs = all_specs(F)
     names = [s.name for s in specs]
     assert len(names) == len(set(names)), "duplicate spec names"
     gib = total_bytes(specs) / 2**30
