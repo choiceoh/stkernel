@@ -87,7 +87,11 @@ MOE_FLAG=""; [ -n "$MOE_BACKEND" ] && MOE_FLAG="--moe-backend $MOE_BACKEND"
 # auto: probe every node and take the floor. Six boots died in one day to a
 # hand-picked value; failing in 2 seconds beats failing in 12 minutes.
 GPU_MEM="${GPU_MEM:-auto}"
+# A value the caller pinned is a claim about the box, not just about vLLM; the
+# preflight below refuses it when the box disagrees, instead of lowering it.
+GPU_MEM_PINNED=1
 if [ "$GPU_MEM" = auto ]; then
+  GPU_MEM_PINNED=0
   if [ -x /home/choiceoh/tp4-mem.sh ] || [ -f /home/choiceoh/tp4-mem.sh ]; then
     GPU_MEM=$(bash /home/choiceoh/tp4-mem.sh gmu) || {
       echo "ABORT: no memory window -- run: bash ~/tp4-mem.sh plan" >&2; exit 4; }
@@ -193,6 +197,60 @@ for ip in $HEAD_IP $_wips; do
   run "docker image inspect $IMAGE >/dev/null 2>&1" || { echo "ABORT: $ip missing image $IMAGE" >&2; exit 1; }
 done
 echo "  all nodes have the model and the image"
+
+# --- memory headroom ---------------------------------------------------------
+# 2026-09-11: this lane was the one without this guard. GPU_MEM=auto asks
+# tp4-mem.sh for a window, but a window is a FRACTION OF TOTAL memory -- it never
+# asks whether the box still has that much free. Rank 3 landed on srv4, which
+# legitimately co-hosts another vLLM server and the Deneb/SolarFlow sidecars, and
+# took ~96 GiB of its 121.63: MemAvailable fell to 9 GiB, PSI memory full hit
+# 95%, load reached 217, and the node entered the 09-04 wedge -- sshd accepted
+# TCP and finished KEX but could not complete a login, over tailscale and over
+# the 0.2 ms fabric alike. The head logged "No available shared memory broadcast
+# block" every 60 s for 50 minutes because that rank could not make progress.
+# The co-tenants are not the fault and are not this launcher's to stop; booting
+# without asking whether there was room is.
+#
+# glm53 and hy4 have run memfree-preflight.sh all along; only this lane skipped
+# it. Order is load-bearing (glm53 learned it the same way): tear down THIS
+# lane's own previous containers first, or their ~96 GiB reads as unavailable
+# and every restart refuses itself. Other tenants stay up and are measured as
+# the load they are. Runs after the model/image checks so a refusal here never
+# leaves production down for a boot that was going to abort anyway.
+# SKIP_PREFLIGHT=1 opts out.
+PREFLIGHT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/memfree-preflight.sh"
+if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ]; then
+  for ip in $HEAD_IP $_wips; do
+    if [ "$ip" = "$HEAD_IP" ]; then run() { bash -c "$1"; }; else run() { ssh $SSHOPT choiceoh@"$ip" "$1"; }; fi
+    run "docker rm -f q38 q38-worker >/dev/null 2>&1; true"
+  done
+  echo "== memfree preflight =="
+  # Compare the effective residency, not the window. KV_CACHE_MEMORY (043ca6d,
+  # ostcode/upgrade-glm-dsv4-flash-54ec28) pins a fixed KV size, and vLLM states
+  # what that means: "reserved N GiB ... as specified by kv_cache_memory_bytes
+  # config and skipped memory profiling. This does not respect the
+  # gpu_memory_utilization config." A fixed KV therefore sits OUTSIDE the window
+  # the planner sized -- which is how gmu 0.60 still put ~96 GiB on srv4 on
+  # 09-11. Unset (this branch today) leaves the term at 0.
+  _kv_frac=$(awk -v b="${KV_CACHE_MEMORY:-0}" -v t="${TOTAL_GIB:-119.69}"                'BEGIN{printf "%.4f", b/1073741824/t}')
+  _gmu_eff=$(awk -v g="$GPU_MEM" -v k="$_kv_frac" 'BEGIN{printf "%.4f", g+k}')
+  [ "$_kv_frac" = "0.0000" ] || echo "  KV_CACHE_MEMORY adds $_kv_frac on top of gmu $GPU_MEM -> effective $_gmu_eff"
+  # Margin 10, the value the other two lanes pass: these boxes carry a 4.0 GiB
+  # kernel min watermark and a margin-3 boot wedged three nodes on 09-04.
+  if GPU_MEM_SAFE=$("$PREFLIGHT" 10 $HEAD_IP $_wips); then
+    if awk "BEGIN{exit !($_gmu_eff > $GPU_MEM_SAFE)}" 2>/dev/null; then
+      if [ "$GPU_MEM_PINNED" = 1 ] || [ -n "${KV_CACHE_MEMORY:-}" ]; then
+        echo "ABORT: effective $_gmu_eff (gmu $GPU_MEM + KV $_kv_frac) exceeds the measured budget $GPU_MEM_SAFE -- a node has no room for this rank" >&2
+        exit 1
+      fi
+      echo "  GPU_MEM $GPU_MEM -> $GPU_MEM_SAFE (실측 채택)"
+      GPU_MEM=$GPU_MEM_SAFE
+    fi
+  else
+    echo "ABORT: memory preflight failed (a node did not report); Q38 boot deferred" >&2
+    exit 1
+  fi
+fi
 
 echo "=== [1/5] write serve.sh ==="
 cat > /tmp/serve-q38.sh <<EOF
