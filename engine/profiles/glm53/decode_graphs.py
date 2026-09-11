@@ -141,7 +141,8 @@ class Glm53DecodeGraphs:
         self.net, self.caches, self.tokens = net, caches, tokens
         self.memory = memory
         self.aux_layers = tuple(aux_layers)
-        total = caches.block_table.shape[1] * net.F.block
+        # the ladder ends at the model's context ceiling: positions past it are never served (facts.max_position)
+        total = min(caches.block_table.shape[1] * net.F.block, net.F.max_position)
         self.capacities = [min(4096, total)]
         while self.capacities[-1] < total:
             self.capacities.append(min(total, self.capacities[-1] * 2))

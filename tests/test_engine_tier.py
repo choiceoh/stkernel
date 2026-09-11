@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -25,12 +26,36 @@ class MemoryTier:
     `record`, a capacity that raises TierFull, `keys()` and `oldest()`."""
     block_bytes = 4
 
-    def __init__(self, capacity=None):
+    def __init__(self, capacity=None, delay=0.0, gate=None):
         self.index = {}
         self.data, self.extra, self.records = {}, {}, {}
         self.capacity = capacity                    # conversations, not bytes: enough for the policy
         self.order = []
+        self.delay, self.gate = delay, gate         # a slow tier thread: sleep, or wait for an Event the test sets
         self.fail_demote = self.fail_promote = self.fail_forget = False
+
+    def run_async(self, fn, *args):
+        """Like NvmeTier.run_async: the transfer on its own thread. With no delay and no gate it
+        completes before returning, which keeps the ownership tests sequential."""
+        from concurrent.futures import Future
+        future = Future()
+
+        def work():
+            future.set_running_or_notify_cancel()
+            try:
+                if self.gate is not None and not self.gate.wait(5):
+                    raise TimeoutError("test did not open the tier gate")
+                if self.delay:
+                    time.sleep(self.delay)
+                future.set_result(fn(*args))
+            except BaseException as exc:            # noqa: BLE001
+                future.set_exception(exc)
+
+        if self.delay or self.gate is not None:
+            threading.Thread(target=work, daemon=True).start()
+        else:
+            work()
+        return future
 
     def has(self, seq):
         return str(seq) in self.index
@@ -197,6 +222,40 @@ class TierOwnershipTests(unittest.TestCase):
             kv.resume(0, key=7)
         self.assertTrue(kv.is_parked(7))
         self.assertEqual(kv.pool.available, 4)
+
+    def test_park_halves_keep_blocks_reserved_until_the_write_is_done(self):
+        gate = threading.Event()
+        pool = BlockPool(4, 16, 4, 4)
+        pool.attach_storage(Storage(range(16)), 4)
+        kv = TieredKV(pool, MemoryTier(gate=gate))
+        kv.pool.reserve(0, 17)
+        kv.park_begin(0, key=9, record={"context": 17, "pending": 1})
+        self.assertFalse(kv.done(0))
+        self.assertEqual((kv.pool.tokens[0], kv.pool.available), (17, 2))   # still reserved: the write reads them
+        with self.assertRaisesRegex(ValueError, "in flight"):
+            kv.park_begin(0, key=10)
+        gate.set()
+        for _ in range(200):
+            if kv.done(0):
+                break
+            time.sleep(0.005)
+        self.assertTrue(kv.done(0))
+        self.assertEqual(kv.park_finish(0), 8)
+        self.assertEqual((kv.pool.tokens[0], kv.pool.available), (0, 4))
+        self.assertTrue(kv.is_parked(9) and not kv.inflight)
+        # resume halves: blocks reserved at begin, committed at finish
+        gate.clear()
+        kv.resume_begin(2, key=9)
+        self.assertEqual((kv.pool.tokens[2], kv.pool.available), (17, 2))
+        self.assertFalse(kv.done(2))
+        gate.set()
+        for _ in range(200):
+            if kv.done(2):
+                break
+            time.sleep(0.005)
+        self.assertEqual(kv.resume_finish(2), 8)
+        self.assertFalse(kv.is_parked(9) or kv.inflight)
+        self.assertEqual(kv.pool.tokens[2], 17)
 
     def test_a_key_cannot_be_parked_twice(self):
         kv = make_tier()

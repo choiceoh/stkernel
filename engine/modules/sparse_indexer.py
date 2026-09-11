@@ -35,12 +35,14 @@ def indexer_logits(q: torch.Tensor, k: torch.Tensor, weights: torch.Tensor) -> t
     return torch.einsum("mhn,mh->mn", s, weights.float())
 
 
-def topk_positions(logits: torch.Tensor, k: int, valid: "torch.Tensor | None" = None) -> torch.Tensor:
-    """Per-query top-k position ids, -1 padded; `valid[m]` masks positions >= it."""
+def topk_positions(logits: torch.Tensor, k: int, valid: "torch.Tensor | None" = None, inplace: bool = False) -> torch.Tensor:
+    """Per-query top-k position ids, -1 padded; `valid[m]` masks positions >= it.
+    `inplace` masks the caller's logits instead of copying them (a [T, N] fp32 copy is the
+    prefill indexer's largest transient)."""
     m, n = logits.shape
     if valid is not None:
         mask = torch.arange(n, device=logits.device)[None, :] >= valid[:, None]
-        logits = logits.masked_fill(mask, float("-inf"))
+        logits = logits.masked_fill_(mask, float("-inf")) if inplace else logits.masked_fill(mask, float("-inf"))
     kk = min(k, n)
     vals, idx = logits.topk(kk, dim=-1)
     idx = idx.masked_fill(torch.isinf(vals), -1).to(torch.int32)
