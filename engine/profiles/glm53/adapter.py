@@ -65,8 +65,19 @@ class Glm53Engine:
         for d in (self.ctx, self.slot):
             d.pop(seq, None)
 
+    def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None) -> int:
+        """A new turn: more prompt tokens on a conversation the caches still hold.
+        Returns the tokens to prefill -- the last sampled token (never fed) and
+        the new ones -- so `generated` counts this turn only from here on."""
+        self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
+        self.limits[seq] = (self.max_new if max_new is None else max_new, self.temperature if temperature is None else temperature)
+        return len(self.tokens[seq]) - self.ctx[seq]
+
     def horizon(self, seq: int) -> int:
         return self.ctx[seq] + 1 + self.drafter.k
+
+    def context(self, seq: int) -> int:
+        return self.ctx[seq]
 
     def generated(self, seq: int) -> "list[int]":
         return self.tokens[seq][self.prompt_len[seq]:]

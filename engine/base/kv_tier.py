@@ -68,7 +68,13 @@ class NvmeTier:
         return self.dir / f"seq-{seq}.kv"
 
     def has(self, seq: int) -> bool:
-        return str(seq) in self.index
+        """Parked under THIS block layout; a file written with another block size
+        stays on disk (deleting is a person's job) but is not resumable."""
+        e = self.index.get(str(seq))
+        return e is not None and e.get("block_bytes", self.block_bytes) == self.block_bytes
+
+    def stale(self) -> "list[str]":
+        return [k for k, e in self.index.items() if e.get("block_bytes", self.block_bytes) != self.block_bytes]
 
     def _save_manifest(self, index: dict) -> None:
         tmp = self.manifest.with_suffix(".tmp")
@@ -109,7 +115,7 @@ class NvmeTier:
             os.close(fd)
         with self.lock:
             self._save_manifest({**self.index, str(seq): {
-                "blocks": len(block_ids), "tokens": tokens, "bytes": written, "at": time.time()}})
+                "blocks": len(block_ids), "tokens": tokens, "bytes": written, "block_bytes": self.block_bytes, "at": time.time()}})
         self.bytes_written += written
         return written
 
@@ -122,6 +128,8 @@ class NvmeTier:
         import torch
 
         meta = self.index[str(seq)]
+        if meta.get("block_bytes", self.block_bytes) != self.block_bytes:
+            raise ValueError(f"seq {seq} was parked with {meta['block_bytes']} B blocks; this layout has {self.block_bytes}")
         if len(block_ids) != meta["blocks"]:
             raise ValueError(f"seq {seq}: {meta['blocks']} blocks on disk, {len(block_ids)} given")
         table = storage.view(-1, self.block_bytes)
@@ -206,9 +214,11 @@ def _selfcheck() -> None:
         storage.zero_()
         t0 = time.perf_counter(); got = tier.promote(7, storage, ids); torch.cuda.synchronize(); t_r = time.perf_counter() - t0
         assert wrote == got == n_blocks * block_bytes and torch.equal(storage, keep), "round trip must be exact"
-        tier2 = NvmeTier(d, block_bytes); assert tier2.has(7); tier2.forget(7); assert not tier2.has(7)
+        tier2 = NvmeTier(d, block_bytes); assert tier2.has(7)
+        other = NvmeTier(d, block_bytes * 2); assert not other.has(7) and other.stale() == ["7"]   # another layout: parked, not resumable
+        tier2.forget(7); assert not tier2.has(7)
         print(f"  kv_tier v2: {wrote / GIB:.2f} GiB demote {t_w:.2f}s ({wrote / GIB / t_w:.2f} GiB/s), "
-              f"promote {t_r:.2f}s ({got / GIB / t_r:.2f} GiB/s), scattered ids exact, own stream + pinned staging OK")
+              f"promote {t_r:.2f}s ({got / GIB / t_r:.2f} GiB/s), scattered ids exact, own stream + pinned staging; a foreign block layout is stale, not resumable OK")
 
 
 if __name__ == "__main__":
