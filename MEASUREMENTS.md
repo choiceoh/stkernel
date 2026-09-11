@@ -8653,3 +8653,11 @@ spec-verify 경로라 `ssm_state_indices` 등을 요구). 맞추자 프리필 **
 출력으로 바꿔 놓은 뒤 재귀 커널이 그 `v` 를 입력으로 받은 결과 — 플래그와 무관. `out` 을 명시하니
 **프리필 6.3e-3 · 디코드 6.3e-3 · 최종 상태 6.4e-3**, 커널 대 커널도 일치. 엔진에서의 규칙: **커널 호출은
 출력 버퍼를 명시한다; 입력이 보존된다고 가정하지 않는다**(변형 감지기는 프로브에 남긴다).
+
+### mHC 레퍼런스 == 서빙 TileLang 커널(우리 포크) — 둘째 real 에지 종결
+
+`modules/hyper_connection.mhc_pre/mhc_post` 를 vLLM `kernels/mhc/torch.py` 수식 그대로 적고 glm53 이미지 안에서
+우리 `tilelang*.py` 를 대상 경로에 마운트해 등록된 op 로 판정: vLLM torch 레퍼런스 대비 **0.0**, 서빙 커널 대비
+pre(post 3.0e-4 · comb 2.8e-4 · layer_input 4.4e-3), post 1.6e-3. 두 함정: 패키지 `__init__` 이 `torch` 이름을
+가려 `from ...mhc import torch` 가 진짜 torch 를 줬고, CustomOp 인스턴스화는 vLLM config 컨텍스트를 요구해
+등록 op 를 직접 불렀다. 계기: real 15 → **10**, 전체 56% ours(드롭·심 뒤 87%).

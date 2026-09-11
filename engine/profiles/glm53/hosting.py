@@ -35,6 +35,8 @@ MAP = {
     "maybe_prefix": None, "extract_layer_index": None, "make_layers": None, "is_pp_missing_parameter": None,
     "AutoWeightsLoader": "base.loader", "WeightsMapper": "base.loader",
     "GatedDeltaNetAttention": "modules.linear_attention", "causal_conv1d_fn": None, "causal_conv1d_update": None,
+    "MHCPreOp": "modules.hyper_connection (judged vs served tilelang)", "MHCPostOp": "modules.hyper_connection (judged)",
+    "MHCFusedPostPreOp": "modules.hyper_connection (judged)", "hc_contract": "modules.hyper_connection", "hc_expand": "modules.hyper_connection",
     "chunk_kda": "glm53_kernels/kda.py (ours, judged)", "fused_recurrent_kda": "glm53_kernels/kda.py (ours, judged)",
     "chunk_kda_with_fused_gate": "glm53_kernels/kda.py (ours, judged)", "FusedRMSNormGated": "modules.norm",
     "fused_kda_gate": "modules.linear_attention.kda_gate", "GDNAttentionMetadata": "base.step_meta",
