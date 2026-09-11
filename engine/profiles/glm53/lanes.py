@@ -25,8 +25,8 @@ import torch
 class Lanes:
     name: str
     conv_prefill: object      # (x [T,C] bf16, w [C,K] f32, state [C,K-1] | None) -> (y [T,C] bf16, state' [C,K-1])
-    kda_chunk: object         # (q,k,v [1,T,H,D] bf16, g_raw [1,T,H,D] bf16, beta [1,T,H] f32 sigmoided, A_log [H] f32,
-                              #  dt_bias [H*D] f32, state0 [1,H,D,D] f32 | None, lower_bound) -> (o [1,T,H,D] bf16, state [1,H,D,D] f32)
+    kda_chunk: object         # (q,k,v [1,T,H,D] bf16, g_raw [1,T,H,D] bf16, beta_raw [1,T,H] bf16 (logits: the lane sigmoids), A_log [H] f32,
+                              #  dt_bias [H*D] f32, state0 [1,H,D,D] f32 | None, lower_bound) -> (o [1,T,H,D] bf16, state [1,H,D,D] f32, [k, v] layout)
     kda_recurrent: object     # same inputs for a decode/verify step (T <= spec_k+1) -> (o [1,T,H,D], states [T,H,D,D] f32: after EVERY token)
     mhc_pre: object           # (res [T,hc,H] bf16, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w [H], norm_eps)
                               #   -> (post [T,hc,1] f32, comb [T,hc,hc] f32, x [T,H] bf16 = rmsnorm(sum_i pre_i res_i) * norm_w)
@@ -36,8 +36,20 @@ class Lanes:
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
                               #  scale, ckv_scale) -> [T,H,512] bf16
-    expert: object            # (x [n,H] bf16, w13 [2I,H/2] u8, w13_s [2I,H/16] e4m3, w13_mult [2] f32, a13_mult [] f32,
-                              #  w2 [H,I/2] u8, w2_s [H,I/16] e4m3, w2_mult [], a2_mult [], limit) -> [n,H] bf16 (this rank's partial)
+    moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8, w13_sf [E, 2I*H/16] e4m3 (folded, interleaved),
+                              #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit) -> [T,H] bf16: this rank's routed partial (shared expert excluded)
+
+
+_TP = {"active": None}
+
+
+def bind_tp(tp) -> None:
+    """Tell the served lanes which LocalTP run (if any) owns the main thread."""
+    _TP["active"] = tp
+
+
+def _active_tp():
+    return _TP["active"]
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -60,15 +72,16 @@ def reference() -> Lanes:
     def conv_prefill(x, w, state):
         return causal_conv1d(x, w, None, state, "silu")
 
-    def kda_chunk(q, k, v, g_raw, beta, A_log, dt_bias, state0, lower_bound):
+    def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
         g = kda_gate(g_raw, A_log, dt_bias, lower_bound, safe_gate=True)
-        return gated_delta_rule(q, k, v, g, beta, state0, scale=q.shape[-1] ** -0.5,
+        return gated_delta_rule(q, k, v, g, torch.sigmoid(beta_raw.float()), state0, scale=q.shape[-1] ** -0.5,
                                 qk_l2norm=True, decay_per_channel=True)
 
-    def kda_recurrent(q, k, v, g_raw, beta, A_log, dt_bias, state0, lower_bound):
+    def kda_recurrent(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
         """The recurrence one token at a time, keeping every state: what a
         verify step needs so a rejected draft rolls back by position."""
         g = kda_gate(g_raw, A_log, dt_bias, lower_bound, safe_gate=True)
+        beta = torch.sigmoid(beta_raw.float())
         t = q.shape[1]
         outs, states, state = [], [], state0
         for i in range(t):
@@ -86,27 +99,45 @@ def reference() -> Lanes:
         x = (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + norm_eps)).to(x.dtype) * norm_w
         return post, comb, x
 
-    def expert(x, w13, w13_s, w13_mult, a13_mult, w2, w2_s, w2_mult, a2_mult, limit):
-        half = w13.shape[0] // 2
-        g = expert_gemm(x, w13[:half], w13_s[:half], w13_mult[0], a13_mult, quantize_act=True)
-        u = expert_gemm(x, w13[half:], w13_s[half:], w13_mult[1], a13_mult, quantize_act=True)
-        h = swiglu_clamped(g, u, limit)
-        return expert_gemm(h, w2, w2_s, w2_mult, a2_mult, quantize_act=True)
+    def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit):
+        """Per selected expert: unswizzle its folded scales, dequantise, W4A4 with
+        the kernel's DYNAMIC activation quant (per-16 scales under a global of 1,
+        no calibrated input scale -- what the served SM12x lane does)."""
+        from engine.modules.nvfp4_sf import unswizzle_sf
+        E, two_i, half_h = w13.shape
+        i_local, hidden = two_i // 2, half_h * 2
+        one = torch.ones((), device=x.device)
+        out = torch.zeros(x.shape[0], hidden, dtype=torch.float32, device=x.device)
+        for e in sel.unique().tolist():
+            rows, k = (sel == e).nonzero(as_tuple=True)
+            s13 = unswizzle_sf(w13_sf[e].view(torch.uint8), two_i, hidden // 16).view(torch.float8_e4m3fn)
+            s2 = unswizzle_sf(w2_sf[e].view(torch.uint8), hidden, i_local // 16).view(torch.float8_e4m3fn)
+            xe = x[rows]
+            g = expert_gemm(xe, w13[e, :i_local], s13[:i_local], one, one, quantize_act=True)
+            u = expert_gemm(xe, w13[e, i_local:], s13[i_local:], one, one, quantize_act=True)
+            y = expert_gemm(swiglu_clamped(g, u, limit), w2[e], s2, one, one, quantize_act=True)
+            out.index_add_(0, rows, y.float() * w[rows, k][:, None])
+        return out.to(x.dtype)
 
     return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
-                 mla_sparse_mqa, expert)
+                 mla_sparse_mqa, moe)
 
 
-def served(expert_lane: str = "b12x") -> Lanes:
+def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
     """Bound inside the glm53 image (probes/* run there the same way).
-    `expert_lane="reference"` is for the lane judge only (check.py says so
-    out loud): the b12x expert lane is not bound yet."""
+
+    `reference_for` names lanes DECLARED to run on the torch reference in
+    this table ("expert" and/or "kda_recurrent"). The table's name says so,
+    boot prints it, proof can demand it: a declared choice, not a fallback
+    (D3). Anything not named must bind or the call raises."""
+    expert_lane = "reference" if "expert" in reference_for else "b12x"
     from vllm.third_party.flash_linear_attention.ops.kda import chunk_kda_with_fused_gate          # ours: overlay/modules/glm53_kernels/kda.py
     from vllm.model_executor.layers.mamba.ops.causal_conv1d import causal_conv1d_fn                # served op (judged: probes/conv_check.py)
     import vllm.model_executor.layers.mhc  # noqa: F401  registers torch.ops.vllm.mhc_*_tilelang (ours: overlay dsv4_mhc_tilelang)
     from vllm.utils.deep_gemm import fp8_fp4_mqa_logits                                             # served DeepGEMM op
     from vllm.models.glm5next.nvidia.ops.kpool_compress import kpool_compress_and_write_cache        # served op (byte-identical to ours)
     from vllm.model_executor.layers import glm53_megakernel as mk                                   # ours: overlay/modules/glm53_megakernel
+    ref = reference()
 
     def conv_prefill(x, w, state):
         """probes/conv_check.py's call, verbatim: a two-row state table with
@@ -122,15 +153,67 @@ def served(expert_lane: str = "b12x") -> Lanes:
         y = y.T if y.shape[0] == c else y
         return y, table[1]
 
-    def kda_chunk(q, k, v, g_raw, beta, A_log, dt_bias, state0, lower_bound):
+    from vllm.third_party.flash_linear_attention.ops.kda import fused_recurrent_kda                  # ours, same file
+    layout = {}                                 # kernel -> whether its state is [v, k] (transposed against the reference's [k, v])
+
+    def _state_layout(name, run):
+        """Armed != serving: the kernel's state layout is measured once against
+        the reference on tiny inputs, not assumed (the 44th ledger found the two
+        served kernels disagree). `run(q, k, v, g_raw, beta_raw, A_log, dt_bias)`
+        returns the kernel's final state [H, D, D]."""
+        if name in layout:
+            return layout[name]
+        torch.manual_seed(0)
+        H, D, T = 2, 128, 6
+        mk = lambda *shape: torch.randn(*shape, device="cuda", dtype=torch.bfloat16)
+        q, k, v, g_raw = mk(1, T, H, D), mk(1, T, H, D), mk(1, T, H, D), mk(1, T, H, D) * 0.5
+        beta_raw, A_log, dt_bias = mk(1, T, H), (torch.randn(H, device="cuda") * 0.3), torch.randn(H * D, device="cuda") * 0.1
+        _o, ref_state = ref.kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, None, -5.0)
+        got = run(q, k, v, g_raw, beta_raw, A_log, dt_bias).float()
+        r_same = ((got - ref_state[0]).abs().max() / ref_state.abs().max()).item()
+        r_t = ((got.transpose(-1, -2) - ref_state[0]).abs().max() / ref_state.abs().max()).item()
+        if min(r_same, r_t) > 5e-2:
+            raise RuntimeError(f"{name}: final state matches the reference in neither layout (rel {r_same:.2e} / {r_t:.2e})")
+        layout[name] = r_t < r_same
+        return layout[name]
+
+    def _chunk_state(q, k, v, g_raw, beta_raw, A_log, dt_bias):
         t = q.shape[1]
-        out = torch.empty_like(v)
+        _o, st = chunk_kda_with_fused_gate(q=q, k=k, v=v, raw_g=g_raw, beta=torch.sigmoid(beta_raw.float()), A_log=A_log.view(1, 1, -1, 1),
+                                          g_bias=dt_bias, initial_state=None, output_final_state=True, use_qk_l2norm_in_kernel=True,
+                                          cu_seqlens=torch.tensor([0, t], dtype=torch.int32, device=q.device), safe_gate=True,
+                                          lower_bound=-5.0, out=torch.empty_like(v))
+        return st[0]
+
+    def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
+        t = q.shape[1]
+        tr = _state_layout("chunk_kda_with_fused_gate", _chunk_state)
+        init = None if state0 is None else (state0.transpose(-1, -2).contiguous() if tr else state0.contiguous())
         o, state = chunk_kda_with_fused_gate(
-            q=q, k=k, v=v, raw_g=g_raw, beta=beta, A_log=A_log.view(1, 1, -1, 1), g_bias=dt_bias,
-            initial_state=state0, output_final_state=True, use_qk_l2norm_in_kernel=True,
+            q=q, k=k, v=v, raw_g=g_raw, beta=torch.sigmoid(beta_raw.float()), A_log=A_log.view(1, 1, -1, 1), g_bias=dt_bias,
+            initial_state=init, output_final_state=True, use_qk_l2norm_in_kernel=True,
             cu_seqlens=torch.tensor([0, t], dtype=torch.int32, device=q.device),
-            safe_gate=True, lower_bound=lower_bound, out=out)
-        return o, state
+            safe_gate=True, lower_bound=lower_bound, out=torch.empty_like(v))
+        return o, (state.transpose(-1, -2) if tr else state)
+
+    def _rec_state(q, k, v, g_raw, beta_raw, A_log, dt_bias):
+        H, D = q.shape[2], q.shape[3]
+        _o, st = fused_recurrent_kda(q, k, v, g_raw, beta_raw, None, initial_state=torch.zeros(1, H, D, D, device=q.device),
+                                     inplace_final_state=False, use_qk_l2norm_in_kernel=True, sigmoid_beta=True,
+                                     a_log=A_log, g_bias=dt_bias, compute_gate=True, lower_bound=-5.0)
+        return st[-1]
+
+    def kda_recurrent(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
+        """fused_recurrent_kda in its dense, non-inplace form: gate and sigmoid
+        in-kernel, l2norm in-kernel, and `final_state` [T, H, D, D] is the
+        state after EVERY token -- the ring's rows."""
+        H, D = q.shape[2], q.shape[3]
+        tr = _state_layout("fused_recurrent_kda", _rec_state)
+        init = torch.zeros(1, H, D, D, device=q.device) if state0 is None else (state0.transpose(-1, -2).contiguous() if tr else state0.contiguous())
+        o, states = fused_recurrent_kda(q, k, v, g_raw, beta_raw, None, initial_state=init, inplace_final_state=False,
+                                        use_qk_l2norm_in_kernel=True, sigmoid_beta=True, a_log=A_log, g_bias=dt_bias,
+                                        compute_gate=True, lower_bound=lower_bound)
+        return o, (states.transpose(-1, -2) if tr else states)
 
     def pre(res, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w, norm_eps):
         post, comb, x = torch.ops.vllm.mhc_pre_tilelang(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult,
@@ -163,26 +246,40 @@ def served(expert_lane: str = "b12x") -> Lanes:
                  for i in range(0, q_abs.shape[1], mk.MLA_H)]
         return torch.cat(parts, dim=1)
 
-    def kda_recurrent(q, k, v, g_raw, beta, A_log, dt_bias, state0, lower_bound):
-        raise NotImplementedError("served fused_recurrent_kda with per-token state rows: bound after its kernel's index contract is read")
-
+    if "kda_recurrent" in reference_for:
+        kda_recurrent = ref.kda_recurrent
     if expert_lane == "reference":
-        expert = reference().expert
+        moe = ref.moe
     else:
-        def expert(*a, **k):
-            raise NotImplementedError("the b12x expert lane eats moe_sf_pack-swizzled packs; it is bound through the served layer (44th ledger), not here yet")
+        from flashinfer.fused_moe import b12x_fused_moe                                     # ours: overlay/modules/glm53_moe/b12x_moe.py
+        ones = {}
 
-    import threading
-    lock = threading.Lock()                      # triton's autotuner keeps per-call state on the kernel object: one caller at a time
+        def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit):
+            """The served call (flashinfer_b12x_moe._apply_*): packed nibbles, folded
+            interleaved scales, alpha 1, fc2 input scale 1, no input scale (dynamic
+            per-block activation quant), clamped SiLU spelled the kernel's way."""
+            E = w13.shape[0]
+            if E not in ones:
+                ones[E] = torch.ones(E, device=x.device, dtype=torch.float32)
+            return b12x_fused_moe(x=x.contiguous(), w1_weight=w13, w1_weight_sf=w13_sf, w2_weight=w2, w2_weight_sf=w2_sf,
+                                  token_selected_experts=sel.contiguous(), token_final_scales=w.contiguous(),
+                                  num_experts=E, num_local_experts=E, top_k=sel.shape[1],
+                                  w1_alpha=ones[E], w2_alpha=ones[E], fc2_input_scale=ones[E], input_global_scale=None,
+                                  activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0, swiglu_limit=float(limit),
+                                  activation_precision="fp4", quant_mode="nvfp4")
 
-    def locked(fn):
+    def on_main(fn):
+        """Served kernels run on the main thread: DeepGEMM's JIT runtime raises
+        CUDA_ERROR_INVALID_VALUE from a worker (probes/mhc_lane_isolate.py), and
+        triton's autotuner is not thread-safe either. base/comm.LocalTP hands
+        the call over; on the fleet (one rank per process) it is a direct call."""
         def run(*a, **k):
-            with lock:
-                return fn(*a, **k)
+            tp = _active_tp()
+            return fn(*a, **k) if tp is None else tp.on_main(fn, *a, **k)
         return run
 
-    return Lanes("served" if expert_lane != "reference" else "served (experts: reference)",
-                 *(locked(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, expert)))
+    name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
+    return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, moe)))
 
 
 def _selfcheck() -> None:

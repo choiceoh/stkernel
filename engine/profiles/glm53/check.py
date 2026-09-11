@@ -7,7 +7,8 @@ The four ranks are four threads on this GB10 (base/comm.LocalTP), each
 binding ITS slice of the layers from its rank file (facts.RANKS, the
 preshard's output) into its own arena, so the row/column splits and every
 all-reduce run exactly as on the fleet -- a wrong split shows up here, not
-on four nodes. Two things are judged:
+on four nodes. The caches are the profile's real ones (caches.py: block and
+slot pools carved from the same arena, block-table addressing). Judged:
 
   ranks agree     after every all-reduce the activations are replicated, so
                   the four final hidden states must be byte-identical
@@ -38,45 +39,10 @@ from engine.base.instruments import Recorder                     # noqa: E402
 from engine.base.loader import RankLoader                        # noqa: E402
 from engine.base.params import total_bytes                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
-from engine.profiles.glm53.net import BF16, E4M3, F32, Glm53Net, Step  # noqa: E402
+from engine.profiles.glm53.caches import Glm53Caches, block_bytes, slot_bytes   # noqa: E402
+from engine.profiles.glm53.net import Glm53Net, Step             # noqa: E402
 
 GIB = 1 << 30
-
-
-class ChainCaches:
-    """The `Caches` protocol for one sequence in one slot, contiguous: slot ids
-    are positions (block table = identity). Carved from this rank's arena."""
-
-    def __init__(self, arena: Arena, F, net: Glm53Net, capacity: int, slots: int = 2):
-        kp = F.kpool
-        self._kda, self._lat, self._pk, self._ps, self._tail = {}, {}, {}, {}, {}
-        for L in net.layers:
-            if F.is_dsa(L):
-                self._lat[L] = arena.carve(capacity * F.kv_lora, f"L{L} latent").view(E4M3).view(capacity, F.kv_lora)
-                self._pk[L] = arena.carve(capacity // kp * F.idx_dim, f"L{L} pool keys").view(E4M3).view(capacity // kp, F.idx_dim)
-                self._ps[L] = arena.carve(capacity // kp * 4, f"L{L} pool scales").view(F32)
-                self._tail[L] = arena.carve(slots * kp * 2 * F.idx_dim * 2, f"L{L} tail").view(BF16).view(slots, kp, 2, F.idx_dim)
-            else:
-                c, wc, wr = 3 * net.Hk * F.kda_dim, net.conv_ring, net.rec_ring
-                conv = arena.carve(slots * c * wc * 2, f"L{L} conv ring").view(BF16).view(slots, c, wc)
-                rec = arena.carve(slots * wr * net.Hk * F.kda_dim * F.kda_dim * 4, f"L{L} recurrent ring").view(F32).view(slots, wr, net.Hk, F.kda_dim, F.kda_dim)
-                self._kda[L] = (conv, rec)
-
-    def reset(self):
-        for conv, rec in self._kda.values():
-            conv.zero_(); rec.zero_()
-        for t in list(self._lat.values()) + list(self._pk.values()) + list(self._tail.values()):
-            t.view(torch.uint8).zero_()
-        for t in self._ps.values():
-            t.zero_()
-
-    def kda(self, layer, slot): conv, rec = self._kda[layer]; return conv[slot], rec[slot]
-    def latent(self, layer): return self._lat[layer]
-    def pool_keys(self, layer): return self._pk[layer]
-    def pool_scales(self, layer): return self._ps[layer]
-    def tail(self, layer, slot): return self._tail[layer][slot]
-    def token_slots(self, seq, positions): return positions.to(torch.int32)
-    def pool_slots(self, seq, pool_ids): return pool_ids.to(torch.int32)
 
 
 def parse_layers(spec: str):
@@ -100,23 +66,28 @@ def rank_main(comm, a, F, layers, lanes, ids, garbage):
     rec = Recorder(f"rank{comm.rank}")
     net = Glm53Net(F, comm, lanes, layers)
     specs = net.specs()
-    cap = -(-a.tokens // F.block) * F.block
+    nb, ns = -(-a.tokens // F.block) + 1, 2                                          # blocks for the prompt (+1 spare), null slot + one
     with rec.phase("arena"):
-        arena = Arena(total_bytes(specs) + 256 * len(specs) + len(layers) * (64 << 20) + cap * 8192)   # weights + alignment + states + paged
+        arena = Arena(total_bytes(specs) + 256 * (len(specs) + 64) + nb * block_bytes(F, layers) + ns * slot_bytes(F, layers, net.Hk))
     with rec.phase("load"):
         views = RankLoader(Path(a.ranks) / f"rank{comm.rank}of{facts.TP}.safetensors").load([s.name for s in specs], arena=arena, recorder=rec)
         net.bind(views)
-    caches = ChainCaches(arena, F, net, cap)
+    caches = Glm53Caches(arena, F, layers, net.Hk, nb, ns, max_seqs=1)
     blocks = {}
     net.probe = lambda name, L, out: blocks.setdefault((name, L), []).append(out)
     T, K1 = a.tokens, F.spec_k + 1
     runs = {}
 
     def run(name, steps):
-        blocks.clear(); caches.reset()
+        blocks.clear()
+        if caches.blocks.tokens[0]:
+            caches.release(0)
+        slot = caches.slots.take(0); caches.clear_slot(slot)
+        caches.reserve(0, T + F.spec_k)                                                # the whole prompt plus a step's drafts, up front
         with rec.phase(name):
             hs = [net.forward(st, caches) for st in steps]
             torch.cuda.synchronize()
+        caches.slots.give(slot)
         runs[name] = {"h": hs, "blocks": {k: list(v) for k, v in blocks.items()}}
 
     run("whole", [Step.prefill(ids, 0, 0, 1)])
@@ -143,14 +114,16 @@ def main(argv=None) -> int:
     layers = parse_layers(a.layers)
     if a.chunk % F.kpool or a.tokens <= a.chunk:
         raise SystemExit(f"--chunk must be a multiple of kpool {F.kpool} and below --tokens")
-    lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served(expert_lane="reference")
+    lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served()
+    tp = LocalTP(facts.TP)
+    lane_tables.bind_tp(tp)
     if a.lanes == "served":
         print("  NOTE: served lanes with the REFERENCE expert lane (b12x is not bound yet) -- a lane judge, not a boot")
     torch.manual_seed(a.seed)
     ids = torch.randint(0, 100_000, (a.tokens,), device="cuda")
     garbage = torch.randint(0, 100_000, (F.spec_k + 1 - 2,), device="cuda")
     t0 = time.perf_counter()
-    outs = LocalTP(facts.TP).run(rank_main, a, F, layers, lanes, ids, garbage)
+    outs = tp.run(rank_main, a, F, layers, lanes, ids, garbage)
     wall = time.perf_counter() - t0
     r0 = outs[0]
     print(r0["rec"].table())
