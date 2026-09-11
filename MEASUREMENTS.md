@@ -9316,3 +9316,46 @@ MLA 무장이 사이드 스트림 워밍업에서 끝나 캡처 금지 가드를
 **검증**: 이미지 CPU 스위트 244 tests OK(55 skip), 새 `tests/test_engine_graph_contracts.py` 10 tests(캡처 거부·사다리 천장·풀 분리·고정 스테이징), 임포트 프로브 48 모듈 OK.
 **GPU 미검증**: `probes/engine_decode_graph_check.py`(재생 vs 이거 + 롤백)와 실제 부팅 캡처 시간. 프로덕션 서빙 중이라 창 없음.
 
+
+### 45차 §23 — 프로덕션 전환 시도: 창·45층 4노드 부팅·문 사다리, 그리고 깨진 글의 원인 = KDA `o_norm` epsilon (2026-09-11 밤 ~ 09-12 새벽)
+
+**창**: 22:21:56 srv2 `fleet-idle-recovery.timer` 정지(이 컨트롤러만 프로덕션을 되살린다), 22:22:01 네 노드 `glm53`/`glm53-worker` 제거. 직전 프로덕션 카운터
+prompt 198,017 · generation 1,947 · success stop 10 + length 6. wormhole 의 `glm-5.3-flash-local` 은 `fallback: glm-5.3-flash`(z.ai) 라 창 동안 상류 API 가 받았다(로그 확인).
+운영자 지시로 창은 진단이 끝날 때까지 열어 둔다(23:58 "프로덕션 복귀는 시키지마").
+
+**부팅**(`start-st-glm53.sh`, RANKS_DIR=`~/models/st-glm53-9391-up-gate-full`, 네 노드 표식본): arena 2.26 s(+57.17 GiB 한 덩어리 — 부팅 OOM 가설 기각), load 41.2 s(44.5 GiB, 54 블록),
+drafter 2.8 s, **capture decode 238.9 s**(콜드; 두 번째부터 63.7 s), 총 5분 20초(프로덕션 vLLM 웜 부팅 345 s 급). `ST engine: GLM-5.3, TP=4, lanes=served, KV 8.73 GiB, serving on :8000`,
+`/v1/models` = `glm-5.3-flash`. 예산 표(rank 0): 상자 119.69 − OS 11.97 − 런타임 바닥 5.54 − 가중치 44.50 − 드래프터 2.18 − 슬롯 1.21 − prefix 스냅샷 0.59 − 워크스페이스 12.00 − 티어 0.12
+= **KV 41.58 GiB**, 선언 7.52(580 블록) → 미할당 34.06 GiB; 동시 4 에서 1,048,576 tok/요청.
+
+**부팅 넷의 판정**:
+| 부팅 | 티어 | 디코드 | 결과 |
+|---|---|---|---|
+| 22:22 | srv4 에 16:52 로컬 테스트 잔재(rank0~3, seq-0/1) | 캡처 그래프 | 첫 요청 안 끝남, 네 랭크 96% GPU 스핀, `adapter.decode` 안 |
+| 22:36 | 같음 | 이거(`STK_decode_eager=1`) | 64 토큰 나왔으나 글이 깨짐; rank 3 이 retire 에서 `conversation 0 is already parked` 로 사망 → 셋이 다음 all_reduce 에서 스핀 |
+| 22:39 | 청소 | 캡처 그래프 | 3분 20초 진전 0(카운터 전부 0), 네 랭크 살아서 96% — 재현 2/2 |
+| 22:45 | 청소 | 이거 | 요청 정상 종료(10.7 tok/s, 수용률 25%), **글은 여전히 깨짐** |
+
+**뿌리 셋** (3 은 codex 세션이 같은 시각에 독립적으로 찾아 **PR #565** 로 먼저 머지했다 — 그쪽은 한 상자 LocalTP 45층 추적으로, 여기는 vLLM 층별 훅 대조와 플릿 4노드 서빙으로 같은 상수에 닿았다; 이 절의 몫은 판정 사슬·도구·플릿 검증이고 수정 커밋은 #565 의 것이다):
+1. **티어 잔재 = 랭크 발산**(고침). 티어는 랭크·노드마다라 한 노드의 옛 파일이 그 랭크만 "이미 파킹된 대화"로 만들어 `_admit` 이 프리필 대신 복원을 골랐다.
+   조치: 네 노드 `st-tier` 청소 + `Server._agree_on_parked`(개수·마지막 키·체크섬을 all_reduce_max 로 맞추고 다르면 네 랭크가 같은 메시지로 죽는다, D3; 캡처 앞에서도 한 번).
+2. **NCCL all_reduce 가 든 캡처 디코드 그래프는 첫 replay 에서 안 돌아온다**(청소 뒤에도 2/2). 같은 레인을 이거로 돌리면 돈다 — 커널·NCCL 무죄, 그래프 replay 의 문제. 열린 항목(§23 보충에서 재확인).
+3. **깨진 글 = `net.py` `O_NORM_EPS`**. 판정 사슬: (a) `max_tokens=1` 에서 이미 첫 토큰이 틀림("Twinkle, twinkle, little" → `,`, "import numpy as" → `s`, "One, two, three, four," → `chr`) → 프리필 경로;
+   (b) 참조 레인표(`STK_lanes=reference`)로 45층을 돌려도 깨짐(`, and the, and, and`) → 커널 레인 무죄, 두 표가 공유하는 조합·가중치·캐시·문;
+   (c) 랭크 파일 == 현재 `specs.py` 빌더(rank 0·3, top/L0/L3/L44 + L3 전문가, `probes/glm53_rankfile_audit.py`), 아레나(O_DIRECT·H2D) 경로 == CPU 경로(`probes/glm53_arena_bytes_check.py`) → 가중치 무죄;
+   (d) **외부 참조**: 프로덕션 vLLM 모델 코드(오버레이)를 srv4 한 대·TP=1·앞 3층으로 띄워(로더에 층 범위 가드 한 줄) embed·각 층 attn/mlp·L0 내부(mhc_pre·in_proj·f_b·g_b·o_norm·o_proj) 를 훅으로 덤프, ST 프로브(`probes/glm53_first_token.py`, 참조 레인, LocalTP, 0~2층)와 대조 —
+   **embed 완전 일치, L0 KDA 블록부터 per-token rel 1.9**(ST rms 0.0188 vs vLLM 0.0064);
+   (e) CPU 재현(HF 텐서, ST 모듈 함수): x·투영·f_a·f_b·g_b 출력이 vLLM 과 4자리 일치 → 코어(conv·recurrence·o_norm) 안. KDA 코어 출력은 rms ~2e-4, **mean(x²) ~7e-10** 이라 `rmsnorm` 이 eps 에 지배된다:
+   vLLM 은 `FusedRMSNormGated(head_dim, activation="sigmoid")` **클래스 기본값 eps=1e-5**(`third_party/flash_linear_attention/ops/kda.py:483`; 1e-6 은 맨 함수 `rms_norm_gated` 의 기본값), ST 는 1e-6 → 모든 KDA 블록 출력이 √10 = 3.16배(0층 실측 2.9배).
+   `O_NORM_EPS=1e-5` 로 L0 블록 rel **1.94 → 0.008**. 플릿(서빙 레인·이거) 재부팅: 첫 토큰 " Paris"·" star"·" np"·" Thursday"·" five", 본문 `' Paris. In French, Paris is spelled "Paris", but…'`,
+   `' 도쿄입니다. 대한민국의 수도는 서울이고, …'`, `' 7, 8, 9, 10, 11, 12, 13, 14,'`, chat(thinking off) `'대한민국의 수도는 서울입니다.'`. 자기일관성 판정이 전부 통과한 이유: 상수 하나를 두 레인표가 공유한다.
+   **교훈(D14)**: 참조 레인은 커널의 참조이지 알고리즘의 참조가 아니다 — 알고리즘의 참조는 vLLM 스택이고, 층별 훅 대조(`scratch vllm_ref_hooks.py`, 이번에 만든 절단 로더 가드)가 그 판정기다.
+
+**문**: thinking off 이면 템플릿이 `<think></think>` 로 블록을 닫으므로 생성 전부가 content — 문이 `</think>` 를 기다리며 답을 `reasoning_content` 에 넣던 것을 고침(렌더된 프롬프트가 reasoning-end 로 끝나면 content 모드).
+**리베이스 뒤(main #561~#565: KDA 상태·후보 교환·그래프 검토·KDA 출력 노름 융합 커널·eps)**: 융합 노름 경로로 첫 토큰 " Paris"·" star" 정상, 그러나 3토큰 프롬프트("import numpy as")에서 네 랭크가 `moe_dispatch._get_direct_micro_kernel` 의 `kernel.__cache_key__()` TypeError 로 사망 — #558 의 direct-micro 디스크 캐시 래퍼가 GPU 에서 처음 도는 순간이었고 `__cache_key__` 는 프로퍼티다(`moe_w4a16_kernel` 은 맨 속성으로 읽음). 고침(호출 가능하면 호출, 아니면 속성).
+**부수 수정**: 런처·슈퍼바이저의 자기 ssh(헤드 srv2 는 자기 키를 거부 → 로컬 셸), `facts.RANKS`·런처 기본값을 실재하는 표식본으로, `STK_*` 노브 컨테이너 전달, `qualify_eager_decode(warmup=)`.
+**뿌리 2 의 답(06:28, main #567 병합 뒤 재부팅)**: codex 가 원인을 찾았다 — 캡처 워밍업·첫 프리필이 MoE 워크스페이스 캐시를 키우며 **그래프에 기록된 작은 할당을 해제**해 replay 가 해제된 주소를 읽었다; #567 이 소유자를 그래프 수명 동안 붙든다. 이 브랜치 + #567 로 그래프 부팅(capture 92.9 s): `The capital of France is` → ` Paris. In French, …`, 3토큰·7토큰 첫 토큰 정상, **256 토큰 스트림 29.7 tok/s(TTFT 4.78 s, 수용 173/525)** — 이거 10.7 tok/s 의 2.8배, 프로덕션 C=1(16.6 step/s × ~2.2) 의 ~80%. 표본 하나, 띠 아님(D14).
+**그래프 경로 첫 onepass(ST-GRAPH-45, 06:31, 123 s)**: 2K 2/3 · 32K 0/3 · 128K 0/3 = **2/9**, 한국어 깨진 응답 1/5, 디코드 창 없음 — 그런데 표의 프롬프트 토큰이 세 문맥 모두 **2048**, 32K 프리필이 1.18 s. 원인: `tokenizer.json` 이 `truncation {max_length 2048, direction Right}` 를 싣고 있고 문의 `tokenizers.Tokenizer.from_file` 이 그 규칙을 그대로 적용해 **모든 프롬프트를 앞 2048 토큰으로 자른다**(질문이 끝에 있으니 채움글 얘기만: 32K 답이 사원수·해밀턴). transformers 의 AutoTokenizer(vLLM 의 토크나이즈 경로)는 이 설정을 무시한다. 직접 확인: 2,684자·10,583자·30,085자 프롬프트 모두 `prompt_tokens` 2048, 끝에 심은 코드 못 찾음. 조치: `boot.tokenizer()` 가 `no_truncation()`·`no_padding()`; `tests/test_engine_tokenizer.py`.
+**잘림 수정 뒤(06:37 부팅, 그래프 경로)**: 바늘 찾기 2,684자/10,583자/30,085자 → prompt_tokens 2,220/8,545/24,251, 코드 셋 다 정답(BLUE-7742·RED-3319·GREEN-5561; 1·1.2·3 청크). **onepass ST-GRAPH-45b(173 s): 9/9 정답 · 한국어 깨짐 0/5 · 프리필 2K 2,028 tok/s(웜, TTFT 1.05 s) · 32K 2,117 tok/s(TTFT 15.4 s) · 128K 1,990 tok/s(TTFT 64.6 s)**; 디코드 창은 안 잡힘(이 워크로드의 답이 짧아 2 s 창 없음 — 고정 길이 다리 `--fixed-decode-tokens` 로 따로). 프로덕션 기준선(23K 2,696 tok/s·TTFT 8.55 s)의 프리필 ~79%. 한 부팅 한 표본 — 띠가 아니다(D14).
+**디코드(고정 길이 다리, ST-GRAPH-45c, 297 s, 같은 부팅)**: `--fixed-decode-tokens 2048 --fixed-decode-reps 3` → C=1 **32.8 / 32.3 / 35.4 tok/s**(2048/2048 토큰씩), 품질 18/18, 한국어 0/8. 프로덕션 C=1 기준선 16.6 step/s × raw acc 18~25%(≈2.0~2.2 tok/step) ≈ 33~36 tok/s 와 같은 급. onepass 의 디코드 창(step/s)은 ST 문에 `vllm:iteration_tokens_total_count` 가 없어 0개였다("INVALID: too few fixed decode windows") — 문에 그 행(= runner.steps)을 추가, 다음 부팅부터 창이 잡힌다.
+**남은 것**: (1) 부팅 반복으로 띠(프리필·디코드 창) 세우기; (2) 이거 디코드 10.7 tok/s 는 프로덕션(16.6 step/s × ~2.2)의 1/7 — 그래프가 돌아야 전환 논의 가능; (3) onepass 품질 게이트(9/9·한국어) 미측정; (4) KV·max_seqs 결정(미할당 34 GiB).

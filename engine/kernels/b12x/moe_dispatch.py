@@ -2957,7 +2957,10 @@ def _get_direct_micro_kernel(
         swiglu_beta=swiglu_beta,
         device=device,
     )
-    compile_key = ("direct_micro", kernel.__cache_key__(), topk_ids_dtype)
+    # the kernel's __cache_key__ is a property on the CuTe-DSL kernel classes (moe_w4a16_kernel reads it bare); the
+    # first fleet request with M=3 tokens took this path and died calling the tuple (45차 §23)
+    cache_key = kernel.__cache_key__
+    compile_key = ("direct_micro", cache_key() if callable(cache_key) else cache_key, topk_ids_dtype)
     entry = _DIRECT_MICRO_KERNEL_CACHE.get(compile_key)
     if entry is None:
         # Register pressure can cap the launchable CTA below the fused body's

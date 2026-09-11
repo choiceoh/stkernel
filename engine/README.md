@@ -47,7 +47,15 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 운영(`launchers/st-glm53-supervisor.sh` + `st-glm53.service`, 헤드 srv2 의 사용자 유닛): 30 s 마다 진짜 4 토큰 chat 으로 건강을 재고(문이
 열려 있어도 링은 죽어 있을 수 있다), 3 회 연속 실패면 포렌식(네 랭크 로그·free·nvidia-smi·metrics → `~/glm53-logs/st-forensics/`) → stop →
 start. 재시작 간격은 60 s 부터 두 배씩 30 분까지, 5 회 실패 뒤엔 멈추고 사람을 부른다. 프로덕션 vLLM·q38 컨테이너가 보이면 절대 띄우지 않는다.
-`ST_SUPERVISOR_ONCE=1` 로 한 사이클만 판정할 수 있다.
+`ST_SUPERVISOR_ONCE=1` 로 한 사이클만 판정할 수 있다. 한 노드는 **자기 자신에게 ssh 하지 못하므로**(srv2 가 자기 키를 거부한다) 런처와
+슈퍼바이저는 대상 IP 가 자기 것이면 로컬 셸로 돌린다 — 그래서 헤드에서 도는 슈퍼바이저가 rank 0 의 컨테이너·로그·잠금을 본다.
+
+프로덕션 전환: 프로덕션 vLLM 을 되살리는 경로는 `fleet-idle-recovery.timer`(5 분 유휴 뒤 복구) 하나뿐이다. ST 가 프로덕션이 되는 동안은
+그 타이머를 끄고(`st-glm53.service` 의 `Conflicts=`가 같은 일을 한다) 슈퍼바이저 유닛을 켠다. 되돌리기는 그 반대 순서다:
+
+    systemctl --user disable --now st-glm53          # (헤드)
+    bash launchers/start-st-glm53.sh stop            # 네 노드 컨테이너 + 잠금 해제
+    systemctl --user start fleet-idle-recovery.timer # 5 분 유휴 뒤 vLLM 복귀
 
 Prefix 재사용(`base/prefix.py`): 프롬프트를 프리필 청크(6,912 = 블록 3개) 단위로 해시 사슬을 만들고, 청크 경계마다 모델의 위치 링 상태
 (KDA conv 탭 3개 + 재귀 상태 1개 × 34층, 드래프터 문맥 링; 인덱서 꼬리는 경계에서 비어 있어 제외)를 아레나의 스냅샷 슬롯(`PREFIX_SNAPSHOTS`

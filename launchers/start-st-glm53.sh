@@ -17,7 +17,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 IMAGE=${ST_IMAGE:-${IMAGE:-st-engine:glm53}}
 PORT=${PORT:-8000}
-RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/glm53-redhat-nvfp4-tp4-up-gate-v1}
+RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/st-glm53-9391-up-gate-full}
 CKPT=${CKPT:-/home/choiceoh/models/glm53-redhat-nvfp4}
 DRAFTER=${DRAFTER:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}
 ENGINE_DIR=/home/choiceoh/st-engine                     # the engine tree, rsynced to every node
@@ -25,7 +25,22 @@ CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-glm53
 
-node_sh() { local ip=$1; shift; ssh $SSHOPT "choiceoh@$ip" "$@"; }
+# A node cannot ssh to itself (srv2 refuses its own key), and the head runs this script: run its own
+# commands in a local shell instead. Same for the tree push -- and if this checkout *is* the node's
+# engine tree there is nothing to push.
+SELF_IPS=" $(hostname -I 2>/dev/null) "
+is_self() { [[ "$SELF_IPS" == *" $1 "* ]]; }
+node_sh() { local ip=$1; shift; if is_self "$ip"; then bash -c "$*"; else ssh $SSHOPT "choiceoh@$ip" "$@"; fi; }
+push_tree() {
+  local ip=$1
+  if is_self "$ip"; then
+    [ "$(readlink -f "$REPO")" = "$(readlink -f "$ENGINE_DIR")" ] && return 0
+    mkdir -p "$ENGINE_DIR"
+    rsync -a --delete --exclude __pycache__ "$REPO/engine" "$REPO/launchers" "$META" "$ENGINE_DIR/"
+  else
+    rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/launchers" "$META" "choiceoh@$ip:$ENGINE_DIR/"
+  fi
+}
 
 case "${1:-start}" in
   stop)
@@ -47,6 +62,9 @@ done
 held=$(node_sh "${NODES[0]}" "cat $LOCK 2>/dev/null || true")
 [ -z "$held" ] || { echo "ABORT: the fleet is locked by '$held' ($LOCK on ${NODES[0]}); wait or 'stop' from that side" >&2; exit 1; }
 node_sh "${NODES[0]}" "echo '$(whoami)@$(hostname) st-glm53 $(date '+%F %T')' > $LOCK"
+
+# the engine's own namespace travels into the container: a declared, expiring knob (D11) is set on the launch line
+KNOB_ENV=""; for name in $(compgen -v STK_ 2>/dev/null); do KNOB_ENV="$KNOB_ENV -e $name=${!name}"; done
 
 NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
@@ -77,8 +95,7 @@ stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
 start_rank() {
   local r=$1 ip=${NODES[$1]}
   echo "== rank $r on $ip"
-  rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/launchers" "$META" "choiceoh@$ip:$ENGINE_DIR/" \
-    || { echo "ABORT: $ip could not receive the engine tree (rsync)" >&2; return 1; }
+  push_tree "$ip" || { echo "ABORT: $ip could not receive the engine tree (rsync)" >&2; return 1; }
   # the ST image is built on the node from the tree just rsynced: seconds (two thin layers on the seed every node has); the seed ID is pinned in build.sh
   node_sh "$ip" "ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh >/dev/null 2>&1 || ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh 2>&1 | tail -5" \
     || { echo "ABORT: $ip could not build $IMAGE (engine/runtime/build.sh)" >&2; return 1; }
@@ -87,7 +104,7 @@ start_rank() {
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \
     --network host --ipc host --shm-size 32g --ulimit memlock=-1:-1 --ulimit nofile=524288:524288 --cap-add IPC_LOCK \
     --device /dev/infiniband:/dev/infiniband \
-    -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
+    -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV $KNOB_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER' >/dev/null && echo '$ip: started'"
