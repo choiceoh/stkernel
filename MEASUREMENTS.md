@@ -8681,3 +8681,12 @@ pre(post 3.0e-4 · comb 2.8e-4 · layer_input 4.4e-3), post 1.6e-3. 두 함정: 
 은 슬롯 0 을 절대 내주지 않고 `cache_spec` 은 슬롯 하나를 더 잡는다(D3). GLM `o_norm` 활성 = sigmoid.
 계기: real 8 → **6**. **함정 둘째**: `cat >> … <<'EOF'` 뒤 줄의 `git commit` 은 `&&` 사슬 밖이라 앞 검사가
 실패해도 돈다(bf9fccfa 가 그렇게 들어감) — 판정은 변수로, 커밋은 그 변수를 보고.
+
+### 희소 인덱서 점수식 == 서빙 DeepGEMM op — 다섯째 real 에지(kpool 의 점수 절반)
+
+`modules/sparse_indexer.indexer_logits` = Σ_h w[m,h]·relu(q[m,h]·k[n]) (세 모델 공통식). glm53 이미지에서
+서빙 `fp8_fp4_mqa_logits`(FP8 경로: q 토큰별 스케일은 weights 에 접힘, k 행별 fp32 스케일, `cu_seqlen_ks/ke`
+로 창 지정)와 **같은 양자화 값** 위에서 대조 — rel **2.38e-3**(|logits| 200). 판정 대상은 양자화기가 아니라
+식이다. 남은 kpool 조각: 풀링(gate softmax + APE → FWHT-fp8 쓰기), `top_k_per_row`(풀 단위 select_k =
+2048/4), `expand_pools_and_append_tail`(꼬리 항상 포함). 오늘 서빙 커널로 판정된 에지 다섯: KDA · mHC ·
+MLA · conv · 인덱서 점수.
