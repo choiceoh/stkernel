@@ -223,10 +223,25 @@ class Glm53DecodeGraphs:
             finally:
                 del scratch.block_table
 
+        warmed = set()
+
+        def warmup_for(shape):
+            """Two passes for the first shape of a (seqs, tokens) family, one for the capacity
+            buckets that follow it. The family's first pass compiles and autotunes the whole chain
+            and its second settles the allocator; a later bucket runs those same kernels over a
+            different candidate count, which its own pass covers. The shapes are ordered by family
+            so "first" means what it says. 72 warmup passes become 40 (boot-time study: warmup is
+            18.3 s of the 28 s of graph work)."""
+            key = shape[:2]
+            first = key not in warmed
+            warmed.add(key)
+            return 2 if first else 1
+
         try:
             self.graphs = DecodeGraphs(forward, make_inputs,
-                                       [(n, tokens, capacity) for capacity in self.capacities
-                                        for n in range(1, max_seqs + 1)], memory=memory, label="target",
+                                       [(n, tokens, capacity) for n in range(1, max_seqs + 1)
+                                        for capacity in self.capacities],
+                                       warmup=warmup_for, memory=memory, label="target",
                                        resources=net.lanes.graph_resources)
         finally:
             # Warmup and capture execute real writes, before requests exist.

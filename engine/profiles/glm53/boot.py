@@ -209,24 +209,30 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
             drafter = drafter_mod.Drafter(D, net, decodable)
             drafter.bind(dviews)
-        caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=PREFIX_SNAPSHOTS)
-        # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
-        aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
-        engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
-                             decodable=decodable, aux_layers=aux, context_ceiling=context_ceiling)
-        contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
-                                  max_wait_s=MAX_WAIT_S, max_running=max_seqs)
-        engine.memory = memory
-        engine.prefill_chunk = sched.chunk_for(contract.chunk_align, contract.token_budget, contract.draft_slots)
+        # Everything from here to the first ledger row was 7.5 s of a measured boot with no name
+        # (boot-time study 5-c): the caches and their zeroing, the engine, the tier's pinned staging,
+        # the prefix snapshots and the runner.
+        with recorder.phase("caches"):
+            caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=PREFIX_SNAPSHOTS)
+        with recorder.phase("engine"):
+            # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
+            aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
+            engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
+                                 decodable=decodable, aux_layers=aux, context_ceiling=context_ceiling)
+            contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
+                                      max_wait_s=MAX_WAIT_S, max_running=max_seqs)
+            engine.memory = memory
+            engine.prefill_chunk = sched.chunk_for(contract.chunk_align, contract.token_budget, contract.draft_slots)
         if memory is not None:
             memory.checkpoint("loaded")
-        tiered = None
-        if tier_dir:                                                                    # D16: idle conversations park on NVMe, per rank
-            tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
-            tiered = TieredKV(caches.pool, tier)
-        prefix = PrefixCache(F.block, engine.prefill_chunk, PREFIX_SNAPSHOTS)      # boundaries = prefill chunks (base/prefix.py)
-        runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
-                        keep_idle=tiered is not None, prefix=prefix)                   # with a tier, conversations live on and park
+        with recorder.phase("runner"):
+            tiered = None
+            if tier_dir:                                                                # D16: idle conversations park on NVMe, per rank
+                tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
+                tiered = TieredKV(caches.pool, tier)
+            prefix = PrefixCache(F.block, engine.prefill_chunk, PREFIX_SNAPSHOTS)      # boundaries = prefill chunks (base/prefix.py)
+            runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
+                            keep_idle=tiered is not None, prefix=prefix)                # with a tier, conversations live on and park
         recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
         recorder.gauge("prefix_snapshots", PREFIX_SNAPSHOTS); recorder.gauge("snapshot_MiB", round(snapshot_bytes / 2**20, 1))
         return F, net, caches, engine, runner

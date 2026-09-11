@@ -33,10 +33,18 @@ import torch
 
 
 class DecodeGraphs:
-    def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup: int = 2, generators=(),
+    def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup=2, generators=(),
                  memory=None, label="decode", resources=None):
         """step_fn(inputs) runs one decode step over static `inputs`;
         make_inputs(num_seqs, tokens_per_seq) allocates them once per shape.
+
+        `warmup` is how many passes run on the side stream before a shape is
+        captured, either a count or a function of the shape. Two is the safe
+        default -- the first pass compiles and autotunes, the second settles the
+        allocator -- and a caller that knows a shape runs kernels an earlier one
+        already warmed may declare fewer. Warmup was 18.3 s of a measured boot's
+        28 s of graph work (boot-time study), so it is worth declaring rather
+        than inheriting.
 
         resources() returns owners of external kernel workspaces used by the
         capture. CUDA records their addresses, not Python references. Keep each
@@ -53,9 +61,12 @@ class DecodeGraphs:
                 if memory is not None:
                     memory.checkpoint(f"{label}/{shape}/before")
                 inp = make_inputs(*shape)
+                passes = warmup(shape) if callable(warmup) else warmup
+                if not isinstance(passes, int) or passes < 1:
+                    raise ValueError(f"{label}: {shape} needs at least one warmup pass, got {passes!r}")
                 side.wait_stream(torch.cuda.current_stream())
                 with torch.cuda.stream(side):
-                    for _ in range(warmup):
+                    for _ in range(passes):
                         step_fn(inp)
                 torch.cuda.current_stream().wait_stream(side)
                 if memory is not None:
