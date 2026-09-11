@@ -129,8 +129,6 @@ def main(argv=None) -> int:
     lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served()
     tp = LocalTP(facts.TP)
     lane_tables.bind_tp(tp)
-    if a.lanes == "served":
-        print("  NOTE: served lanes with the REFERENCE expert lane (b12x is not bound yet) -- a lane judge, not a boot")
     torch.manual_seed(a.seed)
     ids = torch.randint(0, 100_000, (a.tokens,), device="cuda")
     garbage = torch.randint(0, 100_000, (F.spec_k + 1 - 2,), device="cuda")
