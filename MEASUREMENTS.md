@@ -8874,3 +8874,24 @@ plan 이 빠뜨렸던 꼬리 링 11×2 KiB 를 채움). `check.py` 는 이제 Ch
   디스크 95%(52 GB 남음)** — 44.5 GiB 를 넣으면 98% 라 운영자 판단 뒤에.
 - 열린 항목: 서빙 레인 판정(한 상자, DeepGEMM 워커 스레드) — 플릿에선 문제 아님. DFlash2 드래프터 포팅이 다음(인터페이스는
   `Drafter.propose` 하나; 대상 층 5·14·24·33·42 의 hidden 을 net 이 내줘야 함).
+
+### 45차 §7 — DFlash2 드래프터가 엔진 안에서 돈다; 서빙 recurrent KDA 레인 (2026-09-11 저녁)
+
+- `profiles/glm53/drafter.py` — DFlash2 를 같은 규율로: 사실 단언(qwen3 5층·32/8 헤드·창 2048·비인과 블록·mask 154856·selector
+  16/256·대상 층 5,14,24,33,42 → 출력은 4,13,23,32,41 층 뒤), 81 텐서를 체크포인트 이름 그대로 뷰로 바인딩(2.18 GiB **복제**,
+  DRAFT_TP=1 그대로 — 임베드·헤드는 대상 모델 것을 빌림), 슬롯별 컨텍스트 K/V 링 `[5, 2, 2048, 8, 128]`(40 MiB),
+  `observe(ring, positions, aux)`(fc → hidden_norm → 층별 k/v → k_norm → rope → 링)와 `propose(anchor, position, ring)`
+  (앵커+마스크 K 블록 → 그룹 conv(2탭·16그룹, 블록 내 위치로 탭 마스크) 감싼 5층 → 마스크 위치의 로짓 top-16 → 코드북
+  에지 점수 → 앵커부터 탐욕 walk). 서빙 `_selector_walk_kernel` 의 온도 0 가지와 같다; Gumbel 가지는 안 옮김.
+- `net.forward(..., aux_layers)` 가 해당 층 뒤의 contract(hc_post) 를 이어 붙여 돌려준다(서빙의 aux_hidden_states 규칙).
+  `adapter`: 프리필 뒤 프롬프트 전 토큰, 디코드 뒤 **수락된 위치까지** observe; 다음 스텝은 마지막 토큰을 앵커로 propose.
+  토크나이저가 디코드 못 하는 행은 대상·드래프터 로짓 모두 마스크(서빙의 vocab-mask).
+- `boot.py --local --drafter`(0~4층, aux 층은 체인 끝으로 잘라 배관만): **16 스텝, K=5, 0/70 수락**(5층짜리 체인이니 당연),
+  네 랭크 토큰 동일, PASS. 플릿 모드는 드래프터 기본 on.
+- 레인: beta 는 **raw 로짓**으로 다닌다(참조는 sigmoid, 서빙 chunk 는 fp32 sigmoid, 서빙 recurrent 는 커널 안). 서빙
+  `fused_recurrent_kda` 를 dense·non-inplace 형(`final_state [T,H,D,D]` = 토큰마다의 상태)으로 `kda_recurrent` 에 바인딩.
+  두 서빙 커널의 상태 레이아웃([k,v] vs [v,k])은 **부팅 때 작은 입력으로 참조와 대조해 측정**(`_state_layout`, 무장≠서빙).
+  `served(reference_for=("expert",))` — 남은 참조 레인은 b12x 전문가뿐이라고 표 이름이 말한다.
+- 이름 충돌 함정: `profiles/glm53/engine.py` 가 스크립트 실행 시 `engine` 패키지를 가렸다 → `adapter.py`.
+- 16:14 이 박스에서 다른 세션의 q38 vLLM 이 nvidia 드라이버 rwsem 에서 D 상태로 죽고(journal 정지·재시작, 서비스 KILL),
+  내 스모크와 자가검증이 137 로 죽었다. 재실행 정상. 기록만.

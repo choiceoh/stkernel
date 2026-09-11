@@ -53,8 +53,13 @@ def slot_bytes(F: Facts, layers, hk: int) -> int:
 class Glm53Caches:
     """The `Caches` protocol over base/kv pools, carved from the arena."""
 
-    def __init__(self, arena: Arena, F: Facts, layers, hk: int, num_blocks: int, num_slots: int, max_seqs: int):
+    def __init__(self, arena: Arena, F: Facts, layers, hk: int, num_blocks: int, num_slots: int, max_seqs: int, draft=None):
+        """`draft` = (layers, window, kv_heads, head_dim) adds the drafter's context K/V ring per slot (drafter.py)."""
         self.F, self.layers, self.B, self.kp = F, list(layers), F.block, F.kpool
+        self._draft = None
+        if draft is not None:
+            dl, dw, dkv, dd = draft
+            self._draft = arena.carve(num_slots * dl * 2 * dw * dkv * dd * 2, "drafter context rings").view(BF16).view(num_slots, dl, 2, dw, dkv, dd)
         self.bp = F.block // F.kpool                          # pools per block
         wc, wr = F.conv - 1 + F.spec_k, F.spec_k + 1
         self._lat, self._pk, self._ps, self._tail, self._kda = {}, {}, {}, {}, {}
@@ -106,6 +111,9 @@ class Glm53Caches:
     def pool_scales(self, layer): return self._ps[layer]
     def tail(self, layer, slot): return self._tail[layer][slot]
 
+    def draft_ring(self, slot: int) -> torch.Tensor:
+        return self._draft[slot]
+
     def clear_slot(self, slot: int) -> None:
         """A fresh sequence starts from nothing: the rings it inherits are zeroed
         (a position-addressed ring never reads before it writes, but zero is
@@ -114,6 +122,8 @@ class Glm53Caches:
             conv[slot].zero_(); rec[slot].zero_()
         for t in self._tail.values():
             t[slot].zero_()
+        if self._draft is not None:
+            self._draft[slot].zero_()
 
     def regions(self):
         """(name, storage, bytes per block) for every paged region: the tier's view."""

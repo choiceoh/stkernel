@@ -32,7 +32,8 @@ from engine.base.runner import STEP_RECORD, Runner               # noqa: E402
 from engine.base.serve import Server                             # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
 from engine.profiles.glm53.caches import Glm53Caches, block_bytes, slot_bytes   # noqa: E402
-from engine.profiles.glm53.engine import Glm53Engine, NullDrafter              # noqa: E402
+from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
+from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
 
 GIB = 1 << 30
@@ -54,24 +55,45 @@ def eos_ids(ckpt=facts.CKPT) -> "list[int]":
     return list(e) if isinstance(e, list) else [e]
 
 
-def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, drafter, recorder: Recorder,
+def decodable_vocab(tok) -> int:
+    """Rows of the head the tokenizer has a token for: ids past this are masked (as served)."""
+    return max(tok.get_vocab().values()) + 1
+
+
+def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
           max_new: int = 256, temperature: float = 0.0, seed: int = 0):
     F = facts.load()
     net = Glm53Net(F, comm, lanes, layers)
     specs = net.specs()
+    D = drafter_mod.load() if use_drafter else None
+    dspecs = drafter_mod.specs(D) if D else []
     bb, sb = block_bytes(F, net.layers), slot_bytes(F, net.layers, net.Hk)
     ns = max_seqs + 1
-    nb = int((kv_gib * GIB - ns * sb) // bb)
+    ring = drafter_mod.ring_bytes(D) if D else 0
+    nb = int((kv_gib * GIB - ns * (sb + ring)) // bb)
     if nb < 2:
-        raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
+        raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {(sb + ring) / 2**20:.0f} MiB")
     with recorder.phase("arena"):
-        arena = Arena(total_bytes(specs) + 256 * (len(specs) + 64) + nb * bb + ns * sb)
+        arena = Arena(total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + nb * bb + ns * (sb + ring))
     with recorder.phase("load"):
         views = RankLoader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors").load(
             [s.name for s in specs], arena=arena, recorder=recorder)
         net.bind(views)
-    caches = Glm53Caches(arena, F, net.layers, net.Hk, nb, ns, max_seqs=ns)
-    engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(), temperature=temperature, seed=seed)
+    tok = tokenizer()
+    decodable = decodable_vocab(tok)
+    drafter = NullDrafter()
+    draft_shape = None
+    if D:
+        with recorder.phase("load drafter"):
+            dviews = RankLoader(drafter_mod.DRAFTER / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
+        drafter = drafter_mod.Drafter(D, net, decodable)
+        drafter.bind(dviews)
+        draft_shape = (D.layers, D.window, D.kv_heads, D.head_dim)
+    caches = Glm53Caches(arena, F, net.layers, net.Hk, nb, ns, max_seqs=ns, draft=draft_shape)
+    # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
+    aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
+    engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(), temperature=temperature, seed=seed,
+                         decodable=decodable, aux_layers=aux)
     contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                               max_wait_s=MAX_WAIT_S, max_running=max_seqs)
     runner = Runner(engine, contract, caches.blocks, caches.slots, Ring(4096, STEP_RECORD.size), recorder)
@@ -102,14 +124,15 @@ def local(a) -> int:
 
     def rank_main(comm):
         rec = Recorder(f"rank{comm.rank}")
-        F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, NullDrafter(), rec,
+        F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, a.drafter, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed)
         t0 = time.perf_counter()
         with rec.phase("generate"):
             out = run_prompts(engine, runner, prompts)
             torch.cuda.synchronize()
         return {"rec": rec, "out": out, "steps": runner.steps, "ring": runner.ring.count, "secs": time.perf_counter() - t0,
-                "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.blocks.available, "slots": caches.slots.available}
+                "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.blocks.available, "slots": caches.slots.available,
+                "accepted": engine.accepted_total, "drafted": engine.drafted_total, "k": engine.drafter.k}
 
     if a.serve:
         return local_serve(a, tp, lanes, layers, prompts)
@@ -120,13 +143,13 @@ def local(a) -> int:
     kinds = r0["kinds"]
     print(f"  layers {layers[0]}-{layers[-1]}, {a.seqs} prompts of ~{a.prompt} tokens, max_new {a.max_new}: {r0['steps']} steps "
           f"({kinds.count(1)} prefill, {kinds.count(2)} decode) in {r0['secs']:.1f} s; ring {r0['ring']} records; "
-          f"blocks/slots returned: {r0['blocks']}/{r0['slots']}")
+          f"blocks/slots returned: {r0['blocks']}/{r0['slots']}; drafter K={r0['k']}: {r0['accepted']}/{r0['drafted']} drafts accepted")
     for seq, ids in r0["out"].items():
         print(f"    seq {seq}: {len(ids)} tokens {ids[:12]}{'...' if len(ids) > 12 else ''}")
     print(f"  four ranks produced identical tokens: {same}")
-    ok = same and all(len(ids) == a.max_new for ids in r0["out"].values()) and kinds.count(2) == a.max_new - 1 + 0
-    print("\n  " + ("PASS: the runner drove prefill and decode through the engine on four ranks" if same and all(len(ids) == a.max_new for ids in r0['out'].values()) else "FAIL"))
-    return 0 if same else 1
+    ok = same and all(len(ids) >= a.max_new for ids in r0["out"].values())
+    print("\n  " + ("PASS: the runner drove prefill and decode through the engine on four ranks" if ok else "FAIL"))
+    return 0 if ok else 1
 
 
 def local_serve(a, tp, lanes, layers, prompts) -> int:
@@ -139,7 +162,7 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
 
     def rank_main(comm):
         rec = Recorder(f"rank{comm.rank}")
-        F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, NullDrafter(), rec,
+        F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, a.drafter, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed)
         server = Server(engine, runner, comm, port=port)
         httpd = None
@@ -188,9 +211,9 @@ def fleet(a) -> int:
     """One rank per node, inside the glm53 image: served lanes (D3: all or nothing), every layer, then serve."""
     print(f"  box: {facts.check_box()}")
     comm = Comm.init()
-    lanes = lane_tables.served()
+    lanes = lane_tables.served(reference_for=("expert",))       # declared, printed, until b12x and the recurrent rows are bound
     rec = Recorder(f"rank{comm.rank}")
-    F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, NullDrafter(), rec,
+    F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                            max_new=a.max_new, temperature=a.temperature, seed=a.seed)
     dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
     if comm.rank == 0:
@@ -216,6 +239,7 @@ def main(argv=None) -> int:
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--serve", action="store_true", help="with --local: through the HTTP door and the lockstep loop")
+    ap.add_argument("--drafter", action="store_true", help="with --local: DFlash2 drafts (aux layers clipped to the chain: plumbing, not quality)")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--dump-dir", default="/home/choiceoh/glm53-logs/st-dumps")
     a = ap.parse_args(argv)

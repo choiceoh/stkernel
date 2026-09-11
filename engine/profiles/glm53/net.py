@@ -144,7 +144,7 @@ class Glm53Net:
         qkv_all, b_all, f_a, g_a = proj.split([3 * Hl * D, Hl, D, D], dim=-1)
         g_raw_all = Fn.linear(f_a, p[n + "f_b"]).view(N, Hl, D)
         g_out = Fn.linear(g_a, p[n + "g_b"]).view(N, Hl, D)
-        beta_all = torch.sigmoid(b_all.float())
+        beta_all = b_all                                                             # raw logits: each lane sigmoids as its kernel wants
         core = torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
         wc, wr = self.conv_ring, self.rec_ring
         for s in step.segments:
@@ -277,15 +277,19 @@ class Glm53Net:
         return self.comm.all_reduce(out.to(x.dtype))
 
     # -- the step ---------------------------------------------------------------------------
-    def forward(self, step: Step, caches: Caches, finish: bool = True):
+    def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None):
         """One step: every segment's tokens through the chain. Returns the final
         hidden states [N, hidden] (post final norm) when `finish`, else the raw
-        mHC carry (res, post, comb, x) for inspection."""
+        mHC carry (res, post, comb, x) for inspection. With `aux_layers`, also
+        the contracted residual after each of those layers, concatenated
+        [N, len * hidden] -- what the drafter reads (the served model's
+        aux_hidden_states: hc_post then hc_contract after layer idx)."""
         F = self.F
         N = step.ids.shape[0]
         x = self.embed(step.ids)
         res = x[:, None, :].expand(N, F.hc, F.hidden).contiguous()                   # hc_expand
         post = comb = None
+        aux = {}
         for L in self.layers:
             if post is not None:
                 res = self.lanes.mhc_post(x, res, post, comb)
@@ -298,11 +302,15 @@ class Glm53Net:
             x = self._moe(L, x) if F.is_moe(L) else self._dense(L, x)
             if self.probe:
                 self.probe("moe" if F.is_moe(L) else "dense", L, x)
+            if aux_layers and L in aux_layers:
+                aux[L] = self.lanes.mhc_post(x, res, post, comb).float().mean(1).to(x.dtype)
         if not finish:
             return res, post, comb, x
         res = self.lanes.mhc_post(x, res, post, comb)
-        h = res.float().mean(1).to(x.dtype)                                           # hc_contract
-        return rmsnorm(h, self.p["norm"], F.rms_eps)
+        h = rmsnorm(res.float().mean(1).to(x.dtype), self.p["norm"], F.rms_eps)      # hc_contract, final norm
+        if aux_layers:
+            return h, torch.cat([aux[L] for L in aux_layers], dim=-1)
+        return h
 
     def prefill(self, ids: torch.Tensor, ctx: int, seq: int, slot: int, caches: Caches, finish: bool = True):
         return self.forward(Step.prefill(ids, ctx, seq, slot), caches, finish)
