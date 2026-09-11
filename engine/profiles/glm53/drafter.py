@@ -127,6 +127,16 @@ class Drafter:
         self.F, self.target, self.decodable = F, target, decodable
         self.k = F.k
         self.p = None
+        self.decode_graphs = None
+
+    def capture_decode(self, caches):
+        from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
+        self.decode_graphs = DrafterDecodeGraphs(self, caches)
+
+    def observe_decode(self, ring, positions, aux):
+        if self.decode_graphs is None:
+            raise RuntimeError("drafter decode context graphs were not captured")
+        self.decode_graphs.observe(ring, positions, aux)
 
     @property
     def aux_layers(self) -> "list[int]":
@@ -143,6 +153,12 @@ class Drafter:
     def observe(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor) -> None:
         """ring [L, 2, window, kv_heads, D] bf16 (a slot's); positions [n]; aux [n, 5*4096] target states."""
         F, p = self.F, self.p
+        if positions.numel() == 0:
+            return
+        # A long prefill can wrap the ring several times. Scatter each cell
+        # once, retaining the newest window; duplicate CUDA indices have no
+        # defined last-writer order.
+        positions, aux = positions[-F.window:], aux[-F.window:]
         c = rmsnorm(Fn.linear(aux, p["fc.weight"]), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
         idx = positions % F.window
         for L in range(F.layers):
@@ -173,13 +189,18 @@ class Drafter:
         kh = rope(rmsnorm(Fn.linear(x, p[q + "k_proj.weight"]).view(B, F.kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
         vh = Fn.linear(x, p[q + "v_proj.weight"]).view(B, F.kv_heads, F.head_dim)
         # the context window: the last min(ctx, window) verified positions, then the block itself (non-causal)
-        n_ctx = min(ctx_len, F.window)
-        cpos = torch.arange(ctx_len - n_ctx, ctx_len, device=x.device)
+        # A fixed window keeps GEMM/reduction geometry identical in eager and
+        # captured execution, including the first 2048 positions.
+        cpos = ctx_len + torch.arange(-F.window, 0, device=x.device)
         kc, vc = ring[L, 0, cpos % F.window], ring[L, 1, cpos % F.window]                    # [n_ctx, kv, D]
+        kc = kc.masked_fill((cpos < 0)[:, None, None], 0)
+        vc = vc.masked_fill((cpos < 0)[:, None, None], 0)
         k_all, v_all = torch.cat([kc, kh]), torch.cat([vc, vh])                                 # [n_ctx + B, kv, D]
         rep = F.heads // F.kv_heads
         k_all, v_all = k_all.repeat_interleave(rep, dim=1), v_all.repeat_interleave(rep, dim=1)
         scores = torch.einsum("bhd,nhd->bhn", qh.float(), k_all.float()) * F.head_dim ** -0.5
+        valid = torch.cat([cpos >= 0, torch.ones(B, device=x.device, dtype=torch.bool)])
+        scores = scores.masked_fill(~valid[None, None, :], float("-inf"))
         o = torch.einsum("bhn,nhd->bhd", torch.softmax(scores, dim=-1), v_all.float()).to(x.dtype)
         return Fn.linear(o.reshape(B, F.heads * F.head_dim), p[q + "o_proj.weight"])
 
@@ -211,25 +232,32 @@ class Drafter:
 
     def propose(self, anchor: int, position: int, ring: torch.Tensor) -> "list[int]":
         """K drafts for the block [anchor at `position`, K masks after it]; the ring holds the context up to position-1."""
+        if self.decode_graphs is not None:
+            return self.decode_graphs.propose(anchor, position, ring).tolist()
+        anchor = torch.full((1,), anchor, dtype=torch.int64, device=ring.device)
+        return self.propose_tensor(anchor, position, ring).tolist()
+
+    def propose_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor) -> torch.Tensor:
+        """The same greedy walk, with every selection remaining on device."""
         F, p = self.F, self.p
         K = self.k
         dev = ring.device
-        ids = torch.tensor([anchor] + [F.mask_id] * K, dtype=torch.int64, device=dev)
+        ids = torch.cat([anchor.reshape(1), torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
         positions = position + torch.arange(K + 1, device=dev)
         h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions
         logits = self.target.head(h).float()
         logits[:, self.decodable:] = float("-inf")
         unary, cand = logits.topk(F.sel_top_k, dim=-1)                                       # [K, 16]
         proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()        # [K, 256]
-        pred_ids = torch.cat([torch.full((1, F.sel_top_k), anchor, device=dev, dtype=torch.int64), cand[:-1]])   # [K, 16]
+        pred_ids = torch.cat([anchor.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])   # [K, 16]
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()                # [K, 16, 256]
         succ = p["candidate_selector.successor_codebook"][cand].float()                      # [K, 16, 256]
         scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)   # [K, prev, cur]
-        out, prev = [], 0
+        out, prev = [], torch.zeros(1, device=dev, dtype=torch.int64)
         for s in range(K):                                                                  # greedy walk, as the served kernel at temperature 0
-            c = int(scores[s, prev].argmax().item())
-            out.append(int(cand[s, c].item())); prev = c
-        return out
+            prev = scores[s].index_select(0, prev).argmax(-1)
+            out.append(cand[s].index_select(0, prev))
+        return torch.cat(out)
 
 
 def ring_bytes(F: DrafterFacts) -> int:

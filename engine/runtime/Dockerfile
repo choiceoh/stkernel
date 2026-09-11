@@ -10,6 +10,7 @@ RUN python3 /tmp/st-promote-deep-gemm.py \
     && rm /tmp/st-promote-deep-gemm.py
 WORKDIR /opt/st
 COPY engine /opt/st/engine
+RUN python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
 ENV PYTHONPATH=/opt/st \
     TRITON_CACHE_DIR=/cache/triton \
     TILELANG_CACHE_DIR=/cache/tilelang \

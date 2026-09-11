@@ -1008,6 +1008,7 @@ class Sm120StaticMoEWorkspace:
     dm_down_input_scale: torch.Tensor | None = None
     # Pinned once with the two E72 decode workspaces, before graph capture.
     ep_micro_scatter_fp32: torch.Tensor | None = None
+    glm_tp_scatter_fp32: torch.Tensor | None = None
 
 
 def _direct_micro_candidate(k: int, n: int, num_topk: int, weight_E: int) -> bool:
@@ -1076,6 +1077,10 @@ def allocate_sm120_static_workspace(
             max(state_E, max_rows), dtype=torch.int32, device=device
         ),
     )
+
+    if state_E == weight_E == 288 and (k, n, num_topk) == (4096, 512, 8) and quant_mode == "nvfp4":
+        workspace.glm_tp_scatter_fp32 = torch.empty(
+            (max(1, max_rows // num_topk), k), dtype=torch.float32, device=device)
 
     # Finalize views
     workspace.packed_a_view = workspace.packed_input.permute(1, 2, 0).view(
@@ -1941,6 +1946,10 @@ def _get_static_kernel(
     if activation_precision == "fp4" and num_topk > 1:
         mma_tiler_mn = _select_moe_mma_tiler_mn(routed_rows, n, resident_clusters=mac)
 
+    scatter_fp32 = _glm_tp_scatter_fp32(
+        state_E=state_E, weight_E=weight_E, k=k, n=n, num_topk=num_topk,
+        quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit)
     cache_key = _static_kernel_cache_key(
         activation_precision=activation_precision,
         quant_mode=quant_mode,
@@ -1961,6 +1970,7 @@ def _get_static_kernel(
         swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
     )
+    cache_key = (*cache_key, scatter_fp32)
     cached = _STATIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -1972,6 +1982,7 @@ def _get_static_kernel(
 
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
     kernel: Any = MoEStaticKernel(
+        scatter_fp32=scatter_fp32,
         sf_vec_size=sf_vec_size,
         mma_tiler_mn=mma_tiler_mn,
         output_tile_count_n=output_tile_count_n,
@@ -2092,7 +2103,7 @@ def _get_static_kernel(
         assumed_align=16,
     )
     scatter_fake = cute.runtime.make_fake_compact_tensor(
-        a_dtype,
+        cutlass.Float32 if scatter_fp32 else a_dtype,
         (m, k),
         stride_order=(1, 0),
         assumed_align=16,
@@ -2473,6 +2484,23 @@ def _get_static_kernel_v2(
 _MICRO_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
 
 
+def _glm_tp_scatter_fp32(*, state_E, weight_E, k, n, num_topk, quant_mode,
+                          activation, swiglu_alpha, swiglu_beta, swiglu_limit):
+    """The fixed GLM TP4 lane sums rounded route partials in FP32."""
+    return (state_E == weight_E == 288 and (k, n, num_topk) == (4096, 512, 8)
+            and quant_mode == "nvfp4" and activation == "swigluoai_uninterleave"
+            and (swiglu_alpha, swiglu_beta, swiglu_limit) == (1., 0., 10.))
+
+
+def _glm_tp_scatter_buffer(workspace, output):
+    plane = workspace.glm_tp_scatter_fp32
+    if (plane is None or plane.shape[0] < output.shape[0] or plane.shape[1] != output.shape[1]
+            or plane.dtype != torch.float32 or plane.device != output.device):
+        raise ValueError("GLM TP FP32 scatter workspace was not allocated before launch")
+    plane.record_stream(torch.cuda.current_stream(output.device))
+    return plane[:output.shape[0]]
+
+
 def _ep_micro_scatter_fp32(*, state_E, weight_E, m, k, n, num_topk,
                           max_rows, skip_zero_weight_expert_id, quant_mode,
                           activation, swiglu_alpha, swiglu_beta, swiglu_limit):
@@ -2610,6 +2638,10 @@ def _get_micro_kernel(
         swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
     )
+    scatter_fp32 = scatter_fp32 or _glm_tp_scatter_fp32(
+        state_E=state_E, weight_E=weight_E, k=k, n=n, num_topk=num_topk,
+        quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit)
     ep_direct_scatter = _ep_micro_direct_scatter(
         state_E=state_E, weight_E=weight_E, m=m, k=k, n=n,
         num_topk=num_topk, max_rows=max_rows,
@@ -3209,6 +3241,12 @@ def launch_sm120_static_moe(
     static_v2_stamps = None
     static_v2_counter = None
     kernel_scatter_output = scatter_output
+    glm_tp_fp32 = _glm_tp_scatter_fp32(
+        state_E=workspace.state_E, weight_E=num_experts, k=k, n=n, num_topk=top_k,
+        quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit)
+    if glm_tp_fp32:
+        kernel_scatter_output = _glm_tp_scatter_buffer(workspace, scatter_output)
 
     if use_micro:
         if _ep_micro_scatter_fp32(
@@ -3323,6 +3361,8 @@ def launch_sm120_static_moe(
                 f"agree: views tiled={bool(getattr(weights, 'tiled', False))}, "
                 f"lane tiled={want_tiled}"
             )
+        if glm_tp_fp32 and static_v2_config is not None:
+            raise ValueError("GLM TP FP32 scatter requires the declared row-major static kernel")
         if static_v2_config is not None:
             static_v2_config = _static_v2_decode_config(static_v2_config, num_tokens)
             if static_v2_config.get("reform_sf_pack"):

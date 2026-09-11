@@ -146,9 +146,20 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
         table = torch.zeros(2, c, w.shape[1] - 1, device=x.device, dtype=x.dtype)
         if state is not None:
             table[1] = state
-        y = causal_conv1d_fn(x.T, w, None, table, torch.tensor([0, t], device=x.device, dtype=torch.int32),
-                             cache_indices=torch.tensor([1], device=x.device, dtype=torch.int32),
-                             has_initial_state=torch.tensor([state is not None], device=x.device), activation="silu")
+        # One sequence, known length: publish the launch map on device.
+        # The generic wrapper otherwise reads query lengths back to the CPU,
+        # which synchronizes eager decode and is forbidden during capture.
+        from types import SimpleNamespace
+        programs = -(-t // 8)
+        batch = torch.zeros(programs, device=x.device, dtype=torch.int32)
+        offsets = torch.arange(programs, device=x.device, dtype=torch.int32)
+        metadata = SimpleNamespace(batch_ptr=batch, token_chunk_offset_ptr=offsets,
+            nums_dict={8: dict(tot=programs, mlist=None, mlist_len=programs,
+                              offsetlist=None, batch_ptr=batch, token_chunk_offset_ptr=offsets)})
+        y = causal_conv1d_fn(x.T, w, None, table, torch.arange(2, device=x.device, dtype=torch.int32) * t,
+                             cache_indices=torch.ones(1, device=x.device, dtype=torch.int32),
+                             has_initial_state=torch.full((1,), state is not None, device=x.device, dtype=torch.bool),
+                             activation="silu", metadata=metadata)
         y = y.T if y.shape[0] == c else y
         return y, table[1]
 

@@ -1,0 +1,52 @@
+weights loaded; rank 0 distributed True
+NCCL version 2.29.7+cuda13.2
+captured 1
+case 1 (0, 0) relative 0.0 state_exact True paged_exact True
+case 1 (1, 3) relative 0.0 state_exact True paged_exact True
+case 1 (7, 8) relative 0.0 state_exact True paged_exact True
+case 1 (15, 257) relative 0.0 state_exact True paged_exact True
+case 1 (255, 511) relative 0.0 state_exact True paged_exact True
+[W911 10:36:52.834245697 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[megakernel] selftest mla rel=2.70e-03 pair_prefill=False group=2 prefill32=False -> ARM
+2026-09-11 10:37:26,207 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-11 10:37:26,207 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m7_k4096_n512_t8_r56_2ef341a06d1ca5e8
+2026-09-11 10:37:28,913 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m7_k4096_n512_t8_r56_2ef341a06d1ca5e8.o
+2026-09-11 10:37:29,453 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m8_k4096_n512_t8_r64_5044a5ac5e0a95d8
+2026-09-11 10:37:31,911 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m8_k4096_n512_t8_r64_5044a5ac5e0a95d8.o
+2026-09-11 10:37:31,990 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m15_k4096_n512_t8_r120_a9edae2f47407744
+2026-09-11 10:37:34,467 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m15_k4096_n512_t8_r120_a9edae2f47407744.o
+2026-09-11 10:37:34,812 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387
+2026-09-11 10:37:37,916 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387.o
+[b12x-bounds] state_E=288 n=512 tile_m=16 routed_rows=2056 -> rows 6656/6656 tiles 416/416 tasks 1664/1664
+[b12x-bounds] state_E=288 n=512 tile_m=16 routed_rows=2040 -> rows 6640/6656 tiles 415/416 tasks 1660/1664
+[b12x-bounds] state_E=288 n=512 tile_m=16 routed_rows=4088 -> rows 8688/8688 tiles 543/543 tasks 2172/2172
+2026-09-11 10:37:38,336 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m7_k4096_n512_t8_r120_2e6dc6692c12313e
+2026-09-11 10:37:40,825 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m7_k4096_n512_t8_r120_2e6dc6692c12313e.o
+case 1 (3, 7) relative 0.0 state_exact True paged_exact True
+2026-09-11 10:37:42  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+2026-09-11 10:37:52  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+case 1 (4090, 4091) relative 0.0 state_exact True paged_exact True
+case 1 (4095, 4096) relative 0.0 state_exact True paged_exact True
+captured 6
+case 6 (0, 0) relative 0.0 state_exact True paged_exact True
+case 6 (1, 3) relative 0.0 state_exact True paged_exact True
+case 6 (7, 8) relative 0.0 state_exact True paged_exact True
+case 6 (15, 257) relative 0.0 state_exact True paged_exact True
+rejected-future (15, 257) relative 0.0 state_exact True paged_exact True
+case 6 (255, 511) relative 0.0 state_exact True paged_exact True
+case 6 (3, 7) relative 0.0 state_exact True paged_exact True
+case 6 (4090, 4091) relative 0.0 state_exact True paged_exact True
+case 6 (4095, 4096) relative 0.0 state_exact True paged_exact True
+PASS
+2026-09-11 10:37:53,659 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_dc39d84bc40c0b93
+2026-09-11 10:37:57,511 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_dc39d84bc40c0b93.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32720 -> rows 69504/69504 tiles 543/543 tasks 2172/2172
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32728 -> rows 69504/69504 tiles 543/543 tasks 2172/2172
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32760 -> rows 69504/69504 tiles 543/543 tasks 2172/2172
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32768 -> rows 69504/69504 tiles 543/543 tasks 2172/2172
+2026-09-11 10:38:02,982 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m6_k4096_n512_t8_r120_6d3401752ae831ea
+2026-09-11 10:38:04,106 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m6_k4096_n512_t8_r120_6d3401752ae831ea.o
+2026-09-11 10:38:05,764 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m12_k4096_n512_t8_r120_b082f52e4b9795a5
+2026-09-11 10:38:06,880 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m12_k4096_n512_t8_r120_b082f52e4b9795a5.o
+2026-09-11 10:38:09,387 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m8_k4096_n512_t8_r120_1a173337dbcd1bcd
+2026-09-11 10:38:11,869 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m8_k4096_n512_t8_r120_1a173337dbcd1bcd.o
