@@ -138,6 +138,13 @@ ASYNC="${ASYNC:-0}";  ASYNC_FLAG=""; [ "$ASYNC" = 1 ] && ASYNC_FLAG="--async-sch
 AUTOTUNE="${AUTOTUNE:-1}"; AUTOTUNE_FLAG=""; [ "$AUTOTUNE" = 0 ] && AUTOTUNE_FLAG="--no-enable-flashinfer-autotune"
 ALL2ALL="${ALL2ALL:-}"; A2A_FLAG=""; [ -n "$ALL2ALL" ] && A2A_FLAG="--all2all-backend $ALL2ALL"
 LOAD_FORMAT="${LOAD_FORMAT:-}"; LOAD_FLAG=""; [ -n "$LOAD_FORMAT" ] && LOAD_FLAG="--load-format $LOAD_FORMAT"
+# KV_CACHE_MEMORY (bytes): size the KV cache to a fixed number instead of
+# "whatever the utilization fraction leaves after the profile peak". On GB10
+# unified memory the profile peak at MAX_NUM_BATCHED=16384 measured ~26 GiB on
+# top of ~32 GiB of weights+PLE per rank (GPU_MEM=0.50 left < 2.44 GiB for KV),
+# and every allocation beyond the budget is a driver NV_ERR_NO_MEMORY the
+# kernel journal records. tp4-mem prints the matching number.
+KV_FLAG=""; [ -n "${KV_CACHE_MEMORY:-}" ] && KV_FLAG="--kv-cache-memory-bytes $KV_CACHE_MEMORY"
 # fastsafetensors on this fleet means the overlay's LOCAL mode (see the profile):
 # without DENEB_FST_LOCAL=1 the loader partitions reads across ranks and
 # redistributes over its own NCCL, which dies in ncclSystemError on 4-node RoCE.
@@ -235,7 +242,7 @@ exec vllm serve $MODEL_PATH \\
   $EP_FLAG \\
   --max-model-len $MAX_MODEL_LEN \\
   --max-num-seqs $MAX_NUM_SEQS --max-num-batched-tokens $MAX_NUM_BATCHED \\
-  --gpu-memory-utilization $GPU_MEM \\
+  --gpu-memory-utilization $GPU_MEM $KV_FLAG \\
   --kv-cache-dtype $KV_DTYPE \\
   $MOE_FLAG \\
   --enable-prefix-caching --enable-chunked-prefill \\
