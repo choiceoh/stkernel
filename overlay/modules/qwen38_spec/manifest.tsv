@@ -1,0 +1,3 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
+gpu_model_runner.py	vllm/v1/worker/gpu_model_runner.py	ccd19277d570ea6f7611f72e27ef1f69dfc8835ae3eb1be30d4948401b8a46ee
+llm_base_proposer.py	vllm/v1/spec_decode/llm_base_proposer.py	7edc6415162c39b46c991a4ea6fc3e87e13e865d0f154027a8fd40111b34c19a
