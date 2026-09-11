@@ -20,17 +20,21 @@ class KnobDeclarationTests(unittest.TestCase):
         from engine.profiles.glm53 import lanes
         # the profile's declaration, spelled here without importing boot (torch/CUDA-heavy imports)
         knobs = [Knob("moe_static", lanes.MOE_STATIC_STOCK, datetime.date(2026, 9, 30), "b12x static lane", "stock"),
-                 Knob("mla_prefill", "stock", datetime.date(2026, 9, 30), "MLA prefill", "stock")]
+                 Knob("mla_prefill", "stock", datetime.date(2026, 9, 30), "MLA prefill", "stock"),
+                 Knob("context_ceiling", 0, datetime.date(2026, 9, 30), "served context ceiling", "0", int)]
         return Config([Fact("world", 4, "facts.TP")], knobs, env=env, today=datetime.date(2026, 9, 12)), ConfigError
 
     def test_defaults_are_the_judged_stock_paths(self):
         cfg, _ = self._declared({})
         self.assertEqual((cfg["moe_static"], cfg["mla_prefill"]), ("stock", "stock"))
+        self.assertEqual(cfg["context_ceiling"], 0)        # 0 = the checkpoint's trained positions
 
     def test_env_selects_the_production_candidate_and_undeclared_dies(self):
-        cfg, ConfigError = self._declared({"STK_moe_static": "t,r,sf6,q0", "STK_mla_prefill": "pair"})
+        cfg, ConfigError = self._declared({"STK_moe_static": "t,r,sf6,q0", "STK_mla_prefill": "pair",
+                                           "STK_context_ceiling": "131072"})
         self.assertEqual((cfg["moe_static"], cfg["mla_prefill"]), ("t,r,sf6,q0", "pair"))
-        self.assertEqual(cfg.overridden, ["mla_prefill", "moe_static"])
+        self.assertEqual(cfg["context_ceiling"], 131072)   # parsed as int, not a string
+        self.assertEqual(cfg.overridden, ["context_ceiling", "mla_prefill", "moe_static"])
         with self.assertRaises(ConfigError):
             self._declared({"STK_B12X_STATIC_V2": "t"})
 
@@ -38,7 +42,8 @@ class KnobDeclarationTests(unittest.TestCase):
         src = (ROOT / "engine/profiles/glm53/boot.py").read_text()
         self.assertIn('Knob("moe_static"', src)
         self.assertIn('Knob("mla_prefill"', src)
-        self.assertEqual(src.count("Knob("), 2)
+        self.assertIn('Knob("context_ceiling"', src)
+        self.assertEqual(src.count("Knob("), 3)     # every axis still under measurement, and no more
         self.assertIn('lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])', src)
 
 
