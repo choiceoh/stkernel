@@ -26,6 +26,35 @@
       "tests/test_engine_sampling.py": "7df335eb8887871654414cf125539a68a041b05c6f72a9d070f1cecaba24b9a2"
     }
   },
+  "merge_validation_main562": {
+    "checked_at": "2026-09-11T14:22:00.943945+00:00",
+    "revision": "670e22bc7f868fab586526679feac25dede0aa36",
+    "integrated_main": "85494679",
+    "native_cpu": {
+      "discovered": 256,
+      "passed": 192,
+      "skipped": 64
+    },
+    "rtx_cuda": {
+      "passed": 30,
+      "skipped": 0
+    },
+    "fused_gb10_tp4": "pending: another task owns the shared fleet lock",
+    "source_sha256": {
+      "engine/kernels/vocab_candidates.py": "1a01cb6da070494d116ba5cde3f612392527d2bfe620feb6f754b8bcce866e88",
+      "engine/modules/vocab.py": "179bc3cda48e23528b431df180ded42d1621f5353767f69ddd2e2d8fd04bc24d",
+      "engine/profiles/glm53/drafter.py": "a6c281a65d73e7af5f0b91703ae23f9a35e57c60f9c18d6bf3e17849e3f78425",
+      "engine/profiles/glm53/decode_graphs.py": "e209316a78938ec442e8962fe4009edf83d6b1c35403361be577f436c00bad56",
+      "tests/test_engine_vocab_topk.py": "7e11ab5e6bbe24d883f13aa59f0c7276e190a776abd8dfc53af63cef4be24ea0",
+      "tests/test_engine_state.py": "f4689dab76ccc043da585ebf349e94be04df80283720611caad035083672e31b",
+      "tests/test_engine_sampling.py": "7df335eb8887871654414cf125539a68a041b05c6f72a9d070f1cecaba24b9a2",
+      "engine/base/comm.py": "1cce4324e0ea97a9cb652cd6c8339fc7832426bcaff54c7e5ae975888a21cfc6",
+      "engine/base/graphs.py": "29057d80e31e88648d017140e8b7c0be1ee32915cce3b2ae4858666a6473bf70",
+      "engine/profiles/glm53/adapter.py": "8192299f99274f6f3ac9f1bc22985d8e9b5731f38f73373f19df502e3570c6f0",
+      "tests/test_engine_graph_contracts.py": "512c270d0f4d8405c11c77dc9c70aa0b6332dd2b18bf21194c7d8fa41a232e39"
+    },
+    "rtx_numpy": "2.5.3"
+  },
   "payload": {
     "legacy_gathered_bytes": 1548800,
     "candidate_gathered_bytes": 2560,

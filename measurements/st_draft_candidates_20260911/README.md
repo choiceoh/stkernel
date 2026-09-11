@@ -163,3 +163,11 @@ All four measurement summarizers were rerun against their recorded revisions.
 The fused GB10/TP4 qualification remains pending under another task's fleet
 lock; this PR integration check does not convert the earlier unfused fleet
 measurements into results for the final fused kernels.
+
+While PR #563 was opening, main advanced through #562 (`85494679`). This
+graph-contract/staging change was also merged without conflicts, and the
+affected regressions were repeated. `merge-validation/main-562/` records the
+latest integration revision: **256 native CPU tests, 192 passed and 64 skipped;
+30 RTX CUDA vocabulary/drafter/state/sampling/graph-contract tests passed with
+zero skips**. The local runtime now includes NumPy 2.5.3 for main's new pinned
+staging views. The final fused GB10/TP4 qualification remains pending.
