@@ -40,7 +40,8 @@ GIB = 1 << 30
 def block_bytes(F: Facts, layers) -> int:
     """One block, all paged layers of `layers` together."""
     n_dsa = sum(1 for L in layers if F.is_dsa(L))
-    return n_dsa * (F.block * F.kv_lora + (F.block // F.kpool) * (F.idx_dim + 4))
+    bp = F.block // F.kpool
+    return n_dsa * (F.block * F.kv_lora + bp * F.idx_dim + -(-bp * 4 // 4096) * 4096)     # the scales' block sector-padded
 
 
 def slot_bytes(F: Facts, layers, hk: int) -> int:
@@ -61,13 +62,15 @@ class Glm53Caches:
             dl, dw, dkv, dd = draft
             self._draft = arena.carve(num_slots * dl * 2 * dw * dkv * dd * 2, "drafter context rings").view(BF16).view(num_slots, dl, 2, dw, dkv, dd)
         self.bp = F.block // F.kpool                          # pools per block
+        self.ps_block = -(-self.bp * 4 // 4096) * 4096        # the scales' block, sector-padded (4,096 B for 576 pools)
         wc, wr = F.conv - 1 + F.spec_k, F.spec_k + 1
         self._lat, self._pk, self._ps, self._tail, self._kda = {}, {}, {}, {}, {}
         for L in self.layers:
             if F.is_dsa(L):
                 self._lat[L] = arena.carve(num_blocks * self.B * F.kv_lora, f"L{L} latent").view(E4M3).view(num_blocks * self.B, F.kv_lora)
                 self._pk[L] = arena.carve(num_blocks * self.bp * F.idx_dim, f"L{L} pool keys").view(E4M3).view(num_blocks * self.bp, F.idx_dim)
-                self._ps[L] = arena.carve(num_blocks * self.bp * 4, f"L{L} pool scales").view(F32)
+                # scales: 576 x 4 B = 2,304 B per block, padded to one sector so the tier can demote the region O_DIRECT
+                self._ps[L] = arena.carve(num_blocks * self.ps_block, f"L{L} pool scales").view(F32).view(num_blocks, self.ps_block // 4)
                 self._tail[L] = arena.carve(num_slots * self.kp * 2 * F.idx_dim * 2, f"L{L} tail ring").view(BF16).view(num_slots, self.kp, 2, F.idx_dim)
             else:
                 c = 3 * hk * F.kda_dim
@@ -104,11 +107,18 @@ class Glm53Caches:
         row = self._rows[seq]
         return (row[pool_ids // self.bp] * self.bp + pool_ids % self.bp).to(torch.int32)
 
+    def read_scales(self, layer: int, slots: torch.Tensor) -> torch.Tensor:
+        s = slots.long()
+        return self._ps[layer][s // self.bp, s % self.bp]
+
+    def write_scales(self, layer: int, slots: torch.Tensor, values: torch.Tensor) -> None:
+        s = slots.long()
+        self._ps[layer][s // self.bp, s % self.bp] = values
+
     # -- regions ---------------------------------------------------------------------
     def kda(self, layer, slot): conv, rec = self._kda[layer]; return conv[slot], rec[slot]
     def latent(self, layer): return self._lat[layer]
     def pool_keys(self, layer): return self._pk[layer]
-    def pool_scales(self, layer): return self._ps[layer]
     def tail(self, layer, slot): return self._tail[layer][slot]
 
     def draft_ring(self, slot: int) -> torch.Tensor:
@@ -131,7 +141,7 @@ class Glm53Caches:
             if self.F.is_dsa(L):
                 yield f"L{L} latent", self._lat[L].view(torch.uint8), self.B * self.F.kv_lora
                 yield f"L{L} pool keys", self._pk[L].view(torch.uint8), self.bp * self.F.idx_dim
-                yield f"L{L} pool scales", self._ps[L].view(torch.uint8), self.bp * 4
+                yield f"L{L} pool scales", self._ps[L].view(torch.uint8), self.ps_block
 
 
 def _selfcheck() -> None:
@@ -141,7 +151,7 @@ def _selfcheck() -> None:
     # the profile's two numbers, from this file's arithmetic
     per_seq, kv_tok, idx_tok = plan.state_bytes(plan.text_config())
     assert slot_bytes(F, range(F.layers), hk) == per_seq, (slot_bytes(F, range(F.layers), hk), per_seq)
-    assert block_bytes(F, range(F.layers)) == 11 * 1_255_680
+    assert block_bytes(F, range(F.layers)) == 11 * (1_179_648 + 73_728 + 4_096)
     nb, ns = 3, 3
     need = nb * block_bytes(F, layers) + ns * slot_bytes(F, layers, hk) + 20 * 256
     arena = Arena(need + (1 << 20))
@@ -155,6 +165,9 @@ def _selfcheck() -> None:
     pools = c.pool_slots(0, torch.tensor([0, 575, 576], device=c.device)).tolist()
     assert pools == [row[0] * 576, row[0] * 576 + 575, row[1] * 576]
     conv, rec = c.kda(0, 1); assert conv.shape == (3 * hk * 128, 8) and rec.shape == (6, hk, 128, 128)
+    ps = torch.tensor(pools, device=c.device, dtype=torch.int32)
+    c.write_scales(3, ps, torch.tensor([1.5, 2.5, 3.5], device=c.device)); assert c.read_scales(3, ps).tolist() == [1.5, 2.5, 3.5]
+    assert all(bb % 4096 == 0 for _n, _st, bb in c.regions()), "every region block must be O_DIRECT-able"
     assert c.latent(3).shape == (nb * 2304, 512) and c.tail(3, 1).shape == (4, 2, 128)
     assert len(list(c.regions())) == 3
     c.release(0); assert c.blocks.available == nb

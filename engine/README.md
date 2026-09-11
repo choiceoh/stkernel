@@ -16,9 +16,17 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     modules/    특징 모듈: 선형 어텐션(KDA), 희소 인덱서·희소 MLA, NVFP4 선형·MoE·양자화, 하이퍼커넥션, 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
 
-빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드):
+빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드; 랭크 파일은 `profiles/glm53/preshard.py` 가 한 번 자른다):
 
-    PYTHONPATH=. python3 engine/profiles/glm53/check.py --layers 0-4          # 참조 레인
-    bash probes/run_engine_check.sh --layers 0-4                              # 서빙 커널 레인, 판정 이미지 안
+    PYTHONPATH=. python3 engine/profiles/glm53/check.py --layers 0-4              # 참조 레인: 랭크 동일 + 청크/verify/롤백 판정
+    bash probes/run_engine_check.sh --layers 0-4                                  # 서빙 커널 레인, 판정 이미지 안
+    PYTHONPATH=. python3 engine/profiles/glm53/boot.py --local --layers 0-4       # 러너가 돈다 (+ --drafter DFlash2, --park NVMe 파킹, --serve HTTP 문)
+
+플릿(스파크 4대, 판정 이미지 안, 노드당 컨테이너):
+
+    bash launchers/fanout-st-ranks.sh            # 랭크 r 파일을 노드 r 로
+    bash launchers/start-st-glm53.sh             # 부팅; glm53*/q38* 컨테이너가 있으면 거부
+    curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64}'
+    curl -s http://10.10.10.2:8000/v1/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
 
 측정과 판정은 `MEASUREMENTS.md` 44~45차.

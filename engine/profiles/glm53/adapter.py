@@ -65,6 +65,10 @@ class Glm53Engine:
         for d in (self.ctx, self.slot):
             d.pop(seq, None)
 
+    def extend(self, seq: int, ids: "list[int]") -> None:
+        """A new turn: more prompt tokens on a conversation the caches still hold."""
+        self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
+
     def horizon(self, seq: int) -> int:
         return self.ctx[seq] + 1 + self.drafter.k
 

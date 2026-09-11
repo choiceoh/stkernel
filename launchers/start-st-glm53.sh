@@ -19,6 +19,7 @@ IMAGE=${IMAGE:-glm53:v13-b12x-it}
 PORT=${PORT:-8000}
 RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/glm53-redhat-nvfp4-tp4}
 CKPT=${CKPT:-/home/choiceoh/models/glm53-redhat-nvfp4}
+DRAFTER=${DRAFTER:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}
 ENGINE_DIR=/home/choiceoh/st-engine                     # the engine tree, rsynced to every node
 OVERLAY_DIR=${OVERLAY_DIR:-/home/choiceoh/overlays/glm53}   # deploy-overlays.sh glm53 puts the composed files here
 CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
@@ -72,11 +73,12 @@ for r in "${!NODES[@]}"; do
   echo "== rank $r on $ip"
   rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/overlay" "choiceoh@$ip:$ENGINE_DIR/"
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; exit 1; }
+  node_sh "$ip" "test -s $DRAFTER/model.safetensors && test -f $CKPT/tokenizer.json" || { echo "ABORT: $ip lacks the drafter or the tokenizer" >&2; exit 1; }
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \
     --network host --ipc host --shm-size 32g --ulimit memlock=-1:-1 --ulimit nofile=524288:524288 --cap-add IPC_LOCK \
     --device /dev/infiniband:/dev/infiniband \
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
-    -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $CKPT:$CKPT:ro -v $CACHE_DIR:/cache \
+    -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $CKPT:$CKPT:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs $mounts \
     --entrypoint /bin/bash $IMAGE -lc 'cd /repo && PYTHONPATH=/repo exec python3 engine/profiles/glm53/boot.py --port $PORT' >/dev/null && echo '$ip: started'"
 done

@@ -24,12 +24,15 @@ import torch                                                     # noqa: E402
 from engine.base import scheduler as sched                       # noqa: E402
 from engine.base.arena import Arena                              # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
+from engine.base.config import Config, Fact                      # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
 from engine.base.loader import RankLoader                        # noqa: E402
 from engine.base.params import total_bytes                       # noqa: E402
 from engine.base.record import DeathDump, Ring                   # noqa: E402
 from engine.base.runner import STEP_RECORD, Runner               # noqa: E402
 from engine.base.serve import Server                             # noqa: E402
+from engine.base.kv_tier import NvmeTier                         # noqa: E402
+from engine.base.tiered_kv import TieredKV                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
 from engine.profiles.glm53.caches import Glm53Caches, block_bytes, slot_bytes   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
@@ -55,13 +58,30 @@ def eos_ids(ckpt=facts.CKPT) -> "list[int]":
     return list(e) if isinstance(e, list) else [e]
 
 
+def declared(a, comm_world: int) -> Config:
+    """D11: the only inputs are facts and expiring knobs; an undeclared STK_*
+    in the environment kills the boot. No knobs today -- every value below is
+    a fact with a source, and there is nothing to tune by env."""
+    facts_ = [
+        Fact("model", str(facts.CKPT), "profiles/glm53/facts.CKPT"),
+        Fact("ranks", str(a.ranks), "preshard output"),
+        Fact("world", comm_world, "facts.TP: four Sparks"),
+        Fact("block", facts.BLOCK, "launcher --block-size"),
+        Fact("spec_k", facts.SPEC_K, "launcher SPEC_K with DFlash2"),
+        Fact("kv_gib", float(a.kv_gib), "40th boot's measured KV" if a.kv_gib == KV_GIB else "--kv-gib (local)"),
+        Fact("port", int(a.port), "--port"),
+    ]
+    cfg = Config(facts_, knobs=[])
+    return cfg
+
+
 def decodable_vocab(tok) -> int:
     """Rows of the head the tokenizer has a token for: ids past this are masked (as served)."""
     return max(tok.get_vocab().values()) + 1
 
 
 def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
-          max_new: int = 256, temperature: float = 0.0, seed: int = 0):
+          max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None):
     F = facts.load()
     net = Glm53Net(F, comm, lanes, layers)
     specs = net.specs()
@@ -96,7 +116,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                          decodable=decodable, aux_layers=aux)
     contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                               max_wait_s=MAX_WAIT_S, max_running=max_seqs)
-    runner = Runner(engine, contract, caches.blocks, caches.slots, Ring(4096, STEP_RECORD.size), recorder)
+    tiered = None
+    if tier_dir:                                                                    # D16: idle conversations park on NVMe, per rank
+        tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=4096)
+        tiered = TieredKV(caches.blocks, tier, regions=[(st, bb) for _n, st, bb in caches.regions()], on_resume=caches.sync_row)
+    runner = Runner(engine, contract, caches.blocks, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
+                    keep_idle=tiered is not None)                                  # with a tier, conversations live on and park
     recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
     return F, net, caches, engine, runner
 
@@ -116,6 +141,7 @@ def run_prompts(engine: Glm53Engine, runner: Runner, prompts: "dict[int, list[in
 
 def local(a) -> int:
     print(f"  box: {facts.check_box()}")
+    print(declared(a, facts.TP).table())
     layers = [int(x) for x in a.layers.split("-")]; layers = list(range(layers[0], layers[-1] + 1))
     torch.manual_seed(a.seed)
     prompts = {seq: torch.randint(0, 100_000, (a.prompt + 7 * seq,)).tolist() for seq in range(a.seqs)}
@@ -125,14 +151,41 @@ def local(a) -> int:
     def rank_main(comm):
         rec = Recorder(f"rank{comm.rank}")
         F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, a.drafter, rec,
-                                               max_new=a.max_new, temperature=a.temperature, seed=a.seed)
+                                               max_new=a.max_new, temperature=a.temperature, seed=a.seed,
+                                               tier_dir=a.tier_dir if a.park else None)
         t0 = time.perf_counter()
         with rec.phase("generate"):
             out = run_prompts(engine, runner, prompts)
             torch.cuda.synchronize()
+        parked = None
+        if a.park:
+            # D16 on the real caches: the finished conversation 0 still holds its blocks (keep_idle); park it, the arena
+            # gets them back; resume into fresh blocks; wake and decode 4 more tokens -- they must equal a straight run's
+            seq, straight = 0, 2
+            with rec.phase("park"):
+                free_before = caches.blocks.available
+                wrote = runner.park(seq)
+                free_after = caches.blocks.available
+                got = runner.resume(seq)
+                torch.cuda.synchronize()
+            with rec.phase("continue"):
+                runner.wake(seq)
+                engine.limits[seq] = (engine.limits[seq][0] + 4, engine.limits[seq][1])
+                while seq in runner.state.running and runner.step(now=0.0) is not None:
+                    pass
+                torch.cuda.synchronize()
+            continued = engine.generated(seq)[a.max_new:]
+            with rec.phase("straight"):                                          # the same prompt, max_new + 4 in one go
+                engine.add(straight, prompts[seq], max_new=a.max_new + 4)
+                runner.submit(straight, len(prompts[seq]), now=0.0)
+                while straight not in runner.idle and runner.step(now=0.0) is not None:
+                    pass
+                torch.cuda.synchronize()
+            parked = {"wrote": wrote, "got": got, "free_before": free_before, "free_after": free_after,
+                      "continued": continued, "straight_tail": engine.generated(straight)[a.max_new:]}
         return {"rec": rec, "out": out, "steps": runner.steps, "ring": runner.ring.count, "secs": time.perf_counter() - t0,
                 "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.blocks.available, "slots": caches.slots.available,
-                "accepted": engine.accepted_total, "drafted": engine.drafted_total, "k": engine.drafter.k}
+                "accepted": engine.accepted_total, "drafted": engine.drafted_total, "k": engine.drafter.k, "parked": parked}
 
     if a.serve:
         return local_serve(a, tp, lanes, layers, prompts)
@@ -148,6 +201,13 @@ def local(a) -> int:
         print(f"    seq {seq}: {len(ids)} tokens {ids[:12]}{'...' if len(ids) > 12 else ''}")
     print(f"  four ranks produced identical tokens: {same}")
     ok = same and all(len(ids) >= a.max_new for ids in r0["out"].values())
+    if r0["parked"] is not None:
+        pk = r0["parked"]
+        same_p = all(o["parked"]["continued"] == pk["continued"] for o in outs[1:])
+        print(f"  park/resume (D16 on the real caches): wrote {pk['wrote'] / 2**20:.1f} MiB (arena free {pk['free_before']} -> {pk['free_after']} blocks), "
+              f"read back {pk['got'] / 2**20:.1f} MiB, continued {pk['continued']} == straight run's {pk['straight_tail']}: "
+              f"{pk['continued'] == pk['straight_tail']}; ranks agree {same_p}")
+        ok = ok and same_p and pk["wrote"] == pk["got"] and pk["free_after"] > pk["free_before"] and pk["continued"] == pk["straight_tail"]
     print("\n  " + ("PASS: the runner drove prefill and decode through the engine on four ranks" if ok else "FAIL"))
     return 0 if ok else 1
 
@@ -163,19 +223,24 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
     def rank_main(comm):
         rec = Recorder(f"rank{comm.rank}")
         F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, a.drafter, rec,
-                                               max_new=a.max_new, temperature=a.temperature, seed=a.seed)
+                                               max_new=a.max_new, temperature=a.temperature, seed=a.seed,
+                                               tier_dir=a.tier_dir if a.park else None)
         server = Server(engine, runner, comm, port=port)
         httpd = None
         if comm.rank == 0:
             httpd = server._serve_http()                       # the door opens before the loop
+            def post(body):
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/completions", method="POST",
+                                             data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=3600) as r:
+                    return json.loads(r.read())
+
             def client():
                 try:
                     for seq, ids in prompts.items():
-                        req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/completions", method="POST",
-                                                     data=json.dumps({"ids": ids, "max_tokens": a.max_new}).encode(),
-                                                     headers={"Content-Type": "application/json"})
-                        with urllib.request.urlopen(req, timeout=3600) as r:
-                            results[seq] = json.loads(r.read())
+                        results[seq] = post({"ids": ids, "max_tokens": a.max_new})
+                    if a.park:                                # a second turn on conversation 0: parked on NVMe after its first, resumed here
+                        results["turn2"] = post({"conversation": results[0]["conversation"], "ids": prompts[0][:5], "max_tokens": 4})
                 except Exception as e:                        # noqa: BLE001
                     results["error"] = repr(e)
                 server.alive = False                          # rank 0 stops after the last answer ...
@@ -199,9 +264,14 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
     t0 = time.perf_counter()
     outs = tp.run(rank_main)
     secs = time.perf_counter() - t0
-    ok = len(results) == len(prompts) and all(o["served"] == len(prompts) for o in outs) and all(len(r["ids"]) == a.max_new for r in results.values())
-    for seq, r in sorted(results.items()):
+    answers = {k: v for k, v in results.items() if k != "turn2"}
+    ok = len(answers) == len(prompts) and all(len(r["ids"]) == a.max_new for r in answers.values())
+    for seq, r in sorted(answers.items()):
         print(f"    seq {seq}: {r['completion_tokens']} tokens in {r['seconds']} s  {r['ids'][:8]}...")
+    if a.park:
+        t2 = results.get("turn2", {})
+        print(f"    turn 2 on conversation {t2.get('conversation')}: {t2.get('completion_tokens')} tokens in {t2.get('seconds')} s (resumed from NVMe, 5 new prompt tokens)")
+        ok = ok and t2.get("completion_tokens") == 4
     print(f"  serve loop on four ranks: {outs[0]['steps']} steps, {outs[0]['served']} answered over HTTP in {secs:.1f} s")
     print("\n  " + ("PASS: requests in at rank 0, tokens out, every rank in lockstep" if ok else "FAIL"))
     return 0 if ok else 1
@@ -210,11 +280,14 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
 def fleet(a) -> int:
     """One rank per node, inside the glm53 image: served lanes (D3: all or nothing), every layer, then serve."""
     print(f"  box: {facts.check_box()}")
+    cfg = declared(a, facts.TP)
     comm = Comm.init()
+    if comm.rank == 0:
+        print(cfg.table())
     lanes = lane_tables.served()                                              # every served lane, or the boot dies (D3)
     rec = Recorder(f"rank{comm.rank}")
     F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
-                                           max_new=a.max_new, temperature=a.temperature, seed=a.seed)
+                                           max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir)
     dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
     if comm.rank == 0:
         print(rec.table())
@@ -240,6 +313,8 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--serve", action="store_true", help="with --local: through the HTTP door and the lockstep loop")
     ap.add_argument("--drafter", action="store_true", help="with --local: DFlash2 drafts (aux layers clipped to the chain: plumbing, not quality)")
+    ap.add_argument("--park", action="store_true", help="with --local: park a finished conversation on NVMe, resume, continue (D16)")
+    ap.add_argument("--tier-dir", default="/home/choiceoh/glm53-logs/st-tier")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--dump-dir", default="/home/choiceoh/glm53-logs/st-dumps")
     a = ap.parse_args(argv)

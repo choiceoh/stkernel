@@ -84,7 +84,8 @@ class Caches(Protocol):
     def kda(self, layer: int, slot: int) -> "tuple[torch.Tensor, torch.Tensor]": ...   # conv ring [C, conv-1+K] bf16 by pos % width; rec ring [K+1, Hl, D, D] f32 by pos % (K+1)
     def latent(self, layer: int) -> torch.Tensor: ...            # [S, 512] e4m3, all slots of the box
     def pool_keys(self, layer: int) -> torch.Tensor: ...         # [P, 128] e4m3 (FWHT-rotated, per-row scaled)
-    def pool_scales(self, layer: int) -> torch.Tensor: ...       # [P] f32
+    def read_scales(self, layer: int, slots: torch.Tensor) -> torch.Tensor: ...            # [n] f32 at pool slots
+    def write_scales(self, layer: int, slots: torch.Tensor, values: torch.Tensor) -> None: ...
     def tail(self, layer: int, slot: int) -> torch.Tensor: ...   # [kpool, 2, 128] bf16: raw k (0) and gate score (1), by pos % kpool
     def token_slots(self, seq: int, positions: torch.Tensor) -> torch.Tensor: ...   # int32 latent slots
     def pool_slots(self, seq: int, pool_ids: torch.Tensor) -> torch.Tensor: ...     # int32 pool slots
@@ -192,7 +193,7 @@ class Glm53Net:
         width = F.topk + kp - 1
         slots_out = torch.full((N, width), -1, dtype=torch.int32, device=x.device)
         valid_out = torch.zeros(N, dtype=torch.int32, device=x.device)
-        keys, scales, tail_all = caches.pool_keys(L), caches.pool_scales(L), None
+        keys = caches.pool_keys(L)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
             tail = caches.tail(L, s.slot)
@@ -205,9 +206,9 @@ class Glm53Net:
             n_full = (end - pool0) // kp
             if n_full:
                 pk8, ps = self.lanes.kpool_compress(k_win[: n_full * kp].view(n_full, kp, d), g_win[: n_full * kp].view(n_full, kp, d), p[n + "ape"])
-                pslots = caches.pool_slots(s.seq, pool0 // kp + torch.arange(n_full, device=x.device)).long()
-                keys[pslots] = pk8
-                scales[pslots] = ps.view(-1)
+                pslots = caches.pool_slots(s.seq, pool0 // kp + torch.arange(n_full, device=x.device))
+                keys[pslots.long()] = pk8
+                caches.write_scales(L, pslots, ps.view(-1))
             new_pos = torch.arange(s.ctx, end, device=x.device)                     # every new token goes to the ring (pos % kp)
             tail[new_pos % kp, 0] = k[sl]
             tail[new_pos % kp, 1] = gate[sl]
@@ -215,9 +216,9 @@ class Glm53Net:
             seq_lens = (new_pos + 1).to(torch.int32)
             n_cand = end // kp                                                       # complete pools before the last query
             if n_cand:
-                cand = caches.pool_slots(s.seq, torch.arange(n_cand, device=x.device)).long()
+                cand = caches.pool_slots(s.seq, torch.arange(n_cand, device=x.device))
                 ke = seq_lens // kp
-                logits = self.lanes.indexer_logits(q8[sl], keys[cand], scales[cand], w_eff[sl], ke)
+                logits = self.lanes.indexer_logits(q8[sl], keys[cand.long()], caches.read_scales(L, cand), w_eff[sl], ke)
                 pool_ids = topk_positions(logits[:, :n_cand].float(), F.topk // kp, valid=ke)
             else:
                 pool_ids = torch.full((s.length, F.topk // kp), -1, dtype=torch.int32, device=x.device)

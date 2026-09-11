@@ -69,62 +69,77 @@ class NvmeTier:
         tmp = self.manifest.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.index)); os.replace(tmp, self.manifest)
 
-    def demote(self, seq: int, storage, block_ids: "list[int]", tokens: int) -> int:
-        """Write blocks `block_ids` of `storage` ([num_blocks * block_bytes] uint8)
-        contiguously. Returns bytes. Device work runs on the tier stream only."""
-        import torch
+    def _regions(self, storage):
+        """One storage (the base self-check) or a list of (storage, block_bytes):
+        a profile keeps a block as several per-layer regions (GLM-5.3: 33 --
+        latent, pool keys, pool scales x 11 layers) and a sequence's file holds
+        them as consecutive segments, each block-contiguous within its segment."""
+        regions = storage if isinstance(storage, (list, tuple)) else [(storage, self.block_bytes)]
+        for st, bb in regions:
+            if bb % SECTOR:
+                raise ValueError(f"region block {bb} B is not a multiple of {SECTOR}: not O_DIRECT-able")
+        return regions
 
-        table = storage.view(-1, self.block_bytes)
-        ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device)
+    def demote(self, seq: int, storage, block_ids: "list[int]", tokens: int) -> int:
+        """Write blocks `block_ids` of every region contiguously, region after
+        region. Returns bytes. Device work runs on the tier stream only."""
+        import torch
         fd = os.open(self._path(seq), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_DIRECT, 0o644)
         written = 0
         try:
-            for i in range(0, len(block_ids), self.per):
-                n_blk = min(self.per, len(block_ids) - i); n = n_blk * self.block_bytes
-                with torch.cuda.stream(self.stream):
-                    torch.index_select(table, 0, ids[i:i + n_blk],
-                                       out=self.scratch[:n].view(n_blk, self.block_bytes))
-                    self.stage_t[:n].copy_(self.scratch[:n], non_blocking=True)
-                self.stream.synchronize()
-                off = 0
-                while off < n:
-                    off += os.pwritev(fd, [self.stage[off:n]], written + off)
-                written += n
+            for st, bb in self._regions(storage):
+                table = st.view(-1, bb)
+                ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device)
+                per = max(1, self.stage_bytes // bb)
+                for i in range(0, len(block_ids), per):
+                    n_blk = min(per, len(block_ids) - i); n = n_blk * bb
+                    with torch.cuda.stream(self.stream):
+                        torch.index_select(table, 0, ids[i:i + n_blk], out=self.scratch[:n].view(n_blk, bb))
+                        self.stage_t[:n].copy_(self.scratch[:n], non_blocking=True)
+                    self.stream.synchronize()
+                    off = 0
+                    while off < n:
+                        off += os.pwritev(fd, [self.stage[off:n]], written + off)
+                    written += n
             os.fsync(fd)
         finally:
             os.close(fd)
         with self.lock:
             self.index[str(seq)] = {"blocks": len(block_ids), "tokens": tokens, "bytes": written,
-                                    "at": time.time()}
+                                    "regions": [bb for _st, bb in self._regions(storage)], "at": time.time()}
             self._save_manifest()
         self.bytes_written += written
         return written
 
     def promote(self, seq: int, storage, block_ids: "list[int]") -> int:
-        """Read the sequence back into blocks `block_ids` of `storage`. Returns bytes."""
+        """Read the sequence back into blocks `block_ids` of every region. Returns bytes."""
         import torch
-
         meta = self.index[str(seq)]
         if len(block_ids) != meta["blocks"]:
             raise ValueError(f"seq {seq}: {meta['blocks']} blocks on disk, {len(block_ids)} given")
-        table = storage.view(-1, self.block_bytes)
-        ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device)
+        regions = self._regions(storage)
+        if meta.get("regions", [self.block_bytes]) != [bb for _st, bb in regions]:
+            raise ValueError(f"seq {seq}: on disk as regions {meta.get('regions')}, asked for {[bb for _st, bb in regions]}")
         fd = os.open(self._path(seq), os.O_RDONLY | os.O_DIRECT)
         read = 0
         try:
-            for i in range(0, len(block_ids), self.per):
-                n_blk = min(self.per, len(block_ids) - i); n = n_blk * self.block_bytes
-                off = 0
-                while off < n:
-                    got = os.preadv(fd, [self.stage[off:n]], read + off)
-                    if got <= 0:
-                        raise OSError(f"short read at {read + off}")
-                    off += got
-                with torch.cuda.stream(self.stream):
-                    self.scratch[:n].copy_(self.stage_t[:n], non_blocking=True)
-                    table.index_copy_(0, ids[i:i + n_blk], self.scratch[:n].view(n_blk, self.block_bytes))
-                self.stream.synchronize()
-                read += n
+            for st, bb in regions:
+                table = st.view(-1, bb)
+                ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device)
+                per = max(1, self.stage_bytes // bb)
+                for i in range(0, len(block_ids), per):
+                    n_blk = min(per, len(block_ids) - i); n = n_blk * bb
+                    off = 0
+                    while off < n:
+                        got = os.preadv(fd, [self.stage[off:n]], read + off)
+                        if got <= 0:
+                            raise OSError(f"short read at {read + off}")
+                        off += got
+                    with torch.cuda.stream(self.stream):
+                        self.scratch[:n].copy_(self.stage_t[:n], non_blocking=True)
+                        table.index_copy_(0, ids[i:i + n_blk], self.scratch[:n].view(n_blk, bb))
+                    self.stream.synchronize()
+                    read += n
         finally:
             os.close(fd)
         self.bytes_read += read
@@ -162,8 +177,20 @@ def _selfcheck() -> None:
         t0 = time.perf_counter(); got = tier.promote(7, storage, ids); torch.cuda.synchronize(); t_r = time.perf_counter() - t0
         assert wrote == got == n_blocks * block_bytes and torch.equal(storage, keep), "round trip must be exact"
         tier2 = NvmeTier(d, block_bytes); assert tier2.has(7); tier2.forget(7); assert not tier2.has(7)
+        # a profile's block as three regions of different block sizes, one file
+        regs = [(torch.randint(0, 256, (64 * bb,), dtype=torch.uint8, device="cuda"), bb) for bb in (288 * SECTOR, 18 * SECTOR, SECTOR)]
+        keep2 = [r[0].clone() for r in regs]
+        w3 = tier.demote(9, regs, list(range(64))[::-1], tokens=64 * 16)
+        for r in regs: r[0].zero_()
+        g3 = tier.promote(9, regs, list(range(64))[::-1])
+        assert w3 == g3 == 64 * (288 + 18 + 1) * SECTOR and all(torch.equal(r[0], k) for r, k in zip(regs, keep2))
+        try:
+            tier.promote(9, regs[:2], list(range(64))); raise AssertionError("region mismatch must be refused")
+        except ValueError:
+            pass
         print(f"  kv_tier v2: {wrote / GIB:.2f} GiB demote {t_w:.2f}s ({wrote / GIB / t_w:.2f} GiB/s), "
-              f"promote {t_r:.2f}s ({got / GIB / t_r:.2f} GiB/s), scattered ids exact, own stream + pinned staging OK")
+              f"promote {t_r:.2f}s ({got / GIB / t_r:.2f} GiB/s), scattered ids exact, own stream + pinned staging; "
+              f"3-region block ({(288 + 18 + 1) * SECTOR / 2**20:.2f} MiB) round trip exact OK")
 
 
 if __name__ == "__main__":

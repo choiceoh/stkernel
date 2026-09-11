@@ -9014,3 +9014,27 @@ plan 이 빠뜨렸던 꼬리 링 11×2 KiB 를 채움). `check.py` 는 이제 Ch
 활성화 양자화**(전역 1, 서빙과 같은 형), 서빙은 `b12x_fused_moe(x, w13, w13_sf, w2, w2_sf, sel, w, E, top_k, α=1, α2=1,
 fc2_input_scale=1, input_global_scale=None, "swigluoai_uninterleave" α1 β0 limit 10, nvfp4)`. `served()` 에 참조 레인이 더 이상
 없다 — 전부 바인딩되거나 죽는다(D3). 랭크 파일 재절단(백그라운드) 뒤 fan-out 을 다시 한다.
+
+### 45차 §9 — 간판(D16)을 실물 캐시에: 다중 영역 티어, 대화가 턴을 넘어 산다 (2026-09-11 밤)
+
+- `base/kv_tier.NvmeTier.demote/promote` 가 **영역 목록** `[(storage, block_bytes), …]` 을 받는다: 시퀀스 파일 하나에 영역별 세그먼트
+  (세그먼트 안에서 블록 연속), 매니페스트에 영역 크기 기록·promote 때 대조. GLM 블록은 11 층 × (latent 1,179,648 + 풀 키 73,728
+  + 풀 스케일) 의 33 영역. 풀 스케일 블록(576 × 4 B = 2,304 B)은 O_DIRECT 가 안 되므로 **섹터(4,096 B)로 패딩**(`caches.ps_block`,
+  블록 13.17 → 13.19 MiB, 0.1%); 스케일은 `caches.read/write_scales(layer, slots)` 로만 만진다(레이아웃은 캐시 안에). 자가검증:
+  1 GiB 단일 영역 demote 1.05 GiB/s·promote 4.0 GiB/s, 3 영역(288·18·1 섹터) 블록 64개 왕복 바이트 동일, 영역 불일치 거부.
+- `base/tiered_kv.TieredKV(pool, tier, regions=caches.regions(), on_resume=caches.sync_row)`.
+- `base/runner`: **대화가 턴을 넘어 산다** — `keep_idle` 이면 끝난 시퀀스는 블록·슬롯을 쥔 채 `idle` 로 남고, `park`(idle 만)·
+  `resume`·`wake`(다음 토큰은 어댑터에 대기 중이라 바로 디코드)·`extend`(새 턴: 쥔 토큰 위에 프롬프트 추가, computed 부터 프리필)·
+  `evict`(진짜 끝: 블록·슬롯·버퍼 반환). 자가검증에 다섯 동사 전부.
+- `boot.py --local --park`: 대화 0 을 파킹(아레나 블록 회수) → 재개 → wake → 4 토큰 더 → **같은 프롬프트를 max_new+4 로 한 번에
+  돌린 꼬리와 비교**(캐시가 바이트 동일해야 같다). 결과는 §10.
+
+### 45차 §10 — 간판이 돈다: park → 아레나 회수 → resume → 이어서 디코드 = 한 번에 돌린 것과 같다 (2026-09-11 밤)
+
+`boot.py --local --drafter --park`(0~4층, TP=4 스레드, 재절단 랭크 파일): 대화 0 이 첫 턴을 마치고 idle 로 블록을 쥔 채 남음 →
+`park` **12 ms**, 1.2 MiB(5층 체인의 DSA 한 층분 블록 하나), 아레나 free 583 → 584 → `resume` → `wake` → 4 토큰 더
+`[55908, 20172, 60100, 30502]` == 같은 프롬프트를 max_new+4 로 **한 번에** 돌린 꼬리 — 캐시가 바이트 동일하다는 뜻. 네 랭크
+동일. 재절단 파일로 `check.py` 도 그대로 PASS(랭크 동일, 캐시 판정 잡음 바닥). 드래프터 K=5: 0/145(5층 체인).
+서브 루프: `POST {conversation: id, ids|prompt, max_tokens}` 로 파킹된 대화를 이어간다(루프가 resume + extend; idle 턴은 티어가
+있으면 **즉시 파킹** — 아레나는 늘 살아 있는 일만 쥔다). 부팅에 D11 `Config`(사실 7개, 노브 0: `STK_*` 미선언 env 는 부팅 사망).
+같은 시각 이미지 안 서빙 레인 판정은 세 GPU 작업 동시 실행으로 컨텍스트 생성에서 OOM — 순차로 다시 돈다(§11).
