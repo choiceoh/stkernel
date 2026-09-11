@@ -141,7 +141,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `qwen38_ple` | Qwen3.8-Flash-Next 전용 (51 GiB PLE n-gram 표: 호스트 RAM 오프로드 + NVFP4 체크포인트용 온디바이스 FP8 임베딩; TP>1 필수; `DENEB_PLE_SSD=1` 이면 랭크별 11.9 GiB 블록을 SSD 에서 O_DIRECT 로 읽음 — `dsv41_engram` 의 리더를 `requires`; 룩업은 splitting 커스텀 op — 컴파일 그래프 경계) | 5 | — | · | · | · | ● |
 | `qwen38_qsa` | Qwen3.8-Flash-Next 전용 (GB10 48 SM 용 QSA split-K 상한; 상위는 GB300 튜닝) | 1 | — | · | · | · | ● |
 | `qwen38_spec` | Qwen3.8-Flash-Next 전용 (MTP 스펙: n-gram 순서 수정, 적응 K) | 2 | — | · | · | · | ● |
-| `qwen38_b12x` | Qwen3.8-Flash-Next 전용 (b12x 워크스페이스 바운드 체크 + 동적 커널의 미라우팅(−1) 슬롯 가드 — 모든 부팅을 죽이던 IMA 의 원인; 생성기로 stock SHA 핀; EP 허용 래퍼 — 전역 id 를 expert_map 으로 로컬/−1 로) | 5 | — | · | · | · | ● |
+| `qwen38_b12x` | Qwen3.8-Flash-Next 전용 (b12x 워크스페이스 바운드 체크 + 동적 커널의 미라우팅(−1) 슬롯 가드 — 모든 부팅을 죽이던 IMA 의 원인; 생성기로 stock SHA 핀; EP 허용 래퍼 — 전역 id 를 expert_map 으로 로컬/−1 로; bf16 MTP MoE 는 b12x 이름 아래서 triton 으로) | 7 | — | · | · | · | ● |
 
 | `sched_decode_first` | 어느 모델이든 (AsyncScheduler 서브클래스; 모델·커널·형상 임포트 0) | 1 | ✓ | · | ● | ● | · |
 | `boot_stamps` | 어느 모델이든 (부팅 단계 계측) | 2 | ✓ | · | ● | ● | · |

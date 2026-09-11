@@ -19,4 +19,6 @@ qwen38_b12x_bounds.py	/usr/local/lib/python3.12/dist-packages/qwen38_b12x_bounds
 zz_qwen38_b12x_bounds.pth	/usr/local/lib/python3.12/dist-packages/zz_qwen38_b12x_bounds.pth	absent
 qwen38_b12x_ep.py	/usr/local/lib/python3.12/dist-packages/qwen38_b12x_ep.py	absent
 zz_qwen38_b12x_ep.pth	/usr/local/lib/python3.12/dist-packages/zz_qwen38_b12x_ep.pth	absent
+qwen38_b12x_unquant.py	/usr/local/lib/python3.12/dist-packages/qwen38_b12x_unquant.py	absent
+zz_qwen38_b12x_unquant.pth	/usr/local/lib/python3.12/dist-packages/zz_qwen38_b12x_unquant.pth	absent
 moe_dynamic_generic.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py	38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da

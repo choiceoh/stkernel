@@ -8,4 +8,6 @@ qwen38_b12x_bounds.py	qwen38_b12x_bounds.py	absent
 zz_qwen38_b12x_bounds.pth	zz_qwen38_b12x_bounds.pth	absent
 qwen38_b12x_ep.py	qwen38_b12x_ep.py	absent
 zz_qwen38_b12x_ep.pth	zz_qwen38_b12x_ep.pth	absent
+qwen38_b12x_unquant.py	qwen38_b12x_unquant.py	absent
+zz_qwen38_b12x_unquant.pth	zz_qwen38_b12x_unquant.pth	absent
 moe_dynamic_generic.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py	38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da

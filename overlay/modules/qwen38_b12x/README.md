@@ -1,11 +1,12 @@
 # qwen38_b12x — the b12x lane on Qwen3.8-Flash-Next
 
-Five files. Four are wrappers (two hooks with their .pth), one is a generated kernel override.
+Seven files. Six are wrappers (three hooks with their .pth), one is a generated kernel override.
 
 | file | kind | what |
 |---|---|---|
 | `qwen38_b12x_bounds.py` + `zz_qwen38_b12x_bounds.pth` | NEW | host-side capacity check around `launch_sm120_dynamic_moe`: prints `[b12x-bounds] state_E=.. rows a/b tiles c/d tasks e/f` and refuses a launch that would overrun its workspace. `DENEB_B12X_BOUNDS=0` disables. |
 | `qwen38_b12x_ep.py` + `zz_qwen38_b12x_ep.pth` | NEW | expert parallelism on the vLLM side: `_supports_parallel_config` → True, the wrapper built at the LOCAL expert count, `apply()` maps global ids through `expert_map` (local slot or −1); the wrapper is built once per geometry and shared by all 48 MoE layers — per-layer wrappers preallocate 0.28 GiB (8192 tokens) / 0.43 GiB (16384) of workspace each, 13.5 / 20.8 GiB per rank. One line of logic once the kernel skips −1 — for the dynamic kernel; the static/micro kernels (routed rows ≤ 640: decode, short prompts) have no guard, so there a −1 slot becomes expert 0 at weight 0 (bit-identical per the pair test; the first TEP=4 request had died in them). `DENEB_B12X_EP=0` disables. |
+| `qwen38_b12x_unquant.py` + `zz_qwen38_b12x_unquant.pth` | NEW | the MTP head's MoE is bf16 and `--moe-backend flashinfer_b12x` is one global name: the unquantized oracle maps the b12x name to `triton` instead of raising (first MTP boot died on that after a full load). `DENEB_B12X_UNQUANT=0` disables. |
 | `moe_dynamic_generic.py` | OVERRIDE of `blackwell_sm12x/_moe_dynamic/generic.py` | the stock SM120 dynamic MoE kernel plus the **unrouted-slot guard** — generated, not hand-edited: `tools/qwen38_b12x_guard_gen.py` |
 
 ## The guard, and why every Qwen3.8 b12x boot died before it
