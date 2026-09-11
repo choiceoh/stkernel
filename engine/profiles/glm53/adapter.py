@@ -15,6 +15,7 @@ all K+1 positions; the next step overwrites what was rejected (net.py).
 from __future__ import annotations
 
 import torch
+from math import isfinite
 
 from engine.base.sampler import sample
 from engine.profiles.glm53.caches import Glm53Caches
@@ -53,9 +54,34 @@ class Glm53Engine:
         self.steps = 0
 
     # -- the runner's protocol -------------------------------------------------------
+    def validate(self, ids, max_new, temperature) -> None:
+        if not ids or any(type(t) is not int or not 0 <= t < self.F.vocab for t in ids):
+            raise ValueError("prompt token id is outside the model vocabulary")
+        if type(max_new) is not int or max_new <= 0:
+            raise ValueError("generation limit must be a positive integer")
+        if type(temperature) not in (int, float):
+            raise ValueError("temperature must be finite and nonnegative")
+        try:
+            valid = isfinite(temperature) and temperature >= 0
+        except OverflowError:
+            valid = False
+        if not valid:
+            raise ValueError("temperature must be finite and nonnegative")
+
     def add(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None) -> None:
+        max_new = self.max_new if max_new is None else max_new
+        temperature = self.temperature if temperature is None else temperature
+        self.validate(ids, max_new, temperature)
+        if seq in self.tokens:
+            raise ValueError(f"seq {seq} is live or has an uncollected result")
         self.tokens[seq] = list(ids); self.prompt_len[seq] = len(ids)
-        self.limits[seq] = (self.max_new if max_new is None else max_new, self.temperature if temperature is None else temperature)
+        self.limits[seq] = (max_new, temperature)
+
+    def forget(self, seq: int) -> None:
+        if seq in self.slot:
+            raise ValueError(f"seq {seq} is still live")
+        for rows in (self.tokens, self.prompt_len, self.limits):
+            rows.pop(seq, None)
 
     def open(self, seq: int, slot: int) -> None:
         self.slot[seq] = slot; self.ctx[seq] = 0

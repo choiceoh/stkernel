@@ -314,6 +314,27 @@ class CudaCacheTests(unittest.TestCase):
         r.step(now=21)
         self.assertEqual(r.take_result(0), (10,))
 
+    def test_http_engine_adapter_recycles_rows_and_releases_token_buffers(self):
+        from engine.base.comm import Comm
+        from engine.base.record import Ring
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.scheduler import Contract
+        from engine.base.serve import Server
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        runner = Runner(engine, Contract(4, 8, 0, 0., 2), self.c.pool, self.c.slots, Ring(8, STEP_RECORD.size))
+        server = Server(engine, runner, Comm(1, 0))
+        jobs = [server.submit([i], 2, 0) for i in range(25)]
+        for _ in range(100):
+            if not server.once() and not server._waiting:
+                break
+        for i, (request, event) in enumerate(jobs):
+            self.assertTrue(event.is_set())
+            self.assertEqual(server.take_result(request), [i + 1, i + 2])
+        self.assertFalse(engine.tokens or engine.prompt_len or engine.limits or engine.ctx or engine.slot)
+        self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
+        self.assertEqual(self.c.slots.available, 4)
+
     def test_runtime_can_stop_on_the_first_eos_without_decode(self):
         r = self.runtime(eos_ids=(7,))
         r.submit(0, torch.arange(7, device="cuda"), 20, now=0)

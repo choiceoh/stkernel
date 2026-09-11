@@ -80,6 +80,11 @@ class Runner:
         self.slots.give(self.slot_of.pop(seq))
         self.model.close(seq)
 
+    def cancel(self, seq: int) -> None:
+        """Release a submitted request when its server shuts down."""
+        if seq in self.slot_of:
+            self._finish(seq)
+
     def park(self, seq: int) -> int:
         """An idle conversation leaves the arena but keeps its KV (D16).
         Only a sequence that is not running: parking a live one would make the

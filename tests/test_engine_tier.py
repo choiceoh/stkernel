@@ -140,6 +140,89 @@ class TierOwnershipTests(unittest.TestCase):
 
 
 class NvmeControlTests(unittest.TestCase):
+    def tier(self, directory):
+        tier = NvmeTier.__new__(NvmeTier)
+        tier.dir = Path(directory)
+        tier.manifest = tier.dir / "manifest.json"
+        tier.index = json.loads(tier.manifest.read_text()) if tier.manifest.exists() else {}
+        tier.lock, tier._transfer_lock = threading.Lock(), threading.Lock()
+        return tier
+
+    def test_failed_replacement_keeps_prior_generation_and_cleanup_reclaims_only_unpublished_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            old = tier.dir / 'seq-0.kv'
+            old.write_bytes(b'original')
+            tier._save_manifest({'0': {'blocks': 1, 'tokens': 1, 'bytes': 8}})
+            new = tier.dir / ('seq-0-' + 'a' * 32 + '.kv')
+            new.write_bytes(b'new bytes')
+            with patch('engine.base.kv_tier.os.replace', side_effect=OSError('manifest full')):
+                with self.assertRaisesRegex(OSError, 'manifest full'):
+                    tier._publish(0, new, 1, 2, 9)
+            self.assertEqual(tier._path(0).read_bytes(), b'original')
+            self.assertEqual(tier.index, json.loads(tier.manifest.read_text()))
+            unrelated = tier.dir / 'seq-99.kv'
+            unrelated.write_bytes(b'legacy, not in manifest')
+            tier.cleanup()
+            self.assertFalse(new.exists())
+            self.assertTrue(unrelated.exists())
+            self.assertEqual(tier._path(0).read_bytes(), b'original')
+
+    def test_failed_unlink_keeps_a_restartable_cleanup_tombstone(self):
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            tier._path(0).write_bytes(b'snapshot')
+            tier._save_manifest({'0': {'blocks': 1, 'tokens': 1, 'bytes': 8}})
+            with patch('pathlib.Path.unlink', side_effect=PermissionError('busy')):
+                with self.assertRaisesRegex(PermissionError, 'busy'):
+                    tier.forget(0)
+            self.assertFalse(tier.has(0))             # no longer promotable once deletion commits
+            self.assertTrue(tier.index['0']['deleting'])
+            self.assertEqual(tier._path(0).read_bytes(), b'snapshot')
+            reopened = self.tier(d)
+            reopened.cleanup()
+            self.assertFalse(reopened.index)
+            self.assertFalse(tier._path(0).exists())
+
+    def test_final_manifest_failure_after_unlink_is_retryable_after_restart(self):
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            tier._path(0).write_bytes(b'snapshot')
+            tier._save_manifest({'0': {'blocks': 1, 'tokens': 1, 'bytes': 8}})
+            save = tier._save_manifest
+            def fail_final(index):
+                if not index:
+                    raise OSError('final manifest failed')
+                save(index)
+            with patch.object(tier, '_save_manifest', side_effect=fail_final):
+                with self.assertRaisesRegex(OSError, 'final manifest failed'):
+                    tier.forget(0)
+            self.assertFalse(tier._path(0).exists())
+            self.assertTrue(tier.index['0']['deleting'])
+            reopened = self.tier(d)
+            reopened.forget(0)
+            self.assertFalse(reopened.index)
+
+    def test_retired_files_remain_discoverable_until_cleanup_succeeds(self):
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            old = tier._path(0)
+            old.write_bytes(b'old')
+            tier._save_manifest({'0': {'blocks': 1, 'tokens': 1, 'bytes': 3}})
+            new = tier.dir / ('seq-0-' + 'b' * 32 + '.kv')
+            new.write_bytes(b'new')
+            tier._publish(0, new, 1, 2, 3)
+            with patch('pathlib.Path.unlink', side_effect=PermissionError('busy')):
+                with self.assertRaises(PermissionError):
+                    tier.cleanup()
+            self.assertTrue(tier.has(0))
+            self.assertEqual(tier.index['0']['retired'], [old.name])
+            self.assertEqual(tier._path(0).read_bytes(), b'new')
+            tier.cleanup()
+            self.assertFalse(old.exists())
+            self.assertEqual(tier.index['0']['retired'], [])
+            self.assertEqual(tier._path(0).read_bytes(), b'new')
+
     def test_async_transfers_cannot_use_shared_staging_concurrently(self):
         tier = NvmeTier.__new__(NvmeTier)
         tier._transfer_lock = threading.Lock()
