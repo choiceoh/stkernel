@@ -48,8 +48,13 @@ def mla_sparse_mqa(q_abs: torch.Tensor, kv_c: torch.Tensor, topk_slots: torch.Te
     the caller (the wrapper's un-absorb), not here.
     """
     t, h, d = q_abs.shape
-    kv = kv_c.float() * ckv_scale if kv_c.dtype != torch.bfloat16 else kv_c.float()
-    rows = kv[topk_slots.long().clamp_min(0)]                          # [T, K, 512]
+    # Read selected rows before dequantizing. A paged cache can be many GiB;
+    # converting all of it per layer needlessly scales work with the arena.
+    rows = kv_c[topk_slots.long().clamp_min(0)].float()                # [T, K, 512]
+    if kv_c.dtype != torch.bfloat16:
+        rows = rows * ckv_scale
+    active = torch.arange(topk_slots.shape[1], device=q_abs.device)[None, :] < valid[:, None]
+    rows = rows.masked_fill(~active[:, :, None], 0)
     scores = torch.einsum("thd,tkd->thk", q_abs.float(), rows) * scale
     k = topk_slots.shape[1]
     mask = torch.arange(k, device=q_abs.device)[None, :] >= valid[:, None]   # [T, K] padding

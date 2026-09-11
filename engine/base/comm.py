@@ -28,9 +28,10 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
+from datetime import timedelta
 
-HEAD = "10.10.10.2"
-NODES = ("10.10.10.1", "10.10.10.2", "10.10.10.3", "10.10.10.4")   # rank order = node order
+NODES = ("10.10.10.2", "10.10.10.1", "10.10.10.3", "10.10.10.4")   # rank 0 owns the rendezvous store
+HEAD = NODES[0]
 GLOO_IFNAME = "enP2p1s0f0np0"
 LANES = {"tp.allreduce.oneshot": "tp_oneshot_ar (ours): one-shot AR over RoCE, prefetch-hinted"}
 
@@ -67,17 +68,19 @@ class Comm:
     group: object = None
 
     @classmethod
-    def init(cls, rank: "int | None" = None, world: "int | None" = None):
+    def init(cls, rank: "int | None" = None, world: "int | None" = None, *, timeout_s: float = 120.):
         """One process per node. World 1 needs no process group at all."""
         import torch.distributed as dist
 
-        world = world or int(os.getenv("WORLD_SIZE", "1"))
+        world = world if world is not None else int(os.getenv("WORLD_SIZE", "1"))
         rank = rank if rank is not None else int(os.getenv("RANK", "0"))
+        if world <= 0 or not 0 <= rank < world or timeout_s <= 0:
+            raise ValueError("comm requires a positive world/timeout and a rank inside that world")
         if world == 1:
             return cls(1, 0, None)
         for k, v in fleet_env(rank, world).items():
             os.environ.setdefault(k, v)
-        dist.init_process_group("nccl", world_size=world, rank=rank)
+        dist.init_process_group("nccl", world_size=world, rank=rank, timeout=timedelta(seconds=timeout_s))
         return cls(world, rank, dist.group.WORLD)
 
     def all_reduce(self, t):

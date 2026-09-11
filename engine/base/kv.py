@@ -28,8 +28,9 @@ class BlockPool:
     """Fixed-size blocks handed out from a stack; a sequence owns a row."""
 
     def __init__(self, num_blocks: int, block_size: int, max_seqs: int, max_blocks_per_seq: int):
-        if num_blocks <= 0 or block_size <= 0:
-            raise ValueError("a pool needs at least one block of at least one token")
+        if any(not isinstance(n, int) or n <= 0
+               for n in (num_blocks, block_size, max_seqs, max_blocks_per_seq)):
+            raise ValueError("block count, block size, row count and row width must be positive integers")
         self.block_size = block_size
         self.num_blocks = num_blocks
         # free stack: block ids, top at the end. int32 so it can be handed to a kernel.
@@ -65,28 +66,49 @@ class BlockPool:
         return -(-tokens // self.block_size)
 
     def row(self, seq: int) -> memoryview:
+        if not 0 <= seq < self.max_seqs:
+            raise IndexError(f"row {seq} outside {self.max_seqs}")
         base = seq * self.max_blocks_per_seq
         return memoryview(self.table)[base:base + self.max_blocks_per_seq]
 
     def reserve(self, seq: int, tokens: int) -> int:
         """Grow `seq` to hold `tokens` more. Returns blocks newly taken."""
-        if not 0 <= seq < self.max_seqs:
-            raise IndexError(f"row {seq} outside {self.max_seqs}")
-        have = self.blocks_for(self.tokens[seq])
-        need = self.blocks_for(self.tokens[seq] + tokens)
-        grow = need - have
-        if grow > len(self.free):
+        return self.reserve_many((seq,), tokens)
+
+    def reserve_many(self, seqs, tokens: int) -> int:
+        """Grow a batch by `tokens` per row, all or nothing.
+
+        Validate every row and the combined demand before touching the free
+        stack. A decoder never sees a batch whose earlier rows were reserved
+        but whose later rows ran out. Called on the runner's owning thread.
+        """
+        if not isinstance(tokens, int) or tokens < 0:
+            raise ValueError("reserved token count must be a nonnegative integer")
+        seqs = tuple(seqs)
+        if len(set(seqs)) != len(seqs):
+            raise ValueError("a reservation batch must contain each sequence once")
+        growth = []
+        for seq in seqs:
+            self.row(seq)                              # bounds before indexing tokens
+            total = self.tokens[seq] + tokens
+            if total >= 2**31:
+                raise ValueError(f"seq {seq} token count exceeds int32")
+            have, need = self.blocks_for(self.tokens[seq]), self.blocks_for(total)
+            if need > self.max_blocks_per_seq:
+                raise MemoryError(f"seq {seq} would exceed {self.max_blocks_per_seq} blocks")
+            growth.append((seq, have, need))
+        grow = sum(need - have for _, have, need in growth)
+        if grow > self.available:
             raise MemoryError(
-                f"seq {seq} needs {grow} more blocks, {len(self.free)} free: the "
+                f"batch needs {grow} more blocks, {self.available} free: the "
                 "scheduler admitted more than the budget declared")
-        if need > self.max_blocks_per_seq:
-            raise MemoryError(f"seq {seq} would exceed {self.max_blocks_per_seq} blocks")
-        row = self.row(seq)
-        for i in range(have, need):
-            row[i] = self.free.pop()
-        if self.tokens[seq] == 0 and tokens:
-            self.rows_in_use += 1
-        self.tokens[seq] += tokens
+        for seq, have, need in growth:
+            row = self.row(seq)
+            for i in range(have, need):
+                row[i] = self.free.pop()
+            if self.tokens[seq] == 0 and tokens:
+                self.rows_in_use += 1
+            self.tokens[seq] += tokens
         return grow
 
     def release(self, seq: int) -> int:
@@ -129,6 +151,10 @@ class SlotPool:
         return len(self.free)
 
     def take(self, seq: int) -> int:
+        if not isinstance(seq, int) or not 0 <= seq < 2**31:
+            raise ValueError("slot owner must be a nonnegative int32 sequence id")
+        if seq in self.owner:
+            raise ValueError(f"seq {seq} already owns a state slot")
         if not self.free:
             raise MemoryError("no state slot left: more live sequences than the budget declared")
         slot = self.free.pop()
@@ -136,6 +162,8 @@ class SlotPool:
         return slot
 
     def give(self, slot: int) -> None:
+        if not 0 <= slot < self.num_slots:
+            raise IndexError(f"slot {slot} outside {self.num_slots}")
         if slot == self.NULL:
             raise ValueError("slot 0 is the null slot and is never taken")
         if self.owner[slot] == EMPTY:

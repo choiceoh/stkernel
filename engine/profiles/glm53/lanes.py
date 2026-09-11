@@ -1,4 +1,4 @@
-"""The eight kernel lanes GLM-5.3 runs on (profile), bound two ways.
+"""The nine kernel lanes GLM-5.3 runs on (profile), bound two ways.
 
     reference()   the engine's torch references in modules/* -- each one
                   judged against its served kernel in probes/ (44th ledger):
@@ -11,7 +11,7 @@
                   raises, the boot dies (D3) -- there is no per-lane
                   fallback to the reference.
 
-The model (net.py) calls only these eight names; everything else it does is
+The model (net.py) calls only these nine names; everything else it does is
 plain torch on views. One contract per lane, spelled in the docstrings.
 """
 from __future__ import annotations
@@ -101,7 +101,7 @@ def served(expert_lane: str = "b12x") -> Lanes:
     """Bound inside the glm53 image (probes/* run there the same way).
     `expert_lane="reference"` is for the lane judge only (check.py says so
     out loud): the b12x expert lane is not bound yet."""
-    from vllm.third_party.flash_linear_attention.ops.kda import chunk_kda_with_fused_gate          # ours: overlay/modules/glm53_kernels/kda.py
+    from vllm.third_party.flash_linear_attention.ops.kda import chunk_kda_with_fused_gate, fused_recurrent_kda  # ours: overlay/modules/glm53_kernels/kda.py
     from vllm.model_executor.layers.mamba.ops.causal_conv1d import causal_conv1d_fn                # served op (judged: probes/conv_check.py)
     import vllm.model_executor.layers.mhc  # noqa: F401  registers torch.ops.vllm.mhc_*_tilelang (ours: overlay dsv4_mhc_tilelang)
     from vllm.utils.deep_gemm import fp8_fp4_mqa_logits                                             # served DeepGEMM op
@@ -127,12 +127,16 @@ def served(expert_lane: str = "b12x") -> Lanes:
         out = torch.empty_like(v)
         o, state = chunk_kda_with_fused_gate(
             q=q, k=k, v=v, raw_g=g_raw, beta=beta, A_log=A_log.view(1, 1, -1, 1), g_bias=dt_bias,
-            initial_state=state0, output_final_state=True, use_qk_l2norm_in_kernel=True,
+            initial_state=state0.transpose(-1, -2).contiguous() if state0 is not None else None,
+            output_final_state=True, use_qk_l2norm_in_kernel=True,
             cu_seqlens=torch.tensor([0, t], dtype=torch.int32, device=q.device),
             safe_gate=True, lower_bound=lower_bound, out=out)
-        return o, state
+        # The kernel stores [H,V,K]; the engine/reference contract is [H,K,V].
+        return o, state.transpose(-1, -2).contiguous()
 
     def pre(res, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w, norm_eps):
+        if fn.data_ptr() % 16:
+            raise ValueError("mHC weight is not TMA-aligned; regenerate rank files with the aligned RankWriter")
         post, comb, x = torch.ops.vllm.mhc_pre_tilelang(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult,
                                                         sinkhorn, 1, norm_w, norm_eps)
         return post, comb, x
@@ -164,7 +168,15 @@ def served(expert_lane: str = "b12x") -> Lanes:
         return torch.cat(parts, dim=1)
 
     def kda_recurrent(q, k, v, g_raw, beta, A_log, dt_bias, state0, lower_bound):
-        raise NotImplementedError("served fused_recurrent_kda with per-token state rows: bound after its kernel's index contract is read")
+        # Dense one-sequence form, separate output states: no NULL slot indices,
+        # no in-place overwrite of the initial state needed by rejected drafts.
+        initial = (state0.transpose(-1, -2).contiguous() if state0 is not None
+                   else torch.zeros(1, v.shape[2], v.shape[-1], k.shape[-1], device=q.device, dtype=torch.float32))
+        out, states = fused_recurrent_kda(
+            q, k, v, g_raw, beta, scale=k.shape[-1] ** -0.5, initial_state=initial,
+            inplace_final_state=False, use_qk_l2norm_in_kernel=True,
+            sigmoid_beta=False, a_log=A_log, g_bias=dt_bias, compute_gate=True, lower_bound=lower_bound)
+        return out, states.transpose(-1, -2).contiguous()
 
     if expert_lane == "reference":
         expert = reference().expert

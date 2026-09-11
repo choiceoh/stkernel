@@ -1,0 +1,267 @@
+"""GLM cache layout contracts plus small CUDA rollback/paging regressions."""
+from __future__ import annotations
+
+import importlib.util
+import unittest
+from dataclasses import replace
+
+from engine.profiles.glm53.caches import layout
+from engine.profiles.glm53.facts import Facts
+
+torch = None
+if importlib.util.find_spec("torch") is not None:
+    import torch
+
+
+def tiny_facts():
+    return Facts(hidden=128, layers=3, kinds=("kda", "dsa", "dsa"), dense=(0, 1, 2),
+                 vocab=256, rms_eps=1e-5, kda_heads=4, kda_dim=8, conv=4, lower_bound=-5,
+                 heads=4, qk_nope=16, v_dim=16, q_lora=16, kv_lora=16,
+                 idx_heads=4, idx_dim=128, topk=8, kpool=4, experts=4,
+                 topk_experts=2, moe_inter=64, dense_inter=64, routed_scale=1.,
+                 swiglu_limit=10., hc=4, hc_eps=1e-6, sinkhorn=20, post_mult=2.,
+                 block=16, spec_k=5)
+
+
+class LayoutTests(unittest.TestCase):
+    def test_block_layout_keeps_every_typed_view_aligned_and_disjoint(self):
+        F = tiny_facts()
+        p = layout(F, range(F.layers))
+        self.assertEqual(p.block_bytes % 4096, 0)
+        self.assertEqual(p.block_bytes % F.kv_lora, 0)
+        self.assertEqual(p.block_bytes % (F.idx_dim + 4), 0)
+        regions = []
+        for L in F.dsa_layers:
+            a, b = p.token_offsets[L], p.pool_offsets[L]
+            self.assertEqual(a % F.kv_lora, 0)
+            self.assertEqual(b % (F.idx_dim + 4), 0)
+            regions.extend([(a, a + F.block * F.kv_lora),
+                            (b, b + F.block // F.kpool * (F.idx_dim + 4))])
+        regions.sort()
+        self.assertTrue(all(a[1] <= b[0] for a, b in zip(regions, regions[1:])))
+        self.assertLessEqual(regions[-1][1], p.block_bytes)
+
+    def test_position_rings_retain_history_after_rejecting_all_drafts(self):
+        F = tiny_facts()
+        fields = {(f.name, f.layer): f for f in layout(F, range(F.layers)).fields}
+        self.assertEqual(fields["tail", 1].shape[0], F.kpool - 1 + F.spec_k)
+        self.assertEqual(fields["conv", 0].shape[-1], F.conv - 1 + F.spec_k)
+        self.assertEqual(fields["rec", 0].shape[0], F.spec_k + 1)
+
+    def test_invalid_layers_and_partial_pools_fail_before_allocation(self):
+        F = tiny_facts()
+        for layers in ([], [0, 0], [-1], [F.layers]):
+            with self.subTest(layers=layers), self.assertRaises(ValueError):
+                layout(F, layers)
+        with self.assertRaises(ValueError):
+            layout(replace(F, block=15), [1])
+
+
+@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA PyTorch")
+class CudaCacheTests(unittest.TestCase):
+    def test_sparse_mla_padding_does_not_read_nan_from_an_unused_block(self):
+        from engine.modules.sparse_attention import mla_sparse_mqa
+        q = torch.ones(1, 1, 16, device="cuda", dtype=torch.bfloat16)
+        cache = torch.full((8, 16), float("nan"), device="cuda").to(torch.float8_e4m3fn)
+        cache[2] = torch.full((16,), 2., device="cuda").to(torch.float8_e4m3fn)
+        slots = torch.tensor([[2, -1]], device="cuda", dtype=torch.int32)
+        out = mla_sparse_mqa(q, cache, slots, torch.tensor([1], device="cuda"), 0.25, 1.)
+        self.assertTrue(torch.equal(out, torch.full_like(out, 2.)))
+
+    def test_step_rejects_gaps_and_reused_state_slots(self):
+        from engine.profiles.glm53.net import Segment, Step
+        ids = torch.arange(4, device="cuda")
+        cases = [(Segment(0, 1, 0, 1, 4),),
+                 (Segment(0, 1, 0, 0, 2),),
+                 (Segment(0, 0, 0, 0, 4),),
+                 (Segment(0, 1, 0, 0, 2), Segment(1, 1, 0, 2, 2)),
+                 (Segment(0, 1, 0, 0, 2), Segment(0, 2, 2, 2, 2))]
+        for segments in cases:
+            with self.subTest(segments=segments), self.assertRaises(ValueError):
+                Step(ids, segments)
+        with self.assertRaises(ValueError):
+            Step.decode([])
+
+    def setUp(self):
+        from engine.base.arena import Arena
+        from engine.profiles.glm53.caches import Glm53Caches
+        self.F = tiny_facts()
+        self.p = layout(self.F, range(self.F.layers))
+        self.arena = Arena(256 + self.p.nbytes(8, 4))
+        self.prefix = self.arena.carve(256, "earlier arena owner").fill_(0xEE)
+        self.c = Glm53Caches(self.arena, self.F, range(self.F.layers), 8, 4)
+
+    def step(self, seq, length, ctx=0):
+        from engine.profiles.glm53.net import Step
+        slot = list(self.c.slots.owner).index(seq)
+        st = Step.prefill(torch.zeros(length, dtype=torch.int64, device="cuda"), ctx, seq, slot)
+        self.c.prepare(st)
+        return st
+
+    def test_views_use_one_arena_and_map_noncontiguous_blocks_per_layer(self):
+        c, F = self.c, self.F
+        for seq, tokens in [(1, 16), (0, 32), (2, 16)]:
+            c.pool.reserve(seq, tokens)
+        c.pool.release(1)
+        c.pool.reserve(0, 16)
+        self.assertEqual(list(c.pool.row(0))[:3], [1, 2, 0])
+        c.slots.take(0)
+        self.step(0, 48)
+        positions = torch.arange(48, device="cuda")
+        for L in F.dsa_layers:
+            ids = c.token_slots(L, 0, positions).long()
+            values = torch.full((48, F.kv_lora), float(L), device="cuda").to(torch.float8_e4m3fn)
+            c.latent(L)[ids] = values
+            for j, block in enumerate((1, 2, 0)):
+                offset = block * self.p.block_bytes + self.p.token_offsets[L]
+                raw = c.paged[offset:offset + F.block * F.kv_lora]
+                self.assertTrue(torch.equal(raw, values[j * 16:(j + 1) * 16].view(torch.uint8).flatten()))
+            pools = c.pool_slots(L, 0, torch.arange(12, device="cuda")).long()
+            c.pool_keys(L)[pools] = torch.full((12, F.idx_dim), float(L), device="cuda").to(torch.float8_e4m3fn)
+            c.pool_scales(L)[pools] = float(L + 10)
+            self.assertTrue(torch.all(c.pool_scales(L)[pools] == L + 10))
+            self.assertTrue(torch.all(c.latent(L)[ids].float() == L))
+        self.assertEqual(self.arena.used, self.arena.nbytes)
+        self.assertTrue(torch.all(self.prefix == 0xEE))
+        self.assertTrue(c.latent(1).is_contiguous())
+        self.assertEqual(c.latent(1).untyped_storage().data_ptr(), self.arena.buf.data_ptr())
+
+    def test_resetting_one_state_slot_preserves_other_sequences(self):
+        a, b = self.c.slots.take(0), self.c.slots.take(1)
+        for L in self.F.dsa_layers:
+            self.c.tail(L, a).fill_(3)
+            self.c.tail(L, b).fill_(7)
+        for t in self.c.kda(0, a):
+            t.fill_(3)
+        for t in self.c.kda(0, b):
+            t.fill_(7)
+        self.c.reset_slot(a)
+        for L in self.F.dsa_layers:
+            self.assertTrue(torch.all(self.c.tail(L, a) == 0))
+            self.assertTrue(torch.all(self.c.tail(L, b) == 7))
+        for t in self.c.kda(0, a):
+            self.assertTrue(torch.all(t == 0))
+        for t in self.c.kda(0, b):
+            self.assertTrue(torch.all(t == 7))
+
+    def test_prepare_rejects_wrong_slot_and_unreserved_positions(self):
+        from engine.profiles.glm53.net import Step
+        self.c.pool.reserve(0, 16)
+        slot = self.c.slots.take(1)
+        ids = torch.zeros(17, dtype=torch.int64, device="cuda")
+        with self.assertRaises(ValueError):
+            self.c.prepare(Step.prefill(ids[:16], 0, 0, slot))
+        self.c.slots.give(slot)
+        self.c.slots.take(0)
+        with self.assertRaises(ValueError):
+            self.c.prepare(Step.prefill(ids, 0, 0, slot))
+
+    def indexer(self):
+        from engine.base.comm import Comm
+        from engine.profiles.glm53 import lanes
+        from engine.profiles.glm53.net import Glm53Net
+        F = self.F
+        net = Glm53Net(F, Comm(4, 0), lanes.reference(), layers=[1])
+        g = torch.Generator(device="cuda").manual_seed(72)
+        def rand(*shape):
+            return torch.randn(*shape, generator=g, device="cuda")
+        net.p = {"L1.idx.wq_b": rand(F.idx_heads * F.idx_dim, F.q_lora).to(torch.bfloat16),
+                 "L1.idx.wk": torch.eye(F.hidden, device="cuda", dtype=torch.bfloat16),
+                 "L1.idx.w_heads": rand(F.idx_heads, F.hidden),
+                 "L1.idx.k_norm_w": torch.ones(F.idx_dim, device="cuda"),
+                 "L1.idx.k_norm_b": torch.zeros(F.idx_dim, device="cuda"),
+                 "L1.idx.gate": torch.zeros(F.idx_dim, F.hidden, device="cuda", dtype=torch.bfloat16),
+                 "L1.idx.ape": torch.zeros(F.kpool, F.idx_dim, device="cuda")}
+        return net, rand(40, F.hidden).to(torch.bfloat16), rand(40, F.q_lora).to(torch.bfloat16)
+
+    def test_rollback_matches_clean_pools_for_every_boundary_and_accept_count(self):
+        net, x, qr = self.indexer()
+        c, F = self.c, self.F
+        c.pool.reserve(0, 40)
+        c.slots.take(0)
+        for phase in range(F.kpool):
+            ctx = 12 + phase
+            for accepted in range(1, F.spec_k + 1):
+                with self.subTest(phase=phase, accepted=accepted):
+                    end = ctx + accepted + F.spec_k + 1
+                    c.reset()
+                    net._indexer(1, x[:ctx + accepted], qr[:ctx + accepted], self.step(0, ctx + accepted), c)
+                    net._indexer(1, x[ctx + accepted:end], qr[ctx + accepted:end], self.step(0, 6, ctx + accepted), c)
+                    ids = c.pool_slots(1, 0, torch.arange(end // F.kpool, device="cuda")).long()
+                    expected_keys = c.pool_keys(1)[ids].view(torch.uint8).clone()
+                    expected_scales = c.pool_scales(1)[ids].clone()
+                    c.reset()
+                    net._indexer(1, x[:ctx], qr[:ctx], self.step(0, ctx), c)
+                    draft = x[ctx:ctx + 6].clone()
+                    draft[accepted:] = x[30:30 + 6 - accepted]
+                    net._indexer(1, draft, qr[ctx:ctx + 6], self.step(0, 6, ctx), c)
+                    net._indexer(1, x[ctx + accepted:end], qr[ctx + accepted:end], self.step(0, 6, ctx + accepted), c)
+                    self.assertTrue(torch.equal(c.pool_keys(1)[ids].view(torch.uint8), expected_keys))
+                    self.assertTrue(torch.equal(c.pool_scales(1)[ids], expected_scales))
+
+    def test_long_prefill_ring_contains_only_the_latest_positions(self):
+        net, x, qr = self.indexer()
+        self.c.pool.reserve(0, 40)
+        slot = self.c.slots.take(0)
+        net._indexer(1, x, qr, self.step(0, 40), self.c)
+        width = self.F.kpool - 1 + self.F.spec_k
+        expected = torch.nn.functional.layer_norm(x[-width:].float(), (128,), eps=1e-6).to(torch.bfloat16)
+        positions = torch.arange(40 - width, 40, device="cuda")
+        self.assertTrue(torch.equal(self.c.tail(1, slot)[positions % width, 0], expected))
+
+    def runtime(self, *, eos_ids=()):
+        from engine.base.scheduler import Contract
+        from engine.profiles.glm53.runtime import Glm53Runtime
+        F = self.F
+
+        class NextTokenNet:
+            layers = (0, 1, 2)
+            def __init__(self):
+                self.F = F
+            def forward(self, step, caches):
+                return step.ids[:, None].float()
+            def head(self, hidden):
+                logits = torch.full((len(hidden), F.vocab), -100., device=hidden.device)
+                return logits.scatter_(1, (hidden.long() + 1) % F.vocab, 100.)
+
+        return Glm53Runtime(NextTokenNet(), self.c, Contract(4, 8, 0, 0., 2), eos_ids=eos_ids)
+
+    def test_runtime_generates_exact_limits_and_releases_every_request(self):
+        r = self.runtime()
+        r.submit(0, torch.arange(20, device="cuda"), 3, now=0)
+        r.submit(1, torch.arange(7, device="cuda"), 1, now=0)
+        kinds = []
+        for tick in range(20):
+            step = r.step(now=tick + 1)
+            if step is None:
+                break
+            kinds.append(step.kind)
+        self.assertEqual(r.take_result(0), (20, 21, 22))
+        self.assertEqual(r.take_result(1), (7,))
+        self.assertEqual(kinds.count("prefill"), 4)
+        self.assertEqual(kinds.count("decode"), 2)
+        self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
+        self.assertEqual(self.c.slots.available, 4)
+        r.submit(0, torch.tensor([9], device="cuda"), 1, now=21)
+        r.step(now=21)
+        self.assertEqual(r.take_result(0), (10,))
+
+    def test_runtime_can_stop_on_the_first_eos_without_decode(self):
+        r = self.runtime(eos_ids=(7,))
+        r.submit(0, torch.arange(7, device="cuda"), 20, now=0)
+        self.assertEqual(r.step(now=1).kind, "prefill")
+        self.assertIsNone(r.step(now=2))
+        self.assertEqual(r.take_result(0), (7,))
+
+    def test_runtime_rejects_bad_input_before_reserving_memory(self):
+        r = self.runtime()
+        for ids in (torch.tensor([-1], device="cuda"), torch.tensor([256], device="cuda"),
+                    torch.empty(0, dtype=torch.int64, device="cuda")):
+            with self.assertRaises(ValueError):
+                r.submit(0, ids, 1)
+        self.assertEqual(self.c.pool.available, 8)
+        self.assertEqual(self.c.slots.available, 4)
+
+
+if __name__ == "__main__":
+    unittest.main()

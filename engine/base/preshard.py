@@ -21,16 +21,32 @@ from pathlib import Path
 
 import torch
 
+from engine.base.arena import ALIGN
+
+_PAD_PREFIX = "__st_padding__."
+
 _NAMES = {torch.uint8: "U8", torch.int8: "I8", torch.float8_e4m3fn: "F8_E4M3", torch.bfloat16: "BF16",
           torch.float16: "F16", torch.float32: "F32", torch.int32: "I32", torch.int64: "I64", torch.bool: "BOOL"}
 
 
 class RankWriter:
     def __init__(self, path: "str | Path", specs, metadata: "dict | None" = None):
+        specs = tuple(specs)
+        names = [s.name for s in specs]
+        if len(set(names)) != len(names) or any(n.startswith(_PAD_PREFIX) or n == "__metadata__" for n in names):
+            raise ValueError("rank tensor names must be unique and outside the reserved metadata/padding namespace")
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         header, off = {}, 0
-        for s in specs:
+        for i, s in enumerate(specs):
+            padding = (-off) % ALIGN
+            if padding:
+                # Safetensors forbids holes. Explicit byte tensors make the
+                # padding valid for its standard reader while keeping each
+                # real weight aligned for TMA after a coalesced arena upload.
+                header[f"{_PAD_PREFIX}{i}"] = {
+                    "dtype": "U8", "shape": [padding], "data_offsets": [off, off + padding]}
+                off += padding
             n = s.nbytes()
             header[s.name] = {"dtype": _NAMES[s.dtype], "shape": list(s.shape), "data_offsets": [off, off + n]}
             off += n
@@ -42,9 +58,17 @@ class RankWriter:
         self.offsets = {s.name: (header[s.name]["data_offsets"][0], s) for s in specs}
         self.done = set()
         self.fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
-        os.pwrite(self.fd, struct.pack("<Q", len(raw)) + raw, 0)
+        self._write_all(struct.pack("<Q", len(raw)) + raw, 0)
         os.ftruncate(self.fd, self.base + off)
         self.total = off
+
+    def _write_all(self, buf, offset):
+        pos, view = 0, memoryview(buf)
+        while pos < len(view):
+            wrote = os.pwrite(self.fd, view[pos:pos + (1 << 30)], offset + pos)
+            if wrote <= 0:
+                raise OSError(f"preshard: short write at {offset + pos}")
+            pos += wrote
 
     def put(self, name: str, t: torch.Tensor) -> None:
         off, s = self.offsets[name]
@@ -54,9 +78,7 @@ class RankWriter:
             raise ValueError(f"preshard: {name} written twice")
         buf = t.detach().contiguous().cpu().reshape(-1).view(torch.uint8).numpy().tobytes() if t.numel() else b""
         assert len(buf) == s.nbytes()
-        pos, view = 0, memoryview(buf)
-        while pos < len(buf):
-            pos += os.pwrite(self.fd, view[pos:pos + (1 << 30)], self.base + off + pos)
+        self._write_all(buf, self.base + off)
         self.done.add(name)
 
     def close(self) -> None:

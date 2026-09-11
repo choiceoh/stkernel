@@ -1,0 +1,48 @@
+/home/choiceoh/st-engine-f4d7-20260911/build/glm53  (71 overlays from 11 modules)
+profile=glm53 image=glm53:v13-b12x-it probe=engine/profiles/glm53/check.py files=23 args=--lanes served --layers 0,3 --tokens 64 --chunk 32 --ranks /ranks
+forwarded: VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MLA=1
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (87 free)
+INFO 09-11 07:18:08 [import_utils.py:464] DeepEP v2 requires NCCL >= 2.30.4 but found 2.29.7. deepep_v2 backend will not be available.
+  NOTE: served lanes with the REFERENCE expert lane (b12x is not bound yet) -- a lane judge, not a boot
+INFO 09-11 07:18:12 [deep_gemm.py:191] deep_gemm not found in site-packages, trying vendored vllm.third_party.deep_gemm
+WARNING 09-11 07:18:13 [glm53_megakernel.py:259] [megakernel] source md5=1f6ac75f kernels=16 (/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu)
+WARNING 09-11 07:19:19 [glm53_megakernel.py:3014] [megakernel] selftest mla rel=2.70e-03 pair_prefill=False group=2 prefill32=False -> ARM
+WARNING 09-11 07:19:19 [glm53_megakernel.py:2699] [megakernel] armed={'mhc': False, 'mhc_pre': False, 'gemm': False, 'mla': True, 'smlp2': False}
+/usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+phase                                      seconds   dev GiB  counters
+arena                                        0.103     +4.04
+load                                         1.208     +1.60  blocks=9 bytes=1.90739e+09
+whole                                       68.967     +2.61
+paged                                        1.106     -0.01
+chunked                                     15.049     +0.08
+verify                                       1.835     -0.04
+rollback                                     1.970     -0.06
+runtime                                      2.264     -0.07
+  chain 0-3 (2 layers: 1 dsa, 1 kda; 1 moe), TP=4 in-process, lanes=served (experts: reference), 64 tokens, arena 1.81 GiB per rank x 4, wall 93.3 s
+  hidden |h| mean 1.1296 max 8.000, finite True; last-token top-5 ids [2504, 91886, 84498, 62273, 48929] logits [7.09, 7.03, 6.69, 6.66, 6.62]
+  ranks agree (hidden and logits identical on all 4): True (max |diff| 0.0e+00)
+  paged KV == contiguous oracle (identical hidden): True; runner generated [3, 1] tokens, ranks agree: True, all resources returned
+  per block vs the whole prefill (per-token rel; floor = first chunk, no cache read):
+    chunked   step 1  L0  kda    p50 6.1e-03 max 1.0e-02  (floor p50 6.5e-03 max 9.2e-03)
+    chunked   step 1  L0  dense  p50 9.7e-03 max 1.8e-02  (floor p50 1.0e-02 max 1.9e-02)
+    chunked   step 1  L3  dsa    p50 7.6e-03 max 1.1e-02  (floor p50 1.2e-02 max 1.9e-02)
+    chunked   step 1  L3  moe    p50 6.2e-02 max 4.1e-01  (floor p50 6.9e-02 max 2.3e-01)
+    verify    step 0  L0  kda    p50 0.0e+00 max 0.0e+00  (floor p50 6.5e-03 max 9.2e-03)
+    verify    step 1  L0  kda    p50 4.6e-03 max 7.7e-03  (floor p50 6.5e-03 max 9.2e-03)
+    verify    step 0  L0  dense  p50 0.0e+00 max 0.0e+00  (floor p50 1.0e-02 max 1.9e-02)
+    verify    step 1  L0  dense  p50 8.2e-03 max 1.5e-02  (floor p50 1.0e-02 max 1.9e-02)
+    verify    step 0  L3  dsa    p50 4.1e-03 max 8.8e-03  (floor p50 1.2e-02 max 1.9e-02)
+    verify    step 1  L3  dsa    p50 3.8e-03 max 8.2e-03  (floor p50 1.2e-02 max 1.9e-02)
+    verify    step 0  L3  moe    p50 4.4e-02 max 4.3e-01  (floor p50 6.9e-02 max 2.3e-01)
+    verify    step 1  L3  moe    p50 4.9e-02 max 7.8e-02  (floor p50 6.9e-02 max 2.3e-01)
+    rollback  step 0  L0  kda    p50 0.0e+00 max 0.0e+00  (floor p50 6.5e-03 max 9.2e-03)
+    rollback  step 2  L0  kda    p50 4.6e-03 max 6.0e-03  (floor p50 6.5e-03 max 9.2e-03)
+    rollback  step 0  L0  dense  p50 0.0e+00 max 0.0e+00  (floor p50 1.0e-02 max 1.9e-02)
+    rollback  step 2  L0  dense  p50 8.8e-03 max 1.3e-02  (floor p50 1.0e-02 max 1.9e-02)
+    rollback  step 0  L3  dsa    p50 4.3e-03 max 8.8e-03  (floor p50 1.2e-02 max 1.9e-02)
+    rollback  step 2  L3  dsa    p50 3.8e-03 max 4.1e-03  (floor p50 1.2e-02 max 1.9e-02)
+    rollback  step 0  L3  moe    p50 4.4e-02 max 3.3e-01  (floor p50 6.9e-02 max 2.3e-01)
+    rollback  step 2  L3  moe    p50 4.2e-02 max 2.0e-01  (floor p50 6.9e-02 max 2.3e-01)
+
+  PASS: four ranks agree; paged caches and runtime; chunked, verify and rollback checks

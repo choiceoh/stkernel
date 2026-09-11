@@ -20,6 +20,7 @@ what lets a death dump (D12) replay it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 
 from engine.base.shapes import chunk_for
 
@@ -35,6 +36,17 @@ class Contract:
     draft_slots: int          # spec-decode slots taken out of the budget
     max_wait_s: float         # D10's one starvation valve
     max_running: int          # decode batch width the kernels support
+
+    def __post_init__(self):
+        for name in ("chunk_align", "token_budget", "max_running"):
+            if not isinstance(getattr(self, name), int) or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if not isinstance(self.draft_slots, int) or self.draft_slots < 0:
+            raise ValueError("draft_slots must be a nonnegative integer")
+        if not isfinite(self.max_wait_s) or self.max_wait_s < 0:
+            raise ValueError("max_wait_s must be finite and nonnegative")
+        if chunk_for(self.chunk_align, self.token_budget, self.draft_slots) == 0:
+            raise ValueError("token budget must hold an aligned chunk after reserving drafts")
 
 
 @dataclass
@@ -57,7 +69,7 @@ class Step:
 
 
 def _decode(state: State, c: Contract, reason: str) -> Step:
-    seqs = tuple(state.running[: c.max_running])
+    seqs = tuple(state.running)
     return Step(DECODE, seqs, len(seqs) * (1 + c.draft_slots), reason)
 
 
@@ -65,19 +77,19 @@ def _prefill(state: State, c: Contract, reason: str) -> Step:
     seq = state.in_prefill if state.in_prefill is not None else state.waiting[0]
     remaining = state.prompt_len[seq] - state.computed.get(seq, 0)
     chunk = min(remaining, chunk_for(c.chunk_align, c.token_budget, c.draft_slots))
-    if remaining and chunk == 0:
-        # the tail is shorter than one alignment unit: it is still legal to
-        # finish, because the LAST chunk of a request ends at its true length.
-        chunk = remaining
     return Step(PREFILL, (seq,), chunk, reason)
 
 
 def plan(state: State, c: Contract, now: float) -> Step | None:
     """One step, or None when there is nothing to do."""
+    if len(state.running) > c.max_running:
+        raise ValueError("running sequences exceed the declared decode width")
     if state.in_prefill is not None:
+        if len(state.running) == c.max_running:
+            raise ValueError("prefill has no reserved place in the decode batch")
         return _prefill(state, c, "prefill in progress: a request is never split across decoders")
     if state.running:
-        if state.waiting:
+        if state.waiting and len(state.running) < c.max_running:
             waited = now - state.arrived_at[state.waiting[0]]
             if waited > c.max_wait_s:
                 return _prefill(state, c, f"waited {waited:.1f}s > {c.max_wait_s}s: starvation valve")
@@ -103,7 +115,20 @@ def advance(state: State, step: Step) -> None:
         raise ValueError(f"a step is prefill or decode, never {step.kind!r}")
 
 
+def validate_arrival(state: State, seq: int, prompt_len: int, now: float) -> None:
+    """Check admission without publishing any scheduler state."""
+    if not isinstance(seq, int) or not 0 <= seq < 2**31:
+        raise ValueError("sequence id must be a nonnegative int32")
+    if not isinstance(prompt_len, int) or not 0 < prompt_len < 2**31:
+        raise ValueError("prompt length must be a positive int32")
+    if not isfinite(now):
+        raise ValueError("arrival time must be finite")
+    if seq in state.prompt_len:
+        raise ValueError(f"seq {seq} is already live")
+
+
 def arrive(state: State, seq: int, prompt_len: int, now: float) -> None:
+    validate_arrival(state, seq, prompt_len, now)
     state.waiting.append(seq)
     state.arrived_at[seq] = now
     state.prompt_len[seq] = prompt_len
