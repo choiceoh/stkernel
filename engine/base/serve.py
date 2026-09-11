@@ -504,6 +504,9 @@ class Server:
                 ("vllm:spec_decode_num_draft_tokens_total", getattr(engine, "drafted_total", 0))]
         if hasattr(engine, "drafts_total"):
             rows.append(("vllm:spec_decode_num_drafts_total", engine.drafts_total))
+        # bench/bracket._StepWindows samples this vLLM histogram count as "engine steps" for its decode windows (steps/s):
+        # the runner's step counter is the same quantity here (a prefill chunk or a decode step each)
+        rows.append(("vllm:iteration_tokens_total_count", self.runner.steps))
         rows.append(("st:requests_cancelled_total", self.cancelled))
         return "".join(f'{name}{{engine="st"}} {max(0, value)}\n' for name, value in rows)
 

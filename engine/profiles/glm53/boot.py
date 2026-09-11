@@ -57,8 +57,15 @@ PREFIX_SNAPSHOTS = 8                # chunk-boundary checkpoints kept for prefix
 
 
 def tokenizer(ckpt=facts.CKPT):
+    """The checkpoint's tokenizer, and nothing else it carries: this tokenizer.json ships a truncation rule
+    (max_length 2048, direction Right) that `Tokenizer.from_file` honours and transformers' AutoTokenizer -- what
+    vLLM tokenizes with -- ignores. Left in, the door silently cut every prompt to its first 2,048 tokens and
+    answered about the head of a document whose question sat at the end (45차 §23: onepass 32K/128K 0/3)."""
     from tokenizers import Tokenizer
-    return Tokenizer.from_file(str(Path(ckpt) / "tokenizer.json"))
+    tok = Tokenizer.from_file(str(Path(ckpt) / "tokenizer.json"))
+    tok.no_truncation()
+    tok.no_padding()
+    return tok
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg

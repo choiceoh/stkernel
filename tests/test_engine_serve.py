@@ -600,6 +600,7 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual(json.load(urllib.request.urlopen(base + '/health', timeout=3)), {'status': 'ok'})
             text = urllib.request.urlopen(base + '/metrics', timeout=3).read().decode()
             self.assertIn('vllm:request_success_total{engine="st"} 0\n', text)
+            self.assertIn('vllm:iteration_tokens_total_count{engine="st"} ', text)   # bench/bracket._StepWindows samples this as engine steps
             self.assertIn('vllm:num_requests_running{engine="st"} 0\n', text)
             self.assertIn('vllm:spec_decode_num_draft_tokens_total{engine="st"} 0\n', text)
         finally:
