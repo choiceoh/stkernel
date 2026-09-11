@@ -140,6 +140,20 @@ def _fwht_quant_kernel(
     tl.store(sout_ptr + rows, scale, mask=rmask)
 
 
+def _fwht_quant_config(n_rows: int) -> tuple[int, int]:
+    """GB10 launch geometry: fill its 48 SMs without wide register tiles.
+
+    One row/warp is fastest for decode. Eight rows/warp amortize scheduling
+    for bounded prefill. Larger inputs retain the original measured baseline.
+    See measurements/st_gb10_indexer_quant_20260911 for the shape sweep.
+    """
+    if n_rows <= 1024:
+        return 1, 1
+    if n_rows <= 65536:
+        return 8, 1
+    return 32, 2
+
+
 def fwht128_quant_fp8(q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Rotate each 128-wide row by the Hadamard-128 transform, then FP8-quant.
 
@@ -162,9 +176,9 @@ def fwht128_quant_fp8(q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     q_scale = torch.empty((n_rows, 1), dtype=torch.float32, device=q.device)
     if n_rows == 0:
         return q_fp8, q_scale
-    BLOCK_R = 32
+    BLOCK_R, num_warps = _fwht_quant_config(n_rows)
     grid = (triton.cdiv(n_rows, BLOCK_R),)
-    _fwht_quant_kernel[grid](q, q_fp8, q_scale, n_rows, BLOCK_R=BLOCK_R, num_warps=2)
+    _fwht_quant_kernel[grid](q, q_fp8, q_scale, n_rows, BLOCK_R=BLOCK_R, num_warps=num_warps)
     return q_fp8, q_scale
 
 

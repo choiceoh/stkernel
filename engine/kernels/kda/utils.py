@@ -10,7 +10,6 @@
 import contextlib
 import functools
 import logging
-import os
 from collections.abc import Callable
 from enum import Enum
 from typing import Any, Literal
@@ -21,10 +20,13 @@ import triton
 
 logger = logging.getLogger(__name__)
 
-COMPILER_MODE = os.getenv("FLA_COMPILER_MODE") == "1"
-FLA_CI_ENV = os.getenv("FLA_CI_ENV") == "1"
+# D11 (2026-09-12, ST): the FLA library knobs (FLA_COMPILER_MODE, FLA_CI_ENV,
+# GDN_RECOMPUTE_SUPPRESS_LEVEL, FLA_USE_CUDA_GRAPH, FLA_USE_TMA) were never set
+# on the fleet; their defaults are the served values and nothing reads the env.
+COMPILER_MODE = False
+FLA_CI_ENV = False
 
-SUPPRESS_LEVEL = int(os.getenv("GDN_RECOMPUTE_SUPPRESS_LEVEL", "0"))
+SUPPRESS_LEVEL = 0
 
 # Default chunk size used across FLA triton kernels (kda, chunk, chunk_o, etc.)
 FLA_CHUNK_SIZE = 64
@@ -120,9 +122,9 @@ def input_guard(fn: Callable[..., torch.Tensor]) -> Callable[..., torch.Tensor]:
 # process may bind kernels before assigning its device.
 device_torch_lib = torch.cuda
 is_amd = False
-use_cuda_graph = os.environ.get("FLA_USE_CUDA_GRAPH", "0") == "1"
+use_cuda_graph = False
 is_gather_supported = True
-is_tma_supported = os.getenv("FLA_USE_TMA", "0") == "1"
+is_tma_supported = False
 
 
 def get_all_max_shared_mem():

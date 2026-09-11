@@ -11,6 +11,13 @@ instead of on the fleet.
 Layer names come from the index rather than from a hardcoded prefix: the model
 puts them under `model.language_model.layers.N.`, and a checkpoint that spells
 that differently should still slice.
+
+Reading goes through base/loader's coalesced ranges, not `safe_open` per tensor.
+A layer's tensors are contiguous in their shard, so the two paths read the same
+bytes -- but the per-tensor one pays a syscall, an allocation and a copy for each
+of them and runs at 0.16-0.5 GiB/s, which is what made presharding 176 GiB take
+343-941 s. This is the same finding base/loader.py was built on, applied to the
+other side of the preshard.
 """
 from __future__ import annotations
 
@@ -29,6 +36,7 @@ class Checkpoint:
         with open(index_path) as fh:
             self.weight_map = json.load(fh)["weight_map"]
         self.layer_prefix, self.num_layers = self._probe_layers()
+        self._readers = {}                  # shard -> RankLoader: its header is parsed once
 
     def _probe_layers(self) -> tuple[str, int]:
         prefixes, highest = set(), -1
@@ -59,26 +67,32 @@ class Checkpoint:
                 out.append(name)
         return sorted(out)
 
-    def load(self, keys: list[str], *, device: str = "cpu", recorder=None) -> dict:
-        """Read exactly these tensors, one shard open at a time.
+    def reader(self, shard: str):
+        """The shard's RankLoader, header parsed once (148,498 tensors across eleven)."""
+        from engine.base.loader import RankLoader
 
-        Grouping by shard is not a micro-optimisation: opening 11 shards once
-        each and pulling the keys out beats reopening per tensor by orders of
-        magnitude at 148k tensors, and it is the difference between a harness
-        that runs in seconds and one nobody uses."""
-        from safetensors import safe_open
+        loader = self._readers.get(shard)
+        if loader is None:
+            loader = self._readers[shard] = RankLoader(os.path.join(self.path, shard))
+        return loader
 
+    def load(self, keys: list[str], *, device: str = "cpu", recorder=None,
+             max_run: int = 1 << 30) -> dict:
+        """Read exactly these tensors as coalesced ranges, one shard at a time.
+
+        Each returned tensor is a view into the range its shard was read in, so a
+        tensor's bytes are never copied twice and the ranges live exactly as long
+        as the tensors do. Grouping by shard is still what makes this cheap at
+        148k tensors; what changed is that inside a shard the selected tensors are
+        read as a few large ranges instead of one request each."""
         by_shard = defaultdict(list)
         for name in keys:
             by_shard[self.weight_map[name]].append(name)
         tensors, total = {}, 0
         for shard, names in sorted(by_shard.items()):
-            full = os.path.join(self.path, shard)
-            with safe_open(full, framework="pt", device=device) as fh:
-                for name in names:
-                    t = fh.get_tensor(name)
-                    tensors[name] = t
-                    total += t.numel() * t.element_size()
+            loader = self.reader(shard)
+            tensors.update(loader.load(names, device=device, max_run=max_run, recorder=recorder))
+            total += loader.nbytes(names)
             if recorder is not None:
                 recorder.count("shards", 1)
         if recorder is not None:

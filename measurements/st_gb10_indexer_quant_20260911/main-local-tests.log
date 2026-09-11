@@ -1,0 +1,31 @@
+......ssssss...........ssssssssssssssssssssssssssssssss....ssssssssss........EEssssss.....ssss........................................s.....sssss...................ss.............s.......................sss
+======================================================================
+ERROR: test_tile_major_layout_contract_is_shared_with_the_reference_module (test_engine_kernels.KernelPackageTests.test_tile_major_layout_contract_is_shared_with_the_reference_module)
+The served bind re-lays expert bytes in place; the reference lane reads them back through
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/.codex/worktrees/9391/stkernel/tests/test_engine_kernels.py", line 125, in test_tile_major_layout_contract_is_shared_with_the_reference_module
+    from engine.modules import expert_layout
+  File "/home/choiceoh/.codex/worktrees/9391/stkernel/engine/modules/expert_layout.py", line 10, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+
+======================================================================
+ERROR: test_engine_knobs (unittest.loader._FailedTest.test_engine_knobs)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_engine_knobs
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/unittest/loader.py", line 394, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/loader.py", line 337, in _get_module_from_name
+    __import__(name)
+  File "/home/choiceoh/.codex/worktrees/9391/stkernel/tests/test_engine_knobs.py", line 11, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+
+
+----------------------------------------------------------------------
+Ran 206 tests in 5.895s
+
+FAILED (errors=2, skipped=70)

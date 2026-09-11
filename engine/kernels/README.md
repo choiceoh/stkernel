@@ -11,6 +11,7 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 | 상태 링 | `state.py`에서 물리 슬롯·위치로 필요한 이력을 읽고 변경된 위치만 쓰기 | PyTorch, Triton |
 | mHC pre / post | `mhc/`의 TileLang 혼합 커널과 작은 M의 prenorm 패딩 | PyTorch, TileLang, Triton, DeepGEMM |
 | 인덱서 로짓 | `deep_gemm.py`에서 `deep_gemm.fp8_fp4_mqa_logits` 직접 호출 | DeepGEMM |
+| 인덱서 query 양자화 | `kpool.py`의 Hadamard-128·FP8 커널, GB10 행 수별 1/8/32행 tile | PyTorch, Triton |
 | kpool | `kpool.py`의 1워프 반환 전용 압축·회전·FP8 변환, 별도 캐시 쓰기 진입점 | PyTorch, Triton |
 | 인덱서 슬롯 | `indexer.py`의 풀 ID 정렬·토큰 확장·페이지 주소 변환·유효 개수·출력 쓰기를 한 커널에서 처리 | PyTorch, Triton |
 | MLA | `mla/`의 전용 Python 드라이버, warp max reduction과 DSMEM split 병합을 적용한 `glm53_megakernel.cu` | PyTorch, CUDA 13 nvcc |
@@ -29,7 +30,8 @@ mHC는 GLM 레인이 호출하는 pre/post를 직접 제공한다. vLLM의 Custo
 일반 `torch.nn.Module`이다. MLA의 Python 드라이버는 sparse MLA에 필요한 빌드·작업공간·
 수치 판정만 보존하며, 다른 모델의 GEMM/가중치 포장 후크를 가져오지 않는다.
 
-GB10 플릿 이미지의 PDL 정책을 유지한다: conv·TileLang·DeepGEMM에서 끈다.
+GB10 플릿 이미지의 PDL 정책을 유지한다: conv·TileLang·DeepGEMM에서 끈다(KDA 상태 커널 경합).
+메가커널 발사는 프로덕션 채택값대로 PDL 을 켠다(`mk_pdl_enabled()` 가 코드 기본값 true, 27차 발사당 58.0→53.6 µs).
 DeepGEMM 설정은 첫 실행에 한 번 적용해 CPU에서의 패키지 검사와 장치 배정 전 임포트가
 CUDA 문맥을 만들지 않게 한다. MLA는 첫 eager 호출에 JIT와 수치 판정을 끝내야 한다.
 그래프 캡처 중 처음 부르면 명시적으로 실패한다.
@@ -38,16 +40,40 @@ MLA는 GB10에서 실측한 thread-block cluster와 distributed shared memory(DS
 사용한다. 기본 split 계획과 합산 순서를 유지하면서 `32 <= T <= 64`, `1 <= W <= 2176`,
 split 2 또는 3인 호출만 cluster로 실행한다. 각 split의 기존 shared memory를 재사용해
 FP32 부분값을 합치므로 이 경로는 전역 partial 버퍼와 grid 전체 ticket barrier를 사용하지
-않는다. 다른 형상은 기존 경로를 사용한다. `ST_GLM53_MK_MLA_CLUSTER=0`으로 cluster를
-끄고 비교할 수 있으며, 부팅 시 실제 커널의 cluster 수용량과 수치 결과를 확인한다.
+않는다. 다른 형상은 기존 경로를 사용한다. A/B 는 `maybe_arm()` 전에 모듈 속성 `mla.ENABLE_MLA_CLUSTER=False` 로 끄고 비교하며(env 아님), 부팅 시 실제 커널의 cluster 수용량과 수치 결과를 확인한다.
 측정에서 느렸던 4~8-block cluster는 기본 디스패치에 포함하지 않았다.
 결과와 재현 절차는 [GB10 MLA 측정](../../measurements/st_gb10_mla_20260911/README.md)에 있다.
 
-이식한 Python 실험 변수는 `ST_GLM53_*` 이름을 사용한다. 예를 들어 KDA strided norm은
-`ST_GLM53_KDA_PREFILL_QK_NORM`, mHC big-fuse 설정은 `ST_GLM53_MHC_BIGFUSE`다.
-MLA는 필수 레인이므로 이전 `VLLM_GLM53_MEGAKERNEL`/`VLLM_GLM53_MK_MLA` 활성화 변수가
-필요하지 않다. 원본 CUDA 파일 안의 진단용 `VLLM_GLM53_*` 문자열은 출처 보존을 위해
-유지되지만 ST 실행기는 전달하지 않는다. FLA·FlashInfer 라이브러리 변수는 원래 이름이다.
+인덱서 query 양자화는 회전·BF16 반올림·FP8 scale 계산을 유지하면서 launch 크기를
+선택한다. 1,024행 이하는 1행·1 warp, 1,025~65,536행은 8행·1 warp를 사용하며,
+더 큰 입력은 기존 32행·2 warp를 사용한다. GLM의 인덱서 head는 32개이므로 행 수는
+토큰 수의 32배다. [GB10 양자화 측정](../../measurements/st_gb10_indexer_quant_20260911/README.md)에
+레지스터·shared memory, 실제 가중치 검사와 형상별 시간을 기록했다.
+
+## 노브 (D11, 2026-09-12 정리)
+
+이 패키지는 환경 변수를 읽지 않는다(예외는 `ST_MLA_BUILD_ROOT` 캐시 경로 하나, `TRITON_CACHE_DIR` 와 같은 부류).
+`tests/test_engine_kernels.py` 가 AST 로 강제한다. 이식 때 남았던 43개 환경 노브는 셋으로 갈랐다.
+
+- **코드에 박은 프로덕션 채택값**: 메가커널 PDL on, GEMM 입력 모드(`MK_INPUT_CTA=4`, `MK_INPUT_REUSE=1`),
+  KDA strided Q/K norm on(`VLLM_GLM53_KDA_PREFILL_QK_NORM=1`, 2026-09-06), 정적 컴팩트 컷오버 640,
+  micro 입력 공유 on, 경계 검사 on, FLA 라이브러리 기본값(ieee tril, 정확 exp/log, TMA·그래프 off, kernel2 norm).
+- **프로필이 선언하는 만료 노브** (`engine/profiles/glm53/boot.declared`, `STK_*`; 미선언·만료는 부팅 사망):
+  `STK_moe_static` — b12x 정적 레인 사양, 기본 `stock`(§15~18 판정 구성), 후보 `t,r,sf6[,q0]`(프로덕션 09-09 채택값과 TP 레시피).
+  `lanes.served()` 가 `moe_dispatch.configure_static_v2()`/`configure_tp_sf6_q0()` 로 한 번 적용하고, 바인딩 때
+  `Lanes.moe_prepare` 가 층마다 뷰를 만든다(셀 `t` 는 아레나 바이트를 제자리 타일 우선으로, `sf6` 는 packed-only 스케일 소유자).
+  참조 레인은 `engine/modules/expert_layout.py` 로 같은 바이트를 행 우선으로 읽는다.
+  `STK_mla_prefill` — 큰 M 프리필 후보 `stock | tile32 | pair | pair4`(프로덕션 off), `mla.configure_prefill()` 이 무장 전에 적용.
+- **프로브 훅으로 남긴 것**(env 가 아니라 인자·모듈 속성; 서빙은 안 건드림): MLA 분할 강제 `mla_decode(splits=)`, MLA 루프라인 모드
+  `mla_decode(probe=)`(`.cu` `run_mla` 의 넷째 int), 쌍 프리필 겹침 통계 `mla.PAIR_STATS`, 동적 tile_m 고정
+  `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(새 형상 셀 측정용), 백엔드·컷오버·MAC 사다리 `moe_dispatch._GLM53_B12X_*`(직접 대입),
+  GEMM v2 k-슬라이스 `mk_set_gemm2`(pybind), mHC TileLang 패스(TMA·warp specialisation) `engine.kernels.configure_mhc_passes()`(mhc 임포트 전).
+- **버린 것(측정돼서 진 것)**: EP 타일 계열 5파일(E=72 전문가 병렬; 프로덕션은 절대 목표로 채택했으나 디코드 TP 보다 9.8% 느림, ST 는 TP=4 형태),
+  강제 W4A16(API 인자 `activation_precision="bf16"` 는 그대로), prefill reuse(39차 NEUTRAL) 와 FC1 N128(기각, −71%), KDA regime(NEUTRAL),
+  mHC big-fuse(GLM in-graph +0.1%). 코드는 git 에 있고 되살리기는 `git checkout` 한 줄이다.
+
+MLA는 필수 레인이므로 이전 `VLLM_GLM53_MEGAKERNEL`/`VLLM_GLM53_MK_MLA` 활성화 변수가 필요하지 않다.
+`SOURCES.json` 의 `sha256` 은 이식 전 바이트, `local_sha256`/`local_modifications` 가 서빙되는 ST 사본과 그 편집 내역이다.
 
 ## 런타임 이미지
 
@@ -70,7 +96,12 @@ API, 전체 수치 검사를 다시 검증한다. 이미지 빌드·프로브는
     bash probes/run_engine_check.sh --layers 0-4
 
 GPU 검사는 사용 가능한 GB10에서 실행한다. JIT 캐시는 기본 `$HOME/.cache/st`에 두며
-`ST_CACHE`로 변경한다. `--lanes conv,kda,mhc`처럼 일부 레인을 골라 재현할 수 있다.
+`ST_CACHE`로 변경한다. JIT 캐시 지도(2026-09-12 실측): Triton `/cache/triton`, TileLang `/cache/tilelang`,
+DeepGEMM `/cache/deep_gemm`, MLA nvcc 빌드 `/cache/mla`, b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
+`/cache/.cache/flashinfer/<버전>/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/*.o` 로 내보내고 적중 시 DSL 컴파일 없이 로드한다
+(키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
+`cute.compile` 에서 꺼지므로(`compile_only` → `no_cache`) ST 에는 무효다. 유일하게 디스크에 안 남는 것은 direct micro 커널의
+`cute.compile`(프로세스 안 캐시, 실제 스트림 규약)이다. `--lanes conv,kda,mhc`처럼 일부 레인을 골라 재현할 수 있다.
 b12x는 `--lanes moe --moe-experts 288`로 실제 TP4 형상(288 experts, top-k 8,
 hidden 4096, rank intermediate 512)을 추가 검사한다. 이 검사에서만 seed의 원본
 FlashInfer API를 호출해 이식 전후를 비교한다. 엔진은 항상 자체 b12x를 호출한다.

@@ -40,6 +40,8 @@ class Lanes:
     indexer_quant: object     # contiguous [R,128] bf16 -> Hadamard-rotated [R,128] e4m3, per-row pow2 [R,1] f32 scale
     pool_slots: object        # (pool ids [T,G] int32, seq_lens [T] int32, pool size, block row | None, block size/stride,
                               #  layer offset, out [T,G*pool+pool-1], counts [T]) -> None; descending token positions, mapped valid prefix
+    moe_prepare: object = None  # (w13, w13_sf, w2, w2_sf, top_k, limit) -> None, once per bound MoE layer BEFORE any capture:
+                              #  the served lane's weight views (in-place tile-major relayout, packed SF6 owner); reference: None
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -94,6 +96,7 @@ def reference() -> Lanes:
         the kernel's DYNAMIC activation quant (per-16 scales under a global of 1,
         no calibrated input scale -- what the served SM12x lane does)."""
         from engine.modules.nvfp4_sf import unswizzle_sf
+        from engine.modules.expert_layout import W13_K_IN_BYTES, W2_K_IN_BYTES, row_major_expert
         E, two_i, half_h = w13.shape
         i_local, hidden = two_i // 2, half_h * 2
         one = torch.ones((), device=x.device)
@@ -105,9 +108,10 @@ def reference() -> Lanes:
             # CuTe keeps FC1 accumulators in FP32 through the activation,
             # then rounds the activation to BF16 before its FP4 quantization.
             xe = x[rows].float()
-            u = expert_gemm(xe, w13[e, :i_local], s13[:i_local], one, one, quantize_act=True)
-            g = expert_gemm(xe, w13[e, i_local:], s13[i_local:], one, one, quantize_act=True)
-            y = expert_gemm(swiglu_clamped(g, u, limit), w2[e], s2, one, one, quantize_act=True)
+            w13e, w2e = row_major_expert(w13, e, W13_K_IN_BYTES), row_major_expert(w2, e, W2_K_IN_BYTES)   # served bind may have tiled the arena
+            u = expert_gemm(xe, w13e[:i_local], s13[:i_local], one, one, quantize_act=True)
+            g = expert_gemm(xe, w13e[i_local:], s13[i_local:], one, one, quantize_act=True)
+            y = expert_gemm(swiglu_clamped(g, u, limit), w2e, s2, one, one, quantize_act=True)
             out.index_add_(0, rows, y.float() * w[rows, k][:, None])
         return out.to(x.dtype)
 
@@ -115,7 +119,25 @@ def reference() -> Lanes:
                  mla_sparse_mqa, moe, fwht128_quant, pool_slots)
 
 
-def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
+MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
+MOE_STATIC_PRODUCTION = "t,r,sf6"   # production glm53.env VLLM_GLM53_B12X_STATIC_V2 (2026-09-09 adoption); "+q0" = the TP recipe
+
+
+def parse_moe_static(value: str) -> "tuple[str | None, bool]":
+    """STK_moe_static -> (b12x static-lane spec or None for stock, TP SF6 Q0 flag).
+    Cells are the dispatcher's (u, t, r, sf6, f<n>, g<n>, ...); q0 is the engine's token."""
+    tokens = [t.strip() for t in str(value).split(",") if t.strip()]
+    if tokens in ([], [MOE_STATIC_STOCK], ["0"], ["off"]):
+        return None, False
+    q0 = "q0" in tokens
+    spec = ",".join(t for t in tokens if t != "q0")
+    if q0 and "sf6" not in tokens:
+        raise ValueError("STK_moe_static: q0 needs the t,r,sf6 cells")
+    return (spec or None), q0
+
+
+def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_STOCK,
+           mla_prefill: str = "stock") -> Lanes:
     """Bind the ST kernel package without an overlay or vLLM installation.
 
     `reference_for` names lanes DECLARED to run on the torch reference in
@@ -126,6 +148,10 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
     `tp` explicitly owns dispatch for this table's lifetime. Bound tables may
     run only inside that LocalTP invocation. Omit it for direct fleet calls
     and warmup; constructing another table never rebinds an existing one.
+
+    `moe_static` / `mla_prefill` are the profile's declared D11 knobs
+    (boot.declared: STK_moe_static, STK_mla_prefill), applied to the kernel
+    package here, once, before anything binds or arms.
     """
     expert_lane = "reference" if "expert" in reference_for else "b12x"
     from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
@@ -135,6 +161,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
     from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
     from engine.kernels import mla as mk
     from engine.kernels.indexer import pool_slots
+    mk.configure_prefill(mla_prefill)
     ref = reference()
 
     def conv_prefill(x, w, state):
@@ -212,26 +239,57 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
 
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent
+    moe_prepare = None
     if expert_lane == "reference":
         moe = ref.moe
     else:
         from engine.kernels.b12x import b12x_fused_moe
+        from engine.kernels.b12x import moe_dispatch as md
         from engine.modules.nvfp4_sf import mma_sf_view
+        spec, q0 = parse_moe_static(moe_static)
+        md.configure_static_v2(spec)                # refuses once views exist: the layout choice is per process
+        md.configure_tp_sf6_q0(q0)
         ones = {}
-        scale_views = {}                            # stable arena aliases, one pair per bound MoE layer
+        prepared = {}                               # (w13, w13_sf, w2, w2_sf ptrs) -> (views, sf13, sf2): stable arena aliases, one per bound MoE layer
+
+        def views_for(w13, w13_sf, w2, w2_sf, top_k, limit, *, in_place):
+            """The dispatcher's weight views for one layer, built once. `in_place` (bind time) re-lays the
+            arena bytes tile-major when the spec says t -- no second copy of 45 layers; a call without a
+            bind (probes) copies instead so the caller's row-major tensors stay what they were."""
+            key = (w13.data_ptr(), w13_sf.data_ptr(), w2.data_ptr(), w2_sf.data_ptr())
+            got = prepared.get(key)
+            if got is not None:
+                return got
+            E, n, k = w13.shape[0], w13.shape[1] // 2, w13.shape[2] * 2
+            if E not in ones:
+                ones[E] = torch.ones(E, device=w13.device, dtype=torch.float32)
+            sf13 = mma_sf_view(w13_sf, w13.shape[1], k)
+            sf2 = mma_sf_view(w2_sf, w2.shape[1], w2.shape[2] * 2)
+            geometry = dict(num_experts=E, num_local_experts=E, hidden_size=k, intermediate_size=n, num_topk=int(top_k),
+                            quant_mode="nvfp4", activation="swigluoai_uninterleave", swiglu_limit=float(limit),
+                            activation_precision="fp4")
+            tiled = md.static_v2_weights_layout(**geometry)
+            reform = md.static_v2_weights_reform_sf_pack(**geometry)
+            sf_pack = md.static_v2_weights_sf_pack(**geometry)
+            if tiled and in_place:
+                md.tile_expert_weights_inplace(w13, w2)     # one transient copy of this layer, then the arena IS tile-major
+            views = md._get_weight_views(w1_fp4=w13, w1_blockscale=sf13, w2_fp4=w2, w2_blockscale=sf2,
+                                         w1_alphas=ones[E], w2_alphas=ones[E], n=n, k=k,
+                                         activation_precision="fp4", quant_mode="nvfp4",
+                                         tiled=tiled, sf_pack=sf_pack, reform_sf_pack=reform,
+                                         packed_only=bool(tiled and reform and not sf_pack))   # sf6: packed scales only, no converted raw copies
+            prepared[key] = (views, sf13, sf2)
+            return prepared[key]
+
+        def moe_prepare(w13, w13_sf, w2, w2_sf, top_k, limit):
+            views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True)
 
         def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit):
             """The served call (flashinfer_b12x_moe._apply_*): packed nibbles, folded
             interleaved scales, alpha 1, fc2 input scale 1, no input scale (dynamic
             per-block activation quant), clamped SiLU spelled the kernel's way."""
             E = w13.shape[0]
-            if E not in ones:
-                ones[E] = torch.ones(E, device=x.device, dtype=torch.float32)
-            key = (w13_sf.data_ptr(), w2_sf.data_ptr())
-            if key not in scale_views:
-                scale_views[key] = (mma_sf_view(w13_sf, w13.shape[1], w13.shape[2] * 2),
-                                    mma_sf_view(w2_sf, w2.shape[1], w2.shape[2] * 2))
-            sf13, sf2 = scale_views[key]
+            views, sf13, sf2 = views_for(w13, w13_sf, w2, w2_sf, sel.shape[1], limit, in_place=False)
             # The ST caller owns the output allocation, including the graph
             # memory pool during capture; the b12x API requires an explicit out.
             output = torch.empty_like(x, memory_format=torch.contiguous_format)
@@ -241,7 +299,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
                                   num_experts=E, num_local_experts=E, top_k=sel.shape[1],
                                   w1_alpha=ones[E], w2_alpha=ones[E], fc2_input_scale=ones[E], input_global_scale=None,
                                   activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0, swiglu_limit=float(limit),
-                                  activation_precision="fp4", quant_mode="nvfp4")
+                                  activation_precision="fp4", quant_mode="nvfp4", _weight_views=views)
 
     def on_main(fn):
         """Served kernels run on the main thread: DeepGEMM's JIT runtime raises
@@ -256,7 +314,8 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None) -> Lanes:
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
     return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
-                                            fwht128_quant_fp8, pool_slots)))
+                                            fwht128_quant_fp8, pool_slots)),
+                 moe_prepare=None if moe_prepare is None else on_main(moe_prepare))
 
 
 def _selfcheck() -> None:

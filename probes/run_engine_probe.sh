@@ -16,7 +16,8 @@ if [ -d "$models" ]; then
   mounts+=(--mount "type=bind,src=$models,dst=$models,readonly")
 fi
 envs=(-e PYTHONPATH=/repo -e "MAX_JOBS=${MAX_JOBS:-2}")
-for name in $(compgen -v ST_); do envs+=(-e "$name=${!name}"); done
+# ST_* (cache paths, probe switches) and STK_* (the profile's declared D11 knobs) reach the container
+for name in $(compgen -v ST_ || true) $(compgen -v STK_ || true); do envs+=(-e "$name=${!name}"); done
 gpu=(--gpus all)
 if [ "${ST_PROBE_NO_GPU:-0}" = 1 ]; then
   gpu=()

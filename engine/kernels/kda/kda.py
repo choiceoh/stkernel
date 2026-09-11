@@ -8,7 +8,6 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 # ruff: noqa: E501
 
-import os
 from functools import lru_cache
 import hashlib
 from pathlib import Path
@@ -35,10 +34,10 @@ BT_LIST_AUTOTUNE = [32, 64, 128]
 NUM_WARPS_AUTOTUNE = [2, 4, 8, 16] if is_amd else [4, 8, 16, 32]
 
 
-_GLM53_KDA_QK_L2NORM_STRIDED = (
-    os.environ.get("ST_GLM53_KDA_PREFILL_QK_NORM") == "1"
-)
-_GLM53_L2NORM_SHA256 = "e281d24540854e8b2412aec447d7dcfd8d9e303adcfe94b7626cae02ea64fcff"
+# D11 (2026-09-12, ST): production glm53.env has carried VLLM_GLM53_KDA_PREFILL_QK_NORM=1
+# since 2026-09-06 (39차 P2D3); the strided Q/K norm is the served path, baked.
+_GLM53_KDA_QK_L2NORM_STRIDED = True
+_GLM53_L2NORM_SHA256 = "203ff42abe4b30b6c28df3c07817fa4ed51ed93ae92da1c3fcfe460862cc4057"
 
 
 @lru_cache(maxsize=1)
@@ -138,9 +137,7 @@ def _glm53_qk_l2norm_strided(q, k):
 # autotune caches.  T remains a non-specialized runtime value; the only new
 # key value is this bounded 0/1 regime, shared by all six core chunk kernels.
 _GLM53_KDA_PREFILL_REGIME_ENV = "ST_GLM53_KDA_PREFILL_REGIME"
-_GLM53_KDA_PREFILL_REGIME_ENABLED = (
-    os.environ.get(_GLM53_KDA_PREFILL_REGIME_ENV) == "1"
-)
+_GLM53_KDA_PREFILL_REGIME_ENABLED = False   # production VLLM_GLM53_KDA_PREFILL_REGIME=0: the stock autotune cache
 _GLM53_KDA_PREFILL_RUNTIME_CONTRACT: (
     tuple[tuple[int, int], str | None, int | None, int | None] | None
 ) = ((12, 1), "glm5_next_text", 4, 8192)
