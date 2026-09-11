@@ -102,6 +102,23 @@ class Glm53Engine:
                 raise ValueError(f"the drafter's {name} graphs share the target graphs' memory pool: "
                                  "a replay between segments would overwrite the auxiliary hidden states")
 
+    def qualify_eager_decode(self, warmup: bool = True) -> None:
+        """Serve without captured decode graphs (knob `decode_eager`): same lanes, the step stays in Python.
+
+        Memory still has to qualify -- that gate is about the allocator ceiling, not about graphs. A
+        reference-lane bisect (knob `lanes`) skips the largest-prefill warmup: the torch sparse MLA gathers
+        [T, K, 512] fp32 rows and a 6,912-token chunk asks 27 GiB of it -- that table exists to talk, not to serve.
+        """
+        if self.tokens:
+            raise ValueError("qualification must finish before requests are admitted")
+        if self.decode_graphs is not None:
+            raise ValueError("decode graphs are already prepared")
+        if self.memory is not None:
+            if warmup:
+                self._warmup_prefill_memory()
+            self.memory.checkpoint("ready")
+            self.memory.ready = True
+
     def _warmup_prefill_memory(self):
         """Exercise the largest legal prefill at both ends of the KV capacity.
 

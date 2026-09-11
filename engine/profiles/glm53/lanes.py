@@ -296,10 +296,23 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
-    return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
+    table = Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
-                 moe_prepare=None if moe_prepare is None else on_main(moe_prepare),
-                 graph_resources=graph_resources)
+                  moe_prepare=None if moe_prepare is None else on_main(moe_prepare),
+                  graph_resources=graph_resources)
+    # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table
+    # (the served output is garbage while every self-consistency judge passes -- which lane, if any, is found by
+    # swapping them one at a time; "expert" and "kda_recurrent" are the two the kernels already know how to declare).
+    known = {"expert", "kda_recurrent"}
+    fields = {f for f in Lanes.__dataclass_fields__ if f not in ("name", "moe_prepare")}
+    unknown = [n for n in reference_for if n not in known and n not in fields]
+    if unknown:
+        raise ValueError(f"reference_for names no lane: {unknown}; lanes are {sorted(fields)} (plus 'expert')")
+    swapped = {n: getattr(ref, n) for n in reference_for if n in fields and n != "kda_recurrent"}
+    if swapped:
+        from dataclasses import replace
+        table = replace(table, **swapped)
+    return table
 
 
 def _selfcheck() -> None:

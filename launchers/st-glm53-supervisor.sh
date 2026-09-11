@@ -24,7 +24,10 @@ LAUNCH_BACKOFF_MAX=1800
 LAUNCH_HOLD_AFTER=5
 FORENSICS=/home/choiceoh/glm53-logs/st-forensics
 log(){ echo "$(date '+%F %T') $*"; }
-node_sh(){ local ip=$1; shift; ssh -n -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "choiceoh@$ip" "$@"; }
+SELF_IPS=" $(hostname -I 2>/dev/null) "                 # this loop runs on rank 0's node, which cannot ssh to itself
+node_sh(){ local ip=$1; shift
+  case "$SELF_IPS" in *" $ip "*) bash -c "$*" </dev/null; return ;; esac
+  ssh -n -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "choiceoh@$ip" "$@"; }
 
 door_up(){ curl -fsS --max-time 5 "$BASE/v1/models" 2>/dev/null | grep -q "\"$MODEL\""; }
 chat_ok(){
