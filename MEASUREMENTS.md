@@ -8118,3 +8118,707 @@ M = 1,152 와 6,912 에서 재면 절편이 바로 나온다.
 **계측 자체는 공짜다** — `is_initialized()` 뒤에서만 표본을 뜨므로 CUDA 가 없으면 줄이 바이트
 동일이고, 부팅마다 두 번의 `cudaMemGetInfo` 뿐이다. 내 부팅이든 피어 부팅이든 다음 부팅이
 그대로 갱신한다.
+
+## ★42차 — 지금 사전샤딩된 DSv4.1 은 GB10 에 **안 들어간다**(TP 를 안 해서다): 랭크 84.70 → TP 면 73.30 (2026-09-11, srv4 로컬, 부팅 없음)
+
+자체 엔진의 첫 컴포넌트 `engine/budget.py`(D1: 예산은 선언이지 발견이 아니다). vLLM 이 매
+부팅 36초(4부팅 36.1/36.2/37.2/36.5, 편차 1초 미만)와 피크 17.7 GiB 를 들여 알아내는 그
+숫자를, **부팅 없이 헤더만 읽어** 낸다. 재현: `python3 engine/budget.py --exclusive --replication`.
+
+**GB10 통합메모리가 기계적으로 확인됐다**: `mem_get_info` 의 total **121.63 GiB** 와
+`/proc/meminfo` MemTotal 이 **소수점까지 동일**하다. 즉 `device free` 는 GPU 여유가 아니라
+**상자 여유**이고, 같은 노드의 다른 프로세스가 우리 KV 를 먹는다(측정 당시 30.86 GiB 가
+이미 타 테넌트).
+
+| 줄 | GiB | 출처 |
+|---|---:|---|
+| box | 121.63 | measured |
+| OS 몫 | −12.16 | **declared** (earlyoom 5% 바닥 6.08 의 2배) |
+| 런타임 바닥(CUDA ctx + NCCL 16ch) | −5.54 | ledger (40차 부팅 표) |
+| 가중치(이 랭크) | **−84.70** | **read** (`rank*of4.safetensors` 헤더, 26,961 텐서, 랭크 간 편차 0 MiB) |
+| 로드 스크래치 | −14.74 | **estimated** (GLM 비율 17.4%) |
+| 액티베이션 피크 | −9.17 | **estimated** (GLM profile-run) |
+| **KV** | **−4.68** | **DOES NOT FIT** |
+
+- **원장 계획(랭크당 71.5 GiB)과 실제 84.70 이 13.2 어긋난다.** 이유는 사전 샤딩 메타데이터가
+  직접 말한다: `"dense": "replicate", "mtp": "replicate"` — **EP 만 샤딩하고 TP 는 안 한다.**
+- 결론이 추정 두 줄(합 23.91 GiB, 박스의 20%)에 달려 있다. 그래서 이 예산은 **아직 게이트가
+  아니다**(도구가 스스로 그렇게 출력한다).
+
+### 복제분 실측 — 랭크당 17.46 GiB, 플릿 69.85 GiB
+
+네 랭크 헤더에서 이름·dtype·shape 가 전부 동일한 텐서만 셌다.
+
+| 그룹 | GiB | 텐서 | 회수 | 방법 |
+|---|---:|---:|---:|---|
+| mtp experts | 6.724 | 2,304 | **−5.04** certain | 본체 384 전문가와 같게 EP 샤딩 |
+| attention `wq_b`/`wo_b` | 3.363 | 172 | −2.52 candidate | TP 샤딩(`wq_b [32768,1280]` 헤드별, `wo_b [5120,8192]` 입력별) |
+| vocab(embed+head) | 2.466 | 2 | **−1.85** certain | vocab-parallel(129,280 행 ÷4) |
+| 노름·라우터 게이트·MLA 압축측 | 2.257 | 855 | — | 설계상 복제 또는 규칙 미지 |
+| shared experts | 1.419 | 258 | −1.06 candidate | FFN TP 샤딩 |
+| vision + aligner | 0.904 | 263 | **−0.90** drop | 텍스트 전용 |
+| mtp 나머지 | 0.331 | 67 | — | — |
+
+**certain 7.80 + candidate 3.59 = 11.38 GiB/랭크.** certain 만으로도 −4.68 → **+3.12 GiB KV**,
+전부면 **+6.70**. candidate 가 candidate 인 이유: `dsv41_layers.py` 에 `expert_rank()` 뿐이라
+**DSv4.1 의 TP 규칙이 아직 없다** — 그게 오늘 모든 랭크가 어텐션 전체를 지고 있는 이유다.
+
+**함정(내가 한 번 빠짐)**: 복제분 6.841 GiB 를 "노름이니 복제가 맞다"고 라벨했는데 평균 텐서가
+5.4 MB 였다 — 노름이 아니라 어텐션 투영과 공유 전문가였다. 복제 그룹은 **크기로 라벨하지 말고
+이름을 뜯어볼 것**.
+
+### 정정 — "안 들어간다" 는 TP=4 가 아니라 **디스크에 있는 산출물**에 대한 것
+
+랭크 파일은 `tools/dsv41_preshard.py` 의 **기본값** `--dense replicate --mtp replicate` 로
+빌드됐다. 그 기본값은 **디스크 제약** 기준으로 옳게 골라진 것이고 도구가 그렇게 적어 놨다 —
+srv1 여유 153 GiB 에 대해 랭크당 131.9 GiB, "neither is needed to clear the bar". 비용도
+알고 있었다: *"replicating 17 GiB costs 13 GiB per node"*. **잴 대상(박스 예산)이 없었을 뿐이다.**
+
+`plan --dense tp --mtp ep`(48 샤드 헤더 전수) 실측: 랭크당 **121.4 GiB**, 그중 engram 47.2 는
+SSD → **상주 74.2**(비전 빼면 **73.30**).
+
+| 레이아웃 | 랭크 상주 | KV | 판정 |
+|---|---:|---:|---|
+| `disk` (오늘, dense·mtp 모두 replicate) | 84.70 | **−4.68** | DOES NOT FIT |
+| `tp` (`--dense tp --mtp ep`) | 74.20 | **+7.64** | 들어감 |
+| `tp-notext` (+ 비전 제거) | 73.30 | **+8.70** | 들어감 |
+
+재현: `python3 engine/budget.py --exclusive --layout {disk,tp,tp-notext}`.
+
+**두 기본값의 근거가 둘 다 vLLM 사정이고, 자체 엔진에는 해당되지 않는다**:
+- `--dense replicate` — *"a HYPOTHESIS until vLLM has DeepSeek-V4.1 model code to compare
+  against"*. 우리가 모델을 쓴다(D13). 축은 우리가 정하고, `dsv41_shapes.py` 가 모든 텐서를
+  예측하며 sha 핀된 레퍼런스가 대조 상대다(D14).
+- `--mtp replicate` — *"this fleet runs its drafter at `draft_tensor_parallel_size=1`"*.
+  vLLM 런타임 제약이지 모델 성질이 아니다(D6).
+
+**남은 일**: `--dense tp` 는 지금 `build` 에서 **ABORT** 한다(축이 가설이라 조용히 쓰지 않음 —
+D3 그대로다). 축을 확정하는 것이 곧 TP 규칙을 정하는 일이고, 그게 `shapes`(D2) 작업이다.
+
+### TP 축은 가설이 아니었다 — 레퍼런스 `inference/convert.py` 가 갖고 있다
+
+`engine/tp_plan.py` 신설. 축을 **손으로 옮기지 않고** convert.py 를 sha256
+`03502834…` 로 핀한 뒤 **AST 에서 `mapping` 딕셔너리를 뽑는다**(벤더가 바꾸면 드리프트가
+아니라 실패 — `dsv41_sparse_contract.py` 와 같은 계약).
+
+```
+mapping = { embed→dim0, head→dim0, wq_b→dim0, wo_a→dim0,
+            wo_b→dim1, attn_sink→dim0, weights_proj→dim0 }   # 나머지 전부 복제
+```
+
+**내 추측 두 개가 틀렸다**: `ffn.shared_experts`(1.320 GiB)는 레퍼런스도 **복제**한다 —
+TP 후보가 아니었다. 반대로 `wo_a`(1.344 GiB, `[8192,4096]`)는 **샤딩된다** — 내가 "MLA
+압축측이니 복제가 맞다"고 분류했던 것이다. 그리고 `mtp.*.experts` 는 레퍼런스가 **EP
+샤딩한다**(`current_n_experts = mtp_n_experts if name.startswith("mtp.")`) — `--mtp replicate`
+는 순전히 vLLM 의 `draft_tensor_parallel_size=1` 사정이었다.
+
+실제 48 샤드 헤더에 적용한 결과가 preshard 도구와 **독립적으로 일치**한다:
+
+| | tp_plan.py (레퍼런스 축) | preshard `--dense tp --mtp ep` |
+|---|---:|---:|
+| expert (+mtp) | 68.92 | 67.2 + 1.7 = 68.9 |
+| engram (SSD) | 47.21 | 47.2 |
+| replicate | 3.40 | 1.8 + 0.7 + 0.9 = 3.4 |
+| tp:0 / tp:1 | 1.41 / 0.42 | 1.3 / 0.5 |
+| **랭크 상주** | **74.15** | 74.2 |
+
+**엔진이 고를 수 있는 두 줄도 값이 붙었다**:
+- 비전+aligner 제거 **−0.90** (텍스트 전용)
+- `wo_a` bf16 **+0.34** — convert.py 는 샤딩 뒤 `weight * scale → .bfloat16()` 로
+  **역양자화한다.** fp8 로 두면 아끼지만 **[32,32] 블록 스케일 커널**이 필요하다(원장이 말한 그
+  블로커). 텍스트 전용 기준 fp8 **73.25** / bf16 **73.58**.
+
+최종: `--layout reference` 에서 가중치 줄이 **estimated 가 아니라 read** 가 되고 **KV 8.76 GiB**.
+재현: `python3 engine/budget.py --exclusive --layout reference`.
+
+**다음**: 추정 두 줄(로드 스크래치·액티베이션 피크, 합 21.92 GiB = 박스의 18%, 남는 KV 의
+2.5배)을 dsv41 에서 실측한다. `engine/slice_load.py` 로 층 슬라이스만 올리면 부팅·플릿 없이
+잴 수 있다.
+
+### KV 는 하나가 아니라 다섯이고, 40층 중 **4층만** KV 를 만든다 (`engine/kv_plan.py`)
+
+"KV = 8.76 GiB" 는 운영자가 쓸 수 있는 답이 아니다. 쓸 수 있는 답은 **동시 몇에 컨텍스트
+얼마**다. 레퍼런스 `model.py` 의 `__init__` 들에서 버퍼 규칙을 읽었다(sha 핀, 바뀌면 실패):
+
+| 버퍼 | 모양 | 어디에 | B=1 S=128K |
+|---|---|---|---:|
+| `window_kv_cache` | `[B, 128, 512]` bf16 | 43 블록 전부 | 0.005 GiB |
+| `compress_kv_cache` | `[B, S/ratio, 512]` bf16 | **`kv_source_layer_ids=[2,8,14,20]` 넷뿐** | 0.312 |
+| `Indexer.k_cache` | `[B, S/ratio, 128]` bf16 | 그중 키를 소유한 층 | 0.078 |
+| `Compressor` 상태 ×2 | `[B, ratio, 512]` fp32 | ratio>1 인 셋 | ~0 |
+| `freqs_cis` | `[S, 32]` **complex64** | **43 블록 전부, 배치 항 없음** | **1.344** |
+
+**둘이 놀랍다:**
+
+1. **40층 중 4층만 KV 를 만든다** — CED 분할이다. 그래서 KV 가 이렇게 싸다.
+2. **아무것도 `world_size` 로 안 나뉜다.** MLA 압축 KV 는 헤드 간 공유라 **모든 랭크가 전부**
+   든다. `head_dim` 이 512(잠재)라서 감당되는 것이다.
+
+**레버: `freqs_cis` 는 B=1 KV 의 77% 인데 41개가 사본이다.** `Attention.__init__` 은
+`if self.compress_ratio:` 한 번으로만 갈리므로 표는 **정확히 2종**이다. 공유하면 S=128K 에서
+**1.344 → 0.062 GiB**(1M 에서는 10.75 → 0.50).
+
+| 동시 | 그대로 | freqs 공유 |
+|---:|---:|---:|
+| 1 | 661,621 | **1,048,576 (모델 상한)** |
+| 4 | 394,125 | 704,877 |
+| 8 | 255,700 | 358,482 |
+| 16 | 149,746 | 180,140 |
+| 32 | 81,342 | 89,638 |
+
+재현: `python3 engine/kv_plan.py --kv-gib 8.76`.
+
+### 로드 스크래치 실측 — dsv41 로더는 **재패킹을 안 한다**, 그리고 읽기가 디스크보다 30배 느리다
+
+`probes/dsv41_load_scratch.py`, srv4 로컬, 부팅 없음. 3 경로(`cuda` 직접 / `cpu`→`.to()` /
+`cpu-stream`) × 3 크기(1·2·4층), 뒤에 페이지 캐시 분리·할당자 설정 대조까지 13 런.
+
+**1. 토치 쪽 스크래치는 0 이다.** `max_memory_allocated` 가 **13 런 전부** 텐서 바이트와
+정확히 일치했다(1.84/3.83/7.53 GiB). 재패킹도, 재양자화도, 옆에 붙들린 스테이징도 없다.
+체크포인트가 그대로 올라간다.
+
+**2. 남는 것은 캐싱 할당자의 블록 반올림뿐이고, 이미 꺼져 있다.**
+
+| | alloc | reserved | slack |
+|---|---:|---:|---:|
+| `PYTORCH_CUDA_ALLOC_CONF` 미설정 | 7.53 | 8.74 | **1.21 (16.1%)** |
+| `expandable_segments:True` | 7.52 | 7.53 | **0.01 (0.1%)** |
+
+**정정 — 이건 레버가 아니다.** 16.1% 가 GLM 의 17.4%(load-model 59.17 대 가중치 50.4)와
+같길래 "GLM 도 회수 가능"으로 갔다가, 두 런처가 **이미 켜고 있는 것**을 확인했다
+(`start-glm53-nvfp4-tp4.sh:434`, `start-hy4-tp4.sh:227`). 내 프로브가 맨 `python3` 라
+미설정 할당자를 잰 것이다. 따라서 **GLM 의 8.77 GiB 는 할당자가 아니라 40차 원장 그대로
+진짜 팩/양자화 스크래치**이고, dsv41 엔 그 경로가 없으니 **8.77 은 상한이지 추정이 아니다.**
+
+**3. 읽기가 디스크의 1/30 이다.** 로더 처리량 **0.16~0.17 GiB/s**, 같은 파일 O_DIRECT 순차
+읽기 **5.1 GB/s**(NVMe). 병목은 저장장치가 아니라 **텐서별 읽기**(층당 ~670 텐서).
+랭크 73 GiB 를 이 속도로 읽으면 **~7.5분**, 순차 대역폭이면 **~14초**. GLM 의 load-model
+85~239 s 와 "부팅이 8분" 이 여기서 나온다. → **엔진 로더의 첫 설계 요구사항**: 샤드를
+텐서 단위가 아니라 **연속 범위로** 읽는다.
+
+**4. 방법론 — 공유 박스에서 `mem_get_info` 는 계측기가 못 된다.** `cuda` 4층 런의 box Δ 가
+**−34.91 GiB** 로 나왔다(그 사이 다른 테넌트가 반납). 1차 측정의 "scratch 2.23~5.16 GiB" 는
+전부 이 오염이었다. 토치 할당자 통계(`memory_allocated`/`reserved`)만 테넌트에 면역이다.
+
+**예산 갱신**: 추정 12.75 → 측정 0.07(할당자) + 상한 8.77(모듈 구성). **KV 8.76 → 12.66 GiB.**
+
+### `engine/loader.py` — 텐서 루프를 버리니 11~17배, 그리고 아레나가 공짜로 따라온다
+
+앞 절의 "로더가 디스크의 1/30" 을 고쳤다. 원인은 I/O 가 아니었다 — **층의 텐서들이 파일에서
+완전히 연속**이다(606개에 구멍 **0.0 MiB**). 텐서별 경로는 연속 범위 하나에 대해 syscall 606,
+할당 606, H2D 606 을 내고 있었다.
+
+분해 측정(층 0, 606 텐서 1.839 GiB):
+
+| 단계 | 시간 | 속도 |
+|---|---:|---:|
+| ① 연속 범위 1회 읽기 | 0.51 s | 3.61 GiB/s |
+| ② 버퍼에서 뷰 자르기 | 0.001 s | — |
+| ③ H2D | 0.43 s | 4.23 GiB/s |
+| 합계 | 0.94 s | **1.95 GiB/s** (기존 0.16) |
+
+①과 ③이 균형이라 호스트 버퍼 둘로 겹쳤다(블록 n 올리는 동안 n+1 읽기).
+
+| | 텐서 | 크기 | 속도 | 랭크 73.25 GiB 환산 |
+|---|---:|---:|---:|---:|
+| 기존(safetensors 텐서별) | — | — | 0.16 GiB/s | ~450 s |
+| 4층 | 2,436 | 7.52 G | **2.72** | 27 s |
+| 8층 | 4,860 | 14.88 G | **1.85** | **40 s** |
+
+**정확성**: 층 0 의 606 텐서를 `safe_open().get_tensor()` 와 dtype·shape·**바이트** 대조 →
+불일치 0.
+
+**부수 이득 — 아레나**: 텐서가 업로드된 블록의 **뷰**라서 할당이 블록 수만큼만 생긴다.
+캐싱 할당자 slack 이 4,860 텐서에서 **0.006 GiB**(텐서별 경로는 16.1%). D1 이 "엔진이
+선언한 아레나 하나" 라고 한 것이 로더 형태에서 그냥 따라 나온다.
+
+### 액티베이션 피크 실측 — **1,024 토큰당 0.520 GiB**, 층 종류와 무관
+
+`probes/dsv41_activation_peak.py`. 레퍼런스의 `Block` 을 `world_size=4, rank=0` 로 세우고
+돌린다. `tilelang` 이 이 플릿에 없어서 `kernel.py` 를 **모양 충실한 스텁**으로 갈았다 —
+정당한 이유가 있다: **TileLang 커널의 전역 메모리 발자국은 출력뿐**이고, 점수·러닝맥스·
+게더한 KV 타일은 공유메모리와 레지스터에 산다(그게 `sparse_attn` 이 존재하는 이유다).
+출력만 정확히 할당하면 이 풀에 대해서는 진짜 커널과 같다. 값은 일부러 쓰레기다 — **액티베이션
+피크는 모양의 함수**다.
+
+| 층 | 1K | 2K | 4K | 8K | GiB/1K |
+|---|---:|---:|---:|---:|---:|
+| 0 (윈도만) | 0.549 | 1.067 | 2.104 | 4.177 | **0.518** |
+| 8 (kv+index 소스) | 0.551 | 1.071 | 2.111 | 4.192 | **0.520** |
+| 40 (MTP) | 0.549 | 1.067 | 2.104 | 4.177 | **0.518** |
+
+선형이고, KV 캐시나 인덱서를 가진 층인지와 **무관하게 세 자리까지 같다**. 층 24 는 단독으로
+못 돈다(kv_source 가 아니라 남의 캐시를 읽는 층) — 예상된 한계이고 버그가 아니다.
+
+블록은 하나씩 돌고 끝나면 해제되므로 **모델 피크는 43개가 아니라 블록 하나 + 잔차 스트림**이다.
+그래서 예산의 이 줄은 상수가 아니라 **청크의 함수**가 된다(D2): 청크를 키우면 여기서 물고,
+그만큼 KV 에서 빠진다.
+
+| 청크 | 액티베이션 | KV |
+|---:|---:|---:|
+| 2,048 | 1.12 | **20.71** |
+| 4,096 | 2.24 | **19.60** |
+| 8,192 | 4.47 | **17.36** |
+
+**예산 최종**: 추정 줄이 **하나만** 남았다(모듈 구성 8.77 상한, 박스의 7%).
+GLM 에서 빌려온 9.17 은 청크 4,096 에서 실제 **2.24** 였다. KV **8.76 → 19.60 GiB**.
+
+### 엔진이 실제로 돈다 — 진짜 가중치 + 우리 로더 + 우리 커널로 DSv4.1 블록 포워드
+
+`engine/kernels.py`(여섯 커널을 torch 로) + `engine/model.py`(로더·커널·레퍼런스 모듈 트리
+연결). `tilelang` 없이 돈다.
+
+**커널 검증** (`probes/dsv41_kernels_check.py`, 7/7 PASS) — 각 검사는 **다른 경로로 유도한
+것**과 대조한다(같은 코드로 왕복하면 균일하게 틀린 커널도 통과한다):
+
+| 검사 | 결과 |
+|---|---|
+| `act_quant` 왕복 | max rel 0.0588 (e4m3 해상도 내) |
+| fp4 pack/unpack, 짝수=하위 니블 | 오차 **0** |
+| `fp8_gemm` == 역양자화 matmul | max rel 0.0038 |
+| `sparse_attn` == 남긴 위치들의 dense attention | max abs 3.9e-3 |
+| **전부 −1 인 행 → NaN 아닌 0** | PASS (−1e30 시드의 존재 이유) |
+| Sinkhorn comb 이중 확률 | 편차 1.0e-6 |
+
+**포워드** (rank0 실가중치, 256 토큰):
+
+| 층 | 종류 | 결과 |
+|---|---|---|
+| 0 | 윈도만 | finite, MISSING 0 |
+| 2 · 8 | kv+index 소스 | finite, MISSING 0 |
+| **20 → 24** | **CED 사슬** — 20 이 쓴 `index_k`/`compress_kv` 를 24 가 읽는다 | **finite, 양쪽 MISSING 0** |
+| 40 | MTP | finite |
+
+**로드 시점 변환 셋을 강제한다**(조용한 캐스트는 거부하고 예외를 던진다):
+1. `wo_a` 는 fp8×블록스케일 → **bf16 역양자화**(convert.py). 스케일 없이 넣으면 모양·dtype 은
+   맞고 **블록마다 배수만큼 틀린다** — 돌긴 돈다.
+2. 압축기 `wkv`/`wgate` 는 ratio>1 에서 **fp32 승격**(저장 dtype 이 아니라 로드 단계).
+3. 전문가 int8 → `float4_e2m1fn_x2` 는 **캐스트가 아니라 `.view()`** (비트 보존).
+
+**부수 확인 — 사전샤딩이 TP 를 안 한 게 여기서 물린다**: `attn_sink` 이 [64] 로 와서
+파라미터 [16] 과 안 맞았다. `tp_plan` 의 축으로 **로드 시점에** 잘라 293 GiB 재빌드 없이
+돌게 했다. 가중치와 **스케일은 같은 축으로 함께** 잘라야 한다.
+
+속도는 162~239 layer-tok/s — torch 오라클이라 느린 게 정상이다(D4: 오라클 먼저, 성능은 그다음).
+
+
+## ★43차 — 계획 변경: 자체 엔진 첫 대상 DSv4.1 → **Qwen3.8-Flash-Next** (2026-09-11, srv4 로컬, 부팅 없음)
+
+운영자: "dsv41 대신 qwen3.8 flash next 구현 위주로 계획 변경함". DSv4.1 계층은 중단·보존
+(마지막 상태: 커널 7/7, 층 포워드 finite, 4노드 fan-out 완료, dist_run 예행 exit 0).
+
+**체크포인트** `~/models/qwen38-flash-next-nvfp4`: 206 샤드 **125.87 GiB**, 296,475 텐서, NVFP4
+W4A4 group 16(routed experts 만; `hf_quant_config` exclude 목록에 attn·linear_attn·gate·shared·
+hc·ple·visual·embed·lm_head). 자격 노트: GSM8K 97.27%(sgl-eval, 1319), verify_hf PASS.
+
+**아키텍처**(text_config): hidden 2560, 48층 = **GDN 36 + full-attn 12**(4층마다), q 24 / kv 2 /
+head 256, GDN k16×128·v48×128·conv 4·ssm fp32, MoE 512 top-10 (inter 640) + shared 640,
+QSA 인덱서(budget 2048, 압축 4, heads 4, kv 1), HC 4(lowrank 320), PLE(layer 2, n-gram 3,
+vocab base 20M, fp8), MTP 1층 hybrid, vocab 248,320, max 262,144.
+
+**배치 × 예산**(규칙 출처 = 이미지 `d464f3b466fa` 의 vLLM 모델 파일):
+
+| 배치 | 체크포인트 | 랭크당 |
+|---|---:|---:|
+| routed experts (EP) | 67.97 | **16.99** |
+| PLE n-gram 표 (vocab-parallel, `common/ple.py`) | 47.68 | **11.92** |
+| embed / lm_head (vocab-parallel) | 2.37 | 0.59 |
+| GDN in/out/conv (헤드별 TP, `qwen_gdn_linear_attn.py`) | 3.89 | 0.97 |
+| full-attn q/o (TP) · k/v (복제: kv 2 < TP 4) | 1.14 · 0.10 | 0.29 · 0.10 |
+| 노름·HC·라우터·MTP·기타 (복제) | 1.52 | 1.52 |
+| vision (제거) | 0.84 | 0 |
+| **상주** | | **32.53** |
+
+예산: 121.63 − OS 12.16 − 런타임 바닥 5.54(GLM ledger, 재측정 대상) − 32.53 − 할당자 0.03 =
+**71.37 GiB 남음**(모듈 구성·액티베이션은 qwen38 에서 미측정 — 추정 줄로 들어갈 것).
+
+**상태/KV**: GDN 36층 × (conv 15 KiB + recurrent 0.75 MiB) = **27.5 MiB/시퀀스**(컨텍스트 무관);
+full-attn KV **12 KiB/토큰** + 인덱서 캐시 0.75 KiB/토큰. KV 40 GiB 면 동시 8 까지 모델 상한
+262,144, 동시 32 에 100,591, 동시 128 에 23,490. **KV 는 제약이 아니다** — D1 의 질문은 PLE
+11.92 의 배치와 남는 71 GiB 의 용도다.
+
+**오라클**: HF transformers 5.16.1 `qwen4_exp`(`~/venvs/chronos`), `modeling_qwen4_exp.py` 2,707줄,
+이 config 로 meta 인스턴스 OK(177.39 B 파라미터 → bf16 330 GiB 라 층 단위로만), GDN torch 폴백
+있음(fla 미설치, 불필요), PLE·QSA 인덱서·HC 전부 구현. 체크포인트 이름 = HF 이름.
+
+**커널 자산(이미지 안)**: `third_party/flash_linear_attention` Triton 6,098줄(chunk·fused_recurrent
+gated delta rule, kda.py 1,685), `mamba/ops/causal_conv1d.py` 1,289, QSA Triton 1,115 + pre-indexer
+508, HC Triton 489, `gdn_chunk_cutedsl` 2,555(opt-in). GDN 프리필 기본 백엔드 = Triton fla.
+**NVFP4 MoE 는 리포 b12x 레인 — 최근 커밋 "the b12x IMA is the MoE dispatch", 미해결 = 블로커.**
+
+**vLLM 경로 상태**: 이미지 4노드 전부 있음, 프로파일 TEP=4 (`SPEC_TOKENS=0 until TEP=4 serves`,
+`SHARED_FUSE=0 until dispatch wired`), 부팅 로그 없음, 원장 실측 0. **서빙한 적 없다.**
+
+**노드**: 체크포인트 srv2·srv3·srv4 ✓, **srv1 ✗ (여유 54 GB — DSv4.1 사본 133 GB 가 점유)**.
+
+### `engine/models/qwen38/plan.py` — 배치·예산·상태 산수, 출처 sha 핀 (PIN OK 4/4)
+
+규칙 출처 = 이미지 `d464f3b466fa` 의 vLLM 파일 넷(`nvidia/model.py`, `gdn/qwen_gdn_linear_attn.py`,
+`common/ple.py`, `mamba_utils.py`)을 sha256 앞 16자리로 핀, `--verify-pins` 가 이미지에서 다시
+뽑아 대조한다(4/4 OK). 오라클 HF `modeling_qwen4_exp.py` 도 핀.
+
+정본 수치(위 43차 표의 32.53 은 shared-expert 매칭이 느슨한 임시 스크립트 값): **랭크 상주
+32.41 GiB** = routed experts EP 16.99 + PLE vocab-parallel 11.92 + 노름·HC 등 복제 1.19 + GDN
+TP 0.97 + embed/head 0.59 + attn q/o 0.29 + 라우터 0.12 + shared 0.11 + k/v 복제 0.10 + MTP
+0.06 + PLE 기타 0.06; vision 0.84 제거. GDN 상태 27.5 MiB/시퀀스, full-attn KV 12 KiB/토큰 +
+인덱서 0.75. 로더에 `U8`(NVFP4 두 개/바이트) dtype 추가.
+
+
+### 엔진 3계층 재구성 — 기본 / 모듈 / 프로필 (운영자 지시, 2026-09-11)
+
+`engine/*.py` 를 AST 로 갈라 옮겼다: **base**(instruments·loader·checkpoint·budget 틀·shapes 틀·
+caches 틀·placement 틀·slice_load), **modules**(quant·sparse_attention·hyper_connection·lookup_table —
+DSv4.1 커널 여섯을 특징별로), **profiles/dsv41**(budget 줄·shapes·caches·placement·engram·reference·
+dist_run·kernels 조립), **profiles/qwen38**(plan). 검증: 전 모듈 import OK, dsv41 budget(KV 19.60)·
+placement(74.15)·shapes(정렬 16)·qwen38 plan(32.41)·커널 검사 7/7 전부 재구성 전과 동일.
+헌장 D15 + §2 표 재작성. 규칙: 기본 층에 모델 이름이 들어가면 되돌린다; 상수는 프로필에만.
+
+### 기본 층 공통 부품 넷 — kv · scheduler · record · config (GPU 없이 자가검증)
+
+- `base/kv.py` — 블록 테이블 `[max_seqs, max_blocks] int32(-1)` + 자유 스택, 상태 슬롯 풀
+  (선형 어텐션 상태는 컨텍스트와 무관하니 시퀀스당 고정 슬롯). 고갈 = `MemoryError`, 폴백 없음(D3).
+- `base/scheduler.py` — 순수 함수 `plan(state, contract, now)`: 스텝은 prefill 아니면 decode 뿐(D9),
+  돌던 디코더는 대기 상한 하나로만 양보(D10), 청크는 `shapes.chunk_for` 한 곳(D2). 자가검증:
+  10,000 토큰 프롬프트 → 4,080 + 4,080 + 1,840(정렬 16, 마지막 꼬리는 참 길이), 디코더 보호 5스텝,
+  20 s 넘으면 밸브.
+- `base/record.py` — 부팅 때 잡은 bytearray 링 + 미리 연 fd, SIGTERM 핸들러가 `os.write` 만 하고
+  같은 시그널로 죽는다. 자가검증에 **실제 자식 프로세스에 SIGTERM** 을 보내 파일에 마지막 3
+  레코드가 남고 rc = −SIGTERM 인 것까지 확인.
+- `base/config.py` — 사실은 env 로 못 덮고, 노브는 만료일·측정 대상·롤백을 지니며 만료되면 부팅
+  사망, 선언 안 된 `STK_*` env 도 사망(D11·D3).
+- `base/proof.py` — 선언된 레인이 서빙 보고를 안 하면 `ProofError`, 선언 안 된 레인이 보고해도 사망(D3).
+- `base/conformance.py` — 게이트 = 띠 + 반복 횟수; 표본이 모자라면 PASS/FAIL 이 아니라 **INSUFFICIENT**
+  (DEF40 의 3.597 단일 부팅이 정확히 그 경우, D14).
+- `base/runner.py` — 스텝 루프: scheduler → kv → `Model` 프로토콜(prefill/decode 분리) → record 링 →
+  instruments. 가짜 모델로 자가검증: 두 요청이 `prefill, prefill, decode×3, prefill, decode×3` —
+  **디코더 옆에 프리필이 한 번도 안 선다**(D9·D10 순차 그대로), 끝나면 블록·슬롯 전부 반환.
+
+### `modules/linear_attention.py` — GLM(KDA)·Qwen(GDN)이 공유하는 델타 규칙, HF 로 판정 4/4
+
+첫 특징 모듈. 게이트 델타 규칙 재귀를 한 번 적고, 관례는 **추정하지 않고 격자로 찾았다**: q/k l2 정규화 ·
+scale=Dk^-0.5(1.0 이면 0.98 어긋남) · 헤드별 감쇠. HF transformers 5.16.1 의 chunked(프리필 형)와
+recurrent(디코드 형) **둘 다** 대비 o 9.8e-4 / state 2.3e-3 (bf16 입력, T=129, 청크 64 의 배수 아님).
+러너가 기대는 성질도 검증: 프리필 상태에서 디코드 1 스텝 = 통째 실행(1e-5 이내), 그리고 **HF 디코드가
+우리 프리필 상태를 그대로 이어받는다** — 상태가 교환 가능하다. 재현: `~/venvs/chronos/bin/python
+probes/linear_attention_check.py`.
+
+### Qwen3.8 프로필 — 액티베이션 실측, budget/shapes/caches (HF 층, 모양만, 부팅 없음)
+
+HF `Qwen4ExpTextDecoderLayer` 를 cuda 에 미초기화로 세워(층당 bf16 4.83 GiB — 512 전문가가 지배,
+**구성 0.2~0.5 s**) 잔차 폭 **10,240**(hc 4 × 2560) 입력으로 돌렸다. 레이블은 `linear_attention` 36 /
+**`qwen_sparse_attention`** 12.
+
+| 층 | 1K | 2K | 4K | 판정 |
+|---|---:|---:|---:|---|
+| GDN(0) | 0.289 | 0.572 | 1.137 | **선형, 0.286 GiB/1K** |
+| QSA(3) | 0.290 | 1.053 | 3.996 | **2차** — HF eager 가 top-k 전에 T×T 인덱스 점수를 실체화 |
+
+QSA 의 2차 곡선은 **오라클의 비용이지 커널의 비용이 아니다**(vLLM Triton `qsa_pre_indexer` 는 커널
+안에서 선택) — DSv4.1 TileLang 스텁 때와 같은 논리를 거꾸로 적용. 예산 줄은 GDN 값(0.286/1K)을 쓰고
+QSA 는 모듈이 생기면 재측정(빚으로 기록). 4K 청크 액티베이션 1.22 GiB.
+
+**예산**(`profiles/qwen38/budget.py`): 121.63 − OS 12.16 − 바닥 5.54 − 가중치 **32.41** − 할당자 0.03
+− 구성 8.77(상한, 유일한 추정) − 액티베이션 1.22 = **KV 61.49 GiB** → 동시 8 까지 모델 상한 262,144,
+동시 32 에 155,811, 동시 128 에 37,294. `shapes.py`: **청크 정렬 4**(QSA 압축 그룹), conv 히스토리 3 ·
+n-gram 히스토리 2 는 슬롯/컨텍스트로 이월, NVFP4 group 16, 잔차 폭 hc 4. `caches.py`: 시퀀스당 27.5 MiB
++ 토큰당 12.75 KiB, B=1 S=128K 총 1.62 GiB.
+
+### `modules/moe.py` — NVFP4(W4A4, group 16) 오라클, 실제 전문가 텐서로 검증
+
+Qwen3.8 의 유일한 NVFP4 텐서 = routed experts. 투영당 넷: `weight U8 [out, in/2]`(바이트당 e2m1 둘,
+짝수=하위 니블 — DSv4.1 fp4 와 같은 순서) · `weight_scale E4M3 [out, in/16]` · `weight_scale_2 F32` ·
+`input_scale F32`. DSv4.1 의 [32,32] 블록과 달리 **행 × 16그룹** 스케일 — b12x 디스패치가 맞춰야 하는
+바로 그 모양 차이(IMA 가 사는 곳). 층 0 전문가 0 gate_proj 역양자화: (640, 2560) finite, std 0.0135,
+|max| 0.18, scale_2 2.08e-4, input_scale 1.97e-3; e2m1 표 여덟 값 전부 사용. 활성 왕복 중앙 상대오차
+0.101(가수 1비트라 거친 게 정상), W4A4 GEMM finite.
+
+### D16 첫 조각 — `base/arena.py`: 할당 하나, 나머지는 전부 뷰
+
+3 GiB 아레나를 한 번 `torch.empty` 하고(할당 정확히 3 GiB), 로더가 dsv41 층 0 의 606 텐서를
+**아레나에서 잘라** 채웠다 — 그 뒤 `memory_allocated` 가 **1 바이트도 안 늘었다**(엔진이 아레나 밖에
+가진 할당이 없다). safetensors 와 40/40 바이트 동일. KV 블록 저장소도 같은 아레나에서 잘라
+`BlockPool.attach_storage` 로 묶는다(블록 = 뷰, 시퀀스의 블록 목록 = 2층이 내리는 단위). 넘치면
+`MemoryError`, 두 번째 할당은 없다(D3).
+
+### D16 둘째 조각 — `base/kv_tier.py`: NVMe 2층은 되는데, **첫 판의 조건은 깨졌다**
+
+**되는 것**: 1 GiB(Qwen3.8 KV 블록 = 16 토큰 × 12.75 KiB, 51 섹터로 반올림)를 시퀀스당 파일 하나에
+연속·O_DIRECT 로 내렸다 올림 — **demote 3.87 GiB/s, promote 3.04 GiB/s**, 바이트 정확, 매니페스트가
+"재부팅"(새 객체)을 넘겨 산다. 128K 시퀀스(1.59 GiB) 복귀 ≈ 0.4~0.5 s — D16 의 0.3 s 주장이 자릿수에서
+맞는다.
+
+**깨진 것**: `probes/kv_tier_interference.py` — 디코드 모양 GPU 루프(48 × 작은 GEMM, 스텝 3.18 ms)를
+2층 트래픽(1 GiB 강등+복귀 1사이클) 옆에서 돌리자 **p50 4.78 ms(1.50×), p95 6.32, max 6.98**. 끝나면
+3.40 으로 복귀. **D10 조건 위반.**
+
+원인 후보(다음 판이 가른다): ① 2층의 D2H/H2D 가 **기본 스트림**에서 돌아 디코드 커널과 직렬화,
+② 블록마다 파이썬 `copy_` 수천 번(4,900 블록) → GIL·런치 경합 — 프로브의 루프가 런치 바운드
+(GEMM 당 66 µs)이고 그래프 캡처가 아니라서 I1 의 진짜 디코드 스텝보다 경합에 민감하다,
+③ 통합메모리 대역폭 공유(루프가 작아 가능성 낮음). 다음 판: 전용 스트림 + 핀 스테이징 + 창당 gather
+커널 하나, 그리고 그래프 재생 루프로 파이썬 경합을 분리.
+
+### D16 조건 **성립** — 2층 v2: 전용 스트림 + 핀 스테이징 + 창당 gather 하나
+
+첫 판(1.50× 저하)의 원인은 ②였다 — 기본 스트림에서 블록마다 파이썬 `copy_`. v2 는 블록 저장소를
+`[num_blocks, block_bytes]` 로 보고 창(64 MiB)마다 `index_select` **한 번** → 핀 스테이징으로 비동기 D2H
+→ `pwritev`; 복귀는 `preadv` → 비동기 H2D → `index_copy_`. 전부 2층 자기 스트림. 흩어진 블록 id(역순)로
+1 GiB 정확 왕복, demote 3.02 / promote 4.21 GiB/s.
+
+| 디코드 루프 | 단독 p50/p95 | 2층 트래픽 옆 p50/p95/max | 비율 |
+|---|---:|---:|---:|
+| eager 런치(파이썬이 커널마다) | 2.52 / 2.55 | 2.52 / 3.51 / **20.90** | **1.000** |
+| **그래프 재생(I1)** | 1.73 / 1.76 | 1.74 / 1.90 / 2.44 | **1.001** |
+
+**돌던 디코더가 디스크를 안 기다린다** — 2 사이클 × 1 GiB 양방향이 옆에서 도는 동안 p50 불변. eager 의
+max 20.9 ms 한 번은 GIL(그래프 재생은 안 낸다) — I1 이 왜 계약인지의 실측 근거 하나 추가.
+srv4 공유 노드에서 잰 것이라 노이즈 포함; 판정은 같은 분 안의 교대 비교.
+- `base/tiered_kv.py` + `Runner.park/resume` — 시퀀스의 블록을 연속으로 내리고(아레나 반환) 새 블록에
+  복귀: 300 블록(60 MiB) 왕복 바이트 동일. 살아 있는 시퀀스는 park 거부(D10). 이로써 D16 의 동사 둘이
+  기본 층에 있다; 언제 park 할지는 스케줄러의 몫.
+
+## ★44차 — 방향 전환: GLM-5.3 이 공통 부분의 기준 모델 (운영자, 2026-09-11) + `profiles/glm53/plan.py` 현실 대조
+
+운영자: "qwen 최적화 하지 말고 glm 5.3 flash 구현 중 아직 우리 코드가 아닌 공통 부분을 작성". GLM 은
+프로덕션이고, 상수가 전부 실측이고, 커널(KDA·메가커널·mhc·드래프터)이 이미 우리 것이며, 레퍼런스가
+**살아 있다**(D4 의 이상 상황). vLLM 의존 인벤토리(glm53 오버레이 임포트, 파일 수): `v1.worker.gpu` 13 ·
+`v1.attention.backends` 10 + `backend` 5 · `v1.kv_cache_interface` 8 · `model_executor.layers.{fused_moe 7,
+quantization 6, mamba 6, linear 6, logits_processor 4, layernorm 4, rotary 3, attention 3}` · `distributed` 7 ·
+`v1.core.sched` 3. 오버라이드 대상: `models/glm5next` 5, `v1/worker` 4, `flashinfer/fused_moe` 3,
+`v1/attention` 2, `flash_linear_attention` 2, `parallel_state.py` 1.
+
+**배치 산수 대 vLLM 실보고**(체크포인트 184.24 GiB, TP=4+EP): routed experts EP 41.55 + KDA TP(15 성분,
+`v_proj`·`v_conv1d` 포함) 2.19 + MLA q_b/kv_b/o_proj TP 0.61 + 복제(indexer 0.17, q_a/kv_a 0.19, 라우터 0.09,
+MTP-45 0.06, 노름/hc 0.07) + 밀집 MLP 0-2 TP 0.21 + shared TP 0.50 + embed/head 0.59 = **46.2**, + DFlash2
+드래프터 **2.18**(bf16 5층, `DRAFT_TP=1` 이라 랭크마다 전부) = **48.4 GiB**. vLLM 40차 보고 "Model loading
+took 50.4" → **잔차 +2.0 GiB(3.9%)** = 로드가 체크포인트에서 파생해 상주시키는 것(FP8 fold, MK W4 팩 180개).
+잔차는 규칙에 접어 0 으로 만들지 않고 잔차로 보고한다 — 측정 대상.
+
+**함정 둘(내가 빠짐)**: ① 부분문자열 규칙 `"f_"` 가 `sel**f_**attn` 에 매치돼 MLA 규칙이 아무것도 못 잡고
+4.6 GiB 가 복제로 계산됐는데 우연히 vLLM 수치와 +0.3% 로 맞았다 — **일치가 검증이 아니다**; 토큰 매치로
+고치니 −5.1%. ② 층 0 샘플을 `[:24]` 로 잘라 `v_proj`/`v_conv1d`(34층 × 2 = 68 텐서 2.13 GiB)를 못 봤다.
+
+**상태/KV(fp8 KV)**: KDA 34층 × (conv q/k/v + 16헤드×128² fp32) = **34.8 MiB/시퀀스**, MLA 5.50 KiB +
+인덱서 0.69 KiB /토큰 → 40차 실제 KV 8.73 GiB 로 동시 4 에 364K, 동시 8 에 179K.
+- `profiles/glm53/shapes.py` — **6,912 법칙이 코드다**: 8192→6,912, 9216→6,912, 9221→9,216 을 자가검증이
+  재현한다(2304 정렬, SPEC_K 5). `base/cache_spec.py` — 프로필의 캐시 선언(페이지드/슬롯) → KV 예산을
+  블록·슬롯 수로: qwen38 40 GiB → 201,181 블록(208,896 B, O_DIRECT 섹터 배수) + 32 슬롯 27.5 MiB, 동시 32 에
+  100,576(프로필 산수 100,590 과 일치); glm53 8.73 GiB → 2304-토큰 블록 632개, 동시 4 에 364,032.
+  `base/sampler.py` — 평평한 logits 위 greedy/온도/top-p, 시드로 재생 가능(D12), torch.multinomial 과 동일.
+- 층 라이브러리 `modules/{linear,norm,logits,rotary}.py` — glm53_model 이 호출하는 생성자 kwargs 와 `(out, bias)`
+  반환 그대로. 시뮬레이션 TP=2 로 전체 GEMM 대조(column 반쪽 concat, row 부분합, merged+복제 샤드, vocab 반쪽
+  합, LM head gather), RMSNorm 융합 잔차형 == torch rms_norm, get_rope(0)→None(서빙 GLM 은 rope 없음).
+- 운영자 범위 확정: **Spark(GB10) 4대 + NVFP4 만, 레거시 없음** → NVFP4 가 가중치의 기본 형(헌장 D5 추가).
+
+### `modules/nvfp4_linear.py` — NVFP4 를 기본 형으로; **전역 스케일의 방향이 형식마다 반대다**
+
+투영 하나 = 디스크의 네 텐서 그대로(U8 packed · E4M3 16그룹 스케일 · F32 전역 둘), TP 는 packed 바이트
+위에서(column = 행, row = in/2 열 + 스케일 in/16 열). 실제 GLM 층 3 전문가 0 `gate_proj [2048, 4096]` 로
+검증: column 반쪽 concat == 전체, row 반쪽 합 == 전체(fp32 상대 1e-7), W4A4 finite, |W| std 0.0199.
+
+**함정(잡음)**: modelopt(Qwen) 의 `weight_scale_2` 는 **곱**(2.08e-4)인데 compressed-tensors(GLM) 의
+`weight_global_scale` 은 **나눗셈**(1.728e4 = 448·6/amax)이다. 곱으로 읽으면 투영이 3e8 배 커지고
+**아무 오류도 없다** — column 검사는 양쪽이 같은 실수를 공유해 통과했고, row 검사의 절대 허용오차만
+그걸 드러냈다. 교훈: 분할 일치는 검증이 아니다, **크기(std 1e-3~0.2)를 단언**해야 한다.
+- `base/comm.py` — 플릿 고정(4 랭크, 헤드 10.10.10.2, RoCE v2 IPv4-mapped GID 자동 검출 = 런처 CT_GID_PRELUDE
+  규칙, GLOO ifname), world-1 항등 자가검증(GID 파서가 PORT 열을 INDEX 로 읽던 실수 한 번 잡음), one-shot AR 은
+  레인으로 등록. `base/graphs.py` — 디코드 셰이프별 CUDA 그래프, 풀 하나, 미선언 셰이프 거부(D3), 재생 == eager,
+  8-GEMM 스텝 eager 1.057 ms → 재생 **0.085 ms**. §5 표 갱신: 공통 부분은 한 스텝에 필요한 만큼 있다.
+
+### 재호스팅 계기 `profiles/glm53/hosting.py` — 서빙 경로 4파일의 vLLM 심볼 126개 중 56 우리 것(44%)
+
+`glm5next_model` 61(20 ours) · `glm5next_kda` 26(16) · `glm5next_attention` 27(12) · `mtp` 12(8). 남은 70 =
+**drop 22**(PP·SP·멀티모달·플랫폼 디스패치·인터페이스 믹스인 — 우리가 안 지는 일반성) + **shim 17**(다른
+이름의 우리 것: 활성화, prefix 헬퍼, 라우터 GateLinear = 리포의 moe_gate_sm121, fp8 LM head…) + **real 23**.
+drop+shim 뒤 계기는 **75%**. real 23 이 "3~5일"의 실체: MLA+희소 인덱서 어텐션(`MLAModules`·`Wrapper`·
+`FusedQkvAProj`·`IndexerCache`·`SparseAttnIndexerKpool`·`head_gate`·`fwht128`), KDA conv 커널
+(`causal_conv1d_*`)과 KDA 커널 셋(`chunk_kda`·`fused_recurrent_kda`·`fused_kda_gate` — 리포의 kda.py, 우리 것),
+MoE 팩토리(b12x 레인), mHC 다섯(`MHC*Op`·`hc_contract`·`hc_expand`).
+
+### KDA 레퍼런스 == **서빙 커널**(우리 kda.py, glm53 이미지 안에서 대상 경로에 마운트) — D4 를 커널 수준에서
+
+`modules/linear_attention.kda_gate`(안전 게이트 `-5·sigmoid(exp(A_log[h])·(g + dt_bias))`, 채널별) + 채널별
+감쇠 델타 규칙 대 GLM 이 실제로 부르는 두 커널. **계약을 서빙 호출 그대로 베끼기 전엔 전부 어긋났다**
+(rel 1~1,700): 두 커널 다 `use_qk_l2norm_in_kernel=True`, 청크는 `cu_seqlens` 필수(없으면 비-varlen
+분기가 |o| 82~121 짜리 쓰레기를 냄)와 fp32 사전 시그모이드 β, 재귀는 dense B=1(cu_seqlens 를 주면
+spec-verify 경로라 `ssm_state_indices` 등을 요구). 맞추자 프리필 **6.3e-3**, 최종 상태 **6.4e-3**. **디코드는 미결**: `use_qk_l2norm_in_kernel` 을 안 주면
+레퍼런스와 6.3e-3 로 일치하고, 서빙처럼 주면 |o| 가 0.0386 → 0.0005 로 77배 작아진다(rel 72) — 그 플래그가
+고르는 재귀 경로를 아직 안 읽었다. 교훈: 커널 간 불일치(chunk vs recurrent rel 700)는 커널이 아니라 **내 입력 계약**이었다 — 서빙
+코드의 호출 인자를 문자 그대로 옮기는 것이 검증의 첫 줄이다. **그리고 `tail` 뒤의 `&&` 가 MISMATCH 를
+커밋시켰다** — 플릿 메모의 파이프 종료코드 함정을 엔진 작업에서 또 밟음; 판정은 변수로 받는다.
+
+### KDA 디코드 형도 일치 — 미결이었던 것은 **청크 커널이 `out=None` 이면 `v` 에 덮어쓴다**는 것이었다
+
+프로브에 호출별 입력 스냅샷·변형 감지기를 달자 `chunk_kda_with_fused_gate` 가 `v` 를 제자리에서 바꾸는 것이
+잡혔다(서빙 호출은 항상 `out=ns_out` 을 준다). 첫 판의 "디코드 77배 축소"는 청크 호출이 먼저 `v` 를
+출력으로 바꿔 놓은 뒤 재귀 커널이 그 `v` 를 입력으로 받은 결과 — 플래그와 무관. `out` 을 명시하니
+**프리필 6.3e-3 · 디코드 6.3e-3 · 최종 상태 6.4e-3**, 커널 대 커널도 일치. 엔진에서의 규칙: **커널 호출은
+출력 버퍼를 명시한다; 입력이 보존된다고 가정하지 않는다**(변형 감지기는 프로브에 남긴다).
+
+### mHC 레퍼런스 == 서빙 TileLang 커널(우리 포크) — 둘째 real 에지 종결
+
+`modules/hyper_connection.mhc_pre/mhc_post` 를 vLLM `kernels/mhc/torch.py` 수식 그대로 적고 glm53 이미지 안에서
+우리 `tilelang*.py` 를 대상 경로에 마운트해 등록된 op 로 판정: vLLM torch 레퍼런스 대비 **0.0**, 서빙 커널 대비
+pre(post 3.0e-4 · comb 2.8e-4 · layer_input 4.4e-3), post 1.6e-3. 두 함정: 패키지 `__init__` 이 `torch` 이름을
+가려 `from ...mhc import torch` 가 진짜 torch 를 줬고, CustomOp 인스턴스화는 vLLM config 컨텍스트를 요구해
+등록 op 를 직접 불렀다. 계기: real 15 → **10**, 전체 56% ours(드롭·심 뒤 87%).
+
+### 희소 MLA 레퍼런스 == 서빙 메가커널 레인 — 셋째 real 에지 종결
+
+`modules/sparse_attention.mla_sparse_mqa`(q_abs [T,16,512] · fp8 latent × ckv_scale · top-k 2048 슬롯 · valid
+마스크 · sink 없음)를 glm53 이미지 안에서 우리 `glm53_megakernel.{py,cu}` 를 대상 경로에, `~/glm53-cache` 를
+`/cache` 에 마운트해 판정: 메가커널의 torch 쌍둥이 `mla_decode_ref` 대비 **2.79e-4**, 무장된 CUDA 레인
+`mla_decode` 대비 **2.23e-3**(첫 런치 포함 0.4 ms — 빌드 캐시가 살아 있다). vLLM `layers/mla.py` 의
+`MultiHeadLatentAttentionWrapper` 는 투영·노름·인덱서·attn·o_proj 의 순수 torch 합성이라 우리 층 라이브러리
+위에 그대로 올라간다(rope 없음, q_lora 1536 / kv_lora 512). 계기: real 10 → **8**(남은 것: kpool 인덱서 셋 +
+`DeepseekV32IndexerCache`·`FusedQkvAProj`, `causal_conv1d` 둘, `FusedMoEFactory`).
+
+### causal conv 레퍼런스 == 서빙 op — 넷째 real 에지, 그리고 **슬롯 0 은 null 이다**
+
+`modules/causal_conv` 를 glm53 이미지의 서빙 Triton op(`causal_conv1d_fn`/`update`)와 대조: 프리필 y 2.9e-4 ·
+최종 상태 정확, update y·상태 정확. 그 전 진단 세 번(레이아웃 격자·dtype·가중치 방향)이 전부 rel ≈ 1 이었던
+이유: **커널은 캐시 인덱스 0 을 null 블록으로 보고 그 시퀀스를 통째로 건너뛴다**(숫자 진단 `y[0] = 4.0 = x`,
+상태 불변). 서빙 러너는 슬롯 0 을 배부한 적이 없어 프로덕션에선 안 보이는 계약. 엔진 규칙: `base/kv.SlotPool`
+은 슬롯 0 을 절대 내주지 않고 `cache_spec` 은 슬롯 하나를 더 잡는다(D3). GLM `o_norm` 활성 = sigmoid.
+계기: real 8 → **6**. **함정 둘째**: `cat >> … <<'EOF'` 뒤 줄의 `git commit` 은 `&&` 사슬 밖이라 앞 검사가
+실패해도 돈다(bf9fccfa 가 그렇게 들어감) — 판정은 변수로, 커밋은 그 변수를 보고.
+
+### 희소 인덱서 점수식 == 서빙 DeepGEMM op — 다섯째 real 에지(kpool 의 점수 절반)
+
+`modules/sparse_indexer.indexer_logits` = Σ_h w[m,h]·relu(q[m,h]·k[n]) (세 모델 공통식). glm53 이미지에서
+서빙 `fp8_fp4_mqa_logits`(FP8 경로: q 토큰별 스케일은 weights 에 접힘, k 행별 fp32 스케일, `cu_seqlen_ks/ke`
+로 창 지정)와 **같은 양자화 값** 위에서 대조 — rel **2.38e-3**(|logits| 200). 판정 대상은 양자화기가 아니라
+식이다. 남은 kpool 조각: 풀링(gate softmax + APE → FWHT-fp8 쓰기), `top_k_per_row`(풀 단위 select_k =
+2048/4), `expand_pools_and_append_tail`(꼬리 항상 포함). 오늘 서빙 커널로 판정된 에지 다섯: KDA · mHC ·
+MLA · conv · 인덱서 점수.
+
+### kpool 인덱서 전부 판정 — 여섯째 real 에지 종결
+
+`modules/sparse_indexer`: 점수식 rel 2.4e-3(서빙 DeepGEMM), 키 양자화 FWHT-128+fp8 **바이트 동일**, 풀링(채널별
+softmax(score+ape) 가중합) 스케일 동일 — fp32 진값 대비 1 fp8 ulp 초과가 **우리 0.0, 서빙 커널 3.4e-3**(둘의
+원소 차이 5.8% 는 커널 쪽 누적 순서의 반올림), 꼬리 확장 `expand_pools_and_append_tail` 과 **동일**. 규칙 하나
+새로 배움: 선택된 풀 id 는 `seq_len // pool_size` 미만(완전한 풀)일 때만 유효하고 나머지 토큰은 꼬리로 온다 —
+내 첫 기대값이 틀렸고 커널이 맞았다. 계기: real 6 → **1**(`FusedMoEFactory` 만 남음), 전체 ours 63%,
+드롭·심 뒤 94%. 오늘 서빙 커널로 판정된 에지: KDA · mHC · MLA · conv · 인덱서(점수·양자화·풀링·꼬리).
+
+### 심 17개 + MoE 레퍼런스 — 계기 real 0, ours 76%
+
+`profiles/glm53/shims.py`: 모델 파일이 vLLM 에서 가져오던 이름 17개(활성화, prefix 헬퍼, LayerNorm,
+GroupShape/scaled_dequantize, yarn_get_mscale, 상태 복사, 전문가 파라미터 매핑, fp8 LM head, 라우터 GateLinear…)를
+우리 모듈 위에 몇 줄로. 자가검증이 계기의 shim 목록 전부를 제공하는지 확인. `modules/moe`: noaux_tc 라우터
+(시그모이드 fp32, 선택은 +바이어스, 가중치는 재정규화 × 2.5)와 NVFP4 SwiGLU 전문가 합산을 실제 층 3 전문가로
+dense 대비 rel 3.9e-3. **b12x 레인의 단독 판정은 접었다**: `b12x_fused_moe` 의 SF 레이아웃이 문서화돼 있지 않고
+서빙 백엔드가 `moe_sf_pack` 으로 스위즐한 팩을 먹인다 — 재현은 토끼굴이고 레인엔 자체 selftest 가 있으며 D4 의
+판정은 재호스팅 뒤 살아 있는 서빙 층으로 한다. 계기: **real 0**, ours 79%, drop 22 만 남음(모델 파일 편집 시 사라짐).
+
+### 재호스팅 시작 — 서빙 4파일을 `profiles/glm53/model/` 로, vLLM 임포트 0줄
+
+계기의 MAP+shims 로 `from vllm…` 을 엔진 경로로 자동 치환: model 40 / kda 24 / attention 25 / mtp 10 줄이
+엔진으로, DROP 마커 21/2/2/2(PP·SP·멀티모달·플랫폼 디스패치 — 손으로 지울 코드 경로). `glm5next_multimodal.py`
+는 텍스트 전용이라 집합에서 제외(vLLM 잔여 14줄 전부 거기). 이제 "vLLM 없이 임포트되나"가 파일별 이정표다.
+
+## ★45차 — 엔진 네이티브 GLM-5.3: 서빙 4파일 재호스팅 대신 우리 계약으로 다시 씀 (2026-09-11)
+
+44차 끝에서 "vLLM 없이 임포트되나"를 파일별 이정표로 삼았는데, 자동 치환된 4파일이 여전히 요구한 이름이 44개
+(`VllmConfig`·`get_forward_context`·`AutoWeightsLoader`·`FusedMoEFactory`·`MambaStateShapeCalculator`…)였다. 그 44개를
+`base/`에 채우면 vLLM 의 추상을 엔진 안에 다시 짓는 것이고, 운영자 지시("특정 하드웨어·NVFP4만, 레거시 없이 처음부터")와
+D7(전방 컨텍스트 없음, 플랫 메타)·D11(사실 + 만료 노브)·D16(아레나만이 할당)에 정면으로 어긋난다. 그래서 4파일을 지우고
+(`git rm`, 3adc8d47 의 산물), GLM-5.3 을 엔진의 계약으로 **다시 썼다**. 서빙 파일은 대수(algebra)의 출처로만 읽었다.
+
+### 무엇이 생겼나
+
+- `profiles/glm53/facts.py` — 상수 전부를 config.json 에서 읽고 **코드가 기대는 가정을 로드 시 단언**(nope·noaux_tc·
+  sigmoid·fp32 라우터·NVFP4 대상 = 3~44층 전문가뿐·kpool 4·hc 4…). vLLM `Glm5NextTextConfig` 가 파생하던 값
+  (post_mult 2.0, sinkhorn 20, mla_nope)은 판정 이미지에서 읽어 박았다. **런처 사실**: ENABLE_EP=0 → 전문가는 TP
+  (중간차원 분할). `plan.py` 의 "EP" 라벨은 종류가 틀렸었다(바이트는 같음) — 고침. MTP(45층, fp8 전문가)는 **서빙되지
+  않는다**(DFlash2 드래프터) → 프로필 범위 밖.
+- `base/params.py` — `Spec(name, shape, dtype, sources, build)` 와 `bind(specs, views)`: 모델은 가중치를 선언만 하고
+  로더가 아레나에서 깎은 뷰에 묶인다. 캐스트·리셰이프 없이, 이름·모양·dtype 불일치는 예외.
+- `base/preshard.py` — safetensors 를 **스트리밍**으로 쓰는 `RankWriter`(헤더 선계산, 텐서는 제 오프셋에 pwrite)
+  + `write_ranks`(층 단위로 소스를 한 번 읽어 4랭크에 동시에 씀). `RankLoader` 와 safetensors 둘 다로 읽어 확인.
+- `profiles/glm53/specs.py` — 랭크가 쥐는 가중치 지도. 서빙 로더가 로드 때 하던 병합을 여기서 한 번(q|k|v|b|f_a|g_a
+  → `in_proj`, q_a|kv_a → `qkv_a`, 세 conv → `[3HD,K]`, gate|up, 전문가별 gate|up → `w13`), dtype 승격도(A_log·dt_bias·
+  mHC·인덱서 head-gate/k_norm → fp32), 전역 스케일은 **곱셈자로 저장**(`*_mult`, 압축텐서의 제수를 뒤집음). 자가검증:
+  랭크당 1,288 텐서 **44.50 GiB = plan 인구조사 44.48**(MTP 전문가 제외, 나머지 0.02 는 승격), 체크포인트의 텍스트 텐서
+  전부가 정확히 한 spec 의 소스.
+- `profiles/glm53/lanes.py` — 커널 레인 여덟(conv·kda_chunk·mhc_pre·mhc_post·indexer_logits·kpool·mla_sparse·expert)을
+  `reference()`(modules 의 판정된 참조) 또는 `served()`(오버레이 커널, 이미지 안 마운트 경로로 임포트, 전부 아니면 예외)
+  로 묶는 표. 활성화는 `swiglu_clamped` 하나: 서빙 dense 는 SiluAndMulWithClamp, 서빙 b12x 는 "swigluoai α1 β0 limit
+  10" — **같은 식**이다(flashinfer_b12x_moe 1380: "whose math reduces to clamped SiLU").
+- `profiles/glm53/net.py` — 조합. 임베드 → 45층 [mHC pre(+in_norm) → KDA | DSA → mHC post/pre(+post_norm) → dense |
+  MoE] → contract(mean) → norm → 헤드. 뷰 위의 평범한 함수, 상태는 `Caches` 프로토콜(층별 플랫 latent/pool-key/
+  pool-scale, 슬롯별 KDA conv·recurrent·tail 링, 호출자의 블록표가 슬롯을 준다)로 받는다. KDA: in_proj → conv(상태
+  carry) → q,k,v / raw gate / beta=sigmoid / 출력 게이트 → 레인 → o_norm(rmsnorm·sigmoid) → o_proj → all_reduce.
+  DSA: qkv_a → q_a_norm → q_b; kv_a_norm → **latent fp8 쓰기(스케일 1, 체크포인트에 kv 스케일 없음)** → 인덱서(wq_b·
+  wk+LayerNorm·fp32 head-gate·gate score → FWHT-fp8 q, 완성 풀 압축·쓰기, 꼬리 링, 후보 풀 = seq_len//4 미만, top-512
+  풀 → 꼬리 포함 토큰 → 슬롯) → W_UK 흡수 MQA(레인) → W_UV → o_proj. MoE: noaux_tc 라우터(fp32 sigmoid, 선택은 +bias,
+  가중치는 재정규화×2.5) → 전문가별 레인(W4A4, gate/up 전역 스케일 따로) → 공유 전문가 → all_reduce 한 번.
+- `profiles/glm53/preshard.py --world 1 --layers 0-4` → dev 랭크파일 12.17 GiB, **14 s**. `--world 4` 전체는 백그라운드로.
+- `profiles/glm53/check.py` — 진짜 가중치로 0~4층(KDA 4, DSA 1, MoE 2)을 한 아레나(12.21 GiB, 25 영역)에서 돌림.
+  로드 **2.5 s**(13 런, 5.2 GiB/s), 512 토큰 프리필 8.0 s(참조 레인, KDA 참조가 파이썬 루프). 유한, |h| mean 1.10.
+
+### 판정 설계에서 배운 것 — "두 청크 = 한 프리필"은 MoE 를 지나면 토큰 단위로 성립하지 않는다
+
+처음 판정(최종 hidden 의 rel)이 2.4e-1 로 실패했고, **첫 청크**(캐시를 읽지 않는)도 똑같이 틀렸다. 블록별 추적:
+M=512 와 M=256 의 bf16 GEMM 은 누적 순서가 달라 1 ulp(p50 4.6e-3)씩 다르고, 3층을 지나 1e-2 가 되며, 3층 라우터가
+그 차이로 **256 토큰 중 30 토큰의 top-8 을 바꾼다**(인덱서의 슬롯 집합은 256/256 동일). 뒤집힌 토큰은 4.6e-1 까지
+벌어진다. 어느 엔진이든 배치 크기가 다르면 MoE 뒤의 토큰은 다르다 — 서빙 경로도 같다. 그래서 판정은 **어텐션 블록의
+둘째 청크 출력(KDA 상태·latent·풀·꼬리를 읽는 유일한 곳)이 첫 청크의 잡음 바닥을 넘지 않는가**로 바꿨다(블록별
+p50·max ≤ 1.5×, 상류 MoE 의 뒤집힘은 물려받는다): L3 dsa 첫 7.4e-3/1.6e-2 vs 둘째 6.7e-3/1.3e-2, L4 kda 3.7e-2/1.4e-1
+vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS. 이 판정은 조합이 GLM 의 대수인지는 말하지 않는다;
+그것은 서빙 층을 옆에 놓는 다음 판정의 몫이다.
+
+### 계기
+
+`hosting.py` 를 엔진 네이티브 지도로 다시 씀(서빙 3파일; mtp 는 서빙 안 됨): **114 심볼 = 89 ours(78%) + 25 drop, real 0**.
+"ours" 의 뜻이 바뀌었다 — 이름을 우리 모듈로 바꾼 것이 아니라 **그 자리에 엔진이 무엇을 두었는가**(대개 `net.py` 의
+한 줄이거나 `specs.py` 의 분할 규칙, 혹은 "사실이라 필요 없음": rope·yarn·fp8 dense·kv 스케일).
+
+### 남은 것(순서대로)
+
+1. `check.py --lanes served` 를 판정 이미지 안에서 — 같은 조합 위에서 참조 레인 vs 서빙 커널(레인 어댑터 판정).
+2. 서빙 `Glm5NextDecoderLayer` 를 옆에 놓는 층 판정(조합 판정, D4).  3. 디코드 경로(recurrent KDA·conv update·
+   드래프트 슬롯 K=5 의 희소 MLA·꼬리 링 갱신).  4. 러너 결합(`cache_spec` 으로 아레나에서 캐시를 깎고 블록표로 슬롯을
+   주는 `Caches`).  5. b12x 전문가 레인 바인딩, DFlash2 드래프터, 4노드.
+
+### 45차 §2 — 네 기본값을 형태로: TP=4·GB10·NVFP4 기본형·레거시 없음 (운영자, 2026-09-11 오후)
+
+운영자: "TP=4, dgx spark, nvfp4, 레거시 없음의 4가지 요소를 디폴트로 해서 아주 잘 써봐" — 그리고 정정: NVFP4 는 **유일형이
+아니라 기본형**(가장 잘 지원하는 형태). 그래서 dense 투영의 강제 W4A16 양자화는 하지 않는다; 체크포인트의 형태(전문가
+W4A4 캘리브레이션 있음, 나머지 bf16)를 그대로 쥐고 NVFP4 를 1급으로 지원한다(packed 바이트 그대로 상주, packed 위에서 TP,
+전역 스케일은 곱셈자, 서빙 커널이 레인).
+
+- **TP=4 가 코드의 형상**: `facts.TP = 4`, 랭크-로컬 크기가 사실(`heads_local 16, kda_heads_local 16, moe_inter_local 512,
+  dense_inter_local 3072, vocab_local 38,720`). `specs`/`preshard`/`net` 에서 `W` 인자와 `// W` 제거; `Glm53Net` 은 world≠4 를
+  거부. `preshard.py` 도 `--world` 없음(출력 기본 `facts.RANKS`).
+- **GB10 단언**: `facts.check_box()` — 장치 1개, SM121, `mem_get_info` 총량 == `/proc/meminfo`(통합 메모리)를 부팅·검증 때
+  단언. 오늘 박스: "SM121, unified 122 GiB".
+- **한 노드에서 TP=4 를 진짜로**: `base/comm.LocalTP(4)` — 네 랭크를 네 스레드로, all_reduce/all_gather 는 배리어에서
+  만나 fp32 로 랭크 순서대로 합산(네 사본이 **동일**, NCCL 이 보장하는 것과 같은 성질). 죽은 랭크는 원인 랭크로 표면화.
+  world-1 항등은 base 자가검증에만 남는다(프로필 경로에는 없음).
+- **검증 입력은 실제 랭크 파일**: 사전샤딩 전체 완료 — **176.09 GiB 읽고 4 × 44.50 GiB 씀, 343 s**(0.51 GiB/s, 층당 6~9 s).
+  `check.py` 는 dev 슬라이스 대신 `RANKS/rank{r}of4` 에서 0~4층 키만 골라 랭크별 아레나(3.10 GiB)에 적재: **로드 2.9 s
+  (4 런, 1.1 GiB/s — 4 스레드가 한 NVMe 를 나눔)**, 512 토큰 프리필 12.9 s(참조 레인, 스레드 4개가 GIL 을 나눔).
+- 판정 둘: **네 랭크의 hidden·logits 바이트 동일(max |diff| 0.0)** — 행/열 분할 규칙과 리덕션 배치가 맞다는 뜻(world-1
+  검증은 이걸 절대 못 본다); 캐시 경로는 첫 청크 잡음 바닥 안(L3 dsa 둘째 9.4e-3/1.8e-2 vs 첫 1.1e-2/2.0e-2). **PASS**.
+- 아까 한 번 본 device-side assert 는 재현되지 않았다(같은 코드로 4회 통과). 원인을 못 봤으니 "고쳤다"가 아니라 "재발
+  감시"로 적는다.
+
+### 45차 §3 — 한 스텝 함수, 위치 링 상태: 디코드·검증 스텝과 롤백이 프리필과 같은 코드 (2026-09-11)
+
+`net.py` 를 **스텝 = 세그먼트 목록**(seq, slot, ctx, length)으로 다시 썼다. 프리필 청크는 긴 세그먼트 하나, 디코드는
+짧은(1+K) 세그먼트 n개 — 조합은 둘을 구분하지 않고 레인만 구분한다(청크 KDA vs 토큰별 상태를 남기는 recurrent).
+시퀀스 상태는 전부 **위치로 주소**를 매긴다: conv 입력 링 `[C, K-1+spec_k]` 와 recurrent 상태 링 `[spec_k+1, H, D, D]`
+는 `pos % width`, latent/풀/꼬리는 pos. 그래서 거부된 드래프트는 되돌리지 않는다 — 다음 스텝이 같은 위치에 덮어쓰고,
+시작 상태는 그냥 "ctx-1 뒤의 상태"다. 서빙 `kda_state_shape(num_spec)` 의 K+1 상태 열과 같은 것이며 `plan.state_bytes`
+도 여기에 맞췄다(**시퀀스당 207 MiB**, 34.8 은 K=0 수치였다). 인덱서는 ctx 가 풀 경계가 아니어도 꼬리 링의 앞 토큰과
+새 토큰을 합쳐 풀을 완성한다.
+
+`check.py` 판정 넷(TP=4 스레드, 실랭크 파일, 참조 레인): 네 랭크 동일(0.0) · 두 청크 · **verify**(T-6 프리필 + 6토큰 검증
+스텝) · **rollback**(T-12 프리필 → 진짜 2 + 가비지 4 검증 → "2 수락" → 진짜 6 검증). 어텐션 블록별 첫 청크 잡음 바닥
+대비: verify L3 dsa 7.5e-3/1.1e-2, L4 kda 2.3e-2/3.7e-2; rollback L3 dsa 8.0e-3/1.0e-2, L4 kda 3.9e-2/4.9e-2 — 가비지가
+어느 캐시(conv 링·recurrent 링·latent·풀·꼬리)에도 새지 않는다. **PASS**.
+
+서빙 레인 첫 실행은 triton autotuner 의 스레드 비안전(`self.nargs` 공유)으로 랭크 1 이 죽었다 — 서빙 레인 어댑터를 잠금
+하나로 직렬화(GPU 가 어차피 직렬). 재실행은 백그라운드.
+
+이름: 운영자가 자체 엔진을 **ST 엔진**으로 명명(헌장 머리말, `engine/README.md`).
