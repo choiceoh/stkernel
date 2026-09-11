@@ -39,6 +39,27 @@ def l2norm(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     return x * torch.rsqrt((x * x).sum(-1, keepdim=True) + eps)
 
 
+def kda_gate(raw_g: torch.Tensor, A_log: torch.Tensor, g_bias: "torch.Tensor | None",
+             lower_bound: float = -5.0, safe_gate: bool = True) -> torch.Tensor:
+    """GLM-5.3's per-channel log-decay, as its served kernel computes it
+    (glm53_kernels/kda.py:1589-1608, the fused gate):
+
+        safe_gate:  g = lower_bound * sigmoid(exp(A_log[h]) * (raw_g + g_bias))   in (lower_bound, 0)
+        else:       g = -exp(A_log[h]) * softplus(raw_g + g_bias)
+
+    raw_g is [B, T, H, Dk] (f_b_proj), A_log [H], g_bias [H*Dk] (dt_bias).
+    GLM-5.3 checkpoints take the safe branch (linear_attn_config has no
+    safe_gate key and the model defaults it True, lower bound -5.0).
+    """
+    g = raw_g.float()
+    if g_bias is not None:
+        g = g + g_bias.float().view(1, 1, *raw_g.shape[-2:])
+    a = torch.exp(A_log.float()).view(1, 1, -1, 1)
+    if safe_gate:
+        return lower_bound * torch.sigmoid(a * g)
+    return -a * torch.nn.functional.softplus(g)
+
+
 def gated_delta_rule(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
                      g: torch.Tensor, beta: torch.Tensor, initial_state=None,
                      scale: "float | None" = None, qk_l2norm: bool = True,

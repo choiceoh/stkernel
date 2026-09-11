@@ -8633,3 +8633,13 @@ drop+shim 뒤 계기는 **75%**. real 23 이 "3~5일"의 실체: MLA+희소 인�
 `FusedQkvAProj`·`IndexerCache`·`SparseAttnIndexerKpool`·`head_gate`·`fwht128`), KDA conv 커널
 (`causal_conv1d_*`)과 KDA 커널 셋(`chunk_kda`·`fused_recurrent_kda`·`fused_kda_gate` — 리포의 kda.py, 우리 것),
 MoE 팩토리(b12x 레인), mHC 다섯(`MHC*Op`·`hc_contract`·`hc_expand`).
+
+### KDA 레퍼런스 == **서빙 커널**(우리 kda.py, glm53 이미지 안에서 대상 경로에 마운트) — D4 를 커널 수준에서
+
+`modules/linear_attention.kda_gate`(안전 게이트 `-5·sigmoid(exp(A_log[h])·(g + dt_bias))`, 채널별) + 채널별
+감쇠 델타 규칙 대 GLM 이 실제로 부르는 두 커널. **계약을 서빙 호출 그대로 베끼기 전엔 전부 어긋났다**
+(rel 1~1,700): 두 커널 다 `use_qk_l2norm_in_kernel=True`, 청크는 `cu_seqlens` 필수(없으면 비-varlen
+분기가 |o| 82~121 짜리 쓰레기를 냄)와 fp32 사전 시그모이드 β, 재귀는 dense B=1(cu_seqlens 를 주면
+spec-verify 경로라 `ssm_state_indices` 등을 요구). 맞추자 프리필 **6.3e-3**, 디코드 **아래 수치**, 최종 상태
+6.4e-3. 교훈: 커널 간 불일치(chunk vs recurrent rel 700)는 커널이 아니라 **내 입력 계약**이었다 — 서빙
+코드의 호출 인자를 문자 그대로 옮기는 것이 검증의 첫 줄이다.
