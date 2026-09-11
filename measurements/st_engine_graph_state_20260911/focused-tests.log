@@ -1,0 +1,8 @@
+test_commit_never_copies_poisoned_unwritten_positions (test_engine_state_cache.StateCacheTests.test_commit_never_copies_poisoned_unwritten_positions) ... ok
+test_graph_replay_remaps_slots_and_preserves_rejected_future_states (test_engine_state_cache.StateCacheTests.test_graph_replay_remaps_slots_and_preserves_rejected_future_states) ... ok
+test_strided_arena_gather_reads_only_the_correct_predecessor (test_engine_state_cache.StateCacheTests.test_strided_arena_gather_reads_only_the_correct_predecessor) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 1.267s
+
+OK
