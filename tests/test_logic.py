@@ -74,7 +74,7 @@ class _CapturingLogger:
 def load_defs(relpath: str, names: set[str], ns: dict) -> dict:
     """exec only the named top-level defs/assigns from a source file into ns."""
     path = _overlay_source(relpath)
-    tree = ast.parse(open(path).read())
+    tree = ast.parse(open(path, encoding="utf-8").read())
     body = []
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in names:
@@ -1488,7 +1488,7 @@ def test_b12x_ep_preflight() -> None:
     def _inspect(inter, experts, tp=4, ep=4):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = {"moe_intermediate_size": inter, "n_routed_experts": experts}
-            open(os.path.join(tmp, "config.json"), "w").write(
+            open(os.path.join(tmp, "config.json"), "w", encoding="utf-8").write(
                 __import__("json").dumps(cfg))
             return pf.inspect(tmp, tp, ep)
 
@@ -3988,7 +3988,7 @@ def test_mhc_bigfuse_knob() -> None:
 
 def test_ep_fixed_output_initialised() -> None:
     src = open(_overlay_source(
-        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py")).read()
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"), encoding="utf-8").read()
     body = src[src.index("def _apply_ep_fixed"):src.index("def _apply_ep_compact")]
     check("pair_out = torch.zeros(" in body,
           "#146 fallback must initialise rows the kernel may skip")
@@ -5242,7 +5242,7 @@ def test_census_streaming_events() -> None:
                 "ts": 3.0, "dur": 1.0}]}
     with tempfile.TemporaryDirectory() as td:
         path = os.path.join(td, "t.json.gz")
-        with gzip.open(path, "wt") as fh:
+        with gzip.open(path, "wt", encoding="utf-8") as fh:
             json.dump(doc, fh, indent=2)
         evs = list(ns["iter_events"](path))
     kernels = [e for e in evs
@@ -5290,7 +5290,7 @@ def test_trace_step_tail_analyze() -> None:
                     "ts": base + 1100, "dur": 100, "args": {"stream": 210}})
     with tempfile.TemporaryDirectory() as td:
         path = os.path.join(td, "tail.json")
-        open(path, "w").write(json.dumps({"traceEvents": evs}))
+        open(path, "w", encoding="utf-8").write(json.dumps({"traceEvents": evs}))
         r = tst.analyze(path)
     check(r["steps"] == 8, f"14 anchors -> 8 analysed windows (got {r['steps']})")
     check(abs(r["fwd_ms"] - 0.5) < 1e-9,
@@ -5599,7 +5599,7 @@ def test_b12x_micro_chunk_width() -> None:
 def test_ep_tail_fixed_shape() -> None:
     """The tail must be padded to one chunk: b12x JITs per launch shape."""
     src = open(_overlay_source(
-        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py")).read()
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"), encoding="utf-8").read()
     body = src[src.index("def _ep_tail_padded_micro"):
                src.index("def _ep_tail_buffers")]
 
@@ -5657,7 +5657,7 @@ def test_ep_compact_shape_align() -> None:
           f"{len(buckets)}")
 
     src = open(_overlay_source(
-        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py")).read()
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"), encoding="utf-8").read()
     start = src.index("def _apply_ep_compact")
     nxt = src.find("\n    def ", start)
     body = src[start:nxt if nxt > 0 else len(src)]
@@ -5702,7 +5702,7 @@ def test_ep_compact_warmup_ladder() -> None:
               f"degenerate geometry must yield no ladder: {args}")
 
     src = open(_overlay_source(
-        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py")).read()
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"), encoding="utf-8").read()
     start = src.index("def _warm_compact_shapes")
     body = src[start:src.index("def _warm_activation_dtype")]
     check('os.environ.get("VLLM_B12X_EP_WARM_COMPACT", "0").strip() != "1"'
@@ -5739,7 +5739,7 @@ def _launcher_caller_passthrough(text: str) -> set[str]:
 
 def test_launcher_load_format_gate() -> None:
     """LOAD_FORMAT must reach the container and refuse anything unvalidated."""
-    text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
+    text = open("launchers/start-glm53-nvfp4-tp4.sh", encoding="utf-8").read()
     # The fast loader is the default, and the profile names the image that
     # actually carries it. These two have to move together: defaulting to
     # instanttensor while the profile pointed at the bare image cost a boot,
@@ -5833,7 +5833,7 @@ def test_dsv4_launcher_adoptions() -> None:
 
 def test_prefill_ladder_probe() -> None:
     """The ladder must not let prefix caching masquerade as a warm kernel."""
-    src = open("probes/prefill_ladder.py").read()
+    src = open("probes/prefill_ladder.py", encoding="utf-8").read()
     ns: dict = {}
     exec(compile(src.replace("raise SystemExit(main(args))", "pass"),
                  "prefill_ladder", "exec"), ns)
@@ -5882,7 +5882,7 @@ def test_once_logger_args_hashable() -> None:
     import ast as _ast
     for rel in ("overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
                 "overlay/modules/glm53_drafter/fp8_lm_head.py"):
-        src = open(_overlay_source(rel)).read()
+        src = open(_overlay_source(rel), encoding="utf-8").read()
         for node in _ast.walk(_ast.parse(src)):
             if not (isinstance(node, _ast.Call)
                     and isinstance(node.func, _ast.Attribute)
@@ -5900,7 +5900,7 @@ def test_dflash2_selector_check() -> None:
     """The selector-load check must read the real object and never be silent."""
     import ast as _ast
     src = open(_overlay_source(
-        "overlay/modules/glm53_drafter/qwen3_dflash2.py")).read()
+        "overlay/modules/glm53_drafter/qwen3_dflash2.py"), encoding="utf-8").read()
     ns = load_defs(
         "overlay/modules/glm53_drafter/qwen3_dflash2.py",
         {"dflash2_selector_load_verdict"}, {},
@@ -6127,7 +6127,7 @@ def test_overlay_logger_defined() -> None:
     import ast as _ast, glob as _glob
     checked = 0
     for path in sorted(_glob.glob("overlay/modules/*/*.py")):
-        src = open(path).read()
+        src = open(path, encoding="utf-8").read()
         if "logger." not in src:
             continue
         checked += 1
@@ -6158,7 +6158,7 @@ def test_torch_imports_are_guarded() -> None:
     with #157/#173, so it is a contract now.
     """
     import ast as _ast
-    src = open("tests/test_logic.py").read()
+    src = open("tests/test_logic.py", encoding="utf-8").read()
     offenders = []
     for node in _ast.parse(src).body:
         if not (isinstance(node, _ast.FunctionDef)
@@ -6178,7 +6178,7 @@ def test_torch_imports_are_guarded() -> None:
 
 def test_launcher_reject_method_gate() -> None:
     """REJECT_METHOD must reach the drafter config and refuse a typo."""
-    text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
+    text = open("launchers/start-glm53-nvfp4-tp4.sh", encoding="utf-8").read()
     check('"rejection_sample_method\\":\\"$REJECT_METHOD' in text,
           "the value must reach the speculative-config JSON")
     check("ABORT: REJECT_METHOD must be standard or block" in text,
@@ -6234,7 +6234,7 @@ def test_accept_profile_conditional_arithmetic() -> None:
     when the per-position conditional rate is flat, which reads as a broken
     drafter. This lane made exactly that error, so pin the arithmetic.
     """
-    src = open("probes/accept_profile.py").read()
+    src = open("probes/accept_profile.py", encoding="utf-8").read()
     check("previous = drafts" in src and "cond = count / previous" in src,
           "the conditional must divide by the previous position's count, "
           "with the draft count seeding position 0")
@@ -6875,17 +6875,17 @@ def test_decode_first_scheduler_contracts() -> None:
             clock[0] = 700.0
             c.schedule()
             check(c.calls[-1][:2] == (False, 0), "no file yet -> off: the solo prefill is stock, uncapped")
-            open(path, "w").write("2304\n")
+            open(path, "w", encoding="utf-8").write("2304\n")
             clock[0] = 700.5
             c.schedule()
             check(c.calls[-1][:2] == (False, 2304), "the file's chunk caps a SOLO prefill (no decoder in play)")
             check(c.scheduler_config.long_prefill_token_threshold == 0, "and the stock threshold is restored after the step")
-            open(path, "w").write("junk")
+            open(path, "w", encoding="utf-8").write("junk")
             clock[0] = 701.0
             c.schedule()
             check(c.calls[-1][:2] == (False, 0), "junk in the file reads as off, never as a crash on the serving path")
             # absolute: it replaces the planned chunk on a mixed step too
-            open(path, "w").write("4608")
+            open(path, "w", encoding="utf-8").write("4608")
             os.environ["VLLM_GLM53_SCHED_MODE"] = "mixed"
             c2 = Sched()
             c2.running = [dec(), pre("long", 100000)]; c2.waiting = []
@@ -7192,7 +7192,7 @@ def test_mk_head_lane_contracts() -> None:
         else:
             sys.modules.pop("torch", None)
 
-    fp8_source = open(_overlay_source("overlay/fp8_lm_head.py")).read()
+    fp8_source = open(_overlay_source("overlay/fp8_lm_head.py"), encoding="utf-8").read()
     tree = ast.parse(fp8_source)
     cls = next(n for n in tree.body
                if isinstance(n, ast.ClassDef) and n.name == "Fp8HeadLogitsProcessor")
@@ -7210,15 +7210,15 @@ def test_mk_head_lane_contracts() -> None:
           "the lane is asked before the fp8 copy, only without a bias, and None falls through unchanged")
     check("_read_bool_env(mk_env)" in apply_src,
           "an endpoint whose knob is off never asks the lane (the knob, not the other endpoint's)")
-    model_src = open(_overlay_source("overlay/glm5next_model.py")).read()
-    draft_src = open(_overlay_source("overlay/qwen3_dflash2.py")).read()
+    model_src = open(_overlay_source("overlay/glm5next_model.py"), encoding="utf-8").read()
+    draft_src = open(_overlay_source("overlay/qwen3_dflash2.py"), encoding="utf-8").read()
     check('mk_env="VLLM_GLM53_MK_HEAD_TARGET"' in model_src
           and 'mk_env="VLLM_GLM53_MK_HEAD_DRAFT"' in draft_src,
           "target and draft heads name their own knobs")
-    env = open(os.path.join(REPO, "profiles/glm53.env")).read()
+    env = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
     check("VLLM_GLM53_MK_HEAD_DRAFT=0\n" in env and "VLLM_GLM53_MK_HEAD_TARGET=0\n" in env,
           "both head knobs are declared off in the profile (the launcher forwards declared keys only)")
-    cu = open(_overlay_source("overlay/glm53_megakernel.cu")).read()
+    cu = open(_overlay_source("overlay/glm53_megakernel.cu"), encoding="utf-8").read()
     m = re.search(r"constexpr int MK2_TILES_MAX = (\d+);", cu)
     check(m is not None and int(m.group(1)) >= -(-38720 // 128),
           "the v2 tile cap covers the vocab head (38,720 / 128 = 303 tiles)")
@@ -10895,11 +10895,11 @@ def test_rank_cache_eviction_contracts() -> None:
     try:
         names = ["a" * 64, "b" * 64, "c" * 64, "d" * 64]
         for i, n in enumerate(names):
-            d = root / n; d.mkdir(); (d / "manifest.json").write_text("{}"); (d / "weights.bin").write_bytes(b"x" * (i + 1))
+            d = root / n; d.mkdir(); (d / "manifest.json").write_text("{}", encoding="utf-8"); (d / "weights.bin").write_bytes(b"x" * (i + 1))
             os.utime(d, (1000 + i, 1000 + i))
         stale = root / ".rank-old"; stale.mkdir(); os.utime(stale, (1, 1))
         fresh = root / ".rank-new"; fresh.mkdir()
-        other = root / "notes.txt"; other.write_text("keep")
+        other = root / "notes.txt"; other.write_text("keep", encoding="utf-8")
         current = root / names[3]
         ns["_evict_stale"](root, current, 2)
         left = sorted(p.name for p in root.iterdir())
@@ -11330,8 +11330,8 @@ def test_trace_composition_analyze() -> None:
     with tempfile.TemporaryDirectory() as td:
         pa = os.path.join(td, "base.json")
         pb = os.path.join(td, "cand.json")
-        open(pa, "w").write(json.dumps(trace(0)))
-        open(pb, "w").write(json.dumps(trace(1)))
+        open(pa, "w", encoding="utf-8").write(json.dumps(trace(0)))
+        open(pb, "w", encoding="utf-8").write(json.dumps(trace(1)))
         ra = tsc.analyze(pa)
         rb = tsc.analyze(pb)
     check(ra["steps"] == 8, f"14 step anchors -> 8 analysed windows (got {ra['steps']})")
@@ -12362,7 +12362,7 @@ def test_trace_step_nodes_tool() -> None:
         ts += 400.0
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "t.json.gz")
-        with gzip.open(path, "wt") as f:
+        with gzip.open(path, "wt", encoding="utf-8") as f:
             json.dump({"schemaVersion": 1, "traceEvents": events}, f)
         r = mod.analyze(path)
         check(r["anchor"] == "_glm53_prep_fused_kernel",
@@ -12380,7 +12380,7 @@ def test_trace_step_nodes_tool() -> None:
               "the v2 lane kernel is ours, with its median duration")
         out = os.path.join(d, "dump.txt")
         j = mod.dump_step(r, out, None)
-        lines = [l for l in open(out).read().splitlines() if not l.startswith("#")]
+        lines = [l for l in open(out, encoding="utf-8").read().splitlines() if not l.startswith("#")]
         check(len(lines) == 4 and lines[0].split()[-1].endswith("_glm53_prep_fused_kernel")
               and lines[1].split()[2] == "150.0",
               f"the dump lists the step's kernels in order with the gap on their stream "
@@ -12525,11 +12525,11 @@ def test_fleet_reservation_tooling_contracts() -> None:
     check('"--knobs"' in base and "already measured on this build" in base,
           "baseline.py reports an arm already measured on this build")
     cells = os.path.join(REPO, "probes", "b12x_static_cells.sh")
-    check(os.path.exists(cells) and subprocess.run(["bash", "-n", cells], capture_output=True).returncode == 0
+    check(os.path.exists(cells) and subprocess.run([_bash(), "-n", cells], capture_output=True).returncode == 0
           and '--configs "$c"' in open(cells, encoding="utf-8").read(),
           "b12x_static_cells.sh runs one probe process per spec cell")
-    check(subprocess.run(["bash", "-n", os.path.join(REPO, "bench", "fleet.sh")], capture_output=True).returncode == 0
-          and subprocess.run(["bash", "-n", os.path.join(REPO, "bench", "ab-lever.sh")], capture_output=True).returncode == 0,
+    check(subprocess.run([_bash(), "-n", os.path.join(REPO, "bench", "fleet.sh")], capture_output=True).returncode == 0
+          and subprocess.run([_bash(), "-n", os.path.join(REPO, "bench", "ab-lever.sh")], capture_output=True).returncode == 0,
           "fleet.sh and ab-lever.sh parse")
 
     # -- round 2 (operator "1~10 도입하고 ... gpu 없이 할수 있는 작업 같으면 병렬로",
@@ -12594,7 +12594,7 @@ def test_fleet_reservation_tooling_contracts() -> None:
     check("chain)" in fleet and "QUICKSTART" in fleet,
           "fleet.sh chain exists and the header opens with a six-line quickstart")
     chain = os.path.join(REPO, "bench", "chain.sh")
-    check(os.path.exists(chain) and subprocess.run(["bash", "-n", chain], capture_output=True).returncode == 0,
+    check(os.path.exists(chain) and subprocess.run([_bash(), "-n", chain], capture_output=True).returncode == 0,
           "bench/chain.sh parses")
     chsrc = open(chain, encoding="utf-8").read()
     check("--after|--legs)" in chsrc and "--after and --legs are disabled" in chsrc
