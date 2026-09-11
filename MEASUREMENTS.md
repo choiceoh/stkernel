@@ -9210,3 +9210,28 @@ accepted·draft), `/health`. 프로필은 프로덕션과 같은 `chat_template_
 넘긴다(이미지 안 검증: 렌더 결과를 `tokenizers` 로 인코딩한 id 가 transformers 와 동일, 22 토큰). `tests/test_engine_serve.py` 20 tests OK
 (문 4종 추가: 목록·카운터·health, 통째 답, 토큰 스트림 + 추론 분리, 엔진 사망 시 스트림 클라이언트 해제). `boot --local --serve` 는 스트림
 chat 한 턴을 더 판정한다(GPU 창 없어 미실행). **다음**: 플릿 창(프로덕션 정지, 한 세션만) → 부팅 → chat 한 요청 → `bench/onepass.py`.
+
+### 45차 §20 — 운영자 지시 넷: prefix 재사용, 취소·타임아웃, 문의 나머지, 슈퍼바이저 (2026-09-11 밤)
+
+플릿 창이 없어(프로덕션 vLLM 20:31 복귀) 모두 CPU 판정(가짜 엔진·실물 풀·러너)까지, GPU 판정은 프로브로 준비했다.
+
+**취소·타임아웃**(`base/serve.py`): 취소는 rank 0 이 도착과 같은 브로드캐스트에 실어 네 랭크가 같은 반복에서 같은 행을 버린다(FIFO 에 있으면
+빼고, 행이면 `runner.cancel` → 블록·슬롯·모델 상태 반납 → 클라이언트에 499/504). 근거 셋: 클라이언트 소켓 EOF·broken pipe(토큰 묶음마다
+`select`+`MSG_PEEK`), `REQUEST_TIMEOUT_S`=3600 초과, `stop` 문자열(내용 채널에서 잘라 조기 종료). chat 요청은 스트림이 아니어도 토큰 큐로
+흐른다(끊김·stop 이 양쪽에서 같이 먹힌다).
+**문의 나머지**: `min_tokens` 는 어댑터에서 뽑힌 뒤 고침(끝 토큰이 최소 전에 뽑히면 그 자리의 차선 토큰; 캡처된 샘플링 그래프 무변경),
+`tools` 는 템플릿 렌더 + `<tool_call>{name}<arg_key>k</arg_key><arg_value>v</arg_value>…</tool_call>` 파서(`profiles/glm53/tools.py`) →
+`tool_calls`, `finish_reason` `tool_calls`; `n`≠1·`logprobs` 는 400; `usage.completion_tokens_details.reasoning_tokens`(게이트웨이가 읽음).
+게이트웨이(`deneb/gateway-go`)는 비스트리밍 chat + tools 를 쓴다.
+**슈퍼바이저**(`launchers/st-glm53-supervisor.sh` + `st-glm53.service`, dsv4-tp4-supervisor 의 형): 30 s 마다 4 토큰 chat(문이 살아도 링은
+죽을 수 있다), 3 회 실패 → 포렌식(네 랭크 로그·free·nvidia-smi·metrics) → stop → start, 백오프 60 s ×2 ≤ 30 min, 5 회 뒤 정지. 프로덕션·
+q38 컨테이너가 보이면 절대 안 띄움. 한 사이클 판정(`ST_SUPERVISOR_ONCE=1`): 지금은 "fleet taken: 10.10.10.2:glm53".
+**prefix 재사용**(`base/prefix.py`, `base/kv.py` 소유 개수, `runner.submit(ids)`/`_checkpoint`, `scheduler.arrive(computed)`, GLM
+`caches.snapshot_layout/checkpoint/restore`, `adapter.checkpoint/restore`, boot `PREFIX_SNAPSHOTS`=8): 단위는 프리필 청크(6,912 = 블록 3개)
+— 선형 어텐션의 상태는 프리필이 멈춘 자리에만 있으므로 청크 경계마다 링 상태를 스냅샷(KDA conv 탭 3 + 재귀 1 × 34층 = 35.4 MiB,
+드래프터 링 41.9 MB; 꼬리 링은 경계에서 비어 제외)하고 앞 블록들을 핀. 새 프롬프트는 자기 길이보다 짧은 가장 긴 경계를 입양(공유 블록은
+완결·읽기 전용, 상태는 슬롯에 복원)해 거기서 프리필 — 토큰 하나는 늘 계산. 회수는 LRU, 풀이 부족할 때 콜백으로. vLLM 의 APC 와 다른 점:
+블록 단위가 아니라 청크 단위(2K 프롬프트는 이득 없음; 6,912 이상의 공유 문서·시스템 프롬프트가 대상), 세션 간 대화 이어가기는 D16 이 맡는다.
+**판정**: `tests/test_engine_prefix.py` 8(소유 개수·입양·핀·회수·해시 사슬·경계 캐시/입양·LRU·실패 반납), serve 25(취소 5 종 추가),
+tools 3, glm53 32, runtime 28, bootpaths 2, tier 16 — 전부 OK. GPU: `probes/engine_prefix_check.py`(공유 두 청크 + 다른 꼬리 두 프롬프트의
+토큰 동일·프리필 시간 비) — srv4 는 프로덕션이 GPU 100 GB 를 쥐고 있어(가용 21 GiB) 돌리지 않았다. 남은 것: 창에서 프로브 → 45층.

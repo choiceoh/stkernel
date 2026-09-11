@@ -83,18 +83,44 @@ def layout(F, layers, draft=None) -> CacheLayout:
                        token_offsets, pool_offsets, tuple(fields))
 
 
+def snapshot_layout(F, layers, draft=None):
+    """What a prefix checkpoint at a chunk boundary P must keep (base/prefix.py), and its byte size:
+    per KDA layer the conv ring's last conv-1 inputs (positions P-conv+1..P-1) and the recurrent
+    state at P-1; the drafter's context ring whole (its window is position-addressed the same way).
+    The indexer tail ring keeps nothing: a chunk is whole pools, so at P the tail is empty and the
+    next pool starts fresh. Returns (nbytes, fields) with fields (name, layer, shape, dtype, offset)."""
+    fields, at = [], 0
+
+    def field(name, L, shape, dtype):
+        nonlocal at
+        at = aligned(at, ALIGN)
+        fields.append(StateField(name, L, shape, dtype, at))
+        at += prod(shape) * (4 if dtype == "f32" else 2)
+
+    for L in layers:
+        if not F.is_dsa(L):
+            field("conv", L, (3 * F.kda_heads_local * F.kda_dim, F.conv - 1), "bf16")
+            field("rec", L, (F.kda_heads_local, F.kda_dim, F.kda_dim), "f32")
+    if draft is not None:
+        dl, dw, dkv, dd = draft
+        field("draft", -1, (dl, 2, dw, dkv, dd), "bf16")
+    return aligned(max(at, 1), ALIGN), tuple(fields)
+
+
 class Glm53Caches:
-    def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int, draft=None):
+    def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int, draft=None, snapshots: int = 0):
         import torch
 
         self.F, self.layers = F, tuple(layers)
         self.layout = layout(F, self.layers, draft)
+        self.snapshot_bytes, self._snapshot_fields = snapshot_layout(F, self.layers, draft)
+        self.snapshots = snapshots
         self.pool = BlockPool(num_blocks, F.block, max_seqs, num_blocks)
         self.slots = SlotPool(max_seqs + 1)
         p = self.layout
         # Preflight all regions, including alignment at an existing arena cursor.
-        if aligned(arena.used, ALIGN) + p.nbytes(num_blocks, max_seqs) > arena.nbytes:
-            raise MemoryError("arena cannot hold the declared GLM caches and block table")
+        if aligned(arena.used, ALIGN) + p.nbytes(num_blocks, max_seqs) + snapshots * self.snapshot_bytes > arena.nbytes:
+            raise MemoryError("arena cannot hold the declared GLM caches, block table and prefix snapshots")
         self.paged = arena.carve(num_blocks * p.block_bytes, "glm53 paged KV")
         self.device = self.paged.device
         self.pool.attach_storage(self.paged, p.block_bytes)
@@ -109,6 +135,16 @@ class Glm53Caches:
             self._fields[f.name, f.layer] = base.as_strided(
                 (max_seqs + 1, *f.shape), (p.slot_bytes // size, *strides),
                 base.storage_offset() + f.offset // size)
+        self._snap = {}
+        if snapshots:
+            self.snapshot_store = arena.carve(snapshots * self.snapshot_bytes, "glm53 prefix snapshots")
+            for f in self._snapshot_fields:
+                dtype = torch.float32 if f.dtype == "f32" else torch.bfloat16
+                size = 4 if f.dtype == "f32" else 2
+                strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
+                base = self.snapshot_store.view(dtype)
+                self._snap[f.name, f.layer] = base.as_strided((snapshots, *f.shape), (self.snapshot_bytes // size, *strides),
+                                                              base.storage_offset() + f.offset // size)
         record = F.idx_dim + 4
         self._latent = self.paged.view(torch.float8_e4m3fn).view(-1, F.kv_lora)
         self._keys = self.paged.as_strided((self.paged.numel() // record, F.idx_dim),
@@ -161,6 +197,46 @@ class Glm53Caches:
             # Commit only after the copy succeeds, so a failed update retries.
             self._table_blocks[s.seq] = count
             self._table_epochs[s.seq] = epoch
+
+    def _ring_cells(self, position: int, count: int, width: int):
+        import torch
+        return torch.tensor([(position - count + i) % width for i in range(count)], device=self.device)
+
+    def checkpoint(self, slot: int, position: int, snap: int) -> None:
+        """Copy the rings' state at chunk boundary `position` out of `slot` into snapshot `snap`."""
+        F = self.F
+        if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
+            raise IndexError("checkpoint needs a real state slot and a declared snapshot")
+        if position <= 0 or position % F.block:
+            raise ValueError("a checkpoint sits at a block boundary")
+        conv_cells = self._ring_cells(position, F.conv - 1, F.conv - 1 + F.spec_k)
+        rec_cell = (position - 1) % (F.spec_k + 1)
+        for L in self.layers:
+            if F.is_dsa(L):
+                continue
+            conv_ring, rec_ring = self.kda(L, slot)
+            self._snap["conv", L][snap].copy_(conv_ring.index_select(1, conv_cells))
+            self._snap["rec", L][snap].copy_(rec_ring[rec_cell])
+        if ("draft", -1) in self._snap:
+            self._snap["draft", -1][snap].copy_(self.draft_ring(slot))
+
+    def restore(self, slot: int, position: int, snap: int) -> None:
+        """The inverse: `slot` continues from `position` with the snapshot's state."""
+        F = self.F
+        if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
+            raise IndexError("restore needs a real state slot and a declared snapshot")
+        if position <= 0 or position % F.block:
+            raise ValueError("a restore sits at a block boundary")
+        conv_cells = self._ring_cells(position, F.conv - 1, F.conv - 1 + F.spec_k)
+        rec_cell = (position - 1) % (F.spec_k + 1)
+        for L in self.layers:
+            if F.is_dsa(L):
+                continue
+            conv_ring, rec_ring = self.kda(L, slot)
+            conv_ring.index_copy_(1, conv_cells, self._snap["conv", L][snap])
+            rec_ring[rec_cell].copy_(self._snap["rec", L][snap])
+        if ("draft", -1) in self._snap:
+            self.draft_ring(slot).copy_(self._snap["draft", -1][snap])
 
     def kda(self, layer, slot):
         return self._fields["conv", layer][slot], self._fields["rec", layer][slot]

@@ -32,9 +32,11 @@ from engine.base.record import DeathDump, Ring                   # noqa: E402
 from engine.base.runner import STEP_RECORD, Runner               # noqa: E402
 from engine.base.serve import Server                             # noqa: E402
 from engine.base.kv_tier import NvmeTier                         # noqa: E402
+from engine.base.prefix import PrefixCache                       # noqa: E402
+from engine.base.shapes import chunk_for                         # noqa: E402
 from engine.base.tiered_kv import TieredKV                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
-from engine.profiles.glm53.caches import Glm53Caches, layout   # noqa: E402
+from engine.profiles.glm53.caches import Glm53Caches, layout, snapshot_layout   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
@@ -45,6 +47,8 @@ KV_GIB = 8.73                       # the 40th boot's KV (plan.py): what the box
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
 MAX_WAIT_S = 20.0                   # D10's one starvation valve
 MAX_SEQS = 4                        # launcher MAX_SEQS
+PREFIX_SNAPSHOTS = 8                # chunk-boundary checkpoints kept for prefix reuse (base/prefix.py): ~77 MiB each per rank at
+                                    # 45 layers with the drafter (34 KDA states + conv taps + the drafter's context ring)
 
 
 def tokenizer(ckpt=facts.CKPT):
@@ -88,6 +92,7 @@ def declared(a, comm_world: int) -> Config:
         Fact("spec_k", facts.SPEC_K, "launcher SPEC_K with DFlash2"),
         Fact("kv_gib", float(a.kv_gib), "40th boot's measured KV" if a.kv_gib == KV_GIB else "--kv-gib (local)"),
         Fact("port", int(a.port), "--port"),
+        Fact("prefix_snapshots", PREFIX_SNAPSHOTS, "chunk-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
     ]
     cfg = Config(facts_, knobs=[])
     return cfg
@@ -118,7 +123,9 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     if nb < 2:
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors")
-    arena_bytes = total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs)
+    snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
+    arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs)
+                   + PREFIX_SNAPSHOTS * snapshot_bytes)
     if len(net.layers) == F.layers:
         # Full-model admission must not rely on the page-cache-inclusive
         # MemAvailable value. The spare 16 GiB is a conservative boot guard,
@@ -152,7 +159,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
         drafter = drafter_mod.Drafter(D, net, decodable)
         drafter.bind(dviews)
-    caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape)
+    caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=PREFIX_SNAPSHOTS)
     # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
     aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
     engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
@@ -163,9 +170,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     if tier_dir:                                                                    # D16: idle conversations park on NVMe, per rank
         tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
         tiered = TieredKV(caches.pool, tier)
+    prefix = PrefixCache(F.block, chunk_for(F.block, TOKEN_BUDGET, drafter.k), PREFIX_SNAPSHOTS)   # boundaries = prefill chunks
     runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
-                    keep_idle=tiered is not None)                                  # with a tier, conversations live on and park
+                    keep_idle=tiered is not None, prefix=prefix)                   # with a tier, conversations live on and park
     recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
+    recorder.gauge("prefix_snapshots", PREFIX_SNAPSHOTS); recorder.gauge("snapshot_MiB", round(snapshot_bytes / 2**20, 1))
     return F, net, caches, engine, runner
 
 

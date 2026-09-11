@@ -264,7 +264,7 @@ class Server:
                 row = heapq.heappop(self._free_rows)
                 try:
                     self.engine.add(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}))
-                    self.runner.submit(row, len(ids))
+                    self.runner.submit(row, len(ids), ids=ids)
                 except BaseException:
                     self.engine.forget(row)
                     heapq.heappush(self._free_rows, row)

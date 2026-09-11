@@ -33,26 +33,36 @@ class Model(Protocol):
     def context(self, seq: int) -> int: ...  # tokens computed so far (a new turn prefills from here)
     def open(self, seq: int, slot: int) -> None: ...
     def close(self, seq: int) -> None: ...           # must also clean up a partially failed open
+    # with a prefix cache (base/prefix.py): the position state at a chunk boundary, out and back in
+    def checkpoint(self, seq: int, position: int, snap: int) -> None: ...   # copy seq's state at `position` into snapshot `snap`
+    def restore(self, seq: int, position: int, snap: int) -> None: ...      # seq starts at `position` with that state
 
 
 class Runner:
     def __init__(self, model: Model, contract: sched.Contract, kv: BlockPool,
                  slots: SlotPool, ring: Ring, recorder: "Recorder | None" = None, tiered=None,
-                 keep_idle: bool = False):
+                 keep_idle: bool = False, prefix=None):
         self.model, self.c, self.kv, self.slots, self.ring = model, contract, kv, slots, ring
         self.tiered = tiered                                # base.tiered_kv.TieredKV, optional
         self.keep_idle = keep_idle                          # a finished turn keeps its blocks and slot: the conversation lives (D16)
+        self.prefix = prefix                                # base/prefix.py, or None: no reuse across requests
+        if prefix is not None:
+            if prefix.block_size != kv.block_size or prefix.chunk % contract.chunk_align:
+                raise ValueError("the prefix cache must share the pool's block size and align with the contract's chunks")
+            prefix.bind(kv)
+        self._chain = {}                                    # seq -> boundary tokens -> hash (live prompts with a cache)
         self.idle = {}                                      # seq -> True: finished, not released, parkable
         self.state = sched.State()
         self.slot_of = {}
         self.rec = recorder or Recorder("runner")
         self.steps = 0
 
-    def submit(self, seq: int, prompt_len: int, now: float | None = None) -> None:
+    def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None) -> None:
         """Publish a request only after its blocks, slot and model state exist.
 
         Admission failures return everything acquired here; an existing live
         or parked sequence is never released by a failed duplicate submit.
+        `ids`: the prompt, when a prefix cache may reuse its beginning.
         """
         now = time.monotonic() if now is None else now
         sched.validate_arrival(self.state, seq, prompt_len, now)
@@ -61,12 +71,27 @@ class Runner:
             raise ValueError(f"seq {seq} already owns resident resources")
         if self.tiered is not None and self.tiered.is_parked(seq):
             raise ValueError(f"seq {seq} is parked; resume it before reusing its id")
-        self.kv.reserve(seq, prompt_len)                   # the whole prompt is admitted or nothing (D3)
+        reused, entry, chain = 0, None, None
+        if self.prefix is not None and ids is not None:
+            if len(ids) != prompt_len:
+                raise ValueError("the prompt ids must be the prompt")
+            reused, entry, _ = self.prefix.lookup(ids)
+            chain = self.prefix.chain(ids)
+        if reused:
+            self.kv.adopt(seq, entry.blocks, reused)       # the shared, complete prefix; the row's own blocks follow
+        try:
+            self.kv.reserve(seq, prompt_len - reused)      # the whole prompt is admitted or nothing (D3)
+        except BaseException:
+            if reused:
+                self.kv.release(seq)
+            raise
         slot = None
         try:
             slot = self.slots.take(seq)
             try:
                 self.model.open(seq, slot)
+                if reused:
+                    self.model.restore(seq, reused, entry.snap)
             except BaseException:
                 self.model.close(seq)
                 raise
@@ -76,7 +101,9 @@ class Runner:
             self.kv.release(seq)
             raise
         self.slot_of[seq] = slot
-        sched.arrive(self.state, seq, prompt_len, now)
+        if chain:
+            self._chain[seq] = chain
+        sched.arrive(self.state, seq, prompt_len, now, reused)
 
     def _finish(self, seq: int) -> None:
         sched.finish(self.state, seq)
@@ -86,6 +113,7 @@ class Runner:
         self._release(seq)
 
     def _release(self, seq: int) -> None:
+        self._chain.pop(seq, None)
         if self.kv.tokens[seq]:
             self.kv.release(seq)
         self.slots.give(self.slot_of.pop(seq))
@@ -158,6 +186,23 @@ class Runner:
         sched.arrive(self.state, seq, held + tokens, now)
         self.state.computed[seq] = held
 
+    def _checkpoint(self, seq: int, position: int) -> None:
+        """A prefill just reached `position`: if it is a chunk boundary nobody cached yet, keep the
+        model's state there and pin the blocks before it."""
+        h = self._chain[seq].get(position)
+        if h is None or self.prefix.has(h):
+            return
+        snap = self.prefix.take_snapshot()
+        if snap is None:
+            return                                          # every snapshot is in use by a live boundary: this one goes uncached
+        try:
+            self.model.checkpoint(seq, position, snap)
+        except BaseException:
+            self.prefix.give_snapshot(snap)
+            raise
+        blocks = tuple(self.kv.row(seq)[: position // self.kv.block_size])
+        self.prefix.insert(h, blocks, position, snap)
+
     def step(self, now: float | None = None) -> "sched.Step | None":
         now = time.monotonic() if now is None else now
         step = sched.plan(self.state, self.c, now)
@@ -171,6 +216,8 @@ class Runner:
                 finished = self.model.prefill(seq, start, step.tokens, self.kv.row(seq), self.slot_of[seq])
                 if finished and start + step.tokens != self.state.prompt_len[seq]:
                     raise ValueError("prefill may finish only at the end of the prompt")
+                if seq in self._chain:
+                    self._checkpoint(seq, start + step.tokens)
             else:
                 self.kv.reserve_to(step.seqs, [self.model.horizon(s) for s in step.seqs])
                 done = self.model.decode(step.seqs, [self.kv.row(s) for s in step.seqs],

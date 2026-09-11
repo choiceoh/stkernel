@@ -122,6 +122,15 @@ class Glm53Engine:
         for d in (self.ctx, self.slot):
             d.pop(seq, None)
 
+    def checkpoint(self, seq: int, position: int, snap: int) -> None:
+        """The runner's prefix cache keeps this sequence's state at a chunk boundary (base/prefix.py)."""
+        self.caches.checkpoint(self.slot[seq], position, snap)
+
+    def restore(self, seq: int, position: int, snap: int) -> None:
+        """A new sequence adopts a cached prefix: its rings take the boundary's state, its context starts there."""
+        self.caches.restore(self.slot[seq], position, snap)
+        self.ctx[seq] = position
+
     def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None,
                min_new: int = 0) -> int:
         """A new turn: more prompt tokens on a conversation the caches still hold.

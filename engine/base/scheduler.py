@@ -127,12 +127,15 @@ def validate_arrival(state: State, seq: int, prompt_len: int, now: float) -> Non
         raise ValueError(f"seq {seq} is already live")
 
 
-def arrive(state: State, seq: int, prompt_len: int, now: float) -> None:
+def arrive(state: State, seq: int, prompt_len: int, now: float, computed: int = 0) -> None:
+    """`computed`: prompt tokens already in the caches (an adopted prefix); the prefill starts there."""
     validate_arrival(state, seq, prompt_len, now)
+    if type(computed) is not int or not 0 <= computed < prompt_len:
+        raise ValueError("an adopted prefix must be shorter than the prompt")
     state.waiting.append(seq)
     state.arrived_at[seq] = now
     state.prompt_len[seq] = prompt_len
-    state.computed[seq] = 0
+    state.computed[seq] = computed
 
 
 def finish(state: State, seq: int) -> None:
