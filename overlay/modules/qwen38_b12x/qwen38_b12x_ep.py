@@ -21,7 +21,9 @@ already follows the MoE sums the ranks. No dummy expert, no GEMM rows for the
 So, installed like qwen38_b12x_bounds through a meta-path hook:
 
   * `_supports_parallel_config` -> True
-  * the `B12xMoEWrapper` is built for the LOCAL expert count (the weights' E)
+  * the `B12xMoEWrapper` is built for the LOCAL expert count (the weights' E),
+    ONCE per geometry and shared by all 48 MoE layers (13.5-20.8 GiB of
+    per-layer workspaces otherwise)
   * `apply()`: `topk_ids = expert_map[topk_ids]` when a map is given; for
     the static/micro kernels (small batches) a -1 slot becomes expert 0 at
     weight 0 instead, since only the dynamic kernel carries the guard
@@ -39,6 +41,7 @@ import torch
 
 TARGET = "vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe"
 _DONE = False
+_SHARED_WRAPPERS: dict = {}     # geometry -> B12xMoEWrapper, process-wide
 
 
 def _log(msg: str) -> None:
@@ -69,18 +72,34 @@ def _patch(mod) -> None:
             return
         from flashinfer.fused_moe import B12xMoEWrapper
 
+        # ONE wrapper per geometry for the whole process, not one per layer.
+        # A wrapper built with use_cuda_graph=True preallocates its static and
+        # dynamic workspaces and its output buffer for max_num_tokens; measured
+        # on this model's local shape (E=128, K=2560, N=640, top-10) that is
+        # 0.28 GiB at 8192 tokens and 0.43 GiB at 16384 -- times 48 MoE layers,
+        # 13.5 / 20.8 GiB per rank of scratch that is never live in two layers
+        # at once. run() takes the weights as arguments and keys its
+        # weight-view cache on their pointers, so the layers can share.
         # The weights on this rank are [num_local_experts, ...]; the kernel's
         # E is that, and the ids reaching it are local (or -1) by apply().
-        self._wrapper = B12xMoEWrapper(
-            num_experts=self.num_local_experts,
-            top_k=self.topk,
-            hidden_size=self.hidden_dim,
-            intermediate_size=self.intermediate_size_per_partition,
-            use_cuda_graph=True,
-            max_num_tokens=self.max_num_tokens,
-            num_local_experts=self.num_local_experts,
-            activation=self._activation_str,
-        )
+        key = (self.num_local_experts, self.topk, self.hidden_dim,
+               self.intermediate_size_per_partition, self.max_num_tokens,
+               self._activation_str)
+        wrapper = _SHARED_WRAPPERS.get(key)
+        if wrapper is None:
+            wrapper = B12xMoEWrapper(
+                num_experts=self.num_local_experts,
+                top_k=self.topk,
+                hidden_size=self.hidden_dim,
+                intermediate_size=self.intermediate_size_per_partition,
+                use_cuda_graph=True,
+                max_num_tokens=self.max_num_tokens,
+                num_local_experts=self.num_local_experts,
+                activation=self._activation_str,
+            )
+            _SHARED_WRAPPERS[key] = wrapper
+            _log(f"b12x wrapper for {key} built once, shared by every MoE layer")
+        self._wrapper = wrapper
 
     cls._ensure_wrapper = _ensure_wrapper
 
