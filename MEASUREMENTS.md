@@ -8450,3 +8450,15 @@ gated delta rule, kda.py 1,685), `mamba/ops/causal_conv1d.py` 1,289, QSA Triton 
 `SHARED_FUSE=0 until dispatch wired`), 부팅 로그 없음, 원장 실측 0. **서빙한 적 없다.**
 
 **노드**: 체크포인트 srv2·srv3·srv4 ✓, **srv1 ✗ (여유 54 GB — DSv4.1 사본 133 GB 가 점유)**.
+
+### `engine/models/qwen38/plan.py` — 배치·예산·상태 산수, 출처 sha 핀 (PIN OK 4/4)
+
+규칙 출처 = 이미지 `d464f3b466fa` 의 vLLM 파일 넷(`nvidia/model.py`, `gdn/qwen_gdn_linear_attn.py`,
+`common/ple.py`, `mamba_utils.py`)을 sha256 앞 16자리로 핀, `--verify-pins` 가 이미지에서 다시
+뽑아 대조한다(4/4 OK). 오라클 HF `modeling_qwen4_exp.py` 도 핀.
+
+정본 수치(위 43차 표의 32.53 은 shared-expert 매칭이 느슨한 임시 스크립트 값): **랭크 상주
+32.41 GiB** = routed experts EP 16.99 + PLE vocab-parallel 11.92 + 노름·HC 등 복제 1.19 + GDN
+TP 0.97 + embed/head 0.59 + attn q/o 0.29 + 라우터 0.12 + shared 0.11 + k/v 복제 0.10 + MTP
+0.06 + PLE 기타 0.06; vision 0.84 제거. GDN 상태 27.5 MiB/시퀀스, full-attn KV 12 KiB/토큰 +
+인덱서 0.75. 로더에 `U8`(NVFP4 두 개/바이트) dtype 추가.

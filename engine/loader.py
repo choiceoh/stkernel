@@ -41,6 +41,7 @@ GIB = 1 << 30
 # safetensors dtype names -> torch. Only what this checkpoint actually holds;
 # an unknown name raises rather than guessing a width.
 _DTYPES = {
+    "U8": "uint8",        # NVFP4 packed weights, two e2m1 per byte (Qwen3.8)
     "I8": "int8",
     "F8_E4M3": "float8_e4m3fn",
     "F8_E8M0": "float8_e8m0fnu",
