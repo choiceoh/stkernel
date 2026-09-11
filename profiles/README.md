@@ -25,7 +25,7 @@ file, the module was never model-agnostic and has to be split, not overridden.
 |---|---|---|---|
 | `dsv4` | DeepSeek-V4-Flash-0731 | 18 | production |
 | `glm53` | GLM-5.3-Flash NVFP4 | 25 | kernel campaign -- boots daily; the megakernel set is its default (ledger 28차 §8) |
-| `qwen38` | Qwen3.8-Flash-Next NVFP4 | 6 | TEP=4 (TP=4 + EP) bring-up |
+| `qwen38` | Qwen3.8-Flash-Next NVFP4 | 8 | TEP=4 (TP=4 + EP) bring-up |
 
 `glm53` carries its own modules and can load none of `dsv4`'s: its image
 installs to dist-packages rather than the venv site-packages, and one of its
@@ -136,6 +136,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 |---|---|---:|:---:|:---:|:---:|:---:|:---:|
 | `moe_gate_sm121` | GB10의 모든 MoE | 1 | ✓ | ● | ● | ● | · |
 | `tp_oneshot_ar` | 어느 모델이든 | 3 | ✓ | ● | ● | ● | ● |
+| `qwen38_oneshot_wiring` | Qwen3.8-Flash-Next 전용 (이 이미지의 CudaCommunicator 에 원샷 AllReduce 훅; 생성기로 stock SHA 핀, `tp_oneshot_ar` requires) | 1 | — | · | · | · | ● |
 | `qwen38_moe` | Qwen3.8-Flash-Next 전용 (공유 전문가를 라우팅 grouped GEMM 의 11번째 슬롯으로 융합; 랭크 로컬 센티넬 −2, all-to-all 비참여) | 1 | ✓ | · | · | · | ● |
 | `qwen38_ple` | Qwen3.8-Flash-Next 전용 (51 GiB PLE n-gram 표: 호스트 RAM 오프로드 + NVFP4 체크포인트용 온디바이스 FP8 임베딩; TP>1 필수; `DENEB_PLE_SSD=1` 이면 랭크별 11.9 GiB 블록을 SSD 에서 O_DIRECT 로 읽음 — `dsv41_engram` 의 리더를 `requires`; 룩업은 splitting 커스텀 op — 컴파일 그래프 경계) | 5 | — | · | · | · | ● |
 | `qwen38_qsa` | Qwen3.8-Flash-Next 전용 (GB10 48 SM 용 QSA split-K 상한; 상위는 GB300 튜닝) | 1 | — | · | · | · | ● |

@@ -1,6 +1,7 @@
 dsv4_oneshot_shim.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py	absent
 dsv4_oneshot_ar.cu	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu	absent
 dsv4_oneshot_transport.h	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_transport.h	absent
+cuda_communicator.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py	a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757
 dsv41_engram.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/dsv41_engram.py	absent
 dsv41_engram_io.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/dsv41_engram_io.py	absent
 dsv41_engram_hash.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/dsv41_engram_hash.py	absent
