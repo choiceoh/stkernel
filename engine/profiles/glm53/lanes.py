@@ -254,14 +254,29 @@ def served(reference_for: "tuple[str, ...]" = ()) -> Lanes:
         from flashinfer.fused_moe import b12x_fused_moe                                     # ours: overlay/modules/glm53_moe/b12x_moe.py
         ones = {}
 
+        views = {}
+
+        def mma6(sf, m, k_sf):
+            """The 6-D strided view flashinfer's convert_sf_to_mma_layout returns over
+            exactly our storage order (groups, m_tiles, k_tiles, 32, 4, 4):
+            (32, 4, m_tiles, 4, k_tiles, groups). A view -- no bytes move."""
+            key = (sf.data_ptr(), m, k_sf)
+            if key not in views:
+                E = sf.shape[0]
+                views[key] = sf.view(E, m // 128, k_sf // 4, 32, 4, 4).permute(3, 4, 1, 5, 2, 0)
+            return views[key]
+
         def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit):
             """The served call (flashinfer_b12x_moe._apply_*): packed nibbles, folded
-            interleaved scales, alpha 1, fc2 input scale 1, no input scale (dynamic
-            per-block activation quant), clamped SiLU spelled the kernel's way."""
-            E = w13.shape[0]
+            interleaved scales as the 6-D MMA view, alpha 1, fc2 input scale 1, no
+            input scale (dynamic per-block activation quant), clamped SiLU spelled
+            the kernel's way."""
+            E, two_i, half_h = w13.shape
+            hidden, i_local = half_h * 2, two_i // 2
             if E not in ones:
                 ones[E] = torch.ones(E, device=x.device, dtype=torch.float32)
-            return b12x_fused_moe(x=x.contiguous(), w1_weight=w13, w1_weight_sf=w13_sf, w2_weight=w2, w2_weight_sf=w2_sf,
+            return b12x_fused_moe(x=x.contiguous(), w1_weight=w13, w1_weight_sf=mma6(w13_sf, two_i, hidden // 16),
+                                  w2_weight=w2, w2_weight_sf=mma6(w2_sf, hidden, i_local // 16),
                                   token_selected_experts=sel.contiguous(), token_final_scales=w.contiguous(),
                                   num_experts=E, num_local_experts=E, top_k=sel.shape[1],
                                   w1_alpha=ones[E], w2_alpha=ones[E], fc2_input_scale=ones[E], input_global_scale=None,

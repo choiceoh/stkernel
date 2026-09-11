@@ -46,7 +46,9 @@ sources=(glm53_megakernel.py glm53_megakernel.cu
          moe_dynamic_prefill.py moe_dynamic_prefill_n128.py
          parallel_state.py glm53_prefill_collectives.py
          moe_static_common.py moe_static_kernel_v4.py moe_sf_pack.py
-         moe_static_kernel_v5.py moe_dynamic_gated_tiled.py)
+         moe_static_kernel_v5.py moe_dynamic_gated_tiled.py
+         # the rest of the flashinfer-side b12x family: b12x_fused_moe imports moe_reform_sf_pack at call time (ST engine judge, 45th ledger)
+         moe_dynamic_gated_sf6.py moe_dynamic_gated_sf6_q0.py moe_dynamic_ep_local.py glm53_ep_route_remap.py moe_reform_sf_pack.py glm53_ep_local_selftest.py glm53_tp_sf6_q0_selftest.py glm53_ep_tiled.py moe_static_ep_tiled.py glm53_ep_tiled_selftest.py)
 mounts=()
 for source in "${sources[@]}"; do
   target=$(awk -F '\t' -v source="$source" '$1 == source {print $2}' "$MANIFEST")
