@@ -1,6 +1,7 @@
 # Fused GLM indexer lanes — 2026-09-11
 
 Integrated with main at `a5b68c84` (PR #541, standalone native kernels).
+Measured implementation: `c62e339b` (PR #540); the source manifest is pinned to that revision.
 Both measured paths use this native runtime and the same incremental block
 tables; the baseline substitutes the two original PyTorch indexer helpers.
 This change connects the native fused kernels to the explicit lane table.

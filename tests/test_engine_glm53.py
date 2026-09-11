@@ -444,12 +444,37 @@ class CudaCacheTests(unittest.TestCase):
         original = net.lanes
         self.c.pool.reserve(0, 16)
         self.c.slots.take(0)
-        for name in ("indexer_quant", "expand_pools"):
+        for name in ("indexer_quant", "expand_pools", "indexer_slots"):
             with self.subTest(lane=name):
                 self.c.reset()
                 net.lanes = replace(original, **{name: Mock(side_effect=RuntimeError("injected lane failure"))})
                 with self.assertRaisesRegex(RuntimeError, "injected lane failure"):
                     net._indexer(1, x[:12], qr[:12], self.step(0, 12), self.c)
+
+    def test_indexer_finalizes_each_segment_with_its_own_block_row(self):
+        from engine.profiles.glm53.net import Step
+        from unittest.mock import Mock
+        net, x, qr = self.indexer()
+        finish = Mock(wraps=net.lanes.indexer_slots)
+        net.lanes = replace(net.lanes, indexer_slots=finish)
+        chunks = []
+        for seq, length in ((2, 12), (0, 6)):
+            self.c.pool.reserve(seq, length)
+            slot = self.c.slots.take(seq)
+            chunks.append((torch.zeros(length, device="cuda", dtype=torch.int64), 0, seq, slot))
+        step = Step.decode(chunks)
+        self.c.prepare(step)
+        selected, counts = net._indexer(1, x[:18], qr[:18], step, self.c)
+        self.assertEqual(finish.call_count, 2)
+        for call, segment in zip(finish.call_args_list, step.segments):
+            tokens, row, size, stride, offset, out, valid = call.args
+            self.assertEqual(row.data_ptr(), self.c.block_table[segment.seq].data_ptr())
+            positions = tokens.sort(dim=1, descending=True).values
+            expected = self.c.token_slots(1, segment.seq, positions.clamp_min(0).flatten()).view_as(positions)
+            expected.masked_fill_(positions < 0, -1)
+            sl = slice(segment.start, segment.start + segment.length)
+            self.assertTrue(torch.equal(selected[sl], expected))
+            self.assertTrue(torch.equal(counts[sl], (positions >= 0).sum(1).int()))
 
     def test_long_prefill_ring_contains_only_the_latest_positions(self):
         net, x, qr = self.indexer()

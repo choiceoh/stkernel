@@ -82,6 +82,7 @@ class ChainCaches:
     def pool_scales(self, layer): return self._ps[layer]
     def tail(self, layer, slot): return self._tail[layer][slot]
     def token_slots(self, layer, seq, positions): return positions.to(torch.int32)
+    def token_map(self, layer, seq): return None, 1, 1, 0
     def pool_slots(self, layer, seq, pool_ids): return pool_ids.to(torch.int32)
 
 

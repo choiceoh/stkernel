@@ -142,6 +142,14 @@ MLA 참조 레인은 선택된 fp8 행만 변환하며, 패딩 슬롯이 가리�
 그대로 전파한다. 실제 가중치 인덱서의 결과·캐시 일치와 구성요소 성능은
 [`measurements/st_engine_indexer_20260911`](../measurements/st_engine_indexer_20260911/README.md)에 기록했다.
 
+선택 토큰의 최종 주소 변환은 `indexer_slots` 레인이 담당한다. PyTorch의 내림차순 정렬을
+유지하고, 유효 개수 집계·블록 주소 변환·패딩·출력 쓰기를 한 Triton 커널로 실행한다.
+캐시는 `token_map(layer, seq)`로 블록 행과 잠재 벡터 행 단위의 블록 크기·간격·레이어 오프셋을
+제공한다. 연속 캐시 검사의 `None` 블록 행은 위치와 슬롯이 같은 매핑이다. 모든 출력 칸을
+덮어쓰므로 별도의 초기화 커널이 필요 없고, LocalTP와 오류 전파 규칙은 다른 레인과 같다.
+검증과 변경 전후 측정은
+[`measurements/st_engine_slots_20260911`](../measurements/st_engine_slots_20260911/README.md)에 있다.
+
 네 노드 검증은 각 노드에서 같은 인자로 `check.py --distributed`를 실행한다.
 기본 노드 순서는 **rank 0=srv2, rank 1=srv1, rank 2=srv3, rank 3=srv4**다.
 `MASTER_ADDR`은 rank 0 서버를 가리켜야 한다. `RANK`, `WORLD_SIZE=4`, 격리된 `MASTER_PORT`,
