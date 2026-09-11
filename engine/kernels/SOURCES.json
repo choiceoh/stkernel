@@ -128,10 +128,11 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "6840b2b1e026e460caf30a1898f8b38f43a3d529f51b1bee5b891e06aad55022",
+      "local_sha256": "f849d96ae1b53a110ba126db23028a3d27111dfeedfd342c3b063ec5fb5b7a80",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
-        "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)"
+        "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
+        "2026-09-12 GB10: include the NVFP4 max3 PTX reduction helper in persistent CuTe cache identity."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -142,12 +143,20 @@
     "b12x/moe_micro_kernel.py": {
       "source": "overlay/modules/glm53_moe/moe_micro_kernel.py",
       "sha256": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "f0a11dfe7d371551bb350de0218e44b7c6d0d7505ef944727e1fd49391353d33",
+      "local_modifications": [
+        "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic."
+      ]
     },
     "b12x/moe_static_kernel.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py",
       "sha256": "b87e2b80f706e1db91b95c8a619806af37f7be25021b33a1da7f117ff4d87610",
-      "origin": "image"
+      "origin": "image",
+      "local_sha256": "dc24b0e1b73076fc4d3abeace44fa2c6a4c99a077f7687616d9c561a897c4de4",
+      "local_modifications": [
+        "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic."
+      ]
     },
     "b12x/moe_w4a16_activations.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_activations.py",

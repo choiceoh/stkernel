@@ -128,6 +128,7 @@ from flashinfer.cute_dsl.fp4_common import (
 from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
     Sm120B12xBlockScaledDenseGemmKernel as DenseGemmKernel,
 )
+from .fp4_quant import max_abs_16
 from .moe_activation import gated_activation_f32, is_gated_activation
 
 
@@ -1321,7 +1322,10 @@ class MoEMicroKernel:
                             a_input[token_idx, block_start + Int32(elem_idx)]
                         )
                         values[elem_idx] = value
-                        block_max = fmax_f32(block_max, fabs_f32(value))
+                        if cutlass.const_expr(self.sf_vec_size != 16):
+                            block_max = fmax_f32(block_max, fabs_f32(value))
+                    if cutlass.const_expr(self.sf_vec_size == 16):
+                        block_max = max_abs_16(values)
                     scale_byte = Uint8(0)
                     if cutlass.const_expr(self.sf_vec_size == 32):
                         packed_lo, packed_hi, scale_byte = quantize_block_mxfp4(
@@ -2214,7 +2218,10 @@ class MoEMicroKernel:
                                 sC[local_row, block_start + elem_idx, silu_epi_buffer]
                             )
                             values[elem_idx] = value
-                            block_max = fmax_f32(block_max, fabs_f32(value))
+                            if cutlass.const_expr(self.sf_vec_size != 16):
+                                block_max = fmax_f32(block_max, fabs_f32(value))
+                        if cutlass.const_expr(self.sf_vec_size == 16):
+                            block_max = max_abs_16(values)
 
                         scale_byte = Uint8(0)
                         if cutlass.const_expr(self.sf_vec_size == 32):
