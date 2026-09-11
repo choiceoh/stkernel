@@ -1,0 +1,38 @@
+[W911 07:38:25.915185568 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (7 free)
+phase                                      seconds   dev GiB  counters
+arena                                        0.069     -0.63
+load                                         1.559     -0.63  blocks=9 bytes=1.90739e+09
+whole                                        9.316     +1.23
+paged                                        1.707     +0.06
+chunked                                      2.489     +0.24
+verify                                       2.215     +0.07
+rollback                                     2.347     -0.23
+runtime                                      1.279     +0.06
+  chain 0-3 (2 layers: 1 dsa, 1 kda; 1 moe), TP=4 fleet, lanes=reference, 64 tokens, arena 1.81 GiB per rank x 4, wall 21.0 s
+  hidden |h| mean 1.1299 max 7.688, finite True; last-token top-5 ids [91886, 2504, 62273, 130738, 37672] logits [7.25, 7.0, 6.91, 6.81, 6.75]
+  ranks agree (hidden and logits identical on all 4): True (max |diff| 0.0e+00)
+  paged KV == contiguous oracle (identical hidden): True; runner generated [3, 1] tokens, ranks agree: True, all resources returned
+  per block vs the whole prefill (per-token rel; floor = first chunk, no cache read):
+    chunked   step 1  L0  kda    p50 6.6e-03 max 1.0e-02  (floor p50 6.5e-03 max 1.1e-02)
+    chunked   step 1  L0  dense  p50 1.1e-02 max 1.7e-02  (floor p50 1.2e-02 max 1.7e-02)
+    chunked   step 1  L3  dsa    p50 8.1e-03 max 1.4e-02  (floor p50 1.1e-02 max 1.9e-02)
+    chunked   step 1  L3  moe    p50 6.5e-02 max 3.8e-01  (floor p50 7.1e-02 max 3.0e-01)
+    verify    step 0  L0  kda    p50 0.0e+00 max 6.0e-03  (floor p50 6.5e-03 max 1.1e-02)
+    verify    step 1  L0  kda    p50 3.6e-03 max 4.6e-03  (floor p50 6.5e-03 max 1.1e-02)
+    verify    step 0  L0  dense  p50 0.0e+00 max 1.2e-02  (floor p50 1.2e-02 max 1.7e-02)
+    verify    step 1  L0  dense  p50 7.6e-03 max 1.2e-02  (floor p50 1.2e-02 max 1.7e-02)
+    verify    step 0  L3  dsa    p50 0.0e+00 max 7.6e-03  (floor p50 1.1e-02 max 1.9e-02)
+    verify    step 1  L3  dsa    p50 5.8e-03 max 8.1e-03  (floor p50 1.1e-02 max 1.9e-02)
+    verify    step 0  L3  moe    p50 0.0e+00 max 4.7e-02  (floor p50 7.1e-02 max 3.0e-01)
+    verify    step 1  L3  moe    p50 5.1e-02 max 9.5e-02  (floor p50 7.1e-02 max 3.0e-01)
+    rollback  step 0  L0  kda    p50 4.6e-03 max 8.3e-03  (floor p50 6.5e-03 max 1.1e-02)
+    rollback  step 2  L0  kda    p50 4.6e-03 max 6.0e-03  (floor p50 6.5e-03 max 1.1e-02)
+    rollback  step 0  L0  dense  p50 9.0e-03 max 2.0e-02  (floor p50 1.2e-02 max 1.7e-02)
+    rollback  step 2  L0  dense  p50 7.9e-03 max 1.2e-02  (floor p50 1.2e-02 max 1.7e-02)
+    rollback  step 0  L3  dsa    p50 8.8e-03 max 1.5e-02  (floor p50 1.1e-02 max 1.9e-02)
+    rollback  step 2  L3  dsa    p50 7.6e-03 max 8.2e-03  (floor p50 1.1e-02 max 1.9e-02)
+    rollback  step 0  L3  moe    p50 6.4e-02 max 2.4e-01  (floor p50 7.1e-02 max 3.0e-01)
+    rollback  step 2  L3  moe    p50 4.9e-02 max 2.0e-01  (floor p50 7.1e-02 max 3.0e-01)
+
+  PASS: four ranks agree; paged caches and runtime; chunked, verify and rollback checks

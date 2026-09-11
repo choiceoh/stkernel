@@ -1,10 +1,14 @@
 # ST engine runtime validation — 2026-09-11
 
+The final PR #534 integration results and commands are in [integration-pr534/README.md](integration-pr534/README.md).
+The measurements below describe the earlier implementation, before the b12x expert lane was bound.
+Its source hashes identify that earlier revision.
+
 PR #532 baseline: `a7fa81c8a494aa18af5de221ab6ab264ba32fd7b`.
 The changes connect GLM to paged arena caches and the common runner, repair draft rollback,
 bind served recurrent KDA, align presharded weights, and harden admission and NVMe ownership.
 
-## Results
+## Initial results before PR #534 integration
 
 | Check | Result | Evidence |
 |---|---|---|

@@ -15,16 +15,21 @@ f_a|g_a into one KDA input projection, q_a|kv_a into one MLA down-projection,
 the three KDA convs into one [3HD, K] bank, gate|up into one dense/shared
 GEMM, and per-expert gate|up into `w13`. Dtype promotions likewise (A_log,
 dt_bias, mHC, indexer head-gate and k_norm to fp32: what the kernels read).
-Global scales are stored as MULTIPLIERS (`*_mult`): compressed-tensors'
-weight_global_scale / input_global_scale are divisors on disk
-(nvfp4_linear.DIVISOR_FAMILY) and inverting them here means the reference
-and the lane both multiply.
+The routed experts are written the way the served b12x lane eats them
+(flashinfer_b12x_moe.process_weights_after_loading): packed nibbles as is,
+block scales with the per-expert global scale FOLDED in (block *= 1/w_gs,
+so alpha = 1) and INTERLEAVED in 128x4 tiles (modules/nvfp4_sf). The
+calibrated input_global_scale is not written: the SM12x kernel quantises
+activations dynamically per block (it forces fc2's to 1.0 and passes none
+for fc1), and the reference lane does the same. Nothing is repacked at
+boot (D1).
 """
 from __future__ import annotations
 
 import torch
 
 from engine.base.params import Spec
+from engine.modules.nvfp4_sf import swizzle_sf
 from engine.profiles.glm53.facts import TP, Facts
 
 CK = "model.language_model."
@@ -139,45 +144,40 @@ def layer_specs(F: Facts, L: int) -> "list[Spec]":
         E = F.experts
         gu = (m + "shared_experts.gate_proj.weight", m + "shared_experts.up_proj.weight")
         ex = [m + f"experts.{e}." for e in range(E)]
-        w13_src = tuple(x + f"{g}_proj.{t}" for x in ex for g in ("gate", "up") for t in ("weight_packed", "weight_scale", "weight_global_scale", "input_global_scale"))
-        w2_src = tuple(x + f"down_proj.{t}" for x in ex for t in ("weight_packed", "weight_scale", "weight_global_scale", "input_global_scale"))
+        w13_src = tuple(x + f"{g}_proj.{t}" for x in ex for g in ("gate", "up") for t in ("weight_packed", "weight_scale", "weight_global_scale"))
+        w2_src = tuple(x + f"down_proj.{t}" for x in ex for t in ("weight_packed", "weight_scale", "weight_global_scale"))
 
-        def w13(kind):
-            def build(s, r, W):
-                return torch.stack([torch.cat([_split(s[x + f"gate_proj.{kind}"], 0, r, W),
-                                               _split(s[x + f"up_proj.{kind}"], 0, r, W)], 0) for x in ex]).contiguous()
-            return build
+        def w13_packed(s, r, W):
+            return torch.stack([torch.cat([_split(s[x + "gate_proj.weight_packed"], 0, r, W),
+                                           _split(s[x + "up_proj.weight_packed"], 0, r, W)], 0) for x in ex]).contiguous()
 
-        def w2(kind):
-            return lambda s, r, W: torch.stack([_split(s[x + f"down_proj.{kind}"], 1, r, W) for x in ex]).contiguous()
+        def w2_packed(s, r, W):
+            return torch.stack([_split(s[x + "down_proj.weight_packed"], 1, r, W) for x in ex]).contiguous()
 
-        def w13_mult(s, r, W):
-            return torch.stack([torch.stack([1.0 / s[x + "gate_proj.weight_global_scale"].float().reshape(()),
-                                             1.0 / s[x + "up_proj.weight_global_scale"].float().reshape(())]) for x in ex]).contiguous()
+        def fold(scale, global_scale):                     # compressed-tensors: the global is a DIVISOR; the served layer bakes 1/w_gs in
+            return (scale.float() / global_scale.float().reshape(())).to(E4)
 
-        def a13_mult(s, r, W):
-            g = torch.stack([s[x + "gate_proj.input_global_scale"].float().reshape(()) for x in ex])
-            u = torch.stack([s[x + "up_proj.input_global_scale"].float().reshape(()) for x in ex])
-            if not torch.equal(g, u):
-                raise ValueError("gate and up input_global_scale differ: one activation quant cannot feed both")
-            return (1.0 / g).contiguous()
+        def w13_sf(s, r, W):
+            rows = []
+            for x in ex:
+                g = fold(_split(s[x + "gate_proj.weight_scale"], 0, r, W), s[x + "gate_proj.weight_global_scale"])
+                u = fold(_split(s[x + "up_proj.weight_scale"], 0, r, W), s[x + "up_proj.weight_global_scale"])
+                rows.append(swizzle_sf(torch.cat([g, u], 0).view(torch.uint8)).view(E4))
+            return torch.stack(rows).contiguous()
 
-        def scalar_mult(proj):
-            return lambda s, r, W: torch.stack([1.0 / s[x + proj].float().reshape(()) for x in ex]).contiguous()
+        def w2_sf(s, r, W):
+            return torch.stack([swizzle_sf(fold(_split(s[x + "down_proj.weight_scale"], 1, r, W), s[x + "down_proj.weight_global_scale"]).view(torch.uint8)).view(E4)
+                                for x in ex]).contiguous()
 
         out += [
             Spec(n + "moe.gate", (E, H), BF, (m + "gate.weight",), _whole(m + "gate.weight")),
             Spec(n + "moe.bias", (E,), F32, (m + "gate.e_score_correction_bias",), _whole(m + "gate.e_score_correction_bias", F32)),
             Spec(n + "moe.sh_gate_up", (2 * Is, H), BF, gu, _cat_rows(gu)),
             Spec(n + "moe.sh_down", (H, Is), BF, (m + "shared_experts.down_proj.weight",), _cols(m + "shared_experts.down_proj.weight")),
-            Spec(n + "moe.w13", (E, 2 * Is, H // 2), U8, w13_src, w13("weight_packed")),
-            Spec(n + "moe.w13_s", (E, 2 * Is, H // 16), E4, w13_src, w13("weight_scale")),
-            Spec(n + "moe.w2", (E, H, Is // 2), U8, w2_src, w2("weight_packed")),
-            Spec(n + "moe.w2_s", (E, H, Is // 16), E4, w2_src, w2("weight_scale")),
-            Spec(n + "moe.w13_mult", (E, 2), F32, w13_src, w13_mult),
-            Spec(n + "moe.a13_mult", (E,), F32, w13_src, a13_mult),
-            Spec(n + "moe.w2_mult", (E,), F32, w2_src, scalar_mult("down_proj.weight_global_scale")),
-            Spec(n + "moe.a2_mult", (E,), F32, w2_src, scalar_mult("down_proj.input_global_scale")),
+            Spec(n + "moe.w13", (E, 2 * Is, H // 2), U8, w13_src, w13_packed),
+            Spec(n + "moe.w13_sf", (E, 2 * Is * (H // 16)), E4, w13_src, w13_sf),        # folded + 128x4 interleaved (b12x layout)
+            Spec(n + "moe.w2", (E, H, Is // 2), U8, w2_src, w2_packed),
+            Spec(n + "moe.w2_sf", (E, H * (Is // 16)), E4, w2_src, w2_sf),
         ]
     return out
 
@@ -223,8 +223,10 @@ def _selfcheck() -> None:
     assert kda.shape == (3 * 16 * 128 + 16 + 256, 4096)
     moe = [s for s in specs if s.name == "L3.moe.w13"][0]
     assert moe.shape == (288, 1024, 2048) and [s for s in specs if s.name == "L3.moe.w2"][0].shape == (288, 4096, 256)
-    # every checkpoint tensor of the text model is a source of exactly the specs that need it; nothing text is left out
-    text = {k for k in wm if not k.startswith("model.visual.") and not k.startswith(f"{CK}layers.{F.layers}.")}
+    assert [s for s in specs if s.name == "L3.moe.w13_sf"][0].shape == (288, 1024 * 256)
+    # every checkpoint tensor of the text model is a source of exactly the specs that need it, except the calibrated
+    # input_global_scale the served lane never reads (dynamic activation quant)
+    text = {k for k in wm if not k.startswith("model.visual.") and not k.startswith(f"{CK}layers.{F.layers}.") and not k.endswith("input_global_scale")}
     used = {k for s in specs for k in s.sources}
     missing = sorted(text - used)
     assert not missing, f"checkpoint tensors no spec reads: {missing[:5]} (+{len(missing)})"

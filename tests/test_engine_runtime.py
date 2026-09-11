@@ -20,13 +20,15 @@ CONTRACT = sched.Contract(16, 64, 0, 20.0, 2)
 
 
 class Model:
-    def __init__(self):
+    def __init__(self, drafts=0):
         self.live = set()
         self.calls = []
         self.fail_open = False
         self.done = set()
+        self.ctx = {}
+        self.drafts = drafts
 
-    def open(self, seq):
+    def open(self, seq, slot):
         self.live.add(seq)
         if self.fail_open:
             raise RuntimeError("open failed")
@@ -34,16 +36,22 @@ class Model:
     def close(self, seq):
         self.live.discard(seq)
 
-    def prefill(self, seq, start, tokens, blocks):
+    def horizon(self, seq):
+        return self.ctx[seq] + 1 + self.drafts
+
+    def prefill(self, seq, start, tokens, blocks, slot):
         self.calls.append(("prefill", seq, start, tokens))
+        self.ctx[seq] = start + tokens
 
     def decode(self, seqs, blocks, slots):
         self.calls.append(("decode", tuple(seqs)))
+        for seq in seqs:
+            self.ctx[seq] += 1
         return [s in self.done for s in seqs]
 
 
 def runner(*, blocks=16, slots=5, contract=CONTRACT):
-    return Runner(Model(), contract, BlockPool(blocks, 16, 4, 16),
+    return Runner(Model(contract.draft_slots), contract, BlockPool(blocks, 16, 4, 16),
                   SlotPool(slots), Ring(16, STEP_RECORD.size))
 
 
@@ -110,6 +118,18 @@ class SchedulingTests(unittest.TestCase):
 
 
 class PoolTests(unittest.TestCase):
+    def test_absolute_horizons_reuse_draft_space_and_reserve_atomically(self):
+        pool = BlockPool(3, 16, 2, 3)
+        pool.reserve_many([0, 1], 16)
+        before = pool_state(pool)
+        with self.assertRaises(MemoryError):
+            pool.reserve_to([0, 1], [20, 40])
+        self.assertEqual(pool_state(pool), before)
+        pool.reserve_to([0, 1], [20, 16])
+        before = pool_state(pool)
+        self.assertEqual(pool.reserve_to([0, 1], [18, 12]), 0)
+        self.assertEqual(pool_state(pool), before)
+
     def test_batch_validates_later_rows_before_reserving_earlier_rows(self):
         for seqs, tokens, error in [((0, 0), 1, ValueError),
                                    ((0, 4), 1, IndexError),

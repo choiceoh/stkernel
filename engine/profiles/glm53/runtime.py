@@ -52,8 +52,7 @@ class Glm53Runtime:
                 rows.pop(seq, None)
             raise
 
-    def open(self, seq):
-        slot = list(self.caches.slots.owner).index(seq)
+    def open(self, seq, slot):
         self.caches.reset_slot(slot)
         self._slots[seq] = slot
 
@@ -71,7 +70,10 @@ class Glm53Runtime:
             done.append(token in self.eos_ids or len(self._generated[seq]) >= self._limits[seq])
         return done
 
-    def prefill(self, seq, start, tokens, blocks):
+    def horizon(self, seq):
+        return self.caches.pool.tokens[seq] + 1
+
+    def prefill(self, seq, start, tokens, blocks, slot):
         ids = self._prompts[seq][start:start + tokens]
         step = Step.prefill(ids, start, seq, self._slots[seq])
         self.caches.prepare(step)

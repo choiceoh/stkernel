@@ -59,6 +59,29 @@ class LayoutTests(unittest.TestCase):
 
 @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA PyTorch")
 class CudaCacheTests(unittest.TestCase):
+    def test_paired_cache_oracle_checks_inputs_before_isolating_expert_rounding(self):
+        from engine.profiles.glm53.check import PairedMoe
+        calls = []
+
+        def expert(x, *args):
+            calls.append(1)
+            return x + len(calls)
+
+        args = [torch.ones(2, 4, device="cuda") for _ in range(7)] + [10.0]
+        oracle = PairedMoe(expert)
+        first = oracle(*args)
+        oracle.replaying = True
+        self.assertTrue(torch.equal(oracle(*args), first))
+        self.assertEqual(len(calls), 2)               # both passes execute the real lane
+        self.assertGreater(oracle.max_rel, 0)
+        for changed in range(3):                    # activations, expert ids, routing weights
+            oracle.position = 0
+            bad = list(args)
+            bad[changed] = bad[changed] + 1
+            with self.assertRaisesRegex(AssertionError, "paged cache changed"):
+                oracle(*bad)
+        self.assertEqual(len(calls), 2)
+
     def test_sparse_mla_padding_does_not_read_nan_from_an_unused_block(self):
         from engine.modules.sparse_attention import mla_sparse_mqa
         q = torch.ones(1, 1, 16, device="cuda", dtype=torch.bfloat16)
@@ -144,6 +167,21 @@ class CudaCacheTests(unittest.TestCase):
         for t in self.c.kda(0, b):
             self.assertTrue(torch.all(t == 7))
 
+    def test_drafter_context_is_in_the_same_slot_and_arena_budget(self):
+        from engine.base.arena import Arena
+        from engine.profiles.glm53.caches import Glm53Caches
+        draft = (2, 8, 1, 4)
+        p = layout(self.F, range(3), draft)
+        arena = Arena(p.nbytes(2, 2))
+        c = Glm53Caches(arena, self.F, range(3), 2, 2, draft=draft)
+        c.draft_ring(1).fill_(3)
+        c.draft_ring(2).fill_(7)
+        c.reset_slot(1)
+        self.assertTrue(torch.all(c.draft_ring(1) == 0))
+        self.assertTrue(torch.all(c.draft_ring(2) == 7))
+        self.assertEqual(c.draft_ring(1).untyped_storage().data_ptr(), arena.buf.data_ptr())
+        self.assertEqual(arena.used, arena.nbytes)
+
     def test_prepare_rejects_wrong_slot_and_unreserved_positions(self):
         from engine.profiles.glm53.net import Step
         self.c.pool.reserve(0, 16)
@@ -218,13 +256,43 @@ class CudaCacheTests(unittest.TestCase):
             layers = (0, 1, 2)
             def __init__(self):
                 self.F = F
-            def forward(self, step, caches):
-                return step.ids[:, None].float()
+            def forward(self, step, caches, aux_layers=None):
+                h = step.ids[:, None].float()
+                return (h, None) if aux_layers is not None else h
             def head(self, hidden):
                 logits = torch.full((len(hidden), F.vocab), -100., device=hidden.device)
                 return logits.scatter_(1, (hidden.long() + 1) % F.vocab, 100.)
 
         return Glm53Runtime(NextTokenNet(), self.c, Contract(4, 8, 0, 0., 2), eos_ids=eos_ids)
+
+    def test_serving_adapter_stops_at_first_sample_and_clips_accepted_drafts(self):
+        from engine.base.runner import Runner, STEP_RECORD
+        from engine.base.record import Ring
+        from engine.base.scheduler import Contract
+        from engine.profiles.glm53.adapter import Glm53Engine
+        from unittest.mock import patch
+
+        class Draft:
+            k = 2
+            aux_layers = ()
+            def propose(self, anchor, position, ring):
+                return [anchor + 1, anchor + 2]
+
+        net = self.runtime().net
+        for limit, eos, expected in ((1, (), [5]), (9, (5,), [5]),
+                                     (2, (), [5, 6]), (9, (6,), [5, 6])):
+            with self.subTest(limit=limit, eos=eos):
+                engine = Glm53Engine(net, self.c, self.F, Draft(), max_new=limit, eos_ids=eos)
+                runner = Runner(engine, Contract(4, 8, 2, 0., 2), self.c.pool, self.c.slots, Ring(8, STEP_RECORD.size))
+                engine.add(0, [4])
+                runner.submit(0, 1, now=0)
+                with patch.object(self.c, "draft_ring", return_value=None):
+                    for tick in range(4):
+                        if runner.step(now=tick + 1) is None:
+                            break
+                self.assertEqual(engine.generated(0), expected)
+                self.assertEqual(self.c.pool.available, self.c.pool.num_blocks)
+                self.assertEqual(self.c.slots.available, 4)
 
     def test_runtime_generates_exact_limits_and_releases_every_request(self):
         r = self.runtime()

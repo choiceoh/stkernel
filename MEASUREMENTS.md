@@ -8922,3 +8922,95 @@ gmu 는 **TOTAL 의 분수**지 "지금 그만큼 비어 있나" 가 아니다(�
 - `nemotron-vllm` 이 16:15:27 에 **새로 떴다**(`RestartPolicy=no`, `RestartCount=0` — 재시작이
   아니라 새 `docker run`). 이 상태에서 q38 을 다시 띄우면 같은 충돌이 재발한다. 새 가드가
   그걸 ABORT 로 잡아야 한다 — 첫 재부팅이 이 패치의 판정이다.
+### 45차 §4 — 서빙 커널은 메인 스레드에서만; 캐시는 프로필의 실물로 (2026-09-11)
+
+서빙 레인 판정 두 번째 실행은 랭크 0 의 mHC pre 레인(우리 tilelang 포크 → DeepGEMM `tf32_hc_prenorm_gemm`)이
+`CUDA_ERROR_INVALID_VALUE`. `probes/mhc_lane_isolate.py`(이미지 안, 한 번에 여섯 형태): 메인 스레드 — norm_weight 유무·
+아레나 뷰(256 B/3840 B 오프셋)·T=6/64/256/512/2304 **전부 OK**; **워커 스레드에서만 FAIL**. 원인은 우리 조합이 아니라
+DeepGEMM JIT 런타임의 스레드 가정이다. 조치: `base/comm.LocalTP.on_main` — 랭크 스레드가 잡을 큐에 넣고 `run()` 을 부른
+메인 스레드가 그 잡을 실행(플릿에선 프로세스당 한 랭크라 직접 호출). `lanes.served()` 의 어댑터 아홉이 이 길로 간다
+(triton autotuner 의 스레드 비안전도 같이 해결; 잠금은 뺐다).
+
+`profiles/glm53/caches.py` — 프로필의 실물 캐시: 층별 플랫 영역(latent·풀 키·풀 스케일; 서빙 커널이 먹는 전역 슬롯 레이아웃)
++ 슬롯별 링(conv·recurrent·꼬리), `base/kv` 의 BlockPool/SlotPool 위에서 **블록표 주소 변환은 여기 한 곳**(토큰 `row[p//2304]*2304
++ p%2304`, 풀 `row[j//576]*576 + j%576`). 블록 = 11 층 × 1,255,680 B = 13.17 MiB, 슬롯 = 207.2 MiB(plan 과 바이트 일치 —
+plan 이 빠뜨렸던 꼬리 링 11×2 KiB 를 채움). `check.py` 는 이제 ChainCaches(항등 표) 대신 이것을 쓴다: 블록은 free 스택에서
+받고(ids 2,1,…), 슬롯 1, 랭크별 아레나 3.14 GiB. 판정 그대로 **PASS**(네 랭크 동일, verify L3 dsa 7.5e-3/1.1e-2, rollback
+8.0e-3/1.0e-2).
+
+### 45차 §5 — 러너가 GLM 을 돈다: 엔진 어댑터 + boot --local (2026-09-11)
+
+운영자: "버그 해결보다 우선 전체 구현을 틀을 잘 잡고 빠르게" — 서빙 레인의 DeepGEMM 스레드 문제는 **열린 항목**으로 두고
+(플릿은 프로세스당 한 랭크라 애초에 없음) 틀을 세운다.
+
+- `base/runner.py` 프로토콜 정정: `open(seq, slot)`·`prefill(..., slot)`, 디코드 예약은 `model.horizon(seq)`(= ctx+1+K)까지만 —
+  거부된 드래프트 위치는 다음 스텝이 덮어쓰므로 **다시 예약하지 않는다**(전엔 매 스텝 1+K 를 무조건 예약해 블록이 샜을 것).
+- `profiles/glm53/engine.py` — 러너의 네 메서드 뒤의 GLM: 토큰 버퍼(프롬프트+생성), 스텝 구성, `base/sampler`(시드 → 리플레이),
+  **위치 기반 검증**([마지막 토큰]+K 드래프트를 ctx..ctx+K 에 먹이고 모든 위치에서 샘플, 일치하는 동안 수락, accepted+1 개 추가).
+  `Drafter` 인터페이스(`propose(seq, tokens) -> K ids`): `NullDrafter`(K=0) 지금, DFlash2 는 같은 두 호출로 꽂는다.
+- `profiles/glm53/boot.py` — 사실 → comm → 아레나(가중치 + KV_GIB 8.73 을 블록/슬롯으로) → 로더 → 캐시 → 레인 → 러너, 한 함수.
+  `--local`: 네 랭크 스레드·참조 레인·층 부분집합으로 **러너 경로 전체**. 0~4층, 300토큰 프롬프트 2개, max_new 8: **16 스텝
+  (프리필 2, 디코드 14 — D10 순차: 0번이 끝까지 디코드한 뒤 1번 프리필), 27.3 s, 링 16 레코드, 블록 753/슬롯 4 반환, 네 랭크
+  토큰 동일**. 디코드 스텝 0.6 s(참조 KDA 파이썬 루프 34→3 층분 + 스레드 4개 GIL). 토큰은 언어가 아니다(5층).
+- 간헐: 같은 명령이 한 번 "rank 1 failed"(추적 못 잡음) 뒤 두 번 PASS. 앞서 device-side assert 한 번과 같은 부류 —
+  LocalTP 4 스레드 아래의 비결정 실패로 기록, 추적은 보류(운영자 지시).
+
+### 45차 §6 — 서브 루프와 문, 플릿 부팅 경로, 런처 (2026-09-11)
+
+- `base/serve.py` — `Server(engine, runner, comm, port)`: 랭크 0 만 문을 연다(HTTP 스레드, `POST /v1/completions` {prompt|ids,
+  max_tokens, temperature}, `GET /` 상태). 매 반복: 랭크 0 이 도착 큐를 비워 **한 번의 `comm.broadcast_object`** 로 모두에게
+  → submit → 스케줄러 한 스텝. 토큰은 랭크끼리 주고받지 않는다 — 로짓이 all-gather 로 동일하고 샘플러가 시드 고정이라
+  **같은 토큰을 각자 계산**. 시퀀스가 러너에서 빠지면 완료 → 랭크 0 이 기다리던 HTTP 호출에 답.
+- `base/comm` 에 `broadcast_object`(NCCL: `broadcast_object_list`, LocalTP: 슬롯 0 + 배리어 둘).
+- `boot.py`: `--local --serve` 는 네 스레드 위에서 **서브 루프 자체**를 돌린다(클라이언트 스레드가 HTTP 로 프롬프트를 보냄):
+  0~4층, 300토큰 2개, max_new 6 → **12 스텝, 2건 응답, 38.7 s, PASS**(문을 루프 전에 열지 않아 첫 시도는 연결 거부가 데몬
+  스레드에 삼켜져 300 s 정지 — 이제 클라이언트 오류는 표면화). 플릿 모드(`boot.py` 인자 없음): `Comm.init`(NCCL) → `lanes.served()`
+  (전부 아니면 죽음) → 45층 전부 → `DeathDump` → 토크나이저(`tokenizers`, 체크포인트 tokenizer.json, eos = generation_config)
+  → `Server.loop`. KV 8.73 GiB(40차 실측)를 블록/슬롯으로.
+- `launchers/start-st-glm53.sh` — 노드당 컨테이너 하나(판정 이미지, 엔진 트리 rsync → /repo, 랭크 파일, 오버레이 8종을 manifest
+  경로에, /cache, 프로덕션 런처의 NCCL/RoCE env 그대로), `stop`/`logs r`. **glm53*/q38*/vllm* 컨테이너가 떠 있으면 거부**(플릿 무단
+  점유 금지). `launchers/fanout-st-ranks.sh` — 랭크 r 파일을 노드 r 로(srv3 은 srv2 경유). srv2·srv3 fan-out 진행 중; **srv1 은
+  디스크 95%(52 GB 남음)** — 44.5 GiB 를 넣으면 98% 라 운영자 판단 뒤에.
+- 열린 항목: 서빙 레인 판정(한 상자, DeepGEMM 워커 스레드) — 플릿에선 문제 아님. DFlash2 드래프터 포팅이 다음(인터페이스는
+  `Drafter.propose` 하나; 대상 층 5·14·24·33·42 의 hidden 을 net 이 내줘야 함).
+
+### 45차 §7 — DFlash2 드래프터가 엔진 안에서 돈다; 서빙 recurrent KDA 레인 (2026-09-11 저녁)
+
+- `profiles/glm53/drafter.py` — DFlash2 를 같은 규율로: 사실 단언(qwen3 5층·32/8 헤드·창 2048·비인과 블록·mask 154856·selector
+  16/256·대상 층 5,14,24,33,42 → 출력은 4,13,23,32,41 층 뒤), 81 텐서를 체크포인트 이름 그대로 뷰로 바인딩(2.18 GiB **복제**,
+  DRAFT_TP=1 그대로 — 임베드·헤드는 대상 모델 것을 빌림), 슬롯별 컨텍스트 K/V 링 `[5, 2, 2048, 8, 128]`(40 MiB),
+  `observe(ring, positions, aux)`(fc → hidden_norm → 층별 k/v → k_norm → rope → 링)와 `propose(anchor, position, ring)`
+  (앵커+마스크 K 블록 → 그룹 conv(2탭·16그룹, 블록 내 위치로 탭 마스크) 감싼 5층 → 마스크 위치의 로짓 top-16 → 코드북
+  에지 점수 → 앵커부터 탐욕 walk). 서빙 `_selector_walk_kernel` 의 온도 0 가지와 같다; Gumbel 가지는 안 옮김.
+- `net.forward(..., aux_layers)` 가 해당 층 뒤의 contract(hc_post) 를 이어 붙여 돌려준다(서빙의 aux_hidden_states 규칙).
+  `adapter`: 프리필 뒤 프롬프트 전 토큰, 디코드 뒤 **수락된 위치까지** observe; 다음 스텝은 마지막 토큰을 앵커로 propose.
+  토크나이저가 디코드 못 하는 행은 대상·드래프터 로짓 모두 마스크(서빙의 vocab-mask).
+- `boot.py --local --drafter`(0~4층, aux 층은 체인 끝으로 잘라 배관만): **16 스텝, K=5, 0/70 수락**(5층짜리 체인이니 당연),
+  네 랭크 토큰 동일, PASS. 플릿 모드는 드래프터 기본 on.
+- 레인: beta 는 **raw 로짓**으로 다닌다(참조는 sigmoid, 서빙 chunk 는 fp32 sigmoid, 서빙 recurrent 는 커널 안). 서빙
+  `fused_recurrent_kda` 를 dense·non-inplace 형(`final_state [T,H,D,D]` = 토큰마다의 상태)으로 `kda_recurrent` 에 바인딩.
+  두 서빙 커널의 상태 레이아웃([k,v] vs [v,k])은 **부팅 때 작은 입력으로 참조와 대조해 측정**(`_state_layout`, 무장≠서빙).
+  `served(reference_for=("expert",))` — 남은 참조 레인은 b12x 전문가뿐이라고 표 이름이 말한다.
+- 이름 충돌 함정: `profiles/glm53/engine.py` 가 스크립트 실행 시 `engine` 패키지를 가렸다 → `adapter.py`.
+- 16:14 이 박스에서 다른 세션의 q38 vLLM 이 nvidia 드라이버 rwsem 에서 D 상태로 죽고(journal 정지·재시작, 서비스 KILL),
+  내 스모크와 자가검증이 137 로 죽었다. 재실행 정상. 기록만.
+
+### 45차 §8 — b12x 전문가 레인: 서빙이 로드 때 하던 팩을 사전샤딩이 한 번 (2026-09-11 저녁)
+
+서빙 `flashinfer_b12x_moe.process_weights_after_loading` 이 하는 일 셋: (1) 블록 스케일에 전문가별 전역 스케일을 접는다
+(`block *= scale_2 = 1/w_gs`, 이후 α = 1), (2) fc2 입력 스케일을 1 로 강제하고 fc1 입력 전역 스케일은 아예 안 넘긴다 —
+**SM12x 커널은 활성화를 블록마다 동적으로 양자화**하므로 체크포인트의 `input_global_scale` 은 읽지 않는다, (3) 스케일을
+`flashinfer_convert_sf_to_mma_layout`(= `flashinfer.fp4_quantization.block_scale_interleave`, 128×4 타일 인터리브)로 바꾼다 —
+랭크당 42층 × 288 전문가 = **4.75 GiB 의 스케일을 부팅마다 재배치**. ST 엔진은 이 셋을 `specs.py` 의 build 로 옮겨 사전샤딩이
+한 번 한다(D1: 로더는 재패킹하지 않는다): `moe.w13_sf [E, 2I·H/16]`, `moe.w2_sf [E, H·I/16]` = 접고 인터리브한 e4m3;
+`*_mult`·`a*_mult` 는 사라짐(spec 1,288 → 1,120 텐서, 바이트 동일 44.50 GiB).
+
+인터리브 식은 `modules/nvfp4_sf.py` 에 torch 로: `(m, s) → ((m//128)·(Sp//4) + s//4)·512 + (m%32)·16 + ((m%128)//32)·4 + s%4`.
+`probes/sf_swizzle_check.py`(이미지 안): 네 형상([1024,4096]·[4096,512]·[256,2048]·[200,1024], E=1~3)에서 flashinfer 와
+**바이트 동일**, 역변환 정확. (`flashinfer.fused_moe.utils.swizzle_sf` 가 부르는 `torch.ops.trtllm.block_scale_interleave` 는
+이 이미지에 없다 — 서빙 층이 진짜 쓰는 것은 `fp4_quantization.block_scale_interleave` 다.)
+
+레인: `expert`(전문가 하나) 대신 **`moe`(이 랭크의 라우팅된 전문가 전체)** 하나 — 참조는 언스위즐 + 전문가 루프 + **동적
+활성화 양자화**(전역 1, 서빙과 같은 형), 서빙은 `b12x_fused_moe(x, w13, w13_sf, w2, w2_sf, sel, w, E, top_k, α=1, α2=1,
+fc2_input_scale=1, input_global_scale=None, "swigluoai_uninterleave" α1 β0 limit 10, nvfp4)`. `served()` 에 참조 레인이 더 이상
+없다 — 전부 바인딩되거나 죽는다(D3). 랭크 파일 재절단(백그라운드) 뒤 fan-out 을 다시 한다.

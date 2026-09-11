@@ -42,7 +42,7 @@ class CacheLayout:
                 + max_seqs * num_blocks * 4)
 
 
-def layout(F, layers) -> CacheLayout:
+def layout(F, layers, draft=None) -> CacheLayout:
     """Declared byte offsets; no CUDA allocation or model execution."""
     layers = tuple(layers)
     if not layers or len(set(layers)) != len(layers) or any(not 0 <= L < F.layers for L in layers):
@@ -72,17 +72,22 @@ def layout(F, layers) -> CacheLayout:
         else:
             field("conv", L, (3 * F.kda_heads_local * F.kda_dim, F.conv - 1 + F.spec_k), "bf16")
             field("rec", L, (F.spec_k + 1, F.kda_heads_local, F.kda_dim, F.kda_dim), "f32")
+    if draft is not None:
+        if len(draft) != 4 or any(not isinstance(n, int) or n <= 0 for n in draft):
+            raise ValueError("draft cache shape must contain four positive dimensions")
+        dl, dw, dkv, dd = draft
+        field("draft", -1, (dl, 2, dw, dkv, dd), "bf16")
     # A KDA-only slice still has logical blocks for the runner's token ledger.
     return CacheLayout(aligned(max(1, paged), quantum), aligned(state, ALIGN),
                        token_offsets, pool_offsets, tuple(fields))
 
 
 class Glm53Caches:
-    def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int):
+    def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int, draft=None):
         import torch
 
         self.F, self.layers = F, tuple(layers)
-        self.layout = layout(F, self.layers)
+        self.layout = layout(F, self.layers, draft)
         self.pool = BlockPool(num_blocks, F.block, max_seqs, num_blocks)
         self.slots = SlotPool(max_seqs + 1)
         p = self.layout
@@ -90,6 +95,7 @@ class Glm53Caches:
         if aligned(arena.used, ALIGN) + p.nbytes(num_blocks, max_seqs) > arena.nbytes:
             raise MemoryError("arena cannot hold the declared GLM caches and block table")
         self.paged = arena.carve(num_blocks * p.block_bytes, "glm53 paged KV")
+        self.device = self.paged.device
         self.pool.attach_storage(self.paged, p.block_bytes)
         self.state = arena.carve((max_seqs + 1) * p.slot_bytes, "glm53 state slots")
         self.block_table = arena.carve(max_seqs * num_blocks * 4, "glm53 block table").view(torch.int32).view(max_seqs, num_blocks)
@@ -144,6 +150,9 @@ class Glm53Caches:
 
     def tail(self, layer, slot):
         return self._fields["tail", layer][slot]
+
+    def draft_ring(self, slot):
+        return self._fields["draft", -1][slot]
 
     def latent(self, layer):
         return self._latent

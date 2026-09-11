@@ -18,7 +18,7 @@ def relative(a, b):
 
 def main():
     torch.manual_seed(29)
-    ref, served = lanes.reference(), lanes.served(expert_lane="reference")
+    ref, served = lanes.reference(), lanes.served(reference_for=("expert",))
     H, D = 16, 128
     def rand(*shape):
         return torch.randn(*shape, device="cuda", dtype=torch.bfloat16)
@@ -26,7 +26,7 @@ def main():
     for T in (1, 6, 64):
         for seeded in (False, True):
             q, k, v, raw = (rand(1, T, H, D) for _ in range(4))
-            beta = torch.sigmoid(rand(1, T, H).float())
+            beta = rand(1, T, H)
             A, bias = rand(H).float() * .2, rand(H * D).float() * .1
             initial = torch.randn(1, H, D, D, device="cuda") * .1 if seeded else None
             saved = initial.clone() if seeded else None

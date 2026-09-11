@@ -28,6 +28,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from dataclasses import replace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -98,6 +99,38 @@ def tok_rel(x, y):
     return (x.float() - y.float()).abs().amax(-1) / y.float().abs().amax(-1).clamp_min(1e-6)
 
 
+class PairedMoe:
+    """Isolate cache equality from the served MoE's unordered BF16 scatter.
+
+    Both passes execute the real expert lane. On the paired pass every
+    activation, selected expert and routing weight must match exactly.
+    Forward the first expert output to subsequent layers so atomic-sum
+    rounding cannot hide a cache mismatch behind a numerical tolerance.
+    Other checks, including generation, use the unmodified expert lane.
+    """
+    def __init__(self, fn):
+        self.fn, self.records, self.replaying, self.position = fn, [], False, 0
+        self.max_rel = 0.0
+
+    def __call__(self, *args):
+        if not self.replaying:
+            out = self.fn(*args)
+            self.records.append((tuple(t.clone() for t in args[:3]),
+                                 tuple(t.data_ptr() for t in args[3:7]), args[7], out.clone()))
+            return out
+        inputs, weights, limit, expected = self.records[self.position]
+        if not all(torch.equal(a, b) for a, b in zip(args[:3], inputs)):
+            raise AssertionError("paged cache changed MoE activations, selected experts or routing weights")
+        if weights != tuple(t.data_ptr() for t in args[3:7]) or limit != args[7]:
+            raise AssertionError("paired cache check changed MoE weights or activation limit")
+        out = self.fn(*args)
+        if not torch.isfinite(out).all():
+            raise AssertionError("served MoE returned nonfinite output")
+        self.max_rel = max(self.max_rel, tok_rel(out, expected).max().item())
+        self.position += 1
+        return expected
+
+
 def rank_main(comm, a, F, layers, lanes, ids, garbage):
     """One rank's whole check: bind, then four runs -- whole prefill; two
     chunks; prefill + one verify step; prefill + a verify step whose last four
@@ -135,9 +168,15 @@ def rank_main(comm, a, F, layers, lanes, ids, garbage):
             torch.cuda.synchronize()
         runs[name] = {"h": hs, "blocks": {k: list(v) for k, v in blocks.items()}}
 
+    paired = PairedMoe(lanes.moe)
+    net.lanes = replace(lanes, moe=paired)
     run("whole", [Step.prefill(ids, 0, 0, 1)], cache=chain)
     logits = net.head(runs["whole"]["h"][0][-1:])
+    paired.replaying = True
     run("paged", [Step.prefill(ids, 0, 0, 1)])
+    assert paired.position == len(paired.records), "paged pass skipped an expert layer"
+    net.lanes = lanes
+    paired.records.clear()
     run("chunked", [Step.prefill(ids[: a.chunk], 0, 0, 1), Step.prefill(ids[a.chunk:], a.chunk, 0, 1)])
     run("verify", [Step.prefill(ids[: T - K1], 0, 0, 1), Step.decode([(ids[T - K1:], T - K1, 0, 1)])])
     c0 = T - 2 * K1                                                        # prefill to c0, verify 2 true + 4 garbage, accept 2, verify the truth
@@ -159,7 +198,8 @@ def rank_main(comm, a, F, layers, lanes, ids, garbage):
     generated = [runtime.take_result(s) for s in (0, 1)]
     assert [len(x) for x in generated] == [3, 1]
     assert caches.pool.available == num_blocks and caches.slots.available == 2
-    return {"rec": rec, "arena": arena, "logits": logits, "runs": runs, "generated": generated}
+    return {"rec": rec, "arena": arena, "logits": logits, "runs": runs, "generated": generated,
+            "moe_repeat_rel": paired.max_rel}
 
 
 def main(argv=None) -> int:
@@ -179,9 +219,7 @@ def main(argv=None) -> int:
         raise SystemExit(f"--layers must select layers inside 0..{F.layers - 1}")
     if a.chunk <= 0 or a.chunk % F.kpool or a.tokens <= max(a.chunk, 2 * (F.spec_k + 1)):
         raise SystemExit(f"--chunk must be a multiple of kpool {F.kpool} and below --tokens")
-    lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served(expert_lane="reference")
-    if a.lanes == "served":
-        print("  NOTE: served lanes with the REFERENCE expert lane (b12x is not bound yet) -- a lane judge, not a boot")
+    lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served()
     torch.manual_seed(a.seed)
     ids = torch.randint(0, 100_000, (a.tokens,), device="cuda")
     garbage = torch.randint(0, 100_000, (F.spec_k + 1 - 2,), device="cuda")
@@ -195,8 +233,10 @@ def main(argv=None) -> int:
 
 def judge(a, F, layers, lanes, ids, garbage, comm):
     t0 = time.perf_counter()
+    tp = None if comm is not None else LocalTP(facts.TP)
+    lane_tables.bind_tp(tp)
     outs = ([rank_main(comm, a, F, layers, lanes, ids, garbage)] if comm is not None
-            else LocalTP(facts.TP).run(rank_main, a, F, layers, lanes, ids, garbage))
+            else tp.run(rank_main, a, F, layers, lanes, ids, garbage))
     wall = time.perf_counter() - t0
     r0 = outs[0]
     print(r0["rec"].table())
@@ -222,8 +262,9 @@ def judge(a, F, layers, lanes, ids, garbage, comm):
     if comm is not None:
         generated = torch.tensor([t for seq in r0["generated"] for t in seq], device="cuda", dtype=torch.int64)
         generated_agree = all(torch.equal(row, generated) for row in comm.all_gather(generated, dim=0).chunk(facts.TP))
-    print(f"  paged KV == contiguous oracle (identical hidden): {paged_exact}; "
+    print(f"  paged KV == contiguous oracle (exact MoE inputs, first expert outputs forwarded): {paged_exact}; "
           f"runner generated {list(map(len, r0['generated']))} tokens, ranks agree: {generated_agree}, all resources returned")
+    print(f"  actual expert lane executed in both paired passes; max relative repeat difference: {r0['moe_repeat_rel']:.3e}")
     # every other run against the whole prefill, per block, per token, against the first chunk's own noise floor
     T, K1 = a.tokens, F.spec_k + 1
     windows = {"chunked": [(0, a.chunk), (a.chunk, T)],

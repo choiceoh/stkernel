@@ -27,9 +27,10 @@ KIND = {sched.PREFILL: 1, sched.DECODE: 2}
 
 
 class Model(Protocol):
-    def prefill(self, seq: int, start: int, tokens: int, blocks) -> "bool | None": ...  # finished on the prompt's first sample?
+    def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> "bool | None": ...  # finished on the prompt's first sample?
     def decode(self, seqs, blocks, slots) -> "list[bool]": ...   # per seq: finished?
-    def open(self, seq: int) -> None: ...
+    def horizon(self, seq: int) -> int: ...  # exclusive end of the next decode writes
+    def open(self, seq: int, slot: int) -> None: ...
     def close(self, seq: int) -> None: ...           # must also clean up a partially failed open
 
 
@@ -61,7 +62,7 @@ class Runner:
         try:
             slot = self.slots.take(seq)
             try:
-                self.model.open(seq)
+                self.model.open(seq, slot)
             except BaseException:
                 self.model.close(seq)
                 raise
@@ -101,11 +102,11 @@ class Runner:
             if step.kind == sched.PREFILL:
                 (seq,) = step.seqs
                 start = self.state.computed[seq]
-                finished = self.model.prefill(seq, start, step.tokens, self.kv.row(seq))
+                finished = self.model.prefill(seq, start, step.tokens, self.kv.row(seq), self.slot_of[seq])
                 if finished and start + step.tokens != self.state.prompt_len[seq]:
                     raise ValueError("prefill may finish only at the end of the prompt")
             else:
-                self.kv.reserve_many(step.seqs, 1 + self.c.draft_slots)
+                self.kv.reserve_to(step.seqs, [self.model.horizon(s) for s in step.seqs])
                 done = self.model.decode(step.seqs, [self.kv.row(s) for s in step.seqs],
                                          [self.slot_of[s] for s in step.seqs])
                 if len(done) != len(step.seqs):
@@ -127,17 +128,18 @@ class Runner:
 
 def _selfcheck() -> None:
     class Fake:
-        def __init__(self): self.calls = []; self.left = {}
-        def open(self, seq): self.left[seq] = 3
+        def __init__(self): self.calls = []; self.left = {}; self.ctx = {}
+        def open(self, seq, slot): self.left[seq] = 3; assert slot != 0
         def close(self, seq): self.left.pop(seq)
-        def prefill(self, seq, start, tokens, blocks):
+        def horizon(self, seq): return self.ctx[seq] + 1
+        def prefill(self, seq, start, tokens, blocks, slot):
             assert all(b != -1 for b in list(blocks)[: -(-(start + tokens) // 16)]), "prefill must see its blocks"
-            self.calls.append(("prefill", seq, start, tokens))
+            self.calls.append(("prefill", seq, start, tokens)); self.ctx[seq] = start + tokens
         def decode(self, seqs, blocks, slots):
             self.calls.append(("decode", tuple(seqs)))
             out = []
             for s in seqs:
-                self.left[s] -= 1; out.append(self.left[s] == 0)
+                self.left[s] -= 1; self.ctx[s] += 1; out.append(self.left[s] == 0)
             return out
     c = sched.Contract(chunk_align=16, token_budget=64, draft_slots=0, max_wait_s=20.0, max_running=8)
     r = Runner(Fake(), c, BlockPool(64, 16, 8, 32), SlotPool(9), Ring(16, STEP_RECORD.size))   # 9 = null + 8

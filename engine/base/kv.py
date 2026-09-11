@@ -85,10 +85,27 @@ class BlockPool:
         if not isinstance(tokens, int) or tokens < 0:
             raise ValueError("reserved token count must be a nonnegative integer")
         seqs = tuple(seqs)
+        return self._reserve_counts(seqs, (tokens,) * len(seqs))
+
+    def reserve_to(self, seqs, horizons) -> int:
+        """Atomically cover absolute write ends, reusing rejected draft space."""
+        seqs, horizons = tuple(seqs), tuple(horizons)
+        if len(seqs) != len(horizons):
+            raise ValueError("one write horizon is required per sequence")
+        counts = []
+        for seq, end in zip(seqs, horizons):
+            self.row(seq)
+            if not isinstance(end, int) or not 0 <= end < 2**31:
+                raise ValueError("write horizons must be nonnegative int32 positions")
+            counts.append(max(0, end - self.tokens[seq]))
+        return self._reserve_counts(seqs, counts)
+
+    def _reserve_counts(self, seqs, counts):
+        seqs = tuple(seqs)
         if len(set(seqs)) != len(seqs):
             raise ValueError("a reservation batch must contain each sequence once")
         growth = []
-        for seq in seqs:
+        for seq, tokens in zip(seqs, counts):
             self.row(seq)                              # bounds before indexing tokens
             total = self.tokens[seq] + tokens
             if total >= 2**31:
@@ -96,13 +113,13 @@ class BlockPool:
             have, need = self.blocks_for(self.tokens[seq]), self.blocks_for(total)
             if need > self.max_blocks_per_seq:
                 raise MemoryError(f"seq {seq} would exceed {self.max_blocks_per_seq} blocks")
-            growth.append((seq, have, need))
-        grow = sum(need - have for _, have, need in growth)
+            growth.append((seq, have, need, tokens))
+        grow = sum(need - have for _, have, need, _ in growth)
         if grow > self.available:
             raise MemoryError(
                 f"batch needs {grow} more blocks, {self.available} free: the "
                 "scheduler admitted more than the budget declared")
-        for seq, have, need in growth:
+        for seq, have, need, tokens in growth:
             row = self.row(seq)
             for i in range(have, need):
                 row[i] = self.free.pop()

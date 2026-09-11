@@ -104,6 +104,15 @@ class Comm:
             import torch.distributed as dist
             dist.barrier(group=self.group)
 
+    def broadcast_object(self, obj):
+        """rank 0's `obj` on every rank (the arrivals of a step)."""
+        if self.world_size == 1:
+            return obj
+        import torch.distributed as dist
+        box = [obj]
+        dist.broadcast_object_list(box, src=0, group=self.group)
+        return box[0]
+
     def close(self):
         if self.world_size > 1:
             import torch.distributed as dist
@@ -121,12 +130,37 @@ class LocalTP:
     which is what the fleet's NCCL guarantees and what a check can assert."""
 
     def __init__(self, world: int = 4, timeout_s: float = 600.0):
+        import queue
         import threading
         self.world_size = world
         self.timeout = timeout_s
         self._barrier = threading.Barrier(world)
         self._slots = [None] * world
         self._results = [None] * world
+        self._jobs = queue.Queue()                 # work the rank threads hand to the main thread
+        self._main = None
+
+    def on_main(self, fn, *args, **kwargs):
+        """Run fn on the thread that called `run` and return its result.
+        DeepGEMM's JIT runtime (the served mHC lane) raises
+        CUDA_ERROR_INVALID_VALUE from any other thread -- measured in
+        probes/mhc_lane_isolate.py -- so a served lane goes through here."""
+        import threading
+        if self._main is None or threading.current_thread() is self._main:
+            return fn(*args, **kwargs)
+        done, box = threading.Event(), {}
+
+        def job():
+            try:
+                box["out"] = fn(*args, **kwargs)
+            except BaseException as e:            # noqa: BLE001
+                box["err"] = e
+            done.set()
+        self._jobs.put(job)
+        done.wait()
+        if "err" in box:
+            raise box["err"]
+        return box["out"]
 
     def rank(self, r: int):
         return _LocalRank(self, r)
@@ -150,11 +184,21 @@ class LocalTP:
                 errors[r] = e
                 self._barrier.abort()
 
+        import queue
         threads = [threading.Thread(target=body, args=(r,), name=f"rank{r}") for r in range(self.world_size)]
+        self._main = threading.current_thread()
         for t in threads:
             t.start()
+        while any(t.is_alive() for t in threads):  # serve the ranks' main-thread jobs until they are all done
+            try:
+                self._jobs.get(timeout=0.02)()
+            except queue.Empty:
+                pass
+        while not self._jobs.empty():
+            self._jobs.get()()
         for t in threads:
             t.join()
+        self._main = None
         culprits = [(r, e) for r, e in enumerate(errors) if e is not None and not isinstance(e, RankLeft)]
         victims = [(r, e) for r, e in enumerate(errors) if isinstance(e, RankLeft)]
         for r, e in culprits + victims:
@@ -191,6 +235,18 @@ class _LocalRank:
     def barrier(self):
         self.tp._meet()
 
+    def broadcast_object(self, obj):
+        tp = self.tp
+        if self.rank == 0:
+            tp._slots[0] = obj
+        tp._meet()
+        out = tp._slots[0]
+        tp._meet()
+        return out
+
+    def on_main(self, fn, *args, **kwargs):
+        return self.tp.on_main(fn, *args, **kwargs)
+
     def close(self):
         pass
 
@@ -222,6 +278,13 @@ mlx5_0  1       3       0000:0000:0000:0000:0000:ffff:0a0a:0a04 10.10.10.4      
     outs = tp.run(rank_fn, torch.ones(3))
     assert all(torch.equal(o[0], torch.full((3,), 4.0 + 6.0)) for o in outs), [o[0] for o in outs]   # 4*1 + (0+1+2+3)
     assert all(torch.equal(o[1], torch.tensor([0., 0., 1., 1., 2., 2., 3., 3.])) for o in outs)
+    import threading
+    main = threading.current_thread()
+    def needs_main(comm, _):
+        where = comm.on_main(lambda: threading.current_thread())
+        return where is main and threading.current_thread() is not main
+    assert all(LocalTP(4).run(needs_main, None)), "on_main must run on the calling thread of run()"
+    assert LocalTP(4).run(lambda comm, _: comm.broadcast_object({"from": comm.rank}), None) == [{"from": 0}] * 4
     def bad(comm, _):
         if comm.rank == 2:
             raise ValueError("rank 2 dies")
@@ -231,7 +294,7 @@ mlx5_0  1       3       0000:0000:0000:0000:0000:ffff:0a0a:0a04 10.10.10.4      
     except RuntimeError as e:
         assert "rank 2" in str(e)
     print(f"  comm: GID rule picks index 3 from a RoCE v2 IPv4-mapped line, world-1 identity, fleet env for rank 3 "
-          f"(GID detected: {env.get('NCCL_IB_GID_INDEX', 'n/a')}); LocalTP(4): sums and gathers identical on all four ranks, a dead rank surfaces OK")
+          f"(GID detected: {env.get('NCCL_IB_GID_INDEX', 'n/a')}); LocalTP(4): sums and gathers identical on all four ranks, on_main runs on the main thread, a dead rank surfaces OK")
 
 
 if __name__ == "__main__":
