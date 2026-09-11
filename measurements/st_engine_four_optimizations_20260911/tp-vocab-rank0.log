@@ -1,0 +1,3 @@
+NCCL version 2.29.7+cuda13.2
+{"passed": true, "rank": 0, "greedy_cases": 18, "sampling_cases": 8, "max_greedy_candidate_bytes": 192, "peak_reserved_bytes": 138412032}
+[W911 12:10:18.123046793 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())

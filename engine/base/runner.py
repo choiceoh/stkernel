@@ -135,7 +135,7 @@ class Runner:
             raise ValueError(f"seq {seq} is not idle")
         if self.tiered is not None and self.tiered.is_parked(seq):
             raise ValueError(f"seq {seq} is parked: resume it first")
-        if len(self.state.running) >= self.c.max_running:
+        if len(self.state.running) + int(self.state.in_prefill is not None) >= self.c.max_running:
             raise ValueError("decode width is full; wake it later")
         self.idle.pop(seq)
         self.state.running.append(seq)

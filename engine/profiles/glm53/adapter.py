@@ -54,18 +54,63 @@ class Glm53Engine:
         self.steps = 0
         self.decode_graphs = None
         self.sampling_graphs = None
+        self.memory = None
+        self.prefill_chunk = None
 
     def capture_decode(self, max_seqs: int) -> None:
         """Bind the fleet's finite target decode graphs before admitting work."""
         from engine.profiles.glm53.decode_graphs import Glm53DecodeGraphs
         if self.tokens:
             raise ValueError("capture must finish before requests are admitted")
-        self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
-                                              self.drafter.k + 1, self.aux_layers)
-        if self.drafter.k:
-            self.drafter.capture_decode(self.caches)
-        from engine.profiles.glm53.decode_graphs import SamplingGraphs
-        self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
+        if self.decode_graphs is not None:
+            raise ValueError("decode graphs are already prepared")
+        try:
+            if self.memory is not None:
+                self._warmup_prefill_memory()
+            self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
+                                                  self.drafter.k + 1, self.aux_layers, memory=self.memory)
+            if self.drafter.k:
+                self.drafter.capture_decode(self.caches, memory=self.memory)
+            from engine.profiles.glm53.decode_graphs import SamplingGraphs
+            self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
+            if self.memory is not None:
+                self.memory.checkpoint("ready")
+                self.memory.ready = True
+        except BaseException:
+            self.close_decode()
+            raise
+
+    def _warmup_prefill_memory(self):
+        """Exercise the largest legal prefill at both ends of the KV capacity.
+
+        Inputs are synthetic; this qualifies memory preparation, not quality.
+        Unseen tail shapes remain subject to the same allocator byte ceiling.
+        """
+        if self.prefill_chunk is None:
+            raise ValueError("full-model memory preparation requires the scheduler's prefill chunk")
+        caches = self.caches
+        if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
+            raise ValueError("memory preparation requires empty request and state slots")
+        capacity = caches.pool.num_blocks * self.F.block
+        length = min(self.prefill_chunk, capacity)
+        slot = caches.slots.take(0)
+        try:
+            caches.pool.reserve(0, capacity)
+            for context in sorted({0, capacity-length}):
+                self.memory.checkpoint(f"prefill/{length}/{context}/before")
+                ids = torch.zeros(length, device=caches.device, dtype=torch.int64)
+                step = Step.prefill(ids, context, 0, slot)
+                h, aux = self._forward(step)
+                self.net.head(h[-1:])
+                if aux is not None:
+                    self.drafter.observe(caches.draft_ring(slot),
+                                         torch.arange(context, context+length, device=caches.device), aux)
+                del h, aux, step, ids
+                self.memory.checkpoint(f"prefill/{length}/{context}/prepared")
+        finally:
+            caches.pool.release(0)
+            caches.slots.give(slot)
+            caches.reset()
 
     def close_decode(self):
         if self.sampling_graphs is not None:
@@ -78,6 +123,8 @@ class Glm53Engine:
             self.drafter.decode_graphs.proposals.close()
             self.drafter.decode_graphs.observations.close()
             self.drafter.decode_graphs = None
+        if self.memory is not None:
+            self.memory.close()
 
     # -- the runner's protocol -------------------------------------------------------
     def validate(self, ids, max_new, temperature) -> None:
@@ -162,6 +209,11 @@ class Glm53Engine:
             return self.net.forward(step, self.caches, aux_layers=self.aux_layers)
         return self.net.forward(step, self.caches), None
 
+    def _sample_hidden(self, hidden, temps):
+        if all(t <= 0 for t in temps):
+            return self.net.head_tokens(hidden, self.decodable)
+        return self._sample(self.net.head(hidden), temps)
+
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> bool:
         ids = torch.tensor(self.tokens[seq][start: start + tokens], dtype=torch.int64, device=self.caches.device)
         h, aux = self._forward(Step.prefill(ids, start, seq, slot))
@@ -169,7 +221,7 @@ class Glm53Engine:
         if aux is not None:                                                 # every prompt token is context for the drafter
             self.drafter.observe(self.caches.draft_ring(slot), torch.arange(start, start + tokens, device=ids.device), aux)
         if self.ctx[seq] == self.prompt_len[seq]:                         # the prompt is in: the first token comes from its last position
-            first = self._sample(self.net.head(h[-1:]), [self.limits[seq][1]])
+            first = self._sample_hidden(h[-1:], [self.limits[seq][1]])
             self.tokens[seq].append(int(first.item()))
         self.steps += 1
         generated = self._generated_count(seq)
@@ -183,15 +235,12 @@ class Glm53Engine:
             segments.append(Segment(seq, slot, self.ctx[seq], len(flat), len(ids)))
             flat.extend(ids)
         step = Step(torch.tensor(flat, dtype=torch.int64, device=self.caches.device), tuple(segments))
+        temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
         if self.decode_graphs is None:
             h, aux = self._forward(step)
-            logits = self.net.head(h)
+            sampled = self._sample_hidden(h, temps).tolist()
         else:
             h, aux, logits = self.decode_graphs.run(step)
-        temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
-        if self.sampling_graphs is None:
-            sampled = self._sample(logits, temps).tolist()
-        else:
             sampled = self.sampling_graphs.run(self.decode_graphs.shape(step), temps).tolist()
         finished = []
         for s in step.segments:
