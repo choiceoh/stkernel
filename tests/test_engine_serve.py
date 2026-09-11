@@ -17,10 +17,25 @@ from engine.base.serve import RequestError, Server
 
 
 class Engine:
-    def __init__(self):
+    def __init__(self, slots=8):
         self.tokens, self.ctx, self.limits, self.output = {}, {}, {}, {}
         self.opened = []
+        self.state = [bytearray(4) for _ in range(slots)]     # one 4-byte "state slot" per slot id
         self.fail_open = self.fail_decode = False
+
+    def state_bytes(self, slot):
+        return memoryview(self.state[slot])
+
+    def park(self, seq):
+        record = {"context": self.ctx[seq], "pending": len(self.tokens[seq]) + len(self.output[seq]) - self.ctx[seq],
+                  "tokens": list(self.tokens[seq]), "output": list(self.output[seq]), "limit": self.limits[seq]}
+        self.close(seq)
+        self.forget(seq)
+        return record
+
+    def resume(self, seq, slot, record):
+        self.tokens[seq], self.output[seq], self.limits[seq] = list(record["tokens"]), list(record["output"]), record["limit"]
+        self.ctx[seq] = record["context"]
 
     def validate(self, ids, limit, temperature):
         if any(t >= 256 for t in ids):
@@ -32,6 +47,7 @@ class Engine:
     def open(self, seq, slot):
         self.ctx[seq] = 0
         self.opened.append(seq)
+        self.state[slot][:] = bytes([slot, seq, 0, 0])          # a mark the tier must carry between slots
         if self.fail_open:
             raise RuntimeError("open failed")
 
@@ -82,15 +98,15 @@ class Comm:
         return obj
 
 
-def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tiered=False):
-    engine = Engine()
+def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tiered=False, tier=None):
+    engine = Engine(rows + 1)
     runner = Runner(engine, Contract(4, 8, 0, 0, rows), BlockPool(blocks, 4, rows, blocks),
                     SlotPool(rows + 1), Ring(16, STEP_RECORD.size), keep_idle=keep_idle)
-    if tiered:
+    if tiered or tier is not None:
         from test_engine_tier import MemoryTier, Storage
         from engine.base.tiered_kv import TieredKV
         runner.kv.attach_storage(Storage(blocks * 4), 4)
-        runner.tiered = TieredKV(runner.kv, MemoryTier())
+        runner.tiered = TieredKV(runner.kv, tier if tier is not None else MemoryTier())
     return Server(engine, runner, comm or Comm(), host="127.0.0.1", port=0, max_pending=max_pending)
 
 
@@ -148,18 +164,85 @@ class ServeTests(unittest.TestCase):
         s = server(keep_idle=True, tiered=True)
         first, _ = s.submit([3], 2, 0)
         self.drain(s, retained=True)
-        row = s._conversations[first]
-        self.assertTrue(s.runner.tiered.is_parked(row))
+        # parked: blocks, slot and row are all free; the conversation is a key on the tier, not a row
+        self.assertTrue(s.runner.is_parked(first))
+        self.assertNotIn(first, s._conversations)
         self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+        self.assertEqual(s.runner.slots.available, s.runner.c.max_running)
+        self.assertEqual(sorted(s._free_rows), [0, 1])
+        self.assertFalse(s.engine.tokens or s.runner.slot_of or s.runner.idle)
+        self.assertEqual(s.runner.tiered.tier.record(first)["tokens"], [3])
         second, _ = s.submit([9], 2, 0, conversation=first)
         self.drain(s, retained=True)
         self.assertEqual(s.take_result(second), [9, 9])
-        self.assertTrue(s.runner.tiered.is_parked(row))
-        self.assertEqual(s.engine.opened, [0])
+        self.assertTrue(s.runner.is_parked(first))
+        self.assertEqual(s.engine.opened, [0])                 # resume reopens without `open`: the slot's bytes came from disk
         s.alive = False
         s.once()
-        self.assertFalse(s.runner.tiered.tier.index or s.runner.tiered.parked)
+        self.assertTrue(s.runner.is_parked(first))             # the process stops; the conversation stays on disk (D16)
         self.assertFalse(s.engine.tokens or s.runner.slot_of)
+
+    def test_retained_conversations_are_bounded_by_the_tier_not_by_rows(self):
+        s = server(rows=2, keep_idle=True, tiered=True)
+        jobs = [s.submit([i], 1, 0) for i in range(6)]
+        self.drain(s, retained=True)
+        self.assertEqual(sorted(s.runner.parked_keys()), [r for r, _ in jobs])   # six conversations, two rows
+        self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+        for i, (request, _) in enumerate(jobs):
+            self.assertEqual(s.take_result(request), [i])
+        turns = [s.submit([10 + i], 1, 0, conversation=r) for i, (r, _) in enumerate(jobs)]
+        self.drain(s, retained=True)
+        for i, (request, _) in enumerate(turns):
+            self.assertEqual(s.take_result(request), [10 + i])
+        self.assertEqual(sorted(s.runner.parked_keys()), [r for r, _ in jobs])
+        self.assertEqual(s.engine.opened, [0, 1] * 3)           # rows were reused, resumes never `open`
+
+    def test_slot_bytes_follow_a_conversation_into_another_slot(self):
+        s = server(rows=2, keep_idle=True, tiered=True)
+        first, _ = s.submit([3], 1, 0)
+        self.drain(s, retained=True)
+        self.assertEqual(bytes(s.runner.tiered.tier.extra[first]), bytes([1, 0, 0, 0]))   # slot 1 held row 0
+        blocker, _ = s.submit([5], 4, 0)                          # a live request takes row 0 / slot 1
+        s.once()
+        second, _ = s.submit([9], 1, 0, conversation=first)        # the continuation lands in row 1 / slot 2
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(second), [9])
+        self.assertEqual(bytes(s.runner.tiered.tier.extra[first]), bytes([1, 0, 0, 0]))   # the same bytes, parked from slot 2
+        self.assertEqual(s.take_result(blocker), [5] * 4)
+
+    def test_a_full_tier_forgets_the_least_recently_parked_conversation(self):
+        from test_engine_tier import MemoryTier
+        s = server(rows=2, keep_idle=True, tier=MemoryTier(capacity=2))
+        jobs = [s.submit([i], 1, 0) for i in range(3)]
+        self.drain(s, retained=True)
+        keys = [r for r, _ in jobs]
+        self.assertEqual(sorted(s.runner.parked_keys()), keys[1:])
+        gone, event = s.submit([7], 1, 0, conversation=keys[0])
+        self.drain(s, retained=True)
+        with self.assertRaises(RequestError) as error:
+            s.take_result(gone)
+        self.assertEqual(error.exception.status, 409)
+        kept, _ = s.submit([7], 1, 0, conversation=keys[1])
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(kept), [7])
+
+    def test_conversations_survive_a_restart_of_server_and_runner(self):
+        from test_engine_tier import MemoryTier
+        tier = MemoryTier()
+        s = server(rows=2, keep_idle=True, tier=tier)
+        jobs = [s.submit([i], 2, 0) for i in range(3)]
+        self.drain(s, retained=True)
+        s.alive = False
+        s.once()
+        restarted = server(rows=2, keep_idle=True, tier=tier)   # a new process: no host state but the tier
+        self.assertEqual(restarted.next_seq, 3)                  # new request ids start above the parked ones
+        self.assertEqual(sorted(restarted.runner.parked_keys()), [0, 1, 2])
+        turn, _ = restarted.submit([9], 1, 0, conversation=1)
+        self.drain(restarted, retained=True)
+        self.assertEqual(turn, 3)
+        self.assertEqual(restarted.take_result(turn), [9])
+        self.assertEqual(restarted.engine.tokens, {})            # parked again after the turn
+        self.assertTrue(restarted.runner.is_parked(1))
 
     def test_oversized_continuation_preserves_the_previous_idle_context(self):
         s = server(blocks=2, keep_idle=True)
@@ -175,7 +258,7 @@ class ServeTests(unittest.TestCase):
         self.drain(s, retained=True)
         self.assertEqual(s.take_result(good), [7])
 
-    def test_failed_resume_wakes_client_and_releases_parked_conversation_ownership(self):
+    def test_failed_resume_wakes_client_and_keeps_the_parked_conversation_on_disk(self):
         s = server(keep_idle=True, tiered=True)
         first, _ = s.submit([3], 2, 0)
         self.drain(s, retained=True)
@@ -187,8 +270,9 @@ class ServeTests(unittest.TestCase):
         with self.assertRaises(RequestError):
             s.take_result(request)
         self.assertFalse(s.engine.tokens or s.runner.slot_of or s.runner.idle)
-        self.assertFalse(s.runner.tiered.parked or s.runner.tiered.tier.index)
+        self.assertTrue(s.runner.is_parked(first))              # a failed read keeps the disk copy
         self.assertEqual(s.runner.kv.available, s.runner.kv.num_blocks)
+        self.assertEqual(s.runner.slots.available, s.runner.c.max_running)
 
     def test_busy_continuation_does_not_replace_the_active_turns_event(self):
         s = server(keep_idle=True)
