@@ -43,6 +43,7 @@ class Lanes:
     kda_output_norm: object   # (core/gate [T,H,D] bf16, weight [D] bf16/f32, eps) -> [T,H,D] bf16; FP32 RMS norm and sigmoid gate
     moe_prepare: object = None  # (w13, w13_sf, w2, w2_sf, top_k, limit) -> None, once per bound MoE layer BEFORE any capture:
                               #  the served lane's weight views (in-place tile-major relayout, packed SF6 owner); reference: None
+    graph_resources: object = None  # () -> external workspace owners to retain until the captured graphs close
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -220,11 +221,13 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent
     moe_prepare = None
+    graph_resources = None
     if expert_lane == "reference":
         moe = ref.moe
     else:
         from engine.kernels.b12x import b12x_fused_moe
         from engine.kernels.b12x import moe_dispatch as md
+        graph_resources = md.cached_workspace_owners
         from engine.modules.nvfp4_sf import mma_sf_view
         spec, q0 = parse_moe_static(moe_static)
         md.configure_static_v2(spec)                # refuses once views exist: the layout choice is per process
@@ -295,7 +298,8 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
     return Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
-                 moe_prepare=None if moe_prepare is None else on_main(moe_prepare))
+                 moe_prepare=None if moe_prepare is None else on_main(moe_prepare),
+                 graph_resources=graph_resources)
 
 
 def _selfcheck() -> None:

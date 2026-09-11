@@ -1,0 +1,56 @@
+{
+  "base_commit": "b7a6e44c870f7f134499801a943deb00ead45573",
+  "local": {
+    "engine/base/graphs.py": "37112171785fc1c47b201d02e1d8bc0a3ecf242566601765aac77b4b6baf2725",
+    "engine/kernels/b12x/moe_dispatch.py": "31380ff3a964b974d4ebfe0991fd60a2d0a93580fd2b294d13b9d38755cfadc6",
+    "engine/profiles/glm53/decode_graphs.py": "4ef469de4c44c566a6e0b8bc032f46ea353812bf9e379aa1610e47f2d83806c1",
+    "engine/profiles/glm53/lanes.py": "e502502656ece196ca117ee2c108cb5c2597c4a2ca7a7bc8a2f7f8ab57e92f51",
+    "probes/engine_decode_replay_check.py": "da0b0d72873a27b51c5fc5f74b47c8d30f255ed2ca1fa3bea56aa209f99627ff"
+  },
+  "fleet": [
+    {
+      "rank": 0,
+      "node": "10.10.10.2",
+      "sha256": {
+        "engine/base/graphs.py": "37112171785fc1c47b201d02e1d8bc0a3ecf242566601765aac77b4b6baf2725",
+        "engine/kernels/b12x/moe_dispatch.py": "31380ff3a964b974d4ebfe0991fd60a2d0a93580fd2b294d13b9d38755cfadc6",
+        "engine/profiles/glm53/decode_graphs.py": "4ef469de4c44c566a6e0b8bc032f46ea353812bf9e379aa1610e47f2d83806c1",
+        "engine/profiles/glm53/lanes.py": "e502502656ece196ca117ee2c108cb5c2597c4a2ca7a7bc8a2f7f8ab57e92f51",
+        "probes/engine_decode_replay_check.py": "da0b0d72873a27b51c5fc5f74b47c8d30f255ed2ca1fa3bea56aa209f99627ff"
+      }
+    },
+    {
+      "rank": 1,
+      "node": "10.10.10.1",
+      "sha256": {
+        "engine/base/graphs.py": "37112171785fc1c47b201d02e1d8bc0a3ecf242566601765aac77b4b6baf2725",
+        "engine/kernels/b12x/moe_dispatch.py": "31380ff3a964b974d4ebfe0991fd60a2d0a93580fd2b294d13b9d38755cfadc6",
+        "engine/profiles/glm53/decode_graphs.py": "4ef469de4c44c566a6e0b8bc032f46ea353812bf9e379aa1610e47f2d83806c1",
+        "engine/profiles/glm53/lanes.py": "e502502656ece196ca117ee2c108cb5c2597c4a2ca7a7bc8a2f7f8ab57e92f51",
+        "probes/engine_decode_replay_check.py": "da0b0d72873a27b51c5fc5f74b47c8d30f255ed2ca1fa3bea56aa209f99627ff"
+      }
+    },
+    {
+      "rank": 2,
+      "node": "10.10.10.3",
+      "sha256": {
+        "engine/base/graphs.py": "37112171785fc1c47b201d02e1d8bc0a3ecf242566601765aac77b4b6baf2725",
+        "engine/kernels/b12x/moe_dispatch.py": "31380ff3a964b974d4ebfe0991fd60a2d0a93580fd2b294d13b9d38755cfadc6",
+        "engine/profiles/glm53/decode_graphs.py": "4ef469de4c44c566a6e0b8bc032f46ea353812bf9e379aa1610e47f2d83806c1",
+        "engine/profiles/glm53/lanes.py": "e502502656ece196ca117ee2c108cb5c2597c4a2ca7a7bc8a2f7f8ab57e92f51",
+        "probes/engine_decode_replay_check.py": "da0b0d72873a27b51c5fc5f74b47c8d30f255ed2ca1fa3bea56aa209f99627ff"
+      }
+    },
+    {
+      "rank": 3,
+      "node": "10.10.10.4",
+      "sha256": {
+        "engine/base/graphs.py": "37112171785fc1c47b201d02e1d8bc0a3ecf242566601765aac77b4b6baf2725",
+        "engine/kernels/b12x/moe_dispatch.py": "31380ff3a964b974d4ebfe0991fd60a2d0a93580fd2b294d13b9d38755cfadc6",
+        "engine/profiles/glm53/decode_graphs.py": "4ef469de4c44c566a6e0b8bc032f46ea353812bf9e379aa1610e47f2d83806c1",
+        "engine/profiles/glm53/lanes.py": "e502502656ece196ca117ee2c108cb5c2597c4a2ca7a7bc8a2f7f8ab57e92f51",
+        "probes/engine_decode_replay_check.py": "da0b0d72873a27b51c5fc5f74b47c8d30f255ed2ca1fa3bea56aa209f99627ff"
+      }
+    }
+  ]
+}

@@ -34,10 +34,16 @@ import torch
 
 class DecodeGraphs:
     def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup: int = 2, generators=(),
-                 memory=None, label="decode"):
+                 memory=None, label="decode", resources=None):
         """step_fn(inputs) runs one decode step over static `inputs`;
-        make_inputs(num_seqs, tokens_per_seq) allocates them once per shape."""
+        make_inputs(num_seqs, tokens_per_seq) allocates them once per shape.
+
+        resources() returns owners of external kernel workspaces used by the
+        capture. CUDA records their addresses, not Python references. Keep each
+        generation alive before the next shape's warmup can replace it.
+        """
         self.graphs, self.inputs, self.outputs = {}, {}, {}
+        self.resources = {}
         # One memory pool for every graph of THIS instance, and a different pool from
         # every other instance's: see the module docstring's second rule.
         self.pool = pool = torch.cuda.graph_pool_handle()
@@ -63,6 +69,9 @@ class DecodeGraphs:
                 try:
                     with torch.cuda.graph(g, pool=pool):
                         out = step_fn(inp)
+                    if resources is not None:
+                        for owner in resources():
+                            self.resources[id(owner)] = owner
                 except BaseException:
                     g.reset()
                     raise
@@ -90,6 +99,9 @@ class DecodeGraphs:
         self.graphs.clear()
         self.inputs.clear()
         self.outputs.clear()
+        # All graphs must release their recorded addresses before their external
+        # allocations can return to the eager allocator and be reused.
+        self.resources.clear()
 
 
 def _selfcheck() -> None:
