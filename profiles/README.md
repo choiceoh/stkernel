@@ -43,8 +43,9 @@ is not model-agnostic has to be split, not overridden" looks like when it is
 actually applied. The name still says `glm53`; renaming it touches the ledger,
 so it waits for a measured win on the second model.
 
-`qwen38` stays at one module: it ran on stock image code, and its b12x path is
-closed rather than pending (MEASUREMENTS.md).
+`qwen38` pins `qwen38-fi618:local` -- the qwen38-flash-next image on the
+campaign's FlashInfer -- and composes six modules; its b12x path was closed by
+an unrouted-slot guard on the dynamic kernel (`qwen38_b12x`), not by the shape.
 
 A profile also carries the serving knobs that are the model's rather than the
 fleet's -- backend, speculative depth, draft placement -- and, where a bring-up
@@ -139,7 +140,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `qwen38_ple` | Qwen3.8-Flash-Next 전용 (51 GiB PLE n-gram 표: 호스트 RAM 오프로드 + NVFP4 체크포인트용 온디바이스 FP8 임베딩; TP>1 필수) | 2 | — | · | · | · | ● |
 | `qwen38_qsa` | Qwen3.8-Flash-Next 전용 (GB10 48 SM 용 QSA split-K 상한; 상위는 GB300 튜닝) | 1 | — | · | · | · | ● |
 | `qwen38_spec` | Qwen3.8-Flash-Next 전용 (MTP 스펙: n-gram 순서 수정, 적응 K) | 2 | — | · | · | · | ● |
-| `qwen38_b12x` | Qwen3.8-Flash-Next 전용 (b12x 워크스페이스 용량 바운드 체크 래퍼; IMA 를 숫자 적힌 부등식으로) | 2 | ✓ | · | · | · | ● |
+| `qwen38_b12x` | Qwen3.8-Flash-Next 전용 (b12x 워크스페이스 바운드 체크 + 동적 커널의 미라우팅(−1) 슬롯 가드 — 모든 부팅을 죽이던 IMA 의 원인; 생성기로 stock SHA 핀) | 3 | — | · | · | · | ● |
 
 | `sched_decode_first` | 어느 모델이든 (AsyncScheduler 서브클래스; 모델·커널·형상 임포트 0) | 1 | ✓ | · | ● | ● | · |
 | `boot_stamps` | 어느 모델이든 (부팅 단계 계측) | 2 | ✓ | · | ● | ● | · |
@@ -192,4 +193,4 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 제거한다. 혼합·디코드 경로는 그대로이며 GPU 수치·재생·속도 검증 전에는
 승격하지 않는다. [검증 명령과 계약](../overlay/modules/glm53_kernels/README.md#pure-prefill-direct-output-2026-09-06-default-off).
 
-`qwen38`은 이미지를 고정하지 않았다. 그 브링업은 스톡 이미지에서 돌았고 b12x 경로는 열린 문제가 아니라 닫힌 것이라(MEASUREMENTS.md), 프로필은 기록으로만 있다 — 실제로 합성해 배포한 적은 없다.
+`qwen38`은 `qwen38-fi618:local`(스톡 qwen38-flash-next 이미지 + 캠페인의 FlashInfer 0.6.18)을 고정한다. b12x 경로를 막던 IMA 는 형상이 아니라 미라우팅 슬롯(−1) 이었고 `qwen38_b12x` 의 커널 가드로 닫혔다; 프로필은 이제 합성 대상이다.

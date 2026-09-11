@@ -219,6 +219,16 @@ EOF
 chmod +x /tmp/serve-q38.sh
 echo "  written"
 
+# DRY_RUN=1 stops here: everything above is checks and a file in /tmp;
+# everything below creates containers on four machines. (It used to skip only
+# the head-node guard, which is how a "dry run" from srv4 once built a head
+# container here and root-owned bind-mount stubs on srv3.)
+if [ "${DRY_RUN:-0}" = 1 ]; then
+  echo "=== DRY_RUN: would start head $HEAD_IP + workers [$WORKERS] with:"
+  sed 's/^/    /' /tmp/serve-q38.sh
+  exit 0
+fi
+
 echo "=== [2/5] head container ==="
 docker rm -f q38 2>/dev/null || true
 docker run -d --name q38 $COMMON $RDMA_FLAGS $ENVV -e VLLM_HOST_IP=$HEAD_IP $MOUNTS \

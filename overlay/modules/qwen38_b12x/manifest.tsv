@@ -1,6 +1,9 @@
 # source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256_or_absent
-# NEW files: a wrapper, not a replacement. This fleet's moe_dispatch.py
-# override is written against the GLM-5.3 image's FlashInfer (5,514 lines) and
-# cannot be mounted on this image's 0.6.17 (3,047 lines, different preimage).
+# Against qwen38-fi618:local (tools/qwen38-fi618.Dockerfile): the qwen38-flash-next
+# image with its FlashInfer replaced by the 0.6.18.dev20260819 this fleet's b12x
+# campaign runs on. The kernel override below is GENERATED from that image's file
+# by tools/qwen38_b12x_guard_gen.py (stock SHA pinned there) -- regenerate with
+# --check rather than editing it.
 qwen38_b12x_bounds.py	qwen38_b12x_bounds.py	absent
 zz_qwen38_b12x_bounds.pth	zz_qwen38_b12x_bounds.pth	absent
+moe_dynamic_generic.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py	38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da
