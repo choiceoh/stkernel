@@ -20,49 +20,69 @@ from engine.base.kv_tier import NvmeTier, SECTOR
 GIB = 1 << 30
 
 
-def decode_loop(iters: int, seqs: int = 8) -> "list[float]":
-    """A step-shaped GPU workload: a few GEMMs of Qwen3.8's hidden sizes."""
-    x = torch.randn(seqs, 2560, device="cuda", dtype=torch.bfloat16)
-    w1 = torch.randn(2560, 10240, device="cuda", dtype=torch.bfloat16)
-    w2 = torch.randn(10240, 2560, device="cuda", dtype=torch.bfloat16)
-    times = []
-    for _ in range(iters):
-        torch.cuda.synchronize(); t0 = time.perf_counter()
-        for _ in range(48):                       # one "layer" per pass, 48 layers
-            x = (x @ w1)[:, :2560] @ w2[:2560] if False else torch.tanh(x @ w1[:, :2560])
-        torch.cuda.synchronize(); times.append((time.perf_counter() - t0) * 1000)
-    return times
+class DecodeLoop:
+    """A step-shaped GPU workload, runnable eagerly (Python launches every
+    kernel -- what the first probe measured) or as a captured CUDA graph
+    (I1: no Python on the hot path -- what a real decode step is)."""
+
+    def __init__(self, seqs: int = 8):
+        self.x = torch.randn(seqs, 2560, device="cuda", dtype=torch.bfloat16)
+        self.w1 = torch.randn(2560, 2560, device="cuda", dtype=torch.bfloat16)
+        self.graph = None
+
+    def _step(self):
+        for _ in range(48):
+            self.x = torch.tanh(self.x @ self.w1)
+
+    def capture(self):
+        s = torch.cuda.Stream()
+        with torch.cuda.stream(s):
+            for _ in range(3): self._step()
+        torch.cuda.current_stream().wait_stream(s)
+        self.graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(self.graph):
+            self._step()
+
+    def run(self, iters: int, graph: bool) -> "list[float]":
+        times = []
+        for _ in range(iters):
+            torch.cuda.synchronize(); t0 = time.perf_counter()
+            self.graph.replay() if graph else self._step()
+            torch.cuda.synchronize(); times.append((time.perf_counter() - t0) * 1000)
+        return times
 
 
 def main() -> int:
     block_bytes = 51 * SECTOR
     n_blocks = GIB // block_bytes
-    src = torch.randint(0, 256, (n_blocks * block_bytes,), dtype=torch.uint8, device="cuda")
-    blocks = [src[i * block_bytes:(i + 1) * block_bytes] for i in range(n_blocks)]
-    dst = torch.zeros_like(src)
-    into = [dst[i * block_bytes:(i + 1) * block_bytes] for i in range(n_blocks)]
-    decode_loop(5)                                  # warm
+    storage = torch.randint(0, 256, (n_blocks * block_bytes,), dtype=torch.uint8, device="cuda")
+    ids = list(range(n_blocks))
+    loop = DecodeLoop(); loop.capture(); loop.run(5, True); loop.run(5, False)
     with tempfile.TemporaryDirectory(dir="/home/choiceoh") as d:
         tier = NvmeTier(d, block_bytes)
-        results = {}
-        for phase in ("alone", "with tier traffic", "alone again"):
-            stop = threading.Event(); cycles = [0]
-            def traffic():
-                while not stop.is_set():
-                    tier.demote(1, blocks, tokens=n_blocks * 16); tier.promote(1, into); cycles[0] += 1
-            th = None
-            if "tier" in phase:
-                th = threading.Thread(target=traffic, daemon=True); th.start(); time.sleep(0.3)
-            times = decode_loop(60)
-            if th: stop.set(); th.join()
-            results[phase] = (times, cycles[0])
-            print(f"  {phase:18s} step p50 {statistics.median(times):6.2f} ms  p95 {sorted(times)[int(0.95 * len(times)) - 1]:6.2f}  "
-                  f"max {max(times):6.2f}" + (f"   ({cycles[0]} demote+promote cycles of {n_blocks * block_bytes / GIB:.2f} GiB, "
-                  f"{tier.bytes_written / GIB:.1f} GiB written, {tier.bytes_read / GIB:.1f} read)" if th else ""))
-    a, b = results["alone"][0], results["with tier traffic"][0]
-    ratio = statistics.median(b) / statistics.median(a)
-    print(f"\n  p50 ratio with/without tier traffic: {ratio:.3f}  "
-          f"({'holds' if ratio < 1.05 else 'DISTURBED'}: D10 wants the running decoder unchanged)")
+        verdicts = []
+        for graph in (False, True):
+            label = "graph replay (I1)" if graph else "eager launches"
+            print(f"### {label}")
+            results = {}
+            for phase in ("alone", "with tier traffic", "alone again"):
+                stop = threading.Event(); cycles = [0]
+                def traffic():
+                    while not stop.is_set():
+                        tier.demote(1, storage, ids, tokens=n_blocks * 16); tier.promote(1, storage, ids); cycles[0] += 1
+                th = None
+                if "tier" in phase:
+                    th = threading.Thread(target=traffic, daemon=True); th.start(); time.sleep(0.3)
+                times = loop.run(80, graph)
+                if th: stop.set(); th.join()
+                results[phase] = times
+                srt = sorted(times)
+                print(f"  {phase:18s} step p50 {statistics.median(times):6.2f} ms  p95 {srt[int(0.95 * len(srt)) - 1]:6.2f}  "
+                      f"max {max(times):6.2f}" + (f"   ({cycles[0]} cycles x {n_blocks * block_bytes / GIB:.2f} GiB each way)" if th else ""))
+            ratio = statistics.median(results["with tier traffic"]) / statistics.median(results["alone"])
+            verdicts.append((label, ratio))
+            print(f"  p50 ratio with/without: {ratio:.3f}  ({'holds' if ratio < 1.05 else 'DISTURBED'})")
+    print("\n  " + "; ".join(f"{l}: {r:.3f}" for l, r in verdicts))
     return 0
 
 
