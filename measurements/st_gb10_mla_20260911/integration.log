@@ -1,0 +1,17 @@
+armed cluster_max 8
+{"T": 6, "W": 2048, "splits": 16, "cluster": false, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 24, "W": 2048, "splits": 4, "cluster": false, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 32, "W": 1, "splits": 3, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 32, "W": 2176, "splits": 3, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 33, "W": 33, "splits": 3, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 36, "W": 2048, "splits": 3, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 40, "W": 2048, "splits": 2, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 42, "W": 2048, "splits": 2, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 48, "W": 2048, "splits": 2, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 54, "W": 2048, "splits": 2, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 60, "W": 2048, "splits": 2, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 63, "W": 2176, "splits": 2, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 64, "W": 2176, "splits": 3, "cluster": true, "eager_exact": true, "graph_replays_exact": 5}
+{"T": 65, "W": 33, "splits": 1, "cluster": false, "eager_exact": true, "graph_replays_exact": 5}
+PASS: production JIT/boot gate, 14 eager cases, 70 graph replays, two concurrent streams
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
