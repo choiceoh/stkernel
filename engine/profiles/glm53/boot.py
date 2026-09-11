@@ -54,6 +54,7 @@ def tokenizer(ckpt=facts.CKPT):
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
 REASONING_END = "</think>"                       # the model closes its reasoning with this token; the door splits content there
+REQUEST_TIMEOUT_S = 3600.0                       # a request older than this is cancelled (the production probe's long-ingest bound x12)
 
 
 def chat_renderer(ckpt=facts.CKPT):
@@ -282,8 +283,10 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                                                tier_dir=a.tier_dir if a.park else None,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
         tok = tokenizer(a.ckpt_meta)
+        from engine.profiles.glm53.tools import parse_tool_calls
         server = Server(engine, runner, comm, port=port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
-                        model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END))
+                        model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
+                        tool_parser=parse_tool_calls)
         httpd = None
         if comm.rank == 0:
             httpd = server._serve_http()                       # the door opens before the loop
@@ -382,8 +385,10 @@ def fleet(a) -> int:
                 t = runner.tiered.tier
                 print(f"  NVMe tier: {sum(1 for k in t.index if t.has(int(k)))} conversations parked from before, {len(t.stale())} under another layout (kept, not resumable)")
         tok = tokenizer(a.ckpt_meta)
+        from engine.profiles.glm53.tools import parse_tool_calls
         Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
-               model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END)).loop()
+               model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
+               tool_parser=parse_tool_calls).loop()
     finally:
         if dump is not None:
             dump.close()

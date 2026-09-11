@@ -49,6 +49,7 @@ class Glm53Engine:
         self.decodable = decodable                          # logits past this id are the tokenizer's orphans: masked (as served)
         self.gen = torch.Generator(device=caches.device).manual_seed(seed)
         self.tokens, self.prompt_len, self.ctx, self.slot, self.limits = {}, {}, {}, {}, {}
+        self.min_new = {}                                   # seq -> no end token before this many generated (OpenAI min_tokens)
         self.accepted_total = 0
         self.drafted_total = 0
         self.steps = 0
@@ -94,19 +95,23 @@ class Glm53Engine:
         if not valid:
             raise ValueError("temperature must be finite and nonnegative")
 
-    def add(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None) -> None:
+    def add(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None,
+            min_new: int = 0) -> None:
         max_new = self.max_new if max_new is None else max_new
         temperature = self.temperature if temperature is None else temperature
         self.validate(ids, max_new, temperature)
+        if type(min_new) is not int or not 0 <= min_new <= max_new:
+            raise ValueError("min_tokens must be an integer between 0 and the generation limit")
         if seq in self.tokens:
             raise ValueError(f"seq {seq} is live or has an uncollected result")
         self.tokens[seq] = list(ids); self.prompt_len[seq] = len(ids)
         self.limits[seq] = (max_new, temperature)
+        self.min_new[seq] = min_new
 
     def forget(self, seq: int) -> None:
         if seq in self.slot:
             raise ValueError(f"seq {seq} is still live")
-        for rows in (self.tokens, self.prompt_len, self.limits):
+        for rows in (self.tokens, self.prompt_len, self.limits, self.min_new):
             rows.pop(seq, None)
 
     def open(self, seq: int, slot: int) -> None:
@@ -117,15 +122,19 @@ class Glm53Engine:
         for d in (self.ctx, self.slot):
             d.pop(seq, None)
 
-    def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None) -> int:
+    def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None,
+               min_new: int = 0) -> int:
         """A new turn: more prompt tokens on a conversation the caches still hold.
         Returns the tokens to prefill -- the last sampled token (never fed) and
         the new ones -- so `generated` counts this turn only from here on."""
         max_new = self.max_new if max_new is None else max_new
         temperature = self.temperature if temperature is None else temperature
         self.validate(ids, max_new, temperature)
+        if type(min_new) is not int or not 0 <= min_new <= max_new:
+            raise ValueError("min_tokens must be an integer between 0 and the generation limit")
         self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
         self.limits[seq] = (max_new, temperature)
+        self.min_new[seq] = min_new
         return len(self.tokens[seq]) - self.ctx[seq]
 
     def extension_tokens(self, seq: int, ids) -> int:
@@ -156,6 +165,23 @@ class Glm53Engine:
         p = torch.full((logits.shape[0],), self.top_p, device=logits.device)
         return sample(logits, t, p, self.gen)
 
+    def _no_end_yet(self, seq: int, picks: "list[int]", logits: torch.Tensor, rows: slice) -> "list[int]":
+        """OpenAI min_tokens: while fewer than `min_new` tokens are generated, an end token cannot be
+        chosen -- the position takes its best other token instead (the same as masking the end tokens
+        before the pick, applied only where a pick was an end token, so the graphs stay as captured)."""
+        need = self.min_new.get(seq, 0) - self._generated_count(seq)
+        if need <= 0 or not self.eos:
+            return picks
+        fixed = list(picks)
+        for i, token in enumerate(picks[:need]):
+            if token in self.eos:
+                row = logits[rows][i].clone()
+                row[list(self.eos)] = float("-inf")
+                if self.decodable is not None and row.shape[-1] > self.decodable:
+                    row[self.decodable:] = float("-inf")
+                fixed[i] = int(row.argmax().item())
+        return fixed
+
     def _forward(self, step: Step):
         self.caches.prepare(step)
         if self.drafter.k:
@@ -169,8 +195,9 @@ class Glm53Engine:
         if aux is not None:                                                 # every prompt token is context for the drafter
             self.drafter.observe(self.caches.draft_ring(slot), torch.arange(start, start + tokens, device=ids.device), aux)
         if self.ctx[seq] == self.prompt_len[seq]:                         # the prompt is in: the first token comes from its last position
-            first = self._sample(self.net.head(h[-1:]), [self.limits[seq][1]])
-            self.tokens[seq].append(int(first.item()))
+            logits = self.net.head(h[-1:])
+            first = self._sample(logits, [self.limits[seq][1]])
+            self.tokens[seq].append(self._no_end_yet(seq, [int(first.item())], logits, slice(0, 1))[0])
         self.steps += 1
         generated = self._generated_count(seq)
         return generated > 0 and (self.tokens[seq][-1] in self.eos or generated >= self.limits[seq][0])
@@ -195,7 +222,7 @@ class Glm53Engine:
             sampled = self.sampling_graphs.run(self.decode_graphs.shape(step), temps).tolist()
         finished = []
         for s in step.segments:
-            picks = sampled[s.start: s.start + s.length]
+            picks = self._no_end_yet(s.seq, sampled[s.start: s.start + s.length], logits, slice(s.start, s.start + s.length))
             accepted = 0
             for d, got in zip(drafts[s.seq], picks):
                 if d != got:
