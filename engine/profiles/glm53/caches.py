@@ -186,6 +186,11 @@ class Glm53Caches:
         return (blocks * (p.block_bytes // F.kv_lora)
                 + p.token_offsets[layer] // F.kv_lora + positions % F.block).to(blocks.dtype)
 
+    def token_map(self, layer, seq):
+        """Block row and scalar strides, measured in latent rows, for a lane."""
+        F, p = self.F, self.layout
+        return self.block_table[seq], F.block, p.block_bytes // F.kv_lora, p.token_offsets[layer] // F.kv_lora
+
     def pool_slots(self, layer, seq, pool_ids):
         F, p = self.F, self.layout
         per, record = F.block // F.kpool, F.idx_dim + 4

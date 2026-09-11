@@ -74,7 +74,7 @@ def threaded_dispatch(fused):
     return {"logical_ranks": 4, "main_thread_dispatch_exact": True}
 
 
-def real_indexer(checkpoint, rank_file, ref, fused):
+def real_indexer(checkpoint, rank_file, ref, fused, baseline=None):
     loader = rank_loader(rank_file)
     F = facts.load(checkpoint)
     assert F.is_dsa(3)
@@ -89,7 +89,8 @@ def real_indexer(checkpoint, rank_file, ref, fused):
         cache.pool.reserve(1, F.block)             # force a nonidentity physical block mapping
         cache.pool.reserve(0, 2080)
         cache.slots.take(0)
-    old = replace(fused, indexer_quant=ref.indexer_quant, expand_pools=ref.expand_pools)
+    old = replace(fused, indexer_quant=ref.indexer_quant, expand_pools=ref.expand_pools) if baseline is None else fused
+    methods = (baseline or Glm53Net._indexer, Glm53Net._indexer)
     g = torch.Generator(device="cuda").manual_seed(23)
     x = torch.randn(2080, F.hidden, device="cuda", generator=g).to(torch.bfloat16)
     qr = torch.randn(2080, F.q_lora, device="cuda", generator=g).to(torch.bfloat16)
@@ -104,10 +105,10 @@ def real_indexer(checkpoint, rank_file, ref, fused):
                 qq[2:] -= 1
             step = Step.prefill(torch.zeros(length, device="cuda", dtype=torch.int64), start, 0, 1)
             outputs = []
-            for table, cache in zip((old, fused), caches):
+            for table, cache, method in zip((old, fused), caches, methods):
                 net.lanes = table
                 cache.prepare(step)
-                outputs.append(net._indexer(3, xx, qq, step, cache))
+                outputs.append(method(net, 3, xx, qq, step, cache))
             assert all(torch.equal(a, b) for a, b in zip(*outputs)), (ctx, phase, "selected slots/counts")
             assert torch.equal(caches[0].paged, caches[1].paged), (ctx, phase, "pool KV bytes/scales")
             assert torch.equal(caches[0].state, caches[1].state), (ctx, phase, "tail ring bytes")
@@ -118,10 +119,11 @@ def real_indexer(checkpoint, rank_file, ref, fused):
         xx, qq = x[start:start + length], qr[start:start + length]
         for cache in caches:
             cache.prepare(step)
-        def run(table, cache):
+        def run(table, cache, method):
             net.lanes = table
-            return net._indexer(3, xx, qq, step, cache)
-        fns = [lambda table=t, cache=c: run(table, cache) for t, c in zip((old, fused), caches)]
+            return method(net, 3, xx, qq, step, cache)
+        fns = [lambda table=t, cache=c, method=m: run(table, cache, method)
+               for t, c, m in zip((old, fused), caches, methods)]
         measurements.append({"phase": phase, "context": start, "tokens": length,
                              **paired(fns, rounds=5, samples=50, warmup=10)})
         assert all(torch.equal(a, b) for a, b in zip(fns[0](), fns[1]()))
