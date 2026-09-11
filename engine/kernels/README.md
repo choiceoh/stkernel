@@ -10,8 +10,8 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 | causal conv | `causal_conv.py`의 prefill / update Triton 커널 | PyTorch, Triton, NumPy |
 | mHC pre / post | `mhc/`의 TileLang 혼합 커널과 작은 M의 prenorm 패딩 | PyTorch, TileLang, Triton, DeepGEMM |
 | 인덱서 로짓 | `deep_gemm.py`에서 `deep_gemm.fp8_fp4_mqa_logits` 직접 호출 | DeepGEMM |
-| kpool | `kpool.py`의 압축·회전·FP8 변환·캐시 쓰기 | PyTorch, Triton |
-| 인덱서 슬롯 | `indexer.py`의 유효 개수 집계·페이지 주소 변환·출력 쓰기, PyTorch 정렬 유지 | PyTorch, Triton |
+| kpool | `kpool.py`의 1워프 반환 전용 압축·회전·FP8 변환, 별도 캐시 쓰기 진입점 | PyTorch, Triton |
+| 인덱서 슬롯 | `indexer.py`의 풀 ID 정렬·토큰 확장·페이지 주소 변환·유효 개수·출력 쓰기를 한 커널에서 처리 | PyTorch, Triton |
 | MLA | `mla/`의 전용 Python 드라이버와 원본 그대로인 `glm53_megakernel.cu` | PyTorch, CUDA 13 nvcc |
 | b12x MoE | `b12x/`의 API·디스패치·CuTe 커널·내부 보조 모듈 | PyTorch, CUTLASS DSL, CUDA bindings, FlashInfer 유틸/JIT |
 
