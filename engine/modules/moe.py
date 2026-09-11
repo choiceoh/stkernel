@@ -112,3 +112,101 @@ def _selfcheck() -> None:
 
 if __name__ == "__main__":
     _selfcheck()
+
+
+# --------------------------------------------------------------------------
+# routing and the whole MoE block, as GLM-5.3 serves it (reference)
+# --------------------------------------------------------------------------
+
+def route_noaux_tc(hidden: torch.Tensor, gate_weight: torch.Tensor, correction_bias: "torch.Tensor | None",
+                   topk: int, routed_scaling_factor: float = 1.0, renormalize: bool = True,
+                   scoring: str = "sigmoid"):
+    """DeepSeek-V3's `noaux_tc` router, GLM-5.3's config: sigmoid scores in fp32,
+    SELECT top-k by (score + e_score_correction_bias), WEIGHT by the uncorrected
+    scores of the selected experts, renormalise, scale by routed_scaling_factor.
+    n_group = topk_group = 1 on GLM, so no group stage. Returns (ids [T,k] int32, w [T,k] fp32)."""
+    logits = hidden.float() @ gate_weight.float().T                        # [T, E]
+    scores = torch.sigmoid(logits) if scoring == "sigmoid" else torch.softmax(logits, -1)
+    select_on = scores + correction_bias.float() if correction_bias is not None else scores
+    ids = select_on.topk(topk, dim=-1).indices
+    w = scores.gather(-1, ids)
+    if renormalize:
+        w = w / w.sum(-1, keepdim=True)
+    return ids.to(torch.int32), w * routed_scaling_factor
+
+
+def moe_reference(hidden: torch.Tensor, ids: torch.Tensor, w: torch.Tensor, experts: dict,
+                  shared: "dict | None" = None, quantize_act: bool = False) -> torch.Tensor:
+    """experts: {expert_id: {"gate_proj": four-tensor dict, "up_proj": ..., "down_proj": ...}}
+    (NVFP4, either name family). SwiGLU per expert, weighted combine, plus the
+    shared expert (bf16 dict {"gate_proj","up_proj","down_proj": weight}) if given."""
+    from engine.modules.nvfp4_linear import NVFP4Linear
+    t = hidden.shape[0]
+    out = torch.zeros(t, hidden.shape[1], dtype=torch.float32, device=hidden.device)
+    cache = {}
+    for e in ids.unique().tolist():
+        if e not in experts:
+            raise KeyError(f"expert {e} selected but not provided")
+        if e not in cache:
+            mods = {}
+            for name, (inn, outn) in (("gate_proj", (hidden.shape[1], None)), ("up_proj", (hidden.shape[1], None)), ("down_proj", (None, hidden.shape[1]))):
+                tens = experts[e][name]
+                packed = tens.get("weight_packed", tens.get("weight"))
+                o, i2 = packed.shape[0], packed.shape[1] * 2
+                m = NVFP4Linear(i2, o, "replicated").to(hidden.device); m.load(tens); mods[name] = m
+            cache[e] = mods
+        rows, slot = (ids == e).nonzero(as_tuple=True)
+        x = hidden[rows]
+        g, _ = cache[e]["gate_proj"](x, quantize_act); u, _ = cache[e]["up_proj"](x, quantize_act)
+        h = torch.nn.functional.silu(g.float()) * u.float()
+        d, _ = cache[e]["down_proj"](h.to(hidden.dtype), quantize_act)
+        out.index_add_(0, rows, d.float() * w[rows, slot].unsqueeze(-1))
+    if shared is not None:
+        g = hidden.float() @ shared["gate_proj"].float().T; u = hidden.float() @ shared["up_proj"].float().T
+        out += (torch.nn.functional.silu(g) * u) @ shared["down_proj"].float().T
+    return out.to(hidden.dtype)
+
+
+def _selfcheck_moe() -> None:
+    import json, struct
+    from pathlib import Path
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    ck = Path("/home/choiceoh/models/glm53-redhat-nvfp4")
+    wm = json.loads((ck / "model.safetensors.index.json").read_text())["weight_map"]
+    def load(name):
+        sh = ck / wm[name]
+        with sh.open("rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]; h = json.loads(f.read(n)); base = 8 + n
+        e = h[name]; lo, hi = e["data_offsets"]
+        with sh.open("rb") as f: f.seek(base + lo); raw = f.read(hi - lo)
+        dt = {"U8": torch.uint8, "F8_E4M3": torch.float8_e4m3fn, "F32": torch.float32, "BF16": torch.bfloat16}[e["dtype"]]
+        return torch.frombuffer(bytearray(raw), dtype=torch.uint8).view(dt).reshape(e["shape"]).to(dev)
+    L = "model.language_model.layers.3."
+    gate_w = load(L + "mlp.gate.weight"); bias = load(L + "mlp.gate.e_score_correction_bias")
+    torch.manual_seed(0); hidden = torch.randn(6, 4096, device=dev, dtype=torch.bfloat16)
+    ids, w = route_noaux_tc(hidden, gate_w, bias, topk=8, routed_scaling_factor=2.5)
+    assert ids.shape == (6, 8) and torch.allclose(w.sum(-1), torch.full((6,), 2.5, device=dev), atol=1e-4)
+    # selection uses the bias, weights do not: a large bias on expert 0 must select it without changing its weight law
+    ids_b, w_b = route_noaux_tc(hidden, gate_w, bias + 0, topk=8, routed_scaling_factor=2.5)
+    big = bias.clone(); big[0] += 100.0
+    ids_c, _ = route_noaux_tc(hidden, gate_w, big, topk=8, routed_scaling_factor=2.5)
+    assert (ids_c == 0).any(-1).all() and torch.equal(ids_b, ids)
+    # experts: load the ones selected for token 0 (real NVFP4 tensors) and check the combine against dense bf16
+    experts = {}
+    for e in ids[0].tolist():
+        experts[e] = {p: {k: load(f"{L}mlp.experts.{e}.{p}.{k}") for k in ("weight_packed", "weight_scale", "weight_global_scale", "input_global_scale")}
+                      for p in ("gate_proj", "up_proj", "down_proj")}
+    out = moe_reference(hidden[:1], ids[:1], w[:1], experts)
+    from engine.modules.moe import dequant_nvfp4
+    dense = torch.zeros(1, 4096, device=dev)
+    for j, e in enumerate(ids[0].tolist()):
+        W = {p: dequant_nvfp4(experts[e][p]["weight_packed"], experts[e][p]["weight_scale"], 1.0 / experts[e][p]["weight_global_scale"]) for p in ("gate_proj", "up_proj", "down_proj")}
+        x = hidden[:1].float()
+        dense += w[0, j] * ((torch.nn.functional.silu(x @ W["gate_proj"].T) * (x @ W["up_proj"].T)) @ W["down_proj"].T)
+    rel = ((out.float() - dense).abs().max() / dense.abs().max()).item()
+    assert rel < 2e-2, rel
+    print(f"  moe: noaux_tc router (sum w = 2.5, bias selects but does not weight), 8-expert NVFP4 combine == dense (rel {rel:.1e}) OK")
+
+
+if __name__ == "__main__":
+    _selfcheck_moe()
