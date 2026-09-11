@@ -4943,7 +4943,34 @@ class MoEDirectMicroKernel:
         barrier_epoch: torch.Tensor,
         m: int,
         grid_x: int,
+        tvm_ffi: bool = False,
     ):
+        if tvm_ffi:
+            # The disk-cached form: pointer parameters take raw addresses, the barrier
+            # tensors go as torch tensors, scalars as ints, and no stream -- TVM-FFI
+            # supplies the caller's current stream (compiled against the env-stream
+            # placeholder), exactly like the static/dynamic kernels of moe_dispatch.
+            compiled_fn(
+                x.data_ptr(),
+                w1_fp4.data_ptr(),
+                w1_blockscale.data_ptr(),
+                w1_alphas.data_ptr(),
+                a1_gscale.data_ptr(),
+                a2_gscale.data_ptr(),
+                inter_fp32.data_ptr(),
+                w2_fp4.data_ptr(),
+                w2_blockscale.data_ptr(),
+                w2_alphas.data_ptr(),
+                topk_ids.data_ptr(),
+                topk_weights.data_ptr(),
+                out.data_ptr(),
+                barrier_count,
+                barrier_epoch,
+                int(m),
+                int(grid_x),
+            )
+            return
+
         def ptr(dt, t):
             return make_ptr(dt, t.data_ptr(), cute.AddressSpace.gmem, assumed_align=16)
 
@@ -5039,10 +5066,18 @@ def compile_direct_micro_kernel(
     *,
     topk_ids_dtype: torch.dtype = torch.int32,
     options: str | None = None,
+    tvm_ffi: bool = False,
 ):
     """cute.compile a configured direct micro kernel against fake pointers.
 
     Returns the compiled callable; launch via ``MoEDirectMicroKernel.launch``.
+
+    ``tvm_ffi=True`` compiles the form the dispatcher serves through flashinfer's
+    on-disk CuTe-DSL cache (``build_and_load_cute_dsl_kernel``): the stream is
+    the TVM-FFI environment stream (the parameter leaves the signature) and the
+    result exports to a ``.o`` a fresh process reloads without recompiling.
+    Launch it with ``launch(..., tvm_ffi=True)``. The default form keeps the
+    explicit stream for in-process probes.
     """
 
     def dummy(dt):
@@ -5055,8 +5090,12 @@ def compile_direct_micro_kernel(
         assumed_align=4,
     )
     compile_kwargs = {}
+    if tvm_ffi and "--enable-tvm-ffi" not in (options or ""):
+        options = f"{options} --enable-tvm-ffi".strip() if options else "--enable-tvm-ffi"
     if options:
         compile_kwargs["options"] = options
+    stream = (cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True) if tvm_ffi
+              else current_cuda_stream())
     compile_m = int(kernel.m_const) if int(kernel.m_const) != 0 else 8
     return cute.compile(
         kernel,
@@ -5077,7 +5116,7 @@ def compile_direct_micro_kernel(
         barrier_fake,  # barrier_epoch
         Int32(compile_m),  # m_val
         Int32(1),  # grid_x
-        current_cuda_stream(),  # stream
+        stream,  # stream (a TVM-FFI env-stream placeholder when tvm_ffi)
         **compile_kwargs,
     )
 

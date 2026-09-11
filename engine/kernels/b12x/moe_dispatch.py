@@ -8,6 +8,7 @@ selection.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import weakref
@@ -2812,6 +2813,85 @@ def _get_micro_kernel(
 # (m=2..8 differ only in grid_x).
 _DIRECT_MICRO_LAUNCH_CACHE: Dict[Tuple, Tuple] = {}
 _DIRECT_MICRO_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
+# The direct micro kernel goes through the same on-disk CuTe-DSL cache as the
+# static/dynamic families (2026-09-12): its own module directory, keyed by the
+# sources that contribute device code to it.
+_DIRECT_MICRO_MODULE = "st_b12x_direct_micro"
+
+
+def _direct_micro_source_files() -> Tuple[str, ...]:
+    from flashinfer.cute_dsl import fp4_common
+    from flashinfer.cute_dsl import utils as cute_dsl_utils
+
+    from . import moe_activation, moe_direct_micro_kernel
+
+    return (
+        __file__,
+        moe_direct_micro_kernel.__file__,
+        moe_activation.__file__,
+        fp4_common.__file__,
+        cute_dsl_utils.__file__,
+    )
+
+
+def _write_json_atomic(path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f"{path.suffix}.tmp.{os.getpid()}")
+    tmp.write_text(json.dumps(payload, indent=2))
+    os.replace(tmp, path)
+
+
+def _build_direct_micro_on_disk(kernel, prefix: str, compile_key: Tuple, topk_ids_dtype) -> Tuple[Any, bool]:
+    """(compiled, accepts_block_dim) for one direct micro specialization, through
+    flashinfer's on-disk CuTe-DSL cache.
+
+    The block-dim verdict (register pressure may cap the launchable CTA below the
+    fused body's 512 threads) needs the in-process compiled object -- its kernel
+    name and CUDA library handle -- which a ``.o`` reloaded from disk does not
+    carry. So the verdict is persisted beside the object as a sidecar when the
+    kernel is built, and read back on a cache hit; an object without its sidecar
+    is rebuilt rather than served with a guessed verdict.
+    """
+    from flashinfer.jit.cute_dsl_core import (
+        JitSpecCuteDsl,
+        _hash_source_files,
+        cute_dsl_cache_disabled,
+    )
+
+    verdict: Dict[str, bool] = {}
+
+    def compile_fn():
+        compiled = compile_direct_micro_kernel(kernel, topk_ids_dtype=topk_ids_dtype, tvm_ffi=True)
+        verdict["accepts"] = compiled_direct_micro_accepts_block_dim(compiled, kernel.launch_block_dim)
+        return compiled
+
+    if cute_dsl_cache_disabled():
+        compiled = compile_fn()
+        return compiled, verdict["accepts"]
+    try:
+        source_sha256 = _hash_source_files(tuple(_direct_micro_source_files()))
+    except (OSError, TypeError):
+        compiled = compile_fn()
+        return compiled, verdict["accepts"]
+    spec = JitSpecCuteDsl(_DIRECT_MICRO_MODULE, _disk_kernel_name(prefix, compile_key), compile_fn, source_sha256)
+    sidecar = spec.module_dir / f"{spec.kernel_name}.blockdim.json"
+    if spec.object_path.exists() and not sidecar.exists():
+        spec.object_path.unlink()
+    compiled = spec.build_and_load()
+    if "accepts" in verdict:                       # built in this process: persist the verdict beside the .o
+        _write_json_atomic(sidecar, {"block_dim": int(kernel.launch_block_dim), "accepts": bool(verdict["accepts"])})
+        return compiled, verdict["accepts"]
+    try:
+        data = json.loads(sidecar.read_text())
+        accepts = bool(data["accepts"]) if int(data["block_dim"]) == int(kernel.launch_block_dim) else None
+    except (OSError, ValueError, KeyError, TypeError):
+        accepts = None
+    if accepts is None:                              # unreadable or stale sidecar: rebuild once, never guess
+        spec.object_path.unlink(missing_ok=True)
+        compiled = spec.build_and_load()
+        _write_json_atomic(sidecar, {"block_dim": int(kernel.launch_block_dim), "accepts": bool(verdict["accepts"])})
+        return compiled, verdict["accepts"]
+    return compiled, accepts
 
 
 def _get_direct_micro_kernel(
@@ -2877,16 +2957,13 @@ def _get_direct_micro_kernel(
         swiglu_beta=swiglu_beta,
         device=device,
     )
-    compile_key = ("direct_micro", kernel.__cache_key__, topk_ids_dtype)
+    compile_key = ("direct_micro", kernel.__cache_key__(), topk_ids_dtype)
     entry = _DIRECT_MICRO_KERNEL_CACHE.get(compile_key)
     if entry is None:
-        compiled = compile_direct_micro_kernel(kernel, topk_ids_dtype=topk_ids_dtype)
         # Register pressure can cap the launchable CTA below the fused body's
-        # 512 threads; probe once per compiled kernel.
-        accepts = compiled_direct_micro_accepts_block_dim(
-            compiled, kernel.launch_block_dim
-        )
-        entry = (compiled, accepts)
+        # 512 threads; the verdict travels with the on-disk kernel.
+        entry = _build_direct_micro_on_disk(
+            kernel, f"direct_micro_E{weight_E}_m{m}_k{k}_n{n}_t{num_topk}", compile_key, topk_ids_dtype)
         _DIRECT_MICRO_KERNEL_CACHE[compile_key] = entry
     compiled, accepts = entry
     cached = (compiled, kernel.grid_x, accepts)
@@ -3099,6 +3176,7 @@ def launch_sm120_static_moe(
             barrier_epoch=workspace.dm_barrier_epoch,
             m=num_tokens,
             grid_x=grid_x,
+            tvm_ffi=True,
         )
         return scatter_output
 
