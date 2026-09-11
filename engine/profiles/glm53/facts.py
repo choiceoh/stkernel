@@ -53,6 +53,7 @@ class Facts:
     idx_dim: int
     topk: int
     kpool: int
+    max_position: int               # max_position_embeddings: positions past it were never trained (the door refuses them)
     # MoE
     experts: int
     topk_experts: int
@@ -127,6 +128,7 @@ def load(ckpt: "str | Path" = CKPT) -> Facts:
         heads=t["num_attention_heads"], qk_nope=t["qk_nope_head_dim"], v_dim=t["v_head_dim"],
         q_lora=t["q_lora_rank"], kv_lora=t["kv_lora_rank"],
         idx_heads=t["index_n_heads"], idx_dim=t["index_head_dim"], topk=t["index_topk"], kpool=t["index_kpool"],
+        max_position=int(t["max_position_embeddings"]),
         experts=t["n_routed_experts"], topk_experts=t["num_experts_per_tok"], moe_inter=t["moe_intermediate_size"],
         dense_inter=t["intermediate_size"], routed_scale=t["routed_scaling_factor"], swiglu_limit=t["swiglu_limit"],
         hc=t["hc_mult"], hc_eps=t["hc_eps"], sinkhorn=t["hc_sinkhorn_iters"], post_mult=2.0,

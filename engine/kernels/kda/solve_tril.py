@@ -8,7 +8,6 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 # ruff: noqa: E501
 
-import os
 
 import torch
 
@@ -19,7 +18,7 @@ from .index import prepare_chunk_indices
 from .op import make_tensor_descriptor
 from .utils import input_guard, is_amd, is_tma_supported
 
-FLA_TRIL_PRECISION = os.environ.get("FLA_TRIL_PRECISION", "ieee")
+FLA_TRIL_PRECISION = "ieee"   # D11 (ST): served value; FLA_TRIL_PRECISION was never set on the fleet
 ALLOWED_TRIL_PRECISIONS = ["ieee", "tf32"] if is_amd else ["ieee", "tf32", "tf32x3"]
 assert FLA_TRIL_PRECISION in ALLOWED_TRIL_PRECISIONS, (
     f"FLA_TRIL_PRECISION must be one of {ALLOWED_TRIL_PRECISIONS}, but got {FLA_TRIL_PRECISION}"

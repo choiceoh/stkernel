@@ -31,6 +31,8 @@ def main():
     parser.add_argument("--lanes", default="conv,kda,mhc,indexer,kpool,mla,moe")
     parser.add_argument("--moe-experts", type=int, choices=(8, 288), default=8,
                         help="8 for bounded smoke; 288 for GLM's full TP4 expert geometry")
+    parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
+    parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     args = parser.parse_args()
     sys.meta_path.insert(0, ForbidVllm())
     assert not any(n == "vllm" or n.startswith("vllm.") for n in sys.modules)
@@ -42,7 +44,7 @@ def main():
     imported = [m.name for m in pkgutil.walk_packages(engine.kernels.__path__, "engine.kernels.")]
     for name in imported:
         importlib.import_module(name)
-    native, ref = lanes.served(), lanes.reference()
+    native, ref = lanes.served(moe_static=args.moe_static, mla_prefill=args.mla_prefill), lanes.reference()
     rows = []
 
     def report(name, **values):

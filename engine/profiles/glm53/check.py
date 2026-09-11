@@ -218,6 +218,9 @@ def main(argv=None) -> int:
     ap.add_argument("--tokens", type=int, default=512)
     ap.add_argument("--chunk", type=int, default=256)
     ap.add_argument("--lanes", choices=["reference", "served"], default="reference")
+    ap.add_argument("--moe-static", default=lane_tables.MOE_STATIC_STOCK,
+                    help=f"served b12x static-lane spec (the STK_moe_static knob): stock | {lane_tables.MOE_STATIC_PRODUCTION}[,q0]")
+    ap.add_argument("--mla-prefill", default="stock", help="served MLA large-M prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--distributed", action="store_true", help="one rank per GB10; RANK/WORLD_SIZE/MASTER_* from the launcher")
     a = ap.parse_args(argv)
@@ -242,7 +245,8 @@ def main(argv=None) -> int:
 def judge(a, F, layers, ids, garbage, comm):
     t0 = time.perf_counter()
     tp = None if comm is not None else LocalTP(facts.TP)
-    lanes = lane_tables.reference() if a.lanes == "reference" else lane_tables.served(tp=tp)
+    lanes = (lane_tables.reference() if a.lanes == "reference"
+             else lane_tables.served(tp=tp, moe_static=a.moe_static, mla_prefill=a.mla_prefill))
     outs = ([rank_main(comm, a, F, layers, lanes, ids, garbage)] if comm is not None
             else tp.run(rank_main, a, F, layers, lanes, ids, garbage))
     wall = time.perf_counter() - t0

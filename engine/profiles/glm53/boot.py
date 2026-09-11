@@ -29,7 +29,7 @@ from engine.base import scheduler as sched                       # noqa: E402
 from engine.base.arena import Arena, prepare_allocation          # noqa: E402
 from engine.base.runtime_memory import RuntimeMemory           # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
-from engine.base.config import Config, Fact                      # noqa: E402
+from engine.base.config import Config, Fact, Knob                # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
 from engine.base.loader import RankLoader                        # noqa: E402
 from engine.base.params import total_bytes                       # noqa: E402
@@ -87,8 +87,12 @@ def eos_ids(ckpt=facts.CKPT) -> "list[int]":
 
 def declared(a, comm_world: int) -> Config:
     """D11: the only inputs are facts and expiring knobs; an undeclared STK_*
-    in the environment kills the boot. No knobs today -- every value below is
-    a fact with a source, and there is nothing to tune by env."""
+    in the environment kills the boot, and so does an expired knob. The two
+    knobs are the kernel package's only remaining axes under measurement on
+    ST (2026-09-12: 43 env knobs left engine/kernels; production's adopted
+    values are code, the never-adopted ones are gone, these two are the
+    candidates a bracket still has to judge on this engine)."""
+    import datetime as _dt
     facts_ = [
         Fact("model", str(a.ckpt_meta), "the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)"),
         Fact("ranks", str(a.ranks), "preshard output"),
@@ -99,7 +103,16 @@ def declared(a, comm_world: int) -> Config:
         Fact("port", int(a.port), "--port"),
         Fact("prefix_snapshots", PREFIX_SNAPSHOTS, "chunk-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
     ]
-    cfg = Config(facts_, knobs=[])
+    knobs = [
+        Knob("moe_static", lane_tables.MOE_STATIC_STOCK, _dt.date(2026, 9, 30),
+             f"b12x static lane: production's 2026-09-09 adoption {lane_tables.MOE_STATIC_PRODUCTION!r} (+q0 = the TP recipe) "
+             "against the stock kernel the §15~18 judge ran; win = bake t,r,sf6 into lanes.served and delete this knob",
+             f"STK_moe_static={lane_tables.MOE_STATIC_STOCK}"),
+        Knob("mla_prefill", "stock", _dt.date(2026, 9, 30),
+             "large-M MLA prefill candidates (39차: pair, pair4, tile32; production keeps them off pending numerics + a TTFT bracket)",
+             "STK_mla_prefill=stock"),
+    ]
+    cfg = Config(facts_, knobs=knobs)
     return cfg
 
 
@@ -155,6 +168,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
         recorder.gauge("boot_immediately_free_GiB", round(report["immediately_free"] / GIB, 3))
         recorder.gauge("boot_reclaimed_GiB", round(report["reclaimed"] / GIB, 3))
+        # D1: the box declared, with every line's provenance, before the arena is allocated
+        from engine.profiles.glm53 import budget as budget_mod
+        b = budget_mod.budget(kv_gib, max_seqs, chunk=sched.chunk_for(F.block, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
+                              ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None, snapshots=PREFIX_SNAPSHOTS)
+        recorder.gauge("budget_unassigned_GiB", round(b.kv_gib - b.kv_declared_gib, 2))
+        if comm.rank == 0:
+            print(budget_mod.report(b))
     try:
         with recorder.phase("arena"):
             arena = Arena(arena_bytes)
@@ -399,7 +419,7 @@ def fleet(a) -> int:
     try:
         if comm.rank == 0:
             print(cfg.table())
-        lanes = lane_tables.served()                                              # every served lane, or the boot dies (D3)
+        lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])   # every served lane, or the boot dies (D3)
         rec = Recorder(f"rank{comm.rank}")
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,

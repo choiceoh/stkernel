@@ -7,7 +7,6 @@
 # the following copyright notice:
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
-import os
 
 import torch
 
@@ -16,7 +15,7 @@ import triton.language as tl
 
 BT_LIST = [8, 16, 32, 64, 128]
 
-USE_DEFAULT_FLA_NORM = int(os.getenv("USE_DEFAULT_FLA_NORM", "0"))
+USE_DEFAULT_FLA_NORM = 0   # D11 (ST): served value (rsqrt-multiply kernel2); the env switch was never set
 
 
 @triton.autotune(
