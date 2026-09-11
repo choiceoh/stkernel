@@ -1,0 +1,10 @@
+test_chunk_carry_and_torch_convolution (test_engine_causal_conv.SingleConvTests.test_chunk_carry_and_torch_convolution) ... ok
+test_empty_and_invalid_arguments (test_engine_causal_conv.SingleConvTests.test_empty_and_invalid_arguments) ... ok
+test_graph_replay_changed_inputs_state_and_independent_streams (test_engine_causal_conv.SingleConvTests.test_graph_replay_changed_inputs_state_and_independent_streams) ... ok
+test_projection_stride_lengths_and_history_boundaries (test_engine_causal_conv.SingleConvTests.test_projection_stride_lengths_and_history_boundaries) ... ok
+test_widths_channel_tails_dtypes_and_strided_weights_history (test_engine_causal_conv.SingleConvTests.test_widths_channel_tails_dtypes_and_strided_weights_history) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 15.516s
+
+OK

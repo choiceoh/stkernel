@@ -1,0 +1,177 @@
+{
+  "st-conv-tune-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "tune.py"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T17:03:21.638151964Z",
+    "finished_at": "2026-09-11T17:03:39.535224955Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-conv-parallel-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "tune-parallel.py"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T17:05:39.504131935Z",
+    "finished_at": "2026-09-11T17:06:06.896619172Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-conv-check-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_engine_causal_conv.py",
+      "-v"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T17:06:56.381050138Z",
+    "finished_at": "2026-09-11T17:07:13.84158543Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-conv-perf-initial-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "probes/engine_causal_conv_perf.py",
+      "--baseline-lanes",
+      "/work/baseline-lanes.py",
+      "--output",
+      "/work/perf-initial.json"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T17:07:36.496943096Z",
+    "finished_at": "2026-09-11T17:07:49.878625844Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-conv-real-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "probes/engine_kda_state_real.py",
+      "--baseline-lanes",
+      "/work/baseline-lanes.py",
+      "--checkpoint",
+      "/meta",
+      "--rank-file",
+      "/ranks/rank0of4.safetensors",
+      "--output",
+      "/work/real.json"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T17:09:03.591784161Z",
+    "finished_at": "2026-09-11T17:10:21.299840019Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-conv-perf-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "probes/engine_causal_conv_perf.py",
+      "--baseline-lanes",
+      "/work/baseline-lanes.py",
+      "--output",
+      "/work/perf.json"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T17:10:48.641833174Z",
+    "finished_at": "2026-09-11T17:10:58.735458841Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-conv-real-final-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "probes/engine_kda_state_real.py",
+      "--baseline-lanes",
+      "/work/baseline-lanes.py",
+      "--checkpoint",
+      "/meta",
+      "--rank-file",
+      "/ranks/rank0of4.safetensors",
+      "--output",
+      "/work/real-final.json"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T17:11:38.257825056Z",
+    "finished_at": "2026-09-11T17:11:55.675466569Z",
+    "memory_limit_bytes": 5368709120,
+    "nano_cpus": 2000000000
+  },
+  "st-conv-suite-9391": {
+    "image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+    "command": [
+      "600",
+      "python3",
+      "suite.py"
+    ],
+    "entrypoint": [
+      "timeout"
+    ],
+    "status": "exited",
+    "exit_code": 0,
+    "oom_killed": false,
+    "started_at": "2026-09-11T17:12:11.328949438Z",
+    "finished_at": "2026-09-11T17:13:25.987159282Z",
+    "memory_limit_bytes": 6442450944,
+    "nano_cpus": 2000000000
+  }
+}
