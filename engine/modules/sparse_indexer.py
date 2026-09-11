@@ -90,12 +90,45 @@ def fwht128_quant(rows: torch.Tensor):
 
 
 def kpool_compress(k: torch.Tensor, slot_score: torch.Tensor, ape: torch.Tensor):
-    """k [P, kpool, 128] bf16, slot_score [P, kpool] (bf16/fp32), ape [kpool, 128] fp32
-    -> (pooled fp8 [P, 128], scale [P, 1]) -- one compressed key per pool."""
-    score = slot_score.float()[..., None] + ape.float()[None]             # [P, kpool, 128]
+    """k [P, kpool, 128] bf16, slot_score [P, kpool, 128] PER-CHANNEL gate score
+    (a [P, kpool] score broadcasts), ape [kpool, 128] fp32
+    -> (pooled fp8 [P, 128], scale [P, 1]) -- one compressed key per pool.
+    The softmax is over the pool's slots, separately per channel: the served
+    kernel keeps max_score/prob as (BLOCK_D,) vectors."""
+    score = slot_score.float()
+    if score.dim() == 2:
+        score = score[..., None]
+    score = score + ape.float()[None]                                     # [P, kpool, 128]
     prob = torch.softmax(score, dim=1)
     pooled = (prob * k.float()).sum(dim=1)                                # [P, 128]
     return fwht128_quant(pooled)
+
+
+def select_with_tail(pool_ids: torch.Tensor, seq_lens: torch.Tensor, pool_size: int) -> torch.Tensor:
+    """GLM's `expand_pools_and_append_tail`: selected pool ids [rows, topk/pool]
+    (-1 = none) -> token ids [rows, topk + pool_size - 1] int32: every selected
+    pool expands to its `pool_size` tokens, then the incomplete trailing pool
+    (`index_kpool_always_select_tail`: the newest tokens are always attended)
+    is appended, -1 padded."""
+    rows, n_groups = pool_ids.shape
+    topk = n_groups * pool_size
+    dev = pool_ids.device
+    offs = torch.arange(pool_size, device=dev, dtype=torch.int64)
+    ids = pool_ids.to(torch.int64)
+    tokens = (ids[..., None] * pool_size + offs).reshape(rows, topk)
+    seq = seq_lens.to(torch.int64)
+    pool_len = seq // pool_size
+    # a selected pool is real only if it is a COMPLETE pool of this sequence:
+    # the served kernel masks ids >= seq_len // pool_size to -1 (rows with
+    # seq 3 and 4 exposed this: every "selected" pool came back -1)
+    invalid = (ids < 0) | (ids >= pool_len[:, None])
+    tokens = tokens.masked_fill(invalid[..., None].expand(-1, -1, pool_size).reshape(rows, topk), -1)
+    tail_start = pool_len * pool_size
+    tail_count = seq - tail_start                                          # in [0, pool_size)
+    t_offs = torch.arange(pool_size - 1, device=dev, dtype=torch.int64)
+    tail = tail_start[:, None] + t_offs[None, :]
+    tail = tail.masked_fill(t_offs[None, :] >= tail_count[:, None], -1)
+    return torch.cat([tokens, tail], dim=1).to(torch.int32)
 
 
 def _selfcheck_pool() -> None:
@@ -111,7 +144,15 @@ def _selfcheck_pool() -> None:
     q_mean, s_mean = kpool_compress(k, torch.zeros(P, kp, device=dev), torch.zeros(kp, 128, device=dev))
     ref = fwht128_quant(k.float().mean(1))
     assert torch.equal(q_mean.view(torch.uint8), ref[0].view(torch.uint8))
-    print("  sparse_indexer: hadamard128 orthogonal, kpool_compress pow2 scale, uniform gate == mean OK")
+    out = select_with_tail(torch.tensor([[3, 0, -1], [1, 2, 5]], device=dev), torch.tensor([15, 24], device=dev), 4)
+    assert out.shape == (2, 12 + 3)
+    # seq 15: pools 0..2 complete, pool 3 (tokens 12-15) is NOT -- token 15 does not exist --
+    # so a selected id 3 is masked and tokens 12..14 arrive through the tail instead
+    assert out[0].tolist() == [-1, -1, -1, -1, 0, 1, 2, 3, -1, -1, -1, -1, 12, 13, 14], out[0].tolist()
+    assert out[1, 12:].tolist() == [-1, -1, -1]                                                      # seq 24: no tail
+    short = select_with_tail(torch.tensor([[3, 0, 1]], device=dev), torch.tensor([4], device=dev), 4)
+    assert short[0].tolist() == [-1] * 4 + [0, 1, 2, 3] + [-1] * 4 + [-1] * 3, short[0].tolist()   # seq 4: only pool 0 exists
+    print("  sparse_indexer: hadamard128 orthogonal, kpool_compress pow2 scale, uniform gate == mean, tail expansion OK")
 
 
 if __name__ == "__main__":
