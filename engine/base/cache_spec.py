@@ -63,11 +63,11 @@ def plan(paged: "list[PagedSpec]", slots: "list[SlotSpec]", kv_gib: float,
     raw = per_tok * block_tokens
     block_bytes = -(-raw // sector) * sector
     slot_bytes = sum(s.bytes_per_seq * s.layers for s in slots)
-    slots_bytes = slot_bytes * max_seqs
+    slots_bytes = slot_bytes * (max_seqs + 1)          # +1: slot 0 is the kernels' null block, never issued
     left = kv_gib * GIB - slots_bytes
     if left <= 0:
         raise MemoryError(f"{max_seqs} slots need {slots_bytes / GIB:.2f} GiB, budget is {kv_gib:.2f}")
-    return Plan(block_tokens, block_bytes, int(left // block_bytes), slot_bytes, max_seqs,
+    return Plan(block_tokens, block_bytes, int(left // block_bytes), slot_bytes, max_seqs + 1,
                 (left // block_bytes) * block_bytes / GIB, slots_bytes / GIB)
 
 
@@ -90,7 +90,7 @@ def _selfcheck() -> None:
              PagedSpec("qsa keys", n_full, idx_tok // n_full, "profiles/qwen38/caches")]
     slots = [SlotSpec("gdn state", 1, per_seq, "profiles/qwen38/caches")]
     p = plan(paged, slots, kv_gib=40.0, max_seqs=32, block_tokens=16)
-    assert p.block_bytes % 4096 == 0 and p.num_slots == 32
+    assert p.block_bytes % 4096 == 0 and p.num_slots == 33          # 32 usable + the null slot
     ctx32 = p.max_context(32)
     # the profile said 40 GiB buys ~100,590 tokens at concurrency 32; blocks round down a little
     assert 90_000 < ctx32 <= 100_590, ctx32
@@ -100,7 +100,7 @@ def _selfcheck() -> None:
     gp = plan([PagedSpec("mla latent fp8", 11, gkv // 11, "glm53/plan"), PagedSpec("indexer", 11, gidx // 11, "glm53/plan")],
               [SlotSpec("kda state", 1, gs, "glm53/plan")], kv_gib=8.73, max_seqs=4, block_tokens=2304)
     assert gp.block_tokens == 2304 and gp.max_context(4) > 300_000, gp
-    print(f"  cache_spec: qwen38 40 GiB -> {p.num_blocks:,} blocks x {p.block_bytes} B + 32 slots x {p.slot_bytes / 2**20:.1f} MiB, "
+    print(f"  cache_spec: qwen38 40 GiB -> {p.num_blocks:,} blocks x {p.block_bytes} B + 32(+null) slots x {p.slot_bytes / 2**20:.1f} MiB, "
           f"ctx@32 {ctx32:,}; glm53 8.73 GiB -> {gp.num_blocks:,} blocks of 2304 tok, ctx@4 {gp.max_context(4):,} OK")
 
 

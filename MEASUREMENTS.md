@@ -8671,3 +8671,13 @@ pre(post 3.0e-4 · comb 2.8e-4 · layer_input 4.4e-3), post 1.6e-3. 두 함정: 
 `MultiHeadLatentAttentionWrapper` 는 투영·노름·인덱서·attn·o_proj 의 순수 torch 합성이라 우리 층 라이브러리
 위에 그대로 올라간다(rope 없음, q_lora 1536 / kv_lora 512). 계기: real 10 → **8**(남은 것: kpool 인덱서 셋 +
 `DeepseekV32IndexerCache`·`FusedQkvAProj`, `causal_conv1d` 둘, `FusedMoEFactory`).
+
+### causal conv 레퍼런스 == 서빙 op — 넷째 real 에지, 그리고 **슬롯 0 은 null 이다**
+
+`modules/causal_conv` 를 glm53 이미지의 서빙 Triton op(`causal_conv1d_fn`/`update`)와 대조: 프리필 y 2.9e-4 ·
+최종 상태 정확, update y·상태 정확. 그 전 진단 세 번(레이아웃 격자·dtype·가중치 방향)이 전부 rel ≈ 1 이었던
+이유: **커널은 캐시 인덱스 0 을 null 블록으로 보고 그 시퀀스를 통째로 건너뛴다**(숫자 진단 `y[0] = 4.0 = x`,
+상태 불변). 서빙 러너는 슬롯 0 을 배부한 적이 없어 프로덕션에선 안 보이는 계약. 엔진 규칙: `base/kv.SlotPool`
+은 슬롯 0 을 절대 내주지 않고 `cache_spec` 은 슬롯 하나를 더 잡는다(D3). GLM `o_norm` 활성 = sigmoid.
+계기: real 8 → **6**. **함정 둘째**: `cat >> … <<'EOF'` 뒤 줄의 `git commit` 은 `&&` 사슬 밖이라 앞 검사가
+실패해도 돈다(bf9fccfa 가 그렇게 들어감) — 판정은 변수로, 커밋은 그 변수를 보고.

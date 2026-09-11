@@ -111,7 +111,7 @@ def _selfcheck() -> None:
                 self.left[s] -= 1; out.append(self.left[s] == 0)
             return out
     c = sched.Contract(chunk_align=16, token_budget=64, draft_slots=0, max_wait_s=20.0, max_running=8)
-    r = Runner(Fake(), c, BlockPool(64, 16, 8, 32), SlotPool(8), Ring(16, STEP_RECORD.size))
+    r = Runner(Fake(), c, BlockPool(64, 16, 8, 32), SlotPool(9), Ring(16, STEP_RECORD.size))   # 9 = null + 8
     r.submit(1, 100, now=0.0); r.submit(2, 20, now=0.0)
     kinds = []
     t = 0.0
@@ -123,7 +123,7 @@ def _selfcheck() -> None:
     # decoding -- then seq 2 decodes. No prefill ever lands beside a decoder.
     assert kinds == ["prefill", "prefill", "decode", "decode", "decode",
                      "prefill", "decode", "decode", "decode"], kinds
-    assert r.state.running == [] and r.kv.available == 64 and r.slots.available == 8
+    assert r.state.running == [] and r.kv.available == 64 and r.slots.available == 8   # 8 usable of 9
     assert r.ring.count == len(kinds)
     last = STEP_RECORD.unpack(r.ring.ordered()[-1])
     assert last[2] == KIND[sched.DECODE]
