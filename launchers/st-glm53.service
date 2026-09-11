@@ -7,6 +7,7 @@ Conflicts=dsv4-tp4.service dsv4-hybrid.service dsv4-nvfp4.service fleet-idle-rec
 
 [Service]
 Type=simple
+EnvironmentFile=-/home/choiceoh/.config/st-glm53.env
 ExecStart=/home/choiceoh/st-engine/launchers/st-glm53-supervisor.sh
 Restart=always
 RestartSec=15

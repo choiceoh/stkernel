@@ -57,6 +57,20 @@ start. 재시작 간격은 60 s 부터 두 배씩 30 분까지, 5 회 실패 뒤
     bash launchers/start-st-glm53.sh stop            # 네 노드 컨테이너 + 잠금 해제
     systemctl --user start fleet-idle-recovery.timer # 5 분 유휴 뒤 vLLM 복귀
 
+프로덕션은 `ST_PRODUCTION=1`로 실행한다. `boot.py --production`은 검증된 stock MoE/MLA, 전체 컨텍스트,
+served 레인, 캡처 decode를 고정한다. 실험 노브를 선언하지 않아 실험 만료일이 지난 뒤에도 같은 릴리스로 재시작할 수 있고,
+`STK_*`를 섞으면 부팅을 거절한다. 실험은 기존 기본 실행 모드와 만료 규칙을 사용한다.
+
+`st-glm53.service`는 `~/.config/st-glm53.env`를 읽는다. `ST_REPO`와 `ST_ENGINE_DIR`를 동일한
+`/home/choiceoh/st-releases/<commit>`으로, `ST_IMAGE`를 `st-engine:prod-<commit>`으로 고정하고,
+유닛의 `ExecStart`도 그 릴리스의 supervisor를 가리키는 drop-in으로 설치한다. 이렇게 하면 실험용
+`~/st-engine`의 변경이 실행 중인 프로덕션의 소스에 반영되지 않는다. 기존 컨테이너의 자동 재시작은 끄고
+헤드의 supervisor가 네 랭크를 함께 복구한다. 헤드 사용자에 linger가 필요하다.
+
+런처는 잠금을 원자적으로 획득하고 준비 실패 시 자기 잠금만 해제한다. `stop`은 다른 실험의 잠금을 거절한다.
+supervisor는 다른 `st-*` 컨테이너·외부 잠금·접속 불가 노드를 보면 재시작을 보류하며 실패 횟수도 소모하지 않는다.
+전환 전 설정과 이미지 태그를 보존하고, vLLM 복구 timer는 `disable --now`로 재부팅 후에도 비활성화한다.
+
 Prefix 재사용(`base/prefix.py`): 프롬프트를 프리필 청크(6,912 = 블록 3개) 단위로 해시 사슬을 만들고, 청크 경계마다 모델의 위치 링 상태
 (KDA conv 탭 3개 + 재귀 상태 1개 × 34층, 드래프터 문맥 링; 인덱서 꼬리는 경계에서 비어 있어 제외)를 아레나의 스냅샷 슬롯(`PREFIX_SNAPSHOTS`
 = 8, 랭크당 ~77 MiB 씩)에 두고 그 앞 블록들을 고정한다. 새 프롬프트는 자기 길이보다 짧은 가장 긴 캐시 경계를 **입양**(읽기 전용 공유

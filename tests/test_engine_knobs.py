@@ -3,9 +3,11 @@ environment; the profile declares the two remaining axes (STK_moe_static,
 STK_mla_prefill) and applies them once, before anything binds or arms."""
 import datetime
 import importlib
+import os
 import sys
 import types
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import torch
@@ -15,6 +17,21 @@ sys.path.insert(0, str(ROOT))
 
 
 class KnobDeclarationTests(unittest.TestCase):
+    def test_production_remains_restartable_after_experiment_expiry(self):
+        from engine.profiles.glm53 import boot
+        from engine.base.config import Config, ConfigError
+        args = types.SimpleNamespace(production=True, ckpt_meta="/meta", ranks="/ranks", kv_gib=8.73, port=8000)
+        def future_config(facts, knobs):
+            return Config(facts, knobs, env={}, today=datetime.date(2040, 1, 1))
+        with patch.object(boot, "Config", side_effect=future_config):
+            cfg = boot.declared(args, 4)
+        self.assertFalse(cfg.knobs)
+        self.assertEqual([cfg[k] for k in ("moe_static", "mla_prefill", "context_ceiling", "lanes", "decode_eager")],
+                         ["stock", "stock", 0, "served", 0])
+        with patch.dict(os.environ, {"STK_decode_eager": "1"}, clear=True):
+            with self.assertRaises(ConfigError):
+                boot.declared(args, 4)
+
     def _declared(self, env):
         from engine.base.config import Config, ConfigError, Fact, Knob
         from engine.profiles.glm53 import lanes

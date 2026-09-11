@@ -111,6 +111,13 @@ def declared(a, comm_world: int) -> Config:
         Fact("port", int(a.port), "--port"),
         Fact("prefix_snapshots", PREFIX_SNAPSHOTS, "chunk-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
     ]
+    if getattr(a, "production", False):
+        # A pinned serving release must remain restartable after experiments expire.
+        # These are the full-fleet qualified defaults; STK_* overrides are rejected
+        # by Config because production declares facts and no experiment knobs.
+        defaults = dict(moe_static="stock", mla_prefill="stock", context_ceiling=0,
+                        lanes="served", decode_eager=0)
+        return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
         Knob("moe_static", lane_tables.MOE_STATIC_STOCK, _dt.date(2026, 9, 30),
              f"b12x static lane: production's 2026-09-09 adoption {lane_tables.MOE_STATIC_PRODUCTION!r} (+q0 = the TP recipe) "
@@ -503,6 +510,7 @@ def fleet(a) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--local", action="store_true", help="four ranks as threads on this box, reference lanes")
+    ap.add_argument("--production", action="store_true", help="fixed serving defaults without expiring experiment knobs; rejects STK_* overrides")
     ap.add_argument("--layers", default="0-4")
     ap.add_argument("--ranks", default=str(facts.RANKS))
     ap.add_argument("--kv-gib", type=float, default=KV_GIB)
