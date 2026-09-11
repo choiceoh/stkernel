@@ -17,6 +17,7 @@ from engine.profiles.glm53.decode_graphs import DeviceStep, GraphCaches
 from engine.profiles.glm53.net import Glm53Net, Step
 from engine.profiles.glm53.weights import rank_loader
 from engine_kda_state_perf import baseline_lane
+from engine_causal_conv_perf import baseline_conv
 
 
 class IsolatedRank:
@@ -28,12 +29,18 @@ def relative(x, y):
     return ((x.float()-y.float()).abs().max()/y.float().abs().max().clamp_min(1e-6)).item()
 
 
+def same_bits(x, y):
+    return (x.shape == y.shape and x.dtype == y.dtype and
+            torch.equal(x.contiguous().view(torch.uint8), y.contiguous().view(torch.uint8)))
+
+
 @torch.inference_mode()
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     baseline = ap.add_mutually_exclusive_group(required=True)
     baseline.add_argument("--baseline-dir", type=Path)
     baseline.add_argument("--baseline-net", type=Path, help="frozen net.py for comparing the complete KDA method")
+    baseline.add_argument("--baseline-lanes", type=Path, help="frozen lanes.py for comparing the conv adapter")
     ap.add_argument("--checkpoint", type=Path, required=True)
     ap.add_argument("--rank-file", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
@@ -50,6 +57,8 @@ def main():
         spec.loader.exec_module(module)
         methods[0] = module.Glm53Net._kda
         tables = [current,current]
+    elif a.baseline_lanes:
+        tables = [replace(current,conv_prefill=baseline_conv(a.baseline_lanes)),current]
     else:
         tables = [replace(current,kda_recurrent=baseline_lane(a.baseline_dir)),current]
     net = Glm53Net(F,IsolatedRank(),current,layers=[0])
@@ -64,8 +73,8 @@ def main():
         state_error = relative(caches[1]._fields["rec",0],caches[0]._fields["rec",0])
         assert output_error < .008 and state_error < 2e-6,(label,output_error,state_error)
         assert torch.equal(caches[1]._fields["conv",0],caches[0]._fields["conv",0]),label
-        exact = torch.equal(outputs[1],outputs[0]) and torch.equal(caches[1].state,caches[0].state)
-        if a.baseline_net: assert exact,label
+        exact = same_bits(outputs[1],outputs[0]) and torch.equal(caches[1].state,caches[0].state)
+        if a.baseline_net or a.baseline_lanes: assert exact,label
         checked.append({"case":label,"output_relative_max":output_error,"ring_relative_max":state_error,
                         "output_and_state_bits_exact":exact})
     for cache in caches: cache.reset()
@@ -105,7 +114,7 @@ def main():
             net.lanes=current
             eager_step=Step.prefill(step.ids,position,0,physical)
             eager=net._kda(0,x,eager_step,caches[1])
-            assert torch.equal(eager,expected_out) and torch.equal(caches[1].state,expected_state), {
+            assert same_bits(eager,expected_out) and torch.equal(caches[1].state,expected_state), {
                 "tokens":t,"context":position,"slot":physical,
                 "output_relative":relative(eager,expected_out),
                 "state_byte_differences":int((caches[1].state!=expected_state).sum())}
@@ -127,6 +136,7 @@ def main():
             weights[s.name] = {"sha256":hashlib.sha256(stream.read(hi-lo)).hexdigest(),"bytes":hi-lo}
     result={"passed":True,"rank":0,"real_weight_bytes":total_bytes(specs),"weights":weights,
         "baseline_net_sha256":hashlib.sha256(a.baseline_net.read_bytes()).hexdigest() if a.baseline_net else None,
+        "baseline_lanes_sha256":hashlib.sha256(a.baseline_lanes.read_bytes()).hexdigest() if a.baseline_lanes else None,
         "config_sha256":hashlib.sha256((a.checkpoint/"config.json").read_bytes()).hexdigest(),
         "synthetic_activations":True,"collectives":False,"graph_eager_bytes_exact":True,
         "checks":checked,"measurements":measurements}

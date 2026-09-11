@@ -77,6 +77,15 @@
       "sha256": "044d005cfe59fd0818ed421274e04f3e8dd679b8cdb64fca9f4422f2643484b2",
       "origin": "image"
     },
+    "causal_conv_single.py": {
+      "source": "engine/kernels/causal_conv.py @ b7a6e44c",
+      "sha256": "5a768e68031ffe92f79fe1fbe4e1cd7615f6305ecc8d145e9125c382b716dd65",
+      "origin": "repository",
+      "local_sha256": "1dca96f7df20f8a432fc5e8fea3eb52f9498e90157e50a01a0ad510f8458acec",
+      "local_modifications": [
+        "2026-09-12 GB10: specialize the forward recurrence for one sequence; remove batching metadata and mutable state table; use 128 channels and eight tokens per CTA; preserve arithmetic order and rounded history."
+      ]
+    },
     "kpool.py": {
       "source": "vllm/models/glm5next/nvidia/ops/kpool_compress.py",
       "sha256": "52959ea33234db6e7cfa94289dd263a15add3be4d2107285418c830b5c19e472",

@@ -1,0 +1,217 @@
+{
+  "passed": true,
+  "rank": 0,
+  "real_weight_bytes": 70492480,
+  "weights": {
+    "L0.kda.in_proj": {
+      "sha256": "b4643fc6d73d1d6270cf50c778326a55e07fb769803513cd887e3cc6ccdacbe0",
+      "bytes": 52559872
+    },
+    "L0.kda.f_b": {
+      "sha256": "0f5faaadb93f74b5516e53beee8428c3a240ef896aca7615ded2d189b37e90ee",
+      "bytes": 524288
+    },
+    "L0.kda.g_b": {
+      "sha256": "06eddbce2bc038d2eaa984bbbfbe80bd1f12fe9277e97f3c61234a6af4c0335d",
+      "bytes": 524288
+    },
+    "L0.kda.conv": {
+      "sha256": "464ec25a38f012636d84f9871049ae0fa67d88adf59e8110c552c3e5c5c48dd2",
+      "bytes": 98304
+    },
+    "L0.kda.A_log": {
+      "sha256": "253580a9211bceafa0e54f1f18922fbc7f869a84b1c31cb39fda4ed36c8903a1",
+      "bytes": 64
+    },
+    "L0.kda.dt_bias": {
+      "sha256": "5967fa07fcb3190309ce3ccf6663375395227c2d7951d16cb22352536eb1a7ad",
+      "bytes": 8192
+    },
+    "L0.kda.o_norm": {
+      "sha256": "5827105a7348f193adb1a267f88f5451488b97a34fe9663e350c1f2585c9ded0",
+      "bytes": 256
+    },
+    "L0.kda.o_proj": {
+      "sha256": "6dcdccf3cb3d42bf8c5084fc65a2ef989f7aea2792ce9e6d88d33fc74d93355e",
+      "bytes": 16777216
+    }
+  },
+  "baseline_net_sha256": null,
+  "baseline_lanes_sha256": "2fa96b88f94bad2dc5ca3d6d3821d74c2051819857e1150f52adfce1254c2c52",
+  "config_sha256": "29c9f4171196910e99b9c069d6b76c56e3cdcd0f436dc1bacbc9513c9a7529ac",
+  "synthetic_activations": true,
+  "collectives": false,
+  "graph_eager_bytes_exact": true,
+  "checks": [
+    {
+      "case": "prefill",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "verify",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "reject_four",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "decode",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx0_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx1_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx7_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx8_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx4095_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx4096_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx0_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx1_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx7_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx8_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx4095_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx4096_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    }
+  ],
+  "measurements": [
+    {
+      "tokens": 1,
+      "context": 4096,
+      "samples_us": [
+        [
+          452.41600275039673,
+          451.3919949531555,
+          453.37599515914917,
+          450.75199007987976,
+          450.9440064430237,
+          452.38399505615234,
+          449.3120014667511,
+          448.2879936695099,
+          452.89599895477295,
+          451.4240026473999,
+          454.4000029563904
+        ],
+        [
+          439.39200043678284,
+          441.536009311676,
+          440.12799859046936,
+          438.975989818573,
+          441.18401408195496,
+          439.07201290130615,
+          438.01599740982056,
+          440.6079947948456,
+          440.16000628471375,
+          440.8319890499115,
+          439.04000520706177
+        ]
+      ],
+      "median_us": [
+        451.4240026473999,
+        440.12799859046936
+      ]
+    },
+    {
+      "tokens": 6,
+      "context": 4096,
+      "samples_us": [
+        [
+          443.5200095176697,
+          443.0080056190491,
+          447.1040070056915,
+          449.44000244140625,
+          445.18399238586426,
+          445.1200067996979,
+          443.93599033355713,
+          446.1120069026947,
+          444.0639913082123,
+          445.18399238586426,
+          442.111998796463
+        ],
+        [
+          433.8879883289337,
+          430.88001012802124,
+          429.85600233078003,
+          430.84800243377686,
+          428.76800894737244,
+          434.87998843193054,
+          429.79198694229126,
+          429.6000003814697,
+          430.84800243377686,
+          430.88001012802124,
+          428.8960099220276
+        ]
+      ],
+      "median_us": [
+        445.1200067996979,
+        430.84800243377686
+      ]
+    }
+  ]
+}

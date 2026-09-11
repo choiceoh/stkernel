@@ -1,0 +1,19 @@
+{
+  "date_kst": "2026-09-12",
+  "baseline_commit": "b7a6e44c870f7f134499801a943deb00ead45573",
+  "host": "srv4",
+  "architecture_evidence": "measurements/sm121a_architecture_20260911/srv4-device.json",
+  "runtime_image": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+  "mounted_engine_matches_local": true,
+  "engine_files": 137,
+  "suite_passed": 268,
+  "suite_skipped": 0,
+  "source_sha256": {
+    "probes/engine_causal_conv_perf.py": "66761d684217b16d45582244e70c84d182fbc8782f5303d4b2ea6e1439632eab",
+    "probes/engine_kda_state_real.py": "1b68c776a957bfc41c4cbd01982d3dd2772e919a0eddf63d67ebd6712c30c1ab",
+    "probes/engine_kda_state_perf.py": "d51749b285aebcd5d8fff6a9ee5c4c6c06adcaa19f8e04d3257829143df14ec5",
+    "tests/test_engine_causal_conv.py": "73a9160c746623cea43895b2b2ac098feea09f42171c0dedcd325926404db6b0",
+    "tests/test_engine_kernels.py": "cd438a2b9e817f60ba1e7f6347d04b360608c87075b08274eefa5b26763f586f",
+    "engine/kernels/SOURCES.json": "ae89652f54e7e30d70821508069dfcedbf13c9888d41146c8d277fa6ef0a9d66"
+  }
+}
