@@ -204,13 +204,16 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     def kda_recurrent(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
         # Dense one-sequence form, separate output states: no NULL slot indices,
         # no in-place overwrite of the initial state needed by rejected drafts.
-        initial = (state0.transpose(-1, -2).contiguous() if state0 is not None
-                   else torch.zeros(1, v.shape[2], v.shape[-1], k.shape[-1], device=q.device, dtype=torch.float32))
-        out, states = fused_recurrent_kda(
+        # Keep the same initial-state specialization as graph replay, whose
+        # history reader supplies zeros at context 0. Omitting that load lets
+        # Triton change reduction order and splits eager/graph state bytes.
+        initial = state0 if state0 is not None else torch.zeros(
+            1, v.shape[2], k.shape[-1], v.shape[-1], device=q.device, dtype=torch.float32)
+        return fused_recurrent_kda(
             q, k, v, g_raw, beta_raw, scale=k.shape[-1] ** -0.5, initial_state=initial,
             inplace_final_state=False, use_qk_l2norm_in_kernel=True,
-            sigmoid_beta=True, a_log=A_log, g_bias=dt_bias, compute_gate=True, lower_bound=lower_bound)
-        return out, states.transpose(-1, -2).contiguous()
+            sigmoid_beta=True, a_log=A_log, g_bias=dt_bias, compute_gate=True,
+            lower_bound=lower_bound, state_layout="kv")
 
     def pre(res, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w, norm_eps):
         if fn.data_ptr() % 16:

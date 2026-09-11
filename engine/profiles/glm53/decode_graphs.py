@@ -147,21 +147,34 @@ class Glm53DecodeGraphs:
         while self.capacities[-1] < total:
             self.capacities.append(min(total, self.capacities[-1] * 2))
 
+        # The rank-local logits go into a buffer this class owns, one per (n, tokens), instead of
+        # into an allocation each capture makes for itself. The sampler depends on the logits shape
+        # alone, so sharing the buffer across a row's capacity buckets is what lets one sampler graph
+        # serve all of them: 72 sampling graphs become 8 (boot-time study, 2026-09-11).
+        self.logits = {}
+
+        def logits_for(n, t):
+            key = (n, t)
+            if key not in self.logits:
+                self.logits[key] = torch.empty(n * t, net.vp, device=caches.device,
+                                               dtype=net.p["head"].dtype)
+            return self.logits[key]
+
         def make_inputs(n, t, capacity):
             device = caches.device
             seqs = torch.arange(n, device=device, dtype=torch.int64)
             slots = seqs + 1
             contexts = torch.zeros(n, device=device, dtype=torch.int64)
             step = DeviceStep(torch.zeros(n * t, device=device, dtype=torch.int64), contexts, t)
-            return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity)
+            return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity), logits_for(n, t)
 
         def forward(inputs):
-            step, _, _, scratch = inputs
+            step, _, _, scratch, logits = inputs
             scratch.gather()
             try:
                 result = net.forward(step, scratch, aux_layers=self.aux_layers)
                 h, aux = result if self.aux_layers else (result, None)
-                logits = net.head_local(h)
+                logits.copy_(net.head_local(h))
                 return h, aux, logits
             finally:
                 del scratch.block_table
@@ -188,7 +201,7 @@ class Glm53DecodeGraphs:
         self.caches.prepare(step)
 
         def fill(inputs):
-            target, seqs, slots, _ = inputs
+            target, seqs, slots, _, _ = inputs
             target.ids.copy_(step.ids)
             target.contexts.copy_(torch.tensor([s.ctx for s in step.segments], dtype=torch.int64))
             seqs.copy_(torch.tensor([s.seq for s in step.segments], dtype=torch.int64))
@@ -272,12 +285,24 @@ class SamplingGraphs:
         from engine.base.sampler import sample
         from engine.modules.vocab import argmax
         self.tokens = target.tokens
-        shapes = list(target.graphs.outputs)
+        # One sampler per LOGITS BUFFER. A target shape is (seqs, tokens, capacity) but the sampler
+        # only ever sees (seqs * tokens, vocab), and the target graphs of one (seqs, tokens) write
+        # the same static buffer -- so capturing one per capacity captured the same program nine
+        # times. The identity check keeps that contract from rotting: a target that hands out a
+        # different buffer per capacity must not have its samplers quietly bound to the first.
+        first = {}
+        for shape in target.graphs.outputs:
+            key, logits = shape[:2], target.graphs.outputs[shape][2]
+            if key not in first:
+                first[key] = shape
+            elif target.graphs.outputs[first[key]][2] is not logits:
+                raise ValueError(f"target shapes {first[key]} and {shape} must share one logits buffer")
+        shapes = list(first)
         saved = generator.get_state()
 
         def make_inputs(*shape):
             n, t = shape[:2]
-            logits = target.graphs.outputs[shape][2]
+            logits = target.graphs.outputs[first[(n, t)]][2]
             # Capture records the target outputs but need not initialize them.
             # Sampling warmup must see finite logits before the first request.
             logits.zero_()
@@ -307,6 +332,8 @@ class SamplingGraphs:
             generator.set_state(saved)
 
     def run(self, shape, temperatures):
+        """`shape` is the target's, whose first two entries name the sampler."""
+        shape = tuple(shape[:2])
         if all(t <= 0 for t in temperatures):
             return self.greedy.run(shape, lambda inputs: None)
         return self.stochastic.run(shape, lambda inputs: inputs[1].copy_(torch.tensor(temperatures)))

@@ -6,9 +6,10 @@
       "source": "overlay/modules/glm53_kernels/kda.py",
       "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
       "origin": "repository",
-      "local_sha256": "eab1d4a81a845737639e4c2d5f6b66759c388b30a5b42a105118e31a76599fc7",
+      "local_sha256": "0adac7cefaeaa249cb3bb1c3b4342719976305dd20e93248fe475daa694f29a8",
       "local_modifications": [
-        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)"
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)",
+        "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry"
       ]
     },
     "kda/chunk_delta_h.py": {
@@ -24,7 +25,11 @@
     "kda/fused_recurrent.py": {
       "source": "vllm/third_party/flash_linear_attention/ops/fused_recurrent.py",
       "sha256": "371e7d733e90a7147fbca8dbfe67e62503ba663bd1570424bc0efa22c54f3e2b",
-      "origin": "image"
+      "origin": "image",
+      "local_sha256": "04ef53a25293f2672f7ab715419bd9503a66aecb25e6573a052f0566a6c486be",
+      "local_modifications": [
+        "2026-09-11 GB10 recurrent: direct canonical K,V state addressing and masked gate loads at padded K boundaries"
+      ]
     },
     "kda/index.py": {
       "source": "vllm/third_party/flash_linear_attention/ops/index.py",
@@ -100,15 +105,20 @@
     "b12x/moe_direct_micro_kernel.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py",
       "sha256": "9b18f54588c3f24cab74dff07545f323e2af8235a4532233655a5a75498e89cc",
-      "origin": "image"
+      "origin": "image",
+      "local_sha256": "b14b207487fb1c81a2c2d664e87919fd0b4042f76b157b6540add758d0c43474",
+      "local_modifications": [
+        "2026-09-12: TVM-FFI compile/launch form (tvm_ffi=True) for the on-disk cache"
+      ]
     },
     "b12x/moe_dispatch.py": {
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "d85de113e79bd2949e4b449bbf96bfe5ad60dbadf4dd12959a671a8be60d03e7",
+      "local_sha256": "6840b2b1e026e460caf30a1898f8b38f43a3d529f51b1bee5b891e06aad55022",
       "local_modifications": [
-        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook"
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
+        "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)"
       ]
     },
     "b12x/moe_dynamic_kernel.py": {

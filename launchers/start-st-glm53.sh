@@ -66,15 +66,24 @@ for v in $(compgen -v STK_ || true); do NCCL_ENV="$NCCL_ENV -e $v=${!v}"; done
 META="$REPO/build/st-glm53-meta"; mkdir -p "$META"
 cp "$CKPT"/config.json "$CKPT"/tokenizer.json "$CKPT"/tokenizer_config.json "$CKPT"/generation_config.json "$META"/ 2>/dev/null
 cp "$CKPT"/chat_template*.jinja "$META"/ 2>/dev/null || true
-for r in "${!NODES[@]}"; do
-  ip=${NODES[$r]}
+# Every node prepares and starts in PARALLEL. A node's rsync, image build and container start depend
+# on no other node's, but rank 0 waits at the rendezvous for the last node to arrive -- so a sequential
+# loop put its own stagger straight into rank 0's boot: measured 9.0 s of a 90.2 s boot (2026-09-11,
+# srv2 :39.3 / srv1 :42.9 / srv3 :46.1 / srv4 :48.3). Each node's output is buffered and printed in rank
+# order so the log stays readable, and one node's failure stops the whole fleet rather than leaving a
+# partial one behind.
+stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
+
+start_rank() {
+  local r=$1 ip=${NODES[$1]}
   echo "== rank $r on $ip"
-  rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/launchers" "$META" "choiceoh@$ip:$ENGINE_DIR/"
+  rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/launchers" "$META" "choiceoh@$ip:$ENGINE_DIR/" \
+    || { echo "ABORT: $ip could not receive the engine tree (rsync)" >&2; return 1; }
   # the ST image is built on the node from the tree just rsynced: seconds (two thin layers on the seed every node has); the seed ID is pinned in build.sh
   node_sh "$ip" "ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh >/dev/null 2>&1 || ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh 2>&1 | tail -5" \
-    || { echo "ABORT: $ip could not build $IMAGE (engine/runtime/build.sh)" >&2; exit 1; }
-  node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; exit 1; }
-  node_sh "$ip" "test -s $DRAFTER/model.safetensors" || { echo "ABORT: $ip lacks the DFlash2 drafter at $DRAFTER" >&2; exit 1; }
+    || { echo "ABORT: $ip could not build $IMAGE (engine/runtime/build.sh)" >&2; return 1; }
+  node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; return 1; }
+  node_sh "$ip" "test -s $DRAFTER/model.safetensors" || { echo "ABORT: $ip lacks the DFlash2 drafter at $DRAFTER" >&2; return 1; }
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \
     --network host --ipc host --shm-size 32g --ulimit memlock=-1:-1 --ulimit nofile=524288:524288 --cap-add IPC_LOCK \
     --device /dev/infiniband:/dev/infiniband \
@@ -82,5 +91,21 @@ for r in "${!NODES[@]}"; do
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER' >/dev/null && echo '$ip: started'"
+}
+
+pids=()
+for r in "${!NODES[@]}"; do
+  start_rank "$r" >"$stage/rank$r.log" 2>&1 &
+  pids[$r]=$!
 done
+failed=""
+for r in "${!NODES[@]}"; do
+  wait "${pids[$r]}" || failed="$failed $r"
+  cat "$stage/rank$r.log"
+done
+if [ -n "$failed" ]; then
+  echo "ABORT: rank(s)$failed did not start; stopping the rest so no partial fleet is left" >&2
+  bash "$0" stop >/dev/null 2>&1 || true
+  exit 1
+fi
 echo "head: http://10.10.10.2:$PORT/v1/completions  (GET / for status)"

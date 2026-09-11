@@ -50,6 +50,14 @@ FP32 부분값을 합치므로 이 경로는 전역 partial 버퍼와 grid 전�
 토큰 수의 32배다. [GB10 양자화 측정](../../measurements/st_gb10_indexer_quant_20260911/README.md)에
 레지스터·shared memory, 실제 가중치 검사와 형상별 시간을 기록했다.
 
+KDA recurrent는 엔진의 `[H,K,V]` 상태를 직접 읽고 모든 토큰의 상태를 같은 배치로 쓴다.
+`state_layout="kv"`는 dense 단일 sequence·별도 출력 상태 계약이며, 기존 `vk` 상태 테이블
+API와 구분한다. GLM TP4의 16 heads·128×128·1~6토큰에서는 BV16·1 warp를 사용한다.
+초기 상태와 draft 롤백 위치를 보존하면서 두 번의 전치 복사를 제거한다. context 0의 영 상태
+입력은 그래프와 일반 실행의 합산 순서를 맞추기 위해 유지한다. 구형 경로와의 FP32 합산 순서는
+달라질 수 있으며, 측정된 수치 차이·전체 KDA 블록 시간·재현 절차는
+[GB10 KDA 상태 측정](../../measurements/st_gb10_kda_state_20260911/README.md)에 있다.
+
 ## 노브 (D11, 2026-09-12 정리)
 
 이 패키지는 환경 변수를 읽지 않는다(예외는 `ST_MLA_BUILD_ROOT` 캐시 경로 하나, `TRITON_CACHE_DIR` 와 같은 부류).
@@ -100,8 +108,10 @@ GPU 검사는 사용 가능한 GB10에서 실행한다. JIT 캐시는 기본 `$H
 DeepGEMM `/cache/deep_gemm`, MLA nvcc 빌드 `/cache/mla`, b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
 `/cache/.cache/flashinfer/<버전>/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/*.o` 로 내보내고 적중 시 DSL 컴파일 없이 로드한다
 (키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
-`cute.compile` 에서 꺼지므로(`compile_only` → `no_cache`) ST 에는 무효다. 유일하게 디스크에 안 남는 것은 direct micro 커널의
-`cute.compile`(프로세스 안 캐시, 실제 스트림 규약)이다. `--lanes conv,kda,mhc`처럼 일부 레인을 골라 재현할 수 있다.
+`cute.compile` 에서 꺼지므로(`compile_only` → `no_cache`) ST 에는 무효다. direct micro 커널도 같은 래퍼를 탄다(모듈
+`st_b12x_direct_micro_sm121a_cute_dsl`, TVM-FFI 형태: 포인터는 정수 주소, 스트림은 env 스트림). 디스크에서 다시 읽은 `.o` 로는
+block-dim 프로브(레지스터 압력이 512 스레드 CTA 를 막는지)를 못 돌리므로, 빌드 때 판정을 `<커널>.blockdim.json` 사이드카로 `.o` 옆에
+남기고 적중 때 읽는다. 사이드카가 없거나 낡은 `.o` 는 다시 빌드한다. `--lanes conv,kda,mhc`처럼 일부 레인을 골라 재현할 수 있다.
 b12x는 `--lanes moe --moe-experts 288`로 실제 TP4 형상(288 experts, top-k 8,
 hidden 4096, rank intermediate 512)을 추가 검사한다. 이 검사에서만 seed의 원본
 FlashInfer API를 호출해 이식 전후를 비교한다. 엔진은 항상 자체 b12x를 호출한다.
