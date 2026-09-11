@@ -222,7 +222,15 @@ for ip in $HEAD_IP $_wips; do
 done
 echo "  all nodes have the model and the image"
 if [ "${PLE_SSD:-0}" = 1 ]; then
-  _rank_of() { case "$1" in "$HEAD_IP") echo 0 ;; *) for _w in $WORKERS; do [ "${_w%%:*}" = "$1" ] && echo "${_w##*:}"; done ;; esac; }
+  # (set -e trap: a `[ .. ] && echo` loop ends false on a non-matching last
+  # worker, which under -e killed the script silently inside $(...).)
+  _rank_of() {
+    if [ "$1" = "$HEAD_IP" ]; then echo 0; return 0; fi
+    for _w in $WORKERS; do
+      if [ "${_w%%:*}" = "$1" ]; then echo "${_w##*:}"; return 0; fi
+    done
+    echo "ABORT: $1 is neither head nor a listed worker" >&2; return 1
+  }
   for ip in $HEAD_IP $_wips; do
     if [ "$ip" = "$HEAD_IP" ]; then run() { bash -c "$1"; }; else run() { ssh $SSHOPT choiceoh@"$ip" "$1"; }; fi
     _f="$PLE_SSD_DIR/ple-r$(_rank_of "$ip")of$TP_SIZE.weight"
