@@ -1,0 +1,15 @@
+{"lane": "imports", "modules": 51, "table": "served", "vllm_loaded": false}
+{"lane": "moe", "tokens": 1, "experts": 288, "topk": 8, "original_kernel": 0.0, "torch_oracle_relative": 0.04871046543121338}
+{"lane": "moe_graph", "replays": 3, "output": 0.0}
+2026-09-11 08:46:27,275 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m8_k4096_n512_t8_r64_868b808c9d5ca057
+2026-09-11 08:46:28,716 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m8_k4096_n512_t8_r64_868b808c9d5ca057.o
+2026-09-11 08:46:28,722 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static_m8_k4096_n512_t8_r64_868b808c9d5ca057
+2026-09-11 08:46:31,405 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/static_m8_k4096_n512_t8_r64_868b808c9d5ca057.o
+{"lane": "moe", "tokens": 8, "experts": 288, "topk": 8, "original_kernel": 0.016393441706895828, "torch_oracle_relative": 0.06043956056237221}
+2026-09-11 08:46:31,743 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387
+2026-09-11 08:46:34,895 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_850c120ba5fc9387.o
+[b12x-bounds] state_E=288 n=512 tile_m=16 routed_rows=1032 -> rows 5632/5632 tiles 352/352 tasks 1408/1408
+2026-09-11 08:46:34,899 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_f3aad2f9a007d174
+2026-09-11 08:46:37,865 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_f3aad2f9a007d174.o
+{"lane": "moe", "tokens": 129, "experts": 288, "topk": 8, "original_kernel": 0.019607843831181526, "torch_oracle_relative": 0.06951219588518143}
+{"passed": true, "vllm_loaded": false, "checks": [{"lane": "imports", "modules": 51, "table": "served", "vllm_loaded": false}, {"lane": "moe", "tokens": 1, "experts": 288, "topk": 8, "original_kernel": 0.0, "torch_oracle_relative": 0.04871046543121338}, {"lane": "moe_graph", "replays": 3, "output": 0.0}, {"lane": "moe", "tokens": 8, "experts": 288, "topk": 8, "original_kernel": 0.016393441706895828, "torch_oracle_relative": 0.06043956056237221}, {"lane": "moe", "tokens": 129, "experts": 288, "topk": 8, "original_kernel": 0.019607843831181526, "torch_oracle_relative": 0.06951219588518143}]}

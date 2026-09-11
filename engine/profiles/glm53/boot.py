@@ -38,6 +38,7 @@ from engine.profiles.glm53.caches import Glm53Caches, layout   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
+from engine.profiles.glm53.weights import rank_loader            # noqa: E402
 
 GIB = 1 << 30
 KV_GIB = 8.73                       # the 40th boot's KV (plan.py): what the box has left after weights, runtime floor and activations
@@ -98,10 +99,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     nb = int((kv_gib * GIB - ns * sb) // (bb + max_seqs * 4))
     if nb < 2:
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
+    rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors")
     with recorder.phase("arena"):
         arena = Arena(total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs))
     with recorder.phase("load"):
-        views = RankLoader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors").load(
+        views = rank.load(
             [s.name for s in specs], arena=arena, recorder=recorder)
         net.bind(views)
     tok = tokenizer(ckpt_meta)

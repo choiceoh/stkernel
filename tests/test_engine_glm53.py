@@ -57,6 +57,41 @@ class LayoutTests(unittest.TestCase):
             layout(replace(F, block=15), [1])
 
 
+@unittest.skipUnless(torch is not None, "requires PyTorch")
+class ExpertPreshardTests(unittest.TestCase):
+    def test_fp4_midpoints_round_to_even_mantissas(self):
+        from engine.modules.quant import _fp4_encode, FP4_TABLE
+        values = torch.tensor([.25, .75, 1.25, 1.75, 2.5, 3.5, 5.])
+        expected = torch.tensor([0., 1., 1., 2., 2., 4., 4.])
+        for sign in (1, -1):
+            actual = FP4_TABLE[_fp4_encode(sign*values).long()]
+            self.assertTrue(torch.equal(actual, sign*expected))
+
+    def test_each_rank_writes_up_then_gate_with_matching_folded_scales(self):
+        from engine.profiles.glm53.specs import layer_specs
+        from engine.modules.nvfp4_sf import unswizzle_sf
+        F = replace(tiny_facts(), dense=(0, 1), moe_inter=512)
+        specs = {s.name: s for s in layer_specs(F, 2)}
+        source = {}
+        for expert in range(F.experts):
+            prefix = f"model.language_model.layers.2.mlp.experts.{expert}."
+            rank_rows = torch.arange(F.moe_inter) // F.moe_inter_local
+            for projection, value in (("up", 16), ("gate", 64)):
+                key = prefix + projection + "_proj."
+                source[key + "weight_packed"] = (value + rank_rows[:, None]).expand(-1, F.hidden//2).to(torch.uint8)
+                source[key + "weight_scale"] = torch.full((F.moe_inter, F.hidden//16), value/16).to(torch.float8_e4m3fn)
+                source[key + "weight_global_scale"] = torch.tensor(2.)
+        for rank in range(4):
+            packed = specs["L2.moe.w13"].build(source, rank, 4)
+            sf = specs["L2.moe.w13_sf"].build(source, rank, 4)
+            self.assertTrue(torch.all(packed[:, :F.moe_inter_local] == 16 + rank))
+            self.assertTrue(torch.all(packed[:, F.moe_inter_local:] == 64 + rank))
+            for expert in range(F.experts):
+                plain = unswizzle_sf(sf[expert].view(torch.uint8), 2*F.moe_inter_local, F.hidden//16).view(torch.float8_e4m3fn).float()
+                self.assertTrue(torch.all(plain[:F.moe_inter_local] == .5))
+                self.assertTrue(torch.all(plain[F.moe_inter_local:] == 2.))
+
+
 @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA PyTorch")
 class CudaCacheTests(unittest.TestCase):
     def test_paired_cache_oracle_checks_inputs_before_isolating_expert_rounding(self):
