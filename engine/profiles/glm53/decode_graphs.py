@@ -3,8 +3,8 @@
 Active sequence count, tokens per sequence and a declared context-capacity
 bucket select a graph. Exact context lengths and physical cache ownership
 are replay inputs, including rollback.
-Paged writes go directly to the arena; state rings are gathered by slot and
-committed inside the graph. No request may be live during capture.
+Paged writes go directly to the arena; recurrent rings transfer only the
+predecessor and new states inside the graph. No request may be live during capture.
 """
 from dataclasses import dataclass
 
@@ -13,6 +13,7 @@ import triton
 import triton.language as tl
 
 from engine.base.graphs import DecodeGraphs
+from engine.kernels.state_cache import gather_ring, commit_ring
 from engine.profiles.glm53.net import Segment
 
 
@@ -81,8 +82,9 @@ class DeviceStep:
 
 
 class GraphCaches:
-    def __init__(self, real, sequence_ids, slots, capacity):
+    def __init__(self, real, sequence_ids, slots, capacity, step):
         self.real, self.sequence_ids, self.slots = real, sequence_ids, slots
+        self.contexts, self.tokens = step.contexts, step.tokens
         self.F, self.layout = real.F, real.layout
         self.candidate_capacity = capacity // real.F.kpool
 
@@ -90,12 +92,19 @@ class GraphCaches:
         # Unreserved pages are masked out of attention by valid pool counts.
         # Translate them to a readable page so padded gathers stay in bounds.
         self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min(0)
-        self.fields = {key: value.index_select(0, self.slots)
+        # _kda reads only (ctx-1) % ring, then writes tokens consecutive states.
+        # All other scratch recurrence positions stay uninitialized. Commit
+        # must not write them back: rejected drafts and other owners survive.
+        self.fields = {key: (gather_ring(value, self.slots, self.contexts)
+                             if key[0] == "rec" else value.index_select(0, self.slots))
                        for key, value in self.real._fields.items() if key[0] != "draft"}
 
     def commit(self):
         for key, value in self.fields.items():
-            self.real._fields[key].index_copy_(0, self.slots, value)
+            if key[0] == "rec":
+                commit_ring(value, self.real._fields[key], self.slots, self.contexts, self.tokens)
+            else:
+                self.real._fields[key].index_copy_(0, self.slots, value)
 
     def kda(self, layer, slot):
         return self.fields["conv", layer][slot], self.fields["rec", layer][slot]
@@ -144,7 +153,7 @@ class Glm53DecodeGraphs:
             slots = seqs + 1
             contexts = torch.zeros(n, device=device, dtype=torch.int64)
             step = DeviceStep(torch.zeros(n * t, device=device, dtype=torch.int64), contexts, t)
-            return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity)
+            return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity, step)
 
         def forward(inputs):
             step, _, _, scratch = inputs
