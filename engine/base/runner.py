@@ -35,8 +35,9 @@ class Model(Protocol):
 
 class Runner:
     def __init__(self, model: Model, contract: sched.Contract, kv: BlockPool,
-                 slots: SlotPool, ring: Ring, recorder: "Recorder | None" = None):
+                 slots: SlotPool, ring: Ring, recorder: "Recorder | None" = None, tiered=None):
         self.model, self.c, self.kv, self.slots, self.ring = model, contract, kv, slots, ring
+        self.tiered = tiered                                # base.tiered_kv.TieredKV, optional
         self.state = sched.State()
         self.slot_of = {}
         self.rec = recorder or Recorder("runner")
@@ -53,6 +54,18 @@ class Runner:
         self.kv.release(seq)
         self.slots.give(self.slot_of.pop(seq))
         self.model.close(seq)
+
+    def park(self, seq: int) -> int:
+        """An idle conversation leaves the arena but keeps its KV (D16).
+        Only a sequence that is not running: parking a live one would make the
+        next decode wait on disk, which D10 forbids."""
+        if seq in self.state.running or seq in self.state.waiting:
+            raise ValueError(f"seq {seq} is live; only idle sequences park")
+        return self.tiered.park(seq)
+
+    def resume(self, seq: int) -> int:
+        """Bring a parked conversation back into fresh blocks, off the step path."""
+        return self.tiered.resume(seq)
 
     def step(self, now: float | None = None) -> "sched.Step | None":
         now = time.monotonic() if now is None else now
