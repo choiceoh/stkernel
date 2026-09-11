@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import struct
 import tempfile
 import unittest
@@ -16,7 +17,16 @@ if importlib.util.find_spec("torch") is not None:
     import torch
 
 
-HERE = Path(__file__).resolve().parent          # a real filesystem: /tmp may be tmpfs, which refuses O_DIRECT
+def scratch():
+    """A writable directory on a filesystem that may support O_DIRECT.
+
+    /tmp can be tmpfs (no O_DIRECT) and the runtime image mounts the repo read-only,
+    so try the repo, then the image's writable cache, then whatever tempfile picks;
+    the direct-mode assertions skip themselves when none of them has O_DIRECT."""
+    for candidate in (os.environ.get("ST_TEST_SCRATCH"), Path(__file__).resolve().parent, "/cache"):
+        if candidate and os.access(candidate, os.W_OK):
+            return str(candidate)
+    return tempfile.gettempdir()
 
 
 def write_file(path, tensors):
@@ -43,7 +53,7 @@ class ReadTests(unittest.TestCase):
 
     def test_a_truncated_file_is_short_even_under_direct_reads(self):
         from engine.base.loader import SECTOR, staging
-        with tempfile.TemporaryDirectory(dir=HERE) as d:
+        with tempfile.TemporaryDirectory(dir=scratch()) as d:
             p = Path(d) / "truncated.safetensors"
             header = json.dumps({"weight": {"dtype": "U8", "shape": [3 * SECTOR],
                                             "data_offsets": [0, 3 * SECTOR]}}).encode()
@@ -59,7 +69,7 @@ class ReadTests(unittest.TestCase):
         tensors = {"a": ("U8", (3,), b"abc"),                       # every later offset is odd
                    "b": ("U8", (5 * SECTOR + 7,), bytes(range(256)) * ((5 * SECTOR + 7) // 256 + 1))}
         tensors["b"] = ("U8", (5 * SECTOR + 7,), tensors["b"][2][: 5 * SECTOR + 7])
-        with tempfile.TemporaryDirectory(dir=HERE) as d:
+        with tempfile.TemporaryDirectory(dir=scratch()) as d:
             reader = RankLoader(write_file(Path(d) / "odd.safetensors", tensors))
             if not reader.direct:
                 self.skipTest("this filesystem refuses O_DIRECT")
@@ -79,7 +89,7 @@ class ReadTests(unittest.TestCase):
         for view in views:
             with memoryview(view) as m:
                 self.assertEqual(len(m), SECTOR + 17)
-        with tempfile.TemporaryDirectory(dir=HERE) as d:
+        with tempfile.TemporaryDirectory(dir=scratch()) as d:
             reader = RankLoader(write_file(Path(d) / "one.safetensors", {"a": ("U8", (9,), b"123456789")}))
             run = reader.runs(["a"])[0]
             if reader.direct:
@@ -91,7 +101,7 @@ class ReadTests(unittest.TestCase):
 class StagingTests(unittest.TestCase):
     def test_a_cpu_target_does_not_alias_the_reused_staging_buffer(self):
         """Two runs share two buffers; the first run's tensors must keep their bytes."""
-        with tempfile.TemporaryDirectory(dir=HERE) as d:
+        with tempfile.TemporaryDirectory(dir=scratch()) as d:
             path = write_file(Path(d) / "two.safetensors",
                               {"first": ("U8", (2048,), b"\x11" * 2048),
                                "second": ("U8", (2048,), b"\x22" * 2048),
@@ -104,7 +114,7 @@ class StagingTests(unittest.TestCase):
             self.assertEqual(len({t.untyped_storage().data_ptr() for t in out.values()}), 3)
 
     def test_an_empty_selection_reads_nothing(self):
-        with tempfile.TemporaryDirectory(dir=HERE) as d:
+        with tempfile.TemporaryDirectory(dir=scratch()) as d:
             reader = RankLoader(write_file(Path(d) / "one.safetensors", {"a": ("U8", (4,), b"abcd")}))
             self.assertEqual(reader.load([], device="cpu"), {})
 
@@ -129,7 +139,7 @@ class CheckpointTests(unittest.TestCase):
     def test_layers_are_read_as_ranges_and_match_the_reference_reader(self):
         from engine.base.checkpoint import Checkpoint
         from safetensors import safe_open
-        with tempfile.TemporaryDirectory(dir=HERE) as d:
+        with tempfile.TemporaryDirectory(dir=scratch()) as d:
             root = Path(d)
             self.build(root)
             ck = Checkpoint(str(root))
@@ -180,7 +190,7 @@ class CheckpointTests(unittest.TestCase):
     def test_a_recorder_counts_shards_ranges_and_bytes(self):
         from engine.base.checkpoint import Checkpoint
         from engine.base.instruments import Recorder
-        with tempfile.TemporaryDirectory(dir=HERE) as d:
+        with tempfile.TemporaryDirectory(dir=scratch()) as d:
             root = Path(d)
             self.build(root)
             rec = Recorder("t")
