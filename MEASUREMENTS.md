@@ -9286,3 +9286,12 @@ flashinfer 래퍼 `build_and_load_cute_dsl_kernel` 로 컴파일되고 `.o` 를 
 실제 스트림·자체 block-dim 프로브라 래퍼의 TVM-FFI 규약과 다름) — 래퍼로 옮기는 것은 GPU 검증이 필요한 후속; `STK_moe_static=t,r,sf6` 이면 이 경로는 안 탄다.
 (4) #555 의 `moe_dispatch.py` 편집은 `_kernel_source_files()` 해시에 들어가 다음 부팅에 ST 모듈 `.o` 10개가 한 번 재컴파일된다.
 
+**§21 보충 3 — direct micro 를 같은 디스크 캐시로(운영자 지시, 2026-09-12)**: 마지막 프로세스 안 컴파일이던 direct micro 커널을 flashinfer 래퍼
+`build_and_load_cute_dsl_kernel` 과 같은 경로(`JitSpecCuteDsl`, 모듈 `st_b12x_direct_micro`, 키 = DSL 스택 + dispatch·kernel·activation·fp4_common·utils 소스 해시)로 옮겼다.
+규약 변경: 컴파일은 `make_fake_stream(use_tvm_ffi_env_stream=True)` + `--enable-tvm-ffi`, 발사는 포인터 13개를 정수 주소로, 배리어 텐서 둘은 torch 텐서로, m·grid_x 는 int 로,
+스트림 인자 없음(정적·동적 가족과 동일; `_tvm_ffi_args_spec_converter` 가 `Pointer` → `DataPointer`, `_FakeStream(env)` → 서명에서 제거). 프로브·테스트용 옛 형태는 `tvm_ffi=False` 로 남김.
+block-dim 프로브(`compiled_direct_micro_accepts_block_dim`)는 프로세스 안 객체의 `kernel_info`·CUDA 라이브러리 핸들이 필요해 디스크 로드본으로는 못 돌린다 → 빌드 때 판정을
+`.o` 옆 `<커널>.blockdim.json` 사이드카에 쓰고 적중 때 읽는다; 사이드카 없음·낡음(block_dim 불일치)·읽기 실패는 재빌드(추측 금지). CPU 검증(이미지 안): 새 `tests/test_engine_direct_micro_cache.py`
+5 tests OK(미스→빌드·사이드카, 적중→로드, 사이드카 없음/낡음→재빌드, 거부 판정 보존, 캐시 비활성, FFI 발사 인자 17개 = 주소 13 + 텐서 2 + int 2, 스트림 없음).
+**GPU 미검증**: 실제 `.o` 내보내기·재로드 후 발사와 수치 동일성은 다음 창의 `run_engine_check.sh --layers 0-4`(direct micro 는 8토큰 이하 디코드 검사 구간)로 판정한다.
+

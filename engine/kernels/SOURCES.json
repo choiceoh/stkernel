@@ -100,15 +100,20 @@
     "b12x/moe_direct_micro_kernel.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py",
       "sha256": "9b18f54588c3f24cab74dff07545f323e2af8235a4532233655a5a75498e89cc",
-      "origin": "image"
+      "origin": "image",
+      "local_sha256": "b14b207487fb1c81a2c2d664e87919fd0b4042f76b157b6540add758d0c43474",
+      "local_modifications": [
+        "2026-09-12: TVM-FFI compile/launch form (tvm_ffi=True) for the on-disk cache"
+      ]
     },
     "b12x/moe_dispatch.py": {
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "d85de113e79bd2949e4b449bbf96bfe5ad60dbadf4dd12959a671a8be60d03e7",
+      "local_sha256": "6840b2b1e026e460caf30a1898f8b38f43a3d529f51b1bee5b891e06aad55022",
       "local_modifications": [
-        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook"
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
+        "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)"
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
