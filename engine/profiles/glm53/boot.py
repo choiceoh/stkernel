@@ -13,11 +13,15 @@ boot's measured KV), blocks = KV / block_bytes, slots = max_seqs + null.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+# The arena is one virtual range backed by 20 MiB physical chunks (base/arena.py): the regime the
+# box serves vLLM in. Set before torch reads it, so every segment of this process maps that way.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch                                                     # noqa: E402
 
@@ -142,9 +146,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 memory.close()
             raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
         recorder.gauge("boot_immediately_free_GiB", round(report["immediately_free"] / GIB, 3))
+        recorder.gauge("boot_reclaimed_GiB", round(report["reclaimed"] / GIB, 3))
     try:
         with recorder.phase("arena"):
             arena = Arena(arena_bytes)
+        recorder.gauge("arena_expandable", int(arena.expandable))
         with recorder.phase("load"):
             views = rank.load(
                 [s.name for s in specs], arena=arena, recorder=recorder)

@@ -4,28 +4,75 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from engine.base.arena import GIB, prepare_allocation
+from engine.base.arena import GIB, prepare_allocation, touch_pages
+
+
+def meminfo(free, available):
+    return f'MemFree: {free * GIB // 1024} kB\nMemAvailable: {available * GIB // 1024} kB\n'
 
 
 class ArenaAdmissionTests(unittest.TestCase):
     def test_large_available_value_cannot_hide_low_immediately_free_memory(self):
-        memory='MemFree: 8388608 kB\nMemAvailable: 104857600 kB\n'
-        with patch.object(Path,'read_text',return_value=memory):
-            with self.assertRaisesRegex(MemoryError,'immediately free'):
-                prepare_allocation(48*GIB,[],16*GIB,lambda: 100*GIB)
+        # MemAvailable 100 but only 8 free and the reclaim disabled: admission refuses
+        with patch.object(Path, 'read_text', return_value=meminfo(8, 100)):
+            with self.assertRaisesRegex(MemoryError, 'immediately free'):
+                prepare_allocation(48 * GIB, [], 16 * GIB, lambda: 100 * GIB, reclaim=None)
 
     def test_reclaim_preserves_weight_bytes_and_device_free_also_limits_admission(self):
         with tempfile.TemporaryDirectory() as directory:
-            weight=Path(directory)/'rank.safetensors'
-            weight.write_bytes(bytes(range(256))*32)
-            before=weight.read_bytes()
-            memory='MemFree: 104857600 kB\nMemAvailable: 115343360 kB\n'
-            with patch.object(Path,'read_text',return_value=memory):
+            weight = Path(directory) / 'rank.safetensors'
+            weight.write_bytes(bytes(range(256)) * 32)
+            before = weight.read_bytes()
+            with patch.object(Path, 'read_text', return_value=meminfo(100, 110)):
                 with self.assertRaises(MemoryError):
-                    prepare_allocation(48*GIB,[weight],16*GIB,lambda: 60*GIB)
-                report=prepare_allocation(48*GIB,[weight],16*GIB,lambda: 90*GIB)
-            self.assertEqual(report['immediately_free'],90*GIB)
-            self.assertEqual(weight.read_bytes(),before)
+                    prepare_allocation(48 * GIB, [weight], 16 * GIB, lambda: 60 * GIB)
+                report = prepare_allocation(48 * GIB, [weight], 16 * GIB, lambda: 90 * GIB)
+            self.assertEqual(report['immediately_free'], 90 * GIB)
+            self.assertEqual(report['reclaimed'], 0)
+            self.assertEqual(weight.read_bytes(), before)
+
+    def test_shortfall_is_reclaimed_from_page_cache_when_available_says_it_can_be(self):
+        # srv2 on 09-11: 54 free, 99 available, a 55.4 GiB arena. The pump must ask for exactly the shortfall.
+        touched = []
+
+        def pump(nbytes):
+            touched.append(nbytes)
+            states.append(meminfo(100, 99))               # the cache is gone: MemFree caught up
+            return nbytes
+
+        states = [meminfo(54, 99)]
+        with patch.object(Path, 'read_text', side_effect=lambda *a, **k: states[-1]):
+            report = prepare_allocation(int(55.4 * GIB), [], 16 * GIB, lambda: 120 * GIB, reclaim=pump)
+        self.assertEqual(touched, [int(55.4 * GIB) + 16 * GIB - 54 * GIB])
+        self.assertEqual(report['reclaimed'], touched[0])
+        self.assertEqual(report['immediately_free'], 100 * GIB)
+
+    def test_reclaim_is_refused_when_it_would_starve_the_box(self):
+        # (30 free, 60 available): 55.4 + 16 does not fit at all; (10 free, 72 available): it fits, but pumping the
+        # 61.4 GiB shortfall would leave MemAvailable at 10.6, under the 16 GiB headroom earlyoom needs
+        for free, available in ((30, 60), (10, 72)):
+            with self.subTest(free=free, available=available), \
+                 patch.object(Path, 'read_text', return_value=meminfo(free, available)):
+                with self.assertRaisesRegex(MemoryError, 'cannot be reclaimed'):
+                    prepare_allocation(int(55.4 * GIB), [], 16 * GIB, lambda: 120 * GIB,
+                                       reclaim=lambda n: (_ for _ in ()).throw(AssertionError('pump must not run')))
+
+    def test_a_pump_that_did_not_free_enough_still_fails_closed(self):
+        states = [meminfo(54, 99)]
+
+        def pump(nbytes):
+            states.append(meminfo(60, 99))                # the kernel swapped instead of dropping cache
+            return nbytes
+
+        with patch.object(Path, 'read_text', side_effect=lambda *a, **k: states[-1]):
+            with self.assertRaisesRegex(MemoryError, 'after reclaiming'):
+                prepare_allocation(int(55.4 * GIB), [], 16 * GIB, lambda: 120 * GIB, reclaim=pump)
+
+    def test_touch_pages_rounds_to_pages_and_returns_the_memory(self):
+        self.assertEqual(touch_pages(0), 0)
+        self.assertEqual(touch_pages(1), touch_pages(4096))
+        self.assertEqual(touch_pages(3 << 20), 3 << 20)
 
 
-if __name__=='__main__':unittest.main()
+if __name__ == '__main__':
+    unittest.main()

@@ -164,6 +164,29 @@ class Glm53Engine:
         for d in (self.ctx, self.slot):
             d.pop(seq, None)
 
+    # -- parking (D16): the host side of a conversation travels as a record, the slot's bytes with the tier --
+    def park(self, seq: int) -> dict:
+        """Close the row and hand back everything the host held for it."""
+        if seq not in self.slot:
+            raise ValueError(f"seq {seq} is not open")
+        record = {"context": self.ctx[seq], "pending": len(self.tokens[seq]) - self.ctx[seq],
+                  "tokens": list(self.tokens[seq]), "prompt_len": self.prompt_len[seq],
+                  "limits": [self.limits[seq][0], self.limits[seq][1]]}
+        self.close(seq)
+        self.forget(seq)
+        return record
+
+    def resume(self, seq: int, slot: int, record: dict) -> None:
+        """Reopen the row in `slot` from a record; the slot's bytes were restored by the tier, so no reset."""
+        if seq in self.tokens or seq in self.slot:
+            raise ValueError(f"seq {seq} is live or has an uncollected result")
+        self.tokens[seq] = list(record["tokens"]); self.prompt_len[seq] = int(record["prompt_len"])
+        self.limits[seq] = (int(record["limits"][0]), float(record["limits"][1]))
+        self.slot[seq] = slot; self.ctx[seq] = int(record["context"])
+
+    def state_bytes(self, slot: int):
+        return self.caches.slot_bytes(slot)
+
     def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None) -> int:
         """A new turn: more prompt tokens on a conversation the caches still hold.
         Returns the tokens to prefill -- the last sampled token (never fed) and

@@ -12,6 +12,7 @@ WORKDIR /opt/st
 COPY engine /opt/st/engine
 RUN python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
 ENV PYTHONPATH=/opt/st \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     TRITON_CACHE_DIR=/cache/triton \
     TILELANG_CACHE_DIR=/cache/tilelang \
     DG_JIT_CACHE_DIR=/cache/deep_gemm \

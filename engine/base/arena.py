@@ -11,10 +11,20 @@ Carving is a bump allocator on purpose: nothing long-lived is ever freed
 no fragmentation to manage and no allocator to second-guess. The loader
 measured what the caching allocator costs when it is allowed to think --
 16.1% -- and what one arena costs -- 0.006 GiB.
+
+One allocation is one VIRTUAL range. The physical side is the box's: on
+GB10 the first 45-layer boot asked the driver for 55.4 GiB in a single
+cudaMalloc and got CUDA_ERROR_OUT_OF_MEMORY before loading a byte (2026-09-11,
+srv2), while the same box serves vLLM's 63 GiB every day -- mapped through
+`expandable_segments`, 20 MiB physical chunks under one address range. So
+the arena asks the caching allocator for exactly that: one contiguous
+tensor, backed chunk by chunk (`torch._C._accelerator_setAllocatorSettings`).
+Accounting is unchanged: `memory_allocated` still moves by exactly nbytes.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import mmap
 import os
 from pathlib import Path
 
@@ -22,29 +32,89 @@ GIB = 1 << 30
 ALIGN = 256                       # every carve starts on a 256 B boundary (TMA-friendly)
 
 
-def prepare_allocation(nbytes: int, files, headroom: int, device_free) -> dict:
-    """Drop clean pages of the supplied weight files, then check physical headroom.
+def _meminfo() -> dict:
+    return {key: int(value.split()[0]) * 1024
+            for line in Path("/proc/meminfo").read_text().splitlines()
+            for key, value in [line.split(":", 1)]}
+
+
+def touch_pages(nbytes: int) -> int:
+    """Hold `nbytes` of anonymous memory for an instant, then give it back.
+
+    MemAvailable counts clean page cache the kernel reclaims for an anonymous
+    allocation but not, on this UMA box, for a large device one. Faulting the
+    shortfall in as anonymous pages (MAP_POPULATE: one syscall, no Python
+    loop) makes the kernel drop that much cache; releasing it leaves the
+    pages immediately free for the arena. Returns the bytes touched.
+    """
+    page = mmap.PAGESIZE
+    n = -(-nbytes // page) * page
+    if n <= 0:
+        return 0
+    flags = mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS | getattr(mmap, "MAP_POPULATE", 0)
+    region = mmap.mmap(-1, n, flags=flags)
+    try:
+        if not getattr(mmap, "MAP_POPULATE", 0):
+            for off in range(0, n, page):                 # no MAP_POPULATE: fault every page by hand
+                region[off] = 1
+    finally:
+        region.close()
+    return n
+
+
+def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=touch_pages) -> dict:
+    """Drop clean pages of the supplied weight files, reclaim the rest of the
+    shortfall, then check physical headroom.
 
     MemAvailable includes reclaimable page cache. A large CUDA allocation on
     UMA can fail while that number still looks sufficient. This preflight
-    deliberately counts immediately free pages, without relying on swap or
-    invoking a machine-wide cache flush. It is a necessary admission check,
-    not a guarantee against another process allocating after the check.
+    counts immediately free pages: it drops the given files' cache, and when
+    that is not enough but MemAvailable says the rest is reclaimable, it
+    makes it free (`reclaim`, bounded so MemAvailable never dips under
+    `headroom` -- earlyoom's floor is 5%, headroom is 16 GiB). It is a
+    necessary admission check, not a guarantee against another process
+    allocating after the check.
     """
     for path in files:
         with Path(path).open("rb") as stream:
             os.posix_fadvise(stream.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
-    memory = {key: int(value.split()[0]) * 1024
-              for line in Path("/proc/meminfo").read_text().splitlines()
-              for key, value in [line.split(":", 1)]}
+    memory = _meminfo()
+    need = nbytes + headroom
     free = min(memory["MemFree"], device_free())
-    if nbytes + headroom > free:
+    reclaimed = 0
+    if free < need and memory["MemFree"] < need:
+        shortfall = need - memory["MemFree"]
+        if memory["MemAvailable"] < need or shortfall > memory["MemAvailable"] - headroom:
+            raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus headroom {headroom/GIB:.2f} GiB "
+                              f"exceeds immediately free memory {free/GIB:.2f} GiB and cannot be reclaimed: MemAvailable "
+                              f"{memory['MemAvailable']/GIB:.2f} GiB")
+        reclaimed = reclaim(shortfall) if reclaim is not None else 0
+        memory = _meminfo()
+        free = min(memory["MemFree"], device_free())
+    if free < need:
         raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus "
                           f"headroom {headroom/GIB:.2f} GiB exceeds immediately free "
-                          f"memory {free/GIB:.2f} GiB; MemAvailable "
+                          f"memory {free/GIB:.2f} GiB after reclaiming {reclaimed/GIB:.2f} GiB; MemAvailable "
                           f"{memory['MemAvailable']/GIB:.2f} GiB includes reclaimable pages")
     return dict(allocation=nbytes, headroom=headroom, immediately_free=free,
-                available=memory["MemAvailable"])
+                available=memory["MemAvailable"], reclaimed=reclaimed)
+
+
+def expandable_segments() -> bool:
+    """Back every new caching-allocator segment with 20 MiB physical chunks
+    under one virtual range. Safe to call after allocations exist: only new
+    segments are affected. Returns whether the setting took."""
+    import torch
+    for setter in (getattr(getattr(torch, "_C", None), "_accelerator_setAllocatorSettings", None),
+                   getattr(torch.cuda.memory, "_set_allocator_settings", None)):
+        if setter is None:
+            continue
+        try:
+            setter("expandable_segments:True")
+            return True
+        except Exception:                                   # noqa: BLE001 -- try the next entry point
+            continue
+    return False
 
 
 @dataclass(frozen=True)
@@ -55,10 +125,11 @@ class Region:
 
 
 class Arena:
-    def __init__(self, nbytes: int, device: str = "cuda"):
+    def __init__(self, nbytes: int, device: str = "cuda", expandable: bool = True):
         import torch
 
         self.nbytes = nbytes
+        self.expandable = expandable and str(device).startswith("cuda") and expandable_segments()
         self.buf = torch.empty(nbytes, dtype=torch.uint8, device=device)   # the one allocation
         self.used = 0
         self.regions: "list[Region]" = []
@@ -79,7 +150,8 @@ class Arena:
 
     def table(self) -> str:
         width = max((len(r.name) for r in self.regions), default=4)
-        out = [f"  arena {self.nbytes / GIB:.2f} GiB, used {self.used / GIB:.2f}, free {self.remaining / GIB:.2f}"]
+        out = [f"  arena {self.nbytes / GIB:.2f} GiB, used {self.used / GIB:.2f}, free {self.remaining / GIB:.2f}"
+               f" ({'expandable segments' if self.expandable else 'one cudaMalloc'})"]
         for r in self.regions:
             out.append(f"    {r.name:<{width}}  @{r.offset / GIB:8.3f}  {r.nbytes / GIB:8.3f} GiB")
         return "\n".join(out)
@@ -95,6 +167,11 @@ def _selfcheck() -> None:
     arena = Arena(3 * GIB)
     after_arena = torch.cuda.memory_allocated()
     assert after_arena - before == 3 * GIB, "the arena is one allocation of exactly its size"
+    assert arena.expandable, "GB10 maps the arena through expandable segments"
+    segments = [s for s in torch.cuda.memory._snapshot()["segments"] if s["total_size"] >= 3 * GIB]
+    assert segments and all(s.get("is_expandable") for s in segments), "the arena's segment must be expandable"
+    touched = touch_pages(256 << 20)
+    assert touched == 256 << 20
 
     path = "/home/choiceoh/models/DeepSeek-V4.1-Flash-tp4/rank0of4.safetensors"
     loader = RankLoader(path)
@@ -114,7 +191,7 @@ def _selfcheck() -> None:
     except MemoryError:
         pass
     print(arena.table())
-    print(f"  arena: one allocation, loader carved {len(keys)} tensors into it, 40/40 byte-identical, overflow refused OK")
+    print(f"  arena: one expandable allocation, loader carved {len(keys)} tensors into it, 40/40 byte-identical, overflow refused, 256 MiB reclaim touch OK")
 
 
 if __name__ == "__main__":
