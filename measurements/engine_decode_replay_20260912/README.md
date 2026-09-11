@@ -112,3 +112,19 @@ were held by the target family (the warmed prefill workspace and four static
 decode generations); repeated capacity buckets did not duplicate ownership.
 
 The private containers were removed and the run's fleet lock was released.
+
+## PR integration with the subsequent conv optimization
+
+Before merging PR #567, main advanced to `e9702f7b` (PR #566, single-sequence
+causal conv). Integration commit `cb3ca8a9` merged it without conflicts and
+preserved both the new conv binding and this graph-resource binding.
+[Integrated CPU checks](merge-cpu-tests.log) ran 271 tests: 188 passed,
+83 skipped for GPU/checkpoint requirements.
+
+The fleet evidence above predates that integration. The graph implementation,
+MoE workspace-owner accessor and GLM graph hookup are byte-identical to their
+measured versions; `lanes.py` additionally contains PR #566's independently
+validated conv change. A second full-model fleet run was not launched because
+another ST execution owned the fleet lock. The source hashes above identify
+the measured snapshot, rather than claiming that the combined GPU path was
+rerun.
