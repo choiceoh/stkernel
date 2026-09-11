@@ -22,7 +22,9 @@ So, installed like qwen38_b12x_bounds through a meta-path hook:
 
   * `_supports_parallel_config` -> True
   * the `B12xMoEWrapper` is built for the LOCAL expert count (the weights' E)
-  * `apply()`: `topk_ids = expert_map[topk_ids]` when a map is given
+  * `apply()`: `topk_ids = expert_map[topk_ids]` when a map is given; for
+    the static/micro kernels (small batches) a -1 slot becomes expert 0 at
+    weight 0 instead, since only the dynamic kernel carries the guard
 
 Nothing else in the class changes. `DENEB_B12X_EP=0` leaves the stock class
 alone, in which case an EP boot fails the oracle exactly as before.
@@ -33,6 +35,8 @@ from __future__ import annotations
 import os
 import sys
 
+import torch
+
 TARGET = "vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe"
 _DONE = False
 
@@ -40,6 +44,16 @@ _DONE = False
 def _log(msg: str) -> None:
     sys.stderr.write(f"[qwen38-b12x-ep] {msg}\n")
     sys.stderr.flush()
+
+
+def _small_batch_backend(experts, num_tokens: int) -> str:
+    """'static' (static/micro kernels) or 'dynamic', as the wrapper decides."""
+    from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch import (
+        select_sm120_moe_backend,
+    )
+    return select_sm120_moe_backend(
+        num_tokens=int(num_tokens), num_topk=experts.topk,
+        activation_precision="fp4", quant_mode="nvfp4")
 
 
 def _patch(mod) -> None:
@@ -78,8 +92,19 @@ def _patch(mod) -> None:
               apply_router_weight_on_input):
         if expert_map is not None:
             # global expert id -> this rank's slot, or -1: vLLM's unrouted
-            # sentinel, which the guarded kernel skips.
+            # sentinel, which the guarded DYNAMIC kernel skips.
             topk_ids = expert_map[topk_ids.long()]
+            if _small_batch_backend(self, topk_ids.shape[0]) == "static":
+                # The static and micro kernels (routed_rows <= the static
+                # cutover: decode, short prompts) carry no unrouted-slot guard
+                # -- the first TEP=4 request died there with an IMA. For them
+                # the sentinel becomes expert 0 at weight 0, which the pair
+                # test holds bit-identical to -1: a few extra rows through one
+                # expert per step, and nothing else.
+                neg = topk_ids < 0
+                topk_ids = torch.where(neg, torch.zeros_like(topk_ids), topk_ids)
+                topk_weights = torch.where(
+                    neg, torch.zeros_like(topk_weights), topk_weights)
         return inner_apply(self, output, hidden_states, w1, w2, topk_weights,
                            topk_ids, activation, global_num_experts, None,
                            a1q_scale, a2_scale, workspace13, workspace2,
