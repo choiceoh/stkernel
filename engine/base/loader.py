@@ -113,7 +113,10 @@ class RankLoader:
             got, want = 0, run.nbytes
             view = into[:want]
             while got < want:
-                got += os.readv(fd, [view[got:]])
+                n = os.readv(fd, [view[got:]])
+                if n <= 0:
+                    raise EOFError(f"{self.path}: short read at {self.data_base + run.start + got}; expected {want - got} more bytes")
+                got += n
             return view
         finally:
             os.close(fd)

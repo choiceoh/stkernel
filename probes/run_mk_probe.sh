@@ -38,17 +38,20 @@ bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
 
 # The megakernel driver and everything its arm touches, plus the served MoE
 # path (vLLM's b12x experts, flashinfer's wrapper and its sm12x dispatch).
-sources=(glm53_megakernel.py glm53_megakernel.cu
-         glm5next_kda.py kda.py chunk_delta_h.py
-         tilelang.py tilelang_kernels.py glm53_fp8_dense.py glm53_nvfp4_scale.py
-         glm53_nvfp4_bproj.py
-         flashinfer_b12x_moe.py b12x_moe.py moe_dispatch.py moe_micro_kernel.py
-         moe_dynamic_prefill.py moe_dynamic_prefill_n128.py
-         parallel_state.py glm53_prefill_collectives.py
-         moe_static_common.py moe_static_kernel_v4.py moe_sf_pack.py
-         moe_static_kernel_v5.py moe_dynamic_gated_tiled.py
-         # the rest of the flashinfer-side b12x family: b12x_fused_moe imports moe_reform_sf_pack at call time (ST engine judge, 45th ledger)
-         moe_dynamic_gated_sf6.py moe_dynamic_gated_sf6_q0.py moe_dynamic_ep_local.py glm53_ep_route_remap.py moe_reform_sf_pack.py glm53_ep_local_selftest.py glm53_tp_sf6_q0_selftest.py glm53_ep_tiled.py moe_static_ep_tiled.py glm53_ep_tiled_selftest.py)
+sources=(
+    glm53_megakernel.py glm53_megakernel.cu glm5next_kda.py
+    kda.py chunk_delta_h.py tilelang.py
+    tilelang_kernels.py glm53_fp8_dense.py glm53_nvfp4_scale.py
+    glm53_nvfp4_bproj.py flashinfer_b12x_moe.py b12x_moe.py
+    moe_dispatch.py moe_micro_kernel.py moe_dynamic_prefill.py
+    moe_dynamic_prefill_n128.py parallel_state.py glm53_prefill_collectives.py
+    moe_static_common.py moe_static_kernel_v4.py moe_sf_pack.py
+    moe_static_kernel_v5.py moe_dynamic_gated_tiled.py sparse_attn_indexer_kpool.py
+    glm53_kpool_indexer.py moe_dynamic_gated_sf6.py moe_dynamic_gated_sf6_q0.py
+    moe_dynamic_ep_local.py glm53_ep_route_remap.py moe_reform_sf_pack.py
+    glm53_ep_local_selftest.py glm53_tp_sf6_q0_selftest.py glm53_ep_tiled.py
+    moe_static_ep_tiled.py glm53_ep_tiled_selftest.py
+)
 mounts=()
 for source in "${sources[@]}"; do
   target=$(awk -F '\t' -v source="$source" '$1 == source {print $2}' "$MANIFEST")

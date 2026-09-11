@@ -1,0 +1,6 @@
+  glm53 preshard: TP 4, layers 0..3 (2), -> /ranks
+  top                3 sources ->   3 tensors/rank     2.9 s
+  layer 0           26 sources ->  18 tensors/rank     1.5 s
+  layer 3         2619 sources ->  29 tensors/rank     9.3 s
+  read 6.98 GiB, wrote 4 x 1.78 GiB in 14 s
+  done: 1.78 GiB per rank

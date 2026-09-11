@@ -16,40 +16,43 @@ from engine.base.kv_tier import NvmeTier
 
 
 class TieredKV:
-    def __init__(self, pool: BlockPool, tier: NvmeTier, regions=None, on_resume=None):
-        """`regions`: [(storage, block_bytes), ...] -- a profile's per-layer
-        regions (caches.regions()); without it, the pool's own storage.
-        `on_resume(seq)`: the caches re-sync a block table after new blocks."""
-        self.regions = list(regions) if regions is not None else None
-        if self.regions is None:
-            if pool.storage is None:
-                raise ValueError("attach the pool's storage (arena) before tiering it")
-            if pool.block_bytes != tier.block_bytes:
-                raise ValueError(f"pool block {pool.block_bytes} B != tier block {tier.block_bytes} B")
-        self.pool, self.tier, self.on_resume = pool, tier, on_resume
+    def __init__(self, pool: BlockPool, tier: NvmeTier):
+        if pool.storage is None:
+            raise ValueError("attach the pool's storage (arena) before tiering it")
+        if pool.block_bytes != tier.block_bytes:
+            raise ValueError(f"pool block {pool.block_bytes} B != tier block {tier.block_bytes} B")
+        self.pool, self.tier = pool, tier
         self.parked = {}                      # seq -> tokens
-
-    def _storage(self):
-        return self.regions if self.regions is not None else self.pool.storage
 
     def park(self, seq: int) -> int:
         ids = [b for b in self.pool.row(seq) if b != EMPTY]
         tokens = self.pool.tokens[seq]
         if not ids:
             raise ValueError(f"seq {seq} holds no blocks")
-        wrote = self.tier.demote(seq, self._storage(), ids, tokens)
+        wrote = self.tier.demote(seq, self.pool.storage, ids, tokens)
         self.pool.release(seq)
         self.parked[seq] = tokens
         return wrote
 
     def resume(self, seq: int) -> int:
-        tokens = self.parked.pop(seq) if seq in self.parked else self.tier.index[str(seq)]["tokens"]
+        """Restore into an empty row; a failed read keeps the disk copy retryable.
+
+        Once promotion completes, the resident copy is committed. A subsequent
+        failure to forget the disk copy must not release that restored memory.
+        """
+        self.pool.row(seq)                                # bounds before indexing tokens
+        if self.pool.tokens[seq]:
+            raise ValueError(f"seq {seq} already has resident KV")
+        tokens = self.parked[seq] if seq in self.parked else self.tier.index[str(seq)]["tokens"]
         self.pool.reserve(seq, tokens)                     # MemoryError if the arena is full: no fallback
         ids = [b for b in self.pool.row(seq) if b != EMPTY]
-        got = self.tier.promote(seq, self._storage(), ids)
+        try:
+            got = self.tier.promote(seq, self.pool.storage, ids)
+        except BaseException:
+            self.pool.release(seq)
+            raise
+        self.parked.pop(seq, None)
         self.tier.forget(seq)
-        if self.on_resume is not None:
-            self.on_resume(seq)
         return got
 
     def is_parked(self, seq: int) -> bool:

@@ -1,0 +1,9 @@
+<frozen runpy>:128: RuntimeWarning: 'engine.base.record' found in sys.modules after import of package 'engine.base', but prior to execution of 'engine.base.record'; this may result in unpredictable behaviour
+  scheduler: homogeneous steps, protected decoders, aligned chunks OK
+  kv: block pool + slot pool OK
+  runner: 9 steps (3 prefill, 6 decode), all homogeneous, kv/slots returned, ring recorded OK
+  step_meta: prefill/decode flat arrays, padded block tables, positions, slots OK
+  record: ring order, dump/read round trip, SIGTERM handler wrote then died OK
+  comm: GID rule picks index 3 from a RoCE v2 IPv4-mapped line, world-1 identity, fleet env for rank 3 (GID detected: n/a); LocalTP(4): sums and gathers identical on all four ranks, a dead rank surfaces OK
+  params: bind checks name, shape and dtype, never casts OK
+  preshard: streaming safetensors, two ranks, read back by RankLoader and safetensors OK

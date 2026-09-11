@@ -21,22 +21,32 @@ from pathlib import Path
 
 import torch
 
+from engine.base.arena import ALIGN
+
+_PAD_PREFIX = "__st_padding__."
+
 _NAMES = {torch.uint8: "U8", torch.int8: "I8", torch.float8_e4m3fn: "F8_E4M3", torch.bfloat16: "BF16",
           torch.float16: "F16", torch.float32: "F32", torch.int32: "I32", torch.int64: "I64", torch.bool: "BOOL"}
 
 
-ALIGN = 256          # every kernel-facing view must sit on a 256 B boundary (DeepGEMM's TMA refused a 12 B-off `fn`, 45th ledger)
-
-
 class RankWriter:
     def __init__(self, path: "str | Path", specs, metadata: "dict | None" = None):
+        specs = tuple(specs)
+        names = [s.name for s in specs]
+        if len(set(names)) != len(names) or any(n.startswith(_PAD_PREFIX) or n == "__metadata__" for n in names):
+            raise ValueError("rank tensor names must be unique and outside the reserved metadata/padding namespace")
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         header, off = {}, 0
-        # data order: every tensor whose size is a multiple of ALIGN first (they stay aligned back to back), then the
-        # few small odd ones (hc base/scale, A_log, router bias -- plain torch reads); the header maps names, order is free
-        ordered = [s for s in specs if s.nbytes() % ALIGN == 0] + [s for s in specs if s.nbytes() % ALIGN]
-        for s in ordered:
+        for i, s in enumerate(specs):
+            padding = (-off) % ALIGN
+            if padding:
+                # Safetensors forbids holes. Explicit byte tensors make the
+                # padding valid for its standard reader while keeping each
+                # real weight aligned for TMA after a coalesced arena upload.
+                header[f"{_PAD_PREFIX}{i}"] = {
+                    "dtype": "U8", "shape": [padding], "data_offsets": [off, off + padding]}
+                off += padding
             n = s.nbytes()
             header[s.name] = {"dtype": _NAMES[s.dtype], "shape": list(s.shape), "data_offsets": [off, off + n]}
             off += n
@@ -48,9 +58,17 @@ class RankWriter:
         self.offsets = {s.name: (header[s.name]["data_offsets"][0], s) for s in specs}
         self.done = set()
         self.fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
-        os.pwrite(self.fd, struct.pack("<Q", len(raw)) + raw, 0)
+        self._write_all(struct.pack("<Q", len(raw)) + raw, 0)
         os.ftruncate(self.fd, self.base + off)
         self.total = off
+
+    def _write_all(self, buf, offset):
+        pos, view = 0, memoryview(buf)
+        while pos < len(view):
+            wrote = os.pwrite(self.fd, view[pos:pos + (1 << 30)], offset + pos)
+            if wrote <= 0:
+                raise OSError(f"preshard: short write at {offset + pos}")
+            pos += wrote
 
     def put(self, name: str, t: torch.Tensor) -> None:
         off, s = self.offsets[name]
@@ -60,9 +78,7 @@ class RankWriter:
             raise ValueError(f"preshard: {name} written twice")
         buf = t.detach().contiguous().cpu().reshape(-1).view(torch.uint8).numpy().tobytes() if t.numel() else b""
         assert len(buf) == s.nbytes()
-        pos, view = 0, memoryview(buf)
-        while pos < len(buf):
-            pos += os.pwrite(self.fd, view[pos:pos + (1 << 30)], self.base + off + pos)
+        self._write_all(buf, self.base + off)
         self.done.add(name)
 
     def close(self) -> None:
@@ -113,15 +129,10 @@ def _selfcheck() -> None:
         for r in range(2):
             got = RankLoader(paths[r]).load(["w", "s"], device="cpu")
             assert torch.equal(got["w"], full["w"][r * 4:(r + 1) * 4]) and got["s"].item() == 0.5
-        # alignment: the 32 B `w` lands first, the 4 B scalar after it -- a 256-multiple tensor never follows an odd one
-        specs2 = [Spec("s", (), torch.float32, ("s",), lambda src, r, W: src["s"]), Spec("big", (64,), torch.float32, ("w",), lambda src, r, W: src["w"].float().reshape(-1)[:64] if src["w"].numel() >= 64 else torch.zeros(64))]
-        w = RankWriter(Path(d) / "align.safetensors", specs2)
-        assert w.offsets["big"][0] == 0 and w.offsets["s"][0] == 256, w.offsets
-        os.close(w.fd)
         from safetensors import safe_open
         with safe_open(str(paths[1]), "pt") as f:                     # the reference reader agrees
             assert torch.equal(f.get_tensor("w"), full["w"][4:8])
-    print("  preshard: streaming safetensors, two ranks, read back by RankLoader and safetensors; 256 B-multiples first, odd tails last OK")
+    print("  preshard: streaming safetensors, two ranks, read back by RankLoader and safetensors OK")
 
 
 if __name__ == "__main__":

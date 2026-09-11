@@ -1,0 +1,8 @@
+test_scalar_then_matrix_stays_aligned_in_one_upload (test_engine_loader.AlignedRankTests.test_scalar_then_matrix_stays_aligned_in_one_upload) ... ok
+test_short_writes_are_retried_and_zero_progress_fails (test_engine_loader.AlignedRankTests.test_short_writes_are_retried_and_zero_progress_fails) ... ok
+test_truncated_run_raises_instead_of_spinning_on_eof (test_engine_loader.ReadTests.test_truncated_run_raises_instead_of_spinning_on_eof) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.013s
+
+OK

@@ -1,0 +1,59 @@
+/home/choiceoh/st-engine-f4d7-20260911/build/glm53  (71 overlays from 11 modules)
+profile=glm53 image=glm53:v13-b12x-it probe=probes/engine_kda_check.py files=23 args=
+forwarded: (none)
+INFO 09-11 06:58:16 [import_utils.py:464] DeepEP v2 requires NCCL >= 2.30.4 but found 2.29.7. deepep_v2 backend will not be available.
+/usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+{
+  "passed": true,
+  "cases": [
+    {
+      "tokens": 1,
+      "seeded": false,
+      "recurrent_output": 0.0,
+      "every_state": 1.8491535058728914e-07,
+      "chunk_output": 0.0038759689778089523,
+      "chunk_final_state": 0.005482832435518503
+    },
+    {
+      "tokens": 1,
+      "seeded": true,
+      "recurrent_output": 4.461634262042935e-08,
+      "every_state": 1.602063690597788e-07,
+      "chunk_output": 0.005847953259944916,
+      "chunk_final_state": 0.005247505847364664
+    },
+    {
+      "tokens": 6,
+      "seeded": false,
+      "recurrent_output": 4.595588325173594e-05,
+      "every_state": 1.418138566577909e-07,
+      "chunk_output": 0.0058823530562222,
+      "chunk_final_state": 0.004932897165417671
+    },
+    {
+      "tokens": 6,
+      "seeded": true,
+      "recurrent_output": 0.000405844155466184,
+      "every_state": 1.2180204578271514e-07,
+      "chunk_output": 0.006493506487458944,
+      "chunk_final_state": 0.0034516050945967436
+    },
+    {
+      "tokens": 64,
+      "seeded": false,
+      "recurrent_output": 0.000621890532784164,
+      "every_state": 1.1560263146748184e-07,
+      "chunk_output": 0.004975124262273312,
+      "chunk_final_state": 0.004203877877444029
+    },
+    {
+      "tokens": 64,
+      "seeded": true,
+      "recurrent_output": 0.0005411255406215787,
+      "every_state": 1.870413228743928e-07,
+      "chunk_output": 0.0043290043249726295,
+      "chunk_final_state": 0.004209515172988176
+    }
+  ]
+}

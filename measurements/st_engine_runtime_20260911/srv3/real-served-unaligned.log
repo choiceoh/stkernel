@@ -1,0 +1,59 @@
+/home/choiceoh/st-engine-f4d7-20260911/build/glm53  (71 overlays from 11 modules)
+profile=glm53 image=glm53:v13-b12x-it probe=engine/profiles/glm53/check.py files=23 args=--lanes served --layers 0,3 --tokens 64 --chunk 32 --ranks /ranks
+forwarded: VLLM_GLM53_MK_MLA=1
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (17 free)
+INFO 09-11 07:10:12 [import_utils.py:464] DeepEP v2 requires NCCL >= 2.30.4 but found 2.29.7. deepep_v2 backend will not be available.
+  NOTE: served lanes with the REFERENCE expert lane (b12x is not bound yet) -- a lane judge, not a boot
+INFO 09-11 07:10:18 [deep_gemm.py:191] deep_gemm not found in site-packages, trying vendored vllm.third_party.deep_gemm
+/usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+[07:11:43] : Warning: T.vectorized loop over `i_hci` with extent 4 is lowered as a serial loop because TileLang could not find a valid vectorization plan. Scalar accumulator updates inside the loop are a common cause; move reductions to T.unroll or T.serial if this is intended.
+2026-09-11 07:10:19  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+2026-09-11 07:10:29  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+2026-09-11 07:11:42  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_post_tilelang` with `out_idx=None`
+2026-09-11 07:11:44  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_post_tilelang`
+Traceback (most recent call last):
+  File "/repo/engine/base/comm.py", line 148, in body
+    self._results[r] = fn(self.rank(r), *args)
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/check.py", line 137, in rank_main
+    run("whole", [Step.prefill(ids, 0, 0, 1)], cache=chain)
+  File "/repo/engine/profiles/glm53/check.py", line 133, in run
+    hs.append(net.forward(st, cache))
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/net.py", line 321, in forward
+    post, comb, x = self._hc_pre(L, res, "ffn")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/net.py", line 154, in _hc_pre
+    return self.lanes.mhc_pre(res, p[n + f"hc.{side}_fn"], p[n + f"hc.{side}_scale"], p[n + f"hc.{side}_base"],
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/lanes.py", line 191, in run
+    return fn(*a, **k)
+           ^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/lanes.py", line 138, in pre
+    post, comb, x = torch.ops.vllm.mhc_pre_tilelang(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult,
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_ops.py", line 1279, in __call__
+    return self._op(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py", line 491, in mhc_pre_tilelang
+    _deneb_hc_prenorm_gemm(
+  File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py", line 65, in _deneb_hc_prenorm_gemm
+    tf32_hc_prenorm_gemm(x, fn, out_mul, out_sqrsum, n_splits)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/utils/deep_gemm.py", line 669, in tf32_hc_prenorm_gemm
+    return _tf32_hc_prenorm_gemm_impl(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: CUDA driver error (/workspace/.deps/deepgemm-src/csrc/apis/../jit_kernels/impls/runtime_utils.hpp:145): 1 (CUDA_ERROR_INVALID_VALUE, invalid argument)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/repo/engine/profiles/glm53/check.py", line 252, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/repo/engine/profiles/glm53/check.py", line 190, in main
+    else LocalTP(facts.TP).run(rank_main, a, F, layers, lanes, ids, garbage))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/base/comm.py", line 161, in run
+    raise RuntimeError(f"rank {r} failed") from e
+RuntimeError: rank 0 failed

@@ -27,12 +27,12 @@ KIND = {sched.PREFILL: 1, sched.DECODE: 2}
 
 
 class Model(Protocol):
-    def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> None: ...
+    def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> "bool | None": ...  # finished on the prompt's first sample?
     def decode(self, seqs, blocks, slots) -> "list[bool]": ...   # per seq: finished?
-    def horizon(self, seq: int) -> int: ...                       # positions the next decode step writes up to (ctx + 1 + drafts)
-    def context(self, seq: int) -> int: ...                       # tokens computed so far (the next prefill starts here)
+    def horizon(self, seq: int) -> int: ...  # exclusive end of the next decode writes
+    def context(self, seq: int) -> int: ...  # tokens computed so far (a new turn prefills from here)
     def open(self, seq: int, slot: int) -> None: ...
-    def close(self, seq: int) -> None: ...
+    def close(self, seq: int) -> None: ...           # must also clean up a partially failed open
 
 
 class Runner:
@@ -49,10 +49,34 @@ class Runner:
         self.steps = 0
 
     def submit(self, seq: int, prompt_len: int, now: float | None = None) -> None:
-        sched.arrive(self.state, seq, prompt_len, time.monotonic() if now is None else now)
+        """Publish a request only after its blocks, slot and model state exist.
+
+        Admission failures return everything acquired here; an existing live
+        or parked sequence is never released by a failed duplicate submit.
+        """
+        now = time.monotonic() if now is None else now
+        sched.validate_arrival(self.state, seq, prompt_len, now)
+        self.kv.row(seq)                                   # reject invalid row before indexing tokens
+        if self.kv.tokens[seq] or seq in self.slot_of:
+            raise ValueError(f"seq {seq} already owns resident resources")
+        if self.tiered is not None and self.tiered.is_parked(seq):
+            raise ValueError(f"seq {seq} is parked; resume it before reusing its id")
         self.kv.reserve(seq, prompt_len)                   # the whole prompt is admitted or nothing (D3)
-        self.slot_of[seq] = self.slots.take(seq)
-        self.model.open(seq, self.slot_of[seq])
+        slot = None
+        try:
+            slot = self.slots.take(seq)
+            try:
+                self.model.open(seq, slot)
+            except BaseException:
+                self.model.close(seq)
+                raise
+        except BaseException:
+            if slot is not None:
+                self.slots.give(slot)
+            self.kv.release(seq)
+            raise
+        self.slot_of[seq] = slot
+        sched.arrive(self.state, seq, prompt_len, now)
 
     def _finish(self, seq: int) -> None:
         sched.finish(self.state, seq)
@@ -80,8 +104,8 @@ class Runner:
 
     def park(self, seq: int) -> int:
         """An idle conversation leaves the arena but keeps its KV (D16).
-        Only a sequence that is not running: parking a live one would make the
-        next decode wait on disk, which D10 forbids."""
+        Only an idle one: parking a live one would make the next decode wait
+        on disk, which D10 forbids."""
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle; only idle conversations park")
         return self.tiered.park(seq)
@@ -99,23 +123,28 @@ class Runner:
             raise ValueError(f"seq {seq} is not idle")
         if self.tiered is not None and self.tiered.is_parked(seq):
             raise ValueError(f"seq {seq} is parked: resume it first")
+        if len(self.state.running) >= self.c.max_running:
+            raise ValueError("decode width is full; wake it later")
         self.idle.pop(seq)
         self.state.running.append(seq)
 
     def extend(self, seq: int, tokens: int, now: "float | None" = None) -> None:
         """A new turn on an idle conversation: `tokens` more prompt tokens to
-        prefill on top of what the caches already hold."""
+        prefill on top of what the caches already hold (from the model's
+        context, not kv.tokens: reservations overshoot by the last horizon)."""
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle")
         if self.tiered is not None and self.tiered.is_parked(seq):
             raise ValueError(f"seq {seq} is parked: resume it first")
+        if not isinstance(tokens, int) or tokens <= 0:
+            raise ValueError("a turn adds at least one token to prefill")
+        held = self.model.context(seq)
+        now = time.monotonic() if now is None else now
+        sched.validate_arrival(self.state, seq, held + tokens, now)
+        self.kv.reserve_to((seq,), (held + tokens,))
         self.idle.pop(seq)
-        held = self.model.context(seq)                             # NOT kv.tokens: reservations overshoot by the last horizon
-        sched.arrive(self.state, seq, held + tokens, time.monotonic() if now is None else now)
+        sched.arrive(self.state, seq, held + tokens, now)
         self.state.computed[seq] = held
-        need = held + tokens - self.kv.tokens[seq]
-        if need > 0:
-            self.kv.reserve(seq, need)
 
     def step(self, now: float | None = None) -> "sched.Step | None":
         now = time.monotonic() if now is None else now
@@ -123,19 +152,22 @@ class Runner:
         if step is None:
             return None
         t0 = time.perf_counter()
-        with self.rec.phase(step.kind):
+        with self.rec.phase(step.kind, aggregate=True):
             if step.kind == sched.PREFILL:
                 (seq,) = step.seqs
                 start = self.state.computed[seq]
-                self.model.prefill(seq, start, step.tokens, self.kv.row(seq), self.slot_of[seq])
+                finished = self.model.prefill(seq, start, step.tokens, self.kv.row(seq), self.slot_of[seq])
+                if finished and start + step.tokens != self.state.prompt_len[seq]:
+                    raise ValueError("prefill may finish only at the end of the prompt")
             else:
-                for seq in step.seqs:                          # blocks for what this step will write; rejected drafts are overwritten, never re-reserved
-                    need = self.model.horizon(seq) - self.kv.tokens[seq]
-                    if need > 0:
-                        self.kv.reserve(seq, need)
+                self.kv.reserve_to(step.seqs, [self.model.horizon(s) for s in step.seqs])
                 done = self.model.decode(step.seqs, [self.kv.row(s) for s in step.seqs],
                                          [self.slot_of[s] for s in step.seqs])
+                if len(done) != len(step.seqs):
+                    raise ValueError("decode must return one completion flag per sequence")
             sched.advance(self.state, step)
+            if step.kind == sched.PREFILL and finished:
+                self._finish(seq)
             if step.kind == sched.DECODE:
                 for seq, finished in zip(step.seqs, done):
                     if finished:
@@ -179,7 +211,7 @@ def _selfcheck() -> None:
                      "prefill", "decode", "decode", "decode"], kinds
     assert r.state.running == [] and r.kv.available == 64 and r.slots.available == 8   # 8 usable of 9
     assert r.ring.count == len(kinds)
-    # conversations that live on: a finished turn keeps blocks and slot, wakes to decode more, then is evicted
+    # conversations that live on: a finished turn keeps blocks and slot, wakes to decode more, extends, is evicted
     r2 = Runner(Fake(), c, BlockPool(64, 16, 8, 32), SlotPool(9), Ring(16, STEP_RECORD.size), keep_idle=True)
     r2.submit(5, 40, now=0.0)
     while r2.step(now=0.0) is not None:
@@ -193,8 +225,7 @@ def _selfcheck() -> None:
     r2.evict(5); assert r2.kv.available == 64 and r2.slots.available == 8 and 5 not in r2.idle
     last = STEP_RECORD.unpack(r.ring.ordered()[-1])
     assert last[2] == KIND[sched.DECODE]
-    print(f"  runner: {len(kinds)} steps ({kinds.count('prefill')} prefill, {kinds.count('decode')} decode), all homogeneous, kv/slots returned, ring recorded; "
-          "keep_idle: finish keeps blocks, wake/extend/evict OK")
+    print(f"  runner: {len(kinds)} steps ({kinds.count('prefill')} prefill, {kinds.count('decode')} decode), all homogeneous, kv/slots returned, ring recorded; keep_idle: finish keeps blocks, wake/extend/evict OK")
 
 
 if __name__ == "__main__":

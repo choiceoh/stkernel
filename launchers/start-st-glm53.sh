@@ -5,16 +5,16 @@
 # on their target paths, /cache for the JIT builds, and the production
 # launcher's NCCL/RoCE environment (start-glm53-nvfp4-tp4.sh 431-445).
 #
-#   bash launchers/start-st-glm53.sh            # start all four (rank r on 10.10.10.(r+1))
+#   bash launchers/start-st-glm53.sh            # start all four (rank 0=srv2, rank 1=srv1, then srv3/srv4)
 #   bash launchers/start-st-glm53.sh stop       # docker rm -f st-glm53 on every node
 #   bash launchers/start-st-glm53.sh logs [r]   # tail rank r's container log
 #
-# Rank order is base/comm.NODES (srv1..srv4); the head (MASTER_ADDR) is srv2.
+# Rank order is base/comm.NODES (srv2, srv1, srv3, srv4): rank 0 hosts the rendezvous store, so it is the head.
 # Never beside a serving vLLM or a q38 stack: check `docker ps` on every node
 # first -- this script refuses if a glm53*/q38* container is up.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-NODES=(10.10.10.1 10.10.10.2 10.10.10.3 10.10.10.4)
+NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 IMAGE=${IMAGE:-glm53:v13-b12x-it}
 PORT=${PORT:-8000}
 RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/glm53-redhat-nvfp4-tp4}
@@ -62,7 +62,7 @@ NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
 -e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=${GLOO_IFNAME:-enP2p1s0f0np0} \
 -e NCCL_CROSS_NIC=1 -e NCCL_PROTO=LL,LL128,Simple -e NCCL_CUMEM_ENABLE=0 \
--e NCCL_IB_GID_INDEX=3 -e NCCL_IB_ROCE_VERSION_NUM=2 -e NCCL_IB_ADDR_FAMILY=AF_INET \
+-e NCCL_IB_ROCE_VERSION_NUM=2 -e NCCL_IB_ADDR_FAMILY=AF_INET \
 -e NCCL_NVLS_ENABLE=0 -e NCCL_IGNORE_CPU_AFFINITY=1 -e NCCL_DEBUG=WARN \
 -e NCCL_MIN_NCHANNELS=16 -e NCCL_MAX_NCHANNELS=16 -e NCCL_NCHANNELS_PER_NET_PEER=4 \
 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=1 -e VLLM_GLM53_MEGAKERNEL=1 -e VLLM_GLM53_MK_MLA=1 \
@@ -76,7 +76,7 @@ cp "$CKPT"/chat_template*.jinja "$META"/ 2>/dev/null || true
 for r in "${!NODES[@]}"; do
   ip=${NODES[$r]}
   echo "== rank $r on $ip"
-  rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/overlay" "$META" "choiceoh@$ip:$ENGINE_DIR/"
+  rsync -a --delete -e "ssh $SSHOPT" --exclude __pycache__ "$REPO/engine" "$REPO/overlay" "$REPO/launchers" "$META" "choiceoh@$ip:$ENGINE_DIR/"
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; exit 1; }
   node_sh "$ip" "test -s $DRAFTER/model.safetensors" || { echo "ABORT: $ip lacks the DFlash2 drafter at $DRAFTER" >&2; exit 1; }
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \
@@ -85,6 +85,6 @@ for r in "${!NODES[@]}"; do
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs $mounts \
-    --entrypoint /bin/bash $IMAGE -lc 'cd /repo && PYTHONPATH=/repo exec python3 engine/profiles/glm53/boot.py --port $PORT --ckpt-meta /repo/st-glm53-meta' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 engine/profiles/glm53/boot.py --port $PORT --ckpt-meta /repo/st-glm53-meta' >/dev/null && echo '$ip: started'"
 done
 echo "head: http://10.10.10.2:$PORT/v1/completions  (GET / for status)"

@@ -11,5 +11,6 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 MODELS=${MODELS:-/home/choiceoh/models}
 export PROBE_CACHE=1
 export MK_PROBE_DOCKER_ARGS="--mount type=bind,src=$MODELS,dst=$MODELS,readonly ${MK_PROBE_DOCKER_ARGS:-}"
-export VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MLA=1      # the megakernel master flag AND the MLA segment: both, or the lane stays inert
+export VLLM_GLM53_MK_MLA=1
+export VLLM_GLM53_MEGAKERNEL=${VLLM_GLM53_MEGAKERNEL:-1}
 exec bash "$REPO/probes/run_mk_probe.sh" engine/profiles/glm53/check.py --lanes served "$@"

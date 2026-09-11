@@ -34,7 +34,7 @@ from engine.base.serve import Server                             # noqa: E402
 from engine.base.kv_tier import NvmeTier                         # noqa: E402
 from engine.base.tiered_kv import TieredKV                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
-from engine.profiles.glm53.caches import Glm53Caches, block_bytes, slot_bytes   # noqa: E402
+from engine.profiles.glm53.caches import Glm53Caches, layout   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
@@ -90,14 +90,16 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     specs = net.specs()
     D = drafter_mod.load() if use_drafter else None
     dspecs = drafter_mod.specs(D) if D else []
-    bb, sb = block_bytes(F, net.layers), slot_bytes(F, net.layers, net.Hk)
+    draft_shape = (D.layers, D.window, D.kv_heads, D.head_dim) if D else None
+    cache_layout = layout(F, net.layers, draft_shape)
+    bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes
     ns = max_seqs + 1
-    ring = drafter_mod.ring_bytes(D) if D else 0
-    nb = int((kv_gib * GIB - ns * (sb + ring)) // bb)
+    # the persistent int32 block table is part of the same declared budget
+    nb = int((kv_gib * GIB - ns * sb) // (bb + max_seqs * 4))
     if nb < 2:
-        raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {(sb + ring) / 2**20:.0f} MiB")
+        raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
     with recorder.phase("arena"):
-        arena = Arena(total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + nb * bb + ns * (sb + ring))
+        arena = Arena(total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs))
     with recorder.phase("load"):
         views = RankLoader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors").load(
             [s.name for s in specs], arena=arena, recorder=recorder)
@@ -105,14 +107,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     tok = tokenizer(ckpt_meta)
     decodable = decodable_vocab(tok)
     drafter = NullDrafter()
-    draft_shape = None
     if D:
         with recorder.phase("load drafter"):
             dviews = RankLoader(drafter_mod.DRAFTER / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
         drafter = drafter_mod.Drafter(D, net, decodable)
         drafter.bind(dviews)
-        draft_shape = (D.layers, D.window, D.kv_heads, D.head_dim)
-    caches = Glm53Caches(arena, F, net.layers, net.Hk, nb, ns, max_seqs=ns, draft=draft_shape)
+    caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape)
     # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
     aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
     engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
@@ -121,9 +121,9 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                               max_wait_s=MAX_WAIT_S, max_running=max_seqs)
     tiered = None
     if tier_dir:                                                                    # D16: idle conversations park on NVMe, per rank
-        tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=4096)
-        tiered = TieredKV(caches.blocks, tier, regions=[(st, bb) for _n, st, bb in caches.regions()], on_resume=caches.sync_row)
-    runner = Runner(engine, contract, caches.blocks, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
+        tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
+        tiered = TieredKV(caches.pool, tier)
+    runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
                     keep_idle=tiered is not None)                                  # with a tier, conversations live on and park
     recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
     return F, net, caches, engine, runner
@@ -150,6 +150,10 @@ def local(a) -> int:
     prompts = {seq: torch.randint(0, 100_000, (a.prompt + 7 * seq,)).tolist() for seq in range(a.seqs)}
     tp = LocalTP(facts.TP); lane_tables.bind_tp(tp)
     lanes = lane_tables.reference()
+    if a.park:                                            # a run-private tier: parked ids from an earlier smoke must not collide
+        import tempfile
+        Path(a.tier_dir).mkdir(parents=True, exist_ok=True)
+        a.tier_dir = tempfile.mkdtemp(prefix="local-", dir=a.tier_dir)
 
     def rank_main(comm):
         rec = Recorder(f"rank{comm.rank}")
@@ -166,9 +170,9 @@ def local(a) -> int:
             # gets them back; resume into fresh blocks; wake and decode 4 more tokens -- they must equal a straight run's
             seq, straight = 0, 2
             with rec.phase("park"):
-                free_before = caches.blocks.available
+                free_before = caches.pool.available
                 wrote = runner.park(seq)
-                free_after = caches.blocks.available
+                free_after = caches.pool.available
                 got = runner.resume(seq)
                 torch.cuda.synchronize()
             with rec.phase("continue"):
@@ -187,11 +191,16 @@ def local(a) -> int:
             parked = {"wrote": wrote, "got": got, "free_before": free_before, "free_after": free_after,
                       "continued": continued, "straight_tail": engine.generated(straight)[a.max_new:]}
         return {"rec": rec, "out": out, "steps": runner.steps, "ring": runner.ring.count, "secs": time.perf_counter() - t0,
-                "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.blocks.available, "slots": caches.slots.available,
+                "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.pool.available, "slots": caches.slots.available,
                 "accepted": engine.accepted_total, "drafted": engine.drafted_total, "k": engine.drafter.k, "parked": parked}
 
     if a.serve:
-        return local_serve(a, tp, lanes, layers, prompts)
+        try:
+            return local_serve(a, tp, lanes, layers, prompts)
+        finally:
+            if a.park:
+                import shutil
+                shutil.rmtree(a.tier_dir, ignore_errors=True)
     outs = tp.run(rank_main)
     r0 = outs[0]
     print(r0["rec"].table())
@@ -212,6 +221,9 @@ def local(a) -> int:
               f"{pk['continued'] == pk['straight_tail']}; ranks agree {same_p}")
         ok = ok and same_p and pk["wrote"] == pk["got"] and pk["free_after"] > pk["free_before"] and pk["continued"] == pk["straight_tail"]
     print("\n  " + ("PASS: the runner drove prefill and decode through the engine on four ranks" if ok else "FAIL"))
+    if a.park:
+        import shutil
+        shutil.rmtree(a.tier_dir, ignore_errors=True)
     return 0 if ok else 1
 
 
@@ -296,6 +308,9 @@ def fleet(a) -> int:
     if comm.rank == 0:
         print(rec.table())
         print(f"  ST engine: GLM-5.3, TP={facts.TP}, lanes={lanes.name}, KV {a.kv_gib} GiB, serving on :{a.port}")
+        if runner.tiered is not None:
+            t = runner.tiered.tier
+            print(f"  NVMe tier: {sum(1 for k in t.index if t.has(int(k)))} conversations parked from before, {len(t.stale())} under another layout (kept, not resumable)")
     try:
         Server(engine, runner, comm, port=a.port, tokenizer=tokenizer(a.ckpt_meta)).loop()
     finally:
