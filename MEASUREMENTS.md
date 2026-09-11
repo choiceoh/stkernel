@@ -8118,3 +8118,33 @@ M = 1,152 와 6,912 에서 재면 절편이 바로 나온다.
 **계측 자체는 공짜다** — `is_initialized()` 뒤에서만 표본을 뜨므로 CUDA 가 없으면 줄이 바이트
 동일이고, 부팅마다 두 번의 `cudaMemGetInfo` 뿐이다. 내 부팅이든 피어 부팅이든 다음 부팅이
 그대로 갱신한다.
+
+## ★ Qwen3.8-Flash-Next TEP=4 — 첫 브래킷: 디코드 17.9 step/s, 품질 9/9 (2026-09-11 16:54, boot 9, QWEN38-TEP4-SSD2)
+
+세 번째 모델이 원장에 들어온다. `qwen38` 프로필(`qwen38-fi618:local`, TP=4 + EP)의
+첫 onepass, `SPEC_TOKENS=0` 이라 step = token.
+
+| ctx | 프리필 cold / warm tok/s | TTFT cold / warm | 품질 |
+|---|---|---|---|
+| 2K | 2,053 / 4,977 | 0.80 s / 0.33 s | o o o |
+| 32K | 2,538 / (1 req) | 9.07 s / – | o o o |
+| 128K | 2,713 / (1 req) | 33.65 s / – | o o o |
+
+디코드 **17.9 step/s 중앙값**(창 101개, 2K·32K·128K 모두 17.9 — 문맥 길이에 평평),
+수용률 0.0 %(스펙 없음), 품질 9/9, 한국어 깨짐 0/5. 162 s.
+[원본](measurements/qwen38_tep4_20260911/onepass2/README.md).
+
+이 숫자가 나오기까지 죽은 부팅 여덟 번의 원인은 셋이었고 전부 커널 밖이었다.
+(1) vLLM 이 미라우팅 슬롯으로 넘기는 `-1` 을 stock b12x 동적 커널이 `row_counts[-1]`
+로 atomic — compute-sanitizer 로 잡고 커널 가드로 닫음(`qwen38_b12x`). (2) 오라클의
+EP 거부와 torch.compile 의 PLE 그래프 브레이크 — EP 훅과 splitting op. (3) 메모리:
+층마다 만든 b12x 워크스페이스 13.5~20.8 GiB/랭크, 온디바이스 PLE 12 GiB, 이용률 잔여
+KV — 랭크당 ~80 GB 로 노드 가용 15 GB, 요청 시점 JIT 에 드라이버 `NV_ERR_NO_MEMORY`
+(단편화: 가용 23 GB 에서도 실패) → 워크스페이스 공유·PLE SSD·KV 16 GiB 고정·JIT 캐시
+보존·부팅 전 compact_memory 로 랭크당 ~50 GB. 상세는 `profiles/qwen38.env` 주석과
+모듈 README.
+
+**다음 레버(측정 순서)**: 디코드 스텝 56 ms 의 구성 — `PROFILER_DIR` 부팅으로
+`bench/profile-step.py decode:600`; MTP(`SPEC_TOKENS`) 는 step/s 가 아니라 tok/s 를 올리는
+팔이라 별도 브래킷; PLE 룩업(eager Python + SSD 16행/토큰 동기)과 4노드 all-reduce 48×2
+가 유력한 두 덩어리.

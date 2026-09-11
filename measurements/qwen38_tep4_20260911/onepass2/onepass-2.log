@@ -1,0 +1,14 @@
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    1640        2053        4977      0.80s      0.33s  o o o
+  32000   23021        2538     (1 req)      9.07s          -  o o o
+ 128000   91271        2713     (1 req)     33.65s          -  o o o
+  warm 처리량: 4977 -> 2713 tok/s (over 1640 -> 91271 tokens)
+=> 9/9 correct
+decode: windows n=101 med 17.9 [2.0, 19.9] step/s (inside the answers only; per context: 2K: n=31 med 17.9  32K: n=26 med 17.9  128K: n=44 med 17.9), raw acc 0.0%, tokens/step 1.000 (k=7.0), generated 1837 tokens over 162s
+응답 5개 · 문자 4,292
+  깨진 응답: 0/5 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass QWEN38-TEP4-SSD2: 162s total
