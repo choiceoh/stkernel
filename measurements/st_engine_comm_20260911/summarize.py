@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import statistics
+import subprocess
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -10,6 +11,7 @@ ROOT = HERE.parents[1]
 
 def main():
     reports = []
+    measured_sources = {}
     for rank in range(4):
         name = f'st-tp4-lat-f4d7-r1-16-rank{rank}'
         r = json.loads((HERE/'pilot'/f'{name}.json').read_text())
@@ -22,7 +24,12 @@ def main():
             ('sum', 49152), ('sum', 196608), ('sum', 2097152), ('sum', 8388608)]
         assert [c['delayed_rank'] for c in r['injected_wait']] == [-1, 3]
         for path, sha in r['source_sha256'].items():
-            assert hashlib.sha256((ROOT/path).read_bytes()).hexdigest() == sha, path
+            # Main later changed the launcher and net. Validate the actual
+            # recorded tree, including the committed probe, not today's files.
+            if path not in measured_sources:
+                data = subprocess.check_output(['git', 'show', '2ead1f09:'+path], cwd=ROOT)
+                measured_sources[path] = hashlib.sha256(data).hexdigest()
+            assert measured_sources[path] == sha, path
         for c in r['results'] + r['injected_wait']:
             assert c['exact'] and c['cpu_delta']['throttled_usec'] == 0
             for t in [c['per_operation'], *c['spans']]:

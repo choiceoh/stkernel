@@ -1,0 +1,240 @@
+{
+  "status": "Implemented; fused revision still needs GB10/TP4 qualification. No full-model speedup claim.",
+  "unfused_revision": "9de1a199",
+  "fused_revision": "28fcdfbc",
+  "payload": {
+    "legacy_gathered_bytes": 1548800,
+    "candidate_gathered_bytes": 2560,
+    "reduction_percent": 99.83471074380165
+  },
+  "tests": {
+    "final_native_cpu_passed": 174,
+    "final_native_cpu_skipped": 57,
+    "final_rtx_passed": 10,
+    "unfused_tp4_micro_rank_cases": 108,
+    "unfused_real_tp4_rank_contexts": 24,
+    "fused_real_rtx_contexts": 6
+  },
+  "unfused_tp4_selection": [
+    {
+      "rows": 1,
+      "legacy_us": [
+        923.7119853496552,
+        973.5040068626404
+      ],
+      "candidate_us": [
+        814.0960037708282,
+        831.6320180892944
+      ],
+      "reduction_percent": [
+        10.364388416079606,
+        15.843798390307729
+      ]
+    },
+    {
+      "rows": 5,
+      "legacy_us": [
+        1093.9680337905884,
+        1113.0560040473938
+      ],
+      "candidate_us": [
+        849.9199748039246,
+        857.5840294361115
+      ],
+      "reduction_percent": [
+        21.75784883730415,
+        23.4266731876829
+      ]
+    },
+    {
+      "rows": 20,
+      "legacy_us": [
+        922.111988067627,
+        939.4240081310272
+      ],
+      "candidate_us": [
+        813.4879767894745,
+        816.1919713020325
+      ],
+      "reduction_percent": [
+        11.57169606719174,
+        13.35797064378128
+      ]
+    }
+  ],
+  "unfused_real_tp4": [
+    {
+      "context": 0,
+      "legacy_us": [
+        22336.671829223633,
+        22362.48016357422
+      ],
+      "candidate_us": [
+        22678.41625213623,
+        22695.664405822754
+      ],
+      "reduction_percent": [
+        -1.6071891969574592,
+        -1.412795388754029
+      ]
+    },
+    {
+      "context": 1,
+      "legacy_us": [
+        19031.071662902832,
+        19078.944206237793
+      ],
+      "candidate_us": [
+        18874.784469604492,
+        18880.687713623047
+      ],
+      "reduction_percent": [
+        0.7902022121693109,
+        1.0700787969522563
+      ]
+    },
+    {
+      "context": 17,
+      "legacy_us": [
+        18845.983505249023,
+        18861.34433746338
+      ],
+      "candidate_us": [
+        19079.21600341797,
+        19104.20799255371
+      ],
+      "reduction_percent": [
+        -1.3127221059954897,
+        -1.2375713801510368
+      ]
+    },
+    {
+      "context": 2047,
+      "legacy_us": [
+        18882.512092590332,
+        18913.24806213379
+      ],
+      "candidate_us": [
+        18611.135482788086,
+        18621.407508850098
+      ],
+      "reduction_percent": [
+        1.4371848855255664,
+        1.5430483030991704
+      ]
+    },
+    {
+      "context": 2048,
+      "legacy_us": [
+        18964.176177978516,
+        18988.75141143799
+      ],
+      "candidate_us": [
+        18722.14412689209,
+        18726.367950439453
+      ],
+      "reduction_percent": [
+        1.2539865971884834,
+        1.4040274622022064
+      ]
+    },
+    {
+      "context": 2057,
+      "legacy_us": [
+        18908.86402130127,
+        18923.983573913574
+      ],
+      "candidate_us": [
+        18921.615600585938,
+        18945.887565612793
+      ],
+      "reduction_percent": [
+        -0.16232220940921582,
+        0.0005896216015210953
+      ]
+    }
+  ],
+  "fleet_lifecycle_changes": {
+    "selection": [
+      {
+        "node": "10.10.10.4",
+        "started": [
+          "st-gb10-kda-check-9391"
+        ],
+        "stopped": []
+      }
+    ],
+    "real_weights": [
+      {
+        "node": "10.10.10.1",
+        "started": [],
+        "stopped": [
+          "st-draft-topk-cpu-main-clean-f4d7"
+        ]
+      },
+      {
+        "node": "10.10.10.4",
+        "started": [
+          "modest_ardinghelli",
+          "st-gb10-kda-suite-9391"
+        ],
+        "stopped": [
+          "confident_noether",
+          "st-gb10-kda-real-9391"
+        ]
+      }
+    ]
+  },
+  "fused_rtx_local_selection": [
+    {
+      "rows": 1,
+      "dense": 42.35200025141239,
+      "torch_packet": 160.24000197649002,
+      "fused_packet": 116.38399958610535
+    },
+    {
+      "rows": 5,
+      "dense": 50.6879985332489,
+      "torch_packet": 145.28000354766846,
+      "fused_packet": 108.39999839663506
+    },
+    {
+      "rows": 20,
+      "dense": 77.47200131416321,
+      "torch_packet": 311.5680068731308,
+      "fused_packet": 184.00000035762787
+    }
+  ],
+  "fused_real_rtx": [
+    {
+      "context": 0,
+      "legacy": 14538.911819458008,
+      "candidate": 14570.735931396484
+    },
+    {
+      "context": 1,
+      "legacy": 14455.600261688232,
+      "candidate": 14512.399673461914
+    },
+    {
+      "context": 17,
+      "legacy": 14443.952083587646,
+      "candidate": 14532.495975494385
+    },
+    {
+      "context": 2047,
+      "legacy": 14513.69571685791,
+      "candidate": 14553.44009399414
+    },
+    {
+      "context": 2048,
+      "legacy": 14546.048164367676,
+      "candidate": 14532.639980316162
+    },
+    {
+      "context": 2057,
+      "legacy": 14431.711673736572,
+      "candidate": 14486.271858215332
+    }
+  ]
+}
