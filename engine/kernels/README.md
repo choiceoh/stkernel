@@ -11,6 +11,7 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 | 상태 링 | `state.py`에서 물리 슬롯·위치로 필요한 이력을 읽고 변경된 위치만 쓰기 | PyTorch, Triton |
 | mHC pre / post | `mhc/`의 TileLang 혼합 커널과 작은 M의 prenorm 패딩 | PyTorch, TileLang, Triton, DeepGEMM |
 | 인덱서 로짓 | `deep_gemm.py`에서 `deep_gemm.fp8_fp4_mqa_logits` 직접 호출 | DeepGEMM |
+| 인덱서 query 양자화 | `kpool.py`의 Hadamard-128·FP8 커널, GB10 행 수별 1/8/32행 tile | PyTorch, Triton |
 | kpool | `kpool.py`의 1워프 반환 전용 압축·회전·FP8 변환, 별도 캐시 쓰기 진입점 | PyTorch, Triton |
 | 인덱서 슬롯 | `indexer.py`의 풀 ID 정렬·토큰 확장·페이지 주소 변환·유효 개수·출력 쓰기를 한 커널에서 처리 | PyTorch, Triton |
 | MLA | `mla/`의 전용 Python 드라이버, warp max reduction과 DSMEM split 병합을 적용한 `glm53_megakernel.cu` | PyTorch, CUDA 13 nvcc |
@@ -42,6 +43,12 @@ FP32 부분값을 합치므로 이 경로는 전역 partial 버퍼와 grid 전�
 끄고 비교할 수 있으며, 부팅 시 실제 커널의 cluster 수용량과 수치 결과를 확인한다.
 측정에서 느렸던 4~8-block cluster는 기본 디스패치에 포함하지 않았다.
 결과와 재현 절차는 [GB10 MLA 측정](../../measurements/st_gb10_mla_20260911/README.md)에 있다.
+
+인덱서 query 양자화는 회전·BF16 반올림·FP8 scale 계산을 유지하면서 launch 크기를
+선택한다. 1,024행 이하는 1행·1 warp, 1,025~65,536행은 8행·1 warp를 사용하며,
+더 큰 입력은 기존 32행·2 warp를 사용한다. GLM의 인덱서 head는 32개이므로 행 수는
+토큰 수의 32배다. [GB10 양자화 측정](../../measurements/st_gb10_indexer_quant_20260911/README.md)에
+레지스터·shared memory, 실제 가중치 검사와 형상별 시간을 기록했다.
 
 이식한 Python 실험 변수는 `ST_GLM53_*` 이름을 사용한다. 예를 들어 KDA strided norm은
 `ST_GLM53_KDA_PREFILL_QK_NORM`, mHC big-fuse 설정은 `ST_GLM53_MHC_BIGFUSE`다.
