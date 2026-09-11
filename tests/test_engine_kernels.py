@@ -136,7 +136,8 @@ class KernelPackageTests(unittest.TestCase):
 
     def test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance(self):
         manifest = json.loads((KERNELS / "SOURCES.json").read_text())["files"]
-        for name in ("mla/glm53_megakernel.cu", "b12x/_moe_dynamic/gated.py", "causal_conv_single.py"):
+        for name in ("mla/glm53_megakernel.cu", "b12x/_moe_dynamic/gated.py", "causal_conv_single.py",
+                     "kda/kda.py", "kda/fused_recurrent.py"):
             record = manifest[name]
             expected = record.get("local_sha256", record["sha256"])
             self.assertEqual(hashlib.sha256((KERNELS / name).read_bytes()).hexdigest(), expected)
