@@ -96,5 +96,39 @@ class GraphSamplingTests(unittest.TestCase):
                 graphs.close()
 
 
+@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
+class SamplerSharingTests(unittest.TestCase):
+    """One sampler per logits buffer: a row's capacity buckets share it (boot-time study)."""
+
+    def target(self, outputs):
+        from engine.base.comm import Comm
+        return SimpleNamespace(tokens=6, graphs=SimpleNamespace(outputs=outputs),
+                               net=SimpleNamespace(comm=Comm(), rank=0, vp=32))
+
+    def test_capacity_buckets_of_one_row_capture_a_single_sampler(self):
+        from engine.profiles.glm53.decode_graphs import SamplingGraphs
+        shared = {n: torch.empty(n * 6, 32, device="cuda") for n in (1, 2)}
+        outputs = {(n, 6, cap): (None, None, shared[n])
+                   for n in (1, 2) for cap in (4096, 8192, 16384)}
+        generator = torch.Generator(device="cuda").manual_seed(5)
+        graphs = SamplingGraphs(self.target(outputs), generator, None, 1.)
+        try:
+            self.assertEqual(sorted(graphs.greedy.graphs), [(1, 6), (2, 6)])      # not six
+            self.assertEqual(sorted(graphs.stochastic.graphs), [(1, 6), (2, 6)])
+            for cap in (4096, 8192, 16384):                                       # every bucket reaches it
+                shared[1].normal_()
+                picked = graphs.run((1, 6, cap), [0.] * 6)
+                self.assertTrue(torch.equal(picked, shared[1].float().argmax(-1)))
+        finally:
+            graphs.close()
+
+    def test_a_target_that_does_not_share_its_buffer_is_refused(self):
+        from engine.profiles.glm53.decode_graphs import SamplingGraphs
+        outputs = {(1, 6, cap): (None, None, torch.empty(6, 32, device="cuda"))
+                   for cap in (4096, 8192)}
+        with self.assertRaisesRegex(ValueError, "must share one logits buffer"):
+            SamplingGraphs(self.target(outputs), torch.Generator(device="cuda"), None, 1.)
+
+
 if __name__ == "__main__":
     unittest.main()
