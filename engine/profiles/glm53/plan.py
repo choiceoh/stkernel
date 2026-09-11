@@ -103,7 +103,8 @@ def state_bytes(cfg: dict, tp: int = TP, kv_bytes: int = 1, spec_k: int = 5):
     n_kda = len(la["kda_layers"]); n_full = len(la["full_attn_layers"])
     conv = (3 * heads * hd // tp) * (k - 1 + spec_k) * 2        # q|k|v conv ring, bf16
     recurrent = (spec_k + 1) * (heads // tp) * hd * hd * 4      # fp32, one state per draft position
-    per_seq = n_kda * (conv + recurrent)
+    tail = cfg["index_kpool"] * 2 * cfg["index_head_dim"] * 2   # the indexer's in-progress pool: raw k + gate, bf16
+    per_seq = n_kda * (conv + recurrent) + n_full * tail
     kv_tok = n_full * cfg["kv_lora_rank"] * kv_bytes            # MLA latent, nope-only (rope dim 0)
     idx_tok = n_full * cfg["index_head_dim"] * 2 // 4           # kpool compress 4 (index_kpool_compress), bf16
     return per_seq, kv_tok, idx_tok

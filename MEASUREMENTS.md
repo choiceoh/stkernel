@@ -8822,3 +8822,19 @@ W4A4 캘리브레이션 있음, 나머지 bf16)를 그대로 쥐고 NVFP4 를 1�
 하나로 직렬화(GPU 가 어차피 직렬). 재실행은 백그라운드.
 
 이름: 운영자가 자체 엔진을 **ST 엔진**으로 명명(헌장 머리말, `engine/README.md`).
+
+### 45차 §4 — 서빙 커널은 메인 스레드에서만; 캐시는 프로필의 실물로 (2026-09-11)
+
+서빙 레인 판정 두 번째 실행은 랭크 0 의 mHC pre 레인(우리 tilelang 포크 → DeepGEMM `tf32_hc_prenorm_gemm`)이
+`CUDA_ERROR_INVALID_VALUE`. `probes/mhc_lane_isolate.py`(이미지 안, 한 번에 여섯 형태): 메인 스레드 — norm_weight 유무·
+아레나 뷰(256 B/3840 B 오프셋)·T=6/64/256/512/2304 **전부 OK**; **워커 스레드에서만 FAIL**. 원인은 우리 조합이 아니라
+DeepGEMM JIT 런타임의 스레드 가정이다. 조치: `base/comm.LocalTP.on_main` — 랭크 스레드가 잡을 큐에 넣고 `run()` 을 부른
+메인 스레드가 그 잡을 실행(플릿에선 프로세스당 한 랭크라 직접 호출). `lanes.served()` 의 어댑터 아홉이 이 길로 간다
+(triton autotuner 의 스레드 비안전도 같이 해결; 잠금은 뺐다).
+
+`profiles/glm53/caches.py` — 프로필의 실물 캐시: 층별 플랫 영역(latent·풀 키·풀 스케일; 서빙 커널이 먹는 전역 슬롯 레이아웃)
++ 슬롯별 링(conv·recurrent·꼬리), `base/kv` 의 BlockPool/SlotPool 위에서 **블록표 주소 변환은 여기 한 곳**(토큰 `row[p//2304]*2304
++ p%2304`, 풀 `row[j//576]*576 + j%576`). 블록 = 11 층 × 1,255,680 B = 13.17 MiB, 슬롯 = 207.2 MiB(plan 과 바이트 일치 —
+plan 이 빠뜨렸던 꼬리 링 11×2 KiB 를 채움). `check.py` 는 이제 ChainCaches(항등 표) 대신 이것을 쓴다: 블록은 free 스택에서
+받고(ids 2,1,…), 슬롯 1, 랭크별 아레나 3.14 GiB. 판정 그대로 **PASS**(네 랭크 동일, verify L3 dsa 7.5e-3/1.1e-2, rollback
+8.0e-3/1.0e-2).

@@ -40,6 +40,18 @@ class Lanes:
                               #  w2 [H,I/2] u8, w2_s [H,I/16] e4m3, w2_mult [], a2_mult [], limit) -> [n,H] bf16 (this rank's partial)
 
 
+_TP = {"active": None}
+
+
+def bind_tp(tp) -> None:
+    """Tell the served lanes which LocalTP run (if any) owns the main thread."""
+    _TP["active"] = tp
+
+
+def _active_tp():
+    return _TP["active"]
+
+
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
     """GLM's gated activation everywhere (dense, shared, routed): the served
     dense path is SiluAndMulWithClamp and the served b12x lane runs
@@ -172,17 +184,18 @@ def served(expert_lane: str = "b12x") -> Lanes:
         def expert(*a, **k):
             raise NotImplementedError("the b12x expert lane eats moe_sf_pack-swizzled packs; it is bound through the served layer (44th ledger), not here yet")
 
-    import threading
-    lock = threading.Lock()                      # triton's autotuner keeps per-call state on the kernel object: one caller at a time
-
-    def locked(fn):
+    def on_main(fn):
+        """Served kernels run on the main thread: DeepGEMM's JIT runtime raises
+        CUDA_ERROR_INVALID_VALUE from a worker (probes/mhc_lane_isolate.py), and
+        triton's autotuner is not thread-safe either. base/comm.LocalTP hands
+        the call over; on the fleet (one rank per process) it is a direct call."""
         def run(*a, **k):
-            with lock:
-                return fn(*a, **k)
+            tp = _active_tp()
+            return fn(*a, **k) if tp is None else tp.on_main(fn, *a, **k)
         return run
 
     return Lanes("served" if expert_lane != "reference" else "served (experts: reference)",
-                 *(locked(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, expert)))
+                 *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, kpool, mla, expert)))
 
 
 def _selfcheck() -> None:
