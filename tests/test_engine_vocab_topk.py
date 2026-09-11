@@ -67,7 +67,7 @@ class VocabTopkTests(unittest.TestCase):
     def test_actual_vocabulary_ties_and_masks_match_dense_cuda_topk(self):
         gen = torch.Generator(device='cuda').manual_seed(92)
         for dtype in (torch.float32, torch.bfloat16, torch.float16):
-            x = torch.randn(5, 154880, device='cuda', generator=gen).to(dtype)
+            x = torch.randn(5, 154880*2, device='cuda', generator=gen).to(dtype)[:, ::2]
             for decodable in (154880, 153880, 38710, 7):
                 with self.subTest(dtype=dtype, decodable=decodable, mode='random'):
                     self.compare(x, 16, decodable)

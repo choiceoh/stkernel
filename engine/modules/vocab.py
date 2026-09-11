@@ -54,13 +54,18 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
     valid = width if decodable is None else max(0, min(width, decodable - start))
     sentinel = -(2**63)
     local_k = min(k, valid)
+    fused = local_logits.is_cuda and local_logits.ndim == 2
     if local_k:
-        value = local_logits[..., :valid].float().contiguous()
-        bits = value.view(torch.int32).to(torch.int64)
-        ordered = torch.where(bits < 0, bits ^ 0x7fffffff, bits)
-        ordered = torch.where(torch.isnan(value), 0x7fffffff, ordered)
-        ids = start + torch.arange(valid, device=value.device, dtype=torch.int64)
-        key = (ordered << 32) | (0xffffffff - ids)
+        if fused:
+            from engine.kernels.vocab_candidates import pack
+            key = pack(local_logits, start, valid)
+        else:
+            value = local_logits[..., :valid].float().contiguous()
+            bits = value.view(torch.int32).to(torch.int64)
+            ordered = torch.where(bits < 0, bits ^ 0x7fffffff, bits)
+            ordered = torch.where(torch.isnan(value), 0x7fffffff, ordered)
+            ids = start + torch.arange(valid, device=value.device, dtype=torch.int64)
+            key = (ordered << 32) | (0xffffffff - ids)
         packet = key.topk(local_k, dim=-1, sorted=False).values
     else:
         packet = torch.empty((*local_logits.shape[:-1], 0), dtype=torch.int64, device=local_logits.device)
@@ -69,6 +74,9 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
                              dtype=torch.int64, device=packet.device)
         packet = torch.cat((packet, padding), dim=-1)
     gathered = comm.all_gather(packet, dim=-1)
+    if fused:
+        from engine.kernels.vocab_candidates import restore
+        return restore(gathered, vocab).topk(k, dim=-1)
     ids = 0xffffffff - (gathered & 0xffffffff)
     ordered = gathered >> 32
     bits = torch.where(ordered < 0, ordered ^ 0x7fffffff, ordered).to(torch.int32)

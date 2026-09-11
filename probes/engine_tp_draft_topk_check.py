@@ -62,7 +62,8 @@ def main():
                 device=torch.cuda.get_device_name(),nccl=torch.cuda.nccl.version(),cases=[],
                 env={k:v for k,v in os.environ.items() if k.startswith('NCCL_')},
                 source_sha256={p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in (
-                    'engine/modules/vocab.py','engine/base/comm.py','probes/engine_tp_draft_topk_check.py')})
+                    'engine/modules/vocab.py','engine/kernels/vocab_candidates.py',
+                    'engine/base/comm.py','probes/engine_tp_draft_topk_check.py')})
     try:
         gen=torch.Generator(device='cuda').manual_seed(715+comm.rank)
         for rows in (1,5,20):
