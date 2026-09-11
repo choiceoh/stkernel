@@ -8619,3 +8619,7 @@ took 50.4" → **잔차 +2.0 GiB(3.9%)** = 로드가 체크포인트에서 파�
 `weight_global_scale` 은 **나눗셈**(1.728e4 = 448·6/amax)이다. 곱으로 읽으면 투영이 3e8 배 커지고
 **아무 오류도 없다** — column 검사는 양쪽이 같은 실수를 공유해 통과했고, row 검사의 절대 허용오차만
 그걸 드러냈다. 교훈: 분할 일치는 검증이 아니다, **크기(std 1e-3~0.2)를 단언**해야 한다.
+- `base/comm.py` — 플릿 고정(4 랭크, 헤드 10.10.10.2, RoCE v2 IPv4-mapped GID 자동 검출 = 런처 CT_GID_PRELUDE
+  규칙, GLOO ifname), world-1 항등 자가검증(GID 파서가 PORT 열을 INDEX 로 읽던 실수 한 번 잡음), one-shot AR 은
+  레인으로 등록. `base/graphs.py` — 디코드 셰이프별 CUDA 그래프, 풀 하나, 미선언 셰이프 거부(D3), 재생 == eager,
+  8-GEMM 스텝 eager 1.057 ms → 재생 **0.085 ms**. §5 표 갱신: 공통 부분은 한 스텝에 필요한 만큼 있다.

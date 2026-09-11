@@ -410,17 +410,21 @@ GLM 은 프로덕션이고, 상수가 전부 실측이고, 커널이 이미 우�
 
 | GLM 이 vLLM 에서 가져오는 것 (파일 수) | 엔진의 자리 | 상태 |
 |---|---|---|
-| `v1.core.sched` (3) | `base/scheduler` — 균질 스텝·대기 상한 | ✅ 자가검증 |
-| `v1.worker.gpu` (13) — 러너·입력 배치·그래프 | `base/runner` (골격) · 입력 배치 · 그래프 디스패치 | 🟡 골격만 |
-| `v1.kv_cache_interface` (8) · `v1.attention.backends` (15) | `base/kv` (블록·슬롯) · `base/cache_spec` · 스텝 메타데이터 | 🟡 블록·슬롯만 |
-| `model_executor.layers.mamba` (6) / `flash_linear_attention` | `modules/linear_attention` — 델타 규칙 | ✅ HF 대비 4/4 (KDA 채널별 감쇠는 플래그) |
-| `model_executor.layers.fused_moe` (7) / `flashinfer/fused_moe` (3) | `modules/moe` — NVFP4 오라클; 커널은 b12x(우리 것) | 🟡 오라클만 |
-| `model_executor.layers.quantization` (6) | `modules/quant` · `modules/moe` | 🟡 |
-| `model_executor.layers.{linear, layernorm, rotary, logits_processor}` (17) | `modules/linear` · `norm` · `rotary` · `logits` | ❌ |
-| `distributed` (7) · `parallel_state.py` | `base/comm` — 4노드 고정 배선, `tp_oneshot_ar`(우리 것)가 레인 | ❌ |
-| `v1.worker.gpu` 샘플러 | `base/sampler` | ❌ |
-| `model_loader.weight_utils` (3) | `base/loader` + `base/arena` | ✅ 11~17배, 아레나 |
+| `v1.core.sched` (3) | `base/scheduler` — 균질 스텝·대기 상한 | ✅ |
+| `v1.worker.gpu` (13) — 러너·입력 배치·그래프 | `base/runner`(+park/resume) · `base/step_meta` · `base/graphs`(I1: 셰이프별 캡처, 미선언 거부, 재생 0.085 대 eager 1.057 ms) | ✅ 골격+메타+그래프 |
+| `v1.kv_cache_interface` (8) · `v1.attention.backends` (15) | `base/kv`(블록·슬롯) · `base/cache_spec`(선언→블록 수) · `base/kv_tier`+`tiered_kv`(D16, 디코더 무방해 1.001) | ✅ 어텐션 커널 배선만 남음 |
+| `model_executor.layers.mamba` (6) / `flash_linear_attention` | `modules/linear_attention` — 델타 규칙, HF 대비 4/4 | ✅ (KDA 채널별 감쇠 플래그) |
+| `fused_moe` (7) / `flashinfer/fused_moe` (3) · `quantization` (6) | `modules/moe` · `modules/nvfp4_linear` — NVFP4 가 기본 형, packed 바이트 위 TP, 실제 GLM 전문가로 검증 | ✅ 오라클; 커널은 b12x 레인 |
+| `layers.{linear, layernorm, rotary, logits_processor}` (17) | `modules/{linear, norm, rotary, logits}` — glm53_model 의 호출 계약 그대로 | ✅ TP=2 시뮬레이션 대조 |
+| `distributed` (7) · `parallel_state.py` | `base/comm` — 4노드 고정, GID 자동 검출, world-1 항등, one-shot AR 레인 | ✅ world-1 / ❌ 4노드 실시험 |
+| 샘플러 | `base/sampler` — 시드 재생, torch.multinomial 동일 | ✅ |
+| `model_loader.weight_utils` (3) | `base/loader` + `base/arena` | ✅ |
 | `config` (14) · `logger` (28) · `platforms` (12) | `base/config` · `instruments` · 없음(하드웨어 고정) | ✅ |
+
+**공통 부분은 한 스텝에 필요한 만큼 있다.** 남은 것은 세 가지고 전부 GLM 에 붙이는 일이다:
+① `glm53_model` 8파일을 이 층 라이브러리 위에 재호스팅(임포트 계약은 맞춰 뒀다), ② 어텐션·KDA 커널
+배선(우리 커널: kda.py 2,106줄, mk MLA, 인덱서)과 KDA "align" 상태 슬롯, ③ 4노드 comm 실시험 +
+DFlash2 검증 루프. 그다음이 D4 의 판정 — 살아 있는 vLLM GLM 경로와 onepass 띠·반복.
 
 순서는 표의 위에서 아래로가 아니라 **GLM 이 한 스텝을 돌리는 데 필요한 순서**다: cache_spec → 스텝
 메타데이터 → 층 라이브러리 → comm → 샘플러 → 그래프 디스패치. 각 조각은 GPU 없이 자가검증하거나
