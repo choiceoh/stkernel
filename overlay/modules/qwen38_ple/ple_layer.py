@@ -14,6 +14,10 @@ from torch import nn
 import vllm.envs as envs
 from vllm.config import CacheConfig, ModelConfig, VllmConfig, get_current_vllm_config
 from vllm.forward_context import get_forward_context
+from vllm.distributed import (
+    get_tensor_model_parallel_rank,
+    get_tensor_model_parallel_world_size,
+)
 from vllm.model_executor.layers.linear import ReplicatedLinear
 from vllm.model_executor.layers.mamba.abstract import MambaBase
 from vllm.model_executor.layers.mamba.mamba_utils import (
@@ -55,6 +59,7 @@ from vllm.v1.attention.backends.short_conv_attn import (
 from vllm.v1.attention.backends.utils import NULL_BLOCK_ID
 
 from ..common.ple import copy_ple_embedding_shard_
+from .qwen38_ple_ssd import PleSsdConfig, PleSsdTable
 
 _MASK64 = (1 << 64) - 1
 _SPLITMIX_GAMMA = 0x9E3779B97F4A7C15
@@ -257,6 +262,89 @@ class Qwen3_8FlashNextPLEFp8EmbeddingMethod(QuantizeMethodBase):
         return F.embedding(input_, layer.weight)
 
 
+class Qwen3_8FlashNextPLESsdEmbeddingMethod(QuantizeMethodBase):
+    """FP8 PLE embedding whose rows stay on SSD; only the global scale is a parameter.
+
+    DENEB PLE SSD (2026-09-11). `VocabParallelEmbedding` still owns the row
+    partition, the id masking and the all-reduce; this method only answers
+    `embedding(local_ids)` -- from this rank's block file through the O_DIRECT
+    reader (qwen38_ple_ssd.py) instead of from a device table. The `weight`
+    parameter is a zero-row placeholder so every reader of `layer.weight` sees
+    the right dtype and width and holds nothing; load_weights skips the 128
+    checkpoint shards for it. The lookup does host I/O and a D2H of the ids,
+    so it cannot sit inside a CUDA graph: run with --enforce-eager or split
+    the piecewise graph at the PLE op.
+    """
+
+    def __init__(self) -> None:
+        self.cfg: PleSsdConfig | None = None
+        self._table: PleSsdTable | None = None
+
+    def create_weights(
+        self,
+        layer: nn.Module,
+        input_size_per_partition: int,
+        output_partition_sizes: list[int],
+        input_size: int,
+        output_size: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ) -> None:
+        del input_size, output_size, params_dtype
+        world = get_tensor_model_parallel_world_size()
+        rows = sum(output_partition_sizes)
+        self.cfg = PleSsdConfig(
+            rank=get_tensor_model_parallel_rank(),
+            world_size=world,
+            num_embeddings=rows * world,
+            row_bytes=input_size_per_partition,
+        )
+        if not self.cfg.enabled:
+            raise RuntimeError("PLE SSD method built without DENEB_PLE_SSD=1")
+        weight_loader = extra_weight_attrs.get("weight_loader")
+        weight = create_fp8_weight_parameter(0, input_size_per_partition, weight_loader)
+        layer.register_parameter("weight", weight)
+        weight_scale = create_fp8_scale_parameter(
+            PerTensorScaleParameter,
+            output_partition_sizes,
+            input_size_per_partition,
+            None,
+            weight_loader,
+            scale_dtype=torch.bfloat16,
+        )
+        layer.register_parameter("weight_scale", weight_scale)
+
+    def table(self) -> PleSsdTable:
+        """Open lazily: the reader holds fds and threads, wanted in the serving
+        process only, and only once the block file has been checked."""
+        if self._table is None:
+            assert self.cfg is not None
+            from vllm.model_executor.layers.dsv41_engram_io import ShardReader
+
+            path = self.cfg.shard_path()
+            if not os.path.isfile(path):
+                raise FileNotFoundError(
+                    f"PLE SSD block missing: {path} -- build it with "
+                    f"tools/qwen38_ple_shard.py build --world-size "
+                    f"{self.cfg.world_size}")
+            reader = ShardReader(path, queue_depth=self.cfg.queue_depth,
+                                 row_bytes=self.cfg.row_bytes)
+            self._table = PleSsdTable(self.cfg, reader)
+        return self._table
+
+    def apply(
+        self,
+        layer: nn.Module,
+        x: torch.Tensor,
+        bias: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        raise NotImplementedError("PLE SSD weights only support embedding lookup")
+
+    def embedding(self, layer: nn.Module, input_: torch.Tensor) -> torch.Tensor:
+        del layer
+        return self.table().gather(input_).view(torch.float8_e4m3fn)
+
+
 def _get_ple_embedding_quant_method(
     quant_config: QuantizationConfig | None,
     prefix: str,
@@ -277,6 +365,9 @@ def _get_ple_embedding_quant_method(
     # flag lets the on-device path build the same FP8 method the offload path
     # would have fed, so TP=4 can be MEASURED. Off by default: this is an
     # experiment, not a claim that the two paths are numerically identical.
+    # DENEB PLE SSD: the table leaves the device altogether; see the method.
+    if os.environ.get("DENEB_PLE_SSD", "") == "1":
+        return Qwen3_8FlashNextPLESsdEmbeddingMethod()
     forced = os.environ.get("DENEB_PLE_FORCE_FP8_EMBED", "") == "1"
     if not forced:
         if not isinstance(quant_config, Fp8Config):
@@ -645,6 +736,11 @@ class Qwen3_8FlashNextNGramEmbedding(PleOffloadLayer):
                         f"expected {expected_shape}, got "
                         f"{tuple(loaded_weight.shape)}"
                     )
+                if isinstance(embedding.quant_method,
+                              Qwen3_8FlashNextPLESsdEmbeddingMethod):
+                    # The rows are in this rank's block file; nothing to copy.
+                    loaded.add("ngram_embedding.weight")
+                    continue
                 copy_ple_embedding_shard_(
                     embedding.weight.data,
                     loaded_weight,

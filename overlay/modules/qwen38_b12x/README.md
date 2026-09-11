@@ -1,10 +1,11 @@
 # qwen38_b12x — the b12x lane on Qwen3.8-Flash-Next
 
-Three files. Two are wrappers, one is a generated kernel override.
+Five files. Four are wrappers (two hooks with their .pth), one is a generated kernel override.
 
 | file | kind | what |
 |---|---|---|
 | `qwen38_b12x_bounds.py` + `zz_qwen38_b12x_bounds.pth` | NEW | host-side capacity check around `launch_sm120_dynamic_moe`: prints `[b12x-bounds] state_E=.. rows a/b tiles c/d tasks e/f` and refuses a launch that would overrun its workspace. `DENEB_B12X_BOUNDS=0` disables. |
+| `qwen38_b12x_ep.py` + `zz_qwen38_b12x_ep.pth` | NEW | expert parallelism on the vLLM side: `_supports_parallel_config` → True, the wrapper built at the LOCAL expert count, `apply()` maps global ids through `expert_map` (local slot or −1). One line of logic once the kernel skips −1. `DENEB_B12X_EP=0` disables. |
 | `moe_dynamic_generic.py` | OVERRIDE of `blackwell_sm12x/_moe_dynamic/generic.py` | the stock SM120 dynamic MoE kernel plus the **unrouted-slot guard** — generated, not hand-edited: `tools/qwen38_b12x_guard_gen.py` |
 
 ## The guard, and why every Qwen3.8 b12x boot died before it

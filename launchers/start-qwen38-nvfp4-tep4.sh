@@ -30,6 +30,7 @@ _repo="$(cd "$_here/.." && pwd)"
 ct_load_profile "$_repo/profiles/qwen38.env" \
   IMAGE MODEL_HOST_PATH SERVED_NAME MOE_BACKEND EXPERT_PARALLEL MAX_MODEL_LEN \
   MAX_NUM_SEQS MAX_NUM_BATCHED KV_DTYPE GPU_MEM PLE_CPU_OFFLOAD \
+  PLE_SSD PLE_SSD_DIR \
   FORCE_FP8_EMBED CUDAGRAPH_MODE SPEC_TOKENS ADAPTIVE_SPEC NGRAM_FIX \
   QSA_MAX_SPLITS ALL2ALL ASYNC AUTOTUNE LOAD_FORMAT FUSE SHARED_FUSE
 
@@ -171,17 +172,24 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e HF_HUB_OFFLINE=1 -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 -e VLLM_PLE_CPU_OFFLOAD=$PLE_CPU_OFFLOAD \
 -e DENEB_PLE_FORCE_FP8_EMBED=$FORCE_FP8_EMBED -e DENEB_ADAPTIVE_SPEC=$ADAPTIVE_SPEC \
+-e DENEB_PLE_SSD=${PLE_SSD:-0} -e DENEB_PLE_SSD_DIR=${PLE_SSD_DIR:-} \
 -e DENEB_QSA_MAX_SPLITS=$QSA_MAX_SPLITS -e DENEB_NGRAM_FIX=$NGRAM_FIX \
 -e DENEB_Q38_SHARED_FUSE=$SHARED_FUSE"
 COMMON="--runtime nvidia --gpus all --ipc host --network host --cap-add IPC_LOCK --ulimit memlock=-1:-1 --shm-size 32g"
 RDMA_FLAGS="--device /dev/infiniband"
 MOUNTS="-v $MODEL_PATH:$MODEL_PATH:ro -v $CACHE_DIR:/root/.cache/vllm -v $LOGDIR:/q38logs $OVMOUNTS"
+# PLE on SSD: each rank reads its own block (tools/qwen38_ple_shard.py) from
+# PLE_SSD_DIR; the dir is mounted read-only and every node must hold its rank's file.
+if [ "${PLE_SSD:-0}" = 1 ]; then
+  [ -n "${PLE_SSD_DIR:-}" ] || { echo "ABORT: PLE_SSD=1 needs PLE_SSD_DIR" >&2; exit 2; }
+  MOUNTS="$MOUNTS -v $PLE_SSD_DIR:$PLE_SSD_DIR:ro"
+fi
 
 echo "=== [0/5] preflight ==="
 echo "  image      $IMAGE"
 echo "  model      $MODEL_PATH"
 echo "  TP=$TP_SIZE  EP=$EXPERT_PARALLEL  moe=${MOE_BACKEND:-marlin(default)}  gmu=$GPU_MEM"
-echo "  PLE offload=$PLE_CPU_OFFLOAD  force_fp8_embed=$FORCE_FP8_EMBED  shared_fuse=$SHARED_FUSE"
+echo "  PLE offload=$PLE_CPU_OFFLOAD  force_fp8_embed=$FORCE_FP8_EMBED  ple_ssd=${PLE_SSD:-0}  shared_fuse=$SHARED_FUSE"
 echo "  overlays   $(printf '%s' "$OVMOUNTS" | grep -o ' -v ' | wc -l) file(s)"
 
 _wips=""; for _w in $WORKERS; do _wips="$_wips ${_w%%:*}"; done
@@ -193,6 +201,15 @@ for ip in $HEAD_IP $_wips; do
   run "docker image inspect $IMAGE >/dev/null 2>&1" || { echo "ABORT: $ip missing image $IMAGE" >&2; exit 1; }
 done
 echo "  all nodes have the model and the image"
+if [ "${PLE_SSD:-0}" = 1 ]; then
+  _rank_of() { case "$1" in "$HEAD_IP") echo 0 ;; *) for _w in $WORKERS; do [ "${_w%%:*}" = "$1" ] && echo "${_w##*:}"; done ;; esac; }
+  for ip in $HEAD_IP $_wips; do
+    if [ "$ip" = "$HEAD_IP" ]; then run() { bash -c "$1"; }; else run() { ssh $SSHOPT choiceoh@"$ip" "$1"; }; fi
+    _f="$PLE_SSD_DIR/ple-r$(_rank_of "$ip")of$TP_SIZE.weight"
+    run "[ -f $_f ]" || { echo "ABORT: $ip missing its PLE block $_f -- tools/qwen38_ple_shard.py build" >&2; exit 1; }
+  done
+  echo "  every node holds its PLE block (PLE on SSD)"
+fi
 
 echo "=== [1/5] write serve.sh ==="
 cat > /tmp/serve-q38.sh <<EOF
