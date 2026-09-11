@@ -8400,3 +8400,53 @@ GLM 에서 빌려온 9.17 은 청크 4,096 에서 실제 **2.24** 였다. KV **8
 돌게 했다. 가중치와 **스케일은 같은 축으로 함께** 잘라야 한다.
 
 속도는 162~239 layer-tok/s — torch 오라클이라 느린 게 정상이다(D4: 오라클 먼저, 성능은 그다음).
+
+
+## ★43차 — 계획 변경: 자체 엔진 첫 대상 DSv4.1 → **Qwen3.8-Flash-Next** (2026-09-11, srv4 로컬, 부팅 없음)
+
+운영자: "dsv41 대신 qwen3.8 flash next 구현 위주로 계획 변경함". DSv4.1 계층은 중단·보존
+(마지막 상태: 커널 7/7, 층 포워드 finite, 4노드 fan-out 완료, dist_run 예행 exit 0).
+
+**체크포인트** `~/models/qwen38-flash-next-nvfp4`: 206 샤드 **125.87 GiB**, 296,475 텐서, NVFP4
+W4A4 group 16(routed experts 만; `hf_quant_config` exclude 목록에 attn·linear_attn·gate·shared·
+hc·ple·visual·embed·lm_head). 자격 노트: GSM8K 97.27%(sgl-eval, 1319), verify_hf PASS.
+
+**아키텍처**(text_config): hidden 2560, 48층 = **GDN 36 + full-attn 12**(4층마다), q 24 / kv 2 /
+head 256, GDN k16×128·v48×128·conv 4·ssm fp32, MoE 512 top-10 (inter 640) + shared 640,
+QSA 인덱서(budget 2048, 압축 4, heads 4, kv 1), HC 4(lowrank 320), PLE(layer 2, n-gram 3,
+vocab base 20M, fp8), MTP 1층 hybrid, vocab 248,320, max 262,144.
+
+**배치 × 예산**(규칙 출처 = 이미지 `d464f3b466fa` 의 vLLM 모델 파일):
+
+| 배치 | 체크포인트 | 랭크당 |
+|---|---:|---:|
+| routed experts (EP) | 67.97 | **16.99** |
+| PLE n-gram 표 (vocab-parallel, `common/ple.py`) | 47.68 | **11.92** |
+| embed / lm_head (vocab-parallel) | 2.37 | 0.59 |
+| GDN in/out/conv (헤드별 TP, `qwen_gdn_linear_attn.py`) | 3.89 | 0.97 |
+| full-attn q/o (TP) · k/v (복제: kv 2 < TP 4) | 1.14 · 0.10 | 0.29 · 0.10 |
+| 노름·HC·라우터·MTP·기타 (복제) | 1.52 | 1.52 |
+| vision (제거) | 0.84 | 0 |
+| **상주** | | **32.53** |
+
+예산: 121.63 − OS 12.16 − 런타임 바닥 5.54(GLM ledger, 재측정 대상) − 32.53 − 할당자 0.03 =
+**71.37 GiB 남음**(모듈 구성·액티베이션은 qwen38 에서 미측정 — 추정 줄로 들어갈 것).
+
+**상태/KV**: GDN 36층 × (conv 15 KiB + recurrent 0.75 MiB) = **27.5 MiB/시퀀스**(컨텍스트 무관);
+full-attn KV **12 KiB/토큰** + 인덱서 캐시 0.75 KiB/토큰. KV 40 GiB 면 동시 8 까지 모델 상한
+262,144, 동시 32 에 100,591, 동시 128 에 23,490. **KV 는 제약이 아니다** — D1 의 질문은 PLE
+11.92 의 배치와 남는 71 GiB 의 용도다.
+
+**오라클**: HF transformers 5.16.1 `qwen4_exp`(`~/venvs/chronos`), `modeling_qwen4_exp.py` 2,707줄,
+이 config 로 meta 인스턴스 OK(177.39 B 파라미터 → bf16 330 GiB 라 층 단위로만), GDN torch 폴백
+있음(fla 미설치, 불필요), PLE·QSA 인덱서·HC 전부 구현. 체크포인트 이름 = HF 이름.
+
+**커널 자산(이미지 안)**: `third_party/flash_linear_attention` Triton 6,098줄(chunk·fused_recurrent
+gated delta rule, kda.py 1,685), `mamba/ops/causal_conv1d.py` 1,289, QSA Triton 1,115 + pre-indexer
+508, HC Triton 489, `gdn_chunk_cutedsl` 2,555(opt-in). GDN 프리필 기본 백엔드 = Triton fla.
+**NVFP4 MoE 는 리포 b12x 레인 — 최근 커밋 "the b12x IMA is the MoE dispatch", 미해결 = 블로커.**
+
+**vLLM 경로 상태**: 이미지 4노드 전부 있음, 프로파일 TEP=4 (`SPEC_TOKENS=0 until TEP=4 serves`,
+`SHARED_FUSE=0 until dispatch wired`), 부팅 로그 없음, 원장 실측 0. **서빙한 적 없다.**
+
+**노드**: 체크포인트 srv2·srv3·srv4 ✓, **srv1 ✗ (여유 54 GB — DSv4.1 사본 133 GB 가 점유)**.
