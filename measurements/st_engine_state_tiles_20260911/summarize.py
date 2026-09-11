@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 import re
 import statistics
+import subprocess
+import io
+import tarfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -14,6 +17,11 @@ def digest(path):
 
 
 def main():
+    # Later main updates must not invalidate this earlier source manifest.
+    measured = subprocess.check_output(['git', 'archive', 'ffd069a6', 'engine'], cwd=ROOT)
+    with tarfile.open(fileobj=io.BytesIO(measured)) as archive:
+        sources = {m.name: hashlib.sha256(archive.extractfile(m).read()).hexdigest()
+                   for m in archive.getmembers() if m.isfile()}
     baseline = digest(HERE / "baseline-256.py")
     assert digest(ROOT / "engine/kernels/state.py") == baseline, "rejected tiles reached production"
     cases = []
@@ -54,7 +62,7 @@ def main():
     runtime = json.loads((HERE / "runtime-final.json").read_text())
     assert runtime["passed"] and not runtime["vllm_present"]
     for path, sha in runtime["source_files"].items():
-        assert digest(ROOT / "engine" / path) == sha, path
+        assert sources['engine/' + path] == sha, path
     result = dict(decision="retain main's 256-element tile; neither candidate promoted",
                   scope="direct-state transfers only; no full-model or TP4 speedup claim",
                   gpu_tests=170, isolated_real_weight_graph_conditions=17, cases=cases)

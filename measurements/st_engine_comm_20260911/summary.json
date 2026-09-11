@@ -1,0 +1,104 @@
+{
+  "status": "exploratory baseline only; channel comparison blocked by another fleet owner",
+  "source_baseline": "b4cb126b1908eb796ea4091196bcada21d57dbaf",
+  "correctness_cases": 40,
+  "timings": [
+    {
+      "operation": "max",
+      "bytes": 8,
+      "rank_median_range_us": [
+        62.73449957370758,
+        65.62549993395805
+      ]
+    },
+    {
+      "operation": "max",
+      "bytes": 48,
+      "rank_median_range_us": [
+        63.85200098156929,
+        65.3505027294159
+      ]
+    },
+    {
+      "operation": "max",
+      "bytes": 192,
+      "rank_median_range_us": [
+        61.14700064063072,
+        62.59249895811081
+      ]
+    },
+    {
+      "operation": "sum",
+      "bytes": 8192,
+      "rank_median_range_us": [
+        72.2379982471466,
+        74.58949834108353
+      ]
+    },
+    {
+      "operation": "sum",
+      "bytes": 49152,
+      "rank_median_range_us": [
+        75.80600306391716,
+        77.27149873971939
+      ]
+    },
+    {
+      "operation": "sum",
+      "bytes": 196608,
+      "rank_median_range_us": [
+        200.66099613904953,
+        202.17150449752808
+      ]
+    },
+    {
+      "operation": "sum",
+      "bytes": 2097152,
+      "rank_median_range_us": [
+        836.6429805755615,
+        837.6505076885223
+      ]
+    },
+    {
+      "operation": "sum",
+      "bytes": 8388608,
+      "rank_median_range_us": [
+        2437.311053276062,
+        2439.4965171813965
+      ]
+    }
+  ],
+  "injected_wait": [
+    {
+      "rank": 0,
+      "baseline_comm_us": 81.54849946731701,
+      "delayed_comm_us": 191.55100034549832,
+      "local_delay_us": 1.828000011300901
+    },
+    {
+      "rank": 1,
+      "baseline_comm_us": 81.01649989839643,
+      "delayed_comm_us": 191.1659997422248,
+      "local_delay_us": 2.051499999652151
+    },
+    {
+      "rank": 2,
+      "baseline_comm_us": 81.13999990746379,
+      "delayed_comm_us": 191.20249967090786,
+      "local_delay_us": 1.8215000209238497
+    },
+    {
+      "rank": 3,
+      "baseline_comm_us": 81.39849960571155,
+      "delayed_comm_us": 61.28299981355667,
+      "local_delay_us": 132.28849950246513
+    }
+  ],
+  "target_sum_calls": 91,
+  "drafter_proposal": {
+    "implemented": false,
+    "allgather_result_bytes": 1548800,
+    "fp32_score_int64_id_result_bytes": 3840,
+    "logical_payload_reduction_percent": 99.75206611570248
+  }
+}

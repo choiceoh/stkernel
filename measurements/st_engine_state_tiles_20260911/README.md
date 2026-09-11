@@ -56,7 +56,8 @@ claiming a complete-model speedup. Runtime dispatch flags were not added.
   PyTorch/CUDA. The GPU run above covers those paths.
 - `runtime-final.json`: native ABI and source manifest, with vLLM absent.
 - `summarize.py`: checks candidate/baseline source hashes, all six run files,
-  all samples, final production source hashes and validation logs.
+  all samples, the measured engine source manifest at `ffd069a6` and validation
+  logs. Later main changes are not treated as changes to that measured source.
 
 Runs used bounded private containers (four CPUs, 8 GiB), with the launcher's
 shared fleet lock held during validation. These were shared-machine microbenchmarks,
