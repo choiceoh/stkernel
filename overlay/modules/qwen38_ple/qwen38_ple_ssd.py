@@ -26,6 +26,9 @@ one read of row 0 -- `gather` reads each distinct row once.
     DENEB_PLE_SSD=1            take the table off the device
     DENEB_PLE_SSD_DIR=<dir>    where tools/qwen38_ple_shard.py put ple-r{r}of{W}.weight
     DENEB_PLE_SSD_QD=32        reader threads (each its own fd)
+    DENEB_PLE_SSD_CACHE_ROWS=0 rows kept in host RAM after a read (160 B each; 1M = 160 MB).
+                               0 = every step reads. Real text repeats n-grams, so a hit
+                               skips the SSD; a miss costs one dict insert. Bracket it.
 """
 
 from __future__ import annotations
@@ -48,6 +51,7 @@ class PleSsdConfig:
         self.enabled = _env("DENEB_PLE_SSD", "0") == "1"
         self.shard_dir = _env("DENEB_PLE_SSD_DIR", "")
         self.queue_depth = int(_env("DENEB_PLE_SSD_QD", "32"))
+        self.cache_rows = int(_env("DENEB_PLE_SSD_CACHE_ROWS", "0"))
         if world_size < 1 or not 0 <= rank < world_size:
             raise ValueError(f"rank {rank} outside world_size {world_size}")
         if num_embeddings % world_size:
@@ -102,8 +106,10 @@ class PleSsdTable:
     def __init__(self, cfg: PleSsdConfig, reader) -> None:
         self.cfg = cfg
         self.reader = reader            # dsv41_engram_io.ShardReader
-        self.stats = {"calls": 0, "rows": 0, "distinct": 0}
+        self.stats = {"calls": 0, "rows": 0, "distinct": 0, "hits": 0, "reads": 0}
         self._staging = None
+        # insertion-ordered dict as an LRU: hit -> move to end, full -> pop oldest
+        self._cache: dict | None = {} if cfg.cache_rows > 0 else None
         if reader.n_rows != cfg.rows_on_disk():
             raise ValueError(
                 f"{cfg.shard_path()} holds {reader.n_rows} rows; rank "
@@ -124,10 +130,36 @@ class PleSsdTable:
             buf = torch.empty((max(u, 1024), self.cfg.row_bytes), dtype=torch.uint8,
                               pin_memory=torch.cuda.is_available())
             self._staging = buf
-        rows = self.reader.gather(uniq.tolist())
+        ids = uniq.tolist()
+        cache = self._cache
+        if cache is None:
+            blobs = [bytes(b) for b in self.reader.gather(ids)]
+            self.stats["reads"] += u
+        else:
+            blobs = [None] * u
+            miss = []
+            for i, r in enumerate(ids):
+                hit = cache.pop(r, None)
+                if hit is not None:
+                    cache[r] = hit          # re-insert: most recently used
+                    blobs[i] = hit
+                else:
+                    miss.append(i)
+            self.stats["hits"] += u - len(miss)
+            if miss:
+                fetched = self.reader.gather([ids[i] for i in miss])
+                self.stats["reads"] += len(miss)
+                for i, blob in zip(miss, fetched):
+                    b = bytes(blob)
+                    blobs[i] = b
+                    cache[ids[i]] = b
+                cap = self.cfg.cache_rows
+                while len(cache) > cap:
+                    cache.pop(next(iter(cache)))
+        # one contiguous copy instead of a frombuffer per row
         view = buf[:u]
-        for i, blob in enumerate(rows):
-            view[i] = torch.frombuffer(bytearray(blob), dtype=torch.uint8)
+        view.copy_(torch.frombuffer(bytearray(b"".join(blobs)), dtype=torch.uint8)
+                   .view(u, self.cfg.row_bytes))
         dev_rows = view.to(flat.device, non_blocking=True)
         return dev_rows[inverse.to(flat.device)].reshape(*local_ids.shape, self.cfg.row_bytes)
 

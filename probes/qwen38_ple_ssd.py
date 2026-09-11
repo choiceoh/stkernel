@@ -81,6 +81,10 @@ def check_rank(cfg: PleSsdConfig, want_row, n_ids: int, rng: random.Random, labe
     ids[1] = ids[2] = n_local - 1
     local = torch.tensor(ids, dtype=torch.int64).reshape(-1, 4)
     got = table.gather(local)
+    if table._cache is not None:
+        again = table.gather(local)      # second pass: hits, must be identical
+        if not torch.equal(again, got):
+            print(f"  {label}: cached second pass differs"); table.close(); return 1
     table.close()
     bad = 0
     if tuple(got.shape) != (*local.shape, PLE_ROW_BYTES) or got.dtype != torch.uint8:
@@ -95,8 +99,8 @@ def check_rank(cfg: PleSsdConfig, want_row, n_ids: int, rng: random.Random, labe
             if bad > 3:
                 break
     st = table.stats
-    print(f"  {label}: {st['rows']} rows asked, {st['distinct']} distinct read, "
-          f"{'OK' if not bad else 'FAIL'}")
+    print(f"  {label}: {st['rows']} rows asked, {st['distinct']} distinct, {st['reads']} read, "
+          f"{st['hits']} cache hits, {'OK' if not bad else 'FAIL'}")
     return bad
 
 
@@ -133,6 +137,12 @@ def main() -> int:
             for r in range(args.world_size):
                 cfg = PleSsdConfig(rank=r, world_size=args.world_size, num_embeddings=len(rows))
                 bad += check_rank(cfg, rows.__getitem__, 400, rng, f"synthetic rank {r}")
+            # the LRU path: a small cache so evictions happen, same rows, same bytes
+            os.environ["DENEB_PLE_SSD_CACHE_ROWS"] = "200"
+            for r in range(args.world_size):
+                cfg = PleSsdConfig(rank=r, world_size=args.world_size, num_embeddings=len(rows))
+                bad += check_rank(cfg, rows.__getitem__, 400, rng, f"synthetic rank {r} (cache 200)")
+            del os.environ["DENEB_PLE_SSD_CACHE_ROWS"]
     print("PASS" if not bad else "FAIL", "qwen38 PLE SSD table")
     return 1 if bad else 0
 
