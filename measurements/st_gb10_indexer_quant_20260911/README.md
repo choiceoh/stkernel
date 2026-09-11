@@ -91,6 +91,32 @@ tokens/s·ITL·TTFT, TP4 네트워크 성능 또는 DFlash 수락률 개선을 �
 일반 실행의 wall 측정은 CPU 제출·동기화·스케줄링을 포함한다. Graph와 kernel 시간으로
 대체하거나 서로 더하지 않는다. 계산 결과의 bit 일치가 모든 모델 품질 검사를 대신하지는 않는다.
 
+## 최신 main 반영 후 재검증
+
+최종 PR에는 main `a2e530bb`(PR #552/#555)의 bounded indexer selection과 커널 설정 정리를
+병합했다. README 충돌은 두 변경을 보존해 해결했으며 query 양자화 코드는 추가로 바꾸지 않았다.
+**기준과 변경 모두 이 최신 main의 인덱서**를 사용하고 quantizer만 교체해 다시 비교했다.
+
+| 최신 main의 전체 L3 인덱서 | 기존 graph µs | 변경 graph µs | 관측 감소 |
+| --- | ---: | ---: | ---: |
+| decode, 6토큰 | 219.104 | 215.328 | 1.7% |
+| prefill, 256토큰 | 330.528 | 329.632 | 0.3% |
+
+decode의 약 1.7%는 이 재측정의 관측값이다. prefill의 약 0.3%는 작아 전체 경로의
+향상으로 확정하지 않는다. 위의 1.8%/2.8% 표는 최초 기준 commit의 기록이며 최신 main의
+성능으로 인용하지 않는다. 최종 PR에서 단일 양자화 커널의 개선과 전체 인덱서의 효과를 구분한다.
+
+**최신 main의 GPU engine suite 216개 모두 통과, 건너뜀 없음.** model config를 읽기 전용으로
+제공해 새 budget 검사도 실행했다. 실제 가중치 9개 조건, LocalTP, 커널 graph 60회,
+전체 인덱서 graph의 슬롯·유효 개수·캐시 바이트 비교도 다시 통과했다.
+원본은 [main-gpu-tests.log](main-gpu-tests.log), [main-probe.log](main-probe.log),
+[main-integration-results.json](main-integration-results.json), 최종 source 해시는
+[main-integration-provenance.json](main-integration-provenance.json)에 있다.
+
+Torch가 없는 로컬 환경은 상류에 추가된 두 검사가 Torch를 직접 import해 수집 오류가 난다
+(134개 통과, 70개 건너뜀, import 오류 2개; [로그](main-local-tests.log)). 같은 코드의
+전체 검사는 위의 Torch/CUDA 이미지에서 통과했다.
+
 ## 실행 환경과 재현
 
 - 기준 commit: `355c8600` (PR #554 MLA 병합 후).
