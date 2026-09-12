@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from engine.profiles.glm53.tools import parse_tool_calls
+from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
 
 
 class ToolCallTests(unittest.TestCase):
@@ -23,6 +23,65 @@ class ToolCallTests(unittest.TestCase):
     def test_korean_values_survive(self):
         calls = parse_tool_calls("<tool_call>search<arg_key>q</arg_key><arg_value>서울 날씨</arg_value></tool_call>")
         self.assertEqual(json.loads(calls[0][1]), {"q": "서울 날씨"})
+
+
+class PartialToolCallTests(unittest.TestCase):
+    """`arguments` is streamed in fragments, so what this returns may only ever grow (45차 §44)."""
+
+    SHAPES = {
+        "korean and a number": '<tool_call>get_weather<arg_key>city</arg_key><arg_value>서울특별시</arg_value>'
+                               '<arg_key>days</arg_key><arg_value>3</arg_value></tool_call>',
+        "whitespace around a value": '<tool_call>write<arg_key>text</arg_key><arg_value>  안녕  하세요  </arg_value></tool_call>',
+        "a value that is json": '<tool_call>send<arg_key>body</arg_key><arg_value>{"a": [1, 2]}</arg_value></tool_call>',
+        "no arguments at all": "<tool_call>ping</tool_call>",
+        "two calls": '<tool_call>a<arg_key>k</arg_key><arg_value>v1</arg_value></tool_call>'
+                     '<tool_call>b<arg_key>k</arg_key><arg_value>한글</arg_value></tool_call>',
+        "quotes and escapes": '<tool_call>echo<arg_key>s</arg_key><arg_value>he said "hi"\\n끝</arg_value></tool_call>',
+    }
+
+    def test_every_prefix_only_ever_grows(self):
+        """Character by character, over the whole call: a client concatenates these fragments,
+        so a fragment that contradicts one already sent cannot be taken back."""
+        for label, text in self.SHAPES.items():
+            with self.subTest(label):
+                seen = {}
+                for n in range(len(text) + 1):
+                    for i, (_, args, _done) in enumerate(partial_tool_calls(text[:n])):
+                        self.assertTrue(args.startswith(seen.get(i, "")),
+                                        f"at {n}: {args!r} does not continue {seen.get(i, '')!r}")
+                        seen[i] = args
+
+    def test_the_end_of_the_stream_is_what_the_whole_parse_says(self):
+        for label, text in self.SHAPES.items():
+            with self.subTest(label):
+                streamed = [(name, args) for name, args, done in partial_tool_calls(text) if done]
+                self.assertEqual(streamed, [tuple(c) for c in (parse_tool_calls(text) or [])])
+                for _, args in streamed:
+                    json.loads(args)                        # and each one is JSON, whole
+
+    def test_a_value_whose_type_is_not_settled_yet_waits(self):
+        """`3` could become `3`, `30` or `3.5`, and `{` could become anything: a number or an
+        object is only rendered once `</arg_value>` says what it was. A plain string cannot
+        change its type, so it streams."""
+        opening = '<tool_call>f<arg_key>n</arg_key><arg_value>'
+        self.assertEqual(partial_tool_calls(opening + "3")[0][1], "{")
+        self.assertEqual(partial_tool_calls(opening + '{"a"')[0][1], "{")
+        self.assertEqual(partial_tool_calls(opening + "서울")[0][1], '{"n": "서울')
+
+    def test_a_closing_tag_halfway_here_is_not_value_text(self):
+        opening = '<tool_call>f<arg_key>n</arg_key><arg_value>서울'
+        for cut in range(len("</arg_value>")):
+            self.assertEqual(partial_tool_calls(opening + "</arg_value>"[:cut])[0][1], '{"n": "서울')
+
+    def test_a_name_is_not_reported_until_it_is_whole(self):
+        self.assertEqual(partial_tool_calls("<tool_call>get_wea"), [])
+        self.assertEqual(partial_tool_calls("<tool_call>get_weather<arg_k"), [])
+        self.assertEqual(partial_tool_calls("<tool_call>get_weather<arg_key>")[0][0], "get_weather")
+        self.assertEqual(partial_tool_calls("<tool_call>ping</tool_call>"), [("ping", "{}", True)])
+
+    def test_korean_is_not_escaped_into_six_bytes(self):
+        text = '<tool_call>search<arg_key>q</arg_key><arg_value>서울 날씨'
+        self.assertNotIn("\\u", partial_tool_calls(text)[0][1])
 
 
 if __name__ == "__main__":
