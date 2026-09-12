@@ -560,6 +560,25 @@ class DraftCeilingTests(unittest.TestCase):
         self.assertLessEqual(reachable, covered + 1e-6, "what a rule can accept sits under what the candidates cover")
         self.assertLessEqual(accepted / rounds, reachable + 0.05, "and acceptance sits under both")
 
+    def test_ceilings_clip_a_draft_block_when_the_target_has_fewer_rows(self):
+        """An end token or generation limit can leave no target row for tail drafts."""
+        from engine.base.sampler import draft_ceilings, draft_ceilings_over
+        target = torch.tensor([[0.7, 0.3]])
+        # Five draft rows model a normal block, while only the first target
+        # row survived the request's horizon.
+        draft = torch.tensor([
+            [0.5, 0.5], [0.1, 0.9], [0.6, 0.4], [0.3, 0.7], [0.8, 0.2],
+        ])
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertAlmostEqual(reachable, 0.8, places=6)
+        self.assertAlmostEqual(covered, 1.0, places=6)
+
+        cand = torch.tensor([[0, 1], [0, 1], [0, 1], [0, 1], [0, 1]])
+        q = draft
+        over_reachable, over_covered = draft_ceilings_over(target, cand, q)
+        self.assertAlmostEqual(over_reachable, reachable, places=6)
+        self.assertAlmostEqual(over_covered, covered, places=6)
+
 
 class HistoryLifetimeTests(unittest.TestCase):
     """A kept history is only safe while the tokens it was built from are the row's own."""
