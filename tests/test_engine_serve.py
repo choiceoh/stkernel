@@ -86,7 +86,9 @@ class Engine:
     def extension_tokens(self, seq, ids):
         return len(self.tokens[seq]) + len(self.output[seq]) + len(ids) - self.ctx[seq]
 
-    def extend(self, seq, ids, max_new, temperature, min_new=0, options=None, media=None):
+    def extend(self, seq, ids, max_new, temperature, min_new=0, options=None, media=None, drop_unfed=False):
+        if drop_unfed:
+            self.output[seq].pop()                                  # the sampled end token the resent history does not carry
         n = self.extension_tokens(seq, ids)
         base = len(self.tokens[seq]) + len(self.output[seq])
         self.media = getattr(self, "media", {})
@@ -100,7 +102,8 @@ class Engine:
         self.ctx[seq] = start + tokens
         if self.ctx[seq] == len(self.tokens[seq]):
             self.output[seq].append(self.tokens[seq][-1])
-        return len(self.output[seq]) == self.limits[seq]
+        ends = getattr(self, "eos", ()) if getattr(self, "stop_at_eos", False) else ()
+        return len(self.output[seq]) == self.limits[seq] or bool(self.output[seq] and self.output[seq][-1] in ends)
 
     def decode(self, seqs, blocks, slots):
         if self.fail_decode:
@@ -108,7 +111,8 @@ class Engine:
         for seq in seqs:
             self.ctx[seq] += 1
             self.output[seq].append(self.tokens[seq][-1])
-        return [len(self.output[seq]) == self.limits[seq] for seq in seqs]
+        ends = getattr(self, "eos", ()) if getattr(self, "stop_at_eos", False) else ()     # the real engine ends a row at its end token
+        return [len(self.output[seq]) == self.limits[seq] or self.output[seq][-1] in ends for seq in seqs]
 
     def generated(self, seq):
         return self.output[seq]
@@ -1196,6 +1200,22 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(s.engine.opened, opened)
         media = s.engine.media[0]
         self.assertEqual([(m["canvas"], m["positions"]) for m in media], [(b"cat", [1, 2, 3]), (b"dog", [7, 8, 9])])   # absolute positions
+
+    def test_a_history_resent_without_its_end_token_still_continues(self):
+        s = chat_server(keep_idle=True)
+        s.engine.eos = {ord('b')}; s.engine.stop_at_eos = True          # 'b' ends a generation and is never fed
+        first = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                       {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 4}))
+        self.assertEqual(first["choices"][0]["finish_reason"], "stop")
+        self.assertEqual(s.engine.history(0), [97, 98, 98])              # prompt + the end token
+        opened = list(s.engine.opened)
+        # the client resends the prompt and its (empty) answer, then a new question: the end token is not in the text
+        second = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                        {"messages": [{"role": "user", "content": "abc"}], "max_tokens": 2}))
+        self.assertEqual(second["usage"]["prompt_tokens"], 3)
+        self.assertEqual(s.engine.opened, opened)                         # continued: no new row
+        self.assertEqual(s.engine.history(0), [97, 98, 99, 99, 99])        # the end token was dropped, the new turn fed
+        self.assertEqual(second["choices"][0]["message"]["content"], "cc")
 
     def test_a_chat_that_resends_its_history_continues_the_retained_conversation(self):
         s = chat_server(keep_idle=True)

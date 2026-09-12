@@ -89,6 +89,7 @@ class Runner:
         self.rec = recorder or Recorder("runner")
         self.steps = 0
         self.inflight = []                                  # [(step, pending, launched_at)]: decode steps ahead of their results
+        self._salts = {}                                    # seq -> the prompt's media salts (base/prefix.chain), for boundaries after it
         self.depth = 2                                      # steps the device may hold before the host reads the oldest back
         self.async_steps = 0
 
@@ -137,6 +138,7 @@ class Runner:
         self.slot_of[seq] = slot
         if chain:
             self._chain[seq] = chain
+            self._salts[seq] = tuple(salts)
         sched.arrive(self.state, seq, prompt_len, now, reused)
 
     def _finish(self, seq: int) -> None:
@@ -148,6 +150,7 @@ class Runner:
 
     def _release(self, seq: int) -> None:
         self._chain.pop(seq, None)
+        self._salts.pop(seq, None)
         if self.kv.tokens[seq]:
             self.kv.release(seq)
         self.slots.give(self.slot_of.pop(seq))
@@ -291,10 +294,13 @@ class Runner:
         """Read the oldest launched decode step back and apply it: finished rows leave; rows that already left
         (finished by the step before, then run once more as ghosts) are ignored."""
         step, pending, launched = self.inflight.pop(0)
+        before = {s: self.model.context(s) for s in self._tracked(step.seqs)}
         done = pending.resolve()
         if len(done) != len(step.seqs):
             raise ValueError("decode must return one completion flag per sequence")
         for seq, finished in zip(step.seqs, done):
+            if seq in before and seq in self.slot_of and seq in self.state.running:
+                self._generated_boundaries(seq, before[seq], self.model.context(seq))
             if finished and seq in self.state.running:
                 self._finish(seq)
         self.ring.push(STEP_RECORD.pack(self.steps, time.perf_counter() - launched, KIND[step.kind],
@@ -365,6 +371,7 @@ class Runner:
         self.idle.pop(seq)
         sched.arrive(self.state, seq, held + tokens, now)
         self.state.computed[seq] = held
+        self._rechain(seq)                                  # the new turn's boundaries can be marked and cached like a prompt's
 
     def _checkpoint(self, seq: int, position: int) -> None:
         """A prefill just reached `position`: if it is a block boundary nobody cached yet, keep the
@@ -381,6 +388,38 @@ class Runner:
             self.prefix.give_snapshot(snap)
             raise
         self._insert(seq, position, h, snap)
+
+    def _rechain(self, seq: int) -> None:
+        """The boundary hashes over everything the row holds -- prompt, generated tokens, a new turn -- when the model
+        can tell its history (and the pictures standing in it); a prompt-only chain otherwise."""
+        if self.prefix is None or seq not in self._chain:
+            return
+        history = getattr(self.model, "history", None)
+        if history is None:
+            return
+        marks = getattr(self.model, "media_marks", None)
+        salts = [(p, bytes.fromhex(d)) for p, d in marks(seq)] if marks is not None else list(self._salts.get(seq, ()))
+        self._chain[seq] = self.prefix.chain(list(history(seq)), salts)
+
+    def _tracked(self, seqs) -> "list[int]":
+        """Rows whose generated boundaries can enter the prefix cache: a chain exists and the model tells its history."""
+        if self.prefix is None or getattr(self.model, "history", None) is None:
+            return []
+        return [s for s in seqs if s in self._chain and s in self.slot_of]
+
+    def _generated_boundaries(self, seq: int, before: int, after: int) -> None:
+        """A decode step moved `seq` from `before` to `after`: the block boundaries it crossed become prefix entries
+        (45차 §23: a conversation the tier forgot, resent, still finds its answer's blocks). The state at a boundary
+        is in the rings right after the step, or in the caches' stage when the step ran ahead of the host."""
+        if self.prefix is None or seq not in self._chain:
+            return
+        block = self.kv.block_size
+        first = (before // block + 1) * block
+        if first > after:
+            return
+        self._rechain(seq)
+        for position in range(first, after + 1, block):
+            self._checkpoint(seq, position)
 
     def _insert(self, seq: int, position: int, h: bytes, snap: int) -> None:
         blocks = tuple(self.kv.row(seq)[: position // self.kv.block_size])
@@ -458,10 +497,13 @@ class Runner:
                     self._checkpoint(seq, start + step.tokens)
             else:
                 self.kv.reserve_to(step.seqs, [self.model.horizon(s) for s in step.seqs])
+                before = {s: self.model.context(s) for s in self._tracked(step.seqs)}
                 done = self.model.decode(step.seqs, [self.kv.row(s) for s in step.seqs],
                                          [self.slot_of[s] for s in step.seqs])
                 if len(done) != len(step.seqs):
                     raise ValueError("decode must return one completion flag per sequence")
+                for seq in before:
+                    self._generated_boundaries(seq, before[seq], self.model.context(seq))
             sched.advance(self.state, step)
             if step.kind == sched.PREFILL and finished:
                 self._finish(seq)

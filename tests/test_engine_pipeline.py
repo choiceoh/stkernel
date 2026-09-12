@@ -28,7 +28,8 @@ class DistributionBatchTests(unittest.TestCase):
 class ResolveTests(unittest.TestCase):
     def test_resolve_applies_counts_in_launch_order_and_ignores_released_rows(self):
         e = SimpleNamespace(drafter=SimpleNamespace(k=2), caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device("cpu")),
-                            tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1}, inflight={1: 1, 2: 1}, accepted_total=0, drafted_total=0, steps=0)
+                            tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1}, inflight={1: 1, 2: 1}, accepted_total=0, drafted_total=0, steps=0,
+                            F=SimpleNamespace(block=2), staged={})
         p = AsyncDecode(e)
         lane = p.free.pop(0)
         p.host[lane]["tokens"][:2] = torch.tensor([[7, 8, 9], [1, 2, 3]])
@@ -45,6 +46,7 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(first.resolve(), [False, True])
         self.assertEqual(e.tokens[1], [5, 7, 8])
         self.assertEqual((e.ctx[1], e.inflight[1], e.inflight[2]), (3, 0, 0))
+        self.assertEqual(e.staged, {1: 2})                                            # 1 -> 3 crossed the block boundary at 2
         self.assertEqual((e.accepted_total, e.drafted_total, e.steps), (1, 2, 1))
         self.assertIn(lane, p.free)
 
