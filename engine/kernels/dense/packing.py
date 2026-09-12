@@ -329,64 +329,6 @@ def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
     return codes, d_out
 
 
-def _fp4_encode_nibbles(z):
-    """e2m1 nibble (sign in bit 3) of fp32 values already divided by their scale, round to nearest, |z| clamped to 6."""
-    import torch
-
-    grid = torch.tensor(_E2M1_GRID, device=z.device)
-    mids = torch.tensor(_E2M1_MIDS, device=z.device)
-    code = torch.bucketize(z.abs().clamp(max=6.0), mids)
-    return (code.to(torch.uint8) | (torch.signbit(z).to(torch.uint8) << 3)), grid[code]
-
-
-def w4_rowmajor(packs):
-    """(codes uint8 [n_pad, K] e2m1 nibbles with the sign in bit 3, scale fp32 [n_pad, K/16] = the group's e4m3 scale
-    times the row's undo of the shift) of a weight's K tiles of W4Pack, in row-major column order."""
-    import torch
-
-    codes, scales = [], []
-    for p in packs:
-        tn, tk, _, _ = p.data.shape
-        n_pad, k = tn * 128, tk * 128
-        rm = p.data.permute(0, 2, 1, 3).reshape(n_pad, k // 2)
-        codes.append(torch.stack([rm & 0xF, rm >> 4], dim=-1).reshape(n_pad, k))
-        d = p.scale.permute(0, 2, 1, 3).reshape(n_pad, k // 16).to(torch.int32)
-        scales.append((1.0 + (d & 7).float() / 8.0) * torch.exp2((d >> 3).float()) * p.rowscale.float()[:, None])
-    return torch.cat(codes, dim=1), torch.cat(scales, dim=1)
-
-
-def nvfp4_from_w4(packs, rows, cols):
-    """The NVFP4 prefill tensors (data [n_pad, K/2] uint8 even-low, sf [n_pad, K/16] uint8 e4m3 in flashinfer's
-    interleaved layout, scale [1] fp32 = the global scale) that carry a weight's W4 packs as they are: the same e2m1
-    nibbles, each 16-group's scale = the pack's e4m3 group scale x the row's shift undo x a power-of-two global scale,
-    so `mm_fp4` multiplies by the GPTQ solution the decode kernel multiplies by, instead of a fresh round-to-nearest
-    of the bf16 weight (45차 §23 GPU 판정 7차). A group whose scale the e4m3 range cannot hold exactly (a row far from
-    the tensor's median, a subnormal) is re-rounded to nearest on that scale -- counted, and rare."""
-    import torch
-    from engine.modules.nvfp4_sf import swizzle_sf
-
-    codes, s_eff = w4_rowmajor(packs)                                   # [n_pad, K], [n_pad, K/16]
-    n_pad = codes.shape[0]
-    smax = float(s_eff.max().clamp_min(1e-30))
-    m = int(torch.floor(torch.log2(torch.tensor(448.0 / smax))))       # code x sf <= 6 x 448
-    scale = torch.full((1,), 2.0 ** m, dtype=torch.float32, device=codes.device)
-    sf32 = s_eff * scale
-    sf = sf32.to(torch.float8_e4m3fn)
-    exact = sf.float() == sf32
-    inexact = int((~exact).sum())
-    if inexact:
-        grid = torch.tensor(_E2M1_GRID, device=codes.device)
-        vals = grid[(codes & 7).long()] * torch.where((codes & 8) != 0, -1.0, 1.0) * s_eff.repeat_interleave(16, dim=1)
-        z = vals * scale / sf.float().clamp_min(torch.finfo(torch.float32).tiny).repeat_interleave(16, dim=1)
-        re, _ = _fp4_encode_nibbles(z)
-        codes = torch.where((~exact).repeat_interleave(16, dim=1), re, codes)
-    pairs = codes.reshape(n_pad, cols // 2, 2)
-    data = (pairs[..., 0] | (pairs[..., 1] << 4)).contiguous()
-    sf_swizzled = swizzle_sf(sf.view(torch.uint8)).view(n_pad, cols // 16).contiguous()
-    return data, sf_swizzled, scale, inexact
-
-
-# -- the FP8 prefill lane: GPTQ on the fp8 grid (45차 §23 GPU 판정 8차) ------------------------------------------
 FP8_BLOCK = 128
 
 

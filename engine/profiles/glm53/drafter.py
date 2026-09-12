@@ -236,7 +236,7 @@ class Drafter:
             context.extend(shard(p[n+"self_attn."+s+"_proj.weight"],0) for s in ("k", "v"))   # unsmoothed: its input is not divided
         self.dense = {}
         for name, w in weights.items():
-            self.dense[name] = DenseLinear(w,nvfp4=False,store=store,name=store_name(name),smooth=smooth.get(name))
+            self.dense[name] = DenseLinear(w,store=store,name=store_name(name),smooth=smooth.get(name))
         self.context_kv = torch.cat(context)
         if consume_weights:
             for name, layer in self.dense.items():
