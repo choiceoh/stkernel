@@ -36,7 +36,7 @@ class BootPathTests(unittest.TestCase):
         args = SimpleNamespace(ckpt_meta="/alternate/config", drafter_dir="/alternate/draft",
                                ranks="/alternate/ranks", layers="0-0", seed=0, prompt=1,
                                seqs=1, kv_gib=.25, park=False, drafter=True, max_new=1,
-                               temperature=0., tier_dir="/unused", port=8000)
+                               temperature=0., tier_dir="/unused", port=8000, lanes="reference")
         comm = SimpleNamespace(rank=0, world_size=4, close=Mock(), prepare_oneshot=Mock())
         tp = SimpleNamespace(run=lambda fn: fn(comm))
         for mode in ("local", "http", "fleet"):

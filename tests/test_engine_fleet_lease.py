@@ -398,8 +398,17 @@ class SmoothnessTests(unittest.TestCase):
     def test_the_queue_asks_instead_of_only_refusing(self):
         """Otherwise a queued session waits for a human to go and ask."""
         self.assertIn("st_engine_yield()", self.fleet)
-        self.assertIn('st_engine_yield "$s"', self.fleet)
+        self.assertIn('if st_engine_yield "$s"; then', self.fleet)
         self.assertIn("asking it to yield to", self.fleet)
+
+    def test_it_reports_the_ask_it_could_not_make(self):
+        """A runner runs out of a snapshot of bench/, engine/ and probes/ -- launchers/ is not in it, so the
+        helper is absent and the request has nowhere to go. Logging an ask nobody made leaves the waiter and
+        the holder each believing the other has been told (45차 §91)."""
+        self.assertIn("the holder was NOT asked", self.fleet)
+        body = self.fleet.split("st_engine_yield() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn('[ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 1', body)
+        self.assertNotIn("|| true", body)          # swallowing the status is how the lie got in
 
     def test_a_sourced_helper_keeps_its_defaults(self):
         """Assignment prefixes on `.` are temporary in bash: the helper's own defaults are

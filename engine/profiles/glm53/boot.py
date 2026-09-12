@@ -566,6 +566,33 @@ def native_execution_report(net, drafter):
     return proof
 
 
+TEST_FLOOR_GIB = 16.0      # what a --test boot must leave the box, over and above its own KV
+
+
+def memory_left(kv_gib: float) -> float:
+    """MemAvailable less the KV this boot declares, in GiB. The weights and the arena come out of the rest."""
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) / 2 ** 20 - kv_gib
+    raise RuntimeError("/proc/meminfo does not report MemAvailable")
+
+
+def guard_test_memory(kv_gib: float, floor: float = TEST_FLOOR_GIB) -> None:
+    """A test boot must not be the thing that takes production down.
+
+    GB10 has one pool for host and device, earlyoom's floor is absolute, and the engine is a preferred kill
+    target -- on 2026-09-11 a smoke test beside production killed the fleet's worker, not itself. So this
+    refuses rather than guesses (D3), and prints the two numbers the caller needs to make it fit.
+    """
+    left = memory_left(kv_gib)
+    if left < floor:
+        raise SystemExit(
+            f"  --test refuses: {left:.1f} GiB would be left after this boot's {kv_gib:.1f} GiB of KV and the "
+            f"floor is {floor:.1f}. Narrow --layers, lower --kv-gib, or wait for the box. A test boot that "
+            f"earlyooms production has not tested anything.")
+    print(f"  memory: {left:.1f} GiB left after {kv_gib:.1f} GiB of KV, floor {floor:.1f} -- room for the weights")
+
+
 def local(a) -> int:
     print(f"  box: {facts.check_box()}")
     print(declared(a, facts.TP).table())
@@ -573,7 +600,11 @@ def local(a) -> int:
     torch.manual_seed(a.seed)
     prompts = {seq: torch.randint(0, 100_000, (a.prompt + 7 * seq,)).tolist() for seq in range(a.seqs)}
     tp = LocalTP(facts.TP)
-    lanes = lane_tables.reference()
+    if a.lanes == "served":
+        guard_test_memory(a.kv_gib)
+        print("  lanes: served -- the kernels production runs, on this box alone. This is not the fleet and "
+              "it holds no lease; four ranks are four threads and every collective is local.")
+    lanes = lane_tables.served() if a.lanes == "served" else lane_tables.reference()
     if a.park:                                            # a run-private tier: parked ids from an earlier smoke must not collide
         import tempfile
         Path(a.tier_dir).mkdir(parents=True, exist_ok=True)
@@ -932,7 +963,13 @@ def fleet(a) -> int:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--local", action="store_true", help="four ranks as threads on this box, reference lanes")
+    ap.add_argument("--local", action="store_true", help="four ranks as threads on this box")
+    ap.add_argument("--lanes", choices=("reference", "served"), default="reference",
+                    help="with --local: `reference` proves the plumbing, `served` runs the kernels production "
+                         "runs -- the only way to judge them without taking the fleet")
+    ap.add_argument("--test", action="store_true",
+                    help="--local --lanes served: a real engine on one box, no lease, refused if it would "
+                         "leave the box under the memory floor")
     ap.add_argument("--production", action="store_true", help="fixed serving defaults without expiring experiment knobs; rejects STK_* overrides")
     ap.add_argument("--layers", default="0-4")
     ap.add_argument("--ranks", default=str(facts.RANKS))
@@ -951,6 +988,8 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--dump-dir", default="/home/choiceoh/glm53-logs/st-dumps")
     a = ap.parse_args(argv)
+    if a.test:
+        a.local, a.lanes = True, "served"
     if a.local:
         if a.kv_gib == KV_GIB:
             a.kv_gib = 1.0                                      # a layer subset on one box

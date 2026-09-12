@@ -204,11 +204,17 @@ entry_line() {
 # The ST engine can be ASKED to finish, park its conversations and let go, so the queue
 # asks on the waiter's behalf -- once per refusal, and never for a holder that predates
 # the protocol (its plain-text lock has nobody listening).
+#
+# It cannot always ask. A runner executes out of a snapshot that carries bench/, engine/
+# and probes/ and NOT launchers/, so the helper is simply absent there and the request has
+# nowhere to go. Say which of the two happened: a log line that reports an ask nobody made
+# leaves a waiter and a holder each believing the other has been told (45차 §91).
+# Returns 0 when the holder was actually asked.
 st_engine_yield() {
   local who=$1 repo=${FLEET_RUNNER_REPO:-$REPO}
-  [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 0
+  [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 1
   ( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"
-    fleet_lease yield --requester "'queue/$who'" --note "'a queued reservation needs the fleet'" ) >/dev/null 2>&1 || true
+    fleet_lease yield --requester "'queue/$who'" --note "'a queued reservation needs the fleet'" ) >/dev/null 2>&1
 }
 serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting
   ! serving_up && return 0
@@ -518,8 +524,11 @@ _front() { { grep "^[0-9]*|$1|" "$Q"; grep -v "^[0-9]*|$1|" "$Q"; } > "$Q.tmp"; 
 _try_hold() {  # session pid est note [kind] -> 0 when held
   local s=$1 pid=$2 est=$3 note=$4 kind; kind=$(kind_of "${5:-}")
   if st_engine_up; then
-    logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); asking it to yield to $s"
-    st_engine_yield "$s"
+    if st_engine_yield "$s"; then
+      logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); asking it to yield to $s"
+    else
+      logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); $s waits, and the holder was NOT asked -- this runner has no launchers/lib/fleet-lease.sh"
+    fi
     return 1
   fi
   if [ -s "$H" ]; then
