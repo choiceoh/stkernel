@@ -38,13 +38,6 @@ def main():
     sys.meta_path.insert(0, ForbidVllm())
     assert not any(n == "vllm" or n.startswith("vllm.") for n in sys.modules)
 
-    if args.lanes == "moe_compact" and not args.imports_only:
-        # Configure CuTe artifact emission before importing its compiler: the
-        # residency gate needs the actual cubin before a cooperative launch.
-        from probes.engine_moe_compact_check import main as compact_check
-        compact_check(router_ranks=args.ranks)
-        return
-
     import torch
     import engine.kernels
     from engine.profiles.glm53 import lanes

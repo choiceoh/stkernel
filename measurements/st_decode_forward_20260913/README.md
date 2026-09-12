@@ -51,12 +51,20 @@ Raw logs retain admission, execution and lease-release records.
 | `moe-compact-e6dc7ee0-scatter-failure.log` | The probe-only compact tile uses 44032 bytes of shared memory, 96 registers/thread, zero local bytes and supports two blocks/SM in the actual cubin. Its first execution fails with illegal memory access: four 64-column scatter warps retained the old N256 width after the tile became N128. No speed result and no production dispatch. |
 | `moe-scatter-layout-6369964e.log` | CPU layout audit passes after deriving scatter width from the tile and proving complete, unique, bounded output coverage. The GPU retry remains required. |
 
-The MoE compact experiment is not selected by serving. It retains the M16/FC1
-N128/K256 arithmetic and the FC2 K128 rounding boundary, reduces both pipeline
-stages to one and halves FC2 output width. Its 96-CTA cooperative launch is
-refused unless the CUDA occupancy API proves full residency for the exact fresh
-compiled cubin. The probe checks changed graph inputs, zero routing weights,
-SF6 and original scale storage before timing B/C48/C96/C96/C48/B.
+The compact MoE experiment is **rejected and removed from serving code**.
+The corrected GPU run (`moe-compact-f9a96262-rejected.log`) passed changed-input
+SF6 graph checks for U=8/32/56 and exact-zero outputs. CUDA confirmed two blocks/SM
+with 44032 shared bytes, 88 registers and no local memory. Nevertheless C96 was
+5.78%, 0.73% and 1.63% slower than B; C48 also had no stable win. The final raw-scale
+arm did not run: it tried to reuse a packed-only owner, and the existing ownership
+guard correctly refused it. That harness limitation is recorded, not treated as a
+numerical pass. There is no reason to continue this losing geometry. Reproduce it
+from the frozen `f9a96262` commit; raw logs and summary remain here.
+
+The exact consumer router pack also passes: 2352 tested hidden rows select the
+same expert IDs. Its 42 captured router pipelines take 3.206 ms before and
+1.576 ms after the tensor-core change (50.85% less time). This is a component
+result, not an engine throughput claim.
 
 Consumer preparation uses private cache copies on all four nodes, excluding
 `mkcalib` (see `cache-preparation.json` and `prepare_consumer.py`). Planned shape:
@@ -64,12 +72,12 @@ TP4, SPEC_K=6, C=1/C=4, KV=6 GiB, FP32 KDA state, the up/gate full rank pack,
 and the canonical harness 43 budgets. Candidate-only `st_bracket.sh chain` will
 run two complete onepasses and release its own boot through the official stop.
 
-The corrected compact probe is frozen at `f9a96262fae2046343f6e63e8a63c0bedd2a04bc`
-in ticket `st-moe-compact0913v5` (`17892392484116916`). The queue is waiting on
-production `production/srv2/4116044`, which repeats the sampled-request failure
-before the normal quiet handover completes. The prior stop authorization named
-a different boot, so stopping this production supervisor and restoring the fixed
-release was explicitly requested from the operator. No manual stop was performed.
+PR #789 was merged as `938de3f93a19`. The fleet subsequently completed the
+queued component probe and handed the reservation to the next task. The current
+production restart at 04:34 includes the PR #790 sampled-request fix; its real
+health ping passed at 04:38:32 and the supervisor reset its failure counters.
+The older stop request is no longer needed. A fresh candidate-only canonical
+consumer run follows the removal of the rejected probe geometry.
 
 No component result establishes 22 step/s, answer quality, speculative
 acceptance or a same-build consumer speedup.
