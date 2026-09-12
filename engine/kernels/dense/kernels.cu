@@ -2949,11 +2949,18 @@ int g_mla_grid = 0;
 // way, and 6-8% SLOWER, so q stays in shared memory.
 constexpr int MLA_GRID_CAP = 192;
 
-// VLLM_GLM53_MK_PDL=1: launch with programmatic stream serialization so
-// each MK kernel may begin on the SMs its predecessor frees and prefetch
-// its weights during the predecessor's tail (the kernels trigger at entry
-// and wait before their first dependent read). Default off: the serving
-// profile flips it after its bracket, the probe sets it.
+// Launch with programmatic stream serialization so each MK kernel may begin
+// on the SMs its predecessor frees and prefetch its weights during the
+// predecessor's tail (the kernels trigger at entry and wait before their
+// first dependent read).
+//
+// PINNED ON. This was the VLLM_GLM53_MK_PDL env knob and the comment said
+// "default off"; D11's knob sunset replaced the getenv with a literal "1"
+// and left the sentence behind, so the file claimed the opposite of what it
+// compiles for eighteen days. Decode's mHC is this path -- net._hc_post_pre
+// routes every step of <= 64 tokens to kernels/dense/mhc.MHC -- so the
+// reduction-to-mHC overlap the charter asks about is armed here, not behind
+// kernels/mhc/tilelang_kernels.ENABLE_PDL, which is the prefill lane.
 bool mk_pdl_enabled() {
   static int v = -1;
   if (v < 0) {
