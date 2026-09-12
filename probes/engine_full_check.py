@@ -11,10 +11,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import tempfile
 import threading
 import time
 import urllib.request
 
+from engine.profiles.glm53 import drafter as drafter_mod, facts
 import torch
 
 from engine.base.comm import Comm
@@ -39,10 +41,13 @@ def emit(kind, **data):
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--ranks',required=True)
-    ap.add_argument('--ckpt-meta',required=True)
-    ap.add_argument('--drafter-dir',required=True)
-    ap.add_argument('--tier-dir',required=True)
+    # Defaults that work on a node: the fleet queue invokes an admitted ST check with NO arguments
+    # (bench/fleet_onepass.ST_FLAGS admits a handful and --drafter-dir and --tier-dir are not among
+    # them), so a required argument here is a check the queue can start and never run (45차 §95).
+    ap.add_argument('--ranks',default=str(facts.RANKS))
+    ap.add_argument('--ckpt-meta',default=str(facts.CKPT))
+    ap.add_argument('--drafter-dir',default=str(drafter_mod.DRAFTER))
+    ap.add_argument('--tier-dir',default='')      # empty: a run-private tier, below
     ap.add_argument('--port',type=int,default=29692)
     ap.add_argument('--contexts',type=int,nargs='+',default=[2000,32000,128000])
     ap.add_argument('--smoke-only',action='store_true')
@@ -52,7 +57,8 @@ def main():
     try:
         rec=Recorder(f'full-r{comm.rank}')
         _,net,caches,engine,runner=build(comm,None,served(),args.ranks,8.73,4,True,rec,
-            max_new=32,tier_dir=args.tier_dir,ckpt_meta=args.ckpt_meta,drafter_dir=args.drafter_dir)
+            max_new=32,tier_dir=args.tier_dir or tempfile.mkdtemp(prefix='full-check-'),
+            ckpt_meta=args.ckpt_meta,drafter_dir=args.drafter_dir)
         emit('loaded',rank=comm.rank,phases=rec.table(),free_gib=torch.cuda.mem_get_info()[0]/2**30)
         from transformers import AutoTokenizer
         tok=AutoTokenizer.from_pretrained(args.ckpt_meta)
