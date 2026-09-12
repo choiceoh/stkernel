@@ -302,6 +302,49 @@ class SmoothnessTests(unittest.TestCase):
         self.assertIn("fleet_lease read", self.fleet)
         self.assertIn("st_engine_up() {", self.fleet)
 
+    def test_occupancy_is_a_fleet_fact_not_this_node_s_fact(self):
+        """`docker ps` here answers for one of four nodes. A fleet whose rank 0 had gone
+        while the other three still held their GPUs read exactly like an empty one."""
+        self.assertIn("st_engine_elsewhere()", self.fleet)
+        self.assertIn("FLEET_NODES_IPS:-10.10.10.1 10.10.10.2 10.10.10.3 10.10.10.4", self.fleet)
+        body = self.fleet[self.fleet.index("st_engine_elsewhere()"):self.fleet.index("st_engine_lease()")]
+        self.assertIn("ssh -o BatchMode=yes", body)                 # it really asks the other nodes
+        self.assertIn("ST_PROBE_TTL", body)                         # _try_hold asks once a second
+
+    def test_free_is_never_an_answer_from_ignorance(self):
+        """A missing lease helper and an unreadable lease both used to fall through to
+        `return 1` -- and free is the one answer an occupancy check may not guess (D3)."""
+        lease = self.fleet[self.fleet.index("st_engine_lease()"):self.fleet.index("st_engine_evidence()")]
+        self.assertIn("cannot say the fleet is free", lease)         # unreadable => evidence
+        self.assertNotIn("|| return 1", lease)                       # ... never silence
+        scan = self.fleet[self.fleet.index("st_engine_elsewhere()"):self.fleet.index("st_engine_lease()")]
+        self.assertIn("unreachable -- this node cannot say the fleet is free", scan)
+
+    def test_the_taken_line_always_names_its_evidence(self):
+        """With the containers already gone and the lease still held, the status line read
+        `TAKEN by the ST engine, outside this queue ()` -- true, and unreadable."""
+        self.assertIn("TAKEN by the ST engine, outside this queue -- $(st_engine_line)", self.fleet)
+        self.assertIn("st_engine_line() { st_engine_evidence |", self.fleet)
+
+    def test_a_copy_answering_by_older_rules_says_so(self):
+        """2026-09-12: `cd ~/stkernel && bash bench/fleet.sh status` on the controller said
+        FREE with four nodes serving, because that checkout predated the ST-engine check.
+        Hashes and mtimes cannot judge that -- a fresh checkout of an old branch is new by
+        both -- so the answers carry a number."""
+        self.assertRegex(self.fleet, r"(?m)^FLEET_RULES=[0-9]+$")
+        self.assertIn("entry_line() {", self.fleet)
+        self.assertIn("OLDER RULES", self.fleet)
+        status = self.fleet[self.fleet.index('echo "fleet: $('):]
+        self.assertIn("entry_line", status[:400])                    # and it prints under the verdict
+
+    def test_preflight_cannot_move_the_shared_entry_backwards(self):
+        """That sync copies whatever $REPO the caller ran from over $LOGD/fleet.sh, so the
+        one copy every probe runs could be regressed by any stale checkout."""
+        body = self.fleet[self.fleet.index('for pair in "ab-lever2.sh'):]
+        body = body[:body.index("done")]
+        self.assertIn("refusing to move the shared entry back", body)
+        self.assertIn("entry_rules", body)
+
     def test_the_lease_lives_where_a_container_can_read_it(self):
         """The engine must READ its lease to notice a yield request. ~/st-fleet.lock is not
         mounted into any ST container, so the whole handover was inert on the fleet."""
