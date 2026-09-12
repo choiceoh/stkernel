@@ -163,6 +163,16 @@ while :; do
     continue
   fi
   [ "$(date +%s)" -lt "$next_launch_at" ] && continue
+  if taken=$(fleet_taken); then
+    # Someone else's fleet -- a ticket's window, a session's boot -- is not a failure of ours: no
+    # forensics (each dump evicts one of the ten kept, and on 2026-09-13 02:49-02:55 every kept
+    # dump was a "fleet taken" snapshot, the last real failure's evidence gone), no launch
+    # attempt, one line per holder.
+    taken_key=${taken%% since *}
+    [ "$taken_key" = "$taken_logged" ] || { log "fleet taken ($taken): waiting -- no forensics, no launch attempt"; taken_logged=$taken_key; }
+    continue
+  fi
+  taken_logged=
   forensics
   attempt_launch
 done

@@ -110,6 +110,16 @@ elif a and a[0] == 'ps':
         self.assertEqual(self.lock.read_text(), text)
         self.assertFalse(self.events.exists())
 
+    def test_supervisor_dumps_no_forensics_while_the_fleet_is_someone_elses(self):
+        """The forensics ring keeps ten dumps. A dump every 30 s while a session's tickets held the
+        fleet (srv2, 2026-09-13 02:49-02:55) evicted the evidence of the last real failure, and the
+        log said "fleet taken" twice a minute. The loop now asks fleet_taken before it dumps."""
+        text = (Path(__file__).resolve().parents[1] / 'launchers/st-glm53-supervisor.sh').read_text()
+        loop = text[text.rindex('while :; do'):]
+        self.assertLess(loop.index('taken=$(fleet_taken)'), loop.index('\n  forensics\n'), 'asked before the dump')
+        self.assertIn('no forensics, no launch attempt', loop)
+        self.assertIn('taken_logged=$taken_key', loop, 'said once per holder')
+
     def test_supervisor_waits_for_foreign_lock(self):
         self.lock.write_text("st-replay-other-session")
         result = self.run_script("st-glm53-supervisor.sh")
