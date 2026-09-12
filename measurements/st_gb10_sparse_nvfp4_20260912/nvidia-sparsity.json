@@ -1,0 +1,24 @@
+{
+  "repo": "nvidia/GLM-5.3-Flash-NVFP4",
+  "revision": "09b04e5e74bca08ca8549fc736d4cdd8624bfde3",
+  "file": "model-00001-of-00033.safetensors",
+  "key": "model.language_model.layers.3.mlp.experts.0.gate_proj.weight",
+  "tensor": {
+    "dtype": "U8",
+    "shape": [
+      2048,
+      2048
+    ],
+    "data_offsets": [
+      7284228272,
+      7288422576
+    ]
+  },
+  "weight_bytes_read": 1048576,
+  "zero_code_fraction": 0.0677180290222168,
+  "eligible_pair_groups": 35,
+  "pair_groups": 262144,
+  "scope": "first 1MiB of one gate tensor; raw FP4 zeros only; scales not inspected",
+  "sha256": "65ddcbf15149e91caed0b32317193c55bd03c28be22bd0817d273f0d03d5273e",
+  "mtp_index_keys": 889
+}
