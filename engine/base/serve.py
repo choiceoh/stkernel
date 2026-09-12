@@ -143,7 +143,7 @@ BODYLESS = ("/v1/prefix/reset",)
 EFFORT_RUNGS = {"low": "low", "medium": "high", "high": "high", "max": "max"}
 """OpenAI's rungs onto GLM-5.3's two, mapped on purpose instead of by falling through.
 
-The template reads `reasoning_effort in ['low', 'high']` and turns EVERYTHING ELSE into 'max'.
+The official template reads `reasoning_effort in ['low', 'high']` and turns EVERYTHING ELSE into 'max'.
 So an ordinary OpenAI `"medium"` silently buys the deepest setting there is -- the opposite of
 what the caller asked for. Refusing it was wrong the other way: `medium` is a standard value of
 the API this door claims to speak, and the Deneb gateway sends it whenever its thinking budget
@@ -2881,7 +2881,7 @@ class Server:
                     raise RequestError("chat_template_kwargs must be an object")
                 kwargs = dict(kwargs)
                 # the production middleware's contract (glm53_chat.py): thinking/enable_thinking agree, and the
-                # top-level reasoning_effort reaches the template (which otherwise defaults to max)
+                # top-level reasoning_effort reaches the template (the GLM profile defaults to high)
                 if "thinking" in kwargs and "enable_thinking" in kwargs and kwargs["thinking"] != kwargs["enable_thinking"]:
                     raise RequestError("thinking and enable_thinking must agree")
                 if "enable_thinking" in kwargs and "thinking" not in kwargs:

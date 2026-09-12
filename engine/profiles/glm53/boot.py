@@ -185,6 +185,9 @@ def chat_renderer(ckpt=facts.CKPT):
         one, which is what a caller wants when it is handing back a partial answer to extend.
         It is passed only when asked for, so a template engine without it keeps working."""
         resume = {"continue_final_message": True} if continue_final else {}
+        # Keep the profile default even if the checkpoint has an older template.
+        if kwargs.get("reasoning_effort") is None:
+            kwargs = {**kwargs, "reasoning_effort": "high"}
         return t.apply_chat_template(messages, add_generation_prompt=generation_prompt,
                                      tokenize=False, **resume, **kwargs)
     return render

@@ -66,6 +66,8 @@ vLLM 이 낼 수 없는 것(이 엔진에만 있는 부품이라): **어느 캡�
 문(`base/serve.py`): 엔진 방언(`POST /v1/completions` ids|prompt, `conversation` 으로 이어가기)과 OpenAI chat 방언(`POST /v1/chat/completions`,
 `stream` 이면 토큰 단위 SSE, `chat_template_kwargs` 통과, `</think>` 앞은 `reasoning_content` 뒤는 `content`; `GET /v1/models`, `/metrics`, `/health`).
 프로필이 템플릿(`chat_template_mm_v2.jinja`, 프로덕션과 같은 것)과 `</think>` id 를 넘긴다.
+GLM-5.3의 `reasoning_effort`는 생략하거나 `null`이면 `high`다. 명시적인 `low`·`high`·`max`는 그대로 적용하며,
+OpenAI 호환 값 `medium`은 `high`로 매핑한다. 체크포인트에 이전 템플릿이 있어도 프로필이 기본값을 전달한다.
 요청은 `stop`(문자열 ≤4, 내용 채널에서 잘라 조기 종료), `min_tokens`(그 전엔 끝 토큰 불가), `tools`(템플릿이 렌더, 답의
 `<tool_call>` 은 `tool_calls` 로 파싱, finish `tool_calls`), `n`=1 만, `logprobs` 는 400. 클라이언트가 끊으면(소켓 EOF·broken pipe) 요청을
 취소해 행을 돌려주고, `REQUEST_TIMEOUT_S`(3600) 를 넘긴 요청은 504 로 취소한다 — 취소는 rank 0 이 도착과 같은 브로드캐스트로 실어 네 랭크가
