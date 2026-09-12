@@ -1379,10 +1379,9 @@ class Server:
         """A cache control, applied on every rank in the same iteration (the caches must stay identical)."""
         kind, payload = control
         if kind == "calibration":                          # every rank files its own sums (the sharded projections differ per rank)
-            drafter = getattr(self.engine, "drafter", None)
-            calibration = getattr(drafter, "calibration", None)
-            if calibration is not None:
-                calibration.save(payload or drafter.calibration_root, self.comm.rank)
+            file = getattr(self.engine, "file_calibration", None)
+            if file is not None:
+                file(payload)
             return
         prefix = getattr(self.runner, "prefix", None)
         if prefix is None:
@@ -2021,6 +2020,9 @@ class Server:
             self._admit()
             began = self.clock()
             step = self.runner.step()
+            housekeeping = getattr(self.engine, "housekeeping", None)      # a model's own after-step chores (rare device reads)
+            if housekeeping is not None and step is not None:
+                housekeeping(self.runner.steps)
             now = self.clock()
             if step is not None:                                    # D9: one kind or the other
                 kind = "prefill" if step.kind == "prefill" else "decode"   # base/scheduler.PREFILL
@@ -2665,12 +2667,13 @@ class Server:
                 self.reply(200, {"ok": True})
 
             def calibration(self, req):
-                """File the drafter calibration sums now (STK_drafter_calib): between two steps, on every rank's loop thread."""
-                calibration = getattr(getattr(server.engine, "drafter", None), "calibration", None)
+                """File this boot's calibration sums now (kernels/dense/calibration): between two steps, on every rank's
+                loop thread. A boot whose packs were all calibrated has nothing to file."""
+                calibration = getattr(server.engine, "calibration", None)
                 if calibration is None:
-                    raise RequestError("this server is not calibrating the drafter (STK_drafter_calib)", 404)
+                    raise RequestError("this boot is not calibrating: every pack it serves was already calibrated", 404)
                 server.controls.put(("calibration", req.get("root") if isinstance(req.get("root"), str) else None))
-                self.reply(200, {"ok": True, "rows": {k: float(v) for k, v in calibration.rows.items()}})
+                self.reply(200, {"ok": True, "status": calibration.status(), "rows": {k: float(v) for k, v in calibration.rows.items()}})
 
             def do_POST(self):
                 try:

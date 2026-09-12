@@ -1,0 +1,101 @@
+"""Self-calibration of the W4 packs: the Gram sums the pack store lacks, summed from what this boot serves.
+
+The store builds a dense weight's W4 pack GPTQ when `<root>/mkcalib/rank<r>/<name>.pt` holds the Hessian of that
+weight's input and round-to-nearest when it does not (kernels/dense/store). Those blobs used to come from the vLLM
+stack's MK_CALIB dumps. This engine writes its own, by default and without a knob (45차 §23 GPU 판정 6차): a boot
+that finds calibration missing sums X^T X of those weights' inputs inside its own serving -- the packs it serves
+meanwhile are round-to-nearest, counted as such -- files the blobs once enough rows were seen (or at shutdown), and
+the next boot packs GPTQ from them. Every rank sums its own inputs: TP-sharded projections see different columns.
+
+The sums live on the device (carved from the arena, within a fixed budget: what does not fit waits for a later boot,
+drafter first) and are added to inside the captured graphs: every contribution is multiplied by a device scalar
+that is 0 until `arm()` (warm-ups and captures feed the same paths with junk) and by the row mask the caller hands
+over (the pipeline's ghost rows, a masked observation's positions past the committed count -- the 33차 lesson:
+padding rows poison a Hessian). A layer whose small-row calls may carry junk without a mask (the target's decode
+steps run ghost rows through the null slot) sums only its large-row calls (prefill, every row real) -- the same
+tokens' hidden states, which is what the 33차 dumps summed too.
+"""
+from pathlib import Path
+
+import torch
+
+ROWS_TARGET = 32768        # rows per blob before the sums are filed on their own (33차: 33K tokens)
+ROWS_FLOOR = 4096          # fewer than this at shutdown is not filed: a starved Hessian would pack worse than none
+BUDGET_BYTES = 2 << 30     # per rank, from the arena; the rest waits for a later boot
+
+
+class Calibration:
+    def __init__(self, device, budget_bytes: int = BUDGET_BYTES, arena=None):
+        self.device = torch.device(device)
+        self.budget, self.used = budget_bytes, 0
+        self.arena = arena
+        self.H, self.rows, self.tiles = {}, {}, {}          # blob key -> sums, rows, (start, width); layer name -> tiles
+        self.deferred = []                                  # (layer name, key) that did not fit this boot's budget
+        self.armed = torch.zeros((), dtype=torch.float32, device=self.device)
+        self.filed = None                                   # the paths written, once
+
+    def attach(self, name: str, layer, missing: "list[tuple[str, int, int]]", small_rows: bool) -> bool:
+        """Sum `layer`'s input over the tiles in `missing` [(key, start, width)]; `small_rows`: its calls of <= 32
+        rows are real (with the caller's mask) -- False for a layer whose decode rows may be ghosts. Returns whether
+        the tiles fit the budget (all or nothing per layer)."""
+        need = sum(width * width * 4 + 4096 for _key, _start, width in missing)
+        if self.used + need > self.budget:
+            self.deferred.extend((name, key) for key, _start, _width in missing)
+            return False
+        for key, start, width in missing:
+            if self.arena is not None:
+                H = self.arena.carve(width * width * 4, f"calibration/{key}").view(torch.float32).view(width, width)
+                H.zero_()
+            else:
+                H = torch.zeros(width, width, dtype=torch.float32, device=self.device)
+            self.H[key] = H
+            self.rows[key] = torch.zeros((), dtype=torch.float32, device=self.device)
+        self.used += need
+        self.tiles[name] = list(missing)
+        layer.observer = lambda flat, rows_ok, name=name, small=small_rows: self.observe(name, flat, rows_ok, small)
+        return True
+
+    @staticmethod
+    def nbytes(missing) -> int:
+        return sum(width * width * 4 + 4096 for _key, _start, width in missing)
+
+    def arm(self) -> None:
+        self.armed.fill_(1.0)
+
+    def observe(self, name: str, flat: torch.Tensor, rows_ok, small_rows: bool) -> None:
+        if flat.shape[0] <= 32 and not small_rows:
+            return
+        xf = flat.float()
+        if rows_ok is not None:
+            xf = xf * rows_ok.to(xf.dtype).view(-1, 1)
+        xf = xf * self.armed
+        count = (rows_ok.to(torch.float32).sum() if rows_ok is not None
+                 else torch.tensor(float(flat.shape[0]), device=xf.device)) * self.armed
+        for key, start, width in self.tiles[name]:
+            part = xf[:, start:start + width]
+            self.H[key].addmm_(part.t(), part)
+            self.rows[key] += count
+
+    def progress(self) -> int:
+        """The fewest rows any blob has (a device read: ask rarely)."""
+        return int(min(float(r) for r in self.rows.values())) if self.rows else 0
+
+    def complete(self, target: int = ROWS_TARGET) -> bool:
+        return bool(self.rows) and self.progress() >= target
+
+    def save(self, root: "str | Path", rank: int) -> "list[Path]":
+        """One blob per tile under `<root>/mkcalib/rank<rank>/`, in the store's form. Overwrites what an older stack left."""
+        written = []
+        for key, H in self.H.items():
+            path = Path(root) / "mkcalib" / f"rank{rank}" / (key + ".pt")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save({"H": H.detach().cpu().contiguous(), "ntok": int(self.rows[key]), "name": key}, path)
+            written.append(path)
+        self.filed = written
+        return written
+
+    def status(self) -> str:
+        if not self.rows:
+            return "nothing to sum"
+        return f"{'filed' if self.filed else 'collecting'} {self.progress()}/{ROWS_TARGET} rows over {len(self.H)} blobs" + (
+            f", {len(self.deferred)} tiles deferred to a later boot" if self.deferred else "")
