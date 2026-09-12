@@ -183,11 +183,42 @@ global activation scales; the NVIDIA adapter retains calibrated activation
 and weight scales. The same ST build is required for an operational A/B,
 while each loader still follows its checkpoint's format contract.
 
-A same-build A/B is prepared on srv2 under
-`/home/choiceoh/st-checkpoint-ab-9391/{redhat,nvidia}`. Both use engine commit
-`dfd28cb03257`, image `st-engine:nvidia-dfd28cb03257`, TP4, KV12,
-`t,r,sf6,q0`, DFlash2 K=5, identical 2K/32K/128K onepass inputs and seed 7.
-Separate tier/dump directories prevent KV reuse across checkpoints. Runners
-check the engine source hash, checkpoint mount and container identity and
-restore the pinned Red Hat production release on exit. The fleet currently
-belongs to another `st-tile32-debug` run; neither A/B leg has been launched.
+The initial KV12 attempt failed the rank 3 memory admission check before
+arena allocation. Its rollback also used a stale source path with a newer
+deployment environment, overwriting the newer release's engine directory.
+The exact `abceb6a0` source and images were subsequently restored on all
+four nodes; [incident and repair receipts](fleet-admission/incident.json)
+preserve the failure and repair. The deployment environment was not changed
+by that comparison attempt.
+
+The KV7 comparison on srv2 used engine commit `dfd28cb03257`, image
+`st-engine:nvidia-dfd28cb03257`, TP4, `t,r,sf6,q0`, DFlash2 K=5, and the
+unchanged 2K/32K/128K onepass inputs with seed 7. The [Red Hat document
+run](ab-kv7/redhat/result.jsonl) completed its five requests with exit 0:
+the existing retrieval checks found 6 of 9 answers, and Korean corruption
+was absent in all five outputs. The retrieval checker searches reasoning
+and final content together; this is not a final-answer-only accuracy score.
+The 32K and 128K TTFTs were 14.954 and 58.223 seconds. Raw DFlash acceptance
+was 0.4787 and average tokens per step was 3.3935. These are one-run
+observations, not a checkpoint speed comparison without the NVIDIA leg.
+
+The subsequent [HTTP tool check](ab-kv7/redhat/http-full.json) failed with
+503 and aborted the pair before NVIDIA started. A single synthetic tool
+request reproduced the same crash on the configured Red Hat `abceb6a0`
+release. After accepting an EOS draft, `Matcher.fill` attempted to fill a
+mask from an already terminated xgrammar matcher. This shared engine bug
+is independent of NVIDIA's quantization contract.
+
+The small grammar repair stops the speculative walk after the EOS position
+and rolls back the stop token with the other accepted drafts. The original
+source fails both new real-xgrammar regressions; the fixed source passes
+all 28 grammar tests. It was deployed as `prod-abceb6a0-grammar-9391`, keeping
+the current Red Hat checkpoint, KV7 and qualified tile32 prefill. The
+[live recovery receipt](ab-kv7/grammar-restored-http.json) records a successful
+`get_weather(city="Seoul")` response followed by a normal Korean answer.
+All four containers were running and the deployment environment was updated
+to that repaired release only after these checks passed.
+
+NVIDIA's full document run and the requested default checkpoint transition
+remain pending. The old pair runner's captured baseline predates this repair;
+it must not be rerun without refreshing and validating the restoration target.

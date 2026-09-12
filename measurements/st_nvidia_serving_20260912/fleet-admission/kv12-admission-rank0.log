@@ -1,0 +1,32 @@
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (105 free)
+[W912 06:21:23.867186327 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+  facts
+    model                    /repo/st-glm53-meta              [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /home/choiceoh/models/st-glm53-9391-up-gate-full [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   5                                [launcher SPEC_K with DFlash2]
+    kv_gib                   12.0                             [--kv-gib (local)]
+    port                     8001                             [--port]
+    prefix_snapshots         96                               [block-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)]
+    moe_static               t,r,sf6,q0                       [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+    mla_prefill              stock                            [qualified production default]
+    context_ceiling          0                                [qualified production default]
+  knobs (every one expires)
+NCCL version 2.29.7+cuda13.2
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 672, in <module>
+[rank0]:     raise SystemExit(main())
+[rank0]:                      ^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 668, in main
+[rank0]:     return fleet(a)
+[rank0]:            ^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 578, in fleet
+[rank0]:     F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
+[rank0]:                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 239, in build
+[rank0]:     raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
+[rank0]: MemoryError: TP arena admission failed: a peer has insufficient immediately free memory
