@@ -101,30 +101,24 @@ layouts first (`NvmeTier.oldest`).
 """
 PREFIX_TIER_GIB = 16.0
 TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem whatever its own cap allows
-PREFIX_SNAPSHOT_GIB = 4.25
-"""What the resident block-boundary checkpoints may occupy. The COUNT follows (snapshot_count).
+PREFIX_SNAPSHOT_GIB = 2.125
+PREFIX_UNTIERED_SNAPSHOT_GIB = 4.25
+PREFIX_COMPRESSED_BYTES = 1 << 30
+"""Tiered serving keeps 48 native raw snapshots instead of 96, plus at most
+1 GiB of compressed cold snapshots. Original FP32/BF16 bits are preserved.
+The existing prefix tier owns asynchronous spill/restore and a durable NVMe
+copy. Its compressed cache only changes where a restore reads, never rank
+ownership. Untiered local runs retain the original raw budget.
 
-Declared in bytes, because the count is not the cost. One snapshot is the KDA recurrent state and
-conv taps of 34 layers plus the drafter's context ring: 35.2 MiB of state, and a ring that is
-10 MiB when the drafter's KV is sharded across the four ranks (native execution, what production
-runs) and 40 MiB when it is not. Same constant 96, 4.24 GiB or 7.06 GiB -- decided by an execution
-mode the constant could not see. 4.25 GiB is 96 snapshots of today's native shape, so production
-keeps exactly what it had, and every other shape is now bounded by the same line in the budget
-table rather than by arithmetic nobody ran.
-
-The unit is the 768 block (nine per 6,912 chunk); boundaries a request adopted outlive the ones
-nobody asked for (prefix._victim), so churn cannot flush them.
-
-What it buys is smaller than it looks, and that is the number to size against. With a prefix tier
-configured a boundary that loses its snapshot FADES rather than dying: its blocks stay, and the
-next prompt that wants it reads the snapshot back instead of prefilling (base/prefix.py). Measured
-on the tier's own filesystem, 45 MiB reads in 8.7 ms at 5.4 GB/s. So past the working set this
-line buys ~10 ms per hit, not a prefill -- and the meters say where the working set is:
-`st:prefix_snapshots_free` (how many of them were never needed),
-`st:prefix_snapshot_self_evicts_total` and `_denials_total` (pressure),
-`st:prefix_tier_restores_total` (what fading actually cost). All four read 0 on an idle boot,
-so the number to size against has to come off a fleet with Deneb's traffic on it.
+At least nine raw slots remain for a 6,912-token chunk. Compression ratios
+are data dependent; the cap includes entries being built. The codec uses
+bounded chunks through existing tier staging, plus its declared workspace.
 """
+
+
+def prefix_host_bytes(tier_enabled: bool = True) -> int:
+    from engine.base.compressed_snapshots import WORKSPACE_BYTES
+    return PREFIX_COMPRESSED_BYTES + WORKSPACE_BYTES if tier_enabled else 0
 
 
 def snapshot_count(snapshot_bytes: int, gib: float = PREFIX_SNAPSHOT_GIB) -> int:
@@ -219,7 +213,9 @@ def declared(a, comm_world: int) -> Config:
         Fact("kv_gib", float(a.kv_gib), "40th boot's measured KV" if a.kv_gib == KV_GIB else "--kv-gib (local)"),
         Fact("port", int(a.port), "--port"),
         Fact("max_seqs", MAX_SEQS, "resident rows, state slots and captured decode widths"),
-        Fact("prefix_snapshot_gib", PREFIX_SNAPSHOT_GIB, "resident block-boundary checkpoints; the count follows the shape (boot.snapshot_count)"),
+        Fact("prefix_snapshot_gib", PREFIX_SNAPSHOT_GIB, "tiered raw block-boundary checkpoints; count follows the shape"),
+        Fact("prefix_untiered_snapshot_gib", PREFIX_UNTIERED_SNAPSHOT_GIB, "raw checkpoints when no prefix tier is configured"),
+        Fact("prefix_compressed_bytes", PREFIX_COMPRESSED_BYTES, "prefix tier's bounded lossless RAM cache; codec workspace declared separately"),
     ]
     fixed = dict(moe_static=lane_tables.MOE_STATIC_PRODUCTION,
                  lanes="served", decode_eager=0, execution="native")
@@ -282,7 +278,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
     recorder.gauge('weight_layout', F.weight_layout)
     snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
-    snapshots = snapshot_count(snapshot_bytes)
+    snapshots = snapshot_count(snapshot_bytes, PREFIX_SNAPSHOT_GIB if tier_dir else PREFIX_UNTIERED_SNAPSHOT_GIB)
+    host_budget_bytes = prefix_host_bytes(bool(tier_dir))
     # the vision tower (45차 §23 A7): whole on every rank, from vision.safetensors next to the rank files (preshard.py --vision);
     # absent, the door refuses pictures -- the fleet boot requires it (production serves images, PR #431)
     vision_file = Path(ranks_dir) / vision_mod.FILE
@@ -347,10 +344,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             files.append(vision_file)
         failure = None
         try:
-            report = prepare_allocation(arena_bytes, files, workspace_bytes + os_reserve_bytes,
+            report = prepare_allocation(arena_bytes, files, workspace_bytes + os_reserve_bytes + host_budget_bytes,
                                         lambda: torch.cuda.mem_get_info()[0],
                                         cache_roots=(Path(ranks_dir).parent, drafter_dir.parent))
             memory = RuntimeMemory(arena_bytes, workspace_bytes, os_reserve_bytes, comm=comm,
+                                   host_budget_bytes=host_budget_bytes,
                                    reclaim=partial(reclaim_preparation_pages,
                                                    cache_roots=(Path(ranks_dir).parent, drafter_dir.parent)))
         except (MemoryError, OSError, RuntimeError) as exc:
@@ -371,7 +369,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         redeclare = partial(budget_mod.budget, kv_gib, max_seqs,
                             chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
                             ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
-                            snapshots=snapshots,
+                            snapshots=snapshots, tier_enabled=bool(tier_dir),
                             draft_tp=comm.world_size if execution == "native" else 1,
                             draft_native=execution == "native", router_bytes=router_bytes)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
@@ -496,12 +494,17 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 prefix_tier = TieredKV(caches.pool, NvmeTier(Path(tier_dir) / f"rank{comm.rank}" / "prefix",
                                                              block_bytes=cache_layout.block_bytes, stage_bytes=PREFIX_TIER_STAGE,
                                                              capacity_bytes=int(PREFIX_TIER_GIB * GIB),
-                                                             reserve_bytes=int(TIER_RESERVE_GIB * GIB)))
+                                                             reserve_bytes=int(TIER_RESERVE_GIB * GIB),
+                                                             snapshot_cache_bytes=PREFIX_COMPRESSED_BYTES))
             prefix = PrefixCache(F.block, engine.prefill_chunk, snapshots)      # boundaries = every 768 block (base/prefix.py)
+            # Reducing hot slots must not also halve the metadata budget for
+            # cold boundaries whose KV blocks remain reusable.
+            prefix.max_faded = 4 * snapshot_count(snapshot_bytes, PREFIX_UNTIERED_SNAPSHOT_GIB)
             runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
                             keep_idle=tiered is not None, prefix=prefix)                # with a tier, conversations live on and park
             runner.prefix_tier = prefix_tier
         recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
+        recorder.gauge("prefix_compressed_budget_bytes", host_budget_bytes)
         recorder.gauge("prefix_snapshots", snapshots); recorder.gauge("snapshot_MiB", round(snapshot_bytes / 2**20, 1))
         return F, net, caches, engine, runner
     except BaseException:
@@ -540,7 +543,7 @@ def release_line(report: dict, rank: int = 0) -> str:
     """What came back, and -- when something did not -- the sizes of what stayed."""
     line = (f"  released: rank {rank} gave back {report['returned'] / GIB:.2f} GiB of "
             f"{report['arena_bytes'] / GIB:.2f} GiB arena plus {report.get('tier_staging_bytes', 0) / 2**20:.0f} MiB "
-            f"of tier staging; {report['reserved_after'] / GIB:.2f} GiB reserved and "
+            f"of tier memory; {report['reserved_after'] / GIB:.2f} GiB reserved and "
             f"{report['allocated_after'] / 2**20:.0f} MiB allocated still")
     if report["allocated_after"] > CLEAN_RELEASE_BYTES:
         held = ", ".join(f"{n / 2**20:.0f} MiB" for n in report.get("still_held") or ())

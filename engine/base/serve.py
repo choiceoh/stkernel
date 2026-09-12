@@ -2419,6 +2419,19 @@ class Server:
                       "bytes of boundary state written to the prefix tier", moved_out),
                      ("counter", "st:prefix_tier_bytes_read_total",
                       "bytes of boundary state read back from the prefix tier", moved_in)]
+        compressed = getattr(boundary, "snapshot_cache", None)
+        if compressed is not None:
+            rows += [
+                ("gauge", "st:prefix_compressed_bytes", "compressed RAM snapshot bytes including object allowance", compressed.stored_bytes),
+                ("gauge", "st:prefix_compressed_raw_bytes", "original bytes represented by compressed RAM copies", compressed.raw_bytes),
+                ("gauge", "st:prefix_compressed_capacity_bytes", "compressed RAM cache byte cap", compressed.capacity_bytes),
+                ("counter", "st:prefix_compressed_hits_total", "restores served from compressed RAM", compressed.hits),
+                ("counter", "st:prefix_compressed_misses_total", "restores requiring NVMe snapshot reads", compressed.misses),
+                ("counter", "st:prefix_compressed_evictions_total", "compressed copies evicted to respect the byte cap", compressed.evictions),
+                ("counter", "st:prefix_compressed_rejections_total", "snapshots too large or incompressible for the RAM cache", compressed.rejections),
+                ("counter", "st:prefix_compress_seconds_total", "time spent encoding snapshots on the tier worker", compressed.compress_seconds),
+                ("counter", "st:prefix_decompress_seconds_total", "time spent decoding and uploading compressed snapshots", compressed.restore_seconds),
+            ]
         tiered = getattr(runner, "tiered", None)
         if tiered is not None:
             tier = getattr(tiered, "tier", None)
