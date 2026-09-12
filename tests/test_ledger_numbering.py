@@ -13,6 +13,9 @@ import unittest
 from pathlib import Path
 
 LEDGER = Path(__file__).resolve().parents[1] / "MEASUREMENTS.md"
+# The ledger is two files: the working one and the archive that holds what shipped and stopped changing.
+# An entry has to be referable whichever file it sits in, so the name check reads both.
+ARCHIVE = Path(__file__).resolve().parents[1] / "MEASUREMENTS_ARCHIVE.md"
 HEADING = re.compile(r"^#{2,3} (?:(?P<round>\S+차) )?(?:§(?P<num>\d+) )?— ?(?P<title>.*)$", re.M)
 PR = re.compile(r"PR #(\d+)")
 
@@ -20,7 +23,8 @@ PR = re.compile(r"PR #(\d+)")
 def entries():
     """(round, section number or None, the PR it names, the whole heading) for every ledger entry."""
     out = []
-    for line in LEDGER.read_text().splitlines():
+    text = LEDGER.read_text() + ("\n" + ARCHIVE.read_text() if ARCHIVE.exists() else "")
+    for line in text.splitlines():
         if not line.startswith(("## ", "### ")) or " — " not in line:
             continue
         m = HEADING.match(line)
@@ -67,7 +71,7 @@ class LedgerNumberingTests(unittest.TestCase):
                              f"§{num} should name exactly one entry: {[l for _, l in rows.get(num, [])]}")
             pr, line = rows[num][0]
             self.assertIsNotNone(pr, f"§{num} is ambiguous without a PR:\n  {line}")
-        ledger = LEDGER.read_text()
+        ledger = LEDGER.read_text() + ("\n" + ARCHIVE.read_text() if ARCHIVE.exists() else "")
         self.assertIn("§76", ledger)
         self.assertRegex(ledger, r"§7[678][^\n]*?(?:§3[012]|옛 §)",
                          "a renumbered entry has to say which number it used to answer to")

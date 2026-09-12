@@ -136,6 +136,10 @@ class PromptTokens:
         return out
 
 
+BODYLESS = ("/v1/prefix/reset",)
+"""POST routes that configure nothing, so an empty body is the whole request."""
+
+
 EFFORT_RUNGS = {"low": "low", "medium": "high", "high": "high", "max": "max"}
 """OpenAI's rungs onto GLM-5.3's two, mapped on purpose instead of by falling through.
 
@@ -2688,8 +2692,10 @@ class Server:
                         status["fleet"] = fleet
                     self.reply(200, status)
 
-            def body(self):
+            def body(self, allow_empty: bool = False):
                 n = int(self.headers.get("Content-Length", "0"))
+                if n == 0 and allow_empty:
+                    return {}
                 if not 0 < n <= 4 << 20:
                     raise RequestError("request body must contain 1 to 4194304 bytes", 413)
                 req = json.loads(self.rfile.read(n))
@@ -3321,7 +3327,12 @@ class Server:
                     handler = routes.get(self.path)
                     if handler is None:
                         raise RequestError("unknown endpoint", 404)
-                    handler(self.body())
+                    # A route that takes no arguments should not need a body to say so. `body()`
+                    # demands 1..4 MiB, so `curl -X POST .../v1/prefix/reset` -- the way an operator
+                    # actually reaches the one hook that has nothing to configure -- answered 413
+                    # (2026-09-12, mid-measurement: the cache was not reset and the next bracket
+                    # quietly read it back).
+                    handler(self.body(allow_empty=self.path in BODYLESS))
                 except RequestError as exc:
                     self.reply(exc.status, {"error": str(exc)})
                 except (ValueError, TypeError, UnicodeError) as exc:

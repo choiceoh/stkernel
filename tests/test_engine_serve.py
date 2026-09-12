@@ -1916,7 +1916,8 @@ class OpenAIDialectTests(unittest.TestCase):
     streaming, legacy completions, tokenize/detokenize -- and the multi-turn continuation (B1), over the fake engine."""
 
     def _post(self, base, path, body):
-        req = urllib.request.Request(base + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        data = b"" if body is None else json.dumps(body).encode()      # None = a POST with no body at all
+        req = urllib.request.Request(base + path, data=data, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=5) as r:
             return json.load(r)
 
@@ -1950,6 +1951,25 @@ class OpenAIDialectTests(unittest.TestCase):
                                                    {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
                                                     "reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "low"}}))
         self.assertEqual(err.exception.code, 400)
+
+    def test_the_reset_hook_takes_an_empty_post_because_it_configures_nothing(self):
+        """`body()` demands 1..4 MiB, so `curl -X POST .../v1/prefix/reset` -- how an operator
+        actually reaches the one hook with nothing to configure -- answered 413. It happened
+        mid-measurement on 2026-09-12: the cache was not reset and the next bracket read it back,
+        which is exactly the reading D17 says to throw away."""
+        s = chat_server(prefix=4)
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(self._post, base, "/v1/prefix/reset", None))
+                self.assertEqual(out, {"ok": True})
+                # a route that DOES take arguments still insists on one
+                with self.assertRaises(urllib.error.HTTPError) as err:
+                    drive(s, pool.submit(self._post, base, "/v1/chat/completions", None))
+                self.assertEqual(err.exception.code, 413)
+        finally:
+            httpd.shutdown(); httpd.server_close()
 
     def test_the_door_counts_the_reasoning_shape_it_was_handed(self):
         """Whether a conversation CAN be continued turns on this shape and nothing else (45차 §81), and
