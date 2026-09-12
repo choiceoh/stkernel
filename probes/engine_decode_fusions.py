@@ -26,6 +26,22 @@ def _time(graph, iterations=256, flush=None):
     return start.elapsed_time(end) / iterations
 
 
+def shared_mlp(report):
+    from tests.test_engine_shared_mlp import SharedMLPTests
+    gu, down, fused = SharedMLPTests.layers()
+    for rows in (7, 28):
+        x = torch.randn(rows, 4096, device="cuda", dtype=torch.bfloat16)
+        base, _ = _capture(lambda: SharedMLPTests.reference(x, gu, down))
+        cand, _ = _capture(lambda: fused(x))
+        try:
+            measurements = [dict(arm=label, ms=_time(graph)) for label, graph in
+                            (("B", base), ("A", cand), ("A", cand), ("B", base))]
+            report("shared_mlp_timing", rows=rows, intermediate=512, measurements=measurements,
+                   scope="same-pack captured component; not consumer speed")
+        finally:
+            base.reset(); cand.reset()
+
+
 def pointwise(report):
     from engine.kernels.glm_pointwise import swiglu_clamped, route_weights, layernorm
     from engine.kernels.norm_rope import norm

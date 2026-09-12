@@ -495,6 +495,7 @@ __device__ unsigned long long g_mk2_ts[MK2_UNITS_MAX * 4];
 
 struct MKGemm2Ctx {
   const __nv_bfloat16* x;  // [m, k]
+  int64_t x_stride = 0;    // 0 means dense; split projections may retain a wider parent row
   __nv_bfloat16* out;      // [m, n_orig]
   const uint8_t* wq4;      // tile-major W4 pack [n/128, k/128, 128, 64]
   const int8_t* ws4;
@@ -525,6 +526,7 @@ struct MKGemm2Ctx {
   const float* input_s = nullptr;
   int a_ready = 0;
   int pair_act = 0;
+  __nv_bfloat16* activation_out = nullptr;  // optional calibration input, after BF16 SwiGLU round
   int n_int = 0;               // gate width = up width = the down launch's k
   float act_limit = 0.0f, act_alpha = 1.0f, act_beta = 0.0f;
 };
@@ -561,7 +563,7 @@ __device__ __forceinline__ void mk2_lr_partial(const MKGemm2Ctx& c,
     for (int i = threadIdx.x; i < c.m * q4; i += MK_THREADS) {
       const int rr = i / q4, cc = (i % q4) * 4;
       *(uint2*)(sx + rr * LR_PITCH + cc) =
-          *(const uint2*)(c.x + (size_t)rr * c.k + k0 + cc);
+          *(const uint2*)(c.x + (size_t)rr * (c.x_stride ? c.x_stride : c.k) + k0 + cc);
     }
     for (int i = threadIdx.x; i < r * q4; i += MK_THREADS) {
       const int jj = i / q4, cc = (i % q4) * 4;
@@ -704,7 +706,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
       return;
     }
     if (qrow < c.m) {
-      const __nv_bfloat16* src = c.x + (size_t)qrow * c.k + kb * KSTEP + qu * EPL;
+      const __nv_bfloat16* src = c.x + (size_t)qrow * (c.x_stride ? c.x_stride : c.k) + kb * KSTEP + qu * EPL;
 #pragma unroll
       for (int w = 0; w < EPL / 4; ++w) xr[w] = *(const uint2*)(src + 4 * w);
     }
@@ -973,6 +975,9 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
           }
           v[e] = __bfloat162float(__float2bfloat16(
               gv * mk_sigmoid(c.act_alpha * gv) * (uv + c.act_beta)));
+          if (c.activation_out)
+            c.activation_out[(size_t)t * c.n_int + (size_t)pair * KSTEP + lane * 4 + e] =
+                __float2bfloat16(v[e]);
           amax = fmaxf(amax, fabsf(v[e]));
         }
 #pragma unroll
@@ -3163,8 +3168,10 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c2.out = (__nv_bfloat16*)out.data_ptr();
   c2.m = (int)x.size(0);
   c2.k = (int)x.size(1);        // k is the ACTIVATION width
-  TORCH_CHECK(((uintptr_t)x.data_ptr() & 7) == 0 && x.is_contiguous(),
-              "x must be 8 B aligned and contiguous");
+  c2.x_stride = x.stride(0);
+  TORCH_CHECK(((uintptr_t)x.data_ptr() & 7) == 0 && x.stride(1) == 1
+                  && c2.x_stride >= c2.k && c2.x_stride % 4 == 0,
+              "x must have contiguous columns and disjoint 8 B aligned rows");
   // Tile-major packs -- see stage_raw. The shape is the only thing
   // standing between a stale row-major pack and silently wrong output.
   TORCH_CHECK(wq4.dim() == 4 && wq4.size(2) == SMEM_W_ROWS
@@ -3199,6 +3206,7 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                       || (size_t)c2.m * c2.n * c2.ksr <= (size_t)MK2_PART_ELEMS),
               "gemm2 plan out of contract");
   if (input_reuse) {
+    TORCH_CHECK(x.is_contiguous(), "the explicit input-reuse probe needs dense rows");
     const int qbytes = (c2.k / KSTEP) * 1024;
     const int sbytes = (c2.k / KSTEP) * 8 * sizeof(float);
     // PyTorch owns this allocation on the current stream. CUDA graph capture
@@ -3726,13 +3734,14 @@ int64_t mk_mla_grid() {
 // MK_SEG_SMLP2: the shared-expert / dense MLP as two PDL-chained v2
 // launches -- gate_up with the pair-activation epilogue into the caller's
 // bf16 scratch, down on the a_ready path -- no grid barrier anywhere.
-// ptrs: x, gu_wq4, gu_ws4, d_wq4, d_ws4, gu_scratch, out, gu_rgs, d_rgs (0 = none)
+// ptrs: x, gu_wq4, gu_ws4, d_wq4, d_ws4, gu_scratch, out, gu_rgs, d_rgs,
+//       optional activation_out (BF16 [T,n_int], 0 = no observer)
 // scalars: gu_wgs, d_wgs, limit, alpha, beta
 // ints: T, k_gu, n_gu, n_int, n_out, gu_tiles_n, gu_tiles_k, d_tiles_n, d_tiles_k
 void mk_run_smlp2(std::vector<int64_t> ptrs, std::vector<double> scalars,
                   std::vector<int64_t> ints) {
   set_kernel_attrs();
-  TORCH_CHECK(ptrs.size() == 9 && scalars.size() == 5 && ints.size() == 9,
+  TORCH_CHECK((ptrs.size() == 9 || ptrs.size() == 10) && scalars.size() == 5 && ints.size() == 9,
               "run_smlp2 arg contract");
   const int T = (int)ints[0], k_gu = (int)ints[1], n_gu = (int)ints[2];
   const int n_int = (int)ints[3], n_out = (int)ints[4];
@@ -3760,6 +3769,7 @@ void mk_run_smlp2(std::vector<int64_t> ptrs, std::vector<double> scalars,
   g.m = T; g.n = n_gu_pad; g.k = k_gu; g.n_orig = n_gu;
   g.ksr = mk_choose_ksr2(g.m, g.n, g.k);
   g.pair_act = 1; g.n_int = n_int;
+  g.activation_out = ptrs.size() == 10 ? (__nv_bfloat16*)ptrs[9] : nullptr;
   g.act_limit = (float)scalars[2]; g.act_alpha = (float)scalars[3]; g.act_beta = (float)scalars[4];
   TORCH_CHECK((size_t)g.m * g.n * g.ksr <= (size_t)MK2_PART_ELEMS, "smlp2: gate_up plan out of contract");
   mk_launch_gemm2(g, stream);

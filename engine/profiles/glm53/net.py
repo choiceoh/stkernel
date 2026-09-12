@@ -154,6 +154,7 @@ class Glm53Net:
         self.rec_ring = F.spec_k + 1                 # recurrent states kept per slot: one per draft position
         self.p = None
         self.dense = {}
+        self.shared_mlp = {}
         self._router_weights = {}
         self.prefill_transport = None
         self.mhc = None
@@ -296,6 +297,10 @@ class Glm53Net:
             self.p["head"]=None
         from engine.kernels.dense.mhc import MHC
         self.mhc = MHC({key: weight for key, weight in self.p.items() if key.endswith(("hc.attn_fn","hc.ffn_fn"))})
+        from engine.kernels.dense.shared_mlp import SharedMLP
+        self.shared_mlp = {L: SharedMLP(self.dense[f"L{L}.moe.sh_gate_up"],
+                                        self.dense[f"L{L}.moe.sh_down"], self.F.swiglu_limit)
+                           for L in self.layers if self.F.is_moe(L)}
 
     @operation("linear", name_arg=2)
     def linear(self, x, name):
@@ -567,8 +572,11 @@ class Glm53Net:
         F, p, n = self.F, self.p, f"L{L}.moe."
         sel, w = self.route(L, x)
         out = self._experts[L](x, sel, w)
-        g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
-        shared = self.linear(self._activation(g, u, F.swiglu_limit), n + "sh_down")
+        if L in self.shared_mlp and x.shape[0] <= 32:
+            shared = self.shared_mlp[L](x)
+        else:
+            g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
+            shared = self.linear(self._activation(g, u, F.swiglu_limit), n + "sh_down")
         # Both lanes return BF16. Its add accumulates in FP32 and rounds once,
         # just like the former float() + float() followed by to(BF16).
         return (reduce or self.comm.all_reduce)(out + shared)
