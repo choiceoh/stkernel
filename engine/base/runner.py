@@ -77,12 +77,13 @@ class Runner:
         self.rec = recorder or Recorder("runner")
         self.steps = 0
 
-    def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None) -> None:
+    def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None, salts=()) -> None:
         """Publish a request only after its blocks, slot and model state exist.
 
         Admission failures return everything acquired here; an existing live
         or parked sequence is never released by a failed duplicate submit.
-        `ids`: the prompt, when a prefix cache may reuse its beginning.
+        `ids`: the prompt, when a prefix cache may reuse its beginning; `salts`:
+        (position, digest) of the media standing at placeholder ids (base/prefix.chain).
         """
         now = time.monotonic() if now is None else now
         sched.validate_arrival(self.state, seq, prompt_len, now)
@@ -93,8 +94,8 @@ class Runner:
         if self.prefix is not None and ids is not None:
             if len(ids) != prompt_len:
                 raise ValueError("the prompt ids must be the prompt")
-            reused, entry, _ = self.prefix.lookup(ids)
-            chain = self.prefix.chain(ids)
+            reused, entry, _ = self.prefix.lookup(ids, salts)
+            chain = self.prefix.chain(ids, salts)
         if reused:
             self.kv.adopt(seq, entry.blocks, reused)       # the shared, complete prefix; the row's own blocks follow
         try:

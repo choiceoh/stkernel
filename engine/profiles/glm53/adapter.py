@@ -64,6 +64,9 @@ class Glm53Engine:
         self.lps = {}                                       # seq -> per committed token (id, logprob, [(id, logprob)...]) when asked
         self.matchers = {}                                  # seq -> base/grammar.Matcher when the request carries a grammar
         self.grammars = None                                # base/grammar.Grammars, bound at boot when structured output is served
+        self.vision = None                                  # vision.Vision, bound at boot when images are served (45차 §23 A7)
+        self.media = {}                                     # seq -> [dict(kind, digest, positions (absolute), canvas, grid)]: the prompt's pictures
+        self.embeds = {}                                    # seq -> {media index: [tokens, hidden] rows} encoded at the first chunk that needs them
         self.accepted_total = 0
         self.drafted_total = 0
         self.steps = 0
@@ -269,7 +272,7 @@ class Glm53Engine:
             self.matchers.pop(seq, None)
 
     def add(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None,
-            min_new: int = 0, options: "dict | None" = None) -> None:
+            min_new: int = 0, options: "dict | None" = None, media=None) -> None:
         max_new = self.max_new if max_new is None else max_new
         temperature = self.temperature if temperature is None else temperature
         self.validate(ids, max_new, temperature)
@@ -279,6 +282,8 @@ class Glm53Engine:
             raise ValueError(f"seq {seq} is live or has an uncollected result")
         if options:
             self.validate_options(options)
+        if media:
+            self._bind_media(seq, list(ids), media, base=0)
         self.tokens[seq] = list(ids); self.prompt_len[seq] = len(ids)
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
@@ -287,8 +292,58 @@ class Glm53Engine:
     def forget(self, seq: int) -> None:
         if seq in self.slot:
             raise ValueError(f"seq {seq} is still live")
-        for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers):
+        for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers,
+                     self.media, self.embeds):
             rows.pop(seq, None)
+
+    # -- pictures (45차 §23 A7): the door hands canvases with the positions their rows take; every rank encodes them
+    # -- itself (vision.Vision, replicated) at the first prefill chunk that reaches those positions -----------------
+    def _bind_media(self, seq: int, ids: "list[int]", media, base: int) -> None:
+        if self.vision is None:
+            raise ValueError("images are not served: no vision tower is bound")
+        V = self.vision.V
+        items = []
+        for m in media:
+            positions = [int(p) for p in m["positions"]]
+            grid = tuple(int(g) for g in m["grid"])
+            if (m.get("kind") not in ("image", "video") or not positions or len(grid) != 3
+                    or any(b <= a for a, b in zip(positions, positions[1:])) or positions[0] < 0 or positions[-1] >= len(ids)
+                    or len(positions) != V.tokens(grid) or any(ids[p] != V.image_token for p in positions)):
+                raise ValueError("a media record needs a kind, a grid and increasing placeholder positions inside the prompt")
+            items.append({"kind": m["kind"], "digest": str(m["digest"]), "positions": [base + p for p in positions],
+                          "canvas": m.get("canvas"), "grid": grid})
+        self.media.setdefault(seq, []).extend(items)
+
+    def media_marks(self, seq: int) -> "list[tuple[int, str]]":
+        """(first position, digest) of every picture in the conversation, in order (the door's continuation check)."""
+        return [(m["positions"][0], m["digest"]) for m in self.media.get(seq, [])]
+
+    def _patches(self, seq: int, lo: int, hi: int) -> tuple:
+        """The rows standing inside [lo, hi) of the prompt, as (positions relative to lo, rows) pairs -- encoding a
+        picture on the way if this is the first chunk to reach it, dropping it once the chunk passed its last row."""
+        out = []
+        done = []
+        for i, m in enumerate(self.media.get(seq, [])):
+            pos = m["positions"]
+            if pos[-1] < lo or pos[0] >= hi:
+                continue
+            rows = self.embeds.setdefault(seq, {}).get(i)
+            if rows is None:
+                if m["canvas"] is None:
+                    raise RuntimeError("a resumed conversation asked for rows it no longer carries")
+                rows = self.vision.encode(m["canvas"], m["grid"])
+                if rows.shape[0] != len(pos):
+                    raise RuntimeError(f"the vision tower produced {rows.shape[0]} rows for {len(pos)} placeholders")
+                self.embeds[seq][i] = rows
+            p = torch.tensor(pos, dtype=torch.int64, device=rows.device)
+            keep = (p >= lo) & (p < hi)
+            out.append((p[keep] - lo, rows[keep]))
+            if pos[-1] < hi:
+                done.append(i)
+        for i in done:                                                        # its rows are in the caches now
+            self.embeds[seq].pop(i, None)
+            self.media[seq][i]["canvas"] = None
+        return tuple(out)
 
     def open(self, seq: int, slot: int) -> None:
         self.slot[seq] = slot; self.ctx[seq] = 0
@@ -315,7 +370,9 @@ class Glm53Engine:
         record = {"context": self.ctx[seq], "pending": len(self.tokens[seq]) - self.ctx[seq],
                   "tokens": list(self.tokens[seq]), "prompt_len": self.prompt_len[seq],
                   "limits": [self.limits[seq][0], self.limits[seq][1]], "min_new": self.min_new.get(seq, 0),
-                  "options": {k: v for k, v in self.options.get(seq, {}).items() if k != "grammar"}}
+                  "options": {k: v for k, v in self.options.get(seq, {}).items() if k != "grammar"},
+                  "media": [[m["kind"], m["digest"], m["positions"][0], len(m["positions"]), list(m["grid"])]
+                            for m in self.media.get(seq, [])]}         # marks only: the caches hold the pictures' effect
         self.close(seq)
         self.forget(seq)
         return record
@@ -331,13 +388,16 @@ class Glm53Engine:
         if "logit_bias" in options:
             options["logit_bias"] = {int(k): float(v) for k, v in options["logit_bias"].items()}   # JSON keys come back as text
         self._bind_options(seq, options)
+        if record.get("media"):
+            self.media[seq] = [{"kind": kind, "digest": str(digest), "positions": list(range(int(first), int(first) + int(count))),
+                                "canvas": None, "grid": tuple(int(g) for g in grid)} for kind, digest, first, count, grid in record["media"]]
         self.slot[seq] = slot; self.ctx[seq] = int(record["context"])
 
     def state_bytes(self, slot: int):
         return self.caches.slot_bytes(slot)
 
     def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None,
-               min_new: int = 0, options: "dict | None" = None) -> int:
+               min_new: int = 0, options: "dict | None" = None, media=None) -> int:
         """A new turn: more prompt tokens on a conversation the caches still hold.
         Returns the tokens to prefill -- the last sampled token (never fed) and
         the new ones -- so `generated` counts this turn only from here on."""
@@ -348,6 +408,8 @@ class Glm53Engine:
             raise ValueError("min_tokens must be an integer between 0 and the generation limit")
         if options:
             self.validate_options(options)
+        if media:
+            self._bind_media(seq, list(ids), media, base=len(self.tokens[seq]))
         self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
@@ -488,7 +550,8 @@ class Glm53Engine:
 
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> bool:
         ids = torch.tensor(self.tokens[seq][start: start + tokens], dtype=torch.int64, device=self.caches.device)
-        h, aux = self._forward(Step.prefill(ids, start, seq, slot))
+        patches = self._patches(seq, start, start + tokens) if seq in self.media else ()
+        h, aux = self._forward(Step.prefill(ids, start, seq, slot, patches))
         self.ctx[seq] = start + tokens
         if aux is not None:                                                 # every prompt token is context for the drafter
             self.drafter.observe(self.caches.draft_ring(slot), torch.arange(start, start + tokens, device=ids.device), aux)

@@ -49,17 +49,24 @@ class PrefixCache:
         pool.reclaimable = self.reclaimable
 
     # -- the chain ---------------------------------------------------------------------------
-    def chain(self, ids) -> "dict[int, bytes]":
-        """boundary tokens -> hash of the prompt up to there, for every whole chunk."""
+    def chain(self, ids, salts=()) -> "dict[int, bytes]":
+        """boundary tokens -> hash of the prompt up to there, for every whole chunk. `salts`: (position, bytes) pairs
+        folded into the chunk that holds the position -- the digests of the media whose rows stand at those placeholder
+        ids (the same <|image|> run, another picture, must never share a boundary: 45차 §23 A7)."""
         out, h = {}, b""
+        salted = sorted((int(p), bytes(d)) for p, d in salts)
+        j = 0
         for end in range(self.chunk, len(ids) + 1, self.chunk):
             h = hashlib.sha1(h + array("i", ids[end - self.chunk:end]).tobytes()).digest()
+            while j < len(salted) and salted[j][0] < end:
+                h = hashlib.sha1(h + salted[j][1]).digest()
+                j += 1
             out[end] = h
         return out
 
-    def lookup(self, ids):
+    def lookup(self, ids, salts=()):
         """(tokens, entry, hash) of the longest cached boundary strictly inside the prompt, or (0, None, None)."""
-        chain = self.chain(ids)
+        chain = self.chain(ids, salts)
         for tokens in sorted(chain, reverse=True):
             if tokens < len(ids) and chain[tokens] in self.entries:
                 entry = self.entries[chain[tokens]]

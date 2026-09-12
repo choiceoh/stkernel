@@ -28,6 +28,7 @@ back a partial multi-byte character until its next token completes it.
 """
 from __future__ import annotations
 
+import base64
 import heapq
 import json
 import math
@@ -37,10 +38,14 @@ import select
 import socket
 import threading
 import time
+import urllib.request
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from engine.base.kv_tier import TierFull
+
+MEDIA_FETCH_TIMEOUT_S = {"image": 5.0, "video": 30.0}           # vLLM's VLLM_IMAGE_FETCH_TIMEOUT / VLLM_VIDEO_FETCH_TIMEOUT defaults
+MEDIA_MAX_BYTES = {"image": 64 << 20, "video": 512 << 20}        # a door-side ceiling on what one part may carry (vLLM has none)
 
 
 class RequestError(Exception):
@@ -113,6 +118,59 @@ def sampling_options(req: dict, defaults: "dict | None" = None) -> "tuple[float,
             raise RequestError("stop_token_ids must be a list of token ids")
         options["stop_token_ids"] = list(stop_ids)
     return float(temperature), options
+
+
+def media_parts(messages) -> "list[tuple[str, str]]":
+    """(kind, url) of every image_url / video_url part, in the order the chat template renders them. Text parts
+    pass through; any other part type is refused here rather than silently dropped by the template."""
+    out = []
+    for m in messages:
+        content = m.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or not isinstance(part.get("type"), str):
+                raise RequestError("content parts must be objects with a type")
+            kind = part["type"]
+            if kind == "text":
+                if not isinstance(part.get("text"), str):
+                    raise RequestError("a text part needs a text string")
+                continue
+            if kind in ("image_url", "video_url"):
+                ref = part.get(kind)
+                url = ref.get("url") if isinstance(ref, dict) else ref
+                if not isinstance(url, str) or not url:
+                    raise RequestError(f"a {kind} part needs a url")
+                out.append((kind[:-4], url))
+                continue
+            raise RequestError(f"content part type {kind!r} is not served (text, image_url, video_url are)")
+    return out
+
+
+def fetch_media(kind: str, url: str) -> bytes:
+    """The bytes behind a data: URL or an http(s) URL, within the kind's timeout and size ceiling."""
+    limit = MEDIA_MAX_BYTES[kind]
+    if url.startswith("data:"):
+        head, sep, payload = url.partition(",")
+        if not sep or not head.endswith(";base64"):
+            raise RequestError(f"{kind}: only base64 data URLs are served")
+        if len(payload) > limit * 4 // 3 + 4:
+            raise RequestError(f"{kind}: larger than the served {limit >> 20} MiB")
+        try:
+            return base64.b64decode(payload, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise RequestError(f"{kind}: data URL is not valid base64") from exc
+    if url.startswith("http://") or url.startswith("https://"):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "st-engine"}),
+                                        timeout=MEDIA_FETCH_TIMEOUT_S[kind]) as r:
+                data = r.read(limit + 1)
+        except Exception as exc:                                          # noqa: BLE001 -- the fetch's verdict, whatever it was
+            raise RequestError(f"{kind}: could not fetch {url!r}: {exc}") from exc
+        if len(data) > limit:
+            raise RequestError(f"{kind}: larger than the served {limit >> 20} MiB")
+        return data
+    raise RequestError(f"{kind}: url must be a data: or http(s) URL")
 
 
 def stop_strings(req: dict) -> "list[str]":
@@ -267,7 +325,7 @@ class Server:
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
-                 generation: "dict | None" = None, max_choices: int = 4):
+                 generation: "dict | None" = None, max_choices: int = 4, vision=None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -280,6 +338,7 @@ class Server:
         self.port, self.host, self.tok = port, host, tokenizer
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
+        self.vision = vision                       # the profile's door half for pictures (prepare / expand / limits), or None: text only
         self.generation = dict(generation or {})   # the checkpoint's generation_config defaults (temperature ...) a request may omit
         self.max_choices = int(max_choices)        # n / best_of ceiling: one row each, never more than the decode width
         self._stop_ids = {}                        # request id -> stop_token_ids: an end by one of them is finish_reason "stop"
@@ -312,14 +371,16 @@ class Server:
             raise ValueError("the server needs at least one request row and state slot")
 
     def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None, stream: bool = False,
-               min_new: int = 0, options: "dict | None" = None, continue_history: bool = False):
+               min_new: int = 0, options: "dict | None" = None, continue_history: bool = False, media=None):
         """Validate and enqueue on rank 0 without acquiring any model resources.
         `stream`: the request also gets a token queue (see `_streams`). `min_new`: no end token before this many.
         `options`: the request's sampling/behaviour options beyond temperature (the engine validates them).
         `continue_history`: the OpenAI path re-sends a whole chat every turn -- when a retained conversation's history
         (prompt + what it generated) is a proper prefix of `ids`, continue it with the new suffix instead of
         prefilling everything again (45차 §23 B1). The hint is taken here, on rank 0; admission re-checks it and
-        falls back to a fresh prompt if the conversation left in between."""
+        falls back to a fresh prompt if the conversation left in between.
+        `media`: the pictures standing at placeholder runs inside `ids` (the profile's door built them: kind, digest,
+        positions, canvas, grid); they ride to every rank with the request and are encoded there (45차 §23 A7)."""
         if self.comm.rank != 0:
             raise RequestError("requests must enter on rank 0")
         options = dict(options or {})
@@ -328,9 +389,17 @@ class Server:
                 self.engine.validate_options(options)
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
+        media = list(media or [])
+        for m in media:
+            if (not isinstance(m, dict) or not isinstance(m.get("kind"), str) or not isinstance(m.get("digest"), str)
+                    or not isinstance(m.get("positions"), list) or not m["positions"]
+                    or any(type(p) is not int or not 0 <= p < len(ids) for p in m["positions"])):
+                raise RequestError("media records need a kind, a digest and placeholder positions inside the prompt")
+        if media and not hasattr(self.engine, "media_marks"):
+            raise RequestError("images are not served by this engine")
         hint = None
         if continue_history and conversation is None and self.runner.keep_idle:
-            hint = self._continuation(ids)
+            hint = self._continuation(ids, media)
         if conversation is not None:
             if type(conversation) is not int or conversation < 0:
                 raise RequestError("conversation must be a nonnegative integer")
@@ -375,28 +444,45 @@ class Server:
             self.prompt_tokens_total += len(ids)
             if options.get("stop_token_ids"):
                 self._stop_ids[request] = set(options["stop_token_ids"])
-            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint))
+            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint, media))
         return request, event
 
-    def _continuation(self, ids) -> "tuple[int, int] | None":
+    def _continuation(self, ids, media=()) -> "tuple[int, int] | None":
         """(conversation, prefix length) of the retained conversation whose history is the longest proper prefix of
-        `ids`: a resident idle row, or a parked one (its record carries the tokens). None if nothing matches."""
+        `ids`: a resident idle row, or a parked one (its record carries the tokens). None if nothing matches.
+        The pictures must match too: the same placeholder run with another picture is another prompt."""
         best = None
         n = len(ids)
-        def consider(key, history):
+        marks = sorted((m["positions"][0], m["digest"]) for m in media)
+        def consider(key, history, history_marks):
             nonlocal best
             m = len(history)
-            if 0 < m < n and (best is None or m > best[1]) and ids[:m] == list(history):
+            if (0 < m < n and (best is None or m > best[1]) and ids[:m] == list(history)
+                    and [(p, d) for p, d in marks if p < m] == sorted((int(p), str(d)) for p, d in history_marks)):
                 best = (key, m)
         for row in list(self._idle_order):
             key = self._conversation_of.get(row)
             if key is not None and hasattr(self.engine, "history"):
-                consider(key, self.engine.history(row))
+                consider(key, self.engine.history(row),
+                         self.engine.media_marks(row) if hasattr(self.engine, "media_marks") else [])
         for key in self.runner.parked_keys():
             record = self.runner.parked_record(key)
             if record is not None and "tokens" in record:
-                consider(key, record["tokens"])
+                consider(key, record["tokens"], [(r[2], r[1]) for r in record.get("media", [])])
         return best
+
+    @staticmethod
+    def _media_after(media, prefix: int):
+        """The pictures standing past `prefix` with their positions re-based on it; None if one straddles the cut."""
+        out = []
+        for m in media:
+            pos = m["positions"]
+            if pos[-1] < prefix:
+                continue
+            if pos[0] < prefix:
+                return None
+            out.append(dict(m, positions=[p - prefix for p in pos]))
+        return out
 
     def cancel(self, request: int, reason: str = "client closed") -> None:
         """Ask the loop to drop `request` wherever it is (waiting, prefilling, decoding); every rank
@@ -512,19 +598,23 @@ class Server:
 
     def _admit(self):
         while self._waiting:
-            request, ids, limit, temperature, promised, conversation, min_new, options, hint = self._waiting[0]
+            request, ids, limit, temperature, promised, conversation, min_new, options, hint, media = self._waiting[0]
             row = None
             resident = held = 0
             parked = False
             if conversation is None and hint is not None:
                 key, prefix = hint
                 row_ = self._conversations.get(key)
+                rest = self._media_after(media, prefix)
+                if rest is None:
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media)   # a picture straddles the cut
+                    continue
                 if (row_ is not None and row_ in self.runner.idle) or (row_ is None and self.runner.is_parked(key)):
-                    conversation, ids = key, ids[prefix:]         # continue the retained conversation with the new turn
+                    conversation, ids, media = key, ids[prefix:], rest     # continue the retained conversation with the new turn
                 elif row_ is not None or key in self._retiring.values() or any(e["conversation"] == key for e in self._resuming.values()):
                     break                                         # it is mid-park/resume or live: decide next step
                 else:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None)   # gone: fresh prompt
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media)   # gone: fresh prompt
                     continue
             if conversation is not None:
                 row = self._conversations.get(conversation)
@@ -570,8 +660,9 @@ class Server:
                 row = heapq.heappop(self._free_rows)
                 try:
                     self.engine.add(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}),
-                                    **({"options": options} if options else {}))
-                    self.runner.submit(row, len(ids), ids=ids)
+                                    **({"options": options} if options else {}), **({"media": media} if media else {}))
+                    self.runner.submit(row, len(ids), ids=ids,
+                                       salts=[(m["positions"][0], bytes.fromhex(m["digest"])) for m in media] if media else ())
                 except BaseException:
                     self.engine.forget(row)
                     heapq.heappush(self._free_rows, row)
@@ -589,12 +680,12 @@ class Server:
                         raise
                     self._resuming[row] = dict(conversation=conversation, request=request, ids=ids, limit=limit,
                                                temperature=temperature, promised=promised, min_new=min_new, options=options,
-                                               cancelled=None)
+                                               media=media, cancelled=None)
                     self._waiting.popleft()
                     continue                                              # admitted when every rank's read is done (_settle)
                 self._idle_order.pop(row)
                 tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}),
-                                            **({"options": options} if options else {}))
+                                            **({"options": options} if options else {}), **({"media": media} if media else {}))
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
@@ -658,7 +749,8 @@ class Server:
                 if all_ok == world and e["cancelled"] is None:   # resident everywhere: the turn proceeds
                     tokens = self.engine.extend(row, e["ids"], max_new=e["limit"], temperature=e["temperature"],
                                                 **({"min_new": e["min_new"]} if e["min_new"] else {}),
-                                                **({"options": e["options"]} if e.get("options") else {}))
+                                                **({"options": e["options"]} if e.get("options") else {}),
+                                                **({"media": e["media"]} if e.get("media") else {}))
                     self.runner.extend(row, tokens)
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
@@ -867,7 +959,7 @@ class Server:
 
             # ---- the OpenAI dialect ------------------------------------------------------------------------------
             def choices_for(self, ids, count, max_new, temperature, options, stop, *, reasoning, tool_parser=None,
-                            want_logprobs=None, min_new=0, continue_history=False):
+                            want_logprobs=None, min_new=0, continue_history=False, media=None):
                 """Submit `count` generations of one prompt; each is a _Choice fed by its own token queue.
                 With a seed, choice i draws from seed + i so the n answers differ but stay reproducible."""
                 choices = []
@@ -876,7 +968,7 @@ class Server:
                     if count > 1 and "seed" in opts:
                         opts["seed"] = opts["seed"] + i
                     request, event = server.submit(ids, max_new, temperature, stream=True, min_new=min_new,
-                                                   options=opts, continue_history=continue_history)
+                                                   options=opts, continue_history=continue_history, media=media)
                     choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
                                            reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs))
                 return choices
@@ -998,18 +1090,40 @@ class Server:
                 grammar = response_format_grammar(req)
                 if grammar is not None:
                     options["grammar"] = grammar
+                parts = media_parts(messages)                            # (kind, url) in the order the template will emit them
+                items = []
+                if parts:
+                    if server.vision is None:
+                        raise RequestError("images and videos are not served by this deployment")
+                    counts = {}
+                    for kind, url in parts:
+                        counts[kind] = counts.get(kind, 0) + 1
+                        limit = server.vision.limits.get(kind, 0)
+                        if counts[kind] > limit:
+                            raise RequestError(f"at most {limit} {kind}(s) per request are served" if limit else f"{kind} is not served")
+                    for kind, url in parts:
+                        try:
+                            items.append(server.vision.prepare(kind, fetch_media(kind, url)))
+                        except ValueError as exc:
+                            raise RequestError(f"{kind}: {exc}") from exc
                 try:
                     prompt = server.chat(messages, dict(kwargs, tools=tools) if tools else kwargs)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
                     raise RequestError(f"chat template rejected the request: {exc}") from exc
                 ids = server.tok.encode(prompt, add_special_tokens=False).ids
+                media = None
+                if items:
+                    try:
+                        ids, media = server.vision.expand(ids, items)   # one placeholder per part -> the runs the model sees
+                    except ValueError as exc:
+                        raise RequestError(str(exc)) from exc
                 # thinking off: the template already closed the think block (the rendered prompt ends with the reasoning-end
                 # token), so everything generated is content -- otherwise a whole answer lands in reasoning_content
                 # (45차 §22: the gateway's -low route asks thinkingMode off and reads content)
                 reasoning = server.reasoning_end is not None and not (ids and ids[-1] == server.reasoning_end)
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
                                            tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
-                                           continue_history=True)
+                                           continue_history=True, media=media)
                 head = {"id": f"chatcmpl-{choices[0].request}", "created": int(time.time()), "model": model}
 
                 def chunk(index, delta=None, finish=None, usage=None, logprobs=None):
