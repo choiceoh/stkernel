@@ -2,7 +2,8 @@
 import json
 import unittest
 
-from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+from engine.profiles.glm53.tools import (parse_tool_calls, partial_tool_calls,
+                                         tool_call_token, tool_grammar)
 
 
 class ToolCallTests(unittest.TestCase):
@@ -82,6 +83,52 @@ class PartialToolCallTests(unittest.TestCase):
     def test_korean_is_not_escaped_into_six_bytes(self):
         text = '<tool_call>search<arg_key>q</arg_key><arg_value>서울 날씨'
         self.assertNotIn("\\u", partial_tool_calls(text)[0][1])
+
+
+class ToolGrammarTests(unittest.TestCase):
+    """Nothing held a call to the tools that were declared (45차 §45)."""
+
+    TOOLS = [{"type": "function", "function": {"name": "get_weather", "parameters": {
+                 "type": "object", "properties": {"days": {}, "city": {}}}}},
+             {"type": "function", "function": {"name": "ping"}}]
+
+    def test_it_binds_the_names_the_keys_and_the_shape(self):
+        text = tool_grammar(self.TOOLS)
+        self.assertIn('call0 ::= "get_weather" pairs0 "</tool_call>"', text)
+        self.assertIn('key0 ::= "city" | "days"', text)                 # sorted, so the same tools are one cache entry
+        self.assertIn('pairs1 ::= ""', text)                            # a tool that takes nothing takes nothing
+        self.assertIn('root ::= call ("<tool_call>" call)*', text)
+
+    def test_a_value_may_be_anything(self):
+        """A value is raw text and may hold `<`, quotes, code. Its rule admits every character,
+        and the ambiguity with the closing tag is the point: inside a value nothing is forbidden."""
+        self.assertIn("value ::= [^\\u0000]*", tool_grammar(self.TOOLS))
+
+    def test_nothing_to_bind_is_no_grammar(self):
+        self.assertIsNone(tool_grammar([]))
+        self.assertIsNone(tool_grammar(None))
+        self.assertIsNone(tool_grammar([{"type": "function", "function": {}}]))
+        self.assertIsNone(tool_grammar([{"type": "function"}]))
+
+    def test_the_trigger_is_a_token_or_there_is_no_grammar(self):
+        class Whole:
+            def encode(self, text, add_special_tokens=True):
+                return type("E", (), {"ids": [154843]})()
+            def decode(self, ids, skip_special_tokens=True):
+                return "<tool_call>"
+
+        class InPieces(Whole):
+            def encode(self, text, add_special_tokens=True):
+                return type("E", (), {"ids": [1, 2, 3]})()
+
+        class PlainList(Whole):
+            def encode(self, text, add_special_tokens=True):
+                return [154843]
+
+        self.assertEqual(tool_call_token(Whole()), 154843)
+        self.assertEqual(tool_call_token(PlainList()), 154843)          # a transformers tokenizer answers this way
+        self.assertIsNone(tool_call_token(InPieces()))                  # armed in the middle of a marker: no
+        self.assertIsNone(tool_call_token(None))
 
 
 if __name__ == "__main__":
