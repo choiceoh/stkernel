@@ -28,7 +28,9 @@
 # An ST check that needs ONE GPU (probes/run_engine_check.sh, or run_engine_probe.sh without
 # --distributed: one container, the four ranks as threads on one card) does not wait for the
 # Sparks. It takes the single-GPU lane -- the 5050 on ost-97x (FLEET_SINGLE_GPU_HOST; set it
-# empty to turn the lane off) -- with its own holder (holder-single) and its own evidence
+# empty to turn the lane off; the controller's ~/.ssh/config names that alias's address,
+# user and port, since the box is a Windows machine on the tailnet, not a Spark) -- with its
+# own holder (holder-single) and its own evidence
 # (that host's GPU process list; unreachable is not free). The lanes never block each other:
 # a check behind a queued boot runs now, and a boot behind a queued check runs now. The
 # supervisor hands the check to probes/run_engine_probe.sh with ST_PROBE_HOST, which rsyncs

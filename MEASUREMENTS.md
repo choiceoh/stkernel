@@ -322,6 +322,7 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 - **§96** — 관측 겹치기를 준비했다: observe 는 commit 전에 계산을 시작할 수 있다
 - **§97** — 서빙 중에 멎은 플릿: 같은 집합통신에 네 랭크가 서로 다른 형상으로 들어갔다
 - **PR #767** — GPU 하나면 되는 검사는 플릿이 아니라 **ost-97x 의 5050** 으로: 큐에 레인이 둘
+- **PR #771** — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다
 
 ### 45차 §23 — 프로덕션 전환 시도: 창·45층 4노드 부팅·문 사다리, 그리고 깨진 글의 원인 = KDA `o_norm` epsilon (2026-09-11 밤 ~ 09-12 새벽)
 
@@ -1332,3 +1333,31 @@ inspect 1(두 holder 나란히, 대기 대상은 자기 레인) + idle 1(single 
 `test_fleet_experiments` 의 실제 승인 함수 추출 테스트는 새 한 줄 헬퍼 넷(`lane_of`·`holder_file`·`lane_front`·
 `kind_of`)을 같이 뽑도록 고쳤다. `FLEET_AUDIT` 갱신. 이름: 규칙 9 대로 PR 번호다 — §97 로 썼다가 main 의
 §97(PR #759)이 먼저 들어왔고, 그 사이 원장이 얇아졌다(PR #765).
+
+### 45차 — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다 (2026-09-13, 맥→srv2, PR #771)
+
+PR #767 의 "준비물" 을 실제로 만들려고 ost-97x 부터 찾았다.
+
+**찾은 것.** 맥·srv4·srv2 어디에도 DNS·mDNS·`/etc/hosts` 에 없다. 테일넷에 있다: **`OST-97X`**(테일넷 이름
+`office-topsolar.tail7fec17.ts.net`, 100.116.174.65) — **Windows**, DERP 릴레이로만 닿고(직결 없음), 22·3389 닫힘.
+집 LAN(192.168.68.0/22) 스윕에서 ssh 가 열린 호스트는 스파크 넷(srv1 .59, srv4 .72, srv3 .73, srv2 .77)뿐이다.
+즉 이 박스에는 아직 sshd 가 없고, 리눅스도 아니다.
+
+**한 것.** (1) srv2 `~/.ssh/config` 에 `Host ost-97x → HostName office-topsolar.tail7fec17.ts.net`(srv2 의 MagicDNS 가
+푼다). `ssh -o BatchMode=yes ost-97x true` 의 답이 "Could not resolve hostname" 에서 "port 22: Connection timed out"
+으로 바뀌었다 — 이름은 풀리고, 그쪽에 sshd 가 없다. `status` 의 single 줄도 이제 그렇게 말한다. (2) 코드: 레인이
+`choiceoh@` 를 강제하지 않는다. `fleet_single.target()` 과 `probes/run_engine_probe.sh` 는 호스트를 준 그대로 쓰고,
+컨트롤러의 ssh 별칭이 주소·사용자·포트를 정한다 — 그 박스는 스파크도, choiceoh 의 것도 아니다.
+
+**막힌 것 — 운영자의 손이 필요하다.** (1) OST-97X 에 srv2 에서 BatchMode 로 닿는 sshd. 러너가 bash·rsync·docker
+(NVIDIA 런타임)를 쓰므로 **WSL2 Ubuntu 안의 sshd** 가 실용적인 모양이다(테일넷 100.116.174.65:22 로 노출). srv2 의
+공개키(`~/.ssh/id_ed25519.pub`, `choiceoh@spark4tb`)를 그 계정의 `authorized_keys` 에, 사용자·포트를 srv2 별칭에.
+(2) **x86_64 ST 이미지가 없다.** 지금 이미지는 GB10 시드(aarch64) 위에 짓고, DeepGEMM 은 시드에서 뽑은
+`_C.cpython-3xx-aarch64-linux-gnu.so` + JIT 헤더(821 파일)뿐 — `csrc` 가 없고, API 는 포크 것(`fp8_fp4_mqa_logits`,
+`tf32_hc_prenorm_gemm`, 2.6.1). x86 에서 다시 지으려면 그 포크의 확장 소스가 있어야 한다. ST 검사는 전부
+`deep_gemm` 을 임포트하므로, 이게 없는 한 5050 에서 도는 ST 검사는 없다. (3) 그때까지 단일 레인 티켓은
+"Connection timed out" 을 말하며 기다리고, `run --gpu --fleet` 가 우회다.
+
+**검증.** 맥: `test_fleet_single` 12 · onepass · source · ledger_numbering 통과, `FLEET_AUDIT` 갱신(`test_docs_status`
+는 main 의 `bench/FLEET_BOOT_READINESS.md` 배너 누락으로 빨갛다 — 이 PR 밖, 칩으로 띄움). srv2: 별칭 실측은 위와
+같다. 5050 실물 왕복은 여전히 없다.

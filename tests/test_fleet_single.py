@@ -42,7 +42,7 @@ class EvidenceTests(unittest.TestCase):
             calls.append(argv)
             return Done(0, '')
         self.assertEqual(single.evidence('ost-97x', run=free), [])
-        self.assertEqual(calls[0][-2:], ['choiceoh@ost-97x', single.QUERY])   # the fleet's user unless named
+        self.assertEqual(calls[0][-2:], ['ost-97x', single.QUERY])   # the alias as given; ~/.ssh/config owns the rest
         self.assertIn('BatchMode=yes', calls[0])
         busy = single.evidence('ost-97x', run=lambda *a, **k: Done(0, '4242, python3, 512\n4243, python3, 64\n'))
         self.assertEqual(busy, ['ost-97x: busy outside this queue -- pid 4242 (python3) and 1 more'])
@@ -54,9 +54,12 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn('No route to host', failed[0])
         self.assertIn('lane is off', single.evidence('')[0])
 
-    def test_a_user_in_the_host_name_is_kept(self):
+    def test_the_ssh_alias_decides_user_and_address(self):
+        """ost-97x is a Windows box on the tailnet, not a Spark: the controller's ~/.ssh/config
+        names its address, user and port, and nothing here forces the fleet's user onto it."""
         self.assertEqual(single.target('ost@ost-97x'), 'ost@ost-97x')
-        self.assertEqual(single.target('ost-97x'), 'choiceoh@ost-97x')
+        self.assertEqual(single.target('ost-97x'), 'ost-97x')
+        self.assertFalse(hasattr(single, 'USER'))
 
     def test_the_cache_remembers_one_answer_per_ttl_and_per_host(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -124,7 +127,8 @@ class ContractTests(unittest.TestCase):
         self.assertIn('probe_host=${ST_PROBE_HOST:-}', self.runner)
         remote = self.runner[self.runner.index('probe_host=${ST_PROBE_HOST:-}'):self.runner.index('mkdir -p "$cache"')]
         self.assertIn('rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes"', remote)
-        self.assertIn('probe_host="choiceoh@$probe_host"', remote)
+        self.assertNotIn('choiceoh@$probe_host', remote)          # the alias as given, never the fleet's user
+        self.assertIn('ssh $SSHOPT "$probe_host"', remote)
         self.assertIn('''trap 'ssh $SSHOPT "$probe_host" "docker rm -f $NAME"''', remote)
         self.assertIn('exit $rc', remote)
         self.assertNotIn('fleet_lease', remote)
