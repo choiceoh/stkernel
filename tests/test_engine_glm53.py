@@ -67,6 +67,50 @@ class ExpertPreshardTests(unittest.TestCase):
             actual = FP4_TABLE[_fp4_encode(sign*values).long()]
             self.assertTrue(torch.equal(actual, sign*expected))
 
+    def test_the_batched_swizzle_is_the_single_one_stacked(self):
+        from engine.modules.nvfp4_sf import swizzle_sf, swizzle_sf_batch
+        torch.manual_seed(72)
+        block = torch.randn(5, 200, 7).to(torch.float8_e4m3fn).view(torch.uint8)   # both axes need padding
+        one_at_a_time = torch.stack([swizzle_sf(block[i]) for i in range(block.shape[0])])
+        self.assertTrue(torch.equal(swizzle_sf_batch(block), one_at_a_time))
+
+    def test_the_stacked_scale_build_writes_what_the_per_expert_one_wrote(self):
+        """The bytes, not the shape: this is the layout the b12x kernel gates on."""
+        from engine.modules.nvfp4_sf import swizzle_sf
+        from engine.profiles.glm53.specs import _split, layer_specs
+        E4 = torch.float8_e4m3fn
+        F = replace(tiny_facts(), dense=(0, 1), moe_inter=512)
+        specs = {s.name: s for s in layer_specs(F, 2)}
+        torch.manual_seed(9)
+        ex = [f"model.language_model.layers.2.mlp.experts.{e}." for e in range(F.experts)]
+        source = {}
+        for e, prefix in enumerate(ex):
+            for projection in ("up", "gate", "down"):
+                key = prefix + projection + "_proj."
+                rows, cols = ((F.moe_inter, F.hidden) if projection != "down" else (F.hidden, F.moe_inter))
+                source[key + "weight_packed"] = torch.zeros(rows, cols // 2, dtype=torch.uint8)
+                source[key + "weight_scale"] = torch.randn(rows, cols // 16).to(E4)
+                source[key + "weight_global_scale"] = torch.tensor(1.0 + e / 8)
+
+        def fold(scale, global_scale):
+            return (scale.float() / global_scale.float().reshape(())).to(E4)
+
+        for rank in range(4):
+            want13 = torch.stack([
+                swizzle_sf(torch.cat([fold(_split(source[x + "up_proj.weight_scale"], 0, rank, 4),
+                                           source[x + "up_proj.weight_global_scale"]),
+                                      fold(_split(source[x + "gate_proj.weight_scale"], 0, rank, 4),
+                                           source[x + "gate_proj.weight_global_scale"])], 0).view(torch.uint8)).view(E4)
+                for x in ex]).contiguous()
+            want2 = torch.stack([
+                swizzle_sf(fold(_split(source[x + "down_proj.weight_scale"], 1, rank, 4),
+                                source[x + "down_proj.weight_global_scale"]).view(torch.uint8)).view(E4)
+                for x in ex]).contiguous()
+            self.assertTrue(torch.equal(specs["L2.moe.w13_sf"].build(source, rank, 4).view(torch.uint8),
+                                        want13.view(torch.uint8)), f"w13_sf rank {rank}")
+            self.assertTrue(torch.equal(specs["L2.moe.w2_sf"].build(source, rank, 4).view(torch.uint8),
+                                        want2.view(torch.uint8)), f"w2_sf rank {rank}")
+
     def test_each_rank_writes_up_then_gate_with_matching_folded_scales(self):
         from engine.profiles.glm53.specs import layer_specs
         from engine.modules.nvfp4_sf import unswizzle_sf
