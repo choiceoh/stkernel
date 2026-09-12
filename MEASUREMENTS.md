@@ -324,6 +324,7 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 - **PR #767** — GPU 하나면 되는 검사는 플릿이 아니라 **ost-97x 의 5050** 으로: 큐에 레인이 둘
 - **PR #770** — 리스를 큐 아래로: 기록 하나, 주인은 큐, 인계는 이전 — 그리고 러너가 **영원히 거부**하고 있었다
 - **PR #771** — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다
+- **PR #774** — 단일 GPU 레인은 **srv4 한 대에서 프로덕션 옆에**: 증거는 여유 메모리, 첫 실측이 OOM 과 b12x m=8 을 가르쳐 줬다
 
 ### 45차 §23 — 프로덕션 전환 시도: 창·45층 4노드 부팅·문 사다리, 그리고 깨진 글의 원인 = KDA `o_norm` epsilon (2026-09-11 밤 ~ 09-12 새벽)
 
@@ -1518,3 +1519,52 @@ The v3 baseline boot reached canonical preparation, not a completed measurement.
 `21a4c816` adds a conservative in-flight-aware boundary drain, with the existing rich sampler enforcing the cap and async decoding resuming after committed reasoning end. It also keeps hypothetical rejected draft end tokens from disabling the cap. Focused CPU validation: 19 reasoning/gate tests plus 35 async runner/pipeline/sampling tests passed.
 
 The user explicitly requested **no corrected-baseline measurement** and to proceed directly with the corrected improved candidate. The next boot therefore runs two canonical onepass invocations on the candidate alone. Record absolute step/s against the 22 step/s target, actual output tok/s and quality, with `no baseline on this build`; do not claim a matched consumer speedup. Evidence: `measurements/st_decode_22step_20260912/`.
+||||||| cd62b83a
+### 45차 — 단일 GPU 레인은 **srv4 한 대에서 프로덕션 옆에**: 증거는 여유 메모리, 첫 실측이 OOM 과 b12x m=8 을 가르쳐 줬다 (2026-09-13, 맥→srv2/srv4, PR #774)
+
+**결정.** PR #771 뒤의 세 갈래(5050 = WSL2 sshd + x86 이미지 + DeepGEMM 포크 소스, 스파크 한 대 옆, OST-97X 우분투)
+중 운영자가 **2 — 스파크 한 대 옆** 을 골랐다. 맥은 안 된다: 검사가 전부 CUDA(Triton·TileLang·CuTe DSL·DeepGEMM
+JIT·nvcc MLA·b12x)다.
+
+**설계.** 단일 레인의 기본 호스트는 srv4(`FLEET_SINGLE_GPU_HOST`), 프로덕션이 서빙 중인 박스다. 옆에서는 GPU 가
+"비어 있는" 순간이 없으니 증거는 **여유**다: 그 박스의 MemAvailable 에서 검사의 예산(`ST_PROBE_GIB`, 기본 8 GiB)을
+뺀 값이 `--test` 부팅이 지키는 16 GiB 바닥(`boot.TEST_FLOOR_GIB`)을 넘어야 하고, 박스당 프로브 컨테이너는 하나,
+못 닿으면 여유 없음(D3). 플릿 박스에서는 두 레인이 서로 배타다 — 플릿 **boot** 는 그 박스의 빈 메모리를 admission 에
+쓰고, 검사는 earlyoom 이 먼저 찾을 표적이니까 — 서빙 옆에서는 동시에 돈다. 러너는 그 박스에서 **프로덕션이 돌리는
+이미지**(`docker inspect st-glm53`)로 컨테이너를 띄우고 리스는 잡지 않는다. #770(리스를 큐 아래로) 위에 다시 세웠다:
+단일 레인은 여전히 리스와 무관하고, 배타 규칙은 리스·점유 검사 바로 뒤에 선다. `FLEET_RULES=4`. 한 박스 안에서만
+성립하는 규칙이라 `on_fleet`(srv1-4·패브릭 주소·spark*)이 이름으로 가르고, 제 것인 박스(ost-97x)에서는 레인이 서로
+안 기다린다.
+
+**실측 1 — 01:06, srv2 에서 라이브 큐에 티켓(브랜치 7bd41141, LOGD 는 임시 디렉터리라 공유 진입점을 건드리지 않았다).**
+분류 "needs one GPU, not four" → preflight PASS → GO(holder-single) → srv4 에 rsync, 이미지 `st-engine:decode22-a`
+(그 순간 srv4 에는 codex 세션의 부팅 `st-decode22-A` 가 6 분째) → 임포트 76 모듈 OK → 첫 `torch.randn(device="cuda")`
+에서 **CUDA out of memory**, 10 초 만에 실패. MemAvailable 은 26.7 GiB 였다. 원인: 그 숫자는 페이지 캐시를 세고, 방금
+부팅이 free 페이지를 다 fault 한 뒤라 **장치 할당이 쓸 수 있는 페이지가 없었다** — 엔진의 arena 가 정확히 같은 이유로
+`touch_pages` 를 하는 것(`engine/base/arena.py prepare_allocation`)을 레인은 몰랐다. 바닥 규칙만으로는 부족하다.
+
+**보강(5fb71658).** 러너가 컨테이너 직전에 `fleet_single.py reclaim` 을 그 박스에서 돌린다: MemFree 가 예산을 덮으면
+그대로, 아니면 바닥 안에서 예산만큼 익명 페이지를 `MAP_POPULATE` 로 잠깐 잡았다 놓아 캐시를 밀어낸다(arena 의
+touch_pages 그대로); 그래도 모자라면(`short`) 박스가 아직 fault 중인 것(부팅)이니 기다린다. srv2→srv4 실측: evidence
+는 도는 중인 프로브를 `a probe is already running there (st-probe-srv2-2705884)` 로 잡았고, reclaim 은 MemFree
+14.9/85 GiB 에서 각각 rc 0.
+
+**실측 2 — 01:08~01:12, 같은 티켓을 다시(보강 전 코드).** 요청 직후 큐가 `hold refused (single): srv4: no room beside
+production -- MemAvailable 23.7 GiB, this check's budget 8.0 GiB, floor 16.0: 15.7 GiB would be left` 로 20 초 기다리게
+했고(가드가 처음으로 일했다), 여유가 생기자 GO → 페이로드 196 초: kda 6 케이스 통과, mhc(1·6·8·65 토큰) 수치, indexer·
+kpool 통과, mla 부팅 자가검사·그래프 재생 3 통과, moe m=1 통과, moe_graph 통과 — 그리고 **moe m=8 에서 `b12x
+migration` 오차 0.295 > 허용 0.02 로 실패**. 바로 앞에 `compiled micro kernel did not expose a CUDA library ->
+disabling the direct micro MoE backend` 경고가 있었다. 이건 **이미지 `st-engine:decode22-a`(codex 세션의 후보 빌드)에
+대한 판정**이지 레인의 결함이 아니다 — 레인이 플릿을 안 잡고 3 분 만에 그걸 찾아낸 것이 이 항목의 실측이다. 로그
+`fleet/run-logs/8f920027…log`, 원장 행 `st-kc-lane single 3m`. 그 빌드의 주인이 볼 일이다(칩으로 띄움).
+
+**한계.** (1) 랭크 파일 넷이 필요한 검사는 한 노드에서 못 돈다(srv4 에는 `rank3of4` 뿐) — `run --gpu --fleet`.
+지금 레인의 일감은 `engine_kernel_check.py` 다. (2) 예산은 선언값이지 잰 값이 아니다: 예산보다 더 먹는 검사는 여전히
+earlyoom 의 몫이고, 무거운 검사는 `ST_PROBE_GIB` 를 올려 그만큼의 여유를 기다리게 한다. (3) 세션 부팅(리스 kind
+`session`)은 큐의 holder 가 아니라 배타 규칙이 못 본다 — 실측 1 이 그 창이었고, 지금은 reclaim/MemFree 대기가 막는다.
+
+**검증.** 맥: `test_fleet_single` 17(여유·프로브·불통·reclaim 의 넷·호스트 판별 셸/파이썬 일치·캐시·셸 시나리오 셋),
+`test_fleet_experiments` 의 실제 승인 함수 추출 테스트(#770 이후 main 에서 `st_engine_up`·`lease_mine` 미정의로 빨갛던
+것을 스텁으로 고침), `test_engine_fleet_lease`(`FLEET_RULES` 는 "3 이상"으로), fleet_queue·queue_lease_shell·onepass·
+source·ledger_numbering·docs_status — 이 맥에서 돌 수 있는 것 전부 통과. CI engine check success(7bd41141, 5fb71658).
+`FLEET_AUDIT` 갱신. 실물: 위의 둘.
