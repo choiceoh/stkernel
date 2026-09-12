@@ -90,6 +90,8 @@ class PrefixCache:
         self.tick = 0
         self.hits = self.misses = self.evictions = 0
         self.fades = 0                            # boundaries that gave a snapshot away and kept their blocks
+        self.snapshot_denials = 0                 # times `take_snapshot` had nothing to give: every entry was spilling
+        self.last_fade: "bytes | None" = None     # the boundary the last `take_snapshot` displaced, for the caller to recognise
         self.pool = None
         self.tier_keys: "dict[bytes, int]" = {}   # boundaries whose blocks + snapshot the prefix tier holds (base/runner spills them)
         self.tier_owner: "dict[int, bytes]" = {}  # and the inverse, which is what makes the tier's short key safe (below)
@@ -272,12 +274,23 @@ class PrefixCache:
 
     def take_snapshot(self) -> "int | None":
         """A free snapshot slot, taking one from a boundary if none is free (`_victim`). The boundary keeps its blocks
-        when the tier has its state (`_fade`) and is gone when it does not."""
+        when the tier has its state (`_fade`) and is gone when it does not.
+
+        `last_fade` names whoever was displaced, so the caller can tell whether it just evicted one of its own earlier
+        boundaries -- a long prompt has more block boundaries than there are slots (a 128K prompt: 170 against 96), and
+        `_victim` sends the unadopted ones first, which are exactly its own. That is the intended order (45차 §23: the
+        system prompt every conversation shares must survive one long prompt), but the checkpoints it throws away were
+        still computed, and until `snapshot_self_evicts` is read nobody knows how much of that work is being wasted."""
+        self.last_fade = None
         if not self.free_snaps and self.entries:
             victim = self._victim()
             if victim is not None:
                 self._fade(victim)
-        return self.free_snaps.pop() if self.free_snaps else None
+                self.last_fade = victim
+        if self.free_snaps:
+            return self.free_snaps.pop()
+        self.snapshot_denials += 1
+        return None
 
     def give_snapshot(self, snap: int) -> None:
         """A slot whose contents belong to nobody (an aborted checkpoint, a boundary that is gone)."""
