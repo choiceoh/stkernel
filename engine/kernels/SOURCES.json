@@ -295,14 +295,15 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "36ce39f77e2e48ec594cec6d39e513340212fe37d23fc04f23b650db5a82ae52",
+      "local_sha256": "9a0e3fcb3063fe7084fd4b423300b152427be448363987410e365aa16b3ae12f",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
         "Correct GB10 shared memory, cluster and PDL documentation",
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (PDL on, MK_INPUT_CTA 4, MK_INPUT_REUSE 1; probe mode = run_mla's 4th int)",
         "2026-09-12 SM121: byte ldmatrix PV loads and BF16 ldmatrix Q/P loads in both ordinary and cluster MLA; split/MMA accumulation order unchanged; adopted before timing/GPU execution validation.",
-        "2026-09-12 GB10: Q cp.async.ca joins the first KV group; empty splits skip Q; balanced cluster head ownership and coalesced global split reduction. Arithmetic order unchanged; GPU execution and timing pending."
+        "2026-09-12 GB10: Q cp.async.ca joins the first KV group; empty splits skip Q; balanced cluster head ownership and coalesced global split reduction. Arithmetic order unchanged; GPU execution and timing pending.",
+        "2026-09-12 k6 (#732): the MAX_TOK comment counts SPEC_K 6, so T = 28 of 32. Comment only -- no code, no arithmetic. This record is the hash catching up: #732 left it behind and main's check has been red on it since."
       ]
     },
     "mla/__init__.py": {

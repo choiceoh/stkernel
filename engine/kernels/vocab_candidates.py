@@ -1,4 +1,18 @@
-"""Fuse candidate key encoding and sparse restoration; selection stays in CUDA topk."""
+"""Candidate keys, and the selection over them (45차 §87).
+
+A key is `(ordered_score << 32) | (0xffffffff - id)`: one int64 that sorts exactly as the score does and breaks
+every tie toward the lower vocabulary id. Keys are therefore UNIQUE -- no two columns can carry the same one --
+so the top-k over them is a total order with one answer.
+
+Selection used to be torch's. That cost twice: `key.topk(16)` over a rank's 38,720-wide shard was 169 us against
+a 5 us read, and the merge after the exchange restored the candidates into a DENSE [rows, 154,880] fp32 tensor
+filled with -inf -- 3.1 MiB written and scanned to choose sixteen of at most sixty-four -- for another 110 us.
+The restoration existed to give torch's topk the vocabulary positions so its tie order would be the pinned one.
+`select` replaces the first of those. It does not replace the merge: `modules/vocab.topk` is pinned to torch's
+dense CUDA topk down to which of two equal scores comes first, and that order is torch's, not the keys'. What
+`select` has to be is the same SET -- and since the keys are unique, the k largest are one set. The local step
+already says so: it asks torch for `sorted=False`.
+"""
 import torch
 import triton
 import triton.language as tl
@@ -77,6 +91,33 @@ def pack(local_logits, start, valid):
     _pack[(out.shape[0], triton.cdiv(valid, 256))](
         local_logits, out, local_logits.stride(0), local_logits.stride(1), valid, start, 256)
     return out
+
+
+MIN_KEY = tl.constexpr(-9223372036854775808)   # annotation form is rejected by the JIT
+
+
+@triton.jit
+def _select(SRC, OUT, width, sS, sO, K: tl.constexpr, SEGS: tl.constexpr, BLOCK: tl.constexpr):
+    """One segment's K largest keys, descending. The keys are unique, so "largest below the last one taken"
+    is exact and the round needs no mask of what it has already used."""
+    row, seg = tl.program_id(0), tl.program_id(1)
+    col = seg * BLOCK + tl.arange(0, BLOCK)
+    keys = tl.load(SRC + row * sS + col, col < width, other=MIN_KEY)
+    limit = 0x7fffffffffffffff
+    for i in tl.static_range(K):
+        live = keys <= limit if i == 0 else keys < limit
+        limit = tl.max(tl.where(live, keys, MIN_KEY), 0)
+        tl.store(OUT + row * sO + seg * K + i, limit)
+
+
+def select(keys, k):
+    """The k largest keys of every row, descending: [rows, width] int64 -> [rows, k] int64."""
+    rows, width = keys.shape
+    block = min(2048, max(16, triton.next_power_of_2(width)))
+    segs = triton.cdiv(width, block)
+    out = torch.empty((rows, segs * k), dtype=torch.int64, device=keys.device)
+    _select[(rows, segs)](keys, out, width, keys.stride(0), out.stride(0), K=k, SEGS=segs, BLOCK=block)
+    return out if segs == 1 else select(out, k)
 
 
 def restore(gathered, vocab):

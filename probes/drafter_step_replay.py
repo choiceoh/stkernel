@@ -6,12 +6,17 @@ already gone and an eager measurement mostly reports contention.
 
 This builds a drafter whose facts are already this rank's shard -- heads 8, KV heads 2, inter 3072 at TP=4 over
 hidden 4096 and five layers -- with world size 1, so `prepare_fast`'s shard is the identity and every GEMM is
-the size the rank runs. About 600 MiB of random weights; no checkpoint, no fleet, no collectives (the TP joins
-are a no-op here, so `propose` is measured without them).
+the size the rank runs, plus a stub of the target's vocabulary head, which `propose_rows` puts the block's
+output through. About 1.5 GiB of random weights; no checkpoint, no fleet, no collectives (the TP joins are a
+no-op here, so `propose` is measured without them, and the head is BF16 where production's is FP8).
+
+A step runs `block_rows` ONCE, not once a draft: the anchor and the K masks are the same block's t = K+1 rows
+(45차 §86). The head and the selector after it cost more than the block.
 
     python3 probes/drafter_step_replay.py            the two stages, and a block by its parts
 
-Read it as a difference, not an absolute: it shares the GPU with whatever else is on it.
+Read it as a difference, not an absolute, and take differences INSIDE one process: a run-to-run gap of 600 us
+on this box is contention, not a change (45차 §86 read a 43.9 us fusion as 634 before it interleaved).
 """
 import sys
 from pathlib import Path
@@ -21,7 +26,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 from types import SimpleNamespace
 
-ROWS, K = 1, 5                       # one sequence, spec_k: six rows a block
+from engine.profiles.glm53.facts import SPEC_K   # noqa: E402  -- the profile owns k, never this probe
+
+ROWS, K = 1, SPEC_K                  # one sequence at the profile's draft width: K + 1 rows a block
+VOCAB_LOCAL = 38_720                 # 154,880 over TP=4: the head shard a rank owns
+SEL_RANK, SEL_TOP_K = 256, 16        # the candidate selector's codebook width and its candidates a position
 
 
 def build(device="cuda"):
@@ -34,14 +43,22 @@ def build(device="cuda"):
     import engine.profiles.glm53.drafter as drafter
     facts = drafter.DrafterFacts(layers=5, hidden=4096, heads=8, kv_heads=2, head_dim=128, inter=3072,
                                  rms_eps=1e-5, rope_theta=10000.0, window=2048, block=8, mask_id=3,
-                                 conv_taps=2, conv_group=16, sel_rank=8, sel_top_k=4,
+                                 conv_taps=2, conv_group=16, sel_rank=SEL_RANK, sel_top_k=SEL_TOP_K,
                                  target_layers=(1, 2, 3, 4, 5), k=K)
-    embed = torch.nn.Embedding(256, facts.hidden, device=device, dtype=torch.bfloat16)
-    comm = SimpleNamespace(world_size=1, rank=0, all_reduce=lambda x: x)
-    d = drafter.Drafter(facts, SimpleNamespace(comm=comm, embed=lambda ids: embed(ids)), 256)
+    embed = torch.nn.Embedding(VOCAB_LOCAL, facts.hidden, device=device, dtype=torch.bfloat16)
+    comm = SimpleNamespace(world_size=1, rank=0, all_reduce=lambda x: x, all_gather=lambda x, dim: x)
     gen = torch.Generator(device=device).manual_seed(3)
+    # the target's vocabulary head, this rank's shard: what `propose_rows` puts the block's output through
+    head = torch.randn(VOCAB_LOCAL, facts.hidden, device=device, generator=gen, dtype=torch.float32).bfloat16() / 64
+    target = SimpleNamespace(comm=comm, embed=lambda ids: embed(ids), rank=0, vp=VOCAB_LOCAL,
+                             head_local=lambda h: torch.nn.functional.linear(h, head))
+    d = drafter.Drafter(facts, target, VOCAB_LOCAL)
     d.p = {s.name: torch.randn(*s.shape, device=device, generator=gen, dtype=torch.float32).bfloat16() / 16
            for s in drafter.specs(facts) if not s.name.startswith("candidate_selector")}
+    for name, shape in (("candidate_selector.hidden_projection.weight", (facts.sel_rank, facts.hidden)),
+                        ("candidate_selector.predecessor_codebook", (VOCAB_LOCAL, facts.sel_rank)),
+                        ("candidate_selector.successor_codebook", (VOCAB_LOCAL, facts.sel_rank))):
+        d.p[name] = torch.randn(*shape, device=device, generator=gen, dtype=torch.float32).bfloat16() / 16
     d.prepare_fast()
     torch.cuda.empty_cache()
     return drafter, d, facts
@@ -85,18 +102,23 @@ def main():
     gen = torch.Generator(device="cuda").manual_seed(4)
     field = torch.zeros(2, F.layers, 2, module.ring_cells(F), kv, F.head_dim, device="cuda", dtype=torch.bfloat16)
     slots = torch.tensor([1], device="cuda")
-    ids = torch.randint(0, 256, (n * t,), device="cuda")
+    ids = torch.randint(0, VOCAB_LOCAL, (n * t,), device="cuda")
     positions = torch.arange(n * t, device="cuda") + 100
     ctx = torch.tensor([100], device="cuda")
     aux = torch.randn(n * t, F.hidden * len(F.target_layers), device="cuda", generator=gen).bfloat16()
     valid = torch.tensor([t], device="cuda")
     module.warm_rotary(torch.device("cuda"), F.head_dim, F.rope_theta)
 
+    anchors = torch.randint(0, VOCAB_LOCAL, (n,), device="cuda")
+    alive = torch.ones(n, dtype=torch.bool, device="cuda")
     observe = replay(lambda: d.observe_rows(field, slots, positions.view(n, t), aux, valid))
     block = replay(lambda: d.block_rows(ids, positions, slots, ctx, field, n, t))
+    propose = replay(lambda: d.propose_rows(field, slots, anchors, ctx, alive=alive))
     print(f"\n  observe_rows                      {observe:9.1f} us")
-    print(f"  block_rows (one of {F.k})             {block:9.1f} us")
-    print(f"  a step: observe + {F.k} blocks       {observe + F.k * block:9.1f} us")
+    print(f"  propose_rows                      {propose:9.1f} us")
+    print(f"    of which block_rows             {block:9.1f} us")
+    print(f"    the head and the selector       {propose - block:9.1f} us")
+    print(f"  a decode step's drafter           {observe + propose:9.1f} us")
 
     from engine.kernels.draft_attention import draft_attention
     x = torch.randn(n * t, F.hidden, device="cuda", generator=gen).bfloat16()

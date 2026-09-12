@@ -42,7 +42,8 @@ class W4Pack:
 
 
 GPTQ_ACT_ORDER = True       # columns in decreasing Hessian-diagonal order with static groups (45차 §23 GPU 판정 7차)
-TILE = 4096                 # the decode kernel's widest K: a wider weight is a sequence of tiles, fp32-accumulated
+TILE = 4096                 # one GPTQ tile of K: a wider weight is packed as a sequence of them
+KMAX = 20480                # the decode kernel's widest K (kernels.cu KBLK_LIMIT): the drafter's fc, whole
 
 
 def _tile_pack(codes, scales, shift, n, k0, k1):
@@ -104,10 +105,35 @@ def pack_w4_wide(weight, hessian, *, per_row=True, act_order=None, factor=None):
     return packs
 
 
+def _fold(packs):
+    """One pack out of a wide weight's K tiles, when they are tiles of one quantisation.
+
+    `pack_wide` and `pack_w4_wide` take the row shift over the whole K and hand every tile the same one, so
+    their tiles differ only in which columns they hold: concatenating the tile-major data and scales along the
+    k-tile axis IS the wide pack the kernel wants. It matters because the call that used to walk them summed
+    each tile's output AFTER the launch had already rounded it to bf16 -- five launches, five roundings, four
+    adds and a cast for one product. Folded, the k blocks accumulate in fp32 inside the kernel and round once.
+
+    The tiles a first, uncalibrated boot files take their shift per tile (kernels/dense/packing), so those do
+    not fold and are left as they are; the next boot's store packs the weight whole.
+    """
+    packs = list(packs)
+    if len(packs) < 2 or sum(p.cols for p in packs) > KMAX:
+        return packs
+    first = packs[0]
+    if not all(p.rows == first.rows and p.calibrated == first.calibrated
+               and p.rowscale.shape == first.rowscale.shape and torch.equal(p.rowscale, first.rowscale)
+               for p in packs[1:]):
+        return packs
+    return [W4Pack(torch.cat([p.data for p in packs], 1).contiguous(),
+                   torch.cat([p.scale for p in packs], 1).contiguous(),
+                   first.rowscale, first.rows, sum(p.cols for p in packs), first.calibrated)]
+
+
 def w4_gemm(x, pack):
-    if (x.ndim != 2 or not 1 <= x.shape[0] <= 32 or x.shape[1] != pack.cols
+    if (x.ndim != 2 or not 1 <= x.shape[0] <= 32 or x.shape[1] != pack.cols or x.shape[1] > KMAX
             or x.dtype != torch.bfloat16 or x.device != pack.data.device):
-        raise ValueError("W4 decode requires 1..32 BF16 rows matching the bound pack")
+        raise ValueError("W4 decode requires 1..32 BF16 rows matching the bound pack, K at most 20480")
     out = torch.empty(x.shape[0], pack.rows, dtype=x.dtype, device=x.device)
     extension().run_gemm(x.contiguous(), pack.data, pack.scale, out, pack.rows,
                          1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
@@ -151,7 +177,8 @@ class DenseLinear:
                 key = name if self.cols <= TILE else f'{name}.k{start//TILE}'
                 packs.append(store.pack(w, key, smooth=None if smooth is None else smooth[start:start+TILE]) if store is not None else
                              pack_w4(w, hessian=None if hessians is None else hessians[start//TILE]))
-        self.packs = tuple(packs)
+        self.packs = tuple(_fold(packs))
+        packs.clear()                     # the folded copy is the pack now; the tiles are 42 MiB of nothing
         self.calibrated = all(p.calibrated for p in self.packs)
         if prefill:
             # the FP8 lane's weights: GPTQ on the fp8 grid from the same calibration, else round-to-nearest
@@ -185,10 +212,14 @@ class DenseLinear:
             if len(self.packs) == 1:
                 out = w4_gemm(flat, self.packs[0])
             else:
+                # tiles whose row shifts disagree cannot be one pack (see `_fold`), so they are still summed
+                # here -- and each addend has already been rounded to bf16 by its own launch
                 acc = None
-                for i, pack in enumerate(self.packs):
-                    partial = w4_gemm(flat[:, i*4096:i*4096+pack.cols], pack).float()
+                at = 0
+                for pack in self.packs:
+                    partial = w4_gemm(flat[:, at:at+pack.cols], pack).float()
                     acc = partial if acc is None else acc+partial
+                    at += pack.cols
                 out = acc.bfloat16()
         else:
             if self.fp8 is None:
