@@ -142,7 +142,11 @@ class KdaRingTests(unittest.TestCase):
                     # FP32 arithmetic tolerance. Pointer dtype changes compiler
                     # tiling: round-to-nearest ties need not choose identical
                     # FP16 bits when FP32 sums differ by a few ULPs.
-                    self.equal(actual, out, f'T={t} slot={physical} ctx={context} output')
+                    # Both outputs have already rounded to BF16; allow its
+                    # representable spacing plus the FP32 recurrence tolerance.
+                    output_tolerance = out.float().abs() * torch.finfo(out.dtype).eps + out.float().abs().max() * 3e-6
+                    self.assertTrue(((actual.float() - out.float()).abs() <= output_tolerance).all(),
+                                    f'T={t} slot={physical} ctx={context}: output beyond rounding')
                     target = expected.as_strided(ring.shape, ring.stride(), ring.storage_offset())
                     for i, state in enumerate(states):
                         row = (context + i) % ring.shape[1]
