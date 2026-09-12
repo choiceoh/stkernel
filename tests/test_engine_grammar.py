@@ -93,6 +93,9 @@ class GrammarTests(unittest.TestCase):
         masks.apply("row", logits)
         self.assertEqual(sorted((~torch.isinf(logits[0])).nonzero().flatten().tolist()), sorted(ends))
 
+    def test_the_real_compiler_and_kernel_qualify_together(self):
+        self.grammars.qualify("cpu")                       # what boot does, on the tokenizer this test built
+
     def test_json_schema_is_enforced(self):
         m = self.grammars.matcher({"type": "json_schema", "schema": '{"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]}'},
                                   max_rollback=2)
@@ -110,6 +113,10 @@ class _Xgr:
     def __init__(self, words, allow, refuse=(), needed=True):
         self.words, self.allow, self.refuse, self.needed = words, list(allow), set(refuse), needed
         self.accepted, self.rolled, self.fills = [], 0, []
+
+    # -- the compiler's half (what `qualify` reaches for) ---------------------------------
+    def compile_builtin_json_grammar(self):
+        return "builtin"
 
     # -- the module's half --------------------------------------------------------------
     def GrammarMatcher(self, compiled, max_rollback_tokens):
@@ -152,12 +159,14 @@ class _Xgr:
 
 def fake(allow=(1, 5, 70), vocab=128, refuse=(), needed=True):
     """A `Grammars` with the fake module under it: the real buffers, the real walk, no xgrammar."""
+    from concurrent.futures import ThreadPoolExecutor
     from engine.base.grammar import Grammars, Matcher
     g = Grammars.__new__(Grammars)
     g.xgr = _Xgr((vocab + 31) // 32, allow, refuse, needed)
     g.vocab_size, g.words = vocab, (vocab + 31) // 32
     g.staging = g.landing = g.crossed = None
     g._cache, g._lock = {}, threading.Lock()
+    g.compiler, g._pool = g.xgr, ThreadPoolExecutor(max_workers=1)
     return g, Matcher(g, None, 5)
 
 
@@ -249,12 +258,47 @@ class StepBufferTests(unittest.TestCase):
     def test_the_crossing_happens_once_after_the_walk_not_inside_it(self):
         source = (Path(__file__).resolve().parents[1] / "engine/base/grammar.py").read_text()
         code = source[source.index("from __future__"):]          # the prose above says what the code must not do
-        body = code[code.index("    def prepare(self"):code.index("    def warm(self")]
+        body = code[code.index("    def prepare(self"):code.index("    def qualify(self")]
         self.assertLess(body.index("for key, matcher, drafts in rows"), body.index(".copy_("))
         self.assertEqual(body.count(".copy_("), 1, "one transfer for the step, not one per row")
         # the kernel writes -inf; we never build a vocabulary of bool, and a fill overwrites its row, so no reset
         self.assertEqual(code.count("masked_fill"), 0, "the mask is the kernel's, not a bool vocabulary's")
         self.assertEqual(code.count("reset_token_bitmask("), 0, "a fill overwrites its row: a reset is a second memset")
+
+
+class QualifyTests(unittest.TestCase):
+    """What cannot be masked does not boot (D3): the kernel's verdict on the device is compared with the same
+    packed words expanded on the host, and a mask that allows everything or nothing fails too."""
+
+    def setUp(self):
+        try:
+            import torch  # noqa: F401
+        except ImportError as exc:
+            self.skipTest(str(exc))
+
+    def test_a_kernel_that_agrees_with_the_bitmask_qualifies(self):
+        g, _ = fake()
+        g.qualify("cpu")                                   # no raise
+
+    def test_a_kernel_that_masks_the_wrong_ids_fails_the_boot(self):
+        g, _ = fake()
+        real = g.xgr.apply_token_bitmask_inplace
+
+        def wrong(logits, bitmask, *, vocab_size=None, indices=None):
+            real(logits, bitmask, vocab_size=vocab_size, indices=indices)
+            logits[0, 1] = float("-inf")                   # one id the words said was allowed
+        g.xgr.apply_token_bitmask_inplace = wrong
+        with self.assertRaises(RuntimeError) as caught:
+            g.qualify("cpu")
+        self.assertIn("disagrees with the bitmask", str(caught.exception))
+
+    def test_a_mask_that_allows_everything_fails_the_boot(self):
+        """All-true at a JSON start means the head and the tokenizer disagree about the vocabulary -- every
+        later mask would inherit that silently."""
+        g, _ = fake(allow=range(128))
+        with self.assertRaises(RuntimeError) as caught:
+            g.qualify("cpu")
+        self.assertIn("do not agree on the vocabulary", str(caught.exception))
 
 
 class ReasoningGateTests(unittest.TestCase):

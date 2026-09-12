@@ -83,15 +83,15 @@ def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
     """base/grammar.Grammars over the checkpoint's tokenizer, on every rank (each row's matcher runs everywhere), or None
     where xgrammar is not installed -- then response_format is refused at the door (D3), never silently unenforced.
 
-    `device`: warm the mask kernel here. It is a Triton kernel, so its JIT is a second, and the first structured
-    request is not the place to pay it (45차 §23 B2, the same rule as every other first-use cost)."""
+    `device`: prove the mask kernel here and pay its Triton JIT here (45차 §23 B2, the same rule as every other
+    first-use cost -- and the same shape as `vision.qualify`: what cannot be served does not boot, D3)."""
     from engine.base import grammar
     if not grammar.available():
         return None
     from transformers import AutoTokenizer
     g = grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab, stop_token_ids=stop_token_ids)
     if device is not None:
-        g.warm(device)
+        g.qualify(device)
     return g
 
 
@@ -550,7 +550,7 @@ def fleet(a) -> int:
                                f"`python3 engine/profiles/glm53/preshard.py --vision --out {a.ranks}` (45차 §23 A7)")
         with rec.phase("qualify vision"):
             paid.update(engine.vision.qualify())            # the largest image and video, before the door opens (D3)
-        with rec.phase("warm grammar"):
+        with rec.phase("qualify grammar"):
             engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)   # response_format (json_object / json_schema), every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
