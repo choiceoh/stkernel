@@ -168,3 +168,17 @@ class OptionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ValidateTests(unittest.TestCase):
+    """adapter.validate runs on every rank inside the step loop: C-speed, and still strict."""
+
+    def test_validate_rejects_what_it_must_and_accepts_the_rest_without_a_python_loop(self):
+        from types import SimpleNamespace
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = SimpleNamespace(F=SimpleNamespace(vocab=100))
+        ok = lambda ids: Glm53Engine.validate(e, ids, 4, 0.0)          # noqa: E731
+        ok(list(range(100)))
+        for bad in ([], [1, 100], [-1], [1.5, 2], [1, "2"], [None]):
+            with self.assertRaises((ValueError, TypeError)):
+                ok(bad)
