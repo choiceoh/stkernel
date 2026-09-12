@@ -105,6 +105,21 @@ class OptionTests(unittest.TestCase):
         h.forget(0)
         self.assertNotIn(0, h.rows)
 
+    def test_a_handful_of_forbidden_ids_needs_no_vocabulary_of_true(self):
+        logits = torch.zeros(6)
+        seen, counts = self.history(6, [], [])
+        out = process_logits(logits, {}, seen, counts, forbid=torch.tensor([1, 4]))
+        self.assertTrue(torch.isinf(out[1]) and torch.isinf(out[4]))
+        self.assertEqual([float(out[i]) for i in (0, 2, 3, 5)], [0.0] * 4)
+
+    def test_a_grammar_mask_and_a_forbidden_list_both_apply(self):
+        logits = torch.zeros(4)
+        seen, counts = self.history(4, [], [])
+        out = process_logits(logits, {}, seen, counts, mask=torch.tensor([True, True, False, True]),
+                             forbid=torch.tensor([0]))
+        self.assertTrue(torch.isinf(out[0]) and torch.isinf(out[2]))
+        self.assertEqual([float(out[i]) for i in (1, 3)], [0.0, 0.0])
+
     def test_picking_every_row_at_once_draws_what_picking_them_one_by_one_would(self):
         from engine.base.sampler import draw, pick_each
         rows = [torch.softmax(torch.randn(16, generator=torch.Generator().manual_seed(i)), -1) for i in range(4)]

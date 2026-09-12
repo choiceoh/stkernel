@@ -177,12 +177,17 @@ class History:
 
 
 def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, counts: torch.Tensor,
-                   extra=(), decodable: "int | None" = None, mask: "torch.Tensor | None" = None) -> torch.Tensor:
+                   extra=(), decodable: "int | None" = None, mask: "torch.Tensor | None" = None,
+                   forbid: "torch.Tensor | None" = None) -> torch.Tensor:
     """One row's raw logits [V] fp32 -> the logits the pick is made from: logit_bias, repetition/presence/frequency
     penalties over the row's tokens, the decodable cut and an optional grammar mask (True = allowed).
 
     `seen` and `counts` come from `History`. `extra` is this step's drafts before this position: they belong to both
     and are applied as a correction, because rebuilding either for five ids would cost the whole prompt.
+
+    `mask` and `forbid` are not the same thing. A grammar allows a set the size of the vocabulary and has to be
+    given as one; min_tokens forbids a handful of end tokens, and writing those few is cheaper than building a
+    vocabulary of True to say so.
     """
     out = logits.float().clone()
     bias = options.get("logit_bias")
@@ -205,6 +210,8 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
         out -= (freq or 0.0) * counted + (pres or 0.0) * (counted > 0).float()
     if decodable is not None and out.shape[-1] > decodable:
         out[decodable:] = float("-inf")
+    if forbid is not None:
+        out[forbid] = float("-inf")
     if mask is not None:
         out = out.masked_fill(~mask, float("-inf"))
     return out
