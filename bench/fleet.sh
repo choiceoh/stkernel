@@ -127,15 +127,79 @@ serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^glm53$'; 
 # nodes running st-glm53 while status said FREE).
 # Containers AND the lease: the two disagreed once and the queue granted while the lease
 # was still held, so three reservations died on it in two seconds each (2026-09-12).
-st_engine_up() {
-  docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-' && return 0
-  local repo=${FLEET_RUNNER_REPO:-$REPO}
-  [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 1
-  ( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"
-    held=$(fleet_lease read 2>/dev/null) || exit 1
-    case "$held" in free|free\ *) exit 1 ;; *) exit 0 ;; esac )
+#
+# Two more ways FREE was wrong, both closed here (2026-09-12 evening):
+#   - the look was LOCAL. This queue's node is one of four, so a fleet whose rank 0 had
+#     gone while the other three still held their GPUs read exactly like an empty one.
+#   - "I could not tell" answered FREE. A missing lease helper and an unreadable lease
+#     both fell through to `return 1` -- and free is the single answer an occupancy check
+#     may never give from ignorance. Every unknown below is EVIDENCE: it refuses, and the
+#     status line says which node or which file could not be read.
+# The two cheap sources (this node's docker, the head's lease file) are read every time.
+# Only the three remote `docker ps` are cached, because _try_hold asks once a second.
+ST_PROBE=$FLEET_DIR/.st-engine-elsewhere
+ST_PROBE_TTL=${ST_PROBE_TTL:-20}
+st_is_here() { case " $(hostname -I 2>/dev/null) " in *" $1 "*) return 0 ;; esac; return 1; }
+st_engine_elsewhere() {   # the nodes this one cannot see, in parallel; cached for TTL seconds
+  local age tmp ip
+  if [ -f "$ST_PROBE" ]; then
+    age=$(( $(now) - $(stat -c %Y "$ST_PROBE" 2>/dev/null || echo 0) ))
+    [ "$age" -ge 0 ] && [ "$age" -le "$ST_PROBE_TTL" ] && { cat "$ST_PROBE"; return 0; }
+  fi
+  tmp=$(mktemp -d) || return 0
+  for ip in ${FLEET_NODES_IPS:-10.10.10.1 10.10.10.2 10.10.10.3 10.10.10.4}; do
+    st_is_here "$ip" && continue
+    ( if out=$(timeout "${ST_PROBE_TIMEOUT:-6}" ssh -o BatchMode=yes -o ConnectTimeout=4 \
+                 "choiceoh@$ip" "docker ps --format '{{.Names}} {{.Status}}'" 2>/dev/null); then
+        printf '%s\n' "$out" | grep -E '^st-' | head -1 | sed "s|^|$ip: |" > "$tmp/$ip"
+      else
+        echo "$ip: unreachable -- this node cannot say the fleet is free" > "$tmp/$ip"
+      fi ) &
+  done
+  wait
+  cat "$tmp"/* 2>/dev/null | grep -v '^[[:space:]]*$' > "$ST_PROBE.$$"
+  rm -rf "$tmp"; mv -f "$ST_PROBE.$$" "$ST_PROBE" 2>/dev/null || rm -f "$ST_PROBE.$$"
+  cat "$ST_PROBE" 2>/dev/null
 }
-st_engine_line() { docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^st-' | head -1; }
+st_engine_lease() {   # the launcher's own lock on the head: silence only when it says free
+  local repo=${FLEET_RUNNER_REPO:-$REPO} held
+  [ -f "$repo/launchers/lib/fleet-lease.sh" ] \
+    && held=$( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"; fleet_lease read 2>&1 ) \
+    || { echo "lease: unreadable from $repo -- this node cannot say the fleet is free"; return 0; }
+  case "$held" in free|free\ *) return 0 ;; *) echo "lease: $held" ;; esac
+}
+st_engine_evidence() {   # every reason to believe these four nodes are not ours; empty = free
+  local here
+  here=$(docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^st-' | head -1)
+  [ -z "$here" ] || echo "$(me): $here"
+  st_engine_lease
+  st_engine_elsewhere
+}
+st_engine_up() { [ -n "$(st_engine_evidence)" ]; }
+st_engine_line() { st_engine_evidence | paste -sd';' - | sed 's/;/; /g' | cut -c1-240; }
+# A queue answer is only as new as the copy that computed it, and `status` reads live files
+# with whatever rules the caller's checkout happens to carry. On 2026-09-12 a session ran
+# `cd ~/stkernel && bash bench/fleet.sh status` on the controller itself and was told FREE
+# while four nodes served: that checkout was 5e0216cf, from before the check above existed,
+# and the same command from a current tree said "TAKEN by the ST engine".
+#
+# Hashes and mtimes cannot judge that -- a fresh checkout of an old branch is new by both.
+# So the ANSWERS carry a number. Bump FLEET_RULES whenever what this queue reports about
+# occupancy or admission changes; a copy below the shared entry's number says so before it
+# answers, and preflight's sync (which copies $REPO over $LOGD/fleet.sh) refuses to move the
+# shared entry backwards. Copies older than this number cannot warn -- nothing inside them
+# knows there is anything to warn about -- but from here on the class reports itself.
+FLEET_RULES=1
+entry_rules() { sed -n 's/^FLEET_RULES=\([0-9][0-9]*\).*/\1/p' "${1:?file}" 2>/dev/null | head -1; }
+entry_line() {
+  local entry=$LOGD/fleet.sh theirs
+  [ -f "$entry" ] || return 0
+  theirs=$(entry_rules "$entry")
+  [ -n "$theirs" ] && [ "$theirs" -gt "$FLEET_RULES" ] || return 0
+  echo "  OLDER RULES: $0 answers by rules $FLEET_RULES; $entry is at $theirs."
+  echo "               Refresh this checkout before trusting FREE -- that is how a tree from"
+  echo "               before the ST-engine check reported an empty fleet with four nodes serving."
+}
 # Refusing is not enough: a queued session would then wait for a human to go and ask.
 # The ST engine can be ASKED to finish, park its conversations and let go, so the queue
 # asks on the waiter's behalf -- once per refusal, and never for a holder that predates
@@ -168,8 +232,16 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
       --repo "${FLEET_RUNNER_REPO:-$REPO}" --cwd "$PWD" --kind "$kind" -- "$@" || return 1
   fi
   for pair in "ab-lever2.sh:bench/ab-lever.sh" "fleet.sh:bench/fleet.sh"; do
-    local copy=$LOGD/${pair%%:*} src=$REPO/${pair#*:}
+    local copy=$LOGD/${pair%%:*} src=$REPO/${pair#*:} have want
     [ -f "$copy" ] || continue
+    # The sync is one-directional in code but not in effect: it copies whatever $REPO the
+    # caller ran from over the shared entry, so a stale checkout used to be able to move
+    # everyone's copy backwards. The rules number decides -- equal or newer syncs, older
+    # is refused and named (2026-09-12).
+    have=$(entry_rules "$copy"); want=$(entry_rules "$src")
+    if [ -n "$have" ] && [ "$have" -gt "${want:-0}" ]; then
+      echo "  FAIL $copy is at rules $have and $src is at ${want:-0}: refusing to move the shared entry back"; ok=0; continue
+    fi
     if [ "$(md5sum < "$copy")" = "$(md5sum < "$src")" ]; then echo "  PASS $copy == repo"
     elif cp "$src" "$copy.new" 2>/dev/null && chmod +x "$copy.new" && bash -n "$copy.new" 2>/dev/null && mv "$copy.new" "$copy"; then
       # a stale copy is only ever a stale copy: sync it from the repo (the
@@ -646,7 +718,8 @@ case "$cmd" in
     exec python3 "$runner/bench/fleet_boot.py" "$runner/bench/fleet.sh" "$s" "$est" "$note" "$@";;
   status)
     echo "fleet: $( [ -s "$H" ] && { holder_alive && echo "HELD by $(holder_line)" || echo "held by DEAD $(holder_line)"; } \
-                  || { st_engine_up && echo "TAKEN by the ST engine, outside this queue ($(st_engine_line))" || echo FREE; } )"
+                  || { st_engine_up && echo "TAKEN by the ST engine, outside this queue -- $(st_engine_line)" || echo FREE; } )"
+    entry_line
     remaining=0
     if [ -s "$H" ]; then
       IFS='|' read -r hs hpid hhost ht0 hest hnote hkind < "$H"; held=$(( ($(now) - ht0) / 60 ))
