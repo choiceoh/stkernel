@@ -84,11 +84,13 @@ def main():
         layers = list(range(F.layers))
     torch.manual_seed(13)
     _, net, caches, _, _ = build(IsolatedRank(), layers, served(), a.ranks, .25, max(2, a.seqs), False,
-                                 Recorder("profile"), ckpt_meta=a.ckpt_meta)
+                                 Recorder("profile"), ckpt_meta=a.ckpt_meta, execution="native")
     t = F.spec_k + 1
     print(f"weights loaded: {len(layers)} layers, {a.seqs} row(s) of {t} tokens", flush=True)
 
-    graphs = Glm53DecodeGraphs(net, caches, max(2, a.seqs), t)
+    aux_layers = tuple(L for L in (5, 14, 24, 33, 42) if L in layers)
+    graphs = Glm53DecodeGraphs(net, caches, max(2, a.seqs), t, aux_layers=aux_layers,
+                              ceiling=8192)
     slots = [caches.slots.take(i) for i in range(a.seqs)]
     for i in range(a.seqs):
         caches.pool.reserve(i, 4352)
@@ -99,6 +101,8 @@ def main():
         graphs.run(step)
     torch.cuda.synchronize()
     print("captured and warm", flush=True)
+    print(f"execution=native, W4 layers={sum(bool(p.executed & 1) for p in net.dense.values() if hasattr(p, 'packs'))}, "
+          f"mHC layers={len(net.mhc.executed)}, auxiliary layers={aux_layers}", flush=True)
 
     with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
         for _ in range(a.steps):

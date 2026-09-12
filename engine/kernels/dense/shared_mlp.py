@@ -54,3 +54,31 @@ class SharedMLP:
         down.executed |= 1
         self.executed = True
         return out
+
+
+class SharedOverlap:
+    """Fork shared W4 work around routed MoE, then join before any next GEMM.
+
+    The callback may run the router and routed-expert kernel only: it cannot
+    invoke another native dense GEMM, whose device scratch this branch owns.
+    Every invocation rejoins its parent stream, including Python failures.
+    """
+    def __init__(self, device):
+        self.stream = torch.cuda.Stream(device=device)
+        self.executed = False
+
+    def __call__(self, shared, x, routed):
+        parent = torch.cuda.current_stream(x.device)
+        if parent == self.stream:
+            raise ValueError("shared overlap requires a distinct parent stream")
+        self.stream.wait_stream(parent)
+        try:
+            with torch.cuda.stream(self.stream):
+                partial = shared(x)
+                x.record_stream(self.stream)
+            output = routed()
+        finally:
+            parent.wait_stream(self.stream)
+        partial.record_stream(parent)
+        self.executed = True
+        return output + partial

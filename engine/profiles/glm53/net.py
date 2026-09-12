@@ -155,6 +155,7 @@ class Glm53Net:
         self.p = None
         self.dense = {}
         self.shared_mlp = {}
+        self.shared_overlap = None
         self._router_weights = {}
         self.prefill_transport = None
         self.mhc = None
@@ -297,10 +298,12 @@ class Glm53Net:
             self.p["head"]=None
         from engine.kernels.dense.mhc import MHC
         self.mhc = MHC({key: weight for key, weight in self.p.items() if key.endswith(("hc.attn_fn","hc.ffn_fn"))})
-        from engine.kernels.dense.shared_mlp import SharedMLP
+        from engine.kernels.dense.shared_mlp import SharedMLP, SharedOverlap
         self.shared_mlp = {L: SharedMLP(self.dense[f"L{L}.moe.sh_gate_up"],
                                         self.dense[f"L{L}.moe.sh_down"], self.F.swiglu_limit)
                            for L in self.layers if self.F.is_moe(L)}
+        if self.shared_mlp:
+            self.shared_overlap = SharedOverlap(self.p["norm"].device)
 
     @operation("linear", name_arg=2)
     def linear(self, x, name):
@@ -570,6 +573,12 @@ class Glm53Net:
     @operation("moe", layer_arg=1)
     def _moe(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
+        if self.shared_overlap is not None and x.shape[0] <= 32:
+            def routed():
+                sel, w = self.route(L, x)
+                return self._experts[L](x, sel, w)
+            joined = self.shared_overlap(self.shared_mlp[L], x, routed)
+            return (reduce or self.comm.all_reduce)(joined)
         sel, w = self.route(L, x)
         out = self._experts[L](x, sel, w)
         if L in self.shared_mlp and x.shape[0] <= 32:

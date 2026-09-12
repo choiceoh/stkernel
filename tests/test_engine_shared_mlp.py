@@ -102,6 +102,38 @@ class SharedMLPTests(unittest.TestCase):
             finally:
                 graph.reset()
 
+    def test_shared_branch_rejoins_before_next_layer_and_on_error(self):
+        from engine.kernels.dense.shared_mlp import SharedOverlap
+        gu, down, fused = self.layers()
+        overlap = SharedOverlap("cuda")
+        x = torch.randn(7, 4096, device="cuda", dtype=torch.bfloat16)
+        routed_weight = torch.randn(4096, 512, device="cuda", dtype=torch.bfloat16) * .02
+        def routed(value):
+            return (value @ routed_weight) @ routed_weight.T
+        def step():
+            y = overlap(fused, x, lambda: routed(x))
+            return overlap(fused, y, lambda: routed(y))
+        step()
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            actual = step()
+        try:
+            for _ in range(5):
+                x.normal_()
+                y = routed(x) + fused(x)
+                expected = routed(y) + fused(y)
+                graph.replay()
+                self.assertTrue(torch.equal(actual, expected))
+        finally:
+            graph.reset()
+        def fail():
+            raise RuntimeError("routed failed")
+        with self.assertRaisesRegex(RuntimeError, "routed failed"):
+            overlap(fused, x, fail)
+        # A failed callback must also join; this native GEMM shares scratch
+        # with the just-enqueued branch and therefore exercises that edge.
+        self.close(fused(x), self.reference(x, gu, down))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,7 +26,7 @@ def _time(graph, iterations=256, flush=None):
     return start.elapsed_time(end) / iterations
 
 
-def shared_mlp(report):
+def shared_mlp(report, native):
     from tests.test_engine_shared_mlp import SharedMLPTests
     gu, down, fused = SharedMLPTests.layers()
     for rows in (7, 28):
@@ -40,6 +40,50 @@ def shared_mlp(report):
                    scope="same-pack captured component; not consumer speed")
         finally:
             base.reset(); cand.reset()
+    # The independent routed branch is the real serving CuTe lane, so this
+    # also catches races between its workspace and native W4 graph scratch.
+    from engine.kernels.dense.shared_mlp import SharedOverlap
+    from engine.modules.nvfp4_sf import swizzle_sf
+    experts, hidden, width = 288, 4096, 512
+    w13 = torch.randint(0, 256, (experts, 2 * width, hidden // 2), device="cuda", dtype=torch.uint8)
+    w2 = torch.randint(0, 256, (experts, hidden, width // 2), device="cuda", dtype=torch.uint8)
+    s13 = torch.stack([swizzle_sf(torch.full((2 * width, hidden // 16), .015625, device="cuda").to(torch.float8_e4m3fn))
+                       for _ in range(experts)])
+    s2 = torch.stack([swizzle_sf(torch.full((hidden, width // 16), .015625, device="cuda").to(torch.float8_e4m3fn))
+                      for _ in range(experts)])
+    overlap = SharedOverlap("cuda")
+    for rows in (7, 28):
+        x = torch.randn(rows, hidden, device="cuda", dtype=torch.bfloat16) * .3
+        selected = (torch.arange(rows * 8, device="cuda").reshape(rows, 8) % experts).int()
+        weights = torch.full((rows, 8), 1 / 8, device="cuda")
+        def routed():
+            return native.moe(x, selected, weights, w13, s13, w2, s2, 10.)
+        graphs = []
+        outputs = []
+        try:
+            for fn in (lambda: routed() + SharedMLPTests.reference(x, gu, down),
+                       lambda: routed() + fused(x),
+                       lambda: overlap(fused, x, routed)):
+                graph, output = _capture(fn)
+                graphs.append(graph); outputs.append(output)
+            for regime in ("distinct_routes", "reused_routes"):
+                if regime == "reused_routes":
+                    selected.copy_(torch.arange(8, device="cuda", dtype=torch.int32).expand(rows, 8))
+                for _ in range(3):
+                    x.normal_()
+                    for graph in graphs:
+                        graph.replay()
+                    torch.cuda.synchronize()
+                    torch.testing.assert_close(outputs[1], outputs[2], rtol=0, atol=0)
+                    SharedMLPTests().close(outputs[1], outputs[0])
+                measurements = [dict(arm=label, ms=_time(graphs[i], iterations=64)) for label, i in
+                                (("B", 0), ("F", 1), ("O", 2), ("O", 2), ("F", 1), ("B", 0))]
+                report("shared_moe_overlap_timing", rows=rows, experts=experts, topk=8,
+                       regime=regime, replay_exact=True, measurements=measurements,
+                       scope="captured routed plus shared components; no model or communication")
+        finally:
+            for graph in graphs:
+                graph.reset()
 
 
 def pointwise(report):

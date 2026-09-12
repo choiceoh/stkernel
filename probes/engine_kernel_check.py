@@ -67,7 +67,7 @@ def main():
         assert result.wasSuccessful() and not result.skipped, "shared MLP numerical/replay checks did not pass"
         report("shared_mlp", passed=True, tests=result.testsRun)
         from probes.engine_decode_fusions import shared_mlp
-        shared_mlp(report)
+        shared_mlp(report, native)
 
     if "residency" in selected:
         import unittest
