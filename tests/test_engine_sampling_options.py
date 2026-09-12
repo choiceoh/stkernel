@@ -52,8 +52,8 @@ class OptionTests(unittest.TestCase):
         self.assertAlmostEqual(out[4].item(), 0.0 - 1.0 - 0.5)
         self.assertEqual(out[3].item(), 3.0)
         seen, counts = self.history(5, [], [])
-        out = process_logits(logits, {}, seen, counts, decodable=3, mask=torch.tensor([True, False, True, True, True]))
-        self.assertTrue(torch.isinf(out[1]) and torch.isinf(out[3]) and torch.isinf(out[4]) and out[0] == 2.0)
+        out = process_logits(logits, {}, seen, counts, decodable=3)
+        self.assertTrue(torch.isinf(out[3]) and torch.isinf(out[4]) and out[0] == 2.0)
 
     def test_this_step_drafts_count_without_being_written_into_the_history(self):
         logits = torch.zeros(5)
@@ -134,13 +134,17 @@ class OptionTests(unittest.TestCase):
         self.assertTrue(torch.isinf(out[1]) and torch.isinf(out[4]))
         self.assertEqual([float(out[i]) for i in (0, 2, 3, 5)], [0.0] * 4)
 
-    def test_a_grammar_mask_and_a_forbidden_list_both_apply(self):
-        logits = torch.zeros(4)
-        seen, counts = self.history(4, [], [])
-        out = process_logits(logits, {}, seen, counts, mask=torch.tensor([True, True, False, True]),
-                             forbid=torch.tensor([0]))
-        self.assertTrue(torch.isinf(out[0]) and torch.isinf(out[2]))
-        self.assertEqual([float(out[i]) for i in (1, 3)], [0.0, 0.0])
+    def test_a_buffer_receives_the_row_instead_of_a_fresh_vocabulary(self):
+        """The grammar mask crosses a whole row in one launch, which needs the row's positions in consecutive
+        rows of one tensor -- so a position can be asked to land in one (base/grammar, 45차 §28)."""
+        raw = torch.tensor([1.0, -2.0, 3.0, 4.0])
+        seen, counts = self.history(4, [1], [1])
+        buf = torch.empty(2, 4)
+        got = process_logits(raw, {"repetition_penalty": 2.0}, seen, counts, forbid=torch.tensor([0]), out=buf[1])
+        self.assertEqual(got.data_ptr(), buf[1].data_ptr(), "the answer is in the buffer, not beside it")
+        fresh = process_logits(raw, {"repetition_penalty": 2.0}, seen, counts, forbid=torch.tensor([0]))
+        self.assertTrue(torch.equal(torch.nan_to_num(buf[1], neginf=-1e9), torch.nan_to_num(fresh, neginf=-1e9)))
+        self.assertTrue(torch.isinf(buf[1][0]))
 
     def test_picking_every_row_at_once_draws_what_picking_them_one_by_one_would(self):
         from engine.base.sampler import draw, pick_each
@@ -204,3 +208,82 @@ class ValidateTests(unittest.TestCase):
         for bad in ([], [1, 100], [-1], [1.5, 2], [1, "2"], [None]):
             with self.assertRaises((ValueError, TypeError)):
                 ok(bad)
+
+
+class BlockVerificationTests(unittest.TestCase):
+    """Sun et al. 2024: a longer accepted prefix for the same output distribution.
+
+    The claim is distributional, so the gate is distributional. The control is the
+    token-level rule (`speculative_pick`), which the engine keeps as a reference.
+    """
+
+    def draws(self, seed, K, V, spread=1.3):
+        torch.manual_seed(seed)
+        return (torch.softmax(torch.randn(K + 1, V) * spread, -1),
+                torch.softmax(torch.randn(K, V) * spread, -1))
+
+    def emitted(self, pick, target, draft, rounds, seed):
+        from engine.base.sampler import draw
+        gen = torch.Generator().manual_seed(seed)
+        K, V = draft.shape
+        first = torch.zeros(V)
+        accepted = 0
+        for _ in range(rounds):
+            drafts = [draw(draft[i], gen) for i in range(K)]
+            got, new = pick(target, drafts, draft, gen)
+            accepted += got
+            first[new[0]] += 1
+        return first / first.sum(), accepted / rounds
+
+    def test_the_first_emitted_token_is_the_target_s_own(self):
+        from engine.base.sampler import block_verify, speculative_pick
+        target, draft = self.draws(72, 3, 5)
+        blocked, _ = self.emitted(block_verify, target, draft, 20000, 3)
+        token, _ = self.emitted(speculative_pick, target, draft, 20000, 3)
+        # the control says how close 20,000 rounds gets; the block scheme must not be worse
+        allowed = max(0.02, float((token - target[0]).abs().max()) * 1.5)
+        self.assertLess(float((blocked - target[0]).abs().max()), allowed)
+
+    def test_it_accepts_more_than_the_token_level_rule(self):
+        from engine.base.sampler import block_verify, speculative_pick
+        target, draft = self.draws(72, 3, 5)
+        _, blocked = self.emitted(block_verify, target, draft, 8000, 11)
+        _, token = self.emitted(speculative_pick, target, draft, 8000, 11)
+        self.assertGreater(blocked, token)
+
+    def test_one_draft_is_the_token_level_threshold(self):
+        from engine.base.sampler import block_verify
+        target = torch.tensor([[0.6, 0.4], [0.5, 0.5]])
+        draft = torch.tensor([[0.2, 0.8]])
+        # with K = 1 the threshold is min(p/q, 1) = min(0.6/0.2, 1) = 1: always accepted
+        for seed in range(8):
+            got, new = block_verify(target, [0], draft, torch.Generator().manual_seed(seed))
+            self.assertEqual(got, 1)
+            self.assertEqual(new[0], 0)
+
+    def test_the_batch_accepts_what_the_row_by_row_rule_accepts(self):
+        from engine.base.sampler import block_verify_batch
+        torch.manual_seed(3)
+        n, K, V = 4, 3, 7
+        target = torch.softmax(torch.randn(n, K + 1, V), -1)
+        draft = torch.softmax(torch.randn(n, K, V), -1)
+        ids = torch.stack([torch.multinomial(draft[r], 1).squeeze(1) for r in range(n)])
+        accepted, tokens, count = block_verify_batch(target, ids, draft, torch.Generator().manual_seed(5))
+        uniform = torch.rand(n, K, generator=torch.Generator().manual_seed(5))
+        want = []
+        for r in range(n):
+            carried, running = [], 1.0
+            for i in range(K):
+                q = float(draft[r, i, ids[r, i]]); p = float(target[r, i, ids[r, i]])
+                running = min(running * p / q, 1.0) if q > 0 else 0.0
+                carried.append(running)
+            thresholds = list(carried)
+            for i in range(K - 1):
+                mass = float((carried[i] * target[r, i + 1] - draft[r, i + 1]).clamp_min(0).sum())
+                denominator = mass + 1.0 - carried[i]
+                thresholds[i] = mass / denominator if denominator > 0 else 1.0
+            want.append(max([i + 1 for i in range(K) if float(uniform[r, i]) <= thresholds[i]], default=0))
+        self.assertEqual(accepted.tolist(), want)
+        self.assertEqual(count.tolist(), [a + 1 for a in want])
+        for r, a in enumerate(want):
+            self.assertEqual(tokens[r, :a].tolist(), ids[r, :a].tolist(), "accepted drafts are committed as they were")
