@@ -138,8 +138,8 @@ class AsyncDecode:
         )
         b["slot"] = b["real_slot"].clone()
         # the draft distribution is its candidates and their mass, not a vocabulary-wide row (base/sampler)
-        b["qcand"] = torch.zeros(n, K, e.F.sel_top_k, dtype=torch.int64, device=dev) if b["stochastic"] else None
-        b["qprob"] = torch.zeros(n, K, e.F.sel_top_k, dtype=torch.float32, device=dev) if b["stochastic"] else None
+        b["qcand"] = torch.zeros(n, K, e.drafter.F.sel_top_k, dtype=torch.int64, device=dev) if b["stochastic"] else None
+        b["qprob"] = torch.zeros(n, K, e.drafter.F.sel_top_k, dtype=torch.float32, device=dev) if b["stochastic"] else None
         self._propose_rows(b)
         return b
 
@@ -173,7 +173,7 @@ class AsyncDecode:
                         # joins; regenerating survivors would discard progress
                         # and consume an extra set of random draws. A point mass
                         # is one candidate carrying all of it.
-                        c = self.e.F.sel_top_k
+                        c = self.e.drafter.F.sel_top_k
                         rows["qcand"] = rows["drafts"].unsqueeze(2).expand(*rows["drafts"].shape, c).contiguous()
                         rows["qprob"] = torch.zeros((*rows["drafts"].shape, c), dtype=torch.float32,
                                                     device=self.e.caches.device)

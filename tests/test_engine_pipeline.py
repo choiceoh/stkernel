@@ -43,7 +43,7 @@ class ShrinkTests(unittest.TestCase):
     def test_every_row_array_follows_the_surviving_rows(self):
         e = SimpleNamespace(drafter=SimpleNamespace(k=2),
                             caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device("cpu")),
-                            F=SimpleNamespace(block=2, sel_top_k=4))
+                            F=SimpleNamespace(block=2))
         p = AsyncDecode(e)
         t, n = p.t, 3
         b = {name: torch.arange(n) for name in
@@ -199,11 +199,11 @@ class BatchTransitionTests(unittest.TestCase):
     """Run the real launch/commit/readback chain; only model kernels are replaced."""
     def engine(self):
         e = SimpleNamespace(
-            drafter=SimpleNamespace(k=1, decode_graphs=None,
+            drafter=SimpleNamespace(k=1, F=SimpleNamespace(sel_top_k=4), decode_graphs=None,
                                     propose_rows=lambda field, slots, anchors, ctx, alive=None: torch.full((len(slots), 1), 7)),
             caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device('cpu'),
                                    draft_field=lambda: torch.zeros(1), stage_boundaries=lambda *args: None),
-            F=SimpleNamespace(vocab=32, block=16, sel_top_k=4), tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1},
+            F=SimpleNamespace(vocab=32, block=16), tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1},
             limits={1: (10, 0.0), 2: (10, 0.0)}, options={}, ends={}, eos={31}, top_p=1.0,
             inflight={}, staged={}, accepted_total=0, drafted_total=0, steps=0,
             gen=torch.Generator().manual_seed(1))
@@ -213,6 +213,20 @@ class BatchTransitionTests(unittest.TestCase):
         e.sampling_graphs = SimpleNamespace(greedy=SimpleNamespace(
             run=lambda shape, fill: torch.tensor([7, 8] * shape[0])))
         return e
+
+    def test_first_sampled_request_uses_the_real_drafter_candidate_width(self):
+        from tests.test_engine_glm53 import tiny_facts
+        e = self.engine()
+        e.F = tiny_facts()  # target Facts has no drafter selector_top_k field
+        e.drafter.F = SimpleNamespace(sel_top_k=16)
+        e.limits[1] = (10, .7)
+        candidates = torch.arange(16).view(1, 1, 16)
+        probabilities = torch.full((1, 1, 16), 1/16)
+        e.drafter.propose_rows = lambda *args, **kwargs: (torch.tensor([[9]]), candidates, probabilities)
+        p = AsyncDecode(e)
+        p._build([1], [1])
+        torch.testing.assert_close(p.buf['qcand'], candidates)
+        torch.testing.assert_close(p.buf['qprob'], probabilities)
 
     def test_new_request_rebuilds_after_the_previous_batch_has_drained(self):
         for stale in (False, True):
