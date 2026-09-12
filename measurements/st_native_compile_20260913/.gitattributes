@@ -1,0 +1,2 @@
+# Keep the raw compiler command lines byte-for-byte.
+*.log -whitespace
