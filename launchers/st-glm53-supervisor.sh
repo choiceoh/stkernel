@@ -30,6 +30,13 @@ node_sh(){ local ip=$1; shift
   ssh -n -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "choiceoh@$ip" "$@"; }
 
 door_up(){ curl -fsS --max-time 5 "$BASE/v1/models" 2>/dev/null | grep -q "\"$MODEL\""; }
+# A handover is not a failure. The engine refuses new work ON PURPOSE while it finishes the rows
+# it holds, parks them where the next boot finds them (D16) and lets the lease go; `base/serve`
+# answers /v1/models with an empty catalog and 503 "draining" for exactly this reader. Without
+# this the drain looks like three dead health checks, and the relaunch that follows races the
+# next holder -- in the window where the lease is released but not yet taken, `fleet_taken`
+# cannot see it either. No -f: the body of a 503 is the whole point.
+handing_over(){ curl -sS --max-time 5 "$BASE/v1/models" 2>/dev/null | grep -q '"status": *"draining"'; }
 chat_ok(){
   curl -fsS --max-time "$CHAT_TIMEOUT" "$BASE/v1/chat/completions" -H 'Content-Type: application/json' \
     -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":4,\"chat_template_kwargs\":{\"thinking\":false}}" \
@@ -86,6 +93,7 @@ launch_fails=0; next_launch_at=0; held_logged=0; fails=0
 attempt_launch(){
   local taken
   if taken=$(fleet_taken); then log "fleet taken ($taken): waiting without consuming a launch attempt"; return; fi
+  if handing_over; then log "engine is handing the fleet over: waiting without consuming a launch attempt"; return; fi
   launch || true
   launch_fails=$((launch_fails+1))
   local backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
@@ -96,7 +104,10 @@ attempt_launch(){
 
 mkdir -p "$FORENSICS"
 if [ "${ST_SUPERVISOR_ONCE:-0}" = 1 ]; then
-  if taken=$(fleet_taken); then echo "fleet taken: $taken"; elif containers_up && door_up && chat_ok; then echo "healthy"; else echo "would launch (containers_up=$(containers_up && echo yes || echo no) door_up=$(door_up && echo yes || echo no))"; fi
+  if taken=$(fleet_taken); then echo "fleet taken: $taken"
+  elif handing_over; then echo "handing over: waiting"
+  elif containers_up && door_up && chat_ok; then echo "healthy"
+  else echo "would launch (containers_up=$(containers_up && echo yes || echo no) door_up=$(door_up && echo yes || echo no))"; fi
   exit 0
 fi
 log "=== st-glm53 supervisor start ==="
@@ -111,6 +122,10 @@ while :; do
     [ "$fails" -gt 0 ] && log "recovered (fails reset)"
     fails=0
     if [ "$launch_fails" -gt 0 ]; then log "healthy again -- clearing $launch_fails launch attempt(s)"; launch_fails=0; next_launch_at=0; held_logged=0; fi
+    continue
+  fi
+  if handing_over; then
+    log "engine is handing the fleet over: waiting, this is not a failed health check"
     continue
   fi
   fails=$((fails+1))
