@@ -157,12 +157,6 @@ def declared(a, comm_world: int) -> Config:
              "0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's "
              "'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken",
              "STK_context_ceiling=0", int),
-        Knob("drafter_calib", "", _dt.date(2026, 9, 30),
-             "45차 §23 GPU 판정 6차: a pack-store root (the launcher's /cache); every rank sums X^T X of its prepared drafter "
-             "linears' inputs over what it serves (warm-ups excluded, ghost rows masked) and files them as the store's "
-             "calibration blobs on shutdown or POST /v1/engine/calibration, so the next boot packs the drafter GPTQ from this "
-             "engine's own traffic (the vLLM-era dumps are gone); the sums take ~1.8 GiB of each rank's arena",
-             "STK_drafter_calib="),
     ]
     cfg = Config(facts_, knobs=knobs)
     return cfg
@@ -175,7 +169,7 @@ def decodable_vocab(tok) -> int:
 
 def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
-          context_ceiling: "int | None" = None, execution: str = "stock", drafter_calib: str = "",
+          context_ceiling: "int | None" = None, execution: str = "stock",
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
@@ -207,7 +201,31 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     vision_file = Path(ranks_dir) / vision_mod.FILE
     VF = vision_mod.load(ckpt_meta) if vision_file.exists() else None
     vspecs = vision_mod.specs(VF) if VF else []
-    calib_bytes = drafter_mod.Calibration.nbytes(D, comm.world_size) if (D and drafter_calib and execution == "native") else 0
+    # Self-calibration (kernels/dense/calibration): the packs the store cannot build GPTQ, summed from this boot's
+    # serving, drafter first, within a fixed budget of the arena; the next boot packs GPTQ from the blobs.
+    store = calib_plan = None
+    calib_bytes = 0
+    if execution == "native":
+        from engine.kernels.dense.calibration import BUDGET_BYTES, Calibration
+        from engine.kernels.dense.store import PackStore
+        store = PackStore("/cache", comm.rank)
+        calib_plan = []                                                   # (module, weight key, store name, missing tiles, small rows)
+        if D:
+            for key, (_rows, cols) in drafter_mod.dense_shapes(D, comm.world_size).items():
+                missing = store.missing_calibration(drafter_mod.store_name(key), cols)
+                if missing:
+                    calib_plan.append(("drafter", key, missing, True))
+        shapes = {sp.name: sp.shape for sp in specs}
+        for key, name in net.dense_weight_names(shapes).items():
+            missing = store.missing_calibration(name, shapes[key][1])
+            if missing:
+                calib_plan.append(("target", key, missing, False))
+        budget = BUDGET_BYTES
+        for _module, _key, missing, _small in calib_plan:
+            need = Calibration.nbytes(missing)
+            if need <= budget:
+                budget -= need
+                calib_bytes += need
     arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + total_bytes(vspecs) + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + PREFIX_SNAPSHOTS * snapshot_bytes + stage_bytes(F, net.layers, max_seqs) + calib_bytes)
     memory = None
@@ -265,18 +283,21 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
             drafter = drafter_mod.Drafter(D, net, decodable)
             drafter.bind(dviews)
+        calibration = None
         if execution == "native":
-            from engine.kernels.dense.store import PackStore
             from engine.kernels.prefill_collectives import PrefillCollectives
-            store = PackStore("/cache", comm.rank)
             with recorder.phase("prepare native execution"):
                 net.prepare_dense(store, consume_weights=True)
                 net.prefill_transport = PrefillCollectives(comm)
                 if D:
                     drafter.prepare_fast(store, consume_weights=True)
-                    if calib_bytes:                       # the sums over what this boot serves, filed where the store reads them
-                        drafter.calibration = drafter_mod.Calibration(drafter.dense, torch.device("cuda"), arena=arena)
-                        drafter.calibration_root = drafter_calib
+            if calib_plan:                                            # this boot sums what the store lacked, within the budget
+                calibration = Calibration(torch.device("cuda"), BUDGET_BYTES, arena=arena)
+                for module, key, missing, small in calib_plan:
+                    layer = (drafter if module == "drafter" else net).dense[key]
+                    calibration.attach(layer.name, layer, missing, small)
+                recorder.gauge("calibration_blobs", len(calibration.H))
+                recorder.gauge("calibration_deferred", len(calibration.deferred))
             for name, count in store.stats.items():
                 recorder.gauge("dense_pack_"+name, count)
             recorder.gauge("target_native_linears", len(net.dense)-1)
@@ -305,6 +326,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs)
             engine.memory = memory
             engine.vision = vision
+            engine.calibration, engine.calibration_root = calibration, (str(store.root) if store is not None else None)
+            engine.pack_stats = dict(store.stats) if store is not None else {}
             engine.prefill_chunk = sched.chunk_for(contract.chunk_align, contract.token_budget, contract.draft_slots)
         if memory is not None:
             memory.checkpoint("loaded")
@@ -582,13 +605,15 @@ def fleet(a) -> int:
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
                                                context_ceiling=cfg["context_ceiling"] or None,
-                                               execution=cfg["execution"], drafter_calib=cfg["drafter_calib"])
+                                               execution=cfg["execution"])
 
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
-                            "context_ceiling": str(engine.max_context)}
+                            "context_ceiling": str(engine.max_context),
+                            "packs": f"gptq {engine.pack_stats.get('gptq', 0)} rtn {engine.pack_stats.get('rtn', 0)}",   # what the store built or read
+                            "calibration": engine.calibration.status() if engine.calibration is not None else "complete"}
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
         Server._agree_on_parked(comm, sorted(runner.parked_keys()))
         with rec.phase("capture decode"):
@@ -622,10 +647,11 @@ def fleet(a) -> int:
         from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls, tool_call_token, tool_grammar
         if comm.rank == 0:
             print("  warmup: " + ", ".join(f"{k} {v}s" for k, v in paid.items()) + (f"; structured output: {'on' if engine.grammars else 'off (no xgrammar)'}"))
-        if engine.drafter.calibration is not None:          # every warm-up and capture is behind us: from here the sums are the served traffic
-            engine.drafter.calibration.arm()
-            print(f"  drafter calibration: rank {comm.rank} summing its dense inputs -> {cfg['drafter_calib']}/mkcalib/rank{comm.rank}/ "
-                  "(written on shutdown or POST /v1/engine/calibration; the next boot packs GPTQ from them)", flush=True)
+        if engine.calibration is not None:                  # every warm-up and capture is behind us: from here the sums are the served traffic
+            engine.calibration.arm()
+            print(f"  calibration: rank {comm.rank} summing the inputs of {len(engine.calibration.H)} uncalibrated pack tiles "
+                  f"({len(engine.calibration.deferred)} deferred) -> {engine.calibration_root}/mkcalib/rank{comm.rank}/ "
+                  "(filed on its own at 32K rows, at shutdown, or on POST /v1/engine/calibration; the next boot packs GPTQ from them)", flush=True)
         Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
@@ -640,9 +666,10 @@ def fleet(a) -> int:
                 try:
                     if engine.memory is not None:
                         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
-                    if getattr(engine.drafter, "calibration", None) is not None:
-                        written = engine.drafter.calibration.save(engine.drafter.calibration_root, comm.rank)
-                        print(f"  drafter calibration: rank {comm.rank} wrote {len(written)} blobs under {engine.drafter.calibration_root}/mkcalib/rank{comm.rank}/", flush=True)
+                    if getattr(engine, "calibration", None) is not None:
+                        written = engine.file_calibration()
+                        if written:
+                            print(f"  calibration: rank {comm.rank} filed {len(written)} blobs under {engine.calibration_root}/mkcalib/rank{comm.rank}/", flush=True)
                 finally:
                     engine.close_decode()
         finally:
