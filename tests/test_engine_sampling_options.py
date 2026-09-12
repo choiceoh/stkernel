@@ -352,6 +352,44 @@ def _verify_densely(target_probs, drafts, draft_probs, generator):
     return accepted, tokens, accepted + 1
 
 
+class BlockVerifyKernelTests(unittest.TestCase):
+    """The fused kernel must decide exactly what the torch reference decides.
+
+    Compared on ONE device from ONE generator: a CPU generator and a CUDA generator do not agree at the same
+    seed, and comparing across them reads as a kernel bug when it is two different streams of uniforms."""
+
+    @unittest.skipUnless(torch.cuda.is_available(), "the kernel path needs a device")
+    def test_the_kernel_accepts_and_picks_what_the_reference_does(self):
+        from engine.base.sampler import _block_verify_by_torch, block_verify_batch
+        for trial in range(12):
+            torch.manual_seed(trial)
+            n, K, V, C = (1 if trial % 3 else 4), 5, 2003, 16
+            target = torch.softmax(torch.randn(n, K + 1, V), -1).cuda()
+            cand = torch.stack([torch.stack([torch.randperm(V)[:C] for _ in range(K)]) for _ in range(n)]).cuda()
+            qp = torch.softmax(torch.randn(n, K, C), -1).cuda()
+            pick = torch.randint(0, C, (n, K))
+            drafts = cand.cpu().gather(2, pick.unsqueeze(2)).squeeze(2).cuda()
+            seed = lambda: torch.Generator(device="cuda").manual_seed(trial + 100)   # noqa: E731
+            want = _block_verify_by_torch(target, drafts, cand, qp, seed())
+            got = block_verify_batch(target, drafts, cand, qp, seed())
+            for i, name in ((0, "accepted"), (1, "tokens"), (2, "count")):
+                self.assertTrue(torch.equal(want[i], got[i]), f"{name} differ at trial {trial}")
+
+    def test_the_reference_is_reachable_on_any_device(self):
+        """It is the thing the kernel is judged against, so it must not be behind the `is_cuda` branch that
+        chooses the kernel -- otherwise there is no way to run both on one device and compare."""
+        from engine.base.sampler import _block_verify_by_torch
+        n, K, V, C = 2, 3, 41, 5
+        torch.manual_seed(4)
+        target = torch.softmax(torch.randn(n, K + 1, V), -1)
+        cand = torch.stack([torch.stack([torch.randperm(V)[:C] for _ in range(K)]) for _ in range(n)])
+        qp = torch.softmax(torch.randn(n, K, C), -1)
+        accepted, tokens, count = _block_verify_by_torch(target, cand[:, :, 0].contiguous(), cand, qp,
+                                                         torch.Generator().manual_seed(1))
+        self.assertEqual(tuple(tokens.shape), (n, K + 1))
+        self.assertTrue(torch.equal(count, accepted + 1))
+
+
 class SparseDraftDistributionTests(unittest.TestCase):
     """The draft puts mass on `sel_top_k` candidates a position and zero everywhere else, so carrying it as
     [n, K, vocab] was allocating and zeroing 12.4 MiB every decode step to hold 320 numbers (V=154,880, K=5,

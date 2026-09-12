@@ -495,12 +495,40 @@ def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_c
     count [n] = accepted + 1). Draws K uniforms per row then one more per row, in that order, identically on
     every rank, so the ranks stay in step.
 
+    On CUDA the middle of this is one kernel (engine/kernels/block_verify): written as torch operations it issued
+    about 180 device ops per call and spent 2,425 us of wall on 397 us of work at the shape production runs,
+    because at one sequence and K=5 most of those tensors hold five numbers. The code below is what the kernel is
+    judged against, not a fallback it drops to.
+
     The draft is ZERO outside those C candidates -- that is what `propose_rows` builds and what the accept
     test is only unbiased against. Carrying it as [n, K, V] therefore cost a 12.4 MiB allocation, zeroed and
     then read twice, every decode step to hold 320 numbers (V=154,880, K=5, C=16, n=4). Every place the dense
     row was read below has an exactly equal form over the candidates, and the residual that funds the
     correction draw is the target with C entries reduced rather than a second [n, V] tensor subtracted.
     """
+    n, k1, _ = target_probs.shape
+    K = k1 - 1
+    device = target_probs.device
+    if target_probs.is_cuda:
+        # One launch instead of about 180. The uniforms are still drawn here, in this order, so the stream every
+        # rank walks is unchanged; the correction draw stays in torch because `_inverse_cdf`'s cumsum is a
+        # parallel scan and a sequential one differs in the last bits (engine/kernels/block_verify).
+        from engine.kernels.block_verify import verify_rows
+        u = torch.rand(n, K, generator=generator, device=device)
+        accepted, at, rest = verify_rows(target_probs, drafts, draft_cand, draft_probs, u)
+        fresh = _inverse_cdf(rest, torch.rand(n, generator=generator, device=device))
+        tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
+        tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
+        return accepted, tokens, accepted + 1
+    return _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, generator)
+
+
+def _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, generator):
+    """`block_verify_batch` written the obvious way: the reference the kernel is judged against.
+
+    It runs wherever it is given tensors, CUDA included, so the two can be compared on one device from one
+    generator -- a CPU generator and a CUDA generator do NOT agree at the same seed, and comparing across them
+    reads as a kernel bug when it is only two different streams of uniforms."""
     n, k1, _ = target_probs.shape
     K = k1 - 1
     device = target_probs.device
