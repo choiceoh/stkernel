@@ -1728,3 +1728,20 @@ prepared again at 6d63b897eb17`, 영수증은 새 것(379e4c28 → 39575ebc), �
 `~/st-engine` 에 `st-deploy-watch.py` 없음). 즉 #770 뒤의 프로덕션 리스·컨트롤러 추종·D17 프로브·자가 치유는 모두 deploy-watch 를 무장하고
 드롭인·env 를 main 의 릴리스로 옮길 때 비로소 산다 — 어느 트리를 프로덕션으로 할지는 운영자의 결정이라 손대지 않았다.
 남는 노출: 재핀은 준비를 통째로 다시 하므로 CPU 준비 명령이 있는 티켓은 그만큼 대기 루프가 멈춘다 — §95 에서 사람이 `edit` 하던 비용과 같다.
+
+**srv2 전환 (02:49 KST, 운영자 "더 적합한걸로 너가 결정해").** 프로덕션이 어느 트리를 돌릴지 내가 정했다: **main 을 deploy-watch 로.**
+근거 셋 — main 이 이미 `MAX_SEQS = 4` 를 박아 두어(§79 가 "레포 기본값 8" 이라 한 것은 옛말) 프로덕션 모양이 env(`ST_KV_GIB=7.0`,
+9391 랭크, DFlash2 드래프터)로 보존되고, 세션들이 밤새 큐로 띄우는 것이 main 계열 트리이며, 후보를 재는 장치(D17 브래킷)를 만든
+이유가 바로 "main 을 프로덕션으로 밀기 전에 잰다" 인데 손으로 자른 `prod-abceb6a0-grammar-9391`(main 에 없는 커밋)은 그 장치 밖에
+있다. 그리고 옛 슈퍼바이저(5734b29f, #770 이전)는 큐와 싸운다(20:05·20:27 두 번 띄웠다 10분 안에 내린 흔적). 한 것: main
+14384a1f 를 `st_release` 로 잘라 `--seed`(deploy-state.json), 헤드의 `~/st-engine` 을 그 릴리스로 갱신(백업 `.bak-20260913`), env 의
+`ST_REPO`·`ST_ENGINE_DIR`·`ST_IMAGE` 핀 제거(백업), 드롭인 `release.conf` 제거(백업), `st-deploy-watch.timer` 무장, `st-glm53.service`
+기동 — 새 슈퍼바이저는 "fleet taken (lease: queue queue/prefill3000-kv2b …)" 로 **기다린다**(세션의 티켓이 끝나고 대기 부팅 티켓이
+없을 때 뜬다). `~/fleet-controller` 도 같은 sha.
+
+첫 무장 사이클이 결함 둘을 드러냈다. (1) 사이클이 건 D17 프로브의 대기자가 **oneshot 의 cgroup 과 함께 죽었다** — 런치 로그에
+enqueue 와 dequeue 가 0.25 초 간격, 티켓은 `cancelled`(returncode 143). 유닛에 `KillMode=process`(srv2 설치본 먼저, 그리고 PR #786).
+(2) 두 번째 사이클이 같은 이름 `d17-14384a1f6b7b` 로 다시 걸자 런치 계층이 **옛 런치의 기록**을 답했다(disposition `existing`, 143 재생)
+— 같은 이름·같은 인자의 detach 런치는 옛것이라는 `fleet_launch` 의 규칙이라, 자가 치유는 시도마다 이름을 달리해야 한다
+(`d17-<sha12>`, `-2`, `-3`; `ticket_open` 은 접미사까지 본다 — 같은 PR #786). 배포된 sha 의 프로브는 `d17-14384a1f6b7b-2` 로 손으로
+걸어 두었다(프로덕션이 뜨고 유휴해지면 돈다). `fleet-idle-recovery.timer` 는 꺼 둔 대로(`st-glm53.service` 와 `Conflicts=`).
