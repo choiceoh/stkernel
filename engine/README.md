@@ -65,7 +65,14 @@ prefix 재사용의 단위는 풀의 **블록 768**(`facts.BLOCK`; 프리필 청
 "경계 스테이지"(슬롯당 KDA 상태 + conv 탭, `caches.stage_boundaries`; 넘은 스텝만 쓴다)에 놓아 두고 호스트가 결과를 읽을 때
 스냅샷으로 옮긴다(드래프터 링은 그때의 산 링: 넘은 뒤 몇 자리가 창의 가장 오래된 칸에 얹힐 뿐). 스냅샷 96개(경계당 ~77 MiB,
 `boot.PREFIX_SNAPSHOTS`); 자리가 모자라면 **한 번도 채택되지 않은 경계부터** 나간다(`prefix._victim`) — 긴 프롬프트 하나가 모두가
-공유하는 시스템 프롬프트를 밀어내지 못한다. 이어가기(B1)는 히스토리가 끝 토큰(`<|endoftext|>` 등, 템플릿이 되그리지 않는)으로 끝났으면
+공유하는 시스템 프롬프트를 밀어내지 못한다. 밀려나는 **잎 경계**(다른 경계가 잇지 않는 것)는 NVMe **prefix 티어**에 남는다: 스냅샷이
+`runner.spill_low_water`(8) 아래로 줄면 러너가 미리 잎을 써 두고(블록 + 스냅샷 77 MiB + 기록, 대화 티어 옆 `prefix/` 디렉터리, 키는
+해시 56비트), 메모리에 없는 경계를 티어가 들고 있으면 요청 행에 읽어 들여(`restore_begin/finish`, 네 랭크 투표 뒤) 그 뒤부터 프리필한다
+— 32K 프롬프트 재적중 ≈ 280 MB 읽기 vs 16 s 프리필. 같은 프롬프트가 동시에 오면 둘째는 **첫째의 프리필이 그 경계를 캐시할 때까지
+기다렸다 채택**한다(`runner.shared_ahead`, 대기 중 다른 요청을 먼저 들여보내고 경계가 오면 맨 앞으로). `POST /v1/prefix/warm`
+(`messages`/`prompt`/`ids`, `pin: true`)로 알려진 시스템 프롬프트를 미리 넣고 고정, `POST /v1/prefix/unpin` 으로 해제
+(`probes/st_prefix_warm.py prompts.jsonl --pin`); `/metrics` 의 `st:prefix_{reused_tokens_total,entries,pinned_entries,tier_entries,
+tier_spills_total,tier_restores_total,dedup_waits_total}`. 이어가기(B1)는 히스토리가 끝 토큰(`<|endoftext|>` 등, 템플릿이 되그리지 않는)으로 끝났으면
 그 토큰 앞까지 맞아도 이어간다 — 그 토큰은 뽑혔지만 먹인 적이 없어 캐시가 정확히 그 앞에 서 있다(`extend(drop_unfed=True)`). 디코드는
 **호스트보다 앞서 돈다**(`profiles/glm53/pipeline.py`, vLLM 의 비동기 스케줄링): 타깃
 그래프 → 샘플러 → 커밋(`base/sampler.commit_batch`) → 마스크 관측 → 제안 → 다음 스텝 ids 가 장치에 남고, 결과만 핀 버퍼로 건너와

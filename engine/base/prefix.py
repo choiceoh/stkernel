@@ -30,6 +30,10 @@ class Entry:
     snap: int
     used: int
     hits: int = 0                   # adoptions: a boundary that served once is worth more than one nobody asked for
+    pinned: bool = False            # an operator's warm prompt: leaves only when nothing else can (45차 §23 C)
+    spilled: bool = False           # a copy is on the prefix tier: dropping it from memory loses nothing (A)
+    spilling: bool = False          # the copy is being written: the snapshot and blocks must stay as they are
+    spill_failed: bool = False      # the tier refused it for good (not room: an error)
 
 
 class PrefixCache:
@@ -42,6 +46,7 @@ class PrefixCache:
         self.tick = 0
         self.hits = self.misses = self.evictions = 0
         self.pool = None
+        self.tier_keys: "dict[bytes, int]" = {}   # boundaries whose blocks + snapshot the prefix tier holds (base/runner spills them)
 
     def bind(self, pool) -> None:
         """The pool this cache pins blocks in; the pool reclaims through it when its free stack runs short."""
@@ -85,19 +90,78 @@ class PrefixCache:
     def has(self, h: bytes) -> bool:
         return h in self.entries
 
+    def peek(self, ids, salts=()) -> int:
+        """The tokens `lookup` would reuse, without counting a query (admission asks before it commits)."""
+        chain = self.chain(ids, salts)
+        return max((t for t in chain if t < len(ids) and chain[t] in self.entries), default=0)
+
+    def tier_lookup(self, ids, salts=(), above: int = 0) -> "tuple[int, bytes] | None":
+        """(tokens, hash) of the longest boundary strictly inside the prompt that the prefix TIER holds and memory
+        does not, longer than `above` (what memory can already give): a restore candidate, or None."""
+        chain = self.chain(ids, salts)
+        for tokens in sorted(chain, reverse=True):
+            if tokens <= above or tokens >= len(ids):
+                continue
+            h = chain[tokens]
+            if h in self.tier_keys and h not in self.entries:
+                return tokens, h
+        return None
+
+    def is_leaf(self, h: bytes) -> bool:
+        """No cached boundary extends this one: its block list is not another entry's prefix. Only leaves go to the
+        tier -- a restored leaf brings every block of its chain back, an inner boundary would bring the same ones."""
+        e = self.entries[h]
+        n = len(e.blocks)
+        return not any(f is not e and len(f.blocks) > n and f.blocks[:n] == e.blocks for f in self.entries.values())
+
+    def spill_candidates(self, count: int) -> "list[bytes]":
+        """Up to `count` leaves in eviction order that have no copy on the tier yet: what to write ahead of need."""
+        order = sorted(self.entries, key=lambda h: (self.entries[h].pinned, self.entries[h].hits > 0, self.entries[h].used))
+        out = []
+        for h in order:
+            e = self.entries[h]
+            if e.spilled or e.spilling or e.spill_failed or not self.is_leaf(h):
+                continue
+            out.append(h)
+            if len(out) >= count:
+                break
+        return out
+
+    def pin(self, hashes) -> int:
+        n = 0
+        for h in hashes:
+            if h in self.entries and not self.entries[h].pinned:
+                self.entries[h].pinned = True
+                n += 1
+        return n
+
+    def unpin_all(self) -> int:
+        n = 0
+        for e in self.entries.values():
+            if e.pinned:
+                e.pinned = False
+                n += 1
+        return n
+
     # -- snapshots and entries ----------------------------------------------------------------
-    def _victim(self) -> bytes:
+    def _victim(self) -> "bytes | None":
         """Who leaves when room is needed: among the boundaries nobody adopted yet, the oldest; only when every
         boundary has served, the least recently used -- so one long prompt's forty fresh boundaries cannot flush the
-        system prompt every conversation shares (45차 §23: the cache is tolerant of churn, not just of size)."""
-        fresh = [h for h, e in self.entries.items() if e.hits == 0]
-        pool = fresh if fresh else list(self.entries)
-        return min(pool, key=lambda h: self.entries[h].used)
+        system prompt every conversation shares (45차 §23: the cache is tolerant of churn, not just of size).
+        Within a class, one whose copy is already on the tier goes first (nothing is lost); a pinned boundary goes
+        last of all; one whose copy is being written cannot go at all (the write reads its snapshot)."""
+        movable = [h for h, e in self.entries.items() if not e.spilling]
+        if not movable:
+            return None
+        return min(movable, key=lambda h: (self.entries[h].pinned, self.entries[h].hits > 0, not self.entries[h].spilled,
+                                           self.entries[h].used))
 
     def take_snapshot(self) -> "int | None":
         """A free snapshot slot, evicting a boundary for it if none is free (`_victim`)."""
         if not self.free_snaps and self.entries:
-            self._evict(self._victim())
+            victim = self._victim()
+            if victim is not None:
+                self._evict(victim)
         return self.free_snaps.pop() if self.free_snaps else None
 
     def give_snapshot(self, snap: int) -> None:
@@ -121,7 +185,10 @@ class PrefixCache:
         """Free at least `blocks` by evicting least recently used entries; returns how many were freed."""
         freed = 0
         while freed < blocks and self.entries:
-            freed += self._evict(self._victim())
+            victim = self._victim()
+            if victim is None:
+                break
+            freed += self._evict(victim)
         return freed
 
     def reclaimable(self) -> int:

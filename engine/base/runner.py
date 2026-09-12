@@ -32,6 +32,7 @@ from typing import Protocol
 from engine.base import scheduler as sched
 from engine.base.instruments import Recorder
 from engine.base.kv import BlockPool, SlotPool
+from engine.base.kv_tier import TierFull
 from engine.base.record import Ring
 
 STEP_RECORD = struct.Struct("<QdBIIi")     # count, wall, kind, n_seqs, tokens, first seq
@@ -90,30 +91,45 @@ class Runner:
         self.steps = 0
         self.inflight = []                                  # [(step, pending, launched_at)]: decode steps ahead of their results
         self._salts = {}                                    # seq -> the prompt's media salts (base/prefix.chain), for boundaries after it
+        # -- the prefix tier (45차 §23 A): evicted leaf boundaries survive on NVMe and come back by reading --
+        self.prefix_tier = None                             # base.tiered_kv.TieredKV over the prefix tier, or None
+        self._spills = {}                                   # hash -> Future: leaf boundaries being written ahead of eviction
+        self._restores = {}                                 # row -> (hash, tokens, snap, Future): a boundary being read into the row
+        self.spill_low_water = 8                            # keep this many snapshots free by writing leaves out ahead
+        self.reused_tokens = 0                              # prompt tokens served from the cache (memory or tier)
+        self.prefix_spills = self.prefix_restores = self.dedup_waits = 0
         self.depth = 2                                      # steps the device may hold before the host reads the oldest back
         self.async_steps = 0
 
-    def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None, salts=()) -> None:
+    def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None, salts=(), prepared=None) -> None:
         """Publish a request only after its blocks, slot and model state exist.
 
         Admission failures return everything acquired here; an existing live
         or parked sequence is never released by a failed duplicate submit.
         `ids`: the prompt, when a prefix cache may reuse its beginning; `salts`:
         (position, digest) of the media standing at placeholder ids (base/prefix.chain).
+        `prepared`: (tokens, snap) when the row already holds a boundary read back from
+        the prefix tier (`restore_finish`): adopted as is, not looked up again.
         """
         now = time.monotonic() if now is None else now
         sched.validate_arrival(self.state, seq, prompt_len, now)
         self.kv.row(seq)                                   # reject invalid row before indexing tokens
-        if self.kv.tokens[seq] or seq in self.slot_of:
+        if seq in self.slot_of or (self.kv.tokens[seq] and prepared is None):
             raise ValueError(f"seq {seq} already owns resident resources")
-        reused, entry, chain = 0, None, None
+        reused, snap, chain = 0, None, None
         if self.prefix is not None and ids is not None:
             if len(ids) != prompt_len:
                 raise ValueError("the prompt ids must be the prompt")
-            reused, entry, _ = self.prefix.lookup(ids, salts)
             chain = self.prefix.chain(ids, salts)
-        if reused:
-            self.kv.adopt(seq, entry.blocks, reused)       # the shared, complete prefix; the row's own blocks follow
+        if prepared is not None:
+            reused, snap = prepared
+            if self.kv.tokens[seq] != reused or reused >= prompt_len:
+                raise ValueError("a prepared row holds exactly its restored boundary, shorter than the prompt")
+        elif chain is not None:
+            reused, entry, _ = self.prefix.lookup(ids, salts)
+            if reused:
+                snap = entry.snap
+                self.kv.adopt(seq, entry.blocks, reused)   # the shared, complete prefix; the row's own blocks follow
         try:
             self.kv.reserve(seq, prompt_len - reused)      # the whole prompt is admitted or nothing (D3)
         except BaseException:
@@ -126,7 +142,7 @@ class Runner:
             try:
                 self.model.open(seq, slot)
                 if reused:
-                    self.model.restore(seq, reused, entry.snap)
+                    self.model.restore(seq, reused, snap)
             except BaseException:
                 self.model.close(seq)
                 raise
@@ -139,7 +155,167 @@ class Runner:
         if chain:
             self._chain[seq] = chain
             self._salts[seq] = tuple(salts)
+        self.reused_tokens += reused
         sched.arrive(self.state, seq, prompt_len, now, reused)
+
+    # -- the prefix tier (45차 §23 A) ------------------------------------------------------------
+    @staticmethod
+    def tier_key(h: bytes) -> int:
+        return int.from_bytes(h[:7], "big")                  # the tier indexes by int; 56 bits of the boundary's hash
+
+    def load_prefix_tier(self) -> None:
+        """What the prefix tier already holds (from an earlier boot): every record with this cache's hash form."""
+        if self.prefix is None or self.prefix_tier is None:
+            return
+        for key in self.prefix_tier.keys():
+            record = self.prefix_tier.record(key)
+            if record and isinstance(record.get("hash"), str):
+                self.prefix.tier_keys[bytes.fromhex(record["hash"])] = key
+
+    def prefix_tier_keys(self) -> "list[int]":
+        return sorted(self.prefix.tier_keys.values()) if self.prefix is not None else []
+
+    def maintain_prefix(self) -> None:
+        """Once a step: land finished spills, and write the next leaves out while snapshots are still free -- so
+        an eviction never waits on the disk (D10) and never loses a boundary the tier could have kept."""
+        if self.prefix is None or self.prefix_tier is None:
+            return
+        prefix, tier = self.prefix, self.prefix_tier
+        for h, future in list(self._spills.items()):
+            if not future.done():
+                continue
+            self._spills.pop(h)
+            e = prefix.entries.get(h)
+            try:
+                future.result()
+            except TierFull:
+                oldest = tier.oldest()
+                if oldest is not None and oldest not in self._restoring_keys():
+                    tier.forget(oldest)                     # room for the next attempt: the least recently written boundary goes
+                    for hh, key in list(prefix.tier_keys.items()):
+                        if key == oldest:
+                            prefix.tier_keys.pop(hh)
+                if e is not None:
+                    e.spilling = False
+                continue
+            except Exception:                               # noqa: BLE001 -- a bad write: this boundary stays memory-only
+                if e is not None:
+                    e.spilling, e.spill_failed = False, True
+                continue
+            self.prefix_spills += 1
+            prefix.tier_keys[h] = self.tier_key(h)
+            if e is not None:
+                e.spilling, e.spilled = False, True
+        if len(prefix.free_snaps) >= self.spill_low_water or self._spills:
+            return
+        # a prompt still being prefilled extends its own leaf every step: its boundaries wait until it is in
+        growing = {h for s, chain in self._chain.items()
+                   if s in self.state.prompt_len and self.state.computed.get(s, 0) < self.state.prompt_len[s]
+                   for h in chain.values()}
+        for h in prefix.spill_candidates(4):
+            if h in growing:
+                continue
+            e = prefix.entries[h]
+            record = {"hash": h.hex(), "tokens": e.tokens}
+            try:
+                future = tier.tier.run_async(tier.tier.demote, self.tier_key(h), self.kv.storage, list(e.blocks), e.tokens,
+                                             self.model.snapshot_bytes(e.snap), record)
+            except Exception:                               # noqa: BLE001 -- could not even hand it over
+                e.spill_failed = True
+                continue
+            e.spilling = True
+            self._spills[h] = future
+            break                                           # one write at a time: the tier has one staging buffer
+
+    def _restoring_keys(self) -> set:
+        return {self.tier_key(h) for h, _, _, _ in self._restores.values()}
+
+    def restore_begin(self, seq: int, h: bytes, tokens: int) -> None:
+        """Read the tier's copy of boundary `h` into the empty row `seq` and a free snapshot, on the tier's thread."""
+        if self.prefix is None or self.prefix_tier is None:
+            raise ValueError("this runner has no prefix tier")
+        if h not in self.prefix.tier_keys:
+            raise ValueError("that boundary is not on the prefix tier")
+        if h in self.prefix.entries:
+            raise ValueError("that boundary is already in memory")
+        self.kv.row(seq)
+        if self.kv.tokens[seq] or seq in self.slot_of or seq in self._restores:
+            raise ValueError(f"row {seq} is not free")
+        if tokens <= 0 or tokens % self.kv.block_size:
+            raise ValueError("a boundary is whole blocks")
+        snap = self.prefix.take_snapshot()
+        if snap is None:
+            raise MemoryError("no snapshot is free for the restored boundary")
+        try:
+            self.kv.reserve(seq, tokens)
+        except BaseException:
+            self.prefix.give_snapshot(snap)
+            raise
+        blocks = [b for b in self.kv.row(seq)][: tokens // self.kv.block_size]
+        try:
+            future = self.prefix_tier.tier.run_async(self.prefix_tier.tier.promote, self.tier_key(h), self.kv.storage, blocks,
+                                                     self.model.snapshot_bytes(snap))
+        except BaseException:
+            self.kv.release(seq)
+            self.prefix.give_snapshot(snap)
+            raise
+        self._restores[seq] = (h, tokens, snap, future)
+
+    def restore_finish(self, seq: int) -> "tuple[int, int]":
+        """The read landed: the boundary is a memory entry again (pinned by the cache, held by the row) -- returns
+        (tokens, snap) for `submit(prepared=...)`. A failed read frees the row and drops the tier's copy, and raises."""
+        h, tokens, snap, future = self._restores.pop(seq)
+        try:
+            future.result()
+        except BaseException:
+            self.kv.release(seq)
+            self.prefix.give_snapshot(snap)
+            key = self.prefix.tier_keys.pop(h, None)
+            if key is not None:
+                try:
+                    self.prefix_tier.forget(key)
+                except Exception:                           # noqa: BLE001 -- the copy is unreadable either way
+                    pass
+            raise
+        blocks = tuple(self.kv.row(seq)[: tokens // self.kv.block_size])
+        self.prefix.insert(h, blocks, tokens, snap)
+        e = self.prefix.entries[h]
+        e.spilled, e.hits = True, 1
+        self.prefix.hits += 1
+        self.prefix_restores += 1
+        return tokens, snap
+
+    def restore_undo(self, seq: int) -> None:
+        """A restore that landed here but not on every rank: the row goes back, the memory entry stays (harmless)."""
+        if self.kv.tokens[seq]:
+            self.kv.release(seq)
+
+    def restore_cancel(self, seq: int) -> None:
+        """Wait for the row's read and drop everything it took (shutdown / a cancelled request)."""
+        if seq not in self._restores:
+            return
+        try:
+            self.restore_finish(seq)
+        except Exception:                                   # noqa: BLE001
+            return
+        self.restore_undo(seq)
+
+    # -- the same prompt, twice at once (45차 §23 B) ------------------------------------------------
+    def shared_ahead(self, ids, salts=(), above: int = 0) -> "bytes | None":
+        """The hash of the longest boundary of `ids` (past `above`) that a prefill now running will cache when it gets
+        there -- a request that waits for it adopts it instead of computing the same tokens beside it. None if no
+        live prefill shares that much."""
+        if self.prefix is None:
+            return None
+        chain = self.prefix.chain(ids, salts)
+        live = [s for s in self._chain if s in self.state.prompt_len and self.state.computed.get(s, 0) < self.state.prompt_len[s]]
+        for tokens in sorted(chain, reverse=True):
+            if tokens <= above or tokens >= len(ids) or chain[tokens] in self.prefix.entries:
+                continue
+            for s in live:
+                if self._chain[s].get(tokens) == chain[tokens] and self.state.computed.get(s, 0) < tokens <= self.state.prompt_len[s]:
+                    return chain[tokens]
+        return None
 
     def _finish(self, seq: int) -> None:
         sched.finish(self.state, seq)
@@ -267,13 +443,17 @@ class Runner:
         return self.resume_finish(seq)
 
     def transfer_done(self, seq: int) -> bool:
-        """Whether the row's park/resume has finished on the tier's thread (never blocks)."""
+        """Whether the row's park/resume/restore has finished on the tier's thread (never blocks)."""
+        if seq in self._restores:
+            return self._restores[seq][3].done()
         return self.tiered.done(seq)
 
     def _settle_row(self, seq: int) -> None:
         """Wait for the row's transfer and finish it, swallowing its failure (shutdown only)."""
         try:
-            if seq in self.retiring:
+            if seq in self._restores:
+                self.restore_cancel(seq)
+            elif seq in self.retiring:
                 self.park_finish(seq)
             elif seq in self.resuming:
                 self.resume_finish(seq)
@@ -286,8 +466,14 @@ class Runner:
             self.drain()
         except Exception:                                    # noqa: BLE001 -- shutdown: the engine's failure is reported elsewhere
             self.inflight.clear()
-        for seq in list(self.retiring) + list(self.resuming):
+        for seq in list(self.retiring) + list(self.resuming) + list(self._restores):
             self._settle_row(seq)
+        for future in list(self._spills.values()):
+            try:
+                future.result()
+            except Exception:                                # noqa: BLE001 -- shutdown
+                pass
+        self._spills.clear()
 
     # -- steps ahead of their results (45차 §23 B3) ------------------------------------------------
     def resolve_oldest(self) -> None:
@@ -344,8 +530,8 @@ class Runner:
         return key
 
     def transfers(self) -> "list[int]":
-        """Rows with a park or resume in flight, in a fixed order (the same on every rank)."""
-        return sorted(self.retiring) + sorted(self.resuming)
+        """Rows with a park, resume or prefix restore in flight, in a fixed order (the same on every rank)."""
+        return sorted(self.retiring) + sorted(self.resuming) + sorted(self._restores)
 
     def wake(self, seq: int) -> None:
         """An idle conversation decodes again (its next token is pending in the model)."""
@@ -445,6 +631,7 @@ class Runner:
 
     def step(self, now: float | None = None) -> "sched.Step | None":
         now = time.monotonic() if now is None else now
+        self.maintain_prefix()
         while True:
             if len(self.inflight) >= self.depth:
                 self.resolve_oldest()

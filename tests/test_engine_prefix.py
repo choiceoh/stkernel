@@ -46,10 +46,15 @@ class Model:
 
     def checkpoint(self, seq, position, snap):
         self.calls.append(("checkpoint", seq, position, snap))
+        self.snaps = getattr(self, "snaps", {}); self.snaps[snap] = bytearray([position % 256] * 4)
 
     def restore(self, seq, position, snap):
         self.calls.append(("restore", seq, position, snap))
         self.ctx[seq] = position
+
+    def snapshot_bytes(self, snap):
+        self.snaps = getattr(self, "snaps", {})
+        return self.snaps.setdefault(snap, bytearray(4))
 
 
 def runner(blocks=16, snapshots=2):
@@ -220,6 +225,52 @@ class PrefixCacheTests(unittest.TestCase):
         snap = c.take_snapshot()                              # room is needed: the fresh, never-adopted one leaves
         self.assertIn(b"hot", c.entries); self.assertNotIn(b"fresh", c.entries)
         c.give_snapshot(snap)
+
+    def test_a_running_prefill_s_boundaries_are_visible_ahead_and_gone_once_cached(self):
+        r, cache = runner(snapshots=8)
+        ids = list(range(20))
+        r.submit(0, 20, now=0, ids=ids)
+        r.step(now=0)                                                   # computed 8: boundaries 12 and 16 still to come
+        h16 = cache.chain(ids)[16]
+        self.assertEqual(r.shared_ahead(ids, (), above=8), h16)
+        self.assertIsNone(r.shared_ahead(ids, (), above=16))            # nothing beyond 16 inside a 20-token prompt
+        self.assertIsNone(r.shared_ahead(list(range(100, 120)), ()))    # a different prompt shares nothing
+        run_to_end(r, 0)
+        self.assertIsNone(r.shared_ahead(ids, (), above=8))             # cached now: nothing to wait for
+
+    def test_a_leaf_spills_to_the_prefix_tier_and_a_later_prompt_restores_it_with_its_snapshot(self):
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 10                                          # write leaves out as soon as they exist
+        r.submit(0, 12, now=0, ids=list(range(12)))                     # boundaries 4 (mark), 8 (checkpoint), 12 (checkpoint)
+        run_to_end(r, 0)
+        r.step(now=0); r.step(now=0)                                    # idle steps: maintain lands the spill of the leaf (12)
+        self.assertEqual(r.prefix_spills, 1)
+        h12 = cache.chain(list(range(12)))[12]
+        self.assertEqual(list(cache.tier_keys), [h12])
+        self.assertTrue(cache.entries[h12].spilled)
+        # three fresh boundaries evict everything: the spilled leaf leaves memory but not the tier
+        r.submit(1, 12, now=0, ids=list(range(50, 62)))
+        run_to_end(r, 1)
+        self.assertNotIn(h12, cache.entries)
+        self.assertIn(h12, cache.tier_keys)
+        # a prompt that starts with the first one: the tier's copy is read into the row, snapshot and all
+        ids = list(range(12)) + [7, 7, 7]
+        self.assertEqual(cache.tier_lookup(ids, (), cache.peek(ids)), (12, h12))
+        r.restore_begin(2, h12, 12)
+        self.assertTrue(r.transfer_done(2))
+        tokens, snap = r.restore_finish(2)
+        self.assertEqual(tokens, 12)
+        self.assertEqual(bytes(r.model.snaps[snap]), bytes([12] * 4))    # the boundary's snapshot bytes came back with it
+        r.submit(2, 15, now=0, ids=ids, prepared=(tokens, snap))
+        self.assertEqual(r.state.computed[2], 12)
+        self.assertEqual(r.model.calls[-1], ("restore", 2, 12, snap))
+        self.assertEqual((r.prefix_restores, r.reused_tokens), (1, 12))
+        run_to_end(r, 2)
+        self.assertEqual([c for c in r.model.calls if c[0] == "prefill"][-1], ("prefill", 2, 12, 3))
 
     def test_ids_must_match_the_prompt(self):
         r, _ = runner()
