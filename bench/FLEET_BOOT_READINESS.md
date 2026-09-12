@@ -1,5 +1,7 @@
 # ST boot preparation and queue lease readiness
 
+> 살아 있는 참조 — **ST 부팅 준비 랑데부와 큐 리스 경로가 지금 어떻게 동작하는지. 부팅 경로가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
+
 Cold and partially warm pack caches can leave TP ranks several minutes apart.
 On 2026-09-12, both `B-boot-failed-cold-packs` and
 `B-boot-failed-warm-packs` under `st-prefill-3000-20260912-batch6`
