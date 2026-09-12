@@ -18,16 +18,20 @@ def compile_only():
     from triton.backends.compiler import GPUTarget
     from triton.compiler import ASTSource
     from engine.kernels.mhc_contract import _contract
-    kernel = triton.compile(ASTSource(_contract,
-        {"X": "*bf16", "Residual": "*bf16", "Post": "*fp32", "Comb": "*fp32",
-         "Out": "*bf16", "OUT_STRIDE": "i64"}, constexprs={"H": 4096, "B": 512}),
-        target=GPUTarget("cuda", 121, 32), options={"num_warps": 4})
+    variants = []
+    for stride_type in ("i32", "i64"):
+        kernel = triton.compile(ASTSource(_contract,
+            {"X": "*bf16", "Residual": "*bf16", "Post": "*fp32", "Comb": "*fp32",
+             "Out": "*bf16", "OUT_STRIDE": stride_type}, constexprs={"H": 4096, "B": 512}),
+            target=GPUTarget("cuda", 121, 32), options={"num_warps": 4})
+        variants.append(dict(out_stride_type=stride_type,
+                             cubin_sha256=hashlib.sha256(kernel.asm["cubin"]).hexdigest(),
+                             shared_bytes=kernel.metadata.shared))
     assert not torch.cuda.is_initialized()
     reduce_header = Path(torch.__file__).parent / "include/ATen/native/cuda/Reduce.cuh"
     return dict(scope="SM121 compilation only; no numerical or speed verdict", gpu_used=False,
                 torch=torch.__version__, triton=triton.__version__, status="PASS",
-                cubin_sha256=hashlib.sha256(kernel.asm["cubin"]).hexdigest(),
-                shared_bytes=kernel.metadata.shared,
+                variants=variants,
                 torch_reduce_header_sha256=hashlib.sha256(reduce_header.read_bytes()).hexdigest())
 
 
