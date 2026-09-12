@@ -152,6 +152,34 @@ class KernelAgreesWithTheSortTests(unittest.TestCase):
             alone = rows(logits[i:i + 1], t[i:i + 1], k[i:i + 1], p[i:i + 1], u[i:i + 1])
             self.assertEqual(int(alone[0]), int(together[i]))
 
+    def test_a_temperature_too_small_to_invert_still_behaves_like_one(self):
+        """`sampling_options` takes any finite nonnegative temperature, so 1e-45 is a request the
+        door will pass on. Scaling by 1/T would make it inf, and the row's own maximum 0 * inf = NaN
+        -- which read out as the last vocabulary id and an all-zero distribution, not as an error."""
+        g = torch.Generator(device="cuda").manual_seed(21)
+        logits = torch.randn(2, 256, device="cuda", generator=g) * 3
+        for temperature in (1e-45, 1e-40, 1e-20, 1e-5):
+            with self.subTest(temperature=temperature):
+                t, k, p = policy(2, "cuda", temperature=temperature, top_p=0.9)
+                probs = torch.empty(2, 256, dtype=torch.float32, device="cuda")
+                ids = rows(logits, t, k, p, torch.full((2,), 0.5, device="cuda"), None, probs)
+                self.assertTrue(torch.equal(ids, logits.argmax(-1)),
+                                "a temperature this small is the argmax, as the sorted reference gives")
+                torch.testing.assert_close(probs.sum(1), torch.ones(2, device="cuda"))
+
+    def test_a_row_that_is_not_contiguous_is_refused_rather_than_misread(self):
+        """The kernel addresses a row as `base + i`. A strided view would be read at the wrong
+        offsets and still return a token; the CPU reference indexes properly and would not agree."""
+        g = torch.Generator(device="cuda").manual_seed(22)
+        base = torch.randn(3, 128, device="cuda", generator=g) * 3
+        strided = base.repeat_interleave(2, dim=1)[:, ::2]          # the same values, stride(1) == 2
+        self.assertEqual(strided.stride(1), 2)
+        t, k, p = policy(3, "cuda", top_p=0.9)
+        u = torch.full((3,), 0.5, device="cuda")
+        with self.assertRaisesRegex(ValueError, "contiguous"):
+            rows(strided, t, k, p, u)
+        self.assertIsNotNone(rows(strided.contiguous(), t, k, p, u), "and the same values, laid out, work")
+
     def test_the_caller_s_logits_are_never_written(self):
         g = torch.Generator(device="cuda").manual_seed(11)
         logits = torch.randn(4, 8192, device="cuda", generator=g)
