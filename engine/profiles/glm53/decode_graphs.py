@@ -430,9 +430,14 @@ class DrafterDecodeGraphs:
 class SamplingGraphs:
     """Greedy and stochastic sampling bind the target graphs' output buffers.
 
-    Choosing the declared sampling policy uses host request metadata. Greedy
-    replay draws no random numbers; mixed/stochastic replay advances the
+    Greedy replay draws no random numbers; mixed/stochastic replay advances the
     engine's explicit generator exactly as the eager sampler does.
+
+    Temperature, top-k and top-p all arrive as per-row arrays staged from pinned
+    memory, so the captured program has no nucleus branch to be recorded with or
+    without -- one capture serves every truncation a request can ask for. That is
+    why a plain `temperature + top_p` row no longer needs the rich sampler
+    (base/sampler.needs_rich_sampler).
     """
     def __init__(self, target, generator, decodable, top_p):
         from engine.base.sampler import sample
@@ -451,9 +456,13 @@ class SamplingGraphs:
             elif target.graphs.outputs[first[key]][2] is not logits:
                 raise ValueError(f"target shapes {first[key]} and {shape} must share one logits buffer")
         shapes = list(first)
-        # Same pinned staging as the target's replay path, for the one array this one writes.
-        self.temps = torch.empty(max(n * t for n, t in shapes), dtype=torch.float32, pin_memory=True)
-        self.staged = self.temps.numpy()
+        # Same pinned staging as the target's replay path, for the three arrays this one writes.
+        width = max(n * t for n, t in shapes)
+        self.default_p = top_p
+        self.policy = (torch.empty(width, dtype=torch.float32, pin_memory=True),
+                       torch.empty(width, dtype=torch.int32, pin_memory=True),
+                       torch.empty(width, dtype=torch.float32, pin_memory=True))
+        self.staged = [x.numpy() for x in self.policy]
         saved = generator.get_state()
 
         def make_inputs(*shape):
@@ -462,18 +471,19 @@ class SamplingGraphs:
             # Capture records the target outputs but need not initialize them.
             # Sampling warmup must see finite logits before the first request.
             logits.zero_()
-            return logits, torch.ones(n*t, device=logits.device), torch.full((n*t,), top_p, device=logits.device)
+            return (logits, torch.ones(n*t, device=logits.device),
+                    torch.zeros(n*t, dtype=torch.int32, device=logits.device),
+                    torch.full((n*t,), top_p, device=logits.device))
 
         def greedy(inputs):
             return argmax(inputs[0], target.net.comm, target.net.rank * target.net.vp, decodable)
 
         def stochastic(inputs):
-            local_logits, temps, p = inputs
-            logits = target.net.comm.all_gather(local_logits, dim=-1)
-            if decodable is not None and logits.shape[-1] > decodable:
-                logits = logits.clone()
-                logits[:, decodable:] = float("-inf")
-            return sample(logits, temps, p, generator, top_p_enabled=top_p < 1.)
+            local_logits, temps, k, p = inputs
+            # The undecodable tail is a `valid` width the sampler stops at, not a copy of the
+            # whole gathered block with minus infinity written into its end.
+            return sample(target.net.comm.all_gather(local_logits, dim=-1), temps, p, generator,
+                          top_k=k, valid=decodable)
 
         try:
             memory = getattr(target, "memory", None)
@@ -487,14 +497,20 @@ class SamplingGraphs:
         finally:
             generator.set_state(saved)
 
-    def run(self, shape, temperatures):
+    def run(self, shape, temperatures, top_k=None, top_p=None):
         """`shape` is the target's, whose first two entries name the sampler."""
         shape = tuple(shape[:2])
         if all(t <= 0 for t in temperatures):
             return self.greedy.run(shape, lambda inputs: None)
         rows = len(temperatures)
-        self.staged[:rows] = temperatures
-        return self.stochastic.run(shape, lambda inputs: inputs[1].copy_(self.temps[:rows], non_blocking=True))
+        self.staged[0][:rows] = temperatures
+        self.staged[1][:rows] = 0 if top_k is None else top_k
+        self.staged[2][:rows] = self.default_p if top_p is None else top_p
+
+        def fill(inputs):
+            for held, static in zip(self.policy, inputs[1:]):
+                static.copy_(held[:rows], non_blocking=True)
+        return self.stochastic.run(shape, fill)
 
     def close(self):
         self.greedy.close()

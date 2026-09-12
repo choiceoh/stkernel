@@ -311,11 +311,17 @@ class Drafter:
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
         succ = p["candidate_selector.successor_codebook"][cand].float()
         scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
+        # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
+        # but its uniforms can be drawn in one call, and over sixteen candidates the cumulative walk is the
+        # whole of a draw. `multinomial` was a kernel a position to do that.
+        u = torch.rand(K, generator=generator, device=dev)
         drafts, dists = [], torch.zeros(K, vocab, device=dev, dtype=torch.float32)
         prev = torch.zeros(1, dtype=torch.int64, device=dev)
         for s in range(K):
             probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)   # over the 16 candidates
-            pick = torch.multinomial(probs, 1, generator=generator)
+            walk = probs.cumsum(0)
+            pick = torch.searchsorted(walk.contiguous(), (u[s] * walk[-1]).reshape(1), right=True) \
+                .clamp_max(probs.numel() - 1)
             dists[s].index_add_(0, cand[s], probs)
             drafts.append(cand[s].index_select(0, pick))
             prev = pick

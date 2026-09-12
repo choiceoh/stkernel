@@ -15,46 +15,48 @@ class DistributionBatchTests(unittest.TestCase):
     def test_greedy_rows_are_one_hot_and_nucleus_rows_keep_the_smallest_prefix(self):
         logits = torch.tensor([[1.0, 3.0, 2.0, 0.0], [1.0, 3.0, 2.0, 0.0], [1.0, 3.0, 2.0, 0.0]])
         temps = torch.tensor([0.0, 1.0, 1.0])
+        top_k = torch.zeros(3, dtype=torch.int32)
         top_p = torch.tensor([1.0, 1.0, 0.5])
-        probs = distribution_batch(logits, temps, top_p, nucleus=True)
+        # no `nucleus` argument: each row carries its own truncation, so there is no host predicate
+        probs = distribution_batch(logits, temps, top_k, top_p)
         self.assertEqual(probs[0].tolist(), [0.0, 1.0, 0.0, 0.0])
         torch.testing.assert_close(probs[1], torch.softmax(logits[1], -1))
         self.assertEqual(probs[2].tolist(), [0.0, 1.0, 0.0, 0.0])                     # the top token alone reaches 0.5
         torch.testing.assert_close(probs.sum(1), torch.ones(3))
-        plain = distribution_batch(logits, temps, torch.ones(3), nucleus=False)
+        plain = distribution_batch(logits, temps, top_k, torch.ones(3))
         torch.testing.assert_close(plain[2], torch.softmax(logits[2], -1))
 
-    def test_only_the_listed_rows_are_sorted_and_truncated(self):
-        logits = torch.tensor([[1.0, 3.0, 2.0, 0.0]] * 3)
-        temps, top_p = torch.ones(3), torch.tensor([1.0, 0.5, 0.5])
-        probs = distribution_batch(logits, temps, top_p, nucleus=torch.tensor([2]))
-        torch.testing.assert_close(probs[1], torch.softmax(logits[1], -1))         # not listed: untouched
-        self.assertEqual(probs[2].tolist(), [0.0, 1.0, 0.0, 0.0])
-        none = distribution_batch(logits, temps, top_p, nucleus=torch.zeros(0, dtype=torch.int64))
-        torch.testing.assert_close(none, torch.softmax(logits, -1))
-        torch.testing.assert_close(distribution_batch(logits, temps, top_p, nucleus=None), none)
+    def test_a_row_that_asks_for_top_k_gets_it_without_leaving_this_path(self):
+        logits = torch.tensor([[3.0, 2.0, 1.0, 0.0], [3.0, 2.0, 1.0, 0.0]])
+        probs = distribution_batch(logits, torch.ones(2), torch.tensor([0, 2], dtype=torch.int32), torch.ones(2))
+        torch.testing.assert_close(probs[0], torch.softmax(logits[0], -1))
+        self.assertEqual(probs[1][2:].tolist(), [0.0, 0.0])
+        torch.testing.assert_close(probs[1][:2], torch.softmax(logits[1][:2], -1))
 
 
 class ShrinkTests(unittest.TestCase):
-    def test_shrink_remaps_the_nucleus_positions_to_the_surviving_rows(self):
-        e = SimpleNamespace(drafter=SimpleNamespace(k=2), caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device("cpu")),
+    """A row finishing does not move the others: every device tensor is re-indexed, on the device.
+
+    What this used to also check -- the remapping of which positions wanted a nucleus -- went away
+    with the sort that list chose the payers for (45차 §34). The re-indexing itself did not."""
+
+    def test_every_row_array_follows_the_surviving_rows(self):
+        e = SimpleNamespace(drafter=SimpleNamespace(k=2),
+                            caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device("cpu")),
                             F=SimpleNamespace(block=2))
         p = AsyncDecode(e)
         t, n = p.t, 3
-        b = {name: torch.arange(n) for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "temps", "top_p", "anchor")}
-        b.update(ends=torch.zeros(n, 1, dtype=torch.int64), alive=torch.ones(n, dtype=torch.bool), drafts=torch.zeros(n, 2, dtype=torch.int64),
-                 ids=torch.arange(n * t), dists=None, nucleus_rows=[j for i in (0, 2) for j in range(i * t, i * t + t)])
-        b["nucleus"] = torch.tensor(b["nucleus_rows"])
+        b = {name: torch.arange(n) for name in
+             ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "temps", "top_k", "top_p", "anchor")}
+        b.update(ends=torch.zeros(n, 1, dtype=torch.int64), alive=torch.ones(n, dtype=torch.bool),
+                 drafts=torch.zeros(n, 2, dtype=torch.int64), ids=torch.arange(n * t), dists=None)
         p.buf, p.batch = b, (1, 2, 3)
-        p._shrink([3, 1])                                                             # old row 2 -> new 0, old row 0 -> new 1
-        self.assertEqual(b["nucleus_rows"], [t + j for j in range(t)] + list(range(t)))
-        self.assertEqual(b["nucleus"].tolist(), b["nucleus_rows"])
+        p._shrink([3, 1])                                                     # old row 2 -> new 0, old row 0 -> new 1
         self.assertEqual(b["seqs"].tolist(), [2, 0])
-        p._shrink([3])                                                                # the row without a nucleus is gone
-        self.assertEqual(b["nucleus_rows"], list(range(t)))
-        p._shrink([])
-        self.assertIsNone(b["nucleus"])
-        self.assertEqual(b["nucleus_rows"], [])
+        self.assertEqual(b["top_k"].tolist(), [2, 0], "a row's truncation follows the row")
+        self.assertEqual(b["top_p"].tolist(), [2, 0])
+        self.assertEqual(b["ids"].tolist(), list(range(2 * t, 3 * t)) + list(range(t)))
+        self.assertEqual(p.batch, (3, 1))
 
 
 class ResolveTests(unittest.TestCase):
