@@ -378,7 +378,7 @@ class Door:
             pass
         image.load()
         image = to_rgb(image)
-        frames = torch.from_numpy(np.asarray(image, dtype=np.uint8)).permute(2, 0, 1).contiguous()[None]   # [1, 3, h, w]
+        frames = torch.from_numpy(np.array(image, dtype=np.uint8)).permute(2, 0, 1).contiguous()[None]     # [1, 3, h, w]
         h, w = frames.shape[-2:]
         lo, hi = V.pixels("image")
         H, W = smart_resize(V.temporal, h, w, V.temporal, V.factor, V.factor, lo, hi)
