@@ -177,7 +177,8 @@ def declared(a, comm_world: int) -> Config:
         return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
         Knob("mla_prefill", "tile32", _dt.date(2026, 9, 30),
-             "large-M MLA prefill candidates (tile32 is the qualified production default; pair and pair4 remain selectable for comparison)",
+             "large-M MLA prefill: tile32 is the qualified production default, stock the baseline "
+             "(the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차)",
              "STK_mla_prefill=tile32"),
         Knob("context_ceiling", 0, _dt.date(2026, 9, 30),
              "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. "
