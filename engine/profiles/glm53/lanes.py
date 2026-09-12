@@ -79,7 +79,7 @@ class Lanes:
                               #  the served lane's weight views (in-place tile-major relayout, packed SF6 owner); reference: None
     graph_resources: object = None  # () -> external workspace owners to retain until the captured graphs close
     kda_chunk_tokens: int = 64      # the kernel chunk `states_at` indexes: a mark inside a prefill chunk sits on a multiple of it
-    kda_recurrent_ring: object = None  # recurrent inputs, then (ring [slots,R,H,K,V] f32, slot, context, lower_bound)
+    kda_recurrent_ring: object = None  # inputs, then (ring [slots,R,H,K,V] f32/f16, slot, context, lower_bound)
                                      # -> output only; writes each token state into the selected ring. None uses the functional lane.
     conv_ring: object = None  # (x [T,C], w [C,K], ring [slots,C,R], slot, context) -> y; writes raw inputs into ring, T<=8
     rmsnorm: object = None    # None declares net.py's torch composition; served binds native pointwise lanes

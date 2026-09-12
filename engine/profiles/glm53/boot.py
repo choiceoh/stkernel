@@ -44,7 +44,8 @@ from engine.base.prefix import PrefixCache                       # noqa: E402
 from engine.base.shapes import chunk_for                         # noqa: E402
 from engine.base.tiered_kv import TieredKV                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
-from engine.profiles.glm53.caches import Glm53Caches, layout, snapshot_layout, stage_bytes   # noqa: E402
+from engine.profiles.glm53.caches import (Glm53Caches, layout, snapshot_layout, stage_bytes,
+                                        cache_capacity, state_dtype)   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
@@ -225,9 +226,12 @@ def declared(a, comm_world: int) -> Config:
         # serving brackets. Keep it in the production contract so a stale
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
-        defaults = dict(mla_prefill="tile32", context_ceiling=0)
+        defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE)
         return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("kda_state_dtype", facts.KDA_STATE_DTYPE, _dt.date(2026, 9, 30),
+             "FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory",
+             "STK_kda_state_dtype=fp32", state_dtype),
         Knob("mla_prefill", "tile32", _dt.date(2026, 9, 30),
              "large-M MLA prefill: tile32 is the qualified production default, stock the baseline "
              "(the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)",
@@ -251,10 +255,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
           context_ceiling: "int | None" = None, execution: str = "stock",
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER,
-          lease_owner: "str | None" = None):
+          lease_owner: "str | None" = None, kda_state_dtype: "str | None" = None):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
     F = facts.load(ckpt_meta)
+    if kda_state_dtype is not None:
+        from dataclasses import replace
+        F = replace(F, kda_state_dtype=state_dtype(kda_state_dtype))
     if execution not in ("stock", "native"):
         raise ValueError("execution must be stock or native")
     net = Glm53Net(F, comm, lanes, layers)
@@ -271,14 +278,21 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     cache_layout = layout(F, net.layers, draft_shape)
     bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes
     ns = max_seqs + 1
-    # the persistent int32 block table is part of the same declared budget
-    nb = int((kv_gib * GIB - ns * sb) // (bb + max_seqs * 4))
+    # Keep FP32's capacity: narrower state must return bytes, not buy more KV.
+    nb, snapshots = cache_capacity(F, net.layers, draft_shape, kv_gib, max_seqs,
+                                   PREFIX_SNAPSHOT_GIB if tier_dir else PREFIX_UNTIERED_SNAPSHOT_GIB)
     if nb < 2:
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
     recorder.gauge('weight_layout', F.weight_layout)
     snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
-    snapshots = snapshot_count(snapshot_bytes, PREFIX_SNAPSHOT_GIB if tier_dir else PREFIX_UNTIERED_SNAPSHOT_GIB)
+    reference_snapshot_bytes = snapshot_layout(F, net.layers, draft_shape, state_storage="fp32")[0]
+    recorder.gauge("kda_state_dtype", F.kda_state_dtype)
+    saved = ns * (layout(F, net.layers, draft_shape, state_storage="fp32").slot_bytes - sb)
+    saved += snapshots * (reference_snapshot_bytes - snapshot_bytes)
+    saved += ns * (snapshot_layout(F, net.layers, state_storage="fp32")[0]
+                   - snapshot_layout(F, net.layers)[0])
+    recorder.gauge("kda_state_storage_saved_bytes", saved)
     host_budget_bytes = prefix_host_bytes(bool(tier_dir))
     # the vision tower (45차 §23 A7): whole on every rank, from vision.safetensors next to the rank files (preshard.py --vision);
     # absent, the door refuses pictures -- the fleet boot requires it (production serves images, PR #431)
@@ -369,7 +383,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         redeclare = partial(budget_mod.budget, kv_gib, max_seqs,
                             chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
                             ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
-                            snapshots=snapshots, tier_enabled=bool(tier_dir),
+                            snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
                             draft_tp=comm.world_size if execution == "native" else 1,
                             draft_native=execution == "native", router_bytes=router_bytes)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
@@ -486,8 +500,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                     left = tenancy.claim(Path(tier_dir) / f"rank{comm.rank}", lease_owner)
                     if left:
                         print(f"  rank{comm.rank}: tenant state cleared -- the fleet changed hands from {left}")
+                # Missing format tags name historical FP32 bytes. FP16 cannot
+                # discover or restore those conversations/prefix snapshots.
+                state_format = "glm53-kda-fp16-v1" if F.kda_state_dtype == "fp16" else ""
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes,  # a block is one NVMe unit (block-major)
-                                capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB))
+                                capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB),
+                                state_format=state_format)
                 tiered = TieredKV(caches.pool, tier)
                 # the prefix tier (45차 §23 A): evicted leaf boundaries -- their blocks and snapshot -- live on beside the parked
                 # conversations, in their own directory and keyspace (a boundary's key is 56 bits of its hash)
@@ -495,11 +513,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                                                              block_bytes=cache_layout.block_bytes, stage_bytes=PREFIX_TIER_STAGE,
                                                              capacity_bytes=int(PREFIX_TIER_GIB * GIB),
                                                              reserve_bytes=int(TIER_RESERVE_GIB * GIB),
-                                                             snapshot_cache_bytes=PREFIX_COMPRESSED_BYTES))
+                                                             snapshot_cache_bytes=PREFIX_COMPRESSED_BYTES,
+                                                             state_format=state_format))
             prefix = PrefixCache(F.block, engine.prefill_chunk, snapshots)      # boundaries = every 768 block (base/prefix.py)
             # Reducing hot slots must not also halve the metadata budget for
             # cold boundaries whose KV blocks remain reusable.
-            prefix.max_faded = 4 * snapshot_count(snapshot_bytes, PREFIX_UNTIERED_SNAPSHOT_GIB)
+            prefix.max_faded = 4 * snapshot_count(reference_snapshot_bytes, PREFIX_UNTIERED_SNAPSHOT_GIB)
             runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
                             keep_idle=tiered is not None, prefix=prefix)                # with a tier, conversations live on and park
             runner.prefix_tier = prefix_tier
@@ -956,11 +975,13 @@ def fleet(a) -> int:
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
                                                context_ceiling=cfg["context_ceiling"] or None,
-                                               execution=cfg["execution"], lease_owner=lease["owner"])
+                                               execution=cfg["execution"], lease_owner=lease["owner"],
+                                               kda_state_dtype=cfg["kda_state_dtype"])
 
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
+                            "kda_state_dtype": F.kda_state_dtype,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
                             "context_ceiling": str(engine.max_context),
                             "packs": f"gptq {engine.pack_stats.get('gptq', 0)} rtn {engine.pack_stats.get('rtn', 0)}",   # what the store built or read

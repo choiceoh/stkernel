@@ -6,7 +6,7 @@ from .fused_recurrent import fused_recurrent_gated_delta_rule_fwd_kernel
 
 
 def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound):
-    """Return dense output and write every token's FP32 state directly to ring.
+    """Return dense output and store FP32 accumulators directly in the typed ring.
 
     Ring is [slots,R,HV,K,V], with dense per-slot rows and optional slot
     padding. Only rows (context + i) % R of the selected slot are modified.
@@ -34,10 +34,10 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
                 for x in inputs)):
         raise ValueError("ring KDA requires compatible CUDA floating Q/K, V, gate and scalar beta")
     if (ring.ndim != 5 or ring.shape[0] <= 0 or ring.shape[2:] != (hv, kd, vd) or
-            not 1 <= t <= ring.shape[1] or ring.device != q.device or ring.dtype != torch.float32 or
+            not 1 <= t <= ring.shape[1] or ring.device != q.device or ring.dtype not in (torch.float32, torch.float16) or
             ring.stride()[1:] != (hv*kd*vd, kd*vd, vd, 1) or
             ring.stride(0) < ring.shape[1]*hv*kd*vd):
-        raise ValueError("ring must be FP32 [slots,R,HV,K,V] with dense rows and 1 <= T <= R")
+        raise ValueError("ring must be FP32/FP16 [slots,R,HV,K,V] with dense rows and 1 <= T <= R")
     for x, size in ((a_log, h), (g_bias, h*kd)):
         if x.device != q.device or x.dtype != torch.float32 or x.numel() != size or not x.is_contiguous():
             raise ValueError("ring gate parameters must be contiguous FP32 on the input device")

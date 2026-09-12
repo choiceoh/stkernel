@@ -211,7 +211,7 @@ class ContractTests(unittest.TestCase):
     def test_the_runner_waits_for_room_uses_the_production_image_and_takes_no_lease_there(self):
         self.assertIn('probe_host=${ST_PROBE_HOST:-}', self.runner)
         remote = self.runner[self.runner.index('probe_host=${ST_PROBE_HOST:-}'):self.runner.index('mkdir -p "$cache"')]
-        self.assertIn('rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes"', remote)
+        self.assertIn('rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes" "$repo/tests"', remote)
         self.assertIn('fleet_single.py" evidence --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"', remote)
         self.assertIn('fleet_single.py" reclaim --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"', remote)
         self.assertIn('waiting for room on $probe_host', remote)

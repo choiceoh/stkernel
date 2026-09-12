@@ -1,0 +1,6 @@
+............................................................................
+----------------------------------------------------------------------
+Ran 76 tests in 1.666s
+
+OK
+  fleet_prune: keeps the holder, the queue, the paused and every runner they name; removes only what is both unreferenced and old; dry by default OK
