@@ -12,6 +12,25 @@ class StopAtBuild(Exception):
 
 @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires PyTorch")
 class BootPathTests(unittest.TestCase):
+    def test_the_repo_default_width_is_the_one_production_serves(self):
+        """They disagreed, and that is how two onepass runs 27 minutes apart on one commit came
+        out incomparable: one captured widths 1-4 with a 1,035,264 ceiling, the other 1-8 with
+        364,032, and nothing in either record said so (45차 §72).
+
+        4 is not a smaller engine, it is the measured one. From two ledgers, same commit:
+        graph pool 0.60 vs 2.50 GiB, captured ceiling 1,035,264 vs 364,032, state slots 1.21 vs
+        2.17 GiB, boot 161.9 vs 208.7 s. 8 existed for kernel coverage (48 target tokens at
+        K=5) and 24 is inside the same kernels.
+        """
+        from engine.profiles.glm53 import boot
+        self.assertEqual(boot.MAX_SEQS, 4)
+        for path in sorted(Path("/home/choiceoh/st-releases").glob("*/engine/profiles/glm53/boot.py")):
+            if "prod-" not in path.parts[-5]:
+                continue                                        # only what has actually served
+            declared = [l for l in path.read_text().splitlines() if l.startswith("MAX_SEQS")]
+            self.assertTrue(declared and declared[0].split("=")[1].split("#")[0].strip() == "4",
+                            f"{path.parts[-5]} serves a width this repo no longer defaults to")
+
     def test_local_http_and_fleet_forward_both_model_directories(self):
         from engine.profiles.glm53 import boot
         args = SimpleNamespace(ckpt_meta="/alternate/config", drafter_dir="/alternate/draft",
