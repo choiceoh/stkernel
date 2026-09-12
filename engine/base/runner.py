@@ -177,8 +177,12 @@ class Runner:
             return
         for key in self.prefix_tier.keys():
             record = self.prefix_tier.record(key)
-            if record and isinstance(record.get("hash"), str):
-                self.prefix.tier_keys[bytes.fromhex(record["hash"])] = key
+            if not record or not isinstance(record.get("hash"), str):
+                continue
+            h = bytes.fromhex(record["hash"])
+            if self.tier_key(h) != key:                      # a record that does not name its own slot is not ours
+                continue
+            self.prefix.hold_tier(h, key)
 
     def prefix_tier_keys(self) -> "list[int]":
         return sorted(self.prefix.tier_keys.values()) if self.prefix is not None else []
@@ -207,8 +211,13 @@ class Runner:
             except Exception:                               # noqa: BLE001 -- a bad write: this boundary stays memory-only
                 prefix.spill_end(h, failed=True)
                 continue
+            key = self.tier_key(h)
+            if prefix.tier_holder(key) not in (None, h):
+                # somebody took the slot between the write being issued and it landing: the bytes on the
+                # tier are this boundary's now, so the OWNER's copy is the one that is gone, not ours
+                prefix.forget_tier(prefix.tier_holder(key))
             self.prefix_spills += 1
-            prefix.tier_keys[h] = self.tier_key(h)
+            prefix.hold_tier(h, key)
             prefix.spill_end(h, spilled=True)
         if len(prefix.free_snaps) >= self.spill_low_water or self._spills:
             return
@@ -224,6 +233,9 @@ class Runner:
             if h in growing:
                 continue
             e = prefix.entries[h]
+            held = prefix.tier_holder(self.tier_key(h))
+            if held is not None and held != h:
+                continue                                     # that slot is another boundary's: this one stays in memory
             record = {"hash": h.hex(), "tokens": e.tokens}
             prefix.spill_begin(h)                           # the blocks are held until the read lands: `available` says so
             try:
@@ -247,6 +259,10 @@ class Runner:
             raise ValueError("this runner has no prefix tier")
         if h not in self.prefix.tier_keys:
             raise ValueError("that boundary is not on the prefix tier")
+        if self.prefix.tier_holder(self.tier_key(h)) != h:
+            # its slot belongs to another boundary: reading it would hand this row the other one's KV
+            self.prefix.forget_tier(h)
+            raise ValueError("that boundary's tier slot is another boundary's")
         if self.prefix.has(h):
             raise ValueError("that boundary is already in memory")
         self.kv.row(seq)
