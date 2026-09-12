@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import threading
+import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -91,12 +93,23 @@ class RecordingTests(unittest.TestCase):
                 self.assertTrue(waiting['event'].is_set())
                 return waiting['reply']['ranks'][0]
             self.assertEqual(control('begin')['status'], 'recording')
+            self.assertIn('error', control('begin'))
+            self.assertIsNotNone(s.latency.active)  # duplicate begin must not abort the existing owner
             for i in range(4): s.submit([10 + i] * 4, 6, 0.0)
             for _ in range(100):
                 s.once()
                 if not s._active and not s._waiting: break
+            # A final pipelined result may belong to an already retired row.
+            from engine.base.scheduler import Step
+            resolved = []
+            def resolve():
+                resolved.append(True)
+                return [True]
+            s.runner.inflight.append((Step('decode', (0,), 1, 'retired'), SimpleNamespace(resolve=resolve), time.perf_counter()))
             self.assertIn('error', control('end', 'other'))
+            self.assertFalse(resolved)
             report = control('end')
+            self.assertTrue(resolved)
             self.assertTrue(report['complete'])
             widths = [len(r['rows']) for r in report['rows'] if r['kind'] == 'host_step' and r['phase'] == 'decode']
             self.assertIn(4, widths)

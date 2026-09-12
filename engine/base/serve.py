@@ -1776,12 +1776,19 @@ class Server:
             operation, token = payload.get('op'), payload.get('token')
             try:
                 if operation == 'begin':
-                    if self._active or self._waiting or self.runner.inflight or self._profiling is not None:
+                    if hasattr(self.comm, 'tp'):
+                        raise ValueError('onepass recording requires one serving process per rank; LocalTP shares the profiler')
+                    if self._active or self._waiting or self._profiling is not None:
                         raise ValueError('latency recording requires idle serving and no other profiler')
+                    self.runner.drain()  # finish retired asynchronous rows before the measurement boundary
                     mine = self.latency.begin(token, payload.get('diagnostic', False), payload.get('concurrency', 1))
                 elif operation in ('end', 'abort'):
-                    if operation == 'end' and (self._active or self._waiting or self.runner.inflight):
+                    if self.latency.active is None or self.latency.active['token'] != token:
+                        raise ValueError('latency token does not own the active recording')
+                    if operation == 'end' and (self._active or self._waiting):
                         raise ValueError('latency recording still has active requests')
+                    if operation == 'end':
+                        self.runner.drain()  # consumers finished; resolve ghost steps outside the timed request
                     if operation == 'abort' and self.latency.active and self.latency.active['token'] == token:
                         self.latency.active['errors'].append('client aborted recording')
                     clock = getattr(getattr(self.engine, 'pipeline', None), 'clock', None)
@@ -1794,7 +1801,7 @@ class Server:
                 mine = dict(rank=self.comm.rank, token=token, error=str(exc), complete=False)
             ranks = self.comm.gather_objects(mine) if getattr(self.comm, 'world_size', 1) > 1 else [mine]
             if operation == 'begin' and any(r.get('error') for r in ranks):
-                if self.latency.active and self.latency.active['token'] == token:
+                if mine.get('status') == 'recording' and self.latency.active and self.latency.active['token'] == token:
                     self.latency.active['errors'].append('another rank rejected begin')
                     self.latency.finish(token)
             if self.comm.rank == 0:
