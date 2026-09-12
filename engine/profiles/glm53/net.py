@@ -591,7 +591,16 @@ def _selfcheck() -> None:
     net = Glm53Net(F, LocalTP(4).rank(3), lanes.reference(), layers=range(0, 5))
     names = [s.name for s in net.specs()]
     assert names[:3] == ["embed", "norm", "head"] and "L3.moe.w13" in names and "L4.kda.in_proj" in names
-    assert net.Hl == 16 and net.Hk == 16 and net.vp == 38720 and net.rank == 3 and (net.conv_ring, net.rec_ring) == (8, 6)
+    assert net.Hl == 16 and net.Hk == 16 and net.vp == 38720 and net.rank == 3
+    # The rings are sized from the draft width, so asserting their numbers only restates the arithmetic. What
+    # can actually break is the lane the width is supposed to reach: `_kda` takes the direct conv ring only for
+    # `s.length <= min(8, conv_ring)`, and a decode block is spec_k + 1 tokens. Past spec_k 7 that silently
+    # falls back to the prefill convolution -- armed and not running, which is the failure this fleet knows.
+    block = F.spec_k + 1
+    assert block <= net.rec_ring, "the recurrent ring must hold one state per draft position"
+    assert block <= min(8, net.conv_ring), (
+        f"a decode block of {block} tokens is past the direct conv ring's {min(8, net.conv_ring)}: "
+        "the KDA lane would fall back to the prefill convolution on every decode step")
     try:
         Glm53Net(F, Comm.init(rank=0, world=1), lanes.reference()); raise AssertionError("world 1 must be refused")
     except ValueError:
@@ -600,8 +609,9 @@ def _selfcheck() -> None:
     st = Step.decode([(ids[:6], 100, 7, 1), (ids[6:], 40, 9, 2)])
     assert [tuple(s) for s in map(lambda s: (s.seq, s.slot, s.ctx, s.start, s.length), st.segments)] == [(7, 1, 100, 0, 6), (9, 2, 40, 6, 4)]
     assert st.positions.tolist() == list(range(100, 106)) + list(range(40, 44))
-    print(f"  net: glm53 layers 0-4 declares {len(names)} tensors per rank (16 heads, vocab 38,720); rings conv 8 / rec 6; "
-          "steps are segments over flat tokens; world != 4 refused OK")
+    print(f"  net: glm53 layers 0-4 declares {len(names)} tensors per rank (16 heads, vocab 38,720); a decode "
+          f"block of {block} rides rings conv {net.conv_ring} / rec {net.rec_ring}; steps are segments over "
+          "flat tokens; world != 4 refused OK")
 
 
 if __name__ == "__main__":
