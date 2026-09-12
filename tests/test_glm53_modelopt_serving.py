@@ -39,22 +39,31 @@ def model(layer, table=None):
 
 
 class ModelOptServingTests(unittest.TestCase):
+    def test_replay_judge_distinguishes_one_bf16_step_from_scatter_drift(self):
+        from probes.engine_modelopt_check import bf16_ulps, repeat_stable
+        x=torch.tensor([-1.,-.5,-0.,0.,.5,1.],dtype=torch.bfloat16)
+        next_x=torch.nextafter(x,torch.full_like(x,float('inf')))
+        self.assertEqual(bf16_ulps(x,next_x),1)
+        self.assertTrue(repeat_stable(.001269,1))
+        self.assertFalse(repeat_stable(.0125,2))
+        self.assertEqual(bf16_ulps(torch.tensor([-0.],dtype=torch.bfloat16),
+                                   torch.tensor([0.],dtype=torch.bfloat16)),0)
+
     def scales(self):
         values = [torch.tensor(v) for v in ([.125,.5], [.25,.125], [.5,.25], [.125,.5])]
         return ModelOptScales.bind(*values, experts=2, device=torch.device('cpu'))
 
-    def test_both_gemms_restore_activation_scale_and_invert_quantizer_scale(self):
+    def test_both_gemms_restore_activation_scale_and_keep_quantizer_divisors(self):
         s = self.scales()
         self.assertTrue(torch.equal(s.alpha13, torch.tensor([.03125,.0625])))
-        self.assertTrue(torch.equal(s.quant13, torch.tensor([4.,8.])))
+        self.assertTrue(torch.equal(s.input13, torch.tensor([.25,.125])))
         self.assertTrue(torch.equal(s.alpha2, torch.tensor([.0625,.125])))
-        self.assertTrue(torch.equal(s.quant2, torch.tensor([8.,2.])))
+        self.assertTrue(torch.equal(s.input2, torch.tensor([.125,.5])))
         # Reconstructed x/a times an unscaled weight needs a*w exactly once.
         x, w = torch.tensor([3.,-2.]), torch.tensor([2.,4.])
-        for a, alpha, q, wg in ((s.input13,s.alpha13,s.quant13,s.weight13),
-                                (s.input2,s.alpha2,s.quant2,s.weight2)):
-            self.assertTrue(torch.equal((x*q)*w*alpha, x*w*wg))
-            self.assertTrue(torch.equal(a*q,torch.ones(2)))
+        for a, alpha, wg in ((s.input13,s.alpha13,s.weight13),
+                             (s.input2,s.alpha2,s.weight2)):
+            self.assertTrue(torch.equal((x/a)*w*alpha, x*w*wg))
 
     def test_bad_scales_fail_at_bind_before_capture(self):
         for bad in (0., -1., float('nan'), float('inf'), 1e-45):
@@ -73,7 +82,7 @@ class ModelOptServingTests(unittest.TestCase):
         self.assertNotIn('L0.mlp.gate_up',net.p)
         self.assertIs(net.p['L0.mlp.w13'],views['L0.mlp.w13'])
         scale=net._quant_scales[0]
-        pointers=[v.data_ptr() for v in (scale.alpha13,scale.quant13,scale.alpha2,scale.quant2)]
+        pointers=[v.data_ptr() for v in (scale.alpha13,scale.input13,scale.alpha2,scale.input2)]
         for rows in (1,6,129):
             x=torch.zeros(rows,128,dtype=torch.bfloat16)
             self.assertIs(net._dense(0,x),x)
@@ -81,9 +90,14 @@ class ModelOptServingTests(unittest.TestCase):
             self.assertEqual(ids.shape,(rows,1));self.assertEqual(ids.dtype,torch.int32)
             self.assertEqual(torch.count_nonzero(ids),0);self.assertTrue(torch.equal(w,torch.ones_like(w)))
             self.assertIs(kw['scales'],scale)
-        self.assertEqual(pointers,[v.data_ptr() for v in (scale.alpha13,scale.quant13,scale.alpha2,scale.quant2)])
+        self.assertEqual(pointers,[v.data_ptr() for v in (scale.alpha13,scale.input13,scale.alpha2,scale.input2)])
         self.assertEqual(net.comm.all_reduce.call_count,3)
         self.assertEqual(table.moe_prepare.call_args.args[-2],1)
+        # Native sequence-parallel prefill supplies its own reduction.
+        reduce=Mock(side_effect=lambda x:x)
+        net._dense(0,torch.zeros(4,128,dtype=torch.bfloat16),reduce=reduce)
+        reduce.assert_called_once()
+        self.assertEqual(net.comm.all_reduce.call_count,3)
 
     def test_moe_passes_each_experts_scales_and_keeps_shared_expert(self):
         calls=[]

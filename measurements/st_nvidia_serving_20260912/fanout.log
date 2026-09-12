@@ -1,0 +1,11 @@
+Identity added: /home/choiceoh/.ssh/id_ed25519 (srv4-claude-20260622)
+rank 0: rank0of4.safetensors + vision + metadata -> 10.10.10.2
+rank0of4.safetensors: OK
+vision.safetensors: OK
+rank 1: rank1of4.safetensors + vision + metadata -> 10.10.10.1
+rank1of4.safetensors: OK
+vision.safetensors: OK
+rank 2: source node already holds rank2of4.safetensors and vision.safetensors
+rank 3: rank3of4.safetensors + vision + metadata -> 10.10.10.4
+rank3of4.safetensors: OK
+vision.safetensors: OK

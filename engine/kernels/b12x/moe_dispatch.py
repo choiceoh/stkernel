@@ -110,9 +110,11 @@ def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
                          quant_mode, tiled, reform_sf_pack, activation,
                          swiglu_alpha, swiglu_beta, swiglu_limit,
                          share_input_across_experts):
-    return (enabled and type(m) is int and 4096 <= m <= 8192
+    # The recipe's FP32 sum must survive a layer failing lossless SF6
+    # compression. Its raw-scale subclass uses the same Q0 and epilogue.
+    return (enabled and type(m) is int and 1 <= m <= 8192
             and (E,k,n,num_topk,tile_m) == (288,4096,512,8,128)
-            and quant_mode == "nvfp4" and tiled and reform_sf_pack
+            and quant_mode == "nvfp4" and tiled
             and not share_input_across_experts
             and (activation,swiglu_alpha,swiglu_beta,swiglu_limit)
                 == ("swigluoai_uninterleave",1.,0.,10.))
@@ -970,6 +972,11 @@ def allocate_sm120_static_workspace(
 
     quant_mode = _normalize_quant_mode(quant_mode, activation_precision)
     sf_vec_size, sf_dtype = _sf_params_for_quant_mode(quant_mode)
+    # A single dense expert still needs a row axis in its packed-input TMA
+    # map. (E=1, rows=1) collapses to a 1D FP4 transfer on SM121. Reserve one
+    # scale tile; routing/valid-row counts continue to describe the real M.
+    if state_E == weight_E == 1 and quant_mode == "nvfp4":
+        max_rows = max(max_rows, 128)
     rows_pad_k = _align_up(max_rows, 128)
     cols_pad_k = _align_up(k // sf_vec_size, 4)
     _check_memref_limit("static packed_input", state_E * max_rows * (k // 2))
@@ -1007,7 +1014,7 @@ def allocate_sm120_static_workspace(
         ),
     )
 
-    if state_E == weight_E == 288 and (k, n, num_topk) == (4096, 512, 8) and quant_mode == "nvfp4":
+    if _glm_tp_scatter_shape(state_E, weight_E, k, n, num_topk) and quant_mode == "nvfp4":
         workspace.glm_tp_scatter_fp32 = torch.empty(
             (max(1, max_rows // num_topk), k), dtype=torch.float32, device=device)
 
@@ -2442,10 +2449,15 @@ def _get_static_kernel_v2(
 _MICRO_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
 
 
+def _glm_tp_scatter_shape(state_E, weight_E, k, n, num_topk):
+    return state_E == weight_E and (weight_E, k, n, num_topk) in (
+        (288, 4096, 512, 8), (1, 4096, 3072, 1))
+
+
 def _glm_tp_scatter_fp32(*, state_E, weight_E, k, n, num_topk, quant_mode,
                           activation, swiglu_alpha, swiglu_beta, swiglu_limit):
     """The fixed GLM TP4 lane sums rounded route partials in FP32."""
-    return (state_E == weight_E == 288 and (k, n, num_topk) == (4096, 512, 8)
+    return (_glm_tp_scatter_shape(state_E, weight_E, k, n, num_topk)
             and quant_mode == "nvfp4" and activation == "swigluoai_uninterleave"
             and (swiglu_alpha, swiglu_beta, swiglu_limit) == (1., 0., 10.))
 
@@ -3172,10 +3184,11 @@ def launch_sm120_static_moe(
                 raise RuntimeError("compiled direct micro MoE kernel cannot launch")
             use_direct_micro = False
     if use_direct_micro:
-        # The kernel takes multiplier-form scales only; invert reciprocal
-        # inputs into the persistent workspace planes (zeros stay zero,
-        # matching the MMA kernels).
-        if input_scales_are_reciprocal:
+        # MMA fp4_common quantizers divide by the dequantization scale;
+        # direct micro's local helpers multiply by its reciprocal. Normalize
+        # into persistent planes (zeros stay zero). Reciprocal-form callers
+        # already supply direct micro's multiplier.
+        if not input_scales_are_reciprocal:
             workspace.dm_input_gs.copy_(
                 torch.where(input_gs != 0, 1.0 / input_gs, input_gs)
             )
@@ -3562,6 +3575,15 @@ def select_sm120_moe_backend(
         return "dynamic"
     if forced_backend in ("static", "micro", "direct_micro"):
         # Both micro variants launch through the static workspace path.
+        return "static"
+    # NVIDIA's first three dense GLM MLPs split FC2 over 24 slices. Their
+    # BF16 atomic sum varies between replays; the static family supplies the
+    # persistent FP32 sum plane for every batch size. The generic dynamic
+    # backend still has BF16 scatter and cannot serve this dense contract.
+    if (num_experts == num_local_experts == 1
+            and (hidden_size, intermediate_size, num_topk) == (4096, 3072, 1)
+            and mode == "nvfp4" and activation == "swigluoai_uninterleave"
+            and swiglu_limit == 10.):
         return "static"
     routed_rows = num_tokens * num_topk
     cutover = _get_static_compact_cutover_pairs("fp4")
@@ -4097,6 +4119,7 @@ def _get_dynamic_kernel(
         raise ValueError("explicit TP SF6 Q0 selection is outside exact eligibility")
     if tp_sf6_q0:
         from .moe_dynamic_gated_sf6_q0 import MoEGatedDynamicKernelSF6Q0, stock_contract_matches
+        from .moe_dynamic_gated_raw_q0 import MoEGatedDynamicKernelRawQ0
         if torch.cuda.get_device_capability() != (12,1) or not stock_contract_matches():
             raise RuntimeError("TP SF6 Q0 requires pinned SM121 source")
 
@@ -4165,7 +4188,7 @@ def _get_dynamic_kernel(
                 "tiled expert weights (static v2 cell t) need the gated dynamic "
                 f"kernel for prefill; the dispatcher selected {type(kernel).__name__}"
             )
-        tiled_cls = MoEGatedDynamicKernelTiled
+        tiled_cls = MoEGatedDynamicKernelRawQ0 if tp_sf6_q0 else MoEGatedDynamicKernelTiled
         tiled_kwargs = {}
         if reform_sf_pack:
             from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6
@@ -4387,6 +4410,8 @@ def _get_dynamic_kernel(
         extra_key_files=_kernel_source_files() + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6_q0.py"),)
             if tp_sf6_q0 else ()) + (
+            (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_raw_q0.py"),)
+            if tp_sf6_q0 and not reform_sf_pack else ()) + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_ep_local.py"),)
             if ep_local_cls is not None or tp_sf6_q0 else ()),
     )
@@ -4406,12 +4431,12 @@ def _get_dynamic_kernel(
 # ---------------------------------------------------------------------------
 # Dynamic launch
 # ---------------------------------------------------------------------------
-def _ep_local_scatter_buffer(workspace, output, num_tokens, k):
+def _ep_local_scatter_buffer(workspace, output, num_tokens, k, *, tp=False):
     """Get this shared workspace's FP32 sum while preserving the BF16 ABI."""
     if (output.dtype != torch.bfloat16 or tuple(output.shape) != (num_tokens, k)
             or not output.is_contiguous() or output.device != workspace.device
             or k != 4096
-            or not (1 if getattr(workspace, "ep_tiled", False) else 4096) <= num_tokens <= 16384):
+            or not (1 if tp or getattr(workspace, "ep_tiled", False) else 4096) <= num_tokens <= 16384):
         raise ValueError("expert-local FP32 scatter requires contiguous CUDA BF16 [T,4096]")
     current = workspace.ep_scatter_fp32
     if current is not None and (current.dtype != torch.float32 or current.device != output.device
@@ -4487,7 +4512,7 @@ def launch_sm120_dynamic_moe(
         tiled=bool(getattr(weights, "tiled", False)), reform_sf_pack=direct_sf6,
         activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
-    accumulator = (_ep_local_scatter_buffer(workspace, scatter_output, num_tokens, k)
+    accumulator = (_ep_local_scatter_buffer(workspace, scatter_output, num_tokens, k, tp=tp_scatter_fp32)
                    if ep_local or tp_scatter_fp32 else scatter_output)
     compiled, mac = _get_dynamic_kernel(
         num_experts,

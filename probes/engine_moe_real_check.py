@@ -26,7 +26,7 @@ def scaled(X, Y, S, GS, N: tl.constexpr, MULTIPLIER: tl.constexpr = False):
     s = tl.minimum(rgs * (tl.max(tl.abs(x),0) * rsix), 448.).to(tl.float8e4nv).to(tl.float32)
     inv = tl.inline_asm_elementwise('rcp.approx.ftz.f32 $0, $1;', '=f,f', [s], dtype=tl.float32, is_pure=True, pack=1)
     inv = tl.where(s == 0., 0., inv)
-    tl.store(Y+i, x * (inv * rgs) if MULTIPLIER else (x * inv) * rgs)
+    tl.store(Y+i, x * (inv * rgs))
     tl.store(S+block, s)
 
 def hardware_quant(x, gs, *, multiplier=False):

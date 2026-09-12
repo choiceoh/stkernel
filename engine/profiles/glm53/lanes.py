@@ -272,7 +272,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             bind (probes) copies instead so the caller's row-major tensors stay what they were."""
             key = (w13.data_ptr(), w13_sf.data_ptr(), w2.data_ptr(), w2_sf.data_ptr())
             if scales is not None:
-                key += tuple(v.data_ptr() for v in (scales.alpha13, scales.quant13, scales.alpha2, scales.quant2))
+                key += tuple(v.data_ptr() for v in (scales.alpha13, scales.input13, scales.alpha2, scales.input2))
             got = prepared.get(key)
             if got is not None:
                 return got
@@ -280,7 +280,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             if E not in ones:
                 ones[E] = torch.ones(E, device=w13.device, dtype=torch.float32)
             alpha13, alpha2, quant13, quant2 = ((ones[E], ones[E], None, ones[E]) if scales is None else
-                (scales.alpha13, scales.alpha2, scales.quant13, scales.quant2))
+                (scales.alpha13, scales.alpha2, scales.input13, scales.input2))
             sf13 = mma_sf_view(w13_sf, w13.shape[1], k)
             sf2 = mma_sf_view(w2_sf, w2.shape[1], w2.shape[2] * 2)
             geometry = dict(num_experts=E, num_local_experts=E, hidden_size=k, intermediate_size=n, num_topk=int(top_k),
@@ -299,7 +299,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             if in_place and consume_scales and views.packed_only:
                 md.consume_packed_scale_storage(views,w13_sf,w2_sf)
             # _weight_views tells dispatch the alpha is final. In particular,
-            # it must not fold the inverse input scale into alpha a second time.
+            # it must not fold the input scale into alpha a second time.
             prepared[key] = (views, sf13, sf2, alpha13, alpha2, quant13, quant2)
             return prepared[key]
 
@@ -308,7 +308,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
 
         def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None):
             """Packed W4A4 with prepared b12x quantizer/epilogue scales.
-            Red Hat uses unit scales; ModelOpt uses 1/a for quantization and
+            Red Hat uses unit scales; ModelOpt passes a for quantization and
             a*w for each GEMM. The clamped activation is common to both."""
             E = w13.shape[0]
             views, sf13, sf2, a13, a2, q13, q2 = views_for(

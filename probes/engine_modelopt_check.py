@@ -24,6 +24,21 @@ def relative(a, b):
     return float((a.float() - b.float()).abs().max() / b.float().abs().max().clamp_min(1e-6))
 
 
+def bf16_ulps(a, b):
+    def ordered(t):
+        bits = t.bfloat16().view(torch.int16).to(torch.int32)
+        return torch.where(bits < 0, -32768 - bits, bits)
+    return int((ordered(a) - ordered(b)).abs().max())
+
+
+def repeat_stable(relative_error, ulps):
+    # FP32 atomic order can put an exact BF16 halfway case on either side
+    # of final rounding. One adjacent BF16 value is the representable error
+    # floor even when its normalized size exceeds 0.1%; larger changes must
+    # still satisfy the original normalized-spread bound.
+    return relative_error <= .001 or ulps <= 1
+
+
 def source_weights(checkpoint, layer, experts, rank, device, dense):
     """Read and split raw projections without the preshard builder or SF swizzle."""
     out = {}
@@ -59,11 +74,12 @@ def oracle(x, ids, route, weights, quant, limit, *, gpu_epilogue=False):
         up, gate = (linear(x[rows], name) for name in ('up', 'gate'))
         hidden = lanes.swiglu_clamped(gate, up, limit)
         y = linear(hidden, 'down')
-        # The CPU reference rounds each expert output to BF16. The SM121
-        # decode epilogue accumulates weighted contributions in FP32.
-        if not gpu_epilogue:
-            y = y.bfloat16().float()
-        out.index_add_(0, rows, y * route[rows, slots, None])
+        # Both lanes round FC2 to BF16. Native scatter additionally rounds
+        # each weighted route to BF16 before the GLM FP32 accumulation.
+        contribution = y.bfloat16().float() * route[rows, slots, None]
+        if gpu_epilogue:
+            contribution = contribution.bfloat16().float()
+        out.index_add_(0, rows, contribution)
     return out.bfloat16()
 
 
@@ -75,7 +91,7 @@ def main():
     ap.add_argument('--layers', type=int, nargs='+', default=[0, 1, 2, 3, 44])
     ap.add_argument('--tokens', type=int, nargs='+', default=[1, 6, 129])
     ap.add_argument('--device', choices=['cpu', 'cuda'], default='cpu')
-    ap.add_argument('--moe-static', default='stock')
+    ap.add_argument('--moe-static', default=lanes.MOE_STATIC_PRODUCTION)
     ap.add_argument('--repeats', type=int, default=8)
     ap.add_argument('--oracle-rows', type=int, default=32)
     ap.add_argument('--out')
@@ -86,7 +102,7 @@ def main():
     if gpu:
         torch.backends.cuda.matmul.allow_tf32 = False
         from probes.engine_moe_real_check import hardware_quant
-        quant = lambda x, ag: hardware_quant(x, ag.reciprocal(), multiplier=True)
+        quant = hardware_quant
     else:
         quant = moe.quant_nvfp4_act
     F = facts.load(a.ranks)
@@ -94,7 +110,7 @@ def main():
     loader = rank_loader(Path(a.ranks) / f'rank{a.rank}of4.safetensors', expected_layout=F.weight_layout)
     rows_out = []
     for layer in a.layers:
-        lane = lanes.served(moe_static=a.moe_static) if gpu else lanes.reference()
+        lane = lanes.served(moe_static=a.moe_static, consume_scales=True) if gpu else lanes.reference()
         dense = not F.is_moe(layer)
         contracts = modelopt_weights.quant_specs(F, layer)
         got = loader.load([s.name for s in contracts], device=a.device, max_run=64 << 20)
@@ -130,10 +146,12 @@ def main():
             sample = torch.linspace(0, tokens - 1, min(tokens, a.oracle_rows), device=a.device).long()
             expected = oracle(x[sample], ids[sample], route[sample], source, quant, F.swiglu_limit, gpu_epilogue=gpu)
             row = dict(layer=layer, rank=a.rank, tokens=tokens, oracle_rows=len(sample), dense=dense,
-                       relative=relative(actual[sample], expected), finite=bool(torch.isfinite(actual).all()))
+                       relative=relative(actual[sample], expected), finite=bool(torch.isfinite(actual).all()),
+                       output_absmax=float(actual.abs().max()), reference_absmax=float(expected.abs().max()))
             if gpu:
                 repeats = torch.stack([call().clone() for _ in range(a.repeats)])
                 row['repeat_relative'] = relative(repeats, actual)
+                row['repeat_bf16_ulps'] = bf16_ulps(repeats, actual)
                 graph = torch.cuda.CUDAGraph()
                 with torch.cuda.graph(graph):
                     captured = call()
@@ -143,23 +161,29 @@ def main():
                     graph.replay()
                     graph_runs.append(captured.clone())
                 row['graph_relative'] = relative(torch.stack(graph_runs), actual)
+                row['graph_bf16_ulps'] = bf16_ulps(torch.stack(graph_runs), actual)
                 graph.reset()
                 del owners, captured, graph_runs, repeats
+            row['passed'] = row['finite'] and row['relative'] <= (.02 if gpu else 1e-6)
+            if gpu:
+                row['passed'] &= (repeat_stable(row['repeat_relative'], row['repeat_bf16_ulps'])
+                                  and repeat_stable(row['graph_relative'], row['graph_bf16_ulps']))
             rows_out.append(row)
             print(json.dumps(row), flush=True)
-            assert row['finite'] and row['relative'] <= (.02 if gpu else 1e-6), row
-            if gpu:
-                assert row['repeat_relative'] <= .001 and row['graph_relative'] <= .001, row
         if dense:
             del net
         del source, got, w13, sf13, w2, sf2, scales, lane, call
         if gpu:
             from engine.kernels.b12x.moe_dispatch import clear_sm120_moe_caches
             clear_sm120_moe_caches()  # every graph above is already reset
-    result = dict(passed=True, device=a.device, layout=F.weight_layout, moe_static=a.moe_static, checks=rows_out)
+    result = dict(passed=all(r['passed'] for r in rows_out), device=a.device,
+                  layout=F.weight_layout, moe_static=a.moe_static,
+                  limits=dict(source_relative=.02 if gpu else 1e-6, repeat_relative=.001,
+                              repeat_bf16_ulps_alternative=1), checks=rows_out)
     if a.out:
         Path(a.out).write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result), flush=True)
+    assert result['passed'], [r for r in rows_out if not r['passed']]
 
 
 if __name__ == '__main__':
