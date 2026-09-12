@@ -25,18 +25,27 @@ from engine.base.sampler import block_verify_batch, commit_batch
 from engine.profiles.glm53.net import Segment, Step
 
 
-def distribution_batch(logits: torch.Tensor, temps: torch.Tensor, top_p: torch.Tensor, nucleus: bool) -> torch.Tensor:
+def distribution_batch(logits: torch.Tensor, temps: torch.Tensor, top_p: torch.Tensor, nucleus) -> torch.Tensor:
     """base/sampler.distribution for every row at once: [m, V] fp32 probabilities -- a one-hot argmax where the row's
-    temperature is 0, the nucleus-truncated softmax otherwise. `nucleus` is decided on the host (no device predicate)."""
+    temperature is 0, the nucleus-truncated softmax otherwise. `nucleus`: the rows whose top_p is below 1 -- only those
+    are sorted (the sort of a [24, 155k] batch is 2.9 ms, of one row's six positions 0.7 ms, measured beside production,
+    45차 §23): True means every row, False/None none, else an int64 index tensor already on the logits' device (a host
+    list would be copied every step, and a pageable copy waits for the steps in flight)."""
     greedy = temps <= 0
     scaled = logits / temps.clamp_min(1e-5).unsqueeze(1)
     probs = torch.softmax(scaled, dim=-1)
-    if nucleus:
-        srt, idx = probs.sort(dim=-1, descending=True)
+    rows = None
+    if nucleus is True:
+        rows = slice(None)
+    elif nucleus is not False and nucleus is not None and len(nucleus):
+        rows = nucleus
+    if rows is not None:
+        sub = probs[rows]
+        srt, idx = sub.sort(dim=-1, descending=True)
         cum = srt.cumsum(dim=-1)
-        keep = (cum - srt) < top_p.unsqueeze(1)
+        keep = (cum - srt) < top_p[rows].unsqueeze(1)
         srt = srt * keep
-        probs = torch.zeros_like(probs).scatter_(1, idx, srt / srt.sum(dim=-1, keepdim=True).clamp_min(1e-30))
+        probs[rows] = torch.zeros_like(sub).scatter_(1, idx, srt / srt.sum(dim=-1, keepdim=True).clamp_min(1e-30))
     onehot = torch.zeros_like(probs).scatter_(1, logits.argmax(dim=-1, keepdim=True), 1.0)
     return torch.where(greedy.unsqueeze(1), onehot, probs)
 
@@ -96,8 +105,9 @@ class AsyncDecode:
             ids=torch.zeros(n * t, dtype=torch.int64, device=dev),
             drafts=torch.zeros(n, K, dtype=torch.int64, device=dev),
             stochastic=any(x > 0 for x in temps),
-            nucleus=any(p < 1.0 for p in top_p),
+            nucleus_rows=[i * t + j for i, p in enumerate(top_p) if p < 1.0 for j in range(t)],   # positions whose row asked for a nucleus
         )
+        b["nucleus"] = torch.tensor(b["nucleus_rows"], dtype=torch.int64, device=dev) if b["nucleus_rows"] else None
         b["slot"] = b["real_slot"].clone()
         b["dists"] = torch.zeros(n, K, e.F.vocab, dtype=torch.float32, device=dev) if b["stochastic"] else None
         self.buf, self.batch, self.stale = b, tuple(seqs), False
@@ -121,6 +131,16 @@ class AsyncDecode:
         b["ids"] = b["ids"].view(-1, self.t).index_select(0, idx).reshape(-1)
         if b["dists"] is not None:
             b["dists"] = b["dists"].index_select(0, idx)
+        old_rows = {r: i for i, r in enumerate(keep)}
+        b["nucleus_rows"] = [old_rows[pos // self.t] * self.t + pos % self.t for pos in b["nucleus_rows"] if pos // self.t in old_rows]
+        if not b["nucleus_rows"]:
+            b["nucleus"] = None
+        elif dev.type == "cuda":
+            host = torch.tensor(b["nucleus_rows"], dtype=torch.int64, pin_memory=True)
+            b["nucleus"] = host.to(dev, non_blocking=True)
+            self._staged = (self._staged + [host])[-8:]
+        else:
+            b["nucleus"] = torch.tensor(b["nucleus_rows"], dtype=torch.int64, device=dev)
         self.batch = tuple(seqs)
 
     def _propose(self, i: int, temperature: float) -> None:
