@@ -573,7 +573,9 @@ class Glm53Net:
     @operation("moe", layer_arg=1)
     def _moe(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
-        if self.shared_overlap is not None and x.shape[0] <= 32:
+        # GPU component gate: C=1 wins; C=4 with reused routes regresses.
+        # Keep the established shared chain for wider captured batches.
+        if self.shared_overlap is not None and x.shape[0] <= F.spec_k + 1:
             def routed():
                 sel, w = self.route(L, x)
                 return self._experts[L](x, sel, w)
@@ -581,11 +583,8 @@ class Glm53Net:
             return (reduce or self.comm.all_reduce)(joined)
         sel, w = self.route(L, x)
         out = self._experts[L](x, sel, w)
-        if L in self.shared_mlp and x.shape[0] <= 32:
-            shared = self.shared_mlp[L](x)
-        else:
-            g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
-            shared = self.linear(self._activation(g, u, F.swiglu_limit), n + "sh_down")
+        g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
+        shared = self.linear(self._activation(g, u, F.swiglu_limit), n + "sh_down")
         # Both lanes return BF16. Its add accumulates in FP32 and rounds once,
         # just like the former float() + float() followed by to(BF16).
         return (reduce or self.comm.all_reduce)(out + shared)
