@@ -982,6 +982,82 @@ class StreamedTextTests(unittest.TestCase):
         self.assertLessEqual(max(seen), 4, "a window, not the whole answer")
 
 
+class StopFloorTests(unittest.TestCase):
+    """min_tokens means at least that many, so a stop string cannot undo it from below."""
+
+    def stream(self, text, stop, min_new):
+        from engine.base.serve import _Choice
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=ByteTokenizer(), stop=list(stop),
+                    reasoning=False, min_new=min_new)
+        shown = []
+        for i in text.encode():
+            c.feed([i], None, None)
+            shown.extend(d.get("content", "") for d in c.flush())
+            if c.finish == "stop":
+                break
+        else:
+            shown.extend(d.get("content", "") for d in c.flush(final=True))
+        return "".join(shown), c
+
+    def test_a_stop_string_below_the_floor_does_not_end_the_answer(self):
+        shown, c = self.stream("XX keep going", ["XX"], min_new=6)
+        self.assertIsNone(c.finish)
+        self.assertEqual(shown, "XX keep going")
+
+    def test_the_same_stop_string_above_the_floor_ends_it(self):
+        shown, c = self.stream("abcdefg XX tail", ["XX"], min_new=6)
+        self.assertEqual(c.finish, "stop")
+        self.assertEqual(shown, "abcdefg ")
+
+    def test_with_no_floor_it_ends_at_once(self):
+        shown, c = self.stream("XX keep going", ["XX"], min_new=0)
+        self.assertEqual(c.finish, "stop")
+        self.assertEqual(shown, "")
+
+
+class StopTokenIdTests(unittest.TestCase):
+    """A stop string the model can emit as one token lets the engine end the row itself."""
+
+    def ids(self, stops):
+        from engine.base.serve import stop_token_ids_for
+        return stop_token_ids_for(stops, Tokenizer())
+
+    def test_a_single_token_stop_string_becomes_an_id(self):
+        self.assertEqual(self.ids(["a", "Z"]), [ord("a"), ord("Z")])
+
+    def test_a_multi_token_stop_string_is_left_to_the_text_scan(self):
+        self.assertEqual(self.ids(["STOP", "\n\nHuman:"]), [])
+
+    def test_a_token_that_does_not_render_as_the_string_is_refused(self):
+        class Lossy(Tokenizer):
+            def decode(self, ids, skip_special_tokens=True):
+                return ""                                  # as a special token renders
+        from engine.base.serve import stop_token_ids_for
+        self.assertEqual(stop_token_ids_for(["a"], Lossy()), [])
+
+
+class LogprobDecodeTests(unittest.TestCase):
+    """The payload asks for each token's text and its bytes: that is one decode, not two."""
+
+    def test_each_distinct_id_is_decoded_once(self):
+        from engine.base.serve import _Choice
+        calls = []
+
+        class Counting(Tokenizer):
+            def decode(self, ids, skip_special_tokens=True):
+                calls.append(tuple(ids))
+                return super().decode(ids)
+
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Counting(), stop=[], reasoning=False,
+                    want_logprobs=3)
+        c.logprobs = [(65, -0.1, [(65, -0.1), (66, -1.0), (67, -2.0)]),
+                      (66, -0.2, [(66, -0.2), (65, -1.0), (67, -2.0)])]
+        payload = c.logprobs_payload()
+        self.assertEqual([r["token"] for r in payload["content"]], ["A", "B"])
+        self.assertEqual(payload["content"][0]["bytes"], [65])
+        self.assertEqual(len(calls), len({c[0] for c in calls}), "one decode per distinct id")
+
+
 class WakeupTests(unittest.TestCase):
     """A streamed token must wake its reader, not wait out a poll."""
 
@@ -1071,8 +1147,11 @@ class OpenAIDialectTests(unittest.TestCase):
         out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
         self.assertEqual(out["choices"][0]["finish_reason"], "length")
         opts = s.engine.options[0]
+        # every one of those stop strings is a single token for this tokenizer, so the engine is
+        # told to end on them itself; the request's own id stays in the set
         self.assertEqual(opts, {"top_p": 0.9, "top_k": 40, "presence_penalty": 0.5, "frequency_penalty": -0.5,
-                                "repetition_penalty": 1.1, "seed": 7, "logit_bias": {98: -5.0}, "stop_token_ids": [3]})
+                                "repetition_penalty": 1.1, "seed": 7, "logit_bias": {98: -5.0},
+                                "stop_token_ids": [3] + [ord(c) for c in "123456"]})
         for bad in ({"top_p": 1.5}, {"top_k": -2}, {"presence_penalty": 3}, {"logit_bias": {"x": 1}}, {"seed": -1}, {"n": 9},
                     {"tool_choice": "required"}, {"response_format": {"type": "xml"}}):
             with self.assertRaises(urllib.error.HTTPError) as err:
