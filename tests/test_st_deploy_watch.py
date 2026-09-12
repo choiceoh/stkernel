@@ -127,6 +127,31 @@ class GateIsNotOptionalTests(unittest.TestCase):
         self.assertIn("--seed", body, "and it says how to give the gate something to compare with")
 
 
+class OlderEngineTests(unittest.TestCase):
+    """`st:quiet` ships in the tree this deploys, so the engine it first meets does not have it."""
+
+    def body(self, quiet=True):
+        rows = ["vllm:num_requests_running 0", "vllm:num_requests_waiting 0", "st:handing_over 0"]
+        return "\n".join(rows + (["st:quiet 1"] if quiet else [])) + "\n"
+
+    def test_an_engine_without_the_metric_is_named_rather_than_waited_on(self):
+        self.assertTrue(watch.unsupported(self.body(quiet=False)))
+        self.assertFalse(watch.unsupported(self.body(quiet=True)))
+
+    def test_silence_is_not_the_same_case(self):
+        """Waiting fixes a door that was busy answering. It does not fix a tree that predates the metric."""
+        self.assertFalse(watch.unsupported(""), "nothing that looks like the door: not this case")
+        self.assertFalse(watch.unsupported("some other exporter 1\n"))
+
+    def test_the_cycle_stops_on_it_instead_of_polling_for_an_hour(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        loop = source[source.index('log(f"  waiting for'):]
+        loop = loop[:loop.index("    release = cut(")]
+        self.assertIn("unsupported(body)", loop)
+        self.assertIn("return 0", loop[loop.index("unsupported(body)"):],
+                      "it has to leave the cycle, not fall through to the deadline")
+
+
 class LaunchFailureTests(unittest.TestCase):
     def test_a_launch_that_failed_is_not_recorded_as_deployed(self):
         """What is serving after a failed launch is whatever the supervisor recovered -- not this
@@ -135,10 +160,12 @@ class LaunchFailureTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
         body = source[source.index("    ok = deploy(release, log)"):]
         body = body[:body.index("\n\ndef ", 10)]
-        failed = body[:body.index("STATE.write_text", body.index("if not ok:"))]
         self.assertIn("if not ok:", body)
         self.assertIn('"rejected": head', body[body.index("if not ok:"):], "a failed launch is a rejection")
         self.assertNotIn('"deployed": head', body[body.index("if not ok:"): body.index("return 1")])
+        self.assertIn('"release": None', body[body.index("if not ok:"):],
+                      "and the baseline goes too: the rsync lands before the step that failed, so "
+                      "which tree the supervisor recovered onto is not known")
 
 
 class ReleaseCuttingTests(unittest.TestCase):
