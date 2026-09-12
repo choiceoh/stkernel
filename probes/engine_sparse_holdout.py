@@ -29,6 +29,7 @@ def main():
     ap.add_argument('--training-capture', type=Path, required=True)
     ap.add_argument('--recovery', type=Path, required=True)
     ap.add_argument('--residual', type=Path, required=True)
+    ap.add_argument('--block-fit', type=Path)
     ap.add_argument('--rank', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args()
@@ -51,6 +52,12 @@ def main():
         raise ValueError('frozen artifacts refer to different calibration data')
     packed = torch.load(args.recovery.with_suffix('.weights.pt'), weights_only=True, map_location='cpu')
     factors = torch.load(args.residual.with_suffix('.weights.pt'), weights_only=True, map_location='cpu')
+    block_weights = None
+    if args.block_fit:
+        block_info = json.loads(args.block_fit.read_text())
+        if block_info['recovery_sha256'] != file_hash(args.recovery):
+            raise ValueError('block reconstruction used different starting weights')
+        block_weights = torch.load(args.block_fit.with_suffix('.weights.pt'), weights_only=True, map_location='cpu')
     payload = torch.load(args.capture, weights_only=True, map_location='cpu')
     report = dict(scope=__doc__, experts=recovery['experts'], layer=3, rank=0,
                   final_prompts=len(info['prompts']), tokens=len(payload['x']),
@@ -59,6 +66,10 @@ def main():
                       args.residual, args.recovery.with_suffix('.weights.pt'), args.residual.with_suffix('.weights.pt')]},
                   source_sha256=file_hash(__file__), cases=[])
     variants = ('original', 'magnitude', 'calibrated', 'residual')
+    if block_weights is not None:
+        variants += ('joint_reconstruction',)
+        report['artifact_sha256'].update({p.name: file_hash(p) for p in
+                                         [args.block_fit, args.block_fit.with_suffix('.weights.pt')]})
     totals = {v: torch.zeros(len(payload['x']), 4096, device='cuda') for v in variants}
     route_count = 0
     for case in recovery['cases']:
@@ -73,7 +84,7 @@ def main():
         route_count += len(indices)
         x = payload['x'][indices].cuda()
         coefficient = (payload['coefficient'][indices] * selected[indices]).sum(-1).cuda()
-        originals, corrected, mag, residual_factors = {}, {}, {}, {}
+        originals, corrected, mag, residual_factors, joint = {}, {}, {}, {}, {}
         for name in ('w13', 'w2'):
             raw, sf, hashes = read_experts(args.rank, 3, name, [expert])
             for key, value in hashes.items():
@@ -88,6 +99,9 @@ def main():
             corrected[name] = dequant(pk.cuda(), sc.cuda())
             mag[name] = magnitude(originals[name])[0]
             residual_factors[name] = tuple(factors[f'e{expert}.{name}.{side}'].cuda() for side in ('B', 'A'))
+            if block_weights is not None:
+                joint[name] = dequant(*(block_weights[f'e{expert}.{name}.{suffix}'].cuda()
+                                        for suffix in ('packed', 'sf')))
         row = dict(expert=expert, rows=len(indices), projections={}, expert_chain={})
         baseline_inputs = x
         for name in ('w13', 'w2'):
@@ -99,12 +113,16 @@ def main():
                 magnitude=metrics(x32 @ mag[name].T, ref),
                 calibrated=metrics(sparse_out, ref),
                 residual=metrics(sparse_out+apply_residual(baseline_inputs, *residual_factors[name]), ref))
+            if joint:
+                row['projections'][name]['joint_reconstruction'] = metrics(x32 @ joint[name].T, ref)
             if name == 'w13':
                 up, gate = ref.chunk(2, -1)
                 baseline_inputs = swiglu_clamped(gate, up, 10.)
         outputs = {}
         for variant in variants:
             weight = originals if variant == 'original' else mag if variant == 'magnitude' else corrected
+            if variant == 'joint_reconstruction':
+                weight = joint
             quant = inputs16 if variant == 'original' else inputs32
             fc1 = quant(x) @ weight['w13'].T
             if variant == 'residual':

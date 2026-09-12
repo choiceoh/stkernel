@@ -1,8 +1,11 @@
+test_block_preserves_subnormal_scales_without_requantizing_them (test_engine_sparse_recovery.SparseRecoveryTests.test_block_preserves_subnormal_scales_without_requantizing_them) ... ok
 test_correlated_hessian_changes_export_and_keeps_legal_pattern (test_engine_sparse_recovery.SparseRecoveryTests.test_correlated_hessian_changes_export_and_keeps_legal_pattern) ... ok
 test_diagonal_hessian_matches_magnitude_with_quantization (test_engine_sparse_recovery.SparseRecoveryTests.test_diagonal_hessian_matches_magnitude_with_quantization) ... ok
+test_fp4_ste_forward_is_exact_and_backward_passes_gradient (test_engine_sparse_recovery.SparseRecoveryTests.test_fp4_ste_forward_is_exact_and_backward_passes_gradient) ... ok
 test_full_rank_residual_matches_ridge_solution (test_engine_sparse_recovery.SparseRecoveryTests.test_full_rank_residual_matches_ridge_solution) ... ok
 test_invalid_numerical_inputs_rejected (test_engine_sparse_recovery.SparseRecoveryTests.test_invalid_numerical_inputs_rejected) ... ok
 test_inverse_factor_matches_regularized_system (test_engine_sparse_recovery.SparseRecoveryTests.test_inverse_factor_matches_regularized_system) ... ok
+test_joint_block_keeps_masks_and_exported_forward (test_engine_sparse_recovery.SparseRecoveryTests.test_joint_block_keeps_masks_and_exported_forward) ... ok
 test_lowrank_residual_recovers_known_mapping_on_unseen_inputs (test_engine_sparse_recovery.SparseRecoveryTests.test_lowrank_residual_recovers_known_mapping_on_unseen_inputs) ... ok
 test_masks_keep_whole_pairs_and_activation_importance (test_engine_sparse_recovery.SparseRecoveryTests.test_masks_keep_whole_pairs_and_activation_importance) ... ok
 test_residual_rank_selected_without_test_scores (test_engine_sparse_recovery.SparseRecoveryTests.test_residual_rank_selected_without_test_scores) ... ok
@@ -10,6 +13,6 @@ test_validation_selection_does_not_use_test (test_engine_sparse_recovery.SparseR
 test_zero_weights_and_unseen_inputs (test_engine_sparse_recovery.SparseRecoveryTests.test_zero_weights_and_unseen_inputs) ... ok
 
 ----------------------------------------------------------------------
-Ran 10 tests in 2.638s
+Ran 13 tests in 2.402s
 
 OK

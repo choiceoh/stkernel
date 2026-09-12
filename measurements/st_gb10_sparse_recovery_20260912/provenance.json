@@ -225,9 +225,43 @@
     "final-holdout.json": {
       "bytes": 26196,
       "sha256": "475507e0dd66849e2c4817d3c0c7b829c4410b1fd0500e7bebd3fb62315d9b9d"
+    },
+    "block-fit.json": {
+      "bytes": 32126,
+      "sha256": "e0ed465cb4121a6ad7208eb7229d46f638f55077bc396657ca42010f1a421016"
+    },
+    "block-fit.weights.pt": {
+      "bytes": 13375183,
+      "sha256": "002b641ee56011e4eed159ce03d9e7b7c4d453ed961cd1f494496e8cd3866aad"
+    },
+    "reconstruction-capture.pt": {
+      "bytes": 9452083,
+      "sha256": "af8dd91d5a88ca62859c48402d081e34040ab66d7c1fad87310b58350dfe83f5"
+    },
+    "reconstruction-capture.json": {
+      "bytes": 19846,
+      "sha256": "39289166bbda778bd198114a2cd9b990693b647c7f415dafb31122315637943a"
+    },
+    "reconstruction-holdout.json": {
+      "bytes": 29016,
+      "sha256": "8bece9b7af5ade939c934fa39b8edef3caf152b1f7d506410c3110dd1598cd70"
+    },
+    "tests.log": {
+      "bytes": 2182,
+      "sha256": "c55b42a0296aa7133b3ad2dbe9fbc90d25c5971c4f429befe9512a0364571f08"
     }
   },
   "remote_artifact_directory": "/tmp/st-sparse-calibration-9391",
   "native_library": "/tmp/st-sparse-nvfp4-9391/sparse.so",
-  "native_library_sha256": "c46f4c4692f8a755ee74627668f85cdfcae38a9f1b65a4553e3ac7bfeda8ff96"
+  "native_library_sha256": "c46f4c4692f8a755ee74627668f85cdfcae38a9f1b65a4553e3ac7bfeda8ff96",
+  "probe_source_sha256": {
+    "probes/engine_sparse_block_reconstruct.py": "06f7d2ccb2e1c83018f0d224f5b68b249ae8f75a3bd4f344f6aa1383f0284452",
+    "probes/engine_sparse_calibrate.py": "85e247e08793dec84382ffca86818232214dc40ba684a4584c5cb1e6146f1573",
+    "probes/engine_sparse_capture.py": "7eee484b2d61241f5ce02dcf89a7f8edaae9fd01538ed6bdd203b0cccfdd1b9a",
+    "probes/engine_sparse_holdout.py": "7d6330a9559ad8c68d800066b73f51e19303432d96fe0aa71e990e01bd37ff64",
+    "probes/engine_sparse_nvfp4.py": "a9720d13ad0727b3537f335ecbef526a4316a1e39472c7631651f3432b5c9ba9",
+    "probes/engine_sparse_nvfp4_prune.py": "2005794c6e084ee09f81ab3feeec5a29bed52b8f596f7a93ef7f8551119f2b6b",
+    "probes/engine_sparse_recovery.py": "7b279441c877ed9219eb9922fbe4de3707f2a4cc3c1949e31189e28081d216cc",
+    "probes/engine_sparse_residual.py": "47b0c38129c3c8b6f124180d8b5ba8bcfa891cba2c492b15a3a589ff0c96441e"
+  }
 }
