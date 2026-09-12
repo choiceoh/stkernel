@@ -13,12 +13,15 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited after merging SF6/boot-memory assertions with EP short-decode,
-# compact warmup and structured proof assertions. The three audited helper
-# tests and load_defs AST match main. PR #508 adds the video-slot assertion;
-# PR #509 parses the already-read boot-stamp phase table and TARGETS strings.
-# Dependency access graphs and source closure are unchanged.
-LOGIC_AUDIT = '40e681a1e7a3c5e99e1c14b6df4105395c75cb154e5ae52b77cc0ff881d5f244'
+# Re-audited 2026-09-12 after five days of unrelated test additions had left this
+# pin stale -- and with it every narrowing this module gates (CPU-evidence reuse,
+# changed_contracts, dependencies), silently, for those five days. The review this
+# pin stands for was done, not stamped: the three audited helper tests
+# (test_prefill_chunker, test_sp_ranges, test_skip_topk) are AST-IDENTICAL to the
+# previous pin, and load_defs differs by exactly one thing -- open(path) became
+# open(path, encoding='utf-8'), which fixes a locale dependency and weakens no
+# contract. Everything else in the file is additions this gate does not audit.
+LOGIC_AUDIT = 'ff9b34d0fbccccab45bcb7ce60b161e125590c0cd38b755ffd0cffea4cb3017f'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

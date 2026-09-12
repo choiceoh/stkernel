@@ -399,3 +399,48 @@ class ProbeLeaseTests(unittest.TestCase):
         boot = (ROOT / "engine/profiles/glm53/boot.py").read_text()
         self.assertIn("def fleet_lease_of()", boot)
         self.assertIn("lease=fleet_lease_of()).loop()", boot)
+
+
+class QueueMaintenanceTests(unittest.TestCase):
+    """The pre-existing queue's rough edges (§31), fixed."""
+
+    def setUp(self):
+        self.fleet = (ROOT / "bench/fleet.sh").read_text()
+
+    def test_the_audit_pins_are_current(self):
+        """One stale hash turns off CPU reuse and contract narrowing for everyone, and the
+        only signal used to be four unit tests everybody called 'pre-existing'."""
+        import hashlib
+        import sys as _sys
+        _sys.path.insert(0, str(ROOT / "bench"))
+        import cpu_contracts, cpu_evidence
+        sha = lambda rel: hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
+        self.assertEqual(sha("tests/test_logic.py"), cpu_contracts.LOGIC_AUDIT)
+        for name in ("LOGIC_SOURCE_AUDIT", "FLEET_AUDIT", "STARTUP_AUDIT"):
+            for rel, want in (getattr(cpu_evidence, name, {}) or {}).items():
+                with self.subTest(audit=name, file=rel):
+                    self.assertEqual(sha(rel), want)
+
+    def test_a_stale_pin_is_reported_where_people_look(self):
+        self.assertIn("audit_line()", self.fleet)
+        self.assertIn("audit: STALE", self.fleet)
+        # defined before the dispatch that calls it
+        self.assertLess(self.fleet.index("audit_line() {"), self.fleet.index('case "$cmd" in'))
+
+    def test_a_remote_holder_is_judged_by_evidence(self):
+        """Blind trust for 3x the estimate meant a crashed holder blocked the fleet for two
+        hours at est 40, and the recovery the header promises is not installed."""
+        self.assertIn("holder_probe()", self.fleet)
+        self.assertIn("case \"$answer\" in alive) return 0 ;; gone) return 1 ;; esac", self.fleet)
+        # /proc, because kill -0 answers "gone" for a process you do not own
+        self.assertIn("[ -d /proc/$pid ] && echo alive || echo gone", self.fleet)
+        self.assertNotIn("kill -0 $pid 2>/dev/null && echo alive", self.fleet)
+        self.assertIn("HOLDER_PROBE_TTL_S", self.fleet)          # not an ssh per poll
+
+    def test_the_queue_can_prune_its_own_debris(self):
+        self.assertIn("  prune)", self.fleet)
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("fleet_prune", ROOT / "bench/fleet_prune.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module._selfcheck()
