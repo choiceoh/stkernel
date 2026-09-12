@@ -21,8 +21,44 @@ from fleet_prepare import command_environment
 
 POLICY = 'GPU work is onepass-only; use fleet.sh pair, chain or onepass'
 SHELL_ENTRIES = ('bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh',
-                 'probes/run_ar_consumer_campaign.sh')
+                 'probes/run_ar_consumer_campaign.sh',
+                 'probes/run_engine_probe.sh', 'probes/run_engine_check.sh')
 PYTHON_ENTRIES = ('bench/onepass.py', 'bench/experiments.py')
+# The ST engine's canonical checks. They are not onepass -- they judge kernels and
+# replay, not tokens/s -- but they take the same four nodes, so they belong in the same
+# queue instead of a second launcher lock nobody else can see (2026-09-12). The runner
+# is a wrapper around `docker run --gpus all <probe>`, so admitting it admits whatever
+# probe it is handed: the probe itself is named here and byte-pinned like the wrapper.
+ST_ENTRIES = ('probes/run_engine_probe.sh', 'probes/run_engine_check.sh')
+ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.py',
+             'probes/engine_drafter_graph_check.py', 'probes/engine_full_check.py',
+             'probes/engine_graph_profile.py', 'engine/profiles/glm53/check.py')
+ST_FLAGS = {'--layers', '--tokens', '--chunk', '--seed', '--moe-static', '--mla-prefill',
+            '--lanes', '--moe-experts', '--samples', '--contexts', '--output', '--ranks',
+            '--ckpt-meta'}
+ST_SWITCHES = {'--imports-only', '--distributed'}
+
+
+def _st_args(relative, args, cwd, repo):
+    """Which ST check, and literal flags only. No probe path the caller invented."""
+    if relative == 'probes/run_engine_probe.sh':
+        if not args:
+            raise ValueError(POLICY + '; the ST probe runner needs one of ' + ', '.join(ST_PROBES))
+        probe, args = args[0], args[1:]
+        if probe not in ST_PROBES:
+            raise ValueError(POLICY + '; ' + probe + ' is not a canonical ST check')
+        _same(_path(probe, cwd), probe, repo)
+    while args:
+        token = args[0]
+        if token in ST_SWITCHES:
+            args = args[1:]
+        elif token in ST_FLAGS and len(args) > 1 and not args[1].startswith('--'):
+            if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.,:/=-]{0,255}', args[1]):
+                raise ValueError(POLICY + '; ' + token + ' takes a literal value')
+            args = args[2:]
+        else:
+            raise ValueError(POLICY + '; the ST checks accept only ' +
+                             ', '.join(sorted(ST_SWITCHES | ST_FLAGS)))
 
 
 def _path(value, cwd):
@@ -153,7 +189,12 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
             _same(_path(effective[key], cwd), target, repo)
     _same(path, relative, repo)
     source = _path(effective.get('REPO', str(cwd)), cwd)
-    dependencies = ('bench/ab-lever.sh', 'bench/onepass.py', 'bench/onepass_deploy.py') if relative in SHELL_ENTRIES else ('bench/onepass.py',)
+    if relative in ST_ENTRIES:
+        # the ST runner, not the vLLM bracket: pin what it actually executes
+        dependencies = ('probes/run_engine_probe.sh',) + (
+            ('probes/run_engine_check.sh',) if relative == 'probes/run_engine_check.sh' else ())
+    else:
+        dependencies = ('bench/ab-lever.sh', 'bench/onepass.py', 'bench/onepass_deploy.py') if relative in SHELL_ENTRIES else ('bench/onepass.py',)
     if relative == 'probes/run_ar_consumer_campaign.sh':
         dependencies += ('bench/pair.sh',)
     for dependency in dependencies:
@@ -181,6 +222,8 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
         _onepass_args(args)
     elif relative == 'bench/experiments.py':
         _experiment(args, cwd, repo, effective)
+    elif relative in ST_ENTRIES:
+        _st_args(relative, args, cwd, repo)
     else:
         while args:
             if args[0] == '--baseline-only':

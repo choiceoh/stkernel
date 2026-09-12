@@ -61,6 +61,12 @@ for ip in "${NODES[@]}"; do
 done
 held=$(node_sh "${NODES[0]}" "cat $LOCK 2>/dev/null || true")
 [ -z "$held" ] || { echo "ABORT: the fleet is locked by '$held' ($LOCK on ${NODES[0]}); wait or 'stop' from that side" >&2; exit 1; }
+# The bench queue reserves the same four nodes and does not know this lock exists. Read its
+# holder before taking the fleet, so the two mechanisms refuse each other in both directions
+# until they become one (bench/fleet.sh now refuses a grant while any st-* container is up).
+FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}
+queued=$(node_sh "${NODES[0]}" "cat $FLEET_HOLDER 2>/dev/null || true")
+[ -z "$queued" ] || { echo "ABORT: the bench queue holds the fleet: $queued (bench/fleet.sh status; release it there)" >&2; exit 1; }
 node_sh "${NODES[0]}" "echo '$(whoami)@$(hostname) st-glm53 $(date '+%F %T')' > $LOCK"
 
 # the engine's own namespace travels into the container: a declared, expiring knob (D11) is set on the launch line

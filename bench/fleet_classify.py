@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import stat
 
-GPU_PATTERN = r'ab-lever|start-glm53|deploy-overlays|run_mk_probe|run_megakernel_bench|docker run|--gpus|onepass\.py|bracket\.py|bench-dec|torch\.cuda|nvidia-smi|\.cu\b|cuda_'
+GPU_PATTERN = r'ab-lever|start-glm53|start-st-glm53|deploy-overlays|run_mk_probe|run_megakernel_bench|run_engine_probe|run_engine_check|docker run|--gpus|onepass\.py|bracket\.py|bench-dec|torch\.cuda|nvidia-smi|\.cu\b|cuda_'
 CPU_PATTERN = r'MK_PROBE_NO_GPU=1|head_pack_accuracy_cpu|baseline\.py|judge\.py|test_logic\.py|b12x_static_compile_check|compile\.sh|nvcc |bash -n|^git |md5sum|proof\.py'
 PYTHON_TOKENS = re.compile(r'torch\.cuda|\.cuda\(|device=.cuda|--gpus|docker run')
 MAX_FILE_BYTES = 1024 * 1024

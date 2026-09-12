@@ -17,12 +17,20 @@
 #   fleet.sh show [s] | logs s | history s               exact command, retained output
 #   fleet.sh status | board | events | ledger [days]      queue, timings and results
 #   fleet.sh classify --explain <cmd>                    CPU/GPU classification evidence
+#   fleet.sh run --gpu s [est] [note] -- bash probes/run_engine_check.sh --layers 0-4
+#   fleet.sh run --gpu s [est] [note] -- bash probes/run_engine_probe.sh probes/engine_decode_graph_check.py
 #   fleet.sh cancel s                                   stop the waiter and withdraw
 #
 # GPU admission accepts current canonical pair, chain, ab-lever, onepass and
 # recorded pair/baseline execution. Unknown wrappers, standalone GPU checks,
 # sanitizers, custom probe manifests, chain --after and LEGS=none are refused
 # before preparation/queueing. Pending edits and execution recheck this policy.
+# The ST engine's canonical checks (probes/run_engine_check.sh and run_engine_probe.sh
+# over a named, byte-pinned probe) are admitted too: they take the same four nodes, so
+# they queue here rather than behind the launcher's own lock. The probe is named in
+# fleet_onepass.ST_PROBES -- admitting the runner never admits an arbitrary probe path.
+# A grant is refused while any st-* container is up, and start-st-glm53.sh refuses while
+# this queue has a holder, so the two mechanisms see each other in both directions.
 # --probe is the internal idle-serving scheduling lane; only onepass.py may
 # enter it. A rehearsal skips GPUs only for canonical pair/chain/ab-lever.
 # No bypass: a FAILed preflight is not queued. Fix the printed cause.
@@ -55,7 +63,10 @@ unset SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION LC_TER
 FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
 export FLEET_DIR LOGD
-REPO=${REPO:-/home/choiceoh/stkernel}
+# The checkout this script belongs to, not a fixed path: a worktree ran its helpers
+# against /home/choiceoh/stkernel, which is whatever branch another session left there
+# (on 2026-09-12 a branch with no bench/fleet_*.py at all, so every helper errored).
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 export REPO
 # Submissions return immediately. The detached runner comes back through run,
 # preserving preflight, CPU classification and the existing GPU reservation.
@@ -87,6 +98,12 @@ LEDGER=$FLEET_DIR/ledger.tsv; JSONL=$LOGD/bracket-onepass.jsonl
 hb_file() { echo "$FLEET_DIR/hb.$1"; }
 kind_of() { [ "${1:-}" = probe ] && echo probe || echo boot; }
 serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^glm53$'; }
+# The ST engine takes the whole fleet (one container per node, named st-*) without
+# entering this queue -- it has its own launcher lock. Until both are one mechanism the
+# queue must at least SEE it: holder-empty is not the same as free (2026-09-12, four
+# nodes running st-glm53 while status said FREE).
+st_engine_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-'; }
+st_engine_line() { docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^st-' | head -1; }
 serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting
   ! serving_up && return 0
   booting && return 1
@@ -206,7 +223,7 @@ classify_cmd() {  # cmd... -> gpu|nogpu|unknown
       *)    text="$text $(grep -vE '^\s*#' "$f" 2>/dev/null)";;
     esac
   done
-  local gpu='ab-lever|start-glm53|deploy-overlays|run_mk_probe|run_megakernel_bench|docker run|--gpus|onepass\.py|bracket\.py|bench-dec|torch\.cuda|nvidia-smi|\.cu\b|cuda_'
+  local gpu='ab-lever|start-glm53|deploy-overlays|run_mk_probe|run_megakernel_bench|run_engine_probe|run_engine_check|docker run|--gpus|onepass\.py|bracket\.py|bench-dec|torch\.cuda|nvidia-smi|\.cu\b|cuda_'
   local cpu='MK_PROBE_NO_GPU=1|head_pack_accuracy_cpu|baseline\.py|judge\.py|test_logic\.py|b12x_static_compile_check|compile\.sh|nvcc |bash -n|^git |md5sum|proof\.py'
   if echo "$text" | grep -qE "$gpu"; then echo gpu
   elif echo "$text" | grep -qE "$cpu"; then echo nogpu
@@ -324,6 +341,7 @@ _front() { { grep "^[0-9]*|$1|" "$Q"; grep -v "^[0-9]*|$1|" "$Q"; } > "$Q.tmp"; 
 
 _try_hold() {  # session pid est note [kind] -> 0 when held
   local s=$1 pid=$2 est=$3 note=$4 kind; kind=$(kind_of "${5:-}")
+  if st_engine_up; then logit "hold refused: ST engine occupies the fleet ($(st_engine_line))"; return 1; fi
   if [ -s "$H" ]; then
     if holder_alive; then return 1; fi
     logit "auto-kick dead holder: $(holder_line)"; rm -f "$H"
@@ -394,6 +412,7 @@ _release() {  # session
 _adopt() {  # caller holds .lock throughout the ownership transition
   local s=$1 pid=$2 est=${3:-30} note=${4:-}
   if [ -s "$H" ] && holder_alive; then echo "fleet already held: $(holder_line)" >&2; return 1; fi
+  if st_engine_up; then echo "ST engine occupies the fleet: $(st_engine_line)" >&2; return 1; fi
   kill -0 "$pid" 2>/dev/null || { echo "pid $pid is not alive on $(me)" >&2; return 1; }
   printf '%s|%s|%s|%s|%s|%s|boot\n' "$s" "$pid" "$(me)" "$(now)" "$est" "$note" > "$H"
   rm -f "$LOGD"/FLEET-free-for-*.done; touch "$LOGD/FLEET-held-by-$s.done"
@@ -512,7 +531,8 @@ case "$cmd" in
     export FLEET_RUN_KIND=$kind
     exec python3 "$runner/bench/fleet_boot.py" "$runner/bench/fleet.sh" "$s" "$est" "$note" "$@";;
   status)
-    echo "fleet: $( [ -s "$H" ] && { holder_alive && echo "HELD by $(holder_line)" || echo "held by DEAD $(holder_line)"; } || echo FREE )"
+    echo "fleet: $( [ -s "$H" ] && { holder_alive && echo "HELD by $(holder_line)" || echo "held by DEAD $(holder_line)"; } \
+                  || { st_engine_up && echo "TAKEN by the ST engine, outside this queue ($(st_engine_line))" || echo FREE; } )"
     remaining=0
     if [ -s "$H" ]; then
       IFS='|' read -r hs hpid hhost ht0 hest hnote hkind < "$H"; held=$(( ($(now) - ht0) / 60 ))

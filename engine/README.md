@@ -28,6 +28,9 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 
     bash launchers/fanout-st-ranks.sh            # 랭크 r 파일을 노드 r 로
     bash launchers/start-st-glm53.sh             # 부팅; glm53*/q38* 컨테이너가 있으면 거부
+    bash bench/fleet.sh run --gpu st 30 "decode graph" -- bash probes/run_engine_probe.sh probes/engine_decode_graph_check.py
+                                                 # GPU 검사는 벤치 큐에 줄을 선다(2026-09-12): 창이 없으면 미루지 말고 예약한다.
+                                                 # 큐는 st-* 컨테이너가 떠 있으면 허가하지 않고, 런처는 큐에 holder 가 있으면 거부한다.
     curl -s http://10.10.10.2:8000/v1/engine/completions -d '{"prompt": "...", "max_tokens": 64}'                    # 엔진 방언: ids/text
     curl -s http://10.10.10.2:8000/v1/engine/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
     curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64, "n": 2, "logprobs": 3}'    # OpenAI completions
