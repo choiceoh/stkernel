@@ -17,13 +17,17 @@ def relative(actual, expected):
 
 def check(report, ranks):
     from engine.kernels.b12x import moe_dispatch as md
+    from engine.profiles.glm53 import facts
     from engine.profiles.glm53.lanes import served
     from engine.profiles.glm53.weights import rank_loader
     from probes.engine_decode_fusions import _capture
 
     if not ranks:
         raise ValueError('the wave probe requires the actual consumer --ranks directory')
-    path = Path(ranks) / 'rank0of4.safetensors'
+    root = Path(ranks)
+    if not root.is_absolute():
+        root = facts.RANKS.parent / root
+    path = root / 'rank0of4.safetensors'
     keys = ['L3.moe.' + name for name in ('w13', 'w13_sf', 'w2', 'w2_sf')]
     loaded = rank_loader(path).load(keys, device='cuda')
     weights = [loaded[key] for key in keys]
@@ -92,6 +96,7 @@ def check(report, ranks):
                    scope='same L3 TP4 pack and source; FP32 scatter; default off; not engine throughput')
         source = Path(md.__file__)
         report('moe_waves_complete', passed=True, gpu=torch.cuda.get_device_name(),
+               rank_file=str(path.resolve()),
                dispatcher_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                max_allocated_bytes=torch.cuda.max_memory_allocated())
     finally:

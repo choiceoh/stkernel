@@ -24,6 +24,17 @@ Validation prepared:
 - Only after those checks, 89 distinct coefficient packs are compared in B/A/A/B
   graph replay order. This excludes model traffic and RDMA overlap and is not onepass.
 
+The full native CUDA/Torch compile and load passed on `a508f86b` without opening
+a GPU, during the second consumer's preparation. `compile-a508f86b.json` records
+80 registers and 28,736 shared bytes for the candidate, versus 128 registers for
+the existing packed consumer. The runtime occupancy guard still has to qualify
+the actual grid on GB10; compiler resources alone do not prove a safe launch or gain.
+
+The first attempt compiled successfully but its resource reader expected an older
+cuobjdump header and falsely reported a missing symbol. The corrected reader has
+two CPU tests and the complete compile gate was rerun successfully; the CUDA source
+is unchanged. `cpu-controller-a508f86b.json` records the image, CPU limits and phase.
+
 Local Python syntax and whitespace checks pass. The two GPU tests skip on macOS.
-Full compilation, GPU numerics and timing are pending. Do not adopt this probe on
-those local checks or imply that 22 step/s has been reached.
+GPU numerics and timing remain pending. Neither probe is in the live `8c8b031b`
+consumer; 22 step/s has not been reached.

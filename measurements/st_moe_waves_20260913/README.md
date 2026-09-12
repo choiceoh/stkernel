@@ -19,9 +19,12 @@ Validation prepared:
   separation and fail-fast shape rejection.
 - `CUDA_VISIBLE_DEVICES= python3 -m probes.engine_moe_waves_compile --output /out/compile.json`
   compiles both native handles without a GPU and checks actual constructor forwarding
-  and cache reuse. Full CUDA/CuTe compilation is pending.
+  and cache reuse. This complete CPU gate passed on `c13f2802` during the second
+  consumer's preparation; `compile-c13f2802.json` retains both emitted handles
+  and dispatcher/kernel hashes. It opened no GPU.
 - The admitted `probes/engine_kernel_check.py --lanes moe_waves --ranks RANKS`
-  replays both graphs on identical real L3 TP4 packs, changing routing from 8 to 56
+  resolves a named rank directory beside `facts.RANKS`, as the existing router
+  probe does, and replays both graphs on identical real L3 TP4 packs, changing routing from 8 to 56
   active experts and back. FP32 atomic scatter retains the existing 0.001 relative
   repeat/graph tolerance; the report records measured pair and repeat error.
 - Only after all numerical cases pass, warm and 64-MiB-evicted B/A/A/B kernel samples
