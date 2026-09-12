@@ -1,0 +1,12 @@
+{
+  "base": "58132bcb",
+  "measured_base": "7b394e88",
+  "comparison": "two-prompt prefix capture after rebasing onto main versus measured base",
+  "equal": {
+    "x": true,
+    "selected": true,
+    "coefficient": true,
+    "prompt_index": true
+  },
+  "capture_sha256": "d77c1dccc08f253d7ee790ce2b96770e5fe2acb154e3703f5d964e89d7e72f60"
+}

@@ -44,6 +44,8 @@ across the four local TP ranks. Capture peak Torch allocation was
 1,961,152,512 bytes. A two-prompt compatibility run on integration base
 `cda0af61` produced byte-identical tensors to the measured engine base
 `7b394e88`; see `compatibility.json`.
+After rebasing the probes onto `58132bcb`, the same two-prompt check again
+matched all captured tensors exactly; see `rebase-compatibility.json`.
 
 Experts are selected solely by training route count: **10, 4, 119, 178**.
 Their training counts are 1,494, 263, 227 and 225, respectively. This is limited
