@@ -557,6 +557,13 @@ class SnapshotPressureTests(unittest.TestCase):
     engine has `PREFIX_SNAPSHOTS` slots, so a long enough prompt evicts its own earlier checkpoints as it goes
     (production: 170 boundaries in a 128K prompt against 96 slots). Nothing counted that before."""
 
+    def test_a_fresh_cache_has_displaced_nobody(self):
+        """`last_fade` exists from construction: a reader before the first `take_snapshot` gets None, not an
+        AttributeError. Found by tools/mutate.py -- dropping the initialiser killed no test."""
+        c = PrefixCache(BLOCK, CHUNK, 2)
+        self.assertIsNone(c.last_fade)
+        self.assertEqual(c.snapshot_denials, 0)
+
     def test_a_free_slot_fades_nobody(self):
         c = PrefixCache(BLOCK, CHUNK, 2)
         c.bind(BlockPool(16, BLOCK, 4, 16))
