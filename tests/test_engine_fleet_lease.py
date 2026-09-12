@@ -266,6 +266,42 @@ class SmoothnessTests(unittest.TestCase):
         module = (ROOT / "engine/base/fleet_lease.py").read_text()
         self.assertIn('print("free (stale: " + describe(held) + ")")', module)
 
+    def test_an_opaque_lock_naming_a_dead_pid_is_not_a_dead_hand(self):
+        """Treating every unparseable record as permanently held made a departed session
+        block the fleet until a human ran `stop` -- three queued reservations died on it."""
+        import os
+        here = os.uname().nodename.split(".")[0]
+        path = Path(self.probe)                                  # any path; we write our own below
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lease"
+            path.write_text(f"choiceoh@{here} st-glm53 2026-09-12 02:55:58 UTC pid=999999999\n")
+            record = read(path)
+            self.assertTrue(record["opaque"] and record["pid"] == 999999999)
+            self.assertEqual(record["host"], here)
+            # its pid is gone and nothing is running: reclaimable
+            self.assertFalse(alive(record, container_up=lambda name: False))
+            # but not while an ST container is up, and not if we cannot ask
+            self.assertTrue(alive(record, container_up=lambda name: True))
+            self.assertTrue(alive(record, container_up=None))
+            # a live pid, or another host, stays held
+            path.write_text(f"choiceoh@{here} st-glm53 pid={os.getpid()}\n")
+            self.assertTrue(alive(read(path), container_up=lambda name: False))
+            path.write_text("choiceoh@some-other-node st-glm53 pid=999999999\n")
+            self.assertTrue(alive(read(path), container_up=lambda name: False))
+            path.write_text("no pid here at all\n")
+            self.assertTrue(alive(read(path), container_up=lambda name: False))
+
+    def test_the_probe_waits_for_the_fleet_instead_of_losing_its_turn(self):
+        self.assertIn("ST_PROBE_WAIT_MINUTES", self.probe)
+        self.assertIn("waiting for the fleet", self.probe)
+        self.assertIn("the fleet stayed held for", self.probe)
+
+    def test_the_queue_reads_the_lease_not_only_containers(self):
+        """They disagreed once and the queue granted while the lease was still held."""
+        self.assertIn("fleet_lease read", self.fleet)
+        self.assertIn("st_engine_up() {", self.fleet)
+
     def test_yield_waits_for_the_handover(self):
         """Asking and leaving the caller to poll is not a handover."""
         self.assertIn("YIELD_WAIT_MINUTES", self.launcher)
