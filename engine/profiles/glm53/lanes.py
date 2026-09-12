@@ -251,7 +251,10 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             prepared = prepare_w4a16_modelopt_nvfp4_weights(
                 w13, w13_sf, scales.weight13,
                 w2, w2_sf, scales.weight2,
-                activation="swigluoai_uninterleave",
+                # W4A16's host validator names the alpha=1,beta=0 GLM form
+                # ``silu``.  It is numerically the same as the serving
+                # ``swigluoai_uninterleave`` contract used by NVFP4.
+                activation="silu",
                 params_dtype=torch.bfloat16,
                 w13_layout="w13",
             )
@@ -425,7 +428,9 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                     top_k=1,
                     num_local_experts=E,
                     scatter_output=output,
-                    activation="swigluoai_uninterleave",
+                    # W4A16 accepts the equivalent alpha=1,beta=0 GLM form
+                    # under its ``silu`` activation name.
+                    activation="silu",
                     swiglu_alpha=1.0,
                     swiglu_beta=0.0,
                     swiglu_limit=float(limit),
