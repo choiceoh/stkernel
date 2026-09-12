@@ -2574,6 +2574,22 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertLessEqual(pt.chars, 8 + len("0aaaa|"))
         self.assertGreaterEqual(len(pt.entries), 1)
 
+    def test_the_grammar_cache_meters_reach_the_scrape(self):
+        s = chat_server()
+        self.assertNotIn("st:grammar_cache_entries", s.metrics(), "no structured output, no rows")
+
+        class Grammars:
+            KEPT = 256
+            compiles, cache_hits, cache_evictions = 9, 4, 2
+            _cache = {"a": 1, "b": 2}
+        s.engine.grammars = Grammars()
+        page = s.metrics()
+        self.assertIn('st:grammar_cache_entries{engine="st"} 2\n', page)
+        self.assertIn('st:grammar_cache_limit{engine="st"} 256\n', page)
+        self.assertIn('st:grammar_compiles_total{engine="st"} 9\n', page)
+        self.assertIn('st:grammar_cache_hits_total{engine="st"} 4\n', page)
+        self.assertIn('st:grammar_cache_evictions_total{engine="st"} 2\n', page)
+
     def test_the_splice_meters_reach_the_scrape(self):
         s = chat_server()
         s.prompt_tokens.spliced, s.prompt_tokens.full, s.prompt_tokens.chars_saved = 7, 3, 4096
