@@ -6,6 +6,10 @@ The 40th campaign spent several fleet holds learning why a prefill chunk was
 "align" mode (--block-size 2304, VLLM_GLM53 APC). MAX_BATCHED=9216 did not
 move it -- six tokens short. The self-check below IS that finding: if it
 ever stops reproducing, the chunk law changed.
+
+ST serves a budget of 10,240, so a chunk of 9,216 (45차 §23 조사 19차): the
+routed expert lane is one fused kernel that is half empty at 6,912 rows, and
+four blocks instead of three take 39% off its cost a token.
 """
 from __future__ import annotations
 
@@ -52,8 +56,9 @@ def _selfcheck() -> None:
     assert chunk_for(8192) == 6912, chunk_for(8192)          # the 40th campaign, exactly
     assert chunk_for(9216) == 6912                           # six tokens short: still 6,912
     assert chunk_for(9222) == 9216                           # N x 2304 + SPEC_K is the only way up
+    assert chunk_for(10240) == 9216                          # what ST serves: four blocks (조사 19차)
     assert chunk_for(16384) == 16128                         # (16384-6)//2304 = 7 blocks
-    print("  glm53 shapes: 8192->6,912, 9216->6,912, 9222->9,216 -- the chunk law reproduces OK")
+    print("  glm53 shapes: 8192->6,912, 9216->6,912, 9222->9,216, 10240->9,216 -- the chunk law reproduces OK")
 
 
 if __name__ == "__main__":

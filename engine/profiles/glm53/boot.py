@@ -53,7 +53,14 @@ from engine.profiles.glm53 import vision as vision_mod           # noqa: E402
 
 GIB = 1 << 30
 KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 28차 §8); the ST budget table leaves 41.6 GiB, 45차 §23
-TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
+TOKEN_BUDGET = 10240                # MAX_BATCHED: the chunk law follows (shapes.py). 8192 gave a 6,912 chunk, which
+                                    # is where vLLM's APC align mode pinned it -- ST computes the chunk from this
+                                    # budget instead, and 45차 §23 조사 19차 measured what the pin cost: the routed
+                                    # expert lane is ONE fused kernel and at 6,912 rows it is half empty (35.9
+                                    # TFLOP/s, 2.83 ms a thousand tokens). 9,216 rows take it to 1.73 (-39%), which
+                                    # is 87% of everything a 13,824 chunk would give, at 1.33x the prefill
+                                    # activation peak instead of 2x -- and that peak is what the 12 GiB workspace
+                                    # ceiling (budget.WORKSPACE_GIB) has to hold.
 MAX_WAIT_S = 0.0                    # admit into a free decode row at the next chunk boundary
 MAX_SEQS = 4
 """Resident decode rows: state slots, captured decode widths and the context ceiling follow.
