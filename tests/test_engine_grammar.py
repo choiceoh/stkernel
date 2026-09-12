@@ -61,6 +61,38 @@ class GrammarTests(unittest.TestCase):
         self.assertEqual(masks.live("row", 4), 1)                         # 'a' cannot open an object: positions 1.. are dead
         self.assertIn(self.vocab.index("{"), self.allowed(m, [])[0])      # and the refusal did not move the matcher
 
+    def test_a_schema_the_compiler_refuses_is_a_value_error_not_the_compiler_s_own(self):
+        """xgrammar's C++ layer raises for a regex it cannot convert and a `$ref` that goes nowhere. Raised
+        where a row is admitted, that would abort every live request on every rank; the door answers 400."""
+        for schema in ('{"type": "string", "pattern": "(a)\\\\1"}',
+                       '{"type": "object", "properties": {"a": {"$ref": "#/definitions/nope"}}}'):
+            with self.assertRaises(ValueError) as caught:
+                self.grammars.ready({"type": "json_schema", "schema": schema})
+            self.assertIn("the grammar cannot be compiled", str(caught.exception))
+
+    def test_the_compile_runs_on_a_thread_and_the_first_mask_waits_for_it(self):
+        handle = self.grammars.compile({"type": "json_object"})
+        self.assertTrue(hasattr(handle, "result"), "the compile is submitted, not done in the caller")
+        self.assertIsNotNone(self.grammars.resolve(handle))
+        m = self.grammars.matcher({"type": "json_object"}, max_rollback=2)
+        self.assertIsNone(m.m, "the matcher is not built until a mask is asked for")
+        self.assertIn(self.vocab.index("{"), self.allowed(m, [])[0])
+        self.assertIsNotNone(m.m)
+
+    def test_the_engine_s_end_tokens_are_the_grammar_s_stop_tokens(self):
+        """Left to itself xgrammar takes the tokenizer's single eos. A model whose generation config ends on
+        something else would finish its JSON on a token the engine does not stop at."""
+        from engine.base.grammar import Grammars
+        ends = [len(self.vocab) - 1, self.vocab.index("a")]          # pretend the engine also ends on 'a'
+        g = Grammars(self.hf, len(self.vocab), stop_token_ids=ends)
+        m = g.matcher({"type": "json_object"}, max_rollback=2)
+        m.advance([self.vocab.index("{"), self.vocab.index("}")])
+        masks = g.prepare([("row", m, [])], "cpu")
+        import torch
+        logits = torch.zeros(1, len(self.vocab))
+        masks.apply("row", logits)
+        self.assertEqual(sorted((~torch.isinf(logits[0])).nonzero().flatten().tolist()), sorted(ends))
+
     def test_json_schema_is_enforced(self):
         m = self.grammars.matcher({"type": "json_schema", "schema": '{"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]}'},
                                   max_rollback=2)
@@ -223,6 +255,68 @@ class StepBufferTests(unittest.TestCase):
         # the kernel writes -inf; we never build a vocabulary of bool, and a fill overwrites its row, so no reset
         self.assertEqual(code.count("masked_fill"), 0, "the mask is the kernel's, not a bool vocabulary's")
         self.assertEqual(code.count("reset_token_bitmask("), 0, "a fill overwrites its row: a reset is a second memset")
+
+
+class ReasoningGateTests(unittest.TestCase):
+    """A grammar that starts inside the model's reasoning forbids the block's own end token: the block never
+    closes, and the whole answer comes back as reasoning. `after` is the token it waits for."""
+
+    def setUp(self):
+        try:
+            import torch  # noqa: F401
+        except ImportError as exc:
+            self.skipTest(str(exc))
+
+    def gate(self, after=7, **kw):
+        from engine.base.grammar import Matcher
+        g, _ = fake(**kw)
+        return g, Matcher(g, None, 5, after=after)
+
+    def allowed(self, g, masks, key, rows):
+        import torch
+        logits = torch.zeros(rows, g.vocab_size)
+        masks.apply(key, logits)
+        return [sorted((~torch.isinf(r)).nonzero().flatten().tolist()) for r in logits]
+
+    def test_a_dormant_row_costs_nothing_and_refuses_nothing(self):
+        g, m = self.gate()
+        masks = g.prepare([("r", m, [1, 2, 3])], "cpu")
+        self.assertEqual(masks.live("r", 4), 4, "every position is still reachable: nothing is constrained")
+        self.assertEqual(g.xgr.fills, [], "a step of pure reasoning does not touch the grammar")
+        import torch
+        logits = torch.zeros(4, g.vocab_size)
+        masks.apply("r", logits)
+        self.assertEqual(int(torch.isinf(logits).sum()), 0)
+
+    def test_a_draft_that_ends_the_reasoning_arms_the_rest_of_the_step_and_is_taken_back(self):
+        g, m = self.gate()
+        masks = g.prepare([("r", m, [1, 7, 2])], "cpu")
+        self.assertEqual(g.xgr.fills, [2, 3], "only the positions behind the end token are filled")
+        rows = self.allowed(g, masks, "r", 4)
+        self.assertEqual(len(rows[0]), g.vocab_size, "the reasoning positions stay open under the same kernel call")
+        self.assertEqual(len(rows[1]), g.vocab_size)
+        self.assertEqual(rows[2], [1, 5, 70])
+        self.assertEqual(rows[3], [1, 5, 70])
+        self.assertEqual(g.xgr.rolled, 1, "the draft the grammar accepted is taken back")
+        self.assertFalse(m.armed, "a draft is not a commit: the row is still dormant")
+
+    def test_only_a_committed_token_arms_it(self):
+        g, m = self.gate()
+        m.advance([1, 2])
+        self.assertFalse(m.armed)
+        g.prepare([("r", m, [])], "cpu")
+        self.assertEqual(g.xgr.fills, [])
+        m.advance([7])
+        self.assertTrue(m.armed)
+        masks = g.prepare([("r", m, [])], "cpu")
+        self.assertEqual(g.xgr.fills, [0])
+        self.assertEqual(self.allowed(g, masks, "r", 1), [[1, 5, 70]])
+
+    def test_the_tokens_after_the_end_token_are_fed_to_the_grammar(self):
+        g, m = self.gate()
+        m.advance([1, 7, 5, 70])
+        self.assertTrue(m.armed)
+        self.assertEqual(g.xgr.accepted, [5, 70], "only what came after the reasoning end is the answer")
 
 
 class PickRichTests(unittest.TestCase):

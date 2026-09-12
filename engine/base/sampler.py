@@ -146,7 +146,7 @@ if __name__ == "__main__":
 # rank identically (same generator seeds, same order), so the picks agree without a message.
 
 OPTION_KEYS = ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
-               "logit_bias", "stop_token_ids", "logprobs", "grammar")
+               "logit_bias", "stop_token_ids", "logprobs", "grammar", "grammar_after")
 
 
 def validate_options(options: dict) -> None:
@@ -182,6 +182,11 @@ def validate_options(options: dict) -> None:
     g = options.get("grammar")
     if g is not None and (not isinstance(g, dict) or g.get("type") not in ("json_object", "json_schema")):
         raise ValueError("grammar must be a json_object or json_schema spec")
+    after = options.get("grammar_after")
+    if after is not None and (type(after) is not int or after < 0):
+        raise ValueError("grammar_after must be a token id")
+    if after is not None and g is None:
+        raise ValueError("grammar_after is the token a grammar waits for: there is no grammar")
 
 
 def needs_rich_sampler(options: dict, temperature: float, drafts: bool) -> bool:
