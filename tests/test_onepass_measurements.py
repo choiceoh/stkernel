@@ -89,6 +89,25 @@ class StreamTests(unittest.TestCase):
         self.assertAlmostEqual(timing["tpot_ms"], 1000 * 20.1 / 1535)
         self.assertEqual(timing["chunk_gaps_ms"], [20000])
 
+    def test_combined_reasoning_budget_is_forwarded_and_recorded(self):
+        events = [
+            {"choices": [{"delta": {"reasoning_content": "근거"}}]},
+            {"choices": [{"delta": {"content": "답변"}, "finish_reason": "stop"}]},
+            {"choices": [], "usage": {"prompt_tokens": 32545, "completion_tokens": 900}},
+        ]
+        stream = io.BytesIO(b"".join(("data: " + json.dumps(e) + "\n\n").encode()
+                                     for e in events) + b"data: [DONE]\n")
+        timing = {}
+        with patch.object(onepass.urllib.request, "urlopen", return_value=stream) as urlopen, \
+                patch.object(onepass.time, "monotonic", side_effect=[100, 102, 122, 122.1]):
+            result = onepass.ask_stream("http://fixture/v1/chat/completions", "glm", "질문", 2400,
+                                        timing, reasoning_budget=900)
+        payload = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(payload["max_tokens"], 2400)
+        self.assertEqual(payload["reasoning_budget"], 900)
+        self.assertEqual(result, ("근거답변", 2, 32545, 900, "stop"))
+        self.assertEqual(timing["reasoning_budget"], 900)
+
 
 if __name__ == "__main__":
     unittest.main()
