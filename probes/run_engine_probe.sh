@@ -5,7 +5,7 @@
 # ST_PROBE_HOST=[user@]host runs the container on THAT host's GPU instead of this node's.
 # That is the queue's single-GPU lane (bench/fleet.sh): a check that needs one GPU, not
 # four, goes to ONE Spark beside production (srv4 by default) and leaves the fleet alone.
-# engine/ and probes/ are rsynced under ~/$ST_PROBE_TREE on that host, the container runs
+# engine/, probes/ and their tests/ are rsynced under ~/$ST_PROBE_TREE on that host, the container runs
 # there on the image production runs there (or $ST_IMAGE), with the same mounts and env,
 # and NO fleet lease is taken -- the queue's holder-single is the reservation. Beside
 # production the guard is ROOM, the same rule as a --test boot: that box's MemAvailable
@@ -45,8 +45,8 @@ if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${pr
   tree=${ST_PROBE_TREE:-st-probe-tree}          # under that host's home
   home=$(ssh $SSHOPT "$probe_host" "mkdir -p '$tree' .cache/st && printf %s \"\$HOME\"") \
     || { echo "ABORT: $probe_host is unreachable; the single-GPU lane cannot run $probe" >&2; exit 1; }
-  rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes" "$probe_host:$tree/" \
-    || { echo "ABORT: could not push engine/ and probes/ to $probe_host:$tree" >&2; exit 1; }
+  rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes" "$repo/tests" "$probe_host:$tree/" \
+    || { echo "ABORT: could not push engine/, probes/ and tests/ to $probe_host:$tree" >&2; exit 1; }
   mounts=(--mount "type=bind,src=$home/$tree,dst=/repo,readonly"
           --mount "type=bind,src=$home/.cache/st,dst=/cache")
   if ssh $SSHOPT "$probe_host" "test -d '$models'"; then
