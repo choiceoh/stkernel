@@ -221,16 +221,19 @@ class _Stream:
 class _Graph:
     def reset(self): pass
     def register_generator_state(self, generator): pass
+    def capture_begin(self, pool, capture_error_mode="global"): pass
+    def capture_end(self): pass
 
 
 class _Cuda:
     """Enough of torch.cuda to run the capture loop's bookkeeping on a CPU host."""
+    def __init__(self): self.flushes = 0
+    def empty_cache(self): self.flushes += 1
     def graph_pool_handle(self): return object()
     def Stream(self): return _Stream()
     def current_stream(self): return _Stream()
     def stream(self, s): return contextlib.nullcontext()
     def CUDAGraph(self): return _Graph()
-    def graph(self, g, pool=None): return contextlib.nullcontext()
     def synchronize(self): pass
 
 
@@ -269,6 +272,46 @@ class LedgerRowTests(unittest.TestCase):
         from engine.base import graphs as module
         with unittest.mock.patch.object(module, "torch", SimpleNamespace(cuda=_Cuda())):
             module.DecodeGraphs(lambda inp: inp, lambda *shape: shape, [(1, 6)], warmup=1)
+
+
+class AllocatorFlushTests(unittest.TestCase):
+    """torch.cuda.graph() flushes the caching allocator before every capture.
+
+    Per shape that returns exactly what the shape's own warmup just allocated, and
+    on unified memory the next shape has to map those pages again. The capture
+    drives capture_begin/capture_end itself so the flush happens once.
+    """
+
+    def test_the_allocator_is_flushed_once_for_the_instance_not_once_per_shape(self):
+        from engine.base import graphs as module
+        cuda = _Cuda()
+        with unittest.mock.patch.object(module, "torch", SimpleNamespace(cuda=cuda)):
+            module.DecodeGraphs(lambda inp: inp, lambda *shape: shape,
+                                [(1, 6), (2, 6), (4, 6), (8, 6)], warmup=1)
+        self.assertEqual(cuda.flushes, 1)
+
+    def test_a_capture_that_raises_still_ends_its_capture(self):
+        from engine.base import graphs as module
+        ended = []
+
+        class _Watched(_Graph):
+            def capture_end(self): ended.append(self)
+
+        cuda = _Cuda()
+        cuda.CUDAGraph = _Watched
+        calls = []
+
+        def boom(inp):
+            calls.append(inp)
+            if len(calls) > 1:                 # the warmup pass runs; the recorded one fails
+                raise RuntimeError("kernel refused")
+            return inp
+
+        with unittest.mock.patch.object(module, "torch", SimpleNamespace(cuda=cuda)):
+            with self.assertRaisesRegex(RuntimeError, "kernel refused"):
+                module.DecodeGraphs(boom, lambda *shape: shape, [(1, 6)], warmup=1)
+        # the stream must not be left recording, or every later capture in the process fails
+        self.assertEqual(len(ended), 1)
 
 
 class DeviceStepTests(unittest.TestCase):

@@ -64,6 +64,17 @@ class DecodeGraphs:
         # every other instance's: see the module docstring's second rule.
         self.pool = pool = torch.cuda.graph_pool_handle()
         side = torch.cuda.Stream()
+        recording = torch.cuda.Stream()
+        # torch.cuda.graph() empties the caching allocator before EVERY capture, to
+        # give the pool room. Per shape that throws away exactly what this shape's
+        # own warmup just allocated, and on unified memory a released page has to be
+        # mapped again before the next shape can touch it -- so the loop pays an
+        # unmap and a remap per shape for blocks the next shape wants anyway. The
+        # shapes here allocate alike (a rung's cost is flat from 4,096 to 1,048,576),
+        # so one flush for the instance leaves the blocks where the next warmup can
+        # reuse them. The ledger row after each shape still holds the byte ceiling,
+        # so if reserved climbs instead of plateauing the boot says so and fails.
+        torch.cuda.empty_cache()
         def mark(shape, name=None):
             if memory is not None:
                 memory.checkpoint(f"{label}/{shape}/{name}" if name else f"{label}/{shape}")
@@ -89,8 +100,15 @@ class DecodeGraphs:
                 # raised is reset here, by the one reference that exists, and never
                 # reaches close() -- which would be resetting an uncaptured graph.
                 try:
-                    with torch.cuda.graph(g, pool=pool):
-                        out = step_fn(inp)
+                    # torch.cuda.graph() is this plus a flush of the caching allocator,
+                    # which is the one thing this loop must not do per shape (above).
+                    torch.cuda.synchronize()
+                    with torch.cuda.stream(recording):
+                        g.capture_begin(pool, capture_error_mode="global")
+                        try:
+                            out = step_fn(inp)
+                        finally:
+                            g.capture_end()
                     if resources is not None:
                         for owner in resources():
                             self.resources[id(owner)] = owner
