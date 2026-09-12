@@ -2143,6 +2143,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("sf_pack", False)),
         bool(config.get("decode_reform", False)),
         bool(config.get("reform_sf_pack", False)),
+        bool(config.get("decode_compact", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -2241,6 +2242,7 @@ def _get_static_kernel_v2(
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
+        decode_compact=bool(config.get("decode_compact", False)),
         reform_sf_pack=bool(config.get("reform_sf_pack", False)),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
