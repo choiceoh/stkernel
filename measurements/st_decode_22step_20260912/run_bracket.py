@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import signal
 import socket
 import subprocess
 import sys
@@ -17,7 +18,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 from engine.base import fleet_lease
 
-ROOT = Path(os.environ.get('ST_DECODE22_EVIDENCE_ROOT', '/home/choiceoh/glm53-logs/st-decode22-consumer-v2'))
+ROOT = Path(os.environ.get('ST_DECODE22_EVIDENCE_ROOT', '/home/choiceoh/glm53-logs/st-decode22-consumer-v3'))
 SOURCE = Path('/home/choiceoh/st-decode22')
 SEED = Path('/home/choiceoh/glm53-cache-decode22-seed-e12cb4b5')
 HOSTS = (None, 'choiceoh@10.10.10.1', 'choiceoh@10.10.10.3', 'choiceoh@10.10.10.4')
@@ -78,7 +79,7 @@ def wait_free(owner):
 
 
 def prepare_cache(arm):
-    cache = Path(f'/home/choiceoh/glm53-cache-decode22-{arm}')
+    cache = Path(f'/home/choiceoh/glm53-cache-{ROOT.name}-{arm}')
     for host in HOSTS:
         script = 'import pathlib,subprocess,sys; src,dst=map(pathlib.Path,sys.argv[1:]); assert src.is_dir(); ' \
                  'subprocess.run(["cp","-a","--reflink=auto",str(src),str(dst)],check=True) if not dst.exists() else None'
@@ -111,7 +112,7 @@ def run_arm(arm, source_name):
                RANKS_DIR='/home/choiceoh/models/st-glm53-nvidia-tp4-9391', CKPT=str(source / 'st-glm53-meta'),
                DRAFTER='/home/choiceoh/models/GLM-5.3-Flash-DFlash2', ST_ENGINE_DIR='/home/choiceoh/st-releases/decode22-' + arm,
                CACHE_DIR=str(cache), ST_TIER_DIR=str(directory / 'tier'), ST_DUMP_DIR=str(directory / 'dumps'),
-               LEASE_OWNER=owner, LEASE_MINUTES='25', LEASE_NOTE='ST decode22 ' + arm + '; two frozen canonical onepass runs')
+               LEASE_OWNER=owner, LEASE_MINUTES='120', LEASE_NOTE='ST decode22 ' + arm + '; two canonical harness-42 onepass runs')
     launcher = ['bash', str(source / 'launchers/start-st-glm53.sh')]
     event(arm + ': launching four ranks')
     try:
@@ -129,6 +130,7 @@ def run_arm(arm, source_name):
         else:
             raise TimeoutError('ST did not become ready within twenty minutes')
         env.update(GLM53_API_PORT=str(PORT), BENCH_MODEL=card['id'])
+        failures = []
         for number in (1, 2):
             if not held_by(owner):
                 raise RuntimeError('lease lost before onepass')
@@ -137,21 +139,39 @@ def run_arm(arm, source_name):
             env['EVIDENCE_DIR'] = str(result_dir)
             (result_dir / 'prefix-reset.json').write_text(json.dumps(get('/v1/prefix/reset', {})) + '\n')
             command = [sys.executable, str(Path(__file__).with_name('run_onepass.py')), '--name', f'decode22-{arm}-{number}',
-                       '--ctx', '2000,32000,128000', '--max-tokens', '400', '--num-spec', '6', '--seed', '7',
-                       '--require-exclusive', '--fixed-decode-tokens', '1024', '--fixed-decode-reps', '3',
+                       '--ctx', '2000,32000,128000', '--max-tokens', '2400',
+                       '--combined-max-tokens', '7200', '--combined-reasoning-budget', '2400',
+                       '--num-spec', '6', '--seed', '7',
+                       '--require-exclusive', '--fixed-decode-tokens', '7200', '--fixed-decode-reps', '3',
                        '--out', str(result_dir / 'raw.jsonl')]
             event(f'{arm}: canonical onepass {number}/2')
             with (result_dir / 'console.log').open('x') as stream:
-                rc = subprocess.run(command, env=env, stdout=stream, stderr=subprocess.STDOUT, timeout=2400).returncode
+                process = subprocess.Popen(command, env=env, stdout=stream, stderr=subprocess.STDOUT,
+                                           start_new_session=True)
+                try:
+                    rc = process.wait(timeout=7200)
+                except BaseException:
+                    # The wrapper launches canonical onepass as a child. Stop
+                    # only our process group before releasing this boot.
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=15)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait()
+                    raise
             (result_dir / 'exit-code.txt').write_text(str(rc) + '\n')
             record = json.loads((result_dir / 'raw.jsonl').read_text().splitlines()[-1])
             event(f'{arm} pass{number}: rc={rc} quality={record.get("quality")} ' +
                   f'fixed_step_s={record.get("decode", {}).get("fixed_pooled_step_s")}')
-            if rc or record.get('evidence_issues'):
-                raise RuntimeError('onepass measurement failed; artifacts retained')
-            if record['quality']['ok'] != record['quality']['total'] or record['korean']['dirty']:
-                raise RuntimeError('quality gate failed; artifacts retained')
-        (directory / 'complete.json').write_text(json.dumps({'arm': arm, 'owner': owner, 'completed_at': time.time()}) + '\n')
+            if rc not in (0, 2):
+                raise RuntimeError('onepass execution failed; artifacts retained')
+            quality_ok = all(record[key]['ok'] == record[key]['total'] for key in ('quality', 'quality_c4'))
+            if rc or record.get('evidence_issues') or not quality_ok or record['korean']['dirty']:
+                failures.append(number)
+                event(f'{arm} pass{number}: adoption gate closed; still retain the required second pass and matched arms')
+        (directory / 'complete.json').write_text(json.dumps({'arm': arm, 'owner': owner,
+            'completed_at': time.time(), 'failed_passes': failures}) + '\n')
     finally:
         if held_by(owner):
             try:
