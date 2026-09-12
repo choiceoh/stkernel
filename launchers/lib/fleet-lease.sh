@@ -37,6 +37,9 @@ fleet_lease() {
 # lease would look stale after GRACE_S and another session could take the fleet underneath it.
 fleet_lease_beat() {
   local owner=$1
-  ( while sleep 120; do fleet_lease renew --owner "'$owner'" >/dev/null 2>&1 || exit 0; done ) &
+  # Callers capture the PID with $(fleet_lease_beat ...). The background
+  # loop must not retain that capture pipe, or substitution waits forever
+  # before the caller can start the container which supplies lease evidence.
+  ( while sleep 120; do fleet_lease renew --owner "'$owner'" >/dev/null 2>&1 || exit 0; done ) </dev/null >/dev/null 2>&1 &
   echo $!
 }
