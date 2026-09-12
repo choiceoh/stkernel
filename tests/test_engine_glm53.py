@@ -206,7 +206,9 @@ class CudaCacheTests(unittest.TestCase):
             c.pool.reserve(seq, tokens)
         c.pool.release(1)
         c.pool.reserve(0, 16)
-        self.assertEqual(list(c.pool.row(0))[:3], [1, 2, 0])
+        row = list(c.pool.row(0))[:3]
+        self.assertEqual(row, [1, 2, 4])            # not contiguous, and not block 0: the free list hands back the
+        self.assertEqual(c.pool.row(0)[3], -1)      # oldest free block, so what row 1 gave back waits its turn
         c.slots.take(0)
         self.step(0, 48)
         positions = torch.arange(48, device="cuda")
@@ -214,7 +216,7 @@ class CudaCacheTests(unittest.TestCase):
             ids = c.token_slots(L, 0, positions).long()
             values = torch.full((48, F.kv_lora), float(L), device="cuda").to(torch.float8_e4m3fn)
             c.latent(L)[ids] = values
-            for j, block in enumerate((1, 2, 0)):
+            for j, block in enumerate(row):
                 offset = block * self.p.block_bytes + self.p.token_offsets[L]
                 raw = c.paged[offset:offset + F.block * F.kv_lora]
                 self.assertTrue(torch.equal(raw, values[j * 16:(j + 1) * 16].view(torch.uint8).flatten()))

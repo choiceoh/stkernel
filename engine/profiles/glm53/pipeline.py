@@ -30,9 +30,11 @@ def distribution_batch(logits: torch.Tensor, temps: torch.Tensor, top_k: torch.T
     """base/sampler.rows for every row at once, distributions only: [m, V] fp32 -- a one-hot argmax where the row's
     temperature is 0, the truncated softmax otherwise.
 
-    No `nucleus` flag: the truncation is a per-row number the sampler reads on the device, so there is no host
-    predicate to decide and nothing to capture two versions of. No draw either -- the speculative pick works from
-    these distributions rather than from a token drawn out of them, so the cumulative walk is not run.
+    There is no `nucleus` argument and no list of which rows to sort, because nothing here sorts: each row carries its
+    own top-k and top-p as numbers the sampler reads on the device (45차 §32). A host predicate had to exist while the
+    truncation was a sort -- the sort of a [24, 155k] batch was 2.9 ms and picking which rows to pay it for was worth
+    the bookkeeping. The threshold search is 467 us for the same block whether one row asks for a nucleus or all of
+    them do. No draw either: the speculative pick works from these distributions, not from a token drawn out of them.
     """
     out = torch.empty(logits.shape[0], logits.shape[-1], dtype=torch.float32,
                       device=logits.device) if into is None else into
@@ -129,6 +131,8 @@ class AsyncDecode:
         b["ids"] = b["ids"].view(-1, self.t).index_select(0, idx).reshape(-1)
         if b["dists"] is not None:
             b["dists"] = b["dists"].index_select(0, idx)
+        # nothing else to re-index: the truncations ride in `top_k` and `top_p` above, and the list of
+        # which rows to sort went away with the sort (45차 §32)
         self.batch = tuple(seqs)
 
     def _propose(self, i: int, temperature: float) -> None:
