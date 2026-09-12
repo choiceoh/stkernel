@@ -4,7 +4,7 @@
     "build/glm53/glm53_megakernel.cu": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
     "build/glm53/glm53_megakernel.py": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e"
   },
-  "cuda_changes": "Adopted fixed dispatch; native strided inputs including input-reuse packing, observer-visible shared activation, and seven-row reuse with unchanged per-shape K-slice arithmetic.",
+  "cuda_changes": "Adopted fixed dispatch; native strided inputs including input-reuse packing, observer-visible shared activation, and seven-row reuse with unchanged per-shape K-slice arithmetic. Probe-only one-token/chunk MHC schedule; default off, with measured residency required.",
   "dispatch": {
     "VLLM_GLM53_MK_PDL": "1",
     "VLLM_GLM53_MK_INPUT_CTA": "4",
@@ -22,5 +22,5 @@
     "_w4_gptq_codes",
     "_w4_quant_cols"
   ],
-  "local_cuda_sha256": "10865738b40a557f8c4c3fe38e315d40d8295bd441eb35e8e68c5f9cdf92b0d3"
+  "local_cuda_sha256": "1d1ea8d488b39f050c339ea3081966de3f990090d9f182f9b3a9cbb10e20ecbb"
 }

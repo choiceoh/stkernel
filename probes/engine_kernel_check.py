@@ -59,7 +59,17 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "mhc_single", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
+
+    if "mhc_single" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_mhc_single")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        if not result.wasSuccessful() or result.skipped or result.testsRun != 2:
+            raise RuntimeError("single-token MHC numerical gate did not pass")
+        report("mhc_single", passed=True, tests=result.testsRun)
+        from probes.engine_decode_fusions import mhc_single
+        mhc_single(report)
 
     if "decode7" in selected:
         import unittest
