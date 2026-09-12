@@ -92,6 +92,7 @@ class Glm53Engine:
         try:
             if self.memory is not None:
                 self._warmup_prefill_memory()
+            self._warmup_serving_kernels()
             self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
                                                   self.drafter.k + 1, self.aux_layers, memory=self.memory,
                                                   ceiling=self.max_context)
@@ -220,6 +221,48 @@ class Glm53Engine:
             caches.pool.release(0)
             caches.slots.give(slot)
             caches.reset()
+
+    WARM_PREFILL_TOKENS = (1, 8, 64, 512)
+    """Prompt widths run once before the door opens, so no request compiles a kernel.
+
+    A kernel that has not been compiled for a token count compiles on the first
+    request that brings one, inside that request's prefill, where the whole compile
+    lands on its time to first token. The 2026-09-12 boot did exactly that: 43 s
+    after it printed `serving`, a b12x MoE shape took 1.55 s to build, and the
+    engine kept adding artifacts for minutes (boot-time study 5-g). The memory
+    warmup above only ever runs the full chunk, so every prompt shorter than one
+    arrived at a cold kernel.
+
+    These four cover the short end, where first prompts live, at a few hundred
+    tokens of work. They are not a guarantee: a width not on this list still
+    compiles when it first arrives, and the honest fix for that is a kernel-side
+    registry of the shapes each lane wants, which is vLLM's answer
+    (model_executor/warmup) and is the kernel owners' to build.
+    """
+
+    def _warmup_serving_kernels(self) -> None:
+        """Run each declared prompt width once, for its kernels, not for its memory."""
+        caches, F = self.caches, self.F
+        if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
+            raise ValueError("kernel warmup requires empty request and state slots")
+        widths = [w for w in self.WARM_PREFILL_TOKENS
+                  if w <= min(self.prefill_chunk or w, caches.pool.num_blocks * F.block)]
+        if not widths:
+            return
+        slot = caches.slots.take(0)
+        try:
+            caches.pool.reserve(0, max(widths))
+            for width in widths:
+                ids = torch.zeros(width, device=caches.device, dtype=torch.int64)
+                h, aux = self._forward(Step.prefill(ids, 0, 0, slot))
+                self.net.head(h[-1:])
+                del h, aux, ids
+        finally:
+            caches.pool.release(0)
+            caches.slots.give(slot)
+            caches.reset()
+        if self.memory is not None:
+            self.memory.checkpoint(f"warm kernels {widths}")
 
     def close_decode(self):
         if self.sampling_graphs is not None:
