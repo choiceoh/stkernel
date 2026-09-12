@@ -391,15 +391,17 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         tok = tokenizer(ckpt_meta)
         decodable = decodable_vocab(tok)
         drafter = NullDrafter()
-        if D:
+        def load_drafter():
             with recorder.phase("load drafter"):
                 # Native packs and surviving BF16 readers are copied into their
                 # compact region below. The full checkpoint is temporary scratch.
                 dviews = RankLoader(drafter_dir / "model.safetensors").load(
                     [s.name for s in dspecs], arena=None if execution == "native" else arena, recorder=recorder)
-            drafter = drafter_mod.Drafter(D, net, decodable)
-            drafter.bind(dviews)
-            del dviews  # do not keep the loader's raw backing blocks after compaction
+            result = drafter_mod.Drafter(D, net, decodable)
+            result.bind(dviews)
+            return result  # the loader's mapping must not outlive this call
+        if D and execution != "native":
+            drafter = load_drafter()
         calibration = None
         if execution == "native":
             from engine.kernels.prefill_collectives import PrefillCollectives
@@ -407,6 +409,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 net.prepare_dense(store, consume_weights=True)
                 net.prefill_transport = PrefillCollectives(comm)
                 if D:
+                    # Do not overlap the temporary checkpoint with target packing.
+                    drafter = load_drafter()
                     drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena)
                     recorder.gauge("drafter_block_fp8_packs", sum(
                         layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
