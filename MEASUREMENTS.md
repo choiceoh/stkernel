@@ -9407,3 +9407,25 @@ drafter 2.8 s, **capture decode 238.9 s**(콜드; 두 번째부터 63.7 s), 총 
 **검증**: 엔진 CPU 스위트 368 tests OK(104 skip), `tests/test_engine_metrics.py` 16 tests(새 6: 그래프 모양 계열, 생산 지점, 수용 분포, 스텝 시간 종류 분할·합=스텝 카운터, lane_info, 부팅이 lane_info 를 채움).
 **GPU·플릿 미검증**(프로덕션 서빙 중).
 
+### 45차 §26 — 플릿 예약을 하나로: 큐가 ST 를 받고, ST 가 큐를 본다 (2026-09-12, srv4)
+
+운영자 "플릿 예약 기능이 원래 잘되어 있었잖아. 그걸 왜 안 써? 안 옮겨왔나". **안 옮겼다.** 확인한 사실:
+
+1. `bench/fleet.sh` + 21 모듈 5,146줄의 예약 큐는 살아 있다(상태 `/home/choiceoh/glm53-logs/fleet`).
+2. GPU 승인이 **onepass 전용**이라 ST 검사는 줄을 못 선다 — 실측 거부: `GPU work is onepass-only; ...; custom GPU scripts and standalone checks are disabled`.
+3. 그래서 §19 가 런처에 `~/st-fleet.lock` 이라는 **두 번째 기구**를 달았다(대기·노화·우선순위·증거·하트비트·복구 없음).
+4. **둘이 서로를 못 본다.** 09-12 10:20 실측: 네 노드 전부 `st-glm53`(다른 세션 prefill-diag, 파일 잠금은 잡음) 인데 `fleet.sh status` 는 `fleet: FREE`, `holder: none`. `FREE` 는 holder 파일이 비었는지만 보고,
+   점유 감지는 `glm53` 이라는 **이름의 컨테이너만** 찾는다. 이 상태에서 누가 브래킷을 큐에 넣으면 큐가 허가하고 09-11 19:42 충돌이 한 층 위에서 재현된다.
+5. 덤: `fleet.sh` 가 `REPO=/home/choiceoh/stkernel` 로 고정 — 그때 거기는 다른 세션 브랜치라 `bench/fleet_*.py` 가 0개였고, 워크트리에서 부른 하위 명령이 전부 파일 없음으로 깨졌다.
+6. **내 잘못**: 그동안 "창이 없다"고 미룬 판단은 `docker ps` 만 본 것이다. 큐가 있었으면 미룰 게 아니라 예약해 두고 열릴 때 돌게 했어야 한다(밀린 GPU 검증 셋: 커널 노브 §21, 그래프 재생 §22, direct micro 디스크 캐시 §보충 3).
+
+**해결 넷**:
+- **큐가 ST 를 본다**: `st_engine_up()`(로컬 `st-*` 컨테이너) 이 `_try_hold`·`_adopt` 에서 허가를 거부하고, `status` 가 `TAKEN by the ST engine, outside this queue` 라고 답한다.
+- **런처가 큐를 본다**: `start-st-glm53.sh` 가 rank 0 노드의 `$FLEET_DIR/holder` 를 읽고 holder 가 있으면 거부. 양방향이 됐다.
+- **ST 검사가 큐에 선다**: `fleet_onepass.SHELL_ENTRIES` 에 `probes/run_engine_{probe,check}.sh` 추가. 러너는 `docker run --gpus all <probe>` 라 **러너를 승인하면 임의 프로브가 승인되므로**,
+  프로브 이름을 `ST_PROBES` 에 못박고 러너와 함께 바이트 고정했다. 인자는 리터럴 플래그 화이트리스트(`ST_FLAGS`/`ST_SWITCHES`)만. 실측: 정식 다섯 조합 ADMIT, 지어낸 프로브·`--sanitizer`·`; rm -rf /` 전부 거부.
+- **`REPO` 를 스크립트 위치에서 해석** → 워크트리에서도 하위 명령이 돈다.
+
+**검증**: 플릿 스위트 385 tests, 실패 4 — **origin/main 에서도 같은 4개가 실패**(coalescing 2, feedback 1, source 1; 임시 워크트리로 대조)라 회귀 0. 새 테스트 8개(ST 승인 4 + 상호 배제 4).
+`fleet.sh preflight ... probes/engine_decode_graph_check.py` → PASS, `classify` → gpu.
+
