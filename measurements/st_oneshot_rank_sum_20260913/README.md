@@ -47,7 +47,7 @@ seconds. Both C=4 waves completed their 128/256/384/512-token limits, with
 running requests falling through 3, 2, 1, 0 and no container replacement.
 `runtime-8c8b031b.json` retains immutable IDs and per-rank runtime manifests.
 Canonical pass 1 began at 06:30:57 KST, run `20260912T213057-9725b41d901c`.
-Both full consumer passes and their quality verdicts remain pending; this
+Both full consumer passes were pending at that functional checkpoint; this
 functional gate is not consumer quality or engine speed proof.
 
 At 06:49 KST, `finish_same_boot.py` took over the controller while retaining
@@ -97,8 +97,11 @@ All five measured C=4 groups on the frozen candidate have now completed:
 and 128K 78.97. These include prefill and **are invalid quality measurements**:
 C=4 has 2/36 complete proof certificates (118/228 checks), with all requests
 normally stopped. C=1 has 1/9 (28/57), with a raw window median of 19.896 step/s.
-The first canonical pass is still in its separate diagnostic stage. Neither
-one complete pass nor 22 step/s is claimed at this checkpoint.
+The first canonical pass was still in its separate diagnostic stage at that
+checkpoint. It subsequently completed all six diagnostics on all four ranks;
+the final record is retained under `consumer-pass1/`. Pass 2 began at 08:29:37 KST
+as `20260912T232937-6373a6373feb`, on the same boot. The failed quality verdicts
+remain failures, and 22 step/s has not been reached.
 
 `consumer-in-progress/answer-failures.json` records the final-answer errors.
 All five C=1 requests (nine cases) have overall `finish_reason=stop`. For example, 2K ledger
@@ -117,6 +120,34 @@ alone would make the certificates correct. The harness discarded the original
 usage reasoning-token counter, so these are re-tokenized text counts rather than
 original generated IDs. `summarize_reasoning.py` reproduces the counts without
 engine traffic. The current two-pass workloads and failure verdicts stay intact.
+
+`consumer-pass1/measured-reasoning-counts.json` extends the count to all 25
+measured requests: all five C=1 spans and 19/20 C=4 spans equal the cap; the
+remaining C=4 span re-tokenizes to 12,287 against a 12,288 cap. Re-tokenization
+cannot establish whether that one-token difference reflects an original ID
+boundary. No saved response contains Halvorsen or its Korean transliteration.
+
+`consumer-pass1/problem-identity.json` compares this campaign with the stopped
+01:42:11 KST preparation from `7b687301`. All five shared prompts and their
+answer data are byte-identical; the reasoning caps changed from 800/2400 to
+4096/12288. The request body template also stayed identical: temperature 0,
+thinking on, no verbosity parameter, and both runs omit a sampling seed.
+The question generator's seed remains 7. The stopped run is not a completed
+consumer baseline. The reasoning tasks were introduced by #763 at 23:50:09 KST
+on September 12; earlier retrieval 9/9 results use a different quality test.
+
+`consumer-pass1/verbosity-comparison.json` separates reasoning from final content.
+The five final answers became shorter by re-tokenized counts, while some early
+reasoning progressed less far within the first 800 tokens. This does not identify
+a causal verbosity change: **the old source stored KDA recurrence in FP32; the
+current record reports FP16**. FP16 support landed at 03:31 (#788), and became
+the default at 04:42 (#791). Both build and cap changed between these samples.
+The user is investigating state rounding in another session; this work does not
+duplicate that state change or conclude that token limits are the sole cause.
+Future comparisons need actual reasoning-token usage, natural termination,
+quality and answer completion time alongside step/s. Merged #798 (`17b660f2`)
+retains the server's reasoning-token usage for future runs; these frozen clients
+remain unchanged.
 
 `consumer-in-progress/profile-summary.json` retains four profiled decode steps
 on each rank at each C=1 context. It groups exact kernel names from the actual
