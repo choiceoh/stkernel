@@ -59,21 +59,42 @@ class Matcher:
         self.g = grammars
         self.m = grammars.xgr.GrammarMatcher(compiled, max_rollback_tokens=max_rollback)
         self.bitmask = grammars.xgr.allocate_token_bitmask(1, grammars.vocab_size)
+        self.words = int(self.bitmask.shape[-1])
+        self.staging = None                      # pinned [positions, words]: xgrammar fills on the host
+        self.landing = None                      # device [positions, words]: one transfer for the whole step
+
+    def _buffers(self, positions: int, device):
+        """The two sides of one transfer, kept between steps.
+
+        xgrammar fills its bitmask on the host, so every position used to cross to the device
+        on its own -- a pageable copy, which synchronizes, once per draft position per row.
+        Staging in pinned memory makes the crossing a direct transfer, and filling every
+        position before crossing makes it one transfer instead of `positions` of them.
+        """
+        import torch
+        if self.staging is None or self.staging.shape[0] < positions:
+            pinned = str(device).startswith("cuda")        # pinning is meaningless without a device to send to
+            self.staging = torch.empty(positions, self.words, dtype=torch.int32, pin_memory=pinned)
+        want = torch.device(device)
+        if self.landing is None or self.landing.shape[0] < positions or self.landing.device != want:
+            self.landing = torch.empty(positions, self.words, dtype=torch.int32, device=want)
+        return self.staging, self.landing
 
     def masks(self, drafts: "list[int]", device) -> "list[torch.Tensor | None]":
         """Allowed-token masks [V] bool for positions 0..len(drafts): position i assumes drafts[:i] were accepted.
         A draft the grammar refuses ends the list (later positions are never reached); a terminated grammar
         allows only its stop tokens (the mask xgrammar fills there)."""
         import torch
-        out = []
-        walked = 0
+        from engine.base.constants import iota
+        positions = len(drafts) + 1
+        staging, landing = self._buffers(positions, device)
+        walked = filled = 0
         try:
-            for i in range(len(drafts) + 1):
+            for i in range(positions):
                 self.g.xgr.reset_token_bitmask(self.bitmask)
                 self.m.fill_next_token_bitmask(self.bitmask)
-                bits = self.bitmask[0].to(device)
-                mask = ((bits.unsqueeze(-1) >> torch.arange(32, device=device, dtype=torch.int32)) & 1).bool().reshape(-1)[: self.g.vocab_size]
-                out.append(mask)
+                staging[i].copy_(self.bitmask[0])
+                filled += 1
                 if i < len(drafts):
                     if self.m.is_terminated() or not self.m.accept_token(drafts[i]):
                         break
@@ -81,7 +102,12 @@ class Matcher:
         finally:
             if walked:
                 self.m.rollback(walked)
-        return out
+        # One crossing for the step. It blocks, deliberately: a non-blocking copy would let the
+        # next step overwrite the staging while this one's transfer was still reading it.
+        landing[:filled].copy_(staging[:filled])
+        shift = iota(32, device, torch.int32)
+        bits = landing[:filled].unsqueeze(-1).bitwise_right_shift(shift).bitwise_and_(1)
+        return list(bits.ne(0).reshape(filled, -1)[:, : self.g.vocab_size])
 
     def advance(self, tokens: "list[int]") -> None:
         for t in tokens:
