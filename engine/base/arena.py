@@ -173,8 +173,36 @@ class Arena:
     def remaining(self) -> int:
         return self.nbytes - self.used
 
+    def release(self) -> int:
+        """Free the one allocation now, whatever still points at it, and say how many bytes.
+
+        Every carve is a VIEW, so dropping the arena's own reference frees nothing while a
+        single weight tensor is alive -- and at shutdown there are always some: `build` handed
+        `net` and `caches` back to a frame that is still on the stack. So this does not drop a
+        reference, it resizes the storage to zero. The caching allocator takes the block back
+        at once and `empty_cache` can hand the physical chunks to the driver; the views survive
+        as zero-byte tensors, and touching one afterwards raises instead of reading memory that
+        belongs to somebody else (D3).
+
+        This is not a way to shrink a live arena. There is no such thing here on purpose --
+        bump allocation, pinned NVRM pages, a footprint that is constant after boot
+        (OOM_STUDY 2) -- and this is the end of the tenancy, not a trim in the middle of it.
+
+        Idempotent: the second call has nothing to free and returns 0.
+        """
+        if self.buf is None:
+            return 0
+        given = self.nbytes
+        self.buf.untyped_storage().resize_(0)
+        self.buf = None
+        self.regions = []
+        self.used = self.nbytes
+        return given
+
     def carve(self, nbytes: int, name: str):
         """A uint8 view of `nbytes`, or MemoryError -- never a second allocation (D3)."""
+        if self.buf is None:
+            raise MemoryError(f"arena: {name} wants {nbytes / GIB:.3f} GiB and the arena is released")
         start = -(-self.used // ALIGN) * ALIGN
         if start + nbytes > self.nbytes:
             raise MemoryError(f"arena: {name} wants {nbytes / GIB:.3f} GiB, "

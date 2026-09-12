@@ -33,13 +33,55 @@ SELECT_ROWS_TRANSIENT_NOTE = "indexer selection bounded to 1,024 query rows per 
 
 def ledger_peak(path: "str | Path | None") -> "tuple[float, str] | None":
     """(peak workspace GiB, phase) from a boot's memory ledger (RuntimeMemory.write), or None."""
-    if not path or not Path(path).exists():
-        return None
-    phases = json.loads(Path(path).read_text()).get("phases", [])
+    report = read_ledger(path)
+    phases = (report or {}).get("phases", [])
     if not phases:
         return None
     top = max(phases, key=lambda r: r.get("peak_workspace_bytes", 0))
     return top.get("peak_workspace_bytes", 0) / GIB, top.get("phase", "?")
+
+
+def read_ledger(source) -> "dict | None":
+    """A boot's memory ledger, given as `RuntimeMemory.report()` itself or the path it was written to."""
+    if isinstance(source, dict):
+        return source
+    if not source or not Path(source).exists():
+        return None
+    return json.loads(Path(source).read_text())
+
+
+def ledger_measured(source) -> "dict | None":
+    """`RuntimeMemory.measured()` out of a ledger: the floor, the prefill peak, the graphs.
+
+    These are the two lines this table used to guess -- a runtime floor carried over from
+    vLLM's 40th-boot table and a workspace ceiling declared at 12 GiB with vLLM's activation
+    slope quoted underneath it (45차 §50). vLLM gets both from one `profile_run`; ST's boot
+    already runs the largest legal prefill and captures every graph under a ledger, so with a
+    ledger in hand the lines are measurements of THIS stack and the table says so.
+
+    A ledger written before `measured()` existed still works: the same split is recomputable
+    from its rows, and the floor is simply absent, which leaves that line where it was.
+    """
+    report = read_ledger(source)
+    if not report:
+        return None
+    if report.get("measured"):
+        return report["measured"]
+    phases, arena = report.get("phases", []), report.get("arena_bytes", 0)
+    if not phases:
+        return None
+    base = report.get("baseline_reserved_bytes", 0)
+    outside = lambda row: row.get("reserved_bytes", 0) - base - arena                    # noqa: E731
+    prefill = [row for row in phases if row.get("phase", "").startswith("prefill/")]
+    final = phases[-1]
+    return dict(floor_bytes=report.get("floor_bytes", 0),
+                prefill_peak_bytes=max((r.get("peak_workspace_bytes", 0) for r in prefill), default=0),
+                prefill_shapes=[r["phase"] for r in prefill if r.get("phase", "").endswith("/prepared")],
+                graph_bytes=max(0, outside(final) - (outside(prefill[-1]) if prefill else 0)),
+                peak_workspace_bytes=max(r.get("peak_workspace_bytes", 0) for r in phases),
+                retained_workspace_bytes=max(0, outside(final)),
+                workspace_limit_bytes=report.get("workspace_limit_bytes", 0),
+                at_phase=final.get("phase", "?"))
 
 
 def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | None" = None,
@@ -85,15 +127,32 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     slots_gib = (max_seqs + 1) * lay.slot_bytes / GIB
     snapshot_bytes = snapshot_layout(F, range(F.layers), draft_shape)[0]
     blocks_at_kv = int((kv_gib * GIB - (max_seqs + 1) * lay.slot_bytes) // (lay.block_bytes + max_seqs * 4))
-    peak = ledger_peak(ledger)
-    workspace_evidence = "base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses beyond it"
-    if peak is not None:
-        workspace_evidence += f"; measured peak {peak[0]:.2f} GiB at {peak[1]} ({Path(ledger).name})"
+    m = ledger_measured(ledger)
+    ledger_name = Path(ledger).name if isinstance(ledger, (str, Path)) and ledger else "this boot"
+    workspace_evidence = ("base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses "
+                          "beyond it")
+    if m and m.get("peak_workspace_bytes"):
+        # The LINE stays the enforced ceiling, because that is what the box must be able to
+        # absorb: the allocator will hand out every byte of it. What the ledger changes is that
+        # the evidence is now this stack's own split instead of vLLM's activation slope, and
+        # `report` can say what lowering the ceiling to the measurement would buy.
+        workspace_evidence += (f"; {ledger_name} peaked at {m['peak_workspace_bytes'] / GIB:.2f} GiB through "
+                               f"{m['at_phase']} -- prefill activations {m['prefill_peak_bytes'] / GIB:.2f} GiB over "
+                               f"{len(m.get('prefill_shapes') or [])} qualified shapes, graphs and scratch "
+                               f"+{m['graph_bytes'] / GIB:.2f} GiB retained")
     else:
-        workspace_evidence += f"; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a {chunk:,}-token chunk at {chunk / 1024 * 0.52:.1f} GiB, {SELECT_ROWS_TRANSIENT_NOTE}"
+        workspace_evidence += (f"; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a {chunk:,}-token chunk at "
+                               f"{chunk / 1024 * 0.52:.1f} GiB, {SELECT_ROWS_TRANSIENT_NOTE}")
+    if m and m.get("floor_bytes"):
+        # A cost, not a ceiling: nothing hands this back, so the measurement IS the line.
+        floor_gib, floor_source = m["floor_bytes"] / GIB, MEASURED
+        floor_evidence = f"{ledger_name}: device in use outside the allocator when the ceiling armed (context + NCCL + one-shot)"
+    else:
+        floor_gib, floor_source = RUNTIME_FLOOR_GIB, LEDGER
+        floor_evidence = "GLM 40th boot table (vLLM) -- no ST ledger given"
     lines = [
         Line("reserve for the OS", OS_RESERVE_GIB, DECLARED, "base/runtime_memory: immediately free host/device byte floor"),
-        Line("runtime floor (CUDA ctx + NCCL 16ch)", RUNTIME_FLOOR_GIB, LEDGER, "GLM 40th boot table -- re-measure on ST"),
+        Line("runtime floor (CUDA ctx + NCCL 16ch)", floor_gib, floor_source, floor_evidence),
         Line("weights (this rank, TP=4)", weights_gib, READ, weights_evidence),
         Line("drafter weight reservation", drafter_gib, READ, f"drafter.specs: source reservation retained; compute/KV TP={draft_tp}"),
         Line("vision tower (BF16, replicated)", vision_gib, READ, vision_evidence),
@@ -110,6 +169,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     b.kv_declared_gib = kv_gib - slots_gib                              # what boot.py actually gives the paged KV + table
     b.paged_gib = blocks_at_kv * lay.block_bytes / GIB
     b.block_bytes, b.slot_bytes, b.block_tokens, b.max_position = lay.block_bytes, lay.slot_bytes, F.block, F.max_position
+    b.measured = m
     return b
 
 
@@ -120,6 +180,15 @@ def report(b: Budget) -> str:
     out.append(f"  declared paged KV {b.kv_declared_gib:.2f} GiB ({b.paged_gib:.2f} in blocks of {b.block_bytes / 2**20:.2f} MiB); "
                f"unassigned {unassigned:+.2f} GiB")
     per_token = b.block_bytes / b.block_tokens
+    m = getattr(b, "measured", None)
+    if m and m.get("peak_workspace_bytes"):
+        # The one line this table could never write from declarations: what the ceiling costs
+        # in KV over what the boot actually spends under it (45차 §51).
+        headroom = (WORKSPACE_GIB * GIB - m["peak_workspace_bytes"]) / GIB
+        out.append(f"  workspace: ceiling {WORKSPACE_GIB:.2f} GiB enforced, this boot peaked at "
+                   f"{m['peak_workspace_bytes'] / GIB:.2f} (prefill activations {m['prefill_peak_bytes'] / GIB:.2f}, "
+                   f"graphs and scratch +{m['graph_bytes'] / GIB:.2f} retained) -- {headroom:+.2f} GiB of the ceiling "
+                   f"unspent, which is what a lower ceiling would return to KV")
     out.append(f"  what the remainder buys at {per_token:,.0f} B/token (paged, layout) + {b.slot_bytes / 2**20:.0f} MiB/sequence (slot):")
     for n in (1, 4, 8, 32):
         toks = (b.kv_gib * GIB - n * b.slot_bytes) / (n * per_token)

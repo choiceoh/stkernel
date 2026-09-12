@@ -42,6 +42,23 @@ class TieredKV:
         self.parked = {}                      # key -> tokens, for conversations parked by this process
         self.inflight = {}                    # row -> (kind, key, tokens, future): a transfer the row waits on
 
+    def close(self, timeout: float = 30.0) -> int:
+        """The tier's staging buffers back; the index on disk and everything parked in it stay.
+
+        A transfer in flight is reading or writing the very buffers this frees, and the tier's
+        workers are daemon threads nobody joins, so this waits for them first. Their failures
+        are not this call's to raise -- serving is already over and the row that cared is gone;
+        what matters is that no thread is still holding the staging when it goes.
+        """
+        for entry in list(self.inflight.values()):
+            try:
+                entry[3].result(timeout=timeout)
+            except BaseException:                  # noqa: BLE001 -- a shutdown never fails a shutdown
+                pass
+        self.inflight.clear()
+        close = getattr(self.tier, "close", None)
+        return close() if close is not None else 0
+
     def _submit(self, fn, *args, **kwargs) -> Future:
         """The tier's own thread when it has one; a completed Future otherwise (probes' bare fakes)."""
         run_async = getattr(self.tier, "run_async", None)

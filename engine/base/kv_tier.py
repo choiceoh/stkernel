@@ -366,6 +366,32 @@ class NvmeTier:
                         path.unlink(missing_ok=True)
                 self._sync_directory()
 
+    def close(self) -> int:
+        """Give the staging buffers back when nothing will be parked or promoted again.
+
+        A tier is pinned host DRAM plus device scratch that live OUTSIDE the arena, so the
+        engine's release cannot reach them and `empty_cache` will not take them while this
+        object holds them. Two tiers a rank, four ranks: on a handover that is most of a
+        gigabyte the next holder would otherwise be waiting for (45차 §51).
+
+        What is on disk is untouched -- conversations parked here outlive this process, which
+        is the point of the tier (D16). This frees the buffers unconditionally, so the caller
+        owes it a quiet tier: `TieredKV.close` waits out whatever was in flight first.
+        Idempotent, and it returns the bytes.
+        """
+        given = 0
+        stage = getattr(self, "stage", None)
+        if stage is not None:
+            stage.release()                       # the memoryview holds the pinned pages open
+            self.stage = None
+        for name in ("stage_t", "scratch"):
+            buf = getattr(self, name, None)
+            if buf is not None:
+                given += buf.numel() * buf.element_size()
+                setattr(self, name, None)
+        self.stream = None
+        return given
+
     def run_async(self, fn, *args) -> Future:
         """Off-thread I/O. Poll `.done()`, then `.result()` to surface failures.
 
