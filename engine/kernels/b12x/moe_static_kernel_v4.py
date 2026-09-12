@@ -108,7 +108,6 @@ class MoEStaticKernelV4:
         fc2_stages: int = 2,
         stamps: bool = False,
         decode_reform: bool = False,
-        decode_compact: bool = False,
         even: bool = False,
         split: bool = False,
         skip_sf: bool = False,
@@ -145,18 +144,14 @@ class MoEStaticKernelV4:
         self.fc2_stages = int(fc2_stages)
         self.stamps = bool(stamps)
         self.decode_reform = bool(decode_reform)
-        self.decode_compact = bool(decode_compact)
-        if self.decode_compact and (not self.decode_reform or self.fc1_stages != 1 or self.fc2_stages != 1):
-            raise ValueError('compact decode requires the reform tile with one stage per projection')
         # One integrated C=1 tile: halve padded M work, consume both FC1
         # halves together, and double FC2 output width. Keep weight storage
         # and the 128-wide intermediate/rounding boundary unchanged.
         self.tile_m = 16 if self.decode_reform else _TILE_M
         self.fc1_tile_n = 128 if self.decode_reform else _FC1_TILE_N
         self.fc1_tile_k = 256 if self.decode_reform else _FC1_TILE_K
-        self.fc2_tile_n = 256 if self.decode_reform and not self.decode_compact else _FC2_TILE_N
+        self.fc2_tile_n = 256 if self.decode_reform else _FC2_TILE_N
         self.fc2_tile_k = _FC2_TILE_K
-        self.scatter_warp_cols = self.fc2_tile_n // 4 if self.decode_reform else 64
         self.fc1_halves = self.fc2_tile_k // self.fc1_tile_n
         # even waves: only the largest CTA count in {48, 44, 40, 36, 32} that
         # leaves the fewest empty item slots takes items, so the last wave is
@@ -208,10 +203,10 @@ class MoEStaticKernelV4:
         self.sf1_block_bytes = 2048 if self.reform_sf_pack and self.decode_reform else _SF_BLOCK_BYTES
         self.sf1_packed_blocks = self.fc1_tile_k // 256
         self.sf1_stage_bytes = 1552 if self.reform_sf_pack else _SF_STAGE_BYTES
-        self.sf2_block_bytes = 2048 if self.fc2_tile_n == 256 else 1024
+        self.sf2_block_bytes = 2048 if self.decode_reform else 1024
         # Gather just one N128 row half in its existing 1024-byte stage:
         # low512 + high256 + base/alignment16. No extra shared/global buffer.
-        self.sf2_stage_bytes = 1552 if self.fc2_tile_n == 256 else 784
+        self.sf2_stage_bytes = 1552 if self.decode_reform else 784
         if self.sf_pack and self.skip_sf:
             raise ValueError("xs (skip the FC1 SFB boxes) and sf_pack are exclusive")
         if self.sf_pack and self.split:
@@ -256,7 +251,7 @@ class MoEStaticKernelV4:
             num_threads=self.num_mma_warps * self.num_threads_per_warp,
         )
         self.load_register_requirement = 32
-        self.mma_register_requirement = 192 if self.decode_compact else 232
+        self.mma_register_requirement = 232
         self.smem_bytes = 0
 
     # the dense-kernel SF helpers read tiled_mma attributes only
@@ -476,19 +471,6 @@ class MoEStaticKernelV4:
             1,
         )
         if self.decode_reform:
-            # Four warps cover the entire N tile. The compact N128 tile must
-            # use 32 columns per warp: retaining N256's 64 overruns sC and
-            # the last global output tile even when the MMA map is correct.
-            scatter_coords = []
-            for warp in range(4):
-                for lane in range(32):
-                    for vector in range(lane, self.tile_m * self.scatter_warp_cols // 8, 32):
-                        row, col = divmod(vector, self.scatter_warp_cols // 8)
-                        scatter_coords.extend((row, warp * self.scatter_warp_cols + col * 8 + j)
-                                              for j in range(8))
-            assert len(scatter_coords) == self.tile_m * self.fc2_tile_n
-            assert set(scatter_coords) == {(m, n) for m in range(self.tile_m)
-                                          for n in range(self.fc2_tile_n)}
             for mma, shape in ((self.tiled_mma1, (self.tile_m, self.fc1_tile_n)),
                                (self.tiled_mma, (self.tile_m, self.fc2_tile_n))):
                 ident = cute.make_identity_tensor(shape)
@@ -555,7 +537,7 @@ class MoEStaticKernelV4:
                         if not self.decode_reform and kind == "fc1":
                             expected = stage_source_offset(rows, k, kind, e, rt,
                                                            kt*2 + dest//2048, dest%2048)
-                        elif kind == "fc2" and self.fc2_tile_n == 128:
+                        elif not self.decode_reform:
                             packed_byte = (dest//512)*1024 + (rt%2)*512 + dest%512
                             expected = stage_source_offset(rows, k, kind, e, rt//2, kt, packed_byte)
                         else:
@@ -1419,7 +1401,7 @@ class MoEStaticKernelV4:
             warp_in_tile = Int32(tidx) >> Int32(5)
             if cutlass.const_expr(self.decode_reform):
                 warp_m_base = Int32(0)
-                warp_n_base = warp_in_tile * Int32(self.scatter_warp_cols)
+                warp_n_base = warp_in_tile * Int32(64)
             else:
                 warp_m_base = (warp_in_tile >> Int32(1)) * Int32(64)
                 warp_n_base = (warp_in_tile & Int32(1)) * Int32(64)
@@ -1778,7 +1760,7 @@ class MoEStaticKernelV4:
                     fc2_peek = fc2_pipeline.consumer_try_wait(fc2_cons_state)
                     fc2_pipeline.consumer_wait(fc2_cons_state, fc2_peek)
                     if cutlass.const_expr(self.reform_sf_pack):
-                        if cutlass.const_expr(self.fc2_tile_n == 256):
+                        if cutlass.const_expr(self.decode_reform):
                             self._sf_expand_stage(
                                 sfb2_base_addr + fc2_cons_state.index * Int32(2048),
                                 Int32(tidx), 2048,
@@ -1854,7 +1836,7 @@ class MoEStaticKernelV4:
                         warp_epi_rows = Int32(64)
                     if warp_epi_rows < Int32(0):
                         warp_epi_rows = Int32(0)
-                    tile_vec_cols = Int32(self.scatter_warp_cols) // Int32(8)
+                    tile_vec_cols = Int32(64) // Int32(8)
                     vec_idx = lane_id
                     while vec_idx < warp_epi_rows * tile_vec_cols:
                         local_row = vec_idx // tile_vec_cols
@@ -2152,7 +2134,7 @@ class MoEStaticKernelV4:
                     )
                     if cutlass.const_expr(self.reform_sf_pack):
                         if is_dma_lane0:
-                            if cutlass.const_expr(self.fc2_tile_n == 256):
+                            if cutlass.const_expr(self.decode_reform):
                                 sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(2048)
                                 sf2_tile = output_tile_idx
                             else:
@@ -2162,7 +2144,7 @@ class MoEStaticKernelV4:
                                 + (Int64(weight_expert_idx) * sf2_blocks_per_expert
                                    + Int64(sf2_tile) * Int64(n_slices)
                                    + Int64(intermediate_slice)) * Int64(1552))
-                            if cutlass.const_expr(self.fc2_tile_n == 256):
+                            if cutlass.const_expr(self.decode_reform):
                                 _bulk_g2s(sf2_dest, sf2_source, Int32(1552), shared_ptr_to_u32(bar2))
                             else:
                                 self._sf6_copy_fc2_half(sf2_dest, sf2_source,

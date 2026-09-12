@@ -1,0 +1,100 @@
+waiting: pos 1/1, held by d17-349f99faa9e2 [probe] (pid 4116153@srv2, since 03:54, est 10m, D17 after deploy 349f99faa9e2), lease: production production/deploy/4000590 on srv2 since 2026-09-13 03:53:58 (production st-glm53 on four Sparks) 2026-09-13_03:54:09
+waiting: pos 1/1, lease: free 2026-09-13_03:54:10
+waiting: pos 1/1, lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:54:11 (production st-glm53 on four Sparks) 2026-09-13_03:54:11
+waiting: pos 1/1, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:54:11 (production st-glm53 on four Sparks) 2026-09-13_03:54:14
+waiting: pos 1/1, lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:54:11 (production st-glm53 on four Sparks) 2026-09-13_03:55:13
+waiting: pos 1/1, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:54:11 (production st-glm53 on four Sparks) 2026-09-13_03:56:13
+waiting: pos 1/1, lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:54:11 (production st-glm53 on four Sparks): running=0, se 2026-09-13_03:57:19
+waiting: pos 1/1, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:54:11 (production st-glm53 on four Sparks): running=0, se 2026-09-13_03:57:59
+waiting: pos 1/1, lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:54:11 (production st-glm53 on four Sparks): running=0, se 2026-09-13_03:58:03
+waiting: pos 1/1, lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:59:05 (production st-glm53 on four Sparks) 2026-09-13_03:59:05
+waiting: pos 1/1, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:59:05 (production st-glm53 on four Sparks) 2026-09-13_03:59:08
+waiting: pos 1/1, lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:59:05 (production st-glm53 on four Sparks) 2026-09-13_04:00:06
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:59:05 (production st-glm53 on four Sparks) 2026-09-13_04:00:37
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:59:05 (production st-glm53 on four Sparks) 2026-09-13_04:01:05
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:59:05 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:02:13
+waiting: pos 1/2, legacy busy (0 procs, 1 reqs), lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:59:05 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:02:51
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:59:05 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:02:52
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 03:59:05 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:02:56
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:04:27 (production st-glm53 on four Sparks) 2026-09-13_04:04:28
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs), lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:04:27 (production st-glm53 on four Sparks) 2026-09-13_04:04:29
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:04:27 (production st-glm53 on four Sparks) 2026-09-13_04:04:30
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:04:27 (production st-glm53 on four Sparks) 2026-09-13_04:05:28
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:04:27 (production st-glm53 on four Sparks) 2026-09-13_04:06:29
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:04:27 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:07:40
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:04:27 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:08:16
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:04:27 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:08:20
+waiting: pos 1/2, lease: free 2026-09-13_04:11:50
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:11:51 (production st-glm53 on four Sparks) 2026-09-13_04:11:52
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:11:51 (production st-glm53 on four Sparks) 2026-09-13_04:11:54
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:11:51 (production st-glm53 on four Sparks) 2026-09-13_04:12:52
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:11:51 (production st-glm53 on four Sparks) 2026-09-13_04:13:53
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:11:51 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:15:32
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:11:51 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:16:11
+waiting: pos 1/2, lease: production production/srv2/4116044 on srv2 since 2026-09-13 04:11:51 (production st-glm53 on four Sparks): running=0, se 2026-09-13_04:16:15
+waiting: pos 1/2, lease: free 2026-09-13_04:18:41
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "4ce9fbe8b51a462689ad9a0b01adf649", "phase": "waiting", "reason": "dequeue", "since": 114862.679495891, "updated_at": 1789240722.7873027, "version": 1}
+GO st-moe-compact0913v5 2026-09-13_04:18:42
+  node 10.10.10.1: gpu=ok stray=3 ram=91G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=95G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+{"lane": "tensorcore_router_timing", "rows": 7, "layers": 42, "checked_rows": 2352, "rank_file": "/home/choiceoh/models/st-glm53-9391-up-gate-full/rank0of4.safetensors", "selected_ids_exact": true, "max_logit_error": 7.62939453125e-05, "measurements": [{"arm": "B", "ms": 3.208491086959839}, {"arm": "A", "ms": 1.576472520828247}, {"arm": "A", "ms": 1.574715495109558}, {"arm": "B", "ms": 3.202883005142212}], "scope": "real router weights, synthetic hidden states, captured; not consumer speed"}
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12 19:18:53,771 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 19:18:53,772 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_compact_1789240724599839834_9c5414e38b03ccf8
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12 19:18:55,960 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_compact_1789240724599839834_9c5414e38b03ccf8.o
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+2026-09-12 19:18:56,012 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f1g1a32wutr16n128k256d256sf6v1_compact_1789240724599839834_7d7363a377440c75
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=1024
+2026-09-12 19:18:57,744 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f1g1a32wutr16n128k256d256sf6v1_compact_1789240724599839834_7d7363a377440c75.o
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f1g1a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=44032 B)
+{"lane": "moe_compact_residency", "cubin": "/cache/st-moe-compact-proof/1789240724599839834/cutlass___call___enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__FakeTensorBFloat167409640961_FakeTensorInt32561_FakeTensorFloat32561_FakeTensorFloat4E2M1FN564096.sm_121a.cubin", "sha256": "a8a9dd474fd9393187fbb5243d03ed8c3579034f940a2fc44e376969379b082f", "dynamic_smem": 44032, "registers": 88, "local_bytes": 0, "blocks_per_sm": 2, "sms": 48, "requested_ctas": 48}
+2026-09-12 19:18:57,749 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f1g1a32wutr16n128k256d256sf6v1_compact_1789240724599839834_ee5b26e57543fed6
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=1024
+2026-09-12 19:18:59,567 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f1g1a32wutr16n128k256d256sf6v1_compact_1789240724599839834_ee5b26e57543fed6.o
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f1g1a32wutr16n128k256d256sf6v1 (mac=96, m=7, routed=56, smem=44032 B)
+{"lane": "moe_compact_residency", "cubin": "/cache/st-moe-compact-proof/1789240724599839834/cutlass___call___enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__FakeTensorBFloat167409640961_FakeTensorInt32561_FakeTensorFloat32561_FakeTensorFloat4E2M1FN564096.sm_121a.cubin", "sha256": "a8a9dd474fd9393187fbb5243d03ed8c3579034f940a2fc44e376969379b082f", "dynamic_smem": 44032, "registers": 88, "local_bytes": 0, "blocks_per_sm": 2, "sms": 48, "requested_ctas": 96}
+{"lane": "moe_compact_timing", "rows": 7, "unique": 8, "rotations": 8, "sf6": true, "max_error": 0.000244140625, "changed_graph_inputs": true, "exact_zero": true, "measurements": [{"arm": "B", "ms": 0.13517962396144867}, {"arm": "C48", "ms": 0.14721974730491638}, {"arm": "C96", "ms": 0.14474262297153473}, {"arm": "C96", "ms": 0.1410747468471527}, {"arm": "C48", "ms": 0.14646711945533752}, {"arm": "B", "ms": 0.13502287864685059}], "scope": "same packs, synthetic routes, captured; not consumer speed"}
+{"lane": "moe_compact_timing", "rows": 7, "unique": 32, "rotations": 8, "sf6": true, "max_error": 0.0, "changed_graph_inputs": true, "exact_zero": true, "measurements": [{"arm": "B", "ms": 0.4973848760128021}, {"arm": "C48", "ms": 0.5005016326904297}, {"arm": "C96", "ms": 0.5025118589401245}, {"arm": "C96", "ms": 0.502923846244812}, {"arm": "C48", "ms": 0.5049301385879517}, {"arm": "B", "ms": 0.5008018612861633}], "scope": "same packs, synthetic routes, captured; not consumer speed"}
+{"lane": "moe_compact_timing", "rows": 7, "unique": 56, "rotations": 5, "sf6": true, "max_error": 0.0, "changed_graph_inputs": true, "exact_zero": true, "measurements": [{"arm": "B", "ms": 0.8480225563049316}, {"arm": "C48", "ms": 0.8479011535644532}, {"arm": "C96", "ms": 0.8611603736877441}, {"arm": "C96", "ms": 0.8672885894775391}, {"arm": "C48", "ms": 0.8475006103515625}, {"arm": "B", "ms": 0.85274658203125}], "scope": "same packs, synthetic routes, captured; not consumer speed"}
+2026-09-12 19:19:01,654 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256_compact_1789240724599839834_ef33dfe7592ff1b4
+DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-12 19:19:05,140 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256_compact_1789240724599839834_ef33dfe7592ff1b4.o
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256 (mac=48, m=7, routed=56, smem=98304 B)
+Traceback (most recent call last):
+  File "/repo/probes/engine_kernel_check.py", line 260, in <module>
+    main()
+  File "/repo/probes/engine_kernel_check.py", line 45, in main
+    compact_check(router_ranks=args.ranks)
+  File "/repo/probes/engine_moe_compact_check.py", line 112, in main
+    graph, output = _capture(lambda: [native.moe(x, route, weights, w13, s13, w2, s2, 10.)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/probes/engine_decode_fusions.py", line 9, in _capture
+    fn()
+  File "/repo/probes/engine_moe_compact_check.py", line 112, in <lambda>
+    graph, output = _capture(lambda: [native.moe(x, route, weights, w13, s13, w2, s2, 10.)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/lanes.py", line 451, in moe
+    return b12x_fused_moe(x=x.contiguous(), output=output,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/api_logging.py", line 2333, in _auto_dump_wrapper
+    return _inner(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/b12x/b12x_moe.py", line 213, in b12x_fused_moe
+    return launch_sm120_moe(
+           ^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/b12x/moe_dispatch.py", line 5655, in launch_sm120_moe
+    return launch_sm120_static_moe(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/b12x/moe_dispatch.py", line 3476, in launch_sm120_static_moe
+    sf1_address, sf2_address = _scale_runtime_addresses(
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/b12x/moe_dispatch.py", line 1602, in _scale_runtime_addresses
+    raise RuntimeError("packed-only SF6 owner cannot launch a raw-scale kernel")
+RuntimeError: packed-only SF6 owner cannot launch a raw-scale kernel
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "60686dd700d54bba818669bde3089afb", "phase": "waiting", "reason": "release", "since": 114886.651215193, "updated_at": 1789240746.7590215, "version": 1}

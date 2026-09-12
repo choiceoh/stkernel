@@ -1,0 +1,40 @@
+2026-09-12T19:52:08.818260856Z   fleet reserved by queue/st-decode-consumer0913v2
+2026-09-12T19:52:09.177493355Z   box: GB10 (DGX Spark): SM121, unified 120 GiB (88 free)
+2026-09-12T19:52:11.565835824Z [W912 19:52:11.457316447 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+2026-09-12T19:52:11.602516877Z   facts
+2026-09-12T19:52:11.602547181Z     model                    /repo/st-glm53-meta              [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+2026-09-12T19:52:11.602549949Z     ranks                    /home/choiceoh/models/st-glm53-9391-up-gate-full [preshard output]
+2026-09-12T19:52:11.602552173Z     world                    4                                [facts.TP: four Sparks]
+2026-09-12T19:52:11.602554045Z     block                    768                              [launcher --block-size]
+2026-09-12T19:52:11.602555773Z     spec_k                   6                                [launcher SPEC_K with DFlash2]
+2026-09-12T19:52:11.602557725Z     kv_gib                   6.0                              [--kv-gib (local)]
+2026-09-12T19:52:11.602559437Z     port                     18122                            [--port]
+2026-09-12T19:52:11.602561181Z     max_seqs                 4                                [resident rows, state slots and captured decode widths]
+2026-09-12T19:52:11.602563005Z     prefix_snapshot_gib      2.125                            [tiered raw block-boundary checkpoints; count follows the shape]
+2026-09-12T19:52:11.602564797Z     prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+2026-09-12T19:52:11.602566557Z     prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+2026-09-12T19:52:11.602569085Z     moe_static               t,r,sf6,q0                       [native TP4 execution]
+2026-09-12T19:52:11.602570765Z     lanes                    served                           [native TP4 execution]
+2026-09-12T19:52:11.602572429Z     decode_eager             0                                [native TP4 execution]
+2026-09-12T19:52:11.602574157Z     execution                native                           [native TP4 execution]
+2026-09-12T19:52:11.602575757Z     mla_prefill              tile32                           [qualified production default]
+2026-09-12T19:52:11.602577453Z     context_ceiling          0                                [qualified production default]
+2026-09-12T19:52:11.602579101Z     kda_state_dtype          fp32                             [qualified production default]
+2026-09-12T19:52:11.602580877Z   knobs (every one expires)
+2026-09-12T19:52:35.780985785Z NCCL version 2.29.7+cuda13.2
+2026-09-12T19:52:41.281812194Z [rank0]: Traceback (most recent call last):
+2026-09-12T19:52:41.281843666Z [rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1116, in <module>
+2026-09-12T19:52:41.281846754Z [rank0]:     raise SystemExit(main())
+2026-09-12T19:52:41.281866723Z [rank0]:                      ^^^^^^
+2026-09-12T19:52:41.281868915Z [rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1112, in main
+2026-09-12T19:52:41.281870803Z [rank0]:     return fleet(a)
+2026-09-12T19:52:41.281872371Z [rank0]:            ^^^^^^^^
+2026-09-12T19:52:41.281873859Z [rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 974, in fleet
+2026-09-12T19:52:41.281875683Z [rank0]:     F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
+2026-09-12T19:52:41.281877315Z [rank0]:                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-12T19:52:41.281878995Z [rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 286, in build
+2026-09-12T19:52:41.281880675Z [rank0]:     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
+2026-09-12T19:52:41.281882435Z [rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-12T19:52:41.281884083Z [rank0]:   File "/repo/engine/profiles/glm53/weights.py", line 18, in rank_loader
+2026-09-12T19:52:41.281885763Z [rank0]:     raise ValueError(f"{path}: checkpoint/rank weight layout mismatch: {expected_layout} != {marker}")
+2026-09-12T19:52:41.281887539Z [rank0]: ValueError: /home/choiceoh/models/st-glm53-9391-up-gate-full/rank0of4.safetensors: checkpoint/rank weight layout mismatch: st-glm53-modelopt-up-gate-v1 != st-glm53-b12x-up-gate-v1

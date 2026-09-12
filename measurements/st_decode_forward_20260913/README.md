@@ -17,6 +17,10 @@ quality hypothesis until the new consumer actually answers.
 - Native shared-expert GU/activation/down fusion and overlap with routed MoE,
   restricted to C=1 after C=4 regressions. The same native W4 packs are reused.
 - W4 row strides remove copies of narrow KDA projection inputs.
+- Input-reuse packing also follows the parent row stride. This is required by
+  the drafter's five-tile 20K observation projection during graph capture; the
+  earlier contiguous-only GPU fixture missed that combination. The new fixture
+  checks both offset tiles with poisoned padding and the complete five-pack fold.
 - Input quantization reuse and CTA-local split folding now cover M=7. The
   former M=6 dispatch silently excluded the actual C=1 verification width.
   Each shape retains its ordinary K-slice boundaries, FP32 fold order and BF16
@@ -51,25 +55,113 @@ Raw logs retain admission, execution and lease-release records.
 | `moe-compact-e6dc7ee0-scatter-failure.log` | The probe-only compact tile uses 44032 bytes of shared memory, 96 registers/thread, zero local bytes and supports two blocks/SM in the actual cubin. Its first execution fails with illegal memory access: four 64-column scatter warps retained the old N256 width after the tile became N128. No speed result and no production dispatch. |
 | `moe-scatter-layout-6369964e.log` | CPU layout audit passes after deriving scatter width from the tile and proving complete, unique, bounded output coverage. The GPU retry remains required. |
 
-The MoE compact experiment is not selected by serving. It retains the M16/FC1
-N128/K256 arithmetic and the FC2 K128 rounding boundary, reduces both pipeline
-stages to one and halves FC2 output width. Its 96-CTA cooperative launch is
-refused unless the CUDA occupancy API proves full residency for the exact fresh
-compiled cubin. The probe checks changed graph inputs, zero routing weights,
-SF6 and original scale storage before timing B/C48/C96/C96/C48/B.
+The compact MoE experiment is **rejected and removed from serving code**.
+The corrected GPU run (`moe-compact-f9a96262-rejected.log`) passed changed-input
+SF6 graph checks for U=8/32/56 and exact-zero outputs. CUDA confirmed two blocks/SM
+with 44032 shared bytes, 88 registers and no local memory. Nevertheless C96 was
+5.78%, 0.73% and 1.63% slower than B; C48 also had no stable win. The final raw-scale
+arm did not run: it tried to reuse a packed-only owner, and the existing ownership
+guard correctly refused it. That harness limitation is recorded, not treated as a
+numerical pass. There is no reason to continue this losing geometry. Reproduce it
+from the frozen `f9a96262` commit; raw logs and summary remain here.
+
+The exact consumer router pack also passes: 2352 tested hidden rows select the
+same expert IDs. Its 42 captured router pipelines take 3.206 ms before and
+1.576 ms after the tensor-core change (50.85% less time). This is a component
+result, not an engine throughput claim.
 
 Consumer preparation uses private cache copies on all four nodes, excluding
 `mkcalib` (see `cache-preparation.json` and `prepare_consumer.py`). Planned shape:
-TP4, SPEC_K=6, C=1/C=4, KV=6 GiB, FP32 KDA state, the up/gate full rank pack,
+TP4, SPEC_K=6, C=1/C=4, KV=6 GiB, FP16 KDA state, the up/gate full rank pack,
 and the canonical harness 43 budgets. Candidate-only `st_bracket.sh chain` will
 run two complete onepasses and release its own boot through the official stop.
 
-The corrected compact probe is frozen at `f9a96262fae2046343f6e63e8a63c0bedd2a04bc`
-in ticket `st-moe-compact0913v5` (`17892392484116916`). The queue is waiting on
-production `production/srv2/4116044`, which repeats the sampled-request failure
-before the normal quiet handover completes. The prior stop authorization named
-a different boot, so stopping this production supervisor and restoring the fixed
-release was explicitly requested from the operator. No manual stop was performed.
+PR #789 was merged as `938de3f93a19`. The fleet subsequently completed the
+queued component probe and handed the reservation to the next task. The
+production restart at 04:34 included the PR #790 sampled-request fix; its real
+health ping passed at 04:38:32 and the supervisor reset its failure counters.
+The older stop request is no longer needed. A fresh candidate-only canonical
+consumer run follows the removal of the rejected probe geometry.
+
+The first admitted consumer (`st-decode-consumer0913v2`, source `a39ca8ac`)
+failed before weight loading or requests. Its private CKPT directory incorrectly
+selected NVIDIA ModelOpt metadata for the B12x up/gate rank pack. All four layout
+guards correctly refused the mismatch. The launcher stopped its own boot and the
+queue released the lease. `consumer-v2-startup-failed/` preserves all four logs,
+container/runtime identities and the launcher output. No measurement was produced.
+`metadata-correction.json` records the corrected, unchanged B12x metadata files and
+their hashes. Preparation now checks all four safetensors layout markers before
+making the private metadata copy.
+
+The next submission (`st-decode-consumer0913v3`) was refused before a GPU hold:
+main had added PR #791's FP16 KDA default. The next admitted source includes that
+change, with unchanged block/snapshot capacity. It will therefore validate the
+combined candidate with FP16 storage, not relabel the earlier FP32 preparation.
+
+Separately, `production-045819/` records a production failure on deployed
+`644fbbea6095`: ranks 2 and 3 stalled in one-shot peer flags at sequence 5518;
+ranks 0 and 1 later lost the control connection in transfer settlement. This is
+distinct from the repaired missing `sel_top_k` attribute and from the consumer's
+metadata rejection. The first divergent operation has not yet been established.
 
 No component result establishes 22 step/s, answer quality, speculative
 acceptance or a same-build consumer speedup.
+
+The admitted `st-decode-consumer0913v4` failed at graph capture on all four ranks
+at 05:15:01 KST, before any consumer request. Removing the W4 tile copy preserved
+the 20K parent row stride, but the M=6/7 input-reuse packer still required dense
+rows. `c8562a7c` fixes the packer's addressing without adding the copies back.
+`consumer-v4-capture-failed/` preserves its immutable container identities and
+all rank logs; the official launcher stopped that boot and released its lease
+at 05:15:09. The focused CPU check passes 32 tests with eight CUDA skips.
+The new strided and full-width captured numerical checks must pass on the
+reserved GPU before another full consumer boot.
+
+A later production boot answered its health chat at 05:23:46, then repeated
+the same one-shot sequence-5518 stall and peer loss at 05:24:20. The four logs
+are retained in `production-052420/`. The transport counters establish repeated
+rank divergence, not which operation first caused it. The queue acquired the
+fleet normally at 05:30:42 for the bounded strided-W4 GPU gate; no manual stop
+was performed.
+
+`decode7-c8562a7c.log` passes all three CUDA numerical/replay tests in
+48.410 s, including the previously failing offset inputs and complete five-pack
+observation projection. Exact consumer-pack router IDs agree for 2352 rows.
+The captured B/A/A/B component bracket puts N6416 effectively flat (+0.19%
+with visible timing drift), N4096/N6144 about 1.5% faster, and the 42 router
+pipelines at 3.198 to 1.574 ms. These are not engine speeds.
+
+`st-decode-consumer0913v5` now runs source `c8562a7c55a4` through the canonical
+two-onepass chain on one boot. All four logs and the PR760 watcher are bound to
+that boot's immutable container IDs. Reused private compilation caches include
+the work paid by the previous failed capture. There were no calibration blobs
+at boot; 20 were filed after 34006 preparation rows, for a subsequent boot only.
+The served packs remained GPTQ=0, RTN=237. Cold-prefix and preparation/measurement
+phases remain explicit.
+
+The first pass ended at 06:01:11 during the first C=4 preparation. Both C=1
+phases completed, but neither complete onepass exists and there is no second
+pass. `consumer-v5-incomplete/` preserves the requests, quality results, raw
+record, all-rank identities/logs, boot and fleet log. Its `status.json` marks
+the aborted run explicitly: the raw record's stale `running` status survived
+because finalization lost the server.
+
+| First-pass measurement, fresh prefix | Pooled decode step/s | SSE decode tok/s | Accepted / drafted |
+| --- | ---: | ---: | ---: |
+| C=1, 2K, three requests | 19.8048 | 62.88 / 68.05 / 66.84 | 38.3929% |
+| C=1, 32K | 19.5808 | 75.1515 | 47.3815% |
+| C=1, 128K | 18.5940 | 72.4733 | 48.3662% |
+
+Canonical C=1 preparation/trace checks report a steady, unprofiled measurement
+with fresh prefixes. Quality is **1/9 complete cases**, 29/57 checks. Longer
+reasoning did not establish correct answers for this run. These observations
+are incomplete first-pass evidence, not a 22-step result or a same-build speedup.
+
+Ranks 2 and 3 report `KeyError: 0` while resolving an already-finished row's
+pending decode. Parking closes the model context before its slot and prefix
+chain are released; `_tracked()` selected that closed row for boundary metadata.
+A four-row CPU reproduction with a prefix cache and asynchronous parking fails
+at the same lookup. Tracking only live decoders fixes it while still resolving
+the inert pending result and advancing the surviving rows. All 46 async-runner
+and prefix tests pass; before/after logs are retained. This is a separate cause
+from the production sequence-5518 stalls, whose first divergence is unresolved.

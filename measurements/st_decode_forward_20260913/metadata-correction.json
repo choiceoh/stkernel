@@ -1,0 +1,19 @@
+{
+  "source": "/home/choiceoh/st-engine/st-glm53-meta",
+  "destination": "/home/choiceoh/glm53-logs/st-decode-forward-consumer-b12x-meta",
+  "quant_method": "compressed-tensors",
+  "rank_metadata": {
+    "model": "glm53",
+    "world": "4",
+    "layers": "all",
+    "layout": "engine.profiles.glm53.specs",
+    "weight_layout": "st-glm53-b12x-up-gate-v1"
+  },
+  "files": {
+    "config.json": "29c9f4171196910e99b9c069d6b76c56e3cdcd0f436dc1bacbc9513c9a7529ac",
+    "tokenizer.json": "0cfe2c099a7702a0921abc315ee039deb51e4a34b4818fc509bd27fa3dc4acc1",
+    "tokenizer_config.json": "77af7d4769cd62c107b90495cac9b0ba81573c86486821bfba2980c04285ec7a",
+    "generation_config.json": "e9e93ee323895fa5e8e160f1f9826fd98b6bd7b3935435f423c3554f88bfa3ac",
+    "processor_config.json": "aae38374c94b08cc9b0547c6e64f05b951bd9735cea571c6988f5ed552bed3ed"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "commit": "5e2f297d0850cef86c217880cf0378aa84332095",
+  "image": "st-engine:main-ff728f43",
+  "entrypoint": "python3",
+  "workdir": "/repo",
+  "device": "CPU; CUDA_VISIBLE_DEVICES empty",
+  "modules": [
+    "tests.test_engine_pipeline",
+    "tests.test_engine_native_execution",
+    "tests.test_engine_shared_mlp",
+    "tests.test_engine_decode_seven",
+    "tests.test_engine_kda_storage"
+  ],
+  "tests": 39,
+  "passed": 32,
+  "skipped_gpu": 7,
+  "duration_s": 1.380,
+  "exit_code": 0,
+  "metadata_preflight": {
+    "ranks_checked_on_owning_nodes": [0, 1, 2, 3],
+    "weight_layout": "st-glm53-b12x-up-gate-v1",
+    "layers": 45,
+    "spec_k": 6,
+    "kda_state_dtype": "fp16",
+    "all_five_metadata_hashes_verified": true
+  },
+  "scope": "CPU contracts and metadata identity; no GPU or consumer performance claim"
+}
