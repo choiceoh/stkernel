@@ -1295,6 +1295,56 @@ class KoreanBudgetTests(unittest.TestCase):
         self.assertLess(s.room_for(s.max_context), room)
 
 
+class ComposedFormTests(unittest.TestCase):
+    """The same Korean, written two ways, must not be two different prompts (45차 §42)."""
+
+    def nfd(self, text):
+        import unicodedata
+        return unicodedata.normalize("NFD", text)
+
+    def test_a_decomposed_prompt_is_tokenised_as_the_composed_one(self):
+        from engine.base.serve import nfc
+        for text in ("안녕하세요", "우리 서버의 지연 시간", "mixed 한글 and ascii", "Tiếng Việt"):
+            with self.subTest(text=text):
+                self.assertEqual(nfc(self.nfd(text)), text)
+                self.assertEqual(nfc(text), text, "already composed text is handed back")
+
+    def test_ascii_is_untouched(self):
+        from engine.base.serve import nfc
+        for text in ("", "plain ascii", "{\"v\": \"x\"}", "<|user|>"):
+            self.assertIs(nfc(text), text)
+
+    def test_a_decomposed_stop_string_is_composed_so_it_can_match(self):
+        from engine.base.serve import stop_strings
+        self.assertEqual(stop_strings({"stop": self.nfd("끝")}), ["끝"])
+        self.assertEqual(stop_strings({"stop": [self.nfd("끝"), "STOP"]}), ["끝", "STOP"])
+
+    def test_the_door_tokenises_both_forms_the_same(self):
+        """The fake tokenizer is one token a character, so a prompt's token count is its length:
+        decomposed "가" is three characters and composed is one, and the door must send one."""
+        s = chat_server()
+        seen, counted = [], []
+        s.chat = lambda messages, kwargs, *, generation_prompt=True, continue_final=False: (
+            seen.append(messages[0]["content"]) or messages[0]["content"])
+        for content in ("가", self.nfd("가")):
+            httpd = s._serve_http()
+            url = f"http://127.0.0.1:{httpd.server_port}/v1/chat/completions"
+            def post():
+                with urllib.request.urlopen(urllib.request.Request(
+                        url, data=json.dumps({"messages": [{"role": "user", "content": content}],
+                                              "max_tokens": 1}).encode()), timeout=5) as r:
+                    return json.load(r)
+            try:
+                with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                    counted.append(drive(s, pool.submit(post))["usage"]["prompt_tokens"])
+            finally:
+                httpd.shutdown(); httpd.server_close()
+        self.assertEqual([len(x) for x in seen], [1, len(self.nfd("가"))], "the two forms really did arrive differently")
+        self.assertGreater(len(self.nfd("가")), 1)
+        self.assertEqual(counted[0], counted[1], "and they reached the engine as the same prompt")
+        self.assertEqual(counted[0], 1)
+
+
 class HangulPatternTests(unittest.TestCase):
     """`[가-힣]` is the natural way to say "Hangul", and xgrammar drops most of it (45차 §41)."""
 

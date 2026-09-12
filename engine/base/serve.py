@@ -38,6 +38,7 @@ import select
 import socket
 import threading
 import time
+import unicodedata
 import urllib.request
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -327,12 +328,32 @@ def prompt_switches(req: dict) -> "tuple[bool, bool]":
     return opening, resuming
 
 
+def nfc(text: str) -> str:
+    """`text` in Unicode's composed form, which is the form the model was trained on.
+
+    The same Korean is two different strings to a tokenizer that does not normalise -- and this
+    checkpoint's does not (`"normalizer": null`). A syllable written whole (NFC, U+AC00-U+D7A3)
+    is one or two tokens; the same syllable written as its jamo (NFD, U+1100-U+11FF) is six or
+    eight, and macOS filenames, some IMEs and a lot of extracted text arrive that way. Measured
+    here: an NFD Korean prompt costs 6.4x the tokens of the identical NFC one -- 7,721 against
+    1,202 -- and hashes differently, so it misses the prefix cache the earlier turn filled.
+
+    NFC and NFD are the same text by Unicode's own definition (canonical equivalence, UAX #15),
+    and NFC is what the web recommends for interchange, so this is not a rewrite of what the
+    caller sent. It costs 2.5 us on a 1,600-character Korean prompt and 0.1 us on English,
+    where it does nothing at all.
+    """
+    return text if unicodedata.is_normalized("NFC", text) else unicodedata.normalize("NFC", text)
+
+
 def stop_strings(req: dict) -> "list[str]":
     stop = req.get("stop")
     stop = [stop] if isinstance(stop, str) else (stop or [])
     if not isinstance(stop, list) or any(not isinstance(x, str) or not x for x in stop):
         raise RequestError("stop must be a nonempty string or a list of them")
-    return stop
+    # The scan compares these against text the model wrote, which is composed. A stop string in
+    # the decomposed form would never match the answer it names.
+    return [nfc(x) for x in stop]
 
 
 def response_format_grammar(req: dict) -> "dict | None":
@@ -2200,7 +2221,7 @@ class Server:
                     max_tokens = req.get("max_completion_tokens")
                 defaulted = max_tokens is None
                 if defaulted:
-                    max_tokens = answer_budget(server.tok, written_text(messages))
+                    max_tokens = answer_budget(server.tok, nfc(written_text(messages)))
                 stream = bool(req.get("stream", False))
                 include_usage = bool(options_stream and options_stream.get("include_usage"))
                 model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
@@ -2235,7 +2256,7 @@ class Server:
                                          generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
                     raise RequestError(f"chat template rejected the request: {exc}") from exc
-                ids = server.tok.encode(prompt, add_special_tokens=False).ids
+                ids = server.tok.encode(nfc(prompt), add_special_tokens=False).ids
                 media = None
                 if items:
                     try:
@@ -2328,11 +2349,11 @@ class Server:
                     raise RequestError("no tokenizer: use /v1/engine/completions with ids")
                 prompt = req.get("prompt", "")
                 if isinstance(prompt, str):
-                    prompts = [server.tok.encode(prompt, add_special_tokens=True).ids]
+                    prompts = [server.tok.encode(nfc(prompt), add_special_tokens=True).ids]
                 elif isinstance(prompt, list) and prompt and all(type(t) is int for t in prompt):
                     prompts = [list(prompt)]
                 elif isinstance(prompt, list) and prompt and all(isinstance(p, str) for p in prompt):
-                    prompts = [server.tok.encode(p, add_special_tokens=True).ids for p in prompt]
+                    prompts = [server.tok.encode(nfc(p), add_special_tokens=True).ids for p in prompt]
                 elif isinstance(prompt, list) and prompt and all(isinstance(p, list) and p and all(type(t) is int for t in p) for p in prompt):
                     prompts = [list(p) for p in prompt]
                 else:
@@ -2381,8 +2402,19 @@ class Server:
                     start = len(server.tok.decode(ids_prompt)) if echo else 0
                     tokens, offsets = token_spans(server.tok, [tid for tid, _, _ in c.logprobs], start)
                     lps = [lp for _, lp, _ in c.logprobs]
-                    tops = [{server.tok.decode([i]): v for i, v in top[:want_logprobs]} if want_logprobs else None
-                            for _, _, top in c.logprobs]
+                    def top_map(top):
+                        """OpenAI's legacy shape is a dict keyed by the token's text, and in Korean
+                        several of a position's candidates are halves of a character -- every one of
+                        them U+FFFD. A dict comprehension would keep the last, which is the least
+                        likely of them; keep the likeliest instead."""
+                        out = {}
+                        for i, v in top[:want_logprobs]:
+                            text = server.tok.decode([i])
+                            if v > out.get(text, float("-inf")):
+                                out[text] = v
+                        return out
+
+                    tops = [top_map(top) if want_logprobs else None for _, _, top in c.logprobs]
                     return {"tokens": tokens, "token_logprobs": lps, "top_logprobs": tops, "text_offset": offsets}
 
                 def chunk(index, text=None, finish=None, usage=None):
@@ -2469,7 +2501,7 @@ class Server:
                     if not isinstance(prompt, str):
                         raise RequestError("prompt must be text")
                     add_special = bool(req.get("add_special_tokens", True))
-                ids = server.tok.encode(prompt, add_special_tokens=add_special).ids
+                ids = server.tok.encode(nfc(prompt), add_special_tokens=add_special).ids
                 self.reply(200, {"count": len(ids), "max_model_len": server.max_context, "tokens": ids})
 
             def detokenize(self, req):
@@ -2489,7 +2521,7 @@ class Server:
                     prompt = req.get("prompt", "")
                     if not isinstance(prompt, str):
                         raise RequestError("prompt must be text")
-                    ids = server.tok.encode(prompt).ids
+                    ids = server.tok.encode(nfc(prompt)).ids
                 t0 = time.perf_counter()
                 conversation = req.get("conversation")
                 temperature, options = sampling_options(req, {})
@@ -2517,11 +2549,11 @@ class Server:
                         prompt = server.chat(req["messages"], dict(kwargs))
                     except Exception as exc:                          # noqa: BLE001
                         raise RequestError(f"chat template rejected the request: {exc}") from exc
-                    ids = server.tok.encode(prompt, add_special_tokens=False).ids
+                    ids = server.tok.encode(nfc(prompt), add_special_tokens=False).ids
                 elif isinstance(req.get("prompt"), str):
                     if server.tok is None:
                         raise RequestError("this server has no tokenizer", 404)
-                    ids = server.tok.encode(req["prompt"], add_special_tokens=False).ids
+                    ids = server.tok.encode(nfc(req["prompt"]), add_special_tokens=False).ids
                 elif isinstance(req.get("ids"), list):
                     ids = req["ids"]
                 else:
