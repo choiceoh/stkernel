@@ -10826,3 +10826,39 @@ ST 엔진 :8000 --/v1/models--> SparkFleet :18900 --/api/services--> 웜홀 :188
 말한다 / 안 바인딩한 능력은 절대 주장 안 한다 / **드레인 중 카탈로그가 비고 503** / `/v1/models` 가 그 판정을
 싣는다 / `readiness()` 세 상태 / `/health` 가 draining 을 싣는다 / GET 헬퍼 /
 **슈퍼바이저가 핸드오버를 기다린다**(가짜 플릿에 진짜 셸 제어 흐름) / **진짜 장애는 여전히 재기동으로 읽는다**.
+
+### 45차 §57 — 웜홀이 우리 눈을 가리던 키를 껐다, 그리고 `max_model_len` 이 비어 있는 걸 실물에서 봤다 (2026-09-12, srv4, 라이브 설정 변경 1건)
+
+§56 에서 증거만 내고 멈춰 둔 것을 집행했다. 운영자 "대기중인것 개선".
+
+**무엇이었나.** `~/.wormhole/config.json` 의 `glm-5.3-flash-local` / `-low` 둘 다 **`"vision": false`** 였다.
+웜홀 `entryAcceptsImages` 는 **설정의 명시 오버라이드가 내장 표를 이긴다**, 그리고 `vision.go` 의 게이트는
+그런 항목으로 가는 요청에서 **이미지 파트를 떼어낸다**. 우리 ST 는 이미지를 서빙하는데(§56 에서 프로덕션 헤드에
+112×112 빨간 PNG → **`빨강`**, 0.7 s 로 확인) 라우터가 눈을 가리고 있었다.
+
+**왜 껐나 — 내장 표가 이미 옳다.** `vision.go` 의 `textOnlyImageModels` 는 `glm-5.3-flash` 를 **고의로 뺐다**:
+
+> *"unlike glm-4.7-flash (text-only) and its own base model glm-5.3, the 5.3 flash tier is multimodal.
+> Measured on the coding plan endpoint 2026-09-02: a 1x1 PNG content-part answered "Red" on glm-5.3-flash,
+> while glm-5.3 / glm-5.2 / glm-5.1 / glm-4.7 all returned 400."*
+
+즉 **클라우드 폴백(`glm-5.3-flash`)도 이미지를 받는다.** 로컬 항목의 `false` 하나만이 유일한 눈가리개였고,
+그게 언제 붙었는지는 백엔드가 비전 없는 vLLM 이던 시절의 잔재로 보인다.
+
+**집행**: 타임스탬프 백업(`config.json.bak-vision-*`) → 두 줄만 `true` 로 → 쓰기 전에 JSON 파싱 확인 →
+웜홀이 mtime 감시로 **`config reloaded models=8`**(16:57:06) 를 찍었다. 다른 항목은 전부 오버라이드 없음(내장 표를 따름).
+
+**덤으로 실물 확인 하나**: 웜홀의 다운스트림 `/v1/models` 를 찍어 보니
+
+```
+glm-5.3-flash-local        max_model_len=-
+glm-5.3-flash-local-low    max_model_len=-
+```
+
+**§56 이 말한 빈칸이 실제로 비어 있다.** 지금 도는 릴리스가 `model_card()` 이전이라 그렇고, 다음 배포부터 채워진다.
+
+**아직 못 한 것**: 웜홀을 통과하는 이미지 요청의 종단 확인. 옆 세션이 srv2 에서 `st-glm53` 을 계속 올렸다 내렸다 해서
+(16:57:16 요청은 웜홀이 **라우팅은 했고**(`reasoning routed off` 로그) 업스트림이 없어서 실패했다) 안정된 헤드가
+생길 때까지 미룬다. **게이트를 통과했다는 것 자체는 그 로그가 증명한다** — 예전이라면 이미지가 그 앞에서 떨어졌다.
+
+**되돌리기**: `cp ~/.wormhole/config.json.bak-vision-<타임스탬프> ~/.wormhole/config.json` 하나, 3초 안에 자동 반영.
