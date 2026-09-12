@@ -329,5 +329,73 @@ class DrafterTests(unittest.TestCase):
         self.assertIn("propose_sampled_tensor(", body)
 
 
+@unittest.skipUnless(torch.cuda.is_available(), "observe's write phase is a device kernel")
+class ObserveOverlapTests(unittest.TestCase):
+    """observe splits into a compute phase and a write phase so the compute can overlap the target's tail
+    (45차 §96). The split has to be free -- byte-for-byte the single call -- and the compute has to be
+    independent of the accepted count, or starting it before the commit would be wrong.
+    """
+    def fast_drafter(self):
+        from engine.profiles.glm53.drafter import Drafter, DrafterFacts
+        F = DrafterFacts(layers=3, hidden=256, heads=8, kv_heads=2, head_dim=128, inter=256, rms_eps=1e-5,
+                         rope_theta=10000., window=64, block=8, mask_id=20, conv_taps=2, conv_group=16,
+                         sel_rank=4, sel_top_k=3, target_layers=(1, 2, 3), k=5)
+        d = Drafter(F, SimpleNamespace(), 64)
+        d.fast_attention = True
+        d.local_kv_heads = F.kv_heads
+        gen = torch.Generator(device="cuda").manual_seed(3)
+        rand = lambda *shape: torch.randn(*shape, device="cuda", generator=gen).bfloat16()
+        d.p = {"fc.weight": rand(F.hidden, F.hidden * len(F.target_layers)),
+               "hidden_norm.weight": torch.ones(F.hidden, device="cuda", dtype=torch.bfloat16)}
+        for L in range(F.layers):
+            d.p[f"layers.{L}.self_attn.k_norm.weight"] = torch.ones(F.head_dim, device="cuda", dtype=torch.bfloat16)
+        d.context_kv = rand(F.layers * 2 * F.kv_heads * F.head_dim, F.hidden)
+        d.linear = lambda x, name, mask=None: torch.nn.functional.linear(x, d.p[name])   # no pack: reference lane
+        return d
+
+    def inputs(self, d, accepted):
+        from engine.profiles.glm53.drafter import ring_cells
+        F = d.F
+        n, t = 1, F.k + 1
+        field = torch.zeros(2, F.layers, 2, ring_cells(F), F.kv_heads, F.head_dim, device="cuda", dtype=torch.bfloat16)
+        slots = torch.tensor([1], device="cuda")
+        positions = (torch.arange(n * t, device="cuda") + 100).view(n, t)
+        gen = torch.Generator(device="cuda").manual_seed(7)
+        aux = torch.randn(n * t, F.hidden * len(F.target_layers), device="cuda", generator=gen).bfloat16()
+        return field, slots, positions, aux, torch.tensor([accepted], device="cuda")
+
+    def test_the_split_is_byte_for_byte_the_single_pass(self):
+        from engine.profiles.glm53.drafter import norm, norm_rope
+        from engine.kernels.draft_attention import write_draft_kv_rows
+        d = self.fast_drafter()
+        F = d.F
+        n, t = 1, F.k + 1
+        field, slots, positions, aux, valid = self.inputs(d, accepted=4)
+
+        got = field.clone()
+        d.observe_rows(got, slots, positions, aux, valid)
+
+        want = torch.zeros_like(field)
+        c = norm(torch.nn.functional.linear(aux, d.p["fc.weight"]), d.p["hidden_norm.weight"], F.rms_eps)
+        context = torch.nn.functional.linear(c, d.context_kv).reshape(n, t, F.layers, 2, F.kv_heads, F.head_dim)
+        for L in range(F.layers):
+            k = norm_rope(context[:, :, L, 0].reshape(n * t, F.kv_heads, F.head_dim),
+                          d.p[f"layers.{L}.self_attn.k_norm.weight"], F.rms_eps,
+                          positions.reshape(-1), F.rope_theta).reshape(n, t, F.kv_heads, F.head_dim)
+            write_draft_kv_rows(want, slots, L, positions, k, context[:, :, L, 1], valid=valid)
+        self.assertTrue(torch.equal(got, want))
+
+    def test_the_compute_phase_does_not_depend_on_the_accepted_count(self):
+        """The overlap starts observe_kv before the commit decides the count. That is only correct because the
+        K/V it produces are the same whatever the count turns out to be -- the count masks the write, nothing
+        more. (On a calibrating boot the mask feeds the calibration sum, so the overlap is a serving-boot
+        thing; the K/V values here are identical regardless.)"""
+        d = self.fast_drafter()
+        _, _, positions, aux, _ = self.inputs(d, accepted=0)
+        full = d.observe_kv(positions, aux, torch.tensor([d.F.k + 1], device="cuda"))
+        part = d.observe_kv(positions, aux, torch.tensor([2], device="cuda"))
+        self.assertTrue(all(torch.equal(a[0], b[0]) and torch.equal(a[1], b[1]) for a, b in zip(full, part)))
+
+
 if __name__ == "__main__":
     unittest.main()
