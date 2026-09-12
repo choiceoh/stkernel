@@ -333,7 +333,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 for module, key, missing, small in calib_plan:
                     layer = (drafter if module == "drafter" else net).dense[key]
                     calibration.attach(layer.name, layer, missing, small, unsmooth=getattr(layer, "smooth", None))
-                recorder.gauge("calibration_blobs", len(calibration.H))
+                recorder.gauge("calibration_blobs", len(calibration.rows))
+                recorder.gauge("calibration_hessians", len(calibration.H))
                 recorder.gauge("calibration_deferred", len(calibration.deferred))
             for name, count in store.stats.items():
                 recorder.gauge("dense_pack_"+name, count)
@@ -787,7 +788,7 @@ def fleet(a) -> int:
             print("  warmup: " + ", ".join(f"{k} {v}s" for k, v in paid.items()) + (f"; structured output: {'on' if engine.grammars else 'off (no xgrammar)'}"))
         if engine.calibration is not None:                  # every warm-up and capture is behind us: from here the sums are the served traffic
             engine.calibration.arm()
-            print(f"  calibration: rank {comm.rank} summing the inputs of {len(engine.calibration.H)} uncalibrated pack tiles "
+            print(f"  calibration: rank {comm.rank} summing the inputs of {len(engine.calibration.rows)} uncalibrated pack tiles "
                   f"({len(engine.calibration.deferred)} deferred) -> {engine.calibration_root}/mkcalib/rank{comm.rank}/ "
                   "(filed on its own at 32K rows, at shutdown, or on POST /v1/engine/calibration; the next boot packs GPTQ from them)", flush=True)
         Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,

@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 
 from engine.kernels.dense.calibration import BUDGET_BYTES, ROWS_TARGET, Calibration
-from engine.kernels.dense.store import PackStore
+from engine.kernels.dense.store import Need, PackStore
 
 
 class FakeLayer:
@@ -77,7 +77,7 @@ class CalibrationTests(unittest.TestCase):
         wide_cols = 2 * PackStore.TILE
         c = Calibration("cpu", budget_bytes=Calibration.nbytes(PackStore.tiles("Target/model.fc", wide_cols)))
         wide = FakeLayer(wide_cols, "Target/model.fc")
-        self.assertEqual(PackStore.tiles(wide.name, wide_cols), [(wide.name, 0, wide_cols)])
+        self.assertEqual(PackStore.tiles(wide.name, wide_cols), [Need(wide.name, 0, wide_cols, hessian=True)])
         self.assertTrue(c.attach(wide.name, wide, PackStore.tiles(wide.name, wide.cols), small_rows=True))
         self.assertEqual(list(c.H), [wide.name])
         self.assertEqual(tuple(c.H[wide.name].shape), (wide_cols, wide_cols))
@@ -97,7 +97,7 @@ class CalibrationTests(unittest.TestCase):
     def test_the_store_reports_missing_tiles_and_refuses_foreign_blobs(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = PackStore(tmp, 0)
-            self.assertEqual(store.missing_calibration("A/model.x", 5 * PackStore.TILE), [("A/model.x", 0, 5 * PackStore.TILE)])
+            self.assertEqual(store.missing_calibration("A/model.x", 5 * PackStore.TILE), [Need("A/model.x", 0, 5 * PackStore.TILE)])
             self.assertFalse(store.calibrated("A/model.x"))
             path = store.calibration_path("A/model.y")
             path.parent.mkdir(parents=True)
@@ -106,6 +106,82 @@ class CalibrationTests(unittest.TestCase):
             self.assertTrue(store.calibrated("A/model.y"))
             with self.assertRaisesRegex(ValueError, "do not fit"):
                 store.missing_calibration("A/model.y", 256)                  # a TP-sharded width the old dump does not match
+
+
+class PeaksOnlyTests(unittest.TestCase):
+    """A blob whose Hessian already fits the served weight but predates the channel peaks: only the peaks are summed."""
+
+    def blob(self, store, key, width, rows=4096):
+        g = torch.Generator().manual_seed(11)
+        x = torch.randn(rows, width, generator=g)
+        path = store.calibration_path(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"H": x.T @ x, "ntok": rows, "name": key}, path)              # an older stack's dump: no "amax"
+        return x
+
+    def test_a_blob_that_only_lacks_its_peaks_costs_its_columns_not_its_square(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PackStore(tmp, 0)
+            self.blob(store, "A/model.w", 512)
+            need = store.missing_calibration("A/model.w", 512)
+            self.assertEqual(need, [Need("A/model.w", 0, 512, hessian=False)])
+            self.assertLess(Calibration.nbytes(need), 512 * 512 * 4 // 100, "a [K, K] Hessian is not allocated for [K] peaks")
+            self.assertEqual(Calibration.nbytes(need), 512 * 4 + 4096)
+            whole = store.missing_calibration("A/model.absent", 512)
+            self.assertEqual(Calibration.nbytes(whole), 512 * 512 * 4 + 512 * 4 + 4096)
+
+    def test_the_peaks_are_summed_and_filed_into_the_blob_the_store_already_had(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PackStore(tmp, 2)
+            x = self.blob(store, "A/model.w", 64)
+            kept = torch.load(store.calibration_path("A/model.w"), weights_only=True)
+            c = Calibration("cpu", budget_bytes=1 << 20)
+            layer = FakeLayer(64, "A/model.w")
+            self.assertTrue(c.attach(layer.name, layer, store.missing_calibration(layer.name, 64), small_rows=True))
+            self.assertEqual(list(c.H), [], "no Gram buffer for a blob whose Hessian is on disk")
+            self.assertEqual(list(c.rows), [layer.name])
+            c.arm()
+            seen = torch.randn(20, 64, generator=torch.Generator().manual_seed(3))
+            layer(seen.bfloat16())
+            self.assertEqual(c.progress(), 20)
+            self.assertIn("1 for their channel peaks alone", c.status())
+            written = c.save(tmp, rank=2)
+            self.assertEqual(written, [store.calibration_path("A/model.w")])
+            after = torch.load(written[0], weights_only=True)
+            self.assertTrue(torch.equal(after["H"], kept["H"]), "the store's Hessian is kept, byte for byte")
+            self.assertEqual((after["ntok"], after["name"]), (kept["ntok"], "A/model.w"), "and the rows that built it")
+            torch.testing.assert_close(after["amax"], seen.bfloat16().float().abs().amax(0))
+            self.assertEqual(PackStore(tmp, 2).missing_calibration("A/model.w", 64), [], "nothing left to sum")
+            self.assertIsNotNone(PackStore(tmp, 2).amax("A/model.w"))
+            del x
+
+
+class FactorSharingTests(unittest.TestCase):
+    def test_both_lanes_of_a_weight_share_one_factorisation_and_get_the_same_answer(self):
+        from engine.kernels.dense.packing import fp8_gptq, gptq_factor
+        g = torch.Generator().manual_seed(7)
+        K = 128
+        w = (torch.randn(64, K, generator=g) * 0.05).bfloat16()
+        x = torch.randn(512, K, generator=g) @ (torch.randn(K, K, generator=g) * 0.3 + torch.eye(K))
+        H = x.T @ x
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PackStore(tmp, 0)
+            first = store._factor("A/model.w", H, "none", "cpu")
+            second = store._factor("A/model.w", H, "none", "cpu")
+            self.assertIs(first, second)
+            self.assertEqual((store.stats["factor_built"], store.stats["factor_reused"]), (1, 1))
+            store._factor("A/model.other", H, "none", "cpu")
+            self.assertEqual((store.stats["factor_built"], store.stats["factor_reused"]), (2, 1), "one entry: the next weight replaces it")
+            store.FACTOR_BYTES = 0
+            store._factor("A/model.big", H, "none", "cpu")
+            store._factor("A/model.big", H, "none", "cpu")
+            self.assertEqual(store.stats["factor_reused"], 1, "a factor too large to hold is used and dropped")
+        perm, U, dead = gptq_factor(H, act_order=True, factor_device="cpu")
+        torch.testing.assert_close(U, first[1])
+        self.assertTrue(torch.equal(perm, first[0]))
+        shared, alone = fp8_gptq(w, H, factor=first), fp8_gptq(w, H)
+        self.assertTrue(torch.equal(shared[0].view(torch.uint8), alone[0].view(torch.uint8)), "the shared factor changes no code")
+        self.assertTrue(torch.equal(shared[1], alone[1]))
 
 
 class Fp8GptqTests(unittest.TestCase):
@@ -139,7 +215,7 @@ class Fp8GptqTests(unittest.TestCase):
             path = store.calibration_path("A/model.h"); path.parent.mkdir(parents=True)
             torch.save({"H": x.T @ x, "ntok": 1024, "name": "A/model.h"}, path)
             q, s = store.pack_fp8(w, "A/model.h")
-            self.assertEqual(dict(store.stats), {"fp8_built": 1, "fp8_gptq": 1})
+            self.assertEqual(dict(store.stats), {"factor_built": 1, "fp8_built": 1, "fp8_gptq": 1})
             self.assertTrue(torch.equal(s, fp8_rtn(w)[1]))
             q2, _ = PackStore(tmp, 0).pack_fp8(w, "A/model.h")
             self.assertTrue(torch.equal(q.view(torch.uint8), q2.view(torch.uint8)))
