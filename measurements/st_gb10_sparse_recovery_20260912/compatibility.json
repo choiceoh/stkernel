@@ -1,0 +1,10 @@
+{
+  "base": "cda0af61",
+  "comparison": "prefix capture on current main versus measured base",
+  "equal": {
+    "x": true,
+    "selected": true,
+    "coefficient": true,
+    "prompt_index": true
+  }
+}

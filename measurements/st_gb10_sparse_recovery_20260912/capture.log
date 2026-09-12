@@ -1,0 +1,10 @@
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{"start": 0, "tokens": 622, "seconds": 16.561951199997566, "tp_replicas_exact": true}
+{"start": 4, "tokens": 610, "seconds": 18.865011651003442, "tp_replicas_exact": true}
+{"start": 8, "tokens": 597, "seconds": 20.514084964001086, "tp_replicas_exact": true}
+{"start": 12, "tokens": 597, "seconds": 22.17199607600196, "tp_replicas_exact": true}
+{"start": 16, "tokens": 563, "seconds": 24.141572448999796, "tp_replicas_exact": true}
+{"start": 20, "tokens": 605, "seconds": 26.085754637002537, "tp_replicas_exact": true}
+{"start": 24, "tokens": 610, "seconds": 27.84490760799963, "tp_replicas_exact": true}
+{"start": 28, "tokens": 596, "seconds": 29.68204004799918, "tp_replicas_exact": true}
+{"start": 32, "tokens": 582, "seconds": 31.35829613500391, "tp_replicas_exact": true}
