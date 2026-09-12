@@ -1241,6 +1241,13 @@ class Server:
         self._deferred = set()                     # requests waiting for a running prefill to cache the prefix they share (B)
         self.controls = queue.Queue()              # rank 0's cache controls (pin / unpin / reset), broadcast with the arrivals (C)
         self.prefix_resets = 0                     # how many times an operator threw the prefix cache away
+        # Which way a prompt found its KV. D16's conversation tier can only serve a prompt that
+        # EXTENDS a retained history exactly; the prefix cache serves one that merely shares
+        # whole blocks. A client whose prompt diverges near its end -- which is what Deneb's
+        # wire-only tail injection produces on purpose, to keep the byte prefix stable -- takes
+        # the second path always and the first never. This census is how that stops being an
+        # argument (45차 §68).
+        self.reuse_paths = {"continuation": 0, "prefix_or_cold": 0}
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
@@ -1304,6 +1311,7 @@ class Server:
         hint = None
         if continue_history and conversation is None and self.runner.keep_idle:
             hint = self._continuation(ids, media, salt)
+        self.reuse_paths["continuation" if (hint is not None or conversation is not None) else "prefix_or_cold"] += 1
         if conversation is not None:
             if type(conversation) is not int or conversation < 0:
                 raise RequestError("conversation must be a nonnegative integer")
@@ -2285,6 +2293,10 @@ class Server:
             labelled.append(("st:detokenizer_repairs_total", "counter",
                              "streamed text the door had to repair, by what went wrong",
                              [(f'reason="{reason}"', count) for reason, count in sorted(self.detok_repairs.items()) if count]))
+        if any(self.reuse_paths.values()):
+            labelled.append(("st:reuse_path_total", "counter",
+                             "prompts by how they found their KV: a conversation they extend, or blocks they share",
+                             [(f'path="{path}"', count) for path, count in sorted(self.reuse_paths.items())]))
         if self.by_reason:
             labelled.append(("vllm:request_success_by_reason_total", "counter",
                              "requests answered, by why they stopped",
