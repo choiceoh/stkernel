@@ -83,13 +83,24 @@ def main():
     else:
         layers = list(range(F.layers))
     torch.manual_seed(13)
-    _, net, caches, _, _ = build(IsolatedRank(), layers, served(), a.ranks, .25, max(2, a.seqs), False,
+    # Full-model recurrent rollback slots alone exceed .25 GiB. Budget them
+    # from the same layout as serving, plus room for these 4352-token rows.
+    from engine.profiles.glm53.caches import layout
+    shape = layout(F, layers)
+    blocks = a.seqs * ((4352 + F.block - 1) // F.block)
+    kv_gib = ((a.seqs + 1) * shape.slot_bytes + blocks * (shape.block_bytes + a.seqs * 4) + (64 << 20)) / 2**30
+    _, net, caches, _, _ = build(IsolatedRank(), layers, served(), a.ranks, kv_gib, a.seqs, False,
                                  Recorder("profile"), ckpt_meta=a.ckpt_meta, execution="native")
+    # This asks about the target kernels after calibration has filed. With
+    # no drafter, build otherwise sizes the observer for single-token steps.
+    # Do not attribute synthetic seven-row Gram collection to target math.
+    for layer in net.dense.values():
+        layer.observer = None
     t = F.spec_k + 1
     print(f"weights loaded: {len(layers)} layers, {a.seqs} row(s) of {t} tokens", flush=True)
 
     aux_layers = tuple(L for L in (5, 14, 24, 33, 42) if L in layers)
-    graphs = Glm53DecodeGraphs(net, caches, max(2, a.seqs), t, aux_layers=aux_layers,
+    graphs = Glm53DecodeGraphs(net, caches, a.seqs, t, aux_layers=aux_layers,
                               ceiling=8192)
     slots = [caches.slots.take(i) for i in range(a.seqs)]
     for i in range(a.seqs):
@@ -101,7 +112,7 @@ def main():
         graphs.run(step)
     torch.cuda.synchronize()
     print("captured and warm", flush=True)
-    print(f"execution=native, W4 layers={sum(bool(p.executed & 1) for p in net.dense.values() if hasattr(p, 'packs'))}, "
+    print(f"execution=native, calibration=disabled, W4 layers={sum(bool(p.executed & 1) for p in net.dense.values() if hasattr(p, 'packs'))}, "
           f"mHC layers={len(net.mhc.executed)}, auxiliary layers={aux_layers}", flush=True)
 
     with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
