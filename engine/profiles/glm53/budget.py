@@ -109,7 +109,7 @@ def ledger_measured(source) -> "dict | None":
 def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | None" = None,
            ckpt: "str | Path" = facts.CKPT, ranks_dir: "str | Path | None" = None, rank: int = 0,
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
-           snapshots: int = 8, draft_tp: int = 1, draft_native: "bool | None" = None) -> Budget:
+           snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave."""
     host_total, _ = host_box()
     if box_gib is None:
@@ -148,6 +148,9 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     lay = layout(F, range(F.layers), draft_shape)
     slots_gib = (max_seqs + 1) * lay.slot_bytes / GIB
     snapshot_bytes = snapshot_layout(F, range(F.layers), draft_shape)[0]
+    if snapshots is None:
+        from engine.profiles.glm53.boot import snapshot_count      # the count follows the shape, not a constant
+        snapshots = snapshot_count(snapshot_bytes)
     blocks_at_kv = int((kv_gib * GIB - (max_seqs + 1) * lay.slot_bytes) // (lay.block_bytes + max_seqs * 4))
     m = ledger_measured(ledger)
     ledger_name = Path(ledger).name if isinstance(ledger, (str, Path)) and ledger else "this boot"
@@ -196,7 +199,8 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         Line(f"state slots ({max_seqs} + null) x {lay.slot_bytes / 2**20:.0f} MiB", slots_gib, READ,
              "caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring"),
         Line(f"prefix snapshots ({snapshots} x {snapshot_bytes / 2**20:.0f} MiB)", snapshots * snapshot_bytes / GIB, READ,
-             "caches.snapshot_layout: chunk-boundary position rings for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
+             f"caches.snapshot_layout: chunk-boundary position rings for prefix reuse; the count follows "
+             f"boot.PREFIX_SNAPSHOT_GIB and this shape (sharded drafter ring: {'yes' if draft_native else 'no'})"),
         Line("generated-boundary staging", stage_bytes(F, range(F.layers), max_seqs) / GIB, READ,
              "caches.stage_bytes: per-slot recurrent state and convolution history"),
         Line("workspace ceiling (outside the arena)", WORKSPACE_GIB, DECLARED, workspace_evidence),
@@ -243,7 +247,8 @@ def main(argv=None) -> int:
     ap.add_argument("--box-gib", type=float, default=None)
     ap.add_argument("--ranks", default=str(facts.RANKS))
     ap.add_argument("--ledger", default=None, help="a boot's memory-rankN.json (RuntimeMemory.write)")
-    ap.add_argument("--snapshots", type=int, default=boot.PREFIX_SNAPSHOTS)
+    ap.add_argument("--snapshots", type=int, default=None,
+                    help="resident boundary checkpoints; default follows boot.PREFIX_SNAPSHOT_GIB and this shape")
     a = ap.parse_args(argv)
     b = budget(a.kv_gib, a.max_seqs, a.chunk, a.box_gib, ranks_dir=a.ranks, ledger=a.ledger, snapshots=a.snapshots,
                draft_tp=facts.TP)

@@ -108,6 +108,30 @@ class BudgetTests(unittest.TestCase):
         self.assertNotIn("this boot peaked", budget.report(b))
 
     @unittest.skipUnless(Path('/home/choiceoh/models/GLM-5.3-Flash-DFlash2/config.json').exists(), 'DFlash2 metadata')
+    def test_the_snapshot_pool_is_a_byte_budget_so_the_shape_cannot_change_its_cost(self):
+        """The count is not the cost. One snapshot is 34 layers of KDA state (35.2 MiB) plus the
+        drafter's context ring -- 10 MiB when that ring is sharded across the four ranks (native
+        execution, what production runs) and 40 MiB when it is not. The same constant 96 was
+        4.24 GiB or 7.06 GiB, decided by a mode the constant could not see (2026-09-12)."""
+        from engine.profiles.glm53 import boot, budget
+        sizes = {}
+        for native in (True, False):
+            b = budget.budget(7.0, 4, box_gib=121.63, draft_tp=4 if native else 1, draft_native=native)
+            line = next(l for l in b.lines if l.name.startswith("prefix snapshots"))
+            sizes[native] = line.gib
+        self.assertLess(abs(sizes[True] - sizes[False]), 0.1, "the line is the budget, whatever the shape")
+        self.assertLessEqual(max(sizes.values()), boot.PREFIX_SNAPSHOT_GIB)
+        # production keeps exactly what it had: 96 of the native shape
+        native = budget.budget(7.0, 4, box_gib=121.63, draft_tp=4, draft_native=True)
+        self.assertIn("(96 x ", next(l for l in native.lines if l.name.startswith("prefix snapshots")).name)
+
+    def test_a_snapshot_budget_always_leaves_a_chunk_worth_of_boundaries(self):
+        """Nine blocks is one prefill chunk: below that a chunk cannot checkpoint itself at all."""
+        from engine.profiles.glm53.boot import snapshot_count
+        self.assertEqual(snapshot_count(45 << 20, gib=4.25), 96)
+        self.assertEqual(snapshot_count(75 << 20, gib=4.25), 58)
+        self.assertEqual(snapshot_count(1 << 30, gib=0.001), 9)          # the floor, not zero
+
     def test_native_kv_shards_remove_replicated_heads_from_every_snapshot(self):
         from engine.profiles.glm53 import budget
         replicated = budget.budget(16, 4, snapshots=96, draft_tp=1)

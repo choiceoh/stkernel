@@ -20,14 +20,18 @@ its name. A reservation spends anonymous blocks first and a boundary's last, and
 being one exactly when a block of it is handed out -- not a moment earlier, so a prompt that comes
 back while its blocks are still there pays nothing at all.
 
-The scarce thing here is not the block, it is the SNAPSHOT: 96 of them against thousands of blocks
-(profiles/glm53/boot.PREFIX_SNAPSHOTS), and a snapshot is only ever freed because something else
-wants it that instant. So the two resources part ways, and a boundary has three lives, not two:
+The scarce thing here is not the block, it is the SNAPSHOT: a declared few gigabytes of them
+against thousands of blocks (profiles/glm53/boot.PREFIX_SNAPSHOT_GIB, 96 of 45 MiB as production
+runs), and a snapshot is only ever freed because something else wants it that instant. So the two
+resources part ways, and a boundary has three lives, not two:
 
   entry   blocks and snapshot in memory       -- adopt and restore, free
   faded   blocks in memory, snapshot given    -- the blocks were never handed out, so a prompt that
-          away to a newer boundary               wants this boundary back reads the 77 MiB snapshot
-                                                 off the prefix tier and NOT the KV under it
+          away to a newer boundary               wants this boundary back reads the snapshot off the
+                                                 prefix tier and NOT the KV under it: 45 MiB in
+                                                 8.7 ms on this fleet's NVMe, measured. Fading is
+                                                 what makes the resident count a working-set
+                                                 question rather than a capacity one.
   gone    a block of it was handed out        -- the tier's copy whole, or a prefill
 
 A boundary can only fade if the tier has its state; with no tier, giving up the snapshot is the end
