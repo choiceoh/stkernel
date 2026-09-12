@@ -2484,6 +2484,78 @@ class OpenAIDialectTests(unittest.TestCase):
         s.vision = object()
         self.assertEqual(s.model_card()["capabilities"]["vision"], True)
 
+    def test_a_continuing_turn_tokenizes_only_its_tail(self):
+        """An agent resends its whole conversation every turn. Measured on the real checkpoint:
+        239 ms to re-tokenize a 106K-token conversation for 29 new tokens (0.05 ms). Splicing is
+        sound only where no merge crosses the cut, so the base must end on an ADDED token --
+        which `tokenizers` matches before the BPE model, and which a rendered chat prompt ends
+        with by construction (45차 §61)."""
+        from engine.base.serve import PromptTokens
+
+        class Tok:
+            """Character-level, with two 'added' ids: 1 is a legal cut, 2 is not."""
+            def __init__(self): self.calls = []
+            def get_added_tokens_decoder(self): return {1: object()}
+            def encode(self, text, add_special_tokens=False):
+                self.calls.append(text)
+                return type("E", (), {"ids": [1 if c == "|" else ord(c) for c in text]})()
+
+        tok = Tok()
+        pt = PromptTokens(tok)
+        first = pt.encode("abc|")
+        self.assertEqual(tok.calls, ["abc|"])
+        self.assertEqual((pt.full, pt.spliced), (1, 0))
+
+        second = pt.encode("abc|def|")
+        self.assertEqual(tok.calls[-1], "def|", "only the tail reached the tokenizer")
+        self.assertEqual(second, first + [ord("d"), ord("e"), ord("f"), 1])
+        self.assertEqual((pt.full, pt.spliced, pt.chars_saved), (1, 1, 4))
+
+    def test_a_base_that_does_not_end_on_a_cut_is_tokenized_whole(self):
+        # Cut mid-word the splice is NOT identical (47 tokens against 45 on the real vocab),
+        # so a base whose last token is not an added token must not be spliced against.
+        from engine.base.serve import PromptTokens
+
+        class Tok:
+            def __init__(self): self.calls = []
+            def get_added_tokens_decoder(self): return {1: object()}
+            def encode(self, text, add_special_tokens=False):
+                self.calls.append(text)
+                return type("E", (), {"ids": [ord(c) for c in text]})()
+
+        tok = Tok()
+        pt = PromptTokens(tok)
+        pt.encode("abc")                                  # ends on 'c', not an added token
+        pt.encode("abcdef")
+        self.assertEqual(tok.calls, ["abc", "abcdef"], "the second pass saw the whole prompt")
+        self.assertEqual((pt.full, pt.spliced), (2, 0))
+
+    def test_the_prompt_cache_is_bounded_by_entries_and_by_characters(self):
+        from engine.base.serve import PromptTokens
+
+        class Tok:
+            def get_added_tokens_decoder(self): return {1: object()}
+            def encode(self, text, add_special_tokens=False):
+                return type("E", (), {"ids": [1 if c == "|" else ord(c) for c in text]})()
+
+        pt = PromptTokens(Tok(), keep=2, max_chars=1 << 20)
+        for i in range(5):
+            pt.encode(f"{i}|")
+        self.assertEqual(len(pt.entries), 2)
+        pt = PromptTokens(Tok(), keep=100, max_chars=8)
+        for i in range(5):
+            pt.encode(f"{i}aaaa|")
+        self.assertLessEqual(pt.chars, 8 + len("0aaaa|"))
+        self.assertGreaterEqual(len(pt.entries), 1)
+
+    def test_the_splice_meters_reach_the_scrape(self):
+        s = chat_server()
+        s.prompt_tokens.spliced, s.prompt_tokens.full, s.prompt_tokens.chars_saved = 7, 3, 4096
+        page = s.metrics()
+        self.assertIn('st:prompt_tokenize_spliced_total{engine="st"} 7\n', page)
+        self.assertIn('st:prompt_tokenize_full_total{engine="st"} 3\n', page)
+        self.assertIn('st:prompt_tokenize_chars_saved_total{engine="st"} 4096\n', page)
+
     def test_the_status_door_publishes_the_fleet_lifecycle(self):
         """Who holds the fleet, whether it was asked to let go, and how the handover went. The
         engine writes all three into ~/st-fleet.lock and until now the only reader had to ssh
