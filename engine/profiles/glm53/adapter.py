@@ -372,10 +372,18 @@ class Glm53Engine:
         if media:
             self._bind_media(seq, list(ids), media, base=0)
         self.tokens[seq] = list(ids); self.prompt_len[seq] = len(ids)
-        self.history.forget(seq)                            # a row's history may not outlive the tokens it was built from
+        self._forget_history(seq)                           # a row's history may not outlive the tokens it was built from
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
         self._bind_options(seq, options)
+
+    def _forget_history(self, seq: int) -> None:
+        """Drop a row's penalty history. The history is LAZY -- it is built at the first row that actually asks for
+        penalties (`_row_logits`), so before that there is nothing to forget, and a caller replacing a row's tokens
+        must be able to say so without knowing whether anyone has asked yet. Three callers replace tokens; two of
+        them reached through `self.history` directly and died on the first request of a boot that had not."""
+        if self.history is not None:
+            self.history.forget(seq)
 
     def note_ceilings(self, target_probs, draft_probs) -> None:
         """Every 64th verification, record what the draft allowed. See base/sampler.draft_ceilings."""
@@ -394,8 +402,7 @@ class Glm53Engine:
         for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers,
                      self.media, self.embeds, self.inflight, self.staged, self._ends_tensor):
             rows.pop(seq, None)                             # a row leaving does not move the others: the pipeline shrinks its view
-        if self.history is not None:
-            self.history.forget(seq)
+        self._forget_history(seq)
 
     # -- pictures (45차 §23 A7): the door hands canvases with the positions their rows take; every rank encodes them
     # -- itself (vision.Vision, replicated) at the first prefill chunk that reaches those positions -----------------
@@ -487,7 +494,7 @@ class Glm53Engine:
         if seq in self.tokens or seq in self.slot:
             raise ValueError(f"seq {seq} is live or has an uncollected result")
         self.tokens[seq] = list(record["tokens"]); self.prompt_len[seq] = int(record["prompt_len"])
-        self.history.forget(seq)                            # the row now holds another conversation's tokens
+        self._forget_history(seq)                           # the row now holds another conversation's tokens
         self.limits[seq] = (int(record["limits"][0]), float(record["limits"][1]))
         self.min_new[seq] = int(record.get("min_new", 0))
         options = dict(record.get("options") or {})
