@@ -2840,3 +2840,64 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(second["usage"]["prompt_tokens"], 5)
         self.assertEqual(s.engine.opened, opened)          # no new row was opened: the conversation was extended
         self.assertEqual(s.engine.history(0), [97, 98, 98, 98, 99, 99, 99])
+
+
+def _cuda() -> bool:
+    if importlib.util.find_spec("torch") is None:
+        return False
+    import torch
+    return torch.cuda.is_available()
+
+
+class ProfileEndpointTests(unittest.TestCase):
+    """`/v1/engine/profile` says what a decode step's kernels were (45차 §90).
+
+    It exists because nothing else can see inside one: a decode step replays a captured graph, and a CUDA
+    timing event cannot be recorded during capture -- `Event.record` raises, and a mark placed inside `forward`
+    would time the capture rather than any replay. The stage clock can only wrap the replay whole.
+    """
+    def server(self):
+        from types import SimpleNamespace
+        from engine.base import serve
+        s = serve.Server.__new__(serve.Server)
+        s._profiling = None
+        s.profile_table = None
+        s.comm = SimpleNamespace(rank=0)
+        return s
+
+    @unittest.skipUnless(_cuda(), "the profiler has no CUDA activity to record without a GPU")
+    def test_a_run_is_bounded_and_does_not_restart_itself(self):
+        s = self.server()
+        s._begin_profile(10_000)
+        self.assertEqual(s._profiling["steps"], serve_module().Server.PROFILE_MAX_STEPS)
+        held = s._profiling["prof"]
+        s._begin_profile(4)                                  # a second ask joins nothing
+        self.assertIs(s._profiling["prof"], held)
+        s._end_profile()
+        self.assertIsNone(s._profiling)
+
+    def test_the_table_is_per_step_and_ordered_by_device_time(self):
+        from types import SimpleNamespace
+        s = self.server()
+
+        class Fake:
+            def key_averages(self):
+                return [SimpleNamespace(key="small", count=8, self_device_time_total=80.0),
+                        SimpleNamespace(key="big", count=4, self_device_time_total=400.0),
+                        SimpleNamespace(key="host_only", count=9, self_device_time_total=0.0)]
+
+            def __exit__(self, *exc):
+                return False
+
+        s._profiling = {"left": 0, "prof": Fake(), "steps": 4}
+        s._end_profile()
+        table = s.profile_table
+        self.assertEqual([row["kernel"] for row in table["kernels"]], ["big", "small"])
+        self.assertEqual(table["kernels"][0]["us_per_step"], 100.0)
+        self.assertEqual(table["device_us_per_step"], 120.0)
+        self.assertEqual(table["steps"], 4)
+
+
+def serve_module():
+    from engine.base import serve
+    return serve
