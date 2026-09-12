@@ -51,6 +51,16 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 캔버스는 요청과 함께 네 랭크로 가고 각 랭크가 같은 비전 타워(`vision.safetensors`, 랭크 파일 옆; `preshard.py --vision` 으로 한 번)를 돌려
 자리표시자 위치의 임베딩을 바꿔 넣는다(D3: 네 랭크의 결과 합이 다르면 죽는다). 같은 자리표시자에 다른 그림은 다른 프롬프트다 — 이어가기(B1)와
 prefix 캐시 둘 다 그림의 digest 를 본다. 플릿 부팅은 `vision.safetensors` 가 없으면 서지 않는다(프로덕션이 그림을 서빙하므로).
+prefix 재사용의 단위는 풀의 **블록(2,304)** 이다(`base/prefix.py`, 프로덕션 APC 와 같음): 프리필 청크(6,912) 안의 두 경계는 스텝 전에
+`marks` 로 이름 붙여 스텝이 도는 동안 받는다 — KDA 되풀이를 그 자리에서 끊어(정확: 커널 청크가 64 정렬 경계에서 다시 시작) 조각의 끝
+상태와 conv 입력을 스냅샷에 쓰고, 드래프터 링은 스텝 전 링 + 경계 전 위치를 스냅샷에 관측한다(`adapter.prefill`). 스냅샷 24개(경계당
+~77 MiB, `boot.PREFIX_SNAPSHOTS`). 디코드는 **호스트보다 앞서 돈다**(`profiles/glm53/pipeline.py`, vLLM 의 비동기 스케줄링): 타깃
+그래프 → 샘플러 → 커밋(`base/sampler.commit_batch`) → 마스크 관측 → 제안 → 다음 스텝 ids 가 장치에 남고, 결과만 핀 버퍼로 건너와
+다음 스텝이 이미 도는 동안 읽힌다(`runner.inflight`, 깊이 2). 장치에서 끝난 행은 상태 슬롯을 null 슬롯으로 돌려 유령 스텝이 링에 아무
+것도 못 쓰고, 러너는 한 스텝 늦게 끝을 알아 그 유령의 결과를 버린다. 온도/top_p 만 있는 행은 장치의 기각 샘플링
+(`speculative_pick_batch`)으로 앞서 돌고, 페널티·logit_bias·seed·logprobs·문법·min_tokens 미충족 행은 동기 경로(러너가 먼저 비운다).
+루프의 도착 브로드캐스트와 투표는 gloo 제어 그룹(`Comm.control`)으로 간다 — NCCL 그룹의 객체 브로드캐스트는 스텝의 커널 뒤에
+줄 서고 읽기 위해 장치를 기다린다.
 
 운영(`launchers/st-glm53-supervisor.sh` + `st-glm53.service`, 헤드 srv2 의 사용자 유닛): 30 s 마다 진짜 4 토큰 chat 으로 건강을 재고(문이
 열려 있어도 링은 죽어 있을 수 있다), 3 회 연속 실패면 포렌식(네 랭크 로그·free·nvidia-smi·metrics → `~/glm53-logs/st-forensics/`) → stop →

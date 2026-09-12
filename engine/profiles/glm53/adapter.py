@@ -72,6 +72,8 @@ class Glm53Engine:
         self.steps = 0
         self.decode_graphs = None
         self.sampling_graphs = None
+        self.pipeline = None                                # pipeline.AsyncDecode once the graphs are captured (45차 §23 B3)
+        self.inflight = {}                                  # seq -> decode steps launched ahead whose tokens the host has not read
         self.memory = None
         self.prefill_chunk = None
 
@@ -93,6 +95,9 @@ class Glm53Engine:
                 self._check_graph_pools()
             from engine.profiles.glm53.decode_graphs import SamplingGraphs
             self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
+            if self.drafter.k:
+                from engine.profiles.glm53.pipeline import AsyncDecode
+                self.pipeline = AsyncDecode(self)
             if self.memory is not None:
                 self.memory.checkpoint("ready")
                 self.memory.ready = True
@@ -293,8 +298,8 @@ class Glm53Engine:
         if seq in self.slot:
             raise ValueError(f"seq {seq} is still live")
         for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers,
-                     self.media, self.embeds):
-            rows.pop(seq, None)
+                     self.media, self.embeds, self.inflight):
+            rows.pop(seq, None)                             # a row leaving does not move the others: the pipeline shrinks its view
 
     # -- pictures (45차 §23 A7): the door hands canvases with the positions their rows take; every rank encodes them
     # -- itself (vision.Vision, replicated) at the first prefill chunk that reaches those positions -----------------
@@ -410,6 +415,7 @@ class Glm53Engine:
             self.validate_options(options)
         if media:
             self._bind_media(seq, list(ids), media, base=len(self.tokens[seq]))
+        self._moved()
         self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
@@ -421,7 +427,29 @@ class Glm53Engine:
         return len(self.tokens[seq]) + len(ids) - self.ctx[seq]
 
     def horizon(self, seq: int) -> int:
-        return self.ctx[seq] + 1 + self.drafter.k
+        """The exclusive end of the row's next decode writes -- and of every step launched ahead of the host (B3)."""
+        return self.ctx[seq] + (1 + self.drafter.k) * (1 + self.inflight.get(seq, 0))
+
+    # -- decode steps ahead of the host (pipeline.py, 45차 §23 B3) ------------------------------------------------
+    def _plain_ahead(self, seq: int) -> bool:
+        """Greedy, or temperature / top_p only: the device can commit, observe and propose without the host."""
+        opts = self.options.get(seq, {})
+        if any(opts.get(k) is not None for k in ("top_k", "seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
+                                                  "logit_bias", "logprobs", "grammar", "min_p")):
+            return False
+        if seq in self.matchers or seq in self.gens or seq in self.lps:
+            return False
+        return self.min_new.get(seq, 0) <= self._generated_count(seq)
+
+    def async_ready(self, seqs) -> bool:
+        if self.pipeline is None or self.decode_graphs is None or not self.drafter.k:
+            return False
+        if self.pipeline.pending and any(s not in self.pipeline.batch for s in seqs):
+            return False                                    # rows joined: the runner drains, then the view is rebuilt from the host
+        return all(self._plain_ahead(s) for s in seqs)
+
+    def decode_async(self, seqs, blocks, slots):
+        return self.pipeline.launch(seqs, slots)
 
     def context(self, seq: int) -> int:
         return self.ctx[seq]
@@ -548,12 +576,24 @@ class Glm53Engine:
         done = any(t in self.ends.get(seq, self.eos) for t in new) or self._generated_count(seq) >= self.limits[seq][0]
         return new, done
 
-    def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> bool:
+    def _moved(self) -> None:
+        if self.pipeline is not None:
+            self.pipeline.stale = True
+
+    def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int, marks=None) -> bool:
+        """`marks`: {absolute position: snapshot} for the block boundaries inside this step that the prefix cache keeps
+        (base/runner): the KDA states are taken by the forward at those cuts; the drafter's context ring at a mark is the
+        ring before this step plus the step's positions before the mark, observed into the snapshot here."""
+        self._moved()
         ids = torch.tensor(self.tokens[seq][start: start + tokens], dtype=torch.int64, device=self.caches.device)
         patches = self._patches(seq, start, start + tokens) if seq in self.media else ()
-        h, aux = self._forward(Step.prefill(ids, start, seq, slot, patches))
+        cuts = tuple(sorted((int(p) - start, int(snap)) for p, snap in (marks or {}).items()))
+        h, aux = self._forward(Step.prefill(ids, start, seq, slot, patches, cuts))
         self.ctx[seq] = start + tokens
         if aux is not None:                                                 # every prompt token is context for the drafter
+            for rel, snap in cuts:                                          # the marks' rings first: the step's observe below overwrites cells
+                self.caches.mark_draft(snap, slot)
+                self.drafter.observe(self.caches.snapshot_draft_ring(snap), torch.arange(start, start + rel, device=ids.device), aux[:rel])
             self.drafter.observe(self.caches.draft_ring(slot), torch.arange(start, start + tokens, device=ids.device), aux)
         if self.ctx[seq] == self.prompt_len[seq]:                         # the prompt is in: the first token comes from its last position
             if self._rich(seq):
@@ -568,6 +608,7 @@ class Glm53Engine:
         return generated > 0 and (self.tokens[seq][-1] in self.ends.get(seq, self.eos) or generated >= self.limits[seq][0])
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
+        self._moved()
         flat, segments, drafts, draft_probs = [], [], {}, {}
         for seq, slot in zip(seqs, slots):
             ring = self.caches.draft_ring(slot) if self.drafter.k else None

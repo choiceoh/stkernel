@@ -266,6 +266,13 @@ class Glm53DecodeGraphs:
                 return len(step.segments), self.tokens, capacity
         raise ValueError("decode context exceeds the captured cache capacity")
 
+    def shape_for(self, n: int, end: int):
+        """The graph for `n` rows whose longest context may reach `end` (a step ahead of the host rounds up)."""
+        for capacity in self.capacities:
+            if end <= capacity:
+                return n, self.tokens, capacity
+        raise ValueError("decode context exceeds the captured cache capacity")
+
     def run(self, step, shape=None):
         """`shape` is this step's, when the caller already asked for it (the sampler needs it too)."""
         shape = self.shape(step) if shape is None else shape
@@ -282,6 +289,22 @@ class Glm53DecodeGraphs:
             target.contexts.copy_(self.staging[0, :n], non_blocking=True)
             seqs.copy_(self.staging[1, :n], non_blocking=True)
             slots.copy_(self.staging[2, :n], non_blocking=True)
+
+        return self.graphs.run(shape, fill)
+
+    def run_device(self, shape, host_step, ids, contexts, seqs, slots):
+        """Replay with every input already on the device (45차 §23 B3: the step ahead of the host reads the previous
+        step's commit, not the host's view). `host_step` carries the segments the block tables are prepared from --
+        its contexts may lag the device's; the reservation covers the lag."""
+        self.caches.prepare(host_step)
+
+        def fill(inputs):
+            target, seqs_in, slots_in, _, _ = inputs
+            n = contexts.numel()
+            target.ids.copy_(ids)
+            target.contexts.copy_(contexts)
+            seqs_in.copy_(seqs[:n])
+            slots_in.copy_(slots[:n])
 
         return self.graphs.run(shape, fill)
 
@@ -313,15 +336,31 @@ class DrafterDecodeGraphs:
             drafter.observe(rings[0], inputs["positions"], inputs["aux"])
             self.field.index_copy_(0, inputs["slot"], rings)
 
+        def masked_inputs(n, t):
+            return dict(positions=torch.arange(t, device=device, dtype=torch.int64),
+                        aux=torch.zeros(t, drafter.F.hidden * len(drafter.aux_layers),
+                                        device=device, dtype=torch.bfloat16),
+                        slot=torch.zeros(1, device=device, dtype=torch.int64),
+                        valid=torch.zeros((), device=device, dtype=torch.int64))
+
+        def observe_masked(inputs):
+            rings = self.field.index_select(0, inputs["slot"])
+            drafter.observe_masked(rings[0], inputs["positions"], inputs["aux"], inputs["valid"])
+            self.field.index_copy_(0, inputs["slot"], rings)
+
         try:
             self.proposals = DecodeGraphs(propose, propose_inputs, [(1, drafter.k + 1)],
                                           memory=memory, label="drafter/propose")
             self.observations = DecodeGraphs(observe, observe_inputs,
                                              [(1, t) for t in range(1, drafter.k + 2)],
                                              memory=memory, label="drafter/observe")
+            # the step ahead of the host observes all K+1 positions with a device count of the valid ones (B3)
+            self.masked = DecodeGraphs(observe_masked, masked_inputs, [(1, drafter.k + 1)],
+                                       memory=memory, label="drafter/observe_masked")
         except BaseException:
-            if hasattr(self, "proposals"):
-                self.proposals.close()
+            for name in ("proposals", "observations"):
+                if hasattr(self, name):
+                    getattr(self, name).close()
             raise
         finally:
             caches.reset()
@@ -348,6 +387,24 @@ class DrafterDecodeGraphs:
             inputs["aux"].copy_(aux)
             inputs["slot"].fill_(slot)
         self.observations.run((1, positions.numel()), fill)
+
+    def observe_masked(self, ring, positions, aux, valid):
+        """All K+1 positions of a step ahead of the host; `valid` (a device scalar) says how many enter the ring."""
+        slot = self.slot(ring)
+        def fill(inputs):
+            inputs["positions"].copy_(positions)
+            inputs["aux"].copy_(aux)
+            inputs["slot"].fill_(slot)
+            inputs["valid"].copy_(valid)
+        self.masked.run((1, positions.numel()), fill)
+
+    def propose_from(self, anchor, position, slot):
+        """`propose` with the anchor, the position and the slot as device tensors (45차 §23 B3)."""
+        def fill(inputs):
+            inputs["anchor"].copy_(anchor.reshape(1))
+            inputs["position"].copy_(position.reshape(()))
+            inputs["slot"].copy_(slot.reshape(1))
+        return self.proposals.run((1, self.drafter.k + 1), fill)
 
 
 class SamplingGraphs:
