@@ -1,0 +1,12 @@
+test_joining_or_invalidating_with_an_outstanding_readback_is_rejected (test_engine_pipeline.BatchTransitionTests.test_joining_or_invalidating_with_an_outstanding_readback_is_rejected) ... ok
+test_new_request_rebuilds_after_the_previous_batch_has_drained (test_engine_pipeline.BatchTransitionTests.test_new_request_rebuilds_after_the_previous_batch_has_drained) ... ok
+test_shrinking_keeps_device_progress_ahead_of_the_host (test_engine_pipeline.BatchTransitionTests.test_shrinking_keeps_device_progress_ahead_of_the_host) ... ok
+test_a_row_that_asks_for_top_k_gets_it_without_leaving_this_path (test_engine_pipeline.DistributionBatchTests.test_a_row_that_asks_for_top_k_gets_it_without_leaving_this_path) ... ok
+test_greedy_rows_are_one_hot_and_nucleus_rows_keep_the_smallest_prefix (test_engine_pipeline.DistributionBatchTests.test_greedy_rows_are_one_hot_and_nucleus_rows_keep_the_smallest_prefix) ... ok
+test_resolve_applies_counts_in_launch_order_and_ignores_released_rows (test_engine_pipeline.ResolveTests.test_resolve_applies_counts_in_launch_order_and_ignores_released_rows) ... ok
+test_every_row_array_follows_the_surviving_rows (test_engine_pipeline.ShrinkTests.test_every_row_array_follows_the_surviving_rows) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 2.038s
+
+OK

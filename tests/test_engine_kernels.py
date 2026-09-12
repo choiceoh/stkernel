@@ -102,7 +102,9 @@ class KernelPackageTests(unittest.TestCase):
     def test_kernels_read_no_environment_knobs(self):
         """D11 (2026-09-12): the kernel package has no env knob. The only os.environ read left is the
         MLA build root (a cache path, the same class as TRITON_CACHE_DIR); the CUDA TU has no getenv."""
-        allowed = {("mla/__init__.py", "ST_MLA_BUILD_ROOT")}
+        allowed = {("mla/__init__.py", "ST_MLA_BUILD_ROOT"),
+                   ("dense/__init__.py", "ST_DENSE_BUILD_ROOT"),
+                   ("oneshot/__init__.py", "ST_ONESHOT_BUILD_ROOT")}
         found = set()
         for path in KERNELS.rglob("*.py"):
             rel = str(path.relative_to(KERNELS))

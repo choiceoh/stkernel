@@ -16,10 +16,11 @@ anchor. The walk at temperature 0 is what the served speculator's
 `_selector_walk_kernel` does; the Gumbel branch is not ported (the engine
 samples the TARGET; drafts only need to be good guesses).
 
-Replicated: every rank holds the whole drafter (2.18 GiB, DRAFT_TP=1 as
-served) and computes identical drafts from identical inputs; the only
-collectives are the target's vocab-parallel embed and head, which the
-drafter borrows (its checkpoint ships neither).
+The loader reserves the whole 2.18 GiB drafter on every rank. Native
+preparation retires dense weights into calibrated packs and shards its
+attention heads and MLP across TP4; row-parallel outputs are reduced.
+It also borrows the target's vocab-parallel embed and head (the drafter
+checkpoint ships neither).
 
 Two calls, from the engine (engine.py):
     observe(slot, positions, aux)    the target's aux hidden of newly VERIFIED tokens -> context K/V into the slot's ring
@@ -130,6 +131,10 @@ class Drafter:
         self.k = F.k
         self.p = None
         self.decode_graphs = None
+        self.dense = {}
+        self.fast_attention = False
+        self.local_heads, self.local_kv_heads = F.heads, F.kv_heads
+        self.context_kv = None
 
     def capture_decode(self, caches, memory=None, generator=None, vocab=None):
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
@@ -151,9 +156,63 @@ class Drafter:
         from engine.base.params import bind
         self.p = bind(self.specs(), views)
 
+    def prepare_fast(self, store=None, *, consume_weights=False):
+        """TP-shard dense compute and bind calibrated packs before capture.
+
+        Only this rank's heads/MLP shard are read by decode; row-parallel
+        outputs join through the target comm. Production explicitly retires
+        source BF16 regions into packs after every source consumer is prepared.
+        """
+        from engine.kernels.dense import DenseLinear
+        F, p, comm = self.F, self.p, self.target.comm
+        if F.heads % comm.world_size or F.kv_heads % comm.world_size or F.inter % comm.world_size:
+            raise ValueError("DFlash dimensions must split over the target communicator")
+        self.local_heads, self.local_kv_heads = F.heads//comm.world_size, F.kv_heads//comm.world_size
+        def shard(w, dim):
+            return w.chunk(comm.world_size,dim=dim)[comm.rank].contiguous()
+        weights = {"fc.weight": p["fc.weight"]}
+        context = []
+        for L in range(F.layers):
+            n = f"layers.{L}."
+            weights[n+"self_attn.qkv"] = torch.cat([shard(p[n+"self_attn."+s+"_proj.weight"],0) for s in ("q", "k", "v")])
+            weights[n+"mlp.gate_up"] = torch.cat([shard(p[n+"mlp."+s+"_proj.weight"],0) for s in ("gate", "up")])
+            for key in ("self_attn.o_proj.weight", "mlp.down_proj.weight"):
+                weights[n+key] = shard(p[n+key],1)
+            for key in ("attention_conv.kernel_projection.weight", "mlp_conv.kernel_projection.weight"):
+                weights[n+key] = p[n+key]
+            context.extend(shard(p[n+"self_attn."+s+"_proj.weight"],0) for s in ("k", "v"))
+        self.dense = {}
+        for name, w in weights.items():
+            module = name.removesuffix(".weight").replace("self_attn.qkv","self_attn.qkv_proj").replace("mlp.gate_up","mlp.gate_up_proj")
+            self.dense[name] = DenseLinear(w,nvfp4=False,store=store,name="DFlash2Qwen3ForCausalLM/model."+module)
+        self.context_kv = torch.cat(context)
+        if consume_weights:
+            for name, layer in self.dense.items():
+                source = (name.replace("self_attn.qkv","self_attn.q_proj.weight")
+                          .replace("mlp.gate_up","mlp.gate_proj.weight"))
+                layer.consume_weight(p[source])
+                p[source]=None
+            # All query/gate/up projections now have explicit packed readers;
+            # context KV was merged above, before any source was retired.
+            for L in range(F.layers):
+                for suffix in ("self_attn.k_proj.weight","self_attn.v_proj.weight","mlp.up_proj.weight"):
+                    p[f"layers.{L}."+suffix]=None
+        self.fast_attention = True
+
+    def linear(self, x, name):
+        layer = self.dense.get(name)
+        return layer(x) if layer is not None else Fn.linear(x, self.p[name])
+
     # -- context: verified tokens' target states -> K/V rings -------------------------------
     def observe(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor) -> None:
         """ring [L, 2, window, kv_heads, D] bf16 (a slot's); positions [n]; aux [n, 5*4096] target states."""
+        self._observe(ring, positions, aux)
+
+    def observe_masked(self, ring, positions, aux, valid):
+        """Commit a device-counted accepted prefix using the same TP context projection."""
+        self._observe(ring, positions, aux, valid)
+
+    def _observe(self, ring, positions, aux, valid=None):
         F, p = self.F, self.p
         if positions.numel() == 0:
             return
@@ -161,32 +220,25 @@ class Drafter:
         # once, retaining the newest window; duplicate CUDA indices have no
         # defined last-writer order.
         positions, aux = positions[-F.window:], aux[-F.window:]
-        c = rmsnorm(Fn.linear(aux, p["fc.weight"]), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
+        c = rmsnorm(self.linear(aux, "fc.weight"), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
         idx = positions % F.window
+        context = (Fn.linear(c,self.context_kv).reshape(-1,F.layers,2,self.local_kv_heads,F.head_dim)
+                   if self.context_kv is not None else None)
         for L in range(F.layers):
             q = f"layers.{L}.self_attn."
-            k = Fn.linear(c, p[q + "k_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
+            k = context[:,L,0] if context is not None else self.linear(c, q + "k_proj.weight").view(-1, F.kv_heads, F.head_dim)
             k = rope(rmsnorm(k, p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
-            v = Fn.linear(c, p[q + "v_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
-            ring[L, 0, idx] = k
-            ring[L, 1, idx] = v
-
-    def observe_masked(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor, valid: torch.Tensor) -> None:
-        """`observe` for a decode step running ahead of the host (45차 §23 B3): the step's K+1 positions are given, but
-        only the first `valid` (a device scalar: the tokens the device committed) may enter the ring -- the rest keep
-        the cells they would have overwritten. Blend, then scatter: no host read, no duplicate writer."""
-        F, p = self.F, self.p
-        t = positions.numel()
-        c = rmsnorm(Fn.linear(aux, p["fc.weight"]), p["hidden_norm.weight"], F.rms_eps)
-        idx = positions % F.window
-        keep = (torch.arange(t, device=positions.device) < valid).view(t, 1, 1)
-        for L in range(F.layers):
-            q = f"layers.{L}.self_attn."
-            k = Fn.linear(c, p[q + "k_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
-            k = rope(rmsnorm(k, p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
-            v = Fn.linear(c, p[q + "v_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
-            ring[L, 0, idx] = torch.where(keep, k, ring[L, 0, idx])
-            ring[L, 1, idx] = torch.where(keep, v, ring[L, 1, idx])
+            v = context[:,L,1] if context is not None else self.linear(c, q + "v_proj.weight").view(-1, F.kv_heads, F.head_dim)
+            if isinstance(ring, tuple):
+                from engine.kernels.draft_attention import write_draft_kv
+                write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+            else:
+                if valid is not None:
+                    keep = (torch.arange(len(positions), device=positions.device) < valid)[:, None, None]
+                    k = torch.where(keep, k, ring[L, 0, idx, :self.local_kv_heads])
+                    v = torch.where(keep, v, ring[L, 1, idx, :self.local_kv_heads])
+                ring[L, 0, idx, :self.local_kv_heads] = k
+                ring[L, 1, idx, :self.local_kv_heads] = v
 
     # -- the block ------------------------------------------------------------------------------
     def _conv(self, x, delta, base, tap_valid):
@@ -204,9 +256,21 @@ class Drafter:
         F, p = self.F, self.p
         q = f"layers.{L}.self_attn."
         B = x.shape[0]
-        qh = rope(rmsnorm(Fn.linear(x, p[q + "q_proj.weight"]).view(B, F.heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps), positions, F.rope_theta)
-        kh = rope(rmsnorm(Fn.linear(x, p[q + "k_proj.weight"]).view(B, F.kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
-        vh = Fn.linear(x, p[q + "v_proj.weight"]).view(B, F.kv_heads, F.head_dim)
+        heads, kv_heads = self.local_heads, self.local_kv_heads
+        if self.fast_attention:
+            q0, k0, v0 = self.dense[q+"qkv"](x).split((heads*F.head_dim, kv_heads*F.head_dim, kv_heads*F.head_dim), -1)
+        else:
+            q0, k0, v0 = (Fn.linear(x, p[q+s+"_proj.weight"]) for s in ("q", "k", "v"))
+        qh = rope(rmsnorm(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps), positions, F.rope_theta)
+        kh = rope(rmsnorm(k0.reshape(B, kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
+        vh = v0.reshape(B, kv_heads, F.head_dim)
+        if self.fast_attention:
+            from engine.kernels.draft_attention import draft_attention
+            if isinstance(ring, tuple):
+                o = draft_attention(qh.contiguous(),kh.contiguous(),vh.contiguous(),ring[0],ctx_len,slot=ring[1],layer=L)
+            else:
+                o = draft_attention(qh.contiguous(), kh.contiguous(), vh.contiguous(), ring[L], ctx_len)
+            return self.target.comm.all_reduce(self.linear(o.reshape(B, heads*F.head_dim), q+"o_proj.weight"))
         # the context window: the last min(ctx, window) verified positions, then the block itself (non-causal)
         # A fixed window keeps GEMM/reduction geometry identical in eager and
         # captured execution, including the first 2048 positions.
@@ -221,7 +285,7 @@ class Drafter:
         valid = torch.cat([cpos >= 0, torch.ones(B, device=x.device, dtype=torch.bool)])
         scores = scores.masked_fill(~valid[None, None, :], float("-inf"))
         o = torch.einsum("bhn,nhd->bhd", torch.softmax(scores, dim=-1), v_all.float()).to(x.dtype)
-        return Fn.linear(o.reshape(B, F.heads * F.head_dim), p[q + "o_proj.weight"])
+        return self.linear(o.reshape(B, F.heads * F.head_dim), q + "o_proj.weight")
 
     def block(self, ids: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int) -> torch.Tensor:
         """One block through the five layers; returns the final hidden [B, hidden]."""
@@ -237,15 +301,21 @@ class Drafter:
             else:
                 res = res + x
                 h = rmsnorm(res, p[q + "input_layernorm.weight"], F.rms_eps)
-            coeff = Fn.linear(h, p[q + "attention_conv.kernel_projection.weight"]).reshape(B, 2, F.conv_taps, -1)
+            coeff = self.linear(h, q + "attention_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], tap_valid)
             h = self._attn(L, h, positions, ring, ctx_len)
             h = self._conv(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], tap_valid)
             res = res + h
             h = rmsnorm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
-            coeff = Fn.linear(h, p[q + "mlp_conv.kernel_projection.weight"]).reshape(B, 2, F.conv_taps, -1)
+            coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid)
-            h = Fn.linear(Fn.silu(Fn.linear(h, p[q + "mlp.gate_proj.weight"])) * Fn.linear(h, p[q + "mlp.up_proj.weight"]), p[q + "mlp.down_proj.weight"])
+            if self.fast_attention:
+                gate, up = self.dense[q+"mlp.gate_up"](h).chunk(2, -1)
+            else:
+                gate, up = (Fn.linear(h, p[q+"mlp."+s+"_proj.weight"]) for s in ("gate", "up"))
+            h = self.linear(Fn.silu(gate)*up, q + "mlp.down_proj.weight")
+            if self.fast_attention:
+                h = self.target.comm.all_reduce(h)
             x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], tap_valid)
         return rmsnorm(res + x, p["norm.weight"], F.rms_eps)
 
@@ -260,7 +330,18 @@ class Drafter:
         the whole draft field; slots [n]; positions [n, t]; aux [n*t, A] in row order; valid [n] (device counts)."""
         F, p = self.F, self.p
         n, t = positions.shape
-        c = rmsnorm(Fn.linear(aux, p["fc.weight"]), p["hidden_norm.weight"], F.rms_eps)
+        c = rmsnorm(self.linear(aux, "fc.weight"), p["hidden_norm.weight"], F.rms_eps)
+        if self.fast_attention:
+            from engine.kernels.draft_attention import write_draft_kv
+            context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
+            for L in range(F.layers):
+                q = f"layers.{L}.self_attn."
+                k = rope(rmsnorm(context[:, :, L, 0].reshape(n*t, self.local_kv_heads, F.head_dim),
+                                 p[q + "k_norm.weight"], F.rms_eps), positions.reshape(-1), F.rope_theta)
+                k = k.reshape(n, t, self.local_kv_heads, F.head_dim)
+                for r in range(n):
+                    write_draft_kv(field, slots[r:r+1], L, positions[r], k[r], context[r, :, L, 1], valid=valid[r])
+            return
         flat = positions.reshape(-1)
         idx = positions % F.window
         rows = slots.view(n, 1)
@@ -294,6 +375,19 @@ class Drafter:
         head are laid out as more queries against it, so no head is repeated in memory."""
         F, p = self.F, self.p
         q = f"layers.{L}.self_attn."
+        if self.fast_attention:
+            from engine.kernels.draft_attention import draft_attention
+            heads, kv, D = self.local_heads, self.local_kv_heads, F.head_dim
+            q0, k0, v0 = self.dense[q + "qkv"](x).split((heads*D, kv*D, kv*D), -1)
+            qh = rope(rmsnorm(q0.reshape(n*t, heads, D), p[q + "q_norm.weight"], F.rms_eps), positions, F.rope_theta)
+            kh = rope(rmsnorm(k0.reshape(n*t, kv, D), p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
+            vh = v0.reshape(n*t, kv, D)
+            # GEMMs cover all rows once; attention reads each device-selected
+            # slot directly, with no replicated heads or SDPA ring scratch.
+            out = [draft_attention(qh[r*t:(r+1)*t].contiguous(), kh[r*t:(r+1)*t].contiguous(),
+                                   vh[r*t:(r+1)*t].contiguous(), field, ctx[r], slot=slots[r:r+1], layer=L)
+                   for r in range(n)]
+            return self.target.comm.all_reduce(self.linear(torch.cat(out).reshape(n*t, heads*D), q + "o_proj.weight"))
         S, W, kv, D, rep = field.shape[0], F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
         qh = rope(rmsnorm(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps),
                   positions, F.rope_theta)
@@ -328,15 +422,21 @@ class Drafter:
             else:
                 res = res + x
                 h = rmsnorm(res, p[q + "input_layernorm.weight"], F.rms_eps)
-            coeff = Fn.linear(h, p[q + "attention_conv.kernel_projection.weight"]).reshape(n * t, 2, F.conv_taps, -1)
+            coeff = self.linear(h, q + "attention_conv.kernel_projection.weight").reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], tap_valid, n, t)
             h = self._attn_rows(L, h, positions, slots, ctx, field, n, t)
             h = self._conv_rows(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], tap_valid, n, t)
             res = res + h
             h = rmsnorm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
-            coeff = Fn.linear(h, p[q + "mlp_conv.kernel_projection.weight"]).reshape(n * t, 2, F.conv_taps, -1)
+            coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid, n, t)
-            h = Fn.linear(Fn.silu(Fn.linear(h, p[q + "mlp.gate_proj.weight"])) * Fn.linear(h, p[q + "mlp.up_proj.weight"]), p[q + "mlp.down_proj.weight"])
+            if self.fast_attention:
+                gate, up = self.dense[q + "mlp.gate_up"](h).chunk(2, -1)
+            else:
+                gate, up = (self.linear(h, q + "mlp." + name + "_proj.weight") for name in ("gate", "up"))
+            h = self.linear(Fn.silu(gate) * up, q + "mlp.down_proj.weight")
+            if self.fast_attention:
+                h = self.target.comm.all_reduce(h)
             x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], tap_valid, n, t)
         return rmsnorm(res + x, p["norm.weight"], F.rms_eps)
 
@@ -356,7 +456,7 @@ class Drafter:
         from engine.modules.vocab import topk
         unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
         unary, cand = unary.view(n, K, F.sel_top_k), cand.view(n, K, F.sel_top_k)
-        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float().view(n, K, -1)
+        proj = self.linear(h, "candidate_selector.hidden_projection.weight").float().view(n, K, -1)
         pred_ids = torch.cat([anchors.view(n, 1, 1).expand(n, 1, F.sel_top_k), cand[:, :-1]], 1)         # [n, K, 16]
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()                              # [n, K, 16, 256]
         succ = p["candidate_selector.successor_codebook"][cand].float()
@@ -392,7 +492,7 @@ class Drafter:
         """The same greedy walk, with every selection remaining on device."""
         F, p = self.F, self.p
         K = self.k
-        dev = ring.device
+        dev = anchor.device
         ids = torch.cat([anchor.reshape(1), torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
         positions = position + torch.arange(K + 1, device=dev)
         h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions

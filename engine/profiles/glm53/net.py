@@ -146,6 +146,9 @@ class Glm53Net:
         self.conv_ring = F.conv - 1 + F.spec_k       # conv inputs kept per slot: the window plus K drafts
         self.rec_ring = F.spec_k + 1                 # recurrent states kept per slot: one per draft position
         self.p = None
+        self.dense = {}
+        self.prefill_transport = None
+        self.mhc = None
         self.probe = None                            # probe(block, layer, out) after every block, for judges
 
     # -- binding ----------------------------------------------------------------
@@ -166,6 +169,45 @@ class Glm53Net:
                     n = f"L{L}.moe."
                     prepare(p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"], F.topk_experts, F.swiglu_limit)
 
+    @staticmethod
+    def dense_weight_names(keys):
+        """The rank-file key and original calibration name of each projection."""
+        names = {
+            "kda.in_proj": "self_attn.in_proj_qkvbfg_a", "kda.o_proj": "self_attn.o_proj",
+            "mla.qkv_a": "self_attn.fused_qkv_a_proj", "mla.q_b": "self_attn.q_b_proj",
+            "mla.o_proj": "self_attn.o_proj", "idx.wq_b": "self_attn.indexer.wq_b",
+            "mlp.gate_up": "mlp.gate_up_proj", "mlp.down": "mlp.down_proj",
+            "moe.sh_gate_up": "mlp.shared_experts.gate_up_proj", "moe.sh_down": "mlp.shared_experts.down_proj",
+        }
+        result = {}
+        for key in keys:
+            layer, _, suffix = key.partition(".")
+            if suffix in names:
+                result[key] = f"Glm5NextForCausalLM/model.layers.{layer[1:]}.{names[suffix]}"
+        return result
+
+    def prepare_dense(self, store=None, *, consume_weights=False):
+        """Declare and prepare the same dense families as the fleet's MK path."""
+        from engine.kernels.dense import DenseLinear
+        self.dense = {}
+        for key, name in self.dense_weight_names(self.p).items():
+            weight = self.p[key]
+            self.dense[key] = DenseLinear(weight, store=store, name=name)
+            if consume_weights:
+                self.dense[key].consume_weight(weight)
+                self.p[key]=None
+        from engine.kernels.dense import FP8Linear
+        self.dense["head"] = FP8Linear(self.p["head"])
+        if consume_weights:
+            self.dense["head"].consume_weight(self.p["head"])
+            self.p["head"]=None
+        from engine.kernels.dense.mhc import MHC
+        self.mhc = MHC({key: weight for key, weight in self.p.items() if key.endswith(("hc.attn_fn","hc.ffn_fn"))})
+
+    def linear(self, x, name):
+        layer = self.dense.get(name)
+        return layer(x) if layer is not None else Fn.linear(x, self.p[name])
+
     # -- embed / head -------------------------------------------------------------
     def embed(self, ids: torch.Tensor) -> torch.Tensor:
         start = self.rank * self.vp
@@ -178,7 +220,7 @@ class Glm53Net:
         return self.comm.all_gather(self.head_local(h), dim=-1)
 
     def head_local(self, h: torch.Tensor) -> torch.Tensor:
-        return Fn.linear(h, self.p["head"])
+        return self.linear(h, "head")
 
     def head_tokens(self, h: torch.Tensor, decodable=None) -> torch.Tensor:
         from engine.modules.vocab import argmax
@@ -192,13 +234,23 @@ class Glm53Net:
                                   F.rms_eps, F.hc_eps, F.post_mult, F.sinkhorn, norm_w, F.rms_eps)
 
     # -- KDA ------------------------------------------------------------------------
-    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches) -> torch.Tensor:
+    def _hc_post_pre(self, L, x, res, post, comb, side):
+        if self.mhc is None or x.shape[0] > 32:
+            res = self.lanes.mhc_post(x, res, post, comb)
+            post, comb, x = self._hc_pre(L, res, side)
+            return res, post, comb, x
+        n, F, p = f"L{L}.", self.F, self.p
+        return self.mhc(n+f"hc.{side}_fn",x,res,post,comb,p[n+f"hc.{side}_scale"],
+                        p[n+f"hc.{side}_base"],p[n+("in_norm" if side=="attn" else "post_norm")],
+                        F.rms_eps,F.hc_eps,F.post_mult,F.sinkhorn)
+
+    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.kda."
         N = x.shape[0]; Hl, D, K = self.Hk, F.kda_dim, F.conv
-        proj = Fn.linear(x, p[n + "in_proj"])
+        proj = self.linear(x, n + "in_proj")
         qkv_all, b_all, f_a, g_a = proj.split([3 * Hl * D, Hl, D, D], dim=-1)
-        g_raw_all = Fn.linear(f_a, p[n + "f_b"]).view(N, Hl, D)
-        g_out = Fn.linear(g_a, p[n + "g_b"]).view(N, Hl, D)
+        g_raw_all = self.linear(f_a, n + "f_b").view(N, Hl, D)
+        g_out = self.linear(g_a, n + "g_b").view(N, Hl, D)
         beta_all = b_all                                                             # raw logits: each lane sigmoids as its kernel wants
         core = torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
         wc, wr = self.conv_ring, self.rec_ring
@@ -264,7 +316,7 @@ class Glm53Net:
                         rec_ring[(s.ctx + i) % wr] = states[i]
             core[sl] = o[0]
         out = self.lanes.kda_output_norm(core, g_out, p[n + "o_norm"], O_NORM_EPS)
-        return self.comm.all_reduce(Fn.linear(out.reshape(N, Hl * D), p[n + "o_proj"]))
+        return (reduce or self.comm.all_reduce)(self.linear(out.reshape(N, Hl * D), n + "o_proj"))
 
     # -- sparse MLA + kpool indexer ------------------------------------------------------
     def _indexer(self, L: int, x: torch.Tensor, qr: torch.Tensor, step: Step, caches: Caches):
@@ -274,11 +326,11 @@ class Glm53Net:
         in-progress tail, as latent slots (valid prefix first) and counts."""
         F, p, n = self.F, self.p, f"L{L}.idx."
         N = x.shape[0]; kp, nh, d = F.kpool, F.idx_heads, F.idx_dim
-        q = Fn.linear(qr, p[n + "wq_b"]).view(N, nh, d)
-        k = Fn.linear(x, p[n + "wk"])
+        q = self.linear(qr, n + "wq_b").view(N, nh, d)
+        k = self.linear(x, n + "wk")
         k = Fn.layer_norm(k.float(), (d,), p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS).to(x.dtype)
         w = x.float() @ p[n + "w_heads"].T                                           # fp32 head gate, as served
-        gate = Fn.linear(x, p[n + "gate"])                                           # [N, 128] per-channel pool score
+        gate = self.linear(x, n + "gate")                                           # [N, 128] per-channel pool score
         q8, qs = self.lanes.indexer_quant(q.reshape(-1, d))
         q8 = q8.view(N, nh, d)
         w_eff = (w * qs.view(N, nh) * F.idx_scale).contiguous()                     # q's scale folds into the head gate, as served
@@ -354,12 +406,12 @@ class Glm53Net:
             out[r0:r1] = topk_positions(logits[:, :n_cand].float(), k, valid=ke[r0:r1], inplace=True)
         return out
 
-    def _dsa(self, L: int, x: torch.Tensor, step: Step, caches: Caches) -> torch.Tensor:
+    def _dsa(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.mla."
         N = x.shape[0]; Hl = self.Hl
-        q_a, kv_c = Fn.linear(x, p[n + "qkv_a"]).split([F.q_lora, F.kv_lora], dim=-1)
+        q_a, kv_c = self.linear(x, n + "qkv_a").split([F.q_lora, F.kv_lora], dim=-1)
         qr = rmsnorm(q_a, p[n + "q_a_norm"], F.rms_eps)
-        q = Fn.linear(qr, p[n + "q_b"]).view(N, Hl, F.qk_nope)
+        q = self.linear(qr, n + "q_b").view(N, Hl, F.qk_nope)
         kv_n = rmsnorm(kv_c, p[n + "kv_a_norm"], F.rms_eps)
         latent = caches.latent(L)
         # A captured step asks for the same few lengths forever, so they come from the kept
@@ -374,13 +426,13 @@ class Glm53Net:
         q_abs = torch.einsum("thd,hdc->thc", q, w_uk)                                # absorb W_UK: MQA over the latent
         ctx_lat = self.lanes.mla_sparse(q_abs.contiguous(), latent, slots, valid, F.mla_scale, 1.0)
         o = torch.einsum("thc,hvc->thv", ctx_lat, w_uv)                              # un-absorb W_UV
-        return self.comm.all_reduce(Fn.linear(o.reshape(N, Hl * F.v_dim), p[n + "o_proj"]))
+        return (reduce or self.comm.all_reduce)(self.linear(o.reshape(N, Hl * F.v_dim), n + "o_proj"))
 
     # -- MLPs -----------------------------------------------------------------------------
-    def _dense(self, L: int, x: torch.Tensor) -> torch.Tensor:
+    def _dense(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         p, n = self.p, f"L{L}.mlp."
-        g, u = Fn.linear(x, p[n + "gate_up"]).chunk(2, dim=-1)
-        return self.comm.all_reduce(Fn.linear(swiglu_clamped(g, u, self.F.swiglu_limit), p[n + "down"]))
+        g, u = self.linear(x, n + "gate_up").chunk(2, dim=-1)
+        return (reduce or self.comm.all_reduce)(self.linear(swiglu_clamped(g, u, self.F.swiglu_limit), n + "down"))
 
     def route(self, L: int, x: torch.Tensor):
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
@@ -391,13 +443,13 @@ class Glm53Net:
         w = s.gather(-1, sel)
         return sel.to(torch.int32), w / w.sum(-1, keepdim=True) * F.routed_scale
 
-    def _moe(self, L: int, x: torch.Tensor) -> torch.Tensor:
+    def _moe(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
         sel, w = self.route(L, x)
         out = self.lanes.moe(x, sel, w, p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"], F.swiglu_limit).float()
-        g, u = Fn.linear(x, p[n + "sh_gate_up"]).chunk(2, dim=-1)
-        out += Fn.linear(swiglu_clamped(g, u, F.swiglu_limit), p[n + "sh_down"]).float()
-        return self.comm.all_reduce(out.to(x.dtype))
+        g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
+        out += self.linear(swiglu_clamped(g, u, F.swiglu_limit), n + "sh_down").float()
+        return (reduce or self.comm.all_reduce)(out.to(x.dtype))
 
     # -- the step ---------------------------------------------------------------------------
     def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None):
@@ -409,22 +461,33 @@ class Glm53Net:
         aux_hidden_states: hc_post then hc_contract after layer idx)."""
         F = self.F
         N = step.ids.shape[0]
+        sp = self.prefill_transport if (finish and not self.probe and len(step.segments) == 1
+                                       and N >= 128 and N % self.comm.world_size == 0
+                                       and not getattr(step, "captured", False)) else None
+        reduce = sp.reduce_scatter if sp else self.comm.all_reduce
         x = self.embed(step.ids)
         for pos, rows in step.patches:                                               # image rows in place of their placeholders
             x.index_copy_(0, pos, rows.to(x.dtype))
+        if sp:
+            x = x.chunk(self.comm.world_size, dim=0)[self.rank]
+            N = x.shape[0]
         res = x[:, None, :].expand(N, F.hc, F.hidden).contiguous()                   # hc_expand
         post = comb = None
         aux = {}
         for L in self.layers:
             if post is not None:
-                res = self.lanes.mhc_post(x, res, post, comb)
-            post, comb, x = self._hc_pre(L, res, "attn")
-            x = self._dsa(L, x, step, caches) if F.is_dsa(L) else self._kda(L, x, step, caches)
+                res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "attn")
+            else:
+                post, comb, x = self._hc_pre(L, res, "attn")
+            if sp:
+                x = sp.all_gather(x.contiguous())
+            x = self._dsa(L, x, step, caches, reduce) if F.is_dsa(L) else self._kda(L, x, step, caches, reduce)
             if self.probe:
                 self.probe("dsa" if F.is_dsa(L) else "kda", L, x)
-            res = self.lanes.mhc_post(x, res, post, comb)
-            post, comb, x = self._hc_pre(L, res, "ffn")
-            x = self._moe(L, x) if F.is_moe(L) else self._dense(L, x)
+            res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "ffn")
+            if sp:
+                x = sp.all_gather(x.contiguous())
+            x = self._moe(L, x, reduce) if F.is_moe(L) else self._dense(L, x, reduce)
             if self.probe:
                 self.probe("moe" if F.is_moe(L) else "dense", L, x)
             if aux_layers and L in aux_layers:
@@ -433,8 +496,11 @@ class Glm53Net:
             return res, post, comb, x
         res = self.lanes.mhc_post(x, res, post, comb)
         h = rmsnorm(res.float().mean(1).to(x.dtype), self.p["norm"], F.rms_eps)      # hc_contract, final norm
+        if sp:
+            h = self.comm.all_gather(h, dim=0)
         if aux_layers:
-            return h, torch.cat([aux[L] for L in aux_layers], dim=-1)
+            features = torch.cat([aux[L] for L in aux_layers], dim=-1)
+            return h, self.comm.all_gather(features, dim=0) if sp else features
         return h
 
     def prefill(self, ids: torch.Tensor, ctx: int, seq: int, slot: int, caches: Caches, finish: bool = True):

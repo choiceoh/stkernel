@@ -1,0 +1,26 @@
+{
+  "ready": false,
+  "arena_bytes": 60130701496,
+  "workspace_limit_bytes": 12884901888,
+  "os_reserve_bytes": 4294967296,
+  "baseline_reserved_bytes": 2097152,
+  "allocator_limit_bytes": 73017700536,
+  "seconds": 38.5129,
+  "spend": {
+    "loaded": 38.5129
+  },
+  "phases": [
+    {
+      "phase": "loaded",
+      "at_seconds": 38.5129,
+      "seconds": 38.5129,
+      "allocated_bytes": 61341538816,
+      "reserved_bytes": 61440262144,
+      "peak_allocated_bytes": 62438177792,
+      "peak_reserved_bytes": 62505615360,
+      "immediately_free_bytes": 14094708736,
+      "peak_workspace_bytes": 2372816712,
+      "passed": true
+    }
+  ]
+}

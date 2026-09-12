@@ -1,0 +1,25 @@
+  box: GB10 (DGX Spark): SM121, unified 122 GiB (78 free)
+[W912 02:50:29.064462898 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/repo/engine/profiles/glm53/boot.py", line 210, in build
+[rank3]:     report = prepare_allocation(arena_bytes, files, workspace_bytes + os_reserve_bytes,
+[rank3]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/repo/engine/base/arena.py", line 123, in prepare_allocation
+[rank3]:     raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus headroom {headroom/GIB:.2f} GiB "
+[rank3]: MemoryError: arena admission: allocation 68.14 GiB plus headroom 16.00 GiB exceeds immediately free memory 76.63 GiB and cannot be reclaimed: MemAvailable 97.53 GiB
+
+[rank3]: The above exception was the direct cause of the following exception:
+
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/repo/engine/profiles/glm53/boot.py", line 635, in <module>
+[rank3]:     raise SystemExit(main())
+[rank3]:                      ^^^^^^
+[rank3]:   File "/repo/engine/profiles/glm53/boot.py", line 631, in main
+[rank3]:     return fleet(a)
+[rank3]:            ^^^^^^^^
+[rank3]:   File "/repo/engine/profiles/glm53/boot.py", line 544, in fleet
+[rank3]:     F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
+[rank3]:                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/repo/engine/profiles/glm53/boot.py", line 224, in build
+[rank3]:     raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
+[rank3]: MemoryError: TP arena admission failed: arena admission: allocation 68.14 GiB plus headroom 16.00 GiB exceeds immediately free memory 76.63 GiB and cannot be reclaimed: MemAvailable 97.53 GiB

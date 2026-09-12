@@ -22,15 +22,33 @@ def host_free_bytes():
     raise RuntimeError("MemFree is unavailable")
 
 
+def reclaim_preparation_pages(need, headroom, *, cache_roots=()):
+    """Make a boot's remaining byte budget available despite UMA file cache.
+
+    Anonymous faults evict clean cache where CUDA allocation does not. The
+    temporary allocation must itself leave the declared workspace/OS floor;
+    insufficient MemAvailable leaves the existing admission failure intact.
+    """
+    from engine.base.arena import _meminfo, release_model_cache, touch_pages
+    memory = _meminfo()
+    if memory['MemFree'] < need and cache_roots:
+        release_model_cache(cache_roots)
+        memory = _meminfo()
+    if memory['MemFree'] >= need or need > memory['MemAvailable'] - headroom:
+        return 0
+    return touch_pages(need)
+
+
 class RuntimeMemory:
     def __init__(self, arena_bytes, workspace_bytes, os_reserve_bytes, *, comm=None,
-                 cuda=None, host_free=host_free_bytes):
+                 cuda=None, host_free=host_free_bytes, reclaim=None):
         if min(arena_bytes, workspace_bytes, os_reserve_bytes) <= 0:
             raise ValueError("arena, workspace ceiling and OS reserve must be positive bytes")
         if cuda is None:
             import torch
             cuda = torch.cuda
         self.cuda, self.comm, self.host_free = cuda, comm, host_free
+        self.reclaim = reclaim
         self.arena_bytes, self.workspace_bytes = arena_bytes, workspace_bytes
         self.os_reserve_bytes = os_reserve_bytes
         self.phases, self.ready, self.closed = [], False, False
@@ -58,6 +76,12 @@ class RuntimeMemory:
         """Boot only: retain transient peaks and require every TP rank to pass."""
         cuda = self.cuda
         cuda.synchronize()                          # the row's peaks and its clock read the same instant
+        reclaimed = 0
+        host_free = self.host_free()
+        need = self.os_reserve_bytes + max(0, self.allocator_limit_bytes-cuda.memory_reserved())
+        if self.reclaim is not None and host_free < need:
+            reclaimed = self.reclaim(need, self.workspace_bytes+self.os_reserve_bytes)
+            host_free = self.host_free()
         now = self.clock()
         free, _ = cuda.mem_get_info()
         row = dict(phase=phase, at_seconds=round(now - self.started, 4),
@@ -65,7 +89,7 @@ class RuntimeMemory:
                    reserved_bytes=cuda.memory_reserved(),
                    peak_allocated_bytes=cuda.max_memory_allocated(),
                    peak_reserved_bytes=cuda.max_memory_reserved(),
-                   immediately_free_bytes=min(free, self.host_free()))
+                   immediately_free_bytes=min(free, host_free), reclaimed_bytes=reclaimed)
         row["peak_workspace_bytes"] = max(0, row["peak_reserved_bytes"] - self.baseline_reserved - self.arena_bytes)
         error = None
         if row["peak_reserved_bytes"] > self.allocator_limit_bytes:

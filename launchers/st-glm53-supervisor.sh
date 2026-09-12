@@ -22,7 +22,7 @@ BOOT_GRACE=${BOOT_GRACE:-1800}          # cold JIT (triton/tilelang/DeepGEMM/MLA
 LAUNCH_BACKOFF_BASE=60
 LAUNCH_BACKOFF_MAX=1800
 LAUNCH_HOLD_AFTER=5
-FORENSICS=/home/choiceoh/glm53-logs/st-forensics
+FORENSICS=${ST_FORENSICS:-/home/choiceoh/glm53-logs/st-forensics}
 log(){ echo "$(date '+%F %T') $*"; }
 SELF_IPS=" $(hostname -I 2>/dev/null) "                 # this loop runs on rank 0's node, which cannot ssh to itself
 node_sh(){ local ip=$1; shift
@@ -43,9 +43,19 @@ containers_up(){
   done
 }
 fleet_taken(){   # someone else's serving stack: production vLLM, q38, another ST run -- never fight it
-  local ip busy
+  local ip busy held
+  held=$(node_sh "${NODES[0]}" "cat /home/choiceoh/st-fleet.lock 2>/dev/null || true") || { echo "head unreachable"; return 0; }
+  if [ -n "$held" ]; then
+    case "$SELF_IPS" in
+      *" ${NODES[0]} "*) python3 "$REPO/engine/base/fleet_lease.py" owner --container "$NAME" --path /home/choiceoh/st-fleet.lock >/dev/null 2>&1 ;;
+      *) ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@${NODES[0]}" \
+          "python3 - owner --container $NAME --path /home/choiceoh/st-fleet.lock" < "$REPO/engine/base/fleet_lease.py" >/dev/null 2>&1 ;;
+    esac
+    [ "$?" = 0 ] || { echo "lock: $held"; return 0; }
+  fi
   for ip in "${NODES[@]}"; do
-    busy=$(node_sh "$ip" "docker ps --format '{{.Names}}' | grep -E '^(glm53|q38|vllm)' || true" 2>/dev/null)
+    busy=$(node_sh "$ip" "docker ps --format '{{.Names}}'" 2>/dev/null) || { echo "$ip unreachable"; return 0; }
+    busy=$(printf '%s\n' "$busy" | grep -E '^(glm53|q38|vllm|st-)' | grep -vx "$NAME" || true)
     [ -z "$busy" ] || { echo "$ip:$busy"; return 0; }
   done
   return 1
@@ -63,7 +73,7 @@ launch(){
   local taken waited=0
   if taken=$(fleet_taken); then log "fleet taken ($taken): not launching"; return 1; fi
   log "launching the ST fleet"
-  bash "$LAUNCHER" stop >>"$FORENSICS/launch.log" 2>&1 || true
+  bash "$LAUNCHER" stop >>"$FORENSICS/launch.log" 2>&1 || { log "stop refused; preserving fleet owner"; return 1; }
   bash "$LAUNCHER" >>"$FORENSICS/launch.log" 2>&1 || { log "launcher returned nonzero (see $FORENSICS/launch.log)"; return 1; }
   while [ $waited -lt $BOOT_GRACE ]; do
     door_up && { log "door up after ${waited}s"; return 0; }
@@ -74,6 +84,8 @@ launch(){
 }
 launch_fails=0; next_launch_at=0; held_logged=0; fails=0
 attempt_launch(){
+  local taken
+  if taken=$(fleet_taken); then log "fleet taken ($taken): waiting without consuming a launch attempt"; return; fi
   launch || true
   launch_fails=$((launch_fails+1))
   local backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
@@ -95,7 +107,7 @@ else
 fi
 while :; do
   sleep 30
-  if door_up && chat_ok; then
+  if containers_up && door_up && chat_ok; then
     [ "$fails" -gt 0 ] && log "recovered (fails reset)"
     fails=0
     if [ "$launch_fails" -gt 0 ]; then log "healthy again -- clearing $launch_fails launch attempt(s)"; launch_fails=0; next_launch_at=0; held_logged=0; fi

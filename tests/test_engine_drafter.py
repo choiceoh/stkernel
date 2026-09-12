@@ -170,6 +170,78 @@ class DrafterTests(unittest.TestCase):
                 self.assertLessEqual(int((dists[r, s] > 0).sum()), F.sel_top_k)
         self.assertTrue(torch.equal(dists[1] > 0, torch.nn.functional.one_hot(greedy[1], 21).bool()), "one-hot on the greedy pick")
 
+    def test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail(self):
+        """Exercise the merged batched interface with packed readers and no BF16 sources.
+
+        CPU attention/write oracles replace only the existing CUDA ring kernels;
+        the batched projections, convolution and slot/position plumbing are real.
+        """
+        import copy
+        import sys
+        from types import ModuleType
+        d, field, dev = self.make_full_drafter(seed=19)
+        reference = copy.deepcopy(d)
+        F = d.F
+        linear = torch.nn.functional.linear
+        d.context_kv = torch.cat([d.p[f"layers.{L}.self_attn.{s}_proj.weight"]
+                                  for L in range(F.layers) for s in ("k", "v")])
+        packed = {"fc.weight": d.p["fc.weight"]}
+        for L in range(F.layers):
+            q = f"layers.{L}."
+            packed[q+"self_attn.qkv"] = torch.cat([d.p[q+f"self_attn.{s}_proj.weight"] for s in ("q", "k", "v")])
+            packed[q+"mlp.gate_up"] = torch.cat([d.p[q+f"mlp.{s}_proj.weight"] for s in ("gate", "up")])
+            for key in ("self_attn.o_proj.weight", "mlp.down_proj.weight",
+                        "attention_conv.kernel_projection.weight", "mlp_conv.kernel_projection.weight"):
+                packed[q+key] = d.p[q+key]
+        d.dense = {name: (lambda x, w=w.clone(): linear(x, w)) for name, w in packed.items()}
+        for name in list(d.p):
+            if name in packed or name.endswith(("_proj.weight", "kernel_projection.weight")):
+                d.p[name] = None
+        d.fast_attention = True
+        field = field[:, :, :, :F.window].contiguous()  # native ring has no SDPA scratch tail
+        slots = torch.tensor([2, 1], device=dev)
+        ctx = torch.tensor([13, 3], device=dev)
+        anchors = torch.tensor([7, 9], device=dev)
+        t = F.k + 1
+        ids = torch.cat([anchors[:, None], torch.full((2, F.k), F.mask_id, device=dev)], 1).reshape(-1)
+        pos = (ctx[:, None] + torch.arange(t, device=dev)).reshape(-1)
+        expected = torch.cat([reference.block(ids[r*t:(r+1)*t], pos[r*t:(r+1)*t], field[int(slots[r])], int(ctx[r]))
+                              for r in range(2)])
+        kernels = ModuleType("engine.kernels.draft_attention")
+        def attention(q, k, v, rings, position, *, slot, layer):
+            ring = rings[int(slot[0]), layer]
+            absolute = position + torch.arange(-F.window, 0, device=dev)
+            keys = torch.cat([ring[0, absolute % F.window], k]).repeat_interleave(F.heads//F.kv_heads, 1)
+            vals = torch.cat([ring[1, absolute % F.window], v]).repeat_interleave(F.heads//F.kv_heads, 1)
+            scores = torch.einsum("bhd,nhd->bhn", q.float(), keys.float()) * F.head_dim**-.5
+            valid = torch.cat([absolute >= 0, torch.ones(len(q), device=dev, dtype=torch.bool)])
+            scores.masked_fill_(~valid[None, None], -float("inf"))
+            return torch.einsum("bhn,nhd->bhd", scores.softmax(-1), vals.float()).to(q.dtype)
+        def write(rings, slot, layer, positions, k, v, *, valid):
+            count = int(valid)
+            rows = positions[:count] % F.window
+            rings[int(slot[0]), layer, 0, rows] = k[:count]
+            rings[int(slot[0]), layer, 1, rows] = v[:count]
+        kernels.draft_attention, kernels.write_draft_kv = attention, write
+        prior = sys.modules.get(kernels.__name__)
+        sys.modules[kernels.__name__] = kernels
+        try:
+            actual = d.block_rows(ids, pos, slots, ctx, field, 2, t)
+            torch.testing.assert_close(actual.float(), expected.float(), atol=.06, rtol=.06)
+            aux = torch.randn(2*t, F.hidden, device=dev).bfloat16()
+            valid = torch.tensor([3, 0], device=dev)
+            expect_ring = field.clone()
+            for r in range(2):
+                reference.observe_masked(expect_ring[int(slots[r])], pos.view(2,t)[r], aux[r*t:(r+1)*t], valid[r])
+            d.observe_rows(field, slots, pos.view(2,t), aux, valid)
+            torch.testing.assert_close(field.float(), expect_ring.float(), atol=.02, rtol=.02)
+            self.assertTrue(torch.equal(field[1], expect_ring[1]))
+        finally:
+            if prior is None:
+                sys.modules.pop(kernels.__name__, None)
+            else:
+                sys.modules[kernels.__name__] = prior
+
     def test_the_host_walk_crosses_once_not_twice_a_position(self):
         source = (Path(__file__).resolve().parents[1] / "engine/profiles/glm53/drafter.py").read_text()
         body = source[source.index("    def propose_sampled(self"):source.index("    def propose_sampled_tensor(")]

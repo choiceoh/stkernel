@@ -1,0 +1,15 @@
+[W912 00:07:04.019860584 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+{"rank": 3, "ar_rows": 1, "passed": true}
+{"rank": 3, "ar_rows": 6, "passed": true}
+{"rank": 3, "ar_rows": 12, "passed": true}
+{"rank": 3, "ar_rows": 24, "passed": true}
+{"rank": 3, "ar_rows": 32, "passed": true}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+  return func(*args, **kwargs)
+{"rank": 3, "prefill_rows": 128, "passed": true}
+{"rank": 3, "prefill_rows": 2128, "passed": true}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+{"rank": 3, "prefill_rows": 4096, "passed": true}
+{"rank": 3, "prefill_rows": 4100, "passed": true}
+{"rank": 3, "prefill_rows": 6912, "passed": true}

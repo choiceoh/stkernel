@@ -32,6 +32,23 @@ def _pure(name, path=DECODE_GRAPHS):
 
 
 class CaptureSafetyTests(unittest.TestCase):
+    def test_device_step_runs_the_same_embedding_prologue_as_eager_decode(self):
+        from engine.base.comm import Comm
+        from engine.profiles.glm53.decode_graphs import DeviceStep
+        from engine.profiles.glm53.net import Glm53Net, Step
+        ids = torch.arange(12)
+        device_step = DeviceStep(ids, torch.tensor([0, 9]), 6)
+        eager_step = Step.decode([(ids[:6], 0, 0, 1), (ids[6:], 9, 1, 2)])
+        net = Glm53Net.__new__(Glm53Net)
+        net.F = SimpleNamespace(hidden=8, hc=2)
+        net.layers, net.prefill_transport, net.probe = (), None, None
+        net.comm = Comm()
+        net.embed = lambda tokens: tokens.float()[:, None].expand(-1, 8)
+        actual = net.forward(device_step, None, finish=False)
+        expected = net.forward(eager_step, None, finish=False)
+        self.assertTrue(torch.equal(actual[0], expected[0]))
+        self.assertTrue(torch.equal(actual[3], expected[3]))
+
     def test_localtp_is_marked_unsafe_and_the_fleet_comm_safe(self):
         from engine.base.comm import Comm, LocalTP
         self.assertTrue(Comm.graph_capture_safe)

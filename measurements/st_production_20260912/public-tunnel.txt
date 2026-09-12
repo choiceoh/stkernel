@@ -1,0 +1,3 @@
+ExecStart={ path=/home/choiceoh/.local/bin/ngrok ; argv[]=/home/choiceoh/.local/bin/ngrok http --url=sensation-glider-unknotted.ngrok-free.dev http://10.10.10.2:8000 --log=stdout ; ignore_errors=no ; start_time=[Sat 2026-09-12 06:47:04 KST] ; stop_time=[n/a] ; pid=1021207 ; code=(null) ; status=0/0 }
+ActiveState=active
+UnitFileState=enabled

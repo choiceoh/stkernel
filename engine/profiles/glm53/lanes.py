@@ -118,6 +118,8 @@ def reference() -> Lanes:
         no calibrated input scale -- what the served SM12x lane does)."""
         from engine.modules.nvfp4_sf import unswizzle_sf
         from engine.modules.expert_layout import W13_K_IN_BYTES, W2_K_IN_BYTES, row_major_expert
+        if any(getattr(t,"_st_sf6_consumed",False) for t in (w13_sf,w2_sf)):
+            raise ValueError("raw scale storage was retired; reload rank weights for the reference lane")
         E, two_i, half_h = w13.shape
         i_local, hidden = two_i // 2, half_h * 2
         one = torch.ones((), device=x.device)
@@ -141,11 +143,11 @@ def reference() -> Lanes:
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
-MOE_STATIC_PRODUCTION = "t,r,sf6"   # production glm53.env VLLM_GLM53_B12X_STATIC_V2 (2026-09-09 adoption); "+q0" = the TP recipe
+MOE_STATIC_PRODUCTION = "t,r,sf6,q0"  # native TP4 decode and prefill recipe
 
 
 def parse_moe_static(value: str) -> "tuple[str | None, bool]":
-    """STK_moe_static -> (b12x static-lane spec or None for stock, TP SF6 Q0 flag).
+    """Explicit probe specification -> (b12x static lane, TP SF6 Q0 flag).
     Cells are the dispatcher's (u, t, r, sf6, f<n>, g<n>, ...); q0 is the engine's token."""
     tokens = [t.strip() for t in str(value).split(",") if t.strip()]
     if tokens in ([], [MOE_STATIC_STOCK], ["0"], ["off"]):
@@ -157,7 +159,7 @@ def parse_moe_static(value: str) -> "tuple[str | None, bool]":
     return (spec or None), q0
 
 
-def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_STOCK,
+def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_PRODUCTION, consume_scales: bool = False,
            mla_prefill: str = "stock") -> Lanes:
     """Bind the ST kernel package without an overlay or vLLM installation.
 
@@ -171,7 +173,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     and warmup; constructing another table never rebinds an existing one.
 
     `moe_static` / `mla_prefill` are the profile's declared D11 knobs
-    (boot.declared: STK_moe_static, STK_mla_prefill), applied to the kernel
+    (boot.declared: STK_mla_prefill; MoE is fixed for serving), applied to the kernel
     package here, once, before anything binds or arms.
     """
     expert_lane = "reference" if "expert" in reference_for else "b12x"
@@ -287,6 +289,8 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                                          activation_precision="fp4", quant_mode="nvfp4",
                                          tiled=tiled, sf_pack=sf_pack, reform_sf_pack=reform,
                                          packed_only=bool(tiled and reform and not sf_pack))   # sf6: packed scales only, no converted raw copies
+            if in_place and consume_scales and views.packed_only:
+                md.consume_packed_scale_storage(views,w13_sf,w2_sf)
             prepared[key] = (views, sf13, sf2)
             return prepared[key]
 

@@ -1,11 +1,11 @@
-"""CPU checks for the D11 knob sunset (2026-09-12): the kernel package reads no
-environment; the profile declares the two remaining axes (STK_moe_static,
-STK_mla_prefill) and applies them once, before anything binds or arms."""
+"""Native production defaults are fixed; only unqualified experiments expire."""
 import datetime
 import importlib
+import os
 import sys
 import types
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import torch
@@ -15,38 +15,35 @@ sys.path.insert(0, str(ROOT))
 
 
 class KnobDeclarationTests(unittest.TestCase):
-    def _declared(self, env):
-        from engine.base.config import Config, ConfigError, Fact, Knob
-        from engine.profiles.glm53 import lanes
-        # the profile's declaration, spelled here without importing boot (torch/CUDA-heavy imports)
-        knobs = [Knob("moe_static", lanes.MOE_STATIC_STOCK, datetime.date(2026, 9, 30), "b12x static lane", "stock"),
-                 Knob("mla_prefill", "stock", datetime.date(2026, 9, 30), "MLA prefill", "stock"),
-                 Knob("context_ceiling", 0, datetime.date(2026, 9, 30), "served context ceiling", "0", int)]
-        return Config([Fact("world", 4, "facts.TP")], knobs, env=env, today=datetime.date(2026, 9, 12)), ConfigError
+    def _declared(self, env, *, production=False, today=datetime.date(2026, 9, 12)):
+        from engine.profiles.glm53 import boot
+        from engine.base.config import Config
+        args = types.SimpleNamespace(production=production, ckpt_meta="/meta", ranks="/ranks", kv_gib=8.73, port=8000)
+        with patch.object(boot, "Config", side_effect=lambda facts, knobs: Config(facts, knobs, env=env, today=today)):
+            return boot.declared(args, 4)
 
-    def test_defaults_are_the_judged_stock_paths(self):
-        cfg, _ = self._declared({})
-        self.assertEqual((cfg["moe_static"], cfg["mla_prefill"]), ("stock", "stock"))
-        self.assertEqual(cfg["context_ceiling"], 0)        # 0 = the checkpoint's trained positions
+    def test_production_remains_restartable_after_experiment_expiry(self):
+        cfg = self._declared({}, production=True, today=datetime.date(2040, 1, 1))
+        self.assertFalse(cfg.knobs)
+        self.assertEqual([cfg[k] for k in ("moe_static", "mla_prefill", "context_ceiling", "lanes", "decode_eager", "execution")],
+                         ["t,r,sf6,q0", "stock", 0, "served", 0, "native"])
 
-    def test_env_selects_the_production_candidate_and_undeclared_dies(self):
-        cfg, ConfigError = self._declared({"STK_moe_static": "t,r,sf6,q0", "STK_mla_prefill": "pair",
-                                           "STK_context_ceiling": "131072"})
-        self.assertEqual((cfg["moe_static"], cfg["mla_prefill"]), ("t,r,sf6,q0", "pair"))
-        self.assertEqual(cfg["context_ceiling"], 131072)   # parsed as int, not a string
-        self.assertEqual(cfg.overridden, ["context_ceiling", "mla_prefill", "moe_static"])
+    def test_adopted_execution_cannot_be_changed_by_stale_bisect_environment(self):
+        from engine.base.config import ConfigError
+        for production in (False, True):
+            for name, value in (("execution", "stock"), ("moe_static", "stock"),
+                                ("lanes", "reference"), ("decode_eager", "1")):
+                with self.subTest(production=production, knob=name), self.assertRaises(ConfigError):
+                    self._declared({"STK_"+name:value}, production=production)
+
+    def test_only_unqualified_mla_and_context_experiments_remain(self):
+        cfg = self._declared({"STK_mla_prefill":"pair", "STK_context_ceiling":"131072"})
+        self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling"})
+        self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("pair", 131072))
+        self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
+        from engine.base.config import ConfigError
         with self.assertRaises(ConfigError):
-            self._declared({"STK_B12X_STATIC_V2": "t"})
-
-    def test_boot_declares_exactly_these_knobs(self):
-        src = (ROOT / "engine/profiles/glm53/boot.py").read_text()
-        self.assertIn('Knob("moe_static"', src)
-        self.assertIn('Knob("mla_prefill"', src)
-        self.assertIn('Knob("context_ceiling"', src)
-        self.assertIn('Knob("decode_eager"', src)         # 45차 §23: the fleet's decode-graph stall bisect, expires 2026-09-25
-        self.assertIn('Knob("lanes"', src)                # 45차 §23: served-vs-reference table bisect of the garbage output, expires 2026-09-25
-        self.assertEqual(src.count("Knob("), 5)     # every axis still under measurement, and no more
-        self.assertIn('lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])', src)
+            self._declared({"STK_mla_prefill":"pair"}, production=True)
 
 
 class MoeStaticSpecTests(unittest.TestCase):
@@ -54,7 +51,7 @@ class MoeStaticSpecTests(unittest.TestCase):
         from engine.profiles.glm53.lanes import MOE_STATIC_PRODUCTION, parse_moe_static
         self.assertEqual(parse_moe_static("stock"), (None, False))
         self.assertEqual(parse_moe_static("0"), (None, False))
-        self.assertEqual(parse_moe_static(MOE_STATIC_PRODUCTION), ("t,r,sf6", False))
+        self.assertEqual(parse_moe_static(MOE_STATIC_PRODUCTION), ("t,r,sf6", True))
         self.assertEqual(parse_moe_static("t,r,sf6,q0"), ("t,r,sf6", True))
         with self.assertRaisesRegex(ValueError, "q0 needs"):
             parse_moe_static("u,q0")

@@ -133,10 +133,11 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "f849d96ae1b53a110ba126db23028a3d27111dfeedfd342c3b063ec5fb5b7a80",
+      "local_sha256": "4046daeb055ca1a1cadb3ba2290c0f865da0ab82c9a39f0018dab52a54af1fd4",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
+        "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture",
         "2026-09-12 GB10: include the NVFP4 max3 PTX reduction helper in persistent CuTe cache identity."
       ]
     },
@@ -260,7 +261,11 @@
     "b12x/moe_static_kernel_v4.py": {
       "source": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
       "sha256": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "2d24f28def5205469f5936f019690c7452d199e3181627bc6fbe39b5e2ab5455",
+      "local_modifications": [
+        "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture"
+      ]
     },
     "b12x/moe_static_kernel_v5.py": {
       "source": "overlay/modules/glm53_moe/moe_static_kernel_v5.py",

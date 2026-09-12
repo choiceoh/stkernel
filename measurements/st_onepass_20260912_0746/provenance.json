@@ -1,0 +1,19 @@
+{
+  "harness_commit": "cc6163c78613777225a4e48ac4ae7ac78871f97b",
+  "source_sha256": {
+    "bench/onepass.py": "ea807b17eb1b578121eba0cac91109160edd45646799dc5c669ecc236a4d964d",
+    "bench/bracket.py": "f8a7b7d9ce6d8c25df0e86da99fb78375feb020f938a5059e4067a6c461a5147",
+    "bench/window_metrics.py": "e791c6dbafae901e1e9d9abe7380c2c395e6f10039b8c8a6c97f6e70d1807cb5",
+    "bench/check-quality.py": "4995a58d51f46cb0741cb3156e57336c78e239a8150c41a67b366aae9d2f36ed",
+    "bench/korean-corruption.py": "34a9aacc7e82bf819fa3e0e5e5c6c0538e3e94877b07b7186a9eda69189324e8",
+    "bench/ko_filler.txt": "298db4148cf544aa9dd1e168ff4b65f113dba24275af74197c4e3317dde2fca2"
+  },
+  "adapter_sha256": "ee61630c317e0f999d803d8a5e6eeaeb134cbf1a90c32a43839710e65a5760c8",
+  "runner_sha256": "9a9ea32fe3e5856934b913939a84bc59009d1b9093fbf04ae02f3f64bd3bdeed",
+  "workload_unchanged": true,
+  "quality_gate_unchanged": true,
+  "production_prefix_cache_enabled": true,
+  "cold_boot": false,
+  "prior_attempt": "attempt1-aborted; stopped after 2K and submission of 32K; may warm 32K prefix cache",
+  "validation": "5 output hashes/timings/token counts match raw onepass; request delta 5; generated token total 3327; no traffic issues; same head boot; all ranks running with restart_count 0; supervisor active/enabled"
+}

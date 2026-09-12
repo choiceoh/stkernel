@@ -1,0 +1,95 @@
+...................sssssssssssssssssss2026-09-12 04:45:23,512 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7
+2026-09-12 04:45:23,513 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp4plww9kt/st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7.o
+..2026-09-12 04:45:23,514 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 04:45:23,514 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpl9lh_qlx/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-12 04:45:23,515 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 04:45:23,516 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpl9lh_qlx/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-12 04:45:23,516 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 04:45:23,516 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpl9lh_qlx/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+...sss...................ss.........................................................sssssssssssssssssssssssssssssssss.......[04:45:29] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+/usr/local/lib/python3.12/dist-packages/xgrammar/matcher.py:242: DeprecationWarning: max_rollback_tokens is deprecated. You don't need to set it and it's always unlimited (-1).
+  warnings.warn(
+.[04:45:29] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+.[04:45:29] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+.[04:45:29] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+.[04:45:29] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+.[04:45:29] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+[04:45:29] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+.[04:45:29] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+..................................................sss....ssss..ssss....ssssssssssssssssssssss....................ssss....s......................s......sEEEE....ssss...........................................................s..........ssssssssssssss....sss............................................................................................................................................................ssss...sss........................s...............s..ss...
+======================================================================
+ERROR: test_joining_or_invalidating_with_an_outstanding_readback_is_rejected (test_engine_pipeline.BatchTransitionTests.test_joining_or_invalidating_with_an_outstanding_readback_is_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_pipeline.py", line 124, in test_joining_or_invalidating_with_an_outstanding_readback_is_rejected
+    first = p.launch([1], [1])
+            ^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/pipeline.py", line 172, in launch
+    self._build(seqs, slots)
+  File "/repo/engine/profiles/glm53/pipeline.py", line 112, in _build
+    self._propose_rows()
+  File "/repo/engine/profiles/glm53/pipeline.py", line 152, in _propose_rows
+    drafts = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"])
+             ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute 'propose_rows'
+
+======================================================================
+ERROR: test_new_request_rebuilds_after_the_previous_batch_has_drained (test_engine_pipeline.BatchTransitionTests.test_new_request_rebuilds_after_the_previous_batch_has_drained) (stale=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_pipeline.py", line 111, in test_new_request_rebuilds_after_the_previous_batch_has_drained
+    p.launch([1], [1]).resolve()
+    ^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/pipeline.py", line 172, in launch
+    self._build(seqs, slots)
+  File "/repo/engine/profiles/glm53/pipeline.py", line 112, in _build
+    self._propose_rows()
+  File "/repo/engine/profiles/glm53/pipeline.py", line 152, in _propose_rows
+    drafts = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"])
+             ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute 'propose_rows'
+
+======================================================================
+ERROR: test_new_request_rebuilds_after_the_previous_batch_has_drained (test_engine_pipeline.BatchTransitionTests.test_new_request_rebuilds_after_the_previous_batch_has_drained) (stale=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_pipeline.py", line 111, in test_new_request_rebuilds_after_the_previous_batch_has_drained
+    p.launch([1], [1]).resolve()
+    ^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/pipeline.py", line 172, in launch
+    self._build(seqs, slots)
+  File "/repo/engine/profiles/glm53/pipeline.py", line 112, in _build
+    self._propose_rows()
+  File "/repo/engine/profiles/glm53/pipeline.py", line 152, in _propose_rows
+    drafts = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"])
+             ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute 'propose_rows'
+
+======================================================================
+ERROR: test_shrinking_keeps_device_progress_ahead_of_the_host (test_engine_pipeline.BatchTransitionTests.test_shrinking_keeps_device_progress_ahead_of_the_host)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_pipeline.py", line 137, in test_shrinking_keeps_device_progress_ahead_of_the_host
+    first = p.launch([1, 2], [1, 2])
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/pipeline.py", line 172, in launch
+    self._build(seqs, slots)
+  File "/repo/engine/profiles/glm53/pipeline.py", line 112, in _build
+    self._propose_rows()
+  File "/repo/engine/profiles/glm53/pipeline.py", line 152, in _propose_rows
+    drafts = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"])
+             ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute 'propose_rows'
+
+----------------------------------------------------------------------
+Ran 638 tests in 66.262s
+
+FAILED (errors=4, skipped=130)
+  box: test
+<MagicMock name='declared().table()' id='269246737386960'>
+  box: test
+<MagicMock name='declared().table()' id='269246735879392'>
+  box: test
+<MagicMock name='declared().table()' id='269246735958096'>
+  fleet_prune: keeps the holder, the queue, the paused and every runner they name; removes only what is both unreferenced and old; dry by default OK
+  expert_layout: tile-major bytes read back row-major per expert OK

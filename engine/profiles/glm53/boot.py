@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 import time
+from functools import partial
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -27,7 +28,7 @@ import torch                                                     # noqa: E402
 
 from engine.base import scheduler as sched                       # noqa: E402
 from engine.base.arena import Arena, prepare_allocation          # noqa: E402
-from engine.base.runtime_memory import RuntimeMemory           # noqa: E402
+from engine.base.runtime_memory import RuntimeMemory, reclaim_preparation_pages  # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.config import Config, Fact, Knob                # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
@@ -53,11 +54,10 @@ KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
 MAX_WAIT_S = 20.0                   # D10's one starvation valve
 MAX_SEQS = 4                        # launcher MAX_SEQS
-PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch (kv_tier): half the conversation tier's
-PREFIX_SNAPSHOTS = 96               # block-boundary checkpoints kept for prefix reuse (base/prefix.py): ~77 MiB each per rank at
-                                    # 45 layers with the drafter (34 KDA states + conv taps + the drafter's context ring) -- 7.2 GiB of the
-                                    # budget's ~40 GiB slack. The unit is the 768 block (nine per 6,912 chunk, 45차 §23); boundaries a
-                                    # request adopted outlive the ones nobody asked for (prefix._victim), so churn cannot flush them
+PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch
+PREFIX_SNAPSHOTS = 96               # block-boundary checkpoints: ~45 MiB/rank with the native two-head drafter KV shard.
+                                    # The unit is the 768 block (nine per 6,912 chunk); boundaries a request adopted
+                                    # outlive the ones nobody asked for (prefix._victim), so churn cannot flush them.
 
 
 def tokenizer(ckpt=facts.CKPT):
@@ -125,13 +125,12 @@ def eos_ids(ckpt=facts.CKPT) -> "list[int]":
 
 
 def declared(a, comm_world: int) -> Config:
-    """D11: the only inputs are facts and expiring knobs; an undeclared STK_*
-    in the environment kills the boot, and so does an expired knob. The two
-    kernel knobs are the package's only remaining axes under measurement on
-    ST (2026-09-12: 43 env knobs left engine/kernels; production's adopted
-    values are code, the never-adopted ones are gone, these two are the
-    candidates a bracket still has to judge on this engine). The third knob
-    bisects a serving stall (45th 21) and expires with it."""
+    """Native execution is fixed; only unqualified MLA and context experiments expire.
+
+    Production declares no knobs and rejects every STK_* override. The
+    retired execution, MoE, lane and eager-decode bisects cannot reappear
+    through an old environment file.
+    """
     import datetime as _dt
     facts_ = [
         Fact("model", str(a.ckpt_meta), "the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)"),
@@ -143,11 +142,13 @@ def declared(a, comm_world: int) -> Config:
         Fact("port", int(a.port), "--port"),
         Fact("prefix_snapshots", PREFIX_SNAPSHOTS, "block-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
     ]
+    fixed = dict(moe_static=lane_tables.MOE_STATIC_PRODUCTION,
+                 lanes="served", decode_eager=0, execution="native")
+    facts_ += [Fact(k, v, "native TP4 execution") for k, v in fixed.items()]
+    if getattr(a, "production", False):
+        defaults = dict(mla_prefill="stock", context_ceiling=0)
+        return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
-        Knob("moe_static", lane_tables.MOE_STATIC_STOCK, _dt.date(2026, 9, 30),
-             f"b12x static lane: production's 2026-09-09 adoption {lane_tables.MOE_STATIC_PRODUCTION!r} (+q0 = the TP recipe) "
-             "against the stock kernel the §15~18 judge ran; win = bake t,r,sf6 into lanes.served and delete this knob",
-             f"STK_moe_static={lane_tables.MOE_STATIC_STOCK}"),
         Knob("mla_prefill", "stock", _dt.date(2026, 9, 30),
              "large-M MLA prefill candidates (39차: pair, pair4, tile32; production keeps them off pending numerics + a TTFT bracket)",
              "STK_mla_prefill=stock"),
@@ -156,17 +157,6 @@ def declared(a, comm_world: int) -> Config:
              "0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's "
              "'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken",
              "STK_context_ceiling=0", int),
-        Knob("lanes", "served", _dt.date(2026, 9, 25),
-             "45차 §21: the fleet's served output is garbage from the first token while every self-consistency judge "
-             "passes; 'reference' boots the torch reference table on all 45 layers (slow, correct algebra by construction), "
-             "'expert' / 'kda_recurrent' / 'expert,kda_recurrent' keep the served table with those lanes on the reference -- "
-             "which table talks sense says whether a kernel lane or the composition is wrong",
-             "delete once the served table's text is judged by onepass"),
-        Knob("decode_eager", 0, _dt.date(2026, 9, 25),
-             "45차 §23: the first replay of a captured decode graph stalled on the fleet (four ranks at 96% GPU, 3/3 boots) -- "
-             "PR #567 found the cause (MoE workspaces freed under recorded graph addresses) and retains them; this knob keeps "
-             "an eager decode as the bisect against the graph path while that fix is judged by onepass",
-             "delete once the captured decode path is the judged one", parse=int),
     ]
     cfg = Config(facts_, knobs=knobs)
     return cfg
@@ -179,17 +169,24 @@ def decodable_vocab(tok) -> int:
 
 def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
-          context_ceiling: "int | None" = None,
+          context_ceiling: "int | None" = None, execution: str = "stock",
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
     F = facts.load(ckpt_meta)
+    if execution not in ("stock", "native"):
+        raise ValueError("execution must be stock or native")
     net = Glm53Net(F, comm, lanes, layers)
     specs = net.specs()
     drafter_dir = Path(drafter_dir)
     D = drafter_mod.load(drafter_dir) if use_drafter else None
     dspecs = drafter_mod.specs(D) if D else []
-    draft_shape = (D.layers, drafter_mod.ring_cells(D), D.kv_heads, D.head_dim) if D else None
+    # Native DFlash stores only this rank's KV heads. The direct-ring lane
+    # reads that shard; reserving the replicated ring would also waste three
+    # quarters of every persistent prefix snapshot's drafter state.
+    draft_heads = (D.kv_heads // comm.world_size if execution == "native" else D.kv_heads) if D else 0
+    draft_cells = (D.window if execution == "native" else drafter_mod.ring_cells(D)) if D else 0
+    draft_shape = (D.layers, draft_cells, draft_heads, D.head_dim) if D else None
     cache_layout = layout(F, net.layers, draft_shape)
     bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes
     ns = max_seqs + 1
@@ -219,8 +216,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         failure = None
         try:
             report = prepare_allocation(arena_bytes, files, workspace_bytes + os_reserve_bytes,
-                                        lambda: torch.cuda.mem_get_info()[0])
-            memory = RuntimeMemory(arena_bytes, workspace_bytes, os_reserve_bytes, comm=comm)
+                                        lambda: torch.cuda.mem_get_info()[0],
+                                        cache_roots=(Path(ranks_dir).parent, drafter_dir.parent))
+            memory = RuntimeMemory(arena_bytes, workspace_bytes, os_reserve_bytes, comm=comm,
+                                   reclaim=partial(reclaim_preparation_pages,
+                                                   cache_roots=(Path(ranks_dir).parent, drafter_dir.parent)))
         except (MemoryError, OSError, RuntimeError) as exc:
             failure = exc
         # A failed rank must prevent peers from starting their large CUDA
@@ -232,10 +232,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
         recorder.gauge("boot_immediately_free_GiB", round(report["immediately_free"] / GIB, 3))
         recorder.gauge("boot_reclaimed_GiB", round(report["reclaimed"] / GIB, 3))
+        recorder.gauge("boot_model_cache_files_returned", report["cache_files"])
         # D1: the box declared, with every line's provenance, before the arena is allocated
         from engine.profiles.glm53 import budget as budget_mod
         b = budget_mod.budget(kv_gib, max_seqs, chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
-                              ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None, snapshots=PREFIX_SNAPSHOTS)
+                              ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None, snapshots=PREFIX_SNAPSHOTS,
+                              draft_tp=comm.world_size if execution == "native" else 1,
+                              draft_native=execution == "native")
         recorder.gauge("budget_unassigned_GiB", round(b.kv_gib - b.kv_declared_gib, 2))
         if comm.rank == 0:
             print(budget_mod.report(b))
@@ -255,6 +258,24 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
             drafter = drafter_mod.Drafter(D, net, decodable)
             drafter.bind(dviews)
+        if execution == "native":
+            from engine.kernels.dense.store import PackStore
+            from engine.kernels.prefill_collectives import PrefillCollectives
+            store = PackStore("/cache", comm.rank)
+            with recorder.phase("prepare native execution"):
+                net.prepare_dense(store, consume_weights=True)
+                net.prefill_transport = PrefillCollectives(comm)
+                if D:
+                    drafter.prepare_fast(store, consume_weights=True)
+            for name, count in store.stats.items():
+                recorder.gauge("dense_pack_"+name, count)
+            recorder.gauge("target_native_linears", len(net.dense)-1)
+            recorder.gauge("drafter_native_linears", len(drafter.dense) if D else 0)
+            # Scratch from one-time quantization must not consume the workspace
+            # measured for prefill/capture. Live packs and graph owners remain.
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            store.release_pages()
         vision = None
         if VF:
             with recorder.phase("load vision"):
@@ -310,6 +331,28 @@ def run_prompts(engine: Glm53Engine, runner: Runner, prompts: "dict[int, list[in
             if out[seq] is None and seq not in runner.state.running and seq not in runner.state.waiting:
                 out[seq] = engine.generated(seq)
     return out
+
+
+def native_execution_report(net, drafter):
+    """Reject a prepared but unused lane before the full-model door opens."""
+    target = [layer for name, layer in net.dense.items() if name != 'head']
+    draft = list(drafter.dense.values())
+    expected_mhc = 2*len(net.layers)-1  # first attn pre has no preceding post
+    proof = dict(target_w4=sum(bool(p.executed & 1) for p in target),
+                 target_nvfp4=sum(bool(p.executed & 4) for p in target),
+                 target_fp8=sum(bool(p.executed & 2) for p in target),
+                 head_fp8=net.dense['head'].executed,
+                 drafter_w4=sum(bool(p.executed & 1) for p in draft),
+                 drafter_context_fp8=bool(drafter.dense['fc.weight'].executed & 2),
+                 mhc=len(net.mhc.executed),
+                 prefill_collectives=sorted(net.prefill_transport.executed))
+    if (proof['target_w4'] != len(target) or proof['target_nvfp4'] != len(target)
+            or proof['target_fp8'] != len(target)
+            or proof['drafter_w4'] != len(draft) or not proof['head_fp8']
+            or not proof['drafter_context_fp8'] or proof['mhc'] != expected_mhc
+            or len(proof['prefill_collectives']) != 2):
+        raise RuntimeError(f'native execution proof is incomplete: {proof}')
+    return proof
 
 
 def local(a) -> int:
@@ -519,18 +562,17 @@ def fleet(a) -> int:
     try:
         if comm.rank == 0:
             print(cfg.table())
+        with rec.phase("prepare one-shot"):
+            comm.prepare_oneshot()
         with rec.phase("lanes"):
-            if cfg["lanes"] == "served":
-                lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])   # every served lane, or the boot dies (D3)
-            elif cfg["lanes"] == "reference":
-                lanes = lane_tables.reference()                                                          # declared (STK_lanes), not a fallback
-            else:
-                lanes = lane_tables.served(reference_for=tuple(cfg["lanes"].split(",")),
-                                           moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])
+            lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
+                                       consume_scales=True)
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
-                                               context_ceiling=cfg["context_ceiling"] or None)
+                                               context_ceiling=cfg["context_ceiling"] or None,
+                                               execution=cfg["execution"])
+
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
@@ -539,10 +581,7 @@ def fleet(a) -> int:
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
         Server._agree_on_parked(comm, sorted(runner.parked_keys()))
         with rec.phase("capture decode"):
-            if cfg["decode_eager"]:
-                engine.qualify_eager_decode(warmup=cfg["lanes"] == "served")   # no graphs: the step runs in Python, the lanes are the same
-            else:
-                engine.capture_decode(MAX_SEQS)
+            engine.capture_decode(MAX_SEQS)
         with rec.phase("warmup shapes"):
             paid = engine.warmup_shapes()                   # first-use JIT paid at boot, not on the first user (45차 §23 B2)
         if engine.vision is None:                           # production serves images and video (PR #431): so does this boot, or it does not boot
@@ -554,6 +593,10 @@ def fleet(a) -> int:
             engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)   # response_format (json_object / json_schema), every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
+        engine.memory.checkpoint("production/ready")
+        import json
+        proof = native_execution_report(net, engine.drafter)
+        print('ST_NATIVE_EXECUTION '+json.dumps(dict(rank=comm.rank, **proof)), flush=True)
         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
         dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
         if comm.rank == 0:
@@ -591,6 +634,7 @@ def fleet(a) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--local", action="store_true", help="four ranks as threads on this box, reference lanes")
+    ap.add_argument("--production", action="store_true", help="fixed serving defaults without expiring experiment knobs; rejects STK_* overrides")
     ap.add_argument("--layers", default="0-4")
     ap.add_argument("--ranks", default=str(facts.RANKS))
     ap.add_argument("--kv-gib", type=float, default=KV_GIB)

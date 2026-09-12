@@ -1,0 +1,7 @@
+test_missing_native_implementation_cannot_pass_coverage (test_engine_native_execution.NativeQualificationTests.test_missing_native_implementation_cannot_pass_coverage) ... ok
+test_nonfinite_prefill_releases_slots_and_refuses_readiness (test_engine_native_execution.NativeQualificationTests.test_nonfinite_prefill_releases_slots_and_refuses_readiness) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.003s
+
+OK

@@ -1,0 +1,26 @@
+{
+  "source_commit": "cc6163c78613777225a4e48ac4ae7ac78871f97b",
+  "files": {
+    "build/glm53/glm53_megakernel.cu": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
+    "build/glm53/glm53_megakernel.py": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e"
+  },
+  "cuda_changes": "Runtime environment reads replaced by adopted fixed dispatch values.",
+  "dispatch": {
+    "VLLM_GLM53_MK_PDL": "1",
+    "VLLM_GLM53_MK_INPUT_CTA": "4",
+    "VLLM_GLM53_MK_INPUT_REUSE": "1",
+    "VLLM_GLM53_MK_KSR2": "0",
+    "VLLM_GLM53_MK_MLA_PROBE": "0"
+  },
+  "packing_functions": [
+    "_w4_search",
+    "_w4_row_shift",
+    "_w4_rtn_codes",
+    "mk_w4_dequant_rowmajor",
+    "mk_w4_dequant",
+    "_mk_quant_x_ref",
+    "_w4_gptq_codes",
+    "_w4_quant_cols"
+  ],
+  "local_cuda_sha256": "533262a9416fb47e48bd69e7036693f83beddd250883fccb4e285c389d6e1c0b"
+}

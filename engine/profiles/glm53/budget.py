@@ -22,11 +22,11 @@ from pathlib import Path
 from engine.base.budget import (GIB, MEASURED, READ, LEDGER, DECLARED, Line, Budget, host_box, rank_weights)
 from engine.profiles.glm53 import facts, specs as specs_mod
 from engine.profiles.glm53 import drafter as drafter_mod
-from engine.profiles.glm53.caches import layout, snapshot_layout
+from engine.profiles.glm53.caches import layout, snapshot_layout, stage_bytes
 
 RUNTIME_FLOOR_GIB = 5.54            # ledger 40th boot table (vLLM): CUDA context + NCCL 16 channels -- re-measure on ST
 WORKSPACE_GIB = 12.0                # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
-OS_RESERVE_MULTIPLE = 2.0           # 2x earlyoom's 5% floor (D1: six SIGTERMs at 5%)
+OS_RESERVE_GIB = 4.0               # RuntimeMemory's fixed physical reserve; admission also budgets all workspace
 NVME_STAGING_BYTES = 2 * (64 << 20) + 2 * (32 << 20)   # kv_tier: 64 MiB pinned staging + 64 MiB device scratch, and the prefix tier's 32 + 32
 SELECT_ROWS_TRANSIENT_NOTE = "indexer selection bounded to 1,024 query rows per pass (net.SELECT_ROWS)"
 
@@ -45,7 +45,7 @@ def ledger_peak(path: "str | Path | None") -> "tuple[float, str] | None":
 def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | None" = None,
            ckpt: "str | Path" = facts.CKPT, ranks_dir: "str | Path | None" = None, rank: int = 0,
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
-           snapshots: int = 8) -> Budget:
+           snapshots: int = 8, draft_tp: int = 1, draft_native: "bool | None" = None) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave."""
     host_total, _ = host_box()
     if box_gib is None:
@@ -70,7 +70,11 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     draft_shape, drafter_gib = None, 0.0
     if drafter_dir and (Path(drafter_dir) / "config.json").exists():
         D = drafter_mod.load(drafter_dir)
-        draft_shape = (D.layers, drafter_mod.ring_cells(D), D.kv_heads, D.head_dim)
+        if draft_tp <= 0 or D.kv_heads % draft_tp:
+            raise ValueError("drafter KV heads must split over the declared TP group")
+        native = draft_tp > 1 if draft_native is None else draft_native
+        cells = D.window if native else drafter_mod.ring_cells(D)
+        draft_shape = (D.layers, cells, D.kv_heads // draft_tp, D.head_dim)
         drafter_gib = sum(s.nbytes() for s in drafter_mod.specs(D)) / GIB
     lay = layout(F, range(F.layers), draft_shape)
     slots_gib = (max_seqs + 1) * lay.slot_bytes / GIB
@@ -82,17 +86,18 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         workspace_evidence += f"; measured peak {peak[0]:.2f} GiB at {peak[1]} ({Path(ledger).name})"
     else:
         workspace_evidence += f"; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a {chunk:,}-token chunk at {chunk / 1024 * 0.52:.1f} GiB, {SELECT_ROWS_TRANSIENT_NOTE}"
-    floor = host_total * 0.05
     lines = [
-        Line("reserve for the OS", floor * OS_RESERVE_MULTIPLE, DECLARED, f"{OS_RESERVE_MULTIPLE:g}x earlyoom's 5% floor ({floor:.2f} GiB)"),
+        Line("reserve for the OS", OS_RESERVE_GIB, DECLARED, "base/runtime_memory: immediately free host/device byte floor"),
         Line("runtime floor (CUDA ctx + NCCL 16ch)", RUNTIME_FLOOR_GIB, LEDGER, "GLM 40th boot table -- re-measure on ST"),
         Line("weights (this rank, TP=4)", weights_gib, READ, weights_evidence),
-        Line("drafter (DFlash2, replicated)", drafter_gib, READ, "drafter.specs: every rank holds the whole drafter (DRAFT_TP=1 as served)"),
+        Line("drafter weight reservation", drafter_gib, READ, f"drafter.specs: source reservation retained; compute/KV TP={draft_tp}"),
         Line("vision tower (BF16, replicated)", vision_gib, READ, vision_evidence),
         Line(f"state slots ({max_seqs} + null) x {lay.slot_bytes / 2**20:.0f} MiB", slots_gib, READ,
              "caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring"),
         Line(f"prefix snapshots ({snapshots} x {snapshot_bytes / 2**20:.0f} MiB)", snapshots * snapshot_bytes / GIB, READ,
              "caches.snapshot_layout: chunk-boundary position rings for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
+        Line("generated-boundary staging", stage_bytes(F, range(F.layers), max_seqs) / GIB, READ,
+             "caches.stage_bytes: per-slot recurrent state and convolution history"),
         Line("workspace ceiling (outside the arena)", WORKSPACE_GIB, DECLARED, workspace_evidence),
         Line("NVMe tier staging", NVME_STAGING_BYTES / GIB, DECLARED, "kv_tier: pinned staging + device scratch, conversations and prefix tiers"),
     ]
@@ -129,7 +134,8 @@ def main(argv=None) -> int:
     ap.add_argument("--ledger", default=None, help="a boot's memory-rankN.json (RuntimeMemory.write)")
     ap.add_argument("--snapshots", type=int, default=boot.PREFIX_SNAPSHOTS)
     a = ap.parse_args(argv)
-    b = budget(a.kv_gib, a.max_seqs, a.chunk, a.box_gib, ranks_dir=a.ranks, ledger=a.ledger, snapshots=a.snapshots)
+    b = budget(a.kv_gib, a.max_seqs, a.chunk, a.box_gib, ranks_dir=a.ranks, ledger=a.ledger, snapshots=a.snapshots,
+               draft_tp=facts.TP)
     print(report(b))
     return 0
 

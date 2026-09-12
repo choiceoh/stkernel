@@ -162,11 +162,13 @@ class AsyncDecode:
         if len(self.pending) >= self.depth or not self.free:
             raise RuntimeError("the decode pipeline is full: resolve a step before launching another")
         if self.stale or tuple(seqs) != self.batch:
-            if self.pending or (self.batch and set(seqs) - set(self.batch)):
+            if self.pending:
                 if set(seqs) - set(self.batch) or self.stale:
                     raise RuntimeError("rows joined the batch while steps were in flight: the runner must drain first")
                 self._shrink(seqs)
             else:
+                # A completed request leaves its batch identity behind. Once
+                # readbacks have drained, a new row or prefill can rebuild it.
                 self._build(seqs, slots)
         b = self.buf
         n = len(seqs)

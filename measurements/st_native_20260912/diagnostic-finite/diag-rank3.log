@@ -1,0 +1,82 @@
+[W912 00:35:44.051183826 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{"rank": 3, "tokens": 32545}
+{"rank": 3, "variant": {"sp": true, "nvfp4": true}}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+2026-09-12 00:36:52,777 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 00:36:52,778 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476
+2026-09-12 00:37:00,512 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=55296 -> rows 92032/92032 tiles 719/719 tasks 2876/2876
+[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=6912
+{"rank": 3, "context": 0, "length": 6912, "token": 13, "text": ".", "passed": true}
+{"rank": 3, "context": 6912, "length": 6912, "token": 41802, "text": "\uc73c\ub85c", "passed": true}
+{"rank": 3, "context": 13824, "length": 6912, "token": 53754, "text": " \uae30", "passed": true}
+{"rank": 3, "context": 20736, "length": 6912, "token": 135631, "text": "\ubb3c", "passed": true}
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=39176 -> rows 76032/92032 tiles 594/719 tasks 2376/2876
+{"rank": 3, "context": 27648, "length": 4897, "token": 785, "text": "The", "passed": true}
+{"rank": 3, "variant": {"sp": false, "nvfp4": true}}
+{"rank": 3, "context": 0, "length": 6912, "token": 13, "text": ".", "passed": true}
+{"rank": 3, "context": 6912, "length": 6912, "token": 41802, "text": "\uc73c\ub85c", "passed": true}
+{"rank": 3, "context": 13824, "length": 6912, "token": 53754, "text": " \uae30", "passed": true}
+{"rank": 3, "context": 20736, "length": 6912, "token": 135631, "text": "\ubb3c", "passed": true}
+{"rank": 3, "context": 27648, "length": 4897, "token": 785, "text": "The", "passed": true}
+{"rank": 3, "variant": {"sp": true, "nvfp4": false}}
+{"rank": 3, "context": 0, "length": 6912, "token": 13, "text": ".", "passed": true}
+{"rank": 3, "context": 6912, "length": 6912, "token": 41802, "text": "\uc73c\ub85c", "passed": true}
+{"rank": 3, "context": 13824, "length": 6912, "token": 53754, "text": " \uae30", "passed": true}
+{"rank": 3, "context": 20736, "length": 6912, "token": 135631, "text": "\ubb3c", "passed": true}
+{"rank": 3, "context": 27648, "length": 4897, "token": 785, "text": "The", "passed": true}
+{"rank": 3, "variant": {"sp": false, "nvfp4": false}}
+{"rank": 3, "context": 0, "length": 6912, "token": 13, "text": ".", "passed": true}
+{"rank": 3, "context": 6912, "length": 6912, "token": 78570, "text": " \ufffd", "passed": true}
+{"rank": 3, "context": 13824, "length": 6912, "token": 53754, "text": " \uae30", "passed": true}
+{"rank": 3, "context": 20736, "length": 6912, "token": 135631, "text": "\ubb3c", "passed": true}
+{"rank": 3, "context": 27648, "length": 4897, "token": 785, "text": "The", "passed": true}

@@ -1,0 +1,30 @@
+[
+  {
+    "rank": 0,
+    "ready": true,
+    "checkpoints": 159,
+    "peak_reserved_gib": 61.734375,
+    "peak_workspace_gib": 5.731342144310474
+  },
+  {
+    "rank": 1,
+    "ready": true,
+    "checkpoints": 159,
+    "peak_reserved_gib": 61.734375,
+    "peak_workspace_gib": 5.731342144310474
+  },
+  {
+    "rank": 2,
+    "ready": true,
+    "checkpoints": 159,
+    "peak_reserved_gib": 61.734375,
+    "peak_workspace_gib": 5.731342144310474
+  },
+  {
+    "rank": 3,
+    "ready": true,
+    "checkpoints": 159,
+    "peak_reserved_gib": 61.734375,
+    "peak_workspace_gib": 5.731342144310474
+  }
+]

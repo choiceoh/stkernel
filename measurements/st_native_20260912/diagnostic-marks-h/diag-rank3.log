@@ -1,0 +1,98 @@
+[W912 03:38:28.973394879 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{"rank": 3, "variant": "native-marks", "tokens": 128559, "begin": true}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+2026-09-12 03:39:38,079 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 03:39:38,080 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476
+2026-09-12 03:39:46,416 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=55296 -> rows 92032/92032 tiles 719/719 tasks 2876/2876
+[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=6912
+{"rank": 3, "variant": "native-marks", "ctx": 0}
+{"rank": 3, "variant": "native-marks", "ctx": 27648}
+{"rank": 3, "variant": "native-marks", "ctx": 55296}
+{"rank": 3, "variant": "native-marks", "ctx": 82944}
+{"rank": 3, "variant": "native-marks", "ctx": 110592}
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=33144 -> rows 69888/92032 tiles 546/719 tasks 2184/2876
+2026-09-12 03:40:39,670 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 03:40:39,670 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1_99d2213b325520ff
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12 03:40:41,913 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1_99d2213b325520ff.o
+[b12x static v2] lane serving: static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=1, routed=8, smem=98304 B)
+{"rank": 3, "variant": "native-marks", "first": 785, "generated": [785, 1196, 374, 10156, 2326, 4755, 3118, 389, 279, 2197, 1447, 16, 13, 51053, 27907, 88495, 133420, 90202, 20360, 62882, 29172, 57638, 23196, 16544, 78664, 120, 132826, 31197, 19931, 30, 320, 3838, 374, 279, 37416, 6783, 315, 279, 8754, 35464, 1334, 50472, 17, 13, 10759, 230, 108, 29237, 50015, 65033, 54685, 62882, 34225, 26612, 138835, 144728, 226, 19931, 11, 78664, 116, 36893, 89118, 78992], "text": "The user is asking three questions based on the document:\n\n1. 메리디안 배열의 보정 상수는 얼마인가? (What is the calibration constant of the Meridian array?)\n2. 툰드라 조사 보고서에는 누가, 언제 서명", "seconds": 85.07439123299991}
+DIAGNOSTIC_CONTROL_READY
+DIAGNOSTIC_COMMAND 01-runner.py
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+{"rank": 3, "runner_first": [220]}
+2026-09-12 03:41:49,791 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1_946887720f597aab
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12 03:41:54,815 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1_946887720f597aab.o
+[b12x static v2] lane serving: static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=98304 B)
+{"rank": 3, "variant": "runner-marked", "generated": [220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13, 220, 16, 13], "text": " 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1.", "seconds": 71.17458126600104}
+DIAGNOSTIC_DONE 01-runner.py
+DIAGNOSTIC_COMMAND 02-split.py
+{"rank": 3, "variant": "runner-no-observe", "generated": [785], "text": "The", "seconds": 58.95410724699468}
+{"rank": 3, "variant": "runner-no-prefix", "generated": [785], "text": "The", "seconds": 53.29667566999706}
+DIAGNOSTIC_DONE 02-split.py
+DIAGNOSTIC_COMMAND 03-observe-variants.py
+{"rank": 3, "variant": "runner-live-observe", "generated": [785], "text": "The", "seconds": 63.46217794399854}
+{"rank": 3, "variant": "runner-sync-observe", "generated": [785], "text": "The", "seconds": 59.98129847700329}
+{"rank": 3, "variant": "runner-scratch-observe", "generated": [154842], "text": "</think>", "seconds": 59.824141550001514}
+DIAGNOSTIC_DONE 03-observe-variants.py
+DIAGNOSTIC_COMMAND 04-sync-sides.py
+{"rank": 3, "variant": "runner-sync-before-observe", "generated": [785], "text": "The", "seconds": 59.699275576997024}
+{"rank": 3, "variant": "runner-sync-after-observe", "generated": [785], "text": "The", "seconds": 64.1086357039967}
+DIAGNOSTIC_DONE 04-sync-sides.py
+DIAGNOSTIC_COMMAND 05-forward-fence.py
+{"rank": 3, "variant": "runner-sync-after-forward", "generated": [785], "text": "The", "seconds": 59.955587489996105}
+DIAGNOSTIC_DONE 05-forward-fence.py

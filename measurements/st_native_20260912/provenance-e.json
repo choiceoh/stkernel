@@ -1,0 +1,23 @@
+{
+  "image": "st-engine:perf-f4d7-e",
+  "release": "/home/choiceoh/st-releases/perf-f4d7-20260912e",
+  "source_sha256": "af86a057c318a0e6ab6bdbd195e816ab9f31c68fed9c9cf28c8f37f8404104d3",
+  "ranks": [
+    "10.10.10.2",
+    "10.10.10.1",
+    "10.10.10.3",
+    "10.10.10.4"
+  ],
+  "execution": "native",
+  "moe_static": "t,r,sf6,q0",
+  "vllm_present": false,
+  "nvfp4_quantization_pdl": false,
+  "mk_pdl": true,
+  "production": true,
+  "kv_gib": 16,
+  "prefix_snapshots": 96,
+  "workspace_gib": 12,
+  "os_reserve_gib": 4,
+  "integrated_main": "20db7f1d",
+  "drafter_kv_heads_per_rank": 2
+}

@@ -17,6 +17,23 @@ from engine.base.sampler import (distribution, draw, needs_rich_sampler, process
 
 
 class OptionTests(unittest.TestCase):
+    def test_penalty_history_preserves_the_engines_prefix_history_protocol(self):
+        from types import SimpleNamespace
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = Glm53Engine(None, SimpleNamespace(device=torch.device('cpu')), SimpleNamespace(spec_k=5))
+        e.tokens[0], e.prompt_len[0] = [1, 2, 3], 2
+        e.options[0] = {'presence_penalty': 1.0}
+        self.assertEqual(e.history(0), [1, 2, 3])
+        logits = e._row_logits(0, torch.ones(8), 0, [])
+        self.assertEqual(logits.tolist(), [1., 1., 1., 0., 1., 1., 1., 1.])
+        self.assertEqual(e.history(0), [1, 2, 3])
+        e.forget(0)
+        self.assertNotIn(0, e.sampling_history.rows)
+        e.tokens[0], e.prompt_len[0] = [4, 5], 2
+        e.options[0] = {'presence_penalty': 1.0}
+        self.assertEqual(e._row_logits(0, torch.ones(8), 0, []).tolist(), [1.] * 8)
+        self.assertEqual(e.history(0), [4, 5])
+
     def test_validate_refuses_unknown_and_out_of_range(self):
         validate_options({"top_p": 0.5, "top_k": 3, "seed": 1, "presence_penalty": 1.5, "frequency_penalty": -2,
                           "repetition_penalty": 1.2, "logit_bias": {3: -100.0}, "stop_token_ids": [7], "logprobs": 5,
@@ -364,15 +381,15 @@ class HistoryLifetimeTests(unittest.TestCase):
         from engine.profiles.glm53.adapter import Glm53Engine
         source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
         body = source[source.index("    def _forget_history"):]
-        self.assertIn("self.history.forget(seq)", body[: body.index("\n    def ", 1)], "the helper must reach the History")
+        self.assertIn("self.sampling_history.forget(seq)", body[: body.index("\n    def ", 1)], "the helper must reach the History")
         engine = Glm53Engine.__new__(Glm53Engine)            # the method, none of the boot
-        engine.history = None
+        engine.sampling_history = None
         engine._forget_history(0)                            # a boot whose first request has not asked for penalties
-        engine.history = History(8, "cpu")
-        engine.history.of(0, [1, 1, 2, 3], 2)
-        self.assertIn(0, engine.history.rows)
+        engine.sampling_history = History(8, "cpu")
+        engine.sampling_history.of(0, [1, 1, 2, 3], 2)
+        self.assertIn(0, engine.sampling_history.rows)
         engine._forget_history(0)
-        self.assertNotIn(0, engine.history.rows, "the helper has to reach the history, not merely exist")
+        self.assertNotIn(0, engine.sampling_history.rows, "the helper has to reach the history, not merely exist")
 
 
 class VerificationPathTests(unittest.TestCase):
@@ -390,4 +407,3 @@ class VerificationPathTests(unittest.TestCase):
             many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), draft.unsqueeze(0),
                                             torch.Generator().manual_seed(trial))
             self.assertEqual(one, int(many[0]), f"trial {trial}")
-

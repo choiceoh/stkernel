@@ -1,0 +1,132 @@
+{
+  "ready": false,
+  "arena_bytes": 73166799704,
+  "workspace_limit_bytes": 12884901888,
+  "os_reserve_bytes": 4294967296,
+  "baseline_reserved_bytes": 2097152,
+  "allocator_limit_bytes": 86053798744,
+  "seconds": 95.0749,
+  "spend": {
+    "prefill": 56.286199999999994,
+    "loaded": 38.7887
+  },
+  "phases": [
+    {
+      "phase": "loaded",
+      "at_seconds": 38.7887,
+      "seconds": 38.7887,
+      "allocated_bytes": 74377637888,
+      "reserved_bytes": 74505519104,
+      "peak_allocated_bytes": 75474275840,
+      "peak_reserved_bytes": 75528929280,
+      "immediately_free_bytes": 31128608768,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 2360032424,
+      "passed": true
+    },
+    {
+      "phase": "prefill/128/0/before",
+      "at_seconds": 42.1074,
+      "seconds": 3.3188,
+      "allocated_bytes": 74476985856,
+      "reserved_bytes": 74589405184,
+      "peak_allocated_bytes": 75474275840,
+      "peak_reserved_bytes": 75528929280,
+      "immediately_free_bytes": 31019917312,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 2360032424,
+      "passed": true
+    },
+    {
+      "phase": "prefill/128/0/prepared",
+      "at_seconds": 65.762,
+      "seconds": 23.6545,
+      "allocated_bytes": 74637746688,
+      "reserved_bytes": 74935435264,
+      "peak_allocated_bytes": 75474275840,
+      "peak_reserved_bytes": 75528929280,
+      "immediately_free_bytes": 29452574720,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 2360032424,
+      "passed": true
+    },
+    {
+      "phase": "prefill/1024/0/before",
+      "at_seconds": 65.765,
+      "seconds": 0.0031,
+      "allocated_bytes": 74637746688,
+      "reserved_bytes": 74935435264,
+      "peak_allocated_bytes": 75474275840,
+      "peak_reserved_bytes": 75528929280,
+      "immediately_free_bytes": 29452574720,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 2360032424,
+      "passed": true
+    },
+    {
+      "phase": "prefill/1024/0/prepared",
+      "at_seconds": 66.3943,
+      "seconds": 0.6292,
+      "allocated_bytes": 74687874560,
+      "reserved_bytes": 74956406784,
+      "peak_allocated_bytes": 75474275840,
+      "peak_reserved_bytes": 75528929280,
+      "immediately_free_bytes": 29421858816,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 2360032424,
+      "passed": true
+    },
+    {
+      "phase": "prefill/6912/0/before",
+      "at_seconds": 66.3972,
+      "seconds": 0.0029,
+      "allocated_bytes": 74687874560,
+      "reserved_bytes": 74956406784,
+      "peak_allocated_bytes": 75474275840,
+      "peak_reserved_bytes": 75528929280,
+      "immediately_free_bytes": 29421858816,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 2360032424,
+      "passed": true
+    },
+    {
+      "phase": "prefill/6912/0/prepared",
+      "at_seconds": 76.5959,
+      "seconds": 10.1987,
+      "allocated_bytes": 74796795392,
+      "reserved_bytes": 76277612544,
+      "peak_allocated_bytes": 75844688384,
+      "peak_reserved_bytes": 76277612544,
+      "immediately_free_bytes": 27929874432,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 3108715688,
+      "passed": true
+    },
+    {
+      "phase": "prefill/6912/2596608/before",
+      "at_seconds": 76.5986,
+      "seconds": 0.0027,
+      "allocated_bytes": 74796795392,
+      "reserved_bytes": 76277612544,
+      "peak_allocated_bytes": 75844688384,
+      "peak_reserved_bytes": 76277612544,
+      "immediately_free_bytes": 27929874432,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 3108715688,
+      "passed": true
+    },
+    {
+      "phase": "prefill/6912/2596608/prepared",
+      "at_seconds": 95.0749,
+      "seconds": 18.4763,
+      "allocated_bytes": 74796795392,
+      "reserved_bytes": 83491815424,
+      "peak_allocated_bytes": 81375449088,
+      "peak_reserved_bytes": 83491815424,
+      "immediately_free_bytes": 20525293568,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 10322918568,
+      "passed": false
+    }
+  ]
+}

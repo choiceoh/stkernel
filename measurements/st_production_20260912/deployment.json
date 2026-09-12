@@ -1,0 +1,199 @@
+{
+  "release_commit": "5734b29fde84",
+  "release_dir": "/home/choiceoh/st-releases/5734b29fde84",
+  "local_engine_source_sha256": "ae748cff7c85281f200def3a0fa987be83c21bf2777e637c25a91f61e83ab748",
+  "ranks": [
+    {
+      "rank": 0,
+      "node": "10.10.10.2",
+      "container": "b1806a9d18214ded5fd6108998d1f3638de8751882b3d4b63ae31b715f294bdb",
+      "image": "st-engine:prod-5734b29fde84",
+      "image_id": "sha256:0afd5e827281dfe63bf9d05bc862768860b802137e39eea8069346c51fc68580",
+      "state": "running",
+      "started": "2026-09-11T21:42:23.102861926Z",
+      "command": [
+        "-lc",
+        "source /repo/launchers/lib/common-tp4.sh; eval \"$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --production --port 8000 --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full --ckpt-meta /repo/st-glm53-meta --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "Destination": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "RW": false
+        },
+        {
+          "Source": "/home/choiceoh/glm53-cache",
+          "Destination": "/cache",
+          "RW": true
+        },
+        {
+          "Source": "/home/choiceoh/glm53-logs",
+          "Destination": "/home/choiceoh/glm53-logs",
+          "RW": true
+        },
+        {
+          "Source": "/home/choiceoh/st-releases/5734b29fde84",
+          "Destination": "/repo",
+          "RW": false
+        },
+        {
+          "Source": "/home/choiceoh/models/st-glm53-9391-up-gate-full",
+          "Destination": "/home/choiceoh/models/st-glm53-9391-up-gate-full",
+          "RW": false
+        }
+      ],
+      "env": {
+        "MASTER_ADDR": "10.10.10.2",
+        "WORLD_SIZE": "4",
+        "RANK": "0",
+        "MASTER_PORT": "29555"
+      },
+      "engine_source_sha256": "ae748cff7c85281f200def3a0fa987be83c21bf2777e637c25a91f61e83ab748",
+      "vllm_present": false
+    },
+    {
+      "rank": 1,
+      "node": "10.10.10.1",
+      "container": "0bcd9968e325ee4b8813d004782647ec85f14a0989984da14f0d1da468f673cb",
+      "image": "st-engine:prod-5734b29fde84",
+      "image_id": "sha256:10191f46490f6b92cd44af7978a3dd903ce1c61e2b054fadbbd23a936e955824",
+      "state": "running",
+      "started": "2026-09-11T21:42:24.674534796Z",
+      "command": [
+        "-lc",
+        "source /repo/launchers/lib/common-tp4.sh; eval \"$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --production --port 8000 --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full --ckpt-meta /repo/st-glm53-meta --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/choiceoh/models/st-glm53-9391-up-gate-full",
+          "Destination": "/home/choiceoh/models/st-glm53-9391-up-gate-full",
+          "RW": false
+        },
+        {
+          "Source": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "Destination": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "RW": false
+        },
+        {
+          "Source": "/home/choiceoh/glm53-cache",
+          "Destination": "/cache",
+          "RW": true
+        },
+        {
+          "Source": "/home/choiceoh/glm53-logs",
+          "Destination": "/home/choiceoh/glm53-logs",
+          "RW": true
+        },
+        {
+          "Source": "/home/choiceoh/st-releases/5734b29fde84",
+          "Destination": "/repo",
+          "RW": false
+        }
+      ],
+      "env": {
+        "RANK": "1",
+        "MASTER_ADDR": "10.10.10.2",
+        "MASTER_PORT": "29555",
+        "WORLD_SIZE": "4"
+      },
+      "engine_source_sha256": "ae748cff7c85281f200def3a0fa987be83c21bf2777e637c25a91f61e83ab748",
+      "vllm_present": false
+    },
+    {
+      "rank": 2,
+      "node": "10.10.10.3",
+      "container": "3e5496079160a22f22e6d9c3d8440eca5ad2b1af79e8d07526169275d9476b02",
+      "image": "st-engine:prod-5734b29fde84",
+      "image_id": "sha256:6a71991bfcf68fe069b07d79f96fb673daa02c124ff314d870ce378148092661",
+      "state": "running",
+      "started": "2026-09-11T21:42:24.588067026Z",
+      "command": [
+        "-lc",
+        "source /repo/launchers/lib/common-tp4.sh; eval \"$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --production --port 8000 --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full --ckpt-meta /repo/st-glm53-meta --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/choiceoh/glm53-logs",
+          "Destination": "/home/choiceoh/glm53-logs",
+          "RW": true
+        },
+        {
+          "Source": "/home/choiceoh/st-releases/5734b29fde84",
+          "Destination": "/repo",
+          "RW": false
+        },
+        {
+          "Source": "/home/choiceoh/models/st-glm53-9391-up-gate-full",
+          "Destination": "/home/choiceoh/models/st-glm53-9391-up-gate-full",
+          "RW": false
+        },
+        {
+          "Source": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "Destination": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "RW": false
+        },
+        {
+          "Source": "/home/choiceoh/glm53-cache",
+          "Destination": "/cache",
+          "RW": true
+        }
+      ],
+      "env": {
+        "MASTER_PORT": "29555",
+        "RANK": "2",
+        "MASTER_ADDR": "10.10.10.2",
+        "WORLD_SIZE": "4"
+      },
+      "engine_source_sha256": "ae748cff7c85281f200def3a0fa987be83c21bf2777e637c25a91f61e83ab748",
+      "vllm_present": false
+    },
+    {
+      "rank": 3,
+      "node": "10.10.10.4",
+      "container": "ab3476f9bd81a6b66020028c0a463277a00273cd314d575bfbde4c866a7d1a51",
+      "image": "st-engine:prod-5734b29fde84",
+      "image_id": "sha256:e9d9c4b7f104cce23ef97cb65ba492706212d7bcd261463f23ea7ef8d1c92908",
+      "state": "running",
+      "started": "2026-09-11T21:42:24.542302486Z",
+      "command": [
+        "-lc",
+        "source /repo/launchers/lib/common-tp4.sh; eval \"$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --production --port 8000 --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full --ckpt-meta /repo/st-glm53-meta --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/choiceoh/glm53-cache",
+          "Destination": "/cache",
+          "RW": true
+        },
+        {
+          "Source": "/home/choiceoh/glm53-logs",
+          "Destination": "/home/choiceoh/glm53-logs",
+          "RW": true
+        },
+        {
+          "Source": "/home/choiceoh/st-releases/5734b29fde84",
+          "Destination": "/repo",
+          "RW": false
+        },
+        {
+          "Source": "/home/choiceoh/models/st-glm53-9391-up-gate-full",
+          "Destination": "/home/choiceoh/models/st-glm53-9391-up-gate-full",
+          "RW": false
+        },
+        {
+          "Source": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "Destination": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "RW": false
+        }
+      ],
+      "env": {
+        "RANK": "3",
+        "MASTER_ADDR": "10.10.10.2",
+        "MASTER_PORT": "29555",
+        "WORLD_SIZE": "4"
+      },
+      "engine_source_sha256": "ae748cff7c85281f200def3a0fa987be83c21bf2777e637c25a91f61e83ab748",
+      "vllm_present": false
+    }
+  ]
+}

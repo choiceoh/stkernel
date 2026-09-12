@@ -1,0 +1,6 @@
+test_decode_prefill_and_replayed_changed_inputs (test_engine_dense.DenseTests.test_decode_prefill_and_replayed_changed_inputs) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 41.449s
+
+OK

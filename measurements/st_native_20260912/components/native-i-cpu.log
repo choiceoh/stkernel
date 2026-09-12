@@ -1,0 +1,24 @@
+...................sssssssssssssssssss2026-09-12 03:33:39,481 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7
+2026-09-12 03:33:39,482 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp_uzhdd8a/st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7.o
+..2026-09-12 03:33:39,484 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 03:33:39,484 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpt67nsyer/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-12 03:33:39,486 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 03:33:39,486 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpt67nsyer/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-12 03:33:39,486 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 03:33:39,486 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpt67nsyer/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+...sss.............ss...................................ssssssssssssssssssssssssssssssss.......[03:33:44] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+/usr/local/lib/python3.12/dist-packages/xgrammar/matcher.py:242: DeprecationWarning: max_rollback_tokens is deprecated. You don't need to set it and it's always unlimited (-1).
+  warnings.warn(
+.[03:33:44] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+...................................sss....ssss..ssss...ssssssssssssssssssssss....................ssss....s......................s......s.....ssss....................................................s.........sss...................................................................................................ssss...sss........................s...............s..ss...
+----------------------------------------------------------------------
+Ran 503 tests in 57.716s
+
+OK (skipped=115)
+  box: test
+<MagicMock name='declared().table()' id='272194521246672'>
+  box: test
+<MagicMock name='declared().table()' id='272194520300144'>
+  box: test
+<MagicMock name='declared().table()' id='272194520062368'>
+  expert_layout: tile-major bytes read back row-major per expert OK

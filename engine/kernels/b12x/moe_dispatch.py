@@ -1142,6 +1142,28 @@ def _prepared_reform_scales(source1, source2, raw1, raw2, *, experts, n, k):
     return owner
 
 
+def consume_packed_scale_storage(views, first, second):
+    """Retire arena raw scales once every consumer holds this SF6 owner."""
+    from engine.modules.packed_storage import consume
+    from .moe_reform_sf_pack import ReformScales
+    owner=views.reform_scales
+    if not views.packed_only or owner is None or not owner.enabled:
+        raise ValueError("raw-scale retirement requires a packed-only SF6 layer")
+    for storage,pack in ((first,owner.fc1),(second,owner.fc2)):
+        if (not storage.is_contiguous() or storage.device!=pack.device
+                or storage.numel()*storage.element_size()<pack.numel()):
+            raise ValueError("SF6 pack does not fit its raw-scale arena region")
+    a,=consume(first,[owner.fc1])
+    b,=consume(second,[owner.fc2])
+    replacement=ReformScales(a,b)
+    for key,cached in tuple(_REFORM_SF_CACHE.items()):
+        if cached is owner:
+            _REFORM_SF_CACHE[key]=replacement
+    views.reform_scales=replacement
+    views.sfb1_packed,views.sfb2_packed=a,b
+    first._st_sf6_consumed=second._st_sf6_consumed=True
+
+
 def _packed_fc1_scales(sf: torch.Tensor, num_experts: int) -> torch.Tensor:
     """(E, blocks per expert, SF_STAGE_BYTES) u8 -- the FC1 weight scales
     6-bit packed per 4 KB block, the unit the kernel stages (39차 §4c). Cached
@@ -2187,6 +2209,11 @@ def _get_static_kernel_v2(
         swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
     )
+    scatter_fp32 = _glm_tp_scatter_fp32(
+        state_E=state_E,weight_E=weight_E,k=k,n=n,num_topk=num_topk,
+        quant_mode=quant_mode,activation=activation,swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta,swiglu_limit=swiglu_limit)
+    cache_key = (*cache_key,"tp_scatter_fp32_v1",scatter_fp32)
     cached = _STATIC_V2_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -2200,6 +2227,7 @@ def _get_static_kernel_v2(
     tiled = bool(config.get("tiled", False))
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
+        scatter_fp32=scatter_fp32,
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
@@ -2304,7 +2332,7 @@ def _get_static_kernel_v2(
         alpha_dtype, (weight_E,), assumed_align=16
     )
     scatter_fake = cute.runtime.make_fake_compact_tensor(
-        a_dtype, (m, k), stride_order=(1, 0), assumed_align=16
+        cutlass.Float32 if scatter_fp32 else a_dtype, (m, k), stride_order=(1, 0), assumed_align=16
     )
     token_map_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int32, (state_E, max_rows), stride_order=(1, 0), assumed_align=4
@@ -3371,8 +3399,6 @@ def launch_sm120_static_moe(
                 f"agree: views tiled={bool(getattr(weights, 'tiled', False))}, "
                 f"lane tiled={want_tiled}"
             )
-        if glm_tp_fp32 and static_v2_config is not None:
-            raise ValueError("GLM TP FP32 scatter requires the declared row-major static kernel")
         if static_v2_config is not None:
             static_v2_config = _static_v2_decode_config(static_v2_config, num_tokens)
             if static_v2_config.get("reform_sf_pack"):
@@ -4098,6 +4124,7 @@ def _get_dynamic_kernel(
         reform_sf_pack=reform_sf_pack,
         tp_sf6_q0=tp_sf6_q0,
     )
+    cache_key = (*cache_key, "tp_prefill_scatter_fp32_v1", tp_sf6_q0)
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -4300,7 +4327,7 @@ def _get_dynamic_kernel(
     global_scale_fake = cute.runtime.make_fake_compact_tensor(
         alpha_dtype, (E,), assumed_align=16
     )
-    scatter_dtype = cutlass.Float32 if ep_local_cls is not None else a_dtype
+    scatter_dtype = cutlass.Float32 if ep_local_cls is not None or tp_sf6_q0 else a_dtype
     scatter_fake = make_ptr(scatter_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
     token_map_fake = make_ptr(cutlass.Int32, 4, cute.AddressSpace.gmem, assumed_align=4)
     token_weights_fake = make_ptr(
@@ -4361,7 +4388,7 @@ def _get_dynamic_kernel(
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6_q0.py"),)
             if tp_sf6_q0 else ()) + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_ep_local.py"),)
-            if ep_local_cls is not None else ()),
+            if ep_local_cls is not None or tp_sf6_q0 else ()),
     )
 
     if prefill_reuse:
@@ -4453,8 +4480,15 @@ def launch_sm120_dynamic_moe(
         tile_m=workspace.tile_m, activation=activation, swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit, quant_mode=quant_mode,
         tiled=bool(getattr(weights, "tiled", False))) is not None
+    tp_scatter_fp32 = _tp_sf6_q0_eligible(
+        enabled=_TP_SF6_Q0_ENABLED if _tp_sf6_q0_override is None else _tp_sf6_q0_override,
+        E=num_experts, m=num_tokens, k=k, n=n, num_topk=top_k,
+        tile_m=workspace.tile_m, quant_mode=quant_mode,
+        tiled=bool(getattr(weights, "tiled", False)), reform_sf_pack=direct_sf6,
+        activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
     accumulator = (_ep_local_scatter_buffer(workspace, scatter_output, num_tokens, k)
-                   if ep_local else scatter_output)
+                   if ep_local or tp_scatter_fp32 else scatter_output)
     compiled, mac = _get_dynamic_kernel(
         num_experts,
         num_tokens,
@@ -4533,7 +4567,7 @@ def launch_sm120_dynamic_moe(
             and not torch.cuda.is_current_stream_capturing()):
         print("[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=" + str(num_tokens), flush=True)
         _TP_SF6_Q0_LAUNCH_LOGGED = True
-    if ep_local:
+    if ep_local or tp_scatter_fp32:
         # CuTe and copy_ use the current PyTorch stream; completion of all
         # atomic updates precedes this single FP32 -> BF16 conversion.
         scatter_output.copy_(accumulator)

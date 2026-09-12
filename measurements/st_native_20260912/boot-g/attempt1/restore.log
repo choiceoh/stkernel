@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/home/choiceoh/st-releases/perf-f4d7-20260912g/engine/base/fleet_lease.py", line 270, in <module>
+    print(owner_for(a.container, path=a.path))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/st-releases/perf-f4d7-20260912g/engine/base/fleet_lease.py", line 186, in owner_for
+    raise LeaseHeld(f"the fleet is held by {describe(record)}")
+LeaseHeld: the fleet is held by probe/choiceoh@srv2/3259522 on srv2 since 2026-09-12 11:58:31 (engine/profiles/glm53/check.py)
+ABORT: refusing to stop another fleet owner's lease
+395
+228
+639
+413
+ABORT: 10.10.10.2 runs st-probe-3259522 -- the fleet is taken (hand off the queue, do not squat)
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Couldn't connect to server

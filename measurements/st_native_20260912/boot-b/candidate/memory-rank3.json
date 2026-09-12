@@ -1,0 +1,148 @@
+{
+  "ready": false,
+  "arena_bytes": 60130701496,
+  "workspace_limit_bytes": 12884901888,
+  "os_reserve_bytes": 4294967296,
+  "baseline_reserved_bytes": 2097152,
+  "allocator_limit_bytes": 73017700536,
+  "seconds": 131.1203,
+  "spend": {
+    "prefill": 87.1727,
+    "loaded": 37.9897,
+    "target": 5.958
+  },
+  "phases": [
+    {
+      "phase": "loaded",
+      "at_seconds": 37.9897,
+      "seconds": 37.9897,
+      "allocated_bytes": 61341538816,
+      "reserved_bytes": 61440262144,
+      "peak_allocated_bytes": 62438177792,
+      "peak_reserved_bytes": 62505615360,
+      "immediately_free_bytes": 15938514944,
+      "peak_workspace_bytes": 2372816712,
+      "passed": true
+    },
+    {
+      "phase": "prefill/128/0/before",
+      "at_seconds": 80.9146,
+      "seconds": 42.9249,
+      "allocated_bytes": 61397227520,
+      "reserved_bytes": 61503176704,
+      "peak_allocated_bytes": 62438177792,
+      "peak_reserved_bytes": 62505615360,
+      "immediately_free_bytes": 13281361920,
+      "peak_workspace_bytes": 2372816712,
+      "passed": true
+    },
+    {
+      "phase": "prefill/128/0/prepared",
+      "at_seconds": 104.0612,
+      "seconds": 23.1466,
+      "allocated_bytes": 61557988352,
+      "reserved_bytes": 61849206784,
+      "peak_allocated_bytes": 62438177792,
+      "peak_reserved_bytes": 62505615360,
+      "immediately_free_bytes": 11399417856,
+      "peak_workspace_bytes": 2372816712,
+      "passed": true
+    },
+    {
+      "phase": "prefill/1024/0/before",
+      "at_seconds": 104.0637,
+      "seconds": 0.0026,
+      "allocated_bytes": 61557988352,
+      "reserved_bytes": 61849206784,
+      "peak_allocated_bytes": 62438177792,
+      "peak_reserved_bytes": 62505615360,
+      "immediately_free_bytes": 11399417856,
+      "peak_workspace_bytes": 2372816712,
+      "passed": true
+    },
+    {
+      "phase": "prefill/1024/0/prepared",
+      "at_seconds": 104.8633,
+      "seconds": 0.7995,
+      "allocated_bytes": 61608116224,
+      "reserved_bytes": 61870178304,
+      "peak_allocated_bytes": 62438177792,
+      "peak_reserved_bytes": 62505615360,
+      "immediately_free_bytes": 11355533312,
+      "peak_workspace_bytes": 2372816712,
+      "passed": true
+    },
+    {
+      "phase": "prefill/6912/0/before",
+      "at_seconds": 104.8657,
+      "seconds": 0.0024,
+      "allocated_bytes": 61608116224,
+      "reserved_bytes": 61870178304,
+      "peak_allocated_bytes": 62438177792,
+      "peak_reserved_bytes": 62505615360,
+      "immediately_free_bytes": 11355607040,
+      "peak_workspace_bytes": 2372816712,
+      "passed": true
+    },
+    {
+      "phase": "prefill/6912/0/prepared",
+      "at_seconds": 114.85,
+      "seconds": 9.9844,
+      "allocated_bytes": 61717037056,
+      "reserved_bytes": 63023611904,
+      "peak_allocated_bytes": 62764930048,
+      "peak_reserved_bytes": 63023611904,
+      "immediately_free_bytes": 10297786368,
+      "peak_workspace_bytes": 2890813256,
+      "passed": true
+    },
+    {
+      "phase": "prefill/6912/1329408/before",
+      "at_seconds": 114.8527,
+      "seconds": 0.0027,
+      "allocated_bytes": 61717037056,
+      "reserved_bytes": 63023611904,
+      "peak_allocated_bytes": 62764930048,
+      "peak_reserved_bytes": 63023611904,
+      "immediately_free_bytes": 10297786368,
+      "peak_workspace_bytes": 2890813256,
+      "passed": true
+    },
+    {
+      "phase": "prefill/6912/1329408/prepared",
+      "at_seconds": 125.1623,
+      "seconds": 10.3096,
+      "allocated_bytes": 61717037056,
+      "reserved_bytes": 66567798784,
+      "peak_allocated_bytes": 65322117120,
+      "peak_reserved_bytes": 66567798784,
+      "immediately_free_bytes": 5854134272,
+      "peak_workspace_bytes": 6435000136,
+      "passed": true
+    },
+    {
+      "phase": "target/(1, 6, 4096)/before",
+      "at_seconds": 125.2155,
+      "seconds": 0.0532,
+      "allocated_bytes": 61717037056,
+      "reserved_bytes": 66567798784,
+      "peak_allocated_bytes": 65322117120,
+      "peak_reserved_bytes": 66567798784,
+      "immediately_free_bytes": 5850890240,
+      "peak_workspace_bytes": 6435000136,
+      "passed": true
+    },
+    {
+      "phase": "target/(1, 6, 4096)/warmup",
+      "at_seconds": 131.1203,
+      "seconds": 5.9048,
+      "allocated_bytes": 61789121536,
+      "reserved_bytes": 66655879168,
+      "peak_allocated_bytes": 65322117120,
+      "peak_reserved_bytes": 66655879168,
+      "immediately_free_bytes": 1586225152,
+      "peak_workspace_bytes": 6523080520,
+      "passed": false
+    }
+  ]
+}

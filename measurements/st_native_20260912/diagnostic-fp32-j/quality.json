@@ -1,0 +1,97 @@
+{
+  "scope": "Eager native 128K diagnostic; the unchanged onepass fact matcher sees combined reasoning/output. The 1200-token cap was reached before the final answer. This is not a complete serving acceptance or speed result.",
+  "results": [
+    {
+      "rank": 0,
+      "repeat": 0,
+      "first": 785,
+      "generated_tokens": 1200,
+      "quality": [
+        true,
+        true,
+        true
+      ],
+      "has_final_separator": false,
+      "output_ids_sha256": "915afb90148fbfe49b56734c5f884fa9629d40824a6e67ef1a976e6ac3a168e5"
+    },
+    {
+      "rank": 1,
+      "repeat": 0,
+      "first": 785,
+      "generated_tokens": 1200,
+      "quality": [
+        true,
+        true,
+        true
+      ],
+      "has_final_separator": false,
+      "output_ids_sha256": "915afb90148fbfe49b56734c5f884fa9629d40824a6e67ef1a976e6ac3a168e5"
+    },
+    {
+      "rank": 2,
+      "repeat": 0,
+      "first": 785,
+      "generated_tokens": 1200,
+      "quality": [
+        true,
+        true,
+        true
+      ],
+      "has_final_separator": false,
+      "output_ids_sha256": "915afb90148fbfe49b56734c5f884fa9629d40824a6e67ef1a976e6ac3a168e5"
+    },
+    {
+      "rank": 3,
+      "repeat": 0,
+      "first": 785,
+      "generated_tokens": 1200,
+      "quality": [
+        true,
+        true,
+        true
+      ],
+      "has_final_separator": false,
+      "output_ids_sha256": "915afb90148fbfe49b56734c5f884fa9629d40824a6e67ef1a976e6ac3a168e5"
+    },
+    {
+      "rank": 0,
+      "repeat": 1,
+      "first": 785,
+      "generated_tokens": 1,
+      "quality": null,
+      "has_final_separator": false,
+      "output_ids_sha256": "a23c83f7f1938ff7a18319b9390e69203ee50a746aa7ab6cc222caaff05fbd3f",
+      "scope": "first-token repeat only"
+    },
+    {
+      "rank": 1,
+      "repeat": 1,
+      "first": 785,
+      "generated_tokens": 1,
+      "quality": null,
+      "has_final_separator": false,
+      "output_ids_sha256": "a23c83f7f1938ff7a18319b9390e69203ee50a746aa7ab6cc222caaff05fbd3f",
+      "scope": "first-token repeat only"
+    },
+    {
+      "rank": 2,
+      "repeat": 1,
+      "first": 785,
+      "generated_tokens": 1,
+      "quality": null,
+      "has_final_separator": false,
+      "output_ids_sha256": "a23c83f7f1938ff7a18319b9390e69203ee50a746aa7ab6cc222caaff05fbd3f",
+      "scope": "first-token repeat only"
+    },
+    {
+      "rank": 3,
+      "repeat": 1,
+      "first": 785,
+      "generated_tokens": 1,
+      "quality": null,
+      "has_final_separator": false,
+      "output_ids_sha256": "a23c83f7f1938ff7a18319b9390e69203ee50a746aa7ab6cc222caaff05fbd3f",
+      "scope": "first-token repeat only"
+    }
+  ]
+}

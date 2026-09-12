@@ -1,0 +1,185 @@
+"""Explicit GB10 dense lanes: W4A8 decode, FP8 and NVFP4 prefill.
+
+Packs and the native module belong to the bound layer, before graph capture.
+There is no launch-time fallback or vLLM import. Production may explicitly
+retire BF16 storage into prepared packs; standalone numerical tests retain it.
+"""
+from dataclasses import dataclass
+from functools import cache
+import hashlib
+import os
+from pathlib import Path
+
+import torch
+
+
+@cache
+def extension():
+    from torch.utils.cpp_extension import load
+    source = Path(__file__).with_name("kernels.cu")
+    flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a",
+             "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",
+             "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
+             "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]
+    key = hashlib.sha256(source.read_bytes()+repr((flags, torch.__version__, torch.version.cuda)).encode()).hexdigest()[:16]
+    directory = Path(os.environ.get("ST_DENSE_BUILD_ROOT", str(Path.home()/".cache/st/dense")))/key
+    directory.mkdir(parents=True, exist_ok=True)
+    ext = load(name="st_dense_"+key, sources=[str(source)], extra_cuda_cflags=flags,
+               build_directory=str(directory), verbose=False)
+    if tuple(ext.probe_device())[:3] != (12, 1, 48):
+        raise RuntimeError("native dense lane requires GB10 SM121 with 48 SMs")
+    return ext
+
+
+@dataclass(frozen=True)
+class W4Pack:
+    data: torch.Tensor
+    scale: torch.Tensor
+    rowscale: torch.Tensor
+    rows: int
+    cols: int
+
+
+@torch.inference_mode()
+def pack_w4(weight, *, hessian=None, per_row=True):
+    from .packing import _E2M1_GRID, _E2M1_MIDS, _w4_row_shift, _w4_rtn_codes, _w4_gptq_codes
+    if (not weight.is_cuda or weight.ndim != 2 or weight.dtype != torch.bfloat16
+            or weight.shape[1] % 128 or not 0 < weight.shape[1] <= 4096):
+        raise ValueError("W4 packing requires CUDA BF16 [N,K], K in 128..4096 aligned to 128")
+    n, k = weight.shape
+    padded = (n+127)//128*128
+    mids = torch.tensor(_E2M1_MIDS, device=weight.device)
+    grid = torch.tensor(_E2M1_GRID, device=weight.device)
+    need, shift, _ = _w4_row_shift(weight, padded, k//16, per_row)
+    if hessian is None:
+        codes, scales = _w4_rtn_codes(weight, shift, need, mids, grid)
+    else:
+        if hessian.shape != (k, k) or not torch.isfinite(hessian).all():
+            raise ValueError("GPTQ Hessian must be finite and match the input dimension")
+        codes, scales = _w4_gptq_codes(weight, shift, need, hessian, mids, grid)
+    pairs = codes.reshape(padded, k//2, 2)
+    data = (pairs[..., 0] | (pairs[..., 1] << 4))
+    data = data.view(padded//128, 128, k//128, 64).permute(0, 2, 1, 3).contiguous()
+    scales = scales.view(padded//128, 128, k//128, 8).permute(0, 2, 1, 3).contiguous()
+    return W4Pack(data, scales, torch.exp2(-shift).contiguous(), n, k)
+
+
+def w4_gemm(x, pack):
+    if (x.ndim != 2 or not 1 <= x.shape[0] <= 32 or x.shape[1] != pack.cols
+            or x.dtype != torch.bfloat16 or x.device != pack.data.device):
+        raise ValueError("W4 decode requires 1..32 BF16 rows matching the bound pack")
+    out = torch.empty(x.shape[0], pack.rows, dtype=x.dtype, device=x.device)
+    extension().run_gemm(x.contiguous(), pack.data, pack.scale, out, pack.rows,
+                         1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
+    return out
+
+
+class DenseLinear:
+    """Immutable dispatch: <=32 rows W4A8, 33..1023 FP8, >=1024 NVFP4.
+
+    The K>4096 drafter projection is a fixed sequence of K tiles with FP32
+    accumulation, matching the existing MK lane. Padding is weight-owned.
+    """
+    def __init__(self, weight, *, prefill=True, nvfp4=True, hessians=None, store=None, name=None):
+        from flashinfer import nvfp4_quantize
+        if (weight.ndim != 2 or not weight.is_cuda or weight.dtype != torch.bfloat16
+                or weight.shape[1] % 128):
+            raise ValueError("dense weights must be CUDA BF16 with K aligned to 128")
+        extension()
+        self.rows, self.cols = weight.shape
+        self.executed = 0  # boot proof: W4=1, FP8=2, NVFP4=4
+        packs = []
+        for start in range(0, self.cols, 4096):
+            w = weight[:, start:start+4096].contiguous()
+            key = name if self.cols <= 4096 else f'{name}.k{start//4096}'
+            packs.append(store.pack(w, key) if store is not None else
+                         pack_w4(w, hessian=None if hessians is None else hessians[start//4096]))
+        self.packs = tuple(packs)
+        self.fp8 = FP8Linear(weight) if prefill else None
+        self.nvfp4 = None
+        if prefill and nvfp4:
+            padded_rows = (self.rows+127)//128*128
+            w = torch.nn.functional.pad(weight, (0, 0, 0, padded_rows-self.rows)).contiguous()
+            scale = (2688./w.abs().amax().float().clamp_min(1e-12)).reshape(1)
+            data, sf = nvfp4_quantize(w, scale, enable_pdl=False)
+            self.nvfp4 = data, sf, scale, padded_rows
+
+    def consume_weight(self, storage):
+        """Retire the source arena region into W4/FP8 views before capture."""
+        from engine.modules.packed_storage import consume
+        tensors=[t for p in self.packs for t in (p.data,p.scale,p.rowscale)]
+        if self.fp8 is not None:
+            tensors.extend(self.fp8.weight)
+        owned=iter(consume(storage,tensors))
+        self.packs=tuple(W4Pack(next(owned),next(owned),next(owned),p.rows,p.cols) for p in self.packs)
+        if self.fp8 is not None:
+            self.fp8.weight=next(owned),next(owned)
+
+    def __call__(self, x):
+        if x.shape[-1] != self.cols or x.dtype != torch.bfloat16:
+            raise ValueError("dense input does not match its bound weight")
+        shape = x.shape[:-1]
+        flat = x.reshape(-1, self.cols)
+        if flat.shape[0] <= 32:
+            self.executed |= 1
+            if len(self.packs) == 1:
+                out = w4_gemm(flat, self.packs[0])
+            else:
+                acc = None
+                for i, pack in enumerate(self.packs):
+                    partial = w4_gemm(flat[:, i*4096:i*4096+pack.cols], pack).float()
+                    acc = partial if acc is None else acc+partial
+                out = acc.bfloat16()
+        elif flat.shape[0] < 1024 or self.nvfp4 is None:
+            if self.fp8 is None:
+                raise ValueError("large-M dense call without a prepared prefill lane")
+            out = self.fp8(flat)
+            self.executed |= 2
+        else:
+            from flashinfer import mm_fp4, nvfp4_quantize
+            weight, ws, weight_scale, padded_rows = self.nvfp4
+            scale = (2688./flat.abs().amax().float().clamp_min(1e-12)).reshape(1)
+            # The pinned quantizer reads its global scale before its PDL
+            # dependency wait. This scale was just computed on the stream;
+            # an early launch can read recycled allocation contents. Require
+            # ordinary stream ordering here. MK GEMM/MHC and AR retain PDL.
+            data, sf = nvfp4_quantize(flat.contiguous(), scale, enable_pdl=False)
+            alpha = (1./(scale*weight_scale)).float()
+            out = torch.empty(flat.shape[0], padded_rows, device=x.device, dtype=x.dtype)
+            mm_fp4(data, weight.T, sf, ws.T, alpha, torch.bfloat16, out, 16, False, "cutlass")
+            out = out[:, :self.rows]
+            self.executed |= 4
+        return out.reshape(*shape, self.rows)
+
+
+class FP8Linear:
+    """Block-scaled FP8 for prefill and the accuracy-sensitive vocabulary head."""
+    def __init__(self, weight):
+        from deep_gemm import per_block_cast_to_fp8
+        self.rows, self.cols = weight.shape
+        self.executed = False
+        padded_rows = (self.rows+127)//128*128
+        w = torch.nn.functional.pad(weight, (0, 0, 0, padded_rows-self.rows))
+        qs, scales = [], []
+        # Bound pack-time FP32 temporaries even for the vocabulary head.
+        for chunk in w.split(1024):
+            q, scale = per_block_cast_to_fp8(chunk.float(), use_ue8m0=True)
+            qs.append(q); scales.append(scale)
+        self.weight = torch.cat(qs), torch.cat(scales)
+
+    def consume_weight(self, storage):
+        from engine.modules.packed_storage import consume
+        self.weight=consume(storage,self.weight)
+
+    def __call__(self, x):
+        from deep_gemm import fp8_gemm_nt
+        from .fp8 import quantize
+        from engine.kernels.deep_gemm import _initialize
+        _initialize()
+        shape = x.shape[:-1]
+        flat = x.reshape(-1, self.cols).contiguous()
+        q, scale = quantize(flat)
+        out = torch.empty((flat.shape[0], self.weight[0].shape[0]), device=x.device, dtype=torch.bfloat16)
+        fp8_gemm_nt((q, scale), self.weight, out)
+        self.executed = True
+        return out[:, :self.rows].reshape(*shape, self.rows)

@@ -1,0 +1,11 @@
+{
+  "engine": "st",
+  "boot_id": "9ac317a6fcd744f638724cc1c36c26d88ce2d01a5c40d4db291f1e4901277722|2026-09-12T00:15:45.859571678Z",
+  "image": "st-engine:perf-f4d7-a",
+  "engine_source_sha256": "cbf41bab9dec49a7dc8ca38e83d5f01abf0edc4ebef1c930eb43cb4a5fc8e1e1",
+  "step_counter_source": "GET / -> steps (ST Runner.step counter)",
+  "knobs": {
+    "STK_moe_static": "t,r,sf6,q0",
+    "STK_execution": "parity"
+  }
+}

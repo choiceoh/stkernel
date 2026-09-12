@@ -1,0 +1,46 @@
+[W911 23:37:49.791594753 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[osar] phase rank=1 us/collective (n=6): guard=3.0 copy=4.6 wait=2064.2 reduce=3.2 | total=2075.0  @1592 MHz assumed | wait by size: <=128KiB n=4 2391.2, >128KiB n=2 1410.1
+phase                                      seconds   dev GiB  counters
+arena                                        0.364     +4.78  
+load                                         2.349     +3.11  blocks=3 bytes=1.90739e+09
+load drafter                                 0.519     -0.09  blocks=3 bytes=2.34216e+09
+prepare native execution                    67.642     +5.29  
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+[osar] phase rank=1 us/collective (n=3): guard=3.1 copy=3.2 wait=9693.2 reduce=2.9 | total=9702.4  @1592 MHz assumed | wait by size: <=128KiB n=3 9693.2, >128KiB n=0 0.0
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/repo/engine_parity_graph_check.py", line 86, in <module>
+[rank1]:     if __name__=='__main__':main()
+[rank1]:                             ^^^^^^
+[rank1]:   File "/repo/engine_parity_graph_check.py", line 35, in main
+[rank1]:     target_graph=Glm53DecodeGraphs(net,caches,2,6)
+[rank1]:                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 216, in __init__
+[rank1]:     self.graphs = DecodeGraphs(forward, make_inputs,
+[rank1]:                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/repo/engine/base/graphs.py", line 59, in __init__
+[rank1]:     step_fn(inp)
+[rank1]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 208, in forward
+[rank1]:     result = net.forward(step, scratch, aux_layers=self.aux_layers)
+[rank1]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/repo/engine/profiles/glm53/net.py", line 413, in forward
+[rank1]:     x = self._moe(L, x, reduce) if F.is_moe(L) else self._dense(L, x, reduce)
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/repo/engine/profiles/glm53/net.py", line 374, in _moe
+[rank1]:     out = self.lanes.moe(x, sel, w, p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"], F.swiglu_limit).float()
+[rank1]:           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/repo/engine/profiles/glm53/lanes.py", line 279, in moe
+[rank1]:     return b12x_fused_moe(x=x.contiguous(), output=output,
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/api_logging.py", line 2333, in _auto_dump_wrapper
+[rank1]:     return _inner(*args, **kwargs)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/repo/engine/kernels/b12x/b12x_moe.py", line 213, in b12x_fused_moe
+[rank1]:     return launch_sm120_moe(
+[rank1]:            ^^^^^^^^^^^^^^^^^
+[rank1]:   File "/repo/engine/kernels/b12x/moe_dispatch.py", line 5581, in launch_sm120_moe
+[rank1]:     return launch_sm120_static_moe(
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/repo/engine/kernels/b12x/moe_dispatch.py", line 3374, in launch_sm120_static_moe
+[rank1]:     raise ValueError("GLM TP FP32 scatter requires the declared row-major static kernel")
+[rank1]: ValueError: GLM TP FP32 scatter requires the declared row-major static kernel

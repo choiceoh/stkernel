@@ -85,5 +85,64 @@ class ResolveTests(unittest.TestCase):
         self.assertIn(lane, p.free)
 
 
+class BatchTransitionTests(unittest.TestCase):
+    """Run the real launch/commit/readback chain; only model kernels are replaced."""
+    def engine(self):
+        e = SimpleNamespace(
+            drafter=SimpleNamespace(k=1, decode_graphs=None,
+                                    propose_rows=lambda field, slots, anchors, ctx: torch.full((len(slots), 1), 7)),
+            caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device('cpu'),
+                                   draft_field=lambda: torch.zeros(1), stage_boundaries=lambda *args: None),
+            F=SimpleNamespace(vocab=32, block=16), tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1},
+            limits={1: (10, 0.0), 2: (10, 0.0)}, options={}, ends={}, eos={31}, top_p=1.0,
+            inflight={}, staged={}, accepted_total=0, drafted_total=0, steps=0)
+        e._generated_count = lambda seq: len(e.tokens[seq]) - 1
+        e.decode_graphs = SimpleNamespace(shape_for=lambda n, end: (n, 2, 64),
+                                         run_device=lambda *args: (None, None, None))
+        e.sampling_graphs = SimpleNamespace(greedy=SimpleNamespace(
+            run=lambda shape, fill: torch.tensor([7, 8] * shape[0])))
+        return e
+
+    def test_new_request_rebuilds_after_the_previous_batch_has_drained(self):
+        for stale in (False, True):
+            with self.subTest(stale=stale):
+                e = self.engine()
+                p = AsyncDecode(e)
+                p.launch([1], [1]).resolve()
+                self.assertEqual(e.tokens[1], [5, 7, 8])
+                p.stale = stale
+                e.ctx[2] = 20                             # a new prefill's host position
+                p.launch([2], [3]).resolve()
+                self.assertEqual((p.batch, p.buf['real_slot'].tolist()), ((2,), [3]))
+                self.assertEqual(e.ctx[2], 22)
+                self.assertEqual(e.tokens[2], [6, 7, 8])
+                self.assertEqual(p.pending, [])
+
+    def test_joining_or_invalidating_with_an_outstanding_readback_is_rejected(self):
+        e = self.engine()
+        p = AsyncDecode(e)
+        first = p.launch([1], [1])
+        with self.assertRaisesRegex(RuntimeError, 'must drain first'):
+            p.launch([1, 2], [1, 2])
+        p.stale = True
+        with self.assertRaisesRegex(RuntimeError, 'must drain first'):
+            p.launch([1], [1])
+        first.resolve()
+        p.launch([1, 2], [1, 2]).resolve()
+        self.assertEqual(e.ctx, {1: 5, 2: 3})
+
+    def test_shrinking_keeps_device_progress_ahead_of_the_host(self):
+        e = self.engine()
+        p = AsyncDecode(e)
+        first = p.launch([1, 2], [1, 2])
+        second = p.launch([2], [2])
+        self.assertEqual(p.buf['ctx'].tolist(), [5])
+        self.assertEqual(e.ctx, {1: 1, 2: 1})
+        first.resolve()
+        second.resolve()
+        self.assertEqual(e.ctx, {1: 3, 2: 5})
+        self.assertEqual(e.tokens[2], [6, 7, 8, 7, 8])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -215,17 +215,17 @@ class Glm53Caches:
             # A released row already contains -1 after its active prefix. Send
             # that padding with the new ids to clear stale entries in one copy.
             end = max(count, previous)
-            self.block_table[s.seq, start:end].copy_(self._staged_ids(row[start:end]), non_blocking=self.device.type == "cuda")
+            self._upload_ids(self.block_table[s.seq, start:end], row[start:end])
             # Commit only after the copy succeeds, so a failed update retries.
             self._table_blocks[s.seq] = count
             self._table_epochs[s.seq] = epoch
 
-    def _staged_ids(self, ids):
-        """An int32 host tensor of `ids` for an asynchronous upload: pinned, from a small ring whose slots are reused
-        only once their copy has landed (a pageable copy would make the host wait for every step queued ahead)."""
+    def _upload_ids(self, destination, ids):
+        """Upload through a pinned ring; fence reuse after the copy that reads the slot."""
         import torch
         if self.device.type != "cuda":
-            return torch.tensor(ids, dtype=torch.int32)
+            destination.copy_(torch.tensor(ids, dtype=torch.int32))
+            return
         ring = getattr(self, "_id_ring", None)
         if ring is None:
             width = self.block_table.shape[1]
@@ -236,8 +236,8 @@ class Glm53Caches:
         event.synchronize()                                       # the slot's previous copy has landed (almost always already)
         n = len(ids)
         host[:n].copy_(torch.tensor(ids, dtype=torch.int32))
-        event.record()                                            # recorded now; the upload is enqueued right after on the same stream
-        return host[:n]
+        destination.copy_(host[:n], non_blocking=True)
+        event.record()                                            # the event must cover the upload, not just earlier work
 
     def _ring_cells(self, position: int, count: int, width: int):
         import torch

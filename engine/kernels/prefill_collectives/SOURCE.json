@@ -1,0 +1,10 @@
+{
+  "source_commit": "cc6163c78613777225a4e48ac4ae7ac78871f97b",
+  "source": "build/glm53/glm53_prefill_collectives.py",
+  "sha256": "90dd01eb682a879fcbefcbf6370c85d1feb1a5c13e51409dc3f5370ebac2de22",
+  "functions": [
+    "_pack_rs_payload",
+    "_unpack_gather",
+    "_unpack_sum_payload"
+  ]
+}

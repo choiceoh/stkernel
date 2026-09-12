@@ -1,0 +1,172 @@
+[
+  {
+    "name": "sampling-two-choices",
+    "seconds": 6.583526836999226,
+    "request": {
+      "model": "glm-5.3-flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": "대한민국의 수도 이름만 짧게 답하세요."
+        }
+      ],
+      "max_tokens": 48,
+      "temperature": 0.7,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "top_p": 0.9,
+      "seed": 17,
+      "n": 2
+    },
+    "response": {
+      "id": "chatcmpl-5",
+      "created": 1789183381,
+      "model": "glm-5.3-flash",
+      "object": "chat.completion",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "서울"
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "index": 1,
+          "message": {
+            "role": "assistant",
+            "content": "서울"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 29,
+        "completion_tokens": 6,
+        "total_tokens": 35,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "structured-json",
+    "seconds": 6.133598849999544,
+    "request": {
+      "model": "glm-5.3-flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Return the answer to 2+2 in the answer field."
+        }
+      ],
+      "max_tokens": 48,
+      "temperature": 0,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "sum",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "answer": {
+                "type": "integer",
+                "enum": [
+                  4
+                ]
+              }
+            },
+            "required": [
+              "answer"
+            ],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "response": {
+      "id": "chatcmpl-7",
+      "created": 1789183388,
+      "model": "glm-5.3-flash",
+      "object": "chat.completion",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"answer\": 4}"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 26,
+        "completion_tokens": 7,
+        "total_tokens": 33,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "vision-red-image",
+    "seconds": 8.699827422999078,
+    "request": {
+      "model": "glm-5.3-flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHAAAABwCAIAAABJgmMcAAABM0lEQVR4nO3OAQkAIAAEse9fWksIg0NYgO1s30N+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4Q4wcxfhDjBzF+EOMHMX4QcwENUNHR0Yq0hQAAAABJRU5ErkJggg=="
+              }
+            },
+            {
+              "type": "text",
+              "text": "Name the dominant color in this image. Answer with one English word."
+            }
+          ]
+        }
+      ],
+      "max_tokens": 32,
+      "temperature": 0,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "response": {
+      "id": "chatcmpl-8",
+      "created": 1789183394,
+      "model": "glm-5.3-flash",
+      "object": "chat.completion",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Red"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 45,
+        "completion_tokens": 2,
+        "total_tokens": 47,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  }
+]

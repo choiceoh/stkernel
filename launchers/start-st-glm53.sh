@@ -17,11 +17,24 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 IMAGE=${ST_IMAGE:-${IMAGE:-st-engine:glm53}}
 PORT=${PORT:-8000}
+KV_ARG=""
+if [ -n "${ST_KV_GIB:-}" ]; then
+  [[ "$ST_KV_GIB" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "ST_KV_GIB must be a positive GiB byte budget" >&2; exit 2; }
+  KV_ARG="--kv-gib $ST_KV_GIB"
+fi
+PRODUCTION_ARG=""
+case "${ST_PRODUCTION:-0}" in
+  0) ;;
+  1) PRODUCTION_ARG="--production" ;;
+  *) echo "ST_PRODUCTION must be 0 or 1" >&2; exit 2 ;;
+esac
 RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/st-glm53-9391-up-gate-full}
 CKPT=${CKPT:-/home/choiceoh/models/glm53-redhat-nvfp4}
 DRAFTER=${DRAFTER:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}
-ENGINE_DIR=/home/choiceoh/st-engine                     # the engine tree, rsynced to every node
+ENGINE_DIR=${ST_ENGINE_DIR:-/home/choiceoh/st-engine}    # production can pin a release directory on every node
 CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
+TIER_DIR=${ST_TIER_DIR:-/home/choiceoh/glm53-logs/st-tier}
+DUMP_DIR=${ST_DUMP_DIR:-/home/choiceoh/glm53-logs/st-dumps}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-glm53
 LEASE_OWNER=${LEASE_OWNER:-$(whoami)@$(hostname -s)/$$}   # who holds the fleet, for the lease record
@@ -55,11 +68,29 @@ use_lease() {
   . "$REPO/launchers/lib/fleet-lease.sh"
 }
 
+# Preserve argument boundaries when notes contain spaces; the lease lives at
+# the canonical, container-mounted path selected above.
+lease() {
+  if is_self "${NODES[0]}"; then
+    python3 "$REPO/engine/base/fleet_lease.py" "$@" --path "$LOCK"
+  else
+    local quoted
+    printf -v quoted '%q ' "$@"
+    ssh $SSHOPT "choiceoh@${NODES[0]}" "python3 - $quoted --path $LOCK" < "$REPO/engine/base/fleet_lease.py"
+  fi
+}
+
 case "${1:-start}" in
   stop)
+    held_owner=$(lease owner --container "$NAME") || {
+      echo "ABORT: refusing to stop another fleet owner's lease" >&2; exit 1;
+    }
+    legacy_owner=$(LOCK=$LEGACY_LOCK lease owner --container "$NAME") || {
+      echo "ABORT: refusing to stop another owner's legacy lease" >&2; exit 1;
+    }
     for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
     use_lease
-    fleet_lease release --owner x --force >/dev/null 2>&1 || true
+    lease release --owner "$held_owner"
     node_sh "${NODES[0]}" "rm -f $LEGACY_LOCK" >/dev/null 2>&1 || true
     exit 0 ;;
   yield)
@@ -102,7 +133,7 @@ done
 # Piped, not rsynced: taking the lease must not touch $ENGINE_DIR, which a live session
 # may have mounted into its containers. The module is stdlib-only, so `python3 -` is enough.
 use_lease
-lease() { fleet_lease "$@"; }
+
 # The bench queue reserves the same four nodes and does not know this lock exists. Read its
 # holder before taking the fleet, so the two mechanisms refuse each other in both directions
 # until they become one (bench/fleet.sh now refuses a grant while any st-* container is up).
@@ -111,12 +142,17 @@ legacy=$(node_sh "${NODES[0]}" "cat $LEGACY_LOCK 2>/dev/null || true")
 [ -z "$legacy" ] || { echo "ABORT: a session on the older lock path holds the fleet: $legacy ($LEGACY_LOCK on ${NODES[0]}); 'stop' from that side" >&2; exit 1; }
 queued=$(node_sh "${NODES[0]}" "cat $FLEET_HOLDER 2>/dev/null || true")
 [ -z "$queued" ] || { echo "ABORT: the bench queue holds the fleet: $queued (bench/fleet.sh status; release it there)" >&2; exit 1; }
-lease acquire --owner "'$LEASE_OWNER'" --container "$NAME" --est-minutes "${LEASE_MINUTES:-45}" \
-      --note "'${LEASE_NOTE:-st-glm53 on four Sparks}'" \
-  || { echo "ABORT: $(lease read 2>/dev/null || echo 'the fleet lease refused') -- wait, or 'stop' from that side" >&2; exit 1; }
+lease acquire --owner "$LEASE_OWNER" --container "$NAME" --est-minutes "${LEASE_MINUTES:-45}" \
+      --note "${LEASE_NOTE:-st-glm53 on four Sparks}" \
+  || { echo "ABORT: $(lease read 2>/dev/null || echo 'the fleet lease refused')" >&2; exit 1; }
+stage=$(mktemp -d)
+launched=0
+cleanup() {
+  rm -rf "$stage"
+  if [ "$launched" = 0 ]; then lease release --owner "$LEASE_OWNER" >/dev/null || true; fi
+}
+trap cleanup EXIT
 
-# the engine's own namespace travels into the container: a declared, expiring knob (D11) is set on the launch line
-KNOB_ENV=""; for name in $(compgen -v STK_ 2>/dev/null); do KNOB_ENV="$KNOB_ENV -e $name=${!name}"; done
 
 NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
@@ -127,7 +163,8 @@ NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
 -e NCCL_MIN_NCHANNELS=16 -e NCCL_MAX_NCHANNELS=16 -e NCCL_NCHANNELS_PER_NET_PEER=4 \
 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=1 -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 -e TRITON_CACHE_DIR=/cache/triton -e TILELANG_CACHE_DIR=/cache/tilelang \
--e DG_JIT_CACHE_DIR=/cache/deep_gemm -e ST_MLA_BUILD_ROOT=/cache/mla -e FLASHINFER_WORKSPACE_BASE=/cache"
+-e DG_JIT_CACHE_DIR=/cache/deep_gemm -e ST_MLA_BUILD_ROOT=/cache/mla -e FLASHINFER_WORKSPACE_BASE=/cache \
+-e ST_DENSE_BUILD_ROOT=/cache/st-dense -e ST_ONESHOT_BUILD_ROOT=/cache/st-oneshot -e MAX_JOBS=2"
 # the profile's declared D11 knobs (STK_*, boot.declared) travel from this shell into every rank; an undeclared one kills the boot
 for v in $(compgen -v STK_ || true); do NCCL_ENV="$NCCL_ENV -e $v=${!v}"; done
 
@@ -136,20 +173,22 @@ for v in $(compgen -v STK_ || true); do NCCL_ENV="$NCCL_ENV -e $v=${!v}"; done
 META="$REPO/build/st-glm53-meta"; mkdir -p "$META"
 cp "$CKPT"/config.json "$CKPT"/tokenizer.json "$CKPT"/tokenizer_config.json "$CKPT"/generation_config.json "$CKPT"/processor_config.json "$META"/ 2>/dev/null
 cp "$CKPT"/chat_template*.jinja "$META"/ 2>/dev/null || true
+# When the supervisor launches from the installed tree, refresh its own metadata too.
+if [ "$(readlink -f "$REPO")" = "$(readlink -f "$ENGINE_DIR")" ]; then
+  rsync -a --delete "$META/" "$ENGINE_DIR/st-glm53-meta/"
+fi
 # Every node prepares and starts in PARALLEL. A node's rsync, image build and container start depend
 # on no other node's, but rank 0 waits at the rendezvous for the last node to arrive -- so a sequential
 # loop put its own stagger straight into rank 0's boot: measured 9.0 s of a 90.2 s boot (2026-09-11,
 # srv2 :39.3 / srv1 :42.9 / srv3 :46.1 / srv4 :48.3). Each node's output is buffered and printed in rank
 # order so the log stays readable, and one node's failure stops the whole fleet rather than leaving a
 # partial one behind.
-stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
-
 start_rank() {
   local r=$1 ip=${NODES[$1]}
   echo "== rank $r on $ip"
   push_tree "$ip" || { echo "ABORT: $ip could not receive the engine tree (rsync)" >&2; return 1; }
   # the ST image is built on the node from the tree just rsynced: seconds (two thin layers on the seed every node has); the seed ID is pinned in build.sh
-  node_sh "$ip" "ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh >/dev/null 2>&1 || ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh 2>&1 | tail -5" \
+  node_sh "$ip" "ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh" \
     || { echo "ABORT: $ip could not build $IMAGE (engine/runtime/build.sh)" >&2; return 1; }
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; return 1; }
   node_sh "$ip" "test -s $RANKS_DIR/vision.safetensors" || { echo "ABORT: $ip lacks vision.safetensors (preshard.py --vision --out $RANKS_DIR, once per node)" >&2; return 1; }
@@ -157,11 +196,11 @@ start_rank() {
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \
     --network host --ipc host --shm-size 32g --ulimit memlock=-1:-1 --ulimit nofile=524288:524288 --cap-add IPC_LOCK \
     --device /dev/infiniband:/dev/infiniband \
-    -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV $KNOB_ENV \
+    -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER --tier-dir $TIER_DIR --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()
@@ -179,4 +218,5 @@ if [ -n "$failed" ]; then
   bash "$0" stop >/dev/null 2>&1 || true
   exit 1
 fi
+launched=1
 echo "head: http://10.10.10.2:$PORT/v1/chat/completions (OpenAI), /v1/engine/completions (engine dialect), GET / for status"

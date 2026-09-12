@@ -138,6 +138,36 @@ class ExpertPreshardTests(unittest.TestCase):
 
 @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA PyTorch")
 class CudaCacheTests(unittest.TestCase):
+    def test_pinned_block_ids_are_not_reused_before_their_upload_finishes(self):
+        from unittest.mock import patch
+        from engine.profiles.glm53.caches import Glm53Caches
+        cache = Glm53Caches.__new__(Glm53Caches)
+        cache.device = torch.device("cuda")
+        cache.block_table = torch.empty(1, 4, dtype=torch.int32, device="cuda")
+        # One slot forces the next publication to reuse the same pinned bytes.
+        cache._id_ring = [(torch.empty(4, dtype=torch.int32, pin_memory=True), torch.cuda.Event())]
+        cache._id_ring_next = 0
+        first, second = torch.empty_like(cache.block_table[0]), torch.empty_like(cache.block_table[0])
+        copy = torch.Tensor.copy_
+
+        def delayed_upload(dst, src, **kwargs):
+            if dst.is_cuda and not src.is_cuda:
+                torch.cuda._sleep(20_000_000)
+            return copy(dst, src, **kwargs)
+
+        with patch.object(torch.Tensor, "copy_", delayed_upload):
+            # The old helper records the event before the caller enqueues its upload.
+            # Keep that route here so this regression also runs against the old image.
+            if hasattr(cache, "_upload_ids"):
+                cache._upload_ids(first, [11, 12, 13, 14])
+                cache._upload_ids(second, [21, 22, 23, 24])
+            else:
+                first.copy_(cache._staged_ids([11, 12, 13, 14]), non_blocking=True)
+                second.copy_(cache._staged_ids([21, 22, 23, 24]), non_blocking=True)
+        torch.cuda.synchronize()
+        self.assertEqual(first.tolist(), [11, 12, 13, 14])
+        self.assertEqual(second.tolist(), [21, 22, 23, 24])
+
     def test_paired_cache_oracle_checks_inputs_before_isolating_expert_rounding(self):
         from engine.profiles.glm53.check import PairedMoe
         calls = []
@@ -388,8 +418,10 @@ class CudaCacheTests(unittest.TestCase):
         c.pool.reserve(0, 16)
         step = Step.prefill(torch.zeros(6, dtype=torch.int64, device="cuda"), 0, 0, slot)
         copy = torch.Tensor.copy_
-        def partial_copy(dst, src):
-            copy(dst[:1], src[:1])
+        def partial_copy(dst, src, **kwargs):
+            if not dst.is_cuda:
+                return copy(dst, src, **kwargs)
+            copy(dst[:1], src[:1], **kwargs)
             raise RuntimeError("injected partial copy failure")
         with patch.object(torch.Tensor, "copy_", partial_copy):
             with self.assertRaisesRegex(RuntimeError, "injected partial copy failure"):

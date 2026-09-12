@@ -62,8 +62,8 @@ class Glm53Engine:
         self.options = {}                                   # seq -> the request's sampling options beyond temperature (base/sampler.OPTION_KEYS)
         self.gens = {}                                      # seq -> its own torch.Generator when the request carries a seed
         self.ends = {}                                      # seq -> end tokens: the model's plus the request's stop_token_ids
-        self._ends_tensor = {}                              # seq -> the same, on the device, for min_tokens
-        self.history = None                                 # base/sampler.History, built at the first row that needs penalties
+        self._ends_tensor = {}                              # cached device end-token ids for min_tokens
+        self.sampling_history = None                        # penalty tensors; history(seq) remains the token-list protocol
         self.lps = {}                                       # seq -> per committed token (id, logprob, [(id, logprob)...]) when asked
         self.matchers = {}                                  # seq -> base/grammar.Matcher when the request carries a grammar
         self.grammars = None                                # base/grammar.Grammars, bound at boot when structured output is served
@@ -188,6 +188,18 @@ class Glm53Engine:
                         self.decode(rows, [caches.pool.row(r) for r in rows], slots)
                         torch.cuda.synchronize()
                         paid[f"decode/{width}"] = round(time.perf_counter() - t0, 3)
+                        if self.async_ready(rows):
+                            t0 = time.perf_counter()
+                            pending = []
+                            for _ in range(self.pipeline.depth):
+                                caches.pool.reserve_to(rows, [self.horizon(r) for r in rows])
+                                pending.append(self.decode_async(rows, [caches.pool.row(r) for r in rows], slots))
+                            for step in pending:
+                                step.resolve()
+                            torch.cuda.synchronize()
+                            if self.pipeline.pending or any(self.inflight.get(r, 0) for r in rows):
+                                raise RuntimeError('decode warmup left a readback in flight')
+                            paid[f"decode-async/{width}"] = round(time.perf_counter() - t0, 3)
                     finally:
                         for r in rows:
                             self.close(r); self.forget(r)
@@ -217,20 +229,33 @@ class Glm53Engine:
         if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("memory preparation requires empty request and state slots")
         capacity = caches.pool.num_blocks * self.F.block
-        length = min(self.prefill_chunk, capacity)
+        largest = min(self.prefill_chunk, capacity)
+        shapes = [(largest, context) for context in sorted({0, capacity-largest})]
+        if getattr(self.net, 'dense', None):
+            # Cover the prepared FP8 range and the non-Q0 NVFP4 prefill
+            # family before requests arrive. The maximum chunk alone uses
+            # NVFP4 + Q0 and never executes either of these legal families.
+            shapes = [(length, 0) for length in (128, 1024) if length < largest] + shapes
         slot = caches.slots.take(0)
         try:
             caches.pool.reserve(0, capacity)
-            for context in sorted({0, capacity-length}):
+            for length, context in shapes:
+                caches.reset_slot(slot)
                 self.memory.checkpoint(f"prefill/{length}/{context}/before")
                 ids = torch.zeros(length, device=caches.device, dtype=torch.int64)
                 step = Step.prefill(ids, context, 0, slot)
                 h, aux = self._forward(step)
-                self.net.head(h[-1:])
+                logits = self.net.head(h[-1:])
+                valid = torch.isfinite(h).all() & torch.isfinite(logits).all()
+                if aux is not None:
+                    valid &= torch.isfinite(aux).all()
+                bad = (~valid).to(torch.int32).reshape(1)
+                if self.net.comm.all_reduce_max(bad).item():
+                    raise FloatingPointError(f"prefill/{length}/{context}: non-finite model output during qualification")
                 if aux is not None:
                     self.drafter.observe(caches.draft_ring(slot),
                                          torch.arange(context, context+length, device=caches.device), aux)
-                del h, aux, step, ids
+                del h, aux, logits, valid, bad, step, ids
                 self.memory.checkpoint(f"prefill/{length}/{context}/prepared")
         finally:
             caches.pool.release(0)
@@ -382,8 +407,8 @@ class Glm53Engine:
         penalties (`_row_logits`), so before that there is nothing to forget, and a caller replacing a row's tokens
         must be able to say so without knowing whether anyone has asked yet. Three callers replace tokens; two of
         them reached through `self.history` directly and died on the first request of a boot that had not."""
-        if self.history is not None:
-            self.history.forget(seq)
+        if self.sampling_history is not None:
+            self.sampling_history.forget(seq)
 
     def note_ceilings(self, target_probs, draft_probs) -> None:
         """Every 64th verification, record what the draft allowed. See base/sampler.draft_ceilings."""
@@ -672,9 +697,9 @@ class Glm53Engine:
         whole row at once, from the step's bitmask (`_pick_rich`). `out` is the row's slot in `_positions`."""
         from engine.base.sampler import History, process_logits
         opts = self.options.get(seq, {})
-        if self.history is None:                            # the vocabulary is whatever the head just produced
-            self.history = History(int(raw.shape[-1]), raw.device)
-        seen, counts = self.history.of(seq, self.tokens[seq], self.prompt_len[seq])
+        if self.sampling_history is None:                   # the vocabulary is whatever the head just produced
+            self.sampling_history = History(int(raw.shape[-1]), raw.device)
+        seen, counts = self.sampling_history.of(seq, self.tokens[seq], self.prompt_len[seq])
         need = self.min_new.get(seq, 0) - self._generated_count(seq) - len(drafts_before)
         forbid = self._end_ids(seq, raw.device) if need > 0 and self.ends.get(seq) else None
         return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid, out=out)

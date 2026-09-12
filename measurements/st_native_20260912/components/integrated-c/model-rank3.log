@@ -1,0 +1,12 @@
+[W912 01:52:43.166956869 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+phase                                      seconds   dev GiB  counters
+arena                                        0.391     +3.00  
+load                                         1.804     +1.58  blocks=3 bytes=1.90739e+09
+load drafter                                 0.423     -0.04  blocks=3 bytes=2.34216e+09
+prepare native execution                     4.288     -0.15  
+load vision                                  0.207     +0.00  blocks=2 bytes=1.12726e+09
+caches                                       0.000     +0.00  
+engine                                       0.000     +0.00  
+runner                                       0.000     +0.00  
+{"arena_expandable": 1, "dense_pack_cache": 45, "dense_pack_gptq": 43, "dense_pack_rtn": 2, "target_native_linears": 10, "drafter_native_linears": 31, "blocks": 210, "slots": 3, "arena_GiB": 6.369, "prefix_snapshots": 24, "snapshot_MiB": 41.0}

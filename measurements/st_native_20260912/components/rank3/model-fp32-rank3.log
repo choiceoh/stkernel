@@ -1,0 +1,56 @@
+[W911 23:43:09.762695994 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[osar] phase rank=3 us/collective (n=6): guard=3.0 copy=5.1 wait=713.9 reduce=3.9 | total=725.9  @1592 MHz assumed | wait by size: <=128KiB n=4 1029.2, >128KiB n=2 83.3
+phase                                      seconds   dev GiB  counters
+arena                                        0.190     +4.92  
+load                                         1.626     +3.38  blocks=3 bytes=1.90739e+09
+load drafter                                 0.425     +0.09  blocks=3 bytes=2.34216e+09
+prepare native execution                     5.288     -1.29  
+{"arena_expandable": 1, "dense_pack_cache": 45, "dense_pack_gptq": 43, "dense_pack_rtn": 2, "target_native_linears": 10, "drafter_native_linears": 31, "blocks": 210, "slots": 3, "arena_GiB": 4.678, "prefix_snapshots": 8, "snapshot_MiB": 41.0}
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+2026-09-11 23:43:24,328 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-11 23:43:24,331 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1_946887720f597aab
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-11 23:43:26,533 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1_946887720f597aab.o
+[b12x static v2] lane serving: static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=98304 B)
+[osar] phase rank=3 us/collective (n=4): guard=2.7 copy=4.3 wait=247060.7 reduce=3.2 | total=247070.9  @1592 MHz assumed | wait by size: <=128KiB n=4 247060.7, >128KiB n=0 0.0
+2026-09-11 23:43:33,635 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1_498686e3df00c407
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-11 23:43:38,427 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1_498686e3df00c407.o
+[b12x static v2] lane serving: static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1 (mac=48, m=12, routed=96, smem=101376 B)
+[osar] phase rank=3 us/collective (n=11): guard=3.7 copy=4.2 wait=424519.1 reduce=4.4 | total=424531.3  @1592 MHz assumed | wait by size: <=128KiB n=11 424519.1, >128KiB n=0 0.0
+2026-09-11 23:43:40,058 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r96_tm32f2g2a32wutr16n128k256d256sf6v1_82fe9b63fc412d29
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-11 23:43:44,953 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r96_tm32f2g2a32wutr16n128k256d256sf6v1_82fe9b63fc412d29.o
+[b12x static v2] lane serving: static2_m6_k4096_n512_t8_r96_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=98304 B)
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/repo/engine_parity_graph_check.py", line 87, in <module>
+[rank3]:     if __name__=='__main__':main()
+[rank3]:                             ^^^^^^
+[rank3]:   File "/repo/engine_parity_graph_check.py", line 37, in main
+[rank3]:     drafter.capture_decode(caches)
+[rank3]:   File "/repo/engine/profiles/glm53/drafter.py", line 138, in capture_decode
+[rank3]:     self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory)
+[rank3]:                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 285, in __init__
+[rank3]:     self.proposals = DecodeGraphs(propose, propose_inputs, [(1, drafter.k + 1)],
+[rank3]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/repo/engine/base/graphs.py", line 59, in __init__
+[rank3]:     step_fn(inp)
+[rank3]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 268, in propose
+[rank3]:     return drafter.propose_tensor(inputs["anchor"], inputs["position"], ring)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/repo/engine/profiles/glm53/drafter.py", line 310, in propose_tensor
+[rank3]:     h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions
+[rank3]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/repo/engine/profiles/glm53/drafter.py", line 280, in block
+[rank3]:     h = self._attn(L, h, positions, ring, ctx_len)
+[rank3]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/repo/engine/profiles/glm53/drafter.py", line 244, in _attn
+[rank3]:     o = draft_attention(qh.contiguous(),kh.contiguous(),vh.contiguous(),ring[0],ctx_len,slot=ring[1],layer=L)
+[rank3]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/repo/engine/kernels/draft_attention.py", line 75, in draft_attention
+[rank3]:     raise ValueError("DFlash attention requires contiguous CUDA BF16 block and KV ring")
+[rank3]: ValueError: DFlash attention requires contiguous CUDA BF16 block and KV ring

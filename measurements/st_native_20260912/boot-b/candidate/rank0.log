@@ -1,0 +1,130 @@
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (103 free)
+[W912 01:31:26.350774364 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+  facts
+    model                    /repo/st-glm53-meta              [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /home/choiceoh/models/st-glm53-9391-up-gate-full [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    2304                             [launcher --block-size]
+    spec_k                   5                                [launcher SPEC_K with DFlash2]
+    kv_gib                   8.73                             [40th boot's measured KV]
+    port                     8001                             [--port]
+    prefix_snapshots         8                                [chunk-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)]
+  knobs (every one expires)
+    execution                parity                           until 2026-09-30  measures 'parity: native W4/GPTQ dense, FP8/NVFP4 prefill, TP drafter, MK MHC/PDL, one-shot AR and prefill SP; requires full-fleet quality, memory and onepass qualification before production adoption', rollback 'STK_execution=stock' <- env
+    moe_static               t,r,sf6,q0                       until 2026-09-30  measures "b12x static lane: production's 2026-09-09 adoption 't,r,sf6' (+q0 = the TP recipe) against the stock kernel the §15~18 judge ran; win = bake t,r,sf6 into lanes.served and delete this knob", rollback 'STK_moe_static=stock' <- env
+    mla_prefill              stock                            until 2026-09-30  measures 'large-M MLA prefill candidates (39차: pair, pair4, tile32; production keeps them off pending numerics + a TTFT bracket)', rollback 'STK_mla_prefill=stock'
+    context_ceiling          0                                until 2026-09-30  measures "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. 0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's 'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken", rollback 'STK_context_ceiling=0'
+    lanes                    served                           until 2026-09-25  measures "45차 §21: the fleet's served output is garbage from the first token while every self-consistency judge passes; 'reference' boots the torch reference table on all 45 layers (slow, correct algebra by construction), 'expert' / 'kda_recurrent' / 'expert,kda_recurrent' keep the served table with those lanes on the reference -- which table talks sense says whether a kernel lane or the composition is wrong", rollback "delete once the served table's text is judged by onepass"
+    decode_eager             0                                until 2026-09-25  measures '45차 §23: the first replay of a captured decode graph stalled on the fleet (four ranks at 96% GPU, 3/3 boots) -- PR #567 found the cause (MoE workspaces freed under recorded graph addresses) and retains them; this knob keeps an eager decode as the bisect against the graph path while that fix is judged by onepass', rollback 'delete once the captured decode path is the judged one'
+NCCL version 2.29.7+cuda13.2
+GLM-5.3-Flash on ST, one rank of TP=4, chunk 6,912, kv_gib 8.73 -> 580 blocks
+
+  box                                      119.69 GiB
+  -------------------------------------  --------
+  reserve for the OS                       -11.97 GiB   [declared] 2x earlyoom's 5% floor (5.98 GiB)
+  runtime floor (CUDA ctx + NCCL 16ch)      -5.54 GiB   [ledger] GLM 40th boot table -- re-measure on ST
+  weights (this rank, TP=4)                -44.50 GiB   [read] rank0of4.safetensors header: 1,376 tensors
+  drafter (DFlash2, replicated)             -2.18 GiB   [read] drafter.specs: every rank holds the whole drafter (DRAFT_TP=1 as served)
+  state slots (4 + null) x 247 MiB          -1.21 GiB   [read] caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring
+  prefix snapshots (8 x 75 MiB)             -0.59 GiB   [read] caches.snapshot_layout: chunk-boundary position rings for prefix reuse (boot.PREFIX_SNAPSHOTS)
+  workspace ceiling (outside the arena)    -12.00 GiB   [declared] base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses beyond it; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a 6,912-token chunk at 3.5 GiB, indexer selection bounded to 1,024 query rows per pass (net.SELECT_ROWS)
+  NVMe tier staging                         -0.12 GiB   [declared] kv_tier: pinned staging + device scratch
+  -------------------------------------  --------
+  KV (remainder)                            41.58 GiB
+
+  GATE: KV = 41.58 GiB, declared before load.
+  declared paged KV 7.52 GiB (7.52 in blocks of 13.28 MiB); unassigned +34.06 GiB
+  what the remainder buys at 6,043 B/token (paged, layout) + 247 MiB/sequence (slot):
+    concurrency   1: 1,048,576 tok each
+    concurrency   4: 1,048,576 tok each
+    concurrency   8:   880,634 tok each
+    concurrency  32:   187,982 tok each
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+  return func(*args, **kwargs)
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+  return func(*args, **kwargs)
+2026-09-12 01:33:06,662 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 01:33:06,662 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_cf93baeedfd01c43
+2026-09-12 01:33:10,906 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_cf93baeedfd01c43.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=1024 -> rows 37760/37760 tiles 295/295 tasks 1180/1180
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+  return func(*args, **kwargs)
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=8192 -> rows 44928/44928 tiles 351/351 tasks 1404/1404
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+2026-09-12 01:33:17,966 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 01:33:17,966 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476
+2026-09-12 01:33:25,023 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=55296 -> rows 92032/92032 tiles 719/719 tasks 2876/2876
+[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=6912
+2026-09-12 01:33:37,919 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 01:33:37,919 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1_946887720f597aab
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12 01:33:42,885 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1_946887720f597aab.o
+[b12x static v2] lane serving: static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=98304 B)
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 596, in <module>
+[rank0]:     raise SystemExit(main())
+[rank0]:                      ^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 592, in main
+[rank0]:     return fleet(a)
+[rank0]:            ^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 530, in fleet
+[rank0]:     engine.capture_decode(MAX_SEQS)
+[rank0]:   File "/repo/engine/profiles/glm53/adapter.py", line 77, in capture_decode
+[rank0]:     self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
+[rank0]:                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 216, in __init__
+[rank0]:     self.graphs = DecodeGraphs(forward, make_inputs,
+[rank0]:                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/base/graphs.py", line 62, in __init__
+[rank0]:     memory.checkpoint(f"{label}/{shape}/warmup")
+[rank0]:   File "/repo/engine/base/runtime_memory.py", line 84, in checkpoint
+[rank0]:     raise MemoryError(f"{phase}: {error}")
+[rank0]: MemoryError: target/(1, 6, 4096)/warmup: a TP peer failed runtime memory qualification

@@ -1,0 +1,212 @@
+[megakernel] w4 pack GPTQ: Hessian held at damping 10% (not at 1%)
+{"rank": 0, "name": "L0.kda.in_proj", "seconds": 6.598, "packs": {"legacy_unverified_skipped": 2, "built": 1, "gptq": 1}}
+{"rank": 0, "name": "L0.kda.o_proj", "seconds": 2.27, "packs": {"legacy_unverified_skipped": 4, "built": 2, "gptq": 2}}
+[megakernel] w4 pack GPTQ: Hessian held at damping 10% (not at 1%)
+{"rank": 0, "name": "L0.mlp.gate_up", "seconds": 5.408, "packs": {"legacy_unverified_skipped": 6, "built": 3, "gptq": 3}}
+[megakernel] w4 pack GPTQ: Hessian held at damping 10% (not at 1%)
+{"rank": 0, "name": "L0.mlp.down", "seconds": 3.477, "packs": {"legacy_unverified_skipped": 8, "built": 4, "gptq": 4}}
+[megakernel] w4 pack GPTQ: Hessian held at damping 10% (not at 1%)
+{"rank": 0, "name": "L1.kda.in_proj", "seconds": 5.402, "packs": {"legacy_unverified_skipped": 10, "built": 5, "gptq": 5}}
+{"rank": 0, "name": "L1.kda.o_proj", "seconds": 0.723, "packs": {"legacy_unverified_skipped": 12, "built": 6, "gptq": 6}}
+[megakernel] w4 pack GPTQ: Hessian held at damping 10% (not at 1%)
+{"rank": 0, "name": "L1.mlp.gate_up", "seconds": 5.556, "packs": {"legacy_unverified_skipped": 14, "built": 7, "gptq": 7}}
+{"rank": 0, "name": "L1.mlp.down", "seconds": 1.289, "packs": {"legacy_unverified_skipped": 16, "built": 8, "gptq": 8}}
+{"rank": 0, "name": "L2.kda.in_proj", "seconds": 5.292, "packs": {"legacy_unverified_skipped": 18, "built": 9, "gptq": 9}}
+{"rank": 0, "name": "L2.kda.o_proj", "seconds": 0.877, "packs": {"legacy_unverified_skipped": 20, "built": 10, "gptq": 10}}
+[megakernel] w4 pack GPTQ: Hessian held at damping 10% (not at 1%)
+{"rank": 0, "name": "L2.mlp.gate_up", "seconds": 6.041, "packs": {"legacy_unverified_skipped": 22, "built": 11, "gptq": 11}}
+[megakernel] w4 pack GPTQ: Hessian held at damping 10% (not at 1%)
+{"rank": 0, "name": "L2.mlp.down", "seconds": 3.586, "packs": {"legacy_unverified_skipped": 24, "built": 12, "gptq": 12}}
+[megakernel] w4 pack GPTQ: Hessian held at damping 10% (not at 1%)
+{"rank": 0, "name": "L3.mla.qkv_a", "seconds": 5.471, "packs": {"legacy_unverified_skipped": 26, "built": 13, "gptq": 13}}
+{"rank": 0, "name": "L3.mla.q_b", "seconds": 0.076, "packs": {"legacy_unverified_skipped": 26, "built": 13, "gptq": 13, "legacy": 1, "rtn": 1}}
+{"rank": 0, "name": "L3.mla.o_proj", "seconds": 5.336, "packs": {"legacy_unverified_skipped": 28, "built": 14, "gptq": 14, "legacy": 1, "rtn": 1}}
+{"rank": 0, "name": "L3.idx.wq_b", "seconds": 0.054, "packs": {"legacy_unverified_skipped": 28, "built": 14, "gptq": 14, "legacy": 2, "rtn": 2}}
+[megakernel] w4 pack GPTQ: Hessian held at damping 10% (not at 1%)
+{"rank": 0, "name": "L3.moe.sh_gate_up", "seconds": 5.321, "packs": {"legacy_unverified_skipped": 30, "built": 15, "gptq": 15, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L3.moe.sh_down", "seconds": 0.573, "packs": {"legacy_unverified_skipped": 32, "built": 16, "gptq": 16, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L4.kda.in_proj", "seconds": 2.541, "packs": {"legacy_unverified_skipped": 34, "built": 17, "gptq": 17, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L4.kda.o_proj", "seconds": 2.196, "packs": {"legacy_unverified_skipped": 36, "built": 18, "gptq": 18, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L4.moe.sh_gate_up", "seconds": 2.159, "packs": {"legacy_unverified_skipped": 38, "built": 19, "gptq": 19, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L4.moe.sh_down", "seconds": 0.544, "packs": {"legacy_unverified_skipped": 40, "built": 20, "gptq": 20, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L5.kda.in_proj", "seconds": 5.843, "packs": {"legacy_unverified_skipped": 42, "built": 21, "gptq": 21, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L5.kda.o_proj", "seconds": 2.185, "packs": {"legacy_unverified_skipped": 44, "built": 22, "gptq": 22, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L5.moe.sh_gate_up", "seconds": 4.981, "packs": {"legacy_unverified_skipped": 46, "built": 23, "gptq": 23, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L5.moe.sh_down", "seconds": 0.568, "packs": {"legacy_unverified_skipped": 48, "built": 24, "gptq": 24, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L6.kda.in_proj", "seconds": 5.246, "packs": {"legacy_unverified_skipped": 50, "built": 25, "gptq": 25, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L6.kda.o_proj", "seconds": 2.198, "packs": {"legacy_unverified_skipped": 52, "built": 26, "gptq": 26, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L6.moe.sh_gate_up", "seconds": 5.079, "packs": {"legacy_unverified_skipped": 54, "built": 27, "gptq": 27, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L6.moe.sh_down", "seconds": 0.167, "packs": {"legacy_unverified_skipped": 56, "built": 28, "gptq": 28, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L7.mla.qkv_a", "seconds": 4.995, "packs": {"legacy_unverified_skipped": 58, "built": 29, "gptq": 29, "legacy": 2, "rtn": 2}}
+{"rank": 0, "name": "L7.mla.q_b", "seconds": 0.071, "packs": {"legacy_unverified_skipped": 58, "built": 29, "gptq": 29, "legacy": 3, "rtn": 3}}
+{"rank": 0, "name": "L7.mla.o_proj", "seconds": 5.347, "packs": {"legacy_unverified_skipped": 60, "built": 30, "gptq": 30, "legacy": 3, "rtn": 3}}
+{"rank": 0, "name": "L7.idx.wq_b", "seconds": 0.056, "packs": {"legacy_unverified_skipped": 60, "built": 30, "gptq": 30, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L7.moe.sh_gate_up", "seconds": 5.075, "packs": {"legacy_unverified_skipped": 62, "built": 31, "gptq": 31, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L7.moe.sh_down", "seconds": 0.207, "packs": {"legacy_unverified_skipped": 64, "built": 32, "gptq": 32, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L8.kda.in_proj", "seconds": 2.729, "packs": {"legacy_unverified_skipped": 66, "built": 33, "gptq": 33, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L8.kda.o_proj", "seconds": 2.328, "packs": {"legacy_unverified_skipped": 68, "built": 34, "gptq": 34, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L8.moe.sh_gate_up", "seconds": 5.305, "packs": {"legacy_unverified_skipped": 70, "built": 35, "gptq": 35, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L8.moe.sh_down", "seconds": 0.55, "packs": {"legacy_unverified_skipped": 72, "built": 36, "gptq": 36, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L9.kda.in_proj", "seconds": 5.496, "packs": {"legacy_unverified_skipped": 74, "built": 37, "gptq": 37, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L9.kda.o_proj", "seconds": 2.258, "packs": {"legacy_unverified_skipped": 76, "built": 38, "gptq": 38, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L9.moe.sh_gate_up", "seconds": 5.34, "packs": {"legacy_unverified_skipped": 78, "built": 39, "gptq": 39, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L9.moe.sh_down", "seconds": 0.562, "packs": {"legacy_unverified_skipped": 80, "built": 40, "gptq": 40, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L10.kda.in_proj", "seconds": 5.22, "packs": {"legacy_unverified_skipped": 82, "built": 41, "gptq": 41, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L10.kda.o_proj", "seconds": 0.771, "packs": {"legacy_unverified_skipped": 84, "built": 42, "gptq": 42, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L10.moe.sh_gate_up", "seconds": 5.074, "packs": {"legacy_unverified_skipped": 86, "built": 43, "gptq": 43, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L10.moe.sh_down", "seconds": 0.176, "packs": {"legacy_unverified_skipped": 88, "built": 44, "gptq": 44, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L11.mla.qkv_a", "seconds": 5.256, "packs": {"legacy_unverified_skipped": 90, "built": 45, "gptq": 45, "legacy": 4, "rtn": 4}}
+{"rank": 0, "name": "L11.mla.q_b", "seconds": 0.075, "packs": {"legacy_unverified_skipped": 90, "built": 45, "gptq": 45, "legacy": 5, "rtn": 5}}
+{"rank": 0, "name": "L11.mla.o_proj", "seconds": 2.618, "packs": {"legacy_unverified_skipped": 92, "built": 46, "gptq": 46, "legacy": 5, "rtn": 5}}
+{"rank": 0, "name": "L11.idx.wq_b", "seconds": 0.058, "packs": {"legacy_unverified_skipped": 92, "built": 46, "gptq": 46, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L11.moe.sh_gate_up", "seconds": 5.277, "packs": {"legacy_unverified_skipped": 94, "built": 47, "gptq": 47, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L11.moe.sh_down", "seconds": 0.544, "packs": {"legacy_unverified_skipped": 96, "built": 48, "gptq": 48, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L12.kda.in_proj", "seconds": 5.208, "packs": {"legacy_unverified_skipped": 98, "built": 49, "gptq": 49, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L12.kda.o_proj", "seconds": 2.214, "packs": {"legacy_unverified_skipped": 100, "built": 50, "gptq": 50, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L12.moe.sh_gate_up", "seconds": 5.15, "packs": {"legacy_unverified_skipped": 102, "built": 51, "gptq": 51, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L12.moe.sh_down", "seconds": 0.192, "packs": {"legacy_unverified_skipped": 104, "built": 52, "gptq": 52, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L13.kda.in_proj", "seconds": 5.214, "packs": {"legacy_unverified_skipped": 106, "built": 53, "gptq": 53, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L13.kda.o_proj", "seconds": 0.706, "packs": {"legacy_unverified_skipped": 108, "built": 54, "gptq": 54, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L13.moe.sh_gate_up", "seconds": 5.251, "packs": {"legacy_unverified_skipped": 110, "built": 55, "gptq": 55, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L13.moe.sh_down", "seconds": 0.546, "packs": {"legacy_unverified_skipped": 112, "built": 56, "gptq": 56, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L14.kda.in_proj", "seconds": 5.287, "packs": {"legacy_unverified_skipped": 114, "built": 57, "gptq": 57, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L14.kda.o_proj", "seconds": 2.209, "packs": {"legacy_unverified_skipped": 116, "built": 58, "gptq": 58, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L14.moe.sh_gate_up", "seconds": 5.312, "packs": {"legacy_unverified_skipped": 118, "built": 59, "gptq": 59, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L14.moe.sh_down", "seconds": 0.56, "packs": {"legacy_unverified_skipped": 120, "built": 60, "gptq": 60, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L15.mla.qkv_a", "seconds": 5.349, "packs": {"legacy_unverified_skipped": 122, "built": 61, "gptq": 61, "legacy": 6, "rtn": 6}}
+{"rank": 0, "name": "L15.mla.q_b", "seconds": 0.057, "packs": {"legacy_unverified_skipped": 122, "built": 61, "gptq": 61, "legacy": 7, "rtn": 7}}
+{"rank": 0, "name": "L15.mla.o_proj", "seconds": 5.306, "packs": {"legacy_unverified_skipped": 124, "built": 62, "gptq": 62, "legacy": 7, "rtn": 7}}
+{"rank": 0, "name": "L15.idx.wq_b", "seconds": 0.05, "packs": {"legacy_unverified_skipped": 124, "built": 62, "gptq": 62, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L15.moe.sh_gate_up", "seconds": 5.069, "packs": {"legacy_unverified_skipped": 126, "built": 63, "gptq": 63, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L15.moe.sh_down", "seconds": 0.157, "packs": {"legacy_unverified_skipped": 128, "built": 64, "gptq": 64, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L16.kda.in_proj", "seconds": 5.04, "packs": {"legacy_unverified_skipped": 130, "built": 65, "gptq": 65, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L16.kda.o_proj", "seconds": 2.175, "packs": {"legacy_unverified_skipped": 132, "built": 66, "gptq": 66, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L16.moe.sh_gate_up", "seconds": 5.141, "packs": {"legacy_unverified_skipped": 134, "built": 67, "gptq": 67, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L16.moe.sh_down", "seconds": 0.615, "packs": {"legacy_unverified_skipped": 136, "built": 68, "gptq": 68, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L17.kda.in_proj", "seconds": 2.691, "packs": {"legacy_unverified_skipped": 138, "built": 69, "gptq": 69, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L17.kda.o_proj", "seconds": 2.418, "packs": {"legacy_unverified_skipped": 140, "built": 70, "gptq": 70, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L17.moe.sh_gate_up", "seconds": 1.982, "packs": {"legacy_unverified_skipped": 142, "built": 71, "gptq": 71, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L17.moe.sh_down", "seconds": 0.186, "packs": {"legacy_unverified_skipped": 144, "built": 72, "gptq": 72, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L18.kda.in_proj", "seconds": 2.547, "packs": {"legacy_unverified_skipped": 146, "built": 73, "gptq": 73, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L18.kda.o_proj", "seconds": 0.864, "packs": {"legacy_unverified_skipped": 148, "built": 74, "gptq": 74, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L18.moe.sh_gate_up", "seconds": 1.99, "packs": {"legacy_unverified_skipped": 150, "built": 75, "gptq": 75, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L18.moe.sh_down", "seconds": 0.205, "packs": {"legacy_unverified_skipped": 152, "built": 76, "gptq": 76, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L19.mla.qkv_a", "seconds": 5.211, "packs": {"legacy_unverified_skipped": 154, "built": 77, "gptq": 77, "legacy": 8, "rtn": 8}}
+{"rank": 0, "name": "L19.mla.q_b", "seconds": 0.071, "packs": {"legacy_unverified_skipped": 154, "built": 77, "gptq": 77, "legacy": 9, "rtn": 9}}
+{"rank": 0, "name": "L19.mla.o_proj", "seconds": 2.361, "packs": {"legacy_unverified_skipped": 156, "built": 78, "gptq": 78, "legacy": 9, "rtn": 9}}
+{"rank": 0, "name": "L19.idx.wq_b", "seconds": 0.064, "packs": {"legacy_unverified_skipped": 156, "built": 78, "gptq": 78, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L19.moe.sh_gate_up", "seconds": 5.145, "packs": {"legacy_unverified_skipped": 158, "built": 79, "gptq": 79, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L19.moe.sh_down", "seconds": 0.572, "packs": {"legacy_unverified_skipped": 160, "built": 80, "gptq": 80, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L20.kda.in_proj", "seconds": 2.403, "packs": {"legacy_unverified_skipped": 162, "built": 81, "gptq": 81, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L20.kda.o_proj", "seconds": 2.335, "packs": {"legacy_unverified_skipped": 164, "built": 82, "gptq": 82, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L20.moe.sh_gate_up", "seconds": 5.076, "packs": {"legacy_unverified_skipped": 166, "built": 83, "gptq": 83, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L20.moe.sh_down", "seconds": 0.563, "packs": {"legacy_unverified_skipped": 168, "built": 84, "gptq": 84, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L21.kda.in_proj", "seconds": 2.493, "packs": {"legacy_unverified_skipped": 170, "built": 85, "gptq": 85, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L21.kda.o_proj", "seconds": 2.18, "packs": {"legacy_unverified_skipped": 172, "built": 86, "gptq": 86, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L21.moe.sh_gate_up", "seconds": 5.049, "packs": {"legacy_unverified_skipped": 174, "built": 87, "gptq": 87, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L21.moe.sh_down", "seconds": 0.564, "packs": {"legacy_unverified_skipped": 176, "built": 88, "gptq": 88, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L22.kda.in_proj", "seconds": 2.411, "packs": {"legacy_unverified_skipped": 178, "built": 89, "gptq": 89, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L22.kda.o_proj", "seconds": 0.687, "packs": {"legacy_unverified_skipped": 180, "built": 90, "gptq": 90, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L22.moe.sh_gate_up", "seconds": 5.18, "packs": {"legacy_unverified_skipped": 182, "built": 91, "gptq": 91, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L22.moe.sh_down", "seconds": 0.182, "packs": {"legacy_unverified_skipped": 184, "built": 92, "gptq": 92, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L23.mla.qkv_a", "seconds": 5.178, "packs": {"legacy_unverified_skipped": 186, "built": 93, "gptq": 93, "legacy": 10, "rtn": 10}}
+{"rank": 0, "name": "L23.mla.q_b", "seconds": 0.065, "packs": {"legacy_unverified_skipped": 186, "built": 93, "gptq": 93, "legacy": 11, "rtn": 11}}
+{"rank": 0, "name": "L23.mla.o_proj", "seconds": 5.22, "packs": {"legacy_unverified_skipped": 188, "built": 94, "gptq": 94, "legacy": 11, "rtn": 11}}
+{"rank": 0, "name": "L23.idx.wq_b", "seconds": 0.062, "packs": {"legacy_unverified_skipped": 188, "built": 94, "gptq": 94, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L23.moe.sh_gate_up", "seconds": 5.661, "packs": {"legacy_unverified_skipped": 190, "built": 95, "gptq": 95, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L23.moe.sh_down", "seconds": 0.594, "packs": {"legacy_unverified_skipped": 192, "built": 96, "gptq": 96, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L24.kda.in_proj", "seconds": 5.603, "packs": {"legacy_unverified_skipped": 194, "built": 97, "gptq": 97, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L24.kda.o_proj", "seconds": 2.23, "packs": {"legacy_unverified_skipped": 196, "built": 98, "gptq": 98, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L24.moe.sh_gate_up", "seconds": 2.387, "packs": {"legacy_unverified_skipped": 198, "built": 99, "gptq": 99, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L24.moe.sh_down", "seconds": 0.549, "packs": {"legacy_unverified_skipped": 200, "built": 100, "gptq": 100, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L25.kda.in_proj", "seconds": 5.315, "packs": {"legacy_unverified_skipped": 202, "built": 101, "gptq": 101, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L25.kda.o_proj", "seconds": 0.72, "packs": {"legacy_unverified_skipped": 204, "built": 102, "gptq": 102, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L25.moe.sh_gate_up", "seconds": 5.168, "packs": {"legacy_unverified_skipped": 206, "built": 103, "gptq": 103, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L25.moe.sh_down", "seconds": 0.534, "packs": {"legacy_unverified_skipped": 208, "built": 104, "gptq": 104, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L26.kda.in_proj", "seconds": 2.537, "packs": {"legacy_unverified_skipped": 210, "built": 105, "gptq": 105, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L26.kda.o_proj", "seconds": 2.24, "packs": {"legacy_unverified_skipped": 212, "built": 106, "gptq": 106, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L26.moe.sh_gate_up", "seconds": 5.312, "packs": {"legacy_unverified_skipped": 214, "built": 107, "gptq": 107, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L26.moe.sh_down", "seconds": 0.563, "packs": {"legacy_unverified_skipped": 216, "built": 108, "gptq": 108, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L27.mla.qkv_a", "seconds": 5.193, "packs": {"legacy_unverified_skipped": 218, "built": 109, "gptq": 109, "legacy": 12, "rtn": 12}}
+{"rank": 0, "name": "L27.mla.q_b", "seconds": 0.055, "packs": {"legacy_unverified_skipped": 218, "built": 109, "gptq": 109, "legacy": 13, "rtn": 13}}
+{"rank": 0, "name": "L27.mla.o_proj", "seconds": 2.671, "packs": {"legacy_unverified_skipped": 220, "built": 110, "gptq": 110, "legacy": 13, "rtn": 13}}
+{"rank": 0, "name": "L27.idx.wq_b", "seconds": 0.061, "packs": {"legacy_unverified_skipped": 220, "built": 110, "gptq": 110, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L27.moe.sh_gate_up", "seconds": 5.2, "packs": {"legacy_unverified_skipped": 222, "built": 111, "gptq": 111, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L27.moe.sh_down", "seconds": 0.581, "packs": {"legacy_unverified_skipped": 224, "built": 112, "gptq": 112, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L28.kda.in_proj", "seconds": 5.353, "packs": {"legacy_unverified_skipped": 226, "built": 113, "gptq": 113, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L28.kda.o_proj", "seconds": 2.217, "packs": {"legacy_unverified_skipped": 228, "built": 114, "gptq": 114, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L28.moe.sh_gate_up", "seconds": 2.256, "packs": {"legacy_unverified_skipped": 230, "built": 115, "gptq": 115, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L28.moe.sh_down", "seconds": 0.511, "packs": {"legacy_unverified_skipped": 232, "built": 116, "gptq": 116, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L29.kda.in_proj", "seconds": 2.919, "packs": {"legacy_unverified_skipped": 234, "built": 117, "gptq": 117, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L29.kda.o_proj", "seconds": 0.722, "packs": {"legacy_unverified_skipped": 236, "built": 118, "gptq": 118, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L29.moe.sh_gate_up", "seconds": 2.419, "packs": {"legacy_unverified_skipped": 238, "built": 119, "gptq": 119, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L29.moe.sh_down", "seconds": 0.183, "packs": {"legacy_unverified_skipped": 240, "built": 120, "gptq": 120, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L30.kda.in_proj", "seconds": 5.41, "packs": {"legacy_unverified_skipped": 242, "built": 121, "gptq": 121, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L30.kda.o_proj", "seconds": 2.16, "packs": {"legacy_unverified_skipped": 244, "built": 122, "gptq": 122, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L30.moe.sh_gate_up", "seconds": 2.416, "packs": {"legacy_unverified_skipped": 246, "built": 123, "gptq": 123, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L30.moe.sh_down", "seconds": 0.192, "packs": {"legacy_unverified_skipped": 248, "built": 124, "gptq": 124, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L31.mla.qkv_a", "seconds": 5.093, "packs": {"legacy_unverified_skipped": 250, "built": 125, "gptq": 125, "legacy": 14, "rtn": 14}}
+{"rank": 0, "name": "L31.mla.q_b", "seconds": 0.082, "packs": {"legacy_unverified_skipped": 250, "built": 125, "gptq": 125, "legacy": 15, "rtn": 15}}
+{"rank": 0, "name": "L31.mla.o_proj", "seconds": 2.563, "packs": {"legacy_unverified_skipped": 252, "built": 126, "gptq": 126, "legacy": 15, "rtn": 15}}
+{"rank": 0, "name": "L31.idx.wq_b", "seconds": 0.059, "packs": {"legacy_unverified_skipped": 252, "built": 126, "gptq": 126, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L31.moe.sh_gate_up", "seconds": 5.234, "packs": {"legacy_unverified_skipped": 254, "built": 127, "gptq": 127, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L31.moe.sh_down", "seconds": 0.535, "packs": {"legacy_unverified_skipped": 256, "built": 128, "gptq": 128, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L32.kda.in_proj", "seconds": 5.372, "packs": {"legacy_unverified_skipped": 258, "built": 129, "gptq": 129, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L32.kda.o_proj", "seconds": 2.252, "packs": {"legacy_unverified_skipped": 260, "built": 130, "gptq": 130, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L32.moe.sh_gate_up", "seconds": 5.462, "packs": {"legacy_unverified_skipped": 262, "built": 131, "gptq": 131, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L32.moe.sh_down", "seconds": 0.539, "packs": {"legacy_unverified_skipped": 264, "built": 132, "gptq": 132, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L33.kda.in_proj", "seconds": 5.586, "packs": {"legacy_unverified_skipped": 266, "built": 133, "gptq": 133, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L33.kda.o_proj", "seconds": 2.343, "packs": {"legacy_unverified_skipped": 268, "built": 134, "gptq": 134, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L33.moe.sh_gate_up", "seconds": 5.038, "packs": {"legacy_unverified_skipped": 270, "built": 135, "gptq": 135, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L33.moe.sh_down", "seconds": 0.563, "packs": {"legacy_unverified_skipped": 272, "built": 136, "gptq": 136, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L34.kda.in_proj", "seconds": 5.237, "packs": {"legacy_unverified_skipped": 274, "built": 137, "gptq": 137, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L34.kda.o_proj", "seconds": 2.28, "packs": {"legacy_unverified_skipped": 276, "built": 138, "gptq": 138, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L34.moe.sh_gate_up", "seconds": 2.51, "packs": {"legacy_unverified_skipped": 278, "built": 139, "gptq": 139, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L34.moe.sh_down", "seconds": 0.154, "packs": {"legacy_unverified_skipped": 280, "built": 140, "gptq": 140, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L35.mla.qkv_a", "seconds": 5.022, "packs": {"legacy_unverified_skipped": 282, "built": 141, "gptq": 141, "legacy": 16, "rtn": 16}}
+{"rank": 0, "name": "L35.mla.q_b", "seconds": 0.058, "packs": {"legacy_unverified_skipped": 282, "built": 141, "gptq": 141, "legacy": 17, "rtn": 17}}
+{"rank": 0, "name": "L35.mla.o_proj", "seconds": 5.368, "packs": {"legacy_unverified_skipped": 284, "built": 142, "gptq": 142, "legacy": 17, "rtn": 17}}
+{"rank": 0, "name": "L35.idx.wq_b", "seconds": 0.058, "packs": {"legacy_unverified_skipped": 284, "built": 142, "gptq": 142, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L35.moe.sh_gate_up", "seconds": 5.142, "packs": {"legacy_unverified_skipped": 286, "built": 143, "gptq": 143, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L35.moe.sh_down", "seconds": 0.554, "packs": {"legacy_unverified_skipped": 288, "built": 144, "gptq": 144, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L36.kda.in_proj", "seconds": 5.548, "packs": {"legacy_unverified_skipped": 290, "built": 145, "gptq": 145, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L36.kda.o_proj", "seconds": 2.31, "packs": {"legacy_unverified_skipped": 292, "built": 146, "gptq": 146, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L36.moe.sh_gate_up", "seconds": 2.086, "packs": {"legacy_unverified_skipped": 294, "built": 147, "gptq": 147, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L36.moe.sh_down", "seconds": 0.195, "packs": {"legacy_unverified_skipped": 296, "built": 148, "gptq": 148, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L37.kda.in_proj", "seconds": 5.57, "packs": {"legacy_unverified_skipped": 298, "built": 149, "gptq": 149, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L37.kda.o_proj", "seconds": 2.294, "packs": {"legacy_unverified_skipped": 300, "built": 150, "gptq": 150, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L37.moe.sh_gate_up", "seconds": 2.164, "packs": {"legacy_unverified_skipped": 302, "built": 151, "gptq": 151, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L37.moe.sh_down", "seconds": 0.142, "packs": {"legacy_unverified_skipped": 304, "built": 152, "gptq": 152, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L38.kda.in_proj", "seconds": 5.328, "packs": {"legacy_unverified_skipped": 306, "built": 153, "gptq": 153, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L38.kda.o_proj", "seconds": 2.296, "packs": {"legacy_unverified_skipped": 308, "built": 154, "gptq": 154, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L38.moe.sh_gate_up", "seconds": 5.212, "packs": {"legacy_unverified_skipped": 310, "built": 155, "gptq": 155, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L38.moe.sh_down", "seconds": 0.21, "packs": {"legacy_unverified_skipped": 312, "built": 156, "gptq": 156, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L39.mla.qkv_a", "seconds": 2.084, "packs": {"legacy_unverified_skipped": 314, "built": 157, "gptq": 157, "legacy": 18, "rtn": 18}}
+{"rank": 0, "name": "L39.mla.q_b", "seconds": 0.066, "packs": {"legacy_unverified_skipped": 314, "built": 157, "gptq": 157, "legacy": 19, "rtn": 19}}
+{"rank": 0, "name": "L39.mla.o_proj", "seconds": 5.503, "packs": {"legacy_unverified_skipped": 316, "built": 158, "gptq": 158, "legacy": 19, "rtn": 19}}
+{"rank": 0, "name": "L39.idx.wq_b", "seconds": 0.062, "packs": {"legacy_unverified_skipped": 316, "built": 158, "gptq": 158, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L39.moe.sh_gate_up", "seconds": 5.149, "packs": {"legacy_unverified_skipped": 318, "built": 159, "gptq": 159, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L39.moe.sh_down", "seconds": 0.286, "packs": {"legacy_unverified_skipped": 320, "built": 160, "gptq": 160, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L40.kda.in_proj", "seconds": 5.358, "packs": {"legacy_unverified_skipped": 322, "built": 161, "gptq": 161, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L40.kda.o_proj", "seconds": 2.26, "packs": {"legacy_unverified_skipped": 324, "built": 162, "gptq": 162, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L40.moe.sh_gate_up", "seconds": 5.213, "packs": {"legacy_unverified_skipped": 326, "built": 163, "gptq": 163, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L40.moe.sh_down", "seconds": 0.594, "packs": {"legacy_unverified_skipped": 328, "built": 164, "gptq": 164, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L41.kda.in_proj", "seconds": 5.471, "packs": {"legacy_unverified_skipped": 330, "built": 165, "gptq": 165, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L41.kda.o_proj", "seconds": 2.277, "packs": {"legacy_unverified_skipped": 332, "built": 166, "gptq": 166, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L41.moe.sh_gate_up", "seconds": 2.478, "packs": {"legacy_unverified_skipped": 334, "built": 167, "gptq": 167, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L41.moe.sh_down", "seconds": 0.186, "packs": {"legacy_unverified_skipped": 336, "built": 168, "gptq": 168, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L42.kda.in_proj", "seconds": 5.251, "packs": {"legacy_unverified_skipped": 338, "built": 169, "gptq": 169, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L42.kda.o_proj", "seconds": 2.17, "packs": {"legacy_unverified_skipped": 340, "built": 170, "gptq": 170, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L42.moe.sh_gate_up", "seconds": 5.428, "packs": {"legacy_unverified_skipped": 342, "built": 171, "gptq": 171, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L42.moe.sh_down", "seconds": 0.557, "packs": {"legacy_unverified_skipped": 344, "built": 172, "gptq": 172, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L43.mla.qkv_a", "seconds": 5.085, "packs": {"legacy_unverified_skipped": 346, "built": 173, "gptq": 173, "legacy": 20, "rtn": 20}}
+{"rank": 0, "name": "L43.mla.q_b", "seconds": 0.065, "packs": {"legacy_unverified_skipped": 346, "built": 173, "gptq": 173, "legacy": 21, "rtn": 21}}
+{"rank": 0, "name": "L43.mla.o_proj", "seconds": 5.104, "packs": {"legacy_unverified_skipped": 348, "built": 174, "gptq": 174, "legacy": 21, "rtn": 21}}
+{"rank": 0, "name": "L43.idx.wq_b", "seconds": 0.073, "packs": {"legacy_unverified_skipped": 348, "built": 174, "gptq": 174, "legacy": 22, "rtn": 22}}
+{"rank": 0, "name": "L43.moe.sh_gate_up", "seconds": 2.386, "packs": {"legacy_unverified_skipped": 350, "built": 175, "gptq": 175, "legacy": 22, "rtn": 22}}
+{"rank": 0, "name": "L43.moe.sh_down", "seconds": 0.588, "packs": {"legacy_unverified_skipped": 352, "built": 176, "gptq": 176, "legacy": 22, "rtn": 22}}
+{"rank": 0, "name": "L44.kda.in_proj", "seconds": 5.15, "packs": {"legacy_unverified_skipped": 354, "built": 177, "gptq": 177, "legacy": 22, "rtn": 22}}
+{"rank": 0, "name": "L44.kda.o_proj", "seconds": 2.196, "packs": {"legacy_unverified_skipped": 356, "built": 178, "gptq": 178, "legacy": 22, "rtn": 22}}
+{"rank": 0, "name": "L44.moe.sh_gate_up", "seconds": 5.245, "packs": {"legacy_unverified_skipped": 358, "built": 179, "gptq": 179, "legacy": 22, "rtn": 22}}
+{"rank": 0, "name": "L44.moe.sh_down", "seconds": 0.559, "packs": {"legacy_unverified_skipped": 360, "built": 180, "gptq": 180, "legacy": 22, "rtn": 22}}
+{"rank": 0, "passed": true, "packs": {"legacy_unverified_skipped": 430, "built": 215, "gptq": 215, "legacy": 22, "rtn": 22}}

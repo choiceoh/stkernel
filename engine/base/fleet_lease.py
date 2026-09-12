@@ -290,6 +290,18 @@ def release(owner: str, *, path=DEFAULT_PATH, force: bool = False) -> "dict | No
         return record
 
 
+def owner_for(container: str, *, path=DEFAULT_PATH) -> str:
+    """Resolve an owning launcher's stop without releasing another workload."""
+    record = read(path)
+    if not record:
+        return ""
+    if record.get("container") == container:
+        return record["owner"]
+    if record.get("opaque") and f" {container} " in record["owner"]:
+        return record["owner"]
+    raise LeaseHeld(f"the fleet is held by {describe(record)}")
+
+
 def _selfcheck() -> None:
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
@@ -367,7 +379,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="the fleet lease, for the launcher")
-    parser.add_argument("action", choices=("acquire", "release", "renew", "read", "publish",
+    parser.add_argument("action", choices=("acquire", "release", "renew", "read", "owner", "publish",
                                           "yield", "clear-yield", "asked", "selfcheck"))
     parser.add_argument("--owner", default="")
     parser.add_argument("--path", default=str(DEFAULT_PATH))
@@ -395,6 +407,8 @@ if __name__ == "__main__":
     elif a.action == "renew":
         renew(a.owner, path=a.path)
         print("renewed")
+    elif a.action == "owner":
+        print(owner_for(a.container, path=a.path))
     elif a.action == "publish":
         pairs = dict(p.split("=", 1) for p in a.state.split(",") if "=" in p)
         publish(a.owner, path=a.path, **pairs)

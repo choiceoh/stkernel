@@ -1,0 +1,24 @@
+F
+======================================================================
+FAIL: test_pinned_block_ids_are_not_reused_before_their_upload_finishes (test_engine_glm53.CudaCacheTests.test_pinned_block_ids_are_not_reused_before_their_upload_finishes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/check/test_engine_glm53.py", line 168, in test_pinned_block_ids_are_not_reused_before_their_upload_finishes
+    self.assertEqual(first.tolist(), [11, 12, 13, 14])
+AssertionError: Lists differ: [21, 22, 23, 24] != [11, 12, 13, 14]
+
+First differing element 0:
+21
+11
+
+- [21, 22, 23, 24]
+?  ^   ^   ^   ^
+
++ [11, 12, 13, 14]
+?  ^   ^   ^   ^
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.487s
+
+FAILED (failures=1)

@@ -1,10 +1,10 @@
-"""Experimental TP SF6 Q0 cache; keep stock BF16 output and task policy.
+"""TP SF6 Q0 cache with FP32 accumulation of rounded BF16 contributions.
 
-Only initialize_route_q0_and_publish differs from the SF6 backend. Its stock
-initialization/histogram/prefix and final task publication are retained. The
+The stock initialization/histogram/prefix and final task publication are retained. The
 four-row Q0 producer reuses within-call scale/equality/address metadata; all
 original eight TP routes, including zero-weight routes, remain allocated.
-No additional global workspace, weight copy or persistent tensor cache.
+The shared dynamic workspace owns the FP32 scatter plane. Each weighted BF16
+contribution is widened before atomic addition, with one final BF16 output cast.
 """
 from functools import lru_cache
 import hashlib
@@ -26,6 +26,7 @@ from ._moe_dynamic.gated import (
     load_shared_bf16x16_to_f32x16,
 )
 from . import moe_dynamic_gated_sf6 as _sf6
+from .moe_dynamic_ep_local import MoEGatedEPLocalKernel
 
 SF6_SOURCE_SHA256 = "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e"
 
@@ -37,6 +38,10 @@ def stock_contract_matches():
 
 
 class MoEGatedDynamicKernelSF6Q0(_sf6.MoEGatedDynamicKernelSF6):
+    # The M128 epilogue has the same shared-memory layout in TP and EP.
+    # Widen the atomic sum, preserving each route's BF16 multiply/rounding.
+    scatter_sC_to_gmem = MoEGatedEPLocalKernel.scatter_sC_to_gmem
+
     def _setup_attributes(self, hidden_size):
         if (hidden_size != 4096 or self.tile_shape_mnk != (128,128,128)
                 or not self.reform_sf_pack or self.share_input_across_experts
@@ -77,7 +82,7 @@ class MoEGatedDynamicKernelSF6Q0(_sf6.MoEGatedDynamicKernelSF6):
         num_experts = Int32(row_counts.shape[0])
         sf_blocks_per_row = cols // Int32(16)
         output_bytes_per_row = cols // Int32(2)
-        cols_u32 = cols // Int32(2)
+        cols_u32 = cols  # FP32 scatter, including the whole zeroed output plane
         scatter_output_u32 = cute.recast_tensor(scatter_output, cutlass.Uint32)
         total_pairs = Int32(topk_ids.shape[0])
         num_topk = total_pairs // num_tokens

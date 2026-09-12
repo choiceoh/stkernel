@@ -35,7 +35,7 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     curl -s http://10.10.10.2:8000/v1/engine/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
     curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64, "n": 2, "logprobs": 3}'    # OpenAI completions
     curl -s http://10.10.10.2:8000/tokenize -d '{"prompt": "..."}'; curl -s http://10.10.10.2:8000/detokenize -d '{"tokens": [1, 2]}'
-    STK_moe_static=t,r,sf6 STK_context_ceiling=131072 bash launchers/start-st-glm53.sh   # 선언된 D11 노브는 STK_* 로 부팅에 들어간다(미선언·만료 = 사망)
+    STK_context_ceiling=131072 bash launchers/start-st-glm53.sh   # 선언된 D11 노브는 STK_* 로 부팅에 들어간다(미선언·만료 = 사망)
     bash launchers/start-st-glm53.sh stop        # 컨테이너 제거 + 잠금 해제. start 는 glm53*/q38*/vllm*/st-* 컨테이너나 srv2 의 `st-fleet.lock` 이 있으면 거부한다
     bash launchers/start-st-glm53.sh held         # 누가 쥐고 있고 무엇을 하는 중인지(엔진이 리스에 계속 쓴다)
     bash launchers/start-st-glm53.sh yield "이유"  # 죽이지 말고 넘겨받기: 엔진이 받던 요청을 끝내고
@@ -66,7 +66,7 @@ prefix 재사용의 단위는 풀의 **블록 768**(`facts.BLOCK`; 프리필 청
 끊어(정확: 커널 청크가 64 정렬 경계에서 다시 시작) 조각의 끝 상태와 conv 입력을 스냅샷에 쓰고, 드래프터 링은 스텝 전 링 + 경계 전
 위치를 스냅샷에 관측한다(`adapter.prefill`). **생성 중에 넘은 경계**도 들어간다: 동기 스텝 뒤엔 링에서, 앞서 도는 스텝은 장치의
 "경계 스테이지"(슬롯당 KDA 상태 + conv 탭, `caches.stage_boundaries`; 넘은 스텝만 쓴다)에 놓아 두고 호스트가 결과를 읽을 때
-스냅샷으로 옮긴다(드래프터 링은 그때의 산 링: 넘은 뒤 몇 자리가 창의 가장 오래된 칸에 얹힐 뿐). 스냅샷 96개(경계당 ~77 MiB,
+스냅샷으로 옮긴다(드래프터 링은 그때의 산 링: 넘은 뒤 몇 자리가 창의 가장 오래된 칸에 얹힐 뿐). 스냅샷 96개(경계당 ~45 MiB,
 `boot.PREFIX_SNAPSHOTS`); 자리가 모자라면 **한 번도 채택되지 않은 경계부터** 나간다(`prefix._victim`) — 긴 프롬프트 하나가 모두가
 공유하는 시스템 프롬프트를 밀어내지 못한다. 밀려나는 **잎 경계**(다른 경계가 잇지 않는 것)는 NVMe **prefix 티어**에 남는다: 스냅샷이
 `runner.spill_low_water`(8) 아래로 줄면 러너가 미리 잎을 써 두고(블록 + 스냅샷 77 MiB + 기록, 대화 티어 옆 `prefix/` 디렉터리, 키는
@@ -98,9 +98,23 @@ start. 재시작 간격은 60 s 부터 두 배씩 30 분까지, 5 회 실패 뒤
     bash launchers/start-st-glm53.sh stop            # 네 노드 컨테이너 + 잠금 해제
     systemctl --user start fleet-idle-recovery.timer # 5 분 유휴 뒤 vLLM 복귀
 
-Prefix 재사용(`base/prefix.py`): 프롬프트를 프리필 청크(6,912 = 블록 3개) 단위로 해시 사슬을 만들고, 청크 경계마다 모델의 위치 링 상태
+프로덕션은 `ST_PRODUCTION=1`로 실행한다. `boot.py --production`은 네이티브 dense·one-shot AR·TP4 GPTQ 드래프터·프리필 SP, `t,r,sf6,q0` MoE, stock MLA와 전체 컨텍스트,
+served 레인, 캡처 decode를 고정한다. 실험 노브를 선언하지 않아 실험 만료일이 지난 뒤에도 같은 릴리스로 재시작할 수 있고,
+`STK_*`를 섞으면 부팅을 거절한다. `ST_KV_GIB`는 명시적인 KV 바이트 예산을 `--kv-gib`로 전달하며, 미지정 시 프로필 기본값 24GiB를 사용한다. 실험은 기존 기본 실행 모드와 만료 규칙을 사용한다.
+
+`st-glm53.service`는 `~/.config/st-glm53.env`를 읽는다. `ST_REPO`와 `ST_ENGINE_DIR`를 동일한
+`/home/choiceoh/st-releases/<commit>`으로, `ST_IMAGE`를 `st-engine:prod-<commit>`으로 고정하고,
+유닛의 `ExecStart`도 그 릴리스의 supervisor를 가리키는 drop-in으로 설치한다. 이렇게 하면 실험용
+`~/st-engine`의 변경이 실행 중인 프로덕션의 소스에 반영되지 않는다. 기존 컨테이너의 자동 재시작은 끄고
+헤드의 supervisor가 네 랭크를 함께 복구한다. 헤드 사용자에 linger가 필요하다.
+
+런처는 잠금을 원자적으로 획득하고 준비 실패 시 자기 잠금만 해제한다. `stop`은 다른 실험의 잠금을 거절한다.
+supervisor는 다른 `st-*` 컨테이너·외부 잠금·접속 불가 노드를 보면 재시작을 보류하며 실패 횟수도 소모하지 않는다.
+전환 전 설정과 이미지 태그를 보존하고, vLLM 복구 timer는 `disable --now`로 재부팅 후에도 비활성화한다.
+
+Prefix 재사용(`base/prefix.py`): 프롬프트를 블록(768 토큰, 6,912 청크당 9개) 단위로 해시 사슬을 만들고, 블록 경계마다 모델의 위치 링 상태
 (KDA conv 탭 3개 + 재귀 상태 1개 × 34층, 드래프터 문맥 링; 인덱서 꼬리는 경계에서 비어 있어 제외)를 아레나의 스냅샷 슬롯(`PREFIX_SNAPSHOTS`
-= 8, 랭크당 ~77 MiB 씩)에 두고 그 앞 블록들을 고정한다. 새 프롬프트는 자기 길이보다 짧은 가장 긴 캐시 경계를 **입양**(읽기 전용 공유
+= 96, 랭크당 ~45 MiB 씩)에 두고 그 앞 블록들을 고정한다. 새 프롬프트는 자기 길이보다 짧은 가장 긴 캐시 경계를 **입양**(읽기 전용 공유
 블록 + 슬롯에 상태 복원)하고 거기서부터 프리필한다 — 토큰 하나는 반드시 계산한다. 블록 소유는 개수(행 참조 + 캐시 핀)로, 예약이 모자라면
 풀이 캐시에 LRU 회수를 요청한다. 랭크 넷이 같은 승인을 같은 순서로 하므로 메시지 없이 같은 캐시 상태다. 판정: `tests/test_engine_prefix.py`
 (가짜 모델), GPU 는 `probes/engine_prefix_check.py`(같은 두 청크를 공유하는 두 프롬프트가 같은 토큰을 내야 한다).
@@ -320,3 +334,6 @@ SM121a·TP4 후속 변경은 [`st_engine_four_optimizations_20260911`](../measur
 conv 이력만 읽고 새 토큰 위치만 쓴다. 작은 인덱서 꼬리의 읽기 버퍼는 유지하며, 상태 링 전체의
 gather/commit은 하지 않는다. 전체 모델 부팅은 별도의 작업공간 상한과 OS 여유를 선언하고,
 최대 프리필·모든 그래프 형상의 준비 중 관측한 메모리 최대치를 저장한다.
+
+네이티브 DFlash의 캐시와 프리픽스 스냅샷은 각 랭크가 계산하는 KV 2헤드만 보관한다. BF16 가중치의 원래 아레나 예약은 팩 저장 공간으로 재사용하며 그대로 남는다.
+UMA 입장 검사는 공간이 부족하면 지정된 모델 보관 경로의 `.safetensors`와 다운로드 임시 파일에서 깨끗한 파일 캐시를 반환한다. 파일 내용·진행 중인 쓰기·다운로드 프로세스는 바꾸지 않는다. 최종 입장 조건은 아레나 + 12GiB 작업 공간 + 4GiB OS 여유이며, 준비 중에도 실제 여유와 할당 최고치를 검사한다.

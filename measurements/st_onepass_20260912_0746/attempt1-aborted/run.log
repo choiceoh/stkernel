@@ -1,0 +1,4 @@
+ST fleet idle; supervisor probes suspended, containers retained
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128        1936        2026      1.10s      1.05s  o o o
+Terminated

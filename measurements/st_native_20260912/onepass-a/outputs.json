@@ -1,0 +1,42 @@
+[
+  {
+    "prompt_sha256": "68072919ee36c00a27db8a0cf97907f71a6bb7904d16d789ebe0edc04a5e53bb",
+    "text": "The user is asking about the meridian array calibration constant mentioned in the document. Looking at the document, I can find: \"메리디안 배열의 보정 상수는 8127이다.\"\n\nThe question asks: \"메리디안 배열의 보정 상수는 얼마인가?\" (What is the calibration constant of the meridian array?)\n\nThe answer is 8127. The user wants the answer in Korean, about two paragraphs, based only on the document content, and to cite proper nouns, numbers, dates, equipment numbers exactly as written in the document.\n\nThe document only has one sentence about the meridian array: \"메리디안 배열의 보정 상수는 8127이다.\" So I need to write about two paragraphs, but the document only contains limited information about this topic. I should answer based on the document only. I can state the answer is 8127, and perhaps note that the document doesn't provide additional context about the meridian array beyond this fact.\n\nLet me write two paragraphs in Korean:\n\nParagraph 1: The document states that the calibration constant of the meridian array is 8127. This is the direct answer.\n\nParagraph 2: The document does not provide further details about the meridian array, such as its purpose, location, or how the constant is applied. So based solely on the document, the only confirmed information is that the constant is 8127.\n\nI should keep it factual and based only on the document.문서에 따르면, 메리디안 배열의 보정 상수는 **8127**이다. 이 값은 문서 내에서 메리디안 배열과 관련하여 유일하게 기록된 수치로, 해당 배열의 보정에 사용되는 상수임을 확인할 수 있다.\n\n다만 문서에는 메리디안 배열의 구체적인 용도",
+    "ttft_s": 10.742561532002583,
+    "prompt_tokens": 2121,
+    "completion_tokens": 400,
+    "finish_reason": "length"
+  },
+  {
+    "prompt_sha256": "7c456f3fecaaf0a7f6c3bf76f721b48de50c23566a2e7ea085b140411dc5ab1a",
+    "text": "The user is asking about who signed the tundra survey report and when. Looking at the document, I can find the relevant sentence: \"할보르센 박사는 1997년 3월 14일에 툰드라 조사 보고서에 서명했다.\"\n\nSo the answer is: 할보르센 박사 (Dr. Halvorsen) signed the tundra survey report on 1997년 3월 14일 (March 14, 1997).\n\nThe user wants the answer in Korean, about two paragraphs, based only on the document content, and keeping proper nouns, numbers, dates, equipment numbers etc. exactly as written in the document.\n\nThe document only has one sentence about this topic, so I should answer based on that. Two paragraphs might be a bit much for such a short fact, but I can expand slightly while staying within the document's content. Actually, the instruction says \"두 문단 정도\" (about two paragraphs), but the source material is only one sentence. I should be careful not to fabricate information. I can write a concise answer, perhaps two short paragraphs, but I must not invent details.\n\nLet me write:\n\n문단 1: 문서에 따르면 툰드라 조사 보고서에 서명한 사람은 할보르센 박사이며, 서명 날짜는 1997년 3월 14일이다.\n\n문단 2: 문서에는 이 외에 할보르센 박사나 해당 보고서에 대한 추가 정보는 기재되어 있지 않다... \n\nActually, I should keep it factual. The document only states that one fact. I'll write two short paragraphs but the second one can note that no further details are in the document. That's honest and stays within the document's basis.문서에",
+    "ttft_s": 2.9391142320018844,
+    "prompt_tokens": 2128,
+    "completion_tokens": 400,
+    "finish_reason": "length"
+  },
+  {
+    "prompt_sha256": "34bc765f5ba4261668e355aeb381e08f66ddcfb88614c0f70833772830b6e485",
+    "text": "The user asks: \"채석장의 비상 차단 밸브는 무엇이고 어디에 있는가?\" (What is the quarry's emergency shutoff valve and where is it located?)\n\nFrom the document: \"채석장의 비상 차단 밸브는 북쪽 벽에 있는 K-42 밸브이다.\"\n\nSo the answer: The emergency shutoff valve is the K-42 valve, located on the north wall.\n\nAnswer in Korean, two paragraphs or so. Keep exact notation \"K-42\".문서에 따르면, 채석장의 비상 차단 밸브는 K-42 밸브이다. 이 밸브가 채석장에서 비상 상황 시 차단 기능을 담당하는 장비로 명시되어 있다.\n\n그 위치에 대해서는, K-42 밸브는 채석장의 북쪽 벽에 있다고 기록되어 있다. 즉, 비상 차단 밸브인 K-42 밸브가 북쪽 벽에 설치되어 있는 것이 문서에 나타난 내용이다.",
+    "ttft_s": 1.0249568860017462,
+    "prompt_tokens": 2128,
+    "completion_tokens": 260,
+    "finish_reason": "stop"
+  },
+  {
+    "prompt_sha256": "2d1786cc221a2b300fb21a91fb1968354ddc01ad69d350cfe0ba4ffe6b1fda01",
+    "text": "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+    "ttft_s": 11.684729437998612,
+    "prompt_tokens": 32545,
+    "completion_tokens": 1200,
+    "finish_reason": "length"
+  },
+  {
+    "prompt_sha256": "ce5b02a4ea76de2b19bb765e233e2d573f137afbd16cd3572d85fc0925c0a49f",
+    "text": "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+    "ttft_s": 49.89914108999801,
+    "prompt_tokens": 128559,
+    "completion_tokens": 1200,
+    "finish_reason": "length"
+  }
+]

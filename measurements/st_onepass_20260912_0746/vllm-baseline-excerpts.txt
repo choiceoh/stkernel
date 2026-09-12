@@ -1,0 +1,16 @@
+Source: measurements/glm53_ep_local_20260908/onepass2-completed/live-B1/local.log.gz
+Compressed source SHA-256: 7f3e4bec9bc1f70200bf5d69c8204fe36f9f797519d50a4f5a576c147d2e703b
+Original decompressed line numbers retained; filtered excerpts.
+
+106: (APIServer pid=29) WARNING 09-08 16:58:02 [glm53_prefill_collectives.py:56] [prefill-sp] sequence-parallel prefill armed (fp8 transport=True v3: packed values+scales, one all-to-all + fp32 sum)
+127: WARNING 09-08 16:58:22 [glm53_prefill_collectives.py:56] [prefill-sp] sequence-parallel prefill armed (fp8 transport=True v3: packed values+scales, one all-to-all + fp32 sum)
+221: (Worker_TP0 pid=242) WARNING 09-08 16:59:38 [glm53_fp8_dense.py:1334] [fp8-dense] Glm5NextForCausalLM (knob VLLM_GLM53_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 213 linears w8a8 (4.04 GB bf16), 0 kept bf16, 0 disarmed by the copy check, 213 MK W4 packs, 213 nvfp4 prefill pairs -- fingerprint for the boot log
+281: (Worker_TP0 pid=242) WARNING 09-08 16:59:48 [glm53_fp8_dense.py:1334] [fp8-dense] DFlash2Qwen3ForCausalLM (knob VLLM_DFLASH2_FP8_DENSE=w8a8): 0 linears w4a8 (0.00 GB bf16), 31 linears w8a8 (0.73 GB bf16), 0 kept bf16, 0 disarmed by the copy check, 31 MK W4 packs, 0 nvfp4 prefill pairs -- fingerprint for the boot log
+295: (Worker_TP0 pid=242) WARNING 09-08 17:00:09 [dsv4_oneshot_shim.py:292] [osar] connected rank=0 world=4 shadow=False
+296: (Worker_TP0 pid=242) WARNING 09-08 17:00:09 [dsv4_oneshot_shim.py:355] [osar] self-test PASS div=0 (real=True)
+297: (Worker_TP0 pid=242) WARNING 09-08 17:00:09 [dsv4_oneshot_shim.py:358] [osar] consumer PDL self-test PASS
+301: (Worker_TP0 pid=242) WARNING 09-08 17:00:14 [glm53_fp8_dense.py:800] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+302: (Worker_TP0 pid=242) WARNING 09-08 17:00:14 [glm53_fp8_dense.py:800] [fp8-dense] nvfp4 prefill route engaged (M=8192)
+551: (Worker_TP0 pid=242) WARNING 09-08 17:00:26 [dsv4_oneshot_shim.py:539] [osar] consumer PDL CAPTURED numel=24576
+595: (Worker_TP0 pid=242) INFO 09-08 17:00:30 [model.py:983] [prefill-sp] MHC token shards selected (T=8192, TP=4, full-token attention/MoE)
+694: (Worker_TP0 pid=242) INFO 09-08 17:01:07 [model.py:983] [prefill-sp] MHC token shards selected (T=2121, TP=4, full-token attention/MoE)

@@ -379,7 +379,7 @@ class PickRichTests(unittest.TestCase):
         e.options, e.limits, e.gens, e.gen = {r: {} for r in rows}, {r: (16, 0.0) for r in rows}, {}, torch.Generator().manual_seed(0)
         e.matchers, e.grammars = {0: m}, g
         e.tokens, e.prompt_len, e.min_new, e.ends, e._ends_tensor = {r: [9] for r in rows}, {r: 1 for r in rows}, {}, {}, {}
-        e.history, e.decodable, e._rich_stage = None, None, None
+        e.sampling_history, e.decodable, e._rich_stage = None, None, None
         e.drafter, e.eos = SimpleNamespace(k=k), set()
         e.top_p, e.caches = 1.0, SimpleNamespace(pool=SimpleNamespace(max_seqs=1))
         return e, g, m

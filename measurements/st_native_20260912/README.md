@@ -1,0 +1,194 @@
+# ST native execution qualification — 2026-09-12
+
+Candidate: `codex/st-performance-parity`, based on `cc6163c78613777225a4e48ac4ae7ac78871f97b`.
+The fixed production release remains `5734b29fde84` until full-model gates pass.
+Component results below establish arithmetic, state and replay correctness; they are not serving throughput measurements.
+
+## Scope
+
+| Adopted vLLM feature | ST implementation |
+| --- | --- |
+| One-shot AR | Owned TP4 RoCE transport, lockstep binary/rank-table agreement, NCCL arithmetic self-test, graph replay; other declared shapes and integer collectives use NCCL |
+| MK GEMM / PDL | Native GB10 W4A8 dense kernels; fixed PDL, 96 CTA grid, compact/transposed M8; MK post/pre MHC fusion with model-owned scratch and AR consumer PDL |
+| FP8 / NVFP4 dense prefill | W4 for M≤32, block-128 FP8 for 33≤M<1024, NVFP4 for M≥1024; vocabulary head stays FP8 |
+| Prefill SP and FP8 AG/RS | Equal token shards around residual/MHC; full token order for attention and cache writes; FP8 packets at 4096+ full rows, BF16 below; non-divisible tails retain ordinary TP |
+| GPTQ drafter | TP-sharded QKV, gate/up, output/down; 31 native linears (35 packs including the 5 FC K tiles), merged BF16 context KV; direct circular GQA reads and accepted-position writes |
+| b12x static v2 | `t,r,sf6,q0`; implemented the missing FP32 route-scatter ABI while retaining each contribution's BF16 rounding |
+
+ST has 202 target dense projections. The old 213 count includes 11 MLA `kv_b` matrices; ST's absorbed attention uses those as absorption weights rather than an equivalent standalone linear. They remain in their existing BF16 path.
+
+Packs reuse the retired source BF16 arena regions; SF6 scales reuse their retired raw-scale regions. All moves happen before capture, with capacity, overlap and ownership checks. BF16 reference execution requires a fresh load after retirement. NVFP4 weight packs remain separate. The drafter's original arena reservation is retained, but its large matrix computation is TP-sharded and its packed copies use that reserved space.
+
+GPTQ caches bind weight bytes, exact Hessian bytes, calibration namespace, layout, row scaling and packing code. Historical GPTQ files without a calibration digest are rebuilt; the legacy builder could silently save an RTN fallback under a GPTQ filename. Each rank prepared 237 packs: 215 GPTQ built from the current calibration and 22 RTN target projections without calibration (11 MLA q_b and 11 indexer wq_b). All 31 drafter linears, including the 5 FC K tiles, use GPTQ. Missing calibration is explicitly counted as RTN. New GPTQ failures abort preparation.
+
+## Verified component gates
+
+All distributed gates used the real rank order srv2/srv1/srv3/srv4, TP4, four GB10 SM121 devices. Private resource-limited containers ran beside the existing service, so elapsed times in those logs cannot qualify performance.
+
+- Real target layers 0 and 3 plus full DFlash2: all four ranks passed contexts 0, 17, 128, 256, 4096 and 4097. Eager and captured outputs were identical (relative error 0); recurrent and paged caches were byte-identical. Retired arena storage was enabled.
+- Drafter: contexts 0, 1, 2047, 2048 and 2057; proposal tokens agreed across all ranks and with eager execution. Observe counts 1, 3 and 6 gave identical ring states.
+- One-shot: 1, 6, 12, 24 and 32 rows, two chained reductions, five changed-input replays per shape. FP8 AG/RS: full-row counts 128, 2128, 4096, 4100 and 6912 against an independent quantization/collective twin. All four ranks passed. Final transport build removes periodic phase tracing but retains stall diagnostics.
+- MoE independent reciprocal/dequant oracle: two seeds, shared/mixed routing, 1/6/12/24 tokens, eight repeats; maximum relative error 0.0064935065, repeat and replay spread 0. Final log: `components/rank3/moe-static-oracle.log`.
+- Dense CUDA tests: independent quantized arithmetic and BF16 error bounds, 1023/1024 dispatch boundary, changed-input replay, calibrated pack improvement, stale/unverified cache refusal, retired arena canaries and graph addresses. Three tests passed.
+- Direct-ring CUDA attention: startup, wrap, poisoned unused entries, GQA, changing device slot/layer offsets and untouched arena regions. Two tests passed.
+- MK MHC CUDA test: independent mHC algebra, lossless/non-lossless coefficient cases, M=1/6/12/24/32 and replay. Passed.
+- CPU regression: 287 tests, 81 CUDA-dependent skips, no failures.
+
+`model-storage2-rank*.log` is the successful extended storage test. Earlier component failure logs are retained for the FP32 scatter ABI, arena slot stride and retired-head metadata fixes; their results are not merged with successful runs.
+
+## Full-model procedure
+
+`run-exclusive.sh` is run on srv2 after all pack jobs and component containers finish. It drains active work, suspends supervisor-generated traffic, stops the current fleet through its owning launcher, and starts the candidate on port 8001 with a private tier and dump directory. An EXIT trap collects evidence and restores the pinned production release and supervisor on either outcome. The installed production env file is not edited.
+
+The candidate must pass the existing arena plus **12 GiB workspace / 4 GiB OS reserve** gate, largest 6912-token prefill at both ends of KV capacity, and full decode capture with **KV 8.73 GiB / 4 sequences / 1,048,576 context ceiling**. The boot proof additionally rejects unexecuted target W4/NVFP4, drafter W4/context FP8, vocabulary FP8, MK MHC and FP8 prefill collectives.
+
+The onepass workload, Korean document, request limits, seed, quality gates and interior-window filters remain unchanged. `run_onepass_st.py` adapts only ST identity and step telemetry. `GLM53_API_PORT=8001` selects the private endpoint. Final-answer channels and truncation must be reported separately from the original retrieval gate, which includes reasoning text.
+
+Candidate image: `st-engine:perf-f4d7-a`. All four image manifests report source SHA-256 `cbf41bab9dec49a7dc8ca38e83d5f01abf0edc4ebef1c930eb43cb4a5fc8e1e1`, matching dependency ABIs, and no installed vLLM.
+
+### Candidate A: failed quality; investigation in progress
+
+Full preparation passed on all four ranks. Rank 0 reserved 56.001 GiB arena, measured 6.073 GiB peak workspace and 24.998 GiB minimum immediately free memory across 159 preparation phases. Every required native execution marker fired. This established coverage and memory fit, not model quality.
+
+The exact five onepass request hashes match the stock ST run. The 2K requests produced sensible Korean and passed 3/3 retrieval checks, with decode 56.93 / 58.99 / 60.47 tokens/s. Both 32K and 128K requests emitted repeated `!`, failed all six retrieval checks and accepted no draft tokens. The aggregate result is **3/9, failed**. The existing character-contamination scanner reported 0/5 but did not detect punctuation repetition; it does not establish valid output. The candidate is being repaired for adoption. Its failed long-context speeds cannot qualify a performance improvement.
+
+Artifacts: `onepass-a/`. The image/source identity above belongs only to candidate A. Subsequent memory, preparation and diagnostic changes use separately mounted source and must receive a new image identity before another serving measurement.
+
+A full-model diagnostic of the exact 32K message completed with finite values through all 45 layers in each explicit combination of SP on/off and NVFP4/FP8 prefill. All four combinations selected token 785 (`The`) at the last prompt position. Each operation was synchronized for that diagnostic; it therefore does not exclude a lifetime or ordering error. The next diagnostic uses production graph capture and the original three 2K requests before 32K, with checks only at step boundaries.
+
+Restart investigations also found that faulting only the free-memory shortfall did not evict UMA file cache. Admission now faults the desired free extent, bounded by MemAvailable minus the existing 16 GiB headroom. Completed dense calibration/cache reads explicitly return their clean pages. Independent external model downloading on srv4 can refill cache during preparation; rollback attempts and verified API recovery must be recorded separately from launcher success.
+
+
+### Root cause and candidate B
+
+The bounded production-capture replay and intermediate-state bisection are in `diagnostic-controlled/`. No prefix cache was active in the original replay. Reusing dirty KV pages was not sufficient to reproduce the error. A chunk-boundary synchronization sometimes restored valid text but did not establish deterministic arithmetic; it is not the final fix.
+
+A fresh, identical 6912-token input reproduced the first divergence at **L0.kda.in_proj**, before attention state or drafter observation: maximum output difference **10,376,640,987,136**, with input difference exactly zero. The actual fault is the pinned FlashInfer NVFP4 quantizer's PDL contract: both ordinary and TMA kernels load `SFScaleVal = *SFScale` before `griddepcontrol.wait`. ST computes that scale dynamically immediately before quantization. An early launch can therefore read the allocation's previous contents, even though the later input loads wait correctly. Subsequent normalization can turn this into finite, incorrect states, so a final `isfinite` test alone cannot detect it.
+
+Both weight and activation NVFP4 quantization now explicitly use ordinary stream ordering (`enable_pdl=False`). This fixes the unsafe consumer boundary without a host/device synchronization in the inference path. Native MK GEMM, MHC and one-shot AR retain their PDL implementation. The regression test supplies a scale from a deliberately delayed PDL producer and checks exact GEMM equality across eight repetitions. The unmodified candidate A fails that test; the repaired implementation passes all eight repetitions. Logs: `components/nvfp4-order-old.log` and `components/nvfp4-order.log`.
+
+Candidate B additionally releases calibration/pack file pages, repairs UMA admission without relaxing budgets, warms up the FP8 and NVFP4 shape ranges, and requires every target FP8 projection to execute before readiness. All four B image manifests report source SHA-256 `395e889612afd568582876cf8f10ddde76e40ff2f2e736e5df841fbd07846c8f`, no vLLM, and the pinned dependency ABIs. B passed native preparation and finite prefill gates, then rank 3 failed the unchanged 4 GiB immediately free OS reserve during decode warmup while an independent model download refilled the page cache. No B onepass ran. The pinned service was restored and its API verified; evidence is in `boot-b/`. Preparation now reclaims clean cache through the existing bounded admission mechanism at checkpoints, retaining the 12 GiB workspace and 4 GiB OS limits. This is included in the next integrated build.
+
+
+### Integrated native defaults
+
+The branch now integrates main `887f2678`, including asynchronous decode, vision, API sampling/tool handling and block-boundary prefix snapshots. Production fixes native execution and `t,r,sf6,q0`; obsolete execution/MoE/eager/reference knobs are rejected. Main's explicit 24 GiB KV and 24 prefix snapshots are retained. The workspace and OS limits remain 12 GiB and 4 GiB. A final memory checkpoint follows image/video and serving-shape qualification.
+
+The merged CPU suite passed 411 tests with 113 CUDA/environment skips. The direct-ring GPU suite passed all three tests, including changing device acceptance counts and untouched cache regions. The native drafter's masked observation now shares the calibrated TP context projection and writes only accepted positions directly into the arena. Its graph pool is checked and released along with the other drafter graphs.
+
+Candidate C's real-model probe exposed a missing prefill-only field in `DeviceStep` before target capture completed (`components/integrated-c/`). Device decode now explicitly declares empty image patches and prefix marks. The regression runs the real model embedding prologue with eager and device inputs; all 33 graph-contract tests pass (3 CUDA skips). Candidate D has source SHA-256 `85f781fb303a9be3cb0e990ebc220a31e0ae10397905164d189231b4c0235df7` on every node. Integrated model and full serving qualification are in progress; C did not run onepass.
+
+
+### Candidate D and the final integrated memory layout
+
+All four D component ranks passed the real target contexts 0/17/128/256/4096/4097 with exact eager/replay outputs and byte-identical caches. Drafter contexts 0/1/2047/2048/2057 passed proposals, ordinary observation and device-counted masked observation for 0/1/3/6 accepted positions. Logs: `components/integrated-d/`. D's full-model boot stopped before allocation: rank 3 had 80.89 GiB immediately free and 96.21 GiB available against a 73.49 GiB arena plus 16 GiB headroom. The anonymous reclaim route required another complete 16 GiB floor, so it refused. No D onepass ran. The pinned API and supervisor were restored (`boot-d/`).
+
+The model volume's clean download pages can be returned directly with `POSIX_FADV_DONTNEED`, without a large temporary allocation. On srv4, advising 33 completed/incomplete files returned 10,002,923,520 immediately free bytes; file contents and the active download were preserved. Admission now tries this for the explicitly supplied model directories before anonymous reclaim, and repeats it only when preparation lacks physical headroom. The existing final arena/workspace/OS checks remain unchanged.
+
+Main `20db7f1d` adds 768-token prefix blocks, 96 protected snapshots, generated-boundary staging and JSON fleet leases. These are integrated. Native drafter caches now contain this rank's two KV heads; retaining eight would waste 30 MiB in every snapshot, or 2.8125 GiB across 96 snapshots. The original BF16 drafter weight reservation is still retained. The launcher and supervisor resolve the owning container for both old and JSON leases, preserve other owners, and execute the head's lease operations locally when already on srv2.
+
+Candidate E uses **KV 16 GiB, 96 snapshots, TP4 KV shards, 12 GiB workspace and 4 GiB OS reserve** alongside the fleet's existing services. The explicit launch budget is `ST_KV_GIB=16`; the profile default remains 24 GiB. CPU regression: 441 tests passed, 113 environment/GPU skips. Source SHA-256 on every E node: `af86a057c318a0e6ab6bdbd195e816ab9f31c68fed9c9cf28c8f37f8404104d3`. GPU model and full serving qualification are in progress.
+
+All four E component ranks subsequently passed the six real target contexts and five full-drafter contexts above. Both ordinary observation and device-counted masked observation (0/1/3/6) agree exactly with eager execution, with two KV heads per rank (`components/integrated-e/`). The three real-metadata budget tests also pass, including the exact 2.8125 GiB snapshot saving and redistribution of the smaller live state slots into paged KV under the fixed budget (`components/native-e-budget-cpu.log`).
+
+Two drain attempts (60 and 600 seconds) ended before starting a candidate because existing production traffic kept arriving. The final exclusive wrapper temporarily rejects only new external TCP connections to the old HTTP/1.0 port; established responses finish normally. Its EXIT cleanup reopens ingress after restoring the pinned service, and an independent 60-minute system timer also removes the rule after an abrupt wrapper termination. The candidate remains on private port 8001. After onepass, bounded API checks exercise seeded two-choice sampling, JSON-schema output and a real red-image request before rollback.
+
+### Candidate E serving transition failure and F repair
+
+E passed full preparation, all native execution markers, the largest image/video shapes, and every rank's final `production/ready` memory checkpoint. Arena: 68.1419 GiB; maximum workspace: 9.6159 GiB; the lowest immediately free memory across ranks was 5.3752 GiB. The first 2K request produced 400 coherent tokens and retrieved 8127. The second request emitted its initial prefill token, then crashed before its first decode. This is **an incomplete, failed onepass**, not a quality or performance pass (`onepass-e/`).
+
+`AsyncDecode.launch` rejected a new row even after all pending readbacks had drained, because the old batch identity remained nonempty. It now rebuilds the device view from host state whenever there is no pending readback. Joining or invalidating a batch with pending work still fails; shrinking a batch retains its device progress. The regression executes the real pipeline launch, commit and readback with only model kernels replaced. The old image fails three transition cases; the repaired code passes all five pipeline tests. Boot now additionally launches and resolves the full asynchronous depth at each batch width 1/2/3/4, after the synchronous warmup, so this path executes before readiness.
+
+E's initial rollback also failed old-release memory admission on srv4; its old anonymous reclaim did not return enough model file cache. After returning clean model-volume pages directly, the pinned service booted and answered the capital-city request with `서울` (`onepass-e/restored-chat.json`). The final wrapper includes that cache return in rollback too; model files and unrelated services are preserved.
+
+Candidate F retains E's budgets and native kernels and adds the batch transition repair and asynchronous boot exercise. Source SHA-256 on all four nodes: `e24ea2a1152984f4b11168bcc99c0ab7fb5a4815f9e94848107711284ef193c4`. The complete CPU suite ran 445 tests successfully, with 114 environment/GPU skips (`components/native-f-cpu.log`). An earlier test invocation lacked the bench/probe fixture directories; its six import/file errors are preserved separately and were resolved by supplying those directories, without changing the test gates.
+
+
+### Candidate G and the reduced KV serving budget
+
+G adds main `2aae87d1` and keeps the async transition repair. The merged sampler's tensor cache is named `sampling_history` so it does not shadow the existing `history(seq)` protocol; a real-adapter regression covers penalties, forget and row reuse. All four G image manifests match `0abb87ae741ee2843dc54ef16479c404478f28ff249cee346856eeb1f3b7a331`; 467 CPU tests ran with 114 skips and no failures.
+
+The first G attempt was refused before boot by a queued foreign experiment. On retry, G completed native load and executed the 6912-token prefill near the end of its KV capacity, but rank 3 retained only **2.9348 GiB immediately free** against the unchanged 4 GiB floor. A separate unleased GPU reference probe started on srv4 during preparation. No G onepass ran. Its initial rollback was also refused by the old launcher's name guard while our bounded CPU test container was finishing; the subsequent manual restoration is recorded separately. Artifacts: `boot-g/`.
+
+At the user's direction, H explicitly reduces **KV from 16 to 12 GiB**, releasing 4 GiB from the arena while keeping 96 snapshots, four sequences, the 1,048,576 per-request context ceiling, 12 GiB workspace and 4 GiB OS reserve. H integrates main `c489ca4e`, including pinned host metadata, prefix-tier fixes and block verification, while preserving native execution, async batch rebuilding and the sampling-history protocol repair. The complete CPU suite ran 502 tests with 114 skips and no failures. All four immutable images `st-engine:perf-f4d7-h` report source SHA-256 `de14e0d8fc16cac0fff176cf743425baaf47e94cda29ca29f01c1a19be2e3245`. Full serving qualification follows before adoption.
+
+
+### H serving result: memory/API pass, 128K retrieval failure
+
+H passed final `production/ready` on all four ranks with **64.1413 GiB arena**, **7.6205 GiB peak workspace**, and minimum immediately free memory **4.3733 GiB** (rank 3). The 12 GiB KV budget resolves the admission failure while preserving the 12 GiB workspace and 4 GiB OS floor. API smoke passed 3/3: two seeded choices both returned `서울`, strict schema returned `{"answer":4}`, and the image returned `Red`.
+
+The unchanged onepass completed, but quality is **6/9**: 2K and 32K passed, while 128K repeated unrelated Korean historical prose and failed all three retrieval questions. The character scanner reports 0/5; that does not make the response valid. This is not an adoption-qualified result. Artifacts: `onepass-h/`. The pinned production service was restored.
+
+The valid 32K request generated 730 tokens and stopped normally with 672 final-answer characters. Observed decode: 54.8302 tokens/s, TTFT 15.8931 seconds, and 11 interior windows with median 16.9544 steps/s (58.9818 ms/step). Same-day stock ST's 32K median is 10.9602 steps/s (91.2388 ms/step). A separate GPU probe was present on srv4 at measurement start and exited during the run (`peers-before-10.10.10.4.txt`, `peer-events-10.10.10.4.txt`); these are observations under that interference, not a controlled performance claim. Failed 128K throughput is excluded from improvement claims.
+
+A full-model 128,559-token diagnostic without prefix marks produced the correct first token (`The`) with native NVFP4 + SP and explicitly retrieved 8127 in its first 64 generated tokens. Explicit FP8 and no-SP controls also recognized the document/questions (`diagnostic-long-h/`). The remaining investigation adds prefix marks and the real runner while retaining the native computation.
+
+The merged block-table upload ring had a separate proven ordering defect: it recorded the reuse event before enqueueing the upload. A deliberately delayed upload caused the old code to read `[21,22,23,24]` where `[11,12,13,14]` had been submitted. The event now follows its upload. The real GPU regression fails on H and passes on the repair; the full CPU suite ran 503 tests with 115 skips and no failures. This defect is fixed independently; the long-context failure is not yet attributed to it.
+
+### Prefix observation bisection (H, eager runner, 128,559 input tokens)
+
+The loaded four-rank model was reused for controlled diagnostic arms in `diagnostic-marks-h/`. These runs are numerical diagnostics, not serving performance measurements: no decode capture, asynchronous runner, HTTP door, or NVMe prefix tier. All native dense/SP lanes remained active. Every request cleared prefix entries and cache contents before admission.
+
+- Direct target forward with KDA prefix marks retained the expected first token 785 (`The`) and meaningful document-question reasoning.
+- The real runner with target auxiliary states and drafter observations into all prefix snapshots selected token 220 and repeated `1.` for 192 tokens.
+- Disabling all observations, disabling prefix caching, or skipping only snapshot observations each selected 785.
+- Keeping snapshot observations but writing their drafter state into cloned scratch rings selected 154842 (`</think>`); the discrepancy is not specific to the snapshot arena address.
+- Synchronizing before each observation, after each observation, or only once after each target forward selected 785. This narrows the discrepancy to a lifetime/order-sensitive path; it does not yet identify the faulty operation or establish full answer correctness.
+
+The wrapper exited 0, restored the pinned serving release and active systemd service, and removed its ingress drain rule. A separate fresh-session native / synchronized / native repeat is next, to check order effects before changing production behavior. The independently repaired pinned block-ID event is not claimed to explain this result.
+
+### TP prefill accumulation repair (J)
+
+The event-order hypothesis did not survive a fresh repetition: a device event
+also produced an incorrect first token and a 1/3 retrieval answer. No global
+fence was adopted. First-divergence tracing and a replay of actual L3 inputs
+isolated nondeterminism to the large-M dynamic MoE's BF16 atomic scatter; see
+`diagnostic-lifetime-h/`.
+
+The TP SF6 Q0 prefill lane now preserves each weighted BF16 contribution but
+accumulates it in the existing dynamic workspace's FP32 plane and casts once
+at completion. It reuses the M128 FP32 scatter epilogue, widens the entire zero
+fill, selects the matching compiled pointer dtype, and keys the compiled cache
+on the new ABI and imported epilogue source. The extra shared plane is 108 MiB
+at the production 6912-token chunk size, reused across layers.
+
+On srv1, the actual L3 [6912,4096] input now produced bit-identical output in
+all eight calls (previously 633113–871919 changed elements between calls).
+The four-node native eager runner then retrieved all three planted facts at
+128559 input tokens. All ranks produced identical 1200-token sequences, and
+a second cache-cleared request selected the same first token 785. The original
+onepass fact matcher passes 3/3 on the combined reasoning/output. The response
+hit its 1200-token cap before the final-answer separator; this is a retrieval
+repair result, not proof of complete final-answer delivery or serving throughput.
+No extra synchronization or disabled native lane was used.
+
+Targeted kernel/configuration CPU tests: 23 passed, 26 GPU-dependent tests
+skipped. The eight-call GPU replay and full-model results are in
+`diagnostic-fp32-j/`. The reusable replay probe also includes poisoned-workspace
+and zero-route-weight checks; those additional cases were not run in this
+session because the user accepted this verification level and requested merge.
+The live service is restored to the pinned release; merging this source change
+is separate from switching the running deployment.
+
+### Merge with main through PR #638
+
+Integrated main `e3f356a5` while preserving the FP32 MoE repair. Native batched
+DFlash now uses its prepared packs for projections, fused context KV, local
+heads and device-selected ring slots. Stock SDPA retains its block-key ring
+tail; native direct-ring attention retains its original window geometry, and
+both the allocation and budget use the selected geometry. The native weight
+retirement/slot plumbing regression compares against the full CPU drafter with
+only CUDA ring primitives replaced by CPU oracles. GPU integration after this
+main merge was not rerun at the user's requested stopping point.
+
+The canonical fleet lease path and main's yield handling are retained, with
+quoted launch arguments and ownership checks for both canonical and legacy
+leases before stop. Lazy penalty history keeps its distinct `sampling_history`
+name so the token-list `history(seq)` protocol remains callable.
+
+CPU integration ran 638 tests, with 130 environment/GPU skips. The remaining
+errors were four reports from three BatchTransitionTests whose fake drafter
+still exposed the old per-row API. Only that test fixture was updated to the
+batched API; all seven pipeline tests then passed. No engine code changed
+between that integration run and the targeted rerun. Logs:
+`merge-main-638/cpu2.log`, `merge-main-638/pipeline.log`.

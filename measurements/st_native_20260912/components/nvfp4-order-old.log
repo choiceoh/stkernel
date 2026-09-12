@@ -1,0 +1,14 @@
+test_dynamic_scale_is_ready_before_quantization (__main__.NVFP4OrderingTests.test_dynamic_scale_is_ready_before_quantization) ... FAIL
+
+======================================================================
+FAIL: test_dynamic_scale_is_ready_before_quantization (__main__.NVFP4OrderingTests.test_dynamic_scale_is_ready_before_quantization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/proof/test_engine_nvfp4_order.py", line 35, in test_dynamic_scale_is_ready_before_quantization
+    self.assertTrue(torch.equal(actual, expected))
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 1 test in 92.616s
+
+FAILED (failures=1)
