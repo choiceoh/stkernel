@@ -821,6 +821,11 @@ class Server:
                 self.engine.validate_options(options)
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
+        if options and hasattr(self.engine, "prepare_options"):
+            try:
+                self.engine.prepare_options(options)     # a grammar is built here, where failing is an answer
+            except ValueError as exc:
+                raise RequestError(str(exc)) from exc
         if cache_salt is not None and (not isinstance(cache_salt, str) or not 0 < len(cache_salt) <= 256):
             raise RequestError("cache_salt must be a string of 1 to 256 characters")
         salt = prefix_cache.tenant_salt(cache_salt) if cache_salt else None
@@ -2019,6 +2024,11 @@ class Server:
                 # token), so everything generated is content -- otherwise a whole answer lands in reasoning_content
                 # (45차 §22: the gateway's -low route asks thinkingMode off and reads content)
                 reasoning = server.reasoning_end is not None and not (ids and ids[-1] == server.reasoning_end)
+                if reasoning and "grammar" in options:
+                    # The answer starts inside a think block, and a grammar that started here would forbid the
+                    # reasoning -- including the block's own end token, so the block would never close and the
+                    # whole answer would come back as reasoning_content with content empty. It waits instead.
+                    options["grammar_after"] = server.reasoning_end
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
                                            tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
                                            continue_history=True, media=media, cache_salt=req.get("cache_salt"))

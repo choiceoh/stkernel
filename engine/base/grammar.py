@@ -19,6 +19,19 @@ Three things are the step's, not the row's, and that is what makes this cheap:
 * **The kernel.** `xgrammar.apply_token_bitmask_inplace` writes -inf straight from the packed words -- one
   launch for a row's positions, one int32 read per 32 tokens. Expanding a bitmask into a vocabulary of `bool`
   and then `masked_fill`-ing it costs five launches and ~2 MB of traffic per position instead.
+
+Two things the grammar must not do, both learned from SGLang's `constrained/` (45차 §32):
+
+* **It must not start inside the model's reasoning.** A row whose prompt ends inside a think block generates
+  its reasoning first, and a JSON grammar forbids every token of it -- including the block's own end token, so
+  the block never closes and the whole answer lands in `reasoning_content` with `content` empty. `after` holds
+  the token the grammar waits for; until it is committed the row is unconstrained and the matcher does not move.
+* **It must not take the engine down.** A schema xgrammar cannot build (a regex backreference, a `$ref` that
+  goes nowhere) raises from its C++ layer, and that exception, raised where a row is admitted, would abort every
+  live request on every rank. `compile` turns those into `ValueError`, which the door answers as a bad request.
+
+Compiling is also not free -- a wide regex measured 283 ms -- so it happens on a thread and is waited for at the
+first mask, which for a thinking row is after the reasoning and for any row is after its prompt.
 """
 from __future__ import annotations
 
@@ -38,37 +51,63 @@ class Grammars:
     """Compiled grammars keyed by spec, over one tokenizer (the checkpoint's, as a transformers tokenizer),
     and the one bitmask every row of a step is filled into."""
 
-    def __init__(self, hf_tokenizer, vocab_size: int):
+    def __init__(self, hf_tokenizer, vocab_size: int, stop_token_ids=None):
         import xgrammar as xgr
+        from concurrent.futures import ThreadPoolExecutor
         self.xgr = xgr
-        info = xgr.TokenizerInfo.from_huggingface(hf_tokenizer, vocab_size=vocab_size)
+        # The engine's end tokens are the authority on where a generation may end, so they are the grammar's
+        # stop tokens too. Left to itself xgrammar takes the tokenizer's single `eos_token`, and a model whose
+        # generation config ends on something else would finish its JSON on a token the engine does not stop
+        # at -- the grammar then allows nothing but that token, and the row runs to its limit repeating it.
+        info = xgr.TokenizerInfo.from_huggingface(hf_tokenizer, vocab_size=vocab_size,
+                                                  stop_token_ids=sorted(stop_token_ids) if stop_token_ids else None)
         self.vocab_size = vocab_size
         self.compiler = xgr.GrammarCompiler(info)
         self.words = int(xgr.allocate_token_bitmask(1, vocab_size).shape[-1])
         self._cache = {}
         self._lock = threading.Lock()
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="grammar")
         self.staging = None                      # pinned [step positions, words]: xgrammar fills on the host
         self.landing = None                      # device [step positions, words]: one transfer for the whole step
         self.crossed = None                      # the event that says the last transfer has finished reading staging
 
+    def _build(self, spec: dict):
+        """The compile itself. Everything it can fail at is the request's schema, so those failures are the
+        door's to answer (`ValueError` -> 400) and not the engine's to die of (D3 is about the engine)."""
+        try:
+            if spec["type"] == "json_object":
+                return self.compiler.compile_builtin_json_grammar()
+            if spec["type"] == "json_schema":
+                return self.compiler.compile_json_schema(spec["schema"])
+        except (RuntimeError, TypeError, ValueError, UnicodeError) as exc:
+            raise ValueError(f"the grammar cannot be compiled: {exc}") from exc
+        raise ValueError(f"unknown grammar spec {spec['type']!r}")
+
     def compile(self, spec: dict):
+        """A handle for `spec`: the compiled grammar, or the thread compiling it. Shared by key, so a second
+        row asking for the same schema waits on the same work instead of doing it again."""
         key = json.dumps(spec, sort_keys=True)
         with self._lock:
             hit = self._cache.get(key)
             if hit is not None:
                 return hit
-        if spec["type"] == "json_object":
-            compiled = self.compiler.compile_builtin_json_grammar()
-        elif spec["type"] == "json_schema":
-            compiled = self.compiler.compile_json_schema(spec["schema"])
-        else:
-            raise ValueError(f"unknown grammar spec {spec['type']!r}")
-        with self._lock:
-            self._cache[key] = compiled
-        return compiled
+            started = self._pool.submit(self._build, spec)
+            self._cache[key] = started
+            return started
 
-    def matcher(self, spec: dict, max_rollback: int):
-        return Matcher(self, self.compile(spec), max_rollback)
+    def resolve(self, handle):
+        """The compiled grammar, waiting for its thread if it is still running (and raising what it raised)."""
+        if hasattr(handle, "result"):
+            handle = handle.result()
+        return handle
+
+    def ready(self, spec: dict):
+        """Compile now and answer for it -- what the door asks before a request is admitted, so that a schema
+        xgrammar refuses is a 400 and not a step that raises on four ranks at once."""
+        self.resolve(self.compile(spec))
+
+    def matcher(self, spec: dict, max_rollback: int, after: "int | None" = None):
+        return Matcher(self, self.compile(spec), max_rollback, after)
 
     def _buffers(self, positions: int, device):
         """The two sides of one transfer, kept between steps and grown only upwards. The caller has already
@@ -143,11 +182,24 @@ class StepMasks:
 
 
 class Matcher:
-    """One row's grammar state: fill the step's positions, then advance by what was committed."""
+    """One row's grammar state: fill the step's positions, then advance by what was committed.
 
-    def __init__(self, grammars: Grammars, compiled, max_rollback: int):
+    Dormant until `after` is committed when the row asked for it (the reasoning end): the model writes its
+    reasoning unconstrained, and the grammar takes over at the first token of the answer.
+    """
+
+    def __init__(self, grammars: Grammars, handle, max_rollback: int, after: "int | None" = None):
         self.g = grammars
-        self.m = grammars.xgr.GrammarMatcher(compiled, max_rollback_tokens=max_rollback)
+        self.handle, self.max_rollback = handle, max_rollback
+        self.m = None                            # built at the first mask: the compile may still be running
+        self.after = after
+        self.armed = after is None
+
+    @property
+    def matcher(self):
+        if self.m is None:
+            self.m = self.g.xgr.GrammarMatcher(self.g.resolve(self.handle), max_rollback_tokens=self.max_rollback)
+        return self.m
 
     def fill(self, bitmask, at: int, drafts: "list[int]") -> "tuple[int, bool]":
         """Fill rows `at` .. `at + len(drafts)` of `bitmask` with this row's mask for each of the step's
@@ -158,34 +210,49 @@ class Matcher:
         mask xgrammar fills there). The walk is taken back before returning: only committed tokens advance a
         matcher, and that is `advance`.
 
+        While the row is dormant nothing is written and nothing is refused, so a step of pure reasoning costs
+        the grammar nothing at all. A step where the drafts cross `after` is the one case that has to write:
+        the positions before the crossing are opened by hand, because the kernel applies the row's slice whole.
+
         No `reset_token_bitmask` first -- `fill_next_token_bitmask` writes the whole row it is given, verified
         against a row left dirty, so resetting would only be a second 19 KB memset per position (as expensive
         as the fill itself, measured: 1.6 us against 1.3 us at GLM-5.3's vocabulary).
         """
+        dormant = not self.armed                 # the walk may arm it; only a committed token really does
         walked = live = 0
+        first = None                             # the first position the grammar constrains
         needed = False
         try:
             for i in range(len(drafts) + 1):
-                # `fill_next_token_bitmask` answers whether the mask refuses anything at all; older builds
-                # answer nothing, and then every position is taken as needing the mask.
-                needed |= self.m.fill_next_token_bitmask(bitmask, at + i) is not False
+                if self.armed:
+                    if first is None:
+                        first = i
+                    # `fill_next_token_bitmask` answers whether the mask refuses anything at all; older builds
+                    # answer nothing, and then every position is taken as needing the mask.
+                    needed |= self.matcher.fill_next_token_bitmask(bitmask, at + i) is not False
                 live += 1
                 if i < len(drafts):
-                    if self.m.is_terminated() or not self.m.accept_token(drafts[i]):
-                        break
-                    walked += 1
+                    if self.armed:
+                        if self.matcher.is_terminated() or not self.matcher.accept_token(drafts[i]):
+                            break
+                        walked += 1
+                    elif drafts[i] == self.after:
+                        self.armed = True        # the reasoning ends here: the answer's first token is the next one
         finally:
             if walked:
-                self.m.rollback(walked)
+                self.matcher.rollback(walked)
+            if dormant:
+                self.armed = False               # `advance` arms it, on a token that was really committed
+        if needed and first:
+            bitmask[at: at + first].fill_(-1)    # the dormant positions the kernel will sweep with the rest: open them
         return live, needed
 
     def advance(self, tokens: "list[int]") -> None:
         for t in tokens:
-            if self.m.is_terminated():
+            if not self.armed:
+                self.armed = t == self.after
+                continue
+            if self.matcher.is_terminated():
                 return
-            if not self.m.accept_token(t):
+            if not self.matcher.accept_token(t):
                 raise ValueError(f"committed token {t} is outside the grammar (the mask should have refused it)")
-
-    @property
-    def terminated(self) -> bool:
-        return bool(self.m.is_terminated())
