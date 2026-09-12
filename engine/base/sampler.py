@@ -193,6 +193,56 @@ def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[
     return accepted, list(draft_ids) + [draw(target_probs[k], generator)]
 
 
+def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_probs: torch.Tensor, generator):
+    """`speculative_pick` for a whole decode batch on the device, with no host round trip (45차 §23 B3): rows run
+    ahead of the host, so their picks must be tensors. target_probs [n, K+1, V]; drafts [n, K]; draft_probs [n, K, V].
+    Returns (accepted [n], tokens [n, K+1] with the committed ones first, count [n] = accepted + 1). Draws K uniforms
+    per row then one multinomial per row from `generator`, in that order, identically on every rank."""
+    n, k1, V = target_probs.shape
+    K = k1 - 1
+    device = target_probs.device
+    rows = torch.arange(n, device=device)
+    u = torch.rand(n, K, generator=generator, device=device)
+    p_d = target_probs[:, :K].gather(2, drafts.unsqueeze(2)).squeeze(2)                 # the target's mass on each draft
+    q_d = draft_probs.gather(2, drafts.unsqueeze(2)).squeeze(2)                          # the drafter's
+    accept = (q_d > 0) & (u < (p_d / q_d.clamp_min(1e-30)).clamp_max(1.0))
+    accepted = accept.long().cumprod(1).sum(1)                                           # leading accepts only
+    at = accepted.clamp_max(K)                                                           # the position drawn afresh: recovered or bonus
+    row_p = target_probs[rows, at]
+    row_q = torch.where((at < K).unsqueeze(1), draft_probs[rows, at.clamp_max(K - 1)], torch.zeros_like(row_p))
+    recovered = (row_p - row_q).clamp_min(0)
+    total = recovered.sum(1, keepdim=True)
+    recovered = torch.where(total > 0, recovered / total.clamp_min(1e-30), row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
+    fresh = torch.multinomial(recovered, 1, generator=generator).squeeze(1)
+    tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
+    tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
+    return accepted, tokens, accepted + 1
+
+
+def commit_batch(picks: torch.Tensor, drafts: torch.Tensor, alive: torch.Tensor, generated: torch.Tensor, limit: torch.Tensor,
+                 ends: torch.Tensor, accepted: "torch.Tensor | None" = None):
+    """The device half of adapter._commit for a decode batch running ahead of the host (45차 §23 B3).
+    picks [n, K+1]: the tokens chosen at each position (greedy: the sampler's; stochastic: speculative_pick_batch's, with
+    `accepted` given); drafts [n, K]; alive [n] bool; generated/limit [n]; ends [n, E] end-token ids padded with -1.
+    Returns (count [n] tokens committed, done [n], accepted [n], tokens [n, K+1] = picks). A row that is not alive
+    commits nothing; the row's remaining limit and its first end token clip the run, as the host does."""
+    n, k1 = picks.shape
+    K = k1 - 1
+    if accepted is None:
+        accepted = (picks[:, :K] == drafts).long().cumprod(1).sum(1)
+    count = accepted + 1
+    room = (limit - generated).clamp_min(0)
+    count = torch.minimum(count, room)
+    is_end = (picks.unsqueeze(2) == ends.unsqueeze(1)).any(2)                            # [n, K+1]
+    positions = torch.arange(k1, device=picks.device).unsqueeze(0)
+    first_end = torch.where(is_end & (positions < count.unsqueeze(1)), positions, torch.full_like(positions, k1)).min(1).values
+    count = torch.minimum(count, first_end + 1)
+    count = torch.where(alive, count, torch.zeros_like(count))
+    hit_end = (first_end < k1) & alive
+    done = alive & (hit_end | (generated + count >= limit))
+    return count, done, torch.minimum(accepted, (count - 1).clamp_min(0)), picks
+
+
 def top_logprobs(logits: torch.Tensor, chosen: int, k: int) -> "tuple[float, list[tuple[int, float]]]":
     """(log-probability of `chosen`, the k most likely (id, logprob)) from raw logits, vLLM's raw_logprobs mode."""
     lp = torch.log_softmax(logits.float(), dim=-1)
