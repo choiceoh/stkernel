@@ -21,6 +21,19 @@
 #   fleet.sh run --gpu s [est] [note] -- bash probes/run_engine_check.sh --layers 0-4
 #   fleet.sh run --gpu s [est] [note] -- bash probes/run_engine_probe.sh probes/engine_decode_graph_check.py
 #   fleet.sh cancel s                                   stop the waiter and withdraw
+#   fleet.sh run --gpu --fleet s [est] [note] -- <ST check>   keep a one-GPU check on the four Sparks
+#   fleet.sh kick [--force] [single]                    a dead holder: the fleet's, or the single GPU's
+#
+# TWO LANES. A boot, a pair, a chain, a live onepass take the fleet: four Sparks, one holder.
+# An ST check that needs ONE GPU (probes/run_engine_check.sh, or run_engine_probe.sh without
+# --distributed: one container, the four ranks as threads on one card) does not wait for the
+# Sparks. It takes the single-GPU lane -- the 5050 on ost-97x (FLEET_SINGLE_GPU_HOST; set it
+# empty to turn the lane off) -- with its own holder (holder-single) and its own evidence
+# (that host's GPU process list; unreachable is not free). The lanes never block each other:
+# a check behind a queued boot runs now, and a boot behind a queued check runs now. The
+# supervisor hands the check to probes/run_engine_probe.sh with ST_PROBE_HOST, which rsyncs
+# engine/ and probes/ to that host, runs the container there and takes no fleet lease. Say
+# --fleet to keep a one-GPU check on the Sparks (one that needs GB10 memory, say).
 #
 # GPU admission accepts current canonical pair, chain, ab-lever, onepass and
 # recorded pair/baseline execution. Unknown wrappers, standalone GPU checks,
@@ -110,8 +123,14 @@ baseline_line() {
   (cd "$REPO" 2>/dev/null && timeout 20 python3 bench/baseline.py --brief 2>/dev/null) || true
 }
 HEAD_URL=${HEAD_URL:-http://10.10.10.2:8000}
+# The single-GPU lane's host and card. `${VAR-default}`, not `:-`: an explicitly EMPTY host
+# is the switch that turns the lane off, and then a one-GPU check takes the four Sparks as
+# it did before. bench/fleet_single.py carries the same defaults (a test pins that).
+FLEET_SINGLE_GPU_HOST=${FLEET_SINGLE_GPU_HOST-ost-97x}
+FLEET_SINGLE_GPU_NAME=${FLEET_SINGLE_GPU_NAME:-5050}
+export FLEET_SINGLE_GPU_HOST FLEET_SINGLE_GPU_NAME
 mkdir -p "$FLEET_DIR"
-Q=$FLEET_DIR/queue; H=$FLEET_DIR/holder; L=$FLEET_DIR/log; LK=$FLEET_DIR/.lock
+Q=$FLEET_DIR/queue; H=$FLEET_DIR/holder; HS=$FLEET_DIR/holder-single; L=$FLEET_DIR/log; LK=$FLEET_DIR/.lock
 touch "$Q" "$L"
 now() { date +%s; }
 ts() { date +%F_%T; }
@@ -119,7 +138,14 @@ logit() { echo "$(ts) $*" >> "$L"; }
 me() { hostname -s; }
 LEDGER=$FLEET_DIR/ledger.tsv; JSONL=$LOGD/bracket-onepass.jsonl
 hb_file() { echo "$FLEET_DIR/hb.$1"; }
-kind_of() { [ "${1:-}" = probe ] && echo probe || echo boot; }
+# kind: boot and probe take the fleet (one holder, $H); single takes the one GPU ($HS).
+kind_of() { case "${1:-}" in probe|single) echo "$1";; *) echo boot;; esac; }
+lane_of() { [ "${1:-}" = single ] && echo single || echo fleet; }
+holder_file() { [ "$(lane_of "${1:-}")" = single ] && echo "$HS" || echo "$H"; }   # kind -> its lane's holder
+holder_file_of() {  # session -> the holder file naming it; 1 when it holds nothing
+  local f; for f in "$H" "$HS"; do [ -s "$f" ] && [ "$(cut -d'|' -f1 "$f")" = "$1" ] && { echo "$f"; return 0; }; done; return 1
+}
+lane_front() { awk -F'|' -v lane="$(lane_of "${1:-}")" '{ k = ($6 == "single") ? "single" : "fleet" } k == lane { print $2; exit }' "$Q"; }   # kind -> the first queued session of its lane, in the ranked order
 serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^glm53$'; }
 # The ST engine takes the whole fleet (one container per node, named st-*) without
 # entering this queue -- it has its own launcher lock. Until both are one mechanism the
@@ -177,6 +203,29 @@ st_engine_evidence() {   # every reason to believe these four nodes are not ours
 }
 st_engine_up() { [ -n "$(st_engine_evidence)" ]; }
 st_engine_line() { st_engine_evidence | paste -sd';' - | sed 's/;/; /g' | cut -c1-240; }
+# ---- the single-GPU lane's occupancy: that host's own GPU process list over ssh, remembered
+# for a TTL by bench/fleet_single.py. The fleet's rule holds here too: every unknown is
+# EVIDENCE and refuses, and a helper that fails is not an empty (= free) answer.
+single_gpu_label() { echo "$FLEET_SINGLE_GPU_NAME on $FLEET_SINGLE_GPU_HOST"; }
+single_gpu_evidence() {   # every reason to believe the single GPU is not ours; empty = free
+  [ -n "$FLEET_SINGLE_GPU_HOST" ] || { echo "single-GPU lane is off (FLEET_SINGLE_GPU_HOST is empty)"; return 0; }
+  local out
+  out=$(python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_single.py" evidence --cache "$FLEET_DIR" 2>&1) && return 0
+  echo "${out:-fleet_single.py gave no answer -- this queue cannot say the $FLEET_SINGLE_GPU_NAME is free}"
+}
+single_gpu_line() { single_gpu_evidence | paste -sd';' - | sed 's/;/; /g' | cut -c1-240; }
+single_refused() {  # session reason -- logged once per distinct reason, not once per poll
+  local marker=$FLEET_DIR/.single-refused.$1
+  [ "$(cat "$marker" 2>/dev/null)" = "$2" ] && return 0
+  printf '%s' "$2" > "$marker"; logit "hold refused (single): $2; $1 waits"
+}
+single_line() {   # for status: the lane's holder, else its evidence, else FREE
+  [ -n "$FLEET_SINGLE_GPU_HOST" ] || { echo "single: off (FLEET_SINGLE_GPU_HOST is empty; one-GPU checks take the four Sparks)"; return 0; }
+  local what
+  if [ -s "$HS" ]; then holder_alive "$HS" && what="HELD by $(holder_line "$HS")" || what="held by DEAD $(holder_line "$HS")"
+  else what=$(single_gpu_line); [ -n "$what" ] || what=FREE; fi
+  echo "single ($(single_gpu_label)): $what"
+}
 # A queue answer is only as new as the copy that computed it, and `status` reads live files
 # with whatever rules the caller's checkout happens to carry. On 2026-09-12 a session ran
 # `cd ~/stkernel && bash bench/fleet.sh status` on the controller itself and was told FREE
@@ -189,7 +238,9 @@ st_engine_line() { st_engine_evidence | paste -sd';' - | sed 's/;/; /g' | cut -c
 # answers, and preflight's sync (which copies $REPO over $LOGD/fleet.sh) refuses to move the
 # shared entry backwards. Copies older than this number cannot warn -- nothing inside them
 # knows there is anything to warn about -- but from here on the class reports itself.
-FLEET_RULES=1
+#   1  the ST-engine occupancy check (2026-09-12)
+#   2  the single-GPU lane: one-GPU checks are admitted to the 5050, not the fleet (2026-09-12)
+FLEET_RULES=2
 entry_rules() { sed -n 's/^FLEET_RULES=\([0-9][0-9]*\).*/\1/p' "${1:?file}" 2>/dev/null | head -1; }
 entry_line() {
   local entry=$LOGD/fleet.sh theirs
@@ -205,9 +256,8 @@ entry_line() {
 # asks on the waiter's behalf -- once per refusal, and never for a holder that predates
 # the protocol (its plain-text lock has nobody listening).
 #
-# It cannot always ask. A runner executes out of a snapshot that carries bench/, engine/
-# and probes/ and NOT launchers/, so the helper is simply absent there and the request has
-# nowhere to go. Say which of the two happened: a log line that reports an ask nobody made
+# Older runner snapshots omit the lease helper. Say which of the two happened:
+# a log line that reports an ask nobody made
 # leaves a waiter and a holder each believing the other has been told (45차 §91).
 # Returns 0 when the holder was actually asked.
 st_engine_yield() {
@@ -227,9 +277,9 @@ expected_min() {  # session est
   echo "${m:-$2}"
 }
 # ---- preflight: the traps that cost a boot on 09-06, checked before the boot
-preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
+preflight() {  # [--probe|--single] session [-- cmd...] -> 0 PASS, 1 FAIL
   local ok=1 knobs="" chain="" kind=boot
-  [ "${1:-}" = "--probe" ] && { kind=probe; shift; }
+  case "${1:-}" in --probe|--single) kind=${1#--}; shift;; esac
   echo "preflight $1 [$kind]:"
   shift
   [ "${1:-}" = "--" ] && shift
@@ -273,8 +323,8 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
   # VLLM_* names inside a probe runner are not knobs at all. Checking them
   # FAILed a probe turn on 09-06 over run_mk_probe.sh's own PROBE_CACHE lines
   # (VLLM_CACHE_ROOT, VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR).
-  if [ "$kind" = probe ]; then
-    echo "  SKIP declared-knob check (probe: no launcher in the path)"
+  if [ "$kind" != boot ]; then
+    echo "  SKIP declared-knob check ($kind: no launcher in the path)"
   else
     # The profile that will serve is the one the chain deploys, and chains pull
     # origin/main at their start (or the holder runs `fleet.sh deploy`): check
@@ -441,9 +491,10 @@ legacy_busy() { [ "$(busy_procs)" != 0 ] || [ "$(busy_reqs)" != 0 ] || booting; 
 
 # ---- holder liveness: pid on this host checked directly; elsewhere, trust it
 # until 3x its estimate has passed.
-holder_alive() {
-  [ -s "$H" ] || return 1
-  IFS='|' read -r s pid host t0 est note kind < "$H"
+holder_alive() {  # [holder file], the fleet's by default
+  local hf=${1:-$H}
+  [ -s "$hf" ] || return 1
+  IFS='|' read -r s pid host t0 est note kind < "$hf"
   if [ "$host" = "$(me)" ] && [ -n "$pid" ]; then kill -0 "$pid" 2>/dev/null && return 0; return 1; fi
   # A holder on another node used to be trusted blind for 3x its estimate -- a crashed
   # one blocked the fleet for two hours at est 40, and the recovery the header promises
@@ -474,7 +525,7 @@ holder_probe() {
   printf '%s' "$out" > "$cache" 2>/dev/null || true
   printf '%s' "$out"
 }
-holder_line() { [ -s "$H" ] && IFS='|' read -r s pid host t0 est note kind < "$H" && echo "$s${kind:+ [$kind]} (pid $pid@$host, since $(date -d @$t0 +%H:%M), est ${est}m, $note)"; }
+holder_line() { local hf=${1:-$H}; [ -s "$hf" ] && IFS='|' read -r s pid host t0 est note kind < "$hf" && echo "$s${kind:+ [$kind]} (pid $pid@$host, since $(date -d @$t0 +%H:%M), est ${est}m, $note)"; }
 
 with_lock() { ( flock -x 9; "$@" ) 9>"$LK"; }
 
@@ -496,21 +547,24 @@ _enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repea
       logit "refused duplicate session $1 (pid $pid vs queued $qpid)"; return 2
     fi
     awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" -v kind="$kind" -v pid="$pid" '$2==s {$4=est; $5=note; $6=kind; if (pid!="") $7=pid} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
-    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue || return 1
+    [ "$kind" = single ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue || return 1
     return 0
   fi
   echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}|$kind|$pid" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}"
-  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue
+  # A single-GPU check is not fleet activity: the idle controller's clock is the fleet's.
+  [ "$kind" = single ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue
 }
 _dequeue() {
-  local existed=0
+  local existed=0 rowkind
+  rowkind=$(grep "^[0-9]*|$1|" "$Q" | head -1 | cut -d'|' -f6)
   grep -q "^[0-9]*|$1|" "$Q" && existed=1
   grep -v "^[0-9]*|$1|" "$Q" > "$Q.tmp"; mv "$Q.tmp" "$Q"
   local marker
   for marker in priority-front priority-yield; do
     [ "$(cat "$FLEET_DIR/$marker" 2>/dev/null)" != "$1" ] || rm -f "$FLEET_DIR/$marker"
   done
-  [ "$existed" = 0 ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dequeue
+  rm -f "$FLEET_DIR/.single-refused.$1"
+  [ "$existed" = 0 ] || [ "$rowkind" = single ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dequeue
 }
 _withdraw_owned() {  # session pid; an older supervisor cannot erase a reused name
   local rowpid
@@ -522,49 +576,69 @@ _position() { grep -n "^[0-9]*|$1|" "$Q" | head -1 | cut -d: -f1; }
 _front() { { grep "^[0-9]*|$1|" "$Q"; grep -v "^[0-9]*|$1|" "$Q"; } > "$Q.tmp"; mv "$Q.tmp" "$Q"; echo "$1" > "$FLEET_DIR/priority-front"; logit "front $1"; }
 
 _try_hold() {  # session pid est note [kind] -> 0 when held
-  local s=$1 pid=$2 est=$3 note=$4 kind; kind=$(kind_of "${5:-}")
-  if st_engine_up; then
-    if st_engine_yield "$s"; then
-      logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); asking it to yield to $s"
-    else
-      logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); $s waits, and the holder was NOT asked -- this runner has no launchers/lib/fleet-lease.sh"
+  local s=$1 pid=$2 est=$3 note=$4 kind hf; kind=$(kind_of "${5:-}"); hf=$(holder_file "$kind")
+  if [ "$kind" != single ]; then
+    # The fleet lane: the ST engine, a serving container, a legacy chain all occupy the
+    # four Sparks. None of that is evidence about the single GPU, so the single lane
+    # skips this and asks its own host below.
+    if st_engine_up; then
+      if st_engine_yield "$s"; then
+        logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); asking it to yield to $s"
+      else
+        logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); $s waits, and the holder was NOT asked -- this runner has no launchers/lib/fleet-lease.sh"
+      fi
+      return 1
     fi
-    return 1
   fi
-  if [ -s "$H" ]; then
-    if holder_alive; then return 1; fi
-    logit "auto-kick dead holder: $(holder_line)"; rm -f "$H"
-    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dead-holder || return 1
+  if [ -s "$hf" ]; then
+    if holder_alive "$hf"; then return 1; fi
+    logit "auto-kick dead holder: $(holder_line "$hf")"; rm -f "$hf"
+    [ "$kind" = single ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dead-holder || return 1
   fi
-  # We hold .lock and have no live holder. Every waiter sees the same order;
-  # priority cannot interrupt a pair/chain or steal a yielded holder's place.
+  # We hold .lock and have no live holder in this lane. Every waiter sees the same order;
+  # priority cannot interrupt a pair/chain or steal a yielded holder's place. Each lane
+  # takes its own head of that order: a one-GPU check behind a queued boot does not wait
+  # for the Sparks, and a boot behind a queued check does not wait for the 5050.
   local eligibility=""
   serving_idle || eligibility=--boot-only
   python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_priority.py" "$FLEET_DIR" --apply ${eligibility:+"$eligibility"} || logit "priority unavailable: retain FIFO"
-  [ "$(head -1 "$Q" | cut -d'|' -f2)" = "$s" ] || return 1
+  [ "$(lane_front "$kind")" = "$s" ] || return 1
   # wait may have captured these before an edit. Read the queue under the
   # admission lock so holder/ledger metadata match the accepted reservation.
   IFS='|' read -r _ _ _ est note kind _ <<< "$(grep "^[0-9]*|$s|" "$Q" | head -1)"
+  kind=$(kind_of "$kind"); hf=$(holder_file "$kind")
   [ "$kind" = probe ] && ! serving_idle && return 1
   # never hand the fleet to a dead job (an orphaned waiter whose run process
   # was killed took a turn for pid 3710362 on 09-06 and was auto-kicked 2 s
   # later, dropping the live request with the same session name)
   [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null || return 1
-  legacy_busy && return 1
+  if [ "$kind" = single ]; then
+    # The lane's evidence, right before the grant: that host's own GPU process list.
+    # Unreachable is not free. Logged once per distinct reason, not once per poll.
+    local why; why=$(single_gpu_line)
+    if [ -n "$why" ]; then single_refused "$s" "$why"; return 1; fi
+  else
+    legacy_busy && return 1
+  fi
   python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pause.py" admission "$s"; local prepared_rc=$?
   [ "$prepared_rc" != 4 ] || return 4
   [ "$prepared_rc" = 0 ] || { _dequeue "$s"; return 3; }
   python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_handoff.py" admit "$FLEET_DIR" "$s" "$pid" "$kind" "$est" "$note" || return 1
   _dequeue "$s"
-  rm -f "$LOGD"/FLEET-free-for-*.done 2>/dev/null; touch "$LOGD/FLEET-held-by-$s.done"
-  logit "GO $s (pid $pid)"; _event GO "$s" "$note"; return 0
+  if [ "$kind" = single ]; then
+    logit "GO $s (pid $pid) [single: $(single_gpu_label)]"
+  else
+    rm -f "$LOGD"/FLEET-free-for-*.done 2>/dev/null; touch "$LOGD/FLEET-held-by-$s.done"
+    logit "GO $s (pid $pid)"
+  fi
+  _event GO "$s" "$note"; return 0
 }
-_ledger_row() {  # session -- from the holder file, before it is removed
-  IFS='|' read -r s pid host t0 est note kind < "$H"
+_ledger_row() {  # session [holder file] -- from the holder file, before it is removed
+  IFS='|' read -r s pid host t0 est note kind < "${2:-$H}"
   local held boots recs; held=$(( ($(now) - t0 + 30) / 60 ))
   boots=$(find "$LOGD" -maxdepth 1 -name 'boot-*.log' -newermt "@$t0" 2>/dev/null | wc -l)
   [ "$boots" = 0 ] && [ "${kind:-boot}" = boot ] && [ -f "$LOGD/glm53.log" ] && [ "$(stat -c %Y "$LOGD/glm53.log")" -ge "$t0" ] && boots=1
-  [ "${kind:-boot}" = probe ] && boots=0
+  case "${kind:-boot}" in probe|single) boots=0;; esac   # neither boots the fleet
   recs=$(python3 - "$JSONL" "$t0" <<'PY' 2>/dev/null || echo 0
 import json, sys, time
 n = 0
@@ -586,10 +660,13 @@ _yield_requeue() {
   _enqueue "$1" "$2" "$3" boot "${FLEET_PID:-$PPID}"; _front "$1"
   echo "$4" > "$FLEET_DIR/priority-yield"
 }   # the yielding holder resumes immediately after its chosen probe
-_release() {  # session
-  if [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$1" ]; then
-    _ledger_row "$1"
-    rm -f "$H" "$LOGD/FLEET-held-by-$1.done" "$(hb_file "$1")"; logit "release $1"; _event release "$1" ""
+_release() {  # session -- whichever lane's holder names it
+  local hf
+  if hf=$(holder_file_of "$1"); then
+    _ledger_row "$1" "$hf"
+    rm -f "$hf" "$(hb_file "$1")"; _event release "$1" ""
+    if [ "$hf" = "$HS" ]; then logit "release $1 [single]"; return 0; fi
+    rm -f "$LOGD/FLEET-held-by-$1.done"; logit "release $1"
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" release || return 1
     # legacy markers for chains that still poll them
     for p in fusion mkg3 b12x glmfix; do touch "$LOGD/FLEET-free-for-$p.done"; done
@@ -608,12 +685,18 @@ _adopt() {  # caller holds .lock throughout the ownership transition
   python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" adopt || return 1
   logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)"
 }
-_kick() {  # preserve the same lock used by idle recovery and admission
-  if [ ! -s "$H" ]; then echo "nothing held"; return 0; fi
-  if holder_alive && [ "${1:-}" != "--force" ]; then echo "holder is ALIVE: $(holder_line) -- use --force only on the operator's word" >&2; return 1; fi
-  logit "kick${1:+ $1} of $(holder_line)"; rm -f "$H"
-  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" kick || return 1
-  touch "$LOGD"/FLEET-free-for-{fusion,mkg3,b12x,glmfix}.done; echo "kicked"
+_kick() {  # [--force] [single] -- preserve the same lock used by idle recovery and admission
+  local force="" lane=fleet a hf
+  for a in "$@"; do case "$a" in --force) force=--force;; single|fleet) lane=$a;; "") ;; *) echo "usage: fleet.sh kick [--force] [single]" >&2; return 2;; esac; done
+  hf=$(holder_file "$lane")
+  if [ ! -s "$hf" ]; then echo "nothing held$([ "$lane" = single ] && echo ' (single)')"; return 0; fi
+  if holder_alive "$hf" && [ -z "$force" ]; then echo "holder is ALIVE: $(holder_line "$hf") -- use --force only on the operator's word" >&2; return 1; fi
+  logit "kick${force:+ $force}$([ "$lane" = single ] && echo ' [single]') of $(holder_line "$hf")"; rm -f "$hf"
+  if [ "$lane" = fleet ]; then
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" kick || return 1
+    touch "$LOGD"/FLEET-free-for-{fusion,mkg3,b12x,glmfix}.done
+  fi
+  echo "kicked"
 }
 
 cmd=${1:-status}; shift || true
@@ -659,7 +742,9 @@ case "$cmd" in
       if [ "$admission_rc" = 0 ]; then echo "GO $s $(ts)"; exit 0; fi
       if [ "$admission_rc" = 3 ]; then exit 3; fi
       [ "$admission_rc" != 4 ] || continue
-      why="pos $(_position "$s")/$(grep -c . "$Q")"; [ -s "$H" ] && why="$why, held by $(holder_line)"; legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"
+      why="pos $(_position "$s")/$(grep -c . "$Q")"; hf=$(holder_file "$kind"); [ -s "$hf" ] && why="$why, held by $(holder_line "$hf")"
+      if [ "$kind" = single ]; then sgl=$(single_gpu_line); [ -z "$sgl" ] || why="$why, $sgl"
+      else legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"; fi
       [ "$why" = "$last" ] || { echo "waiting: $why $(ts)"; last=$why; }
       sleep 1
     done
@@ -667,16 +752,17 @@ case "$cmd" in
   version) vr=${FLEET_RUNNER_REPO:-$REPO}; sha256sum "$vr/bench/fleet.sh" "$vr/bench/fleet_boot.py" "$vr/bench/fleet_handoff.py"; echo "handoff_protocol=2";;
   release) with_lock _release "${1:?session}";;
   run)
-    kind=boot; force=""; detach=0; prepare_spec=""; prepared_manifest=""
-    while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; --detach) detach=1; shift;; --prepare) prepare_spec=${2:?preparation spec}; shift 2;; --prepared) prepared_manifest=${2:?prepared manifest}; shift 2;; *) break;; esac; done
+    kind=boot; force=""; detach=0; prepare_spec=""; prepared_manifest=""; lane_force=""
+    while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; --fleet) lane_force=fleet; shift;; --detach) detach=1; shift;; --prepare) prepare_spec=${2:?preparation spec}; shift 2;; --prepared) prepared_manifest=${2:?prepared manifest}; shift 2;; *) break;; esac; done
     s=${1:?session}; shift; est=30; note=""
     [ "${1:-}" != "--" ] && { est=$1; shift; }
     [ "${1:-}" != "--" ] && { note=$1; shift; }
     [ "${1:-}" = "--" ] && shift
-    [ $# -gt 0 ] || { echo "usage: fleet.sh run --gpu|--cpu [--probe] <session> [est_min] [note] -- cmd..." >&2; exit 2; }
+    [ $# -gt 0 ] || { echo "usage: fleet.sh run --gpu|--cpu [--probe] [--fleet] <session> [est_min] [note] -- cmd..." >&2; exit 2; }
     if [ "$detach" = 1 ]; then
       detached_args=(run)
       [ "$kind" = probe ] && detached_args+=(--probe)
+      [ -z "$lane_force" ] || detached_args+=(--fleet)
       case "$force" in gpu) detached_args+=(--gpu);; nogpu) detached_args+=(--cpu);; esac
       [ -n "$prepare_spec" ] && detached_args+=(--prepare "$prepare_spec")
       [ -n "$prepared_manifest" ] && detached_args+=(--prepared "$prepared_manifest")
@@ -692,7 +778,14 @@ case "$cmd" in
     fi
     [ -z "$force" ] && echo "no --gpu/--cpu given: classified as $auto"
     if [ "$cls" != nogpu ]; then
-      python3 "$REPO/bench/fleet_onepass.py" --repo "$REPO" --cwd "$PWD" --kind "$kind" -- "$@" || exit 2
+      contract=$(python3 "$REPO/bench/fleet_onepass.py" --repo "$REPO" --cwd "$PWD" --kind "$kind" -- "$@") || exit 2
+      # A check that needs ONE GPU does not wait for the four Sparks: it takes the single-GPU
+      # lane (the 5050 on ost-97x) unless the caller said --fleet or the lane is off.
+      if [ "$kind" = boot ] && [ "$lane_force" != fleet ] && [ -n "$FLEET_SINGLE_GPU_HOST" ] \
+          && [ "$(printf '%s' "$contract" | sed -n 's/.*"gpus": *\([0-9][0-9]*\).*/\1/p')" = 1 ]; then
+        kind=single
+        echo "needs one GPU, not four: single-GPU lane ($(single_gpu_label)); say --fleet to take the four Sparks instead"
+      fi
     fi
     prep_args=(); [ -n "$prepare_spec" ] && prep_args=(--spec "$prepare_spec")
     [ -n "$prepared_manifest" ] && prep_args+=(--prepared "$prepared_manifest")
@@ -709,7 +802,7 @@ case "$cmd" in
       logit "nogpu-done $s rc=$rc"; _event nogpu-done "$s" "$note"; exit $rc
     fi
     [ "$cls" = unknown ] && echo "no evidence either way -> queued as GPU (say --cpu to run in parallel)"
-    pf=(); [ "$kind" = probe ] && pf=(--probe)
+    pf=(); [ "$kind" = boot ] || pf=(--$kind)
     if ! preflight ${pf[@]+"${pf[@]}"} "$s" -- "$@"; then
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
@@ -729,6 +822,7 @@ case "$cmd" in
     echo "fleet: $( [ -s "$H" ] && { holder_alive && echo "HELD by $(holder_line)" || echo "held by DEAD $(holder_line)"; } \
                   || { st_engine_up && echo "TAKEN by the ST engine, outside this queue -- $(st_engine_line)" || echo FREE; } )"
     entry_line
+    single_line
     remaining=0
     if [ -s "$H" ]; then
       IFS='|' read -r hs hpid hhost ht0 hest hnote hkind < "$H"; held=$(( ($(now) - ht0) / 60 ))
@@ -758,10 +852,10 @@ case "$cmd" in
     # the waiter goes first -- it is this tool's own process, recorded at request
     if [ -n "$qpid" ] && kill -0 "$qpid" 2>/dev/null && grep -qE "fleet.sh|fleet_boot.py" "/proc/$qpid/cmdline" 2>/dev/null; then kill "$qpid" 2>/dev/null; sleep 1; echo "stopped waiter pid $qpid"; fi
     with_lock _dequeue "$s"; logit "cancel $s"; echo "cancelled $s";;
-  kick) with_lock _kick "${1:-}";;
+  kick) with_lock _kick "$@";;
   busy) echo "$(busy_procs) $(busy_reqs)";;
   preflight)
-    [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe] <session> [-- cmd...]" >&2; exit 2; }
+    [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe|--single] <session> [-- cmd...]" >&2; exit 2; }
     preflight "$@";;
   startup)
     echo 'GPU work requires onepass: use fleet.sh pair/chain for startup knobs; separate startup request campaigns are disabled' >&2; exit 2;;

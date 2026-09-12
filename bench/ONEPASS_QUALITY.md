@@ -1,5 +1,7 @@
 # Onepass reasoning quality — harness 42 / ko-reasoning-v1
 
+> 살아 있는 참조 — **원패스가 무엇을 묻고 어떻게 채점하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
+
 Canonical onepass now asks for verifiable reasoning certificates instead of
 checking whether three retrieved names/numbers occur somewhere in the answer.
 The question families are deliberately harder and self-contained. They measure

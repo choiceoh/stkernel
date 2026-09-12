@@ -19,6 +19,8 @@ def source_files(repo):
     # (2026-09-12: three ST reservations paused on 'cannot verify ... No such file').
     import fleet_onepass
     canonical = ('probes/run_ar_consumer_campaign.sh',
+                 # Occupancy and yield execute from the pinned control tree.
+                 # Without both files, a free lease looks unreadable forever.
                  'launchers/lib/fleet-lease.sh', 'engine/base/fleet_lease.py',
                  *fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES)
     for relative in canonical:

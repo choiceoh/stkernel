@@ -43,8 +43,21 @@ def text(path):
 def read_state(directory):
     rows = [line.split('|') for line in text(directory / 'queue').splitlines() if line]
     rows = [r for r in rows if len(r) >= 7]
-    holder = text(directory / 'holder').strip().split('|')
-    return rows, holder if len(holder) >= 7 else None
+    holders = {lane: row for lane, row in handoff.holders(directory).items() if len(row) >= 7}
+    return rows, holders
+
+
+def holder_for(holders, session, rows):
+    """The holder that matters to one session: the one naming it, else its lane's.
+
+    A queued single-GPU check waits behind `holder-single`, not behind the fleet's holder,
+    and its `waiting_for` must say so.
+    """
+    for row in holders.values():
+        if row[0] == session:
+            return row
+    queued = next((r for r in rows if r[1] == session), None)
+    return holders.get(handoff.lane(queued[5]) if queued else 'fleet')
 
 
 def process_log(pid):
@@ -123,7 +136,9 @@ def describe(directory, session, rows, holder, now=None, ticket=None):
         if not value:
             alive = bool(handoff.identity(int(row[6])))
         result['state'] = ('paused' if value and value['state'] == 'paused' else 'queued') if alive else 'interrupted'
-        result['waiting_for'] = ('holder ' + holder[0]) if holder else 'fleet admission checks'
+        result['waiting_for'] = (('holder ' + holder[0]) if holder else
+                                 'single-GPU admission checks' if handoff.lane(row[5]) == handoff.SINGLE
+                                 else 'fleet admission checks')
         result['ahead'] = [r[1] for r in rows[:rows.index(row)] if not paused(directory, r[1], r)]
         result['editable'] = bool(value and alive and value['state'] in ('queued','paused'))
         if result['state'] == 'paused':
@@ -184,19 +199,20 @@ def show(directory, session=None, ticket=None):
     if ticket is not None and session is None:
         raise ValueError('--ticket requires a reservation session')
     with snapshot_lock(directory):
-        rows, holder = read_state(directory)
+        rows, holders = read_state(directory)
         if session is not None:
-            return describe(directory, session, rows, holder, ticket=ticket)
-        names = list(dict.fromkeys(([holder[0]] if holder else []) + [r[1] for r in rows]))
+            return describe(directory, session, rows, holder_for(holders, session, rows), ticket=ticket)
+        names = list(dict.fromkeys([row[0] for row in holders.values()] + [r[1] for r in rows]))
         from fleet_pause import parked
         names += [v['session'] for v in parked(directory) if v['session'] not in names]
-        return [describe(directory, name, rows, holder) for name in names]
+        return [describe(directory, name, rows, holder_for(holders, name, rows)) for name in names]
 
 
 def history(directory, session, limit=20):
     """Bounded summaries for one session, including its latest active ticket."""
     with snapshot_lock(directory):
-        rows, holder = read_state(directory)
+        rows, holders = read_state(directory)
+        holder = holder_for(holders, session, rows)
         result = []
         for record in pending.history(directory, session, limit):
             value = describe(directory, session, rows, holder, ticket=record['ticket'])

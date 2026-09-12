@@ -213,9 +213,9 @@ def start(fleet, session, argv, timeout=30):
                 return dict(result, disposition='existing'), result.get('returncode', 0)
         else:
             with locked(directory / '.lock', deadline):
-                holder = (directory / 'holder').read_text().split('|') if (directory / 'holder').exists() else []
+                held = [row[0] for row in handoff.holders(directory).values()]
                 rows = handoff.rows(directory) if (directory / 'queue').exists() else []
-                if any(row[1] == session for row in rows) or (holder and holder[0] == session):
+                if any(row[1] == session for row in rows) or session in held:
                     raise ValueError('session is already queued or running; inspect or edit that reservation instead')
             nonce = uuid.uuid4().hex
             log = launches / (digest + '.' + nonce + '.log')

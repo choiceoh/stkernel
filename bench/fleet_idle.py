@@ -147,6 +147,10 @@ def runnable_queue(directory, serving_stopped):
         # A probe needing absent serving cannot run until this controller boots.
         if row[5] == 'probe' and serving_stopped:
             continue
+        # A single-GPU check runs on another host's card: it never needs the fleet, so it
+        # is not fleet work the controller should hold recovery for.
+        if row[5] == 'single':
+            continue
         return True
     return False
 

@@ -42,6 +42,22 @@ class InspectTests(unittest.TestCase):
         self.assertFalse(result['editable'])
         self.assertEqual(result['wait_seconds'], 20)
 
+    def test_a_single_lane_check_shows_beside_the_fleet_holder_and_waits_on_its_own(self):
+        """Two lanes, two holders: a queued one-GPU check waits behind holder-single, and the
+        fleet's holder is never what it waits for (2026-09-12)."""
+        host = inspect.socket.gethostname().split('.')[0]
+        (self.root/'holder').write_text(f'boot|{self.pid}|{host}|100|30|a boot|boot\n')
+        (self.root/'holder-single').write_text(f'check|{self.pid}|{host}|110|5|a kernel check|single\n')
+        self.queue.write_text(f'20|mine|100|10|fixture|boot|{self.pid}\n30|next|120|5|next check|single|{self.pid}\n')
+        listing = {row['session']:row for row in inspect.show(self.root)}
+        self.assertEqual((listing['check']['state'], listing['check']['kind']), ('running', 'single'))
+        self.assertEqual(listing['boot']['state'], 'running')
+        self.assertEqual(listing['next']['waiting_for'], 'holder check')
+        self.assertEqual(listing['mine']['waiting_for'], 'holder boot')
+        (self.root/'holder-single').unlink()
+        self.assertEqual(inspect.show(self.root, 'next')['waiting_for'], 'single-GPU admission checks')
+        self.assertEqual(inspect.show(self.root, 'mine')['waiting_for'], 'holder boot')
+
     def test_completed_failure_distinguishes_successful_payload_from_failed_restore(self):
         self.queue.write_text('')
         pending.transition(self.root, 'mine', 'finished', phase='finished', outcome='failed',
