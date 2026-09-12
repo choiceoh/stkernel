@@ -1,0 +1,3 @@
+ninja: no work to do.
+RESULT {"arm": "stable", "fixture": "oneshot", "key": "2208cbfe2c6eb524491dcfaa", "value": ["connect", "healthy", "init", "local_infos", "oneshot_ar", "oneshot_ar_consumer", "oneshot_ar_hint", "oneshot_max_int64", "phase_counters", "shutdown", "transport_modes"], "load_seconds": 0.018442895991029218, "nvcc_compilations": 0, "directory": "/evidence/oneshot-cache-0913-v1/stable/2208cbfe2c6eb524491dcfaa", "torch": "2.13.0+cu130", "cuda": "13.0", "cuda_initialized": false}
+W0912 17:04:36.673000 107 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
