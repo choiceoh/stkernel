@@ -236,10 +236,12 @@ class PriorityTests(unittest.TestCase):
     def test_real_admission_function_preserves_live_holder_and_uses_priority_when_free(self):
         source = (ROOT / "bench/fleet.sh").read_text()
         function = source[source.index("_try_hold() {"):source.index("_ledger_row() {")]
-        # the admission function's own one-line helpers: the kind, its lane, its holder, its head
+        # the admission function's own one-line helpers: the kind, its lane, its holder, its head,
+        # and whether the single-GPU lane's box is one of the fleet's
         helpers = [line for line in source.splitlines()
-                   if line.startswith(("kind_of() {", "lane_of() {", "holder_file() {", "lane_front() {"))]
-        self.assertEqual(len(helpers), 4)
+                   if line.startswith(("kind_of() {", "lane_of() {", "holder_file() {", "lane_front() {",
+                                       "single_on_fleet() {"))]
+        self.assertEqual(len(helpers), 5)
         function = "\n".join(helpers) + "\n" + function
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -249,14 +251,24 @@ class PriorityTests(unittest.TestCase):
             lines = f"1|long|{now}|30|long|boot|\n2|short|{now}|2|short|boot|\n"
             queue.write_text(lines)
             holder.write_text("active|123|host|0|30|pair|boot\n")
+            # A free fleet whose lease the ticket takes at GO (PR #770): the occupancy check and
+            # the lease helpers answer "free" and "taken"; nothing here touches a real lease.
             setup = '''
-H="$FLEET_DIR/holder"; Q="$FLEET_DIR/queue"
+H="$FLEET_DIR/holder"; HS="$FLEET_DIR/holder-single"; Q="$FLEET_DIR/queue"
+FLEET_SINGLE_GPU_HOST=srv4
 holder_alive() { return 0; }
 logit() { :; }
 _event() { :; }
 _dequeue() { :; }
 serving_idle() { return 0; }
 legacy_busy() { return 1; }
+st_engine_up() { return 1; }
+st_engine_ask() { :; }
+lease() { return 0; }
+lease_mine() { return 1; }
+lease_state() { echo free; }
+_lease_pass_on() { :; }
+_kick_lease() { :; }
 me() { echo host; }
 now() { date +%s; }
 '''

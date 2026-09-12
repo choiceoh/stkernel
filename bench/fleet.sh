@@ -27,15 +27,20 @@
 # TWO LANES. A boot, a pair, a chain, a live onepass take the fleet: four Sparks, one holder.
 # An ST check that needs ONE GPU (probes/run_engine_check.sh, or run_engine_probe.sh without
 # --distributed: one container, the four ranks as threads on one card) does not wait for the
-# Sparks. It takes the single-GPU lane -- the 5050 on ost-97x (FLEET_SINGLE_GPU_HOST; set it
-# empty to turn the lane off; the controller's ~/.ssh/config names that alias's address,
-# user and port, since the box is a Windows machine on the tailnet, not a Spark) -- with its
-# own holder (holder-single) and its own evidence
-# (that host's GPU process list; unreachable is not free). The lanes never block each other:
-# a check behind a queued boot runs now, and a boot behind a queued check runs now. The
-# supervisor hands the check to probes/run_engine_probe.sh with ST_PROBE_HOST, which rsyncs
-# engine/ and probes/ to that host, runs the container there and takes no fleet lease. Say
-# --fleet to keep a one-GPU check on the Sparks (one that needs GB10 memory, say).
+# Sparks. It takes the single-GPU lane: ONE Spark beside production -- srv4 by default
+# (FLEET_SINGLE_GPU_HOST; set it empty to turn the lane off) -- with its own holder
+# (holder-single) and its own evidence. Beside production the GPU is never "free", so the
+# evidence is ROOM: that box's MemAvailable less the check's budget (ST_PROBE_GIB, 8 GiB by
+# default) must stay above the 16 GiB floor a --test boot keeps (bench/fleet_single.py), and
+# only one probe container runs there at a time; a box that cannot answer has no room. On a
+# fleet box the two lanes do exclude each other -- a fleet BOOT and a single check never share
+# it -- while beside serving they run at once. Elsewhere (a box of its own, such as ost-97x,
+# the operator's Windows PC on the tailnet, once it has sshd and an x86_64 image) the lanes
+# never wait for each other; the controller's ~/.ssh/config names that alias's address, user
+# and port. The supervisor hands the check to probes/run_engine_probe.sh with ST_PROBE_HOST,
+# which rsyncs engine/ and probes/ to that host, waits for room, runs the container there on
+# the image production runs there, and takes no fleet lease. Say --fleet to keep a one-GPU
+# check on the four Sparks (one that needs every rank file, say).
 #
 # GPU admission accepts current canonical pair, chain, ab-lever, onepass and
 # recorded pair/baseline execution. Unknown wrappers, standalone GPU checks,
@@ -129,11 +134,12 @@ baseline_line() {
   (cd "$REPO" 2>/dev/null && timeout 20 python3 bench/baseline.py --brief 2>/dev/null) || true
 }
 HEAD_URL=${HEAD_URL:-http://10.10.10.2:8000}
-# The single-GPU lane's host and card. `${VAR-default}`, not `:-`: an explicitly EMPTY host
-# is the switch that turns the lane off, and then a one-GPU check takes the four Sparks as
-# it did before. bench/fleet_single.py carries the same defaults (a test pins that).
-FLEET_SINGLE_GPU_HOST=${FLEET_SINGLE_GPU_HOST-ost-97x}
-FLEET_SINGLE_GPU_NAME=${FLEET_SINGLE_GPU_NAME:-5050}
+# The single-GPU lane's host and card: one Spark beside production. `${VAR-default}`, not
+# `:-`: an explicitly EMPTY host is the switch that turns the lane off, and then a one-GPU
+# check takes the four Sparks as it did before. bench/fleet_single.py carries the same
+# defaults (a test pins that).
+FLEET_SINGLE_GPU_HOST=${FLEET_SINGLE_GPU_HOST-srv4}
+FLEET_SINGLE_GPU_NAME=${FLEET_SINGLE_GPU_NAME:-GB10}
 export FLEET_SINGLE_GPU_HOST FLEET_SINGLE_GPU_NAME
 mkdir -p "$FLEET_DIR"
 Q=$FLEET_DIR/queue; H=$FLEET_DIR/holder; HS=$FLEET_DIR/holder-single; L=$FLEET_DIR/log; LK=$FLEET_DIR/.lock
@@ -152,6 +158,7 @@ holder_file_of() {  # session -> the holder file naming it; 1 when it holds noth
   local f; for f in "$H" "$HS"; do [ -s "$f" ] && [ "$(cut -d'|' -f1 "$f")" = "$1" ] && { echo "$f"; return 0; }; done; return 1
 }
 lane_front() { awk -F'|' -v lane="$(lane_of "${1:-}")" '{ k = ($6 == "single") ? "single" : "fleet" } k == lane { print $2; exit }' "$Q"; }   # kind -> the first queued session of its lane, in the ranked order
+single_on_fleet() { case "${FLEET_SINGLE_GPU_ON_FLEET:-}" in 1) return 0;; 0) return 1;; esac; case "${FLEET_SINGLE_GPU_HOST#*@}" in srv[1-4]|srv[1-4].*|spark*|10.10.0.[1-4]|10.10.1.[1-4]|10.10.10.[1-4]|10.10.11.[1-4]) return 0;; *) return 1;; esac; }   # is the single host one of the fleet's own boxes? (= fleet_single.on_fleet)
 serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^glm53$'; }
 # ---- the fleet lease: ONE record of who holds the four Sparks (engine/base/fleet_lease.py).
 # This queue is its authority for tickets. _try_hold takes it as queue/<session> at GO (or
@@ -232,10 +239,11 @@ st_engine_evidence() {   # every reason to believe these four nodes are not ours
 }
 st_engine_up() { [ -n "$(st_engine_evidence)" ]; }
 st_engine_line() { st_engine_evidence | paste -sd';' - | sed 's/;/; /g' | cut -c1-240; }
-# ---- the single-GPU lane's occupancy: that host's own GPU process list over ssh, remembered
-# for a TTL by bench/fleet_single.py. The fleet's rule holds here too: every unknown is
-# EVIDENCE and refuses, and a helper that fails is not an empty (= free) answer.
-single_gpu_label() { echo "$FLEET_SINGLE_GPU_NAME on $FLEET_SINGLE_GPU_HOST"; }
+# ---- the single-GPU lane's occupancy: ROOM beside production on that box -- its MemAvailable
+# over ssh less the check's budget must clear the --test floor, and no other probe may be
+# there -- remembered for a TTL by bench/fleet_single.py. The fleet's rule holds here too:
+# every unknown is EVIDENCE and refuses, and a helper that fails is not an empty (= room) answer.
+single_gpu_label() { echo "$FLEET_SINGLE_GPU_NAME on $FLEET_SINGLE_GPU_HOST$(single_on_fleet && echo ' beside production')"; }
 single_gpu_evidence() {   # every reason to believe the single GPU is not ours; empty = free
   [ -n "$FLEET_SINGLE_GPU_HOST" ] || { echo "single-GPU lane is off (FLEET_SINGLE_GPU_HOST is empty)"; return 0; }
   local out
@@ -252,7 +260,10 @@ single_line() {   # for status: the lane's holder, else its evidence, else FREE
   [ -n "$FLEET_SINGLE_GPU_HOST" ] || { echo "single: off (FLEET_SINGLE_GPU_HOST is empty; one-GPU checks take the four Sparks)"; return 0; }
   local what
   if [ -s "$HS" ]; then holder_alive "$HS" && what="HELD by $(holder_line "$HS")" || what="held by DEAD $(holder_line "$HS")"
-  else what=$(single_gpu_line); [ -n "$what" ] || what=FREE; fi
+  else
+    what=$(single_gpu_line); [ -n "$what" ] || what=FREE
+    if single_on_fleet && [ -s "$H" ] && [ "$(cut -d'|' -f7 "$H" | tr -d '\n')" = boot ]; then what="$what -- but the fleet boot $(cut -d'|' -f1 "$H") holds this box too"; fi
+  fi
   echo "single ($(single_gpu_label)): $what"
 }
 # A queue answer is only as new as the copy that computed it, and `status` reads live files
@@ -270,7 +281,9 @@ single_line() {   # for status: the lane's holder, else its evidence, else FREE
 #   1  the ST-engine occupancy check (2026-09-12)
 #   2  the single-GPU lane: one-GPU checks are admitted to the 5050, not the fleet (2026-09-12)
 #   3  the lease is the queue's: taken at GO, asked by kind through the quiet gate, handed on (2026-09-13)
-FLEET_RULES=3
+#   4  the single-GPU lane is one Spark beside production: room, not a free GPU, is the evidence,
+#      and on a fleet box a fleet boot and a single check never share it (2026-09-13)
+FLEET_RULES=4
 entry_rules() { sed -n 's/^FLEET_RULES=\([0-9][0-9]*\).*/\1/p' "${1:?file}" 2>/dev/null | head -1; }
 entry_line() {
   local entry=$LOGD/fleet.sh theirs
@@ -663,6 +676,12 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
       st_engine_ask "$s" "$pid" "$est" "$note"
       return 1
     fi
+    # A fleet BOOT never shares a box with a single check: the boot's admission needs that
+    # box's free memory, and the check would be what earlyoom finds first. Beside serving
+    # (a probe) they run at once, and on a box of its own the lanes never meet.
+    if [ "$kind" = boot ] && single_on_fleet && [ -s "$HS" ] && holder_alive "$HS"; then return 1; fi
+  elif single_on_fleet && [ -s "$H" ] && [ "$(cut -d'|' -f7 "$H" | tr -d '\n')" = boot ] && holder_alive "$H"; then
+    single_refused "$s" "the fleet boot $(cut -d'|' -f1 "$H") holds this box too"; return 1
   fi
   if [ -s "$hf" ]; then
     if holder_alive "$hf"; then return 1; fi
@@ -852,8 +871,13 @@ case "$cmd" in
       if [ "$admission_rc" = 3 ]; then exit 3; fi
       [ "$admission_rc" != 4 ] || continue
       why="pos $(_position "$s")/$(grep -c . "$Q")"; hf=$(holder_file "$kind"); [ -s "$hf" ] && why="$why, held by $(holder_line "$hf")"
-      if [ "$kind" = single ]; then sgl=$(single_gpu_line); [ -z "$sgl" ] || why="$why, $sgl"
-      else legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"; why="$why, lease: $(lease_state | cut -c1-120)"; fi
+      if [ "$kind" = single ]; then
+        sgl=$(single_gpu_line); [ -z "$sgl" ] || why="$why, $sgl"
+        single_on_fleet && [ -s "$H" ] && why="$why, the fleet's $(cut -d'|' -f1 "$H") holds this box too"
+      else
+        legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"; why="$why, lease: $(lease_state | cut -c1-120)"
+        single_on_fleet && [ -s "$HS" ] && why="$why, a single check holds $FLEET_SINGLE_GPU_HOST"
+      fi
       [ "$why" = "$last" ] || { echo "waiting: $why $(ts)"; last=$why; }
       sleep 1
     done
