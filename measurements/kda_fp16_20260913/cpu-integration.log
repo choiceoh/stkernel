@@ -1,0 +1,13 @@
+.......................................
+----------------------------------------------------------------------
+Ran 39 tests in 3.538s
+
+OK
+  box: test
+<MagicMock name='declared().table()' id='268261096044112'>
+  box: test
+<MagicMock name='declared().table()' id='268261096933088'>
+  fleet reserved by test
+  box: test
+<MagicMock name='declared().table()' id='268260913220544'>
+  expert_layout: tile-major bytes read back row-major per expert OK

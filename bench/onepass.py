@@ -415,6 +415,16 @@ def _require_preparation(rec):
     rec['preparation'] = dict(verdict='REJECTED', reason='preparation proof not completed')
 
 
+def kda_state_storage(metrics_text: str):
+    """Actual bound precision, separate from shape so an A/B may vary it."""
+    for line in metrics_text.splitlines():
+        if line.startswith("st:lane_info{"):
+            match = re.search(r'\bkda_state_dtype="(fp32|fp16)"', line)
+            if match:
+                return match.group(1)
+    return None
+
+
 def engine_shape(completion_url: str) -> dict:
     """The served shape this run measured, stamped on the record.
 
@@ -594,6 +604,8 @@ def _main() -> int:
 
     from window_metrics import traffic_state, exclusive_errors, decode_windows
     metrics_before = _metrics_text(bd.METRICS)
+    if precision := kda_state_storage(metrics_before):
+        rec["kda_state_dtype"] = precision
     before_traffic = traffic_state(metrics_before)
     if args.require_exclusive and (before_traffic["running"] != 0 or before_traffic["waiting"] != 0):
         raise RuntimeError("exclusive onepass requires an idle server before sending requests")

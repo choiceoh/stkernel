@@ -58,7 +58,15 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency"}, selected
+
+    if "kda-storage" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromNames(
+            ["tests.test_engine_kda_ring", "tests.test_engine_boundary_stage"])
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "KDA FP32/FP16 storage checks did not pass"
+        report("kda-storage", passed=True, tests=result.testsRun, arithmetic="fp32", storage=["fp32", "fp16"])
 
     if "residency" in selected:
         import unittest

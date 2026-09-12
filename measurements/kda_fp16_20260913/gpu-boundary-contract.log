@@ -1,0 +1,22 @@
+GO kda-fp16-contract0913g 2026-09-13_03:26:48
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 2 GiB beside production, no fleet lease)
+{"lane": "imports", "modules": 80, "table": "served", "vllm_loaded": false}
+test_disjoint_slots_on_two_cuda_streams (tests.test_engine_kda_ring.KdaRingTests.test_disjoint_slots_on_two_cuda_streams) ... ok
+test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) ... ok
+test_fp16_initial_state_continues_prefill_and_functional_decode_in_fp32 (tests.test_engine_kda_ring.KdaRingTests.test_fp16_initial_state_continues_prefill_and_functional_decode_in_fp32) ... ok
+test_fp16_storage_rounds_only_at_ring_writes_and_replays_rollback (tests.test_engine_kda_ring.KdaRingTests.test_fp16_storage_rounds_only_at_ring_writes_and_replays_rollback) ... ok
+test_graph_mutable_slot_context_and_rejected_drafts (tests.test_engine_kda_ring.KdaRingTests.test_graph_mutable_slot_context_and_rejected_drafts) ... ok
+test_invalid_layout_indices_and_overlapping_inputs (tests.test_engine_kda_ring.KdaRingTests.test_invalid_layout_indices_and_overlapping_inputs) ... ok
+test_reference_bisect_disables_direct_ring_lane (tests.test_engine_kda_ring.KdaRingTests.test_reference_bisect_disables_direct_ring_lane) ... ok
+test_tail_dimensions_grouped_heads_and_float_types (tests.test_engine_kda_ring.KdaRingTests.test_tail_dimensions_grouped_heads_and_float_types) ... ok
+test_zero_context_masks_nan_and_device_int32 (tests.test_engine_kda_ring.KdaRingTests.test_zero_context_masks_nan_and_device_int32) ... ok
+test_a_crossing_step_parks_the_boundary_and_a_non_crossing_one_leaves_the_stage_alone (tests.test_engine_boundary_stage.BoundaryStageTests.test_a_crossing_step_parks_the_boundary_and_a_non_crossing_one_leaves_the_stage_alone) ... ok
+test_the_stage_is_declared_with_the_arena (tests.test_engine_boundary_stage.BoundaryStageTests.test_the_stage_is_declared_with_the_arena) ... ok
+test_fp32_and_fp16_graph_staging_restore_match_cpu_bytes (tests.test_engine_boundary_stage.CudaBoundaryStageTests.test_fp32_and_fp16_graph_staging_restore_match_cpu_bytes) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 13.678s
+
+OK
+{"lane": "kda-storage", "passed": true, "tests": 12, "arithmetic": "fp32", "storage": ["fp32", "fp16"]}
+{"passed": true, "vllm_loaded": false, "checks": [{"lane": "imports", "modules": 80, "table": "served", "vllm_loaded": false}, {"lane": "kda-storage", "passed": true, "tests": 12, "arithmetic": "fp32", "storage": ["fp32", "fp16"]}]}

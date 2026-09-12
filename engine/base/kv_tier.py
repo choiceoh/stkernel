@@ -68,7 +68,7 @@ class TierFull(MemoryError):
 class NvmeTier:
     def __init__(self, directory: "str | Path", block_bytes: int, stage_bytes: int = 64 << 20,
                  capacity_bytes: "int | None" = None, reserve_bytes: int = 1 << 30,
-                 snapshot_cache_bytes: int = 0):
+                 snapshot_cache_bytes: int = 0, state_format: str = ""):
         if not isinstance(block_bytes, int) or block_bytes <= 0 or block_bytes % SECTOR:
             raise ValueError(f"block_bytes {block_bytes} must be a positive multiple of {SECTOR} for O_DIRECT")
         if not isinstance(stage_bytes, int) or stage_bytes < block_bytes:
@@ -79,6 +79,9 @@ class NvmeTier:
             raise ValueError("capacity_bytes must be a positive integer or None (the filesystem decides)")
         if type(snapshot_cache_bytes) is not int or snapshot_cache_bytes < 0:
             raise ValueError("snapshot cache must be nonnegative bytes")
+        if not isinstance(state_format, str):
+            raise ValueError("state_format must be a string")
+        self.state_format = state_format
         from engine.base.compressed_snapshots import CompressedSnapshots
         self.snapshot_cache = CompressedSnapshots(snapshot_cache_bytes) if snapshot_cache_bytes else None
         import torch
@@ -109,16 +112,20 @@ class NvmeTier:
     def has(self, seq: int) -> bool:
         meta = self.index.get(str(seq))
         return (meta is not None and not meta.get("deleting", False)
-                and meta.get("block_bytes", self.block_bytes) == self.block_bytes)
+                and self._compatible(meta))
+
+    def _compatible(self, meta: dict) -> bool:
+        return (meta.get("block_bytes", self.block_bytes) == self.block_bytes
+                and meta.get("state_format", "") == getattr(self, "state_format", ""))
 
     def keys(self) -> "list[int]":
         """Every parked conversation this layout can promote."""
         return sorted(int(k) for k in self.index if self.has(int(k)))
 
     def stale(self) -> "list[str]":
-        """Foreign block layouts stay on disk and cannot be promoted."""
+        """Foreign block or state layouts stay on disk and cannot be promoted."""
         return [k for k, meta in self.index.items()
-                if meta.get("block_bytes", self.block_bytes) != self.block_bytes]
+                if not self._compatible(meta)]
 
     def used_bytes(self) -> int:
         return sum(int(meta.get("bytes", 0)) for meta in self.index.values() if not meta.get("deleting"))
@@ -138,7 +145,7 @@ class NvmeTier:
         """
         foreign = [(meta.get("at", 0.0), int(k)) for k, meta in self.index.items()
                    if not meta.get("deleting")
-                   and meta.get("block_bytes", self.block_bytes) != self.block_bytes]
+                   and not self._compatible(meta)]
         if foreign:
             return min(foreign)[1]
         live = [(meta.get("at", 0.0), int(k)) for k, meta in self.index.items() if self.has(int(k))]
@@ -148,7 +155,7 @@ class NvmeTier:
         """What the foreign layouts occupy: the number the boot line owed the operator."""
         return sum(int(meta.get("bytes", 0)) for meta in self.index.values()
                    if not meta.get("deleting")
-                   and meta.get("block_bytes", self.block_bytes) != self.block_bytes)
+                   and not self._compatible(meta))
 
     def record(self, seq: int) -> "dict | None":
         path = self._record_path(seq)
@@ -193,6 +200,8 @@ class NvmeTier:
         self._sync_directory()                   # persist the new generation before referring to it
         meta = {"file": path.name, "blocks": blocks, "tokens": tokens, "bytes": written,
                 "block_bytes": self.block_bytes, "at": time.time(), "retired": retired, "extra": extra}
+        if getattr(self, "state_format", ""):
+            meta["state_format"] = self.state_format
         if record:
             meta["record"] = record
         self._save_manifest({**self.index, str(seq): meta})
@@ -214,7 +223,7 @@ class NvmeTier:
 
     def _demote(self, seq: int, storage, block_ids: "list[int]", tokens: int, extra=None, record=None) -> int:
         if str(seq) in self.stale():
-            raise ValueError(f"seq {seq} belongs to a different block layout")
+            raise ValueError(f"seq {seq} belongs to a different block layout or state format")
         import torch
 
         extra_bytes = int(extra.numel()) if extra is not None else 0
@@ -324,6 +333,8 @@ class NvmeTier:
             raise ValueError(f"seq {seq} is pending file cleanup, not promotion")
         if meta.get("block_bytes", self.block_bytes) != self.block_bytes:
             raise ValueError(f"seq {seq} was parked with {meta['block_bytes']} B blocks; this layout has {self.block_bytes}")
+        if not self._compatible(meta):
+            raise ValueError(f"seq {seq} was parked with a different state format")
         if block_ids is not None and len(block_ids) != meta["blocks"]:
             raise ValueError(f"seq {seq}: {meta['blocks']} blocks on disk, {len(block_ids)} given")
         extra_bytes = int(meta.get("extra", 0))

@@ -66,6 +66,7 @@ class BootPathTests(unittest.TestCase):
              patch.object(boot.drafter_mod, "load", return_value=draft) as draft_load, \
              patch.object(boot.drafter_mod, "specs", return_value=[]), \
              patch.object(boot, "layout", return_value=cache), \
+             patch.object(boot, "cache_capacity", return_value=(100, 9)), \
              patch.object(boot, "rank_loader", side_effect=StopAtBuild):
             with self.assertRaises(StopAtBuild):
                 boot.build(SimpleNamespace(rank=0), [0], None, "/ranks", 1., 1, True, None,
