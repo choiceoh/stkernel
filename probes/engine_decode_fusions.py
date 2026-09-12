@@ -98,6 +98,7 @@ def calibration(report):
     from engine.kernels.dense.calibration import Calibration
     class Layer:
         observer = None
+        input_dtype = torch.bfloat16
     # Wide drafter fc, the Gram which dominates the uncalibrated serving boot.
     width = 20480
     for rows in (1, 7):
@@ -116,6 +117,7 @@ def calibration(report):
             torch.maximum(peaks, xf.abs().amax(0), out=peaks)
         base, _ = _capture(baseline)
         cand, _ = _capture(lambda: layer.observer(x, mask))
+        c.flush()  # compile force-flush while disarmed, outside every timed arm
         c.arm()
         measurements = []
         for label, graph in (("B", base), ("A", cand), ("A", cand), ("B", base)):
@@ -125,5 +127,6 @@ def calibration(report):
         torch.testing.assert_close(c.rows["fc"], count, rtol=0, atol=0)
         torch.testing.assert_close(c.amax["fc"], peaks, rtol=0, atol=0)
         report("calibration_timing", rows=rows, width=width, measurements=measurements,
-               includes_partial_flush=True, scope="single-GPU captured observer; not consumer speed")
+               includes_partial_flush=True, staging_dtype=str(c.staging['fc'][0].dtype),
+               scope="single-GPU captured observer; not consumer speed")
         del base, cand, h, c, layer

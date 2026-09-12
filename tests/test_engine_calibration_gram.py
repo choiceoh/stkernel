@@ -13,20 +13,29 @@ class BudgetTests(unittest.TestCase):
         missing = PackStore.tiles("draft.fc", 20480)
         extra = Calibration.nbytes(missing, max_decode_rows=28) - Calibration.nbytes(missing)
         self.assertEqual(extra, (GRAM_ROWS + 27) * 20480 * 4)
+        bf16_extra = Calibration.nbytes(missing, max_decode_rows=28, input_dtype=torch.bfloat16) - Calibration.nbytes(missing)
+        self.assertEqual(bf16_extra * 2, extra)
         self.assertLess(Calibration.nbytes(missing, max_decode_rows=28), 2 << 30)
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA graph and Triton execution required")
 class BufferedGramTests(unittest.TestCase):
     def test_graph_replay_masks_wraps_shape_changes_and_partial_save(self):
+        self._check_graph(torch.float32)
+
+    def test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation(self):
+        self._check_graph(torch.bfloat16)
+
+    def _check_graph(self, dtype):
         class Layer:
             observer = None
+            input_dtype = dtype
         for width in (64, 95):
             with self.subTest(width=width):
                 layer = Layer()
                 c = Calibration("cuda", max_decode_rows=28)
                 c.attach("x", layer, PackStore.tiles("x", width), small_rows=True)
-                inputs = {n: torch.zeros(n, width, device="cuda") for n in (1, 7, 28)}
+                inputs = {n: torch.zeros(n, width, device="cuda", dtype=dtype) for n in (1, 7, 28)}
                 masks = {n: torch.zeros(n, dtype=torch.bool, device="cuda") for n in inputs}
                 graphs = {}
                 stream = torch.cuda.Stream()
@@ -50,14 +59,14 @@ class BufferedGramTests(unittest.TestCase):
                 for step in range(65):
                     n = (1, 7, 28)[step % 3]
                     # FP32 inputs exercise tf32x3, not only exactly representable BF16.
-                    x = torch.randn(n, width, generator=gen, device="cuda")
+                    x = torch.randn(n, width, generator=gen, device="cuda", dtype=dtype)
                     mask = torch.arange(n, device="cuda") % 3 != step % 3
                     inputs[n].copy_(x)
                     masks[n].copy_(mask)
                     graphs[n].replay()
                     kept.append(x[mask])
                     if step == 32:
-                        large = torch.randn(71, width, generator=gen, device="cuda")
+                        large = torch.randn(71, width, generator=gen, device="cuda", dtype=dtype)
                         layer.observer(large, None)  # eager prefill flushes the pending decode tail first
                         kept.append(large)
                 expected_rows = torch.cat(kept)
@@ -83,6 +92,20 @@ class BufferedGramTests(unittest.TestCase):
         c.arm()
         layer.observer(torch.ones(28, 64, device="cuda"), None)
         self.assertEqual(c.staging, {})
+        self.assertEqual(c.progress(), 0)
+
+    def test_declared_bf16_staging_refuses_precision_loss(self):
+        class Layer:
+            observer = None
+            input_dtype = torch.bfloat16
+        layer = Layer()
+        c = Calibration('cuda', max_decode_rows=28)
+        c.attach('x', layer, PackStore.tiles('x', 64), small_rows=True)
+        c.arm()
+        for x, mask in ((torch.randn(7, 64, device='cuda'), None),
+                        (torch.randn(7, 64, device='cuda').bfloat16(), torch.full((7,), .5, device='cuda'))):
+            with self.assertRaises(ValueError):
+                layer.observer(x, mask)
         self.assertEqual(c.progress(), 0)
 
     def test_peak_only_masked_strided_rows_need_no_hessian_staging(self):

@@ -35,7 +35,7 @@ class Calibration:
         self.budget, self.used = budget_bytes, 0
         self.arena = arena
         self.H, self.rows, self.tiles = {}, {}, {}          # blob key -> sums, rows, (start, width); layer name -> tiles
-        self.staging = {}                                  # key -> (float32 row buffer, device cursor); CUDA small-row Hessians only
+        self.staging = {}                                  # key -> (declared-input row buffer, device cursor); CUDA small-row Hessians only
         self.amax, self.unsmooth = {}, {}                   # blob key -> channel peaks [width]; layer name -> the s its input was divided by
         self.deferred = []                                  # (layer name, key) that did not fit this boot's budget
         self.armed = torch.zeros((), dtype=torch.float32, device=self.device)
@@ -57,7 +57,8 @@ class Calibration:
         unsmoothed domain so every boot derives its own factors from scratch. Returns whether the tiles fit the
         budget (all or nothing per layer)."""
         decode_rows = self.max_decode_rows if small_rows and self.device.type == "cuda" else 0
-        need = self.nbytes(missing, max_decode_rows=decode_rows)
+        input_dtype = getattr(layer, 'input_dtype', torch.float32)
+        need = self.nbytes(missing, max_decode_rows=decode_rows, input_dtype=input_dtype)
         if self.used + need > self.budget:
             self.deferred.extend((name, key) for key, _start, _width, _h in self._needs(missing))
             return False
@@ -68,10 +69,11 @@ class Calibration:
                 self.H[key] = torch.zeros(width, width, dtype=torch.float32, device=self.device)
             if hessian and decode_rows:
                 shape = (GRAM_ROWS + decode_rows - 1, width)
+                itemsize = torch.empty((), dtype=input_dtype).element_size()
                 if self.arena is not None:
-                    buffer = self.arena.carve(shape[0] * width * 4, f"calibration/staging/{key}").view(torch.float32).view(shape)
+                    buffer = self.arena.carve(shape[0] * width * itemsize, f"calibration/staging/{key}").view(input_dtype).view(shape)
                 else:
-                    buffer = torch.empty(shape, dtype=torch.float32, device=self.device)
+                    buffer = torch.empty(shape, dtype=input_dtype, device=self.device)
                 self.staging[key] = (buffer, torch.zeros((), dtype=torch.int32, device=self.device))
             self.rows[key] = torch.zeros((), dtype=torch.float32, device=self.device)
             self.amax[key] = torch.zeros(width, dtype=torch.float32, device=self.device)
@@ -83,9 +85,12 @@ class Calibration:
         return True
 
     @staticmethod
-    def nbytes(missing, max_decode_rows: int = 0) -> int:
+    def nbytes(missing, max_decode_rows: int = 0, input_dtype=torch.float32) -> int:
+        if input_dtype not in (torch.float32, torch.bfloat16):
+            raise ValueError('calibration staging supports declared FP32 or BF16 inputs')
+        itemsize = torch.empty((), dtype=input_dtype).element_size()
         return sum((width * width * 4 if hessian else 0) + width * 4 + 4096
-                   + ((GRAM_ROWS + max_decode_rows - 1) * width * 4 if hessian and max_decode_rows else 0)
+                   + ((GRAM_ROWS + max_decode_rows - 1) * width * itemsize if hessian and max_decode_rows else 0)
                    for _key, _start, width, hessian in Calibration._needs(missing))
 
     def arm(self) -> None:
@@ -98,6 +103,9 @@ class Calibration:
             from .calibration_gram import observe
             for key, start, width, _hessian in self.tiles[name]:
                 buffer, cursor = self.staging.get(key, (None, None))
+                if buffer is not None and buffer.dtype == torch.bfloat16:
+                    if flat.dtype != torch.bfloat16 or (rows_ok is not None and rows_ok.dtype != torch.bool):
+                        raise ValueError('BF16 calibration requires BF16 inputs and a boolean committed-row mask')
                 observe(flat[:, start:start + width], rows_ok, buffer, self.H.get(key), cursor,
                         self.armed, self.rows[key], self.amax[key])
             return

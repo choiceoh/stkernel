@@ -313,7 +313,9 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             calib_plan.append(("target", "head", missing, True))      # its rows are the batch's own, prefill and decode alike
         budget = BUDGET_BYTES
         for _module, _key, missing, _small in calib_plan:
-            need = Calibration.nbytes(missing, max_decode_rows=max_seqs * (D.k + 1 if D else 1) if _small else 0)
+            from engine.kernels.dense import DenseLinear
+            need = Calibration.nbytes(missing, max_decode_rows=max_seqs * (D.k + 1 if D else 1) if _small else 0,
+                                      input_dtype=DenseLinear.input_dtype if _module == "drafter" else torch.float32)
             if need <= budget:
                 budget -= need
                 calib_bytes += need

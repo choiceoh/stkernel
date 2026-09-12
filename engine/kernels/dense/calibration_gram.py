@@ -4,6 +4,8 @@ Append, accumulate, advance are ordered on the caller's stream. The staging
 plane has room for the threshold plus one maximum-sized call, so crossing the
 threshold never overwrites an unconsumed row. A fixed persistent grid exits
 immediately between flushes instead of launching one CTA per Hessian tile.
+Declared BF16 dense inputs remain BF16 in staging and use a BF16 dot with FP32
+accumulation. Generic FP32 observers keep FP32 staging and tf32x3 products.
 """
 import triton as tr
 import triton.language as tl
@@ -53,7 +55,10 @@ def _gram(Buffer, H, Cursor, Armed, K: tl.constexpr, M: tl.constexpr,
                             (r[None, :] < n) & (i[:, None] < K), 0)
                 b = tl.load(Buffer + r[:, None] * K + j[None, :],
                             (r[:, None] < n) & (j[None, :] < K), 0)
-                total += tl.dot(a, b, input_precision="tf32x3")
+                if Buffer.dtype.element_ty == tl.bfloat16:
+                    total += tl.dot(a, b)  # exact BF16 inputs, FP32 accumulation
+                else:
+                    total += tl.dot(a, b, input_precision="tf32x3")
             addr = H + i[:, None] * K + j[None, :]
             mask = (i[:, None] < K) & (j[None, :] < K)
             old = tl.load(addr, mask, 0)

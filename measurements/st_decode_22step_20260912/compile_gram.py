@@ -41,4 +41,15 @@ for fn, sig, const in (
                             options={"num_warps": 4, "enable_fp_fusion": False})
     rows.append(dict(kernel=fn.__name__, shared=kernel.metadata.shared))
 assert not torch.cuda.is_initialized()
+for m in (1, 7, 28):
+    kernel = triton.compile(ASTSource(_gram, dict(Buffer="*bf16", H="*fp32", Cursor="*i32", Armed="*fp32"),
+        constexprs=dict(K=20480, M=m, CAPACITY=283, FORCE=False, PROGRAMS=96, THRESHOLD=256, B=32, R=32)),
+        target=GPUTarget("cuda", 121, 32), options={"num_warps": 4})
+    rows.append(dict(kernel="bf16_gram", rows=m, shared=kernel.metadata.shared))
+kernel = triton.compile(ASTSource(_observe,
+    dict(X="*bf16", Mask="*i8", Buffer="*bf16", Cursor="*i32", Armed="*fp32", Count="*fp32", Peaks="*fp32"),
+    constexprs=dict(K=20480, M=7, SX=20480, MASKED=True, STAGE=True, BM=8, BC=128)),
+    target=GPUTarget("cuda", 121, 32), options={"num_warps": 4, "enable_fp_fusion": False})
+rows.append(dict(kernel="bf16_observe", rows=7, shared=kernel.metadata.shared))
+assert not torch.cuda.is_initialized()
 print(json.dumps(dict(status="PASS", gpu_used=False, variants=rows)))
