@@ -26,7 +26,7 @@ class Caches:
     def kda(self, layer, slot):
         return self.rings[layer]
 
-    def mark_kda(self, layer, snap, state, taps):
+    def mark_kda(self, layer, snap, state, taps, **kwargs):
         self.marks[layer, snap] = (state.clone(), taps.clone())
 
 

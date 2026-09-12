@@ -294,12 +294,13 @@ class Glm53Caches:
         if ("draft", -1) in self._snap:
             self._snap["draft", -1][snap].copy_(self.draft_ring(slot))
 
-    def mark_kda(self, layer: int, snap: int, state, taps) -> None:
+    def mark_kda(self, layer: int, snap: int, state, taps, *, position: int, round_seed: int) -> None:
         """A block boundary inside a prefill step: the layer's recurrent state there [H, K, V] and the conv inputs of the
         conv-1 positions before it [conv-1, C], straight into snapshot `snap` (net._kda cuts the recurrence at the mark)."""
         if not 0 <= snap < self.snapshots:
             raise IndexError("a mark needs a declared snapshot")
-        self._snap["rec", layer][snap].copy_(state)
+        from engine.modules.kda_storage import store_state
+        store_state(self._snap["rec", layer][snap], state, position, round_seed)
         self._snap["conv", layer][snap].copy_(taps.T)
 
     def mark_draft(self, snap: int, slot: int) -> None:

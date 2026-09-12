@@ -6,6 +6,7 @@ import base64
 import gzip
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import threading
@@ -54,6 +55,41 @@ def steady_errors(report, requests, concurrency):
     return errors
 
 
+def generation_summary(requests):
+    """Length evidence, grouped by workload/window; censored runs stay visible.
+
+    A stop reason does not prove natural reasoning termination: the server
+    can force a reasoning boundary first. Record budget hits independently.
+    Fixed/min-token runs cannot establish verbosity and are excluded.
+    """
+    groups = {}
+    for r in requests:
+        if not r.get('phase', '').startswith('measure-') or r.get('fixed_decode') or r.get('min_tokens', 0):
+            continue
+        key = tuple(r.get(k) for k in ('phase', 'ctx', 'question', 'concurrency', 'max_tokens', 'reasoning_budget'))
+        groups.setdefault(key, []).append(r)
+    def distribution(values):
+        values = sorted(v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v))
+        return dict(n=len(values), mean=sum(values)/len(values),
+                    p50=values[math.ceil(.5*len(values))-1], p95=values[math.ceil(.95*len(values))-1]) if values else dict(n=0, mean=None, p50=None, p95=None)
+    result = []
+    for key, rows in groups.items():
+        finishes = {}
+        for r in rows:
+            reason = r.get('finish_reason') or 'unknown'
+            finishes[reason] = finishes.get(reason, 0) + 1
+        known_budget = [r for r in rows if isinstance(r.get('reasoning_tokens'), int)
+                        and isinstance(r.get('reasoning_budget'), int) and r['reasoning_budget'] > 0]
+        hits = sum(r['reasoning_tokens'] >= r['reasoning_budget'] for r in known_budget)
+        result.append(dict(zip(('phase', 'ctx', 'question', 'concurrency', 'max_tokens', 'reasoning_budget'), key),
+            requests=len(rows), completion_tokens=distribution([r.get('completion_tokens') for r in rows]),
+            reasoning_tokens=distribution([r.get('reasoning_tokens') for r in rows]), finish_reasons=finishes,
+            stop_rate=finishes.get('stop', 0)/len(rows), length_limit_rate=finishes.get('length', 0)/len(rows),
+            reasoning_budget_known=len(known_budget), reasoning_budget_hits=hits,
+            reasoning_budget_hit_rate=hits/len(known_budget) if known_budget else None))
+    return result
+
+
 class Run:
     def __init__(self, record, out, url):
         self.record, self.out = record, Path(out).expanduser()
@@ -64,6 +100,7 @@ class Run:
         self.url = url.split('/v1/')[0] + '/v1/engine/latency'
         self.lock = threading.Lock()
         self.phase, self.token, self.requests = 'initializing', None, []
+        self.generation_requests = []
         self.complete = False
         record.update(run_id=self.id, artifacts=str(self.path), measurement_policy=POLICY,
                       recording={'schema': 1, 'status': 'running'})
@@ -170,13 +207,15 @@ class Run:
     def request(self, timing, text, events):
         value = dict(timing, phase=self.phase, text=text, channels=events)
         with self.lock:
-            self.requests.append(timing.copy())
+            self.requests.append(dict(timing, phase=self.phase))
+            self.generation_requests.append(dict(timing, phase=self.phase))
             with (self.path / 'requests.jsonl').open('a') as f:
                 f.write(json.dumps(value, ensure_ascii=False) + '\n')
                 f.flush()
                 os.fsync(f.fileno())
 
     def finish(self, error=None):
+        self.record['generation_summary'] = generation_summary(self.generation_requests)
         if error:
             self.record['recording'].update(status='incomplete', error=str(error))
             # Preserve the server token and its on-disk running manifest for recovery.

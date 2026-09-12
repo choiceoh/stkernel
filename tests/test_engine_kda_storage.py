@@ -106,9 +106,12 @@ class StateCopyTests(unittest.TestCase):
         # A prefill marker arrives in FP32, rounds once, then copies exactly.
         source = torch.linspace(-1., 1., rec[0].numel()).reshape(rec[0].shape)
         taps = torch.full((F.conv - 1, conv.shape[0]), .125, dtype=torch.bfloat16)
-        caches.mark_kda(0, 0, source, taps)
+        from engine.modules.kda_storage import store_state, rounding_seed
+        rounded = torch.empty_like(source, dtype=torch.float16)
+        store_state(rounded, source, 15, rounding_seed(0, 0))
+        caches.mark_kda(0, 0, source, taps, position=15, round_seed=rounding_seed(0, 0))
         caches.restore(2, 16, 0)
-        self.assertTrue(torch.equal(caches.kda(0, 2)[1][15 % (F.spec_k + 1)], source.half()))
+        self.assertTrue(torch.equal(caches.kda(0, 2)[1][15 % (F.spec_k + 1)], rounded))
         self.assertLessEqual(arena.used, size + 256)
 
     def test_experiment_selection_and_production_fact_are_explicit(self):

@@ -43,6 +43,7 @@ from engine.base.kv_tier import NvmeTier                         # noqa: E402
 from engine.base.prefix import PrefixCache                       # noqa: E402
 from engine.base.shapes import chunk_for                         # noqa: E402
 from engine.base.tiered_kv import TieredKV                       # noqa: E402
+from engine.modules.kda_storage import ROUNDING, FP16_FORMAT    # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
 from engine.profiles.glm53.caches import (Glm53Caches, layout, snapshot_layout, stage_bytes,
                                         cache_capacity, state_dtype)   # noqa: E402
@@ -288,6 +289,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
     reference_snapshot_bytes = snapshot_layout(F, net.layers, draft_shape, state_storage="fp32")[0]
     recorder.gauge("kda_state_dtype", F.kda_state_dtype)
+    recorder.gauge("kda_state_rounding", ROUNDING if F.kda_state_dtype == "fp16" else "none")
     saved = ns * (layout(F, net.layers, draft_shape, state_storage="fp32").slot_bytes - sb)
     saved += snapshots * (reference_snapshot_bytes - snapshot_bytes)
     saved += ns * (snapshot_layout(F, net.layers, state_storage="fp32")[0]
@@ -502,7 +504,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                         print(f"  rank{comm.rank}: tenant state cleared -- the fleet changed hands from {left}")
                 # Missing format tags name historical FP32 bytes. FP16 cannot
                 # discover or restore those conversations/prefix snapshots.
-                state_format = "glm53-kda-fp16-v1" if F.kda_state_dtype == "fp16" else ""
+                state_format = FP16_FORMAT if F.kda_state_dtype == "fp16" else ""
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes,  # a block is one NVMe unit (block-major)
                                 capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB),
                                 state_format=state_format)
@@ -982,6 +984,7 @@ def fleet(a) -> int:
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
                             "kda_state_dtype": F.kda_state_dtype,
+                            "kda_state_rounding": ROUNDING if F.kda_state_dtype == "fp16" else "none",
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
                             "context_ceiling": str(engine.max_context),
                             "packs": f"gptq {engine.pack_stats.get('gptq', 0)} rtn {engine.pack_stats.get('rtn', 0)}",   # what the store built or read

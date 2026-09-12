@@ -138,7 +138,7 @@ class KdaRingTests(unittest.TestCase):
                     out, expected, states = self.expected(args, backing, ring, physical, context)
                     graph.replay()
                     # Start from the same FP16 bits, do an entire step in FP32,
-                    # then allow one FP16 rounding plus the independently gated
+                    # then allow one FP16 ULP (SR can select either neighbor) plus the independently gated
                     # FP32 arithmetic tolerance. Pointer dtype changes compiler
                     # tiling: round-to-nearest ties need not choose identical
                     # FP16 bits when FP32 sums differ by a few ULPs.
@@ -152,7 +152,7 @@ class KdaRingTests(unittest.TestCase):
                         row = (context + i) % ring.shape[1]
                         stored = ring[physical, row]
                         self.assertTrue(torch.isfinite(stored).all())
-                        tolerance = state.abs() * 2**-11 + 2**-25 + state.abs().max() * 3e-6
+                        tolerance = state.abs() * 2**-10 + 2**-24 + state.abs().max() * 3e-6
                         self.assertTrue(((stored.float() - state).abs() <= tolerance).all(),
                                         f'T={t} slot={physical} ctx={context} state={i}: beyond FP16 rounding')
                         target[physical, row].copy_(stored)

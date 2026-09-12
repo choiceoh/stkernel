@@ -429,6 +429,15 @@ def kda_state_storage(metrics_text: str):
     return None
 
 
+def kda_state_rounding(metrics_text: str):
+    for line in metrics_text.splitlines():
+        if line.startswith("st:lane_info{"):
+            match = re.search(r'\bkda_state_rounding="([^"]+)"', line)
+            if match:
+                return match.group(1)
+    return None  # old records have no rounding attestation
+
+
 def engine_shape(completion_url: str) -> dict:
     """The served shape this run measured, stamped on the record.
 
@@ -632,6 +641,8 @@ def _main() -> int:
     metrics_before = _metrics_text(bd.METRICS)
     if precision := kda_state_storage(metrics_before):
         rec["kda_state_dtype"] = precision
+    if rounding := kda_state_rounding(metrics_before):
+        rec["kda_state_rounding"] = rounding
     before_traffic = traffic_state(metrics_before)
     if args.require_exclusive and (before_traffic["running"] != 0 or before_traffic["waiting"] != 0):
         raise RuntimeError("exclusive onepass requires an idle server before sending requests")

@@ -91,7 +91,7 @@ def main():
     if "kda-storage" in selected:
         import unittest
         suite = unittest.defaultTestLoader.loadTestsFromNames(
-            ["tests.test_engine_kda_ring", "tests.test_engine_boundary_stage"])
+            ["tests.test_engine_kda_ring", "tests.test_engine_boundary_stage", "tests.test_engine_kda_rounding", "tests.test_engine_state"])
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         assert result.wasSuccessful() and not result.skipped, "KDA FP32/FP16 storage checks did not pass"
         report("kda-storage", passed=True, tests=result.testsRun, arithmetic="fp32", storage=["fp32", "fp16"])

@@ -5,7 +5,7 @@ import triton
 from .fused_recurrent import fused_recurrent_gated_delta_rule_fwd_kernel
 
 
-def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound):
+def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, round_seed=0):
     """Return dense output and store FP32 accumulators directly in the typed ring.
 
     Ring is [slots,R,HV,K,V], with dense per-slot rows and optional slot
@@ -18,10 +18,10 @@ def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, low
     [0, slots), context nonnegative, and concurrent invocations must own
     different slots. Device values are never copied to the host.
     """
-    return _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound)
+    return _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, round_seed=round_seed)
 
 
-def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False):
+def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False, round_seed=0):
     if any(t.ndim != 4 for t in (q, k, v, g)):
         raise ValueError("ring KDA requires [1,T,H,D] inputs")
     b, t, h, kd = k.shape
@@ -82,6 +82,6 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
         ring_slot=slot, ring_context=context, RING_SIZE=ring.shape[1],
         RING_SLOT_STRIDE=ring.stride(0), RING_DEVICE_INDICES=device_indices,
         deferred_keys=factors[0], deferred_decay=factors[1], deferred_updates=factors[2],
-        DEFERRED_STATE=deferred,
+        DEFERRED_STATE=deferred, ROUND_SEED=round_seed,
         num_warps=1, num_stages=3)
     return (out, factors) if deferred else out

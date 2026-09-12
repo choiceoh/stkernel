@@ -137,9 +137,9 @@ class GraphCaches:
         from engine.kernels.state import write_conv
         write_conv(inputs, self.real._fields["conv", layer], self.slots[slot:slot+1], context)
 
-    def write_rec(self, layer, slot, context, states):
+    def write_rec(self, layer, slot, context, states, *, round_seed=0):
         from engine.kernels.state import write_ring
-        write_ring(states, self.real._fields["rec", layer], self.slots[slot:slot+1], context)
+        write_ring(states, self.real._fields["rec", layer], self.slots[slot:slot+1], context, round_seed=round_seed)
 
     def tail(self, layer, slot):
         return self.real._fields["tail", layer].index_select(0, self.slots[slot:slot+1])[0]

@@ -14,6 +14,7 @@ import triton
 import triton.language as tl
 
 from .op import exp, log
+from .rounding import fp16_sr
 
 
 @triton.heuristics(
@@ -24,7 +25,7 @@ from .op import exp, log
         "IS_SPEC_DECODING": lambda args: args["num_accepted_tokens"] is not None,
     }
 )
-@triton.jit(do_not_specialize=["N", "T", "ring_slot", "ring_context"])
+@triton.jit(do_not_specialize=["N", "T", "ring_slot", "ring_context", "ROUND_SEED"])
 def fused_recurrent_gated_delta_rule_fwd_kernel(
     q,
     k,
@@ -76,6 +77,7 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     deferred_decay=None,
     deferred_updates=None,
     DEFERRED_STATE: tl.constexpr = False,
+    ROUND_SEED=0,
 ):
     i_k, i_v, i_nh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_n, i_hv = i_nh // HV, i_nh % HV
@@ -228,7 +230,11 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
             # Even when T == RING_SIZE, only this CTA can overwrite its
             # initial cells, already loaded into registers before the loop.
             p_ht = ht + ring_base + ((context + i_t) % RING_SIZE) * stride_final_state_token
-            tl.store(p_ht, b_h.to(p_ht.dtype.element_ty), mask=mask_h)
+            if p_ht.dtype.element_ty == tl.float16:
+                stored = fp16_sr(b_h, context + i_t, i_hv * K * V + state_offsets, HV * K * V, ROUND_SEED)
+            else:
+                stored = b_h.to(p_ht.dtype.element_ty)
+            tl.store(p_ht, stored, mask=mask_h)
         elif INPLACE_FINAL_STATE:
             # Load state index and check for invalid entries
             final_state_idx = tl.load(

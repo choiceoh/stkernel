@@ -2,6 +2,7 @@
 import torch
 import triton
 import triton.language as tl
+from .kda.rounding import fp16_sr
 
 
 @triton.jit
@@ -41,11 +42,13 @@ def _write_conv(SRC, DST, SLOT, CTX, SS: tl.constexpr, DS: tl.constexpr,
 @triton.jit
 def _write_ring(SRC, DST, SLOT, CTX, SS: tl.constexpr, DS: tl.constexpr,
                 RS: tl.constexpr, WIDTH: tl.constexpr, RING: tl.constexpr,
-                FIRST: tl.constexpr, BLOCK: tl.constexpr):
+                FIRST: tl.constexpr, BLOCK: tl.constexpr, ROUND_SEED):
     row = tl.program_id(0)
     col = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
     slot, ctx = tl.load(SLOT), tl.load(CTX)
     value = tl.load(SRC + (FIRST + row) * SS + col, col < WIDTH, other=0)
+    if DST.dtype.element_ty == tl.float16 and SRC.dtype.element_ty != tl.float16:
+        value = fp16_sr(value, ctx.to(tl.int64) + FIRST + row, col, WIDTH, ROUND_SEED)
     tl.store(DST + slot * DS + ((ctx + FIRST + row) % RING) * RS + col, value, col < WIDTH)
 
 
@@ -76,14 +79,14 @@ def write_conv(src, dst, slot, context):
         channels, dst.shape[2], first, 256)
 
 
-def write_ring(src, dst, slot, context):
+def write_ring(src, dst, slot, context, *, round_seed=0):
     """Write each changed position once, preserving other slots and ring cells."""
     flat = src.reshape(src.shape[0], -1)
     length, width = flat.shape
     first = max(0, length - dst.shape[1])
     _write_ring[(length-first, triton.cdiv(width, 256))](
         flat, dst, slot, context, flat.stride(0), dst.stride(0), dst.stride(1),
-        width, dst.shape[1], first, 256)
+        width, dst.shape[1], first, 256, round_seed)
 
 
 # -- boundaries crossed by a decode step ahead of the host (45차 §23; profiles/glm53/caches.stage_boundaries) --------------

@@ -41,6 +41,7 @@ import torch.nn.functional as Fn
 from engine.base.constants import fresh, iota
 from engine.base.graph_labels import operation
 from engine.modules.sparse_indexer import topk_positions
+from engine.modules.kda_storage import rounding_seed, store_state
 from engine.profiles.glm53 import specs
 from engine.profiles.glm53.facts import TP, Facts
 from engine.profiles.glm53.lanes import Lanes, swiglu_clamped
@@ -364,6 +365,7 @@ class Glm53Net:
         core = torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
         wc, wr = self.conv_ring, self.rec_ring
         captured = getattr(step, "captured", False)
+        round_seed = rounding_seed(L, self.rank)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
             direct_ring = self.lanes.kda_recurrent_ring is not None and s.length <= wr
@@ -398,7 +400,7 @@ class Glm53Net:
             g_raw, beta = g_raw_all[sl][None], beta_all[sl][None]
             if direct_ring:
                 o = self.lanes.kda_recurrent_ring(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"],
-                                                  ring, physical, s.ctx, F.lower_bound)
+                                                  ring, physical, s.ctx, F.lower_bound, round_seed=round_seed)
             elif s.length > wr:                                                     # a prefill chunk: only the final state is kept --
                 # except at the step's marks (prefix snapshots at block boundaries inside the chunk): the lane hands out the
                 # fp32 state at the start of the kernel chunks the marks sit on, out of the one uncut computation (45차 §23:
@@ -412,17 +414,18 @@ class Glm53Net:
                     o, state, states = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound,
                                                             states_at=[m // unit for m, _ in marks])
                     for (m, snap), st in zip(marks, states.unbind(0)):
-                        caches.mark_kda(L, snap, st, qkv_all[sl][m - (K - 1):m])
+                        caches.mark_kda(L, snap, st, qkv_all[sl][m - (K - 1):m],
+                                        position=s.ctx + m - 1, round_seed=round_seed)
                 else:
                     o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
-                rec_ring[(s.ctx + s.length - 1) % wr] = state[0]
+                store_state(rec_ring[(s.ctx + s.length - 1) % wr], state[0], s.ctx + s.length - 1, round_seed)
             else:                                                                   # a decode/verify step: one state per position
                 o, states = self.lanes.kda_recurrent(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
                 if captured:
-                    caches.write_rec(L, s.slot, s.ctx, states)
+                    caches.write_rec(L, s.slot, s.ctx, states, round_seed=round_seed)
                 else:
                     for i in range(s.length):
-                        rec_ring[(s.ctx + i) % wr] = states[i]
+                        store_state(rec_ring[(s.ctx + i) % wr], states[i], s.ctx + i, round_seed)
             core[sl] = o[0]
         out = self.lanes.kda_output_norm(core, g_out, p[n + "o_norm"], O_NORM_EPS)
         return (reduce or self.comm.all_reduce)(self.linear(out.reshape(N, Hl * D), n + "o_proj"))

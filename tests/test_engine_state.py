@@ -50,7 +50,8 @@ class StateGraphTests(unittest.TestCase):
         from engine.profiles.glm53.caches import Glm53Caches, layout
         from engine.profiles.glm53.decode_graphs import GraphCaches
         from tests.test_engine_glm53 import tiny_facts
-        F = tiny_facts()
+        from dataclasses import replace
+        F = replace(tiny_facts(), kda_state_dtype="fp32")  # addressing oracle; FP16 SR has its own graph gate
         plan = layout(F, [0, 1])
         caches = [Glm53Caches(Arena(plan.nbytes(4, 3)), F, [0, 1], 4, 3) for _ in range(2)]
         actual, expected = caches
