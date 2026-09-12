@@ -1,5 +1,7 @@
 # GLM 5.3 Flash required-first request ordering evaluation
 
+> 그대로 두는 기록 — **캠페인 산출물.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 The experimental `glm53_required_first` request option remains off until an
 actual serving comparison supports changing the default. Parser replay checks
 establish transport correctness, not generated-argument completeness.

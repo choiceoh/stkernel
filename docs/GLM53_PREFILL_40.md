@@ -1,5 +1,7 @@
 # GLM-5.3-Flash prefill: 40% throughput campaign
 
+> 그대로 두는 기록 — **캠페인 산출물.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 Baseline source: `8d36ee8`. Original PR: #368 (merged).
 The earlier direct-output candidate is `fa1371e`.
 

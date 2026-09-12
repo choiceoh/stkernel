@@ -1,5 +1,7 @@
 # Shared experiments for coding agents
 
+> 살아 있는 참조 — **플릿 큐의 계약. 큐가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
+
 Optimize the time from an agent's question to usable evidence. Submit once,
 continue independent implementation, and read the shared result. `fleet.sh`
 owns GPU admission and fast source preflight. GPU experiments run only the standard

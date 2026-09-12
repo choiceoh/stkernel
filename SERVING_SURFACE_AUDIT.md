@@ -1,5 +1,7 @@
 # dsv4 서빙 표면 감사
 
+> 그대로 두는 기록 — **2026-08-11 감사, 대상은 dsv4 vLLM.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 Date: 2026-08-11
 Scope: `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6`
 (image ID `sha256:b763d81b57f7611378a514fa0faf859c3b0d0ec1010f8c5115bea11a60d49ec3`,

@@ -1,5 +1,7 @@
 # 메모리: vLLM 과 ST — 부팅과 서빙 (2026-09-12, srv4, GPU 없음)
 
+> 그날의 조사 — **2026-09-12 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 같은 상자 이미지의 vLLM(`v1/worker/gpu_worker.py`, `config/cache.py`, `v1/core/sched/scheduler.py`)을 읽고,
 `MEMORY_REVIEW_20260911`·`OOM_STUDY_20260911`·`base/{arena,cache_spec,runtime_memory}` 와 줄줄이 맞춰 봤다.
 **결론: 부팅은 vLLM 이 재고 우리는 선언한다. 서빙은 둘 다 눈이 없는데, 눈이 없어서 죽는 쪽은 우리다.**
