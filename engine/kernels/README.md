@@ -10,6 +10,7 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 | KDA 출력 정규화 | `kda/output.py`에서 FP32 RMS norm·weight·sigmoid gate를 합치고 BF16으로 한 번 저장 | PyTorch, Triton |
 | causal conv | `causal_conv_single.py`의 단일 시퀀스 conv·상태 반환 커널; 범용 prefill / update는 `causal_conv.py` | PyTorch, Triton (범용 커널은 NumPy 추가) |
 | 상태 링 | `state.py`에서 물리 슬롯·위치로 필요한 이력을 읽고 변경된 위치만 쓰기 | PyTorch, Triton |
+| W4 GEMM | `w4_gemm.py`: 행 6..24 짜리 활성에 int4(g32, bf16 스케일) 가중치를 한 번 스트리밍 — 드래프터의 47 GEMM(45차 §23 GPU 판정 5차) | PyTorch, Triton |
 | mHC pre / post | `mhc/`의 TileLang 혼합 커널과 작은 M의 prenorm 패딩 | PyTorch, TileLang, Triton, DeepGEMM |
 | 인덱서 로짓 | `deep_gemm.py`에서 `deep_gemm.fp8_fp4_mqa_logits` 직접 호출 | DeepGEMM |
 | 인덱서 query 양자화 | `kpool.py`의 Hadamard-128·FP8 커널, GB10 행 수별 1/8/32행 tile | PyTorch, Triton |

@@ -2,6 +2,7 @@
 import importlib.util
 from types import SimpleNamespace
 import unittest
+import unittest.mock
 from pathlib import Path
 
 torch = None
@@ -169,6 +170,64 @@ class DrafterTests(unittest.TestCase):
                 self.assertAlmostEqual(float(dists[r, s].sum()), 1.0, places=4)
                 self.assertLessEqual(int((dists[r, s] > 0).sum()), F.sel_top_k)
         self.assertTrue(torch.equal(dists[1] > 0, torch.nn.functional.one_hot(greedy[1], 21).bool()), "one-hot on the greedy pick")
+
+    @unittest.skipUnless(importlib.util.find_spec("triton") is not None, "requires Triton (the W4 kernel module)")
+    def test_w4_drafter_binds_the_packed_file_and_stays_close_to_bf16(self):
+        """A drafter with K-multiples of 128: its W4 file written by the preshard path, loaded by the rank loader,
+        bound as 47-equivalent packed pairs, and its block within a few percent of the bf16 block."""
+        import tempfile
+        from engine.base.comm import Comm
+        from engine.base.loader import RankLoader
+        from engine.base.preshard import RankWriter
+        from engine.profiles.glm53.drafter import Drafter, DrafterFacts, W4_FILE, gemms, ring_cells, specs, w4_names, write_w4_file
+        F = DrafterFacts(layers=1, hidden=256, heads=4, kv_heads=2, head_dim=64, inter=256, rms_eps=1e-6, rope_theta=10000.,
+                         window=8, block=4, mask_id=20, conv_taps=2, conv_group=16, sel_rank=4, sel_top_k=3, target_layers=(1,), k=3)
+        gen = torch.Generator().manual_seed(11)
+        rand = lambda *shape: (torch.randn(*shape, generator=gen) * 0.05).bfloat16()
+        params = {s.name: (torch.ones(*s.shape, dtype=torch.bfloat16) if s.name.endswith("norm.weight") else rand(*s.shape)) for s in specs(F)}
+        self.assertEqual(len(gemms(F)), 2 + 9 * F.layers)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "drafter"; src.mkdir()
+            w = RankWriter(src / "model.safetensors", specs(F), {"model": "test"})
+            for name, t in params.items():
+                w.put(name, t)
+            w.close()
+            import json
+            (src / "config.json").write_text(json.dumps({
+                "num_hidden_layers": 1, "hidden_size": 4096, "num_attention_heads": 4, "num_key_value_heads": 2, "head_dim": 64,
+                "intermediate_size": 256, "rms_norm_eps": 1e-6, "rope_parameters": {"rope_theta": 10000., "rope_type": "default"},
+                "sliding_window": 8, "dflash_config": {"block_size": 4, "mask_token_id": 20, "conv_kernel_size": 2, "conv_group_size": 16,
+                                                       "selector_rank": 4, "selector_top_k": 3, "target_layer_ids": [1]},
+                "model_type": "qwen3", "architectures": ["DFlash2DraftModel"], "is_causal": False, "layer_types": ["sliding_attention"],
+                "use_sliding_window": True, "num_target_layers": 45, "vocab_size": 154880, "tie_word_embeddings": False}))
+            with self.assertRaises(AssertionError):
+                write_w4_file(src, tmp)                                   # `load` asserts the real checkpoint's hidden size
+            from engine.profiles.glm53 import drafter as dm
+            with unittest.mock.patch.object(dm, "load", return_value=F):
+                size = write_w4_file(src, tmp, log=lambda *a: None)
+            self.assertGreater(size, 0)
+            views = RankLoader(Path(tmp) / W4_FILE).load([s.name for s in specs(F, w4=True)], device="cpu")
+        vocab = 21
+        table, head = rand(vocab, F.hidden), rand(vocab, F.hidden)
+        target = SimpleNamespace(embed=lambda ids: table[ids], head_local=lambda h: torch.nn.functional.linear(h, head), comm=Comm(), rank=0, vp=vocab)
+        d16, d4 = Drafter(F, target, None), Drafter(F, target, None, w4=True)
+        d16.p = params
+        d4.bind(views)
+        nib, sc = w4_names("fc.weight")
+        self.assertEqual((tuple(d4.p[nib].shape), tuple(d4.p[sc].shape)), ((256, 128), (256, 8)))
+        self.assertEqual(set(d4.w4), set(gemms(F)))
+        field = rand(3, F.layers, 2, ring_cells(F), F.kv_heads, F.head_dim)
+        ids = torch.tensor([7, 20, 20, 20]); positions = torch.arange(5, 9)
+        h16 = d16.block(ids, positions, field[1], 5).float()
+        h4 = d4.block(ids, positions, field[1], 5).float()
+        # the served W4 block is exactly the bf16 block over the unpacked weights (the CPU reference path multiplies by them)
+        from engine.kernels.w4_gemm import unpack_w4
+        unpacked = Drafter(F, target, None)
+        unpacked.p = {n: (unpack_w4(*d4.w4[n]) if n in d4.w4 else t) for n, t in params.items()}
+        self.assertTrue(torch.equal(unpacked.block(ids, positions, field[1], 5).float(), h4))
+        # how close int4 g32 stays to bf16 on a random tiny block is only a smoke here; the real drafter is judged on the GPU
+        self.assertLess(float((h4 - h16).norm() / h16.norm()), 0.6)
+        self.assertTrue(torch.isfinite(h4).all())
 
     def test_the_host_walk_crosses_once_not_twice_a_position(self):
         source = (Path(__file__).resolve().parents[1] / "engine/profiles/glm53/drafter.py").read_text()

@@ -154,6 +154,9 @@ start_rank() {
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; return 1; }
   node_sh "$ip" "test -s $RANKS_DIR/vision.safetensors" || { echo "ABORT: $ip lacks vision.safetensors (preshard.py --vision --out $RANKS_DIR, once per node)" >&2; return 1; }
   node_sh "$ip" "test -s $DRAFTER/model.safetensors" || { echo "ABORT: $ip lacks the DFlash2 drafter at $DRAFTER" >&2; return 1; }
+  if [ "${STK_drafter_w4:-0}" != "0" ]; then
+    node_sh "$ip" "test -s $RANKS_DIR/drafter-w4.safetensors" || { echo "ABORT: $ip lacks drafter-w4.safetensors (preshard.py --drafter-w4 --out $RANKS_DIR, once per node; STK_drafter_w4=1 serves it)" >&2; return 1; }
+  fi
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \
     --network host --ipc host --shm-size 32g --ulimit memlock=-1:-1 --ulimit nofile=524288:524288 --cap-add IPC_LOCK \
     --device /dev/infiniband:/dev/infiniband \

@@ -84,8 +84,87 @@ def load(path: "str | Path" = DRAFTER) -> DrafterFacts:
     return f
 
 
-def specs(F: DrafterFacts) -> "list[Spec]":
-    """The checkpoint's 81 tensors, whole, under their own names."""
+W4_FILE = "drafter-w4.safetensors"     # next to the rank files: the GEMM weights packed int4 (preshard.py --drafter-w4)
+
+
+def gemms(F: DrafterFacts) -> "dict[str, tuple[int, int]]":
+    """The 47 weights the proposal multiplies by, [N, K] each -- what W4 packs. Norms, conv base kernels and the
+    selector codebooks (lookups, not GEMMs) stay bf16."""
+    H, I, D = F.hidden, F.inter, F.head_dim
+    G = H // F.conv_group
+    out = {"fc.weight": (H, H * len(F.target_layers)), "candidate_selector.hidden_projection.weight": (F.sel_rank, H)}
+    for L in range(F.layers):
+        p = f"layers.{L}."
+        out.update({p + "self_attn.q_proj.weight": (F.heads * D, H), p + "self_attn.k_proj.weight": (F.kv_heads * D, H),
+                    p + "self_attn.v_proj.weight": (F.kv_heads * D, H), p + "self_attn.o_proj.weight": (H, F.heads * D),
+                    p + "mlp.gate_proj.weight": (I, H), p + "mlp.up_proj.weight": (I, H), p + "mlp.down_proj.weight": (H, I),
+                    p + "attention_conv.kernel_projection.weight": (2 * F.conv_taps * G, H),
+                    p + "mlp_conv.kernel_projection.weight": (2 * F.conv_taps * G, H)})
+    return out
+
+
+def w4_names(name: str) -> "tuple[str, str]":
+    """The packed nibbles and the scales a GEMM weight becomes in the W4 file."""
+    return name + ".w4", name + ".scale"
+
+
+def specs(F: DrafterFacts, w4: bool = False) -> "list[Spec]":
+    """The checkpoint's 81 tensors, whole, under their own names; with `w4` each GEMM weight is its packed int4 nibbles
+    [N, K/2] uint8 and bf16 scales [N, K/32] instead (kernels/w4_gemm), the other 34 tensors unchanged."""
+    out = []
+    packed = gemms(F) if w4 else {}
+    if w4:
+        from engine.kernels.w4_gemm import GROUP
+    for spec in _checkpoint_specs(F):
+        if spec.name in packed:
+            N, K = packed[spec.name]
+            nib, sc = w4_names(spec.name)
+            out += [Spec(nib, (N, K // 2), torch.uint8), Spec(sc, (N, K // GROUP), BF16)]
+        else:
+            out.append(spec)
+    return out
+
+
+def w4_write_specs(F: DrafterFacts) -> "list[Spec]":
+    """`specs(F, w4=True)` with the builds a rank writer calls: pack each GEMM once (both halves come from one packing),
+    copy the rest whole."""
+    from engine.kernels.w4_gemm import pack_w4
+    cache = {}
+
+    def packing(name, part):
+        def build(src, rank, world):
+            if name not in cache:
+                cache[name] = pack_w4(src[name])
+            return cache[name][part]
+        return build
+
+    out = []
+    packed = gemms(F)
+    for spec in specs(F, w4=True):
+        base = spec.name[:-3] if spec.name.endswith(".w4") else spec.name[:-6] if spec.name.endswith(".scale") else None
+        if base in packed:
+            out.append(Spec(spec.name, spec.shape, spec.dtype, (base,), packing(base, 0 if spec.name.endswith(".w4") else 1)))
+        else:
+            out.append(Spec(spec.name, spec.shape, spec.dtype, (spec.name,), lambda s, r, W, name=spec.name: s[name].contiguous()))
+    return out
+
+
+def write_w4_file(drafter_dir: "str | Path", out_dir: "str | Path", log=print) -> int:
+    """`drafter-w4.safetensors` in the rank files' directory: the drafter with its 47 GEMMs packed int4 (one file, every
+    rank the same bytes -- the fleet must draft identical tokens, so the packing happens once, here)."""
+    from engine.base.loader import RankLoader
+    from engine.base.preshard import write_ranks
+    D = load(drafter_dir)
+    S = w4_write_specs(D)
+    source = RankLoader(Path(drafter_dir) / "model.safetensors")
+    path = Path(out_dir) / W4_FILE
+    sizes = write_ranks([("drafter-w4", sorted({n for s in S for n in s.sources}), lambda r: S)], [path],
+                        lambda keys: source.load(list(keys), device="cpu"), 1,
+                        metadata={"model": "glm53", "part": "drafter-w4", "layout": "engine.profiles.glm53.drafter", "group": "32"}, log=log)
+    return sizes[0]
+
+
+def _checkpoint_specs(F: DrafterFacts) -> "list[Spec]":
     H, I, D = F.hidden, F.inter, F.head_dim
     out = [
         Spec("fc.weight", (H, H * len(F.target_layers)), BF16), Spec("hidden_norm.weight", (H,), BF16), Spec("norm.weight", (H,), BF16),
@@ -124,12 +203,23 @@ def rope(x: torch.Tensor, positions: torch.Tensor, theta: float):
 
 
 class Drafter:
-    def __init__(self, F: DrafterFacts, target, decodable: int):
-        """`target` is the Glm53Net (embed/head are borrowed); `decodable` masks ids the tokenizer cannot decode."""
+    def __init__(self, F: DrafterFacts, target, decodable: int, w4: bool = False):
+        """`target` is the Glm53Net (embed/head are borrowed); `decodable` masks ids the tokenizer cannot decode;
+        `w4`: the GEMM weights arrive packed int4 (drafter-w4.safetensors) and run through kernels/w4_gemm."""
         self.F, self.target, self.decodable = F, target, decodable
         self.k = F.k
         self.p = None
+        self.w4_enabled = w4
+        self.w4 = {}                                       # GEMM name -> (packed nibbles, scales) when served W4
         self.decode_graphs = None
+
+    def _lin(self, x: torch.Tensor, name: str) -> torch.Tensor:
+        """x @ W^T for the named GEMM weight: bf16 cuBLAS, or the W4 kernel over its packed form."""
+        w4 = self.w4.get(name)
+        if w4 is None:
+            return Fn.linear(x, self.p[name])
+        from engine.kernels.w4_gemm import w4_linear
+        return w4_linear(x, w4[0], w4[1])
 
     def capture_decode(self, caches, memory=None, generator=None, vocab=None):
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
@@ -145,11 +235,16 @@ class Drafter:
         return self.F.aux_layers
 
     def specs(self):
-        return specs(self.F)
+        return specs(self.F, w4=self.w4_enabled)
 
     def bind(self, views: dict) -> None:
         from engine.base.params import bind
         self.p = bind(self.specs(), views)
+        self.w4 = {}
+        if self.w4_enabled:
+            for name in gemms(self.F):
+                nib, sc = w4_names(name)
+                self.w4[name] = (self.p[nib], self.p[sc])
 
     # -- context: verified tokens' target states -> K/V rings -------------------------------
     def observe(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor) -> None:
@@ -161,13 +256,13 @@ class Drafter:
         # once, retaining the newest window; duplicate CUDA indices have no
         # defined last-writer order.
         positions, aux = positions[-F.window:], aux[-F.window:]
-        c = rmsnorm(Fn.linear(aux, p["fc.weight"]), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
+        c = rmsnorm(self._lin(aux, "fc.weight"), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
         idx = positions % F.window
         for L in range(F.layers):
             q = f"layers.{L}.self_attn."
-            k = Fn.linear(c, p[q + "k_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
+            k = self._lin(c, q + "k_proj.weight").view(-1, F.kv_heads, F.head_dim)
             k = rope(rmsnorm(k, p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
-            v = Fn.linear(c, p[q + "v_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
+            v = self._lin(c, q + "v_proj.weight").view(-1, F.kv_heads, F.head_dim)
             ring[L, 0, idx] = k
             ring[L, 1, idx] = v
 
@@ -177,14 +272,14 @@ class Drafter:
         the cells they would have overwritten. Blend, then scatter: no host read, no duplicate writer."""
         F, p = self.F, self.p
         t = positions.numel()
-        c = rmsnorm(Fn.linear(aux, p["fc.weight"]), p["hidden_norm.weight"], F.rms_eps)
+        c = rmsnorm(self._lin(aux, "fc.weight"), p["hidden_norm.weight"], F.rms_eps)
         idx = positions % F.window
         keep = (torch.arange(t, device=positions.device) < valid).view(t, 1, 1)
         for L in range(F.layers):
             q = f"layers.{L}.self_attn."
-            k = Fn.linear(c, p[q + "k_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
+            k = self._lin(c, q + "k_proj.weight").view(-1, F.kv_heads, F.head_dim)
             k = rope(rmsnorm(k, p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
-            v = Fn.linear(c, p[q + "v_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
+            v = self._lin(c, q + "v_proj.weight").view(-1, F.kv_heads, F.head_dim)
             ring[L, 0, idx] = torch.where(keep, k, ring[L, 0, idx])
             ring[L, 1, idx] = torch.where(keep, v, ring[L, 1, idx])
 
@@ -204,9 +299,9 @@ class Drafter:
         F, p = self.F, self.p
         q = f"layers.{L}.self_attn."
         B = x.shape[0]
-        qh = rope(rmsnorm(Fn.linear(x, p[q + "q_proj.weight"]).view(B, F.heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps), positions, F.rope_theta)
-        kh = rope(rmsnorm(Fn.linear(x, p[q + "k_proj.weight"]).view(B, F.kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
-        vh = Fn.linear(x, p[q + "v_proj.weight"]).view(B, F.kv_heads, F.head_dim)
+        qh = rope(rmsnorm(self._lin(x, q + "q_proj.weight").view(B, F.heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps), positions, F.rope_theta)
+        kh = rope(rmsnorm(self._lin(x, q + "k_proj.weight").view(B, F.kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
+        vh = self._lin(x, q + "v_proj.weight").view(B, F.kv_heads, F.head_dim)
         # the context window: the last min(ctx, window) verified positions, then the block itself (non-causal)
         # A fixed window keeps GEMM/reduction geometry identical in eager and
         # captured execution, including the first 2048 positions.
@@ -221,7 +316,7 @@ class Drafter:
         valid = torch.cat([cpos >= 0, torch.ones(B, device=x.device, dtype=torch.bool)])
         scores = scores.masked_fill(~valid[None, None, :], float("-inf"))
         o = torch.einsum("bhn,nhd->bhd", torch.softmax(scores, dim=-1), v_all.float()).to(x.dtype)
-        return Fn.linear(o.reshape(B, F.heads * F.head_dim), p[q + "o_proj.weight"])
+        return self._lin(o.reshape(B, F.heads * F.head_dim), q + "o_proj.weight")
 
     def block(self, ids: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int) -> torch.Tensor:
         """One block through the five layers; returns the final hidden [B, hidden]."""
@@ -237,15 +332,15 @@ class Drafter:
             else:
                 res = res + x
                 h = rmsnorm(res, p[q + "input_layernorm.weight"], F.rms_eps)
-            coeff = Fn.linear(h, p[q + "attention_conv.kernel_projection.weight"]).reshape(B, 2, F.conv_taps, -1)
+            coeff = self._lin(h, q + "attention_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], tap_valid)
             h = self._attn(L, h, positions, ring, ctx_len)
             h = self._conv(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], tap_valid)
             res = res + h
             h = rmsnorm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
-            coeff = Fn.linear(h, p[q + "mlp_conv.kernel_projection.weight"]).reshape(B, 2, F.conv_taps, -1)
+            coeff = self._lin(h, q + "mlp_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid)
-            h = Fn.linear(Fn.silu(Fn.linear(h, p[q + "mlp.gate_proj.weight"])) * Fn.linear(h, p[q + "mlp.up_proj.weight"]), p[q + "mlp.down_proj.weight"])
+            h = self._lin(Fn.silu(self._lin(h, q + "mlp.gate_proj.weight")) * self._lin(h, q + "mlp.up_proj.weight"), q + "mlp.down_proj.weight")
             x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], tap_valid)
         return rmsnorm(res + x, p["norm.weight"], F.rms_eps)
 
@@ -260,16 +355,16 @@ class Drafter:
         the whole draft field; slots [n]; positions [n, t]; aux [n*t, A] in row order; valid [n] (device counts)."""
         F, p = self.F, self.p
         n, t = positions.shape
-        c = rmsnorm(Fn.linear(aux, p["fc.weight"]), p["hidden_norm.weight"], F.rms_eps)
+        c = rmsnorm(self._lin(aux, "fc.weight"), p["hidden_norm.weight"], F.rms_eps)
         flat = positions.reshape(-1)
         idx = positions % F.window
         rows = slots.view(n, 1)
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).view(n, t, 1, 1)
         for L in range(F.layers):
             q = f"layers.{L}.self_attn."
-            k = Fn.linear(c, p[q + "k_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
+            k = self._lin(c, q + "k_proj.weight").view(-1, F.kv_heads, F.head_dim)
             k = rope(rmsnorm(k, p[q + "k_norm.weight"], F.rms_eps), flat, F.rope_theta).view(n, t, F.kv_heads, F.head_dim)
-            v = Fn.linear(c, p[q + "v_proj.weight"]).view(n, t, F.kv_heads, F.head_dim)
+            v = self._lin(c, q + "v_proj.weight").view(n, t, F.kv_heads, F.head_dim)
             field[rows, L, 0, idx] = torch.where(keep, k, field[rows, L, 0, idx])
             field[rows, L, 1, idx] = torch.where(keep, v, field[rows, L, 1, idx])
 
@@ -295,11 +390,11 @@ class Drafter:
         F, p = self.F, self.p
         q = f"layers.{L}.self_attn."
         S, W, kv, D, rep = field.shape[0], F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
-        qh = rope(rmsnorm(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps),
+        qh = rope(rmsnorm(self._lin(x, q + "q_proj.weight").view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps),
                   positions, F.rope_theta)
-        kh = rope(rmsnorm(Fn.linear(x, p[q + "k_proj.weight"]).view(n * t, kv, D), p[q + "k_norm.weight"], F.rms_eps),
+        kh = rope(rmsnorm(self._lin(x, q + "k_proj.weight").view(n * t, kv, D), p[q + "k_norm.weight"], F.rms_eps),
                   positions, F.rope_theta)
-        vh = Fn.linear(x, p[q + "v_proj.weight"]).view(n * t, kv, D)
+        vh = self._lin(x, q + "v_proj.weight").view(n * t, kv, D)
         field[slots, L, 0, W:W + t] = kh.view(n, t, kv, D)
         field[slots, L, 1, W:W + t] = vh.view(n, t, kv, D)
         q_rows = qh.view(n, t, kv, rep, D).permute(0, 2, 3, 1, 4).reshape(n, kv, rep * t, D)
@@ -312,7 +407,7 @@ class Drafter:
         with fused:                                                                            # D3: no math fallback on CUDA
             o = Fn.scaled_dot_product_attention(q_all, keys, values, attn_mask=mask, scale=D ** -0.5)
         o = o.index_select(0, slots).view(n, kv, rep, t, D).permute(0, 3, 1, 2, 4).reshape(n * t, F.heads * D)
-        return Fn.linear(o, p[q + "o_proj.weight"])
+        return self._lin(o, q + "o_proj.weight")
 
     def block_rows(self, ids: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
                    field: torch.Tensor, n: int, t: int) -> torch.Tensor:
@@ -328,15 +423,15 @@ class Drafter:
             else:
                 res = res + x
                 h = rmsnorm(res, p[q + "input_layernorm.weight"], F.rms_eps)
-            coeff = Fn.linear(h, p[q + "attention_conv.kernel_projection.weight"]).reshape(n * t, 2, F.conv_taps, -1)
+            coeff = self._lin(h, q + "attention_conv.kernel_projection.weight").reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], tap_valid, n, t)
             h = self._attn_rows(L, h, positions, slots, ctx, field, n, t)
             h = self._conv_rows(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], tap_valid, n, t)
             res = res + h
             h = rmsnorm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
-            coeff = Fn.linear(h, p[q + "mlp_conv.kernel_projection.weight"]).reshape(n * t, 2, F.conv_taps, -1)
+            coeff = self._lin(h, q + "mlp_conv.kernel_projection.weight").reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid, n, t)
-            h = Fn.linear(Fn.silu(Fn.linear(h, p[q + "mlp.gate_proj.weight"])) * Fn.linear(h, p[q + "mlp.up_proj.weight"]), p[q + "mlp.down_proj.weight"])
+            h = self._lin(Fn.silu(self._lin(h, q + "mlp.gate_proj.weight")) * self._lin(h, q + "mlp.up_proj.weight"), q + "mlp.down_proj.weight")
             x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], tap_valid, n, t)
         return rmsnorm(res + x, p["norm.weight"], F.rms_eps)
 
@@ -356,7 +451,7 @@ class Drafter:
         from engine.modules.vocab import topk
         unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
         unary, cand = unary.view(n, K, F.sel_top_k), cand.view(n, K, F.sel_top_k)
-        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float().view(n, K, -1)
+        proj = self._lin(h, "candidate_selector.hidden_projection.weight").float().view(n, K, -1)
         pred_ids = torch.cat([anchors.view(n, 1, 1).expand(n, 1, F.sel_top_k), cand[:, :-1]], 1)         # [n, K, 16]
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()                              # [n, K, 16, 256]
         succ = p["candidate_selector.successor_codebook"][cand].float()
@@ -399,7 +494,7 @@ class Drafter:
         from engine.modules.vocab import topk
         unary, cand = topk(self.target.head_local(h), self.target.comm,
                            self.target.rank * self.target.vp, F.sel_top_k, self.decodable)  # [K, 16]
-        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()        # [K, 256]
+        proj = self._lin(h, "candidate_selector.hidden_projection.weight").float()        # [K, 256]
         pred_ids = torch.cat([anchor.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])   # [K, 16]
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()                # [K, 16, 256]
         succ = p["candidate_selector.successor_codebook"][cand].float()                      # [K, 16, 256]
@@ -440,7 +535,7 @@ class Drafter:
         h = self.block(ids, positions, ring, position)[1:]
         from engine.modules.vocab import topk
         unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
-        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()
+        proj = self._lin(h, "candidate_selector.hidden_projection.weight").float()
         pred_ids = torch.cat([anchor.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
         succ = p["candidate_selector.successor_codebook"][cand].float()

@@ -3,6 +3,7 @@
     python3 engine/profiles/glm53/preshard.py                       # -> facts.RANKS/rank{0..3}of4.safetensors
     python3 engine/profiles/glm53/preshard.py --layers 0-4 --out /some/dev/dir
     python3 engine/profiles/glm53/preshard.py --vision               # -> facts.RANKS/vision.safetensors (the tower, whole; seconds)
+    python3 engine/profiles/glm53/preshard.py --drafter-w4           # -> facts.RANKS/drafter-w4.safetensors (the DFlash2 GEMMs int4; minutes, CPU)
 
 Runs once, offline. What the fleet boots from afterwards is `rank{r}of{W}.safetensors`
 read by base/loader.RankLoader with coalesced range reads into the arena --
@@ -41,7 +42,17 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=str(facts.RANKS))
     ap.add_argument("--ckpt", default=str(facts.CKPT))
     ap.add_argument("--vision", action="store_true", help="write only vision.safetensors: the vision tower, whole, for every rank (45차 §23 A7)")
+    ap.add_argument("--drafter-w4", action="store_true",
+                    help="write only drafter-w4.safetensors: the DFlash2 drafter with its 47 GEMMs packed int4, one file for every rank (45차 §23 GPU 판정 5차)")
+    ap.add_argument("--drafter", default=None, help="the DFlash2 checkpoint directory (default: drafter.DRAFTER)")
     a = ap.parse_args(argv)
+    if a.drafter_w4:
+        from engine.profiles.glm53 import drafter as drafter_mod
+        src = a.drafter or drafter_mod.DRAFTER
+        print(f"  glm53 preshard: drafter W4 {src} -> {Path(a.out) / drafter_mod.W4_FILE}")
+        size = drafter_mod.write_w4_file(src, a.out)
+        print(f"  done: {size / 2**30:.2f} GiB")
+        return 0
     if a.vision:
         from engine.profiles.glm53 import vision
         print(f"  glm53 preshard: vision tower -> {Path(a.out) / vision.FILE}")

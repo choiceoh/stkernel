@@ -45,7 +45,8 @@ class KnobDeclarationTests(unittest.TestCase):
         self.assertIn('Knob("context_ceiling"', src)
         self.assertIn('Knob("decode_eager"', src)         # 45차 §23: the fleet's decode-graph stall bisect, expires 2026-09-25
         self.assertIn('Knob("lanes"', src)                # 45차 §23: served-vs-reference table bisect of the garbage output, expires 2026-09-25
-        self.assertEqual(src.count("Knob("), 5)     # every axis still under measurement, and no more
+        self.assertIn('Knob("drafter_w4"', src)           # 45차 §23 GPU 판정 5차: the int4 drafter (kernels/w4_gemm) against bf16, expires 2026-09-30
+        self.assertEqual(src.count("Knob("), 6)     # every axis still under measurement, and no more
         self.assertIn('lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])', src)
 
 

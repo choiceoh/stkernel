@@ -44,7 +44,7 @@ def ledger_peak(path: "str | Path | None") -> "tuple[float, str] | None":
 
 def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | None" = None,
            ckpt: "str | Path" = facts.CKPT, ranks_dir: "str | Path | None" = None, rank: int = 0,
-           drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
+           drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None, drafter_w4: bool = False,
            snapshots: int = 8) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave."""
     host_total, _ = host_box()
@@ -71,7 +71,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     if drafter_dir and (Path(drafter_dir) / "config.json").exists():
         D = drafter_mod.load(drafter_dir)
         draft_shape = (D.layers, drafter_mod.ring_cells(D), D.kv_heads, D.head_dim)
-        drafter_gib = sum(s.nbytes() for s in drafter_mod.specs(D)) / GIB
+        drafter_gib = sum(s.nbytes() for s in drafter_mod.specs(D, w4=drafter_w4)) / GIB
     lay = layout(F, range(F.layers), draft_shape)
     slots_gib = (max_seqs + 1) * lay.slot_bytes / GIB
     snapshot_bytes = snapshot_layout(F, range(F.layers), draft_shape)[0]
@@ -87,7 +87,8 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         Line("reserve for the OS", floor * OS_RESERVE_MULTIPLE, DECLARED, f"{OS_RESERVE_MULTIPLE:g}x earlyoom's 5% floor ({floor:.2f} GiB)"),
         Line("runtime floor (CUDA ctx + NCCL 16ch)", RUNTIME_FLOOR_GIB, LEDGER, "GLM 40th boot table -- re-measure on ST"),
         Line("weights (this rank, TP=4)", weights_gib, READ, weights_evidence),
-        Line("drafter (DFlash2, replicated)", drafter_gib, READ, "drafter.specs: every rank holds the whole drafter (DRAFT_TP=1 as served)"),
+        Line("drafter (DFlash2, replicated" + (", W4)" if drafter_w4 else ")"), drafter_gib, READ,
+             "drafter.specs: every rank holds the whole drafter (DRAFT_TP=1 as served)" + (" -- GEMMs int4 (STK_drafter_w4)" if drafter_w4 else "")),
         Line("vision tower (BF16, replicated)", vision_gib, READ, vision_evidence),
         Line(f"state slots ({max_seqs} + null) x {lay.slot_bytes / 2**20:.0f} MiB", slots_gib, READ,
              "caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring"),

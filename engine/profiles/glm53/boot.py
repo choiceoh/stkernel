@@ -162,6 +162,11 @@ def declared(a, comm_world: int) -> Config:
              "'expert' / 'kda_recurrent' / 'expert,kda_recurrent' keep the served table with those lanes on the reference -- "
              "which table talks sense says whether a kernel lane or the composition is wrong",
              "delete once the served table's text is judged by onepass"),
+        Knob("drafter_w4", 0, _dt.date(2026, 9, 30),
+             "45차 §23 GPU 판정 5차: the DFlash2 drafter's 47 GEMMs as int4 (group 32, kernels/w4_gemm) from "
+             "<ranks>/drafter-w4.safetensors (preshard.py --drafter-w4) against bf16 -- the step reads 0.64 GiB instead of "
+             "2.03 GiB per rank; the bracket judges tok/step (acceptance) with step time; win = bake and delete this knob",
+             "STK_drafter_w4=0", int),
         Knob("decode_eager", 0, _dt.date(2026, 9, 25),
              "45차 §23: the first replay of a captured decode graph stalled on the fleet (four ranks at 96% GPU, 3/3 boots) -- "
              "PR #567 found the cause (MoE workspaces freed under recorded graph addresses) and retains them; this knob keeps "
@@ -177,7 +182,7 @@ def decodable_vocab(tok) -> int:
     return max(tok.get_vocab().values()) + 1
 
 
-def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
+def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder, *, drafter_w4: bool = False,
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
           context_ceiling: "int | None" = None,
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER):
@@ -188,7 +193,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     specs = net.specs()
     drafter_dir = Path(drafter_dir)
     D = drafter_mod.load(drafter_dir) if use_drafter else None
-    dspecs = drafter_mod.specs(D) if D else []
+    dspecs = drafter_mod.specs(D, w4=drafter_w4) if D else []
+    drafter_file = (Path(ranks_dir) / drafter_mod.W4_FILE) if drafter_w4 else drafter_dir / "model.safetensors"   # the served bytes
     draft_shape = (D.layers, drafter_mod.ring_cells(D), D.kv_heads, D.head_dim) if D else None
     cache_layout = layout(F, net.layers, draft_shape)
     bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes
@@ -213,7 +219,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         workspace_bytes, os_reserve_bytes = 12 * GIB, 4 * GIB
         files = sorted(Path(ranks_dir).glob("rank*of4.safetensors"))
         if D:
-            files.append(drafter_dir / "model.safetensors")
+            files.append(drafter_file)
         if VF:
             files.append(vision_file)
         failure = None
@@ -252,8 +258,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         drafter = NullDrafter()
         if D:
             with recorder.phase("load drafter"):
-                dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
-            drafter = drafter_mod.Drafter(D, net, decodable)
+                dviews = RankLoader(drafter_file).load([s.name for s in dspecs], arena=arena, recorder=recorder)
+            drafter = drafter_mod.Drafter(D, net, decodable, w4=drafter_w4)
             drafter.bind(dviews)
         vision = None
         if VF:
@@ -530,10 +536,10 @@ def fleet(a) -> int:
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
-                                               context_ceiling=cfg["context_ceiling"] or None)
+                                               context_ceiling=cfg["context_ceiling"] or None, drafter_w4=bool(cfg["drafter_w4"]))
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
-        engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
+        engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"], "drafter": "w4" if cfg["drafter_w4"] else "bf16",
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
                             "context_ceiling": str(engine.max_context)}
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
