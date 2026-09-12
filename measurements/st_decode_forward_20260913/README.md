@@ -134,5 +134,34 @@ pipelines at 3.198 to 1.574 ms. These are not engine speeds.
 `st-decode-consumer0913v5` now runs source `c8562a7c55a4` through the canonical
 two-onepass chain on one boot. All four logs and the PR760 watcher are bound to
 that boot's immutable container IDs. Reused private compilation caches include
-the work paid by the previous failed capture; they still contain no calibration
-blobs. Cold-prefix and preparation/measurement phases remain explicit.
+the work paid by the previous failed capture. There were no calibration blobs
+at boot; 20 were filed after 34006 preparation rows, for a subsequent boot only.
+The served packs remained GPTQ=0, RTN=237. Cold-prefix and preparation/measurement
+phases remain explicit.
+
+The first pass ended at 06:01:11 during the first C=4 preparation. Both C=1
+phases completed, but neither complete onepass exists and there is no second
+pass. `consumer-v5-incomplete/` preserves the requests, quality results, raw
+record, all-rank identities/logs, boot and fleet log. Its `status.json` marks
+the aborted run explicitly: the raw record's stale `running` status survived
+because finalization lost the server.
+
+| First-pass measurement, fresh prefix | Pooled decode step/s | SSE decode tok/s | Accepted / drafted |
+| --- | ---: | ---: | ---: |
+| C=1, 2K, three requests | 19.8048 | 62.88 / 68.05 / 66.84 | 38.3929% |
+| C=1, 32K | 19.5808 | 75.1515 | 47.3815% |
+| C=1, 128K | 18.5940 | 72.4733 | 48.3662% |
+
+Canonical C=1 preparation/trace checks report a steady, unprofiled measurement
+with fresh prefixes. Quality is **1/9 complete cases**, 29/57 checks. Longer
+reasoning did not establish correct answers for this run. These observations
+are incomplete first-pass evidence, not a 22-step result or a same-build speedup.
+
+Ranks 2 and 3 report `KeyError: 0` while resolving an already-finished row's
+pending decode. Parking closes the model context before its slot and prefix
+chain are released; `_tracked()` selected that closed row for boundary metadata.
+A four-row CPU reproduction with a prefix cache and asynchronous parking fails
+at the same lookup. Tracking only live decoders fixes it while still resolving
+the inert pending result and advancing the surviving rows. All 46 async-runner
+and prefix tests pass; before/after logs are retained. This is a separate cause
+from the production sequence-5518 stalls, whose first divergence is unresolved.

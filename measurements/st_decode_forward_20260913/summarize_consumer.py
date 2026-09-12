@@ -41,7 +41,6 @@ def summarize(samples, requests):
                     ('steps', 'st:steps_decode_total'),
                     ('prefill', 'st:steps_prefill_total'),
                     ('finished', 'vllm:request_success_total'),
-                    ('tokens', 'vllm:generation_tokens_total'),
                     ('accepted', 'vllm:spec_decode_num_accepted_tokens_total'),
                     ('drafted', 'vllm:spec_decode_num_draft_tokens_total')):
                 va, vb = series(sa, name), series(sb, name)
@@ -77,8 +76,7 @@ def aggregate(windows):
                 pooled_step_s=steps/seconds if seconds else None,
                 positive_window_median_step_s=statistics.median(rates) if rates else None,
                 accepted=accepted, drafted=drafted,
-                acceptance=accepted/drafted if drafted else None,
-                output_counter_tok_s=sum(w['tokens'] for w in windows)/seconds if seconds else None)
+                acceptance=accepted/drafted if drafted else None)
 
 
 if __name__ == '__main__':

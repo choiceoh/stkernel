@@ -1,0 +1,158 @@
+lease: verified, queue queue/st-decode-consumer0913v5 on srv2 since 2026-09-13 05:32:05 (Candidate-only native decode with validated strided reuse, KV6, two onepasses)
+== rank 0 on 10.10.10.2
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.46kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+#2 DONE 0.0s
+
+#3 [1/6] FROM docker.io/library/st-engine-seed:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 4.58MB 0.0s done
+#4 DONE 0.1s
+
+#5 [2/6] COPY engine/runtime/promote_deep_gemm.py /tmp/st-promote-deep-gemm.py
+#5 CACHED
+
+#6 [3/6] RUN python3 /tmp/st-promote-deep-gemm.py     && python3 -m pip uninstall -y vllm     && python3 -c "from pathlib import Path; import shutil, sysconfig; shutil.rmtree(Path(sysconfig.get_path('purelib')) / 'vllm', ignore_errors=True)"     && python3 -c "import importlib.util; assert importlib.util.find_spec('vllm') is None; import deep_gemm; assert callable(deep_gemm.fp8_fp4_mqa_logits); assert callable(deep_gemm.tf32_hc_prenorm_gemm)"     && rm /tmp/st-promote-deep-gemm.py
+#6 CACHED
+
+#7 [4/6] WORKDIR /opt/st
+#7 CACHED
+
+#8 [5/6] COPY engine /opt/st/engine
+#8 DONE 0.1s
+
+#9 [6/6] RUN python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#9 DONE 1.0s
+
+#10 exporting to image
+#10 exporting layers 0.1s done
+#10 writing image sha256:0fce1526ec1c32140044182d0926153754ae341aa4b24c073e81388d7a52a526 done
+#10 naming to docker.io/library/st-engine:bracket-c8562a7c55a4 done
+#10 DONE 0.1s
+10.10.10.2: started
+== rank 1 on 10.10.10.1
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.46kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+#2 DONE 0.0s
+
+#3 [1/6] FROM docker.io/library/st-engine-seed:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 4.58MB 0.0s done
+#4 DONE 0.0s
+
+#5 [3/6] RUN python3 /tmp/st-promote-deep-gemm.py     && python3 -m pip uninstall -y vllm     && python3 -c "from pathlib import Path; import shutil, sysconfig; shutil.rmtree(Path(sysconfig.get_path('purelib')) / 'vllm', ignore_errors=True)"     && python3 -c "import importlib.util; assert importlib.util.find_spec('vllm') is None; import deep_gemm; assert callable(deep_gemm.fp8_fp4_mqa_logits); assert callable(deep_gemm.tf32_hc_prenorm_gemm)"     && rm /tmp/st-promote-deep-gemm.py
+#5 CACHED
+
+#6 [2/6] COPY engine/runtime/promote_deep_gemm.py /tmp/st-promote-deep-gemm.py
+#6 CACHED
+
+#7 [4/6] WORKDIR /opt/st
+#7 CACHED
+
+#8 [5/6] COPY engine /opt/st/engine
+#8 DONE 0.0s
+
+#9 [6/6] RUN python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#9 DONE 1.7s
+
+#10 exporting to image
+#10 exporting layers 0.0s done
+#10 writing image sha256:bc3b5f25475e14ae571f067dd8a5c4d4289dd62cf97d77347f506d93d3fe6f3d done
+#10 naming to docker.io/library/st-engine:bracket-c8562a7c55a4 done
+#10 DONE 0.0s
+10.10.10.1: started
+== rank 2 on 10.10.10.3
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.46kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+#2 DONE 0.0s
+
+#3 [1/6] FROM docker.io/library/st-engine-seed:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 4.58MB 0.0s done
+#4 DONE 0.0s
+
+#5 [2/6] COPY engine/runtime/promote_deep_gemm.py /tmp/st-promote-deep-gemm.py
+#5 CACHED
+
+#6 [3/6] RUN python3 /tmp/st-promote-deep-gemm.py     && python3 -m pip uninstall -y vllm     && python3 -c "from pathlib import Path; import shutil, sysconfig; shutil.rmtree(Path(sysconfig.get_path('purelib')) / 'vllm', ignore_errors=True)"     && python3 -c "import importlib.util; assert importlib.util.find_spec('vllm') is None; import deep_gemm; assert callable(deep_gemm.fp8_fp4_mqa_logits); assert callable(deep_gemm.tf32_hc_prenorm_gemm)"     && rm /tmp/st-promote-deep-gemm.py
+#6 CACHED
+
+#7 [4/6] WORKDIR /opt/st
+#7 CACHED
+
+#8 [5/6] COPY engine /opt/st/engine
+#8 DONE 0.0s
+
+#9 [6/6] RUN python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#9 DONE 0.9s
+
+#10 exporting to image
+#10 exporting layers 0.0s done
+#10 writing image sha256:c2e3b7e0a40ead475d62727dc311292a3d8d3742d1c8a92bfbb998a1d3f03d35 0.0s done
+#10 naming to docker.io/library/st-engine:bracket-c8562a7c55a4 done
+#10 DONE 0.1s
+10.10.10.3: started
+== rank 3 on 10.10.10.4
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.46kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+#2 DONE 0.0s
+
+#3 [1/6] FROM docker.io/library/st-engine-seed:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 4.58MB 0.0s done
+#4 DONE 0.0s
+
+#5 [2/6] COPY engine/runtime/promote_deep_gemm.py /tmp/st-promote-deep-gemm.py
+#5 CACHED
+
+#6 [3/6] RUN python3 /tmp/st-promote-deep-gemm.py     && python3 -m pip uninstall -y vllm     && python3 -c "from pathlib import Path; import shutil, sysconfig; shutil.rmtree(Path(sysconfig.get_path('purelib')) / 'vllm', ignore_errors=True)"     && python3 -c "import importlib.util; assert importlib.util.find_spec('vllm') is None; import deep_gemm; assert callable(deep_gemm.fp8_fp4_mqa_logits); assert callable(deep_gemm.tf32_hc_prenorm_gemm)"     && rm /tmp/st-promote-deep-gemm.py
+#6 CACHED
+
+#7 [4/6] WORKDIR /opt/st
+#7 CACHED
+
+#8 [5/6] COPY engine /opt/st/engine
+#8 DONE 0.0s
+
+#9 [6/6] RUN python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#9 DONE 1.1s
+
+#10 exporting to image
+#10 exporting layers 0.0s done
+#10 writing image sha256:3910fb297e1fb40770ea768bd10b280e2cd269960fbec4172b6f0c4facad9e80 done
+#10 naming to docker.io/library/st-engine:bracket-c8562a7c55a4 done
+#10 DONE 0.0s
+10.10.10.4: started
+head: http://10.10.10.2:18122/v1/chat/completions (OpenAI), /v1/engine/completions (engine dialect), GET / for status
+10.10.10.2: stopped
+10.10.10.1: stopped
+10.10.10.3: stopped
+10.10.10.4: stopped
