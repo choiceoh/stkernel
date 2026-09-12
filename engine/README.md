@@ -144,9 +144,15 @@ b12x는 이식 전 FlashInfer 커널과 직접 비교하며, PyTorch 참조와 �
 [`st_engine_native_kernels_20260911`](../measurements/st_engine_native_kernels_20260911/README.md)에 있다.
 이전 측정과 판정은 `MEASUREMENTS.md` 44~45차.
 
-공통 실행부의 CPU 회귀 검증(PyTorch·GPU·체크포인트 없이 실행):
+공통 실행부의 CPU 회귀 검증. **판정은 한 줄이다**:
 
-    python3 -m unittest discover -s tests -p 'test_engine_*.py' -v
+    python3 tools/check.py                 # 55 파일, ok / FAILED / CANNOT RUN / skipped
+    python3 tools/regress.py               # origin/main 과의 **차이**만 (절대 개수는 못 믿는다)
+    python3 tools/mutate.py --tests tests.test_engine_prefix    # 내가 더한 줄 중 아무도 안 보는 것
+
+`check.py` 가 **FAILED 와 CANNOT RUN 을 나눈다**. 전자만 종료 코드를 세운다 — 모듈이 임포트조차 안 되는 것은
+테스트 결과가 아니라 환경 문제이고, 그 둘을 못 나누면 없는 버그를 쫓거나 있는 버그를 내보낸다. 스킵 수도 같이
+나온다(현재 689 중 145). 커널을 쓰기 전에는 `engine/INVENTORY.md` — 이미지 안에 이미 있는 것.
 
 실행 소유권은 커널 표 → LocalTP → 개별 `run` 순서로 명시한다. `lanes.served(tp=tp)`가
 만든 표는 해당 실행기에 고정되며, 다른 표의 생성이나 실행이 이 연결을 바꾸지 않는다.

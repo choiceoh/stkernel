@@ -1,0 +1,28 @@
+# One verdict per pull request, so a collision between parallel sessions is visible before the merge and not after.
+#
+# This is useful even on a runner that cannot install everything: `tools/check.py` reports a module it could not
+# import as CANNOT RUN, which does NOT set the exit code, while a test that actually ran and failed does. So the
+# job fails for broken code and stays quiet about a missing wheel -- which is the distinction the tool exists for.
+name: engine check
+
+on:
+  pull_request:
+    paths: ["engine/**", "tests/**", "tools/**", ".github/workflows/engine-check.yml"]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - name: dependencies that exist on a CPU runner
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy
+          pip install torch --index-url https://download.pytorch.org/whl/cpu || echo "no torch here: those files will report CANNOT RUN"
+      - name: the verdict
+        run: python3 tools/check.py --list
