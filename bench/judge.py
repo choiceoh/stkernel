@@ -61,7 +61,7 @@ def compatible(a, b):
     if b.get("overlay") and a.get("overlay") != b["overlay"]:
         return False
     return all(a.get(k) == b.get(k) for k in
-               ("harness", "doc_lang", "thinking", "workload", "generation_budget", "runtime", "measurement_policy", "engine_shape"))
+               ("harness", "doc_lang", "thinking", "workload", "generation_budget", "runtime", "measurement_policy", "engine_shape", "quality_protocol"))
 
 
 def record_errors(rec):
