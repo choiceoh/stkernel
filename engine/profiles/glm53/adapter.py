@@ -79,6 +79,7 @@ class Glm53Engine:
         self.sampling_graphs = None
         self.pipeline = None                                # pipeline.AsyncDecode once the graphs are captured (45차 §23 B3)
         self.inflight = {}                                  # seq -> decode steps launched ahead whose tokens the host has not read
+        self.staged = {}                                    # seq -> the block boundary a step ahead parked in the caches' stage
         self.memory = None
         self.prefill_chunk = None
 
@@ -348,7 +349,7 @@ class Glm53Engine:
         if seq in self.slot:
             raise ValueError(f"seq {seq} is still live")
         for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers,
-                     self.media, self.embeds, self.inflight):
+                     self.media, self.embeds, self.inflight, self.staged):
             rows.pop(seq, None)                             # a row leaving does not move the others: the pipeline shrinks its view
 
     # -- pictures (45차 §23 A7): the door hands canvases with the positions their rows take; every rank encodes them
@@ -409,8 +410,12 @@ class Glm53Engine:
             d.pop(seq, None)
 
     def checkpoint(self, seq: int, position: int, snap: int) -> None:
-        """The runner's prefix cache keeps this sequence's state at a chunk boundary (base/prefix.py)."""
-        self.caches.checkpoint(self.slot[seq], position, snap)
+        """The runner's prefix cache keeps this sequence's state at a block boundary (base/prefix.py): out of the rings
+        right after the step that reached it, or out of the caches' stage when a step ahead of the host parked it there."""
+        if self.staged.get(seq) == position:
+            self.caches.checkpoint_from_stage(self.slot[seq], snap)
+        else:
+            self.caches.checkpoint(self.slot[seq], position, snap)
 
     def restore(self, seq: int, position: int, snap: int) -> None:
         """A new sequence adopts a cached prefix: its rings take the boundary's state, its context starts there."""
@@ -452,10 +457,12 @@ class Glm53Engine:
         return self.caches.slot_bytes(slot)
 
     def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None,
-               min_new: int = 0, options: "dict | None" = None, media=None) -> int:
+               min_new: int = 0, options: "dict | None" = None, media=None, drop_unfed: bool = False) -> int:
         """A new turn: more prompt tokens on a conversation the caches still hold.
         Returns the tokens to prefill -- the last sampled token (never fed) and
-        the new ones -- so `generated` counts this turn only from here on."""
+        the new ones -- so `generated` counts this turn only from here on.
+        `drop_unfed`: the resent history ends before the last sampled token (an end token the template does not
+        render back): the caches stand exactly there, so that token is dropped instead of fed (45차 §23)."""
         max_new = self.max_new if max_new is None else max_new
         temperature = self.temperature if temperature is None else temperature
         self.validate(ids, max_new, temperature)
@@ -463,6 +470,10 @@ class Glm53Engine:
             raise ValueError("min_tokens must be an integer between 0 and the generation limit")
         if options:
             self.validate_options(options)
+        if drop_unfed:
+            if len(self.tokens[seq]) - self.ctx[seq] != 1:
+                raise ValueError("only one never-fed token can be dropped")
+            del self.tokens[seq][-1]
         if media:
             self._bind_media(seq, list(ids), media, base=len(self.tokens[seq]))
         self._moved()

@@ -84,3 +84,59 @@ def write_ring(src, dst, slot, context):
     _write_ring[(length-first, triton.cdiv(width, 256))](
         flat, dst, slot, context, flat.stride(0), dst.stride(0), dst.stride(1),
         width, dst.shape[1], first, 256)
+
+
+# -- boundaries crossed by a decode step ahead of the host (45차 §23; profiles/glm53/caches.stage_boundaries) --------------
+@triton.jit
+def _stage_rec(RING, STAGE, ROFF, SOFF, SLOT, BEFORE, COUNT, BLOCK_TOKENS: tl.constexpr, CELLS: tl.constexpr,
+               CELL: tl.constexpr, RS: tl.constexpr, SS: tl.constexpr, BLOCK: tl.constexpr):
+    i, L, c = tl.program_id(0), tl.program_id(1), tl.program_id(2)
+    slot, before, count = tl.load(SLOT + i), tl.load(BEFORE + i), tl.load(COUNT + i)
+    after = before + count
+    boundary = (after // BLOCK_TOKENS) * BLOCK_TOKENS
+    crossed = (count > 0) & (boundary > before)
+    cell = (boundary - 1) % CELLS
+    col = c * BLOCK + tl.arange(0, BLOCK)
+    mask = (col < CELL) & crossed
+    value = tl.load(RING + slot * RS + tl.load(ROFF + L) + cell * CELL + col, mask, other=0.0)
+    tl.store(STAGE + slot * SS + tl.load(SOFF + L) + col, value, mask)
+
+
+@triton.jit
+def _stage_conv(RING, STAGE, ROFF, SOFF, SLOT, BEFORE, COUNT, BLOCK_TOKENS: tl.constexpr, WIDTH: tl.constexpr,
+                TAPS: tl.constexpr, CHANNELS: tl.constexpr, RS: tl.constexpr, SS: tl.constexpr, BLOCK: tl.constexpr):
+    i, L, c = tl.program_id(0), tl.program_id(1), tl.program_id(2)
+    slot, before, count = tl.load(SLOT + i), tl.load(BEFORE + i), tl.load(COUNT + i)
+    after = before + count
+    boundary = (after // BLOCK_TOKENS) * BLOCK_TOKENS
+    crossed = (count > 0) & (boundary > before)
+    ch = c * BLOCK + tl.arange(0, BLOCK)
+    mask = (ch < CHANNELS) & crossed
+    for j in tl.static_range(TAPS):
+        cell = (boundary - TAPS + j) % WIDTH
+        value = tl.load(RING + slot * RS + tl.load(ROFF + L) + ch * WIDTH + cell, mask, other=0.0)
+        tl.store(STAGE + slot * SS + tl.load(SOFF + L) + ch * TAPS + j, value, mask)
+
+
+def stage_boundaries(caches, slots, ctx_before, counts):
+    """caches.stage_boundaries on the device: one launch for every KDA layer's recurrent cell, one for the conv taps."""
+    F = caches.F
+    kda = [L for L in caches.layers if not F.is_dsa(L)]
+    if not kda:
+        return
+    state_f32, state_bf16 = caches.state.view(torch.float32), caches.state.view(torch.bfloat16)
+    stage_f32, stage_bf16 = caches.stage_store.view(torch.float32), caches.stage_store.view(torch.bfloat16)
+    dev = slots.device
+    rec_off = torch.tensor([caches._fields["rec", L].storage_offset() - state_f32.storage_offset() for L in kda], device=dev)
+    rec_stage_off = torch.tensor([caches._stage["rec", L].storage_offset() - stage_f32.storage_offset() for L in kda], device=dev)
+    conv_off = torch.tensor([caches._fields["conv", L].storage_offset() - state_bf16.storage_offset() for L in kda], device=dev)
+    conv_stage_off = torch.tensor([caches._stage["conv", L].storage_offset() - stage_bf16.storage_offset() for L in kda], device=dev)
+    n, cells = int(slots.numel()), F.spec_k + 1
+    cell = F.kda_heads_local * F.kda_dim * F.kda_dim
+    _stage_rec[(n, len(kda), triton.cdiv(cell, 1024))](
+        state_f32, stage_f32, rec_off, rec_stage_off, slots, ctx_before, counts, F.block, cells, cell,
+        caches.layout.slot_bytes // 4, caches.stage_bytes // 4, 1024)
+    channels, width, taps = 3 * F.kda_heads_local * F.kda_dim, F.conv - 1 + F.spec_k, F.conv - 1
+    _stage_conv[(n, len(kda), triton.cdiv(channels, 256))](
+        state_bf16, stage_bf16, conv_off, conv_stage_off, slots, ctx_before, counts, F.block, width, taps, channels,
+        caches.layout.slot_bytes // 2, caches.stage_bytes // 2, 256)

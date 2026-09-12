@@ -581,12 +581,19 @@ class Server:
         best = None
         n = len(ids)
         marks = sorted((m["positions"][0], m["digest"]) for m in media)
+        ends = set(getattr(self.engine, "eos", None) or ())
         def consider(key, history, history_marks):
             nonlocal best
+            history = list(history)
             m = len(history)
-            if (0 < m < n and (best is None or m > best[1]) and ids[:m] == list(history)
+            if (0 < m < n and (best is None or m > best[1]) and ids[:m] == history
                     and [(p, d) for p, d in marks if p < m] == sorted((int(p), str(d)) for p, d in history_marks)):
-                best = (key, m)
+                best = (key, m, False)
+            # the history ended with an end token the template does not render back (<|endoftext|> after an answer,
+            # where the next turn renders <|user|>): the caches stand before that token, which was sampled but never fed
+            elif (m > 1 and m - 1 < n and history[-1] in ends and (best is None or m - 1 > best[1]) and ids[:m - 1] == history[:-1]
+                    and [(p, d) for p, d in marks if p < m - 1] == sorted((int(p), str(d)) for p, d in history_marks)):
+                best = (key, m - 1, True)
         for row in list(self._idle_order):
             key = self._conversation_of.get(row)
             if key is not None and hasattr(self.engine, "history"):
@@ -736,8 +743,9 @@ class Server:
             row = None
             resident = held = 0
             parked = False
+            drop = False
             if conversation is None and hint is not None:
-                key, prefix = hint
+                key, prefix, drop = hint
                 row_ = self._conversations.get(key)
                 rest = self._media_after(media, prefix)
                 if rest is None:
@@ -814,12 +822,13 @@ class Server:
                         raise
                     self._resuming[row] = dict(conversation=conversation, request=request, ids=ids, limit=limit,
                                                temperature=temperature, promised=promised, min_new=min_new, options=options,
-                                               media=media, cancelled=None)
+                                               media=media, drop=drop, cancelled=None)
                     self._waiting.popleft()
                     continue                                              # admitted when every rank's read is done (_settle)
                 self._idle_order.pop(row)
                 tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}),
-                                            **({"options": options} if options else {}), **({"media": media} if media else {}))
+                                            **({"options": options} if options else {}), **({"media": media} if media else {}),
+                                            **({"drop_unfed": True} if drop else {}))
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
@@ -886,7 +895,8 @@ class Server:
                     tokens = self.engine.extend(row, e["ids"], max_new=e["limit"], temperature=e["temperature"],
                                                 **({"min_new": e["min_new"]} if e["min_new"] else {}),
                                                 **({"options": e["options"]} if e.get("options") else {}),
-                                                **({"media": e["media"]} if e.get("media") else {}))
+                                                **({"media": e["media"]} if e.get("media") else {}),
+                                                **({"drop_unfed": True} if e.get("drop") else {}))
                     self.runner.extend(row, tokens)
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
