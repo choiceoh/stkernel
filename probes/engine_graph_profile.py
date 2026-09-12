@@ -9,8 +9,12 @@ profiles its replays.
 One rank, real weights: the collectives are the identity here, so the shares are this rank's arithmetic and
 not the fabric's. The layer range is the whole model by default -- a slice measures a slice.
 
-    bash probes/run_engine_probe.sh probes/engine_graph_profile.py --ranks DIR
-    bash probes/run_engine_probe.sh probes/engine_graph_profile.py --ranks DIR --layers 0-4 --steps 16
+    bash probes/run_engine_probe.sh probes/engine_graph_profile.py
+    bash probes/run_engine_probe.sh probes/engine_graph_profile.py --layers 0-4
+
+The KV this replays over holds whatever the arena had -- no prefill precedes it. That is deliberate: the
+kernels read the same number of bytes from the same places either way, and this asks what they cost, not what
+they compute. `probes/engine_decode_graph_check.py` is the one that asks whether the answer is right.
 
 Read the per-step column. `calls` is over the whole run, so `calls / steps` says how many launches a step
 spends on that kernel -- which is the other half of the question: bytes or launches.
@@ -60,7 +64,9 @@ class IsolatedRank:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ranks", required=True)
+    # The queue invokes this with no arguments (bench/fleet_onepass.ST_FLAGS admits --ranks, --ckpt-meta and
+    # --layers and nothing else), so every one of them has to have a default that works on a node.
+    ap.add_argument("--ranks", default=str(facts.RANKS))
     ap.add_argument("--ckpt-meta", default=str(facts.CKPT))
     ap.add_argument("--layers", default="", help="a slice like 0-4; the whole model by default")
     ap.add_argument("--seqs", type=int, default=1, help="rows in the step: production serves one")

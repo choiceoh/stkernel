@@ -5,6 +5,7 @@ Default: isolate rank 0 arithmetic on one GPU (no TP correctness claim).
 """
 import torch
 from engine.base.instruments import Recorder
+from engine.profiles.glm53 import facts
 from engine.profiles.glm53.boot import build
 from engine.profiles.glm53.lanes import served
 from engine.profiles.glm53.net import Step
@@ -21,7 +22,10 @@ def main():
     import argparse
     from engine.base.comm import Comm
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--ranks',required=True)
+    # Defaults that work on a node: the fleet queue invokes an admitted ST check with NO arguments
+    # (bench/fleet_onepass.ST_FLAGS admits a handful and --drafter-dir and --tier-dir are not among
+    # them), so a required argument here is a check the queue can start and never run (45차 §95).
+    ap.add_argument('--ranks',default=str(facts.RANKS))
     ap.add_argument('--ckpt-meta',default='/home/choiceoh/models/glm53-redhat-nvfp4')
     ap.add_argument('--distributed',action='store_true')
     a=ap.parse_args()

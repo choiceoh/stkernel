@@ -834,13 +834,67 @@ class Glm53Engine:
         from engine.base.sampler import needs_rich_sampler
         return needs_rich_sampler(self.options.get(seq, {}), self.limits[seq][1], bool(self.drafter.k))
 
-    def _gather(self, local: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def _draft_digest(drafts) -> int:
+        """A small, order-sensitive number for a row's draft ids -- summed across ranks by the vote, so
+        it must stay well inside int64 for four ranks."""
+        h = 0
+        for token in (drafts or ()):
+            h = (h * 1_000_003 + int(token) + 1) % 0x7FFF_FFFF
+        return h
+
+    def _gather(self, local: torch.Tensor, detail=None) -> torch.Tensor:
         """This rank's logits shard [rows, vp] -> every rank's whole rows [rows, vocab] (a collective: same order everywhere).
 
         The model's dtype, not fp32: every row is copied to fp32 by `process_logits` anyway, so upcasting
         the whole block here only to copy each row out of it again writes the vocabulary twice a step.
+
+        The row count is AGREED first, because this is the one collective in the step whose size is data
+        dependent: the caller builds it from the rich rows and, when a grammar is live, from each row's
+        live span. `all_gather_into_tensor` requires the same shape everywhere and does not check -- it
+        waits. On 2026-09-12 it waited forever: ranks 0 and 1 offered seven rows and ranks 2 and 3 offered
+        six (NumelIn 271,040 against 232,320 at vp 38,720), all four sat in _ALLGATHER_BASE with the GPUs
+        at 0%, requests queued behind them, and the only evidence was an NCCL watchdog dump. A vote costs
+        one small host collective off the device and turns that into a step that says what diverged.
         """
-        return self.net.comm.all_gather(local, dim=-1)
+        comm = self.net.comm
+        rows = int(local.shape[0])
+        if comm.world_size > 1:
+            votes = [0] * comm.world_size
+            votes[comm.rank] = rows
+            counts = comm.all_reduce_host(votes)
+            if len(set(counts)) > 1:
+                raise RuntimeError(self._gather_divergence(counts, detail))
+        return comm.all_gather(local, dim=-1)
+
+    def _gather_divergence(self, counts, detail) -> str:
+        """Why the counts differ, not only that they do -- one more vote, taken only on the bad step.
+
+        The first occurrence (2026-09-12) said seven rows against six and nothing else, and the two
+        candidates behind that number cannot be told apart after the fact: the live span a grammar
+        matcher computed, or the DRAFTS it computed it over, which are drawn per rank from a generator
+        (`propose_sampled`). So both are voted here, per sequence: a span that differs says the matchers
+        disagree over the same drafts, and a draft digest that differs says they never had the same
+        drafts to begin with. One of those is a grammar bug and the other is an RNG bug, and the message
+        names which before anybody goes looking.
+        """
+        lines = ["the ranks disagree about how many rows this step gathers: "
+                 + ", ".join(f"rank{r}={n}" for r, n in enumerate(counts)),
+                 "  the count is the rich rows and their live grammar spans, over drafts drawn per rank"]
+        comm = self.net.comm
+        for seq, span, digest in (detail or ()):
+            spans = comm.all_reduce_host([span if r == comm.rank else 0 for r in range(comm.world_size)])
+            digests = comm.all_reduce_host([digest if r == comm.rank else 0 for r in range(comm.world_size)])
+            if len(set(spans)) > 1 or len(set(digests)) > 1:
+                what = "live spans" if len(set(spans)) > 1 else "drafts"
+                lines.append(f"  seq {seq}: {what} differ -- "
+                             + ", ".join(f"rank{r}: span={s} drafts={d:#x}"
+                                         for r, (s, d) in enumerate(zip(spans, digests))))
+        if not detail:
+            lines.append("  (no per-row detail was passed to this gather)")
+        lines.append("Refusing the collective: it cannot complete, and entering it hangs every rank "
+                     "with no cause recorded.")
+        return "\n".join(lines)
 
     def _row_logits(self, seq: int, raw: torch.Tensor, position: int, drafts_before: "list[int]",
                     out: "torch.Tensor | None" = None) -> torch.Tensor:
@@ -1078,7 +1132,8 @@ class Glm53Engine:
             # an index list would have to be built on the host and copied, which is a stream wait
             rows_in = local if at == local.shape[0] and len(wanted) == len(step.segments) else \
                 torch.cat([local[s.start: s.start + live] for s, live in zip(wanted, spans)])
-            full = self._gather(rows_in)
+            full = self._gather(rows_in, detail=[(s.seq, live, self._draft_digest(drafts.get(s.seq)))
+                                                 for s, live in zip(wanted, spans)])
             jobs = [(s.seq, full[o: o + live], drafts[s.seq], draft_probs[s.seq])
                     for s, o, live in zip(wanted, starts, spans)]
             picked = {s.seq: answer for s, answer in zip(wanted, self._pick_rich(jobs, masks))}
