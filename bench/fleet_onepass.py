@@ -93,7 +93,7 @@ def _st_args(relative, args, cwd, repo):
 
 def _st_bracket_args(args):
     """pair <sha> [--base <sha>] | chain NAME=<sha> ... [NAME ...] | hold <sha> [minutes]."""
-    usage = POLICY + '; the ST bracket takes pair <sha> [--base <sha>], chain NAME=<sha> [NAME ...], or hold <sha> [minutes]'
+    usage = POLICY + '; the ST bracket takes pair <sha> [--base <sha>], chain NAME=<sha> [NAME ...], hold <sha> [minutes], or probe [sha]'
     if not args:
         raise ValueError(usage)
     verb, rest = args[0], list(args[1:])
@@ -125,6 +125,9 @@ def _st_bracket_args(args):
             raise ValueError(usage + ' (hold needs a sha)')
         if len(rest) > 2 or (len(rest) == 2 and not re.fullmatch(r'[1-9][0-9]{0,2}', rest[1])):
             raise ValueError(usage + ' (hold takes minutes 1..999)')
+    elif verb == 'probe':
+        if len(rest) > 1 or (rest and not SHA.fullmatch(rest[0])):
+            raise ValueError(usage + ' (probe takes at most one sha; without one, the deployed commit)')
     else:
         raise ValueError(usage)
 
@@ -250,8 +253,10 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
     relative = next((entry for entry in entries if path.as_posix().endswith('/' + entry)), None)
     if relative is None:
         raise ValueError(POLICY + '; custom GPU scripts and standalone checks are disabled')
-    if kind == 'probe' and relative != 'bench/onepass.py':
-        raise ValueError(POLICY + '; the live-serving lane accepts only bench/onepass.py')
+    if kind == 'probe' and relative != 'bench/onepass.py' and not (relative == ST_BRACKET and command[2:3] == ['probe']):
+        raise ValueError(POLICY + '; the live-serving lane accepts only bench/onepass.py and the ST bracket\'s probe')
+    if kind != 'probe' and relative == ST_BRACKET and command[2:3] == ['probe']:
+        raise ValueError(POLICY + '; the ST bracket\'s probe runs beside production: it belongs to the live-serving lane (fleet.sh st-probe)')
     if effective.get('LEGS', 'onepass') != 'onepass':
         raise ValueError(POLICY + '; LEGS must be onepass')
     if relative in SHELL_ENTRIES and effective.get('PREFILL_WARMUP', '0') != '0':

@@ -66,7 +66,11 @@ conversations and rewrites the lease to the ticket in one step, and at the
 ticket's end the lease goes to the next waiting boot ticket, back to production
 only when none waits. A bare `bash launchers/start-st-glm53.sh` or
 `bash probes/run_engine_probe.sh` is refused: take a ticket, or say
-`ST_LEASE_KIND=session` for a session's own boot by hand.
+`ST_LEASE_KIND=session` for a session's own boot by hand. A probe ticket
+(`run --gpu --probe`, `st-probe`) is the one exception: it runs beside a
+`production` lease when the door is idle -- `st:quiet` and nothing in flight,
+the quiet gate's own reading -- and takes no lease; behind a `session` or a
+ticket's boot it waits like everything else.
 
 ## The ST bracket
 
@@ -89,6 +93,17 @@ column), stop; `bench/st_judge.py` judges warm against warm with the base's
 run-to-run spread as the floor and prints the cold column beside it. `st-pair`
 boots the base only when its sha has no warm sample yet. `FLEET_REHEARSE=1`
 boots nothing and fabricates records, so the flow can be checked without GPUs.
+
+`fleet.sh st-probe SESSION [SHA] [EST] [NOTE]` is the verb that boots nothing:
+two onepass runs on the LIVE production door (`POST /v1/prefix/reset` before
+each) as a probe ticket, so it runs beside production when the door is idle and
+takes no lease. Its first run is `cold=reset`, which `st_judge` keeps out of the
+cold column (a boot's). deploy-watch queues one after every deploy
+(`d17-<sha12>`; `--no-probe` to stop it), so the deployed commit always has a
+warm sample and `st-pair` never has to boot the base; it also moves the queue's
+own checkout, `~/fleet-controller` (`--controller`, `FLEET_CONTROLLER_REPO`;
+`--no-follow`), to the deployed commit, so the queue answers by production's
+rules and 45차 §91's 639-commit drift cannot recur.
 
 Plans now batch their independent CPU stages, publish reusable evidence before
 creating another checkout on a cache hit, and keep core/fleet/startup results
