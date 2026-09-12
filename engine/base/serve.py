@@ -1929,6 +1929,13 @@ class Server:
                 ("counter", "st:prefix_tier_restores_total", "boundaries read back from the prefix tier", getattr(runner, "prefix_restores", 0)),
                 ("counter", "st:prefix_dedup_waits_total", "requests that waited for a running prefill's boundary instead of computing it",
                  getattr(runner, "dedup_waits", 0)),
+                ("gauge", "st:prefix_snapshots_free", "snapshot slots no boundary holds: what the next block boundary can take",
+                 len(prefix.free_snaps)),
+                ("counter", "st:prefix_snapshot_denials_total", "block boundaries left uncached because no snapshot could be freed",
+                 prefix.snapshot_denials),
+                ("counter", "st:prefix_snapshot_self_evicts_total",
+                 "checkpoints a prefill displaced to make room for its own later ones: state copies computed and thrown away",
+                 getattr(runner, "snapshot_self_evicts", 0)),
             ]
         tiered = getattr(runner, "tiered", None)
         if tiered is not None:

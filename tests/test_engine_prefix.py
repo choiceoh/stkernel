@@ -552,5 +552,65 @@ class ChainTests(unittest.TestCase):
         self.assertIsNone(cache.tier_lookup_chain(chain, 14, 12))
 
 
+class SnapshotPressureTests(unittest.TestCase):
+    """The meters for a resource with no spacing policy: a prompt has one block boundary every BLOCK tokens and the
+    engine has `PREFIX_SNAPSHOTS` slots, so a long enough prompt evicts its own earlier checkpoints as it goes
+    (production: 170 boundaries in a 128K prompt against 96 slots). Nothing counted that before."""
+
+    def test_a_free_slot_fades_nobody(self):
+        c = PrefixCache(BLOCK, CHUNK, 2)
+        c.bind(BlockPool(16, BLOCK, 4, 16))
+        self.assertIsNotNone(c.take_snapshot())
+        self.assertIsNone(c.last_fade)
+        self.assertEqual(c.snapshot_denials, 0)
+
+    def test_taking_the_last_slot_names_who_gave_it_up(self):
+        c = PrefixCache(BLOCK, CHUNK, 1)
+        c.bind(BlockPool(16, BLOCK, 4, 16))
+        h = c.chain(list(range(4)))[4]
+        c.insert(h, (0,), BLOCK, c.take_snapshot())
+        snap = c.take_snapshot()                              # nothing free: the boundary is faded for it
+        self.assertIsNotNone(snap)
+        self.assertEqual(c.last_fade, h)
+        self.assertEqual(c.snapshot_denials, 0)
+        c.give_snapshot(snap)
+        self.assertIsNotNone(c.take_snapshot())               # a free slot again: the name does not linger
+        self.assertIsNone(c.last_fade)
+
+    def test_a_denial_is_counted_when_nobody_can_give_a_slot_up(self):
+        c = PrefixCache(BLOCK, CHUNK, 1)
+        c.bind(BlockPool(16, BLOCK, 4, 16))
+        h = c.chain(list(range(4)))[4]
+        c.insert(h, (0,), BLOCK, c.take_snapshot())
+        c.spill_begin(h)                                      # its snapshot is being read: `_victim` will not take it
+        self.assertIsNone(c.take_snapshot())
+        self.assertEqual(c.snapshot_denials, 1)
+        self.assertIsNone(c.last_fade)
+
+    def test_a_prompt_longer_than_the_slots_evicts_its_own_boundaries(self):
+        r, cache = runner(blocks=32, snapshots=2)             # 24 tokens is six boundaries; there are two slots
+        r.submit(0, 24, now=0, ids=list(range(24)))
+        run_to_end(r, 0)
+        self.assertEqual(r.snapshot_self_evicts, 4)           # six boundaries, two slots: four checkpoints computed and dropped
+        self.assertEqual(len(cache.entries), 2)               # counted from both places a boundary is taken: `_marks` and `_checkpoint`
+        self.assertEqual(cache.snapshot_denials, 0)           # a slot was always freeable: this is waste, not refusal
+
+    def test_a_prompt_that_fits_evicts_nothing_of_its_own(self):
+        r, _ = runner(blocks=32, snapshots=8)
+        r.submit(0, 24, now=0, ids=list(range(24)))
+        run_to_end(r, 0)
+        self.assertEqual(r.snapshot_self_evicts, 0)
+
+    def test_displacing_another_row_s_boundary_is_not_a_self_evict(self):
+        r, cache = runner(blocks=32, snapshots=1)
+        r.submit(0, BLOCK, now=0, ids=list(range(BLOCK)))     # one boundary each: neither prompt can displace its own
+        run_to_end(r, 0)
+        self.assertEqual(len(cache.entries), 1)
+        r.submit(1, BLOCK, now=0, ids=list(range(100, 100 + BLOCK)))
+        run_to_end(r, 1)
+        self.assertEqual(list(cache.entries), [cache.chain(list(range(100, 100 + BLOCK)))[BLOCK]])   # the slot changed hands
+        self.assertEqual(r.snapshot_self_evicts, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

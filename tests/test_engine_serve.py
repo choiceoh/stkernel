@@ -2277,6 +2277,18 @@ class OpenAIDialectTests(unittest.TestCase):
         prefills = [c for c in s.engine.__dict__.get("prefills", [])]     # the fake does not record steps; the counters above say it
         self.assertIn("st:prefix_dedup_waits_total{engine=\"st\"} 1\n", s.metrics())
 
+    def test_the_snapshot_pressure_meters_reach_the_metrics_page(self):
+        """A prompt has a block boundary every BLOCK tokens and the engine has a fixed number of snapshot slots, so a
+        long enough prompt drops checkpoints it just computed. These three say whether that is happening."""
+        s = chat_server(prefix=4)
+        self.assertIn('st:prefix_snapshots_free{engine="st"} 4\n', s.metrics())
+        s.runner.prefix.take_snapshot()
+        self.assertIn('st:prefix_snapshots_free{engine="st"} 3\n', s.metrics())
+        s.runner.prefix.snapshot_denials, s.runner.snapshot_self_evicts = 3, 7      # distinct: a swapped wire shows
+        page = s.metrics()
+        self.assertIn('st:prefix_snapshot_denials_total{engine="st"} 3\n', page)
+        self.assertIn('st:prefix_snapshot_self_evicts_total{engine="st"} 7\n', page)
+
     def test_warm_caches_a_prompt_s_boundaries_and_pins_them_until_unpinned(self):
         s = chat_server(prefix=4)
         httpd = s._serve_http()

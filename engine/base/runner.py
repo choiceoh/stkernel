@@ -100,6 +100,7 @@ class Runner:
         self._maintained = -1                               # prefix.version the last candidate scan saw
         self.reused_tokens = 0                              # prompt tokens served from the cache (memory or tier)
         self.prefix_spills = self.prefix_restores = self.dedup_waits = 0
+        self.snapshot_self_evicts = 0                        # checkpoints a prefill threw away to make room for its own later ones
         self.depth = 2                                      # steps the device may hold before the host reads the oldest back
         self.async_steps = 0
 
@@ -600,10 +601,12 @@ class Runner:
     def _checkpoint(self, seq: int, position: int) -> None:
         """A prefill just reached `position`: if it is a block boundary nobody cached yet, keep the
         model's state there and pin the blocks before it."""
-        h = self._chain[seq].get(position)
+        chain = self._chain[seq]
+        h = chain.get(position)
         if h is None or self.prefix.has(h):
             return
         snap = self.prefix.take_snapshot()
+        self._note_fade(chain)
         if snap is None:
             return                                          # every snapshot is in use by a live boundary: this one goes uncached
         try:
@@ -670,10 +673,20 @@ class Runner:
             if h is None or self.prefix.has(h):
                 continue
             snap = self.prefix.take_snapshot()
+            self._note_fade(chain)
             if snap is None:
                 break
             marks[position] = snap
         return marks
+
+    def _note_fade(self, chain: dict) -> None:
+        """A `take_snapshot` just displaced a boundary. Count it when the boundary was this row's own: with no minimum
+        spacing between checkpoints, a prompt longer than `PREFIX_SNAPSHOTS` blocks evicts its own earlier ones as it
+        goes, and the state copy that made each of them was device work spent for nothing. This is the meter that says
+        whether that is happening; it does not change who gets evicted (`prefix._victim`)."""
+        fade = self.prefix.last_fade
+        if fade is not None and fade in chain.values():
+            self.snapshot_self_evicts += 1
 
     def step(self, now: float | None = None) -> "sched.Step | None":
         now = time.monotonic() if now is None else now
