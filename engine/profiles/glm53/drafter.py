@@ -506,7 +506,8 @@ class Drafter:
                      temps: "torch.Tensor | None" = None, generator=None, vocab: "int | None" = None, alive=None):
         """Every row's K drafts at once: anchors [n], positions [n] (each row's context: the anchor's position), slots [n],
         all on the device. Greedy walk, [n, K]; with `temps` [n] the sampled walk at each row's temperature (rows at 0
-        stay greedy) and the [n, K, vocab] distributions the picks were drawn from, as `propose_sampled_tensor`."""
+        stay greedy), plus the candidates each pick was drawn from and their mass -- [n, K, sel_top_k] each, which
+        is the whole distribution: the walk puts nothing anywhere else."""
         F, p = self.F, self.p
         K = self.k
         t = K + 1
@@ -525,7 +526,11 @@ class Drafter:
         scores = unary[:, :, None, :] + torch.einsum("nkpr,nkcr->nkpc", pred * proj[:, :, None, :], succ)   # [n, K, prev, cur]
         rows = torch.arange(n, device=dev)
         prev = torch.zeros(n, dtype=torch.int64, device=dev)
-        dists = torch.zeros(n, K, vocab, dtype=torch.float32, device=dev) if temps is not None else None
+        # The walk puts mass on `sel_top_k` candidates a position and nothing else. Handing that back as
+        # [n, K, vocab] meant allocating and zeroing 12.4 MiB every decode step (n=4, K=5, V=154,880) to carry
+        # 320 numbers, and the verifier then read it twice. The candidates and their mass are the same fact.
+        qprob = torch.zeros(n, K, F.sel_top_k, dtype=torch.float32, device=dev) if temps is not None else None
+        qcand = torch.zeros(n, K, F.sel_top_k, dtype=torch.int64, device=dev) if temps is not None else None
         out = []
         for s in range(K):
             sel = scores[rows, s, prev]                                                                    # [n, 16]
@@ -537,11 +542,11 @@ class Drafter:
                 probs = torch.softmax(sel / temps.clamp_min(1e-5).view(n, 1), dim=-1)
                 probs = torch.where(stochastic, probs, torch.zeros_like(probs).scatter_(1, best.view(n, 1), 1.0))
                 pick = torch.where(stochastic.view(n), torch.multinomial(probs, 1, generator=generator).view(n), best)
-                dists[:, s].scatter_add_(1, cand[:, s], probs)
+                qcand[:, s], qprob[:, s] = cand[:, s], probs
             out.append(cand[rows, s, pick])
             prev = pick
         drafts = torch.stack(out, 1)
-        return (drafts, dists) if temps is not None else drafts
+        return (drafts, qcand, qprob) if temps is not None else drafts
 
     def propose(self, anchor: int, position: int, ring: torch.Tensor) -> "list[int]":
         """K drafts for the block [anchor at `position`, K masks after it]; the ring holds the context up to position-1."""

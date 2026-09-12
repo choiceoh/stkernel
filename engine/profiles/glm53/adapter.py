@@ -502,13 +502,17 @@ class Glm53Engine:
         if self.sampling_history is not None:
             self.sampling_history.forget(seq)
 
-    def note_ceilings(self, target_probs, draft_probs) -> None:
-        """Every 64th verification, record what the draft allowed. See base/sampler.draft_ceilings."""
+    def note_ceilings(self, target_probs, draft_probs, draft_cand=None) -> None:
+        """Every 64th verification, record what the draft allowed. See base/sampler.draft_ceilings.
+
+        `draft_cand` is the shape the draft came in, not a choice: the device chain carries its distribution as
+        the candidates and their mass, the rich rows still carry a row per position."""
         self.steps_verified += 1
         if self.steps_verified % self._ceiling_every:
             return
-        from engine.base.sampler import draft_ceilings
-        reachable, covered = draft_ceilings(target_probs, draft_probs)
+        from engine.base.sampler import draft_ceilings, draft_ceilings_over
+        reachable, covered = (draft_ceilings(target_probs, draft_probs) if draft_cand is None
+                              else draft_ceilings_over(target_probs, draft_cand, draft_probs))
         self.reachable_mass += reachable
         self.covered_mass += covered
         self.ceiling_positions += int(draft_probs.shape[-2]) * (1 if draft_probs.dim() == 2 else int(draft_probs.shape[0]))

@@ -485,20 +485,30 @@ def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, dra
     return accepted, tokens, accepted + 1
 
 
-def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_probs: torch.Tensor, generator):
+def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_cand: torch.Tensor,
+                       draft_probs: torch.Tensor, generator):
     """`block_verify` for a whole decode batch on the device, with no host round trip.
 
-    target_probs [n, K+1, V]; drafts [n, K]; draft_probs [n, K, V]. Returns (accepted [n],
-    tokens [n, K+1] with the committed ones first, count [n] = accepted + 1). Draws K uniforms per
-    row then one more per row, in that order, identically on every rank -- the same shape of
-    stream `speculative_pick_batch` drew, so the ranks stay in step.
+    target_probs [n, K+1, V]; drafts [n, K]; the draft distribution as the candidates it could have drawn
+    (`draft_cand` [n, K, C] int64, distinct within a position -- it is a top-k) and the mass it put on each
+    (`draft_probs` [n, K, C]). Returns (accepted [n], tokens [n, K+1] with the committed ones first,
+    count [n] = accepted + 1). Draws K uniforms per row then one more per row, in that order, identically on
+    every rank, so the ranks stay in step.
+
+    The draft is ZERO outside those C candidates -- that is what `propose_rows` builds and what the accept
+    test is only unbiased against. Carrying it as [n, K, V] therefore cost a 12.4 MiB allocation, zeroed and
+    then read twice, every decode step to hold 320 numbers (V=154,880, K=5, C=16, n=4). Every place the dense
+    row was read below has an exactly equal form over the candidates, and the residual that funds the
+    correction draw is the target with C entries reduced rather than a second [n, V] tensor subtracted.
     """
     n, k1, _ = target_probs.shape
     K = k1 - 1
     device = target_probs.device
     rows = iota(n, device)
     on_draft = target_probs[:, :K].gather(2, drafts.unsqueeze(2)).squeeze(2)
-    by_draft = draft_probs.gather(2, drafts.unsqueeze(2)).squeeze(2)
+    # q at the drafted token: it is one of that position's own candidates, so a masked sum finds it without
+    # a [V]-wide row (and sums duplicates, exactly as the scatter_add that used to build the dense row did)
+    by_draft = (draft_probs * (draft_cand == drafts.unsqueeze(2))).sum(2)
     step = torch.where(by_draft > 0, on_draft / by_draft.clamp_min(1e-30), torch.zeros_like(on_draft))
     # The cap lands at every step, so this scan is not a cumprod. K is the draft width, five here.
     carried = torch.empty_like(step)
@@ -508,8 +518,12 @@ def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_p
         carried[:, i] = running
     thresholds = carried.clone()                     # the last position's threshold is its own P_K
     if K > 1:
-        ahead = carried[:, : K - 1].unsqueeze(-1)
-        mass = (ahead * target_probs[:, 1:K] - draft_probs[:, 1:K]).clamp_min(0).sum(-1)
+        ahead = carried[:, : K - 1]
+        p = target_probs[:, 1:K]
+        # sum_v max(0, a*p_v - q_v) with q zero off the candidates: the whole scaled target, minus what the
+        # candidates take of it, plus what survives the draft at each of them
+        on_cand = ahead.unsqueeze(-1) * p.gather(2, draft_cand[:, 1:K])
+        mass = ahead * p.sum(-1) - on_cand.sum(-1) + (on_cand - draft_probs[:, 1:K]).clamp_min(0).sum(-1)
         denominator = mass + 1.0 - carried[:, : K - 1]
         thresholds[:, : K - 1] = torch.where(denominator > 0, mass / denominator.clamp_min(1e-30),
                                              torch.ones_like(mass))
@@ -520,8 +534,13 @@ def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_p
     before = torch.where(accepted > 0, carried.gather(1, (accepted - 1).clamp_min(0).unsqueeze(1)).squeeze(1),
                          torch.ones(n, device=device, dtype=carried.dtype))
     row_p = target_probs[rows, at]
-    row_q = torch.where((at < K).unsqueeze(1), draft_probs[rows, at.clamp_max(K - 1)], torch.zeros_like(row_p))
-    rest = (before.unsqueeze(1) * row_p - row_q).clamp_min(0)
+    rest = before.unsqueeze(1) * row_p
+    # ... minus the draft, which is zero everywhere except its C candidates, and absent when the row ran the
+    # block out (`at == K`: there is no drafted position left to subtract)
+    held = at.clamp_max(K - 1)
+    where = draft_cand[rows, held]
+    took = torch.where((at < K).unsqueeze(1), draft_probs[rows, held], torch.zeros_like(draft_probs[rows, held]))
+    rest = rest.scatter(1, where, (rest.gather(1, where) - took).clamp_min(0))
     total = rest.sum(1, keepdim=True)
     rest = torch.where(total > 0, rest / total.clamp_min(1e-30),
                        row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
@@ -549,6 +568,19 @@ def draft_ceilings(target_probs: torch.Tensor, draft_probs: torch.Tensor) -> "tu
     """
     k = draft_probs.shape[-2]
     p = target_probs[..., :k, :]
+    return float(torch.minimum(p, draft_probs).sum()), float((p * (draft_probs > 0)).sum())
+
+
+def draft_ceilings_over(target_probs: torch.Tensor, draft_cand: torch.Tensor,
+                        draft_probs: torch.Tensor) -> "tuple[float, float]":
+    """`draft_ceilings` from the candidates instead of a [.., V] row, for the batch the device chain verifies.
+
+    Both ceilings are already sums over the draft's support: `min(p, q)` is zero wherever q is, and `p * (q > 0)`
+    is p on exactly the candidates. So neither needs the vocabulary -- the dense row was never adding anything
+    but zeros to these two numbers.
+    """
+    k = draft_probs.shape[-2]
+    p = target_probs[..., :k, :].gather(-1, draft_cand)
     return float(torch.minimum(p, draft_probs).sum()), float((p * (draft_probs > 0)).sum())
 
 

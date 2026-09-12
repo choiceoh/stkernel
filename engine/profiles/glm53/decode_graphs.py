@@ -502,7 +502,8 @@ class DrafterDecodeGraphs:
         return self.rows_propose.run((anchors.numel(), self.drafter.k + 1), fill)
 
     def propose_rows_sampled(self, anchors, positions, slots, temps, alive):
-        """Every row's drafts drawn at its temperature (0 = greedy) and the distributions they came from: [n, K], [n, K, vocab]."""
+        """Every row's drafts drawn at its temperature (0 = greedy) and the distribution they came from, as the
+        candidates and their mass: [n, K], [n, K, sel_top_k], [n, K, sel_top_k]."""
         def fill(inputs):
             inputs["anchors"].copy_(anchors)
             inputs["positions"].copy_(positions)

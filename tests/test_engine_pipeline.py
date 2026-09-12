@@ -43,13 +43,13 @@ class ShrinkTests(unittest.TestCase):
     def test_every_row_array_follows_the_surviving_rows(self):
         e = SimpleNamespace(drafter=SimpleNamespace(k=2),
                             caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device("cpu")),
-                            F=SimpleNamespace(block=2))
+                            F=SimpleNamespace(block=2, sel_top_k=4))
         p = AsyncDecode(e)
         t, n = p.t, 3
         b = {name: torch.arange(n) for name in
              ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "temps", "top_k", "top_p", "anchor")}
         b.update(ends=torch.zeros(n, 1, dtype=torch.int64), alive=torch.ones(n, dtype=torch.bool),
-                 drafts=torch.zeros(n, 2, dtype=torch.int64), ids=torch.arange(n * t), dists=None)
+                 drafts=torch.zeros(n, 2, dtype=torch.int64), ids=torch.arange(n * t), qcand=None, qprob=None)
         p.buf, p.batch = b, (1, 2, 3)
         p._shrink([3, 1])                                                     # old row 2 -> new 0, old row 0 -> new 1
         self.assertEqual(b["seqs"].tolist(), [2, 0])
@@ -93,7 +93,7 @@ class BatchTransitionTests(unittest.TestCase):
                                     propose_rows=lambda field, slots, anchors, ctx, alive=None: torch.full((len(slots), 1), 7)),
             caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device('cpu'),
                                    draft_field=lambda: torch.zeros(1), stage_boundaries=lambda *args: None),
-            F=SimpleNamespace(vocab=32, block=16), tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1},
+            F=SimpleNamespace(vocab=32, block=16, sel_top_k=4), tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1},
             limits={1: (10, 0.0), 2: (10, 0.0)}, options={}, ends={}, eos={31}, top_p=1.0,
             inflight={}, staged={}, accepted_total=0, drafted_total=0, steps=0,
             gen=torch.Generator().manual_seed(1))
@@ -178,19 +178,48 @@ class BatchTransitionTests(unittest.TestCase):
         e.ends[2] = {29, 30, 31}
         def sampled(field, slots, anchors, ctx, **kwargs):
             ids = torch.full((len(slots), 1), 9)
-            dist = torch.nn.functional.one_hot(ids, 32).float()
-            return ids, dist
+            cand = ids.unsqueeze(2).expand(len(slots), 1, 4).contiguous()
+            q = torch.zeros(len(slots), 1, 4); q[..., 0] = 1.0
+            return ids, cand, q
         e.drafter.propose_rows = sampled
         p._merge([2, 1], [2, 1])
         self.assertEqual(p.buf['drafts'].tolist(), [[9], [7]])
-        self.assertEqual(p.buf['dists'].argmax(-1).tolist(), [[9], [7]])
+        self.assertEqual(p.buf['qcand'][..., 0].tolist(), [[9], [7]])     # the candidate carrying the mass
+        # the greedy survivor becomes a point mass: ALL of it on that one candidate, or the accept test divides
+        # the target by a draft that does not sum to one and the verification stops being unbiased
+        self.assertEqual(p.buf['qprob'][1].tolist(), [[1.0, 0.0, 0.0, 0.0]])
+        self.assertEqual(p.buf['qprob'][0].tolist(), [[1.0, 0.0, 0.0, 0.0]])
+        self.assertEqual(float(p.buf['qprob'].sum()), 2.0)
         self.assertEqual(p.buf['ends'].tolist(), [[29, 30, 31], [31, -1, -1]])
         self.assertEqual(p.buf['temps'].tolist(), [torch.tensor(.7).item(), 0.])
         self.assertEqual(p.buf['ids'].tolist(), [6, 9, 5, 7])
         p._merge([1], [1])
         self.assertFalse(p.buf['stochastic'])
-        self.assertIsNone(p.buf['dists'])
+        self.assertIsNone(p.buf['qprob'])
         self.assertEqual(p.buf['ids'].tolist(), [5, 7])
+
+    def test_a_sampled_survivor_keeps_its_own_draft_when_a_row_joins(self):
+        """`_merge` only invents a point mass for the side that has none. A survivor that was already sampling
+        carries a real distribution, and overwriting it would throw away the draws its drafts came from."""
+        e = self.engine()
+        p = AsyncDecode(e)
+        e.limits[1] = (10, 0.9)
+        def sampled(field, slots, anchors, ctx, **kwargs):
+            ids = torch.full((len(slots), 1), 9)
+            cand = torch.arange(4).view(1, 1, 4).expand(len(slots), 1, 4).contiguous()
+            q = torch.full((len(slots), 1, 4), 0.25)
+            return ids, cand, q
+        greedy = e.drafter.propose_rows
+        e.drafter.propose_rows = sampled
+        p._build([1], [1])                                   # a sampled batch of one
+        self.assertEqual(p.buf['qprob'][0].tolist(), [[0.25] * 4])
+        e.limits[2] = (10, 0.0)
+        e.ends[2] = {31}
+        e.drafter.propose_rows = greedy                      # the joining row walks greedily
+        p._merge([1, 2], [1, 2])
+        held = p.batch.index(1)
+        self.assertEqual(p.buf['qprob'][held].tolist(), [[0.25] * 4], "the survivor's own draft, untouched")
+        self.assertEqual(float(p.buf['qprob'][1 - held].sum()), 1.0, "the joining greedy row is a point mass")
 
     def test_shrinking_keeps_device_progress_ahead_of_the_host(self):
         e = self.engine()
