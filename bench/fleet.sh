@@ -256,16 +256,15 @@ entry_line() {
 # asks on the waiter's behalf -- once per refusal, and never for a holder that predates
 # the protocol (its plain-text lock has nobody listening).
 #
-# It cannot always ask. A runner executes out of a snapshot that carries bench/, engine/
-# and probes/ and NOT launchers/, so the helper is simply absent there and the request has
-# nowhere to go. Say which of the two happened: a log line that reports an ask nobody made
+# Older runner snapshots omit the lease helper. Say which of the two happened:
+# a log line that reports an ask nobody made
 # leaves a waiter and a holder each believing the other has been told (45차 §91).
 # Returns 0 when the holder was actually asked.
 st_engine_yield() {
   local who=$1 repo=${FLEET_RUNNER_REPO:-$REPO}
   [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 1
   ( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"
-    fleet_lease yield --requester "'queue/$who'" --note "'a queued reservation needs the fleet'" ) >/dev/null 2>&1
+    fleet_lease yield --requester "queue/$who" --note "a queued reservation needs the fleet" ) >/dev/null 2>&1
 }
 serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting
   ! serving_up && return 0

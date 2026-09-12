@@ -101,7 +101,7 @@ class LauncherAndQueueTests(unittest.TestCase):
         # the lease never rsyncs over a live session's engine tree
         self.assertIn("launchers/lib/fleet-lease.sh", self.launcher)
         helper = (ROOT / "launchers/lib/fleet-lease.sh").read_text()
-        self.assertIn('ssh $FLEET_LEASE_SSH "choiceoh@$FLEET_HEAD" "python3 - $* --path $FLEET_LEASE_PATH" < "$module"', helper)
+        self.assertIn('ssh $FLEET_LEASE_SSH "choiceoh@$FLEET_HEAD" "python3 - $quoted" < "$module"', helper)
 
     def test_the_queue_refuses_to_answer_off_the_controller(self):
         """Homes are not shared: elsewhere it would create a second, empty queue."""
@@ -116,7 +116,8 @@ class LauncherAndQueueTests(unittest.TestCase):
         import fleet_onepass
         import fleet_pin
         pinned = set(fleet_pin.source_files(ROOT))
-        for relative in (*fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES):
+        for relative in ('launchers/lib/fleet-lease.sh', 'engine/base/fleet_lease.py',
+                         *fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES):
             if (ROOT / relative).is_file():
                 self.assertIn(relative, pinned, relative)
 
