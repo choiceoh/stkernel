@@ -29,6 +29,7 @@ import struct
 import time
 from typing import Protocol
 
+from engine.base import prefix as prefix_mod
 from engine.base import scheduler as sched
 from engine.base.instruments import Recorder
 from engine.base.kv import BlockPool, SlotPool
@@ -156,7 +157,10 @@ class Runner:
             self.kv.release(seq)
             raise
         self.slot_of[seq] = slot
-        if chain:
+        if chain is not None:
+            # An EMPTY chain is kept too: a prompt shorter than one block has no boundary of its own, but what it
+            # generates crosses them, and `_rechain` is the only thing that ever sees those. Dropping it here cost
+            # every sub-block prompt -- most first turns -- every boundary of its whole answer.
             self._chain[seq] = chain
             self._salts[seq] = tuple(salts)
         self.reused_tokens += reused
@@ -602,7 +606,11 @@ class Runner:
         if history is None:
             return
         marks = getattr(self.model, "media_marks", None)
-        salts = [(p, bytes.fromhex(d)) for p, d in marks(seq)] if marks is not None else list(self._salts.get(seq, ()))
+        held = list(self._salts.get(seq, ()))
+        if marks is None:
+            salts = held
+        else:                                               # the model knows the pictures; the tenant is not its business
+            salts = [s for s in held if prefix_mod.is_tenant_salt(s)] + [(p, bytes.fromhex(d)) for p, d in marks(seq)]
         chain = self._chain[seq]
         last = max(chain) if chain else 0
         tail = getattr(self.model, "history_from", None)
