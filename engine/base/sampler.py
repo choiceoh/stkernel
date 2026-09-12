@@ -258,6 +258,10 @@ def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[
     """Rejection sampling over K drafts (Leviathan/Chen; vLLM's rejection_sample): returns (accepted count, the
     committed tokens = accepted drafts + one recovered or bonus token).
 
+    The engine verifies with `block_verify`, which accepts a longer prefix for the same output
+    distribution. This stays as the reference that claim is measured against, the way the lane
+    tables keep a reference implementation of every served kernel.
+
     target_probs: K+1 rows [V] -- the target's distribution at each draft position and the bonus position.
     draft_ids: the K proposed tokens; draft_probs: K rows [V] -- the drafter's distribution each was drawn from
     (zero outside its candidates). u ~ U(0,1) per position from `generator`, identical on every rank."""
@@ -285,6 +289,64 @@ def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[
     return accepted, list(draft_ids) + [draw(target_probs[k], generator)]
 
 
+def block_verify(target_probs, draft_ids, draft_probs, generator) -> "tuple[int, list[int]]":
+    """Block verification (Sun et al. 2024, arXiv 2403.10444): the same output distribution as
+    `speculative_pick`, accepting a longer prefix on average.
+
+    Token-level rejection decides each draft against its own position and stops at the first
+    failure. Block verification decides the LENGTH of the accepted prefix instead, using how much
+    target mass the whole accepted run has carried so far, so a draft the token-level rule would
+    have thrown away can still be kept when the run behind it was good.
+
+    The running quantity is the joint ratio of the accepted prefix, capped at one at every step:
+
+        P_0 = 1 ,  P_i = min(P_{i-1} * p_i(x_i) / q_i(x_i), 1)
+
+    and the threshold at position i is built from the residual mass the next position would leave:
+
+        R_i = sum_x max(P_i * p_{i+1}(x) - q_{i+1}(x), 0)
+        h_i = R_i / (R_i + 1 - P_i)      and h_K = P_K at the last position
+
+    The accepted length is the longest prefix whose uniform falls under its threshold. What follows
+    it is drawn from the residual max(P_{L-1} * p_L(x) - q_L(x), 0), or from the target itself when
+    every draft was accepted and the extra token is the bonus.
+
+    target_probs: K+1 rows [V]; draft_ids: the K proposals; draft_probs: K rows [V].
+    """
+    k = len(draft_ids)
+    if k == 0:
+        return 0, [draw(target_probs[0], generator)]
+    device = target_probs.device
+    chosen = torch.tensor(list(draft_ids), device=device, dtype=torch.int64)
+    at = iota(k, device)
+    ps = target_probs[at, chosen].tolist()
+    qs = draft_probs[at, chosen].tolist()
+    carried, ratio = [], 1.0
+    for i in range(k):
+        ratio = min(ratio * ps[i] / qs[i], 1.0) if qs[i] > 0 else 0.0
+        carried.append(ratio)
+    thresholds = list(carried)                      # the last position's threshold is P_K itself
+    if k > 1:
+        ahead = torch.tensor(carried[:-1], device=device, dtype=target_probs.dtype).unsqueeze(-1)
+        residual = (ahead * target_probs[1:k] - draft_probs[1:k]).clamp_min(0).sum(-1).tolist()
+        for i, mass in enumerate(residual):
+            denominator = mass + 1.0 - carried[i]
+            thresholds[i] = mass / denominator if denominator > 0 else 1.0
+    uniform = torch.rand(k, generator=generator, device=device).tolist()
+    accepted = 0
+    for i in range(k):
+        if uniform[i] <= thresholds[i]:
+            accepted = i + 1
+    if accepted == k:
+        return accepted, list(draft_ids) + [draw(target_probs[k], generator)]
+    before = carried[accepted - 1] if accepted else 1.0
+    rest = (before * target_probs[accepted] - draft_probs[accepted]).clamp_min(0)
+    total = float(rest.sum())
+    if total <= 0:
+        rest, total = target_probs[accepted], float(target_probs[accepted].sum())
+    return accepted, list(draft_ids[:accepted]) + [draw(rest / total, generator)]
+
+
 def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_probs: torch.Tensor, generator):
     """`speculative_pick` for a whole decode batch on the device, with no host round trip (45차 §23 B3): rows run
     ahead of the host, so their picks must be tensors. target_probs [n, K+1, V]; drafts [n, K]; draft_probs [n, K, V].
@@ -306,6 +368,52 @@ def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, dra
     total = recovered.sum(1, keepdim=True)
     recovered = torch.where(total > 0, recovered / total.clamp_min(1e-30), row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
     fresh = torch.multinomial(recovered, 1, generator=generator).squeeze(1)
+    tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
+    tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
+    return accepted, tokens, accepted + 1
+
+
+def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_probs: torch.Tensor, generator):
+    """`block_verify` for a whole decode batch on the device, with no host round trip.
+
+    target_probs [n, K+1, V]; drafts [n, K]; draft_probs [n, K, V]. Returns (accepted [n],
+    tokens [n, K+1] with the committed ones first, count [n] = accepted + 1). Draws K uniforms per
+    row then one multinomial per row, in that order, identically on every rank -- the same shape of
+    stream `speculative_pick_batch` drew, so the ranks stay in step.
+    """
+    n, k1, _ = target_probs.shape
+    K = k1 - 1
+    device = target_probs.device
+    rows = iota(n, device)
+    on_draft = target_probs[:, :K].gather(2, drafts.unsqueeze(2)).squeeze(2)
+    by_draft = draft_probs.gather(2, drafts.unsqueeze(2)).squeeze(2)
+    step = torch.where(by_draft > 0, on_draft / by_draft.clamp_min(1e-30), torch.zeros_like(on_draft))
+    # The cap lands at every step, so this scan is not a cumprod. K is the draft width, five here.
+    carried = torch.empty_like(step)
+    running = torch.ones(n, device=device, dtype=step.dtype)
+    for i in range(K):
+        running = (running * step[:, i]).clamp_max(1.0)
+        carried[:, i] = running
+    thresholds = carried.clone()                     # the last position's threshold is its own P_K
+    if K > 1:
+        ahead = carried[:, : K - 1].unsqueeze(-1)
+        mass = (ahead * target_probs[:, 1:K] - draft_probs[:, 1:K]).clamp_min(0).sum(-1)
+        denominator = mass + 1.0 - carried[:, : K - 1]
+        thresholds[:, : K - 1] = torch.where(denominator > 0, mass / denominator.clamp_min(1e-30),
+                                             torch.ones_like(mass))
+    u = torch.rand(n, K, generator=generator, device=device)
+    reach = iota(K, device).add(1).expand(n, K)
+    accepted = torch.where(u <= thresholds, reach, torch.zeros_like(reach)).max(1).values
+    at = accepted.clamp_max(K)
+    before = torch.where(accepted > 0, carried.gather(1, (accepted - 1).clamp_min(0).unsqueeze(1)).squeeze(1),
+                         torch.ones(n, device=device, dtype=carried.dtype))
+    row_p = target_probs[rows, at]
+    row_q = torch.where((at < K).unsqueeze(1), draft_probs[rows, at.clamp_max(K - 1)], torch.zeros_like(row_p))
+    rest = (before.unsqueeze(1) * row_p - row_q).clamp_min(0)
+    total = rest.sum(1, keepdim=True)
+    rest = torch.where(total > 0, rest / total.clamp_min(1e-30),
+                       row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
+    fresh = torch.multinomial(rest, 1, generator=generator).squeeze(1)
     tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
     tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
     return accepted, tokens, accepted + 1

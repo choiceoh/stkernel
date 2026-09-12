@@ -656,7 +656,7 @@ class Glm53Engine:
         `masks` is the step's grammar masks (base/grammar.StepMasks), filled before the forward; a grammar row with
         no step to ride along with -- the prompt's first token -- fills its own here.
         Returns (accepted drafts, committed tokens, per-token (id, logprob, top) or None)."""
-        from engine.base.sampler import distribution, pick_each, speculative_pick, top_logprobs
+        from engine.base.sampler import block_verify, distribution, pick_each, top_logprobs
         opts = self.options.get(seq, {})
         temperature = self.limits[seq][1]
         gen = self.gens.get(seq, self.gen)
@@ -679,7 +679,7 @@ class Glm53Engine:
                 accepted += 1
             new = picks[: accepted + 1]
         else:
-            accepted, new = speculative_pick(torch.stack(dists), drafts[: len(dists) - 1], draft_probs, gen)
+            accepted, new = block_verify(torch.stack(dists), drafts[: len(dists) - 1], draft_probs, gen)
         want = opts.get("logprobs")
         lps = None
         if want is not None:
