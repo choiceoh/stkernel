@@ -279,6 +279,20 @@ print('{}')
         self.assertIn("health check failed (1/3): containers=yes door=yes chat=no", out.stdout)
         self.assertIn("health check failed (2/3): containers=yes door=yes chat=no", out.stdout)
 
+    def test_a_fleet_taken_while_launching_is_not_a_failed_attempt(self):
+        """05:30 and 06:25 on 2026-09-13: the launcher's stop let the lease go, a waiting ticket took it,
+        the launcher's start was refused -- and the loop counted attempts 1 and 5 and HELD production."""
+        self.activity(ago=1000)
+        launcher = self.home / "launcher.sh"
+        launcher.write_text('#!/bin/sh\necho "launch $*" >> "$FAKE_HOME/events"\n'
+                            'echo st-replay-other-session > "$FAKE_HOME/fleet.lock"\nexit 1\n')   # refused: a ticket took the fleet
+        out = self.loop(FAKE_DOOR_DOWN_CALLS=99)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("the fleet was taken while launching", out.stdout)
+        self.assertNotIn("launch attempt 1/5", out.stdout)
+        text = (Path(__file__).resolve().parents[1] / 'launchers/st-glm53-supervisor.sh').read_text()
+        self.assertIn("a foreign window resets the launch count", text, "and a window ends the row of failures the hold counts")
+
     def test_a_launch_is_done_when_a_chat_answers_and_is_not_repeated(self):
         self.activity(ago=1000)                                   # the grace has passed
         out = self.loop(FAKE_CHAT_FAIL_CALLS=2)                  # the first two chats after the door fail: warmup
