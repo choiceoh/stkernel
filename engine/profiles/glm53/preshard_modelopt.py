@@ -1,8 +1,8 @@
 """Preshard NVIDIA GLM NVFP4 losslessly, retaining separate FP32 multipliers.
 
-Outputs a versioned offline layout, not the current folded-scale serving layout.
-The live loader intentionally rejects it until an explicit ModelOpt adapter is
-implemented. No dequantized BF16 replacement of the dense NVFP4 layers is made.
+Outputs the versioned ModelOpt layout consumed by net.bind/modelopt_scales.
+No dequantized BF16 replacement of the dense NVFP4 layers is made. Conversion
+receipts prove the stored bytes; serving qualification is recorded separately.
 """
 import argparse
 import hashlib
@@ -59,7 +59,7 @@ def plan(ckpt,layers):
         vision_payload_bytes=vision_bytes,
         source_tensors=len(sources),quantized_projections=len(covered),
         global_scales='FP32 multipliers preserved separately; no folding or inversion',
-        dense_nvfp4_preserved=True,live_serving_compatible=False,
+        dense_nvfp4_preserved=True,serving_adapter='engine.profiles.glm53.modelopt_scales',
         source_coverage=coverage,
         source_config_sha256=file_hash(Path(ckpt)/'config.json'),
         source_index_sha256=file_hash(Path(ckpt)/'model.safetensors.index.json'))

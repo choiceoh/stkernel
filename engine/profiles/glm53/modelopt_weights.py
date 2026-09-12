@@ -1,11 +1,12 @@
-"""Lossless offline TP=4 layout for NVIDIA's GLM ModelOpt NVFP4 checkpoint.
+"""Lossless TP=4 layout for NVIDIA's GLM ModelOpt NVFP4 checkpoint.
 
 Packed bytes and E4M3 block scales are split/reordered without arithmetic.
 FP32 weight_scale_2 multipliers and input_scale values remain separate. The
-first three dense MLPs remain NVFP4. This encoding is intentionally distinct
-from the live folded-scale layout; it requires an explicit serving adapter.
+first three dense MLPs remain NVFP4. The layout marker selects this contract
+at boot; net.bind and modelopt_scales prepare the b12x serving multipliers.
 """
 from pathlib import Path
+from dataclasses import replace
 import json
 
 import torch
@@ -15,7 +16,7 @@ from engine.modules.nvfp4_sf import swizzle_sf
 from engine.profiles.glm53 import facts, specs
 
 
-WEIGHT_LAYOUT = 'st-glm53-modelopt-up-gate-v1'
+from engine.profiles.glm53.weights import MODELOPT_WEIGHT_LAYOUT as WEIGHT_LAYOUT
 
 
 def load_facts(path):
@@ -30,7 +31,7 @@ def load_facts(path):
         scheme = groups['group_0'][side]
         if scheme['num_bits'] != 4 or scheme['type'] != 'float' or scheme['group_size'] != 16:
             raise ValueError('requires NVFP4 group 16 for weights and activations')
-    return facts.architecture(config)
+    return replace(facts.architecture(config), weight_layout=WEIGHT_LAYOUT)
 
 
 def quant_specs(F, layer):
@@ -105,3 +106,7 @@ def groups(F,layers):
     yield 'top',top
     for layer in layers:
         yield f'layer {layer}',layer_specs(F,layer)
+
+
+def all_specs(F, layers=None):
+    return [s for _, group in groups(F, range(F.layers) if layers is None else layers) for s in group]

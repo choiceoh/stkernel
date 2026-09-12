@@ -74,6 +74,7 @@ class Facts:
     block: int = BLOCK
     chunk_align: int = CHUNK_ALIGN
     spec_k: int = SPEC_K
+    weight_layout: str = "st-glm53-b12x-up-gate-v1"  # selected from checkpoint metadata before allocation
 
     # -- what one of the four ranks holds (TP by heads / intermediate / vocab) --
     @property
@@ -121,6 +122,9 @@ class Facts:
 
 def load(ckpt: "str | Path" = CKPT) -> Facts:
     c = json.loads((Path(ckpt) / "config.json").read_text())
+    if c['quantization_config'].get('quant_method') == 'modelopt':
+        from engine.profiles.glm53.modelopt_weights import load_facts
+        return load_facts(ckpt)
     f = architecture(c)
     q = c["quantization_config"]["config_groups"]["group_0"]
     assert q["format"] == "nvfp4-pack-quantized" and q["weights"]["group_size"] == 16 and q["input_activations"]["group_size"] == 16

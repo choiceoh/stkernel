@@ -105,7 +105,13 @@ def chat_renderer(ckpt=facts.CKPT):
     template engine renders it (the template needs its filters); chat_template_kwargs (`thinking`, ...) pass through."""
     from transformers import AutoTokenizer
     t = AutoTokenizer.from_pretrained(str(ckpt))
-    t.chat_template = (Path(ckpt) / CHAT_TEMPLATE).read_text()
+    template = Path(ckpt) / CHAT_TEMPLATE
+    if not template.exists():
+        # NVIDIA ships only chat_template.jinja, which always opens <think>.
+        # ST's bundled template preserves thinking=False and multimodal/tools
+        # semantics for both checkpoint encodings, including direct boot.py.
+        template = Path(__file__).resolve().parents[3] / 'launchers' / CHAT_TEMPLATE
+    t.chat_template = template.read_text()
 
     def render(messages, kwargs, *, generation_prompt: bool = True, continue_final: bool = False):
         """`continue_final` resumes inside the last assistant turn instead of opening a new
@@ -194,7 +200,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     nb = int((kv_gib * GIB - ns * sb) // (bb + max_seqs * 4))
     if nb < 2:
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
-    rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors")
+    rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
+    recorder.gauge('weight_layout', F.weight_layout)
     snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
     # the vision tower (45차 §23 A7): whole on every rank, from vision.safetensors next to the rank files (preshard.py --vision);
     # absent, the door refuses pictures -- the fleet boot requires it (production serves images, PR #431)

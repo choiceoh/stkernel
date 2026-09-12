@@ -54,7 +54,7 @@ class ModelOptPreshardTests(unittest.TestCase):
         contract=next(s for s in quant_specs(F,3) if s.name.endswith('w13_alpha'))
         with self.assertRaisesRegex(ValueError,'gate/up'):contract.build(source,0,4)
 
-    def test_modelopt_rank_roundtrip_and_live_loader_rejection(self):
+    def test_modelopt_rank_roundtrip_and_explicit_layout_acceptance(self):
         F,_,source=self.fixture();contracts=quant_specs(F,3)
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'rank0of4.safetensors'
@@ -63,7 +63,9 @@ class ModelOptPreshardTests(unittest.TestCase):
             writer.close();loaded=RankLoader(path).load([s.name for s in contracts],device='cpu')
             for spec in contracts:
                 self.assertTrue(torch.equal(loaded[spec.name].view(torch.uint8),spec.build(source,0,4).view(torch.uint8)))
-            with self.assertRaisesRegex(ValueError,'incompatible'):rank_loader(path)
+            self.assertEqual(rank_loader(path, expected_layout=WEIGHT_LAYOUT).metadata['weight_layout'], WEIGHT_LAYOUT)
+            with self.assertRaisesRegex(ValueError,'layout mismatch'):
+                rank_loader(path, expected_layout='st-glm53-b12x-up-gate-v1')
 
 
 if __name__=='__main__':unittest.main()

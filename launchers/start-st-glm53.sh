@@ -173,6 +173,9 @@ for v in $(compgen -v STK_ || true); do NCCL_ENV="$NCCL_ENV -e $v=${!v}"; done
 META="$REPO/build/st-glm53-meta"; mkdir -p "$META"
 cp "$CKPT"/config.json "$CKPT"/tokenizer.json "$CKPT"/tokenizer_config.json "$CKPT"/generation_config.json "$CKPT"/processor_config.json "$META"/ 2>/dev/null
 cp "$CKPT"/chat_template*.jinja "$META"/ 2>/dev/null || true
+# ST owns this template (thinking, tools and multimodal request semantics).
+# NVIDIA's source does not include it; never inherit a stale previous staging.
+cp "$REPO/launchers/chat_template_mm_v2.jinja" "$META/"
 # When the supervisor launches from the installed tree, refresh its own metadata too.
 if [ "$(readlink -f "$REPO")" = "$(readlink -f "$ENGINE_DIR")" ]; then
   rsync -a --delete "$META/" "$ENGINE_DIR/st-glm53-meta/"

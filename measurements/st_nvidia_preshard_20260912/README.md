@@ -71,11 +71,12 @@ tensors, with **zero unaccounted tensors**. Future full conversions fail if
 anything outside that explicit MTP policy is omitted. DFlash2's own weights
 remain a separate existing checkpoint.
 
-**This is a prepared offline checkpoint, not a live-serving promotion.** The
-current serving loader intentionally rejects this different layout. A serving
-adapter still needs to bind the separate multipliers/input scales and route the
-packed dense layers through the corresponding NVFP4 operations. The original
-checkpoint and current production files/configuration are untouched.
+**The conversion receipt is not a live-serving promotion.** At conversion
+completion the serving loader rejected this layout. The subsequent
+[serving adapter](../st_nvidia_serving_20260912/README.md) binds the separate
+multipliers/input scales and routes packed dense layers through NVFP4. Its
+validation is recorded separately; the historical receipts below are unchanged.
+The original checkpoint and current production files/configuration are untouched.
 
 ## Conversion and verification
 

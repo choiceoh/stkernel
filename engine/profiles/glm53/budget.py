@@ -51,14 +51,19 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     if box_gib is None:
         box_gib = host_total                                             # GB10: device total == MemTotal (facts.check_box)
     F = facts.load(ckpt)
-    weight_specs = specs_mod.all_specs(F)
+    from engine.profiles.glm53.weights import MODELOPT_WEIGHT_LAYOUT
+    if F.weight_layout == MODELOPT_WEIGHT_LAYOUT:
+        from engine.profiles.glm53.modelopt_weights import all_specs
+        weight_specs = all_specs(F)
+    else:
+        weight_specs = specs_mod.all_specs(F)
     rank_file = Path(ranks_dir) / f"rank{rank}of{facts.TP}.safetensors" if ranks_dir else None
     if rank_file is not None and rank_file.exists():
         weights_gib, tensors = rank_weights(rank_file)
         weights_evidence = f"{rank_file.name} header: {tensors:,} tensors"
     else:
         weights_gib = sum(s.nbytes() for s in weight_specs) / GIB
-        weights_evidence = f"specs.py: {len(weight_specs):,} tensors/rank at TP={facts.TP}"
+        weights_evidence = f"{F.weight_layout} specs: {len(weight_specs):,} tensors/rank at TP={facts.TP}"
     vision_file = Path(ranks_dir) / "vision.safetensors" if ranks_dir else None
     if vision_file is not None and vision_file.exists():
         vision_gib, vision_evidence = rank_weights(vision_file)[0], f"{vision_file.name} header"

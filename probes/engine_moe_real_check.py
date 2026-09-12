@@ -16,24 +16,24 @@ from engine.modules import moe
 from engine.modules.quant import _fp4_encode
 
 @tr.jit
-def scaled(X, Y, S, GS, N: tl.constexpr):
+def scaled(X, Y, S, GS, N: tl.constexpr, MULTIPLIER: tl.constexpr = False):
     block = tl.program_id(0)
     i = block * 16 + tl.arange(0, 16)
     x = tl.load(X+i).to(tl.float32)
     gs = tl.load(GS)
-    rgs = tl.inline_asm_elementwise('rcp.approx.ftz.f32 $0, $1;', '=f,f', [gs], dtype=tl.float32, is_pure=True, pack=1)
+    rgs = gs if MULTIPLIER else tl.inline_asm_elementwise('rcp.approx.ftz.f32 $0, $1;', '=f,f', [gs], dtype=tl.float32, is_pure=True, pack=1)
     rsix = tl.inline_asm_elementwise('rcp.approx.ftz.f32 $0, $1;', '=f,f', [tl.full((), 6., tl.float32)], dtype=tl.float32, is_pure=True, pack=1)
     s = tl.minimum(rgs * (tl.max(tl.abs(x),0) * rsix), 448.).to(tl.float8e4nv).to(tl.float32)
     inv = tl.inline_asm_elementwise('rcp.approx.ftz.f32 $0, $1;', '=f,f', [s], dtype=tl.float32, is_pure=True, pack=1)
     inv = tl.where(s == 0., 0., inv)
-    tl.store(Y+i, (x * inv) * rgs)
+    tl.store(Y+i, x * (inv * rgs) if MULTIPLIER else (x * inv) * rgs)
     tl.store(S+block, s)
 
-def hardware_quant(x, gs):
+def hardware_quant(x, gs, *, multiplier=False):
     x = x.contiguous()
     y = torch.empty_like(x, dtype=torch.float32)
     s = torch.empty((*x.shape[:-1],x.shape[-1]//16), device=x.device, dtype=torch.float32)
-    scaled[(x.numel()//16,)](x,y,s,gs, x.numel(), num_warps=1, enable_fp_fusion=False)
+    scaled[(x.numel()//16,)](x,y,s,gs, x.numel(), MULTIPLIER=multiplier, num_warps=1, enable_fp_fusion=False)
     nib = _fp4_encode(y).unflatten(-1,(x.shape[-1]//2,2))
     return (nib[...,0] | (nib[...,1]<<4)).view(torch.float4_e2m1fn_x2), s.to(torch.float8_e4m3fn)
 
