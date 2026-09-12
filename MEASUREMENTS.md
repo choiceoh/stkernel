@@ -12322,3 +12322,36 @@ MemAvailable 을 읽고, 선언한 KV 를 뺀 나머지가 바닥(16 GiB) 아래
 `forward` 안을 보려면 **CUPTI 밖에 없다** — `/v1/engine/profile`(§90) 과
 `probes/engine_graph_profile.py`(큐에 걸어 둔 티켓) 가 그 일을 한다. 테스트 부팅은 그 둘을 **창 없이**
 돌릴 수 있게 해 주는 자리이지, 그 자체가 자는 아니다.
+
+### 45차 §95 — 큐가 허용한 검사 여섯 중 셋은 **큐가 시작은 하되 돌릴 수 없었다** (2026-09-12, srv4, 프로덕션 유지)
+
+§90 의 티켓(`st-fwd-lanes`)이 창을 기다리는 동안 **한 번도 실행된 적 없는 프로브가 어떻게 불리는지**를
+확인했다. 창을 버릴 뻔했다.
+
+`probes/run_engine_probe.sh` 는 프로브 경로 뒤의 `"$@"` 를 그대로 컨테이너에 넘긴다. 그리고 큐의 정석
+호출은 **인자가 없다**(`fleet.sh` 헤더의 예시부터 그렇다). 그런데 `bench/fleet_onepass.ST_FLAGS` 가
+허용하는 플래그는 한 줌뿐이고 — `--drafter-dir` 과 `--tier-dir` 은 **거기 없다** — 그러면
+그걸 `required` 로 받는 검사는 **큐가 시작은 해도 첫 줄에서 죽는다.**
+
+여섯 중 셋이 그랬다:
+
+| 허용된 검사 | 요구하던 것 |
+|---|---|
+| `engine_decode_graph_check.py` | `--ranks` |
+| `engine_drafter_graph_check.py` | `--ranks`, `--ckpt-meta`, **`--drafter-dir`** |
+| `engine_full_check.py` | `--ranks`, `--ckpt-meta`, **`--drafter-dir`**, **`--tier-dir`** |
+
+굵은 둘은 `ST_FLAGS` 에 없으니 **어떤 호출로도 못 넘긴다** — 그 두 검사는 큐를 통해서는 영영 못 돈다.
+#741 에서 `engine_graph_profile.py` 가 **이름만 있고 파일이 없던 것**과 같은 종류다: 허용 목록이
+돌릴 수 없는 것을 약속하고 있었다.
+
+전부 노드에서 되는 기본값을 줬다 — `facts.RANKS` · `facts.CKPT` · `drafter_mod.DRAFTER`, 그리고
+full check 의 티어는 **실행마다 새 임시 디렉터리**(프로덕션 티어를 가리키지 않는다). 내 프로브도
+`--ranks` 를 요구하고 있었다.
+
+`tests/test_engine_graph_profile.py` 가 이제 **허용된 검사 중 어느 것도 인자를 요구하지 않는다**는 것을
+박는다. 이름에 파일이 있는지(§90)와 함께, 큐가 약속한 것이 실제로 돌 수 있는지를 지킨다.
+
+**부수**: 티켓은 `queued checkout revision changed` 로 멈춰 있었다 — 내가 큐에 건 뒤 `~/stkernel` 이
+움직였고(그 사이 PR 셋이 머지됐다) 큐가 **다른 것을 돌리지 않으려고** 멈춘 것이다. 옳은 동작이다.
+`edit` 로 같은 명령을 현재 체크아웃에 재제출하고 `resume` 했다(대기 시간은 유지된다).

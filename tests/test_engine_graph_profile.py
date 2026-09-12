@@ -31,6 +31,22 @@ class AdmittedProbeTests(unittest.TestCase):
     def test_the_graph_profile_is_one_of_them(self):
         self.assertIn("probes/engine_graph_profile.py", admitted())
 
+    def test_none_of_them_requires_an_argument(self):
+        """The queue invokes an admitted check with NO arguments, and `ST_FLAGS` admits only a handful --
+        `--drafter-dir` and `--tier-dir` are not among them, so a check that requires either can be started
+        and never run. Three of the six did (45차 §95). Every default has to work on a node."""
+        import ast
+        needed = {}
+        for rel in admitted():
+            tree = ast.parse((ROOT / rel).read_text())
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "add_argument"
+                        and any(k.arg == "required" and getattr(k.value, "value", False) is True
+                                for k in node.keywords)):
+                    flag = next((a.value for a in node.args if isinstance(a, ast.Constant)), "?")
+                    needed.setdefault(rel, []).append(flag)
+        self.assertEqual(needed, {})
+
 
 class LaneTests(unittest.TestCase):
     def test_a_kernel_is_filed_under_the_lane_it_came_from(self):

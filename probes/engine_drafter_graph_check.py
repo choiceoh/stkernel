@@ -9,6 +9,7 @@ import json
 import torch
 
 from engine.base.instruments import Recorder
+from engine.profiles.glm53 import drafter as drafter_mod, facts
 from engine.profiles.glm53.boot import build
 from engine.profiles.glm53.lanes import served
 from probes.engine_decode_graph_check import IsolatedRank
@@ -38,9 +39,12 @@ def unpadded_attention(drafter, layer, x, positions, ring, context):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ranks", required=True)
-    ap.add_argument("--ckpt-meta", required=True)
-    ap.add_argument("--drafter-dir", required=True)
+    # Defaults that work on a node: the fleet queue invokes an admitted ST check with NO arguments
+    # (bench/fleet_onepass.ST_FLAGS admits a handful and --drafter-dir and --tier-dir are not among
+    # them), so a required argument here is a check the queue can start and never run (45차 §95).
+    ap.add_argument("--ranks", default=str(facts.RANKS))
+    ap.add_argument("--ckpt-meta", default=str(facts.CKPT))
+    ap.add_argument("--drafter-dir", default=str(drafter_mod.DRAFTER))
     args = ap.parse_args()
     torch.manual_seed(19)
     _, _, caches, engine, _ = build(IsolatedRank(), [0, 3], served(), args.ranks, .25, 2,
