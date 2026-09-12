@@ -14,11 +14,11 @@ import tempfile
 def prepare_sources(root, sources, identity):
     """Return (key, build_directory, staged_paths) for flat source siblings.
 
-Read every input once: the key and compiler inputs refer to the same bytes.
-Include local headers in ``sources`` and all explicit build flags/runtime
-versions in ``identity``. Headers are staged beside their translation unit;
-only translation units should be handed to Torch's extension loader.
-"""
+    Read every input once: the key and compiler inputs refer to the same bytes.
+    Include local headers in ``sources`` and all explicit build flags/runtime
+    versions in ``identity``. Headers are staged beside their translation unit;
+    only translation units should be handed to Torch's extension loader.
+    """
     snapshots = [(Path(p).name, Path(p).read_bytes()) for p in sources]
     names = [name for name, _ in snapshots]
     if not names or len(names) != len(set(names)):
