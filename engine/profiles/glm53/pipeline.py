@@ -177,6 +177,7 @@ class AsyncDecode:
             if e.decodable is not None and full.shape[-1] > e.decodable:
                 full[:, e.decodable:] = float("-inf")
             probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_p"].repeat_interleave(t), b["nucleus"]).view(n, t, -1)
+            e.note_ceilings(probs, b["dists"])
             accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["dists"], e.gen)
         else:
             picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
