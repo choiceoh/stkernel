@@ -59,6 +59,69 @@ class RequestError(Exception):
 _TOOL_CALL = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
 _SAMPLING_RANGES = {"presence_penalty": (-2.0, 2.0), "frequency_penalty": (-2.0, 2.0)}
 
+class PromptTokens:
+    """Tokenize a continuing turn by its new tail instead of from the top.
+
+    An agent sends its whole conversation every turn, so the door tokenizes the same hundred
+    thousand characters again to add twenty. Measured on this checkpoint: **239 ms** to
+    re-tokenize a 106K-token conversation against **0.05 ms** for the 29 tokens that were
+    actually new. While a turn is dominated by prefill that hides; once the prefix cache is
+    doing its job -- which for agent traffic is the normal case -- the model barely works on
+    such a turn and that 239 ms becomes its floor (45차 §61).
+
+    Splicing two token streams is sound only where no merge can cross the cut. `tokenizers`
+    matches ADDED tokens before the BPE model, so an added token is exactly such a cut, and a
+    rendered chat prompt ends with one by construction (the generation prompt). The rule is
+    therefore read off the tokenizer's own added-token set rather than guessed from a template,
+    and a base that does not end on one is simply not spliced against. Verified both ways: at
+    `<|assistant|>` the splice is identical to a full pass; cut mid-word it is not (47 tokens
+    against 45), which is why the check is not optional.
+
+    Bounded by entries and by characters, because a door that remembers every prompt is a leak
+    wearing a cache's clothes.
+    """
+
+    def __init__(self, tok, keep: int = 8, max_chars: int = 8 << 20):
+        self.tok, self.keep, self.max_chars = tok, keep, max_chars
+        self.splice_ids = set()
+        try:                                            # tokenizers >= 0.20; without it, nothing splices
+            self.splice_ids = set(tok.get_added_tokens_decoder() or {})
+        except Exception:                               # noqa: BLE001 -- an absent API is not an error here
+            pass
+        self.entries: "list[tuple[str, list]]" = []     # (rendered text, its ids), most recent last
+        self.chars = 0
+        self.spliced = self.full = self.chars_saved = 0
+        self._lock = threading.Lock()
+
+    def _base_for(self, text: str):
+        with self._lock:
+            for base, ids in reversed(self.entries):
+                if len(base) < len(text) and ids and ids[-1] in self.splice_ids and text.startswith(base):
+                    return base, ids
+        return None, None
+
+    def _remember(self, text: str, ids) -> None:
+        with self._lock:
+            self.entries.append((text, ids))
+            self.chars += len(text)
+            while len(self.entries) > self.keep or (self.chars > self.max_chars and len(self.entries) > 1):
+                gone, _ = self.entries.pop(0)
+                self.chars -= len(gone)
+
+    def encode(self, text: str) -> list:
+        """This prompt's ids, spliced onto a remembered prefix when one is a legal cut."""
+        base, ids = self._base_for(text)
+        if base is not None:
+            out = list(ids) + self.tok.encode(text[len(base):], add_special_tokens=False).ids
+            self.spliced += 1
+            self.chars_saved += len(base)
+        else:
+            out = self.tok.encode(text, add_special_tokens=False).ids
+            self.full += 1
+        self._remember(text, out)
+        return out
+
+
 EFFORT_RUNGS = {"low": "low", "medium": "high", "high": "high", "max": "max"}
 """OpenAI's rungs onto GLM-5.3's two, mapped on purpose instead of by falling through.
 
@@ -1081,6 +1144,7 @@ class Server:
         # D3 is about kernels, but its rule holds here too: a path that is taken silently is a
         # path nobody checks. /metrics says which detokenizer served, so a scrape settles it.
         self.rust_detok = tokenizer is not None and decode_stream(tokenizer) is not None
+        self._prompt_tokens = None                 # built from `tok` on first use (see the property)
         self.detok_repairs = new_repairs()         # this door's, so a scrape names who repaired
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
@@ -1517,6 +1581,21 @@ class Server:
                 "max_concurrent_requests": int(self.runner.c.max_running),
             },
         }
+
+    @property
+    def prompt_tokens(self) -> "PromptTokens | None":
+        """The splice cache for whatever tokenizer this server actually has.
+
+        A property and not a constructor field because the tokenizer can arrive afterwards --
+        a boot binds one, a test swaps one in -- and a cache built against a tokenizer the door
+        no longer uses would splice one vocabulary's ids onto another's.
+        """
+        if self.tok is None:
+            return None
+        cache = self._prompt_tokens
+        if cache is None or cache.tok is not self.tok:
+            cache = self._prompt_tokens = PromptTokens(self.tok)
+        return cache
 
     def fleet_status(self) -> "dict | None":
         """Who holds the fleet, whether it has been asked to let go, and how the handover went.
@@ -2107,6 +2186,13 @@ class Server:
             ("gauge", "st:kv_blocks_faded", "free blocks held by a boundary whose snapshot is gone", kv.faded),
             ("gauge", "st:state_slots_free", "state slots a new request could take", slots.available),
             *device_memory_rows(),
+            ("counter", "st:prompt_tokenize_spliced_total",
+             "chat prompts tokenized as a tail onto a remembered prefix", getattr(self.prompt_tokens, "spliced", 0)),
+            ("counter", "st:prompt_tokenize_full_total",
+             "chat prompts tokenized from the first character", getattr(self.prompt_tokens, "full", 0)),
+            ("counter", "st:prompt_tokenize_chars_saved_total",
+             "prompt characters a splice did not have to tokenize again",
+             getattr(self.prompt_tokens, "chars_saved", 0)),
             ("gauge", "st:detokenizer_rust_stream",
              "1 when streamed text is decoded through tokenizers' Rust DecodeStream", int(self.rust_detok)),
         ]
@@ -2599,7 +2685,7 @@ class Server:
                                          generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
                     raise RequestError(f"chat template rejected the request: {exc}") from exc
-                ids = server.tok.encode(nfc(prompt), add_special_tokens=False).ids
+                ids = server.prompt_tokens.encode(nfc(prompt))   # a continuing turn pays for its tail only
                 media = None
                 if items:
                     try:
