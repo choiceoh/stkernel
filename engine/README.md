@@ -12,8 +12,8 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 - **ModelOpt dense 안전장치** — 엔비디아 체크포인트의 첫 3개 dense MLP는 긴 prefill(기본 4,096행)에서
   b12x W4A16으로 내려 activation-side FP4 오차를 줄인다. decode와 짧은 prefill은 NVFP4를 유지하며,
   `STK_GLM53_DENSE_W4A16_GUARD_ROWS=0`은 비교 실험에서만 guard를 끈다.
-- **KDA 상태 저장 정밀도** — 기본 FP32. `STK_kda_state_dtype=fp16`은 비프로덕션 부팅에서만 선택하는
-  실험이며 계산·게이트·프리필 중간 상태는 FP32로 유지한다. 활성 링·prefix 스냅샷·경계 스테이지를 FP16으로
+- **KDA 상태 저장 정밀도** — 기본 FP16. 계산·게이트·프리필 중간 상태는 FP32로 유지한다.
+  `STK_kda_state_dtype=fp32`는 비프로덕션 비교 부팅에서 선택할 수 있다. 활성 링·prefix 스냅샷·경계 스테이지를 FP16으로
   저장하고, KV 블록과 스냅샷 개수는 같은 FP32 예산의 개수로 고정해 절감분을 RAM으로 돌려준다.
   TP4/C=4/K=6/스냅샷 48개에서 선언된 절감량은 노드당 1,496 MiB. NVMe 상태 형식을 구분하므로 FP32와
   FP16 부팅은 서로의 저장 상태를 이어받지 않는다. 실제 정밀도는 `st:lane_info`와 onepass의
