@@ -21,13 +21,20 @@ from probes.engine_sparse_recovery import (choose_validation, hessian, magnitude
 
 
 def inputs16(x):
-    packed, sf = hardware_quant(x.contiguous(), torch.ones((), device=x.device))
-    return dequant(packed.view(torch.uint8), sf.view(torch.uint8))
+    # The K16 reference encoder compares all FP4 codes at once. Bound that
+    # temporary for larger corpora without changing per-row quantization.
+    result = []
+    global_scale = torch.ones((), device=x.device)
+    for start in range(0, len(x), 256):
+        packed, sf = hardware_quant(x[start:start+256].contiguous(), global_scale)
+        result.append(dequant(packed.view(torch.uint8), sf.view(torch.uint8)))
+    return torch.cat(result)
 
 
 def inputs32(x):
-    packed, sf = quantize32(x)
-    return dequant(packed, sf)
+    # Also bound K32 encoding temporaries as corpus size grows.
+    return torch.cat([dequant(*quantize32(x[start:start+256]))
+                      for start in range(0, len(x), 256)])
 
 
 def limit_rows(indices, cap):
@@ -96,12 +103,16 @@ def main():
     ap.add_argument('--library', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--experts', type=int, default=4)
+    ap.add_argument('--expert-ids', type=int, nargs='+', help='freeze expert IDs for a corpus comparison')
     ap.add_argument('--train-cap', type=int, default=2048)
     ap.add_argument('--damping', type=float, nargs='+', default=[.01, .1])
     ap.add_argument('--timing', action='store_true')
     args = ap.parse_args()
-    if not 1 <= args.experts <= 8 or not 128 <= args.train_cap <= 4096:
-        ap.error('bounded pilot: 1..8 experts; 128..4096 training rows each')
+    if not 1 <= args.experts <= 8 or not 128 <= args.train_cap <= 8192:
+        ap.error('bounded pilot: 1..8 experts; 128..8192 training rows each')
+    if args.expert_ids is not None and (not 1 <= len(args.expert_ids) <= 8 or
+            len(set(args.expert_ids)) != len(args.expert_ids) or not all(0 <= e < 288 for e in args.expert_ids)):
+        ap.error('expert IDs must be 1..8 unique values in 0..287')
     torch.set_num_threads(2)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.cuda.set_per_process_memory_fraction((3 << 30)/torch.cuda.get_device_properties(0).total_memory)
@@ -113,10 +124,10 @@ def main():
     train_prompts = [i for i, p in enumerate(info['prompts']) if p['split'] == 'train']
     train_rows = torch.isin(payload['prompt_index'], torch.tensor(train_prompts))
     frequency = torch.bincount(payload['selected'][train_rows].long().flatten(), minlength=288)
-    experts = frequency.argsort(descending=True, stable=True)[:args.experts].tolist()
+    experts = args.expert_ids if args.expert_ids is not None else frequency.argsort(descending=True, stable=True)[:args.experts].tolist()
     report = dict(scope=__doc__, capture_sha256=digest, layer=3, rank=0, experts=experts,
                   train_route_counts=frequency.tolist(), training_cap=args.train_cap,
-                  expert_choice='descending training route count; expert id tie-break',
+                  expert_choice='explicit frozen expert IDs' if args.expert_ids is not None else 'descending training route count; expert id tie-break',
                   method_choice='minimum validation projection relative L2; no test selection',
                   scope_limit='short prefill prompts; one layer; one TP rank; selected experts only; no model quality score',
                   source_sha256={p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in

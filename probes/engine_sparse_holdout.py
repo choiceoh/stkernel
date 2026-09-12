@@ -30,6 +30,9 @@ def main():
     ap.add_argument('--recovery', type=Path, required=True)
     ap.add_argument('--residual', type=Path, required=True)
     ap.add_argument('--block-fit', type=Path)
+    ap.add_argument('--block-label', default='joint_reconstruction',
+                    choices=('joint_reconstruction', 'sequential_reconstruction'))
+    ap.add_argument('--revisit', action='store_true', help='label reuse of an earlier development holdout')
     ap.add_argument('--rank', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args()
@@ -61,13 +64,15 @@ def main():
     payload = torch.load(args.capture, weights_only=True, map_location='cpu')
     report = dict(scope=__doc__, experts=recovery['experts'], layer=3, rank=0,
                   final_prompts=len(info['prompts']), tokens=len(payload['x']),
-                  choices_frozen_before_final_capture=True, production_adopted=False,
+                  choices_frozen_before_final_capture=not args.revisit,
+                  evaluation_role='development holdout revisit' if args.revisit else 'fresh holdout',
+                  production_adopted=False,
                   artifact_sha256={p.name: file_hash(p) for p in [args.capture, args.recovery,
                       args.residual, args.recovery.with_suffix('.weights.pt'), args.residual.with_suffix('.weights.pt')]},
                   source_sha256=file_hash(__file__), cases=[])
     variants = ('original', 'magnitude', 'calibrated', 'residual')
     if block_weights is not None:
-        variants += ('joint_reconstruction',)
+        variants += (args.block_label,)
         report['artifact_sha256'].update({p.name: file_hash(p) for p in
                                          [args.block_fit, args.block_fit.with_suffix('.weights.pt')]})
     totals = {v: torch.zeros(len(payload['x']), 4096, device='cuda') for v in variants}
@@ -114,14 +119,14 @@ def main():
                 calibrated=metrics(sparse_out, ref),
                 residual=metrics(sparse_out+apply_residual(baseline_inputs, *residual_factors[name]), ref))
             if joint:
-                row['projections'][name]['joint_reconstruction'] = metrics(x32 @ joint[name].T, ref)
+                row['projections'][name][args.block_label] = metrics(x32 @ joint[name].T, ref)
             if name == 'w13':
                 up, gate = ref.chunk(2, -1)
                 baseline_inputs = swiglu_clamped(gate, up, 10.)
         outputs = {}
         for variant in variants:
             weight = originals if variant == 'original' else mag if variant == 'magnitude' else corrected
-            if variant == 'joint_reconstruction':
+            if variant == args.block_label:
                 weight = joint
             quant = inputs16 if variant == 'original' else inputs32
             fc1 = quant(x) @ weight['w13'].T
@@ -144,6 +149,14 @@ def main():
     report['weighted_selected_expert_sum'] = {v: metrics(totals[v][active], totals['original'][active])
                                              for v in variants[1:]}
     report['per_prompt'] = []
+    report['per_category'] = {}
+    for category in sorted({p.get('category', 'unspecified') for p in info['prompts']}):
+        prompt_indices = torch.tensor([i for i, p in enumerate(info['prompts'])
+                                      if p.get('category', 'unspecified') == category])
+        mask = torch.isin(payload['prompt_index'], prompt_indices).cuda() & active
+        if mask.any():
+            report['per_category'][category] = dict(tokens_with_selected_route=int(mask.sum()),
+                variants={v: metrics(totals[v][mask], totals['original'][mask]) for v in variants[1:]})
     for i, prompt in enumerate(info['prompts']):
         mask = (payload['prompt_index'] == i).cuda() & active
         if mask.any():

@@ -1,0 +1,69 @@
+{
+  "frozen_at_utc": "2026-09-12T01:43:39.289998+00:00",
+  "artifacts": {
+    "recovery.json": {
+      "bytes": 58094,
+      "sha256": "df4e87ef52d50bae413d4919a9fc5af587e2b7cfa3ee86e9947bce78c00658e8"
+    },
+    "recovery.weights.pt": {
+      "bytes": 13375161,
+      "sha256": "6dfc5191cb7051d563cb4e71d4755930b5fa4bb768a6c6164986d9eabcc87624"
+    },
+    "residual.json": {
+      "bytes": 30510,
+      "sha256": "81419dd81cb038e4efc53a8678b07d69c7fa3b032c3598ca604362411a24215d"
+    },
+    "residual.weights.pt": {
+      "bytes": 4167289,
+      "sha256": "5a60934757cbcfdb67b11ae06e3de8d245dca9260c0c0cfd8b688736210a1e5b"
+    },
+    "block-fit.json": {
+      "bytes": 32126,
+      "sha256": "e0ed465cb4121a6ad7208eb7229d46f638f55077bc396657ca42010f1a421016"
+    },
+    "block-fit.weights.pt": {
+      "bytes": 13375183,
+      "sha256": "002b641ee56011e4eed159ce03d9e7b7c4d453ed961cd1f494496e8cd3866aad"
+    },
+    "chain-residual.json": {
+      "bytes": 58573,
+      "sha256": "0d76a3e97f0841a6f91d5440528b9e972a8028013dc14880f5773f86c1ab00c4"
+    },
+    "chain-residual.weights.pt": {
+      "bytes": 4167485,
+      "sha256": "d2d21e96541b113ea40ae7a87aa6f1c622d5d09599955fde9c2bc7ed9dcc006b"
+    },
+    "expanded-recovery.json": {
+      "bytes": 58651,
+      "sha256": "55ec37d7b952250050028e9e221e3500f7d07d946b08b0326a01dd3987ac1b98"
+    },
+    "expanded-recovery.weights.pt": {
+      "bytes": 13375423,
+      "sha256": "237264c924c2342566a69fa516cfe9af3edf080f7ebcb4ebbf3847b162404a1e"
+    },
+    "expanded-residual.json": {
+      "bytes": 27630,
+      "sha256": "94f6c96c71bb85f968777c05a8b2c50ed561f56e429615929391846864d253c8"
+    },
+    "expanded-residual.weights.pt": {
+      "bytes": 4167551,
+      "sha256": "1d0d14783eea1c97043283259767bff317720361f5c7f7ff4a1b189f81727e7d"
+    },
+    "expanded-chain.json": {
+      "bytes": 58708,
+      "sha256": "128aef8c1dc6c5090d69226fd1ed48ad781920aa64660cc54a3600ad844a5ea6"
+    },
+    "expanded-chain.weights.pt": {
+      "bytes": 4167485,
+      "sha256": "bbd036260715f0b07bae1174a4efaba2a641a94272cd31ae9c87e2c3a668a656"
+    },
+    "expanded-sequential.json": {
+      "bytes": 18303,
+      "sha256": "d9f6e53e6d39d6f3418d359c304cc971d6e3b796c3f5fb8cba33bbc9264488ce"
+    },
+    "expanded-sequential.weights.pt": {
+      "bytes": 13375467,
+      "sha256": "2d5c27ed275a839c54c99802278756326a3db99ffb12c1be0751e7bba16c30f2"
+    }
+  }
+}

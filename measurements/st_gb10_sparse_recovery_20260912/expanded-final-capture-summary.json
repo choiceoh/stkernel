@@ -1,0 +1,27 @@
+{
+  "scope": "Bounded L3 expert-input capture from real text through all four TP ranks.\n\nRuns the actual GLM prefix composition with native KDA chunk and explicit\nreference lanes elsewhere, on one GPU using LocalTP. No live-service hooks,\nfull-model loading, generation, or modified checkpoints. This is a local\ncalibration corpus, not a language-model quality benchmark.\n",
+  "layer": 3,
+  "rank_of_expert_weights": 0,
+  "lanes": "native KDA chunk; other lanes reference",
+  "collective": "LocalTP; FP32 rank-order sum then BF16",
+  "source_sha256": "3b4c8e34a12a3a7fc90c43ad1dc2ee2b68e4e49f61abdd4fa27a65cf592ce5d1",
+  "prompts_sha256": "df52a04e454f362fc3a129034b5174068e6d7901ac0da1a53e59f91f521a7c7c",
+  "template_sha256": "0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42",
+  "max_tokens": 512,
+  "discard_prefix_tokens": 8,
+  "tensor_file_sha256": "fdea49eea9f2239c4eefb893d6fbcf6b1642a7586e123cfc20e76c97a10a0bc8",
+  "peak_torch_allocated_bytes": 2873827328,
+  "total_kept_tokens": 5352,
+  "gpu": "NVIDIA GB10",
+  "torch_version": "2.13.0+cu130",
+  "full_metadata_sha256": "e30afcd12a2a3afb24999195c8aea20df7a048918ddd9165f4534b78929cfbde",
+  "prompt_counts": {
+    "test": 16
+  },
+  "split_kept_tokens": {
+    "train": 0,
+    "validation": 0,
+    "test": 5352
+  },
+  "all_tp_replicas_exact": true
+}

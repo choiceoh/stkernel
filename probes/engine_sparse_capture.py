@@ -24,16 +24,27 @@ from engine.profiles.glm53.weights import rank_loader
 
 def corpus(path):
     rows = json.loads(Path(path).read_text())
-    if not rows or len(rows) > 128:
-        raise ValueError('requires 1..128 prompts')
+    if not rows or len(rows) > 256:
+        raise ValueError('requires 1..256 prompts')
     seen_ids, seen_text = set(), set()
     for row in rows:
         if row['split'] not in ('train', 'validation', 'test'):
             raise ValueError('unknown split')
-        if row['id'] in seen_ids or row['text'] in seen_text or not row['text'].strip():
+        messages = prompt_messages(row)
+        identity = json.dumps(messages, sort_keys=True)
+        if row['id'] in seen_ids or identity in seen_text:
             raise ValueError('duplicate or empty prompt')
-        seen_ids.add(row['id']); seen_text.add(row['text'])
+        seen_ids.add(row['id']); seen_text.add(identity)
     return rows
+
+
+def prompt_messages(row):
+    messages = row.get('messages', [dict(role='user', content=row.get('text', ''))])
+    if not messages or messages[-1]['role'] != 'user' or any(
+            m['role'] not in ('user', 'assistant') or not isinstance(m['content'], str)
+            or not m['content'].strip() for m in messages):
+        raise ValueError('nonempty user/assistant messages ending with user required')
+    return messages
 
 
 def capture_lanes(tp):
@@ -123,7 +134,7 @@ def main():
     template_path = Path(__file__).resolve().parents[1] / 'launchers/chat_template_mm_v2.jinja'
     template = template_path.read_text()
     raw_tokenizer = Tokenizer.from_file(str(args.metadata / 'tokenizer.json'))
-    rendered = [tokenizer.apply_chat_template([dict(role='user', content=p['text'])],
+    rendered = [tokenizer.apply_chat_template(prompt_messages(p),
                 chat_template=template, add_generation_prompt=True, tokenize=False,
                 thinking=False) for p in prompts]
     sequences = [raw_tokenizer.encode(text, add_special_tokens=False).ids[:args.max_tokens]
@@ -155,6 +166,8 @@ def main():
             all_p.append(torch.full((len(ids)-8,), start+i, dtype=torch.int32))
             report['prompts'].append(dict(id=p['id'], split=p['split'], token_ids=ids,
                                            kept_tokens=len(ids)-8))
+            if 'category' in p:
+                report['prompts'][-1]['category'] = p['category']
             at += len(ids)
         row = dict(start=start, tokens=sum(map(len, subset)),
                    seconds=time.monotonic()-started, tp_replicas_exact=True)

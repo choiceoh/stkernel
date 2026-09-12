@@ -8,6 +8,10 @@ methods do not establish an acceptable replacement for the current model.**
 All results below are local numerical errors, not language-model accuracy.
 No serving kernel, original checkpoint, or production service was changed.
 
+The [larger-corpus and Deneb-workload follow-up](EXPANDED.md) records subsequent
+experiments, including the Korean/English domain tradeoff and private mail and
+notification input sources. The original results below remain unchanged.
+
 ## Actual text inputs and separation of decisions
 
 `engine_sparse_capture.py` runs the original checkpoint's prefix through

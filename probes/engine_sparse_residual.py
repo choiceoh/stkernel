@@ -59,6 +59,7 @@ def main():
     ap.add_argument('--rank', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--ranks', type=int, nargs='+', default=[16, 32, 64])
+    ap.add_argument('--rank-budget-from', type=Path, help='cap factor ranks at a prior residual report')
     args = ap.parse_args()
     if not args.ranks or min(args.ranks) < 1 or max(args.ranks) > 128:
         ap.error('residual ranks must be 1..128')
@@ -78,6 +79,12 @@ def main():
                   ranks=args.ranks, damping=.1, rank_selection='validation projection relative L2',
                   production_adopted=False, cases=[])
     exports = {}
+    budgets = {}
+    if args.rank_budget_from:
+        budget_info = json.loads(args.rank_budget_from.read_text())
+        budgets = {(c['expert'], name): p['selected_rank'] for c in budget_info['cases']
+                   for name, p in c['projections'].items()}
+        report['rank_budget_sha256'] = hashlib.sha256(args.rank_budget_from.read_bytes()).hexdigest()
     for case in recovery['cases']:
         if 'skipped' in case:
             continue
@@ -93,19 +100,23 @@ def main():
         row = dict(expert=expert, counts=counts, projections={})
         factors, targets, current_inputs = {}, {}, hidden
         for name in ('w13', 'w2'):
+            budget = budgets[expert, name] if args.rank_budget_from else max(args.ranks)
+            ranks = [r for r in args.ranks if r <= budget]
+            if not ranks:
+                raise ValueError('no candidate rank fits the factor budget')
             start = time.monotonic()
             targets[name] = {s: inputs16(x) @ originals[name].T for s, x in current_inputs.items()}
             sparse_outputs = {s: inputs32(x) @ sparse[name].T for s, x in current_inputs.items()}
             b, a = fit_lowrank(current_inputs['train'], targets[name]['train']-sparse_outputs['train'],
-                               max(args.ranks), .1)
+                               max(ranks), .1)
             scores = {}
-            for rank in args.ranks:
+            for rank in ranks:
                 bb, aa = b[:, :rank].contiguous(), a[:rank].contiguous()
                 scores[rank] = {s: metrics(sparse_outputs[s]+apply_residual(current_inputs[s], bb, aa),
                                           targets[name][s]) for s in ('train', 'validation')}
             selected = choose_rank(scores)
             factors[name] = (b[:, :selected].contiguous(), a[:selected].contiguous())
-            for rank in args.ranks:
+            for rank in ranks:
                 scores[rank]['test'] = metrics(sparse_outputs['test'] +
                     apply_residual(current_inputs['test'], b[:, :rank].contiguous(), a[:rank].contiguous()),
                     targets[name]['test'])
