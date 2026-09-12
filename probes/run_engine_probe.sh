@@ -59,9 +59,14 @@ if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${pr
               || docker image inspect st-engine:glm53 --format '{{index .RepoTags 0}}' 2>/dev/null" | tail -1)
     [ -n "$image" ] || { echo "ABORT: no ST image on $probe_host (no st-glm53 container, no st-engine:glm53); name one with ST_IMAGE" >&2; exit 1; }
   fi
-  # Room beside production, right before taking it: bounded wait, then refuse (D3).
+  # Room beside production, right before taking it, and then IMMEDIATELY FREE pages for it:
+  # MemAvailable counts cache a device allocation cannot use on this UMA box (the lane's first
+  # ticket OOMed on its first tensor with 26 GiB "available", right after another session's
+  # boot), so the budget is faulted and released on that box the way the engine's arena does
+  # it (fleet_single.py RECLAIM). Bounded wait, then refuse (D3).
   deadline=$(( $(date +%s) + 60 * ${ST_PROBE_WAIT_MINUTES:-10} ))
-  until room=$(python3 "$repo/bench/fleet_single.py" evidence --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"); do
+  until room=$(python3 "$repo/bench/fleet_single.py" evidence --host "$probe_host" --gib "${ST_PROBE_GIB:-8}") \
+     && room=$(python3 "$repo/bench/fleet_single.py" reclaim --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"); do
     [ "$(date +%s)" -lt "$deadline" ] \
       || { echo "ABORT: no room on $probe_host for ${ST_PROBE_WAIT_MINUTES:-10} min: $room" >&2; exit 1; }
     echo "  waiting for room on $probe_host: $room" >&2

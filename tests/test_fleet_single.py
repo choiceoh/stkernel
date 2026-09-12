@@ -70,6 +70,34 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn('cannot read MemAvailable', single.evidence('srv4', 8, run=answering('---\n'))[0])
         self.assertIn('lane is off', single.evidence('', 8)[0])
 
+    def test_reclaim_makes_the_budget_immediately_free_or_says_why_not(self):
+        """MemAvailable is not what a device allocation can take on a UMA box: the lane's first real
+        ticket OOMed on its first tensor with 26 GiB 'available'. The runner faults the budget on
+        the box and gives it back (the arena's touch_pages), and waits if the box is still faulting."""
+        calls = []
+        def answer(text, rc=0):
+            def run(argv, **kwargs):
+                calls.append(argv)
+                return Done(rc, text)
+            return run
+        self.assertEqual(single.reclaim('srv4', 8, run=answer('free 14.9\n')), [])
+        self.assertEqual(calls[0][-2], 'srv4')
+        self.assertIn('base64', calls[0][-1])
+        self.assertTrue(calls[0][-1].endswith(' 8.0 16.0'))            # the budget and the floor, as arguments
+        self.assertEqual(single.reclaim('srv4', 8, run=answer('reclaimed 9.3\n')), [])
+        short = single.reclaim('srv4', 8, run=answer('short 2.1\n', 3))
+        self.assertIn('only 2.1 GiB immediately free after reclaiming', short[0])
+        self.assertIn('still faulting', short[0])
+        none = single.reclaim('srv4', 8, run=answer('no-room 20.0\n', 2))
+        self.assertIn('no room beside production', none[0])
+        def unreachable(*args, **kwargs):
+            raise subprocess.TimeoutExpired('ssh', 8)
+        self.assertIn('unreachable', single.reclaim('srv4', 8, run=unreachable)[0])
+        self.assertIn('could not reclaim room (rc 255', single.reclaim('srv4', 8, run=answer('', 255))[0])
+        # the code that runs on the box is the arena's recipe: populate, then release
+        for text in ('MAP_POPULATE', 'MemAvailable', 'MemFree', 'region.close()', "'no-room'", "'short'"):
+            self.assertIn(text, single.RECLAIM)
+
     def test_one_round_trip_to_the_alias_as_given(self):
         calls = []
         def free(argv, **kwargs):
@@ -185,6 +213,7 @@ class ContractTests(unittest.TestCase):
         remote = self.runner[self.runner.index('probe_host=${ST_PROBE_HOST:-}'):self.runner.index('mkdir -p "$cache"')]
         self.assertIn('rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes"', remote)
         self.assertIn('fleet_single.py" evidence --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"', remote)
+        self.assertIn('fleet_single.py" reclaim --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"', remote)
         self.assertIn('waiting for room on $probe_host', remote)
         self.assertIn("docker inspect st-glm53 --format '{{.Config.Image}}'", remote)
         self.assertIn('''trap 'ssh $SSHOPT "$probe_host" "docker rm -f $NAME"''', remote)

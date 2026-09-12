@@ -109,6 +109,69 @@ def parse(text: str):
     return memory, containers
 
 
+# Run ON the box, right before its container starts. MemAvailable counts clean page cache that the
+# kernel reclaims for an anonymous allocation but not, on this UMA box, for a device one -- the
+# engine's own arena admission learned that (engine/base/arena.py touch_pages), and the lane's
+# first real ticket proved it the other way: a kernel check OOMed on its first tiny tensor while
+# MemAvailable said 26 GiB, minutes after another session's boot had faulted the box's free pages.
+# So: if MemFree already covers the budget, nothing to do; else, within the floor, hold the
+# budget as anonymous pages for an instant (MAP_POPULATE) and give it back, which evicts cache
+# and leaves that many pages immediately free. `short` after that means the box is still
+# faulting (a boot, most likely): wait, do not start.
+RECLAIM = r'''
+import mmap, sys
+from pathlib import Path
+budget, floor = float(sys.argv[1]) * 2 ** 30, float(sys.argv[2]) * 2 ** 30
+def meminfo():
+    return {k: int(v.split()[0]) * 1024 for k, v in (l.split(':', 1) for l in Path('/proc/meminfo').read_text().splitlines())}
+m = meminfo()
+if m['MemFree'] >= budget:
+    print('free', round(m['MemFree'] / 2 ** 30, 1)); raise SystemExit(0)
+if m['MemAvailable'] - budget < floor:
+    print('no-room', round(m['MemAvailable'] / 2 ** 30, 1)); raise SystemExit(2)
+page = mmap.PAGESIZE
+n = -(-int(budget) // page) * page
+flags = mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS | getattr(mmap, 'MAP_POPULATE', 0)
+region = mmap.mmap(-1, n, flags=flags)
+try:
+    if not getattr(mmap, 'MAP_POPULATE', 0):
+        for off in range(0, n, page):
+            region[off] = 1
+finally:
+    region.close()
+m = meminfo()
+ok = m['MemFree'] >= budget
+print('reclaimed' if ok else 'short', round(m['MemFree'] / 2 ** 30, 1)); raise SystemExit(0 if ok else 3)
+'''
+
+
+def reclaim(name: str, budget: float = None, *, run=subprocess.run, timeout: float = 120.0,
+            floor: float = FLOOR_GIB) -> list:
+    """Make `budget` GiB immediately free on that box, or say why not; [] means it is free now."""
+    if not name:
+        return ['the single-GPU lane is off (FLEET_SINGLE_GPU_HOST is empty)']
+    budget = budget_gib() if budget is None else float(budget)
+    import base64
+    code = base64.b64encode(RECLAIM.encode()).decode()
+    command = f'python3 -c "import base64,sys;exec(base64.b64decode(\'{code}\'))" {budget} {floor}'
+    try:
+        done = run([*SSH, target(name), command], capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [f'{name}: unreachable ({type(exc).__name__}) -- could not reclaim room']
+    words = (done.stdout or '').split()
+    state = words[0] if words else ''
+    value = words[1] if len(words) > 1 else '?'
+    if done.returncode == 0 and state in ('free', 'reclaimed'):
+        return []
+    if state == 'no-room':
+        return [f'{name}: no room beside production -- MemAvailable {value} GiB, this check\'s budget {budget:.1f} GiB, floor {floor:.1f}']
+    if state == 'short':
+        return [f'{name}: only {value} GiB immediately free after reclaiming for a {budget:.1f} GiB budget -- the box is still faulting (a boot?)']
+    detail = [line for line in (done.stderr or done.stdout or '').splitlines() if line.strip()]
+    why = f': {detail[-1].strip()[:120]}' if detail else ''
+    return [f'{name}: could not reclaim room (rc {done.returncode}{why})']
+
+
 def evidence(name: str, budget: float = None, *, run=subprocess.run, timeout: float = 8.0,
              floor: float = FLOOR_GIB) -> list:
     """Every reason to believe that box has no room for this check; [] means it has. Not knowing is a reason."""
@@ -160,7 +223,7 @@ def cached_evidence(name: str, directory, budget: float = None, *, ttl: float = 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('evidence', 'host', 'label', 'on-fleet', 'budget'))
+    parser.add_argument('action', choices=('evidence', 'reclaim', 'host', 'label', 'on-fleet', 'budget'))
     parser.add_argument('--host', default=None, help='defaults to FLEET_SINGLE_GPU_HOST, then ' + DEFAULT_HOST)
     parser.add_argument('--gib', type=float, default=None, help=f'this check\'s budget; defaults to {BUDGET_ENV}, then {DEFAULT_BUDGET_GIB}')
     parser.add_argument('--cache', help='fleet directory; remembers the answer for --ttl seconds')
@@ -178,8 +241,11 @@ def main(argv=None):
         return 0
     if args.action == 'on-fleet':
         return 0 if on_fleet(name) else 1
-    reasons = (cached_evidence(name, args.cache, args.gib, ttl=args.ttl) if args.cache
-               else evidence(name, args.gib))
+    if args.action == 'reclaim':
+        reasons = reclaim(name, args.gib)
+    else:
+        reasons = (cached_evidence(name, args.cache, args.gib, ttl=args.ttl) if args.cache
+                   else evidence(name, args.gib))
     for reason in reasons:
         print(reason)
     return 1 if reasons else 0
