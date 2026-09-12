@@ -1,0 +1,53 @@
+"""The decode pipeline's pure parts (45차 §23 B3): the batch distribution and the host readback bookkeeping."""
+import sys
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import torch  # noqa: E402
+
+from engine.profiles.glm53.pipeline import AsyncDecode, Pending, distribution_batch  # noqa: E402
+
+
+class DistributionBatchTests(unittest.TestCase):
+    def test_greedy_rows_are_one_hot_and_nucleus_rows_keep_the_smallest_prefix(self):
+        logits = torch.tensor([[1.0, 3.0, 2.0, 0.0], [1.0, 3.0, 2.0, 0.0], [1.0, 3.0, 2.0, 0.0]])
+        temps = torch.tensor([0.0, 1.0, 1.0])
+        top_p = torch.tensor([1.0, 1.0, 0.5])
+        probs = distribution_batch(logits, temps, top_p, nucleus=True)
+        self.assertEqual(probs[0].tolist(), [0.0, 1.0, 0.0, 0.0])
+        torch.testing.assert_close(probs[1], torch.softmax(logits[1], -1))
+        self.assertEqual(probs[2].tolist(), [0.0, 1.0, 0.0, 0.0])                     # the top token alone reaches 0.5
+        torch.testing.assert_close(probs.sum(1), torch.ones(3))
+        plain = distribution_batch(logits, temps, torch.ones(3), nucleus=False)
+        torch.testing.assert_close(plain[2], torch.softmax(logits[2], -1))
+
+
+class ResolveTests(unittest.TestCase):
+    def test_resolve_applies_counts_in_launch_order_and_ignores_released_rows(self):
+        e = SimpleNamespace(drafter=SimpleNamespace(k=2), caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device("cpu")),
+                            tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1}, inflight={1: 1, 2: 1}, accepted_total=0, drafted_total=0, steps=0)
+        p = AsyncDecode(e)
+        lane = p.free.pop(0)
+        p.host[lane]["tokens"][:2] = torch.tensor([[7, 8, 9], [1, 2, 3]])
+        p.host[lane]["count"][:2] = torch.tensor([2, 3])
+        p.host[lane]["done"][:2] = torch.tensor([False, True])
+        p.host[lane]["accepted"][:2] = torch.tensor([1, 2])
+        first = Pending(p, lane, [1, 2], None)
+        p.pending.append(first)
+        second = Pending(p, 0, [1], None)
+        p.pending.append(second)
+        with self.assertRaises(RuntimeError):
+            p.resolve(second)                                                         # launch order
+        del e.tokens[2]                                                               # released meanwhile: nothing applied
+        self.assertEqual(first.resolve(), [False, True])
+        self.assertEqual(e.tokens[1], [5, 7, 8])
+        self.assertEqual((e.ctx[1], e.inflight[1], e.inflight[2]), (3, 0, 0))
+        self.assertEqual((e.accepted_total, e.drafted_total, e.steps), (1, 2, 1))
+        self.assertIn(lane, p.free)
+
+
+if __name__ == "__main__":
+    unittest.main()

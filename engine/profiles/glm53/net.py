@@ -68,6 +68,8 @@ class Step:
     segments: "tuple[Segment, ...]"
     patches: tuple = ()         # ((positions [n] int64 into ids, rows [n, hidden]) ...): rows that replace the embedding at
                                 # those positions -- the vision tower's output at image placeholders (45차 §23 A7, vision.py)
+    marks: tuple = ()           # ((position into ids, snapshot) ...): block boundaries inside a prefill segment whose position
+                                # state the caches keep as a prefix snapshot (base/prefix.py): the KDA recurrence is cut there
 
     def __post_init__(self):
         if self.ids.ndim != 1 or self.ids.dtype != torch.int64 or not self.segments:
@@ -76,6 +78,11 @@ class Step:
             if (pos.ndim != 1 or pos.dtype != torch.int64 or rows.ndim != 2 or rows.shape[0] != pos.numel()
                     or (pos.numel() and (int(pos.min()) < 0 or int(pos.max()) >= self.ids.numel()))):
                 raise ValueError("patches are (positions inside the step, one row per position)")
+        if self.marks:
+            positions = [p for p, _ in self.marks]
+            if (len(self.segments) != 1 or positions != sorted(set(positions)) or positions[0] <= 0
+                    or positions[-1] >= self.ids.numel() or any(type(p) is not int or type(s) is not int for p, s in self.marks)):
+                raise ValueError("marks are increasing positions strictly inside a single prefill segment, each with its snapshot")
         end, seqs, slots = 0, set(), set()
         for s in self.segments:
             if s.start != end or s.length <= 0 or s.ctx < 0 or s.seq < 0 or s.slot <= 0:
@@ -92,8 +99,8 @@ class Step:
         return torch.cat([torch.arange(s.ctx, s.ctx + s.length, device=self.ids.device) for s in self.segments])
 
     @staticmethod
-    def prefill(ids: torch.Tensor, ctx: int, seq: int, slot: int, patches: tuple = ()) -> "Step":
-        return Step(ids, (Segment(seq, slot, ctx, 0, ids.shape[0]),), patches)
+    def prefill(ids: torch.Tensor, ctx: int, seq: int, slot: int, patches: tuple = (), marks: tuple = ()) -> "Step":
+        return Step(ids, (Segment(seq, slot, ctx, 0, ids.shape[0]),), patches, marks)
 
     @staticmethod
     def decode(chunks: "list[tuple[torch.Tensor, int, int, int]]") -> "Step":
@@ -231,8 +238,30 @@ class Glm53Net:
             if direct_ring:
                 o = self.lanes.kda_recurrent_ring(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"],
                                                   ring, physical, s.ctx, F.lower_bound)
-            elif s.length > wr:                                                     # a prefill chunk: only the final state is kept
-                o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
+            elif s.length > wr:                                                     # a prefill chunk: only the final state is kept --
+                # except at the step's marks (prefix snapshots inside the chunk): the recurrence is cut there and each piece's
+                # final state goes to its snapshot with the conv taps before it. Cutting is exact: the kernel's chunks restart
+                # at every mark, which the runner places on block boundaries (64-aligned from a chunk-aligned start).
+                cuts = [m for m, _ in step.marks if 0 < m < s.length] if step.marks else []
+                if not cuts:
+                    o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
+                else:
+                    snaps = dict(step.marks)
+                    pieces, state, lo = [], state0, 0
+                    for hi in cuts + [s.length]:
+                        piece = slice(lo, hi)
+                        if hi - lo > wr:
+                            o_p, state = self.lanes.kda_chunk(q[:, piece], k[:, piece], v[:, piece], g_raw[:, piece], beta[:, piece],
+                                                              p[n + "A_log"], p[n + "dt_bias"], state, F.lower_bound)
+                        else:                                                       # a short tail piece: one state per position
+                            o_p, states = self.lanes.kda_recurrent(q[:, piece], k[:, piece], v[:, piece], g_raw[:, piece], beta[:, piece],
+                                                                   p[n + "A_log"], p[n + "dt_bias"], state, F.lower_bound)
+                            state = states[-1:]
+                        pieces.append(o_p)
+                        if hi in snaps:
+                            caches.mark_kda(L, snaps[hi], state[0], qkv_all[sl][hi - (K - 1):hi])
+                        lo = hi
+                    o = torch.cat(pieces, dim=1)
                 rec_ring[(s.ctx + s.length - 1) % wr] = state[0]
             else:                                                                   # a decode/verify step: one state per position
                 o, states = self.lanes.kda_recurrent(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)

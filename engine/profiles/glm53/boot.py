@@ -53,8 +53,9 @@ KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
 MAX_WAIT_S = 20.0                   # D10's one starvation valve
 MAX_SEQS = 4                        # launcher MAX_SEQS
-PREFIX_SNAPSHOTS = 8                # chunk-boundary checkpoints kept for prefix reuse (base/prefix.py): ~77 MiB each per rank at
-                                    # 45 layers with the drafter (34 KDA states + conv taps + the drafter's context ring)
+PREFIX_SNAPSHOTS = 24               # block-boundary checkpoints kept for prefix reuse (base/prefix.py): ~77 MiB each per rank at
+                                    # 45 layers with the drafter (34 KDA states + conv taps + the drafter's context ring); the unit is
+                                    # the 2,304 block (three per 6,912 chunk, 45차 §23), so three times the eight chunk boundaries
 
 
 def tokenizer(ckpt=facts.CKPT):
@@ -127,7 +128,7 @@ def declared(a, comm_world: int) -> Config:
         Fact("spec_k", facts.SPEC_K, "launcher SPEC_K with DFlash2"),
         Fact("kv_gib", float(a.kv_gib), "40th boot's measured KV" if a.kv_gib == KV_GIB else "--kv-gib (local)"),
         Fact("port", int(a.port), "--port"),
-        Fact("prefix_snapshots", PREFIX_SNAPSHOTS, "chunk-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
+        Fact("prefix_snapshots", PREFIX_SNAPSHOTS, "block-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
     ]
     knobs = [
         Knob("moe_static", lane_tables.MOE_STATIC_STOCK, _dt.date(2026, 9, 30),

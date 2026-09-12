@@ -50,14 +50,17 @@ class PrefixCache:
 
     # -- the chain ---------------------------------------------------------------------------
     def chain(self, ids, salts=()) -> "dict[int, bytes]":
-        """boundary tokens -> hash of the prompt up to there, for every whole chunk. `salts`: (position, bytes) pairs
-        folded into the chunk that holds the position -- the digests of the media whose rows stand at those placeholder
-        ids (the same <|image|> run, another picture, must never share a boundary: 45차 §23 A7)."""
+        """boundary tokens -> hash of the prompt up to there, for every whole BLOCK (45차 §23: the pool's block, as
+        production's APC -- a prefill chunk is three of them, and the two boundaries inside a chunk are taken during the
+        chunk's step, base/runner). `salts`: (position, bytes) pairs folded into the block that holds the position -- the
+        digests of the media whose rows stand at those placeholder ids (the same <|image|> run, another picture, must
+        never share a boundary: A7)."""
         out, h = {}, b""
         salted = sorted((int(p), bytes(d)) for p, d in salts)
         j = 0
-        for end in range(self.chunk, len(ids) + 1, self.chunk):
-            h = hashlib.sha1(h + array("i", ids[end - self.chunk:end]).tobytes()).digest()
+        unit = self.block_size
+        for end in range(unit, len(ids) + 1, unit):
+            h = hashlib.sha1(h + array("i", ids[end - unit:end]).tobytes()).digest()
             while j < len(salted) and salted[j][0] < end:
                 h = hashlib.sha1(h + salted[j][1]).digest()
                 j += 1
@@ -91,8 +94,8 @@ class PrefixCache:
         self.free_snaps.append(snap)
 
     def insert(self, h: bytes, blocks, tokens: int, snap: int) -> None:
-        if h in self.entries or tokens % self.chunk or len(blocks) != tokens // self.block_size:
-            raise ValueError("a prefix entry is one whole-chunk boundary with exactly its blocks")
+        if h in self.entries or tokens % self.block_size or len(blocks) != tokens // self.block_size:
+            raise ValueError("a prefix entry is one whole-block boundary with exactly its blocks")
         self.tick += 1
         self.pool.pin(blocks)
         self.entries[h] = Entry(tuple(blocks), tokens, snap, self.tick)

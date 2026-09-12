@@ -769,6 +769,8 @@ class Server:
         world = int(getattr(self.comm, "world_size", 1) or 1)
         if world <= 1 or not flags:
             return [int(bool(f)) for f in flags]
+        if hasattr(self.comm, "all_reduce_host"):                       # the control group: no device work, no stream wait
+            return self.comm.all_reduce_host([int(bool(f)) for f in flags])
         import torch
         device = "cuda" if torch.cuda.is_available() else "cpu"
         votes = torch.tensor([int(bool(f)) for f in flags], dtype=torch.int32, device=device)
