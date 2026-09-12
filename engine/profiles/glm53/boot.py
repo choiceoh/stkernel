@@ -55,6 +55,22 @@ TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (
 MAX_WAIT_S = 20.0                   # D10's one starvation valve
 MAX_SEQS = 4                        # launcher MAX_SEQS
 PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch
+TIER_GIB = 64.0
+"""What a rank's parked conversations may occupy on NVMe, and its evicted prefix boundaries below.
+
+Declared, because "the filesystem decides" is not a decision (D1). Until 45차 §53 neither tier
+had a capacity at all, so the only brake was `reserve_bytes` -- one gigabyte of free space --
+on a root that also carries the checkpoints, the images and the logs. It had eaten 75 GiB of a
+disk that was 99% full, and nothing in the engine had ever deleted a byte of it.
+
+A parked conversation is ~260 MiB here (one block plus its 247 MiB state slot, the size 45차
+§49 left open), so 64 GiB is about 250 of them and 16 GiB is about 30 prefix boundaries. The
+prefix tier gets the smaller share on purpose: a boundary is a cache that recomputes, a
+conversation is a turn the user may come back to (D16). Past the cap the LRU forgets, foreign
+layouts first (`NvmeTier.oldest`).
+"""
+PREFIX_TIER_GIB = 16.0
+TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem whatever its own cap allows
 PREFIX_SNAPSHOTS = 96               # block-boundary checkpoints: ~45 MiB/rank with the native two-head drafter KV shard.
                                     # The unit is the 768 block (nine per 6,912 chunk); boundaries a request adopted
                                     # outlive the ones nobody asked for (prefix._victim), so churn cannot flush them.
@@ -365,12 +381,15 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         with recorder.phase("runner"):
             tiered = prefix_tier = None
             if tier_dir:                                                                # D16: idle conversations park on NVMe, per rank
-                tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
+                tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes,  # a block is one NVMe unit (block-major)
+                                capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB))
                 tiered = TieredKV(caches.pool, tier)
                 # the prefix tier (45차 §23 A): evicted leaf boundaries -- their blocks and snapshot -- live on beside the parked
                 # conversations, in their own directory and keyspace (a boundary's key is 56 bits of its hash)
                 prefix_tier = TieredKV(caches.pool, NvmeTier(Path(tier_dir) / f"rank{comm.rank}" / "prefix",
-                                                             block_bytes=cache_layout.block_bytes, stage_bytes=PREFIX_TIER_STAGE))
+                                                             block_bytes=cache_layout.block_bytes, stage_bytes=PREFIX_TIER_STAGE,
+                                                             capacity_bytes=int(PREFIX_TIER_GIB * GIB),
+                                                             reserve_bytes=int(TIER_RESERVE_GIB * GIB)))
             prefix = PrefixCache(F.block, engine.prefill_chunk, PREFIX_SNAPSHOTS)      # boundaries = every 768 block (base/prefix.py)
             runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
                             keep_idle=tiered is not None, prefix=prefix)                # with a tier, conversations live on and park
@@ -421,6 +440,18 @@ def release_line(report: dict, rank: int = 0) -> str:
         line += (f"\n  released: rank {rank} did NOT come back clean -- "
                  f"{report['allocated_after'] / 2**20:.0f} MiB is still held by live tensors"
                  + (f", largest blocks {held}" if held else ""))
+    return line
+
+
+def tier_line(tier, cap_gib: float, what: str) -> str:
+    """What is on the disk, in bytes -- the boot used to print counts and leave the size a mystery."""
+    live = sum(1 for k in tier.index if tier.has(int(k)))
+    stale, stale_bytes = len(tier.stale()), tier.stale_bytes()
+    line = (f"  NVMe tier: {live} {what} parked from before, {tier.used_bytes() / GIB:.1f} GiB of "
+            f"{cap_gib:.0f} GiB")
+    if stale:
+        line += (f"; {stale} under another layout holding {stale_bytes / GIB:.1f} GiB -- not resumable, "
+                 f"and the first thing forgotten when the cap bites")
     return line
 
 
@@ -739,8 +770,9 @@ def fleet(a) -> int:
             print(rec.table())
             print(f"  ST engine: GLM-5.3, TP={facts.TP}, lanes={lanes.name}, KV {a.kv_gib} GiB, serving on :{a.port}")
             if runner.tiered is not None:
-                t = runner.tiered.tier
-                print(f"  NVMe tier: {sum(1 for k in t.index if t.has(int(k)))} conversations parked from before, {len(t.stale())} under another layout (kept, not resumable)")
+                print(tier_line(runner.tiered.tier, TIER_GIB, "conversations"))
+                if runner.prefix_tier is not None:
+                    print(tier_line(runner.prefix_tier.tier, PREFIX_TIER_GIB, "prefix boundaries"))
         with rec.phase("door"):
             tok = tokenizer(a.ckpt_meta)
             renderer = chat_renderer(a.ckpt_meta) if comm.rank == 0 else None
