@@ -60,7 +60,9 @@ def runtime_identity(container):
 
 def cases():
     """24 unconstrained pairs plus forced/named/none completion guardrails."""
-    topics = ["a weekend trip", "a programming course", "an office lunch", "a new laptop"]
+    # Keep 12 topic/effort groups using the allowed low/high settings; max is disabled.
+    topics = ["a weekend trip", "a programming course", "an office lunch", "a new laptop",
+              "a home workout", "a team workshop"]
     pref = {"type": "object", "properties": {
         "choices": {"type": "array", "items": {"type": "string"},
                     "description": "Offer six concise, distinct possible answers."},
@@ -68,7 +70,7 @@ def cases():
         "tag": {"type": "string", "description": "A short machine-readable topic identifier."}},
         "required": ["prompt", "tag"], "additionalProperties": False}
     result = []
-    for effort in ("low", "high", "max"):
+    for effort in ("low", "high"):
         for stream in (False, True):
             for index, topic in enumerate(topics):
                 schema = pref if index % 2 == 0 else {"type": "object", "properties": {

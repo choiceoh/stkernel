@@ -188,6 +188,8 @@ def chat_renderer(ckpt=facts.CKPT):
         # Keep the profile default even if the checkpoint has an older template.
         if kwargs.get("reasoning_effort") is None:
             kwargs = {**kwargs, "reasoning_effort": "high"}
+        elif kwargs["reasoning_effort"] not in ("low", "high"):
+            raise ValueError("GLM-5.3-Flash reasoning_effort must be low or high; max is disabled")
         return t.apply_chat_template(messages, add_generation_prompt=generation_prompt,
                                      tokenize=False, **resume, **kwargs)
     return render

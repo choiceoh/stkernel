@@ -52,7 +52,7 @@ class TemplateTests(unittest.TestCase):
              "tool_calls": [{"id": "a", "function": {"name": "lookup", "arguments": {"q": "서울"}}}]},
             {"role": "tool", "tool_call_id": "a", "content": [{"type": "text", "text": "tool result"}]},
         ]
-        for effort in ("low", "high", "max"):
+        for effort in ("low", "high"):
             for clear in (True, False):
                 options = dict(tools=tools, reasoning_effort=effort, clear_thinking=clear)
                 with self.subTest(effort=effort, clear=clear):
@@ -115,15 +115,18 @@ class TemplateTests(unittest.TestCase):
 
     def test_default_on_and_compatibility_off(self):
         self.assertTrue(render([]).endswith("<|assistant|><think>"))
+        for kwargs in ({}, {"reasoning_effort": None}):
+            self.assertIn("Reasoning Effort: High", render([], **kwargs))
         for key in ("thinking", "enable_thinking"):
             self.assertTrue(render([], **{key: False}).endswith("<|assistant|><think></think>"))
-        for effort in ("low", "high", "max"):
+        for effort in ("low", "high"):
             self.assertIn("Reasoning Effort: " + effort.capitalize(), render([], reasoning_effort=effort))
 
     def test_direct_template_users_get_option_validation(self):
         for kwargs in ({"thinking": "false"}, {"enable_thinking": None},
                        {"clear_thinking": 0}, {"legacy_reasoning_content": "true"},
-                       {"thinking": False, "enable_thinking": True}, {"reasoning_effort": "medium"}):
+                       {"thinking": False, "enable_thinking": True}, {"reasoning_effort": "medium"},
+                       {"reasoning_effort": "max"}, {"reasoning_effort": "max", "thinking": False}):
             with self.subTest(kwargs=kwargs), self.assertRaises(TemplateError):
                 render([], **kwargs)
 
@@ -174,6 +177,9 @@ class OptionTests(unittest.TestCase):
 
     def test_bad_types_conflicts_and_efforts_are_rejected(self):
         cases = [{"chat_template_kwargs": []}, {"reasoning_effort": "medium"},
+                 {"reasoning_effort": "max"}, {"chat_template_kwargs": {"reasoning_effort": "max"}},
+                 {"reasoning_effort": None, "chat_template_kwargs": {"reasoning_effort": "max"}},
+                 {"reasoning_effort": "max", "chat_template_kwargs": {"reasoning_effort": None}},
                  {"reasoning_effort": "low", "chat_template_kwargs": {"reasoning_effort": "high"}},
                  {"chat_template_kwargs": {"thinking": False, "enable_thinking": True}}]
         for key in ("thinking", "enable_thinking", "clear_thinking", "legacy_reasoning_content"):
@@ -211,7 +217,9 @@ class MiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent, response)
 
     async def test_errors_never_reach_generation(self):
-        for raw in (b'{"chat_template_kwargs":{"thinking":"false"}}', b"[]", b"not-json"):
+        for raw in (b'{"chat_template_kwargs":{"thinking":"false"}}', b"[]", b"not-json",
+                    b'{"reasoning_effort":"max"}',
+                    b'{"chat_template_kwargs":{"reasoning_effort":"max","thinking":false}}'):
             async def app(*args):
                 self.fail("invalid input reached generation")
             async def receive():

@@ -24,10 +24,10 @@ GLM-5.3 런타임 — 디코드 준비 통합(prep-fused), 샘플러 가드, 부
 - `chat_template_kwargs.thinking`과 `enable_thinking`은 boolean만 받으며,
   둘을 함께 지정하면 값이 같아야 한다. 명시적인 `false`는 기존 클라이언트의
   `<think></think>` 호환 경로를 유지한다. 생략한 값은 서버 기본값에 맡긴다.
-- `reasoning_effort`는 `low`, `high`, `max`를 지원한다. 최상위 필드와
+- GLM-5.3-Flash의 `reasoning_effort`는 `low`, `high`를 허용한다. 최상위 필드와
   `chat_template_kwargs` 값이 충돌하거나 지원하지 않는 값을 지정하면 400이다.
   `null`/생략은 서버 기본값이며, 이 저장소의 GLM 템플릿은 `high`를 기본으로 쓴다.
-  `max`가 필요하면 요청에 명시한다.
+  `max`는 최상위 필드나 템플릿 옵션 어느 쪽에 지정해도 생성 전에 400으로 거부한다.
 - `clear_thinking`은 기존 기본값 false를 유지한다. 일반 채팅 클라이언트는
   true를 명시할 수 있다. 이전 사용자 턴의 reasoning만 지우며 현재 도구 호출
   라운드의 reasoning은 유지한다.
