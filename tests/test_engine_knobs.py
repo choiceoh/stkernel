@@ -81,6 +81,25 @@ class MoeStaticSpecTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             md.configure_static_v2("1")                  # the sunset v2 lane token is rejected, not remapped
 
+    def test_the_timing_cells_reach_the_served_recipe_but_never_serving(self):
+        """xs/xa drop a TMA issue at compile time, which is the only way to ask which of the served recipe's
+        boxes holds its fixed cost. They used to be excluded from `r` and `sf6` and so could not be pointed
+        at what production runs (45차 §23 조사 17차)."""
+        import importlib
+        try:
+            md = importlib.import_module("engine.kernels.b12x.moe_dispatch")
+        except ImportError as exc:
+            self.skipTest(f"b12x dispatcher unavailable here: {exc}")
+        for cells, skip_sf, skip_a in (("xs", True, False), ("xa", False, True), ("xs,xa", True, True)):
+            cfg = md._parse_glm53_static_v2(f"t,r,sf6,{cells}", probe=True)
+            self.assertEqual((cfg["skip_sf"], cfg["skip_a"]), (skip_sf, skip_a), cells)
+            self.assertTrue(cfg["tiled"] and cfg["decode_reform"] and cfg["reform_sf_pack"], cells)
+            with self.assertRaisesRegex(ValueError, "probe-only"):
+                md._parse_glm53_static_v2(f"t,r,sf6,{cells}", probe=False)
+        for cells in ("q", "v"):                          # the cells that do change the scale path stay out of r
+            with self.assertRaisesRegex(ValueError, "r requires t"):
+                md._parse_glm53_static_v2(f"t,r,sf6,{cells}", probe=True)
+
     def test_tile_major_relayout_reads_back_row_major(self):
         try:
             md = importlib.import_module("engine.kernels.b12x.moe_dispatch")
