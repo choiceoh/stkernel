@@ -34,6 +34,31 @@ class DistributionBatchTests(unittest.TestCase):
         torch.testing.assert_close(probs[1][:2], torch.softmax(logits[1][:2], -1))
 
 
+class ShrinkTests(unittest.TestCase):
+    """A row finishing does not move the others: every device tensor is re-indexed, on the device.
+
+    What this used to also check -- the remapping of which positions wanted a nucleus -- went away
+    with the sort that list chose the payers for (45차 §34). The re-indexing itself did not."""
+
+    def test_every_row_array_follows_the_surviving_rows(self):
+        e = SimpleNamespace(drafter=SimpleNamespace(k=2),
+                            caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device("cpu")),
+                            F=SimpleNamespace(block=2))
+        p = AsyncDecode(e)
+        t, n = p.t, 3
+        b = {name: torch.arange(n) for name in
+             ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "temps", "top_k", "top_p", "anchor")}
+        b.update(ends=torch.zeros(n, 1, dtype=torch.int64), alive=torch.ones(n, dtype=torch.bool),
+                 drafts=torch.zeros(n, 2, dtype=torch.int64), ids=torch.arange(n * t), dists=None)
+        p.buf, p.batch = b, (1, 2, 3)
+        p._shrink([3, 1])                                                     # old row 2 -> new 0, old row 0 -> new 1
+        self.assertEqual(b["seqs"].tolist(), [2, 0])
+        self.assertEqual(b["top_k"].tolist(), [2, 0], "a row's truncation follows the row")
+        self.assertEqual(b["top_p"].tolist(), [2, 0])
+        self.assertEqual(b["ids"].tolist(), list(range(2 * t, 3 * t)) + list(range(t)))
+        self.assertEqual(p.batch, (3, 1))
+
+
 class ResolveTests(unittest.TestCase):
     def test_resolve_applies_counts_in_launch_order_and_ignores_released_rows(self):
         e = SimpleNamespace(drafter=SimpleNamespace(k=2), caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device("cpu")),
