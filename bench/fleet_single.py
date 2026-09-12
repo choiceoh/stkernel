@@ -26,7 +26,6 @@ import time
 KIND = 'single'
 DEFAULT_HOST = 'ost-97x'        # bench/fleet.sh carries the same default; tests/test_fleet_single.py pins that
 DEFAULT_GPU = '5050'
-USER = 'choiceoh'               # the fleet's user everywhere else (choiceoh@10.10.10.N)
 CACHE = '.single-gpu-evidence'
 TTL_S = 20.0                    # _try_hold asks once a second per waiter; one ssh per TTL is enough
 SSH = ('ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=4', '-o', 'StrictHostKeyChecking=accept-new')
@@ -50,8 +49,13 @@ def label(environ=None) -> str:
 
 
 def target(name: str) -> str:
-    """[user@]host for ssh: the fleet's user unless the name already carries one."""
-    return name if '@' in name else f'{USER}@{name}'
+    """The ssh target, exactly as configured: the controller's ~/.ssh/config owns the alias.
+
+    ost-97x is not a Spark: it is a Windows box on the tailnet (OST-97X, office-topsolar),
+    so its address, user and port are whatever sshd ends up running there -- an ssh alias
+    on srv2 says, and nothing here overrides it. A `user@host` is honoured as given.
+    """
+    return name
 
 
 def evidence(name: str, *, run=subprocess.run, timeout: float = 8.0) -> list:

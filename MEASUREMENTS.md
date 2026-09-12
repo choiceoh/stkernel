@@ -323,6 +323,7 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 - **§97** — 서빙 중에 멎은 플릿: 같은 집합통신에 네 랭크가 서로 다른 형상으로 들어갔다
 - **PR #767** — GPU 하나면 되는 검사는 플릿이 아니라 **ost-97x 의 5050** 으로: 큐에 레인이 둘
 - **PR #770** — 리스를 큐 아래로: 기록 하나, 주인은 큐, 인계는 이전 — 그리고 러너가 **영원히 거부**하고 있었다
+- **PR #771** — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다
 
 ### 45차 §23 — 프로덕션 전환 시도: 창·45층 4노드 부팅·문 사다리, 그리고 깨진 글의 원인 = KDA `o_norm` epsilon (2026-09-11 밤 ~ 09-12 새벽)
 
@@ -1334,6 +1335,73 @@ inspect 1(두 holder 나란히, 대기 대상은 자기 레인) + idle 1(single 
 `kind_of`)을 같이 뽑도록 고쳤다. `FLEET_AUDIT` 갱신. 이름: 규칙 9 대로 PR 번호다 — §97 로 썼다가 main 의
 §97(PR #759)이 먼저 들어왔고, 그 사이 원장이 얇아졌다(PR #765).
 
+### 45차 — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다 (2026-09-13, 맥→srv2, PR #771)
+
+PR #767 의 "준비물" 을 실제로 만들려고 ost-97x 부터 찾았다.
+
+**찾은 것.** 맥·srv4·srv2 어디에도 DNS·mDNS·`/etc/hosts` 에 없다. 테일넷에 있다: **`OST-97X`**(테일넷 이름
+`office-topsolar.tail7fec17.ts.net`, 100.116.174.65) — **Windows**, DERP 릴레이로만 닿고(직결 없음), 22·3389 닫힘.
+집 LAN(192.168.68.0/22) 스윕에서 ssh 가 열린 호스트는 스파크 넷(srv1 .59, srv4 .72, srv3 .73, srv2 .77)뿐이다.
+즉 이 박스에는 아직 sshd 가 없고, 리눅스도 아니다.
+
+**한 것.** (1) srv2 `~/.ssh/config` 에 `Host ost-97x → HostName office-topsolar.tail7fec17.ts.net`(srv2 의 MagicDNS 가
+푼다). `ssh -o BatchMode=yes ost-97x true` 의 답이 "Could not resolve hostname" 에서 "port 22: Connection timed out"
+으로 바뀌었다 — 이름은 풀리고, 그쪽에 sshd 가 없다. `status` 의 single 줄도 이제 그렇게 말한다. (2) 코드: 레인이
+`choiceoh@` 를 강제하지 않는다. `fleet_single.target()` 과 `probes/run_engine_probe.sh` 는 호스트를 준 그대로 쓰고,
+컨트롤러의 ssh 별칭이 주소·사용자·포트를 정한다 — 그 박스는 스파크도, choiceoh 의 것도 아니다.
+
+**막힌 것 — 운영자의 손이 필요하다.** (1) OST-97X 에 srv2 에서 BatchMode 로 닿는 sshd. 러너가 bash·rsync·docker
+(NVIDIA 런타임)를 쓰므로 **WSL2 Ubuntu 안의 sshd** 가 실용적인 모양이다(테일넷 100.116.174.65:22 로 노출). srv2 의
+공개키(`~/.ssh/id_ed25519.pub`, `choiceoh@spark4tb`)를 그 계정의 `authorized_keys` 에, 사용자·포트를 srv2 별칭에.
+(2) **x86_64 ST 이미지가 없다.** 지금 이미지는 GB10 시드(aarch64) 위에 짓고, DeepGEMM 은 시드에서 뽑은
+`_C.cpython-3xx-aarch64-linux-gnu.so` + JIT 헤더(821 파일)뿐 — `csrc` 가 없고, API 는 포크 것(`fp8_fp4_mqa_logits`,
+`tf32_hc_prenorm_gemm`, 2.6.1). x86 에서 다시 지으려면 그 포크의 확장 소스가 있어야 한다. ST 검사는 전부
+`deep_gemm` 을 임포트하므로, 이게 없는 한 5050 에서 도는 ST 검사는 없다. (3) 그때까지 단일 레인 티켓은
+"Connection timed out" 을 말하며 기다리고, `run --gpu --fleet` 가 우회다.
+
+**검증.** 맥: `test_fleet_single` 12 · onepass · source · ledger_numbering 통과, `FLEET_AUDIT` 갱신(`test_docs_status`
+는 main 의 `bench/FLEET_BOOT_READINESS.md` 배너 누락으로 빨갛다 — 이 PR 밖, 칩으로 띄움). srv2: 별칭 실측은 위와
+같다. 5050 실물 왕복은 여전히 없다.
+
+### 773차 — 시뮬레이터가 기록의 나머지 숫자들도 맞춘다: 폴드아웃 검증으로 잡은 버그 셋 (2026-09-12~13, ost 노트북 macOS arm64·CPU, PR #773)
+
+760차의 `step_sim` 은 스텝 캐던스 하나를 맞추고 나머지는 못 맞췄다. "다른 측정값과도 거의 일치"를 요구받고
+네 기록(ST 엔진 + 노브가 서로 다른 glm53 부팅 셋: EP tiled·EP local·MLA)에 대해 폴드아웃 검증을 돌린 결과,
+**일치하지 않던 것은 전부 모형의 버그였다**:
+
+1. **수용률 매핑** — 원장의 `raw_acc` 는 accepted/drafted 비율이라 위치별 수용 확률은
+   q≈0.75 인데(k=5, acc 46.2%에서) q=0.462 로 추첨해 tokens/step 이 절반쯤으로 나갔다.
+   `per_position_acc()` 가 이등분법으로 q 를 푼다. 이 매핑은 프로브가 아니라 산술이다 —
+   원장 숫자를 시뮬레이션에 옮기는 모두가 밟는 자리.
+2. **행 기준** — tokens/step 을 스텝 수로 나눠 폭 2 스텝이 2배로 읽혔다. 행-스텝 기준
+   (`st:decode_row_steps` 와 같은 정의)으로 고쳤다.
+3. **도착 증폭** — 기록 e2e 누적으로 도착을 유도하니 시뮬이 살짝 느릴 때 다음 프리필이
+   겹쳐 프리필-디코드 간섭이 되먹임으로 커졌다(32K e2e +171%). 하네스는 순차 실행이므로
+   검증은 **closed-loop**(엔진이 한가해야 다음 제출, 폭 1)로 재현한다.
+
+**폴딩·검증**: `fit_cost` 가 기록에서 상수를 폴딩한다(prefill 은 컨텍스트별 실측 처리량 계단 —
+실제 토큰수·warm, decode ms 는 판정 채널의 역수, k·수용률은 스펙 카운터). `--against` 는
+기록마다 closed-loop 재현 후 델타표를 내고 매 행에 [입력](폼 상수, 일치는 자명)과 [예측]
+(폼에 얹히지 않은 값)을 단다.
+
+**결과** — 예측 24행(ST 6 + glm53 18) 중 |잔여|>10% 는 **0행**:
+
+| 기록 | 예측 행 최대 잔여 |
+|---|---|
+| ST-PROD-5734-20260912 (ST 엔진) | +4.9% (e2e 2K) |
+| EPTILEDWORD4B (EP tiled) | +6.8% (TPOT) |
+| EPONEPASS25B0 (EP local) | −6.7% (TTFT warm 2K) |
+| MLAPREF50907B1PRIME (MLA) | +9.1% (TPOT) |
+
+TTFT(warm) 32K/128K 는 네 기록 전부 ±0.5% 이내, tokens/step ±1.2% 이내, 클라이언트 tok/s·TPOT
+−8.3~+2.4%. 남은 −5~−9% 클라이언트 체계 잔여는 모형 오차가 아니라 **기록 안의 채널 차이**다 — 같은
+기록에서 창 메디안×tokens/step 와 요청별 실측이 2~5% 다르고, `--fit-channel client` 로 폼을 옮기면
+step/s 가 +3.4% 예측이 되는 대칭이 관측된다. 어느 쪽에 맞추든 반대채널이 채널 차이만큼 벌어진다.
+
+미계수는 명시돼 있다: decode 의 폭·컨텍스트 의존은 평탄 가정(요약 줄마다 표시). C=2/4 기록(#754)이
+쌓이면 `--cost-json` 으로 폴딩할 자리. 증거: `measurements/step_tools_nofleet_20260912/sim_validate_4records.txt`.
+D17 그대로 — 이것은 시뮬레이션이고 판정은 플릿 onepass 두 판이다.
+
 ### 45차 — 리스를 큐 아래로: 기록 하나, 주인은 큐, 인계는 이전 — 그리고 러너가 **영원히 거부**하고 있었다 (2026-09-12~13, 맥 + 리눅스 컨테이너, GPU·플릿 미검증, PR #770)
 
 운영자 "리스와 큐가 왜 따로 있는거지? 리스를 큐의 기능화 하는게 좋지않나". **가르는 답**: 따로일 이유는 반쪽이다.
@@ -1378,7 +1446,7 @@ sha 하나·프로덕션 형상) → 배포·큐 연결(D17 프로브 티켓, �
   묻는다(production 만, 정숙 게이트, 티켓당 한 번, `.asked.<s>` 마커); `_release` → `_lease_pass_on`(다음 부팅 티켓으로
   `transfer`, 없으면 `release`); `holder_alive` 는 부팅 홀더를 **리스로** 판정(리스 없는 옛 홀더·프로브 홀더는 전처럼
   pid); `_dequeue` 가 자기 요청을 거둔다(`withdraw-yield`); `yield`(프로브에 양보)는 `FLEET_KEEP_LEASE=1` 로 리스를 쥔
-  채; 핀된 모듈에서 직접 읽는다(`launchers/` 헬퍼 참조 제거); `status`·`waiting:` 줄에 `lease:`; `FLEET_RULES=2`.
+  채; 핀된 모듈에서 직접 읽는다(`launchers/` 헬퍼 참조 제거); `status`·`waiting:` 줄에 `lease:`; `FLEET_RULES=3`(PR #767 의 2 다음).
 - `bench/fleet_pin.py` 가 `engine/base/fleet_lease.py`·`launchers/lib/fleet-lease.sh` 를 핀; `bench/fleet_boot.py` 가
   페이로드에 `ST_LEASE_OWNER=queue/<s>` 를 넘김; `bench/fleet_handoff.py next` = 이전 받을 다음 부팅 티켓(우선순위
   순, 살아 있는 슈퍼바이저, 프로브 제외).

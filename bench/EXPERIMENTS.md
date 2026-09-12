@@ -33,7 +33,9 @@ The queue has two GPU lanes. A boot, a pair, a chain and a live onepass take the
 fleet: four Sparks, one holder. An ST check that needs **one** GPU
 (`probes/run_engine_check.sh`, or `run_engine_probe.sh` without `--distributed`)
 takes the single-GPU lane instead: the 5050 on ost-97x (`FLEET_SINGLE_GPU_HOST`;
-set it empty to turn the lane off), with its own holder (`holder-single`) and its
+set it empty to turn the lane off; the controller's `~/.ssh/config` names the
+alias's address, user and port -- the box is a Windows machine on the tailnet,
+so that means sshd inside WSL2), with its own holder (`holder-single`) and its
 own evidence (that host's GPU process list; unreachable is not free). The lanes
 never block each other -- a check behind a queued boot runs now, and a boot
 behind a queued check runs now. The supervisor passes `ST_PROBE_HOST` to the

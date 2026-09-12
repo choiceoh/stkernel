@@ -7,10 +7,12 @@
 # four, goes to the 5050 on ost-97x and leaves the Sparks alone. engine/ and probes/ are
 # rsynced under ~/$ST_PROBE_TREE on that host, the container runs there with the same
 # mounts and env, and NO fleet lease is taken -- that GPU is not the fleet's, and the
-# queue's holder-single is the reservation. The host needs: ssh from here in BatchMode,
-# docker with the NVIDIA runtime, the ST image ($ST_IMAGE) built there, and
-# /home/choiceoh/models when the check wants weights. Kernels JIT for the card they find
-# (an RTX 5050 is sm_120, the Sparks are sm_121a): a verdict from there is that card's.
+# queue's holder-single is the reservation. The host needs: an ssh alias in the
+# controller's ~/.ssh/config (address, user, port -- ost-97x is a Windows box on the
+# tailnet, so this means sshd inside WSL2 Ubuntu) reachable in BatchMode, docker with the
+# NVIDIA runtime, an x86_64 ST image ($ST_IMAGE) built there, and /home/choiceoh/models
+# when the check wants weights. Kernels JIT for the card they find (an RTX 5050 is
+# sm_120, the Sparks are sm_121a): a verdict from there is that card's.
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 probe=${1:?usage: run_engine_probe.sh probes/engine_kernel_check.py [args...]}
@@ -32,7 +34,8 @@ fi
 # local mounts, no lease -- because none of that is about the GPU it uses.
 probe_host=${ST_PROBE_HOST:-}
 if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${probe_host#*@}" != "$(hostname)" ]; then
-  case "$probe_host" in *@*) ;; *) probe_host="choiceoh@$probe_host";; esac
+  # The host is used exactly as given: the controller's ~/.ssh/config (Host ost-97x) names
+  # the address, user and port, because that box is not a Spark and not choiceoh's.
   SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o StrictHostKeyChecking=accept-new"
   tree=${ST_PROBE_TREE:-st-probe-tree}          # under that host's home
   home=$(ssh $SSHOPT "$probe_host" "mkdir -p '$tree' .cache/st && printf %s \"\$HOME\"") \
