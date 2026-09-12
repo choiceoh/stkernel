@@ -1951,6 +1951,44 @@ class OpenAIDialectTests(unittest.TestCase):
                                                     "reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "low"}}))
         self.assertEqual(err.exception.code, 400)
 
+    def test_medium_effort_is_served_and_lands_on_a_rung_the_template_has(self):
+        """GLM's template reads `reasoning_effort in ['low','high']` and turns everything else
+        into 'max', so a plain OpenAI "medium" would silently buy the DEEPEST setting. Refusing
+        it was worse: the Deneb gateway sends medium whenever its thinking budget lands between
+        4K and 10K tokens, and wormhole does not fail over a request-shape 4xx (45차 §59)."""
+        s = chat_server()
+        seen = {}
+        def chat(messages, kwargs, *, generation_prompt=True, continue_final=False):
+            seen.update(kwargs)
+            return "".join(m.get("content") or "" for m in messages)
+        s.chat = chat
+        for asked, reaches in (("low", "low"), ("medium", "high"), ("high", "high"), ("max", "max")):
+            with self.subTest(reasoning_effort=asked):
+                seen.clear()
+                self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                       {"messages": [{"role": "user", "content": "ab"}],
+                                                        "max_tokens": 1, "reasoning_effort": asked}))
+                self.assertEqual(seen["reasoning_effort"], reaches)
+
+    def test_a_template_only_effort_is_checked_instead_of_falling_through_to_max(self):
+        # chat_template_kwargs used to bypass the check entirely, so junk -- or a medium the
+        # caller meant as "less than high" -- reached the template and became 'max'.
+        s = chat_server()
+        seen = {}
+        def chat(messages, kwargs, *, generation_prompt=True, continue_final=False):
+            seen.update(kwargs)
+            return "".join(m.get("content") or "" for m in messages)
+        s.chat = chat
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                                                "chat_template_kwargs": {"reasoning_effort": "medium"}}))
+        self.assertEqual(seen["reasoning_effort"], "high")
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                   {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                                                    "chat_template_kwargs": {"reasoning_effort": "enormous"}}))
+        self.assertEqual(err.exception.code, 400)
+
     def test_a_grammar_waits_for_the_reasoning_to_end(self):
         """A grammar armed inside the think block forbids the block's own end token, so the block never closes
         and the whole answer comes back as reasoning_content with content empty -- the 45차 §22 bug, reached

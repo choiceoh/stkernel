@@ -10910,3 +10910,62 @@ ST 의 실제 상한은 **1,048,576**(프로덕션 `context_ceiling`). 데네브
 
 **확인만 하고 안 건드린 것**: 데네브의 `vision`/`reasoning`/`promptCache` 오버라이드는 **discovery 대상이 아니다**
 (주석이 명시). 로컬 항목엔 `vision` 키가 아예 없어 관대한 기본값이라 이미지가 통과한다 — 눈가리개는 웜홀 쪽 한 곳뿐이었고 §57 에서 껐다.
+
+### 45차 §59 — `medium` 은 표준인데 우리 문이 400 을 냈다, 그리고 템플릿 kwargs 는 검사를 통째로 건너뛰고 있었다 (2026-09-12, srv4, 라이브 판정 2건)
+
+운영자 "데네브 연계 추가개선". 데네브가 우리 엔진에 **어떤 값을 보내는지**를 코드로 따라갔다.
+
+**데네브의 일곱 역할 중 다섯이 우리 엔진에 있다**(`~/.deneb/deneb.json`):
+
+| 역할 | 모델 |
+|---|---|
+| `codingModel` · `lightweightModel` · `submainModel` · **`visionModel`** | `wormhole/glm-5.3-flash-local` |
+| `tinyModel` | `wormhole/glm-5.3-flash-local-low` |
+| `defaultModel` | `kimi/k3` |
+| `fallbackModel` | `wormhole/glm-5.3-flash` (클라우드) |
+
+**`visionModel` 이 로컬을 가리킨다.** 즉 §57 에서 끈 그 `vision: false` 는 추상적인 능력 불일치가 아니라
+**데네브의 전용 비전 역할이 눈을 가린 채 돌고 있었다**는 뜻이다. §58 의 `파랑` 종단 판정이 정확히 그 경로다.
+
+**찾은 것 — `reasoning_effort: "medium"`.** 데네브 `llm/openai.go` 는 사고 예산을 이렇게 옮긴다:
+≤4,096 → `low`, ≤10,240 → **`medium`**, 그 위 → `high`. 그런데 우리 문은:
+
+```
+direct ST, reasoning_effort=medium -> 400 {"error": "reasoning_effort must be low, high, or max"}
+```
+
+(프로덕션 헤드 실측.) **`medium` 은 이 문이 말한다고 주장하는 API 의 표준 값**이다.
+
+**왜 그렇게 막혀 있었나 — 템플릿 때문이다.** GLM-5.3 의 챗 템플릿은 이렇게 쓴다:
+
+```jinja
+{%- set effective_reasoning_effort = reasoning_effort if reasoning_effort is defined
+    and reasoning_effort in ['low', 'high'] else 'max' -%}
+```
+
+**`low`/`high` 가 아니면 전부 `max`** — 즉 `medium` 을 그냥 통과시키면 *"high 보다 낮게"* 라는 뜻이
+**가장 깊은 설정**으로 조용히 뒤집힌다. 거절은 그걸 막았지만 표준 값을 못 받는 대가를 치렀다.
+
+**고친 것**: `EFFORT_RUNGS = {"low": "low", "medium": "high", "high": "high", "max": "max"}`.
+순서가 살아 있고(low ≤ medium ≤ high ≤ max) **사고로 `max` 를 사는 일이 없다**. 진짜 상한이 필요한 호출자에겐
+`reasoning_budget` 이 있다 — 등급 이름이 아니라 토큰을 센다(45차 §46).
+
+**같이 막은 구멍 하나 더 (이쪽이 더 고약하다)**: `chat_template_kwargs` 로만 보낸 `reasoning_effort` 는
+**검사를 통째로 건너뛰고** 템플릿까지 그대로 갔다. `"medium"` 이든 `"enormous"` 든 조용히 `max` 가 됐다.
+이제 최상위와 같은 사다리를 타고, 모르는 값은 400 이다.
+
+**정정 — 처음 읽은 게 틀렸다.** `X-Wormhole-No-Effort: 1`(데네브가 붙인다)을 보고 *"그럼 medium 이 그대로
+ST 로 가서 데네브 역할 넷이 400 난다"* 고 생각했다. **아니다.** 웜홀 `shapeFor` 는 `applyThinking`(No-Effort 로
+억제됨)**과 `applyReasoning`(억제 안 됨)** 을 **둘 다** 부르고, 로컬 항목은 `reasoning: glm-vllm` 이라
+후자가 언제나 `high`/`low` 로 **덮어쓴다**. 실측도 그랬다:
+
+```
+wormhole -local + No-Effort, medium -> 200
+```
+
+그러니 **오늘 데네브 경로는 안전하다.** 남은 것은 (1) 직접 호출하는 OpenAI 클라이언트 — deneb.json 에는
+헤드를 직접 가리키는 `vllm` 프로바이더도 있다 — 와 (2) 템플릿 kwargs 구멍이고, 둘 다 이번에 닫았다.
+**쓰기 전에 찍어 봐서 가짜 결함 하나를 안 적었다.**
+
+**검증**: `tools/check.py` 60 files, **777 tests, 0 failed**. 새 테스트 2개 — 네 등급이 템플릿에 있는 칸에
+떨어진다 / 템플릿 kwargs 만 온 값도 검사받고 모르는 값은 400.
