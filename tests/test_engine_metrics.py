@@ -166,6 +166,24 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(_series(text, "st:prefix_tier_bytes_read_total"), float(3 << 20))
         self.assertEqual(_series(text, "st:tier_bytes_written_total"), 4096.0, "the two tiers stay apart")
         self.assertEqual(_series(text, "st:tier_bytes_read_total"), 512.0)
+    def test_compressed_prefix_metrics_distinguish_ram_from_nvme_bytes(self):
+        import types
+        import test_engine_serve as T
+        from engine.base.compressed_snapshots import CompressedSnapshots
+        s = T.server(tiered=True)
+        cache = CompressedSnapshots(10000)
+        builder = cache.begin(9000)
+        builder.add(b'a' * 9000)
+        cache.publish('generation', builder.finish())
+        cache.get('generation')
+        s.runner.prefix_tier = types.SimpleNamespace(tier=types.SimpleNamespace(
+            snapshot_cache=cache, bytes_written=4096, bytes_read=0))
+        text = s.metrics()
+        self.assertEqual(_series(text, 'st:prefix_compressed_bytes'), cache.stored_bytes)
+        self.assertEqual(_series(text, 'st:prefix_compressed_raw_bytes'), 9000)
+        self.assertEqual(_series(text, 'st:prefix_compressed_hits_total'), 1)
+        self.assertEqual(_series(text, 'st:prefix_tier_bytes_read_total'), 0)
+
     def test_the_scrape_says_which_reasoning_shape_the_traffic_was_rendered_with(self):
         """45차 §81: whether a conversation CAN be continued turns on this and nothing else. With thinking
         off the template writes `<think></think>` and the next turn re-renders that assistant turn

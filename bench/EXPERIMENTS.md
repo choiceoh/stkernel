@@ -103,7 +103,14 @@ cold column (a boot's). deploy-watch queues one after every deploy
 warm sample and `st-pair` never has to boot the base; it also moves the queue's
 own checkout, `~/fleet-controller` (`--controller`, `FLEET_CONTROLLER_REPO`;
 `--no-follow`), to the deployed commit, so the queue answers by production's
-rules and 45차 §91's 639-commit drift cannot recur.
+rules and 45차 §91's 639-commit drift cannot recur. The sample is kept, not just
+queued once: on every later cycle with nothing to deploy, deploy-watch asks the
+controller's judge whether the deployed commit has a warm sample and, when it
+has none and no `d17-<sha12>` ticket is queued or holding, queues another --
+at most `--probe-attempts` (3) per deployed sha, `--probe-gap` (1800 s) apart,
+tallied in `deploy-state.json`. The probe itself refuses to run when the door's
+`ST_RELEASE` is not the sha it was queued for, so a ticket queued before a
+deploy cannot label the next engine's numbers with the old commit.
 
 Plans now batch their independent CPU stages, publish reusable evidence before
 creating another checkout on a cache hit, and keep core/fleet/startup results
@@ -901,7 +908,13 @@ those uses a new `run` with the intended command and inputs shown by `show`.
 ## Prepare ordinary runs before they take a turn
 
 Every new `run` checks executable/script existence, shell/Python syntax and binds
-literal source-file arguments and the execution checkout revision. It recognizes
+literal source-file arguments and the execution checkout revision. A checkout
+that moves while the ticket waits no longer stops it: the queue prepares the
+same command again at the revision that is there now -- the same checks, the
+same CPU preparation -- and the ticket keeps its place and its age, with the
+two commits named in its history (`show`). A tree that fails those checks still
+pauses the ticket with the reason; `FLEET_AUTO_REPIN=0` restores the stop of
+45차 §95 (`queued checkout revision changed`). It recognizes
 literal campaign ancestry and clean-tree guards, including scripts outside the
 checkout. Known scripts that derive `REPO` from their parent and `cd "$REPO"` use
 that source checkout. Arbitrary shell expressions, nested imports and dynamic `cd`
@@ -1069,9 +1082,14 @@ release receipt and never starts a full CPU suite. Missing evidence defers recov
 prime or refresh it explicitly using the command above. Failures retry only after
 another quiet window. `fleet.sh status` shows the controller state and reason.
 
-Install the user service on srv2 (the repository stays at an approved clean commit):
+Install the user service on srv2. It runs from `~/fleet-controller`, the queue's
+own checkout, which `st-deploy-watch` moves to the deployed commit after every
+deploy (PR #778) -- so the idle controller restores by production's rules and
+not by whatever branch a session left in `~/stkernel`. Create that checkout once
+as a detached worktree, then install:
 
 ```bash
+git -C ~/stkernel worktree add --detach ~/fleet-controller "$(python3 launchers/st_release.py deployed)"
 install -m 0644 launchers/fleet-idle-recovery.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now fleet-idle-recovery.timer
