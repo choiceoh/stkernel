@@ -96,6 +96,22 @@ class AdmissionTests(unittest.TestCase):
         contract = self.validate(['env', 'FLEET_REHEARSE=1', 'bash', 'bench/st_bracket.sh', 'pair', CAND], rehearsal_only=True)
         self.assertEqual(contract['entry'], policy.ST_BRACKET)
 
+    def test_the_probe_verb_belongs_to_the_live_lane(self):
+        """Two onepass runs on the live door, beside production: a probe ticket, never a boot."""
+        for tail in (['probe'], ['probe', CAND]):
+            with self.subTest(tail=tail):
+                self.assertEqual(self.validate(['bash', 'bench/st_bracket.sh', *tail], kind='probe')['kind'], 'probe')
+                with self.assertRaisesRegex(ValueError, 'belongs to the live-serving lane'):
+                    self.validate(['bash', 'bench/st_bracket.sh', *tail])
+        for tail in (['probe', 'main'], ['probe', CAND, '1']):
+            with self.assertRaises(ValueError):
+                self.validate(['bash', 'bench/st_bracket.sh', *tail], kind='probe')
+        with self.assertRaisesRegex(ValueError, 'live-serving lane accepts only'):
+            self.validate(['bash', 'bench/st_bracket.sh', 'pair', CAND], kind='probe')
+        fleet = (ROOT / 'bench/fleet.sh').read_text()
+        self.assertIn('  st-probe)', fleet)
+        self.assertIn('run --gpu --probe ${detach[@]+"${detach[@]}"} "$s" "$est" "$note" -- bash "$REPO/bench/st_bracket.sh" probe', fleet)
+
     def test_the_runner_snapshot_carries_what_the_bracket_needs(self):
         pinned = set(fleet_pin.source_files(ROOT))
         for relative in ('bench/st_bracket.sh', 'bench/st_judge.py', 'bench/onepass.py', 'launchers/st_release.py'):
@@ -226,6 +242,15 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(st_judge.identity({'release': 'st-engine'}), '')          # not a sha: no identity
         self.assertEqual(st_judge.identity({'engine_source_sha256': 'ab' * 32}), '')
 
+    def test_a_probe_s_first_run_is_not_the_cold_column(self):
+        """A probe's run 1 follows a prefix reset, not a boot: TTFT without the compile tail."""
+        rows = [record(BASE, 'B', 12.0), record(BASE, 'B', 12.0, run_index=1),
+                dict(record(BASE, 'd17', 12.1, run_index=1, boot='live'), cold='reset'),
+                dict(record(CAND, 'C', 12.5, run_index=1, boot='c1'), cold='reset'), record(CAND, 'C', 12.5, boot='c1')]
+        self.assertEqual([r['name'] for r in st_judge.colds(rows, BASE)], ['B'])
+        self.assertEqual(st_judge.colds(rows, CAND), [])
+        self.assertIsNone(st_judge.judge(rows, CAND, BASE)['cand_summary']['cold_ttft_2k_s'])
+
     def test_rehearsal_records_count_only_when_asked(self):
         rows = [record(BASE, 'B', 12.0, rehearsal=True)]
         self.assertEqual(len(st_judge.samples(rows, BASE)), 0)
@@ -300,6 +325,18 @@ class RehearsalTests(unittest.TestCase):
         self.assertEqual([r['name'] for r in recs], ['A', 'A', 'B', 'B', 'A', 'A', 'B', 'B'])
         self.assertEqual(out.stdout.count('verdict:'), 1)
         self.assertIn('judge B against A', out.stdout)
+
+    def test_probe_rehearses_two_runs_on_the_live_door(self):
+        out = self.run_bracket('probe', self.cand)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        recs = self.records()
+        self.assertEqual([(r['run_index'], r['cold'], r['name']) for r in recs],
+                         [(1, 'reset', 'd17-' + self.cand[:12]), (2, 'reset', 'd17-' + self.cand[:12])])
+        self.assertIn('no boot, no lease', out.stdout)
+        (self.tmp / 'deploy-state.json').write_text(json.dumps({'deployed': self.base}))
+        out = self.run_bracket('probe')
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.records()[-1]['arm_sha'][:12], self.base[:12], 'no sha: the deployed commit')
 
     def test_hold_rehearses_a_boot_and_lets_go(self):
         out = self.run_bracket('hold', self.cand, '1')
