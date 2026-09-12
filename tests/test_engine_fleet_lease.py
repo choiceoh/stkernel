@@ -764,7 +764,7 @@ class OneRecordTests(unittest.TestCase):
         hold = self.fleet[self.fleet.index("_try_hold() {"):self.fleet.index("_ledger_row() {")]
         self.assertIn('if [ "$kind" = boot ] && ! lease_mine "$s"; then', hold)    # a probe runs beside production; the single lane is not the fleet
         self.assertIn('ST_MINE=$s st_engine_up', hold)
-        self.assertRegex(self.fleet, r"(?m)^FLEET_RULES=3$")             # occupancy answers changed
+        self.assertRegex(self.fleet, r"(?m)^FLEET_RULES=[3-9][0-9]*$")   # occupancy answers changed here (3); later admission changes bump it further
 
     def test_a_boot_holder_lives_by_the_lease(self):
         body = self.fleet[self.fleet.index("holder_alive() {"):self.fleet.index("holder_probe() {")]

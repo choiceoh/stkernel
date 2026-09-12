@@ -32,17 +32,24 @@ registered supervisor owns admission for every new GPU command.
 The queue has two GPU lanes. A boot, a pair, a chain and a live onepass take the
 fleet: four Sparks, one holder. An ST check that needs **one** GPU
 (`probes/run_engine_check.sh`, or `run_engine_probe.sh` without `--distributed`)
-takes the single-GPU lane instead: the 5050 on ost-97x (`FLEET_SINGLE_GPU_HOST`;
-set it empty to turn the lane off; the controller's `~/.ssh/config` names the
-alias's address, user and port -- the box is a Windows machine on the tailnet,
-so that means sshd inside WSL2), with its own holder (`holder-single`) and its
-own evidence (that host's GPU process list; unreachable is not free). The lanes
-never block each other -- a check behind a queued boot runs now, and a boot
-behind a queued check runs now. The supervisor passes `ST_PROBE_HOST` to the
-runner, which rsyncs `engine/` and `probes/` to that host, runs the container
-there and takes no fleet lease; a verdict from there is that card's (sm_120), not
-the fleet's. `run --gpu --fleet` keeps a one-GPU check on the Sparks, `status`
-shows the lane beside the fleet, and `kick [--force] single` clears its holder.
+takes the single-GPU lane instead: **one Spark beside production**, srv4 by
+default (`FLEET_SINGLE_GPU_HOST`; set it empty to turn the lane off), with its own
+holder (`holder-single`) and its own evidence. Beside production the GPU is never
+free, so the evidence is *room*: that box's MemAvailable less the check's budget
+(`ST_PROBE_GIB`, 8 GiB by default) must clear the 16 GiB floor a `--test` boot
+keeps, and only one probe container runs there at a time; a box that cannot
+answer has no room. On a fleet box a fleet **boot** and a single check never
+share it (the boot's admission needs that memory; the check is what earlyoom
+would find first), while beside serving they run at once. The supervisor passes
+`ST_PROBE_HOST` to the runner, which rsyncs `engine/` and `probes/` to that host,
+waits for room, runs the container there on the image production runs there, and
+takes no fleet lease. A check that needs every rank file cannot run on one node
+(each Spark holds only its own rank): keep those on the fleet with
+`run --gpu --fleet`. A box of its own (ost-97x, the operator's Windows PC on the
+tailnet, once it has sshd in WSL2 and an x86_64 image) works the same way through
+an ssh alias in the controller's `~/.ssh/config`, which owns address, user and
+port. `status` shows the lane beside the fleet, and `kick [--force] single`
+clears its holder.
 
 ## The fleet lease
 

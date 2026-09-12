@@ -4,15 +4,20 @@
 #
 # ST_PROBE_HOST=[user@]host runs the container on THAT host's GPU instead of this node's.
 # That is the queue's single-GPU lane (bench/fleet.sh): a check that needs one GPU, not
-# four, goes to the 5050 on ost-97x and leaves the Sparks alone. engine/ and probes/ are
-# rsynced under ~/$ST_PROBE_TREE on that host, the container runs there with the same
-# mounts and env, and NO fleet lease is taken -- that GPU is not the fleet's, and the
-# queue's holder-single is the reservation. The host needs: an ssh alias in the
-# controller's ~/.ssh/config (address, user, port -- ost-97x is a Windows box on the
-# tailnet, so this means sshd inside WSL2 Ubuntu) reachable in BatchMode, docker with the
-# NVIDIA runtime, an x86_64 ST image ($ST_IMAGE) built there, and /home/choiceoh/models
-# when the check wants weights. Kernels JIT for the card they find (an RTX 5050 is
-# sm_120, the Sparks are sm_121a): a verdict from there is that card's.
+# four, goes to ONE Spark beside production (srv4 by default) and leaves the fleet alone.
+# engine/ and probes/ are rsynced under ~/$ST_PROBE_TREE on that host, the container runs
+# there on the image production runs there (or $ST_IMAGE), with the same mounts and env,
+# and NO fleet lease is taken -- the queue's holder-single is the reservation. Beside
+# production the guard is ROOM, the same rule as a --test boot: that box's MemAvailable
+# less this check's budget (ST_PROBE_GIB, 8 GiB by default) must clear the 16 GiB floor,
+# and no other probe may be there; this waits for it, bounded, and never guesses -- on
+# 2026-09-11 a smoke test beside production killed the fleet's worker, not itself. A check
+# that needs every rank file cannot run on one node (each Spark holds its own rank): keep
+# those on the fleet with `fleet.sh run --gpu --fleet`. A box of its own (ost-97x, the
+# operator's Windows PC on the tailnet, once it has sshd in WSL2, docker with the NVIDIA
+# runtime and an x86_64 image) works the same way through an ssh alias in the controller's
+# ~/.ssh/config, which owns address, user and port; a verdict from another card (an RTX
+# 5050 is sm_120, the Sparks are sm_121a) is that card's.
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 probe=${1:?usage: run_engine_probe.sh probes/engine_kernel_check.py [args...]}
@@ -47,13 +52,28 @@ if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${pr
   if ssh $SSHOPT "$probe_host" "test -d '$models'"; then
     mounts+=(--mount "type=bind,src=$models,dst=$models,readonly")
   fi
+  # The image production runs on that box, unless the caller named one: the check then
+  # judges the deployed build, and a box that serves has it by construction.
+  if [ -z "${ST_IMAGE:-}" ]; then
+    image=$(ssh $SSHOPT "$probe_host" "docker inspect st-glm53 --format '{{.Config.Image}}' 2>/dev/null \
+              || docker image inspect st-engine:glm53 --format '{{index .RepoTags 0}}' 2>/dev/null" | tail -1)
+    [ -n "$image" ] || { echo "ABORT: no ST image on $probe_host (no st-glm53 container, no st-engine:glm53); name one with ST_IMAGE" >&2; exit 1; }
+  fi
+  # Room beside production, right before taking it: bounded wait, then refuse (D3).
+  deadline=$(( $(date +%s) + 60 * ${ST_PROBE_WAIT_MINUTES:-10} ))
+  until room=$(python3 "$repo/bench/fleet_single.py" evidence --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"); do
+    [ "$(date +%s)" -lt "$deadline" ] \
+      || { echo "ABORT: no room on $probe_host for ${ST_PROBE_WAIT_MINUTES:-10} min: $room" >&2; exit 1; }
+    echo "  waiting for room on $probe_host: $room" >&2
+    sleep "${ST_PROBE_POLL_S:-10}"
+  done
   NAME=st-probe-$(hostname -s)-$$
   # Killed here (the queue's supervisor stops its process group), the container there must
   # not outlive us: remove it however this ends.
   trap 'ssh $SSHOPT "$probe_host" "docker rm -f $NAME" >/dev/null 2>&1 || true' EXIT INT TERM
   printf -v remote '%q ' docker run --rm --name "$NAME" "${gpu[@]}" "${mounts[@]}" "${envs[@]}" \
     --entrypoint python3 "$image" -u "/repo/$probe" "$@"
-  echo "  single GPU: $probe on $probe_host (tree ~/$tree, image $image, no fleet lease)" >&2
+  echo "  single GPU: $probe on $probe_host (tree ~/$tree, image $image, budget ${ST_PROBE_GIB:-8} GiB beside production, no fleet lease)" >&2
   rc=0; ssh $SSHOPT "$probe_host" "$remote" || rc=$?
   exit $rc
 fi
