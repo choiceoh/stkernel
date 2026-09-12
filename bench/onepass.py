@@ -351,6 +351,45 @@ def _require_preparation(rec):
     rec['preparation'] = dict(verdict='REJECTED', reason='preparation proof not completed')
 
 
+def engine_shape(completion_url: str) -> dict:
+    """The served shape this run measured, stamped on the record.
+
+    A record without it cannot say whether a slower number is a regression or a different
+    engine. 2026-09-12 is the case: two onepass boots twenty-seven minutes apart on the same
+    commit, and the second captured decode widths 1-8 with a 364,032 context ceiling where the
+    first had 1-4 and 1,035,264 -- `MAX_SEQS = 8` is the repo default and production pins 4.
+    Capture went 32.3 s to 71.9 s and the boot 163.5 s to 208.7 s, and nothing in the record
+    said so, so the two numbers looked comparable and were not.
+
+    Read from the door, best-effort: an engine that predates these fields contributes what it
+    has and the rest stays absent rather than guessed.
+    """
+    base = completion_url.split("/v1/")[0].rstrip("/")
+    out = {}
+    try:
+        with urllib.request.urlopen(base + "/v1/models", timeout=5) as r:
+            card = (json.loads(r.read()).get("data") or [{}])[0]
+    except Exception:                                   # noqa: BLE001 -- a shape we could not read is not a failed run
+        card = {}
+    caps = card.get("capabilities") or {}
+    for key, value in (("model", card.get("id")), ("max_model_len", card.get("max_model_len")),
+                       ("max_concurrent_requests", caps.get("max_concurrent_requests")),
+                       ("speculative_tokens", caps.get("speculative_tokens")),
+                       ("prefix_cache", caps.get("prefix_cache")),
+                       ("conversation_tier", caps.get("conversation_tier"))):
+        if value is not None:
+            out[key] = value
+    try:
+        with urllib.request.urlopen(base + "/", timeout=5) as r:
+            status = json.loads(r.read())
+        for key in ("engine", "parked"):
+            if status.get(key) is not None:
+                out.setdefault(key, status[key])
+    except Exception:                                   # noqa: BLE001
+        pass
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="onepass")
@@ -399,6 +438,7 @@ def main() -> int:
         rec["experiment_id"] = os.environ["FLEET_EXPERIMENT_ID"]
         rec["runtime"] = json.loads(os.environ.get("FLEET_CONTEXT", "{}"))
     rec["endpoint"] = {"completion": bd.URL, "metrics": bd.METRICS}
+    rec["engine_shape"] = engine_shape(bd.URL)
     rec["generation_budget"] = {
         "individual_max_tokens": args.max_tokens,
         "combined_max_tokens": args.combined_max_tokens,
