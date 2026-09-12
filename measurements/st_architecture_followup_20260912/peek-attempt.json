@@ -1,0 +1,8 @@
+{
+  "tool": "PR 760 step_peek with histogram label fix",
+  "url": "http://127.0.0.1:8000/metrics",
+  "observed_from": "srv2",
+  "result": "connection refused",
+  "samples": 0,
+  "scope": "read-only observation attempt; no inference requests, lease, or GPU allocation"
+}

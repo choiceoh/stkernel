@@ -1,0 +1,14 @@
+# HELP st:decode_stage_samples_total decode steps whose stages were timed
+# TYPE st:decode_stage_samples_total counter
+st:decode_stage_samples_total{engine="st"} 34
+# HELP st:decode_stage_seconds_total device time inside a decode step, by stage, over the sampled steps
+# TYPE st:decode_stage_seconds_total counter
+st:decode_stage_seconds_total{engine="st",stage="boundaries"} 0.001184
+st:decode_stage_seconds_total{engine="st",stage="commit"} 0.00041
+st:decode_stage_seconds_total{engine="st",stage="forward"} 1.760913
+st:decode_stage_seconds_total{engine="st",stage="observe"} 0.538659
+st:decode_stage_seconds_total{engine="st",stage="propose"} 0.573031
+st:decode_stage_seconds_total{engine="st",stage="sample"} 0.001499
+# HELP st:lane_info the lanes and kernel cells this process actually bound
+# TYPE st:lane_info gauge
+st:lane_info{engine="st",calibration="collecting 0/32768 rows over 20 blobs, 208 tiles deferred to a l",context_ceiling="1048576",dense_w4a16_guard_rows="4096",fp8_gptq="0",lanes="served",mla_prefill="tile32",moe_static="t,r,sf6,q0",packs="gptq 0 rtn 231",smoothed="0",spec_k="6"} 1

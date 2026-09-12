@@ -1,0 +1,5 @@
+== steps-sim-20260912-233217-2000k256-d0.ring: 스텝 796 푸시, 796 보존
+   prefill n=28    med     0.043 ms  p95     0.119  max     0.188  tokens med 6144
+   decode  n=768   med     0.041 ms  p95     0.082  max     0.342  tokens med 7
+   (wall 은 launch→readback in-flight — async 스텝은 depth 대기가 포함된다)
+[["ring", {"path": "measurements/st_architecture_followup_20260912/steps-sim-20260912-233217-2000k256-d0.ring", "pushed": 796, "kept": 796, "by_kind": {"prefill": {"steps": 28, "med_ms": 0.043, "p95_ms": 0.119, "max_ms": 0.188, "tokens_med": 6144}, "decode": {"steps": 768, "med_ms": 0.041, "p95_ms": 0.082, "max_ms": 0.342, "tokens_med": 7}}}]]

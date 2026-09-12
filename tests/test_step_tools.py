@@ -150,6 +150,15 @@ class StepPeekTest(unittest.TestCase):
         # 증분이 없는 ttft: 요청이 그 창에 끝나지 않았다 → None (0이 아니다)
         self.assertIsNone(w["ttft"])
 
+    def test_decode_quantiles_exclude_prefill_buckets_with_the_same_bounds(self):
+        expected = peek.hist_delta(self.a, self.b, "st:step_seconds", kind="decode")
+        a, b = dict(self.a), dict(self.b)
+        for le in ("0.01", "0.05", "0.1", "+Inf"):
+            key = f'st:step_seconds_bucket{{engine="st",kind="prefill",le="{le}"}}'
+            a[key], b[key] = 0, 1000
+        actual = peek.hist_delta(a, b, "st:step_seconds", kind="decode")
+        self.assertEqual(actual, expected)
+
     def test_missing_step_counter_degrades(self):
         stripped = {k: v for k, v in self.b.items() if "iteration_tokens" not in k}
         w = peek.window(self.a, stripped, 2.0)

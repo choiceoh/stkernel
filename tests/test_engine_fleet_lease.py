@@ -260,6 +260,39 @@ class SmoothnessTests(unittest.TestCase):
         self.assertIn("BEAT=$(fleet_lease_beat", self.probe)
         self.assertIn("kill $BEAT", self.probe)
 
+    def test_heartbeat_pid_capture_returns_while_renewal_is_running(self):
+        import signal
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tmp:
+            mark = Path(tmp) / "renewed"
+            script = '''
+source "$1"
+sleep() { command sleep 0.02; }
+fleet_lease() { printf '%s\\n' "$*" >> "$RENEW_MARK"; }
+beat=$(fleet_lease_beat test-owner)
+trap 'kill "$beat" 2>/dev/null || true' EXIT
+kill -0 "$beat" || exit 2
+for i in {1..100}; do
+  [ ! -s "$RENEW_MARK" ] || { printf 'ready\\n'; exit 0; }
+  command sleep 0.02
+done
+exit 3
+'''
+            proc = subprocess.Popen(["bash", "-c", script, "test", str(ROOT / "launchers/lib/fleet-lease.sh")],
+                                    env={**os.environ, "RENEW_MARK": str(mark)}, start_new_session=True,
+                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                out, err = proc.communicate(timeout=5)
+                self.assertEqual((proc.returncode, out), (0, "ready\n"), err)
+                self.assertIn("renew --owner test-owner", mark.read_text())
+            finally:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.communicate()
+
     def test_a_cpu_only_probe_reserves_nothing(self):
         """Taking four Sparks for an import check is the opposite of smooth."""
         self.assertIn('[ "${ST_PROBE_NO_LEASE:-0}" != 1 ] && [ "${ST_PROBE_NO_GPU:-0}" != 1 ]', self.probe)
