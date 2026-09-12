@@ -1,0 +1,852 @@
+{
+  "dataset": "HuggingFaceH4/ultrachat_200k",
+  "source_url": "https://huggingface.co/datasets/HuggingFaceH4/ultrachat_200k",
+  "license": "mit",
+  "observed_hub_revision": "8049631c405ae6576f93f445c6b8166f76f5505a",
+  "viewer_revision_pinned": false,
+  "pages": [
+    {
+      "url": "https://datasets-server.huggingface.co/rows?dataset=HuggingFaceH4%2Fultrachat_200k&config=default&split=train_sft&offset=0&length=32",
+      "response_sha256": "966b5314a754e6e63e916e0a01216605377ed22fd490078266baab3a04641071",
+      "rows": [
+        {
+          "id": "ultrachat-train_sft-0",
+          "source_prompt_id": "f0e37e9f7800261167ce91143f98f511f768847236f133f2d0aed60b444ebe57",
+          "conversation_sha256": "f0463acb2b5ebee1f2e66b396b4ef9bcbfa6d9d60a8fe07fc4909e623dcc9d94"
+        },
+        {
+          "id": "ultrachat-train_sft-1",
+          "source_prompt_id": "f5025bdcae61bb77fd98a4d6cd6ba8e0199a098cfebcf6830f4a85e0d13a9e21",
+          "conversation_sha256": "d4e2fe8fcf048eeb1dba5d6d3691cde06206613cdc9c85f9cca4bda73da371bc"
+        },
+        {
+          "id": "ultrachat-train_sft-2",
+          "source_prompt_id": "6db663a4d2671b41e0038c43c39f79cf909b10987dc5954286228079c2c78207",
+          "conversation_sha256": "43da838fdac49b30b0e81bc2a0244dbefc83971b2d730b58a78e7f541c02682f"
+        },
+        {
+          "id": "ultrachat-train_sft-3",
+          "source_prompt_id": "dd1afba7d2151b0695edea838378c8fd086d538e62a6643f67b24b7afeaf7f19",
+          "conversation_sha256": "d76e0c490366eecc6e1ed69eb2ac1b03450437b9a489d642034527ff9a251239"
+        },
+        {
+          "id": "ultrachat-train_sft-4",
+          "source_prompt_id": "cbf683405d8fe0221a42560cec50307d5fa9efa160c49d6d9b2522278f335f56",
+          "conversation_sha256": "bc4196c907e508b73a0b33d5a2c5c978fd7015205f383b7d888a6fd3388b8630"
+        },
+        {
+          "id": "ultrachat-train_sft-5",
+          "source_prompt_id": "e4fefd659416848d028ccfa3a87a7f530887c588feface5c4282e30b65fd7054",
+          "conversation_sha256": "3cd03feda40adf896b3fb8d2adaf372b6a864332a7f2b2e7c6e3a965e0f560bf"
+        },
+        {
+          "id": "ultrachat-train_sft-6",
+          "source_prompt_id": "b6c4eb83a6629ffd727a9b50a469062283b44c82d7008457f5fa111085c792ae",
+          "conversation_sha256": "cb8b7c314f3798991ca2f03498aa5e06b38c468ba48b7073bb39992c86244a4a"
+        },
+        {
+          "id": "ultrachat-train_sft-7",
+          "source_prompt_id": "bb7ef3d3c15f467429ce09e2c44573c35a9ea55c4f28361755afeac2d90301c9",
+          "conversation_sha256": "ecce58dcaa1b899d816b9514a3c7b20da2c3b2cf08f70c516ba410d3f8f7493d"
+        },
+        {
+          "id": "ultrachat-train_sft-8",
+          "source_prompt_id": "db5deabb538bb2ffad351eaade86d6f2abd79e1923564f119a7b42b2dcd52bdb",
+          "conversation_sha256": "db90e91e338fd2c737fa16a118555d8921ffbf9e8732709a9c3dbd909744d232"
+        },
+        {
+          "id": "ultrachat-train_sft-9",
+          "source_prompt_id": "179cd0182613b3f69c34573cd69e3ac6985de6bc2b4cd9e72894252ad9de8bbe",
+          "conversation_sha256": "ee438e2c3b4a9fb8d927301847b72b9d9f5917131e91c012f542dc40ae7f3c7d"
+        },
+        {
+          "id": "ultrachat-train_sft-10",
+          "source_prompt_id": "581eec4ea93d8611cc0f493009820de85eb5847a0e83ea48ba9ac0bc5d8ed57a",
+          "conversation_sha256": "ea33fe003cf8daabe9361728cfca2529f31f526d44eddd1323be2320beb573ec"
+        },
+        {
+          "id": "ultrachat-train_sft-11",
+          "source_prompt_id": "18a9b7fd095d6e63e49d9ca449d833ac042b204a662db2f3ff1eb5e12881573f",
+          "conversation_sha256": "c24721e6c3e9d2da2890e5564401ff8a5211edfbde39671f6ec77da86d7ed9d7"
+        },
+        {
+          "id": "ultrachat-train_sft-12",
+          "source_prompt_id": "a8cb2f77848c29fee58684ef5131102150bff7725da0716af5cc10d21fe0a430",
+          "conversation_sha256": "a18e0a7a40041d69beef3c9b56b2d747dae28a120b6ab993629bbd1e6275eb87"
+        },
+        {
+          "id": "ultrachat-train_sft-13",
+          "source_prompt_id": "fbda7249070afbb9a58f8bb44aa7b4b9a442cf385353ae62a957f003dfba0843",
+          "conversation_sha256": "ccfe6ee1e1a12e70c9919683064c1ce01248f64d65c555acccc5019f96100df6"
+        },
+        {
+          "id": "ultrachat-train_sft-14",
+          "source_prompt_id": "bfdc343937df3796bcd4ac03b9336b7641722f6b1457909d434bbffc3f0a6d2b",
+          "conversation_sha256": "72fd688c7db07548638812e3ecd995921f514818f0f2a0aee318b9bb2e9e7e05"
+        },
+        {
+          "id": "ultrachat-train_sft-15",
+          "source_prompt_id": "b5d23eaad8ffc819d386335191d1144c15fcc5038baf568f6c8094f891df3be9",
+          "conversation_sha256": "b89ec76102641afe227ec26794bd02cd0bc38e3a96401cb6ee5a2956edb801a8"
+        },
+        {
+          "id": "ultrachat-train_sft-16",
+          "source_prompt_id": "c3f39bbf0f3cfd93a2b1fd51a358b02f7ae1f8fac7f3cb25a2ae5167f782e6bf",
+          "conversation_sha256": "7bcc0218b59fb8c19521032c12941e89d7ce254885b6aa6f5cb29af490ea1cce"
+        },
+        {
+          "id": "ultrachat-train_sft-17",
+          "source_prompt_id": "0ee8332c26405af5457b3c33398052b86723c33639f472dd6bfec7417af38692",
+          "conversation_sha256": "cb14f3a19ae27c5cfe75c6050b38c5de39456c1257ce6a59421278ba68945b44"
+        },
+        {
+          "id": "ultrachat-train_sft-18",
+          "source_prompt_id": "297c776b5459329a53ec4e065b766d38f6979e3cf5934a0fa1adfbaa6a97a5e2",
+          "conversation_sha256": "32749f5a4bedcde569e28afe2ad09541e7e23fa8b0b491322489660812680356"
+        },
+        {
+          "id": "ultrachat-train_sft-19",
+          "source_prompt_id": "6985bdcdda43bea6261714a52e8ef4b110329efa810bc5fa4b06e647e5b6035f",
+          "conversation_sha256": "f0a617767b4233661ef31dd029eb5b1846ab74153b17c2bb9ea1b2dc8e504c2f"
+        },
+        {
+          "id": "ultrachat-train_sft-20",
+          "source_prompt_id": "8061d7984c8009f5e6c322c88e6e83ce1ed2ccba7c16013750f54b8ffb48fdb8",
+          "conversation_sha256": "0ec4cdb04c4f6704fdbbcca62866c4353d4d319737bcb200b3d7e47d0cc75e78"
+        },
+        {
+          "id": "ultrachat-train_sft-21",
+          "source_prompt_id": "0a4ef271b8062f0cf61e43a7dc5470a71d3dfaf178f97f27f9feacc673dfc8b1",
+          "conversation_sha256": "14211fb53d55c50d66c8e8cce62edf65d3a28f2bad1f48e1ea1fe980259ab5b6"
+        },
+        {
+          "id": "ultrachat-train_sft-22",
+          "source_prompt_id": "4e225eb3225d130c7aed0d520e5211ff5b27d3a0a64f68848acd2795672da4b5",
+          "conversation_sha256": "c115fcca2bb22cce0795c0fbedf9e61d401db71dcc40c51fd10731c243d58041"
+        },
+        {
+          "id": "ultrachat-train_sft-23",
+          "source_prompt_id": "1b5b3ee78366e943f60a8404bf559f72f0de764a4d9443d833a381e625534969",
+          "conversation_sha256": "e5bfc446c71471233a266be61e06bde3ec6a86831d0ed6d9a76c42a7762cf42f"
+        },
+        {
+          "id": "ultrachat-train_sft-24",
+          "source_prompt_id": "78371e6964701c3e63e7488365241a514adb7a20238476b4e9b71512c985a894",
+          "conversation_sha256": "a8c421409f94da09d248b2872b4c2872d57f43889c7d05177943366e5eed2eaf"
+        },
+        {
+          "id": "ultrachat-train_sft-25",
+          "source_prompt_id": "cfcef2b67d222a0fca63d0991d369e932a0702adc0e48a079756cfcb37e5f49b",
+          "conversation_sha256": "e671b7cd14eff4bc973d8bf381f61974faf303e7361fe5550f593899d6b5b0eb"
+        },
+        {
+          "id": "ultrachat-train_sft-26",
+          "source_prompt_id": "0880f9dfbbf7a9d37c507d06742e3a70b513d8272db08bc71a5fd7c729f1110e",
+          "conversation_sha256": "1d9d7cf3b3269025c72ac0920a181b6a54f5bbdf108600917ae6ff214384f4ff"
+        },
+        {
+          "id": "ultrachat-train_sft-27",
+          "source_prompt_id": "126747f846c834c32be0d6b00356ced833735b0b8f0f6e895f387ed330bb933c",
+          "conversation_sha256": "0f276b69449cd15a4333d8b470faa565d5961a36f04680aa82788d49acb23a13"
+        },
+        {
+          "id": "ultrachat-train_sft-28",
+          "source_prompt_id": "91aec9a843c334dda610884fd32826ca97c005d309ac8832ba5f2f78b2779267",
+          "conversation_sha256": "33e351b05f0f664ebb114e01f1ec5f5267f1fb150f6d450ddb3c46eeebda1993"
+        },
+        {
+          "id": "ultrachat-train_sft-29",
+          "source_prompt_id": "63d640972796eff2deeeb54efbabb1ea44000dbf5e0d87c154ae41a46cacca55",
+          "conversation_sha256": "055b43dfb150e77c830b7471360f36f9beb07f8f83886799362634089a9f1b7b"
+        },
+        {
+          "id": "ultrachat-train_sft-30",
+          "source_prompt_id": "f9d9b254a36bc99fd3ca9ca11175cb360fade67422b69e21eaafc0b84037ffb1",
+          "conversation_sha256": "ef4b5be85e216eaf32d324b655d7121a5e5035d409aa305e1117109ada3c0c11"
+        },
+        {
+          "id": "ultrachat-train_sft-31",
+          "source_prompt_id": "3f2dc91a32fbc4eabb5f1ecab508df4836219219d31e8c68c76a38ec9195fbb3",
+          "conversation_sha256": "601eefbf8efe4d9e90274f048a7ba65ff7b447c8f041fe7579b22df8222d54f9"
+        }
+      ]
+    },
+    {
+      "url": "https://datasets-server.huggingface.co/rows?dataset=HuggingFaceH4%2Fultrachat_200k&config=default&split=train_sft&offset=1000&length=32",
+      "response_sha256": "51aa8a7e42afa50787ea0d09a874cc4ce3ebcfa7448636edaa12fed57b6a3370",
+      "rows": [
+        {
+          "id": "ultrachat-train_sft-1000",
+          "source_prompt_id": "e8d3bd2d1aab5861fb706a4d5e14a55ba26af5db82474b743e9e8fbd91c35965",
+          "conversation_sha256": "1b26a454531b17f0d26d632d0822f9a87e962ae9a7220722aa385c1786a2c42a"
+        },
+        {
+          "id": "ultrachat-train_sft-1001",
+          "source_prompt_id": "8ba7748da8c3ebb9040d1c88d56531af582a128786af979170c8b3fc3c6f44ee",
+          "conversation_sha256": "4f9f13d92e783b3b234194aa97d250d8fbfd6fa99a922759bbd63b3690dc2a24"
+        },
+        {
+          "id": "ultrachat-train_sft-1002",
+          "source_prompt_id": "9207154ef875a02039847f75ad3fbb2e322f01c93c8fa19169ce81b2cefea36f",
+          "conversation_sha256": "b393ea85b2cdfff34d53d7f74021a7ce9fc7ba913bae681316b059503e3e345a"
+        },
+        {
+          "id": "ultrachat-train_sft-1003",
+          "source_prompt_id": "efac13ba8fc3377d10b9f14b2656f551ab930e08efc32832b2624ec1e05d24ff",
+          "conversation_sha256": "9274bc09fd4cc168a04e2952e000d3d6fa023cedb0a29cfa39cfe6cfadf0afc1"
+        },
+        {
+          "id": "ultrachat-train_sft-1004",
+          "source_prompt_id": "c23ed7784739dded7e3dae37795a536b313391a3f848c2cd6ee8202dca357d92",
+          "conversation_sha256": "f7bb8536fa5ba03b3353a2b5a02b78ac39632ab71dbb9db66988b9d12520bf8a"
+        },
+        {
+          "id": "ultrachat-train_sft-1005",
+          "source_prompt_id": "e120f1b0af1f41df5b223c50f71d1342e25c0e179868d4cedb746455deee76e0",
+          "conversation_sha256": "8803480cf7a093594367d380083cfb99290856904ce1eefd01771755c3600b8d"
+        },
+        {
+          "id": "ultrachat-train_sft-1006",
+          "source_prompt_id": "df68980db5d4c76972005636e683c8aa2c4c72eba2ac319ea457314d92f8111f",
+          "conversation_sha256": "15dfa7b5bb79b83db917ed05d19e4207995d29d2b829a04116ea274713325295"
+        },
+        {
+          "id": "ultrachat-train_sft-1007",
+          "source_prompt_id": "17ad617f8c1b9999189b90760e8cac77fff92addbfb0badd512c965659f5969e",
+          "conversation_sha256": "c18fff89b3bafa56971eeebc45589844685a279d62ea0d84545d4236eabdbc6a"
+        },
+        {
+          "id": "ultrachat-train_sft-1008",
+          "source_prompt_id": "49ef0afec67f4c073556eac659da0d3326fe03b43d929fa82bd3c55581586704",
+          "conversation_sha256": "ce0768d6cb5da8e2d58ec8fa37cef4bbaa302250480e2d4d3e77bc56ee384c00"
+        },
+        {
+          "id": "ultrachat-train_sft-1009",
+          "source_prompt_id": "c0b0095603005fea6dcde1755c01c850b40415bf09df9d2ef8fa80cb17e44e21",
+          "conversation_sha256": "7033acffcd2de912e76acd3bdc5995e2813ce5be4187c01c4357506f1b918208"
+        },
+        {
+          "id": "ultrachat-train_sft-1010",
+          "source_prompt_id": "2c562f3dfbeea2e817551593ddb63095f74fd0d7eee238b66dc15eee6d4fd85d",
+          "conversation_sha256": "980261431dc2e690efa8179f91f7abce1bdd85d2d6f0b11d8336fe8794c4f3b8"
+        },
+        {
+          "id": "ultrachat-train_sft-1011",
+          "source_prompt_id": "515feef37e185e70e8b80f0a23b192a2468441b094043a49f3c3675b7d415ffe",
+          "conversation_sha256": "ecfd5e6914ff93ef2ccf04ce6ffb5a5272426b20f4a68d63515d2315c5eeb09a"
+        },
+        {
+          "id": "ultrachat-train_sft-1012",
+          "source_prompt_id": "830304ef8c2f6efd472ea15938e3294db4b9fe020d89f7eefa21591c9437b7f7",
+          "conversation_sha256": "a9dd1c3103d77c1bb92f3f44180bf2e22a886d1e613d1b046e2b1943cbc6892e"
+        },
+        {
+          "id": "ultrachat-train_sft-1013",
+          "source_prompt_id": "f56d7315a867a3ca17320a118c73fd1a8735696688d6d45cce26b2ae0fc4ac53",
+          "conversation_sha256": "c60ad229376544ddb0d03d090f5fc1e9b27bc0fc5746fb07e38aa78d2286206a"
+        },
+        {
+          "id": "ultrachat-train_sft-1014",
+          "source_prompt_id": "7c76842fe2a8e8e1ec724878f61d472b0ea8c6f279275c48f5eb6220b6cded80",
+          "conversation_sha256": "11af44307cb0c481705190419db35226f73af22971cb3b936f70b0d64b43b2be"
+        },
+        {
+          "id": "ultrachat-train_sft-1015",
+          "source_prompt_id": "6b690e5a86a24b04510d7cf463652fb190d2407c4a7b21bb26aa2940ce961637",
+          "conversation_sha256": "100c7e2d4fd8b042652e95f65f7b826215a6336e5b0b232fc812718602fa9813"
+        },
+        {
+          "id": "ultrachat-train_sft-1016",
+          "source_prompt_id": "9fc9b9c66cdfe56a0ae230e155a953b933c75f36aad3ef59b3986620df20a2fa",
+          "conversation_sha256": "4eb1683756f9763165460c5cb80953f9f6fead5e5666c404e49448f4b2c88bbc"
+        },
+        {
+          "id": "ultrachat-train_sft-1017",
+          "source_prompt_id": "ffb62b475f8b73997c5f9d4f9780e85fac48b85d0e3caceabe893c8f51d6d3d9",
+          "conversation_sha256": "09c5393d56a84541a809949d248f09655398be3f6258eaba5e895e9a55f07bf2"
+        },
+        {
+          "id": "ultrachat-train_sft-1018",
+          "source_prompt_id": "8b1f020fdcdc6b062efccca254694115801d35833cbd16fa08717a1fff99cf90",
+          "conversation_sha256": "67d53785e80ccdce97997594913b22d16ac93ff8c16ec6e0226824ec62c028af"
+        },
+        {
+          "id": "ultrachat-train_sft-1019",
+          "source_prompt_id": "631e1bf0a82c6bc865fc88e1a0f485c8ae40edaa7eb51f6380c17d9c48ccf200",
+          "conversation_sha256": "bb559fd4a54f373b84592ca2e63d0bd950a1bf78d9797b7357794b446c271d08"
+        },
+        {
+          "id": "ultrachat-train_sft-1020",
+          "source_prompt_id": "e6499631c8b34f7bc474bccdf7335bc1f57dca8649d936e5c38832c7abec5ffd",
+          "conversation_sha256": "8706c76834f64c8a11bcc858c37f991c1d79671a77b65d6a866ee18f43c440ac"
+        },
+        {
+          "id": "ultrachat-train_sft-1021",
+          "source_prompt_id": "b791e9cbac6508de01d648f0f13024995b89aae9b390f6f3fd065eb52aa391da",
+          "conversation_sha256": "321fc2aefb634f0458d19ba29f75cba323157d42f5601dfeac3244a864f1d38f"
+        },
+        {
+          "id": "ultrachat-train_sft-1022",
+          "source_prompt_id": "898b92bf87b7a4c7fa59a941172f72d09cf8625d35c275b901abf0038171add7",
+          "conversation_sha256": "b11d028248cea82668ae2cf634cfb149a2da6eca52c1640d6b2741c2bd601098"
+        },
+        {
+          "id": "ultrachat-train_sft-1023",
+          "source_prompt_id": "df0055740c9519a35f1122262b602143288353696df079a66dbb9186c14ebfca",
+          "conversation_sha256": "f15017870ae156e81a1cc7e4bce32f7a14e249fa22c09b61564972fdd7bda9b5"
+        },
+        {
+          "id": "ultrachat-train_sft-1024",
+          "source_prompt_id": "aeb3a61dc518389351c70f174ccb89a61dd6fc362f5a38cf836c39dd2adabc2c",
+          "conversation_sha256": "6d56c954ef198210968b6197eb7d0b4944fd0378467fa0d4532c2cadd7ff156e"
+        },
+        {
+          "id": "ultrachat-train_sft-1025",
+          "source_prompt_id": "f694294f2d57ccd95cbf59dc4b68f2a2c81fca11e764587c34048b4acd35800a",
+          "conversation_sha256": "7fb5255d6280bad09dbd5b0e422a2be7fba08aa920f1d78b9c5e54ac9868142d"
+        },
+        {
+          "id": "ultrachat-train_sft-1026",
+          "source_prompt_id": "19fe65e10122d704a95217291717dd9483b2aa031bc51c4632e39a7b6870c5b7",
+          "conversation_sha256": "ee36ebc1de9dd645436f10a3564c8a4ebcb4b0bf54c043d5cfd0ea953733492d"
+        },
+        {
+          "id": "ultrachat-train_sft-1027",
+          "source_prompt_id": "9755ec3f3512233903d3275b82c466917db0a323b13c43144c7ff7d157b0965d",
+          "conversation_sha256": "748d23bf1af672576b18be1a3b92e96c32031117ffaa419bd7f3de1fd319a786"
+        },
+        {
+          "id": "ultrachat-train_sft-1028",
+          "source_prompt_id": "197d231ffc6ace16c67c7763e95f3e5172ec3c3a656305e3479b68f3f05bae89",
+          "conversation_sha256": "c89ec11b094c62263d2639a66a8aab7a61ec05cb60854ee0fec03cf44229a151"
+        },
+        {
+          "id": "ultrachat-train_sft-1029",
+          "source_prompt_id": "8ab2aa03d8ecfee0cea5d53f19220e279934f284e79a29aa2a3cb7308c165edf",
+          "conversation_sha256": "ec5a83a801b97aaae004d53dbc0231438d3fec596d64a64e6816f72a74d452c7"
+        },
+        {
+          "id": "ultrachat-train_sft-1030",
+          "source_prompt_id": "5cd6342d2a4069a50ba310cf550e9eb596cb09741d58ca740f803f6c536c0ccd",
+          "conversation_sha256": "004da8dff84dd8ebffa4b68ab39a1de3fbcf238582920a552794f4ac9878abf5"
+        },
+        {
+          "id": "ultrachat-train_sft-1031",
+          "source_prompt_id": "f6234809e95db92da6f5c16e4334328c7f88a87b8a93a66bbad250e3ca491f28",
+          "conversation_sha256": "940d9c105d3237f42442d8589570fb9d8befc72c3cd8536b6abd4374f0d25e1b"
+        }
+      ]
+    },
+    {
+      "url": "https://datasets-server.huggingface.co/rows?dataset=HuggingFaceH4%2Fultrachat_200k&config=default&split=train_sft&offset=10000&length=32",
+      "response_sha256": "dde422e89dc13799fac484b3ff75f828ec0fc8c313a473619db68fc3a9d932b1",
+      "rows": [
+        {
+          "id": "ultrachat-train_sft-10000",
+          "source_prompt_id": "6aa21cc4313e6d10a62a1ca4222234a0a7c928cd614e1a984fe4e92146036ca6",
+          "conversation_sha256": "a88f1df401b166112203f05a95fcd5fc10c72854a6716e89d657c2e58e661980"
+        },
+        {
+          "id": "ultrachat-train_sft-10001",
+          "source_prompt_id": "262c028623e48c6b83ba0de22fb252e83255ce36a0256dbad9abbf919d1a72c4",
+          "conversation_sha256": "d2f396bdf7126709a513aa8707e904772b61480586de705bdc1e3bec819b431f"
+        },
+        {
+          "id": "ultrachat-train_sft-10002",
+          "source_prompt_id": "bba300dfae9fe734682c98b63e30844e6911c6dccbcc8d3722c9a29e269e0695",
+          "conversation_sha256": "5b4426e0c66679d3c627bd3584b99e9fb37d5f76a8b4943b291e719369faf31b"
+        },
+        {
+          "id": "ultrachat-train_sft-10003",
+          "source_prompt_id": "f9c036ba3de233439578b5a4c3edcd4bff9e99ee6c350d35f0f5d804187912dd",
+          "conversation_sha256": "21ffed6850d2888f14909b7adcc2ed724f4c429129b8df1588fb5d0b36d47f7a"
+        },
+        {
+          "id": "ultrachat-train_sft-10004",
+          "source_prompt_id": "b14aee1dadd767b215d1ece0728dfe24c8fe7cc3fb82aec5d7d80aee601881a4",
+          "conversation_sha256": "42871f0802d99f0e39257f5df82e4062698f47ad3047faa797d78ba1daf35c4d"
+        },
+        {
+          "id": "ultrachat-train_sft-10005",
+          "source_prompt_id": "9ac74cf85b0ac76a21eeb5a189149875565da63b96a820f3c1b83ed3506e7c8b",
+          "conversation_sha256": "4a7c31c443f40122158f527b98fa280d3d26c3646f77f493319175bb2ce4e053"
+        },
+        {
+          "id": "ultrachat-train_sft-10006",
+          "source_prompt_id": "7e030d1776b8763b1ecaf6ac97108e4e66fb1439c8916548fee70fdf7eac9acb",
+          "conversation_sha256": "65a9032859c7270943ac1a9a6af3051b916a569e5e12ed27e2134b3adea466a5"
+        },
+        {
+          "id": "ultrachat-train_sft-10007",
+          "source_prompt_id": "1a4047422ab5efedf4ff1d8af5c90352b64c81e46c0a71540b96f107898e53ee",
+          "conversation_sha256": "1c5b32f94060338f6b759b02e89ddb91193af10e729d60fefc65871273b81c01"
+        },
+        {
+          "id": "ultrachat-train_sft-10008",
+          "source_prompt_id": "ff34e3e756d0674221225446095dca4cc5f5a89e1882b13f14a25b7240980c3e",
+          "conversation_sha256": "d93c5a0517edd912dfe430771e297f588cb5467fe695fcae80444d045df60b81"
+        },
+        {
+          "id": "ultrachat-train_sft-10009",
+          "source_prompt_id": "09e72216a2fec91a2c8f24fed8335d59f0107fc282f7c2efef5a0067b8c450c3",
+          "conversation_sha256": "6656c96e6f63d502ce78acacf8c7183985f9303d03c552a498a893604e4ecb85"
+        },
+        {
+          "id": "ultrachat-train_sft-10010",
+          "source_prompt_id": "4642c8e2b204a3468772f555aefa9152f3d4e09830b51769e901bc073185dac6",
+          "conversation_sha256": "fcf0129580a8ab23539c20f8f5ca35c4e44168d5d81bf2762287bd3ed42080c8"
+        },
+        {
+          "id": "ultrachat-train_sft-10011",
+          "source_prompt_id": "e93996cd980125979895faf483d160335eab590f688ed883d0b384b8e6c728ab",
+          "conversation_sha256": "01c430d186a854b806ebe6b51c281c7528842c7878bc190a72e441e5a2057c87"
+        },
+        {
+          "id": "ultrachat-train_sft-10012",
+          "source_prompt_id": "0fa9d8429baf926cd983fc4ffb93236fea9c5e18c6e24df793fba0a1ba54bc1f",
+          "conversation_sha256": "f37e1b09c567b26f3344f521e69a5bf9f4c1da9cddb2fa5353811b0f18f48ea3"
+        },
+        {
+          "id": "ultrachat-train_sft-10013",
+          "source_prompt_id": "249c1d26bdc70c82a68d4fa3060d3439139006363b194e26b21b6ca8b8e71a5a",
+          "conversation_sha256": "3e2cfb916b81655f5d4b3bc229dca6608cf51b29009d3b592840170a8acf70da"
+        },
+        {
+          "id": "ultrachat-train_sft-10014",
+          "source_prompt_id": "d16f8ece378b560fd7d82de8c61e998df2e94fbddb004425a1bb1aeed1e3158e",
+          "conversation_sha256": "0b49e722b6a4fbf5f1072c93c9cefaa0c2f39faf91d867ead71151b07b63ffb4"
+        },
+        {
+          "id": "ultrachat-train_sft-10015",
+          "source_prompt_id": "df2a488f981a90f0ea221e5d72f4c0baf64e27ada6ff85630e03a2312aa2c678",
+          "conversation_sha256": "c44ed04756b9028d955f9c63751804078cb66c47c4985001e5f1fe7ab2efb788"
+        },
+        {
+          "id": "ultrachat-train_sft-10016",
+          "source_prompt_id": "b08aee09e739794d06d0ccd27f34937e1b63f939d91dd91cea2990a87b8e7c42",
+          "conversation_sha256": "63c8d13a26afbfc3d8d72e1da58de7ee23c56fc223c0d0672e159f16fd202e16"
+        },
+        {
+          "id": "ultrachat-train_sft-10017",
+          "source_prompt_id": "1d76d966fc3c95e42c7fd408b9690d23bf852ab079e27b97f57c87ab047b8b32",
+          "conversation_sha256": "b0d87314fbe7d10f8e2d7856d664fd91c7d2f6ec57f829fe57b12c8d4ae620df"
+        },
+        {
+          "id": "ultrachat-train_sft-10018",
+          "source_prompt_id": "0ca8658a44fbe707b1d5fcfaa768dd25467a76df5f0ded197d8ada293c80a4bd",
+          "conversation_sha256": "534faa00a279347ceb5d75fe0bd73191065a6a093e375312646cd7d58534cb29"
+        },
+        {
+          "id": "ultrachat-train_sft-10019",
+          "source_prompt_id": "3ddab935a3d10b136e8dea70333e854d612aeabcc4d2cf8b2a4e92a9f87ae0fb",
+          "conversation_sha256": "1e042693ee9515168fa607f45b8b1dfeb3cb4a957ab45418b52c16405625ea94"
+        },
+        {
+          "id": "ultrachat-train_sft-10020",
+          "source_prompt_id": "200e0ba23c52a899ef0f8d37309567e9ce8cd048eac108488cf604f803c6db85",
+          "conversation_sha256": "e20c6189cff41af6d0c15d6f6ef931e1895e8aed740b36a518eac9e4604ed433"
+        },
+        {
+          "id": "ultrachat-train_sft-10021",
+          "source_prompt_id": "f752464f8b28c8f78086b6ced33c5d462c25360aa2f7728cf12d06d6f1b1515c",
+          "conversation_sha256": "bc335caf16221940496aa5c020a084146fde4b585a56fd9a92b381ba7f9628c8"
+        },
+        {
+          "id": "ultrachat-train_sft-10022",
+          "source_prompt_id": "fcf339ef96ac9a367b1055eab1c329a64e14993a2fc9fc2af040540eff9e76c2",
+          "conversation_sha256": "65bd628759fd0a4883f28d95ba1e1608d3ec100d6e76b2fcf4c2c90e346435bf"
+        },
+        {
+          "id": "ultrachat-train_sft-10023",
+          "source_prompt_id": "176b36a7a56523ba328305f5f74fb9cdc25f8807945bf9f1a49e52b5f661dc7d",
+          "conversation_sha256": "8fe3344076530ca0b7db168cbb13cdb433fecfe2992b2a65166b15d29bd1656d"
+        },
+        {
+          "id": "ultrachat-train_sft-10024",
+          "source_prompt_id": "29212b4a6c9b0a6f74473612e5d4951c16cc4027777f827ed6085ce2a3c89cbf",
+          "conversation_sha256": "5f5fa6a87c043e3cef8923fdbb08f49686ad8a403da8f896f1036c2bc719463f"
+        },
+        {
+          "id": "ultrachat-train_sft-10025",
+          "source_prompt_id": "48be119d37ce410369e5adb7890fe0a7d6db9d9d6c00ed138b09c21da7521f3a",
+          "conversation_sha256": "934dfdb82bb77fc2a1c9c4832a79ce8809225452a985712fef34d2f817f8763e"
+        },
+        {
+          "id": "ultrachat-train_sft-10026",
+          "source_prompt_id": "89516092a8b490fe20bf5365093bd3a087383dc5772cf160afd9d185f244f58f",
+          "conversation_sha256": "cacfe626eecdca49aa2da05706f85bf11b68676635a5403f7972ae8b1f481aa7"
+        },
+        {
+          "id": "ultrachat-train_sft-10027",
+          "source_prompt_id": "547c76c0a7d199aea1e59e102467d30294da6e1e6ef93f4ed6b249cd784cc0ad",
+          "conversation_sha256": "9f1dd4424e553756b837d63085e0dc9448a451c52fac9818e10f19b8f17f9cb8"
+        },
+        {
+          "id": "ultrachat-train_sft-10028",
+          "source_prompt_id": "4ea659fce311126c425a67a92501f782e38463fc0f1ade3e4db79a822203e44a",
+          "conversation_sha256": "dd377fee46b6a9d4ba427fe3508b5f6bc4163e33106910f8a20c11fafe1c942b"
+        },
+        {
+          "id": "ultrachat-train_sft-10029",
+          "source_prompt_id": "fefb0e64b537f1c9497fdcf50c1d79b7110716ba772280205c7d910e2ff1d575",
+          "conversation_sha256": "4eb041edb252c950411905b47b95bbd5e1813d6a57a225f073fb7968faca1475"
+        },
+        {
+          "id": "ultrachat-train_sft-10030",
+          "source_prompt_id": "b1e3d4905f9a403697895a533e040622ac9bf5d75fa9353e1edec0b9acdfa77f",
+          "conversation_sha256": "648c4c886b955ea71d70e04420e2dc7e1715c0b875ca32dad1c827495ff969c4"
+        },
+        {
+          "id": "ultrachat-train_sft-10031",
+          "source_prompt_id": "2d7f85893a3e2e8e93f4869fad8b33dabe2a7a77899e6b7f902d8c36521bb1f9",
+          "conversation_sha256": "9e06006b17e20163239487dccbc91a9dff4a011922042a982d089bf5ec2e25f5"
+        }
+      ]
+    },
+    {
+      "url": "https://datasets-server.huggingface.co/rows?dataset=HuggingFaceH4%2Fultrachat_200k&config=default&split=train_sft&offset=50000&length=32",
+      "response_sha256": "82fd1345486e424806465d75be05474a1c61a4da4504c254427b0f88070fb882",
+      "rows": [
+        {
+          "id": "ultrachat-train_sft-50000",
+          "source_prompt_id": "dd4e4f1547505ac135ae1dbab4116925dc25b9b86f3b5bed85690e8380f18a39",
+          "conversation_sha256": "88014fc73ecf808bea3014fc3245727c544a6000050d7689f42457932a34938b"
+        },
+        {
+          "id": "ultrachat-train_sft-50001",
+          "source_prompt_id": "6c3a95ce3b2b4463ed456b556901ea24a453b6cbf59b93ff91bdbc090a783d10",
+          "conversation_sha256": "a58fa2bd383a787ae172b9c057aba07aa18a2ff8bcc0a757b76697ed4bae2c89"
+        },
+        {
+          "id": "ultrachat-train_sft-50002",
+          "source_prompt_id": "8314745c19dad02cb03579f9cbd61656e975f5c3c223466e5b9b66076036575d",
+          "conversation_sha256": "f6fb925c4eb8734f7cbc083723666fe34ed62b21e2b614110ee97a8d3780ca8f"
+        },
+        {
+          "id": "ultrachat-train_sft-50003",
+          "source_prompt_id": "34df4e8df7cb95320d54eaba2b77b92a6042bf34fe21252c2b0a2856c673291f",
+          "conversation_sha256": "cc2b1415cfb576d776869aa9f991c458db5fa6b09f0315202a27b019147fc061"
+        },
+        {
+          "id": "ultrachat-train_sft-50004",
+          "source_prompt_id": "c813bc83288bfe10493334267bd77d3c00c71d83c46304fa6d86f0499479b83c",
+          "conversation_sha256": "7fa1bc99e484e8959204b9490a23ab109baeef7a28af5cf68b8d82d5790fc089"
+        },
+        {
+          "id": "ultrachat-train_sft-50005",
+          "source_prompt_id": "afbc310b6c94019c0008df22d95f3f3358984574526733d820d348d713ed7c0b",
+          "conversation_sha256": "997d4b456e764c8a99f7712ef8335ff5a9ce489676e2e2931f7c63beeb94beac"
+        },
+        {
+          "id": "ultrachat-train_sft-50006",
+          "source_prompt_id": "4c3cd0c7dbb5bbc3993430fdf69e660ac0cbf8f71af8d3449350671f50971210",
+          "conversation_sha256": "5a3915aeffc03b85e48f7ec114c56fd8a145005f2ac12f56060ec78e62297c60"
+        },
+        {
+          "id": "ultrachat-train_sft-50007",
+          "source_prompt_id": "06fae27b9e53503c5cad44bd2b683e19d4b3a2834d0fb3d3cae8d3efab05cb27",
+          "conversation_sha256": "05d61760613d8ddf0a5d6681465e459e2666fa608dea40bd0c101f4fbe86edbf"
+        },
+        {
+          "id": "ultrachat-train_sft-50008",
+          "source_prompt_id": "f6f21a83abec4a5468a5b021fb712d1664ff614dae3625dab72b0be112b4b5cc",
+          "conversation_sha256": "22b13e7734520fa8bc5020a7ac1ad39e79a338d4fc163554d7416e2868edb5d4"
+        },
+        {
+          "id": "ultrachat-train_sft-50009",
+          "source_prompt_id": "61ff4f5661b91b4c55e4cd4e4e8d76a88582989741afdab1a90a235379117c3d",
+          "conversation_sha256": "0b1c3f676145bf193390f2b984ab0a4acd937a183b4e8334b0f44718d2eb38f3"
+        },
+        {
+          "id": "ultrachat-train_sft-50010",
+          "source_prompt_id": "b2e60268a00e93e705c3c379e438f630d88e29ff8f341da3e316acd949c9050a",
+          "conversation_sha256": "c3a505e958370c56fc683119c00d548938488d437e7dd9a84394ef5aa4e8ea2f"
+        },
+        {
+          "id": "ultrachat-train_sft-50011",
+          "source_prompt_id": "bf983e857eda53e45ce44a85be52f3bfc891f12145bc27ef6d6c7ad73c01822a",
+          "conversation_sha256": "9a96f11c061f58006f8af988a3640283bbee207bb5a0315dbf83ee1a073a71ee"
+        },
+        {
+          "id": "ultrachat-train_sft-50012",
+          "source_prompt_id": "3292a65dd49c33006b9955167b6fe7f950660e497ce682ee67581fbcb1d57b68",
+          "conversation_sha256": "a17c7a2208b0c75f7f7f626319b6082476c8056d16f194a6907aa0b374e8b797"
+        },
+        {
+          "id": "ultrachat-train_sft-50013",
+          "source_prompt_id": "3358cc8672786f15ff9b43a42f10eaf144145648337da5cc381b9dd1b6e50622",
+          "conversation_sha256": "a6f4aa4a257787c4d34b74677cad2a8036c36b351e523948e2b19111497ea1c8"
+        },
+        {
+          "id": "ultrachat-train_sft-50014",
+          "source_prompt_id": "093ed0b55d5d03cd5333280d53fcce4ace33f1c24fd73cad89c55ff5f92b09c4",
+          "conversation_sha256": "fc87a2a4cac844cd6d76ada4e467b3931e2be2b9c803af5971a904b58178b5d9"
+        },
+        {
+          "id": "ultrachat-train_sft-50015",
+          "source_prompt_id": "c8eceaf4d7e978bf95c07bf6f2a116904110435bc0a8b9c153cb59cf17881dee",
+          "conversation_sha256": "5a4cfae0fc3f56b35c7bee398d6a22851c8fc212623d91ec6cf91c39bd0835ba"
+        },
+        {
+          "id": "ultrachat-train_sft-50016",
+          "source_prompt_id": "aa316b11c455ba90a0ac3a410b0fd6df971d2d27ded7ec3eca8491e839c0e0dd",
+          "conversation_sha256": "545a15348cff98048ed1ffd4995896cf098195e41c77440c152ffb1d96743e12"
+        },
+        {
+          "id": "ultrachat-train_sft-50017",
+          "source_prompt_id": "3d1517e8ec301cc078ea133f5431d3fef6d7b6bf00e3611a72dd80fb36dcf397",
+          "conversation_sha256": "d377e8ac1ed083f3517357c8c18332dd8ecfcbc23b0d80265833f5013a856554"
+        },
+        {
+          "id": "ultrachat-train_sft-50018",
+          "source_prompt_id": "fe698f63d8dda45cc351e0f27803c861f997eb033a49936dec27409a276e7c33",
+          "conversation_sha256": "8cdfb59413afe8cd9370f37f733b12ecedcad46d5929773cc810e501e8452a20"
+        },
+        {
+          "id": "ultrachat-train_sft-50019",
+          "source_prompt_id": "96061ae3a1070c7b83e6a9cc812fb6cf2d58a20357eea76b22283a93d275270a",
+          "conversation_sha256": "6de91739e1ebe4be595186edcd4f5995423dc57e5f07a25789ce46e73810857d"
+        },
+        {
+          "id": "ultrachat-train_sft-50020",
+          "source_prompt_id": "eced335f42995c3d2b24698249e67374cb2494f487950c1d314f20e5f8cc4259",
+          "conversation_sha256": "723a630222fac36f7da8d891f40943035028eae474bf4b82a780b7bda3f3beaa"
+        },
+        {
+          "id": "ultrachat-train_sft-50021",
+          "source_prompt_id": "484d301b2406068e2614ba7e518742612081748ce54b1b1cb827994fb7299c85",
+          "conversation_sha256": "b52861943a7932a0a0304344d203cb9a80b0149c2fffdd682f3b20b638b5739e"
+        },
+        {
+          "id": "ultrachat-train_sft-50022",
+          "source_prompt_id": "136c9b98f5cbe670e59e1d4130b08afd1cfaf406a47abd51fa222d7c4f164884",
+          "conversation_sha256": "c29af6459d372c1989b1201998ddb628718a901a917f48a1892b9323a1c005b0"
+        },
+        {
+          "id": "ultrachat-train_sft-50023",
+          "source_prompt_id": "87ed4c295276ddee23ba79374f554bc3b780685529643d9a3f99d51b626b3dca",
+          "conversation_sha256": "1363e6805652ba9724b86b1a969eb31e7831f38ede6ac6f0a6c33d79fc896f30"
+        },
+        {
+          "id": "ultrachat-train_sft-50024",
+          "source_prompt_id": "3c845b43b97355bcf286e2f1471b2fa7f5cdb43dcfbe9becd02b76df1a496dfd",
+          "conversation_sha256": "75f3ac2368518e3398f81def29697033688e51ad95bc50d04096c2d07fe10815"
+        },
+        {
+          "id": "ultrachat-train_sft-50025",
+          "source_prompt_id": "1f3faa4c4bb27e056e7a61921b0ac8e915bcd1b5d86ade30014dc2dea6490227",
+          "conversation_sha256": "26f64414c59adff01e1df84d4aacfc405904e4506f2b2ca3d941c6f85e3c5992"
+        },
+        {
+          "id": "ultrachat-train_sft-50026",
+          "source_prompt_id": "485e5d423eb5b097c630e7b4abb6d4a05b16e763a18c473b5b2b8034bb817268",
+          "conversation_sha256": "82e84977c8d18397e7c0c8d77ac8ec38e3d962951ae7d14ac04aa0e6b5e333bf"
+        },
+        {
+          "id": "ultrachat-train_sft-50027",
+          "source_prompt_id": "73cf111897617c39d1e93ea89ed8df42aa524cf807c0ae2fc1d93facf8fe7e98",
+          "conversation_sha256": "fa26a9c435f6e570d55f39b145fe8aee6889af9164a98b41b74c602fdff310c3"
+        },
+        {
+          "id": "ultrachat-train_sft-50028",
+          "source_prompt_id": "69a617ba94195474f37a032ecd9b06afb48c93a96ccafc18275a8c4603d8fd89",
+          "conversation_sha256": "709f9ba3b899b5e35f1d48883845fabd56f66cdba883dad1f9971f4255a214e5"
+        },
+        {
+          "id": "ultrachat-train_sft-50029",
+          "source_prompt_id": "034f7694cb6019f531cf510bfa240f9f567698157c23201c4d2a85754333df56",
+          "conversation_sha256": "f0e675b1247145c8c36a405c683f6c11ab07ee2806b33bcb7815f6325d03bfd4"
+        },
+        {
+          "id": "ultrachat-train_sft-50030",
+          "source_prompt_id": "5d526a634eb0f4794d20746f5dc210d5f952515d4af2f5ff5c8d6e024ff11c92",
+          "conversation_sha256": "a86181cb7dcd9e289f8ebb8a0087a4c113e8a48fb813dcc10660b701b963dc3b"
+        },
+        {
+          "id": "ultrachat-train_sft-50031",
+          "source_prompt_id": "7b93ac39a2c3d9d38ff9c3eae8a20680fcdde58a359e3a2e2ff535866338c14c",
+          "conversation_sha256": "6456575cd61144fc32b2a91e2a7fa5ff4a227475d3fb445624a1e954367c6742"
+        }
+      ]
+    },
+    {
+      "url": "https://datasets-server.huggingface.co/rows?dataset=HuggingFaceH4%2Fultrachat_200k&config=default&split=test_sft&offset=0&length=16",
+      "response_sha256": "cccde71073af875aff77fb4f0aa25abd8373c43924a470f512aa82cd26ca3d93",
+      "rows": [
+        {
+          "id": "ultrachat-test_sft-0",
+          "source_prompt_id": "9fb649a870769f4881c647d20d178656f67fc881b2dc0b65d4860237c2c8da6c",
+          "conversation_sha256": "775420b01e3ba09e4a572f6343be5688bba48866ed6ed8bdb83d9af95b41cc52"
+        },
+        {
+          "id": "ultrachat-test_sft-1",
+          "source_prompt_id": "26afb4f9bffc82fbbfdcaa8f0eec0833780e411799dceed12d639c71ce08da25",
+          "conversation_sha256": "6cc35a1f2db9ee52dd1432f60aa126e1579e234fd67e8b607577f5b4686302cd"
+        },
+        {
+          "id": "ultrachat-test_sft-2",
+          "source_prompt_id": "3ab0d0c24777248cbc4aa33971d34e8de9393db1ea0cc1f963585788ca827ca1",
+          "conversation_sha256": "54d07be0ffdd1cd55bccced8ab9aeb46195d2b4f0fa9ac0dcb629e862cf914c5"
+        },
+        {
+          "id": "ultrachat-test_sft-3",
+          "source_prompt_id": "5dac3c072ba477af9ed0c71a31a806f307d7ea839a7977e3befa7d9b060d5bee",
+          "conversation_sha256": "d5d3dbaed364da679aec3dbc6c459a734b80d11e50c087dc82ba8ee842f40798"
+        },
+        {
+          "id": "ultrachat-test_sft-4",
+          "source_prompt_id": "b750ea229635aa6683e0018abd17f92804376c1b0c474dc4b3a636dd2beebece",
+          "conversation_sha256": "b1b5af88744a04800937ee42822575adfafdb2f781a71c417c8a6a5a6506b531"
+        },
+        {
+          "id": "ultrachat-test_sft-5",
+          "source_prompt_id": "7d86ffeefdea030c92138e0b964c304508bfebed4b23261c8a741630823e6f96",
+          "conversation_sha256": "9928ae7755a025979d30f677e50552228628327249c8ca8af7013c1e82f94b5f"
+        },
+        {
+          "id": "ultrachat-test_sft-6",
+          "source_prompt_id": "548934adb3470a43b62c4e81daf1a547dff90d3535ee846e8b5395cbdf21e1de",
+          "conversation_sha256": "c2864803de2b99923d9b60c7707a2794bf25ecda0e0581aa599101c330f0607a"
+        },
+        {
+          "id": "ultrachat-test_sft-7",
+          "source_prompt_id": "f52366b6b6d4fb79bcca917a155b4ed53341ce3c596dae297a4f9deeb2397bc2",
+          "conversation_sha256": "656887170f359108ba07aff77a9442d4396be678b124b8e4699e7a52c81ee58e"
+        },
+        {
+          "id": "ultrachat-test_sft-8",
+          "source_prompt_id": "17705fb3dead237045246c9b0276bd30906793adb1a1e76437836a65cc431aa7",
+          "conversation_sha256": "16f5f4ebfa9e9212c5c0f3bd43f8fc42e6ba4cc834912b0404fc52e986fa5b8c"
+        },
+        {
+          "id": "ultrachat-test_sft-9",
+          "source_prompt_id": "e085d7783d36b7d4161e5b8d62b4878e44557a1925d829f813dcadf571ecac81",
+          "conversation_sha256": "76bb30b84ae58a17e91a7d0be600e5719a4bdbf826da350a4582b047ac298c1c"
+        },
+        {
+          "id": "ultrachat-test_sft-10",
+          "source_prompt_id": "a7d455bdc14741b56d8752a7fa806ee7593aea1c597dc7425334bfd90744e616",
+          "conversation_sha256": "c07ddf19e0765b945a64c97e752806dd3a9a2b1fd6035a196b6b7b3aae1c78eb"
+        },
+        {
+          "id": "ultrachat-test_sft-11",
+          "source_prompt_id": "609d506f31f5a0c1e40cd8b3a074ed486f2daab49e3663f457518de8dda872b8",
+          "conversation_sha256": "8e55c5d46144f0beb759e9ae2533b63f4ebe3288b1fef0e44214967307d4d0ac"
+        },
+        {
+          "id": "ultrachat-test_sft-12",
+          "source_prompt_id": "b0de2e6833f6086605b68eb3af4936840fffe4a92721e45a528c4402913d1b7f",
+          "conversation_sha256": "38a3dc38d28a207d59a360464638d70080b65493aee3c2a221f4e574e2412f78"
+        },
+        {
+          "id": "ultrachat-test_sft-13",
+          "source_prompt_id": "5716606eaf8a48410e49b74a57726cf00a9605e8514b646159acfdd42daf84a4",
+          "conversation_sha256": "6e0c84fb415ab7948bba24278ac923e25091ee12ecdf625f135f366f00bd6b48"
+        },
+        {
+          "id": "ultrachat-test_sft-14",
+          "source_prompt_id": "4f76db4eedfd03c47e8c9ed5576378cd4d639ea384bbe42728a87bb2211b049c",
+          "conversation_sha256": "e0553da180cd386d35544acc324efc0b44d2c0b3287f1ec45217973d2c709a36"
+        },
+        {
+          "id": "ultrachat-test_sft-15",
+          "source_prompt_id": "0c6ac5b4625fd60f5dc023d58a6ed8f240b6d111739862b0843849b216cfc78a",
+          "conversation_sha256": "c352a7724f2f648a90810966960efd52e65c92c31a3e91edceb3fe445e6525fa"
+        }
+      ]
+    },
+    {
+      "url": "https://datasets-server.huggingface.co/rows?dataset=HuggingFaceH4%2Fultrachat_200k&config=default&split=test_sft&offset=1000&length=16",
+      "response_sha256": "8331186465c71e0f090229ea752a247f532ba7b100684c1a97c3f59d36a271da",
+      "rows": [
+        {
+          "id": "ultrachat-test_sft-1000",
+          "source_prompt_id": "99a735f1f0878148805842c86d1169a626793099cdf0d7fab0e6bb93e44d41be",
+          "conversation_sha256": "4f841caac27144b4f77487fb7b8538920da499889bf89d38393a3b41e81cfda1"
+        },
+        {
+          "id": "ultrachat-test_sft-1001",
+          "source_prompt_id": "498e07da5c88370213487b3af5ebd9f815ebe6e390f4f8a22ce1b515bc6f3e2a",
+          "conversation_sha256": "7eca28fadfb7427c1d4cecdbe7a40654bda63472392db55a8b32c52656fbfe30"
+        },
+        {
+          "id": "ultrachat-test_sft-1002",
+          "source_prompt_id": "91323143145c254302054061f2f765f3c23d324ae3578564b075e662540ecd15",
+          "conversation_sha256": "dd6f21d117f095b5b15dfb889c66fc1064611c667b85340902fa4b10b7fbbeab"
+        },
+        {
+          "id": "ultrachat-test_sft-1003",
+          "source_prompt_id": "c25be95116579b310af59a32fc8e18992f83c98537cd8758235cf0dbb802dda7",
+          "conversation_sha256": "175651e47c14c5197744ce0e8f6f697555c8097eeb666e49f99956cb0b324f91"
+        },
+        {
+          "id": "ultrachat-test_sft-1004",
+          "source_prompt_id": "2b5bde3031030f88419e7d1e977d9cf52e6174177ad9e0c57ad848d951ada44f",
+          "conversation_sha256": "9d56f84b8e6637820b2903cb611adbcccf4220a866170660b20974c75c174228"
+        },
+        {
+          "id": "ultrachat-test_sft-1005",
+          "source_prompt_id": "786038e1314f8c4e3ab575bf539747dc39ce0394328e31db9551079655bd6938",
+          "conversation_sha256": "2cb7a8b7dcc5668422b4c32dba9e82373ee78fde32266084c54d5a1b1a76ca60"
+        },
+        {
+          "id": "ultrachat-test_sft-1006",
+          "source_prompt_id": "eeebbadd0f8f32807be8959ec8ad7a55e7339c3d122454f14e82eec5d76678d4",
+          "conversation_sha256": "7e5278fecf45502646844fb7642aff4f08425569662606cedbc9f2eba5d9813e"
+        },
+        {
+          "id": "ultrachat-test_sft-1007",
+          "source_prompt_id": "7b4a744aa6bb9f27e02b52602fec990c8d6fdecc12798b079070633093fe943f",
+          "conversation_sha256": "de59abc89e768cd23853ea80244764492bbdec9bb71bd1eefb56cf628973e0e7"
+        },
+        {
+          "id": "ultrachat-test_sft-1008",
+          "source_prompt_id": "5056be0b8491e0dbc3af172fb181113de9dcfdb5782269d02ab3f3d3b5d78da4",
+          "conversation_sha256": "6925d1d87b0ab213504ecbdf0e01283f0ae003fa37868d2ed855373dd09e16c5"
+        },
+        {
+          "id": "ultrachat-test_sft-1009",
+          "source_prompt_id": "c421d9e3ceada9a12ba368616c06f6e5472f826d91bf2014764b79a4193a9690",
+          "conversation_sha256": "c84405f60902c4aef48439da007a1dcdb02f5ea0861607137ae536807ae34291"
+        },
+        {
+          "id": "ultrachat-test_sft-1010",
+          "source_prompt_id": "c3451c0cae0aee006e361109962fb9f390e4e3ae3ff1ba695972ffd6a6d80c05",
+          "conversation_sha256": "bc26f917ffddbebf30a3bfa479db2d1b7e4e5744eb19d377f9009089705b0aad"
+        },
+        {
+          "id": "ultrachat-test_sft-1011",
+          "source_prompt_id": "f37aa4009f90ac0a7a38e21c0e79482337cee003c4eb9968b02c14aaee9d5d79",
+          "conversation_sha256": "c50b6eec985137dcc59703bd46bd16db9cb39517ca4be591cdb776f679eb15db"
+        },
+        {
+          "id": "ultrachat-test_sft-1012",
+          "source_prompt_id": "e11d05b2a2c8e917669f75a9e1531560b6c8312d01a85f0969880fcd83f293d6",
+          "conversation_sha256": "ef9a9ddc511a58ac799ae415bfd0cd7b41e787919a3bfe044b0b8ef3fc1b316c"
+        },
+        {
+          "id": "ultrachat-test_sft-1013",
+          "source_prompt_id": "35c112bf78e05c2b86a3f5030eb900ce3efc98eaccd64c5ade0af6bccc5b6f01",
+          "conversation_sha256": "7df14a9033b3aac9cfeb316c21f555b349d73edeb3f452376c111982ddd119dc"
+        },
+        {
+          "id": "ultrachat-test_sft-1014",
+          "source_prompt_id": "03b045fc52248cd8d5ebc77b849216d9f4a497d45f028022588b98f3974b6f0c",
+          "conversation_sha256": "de9ff6725c230cb4c0aa755c19cd81ceb083b169d4fc3630fad4ac7ee88b3dc6"
+        },
+        {
+          "id": "ultrachat-test_sft-1015",
+          "source_prompt_id": "f026e91451534b51b1076bcb11d7f4ecbea3d8b287544a5706dd385542e76e9f",
+          "conversation_sha256": "c6edd27f0563430bbdef7f03375d4b27b53e1561d3c84789c7ef86422dbbb32d"
+        }
+      ]
+    }
+  ],
+  "local_fixture_sha256": "a99efbe09ea374f6d3a3cc941af7b87f7dedf2b60a8f59581275aed14e7635f4",
+  "output_sha256": "bf2fb5e588a50f35585fe0327c30bfbbb5a2f88287670d1d3fe3ce039a934828",
+  "prompt_counts": {
+    "train": 152,
+    "validation": 22,
+    "test": 22
+  }
+}

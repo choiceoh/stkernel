@@ -1,0 +1,9 @@
+{
+  "k16_bit_exact": true,
+  "k32_bit_exact": true,
+  "shape": [
+    513,
+    4096
+  ],
+  "peak_bytes": 282093568
+}
