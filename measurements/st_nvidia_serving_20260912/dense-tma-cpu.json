@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "cuda_initialized": false,
+  "target": "sm_121a",
+  "checks": [
+    {
+      "rows": 1,
+      "mac": 24,
+      "input_tma": {
+        "1D": 8,
+        "2D": 20,
+        "3D": 12
+      }
+    },
+    {
+      "rows": 128,
+      "mac": 24,
+      "input_tma": {
+        "1D": 0,
+        "2D": 28,
+        "3D": 12
+      }
+    }
+  ]
+}

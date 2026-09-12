@@ -1,0 +1,30 @@
+{"weight_layout": "st-glm53-modelopt-up-gate-v1", "world": 4, "layers": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44], "tensors_per_rank": 1306, "payload_bytes_per_rank": 47623689640, "vision_payload_bytes": 1127254016, "source_tensors": 146425, "quantized_projections": 36297, "global_scales": "FP32 multipliers preserved separately; no folding or inversion", "dense_nvfp4_preserved": true, "live_serving_compatible": false, "source_config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d", "source_index_sha256": "26765b2601fd246ef361cfb9f5e10f9fb291a59e05ad0a109062f3a4747c7fd1", "source_revision": "09b04e5e74bca08ca8549fc736d4cdd8624bfde3"}
+{"stage": "write", "group": "top", "seconds": 5.3301536130020395}
+{"stage": "write", "group": "layer 0", "seconds": 6.255126989999553}
+{"stage": "write", "group": "layer 1", "seconds": 7.4868386880043545}
+{"stage": "write", "group": "layer 2", "seconds": 8.364975028001936}
+{"stage": "write", "group": "layer 3", "seconds": 18.011196573002962}
+{"stage": "write", "group": "layer 4", "seconds": 29.19153916700452}
+{"stage": "write", "group": "layer 5", "seconds": 38.433174147998216}
+{"stage": "write", "group": "layer 6", "seconds": 47.71423261000018}
+{"stage": "write", "group": "layer 7", "seconds": 59.14583041900187}
+{"stage": "write", "group": "layer 8", "seconds": 68.88871867299895}
+{"stage": "write", "group": "layer 9", "seconds": 78.8576882050038}
+{"stage": "write", "group": "layer 10", "seconds": 87.87039562500286}
+{"stage": "write", "group": "layer 11", "seconds": 98.50734095799999}
+{"stage": "write", "group": "layer 12", "seconds": 109.14168896200135}
+{"stage": "write", "group": "layer 13", "seconds": 119.06252538500121}
+{"stage": "write", "group": "layer 14", "seconds": 130.21994645600353}
+{"stage": "write", "group": "layer 15", "seconds": 140.0930470270032}
+{"stage": "write", "group": "layer 16", "seconds": 150.65910840500146}
+{"stage": "write", "group": "layer 17", "seconds": 161.15241385099944}
+{"stage": "write", "group": "layer 18", "seconds": 171.85373534799874}
+{"stage": "write", "group": "layer 19", "seconds": 181.66820376900432}
+{"stage": "write", "group": "layer 20", "seconds": 191.76073241099948}
+{"stage": "write", "group": "layer 21", "seconds": 201.9016012810025}
+{"stage": "write", "group": "layer 22", "seconds": 214.2424117460032}
+{"stage": "write", "group": "layer 23", "seconds": 224.2328473000016}
+{"stage": "write", "group": "layer 24", "seconds": 234.61784253299993}
+{"stage": "write", "group": "layer 25", "seconds": 244.93720969100104}
+{"stage": "write", "group": "layer 26", "seconds": 256.1275432750044}
+{"stage": "write", "group": "layer 27", "seconds": 267.07620775800024}

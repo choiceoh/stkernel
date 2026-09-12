@@ -32,6 +32,7 @@ served kernels; the composition does not know which.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Protocol
 
 import torch
@@ -149,25 +150,47 @@ class Glm53Net:
         self.dense = {}
         self.prefill_transport = None
         self.mhc = None
+        from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT
+        self.weight_layout = getattr(F, 'weight_layout', WEIGHT_LAYOUT)
+        if self.weight_layout not in (WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT):
+            raise ValueError('unsupported GLM weight layout')
+        self.modelopt = self.weight_layout == MODELOPT_WEIGHT_LAYOUT
+        self._experts = {}
+        self._quant_scales = {}
+        if self.modelopt:
+            self._dense = self._dense_nvfp4
         self.probe = None                            # probe(block, layer, out) after every block, for judges
 
     # -- binding ----------------------------------------------------------------
     def specs(self):
+        if self.modelopt:
+            from engine.profiles.glm53.modelopt_weights import all_specs
+            return all_specs(self.F, self.layers)
         return specs.all_specs(self.F, self.layers)
 
     def bind(self, views: dict) -> None:
         from engine.base.params import bind
         self.p = bind(self.specs(), views)
         prepare = getattr(self.lanes, "moe_prepare", None)
-        if prepare is not None:
-            # The served MoE lane fixes its weight views now, before any capture: the
-            # spec cell t re-lays the arena bytes tile-major in place (the reference lane
-            # reads them back row-major through engine.modules.expert_layout).
-            F, p = self.F, self.p
-            for L in self.layers:
-                if F.is_moe(L):
-                    n = f"L{L}.moe."
-                    prepare(p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"], F.topk_experts, F.swiglu_limit)
+        F, p = self.F, self.p
+        # Bind scales and weight views before capture. The served t cell may
+        # relayout arena bytes in place; the reference can read that layout.
+        for L in self.layers:
+            if not F.is_moe(L) and not self.modelopt:
+                continue
+            n = f"L{L}." + ('moe.' if F.is_moe(L) else 'mlp.')
+            kw = {}
+            if self.modelopt:
+                from engine.profiles.glm53.modelopt_scales import ModelOptScales
+                scales = ModelOptScales.bind(*(p[n + s] for s in ('w13_alpha', 'a13_scale', 'w2_alpha', 'a2_scale')),
+                    experts=p[n + 'w13'].shape[0], device=p[n + 'w13'].device)
+                self._quant_scales[L] = scales
+                kw['scales'] = scales
+            if prepare is not None:
+                prepare(p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"],
+                        F.topk_experts if F.is_moe(L) else 1, F.swiglu_limit, **kw)
+            self._experts[L] = partial(self.lanes.moe, w13=p[n+'w13'], w13_sf=p[n+'w13_sf'],
+                w2=p[n+'w2'], w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
 
     @staticmethod
     def dense_weight_names(keys):
@@ -434,6 +457,13 @@ class Glm53Net:
         g, u = self.linear(x, n + "gate_up").chunk(2, dim=-1)
         return (reduce or self.comm.all_reduce)(self.linear(swiglu_clamped(g, u, self.F.swiglu_limit), n + "down"))
 
+    def _dense_nvfp4(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
+        # Fixed one-expert routing: no router/selection or shared expert. These
+        # buffers are owned by the graph pool during capture, like the MoE out.
+        ids = torch.zeros((x.shape[0], 1), device=x.device, dtype=torch.int32)
+        weights = torch.ones((x.shape[0], 1), device=x.device, dtype=torch.float32)
+        return (reduce or self.comm.all_reduce)(self._experts[L](x, ids, weights))
+
     def route(self, L: int, x: torch.Tensor):
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
         raw scores renormalised, times routed_scaling_factor."""
@@ -446,7 +476,7 @@ class Glm53Net:
     def _moe(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
         sel, w = self.route(L, x)
-        out = self.lanes.moe(x, sel, w, p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"], F.swiglu_limit).float()
+        out = self._experts[L](x, sel, w).float()
         g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
         out += self.linear(swiglu_clamped(g, u, F.swiglu_limit), n + "sh_down").float()
         return (reduce or self.comm.all_reduce)(out.to(x.dtype))

@@ -1,0 +1,18 @@
+test_scalar_then_matrix_stays_aligned_in_one_upload (__main__.AlignedRankTests.test_scalar_then_matrix_stays_aligned_in_one_upload) ... ok
+test_short_writes_are_retried_and_zero_progress_fails (__main__.AlignedRankTests.test_short_writes_are_retried_and_zero_progress_fails) ... ok
+test_a_recorder_counts_shards_ranges_and_bytes (__main__.CheckpointTests.test_a_recorder_counts_shards_ranges_and_bytes) ... ok
+test_layers_are_read_as_ranges_and_match_the_reference_reader (__main__.CheckpointTests.test_layers_are_read_as_ranges_and_match_the_reference_reader) ... ok
+test_ranges_hand_the_preshard_the_same_bytes_as_the_per_tensor_reader (__main__.CheckpointTests.test_ranges_hand_the_preshard_the_same_bytes_as_the_per_tensor_reader)
+The gate on changing how the preshard reads: same sources, same built ranks. ... skipped 'needs the GLM-5.3 checkpoint'
+test_a_truncated_file_is_short_even_under_direct_reads (__main__.ReadTests.test_a_truncated_file_is_short_even_under_direct_reads) ... ok
+test_direct_and_buffered_reads_agree_on_unaligned_offsets (__main__.ReadTests.test_direct_and_buffered_reads_agree_on_unaligned_offsets) ... ok
+test_staging_buffers_are_page_aligned_and_checked_for_size (__main__.ReadTests.test_staging_buffers_are_page_aligned_and_checked_for_size) ... ok
+test_truncated_run_raises_instead_of_spinning_on_eof (__main__.ReadTests.test_truncated_run_raises_instead_of_spinning_on_eof) ... ok
+test_a_cpu_target_does_not_alias_the_reused_staging_buffer (__main__.StagingTests.test_a_cpu_target_does_not_alias_the_reused_staging_buffer)
+Two runs share two buffers; the first run's tensors must keep their bytes. ... ok
+test_an_empty_selection_reads_nothing (__main__.StagingTests.test_an_empty_selection_reads_nothing) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.029s
+
+OK (skipped=1)

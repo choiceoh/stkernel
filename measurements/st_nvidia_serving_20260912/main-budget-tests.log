@@ -1,0 +1,8 @@
+test_a_boot_ledger_puts_the_measured_workspace_peak_on_the_line (test_engine_budget.BudgetTests.test_a_boot_ledger_puts_the_measured_workspace_peak_on_the_line) ... ok
+test_lines_are_all_provenanced_and_the_declared_kv_leaves_room (test_engine_budget.BudgetTests.test_lines_are_all_provenanced_and_the_declared_kv_leaves_room) ... ok
+test_native_kv_shards_remove_replicated_heads_from_every_snapshot (test_engine_budget.BudgetTests.test_native_kv_shards_remove_replicated_heads_from_every_snapshot) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 1.355s
+
+OK

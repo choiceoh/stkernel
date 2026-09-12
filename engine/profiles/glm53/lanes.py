@@ -37,13 +37,14 @@ class Lanes:
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
                               #  scale, ckv_scale) -> [T,H,512] bf16
-    moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8 [up|gate], w13_sf [E, 2I*H/16] e4m3 (folded, interleaved),
-                              #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit) -> [T,H] bf16: this rank's routed partial (shared expert excluded)
+    moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8 [up|gate], w13_sf [E, 2I*H/16] e4m3 (interleaved),
+                              #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit, *, scales=None) -> [T,H] bf16: this rank's routed partial
+                              #  scales=None: folded Red Hat; ModelOptScales: separate NVIDIA multipliers. E=1/k=1 also serves dense MLPs.
     indexer_quant: object     # contiguous [R,128] bf16 -> Hadamard-rotated [R,128] e4m3, per-row pow2 [R,1] f32 scale
     pool_slots: object        # (pool ids [T,G] int32, seq_lens [T] int32, pool size, block row | None, block size/stride,
                               #  layer offset, out [T,G*pool+pool-1], counts [T]) -> None; descending token positions, mapped valid prefix
     kda_output_norm: object   # (core/gate [T,H,D] bf16, weight [D] bf16/f32, eps) -> [T,H,D] bf16; FP32 RMS norm and sigmoid gate
-    moe_prepare: object = None  # (w13, w13_sf, w2, w2_sf, top_k, limit) -> None, once per bound MoE layer BEFORE any capture:
+    moe_prepare: object = None  # (w13, w13_sf, w2, w2_sf, top_k, limit, *, scales=None) -> None, once per bound layer BEFORE any capture:
                               #  the served lane's weight views (in-place tile-major relayout, packed SF6 owner); reference: None
     graph_resources: object = None  # () -> external workspace owners to retain until the captured graphs close
     kda_chunk_tokens: int = 64      # the kernel chunk `states_at` indexes: a mark inside a prefill chunk sits on a multiple of it
@@ -112,10 +113,10 @@ def reference() -> Lanes:
         x = (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + norm_eps)).to(x.dtype) * norm_w
         return post, comb, x
 
-    def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit):
-        """Per selected expert: unswizzle its folded scales, dequantise, W4A4 with
-        the kernel's DYNAMIC activation quant (per-16 scales under a global of 1,
-        no calibrated input scale -- what the served SM12x lane does)."""
+    def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None):
+        """W4A4 from interleaved scales and optional ModelOpt multipliers.
+        Red Hat's folded encoding uses unit weight/activation global scales;
+        NVIDIA uses its calibrated per-expert FP32 dequantization scales."""
         from engine.modules.nvfp4_sf import unswizzle_sf
         from engine.modules.expert_layout import W13_K_IN_BYTES, W2_K_IN_BYTES, row_major_expert
         if any(getattr(t,"_st_sf6_consumed",False) for t in (w13_sf,w2_sf)):
@@ -132,9 +133,11 @@ def reference() -> Lanes:
             # then rounds the activation to BF16 before its FP4 quantization.
             xe = x[rows].float()
             w13e, w2e = row_major_expert(w13, e, W13_K_IN_BYTES), row_major_expert(w2, e, W2_K_IN_BYTES)   # served bind may have tiled the arena
-            u = expert_gemm(xe, w13e[:i_local], s13[:i_local], one, one, quantize_act=True)
-            g = expert_gemm(xe, w13e[i_local:], s13[i_local:], one, one, quantize_act=True)
-            y = expert_gemm(swiglu_clamped(g, u, limit), w2e, s2, one, one, quantize_act=True)
+            w1, a1, w2g, a2 = ((one, one, one, one) if scales is None else
+                               (scales.weight13[e], scales.input13[e], scales.weight2[e], scales.input2[e]))
+            u = expert_gemm(xe, w13e[:i_local], s13[:i_local], w1, a1, quantize_act=True)
+            g = expert_gemm(xe, w13e[i_local:], s13[i_local:], w1, a1, quantize_act=True)
+            y = expert_gemm(swiglu_clamped(g, u, limit), w2e, s2, w2g, a2, quantize_act=True)
             out.index_add_(0, rows, y.float() * w[rows, k][:, None])
         return out.to(x.dtype)
 
@@ -261,19 +264,23 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         md.configure_static_v2(spec)                # refuses once views exist: the layout choice is per process
         md.configure_tp_sf6_q0(q0)
         ones = {}
-        prepared = {}                               # (w13, w13_sf, w2, w2_sf ptrs) -> (views, sf13, sf2): stable arena aliases, one per bound MoE layer
+        prepared = {}                               # weight + derived scale pointers -> stable views and quantizer/epilogue arguments
 
-        def views_for(w13, w13_sf, w2, w2_sf, top_k, limit, *, in_place):
+        def views_for(w13, w13_sf, w2, w2_sf, top_k, limit, *, in_place, scales=None):
             """The dispatcher's weight views for one layer, built once. `in_place` (bind time) re-lays the
             arena bytes tile-major when the spec says t -- no second copy of 45 layers; a call without a
             bind (probes) copies instead so the caller's row-major tensors stay what they were."""
             key = (w13.data_ptr(), w13_sf.data_ptr(), w2.data_ptr(), w2_sf.data_ptr())
+            if scales is not None:
+                key += tuple(v.data_ptr() for v in (scales.alpha13, scales.input13, scales.alpha2, scales.input2))
             got = prepared.get(key)
             if got is not None:
                 return got
             E, n, k = w13.shape[0], w13.shape[1] // 2, w13.shape[2] * 2
             if E not in ones:
                 ones[E] = torch.ones(E, device=w13.device, dtype=torch.float32)
+            alpha13, alpha2, quant13, quant2 = ((ones[E], ones[E], None, ones[E]) if scales is None else
+                (scales.alpha13, scales.alpha2, scales.input13, scales.input2))
             sf13 = mma_sf_view(w13_sf, w13.shape[1], k)
             sf2 = mma_sf_view(w2_sf, w2.shape[1], w2.shape[2] * 2)
             geometry = dict(num_experts=E, num_local_experts=E, hidden_size=k, intermediate_size=n, num_topk=int(top_k),
@@ -285,24 +292,27 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             if tiled and in_place:
                 md.tile_expert_weights_inplace(w13, w2)     # one transient copy of this layer, then the arena IS tile-major
             views = md._get_weight_views(w1_fp4=w13, w1_blockscale=sf13, w2_fp4=w2, w2_blockscale=sf2,
-                                         w1_alphas=ones[E], w2_alphas=ones[E], n=n, k=k,
+                                         w1_alphas=alpha13, w2_alphas=alpha2, n=n, k=k,
                                          activation_precision="fp4", quant_mode="nvfp4",
                                          tiled=tiled, sf_pack=sf_pack, reform_sf_pack=reform,
                                          packed_only=bool(tiled and reform and not sf_pack))   # sf6: packed scales only, no converted raw copies
             if in_place and consume_scales and views.packed_only:
                 md.consume_packed_scale_storage(views,w13_sf,w2_sf)
-            prepared[key] = (views, sf13, sf2)
+            # _weight_views tells dispatch the alpha is final. In particular,
+            # it must not fold the input scale into alpha a second time.
+            prepared[key] = (views, sf13, sf2, alpha13, alpha2, quant13, quant2)
             return prepared[key]
 
-        def moe_prepare(w13, w13_sf, w2, w2_sf, top_k, limit):
-            views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True)
+        def moe_prepare(w13, w13_sf, w2, w2_sf, top_k, limit, *, scales=None):
+            views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True, scales=scales)
 
-        def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit):
-            """The served call (flashinfer_b12x_moe._apply_*): packed nibbles, folded
-            interleaved scales, alpha 1, fc2 input scale 1, no input scale (dynamic
-            per-block activation quant), clamped SiLU spelled the kernel's way."""
+        def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None):
+            """Packed W4A4 with prepared b12x quantizer/epilogue scales.
+            Red Hat uses unit scales; ModelOpt passes a for quantization and
+            a*w for each GEMM. The clamped activation is common to both."""
             E = w13.shape[0]
-            views, sf13, sf2 = views_for(w13, w13_sf, w2, w2_sf, sel.shape[1], limit, in_place=False)
+            views, sf13, sf2, a13, a2, q13, q2 = views_for(
+                w13, w13_sf, w2, w2_sf, sel.shape[1], limit, in_place=False, scales=scales)
             # The ST caller owns the output allocation, including the graph
             # memory pool during capture; the b12x API requires an explicit out.
             output = torch.empty_like(x, memory_format=torch.contiguous_format)
@@ -310,7 +320,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                                   w1_weight=w13, w1_weight_sf=sf13, w2_weight=w2, w2_weight_sf=sf2,
                                   token_selected_experts=sel.contiguous(), token_final_scales=w.contiguous(),
                                   num_experts=E, num_local_experts=E, top_k=sel.shape[1],
-                                  w1_alpha=ones[E], w2_alpha=ones[E], fc2_input_scale=ones[E], input_global_scale=None,
+                                  w1_alpha=a13, w2_alpha=a2, fc2_input_scale=q2, input_global_scale=q13,
                                   activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0, swiglu_limit=float(limit),
                                   activation_precision="fp4", quant_mode="nvfp4", _weight_views=views)
 

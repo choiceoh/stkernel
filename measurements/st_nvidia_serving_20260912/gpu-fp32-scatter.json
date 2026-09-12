@@ -1,0 +1,112 @@
+{
+  "passed": true,
+  "device": "cuda",
+  "layout": "st-glm53-modelopt-up-gate-v1",
+  "moe_static": "t,r,sf6,q0",
+  "checks": [
+    {
+      "layer": 0,
+      "rank": 0,
+      "tokens": 1,
+      "oracle_rows": 1,
+      "dense": true,
+      "relative": 0.003759398590773344,
+      "finite": true,
+      "output_absmax": 0.51953125,
+      "reference_absmax": 0.51953125,
+      "repeat_relative": 0.0,
+      "graph_relative": 0.0
+    },
+    {
+      "layer": 0,
+      "rank": 0,
+      "tokens": 6,
+      "oracle_rows": 6,
+      "dense": true,
+      "relative": 0.003289473708719015,
+      "finite": true,
+      "output_absmax": 0.59375,
+      "reference_absmax": 0.59375,
+      "repeat_relative": 0.0,
+      "graph_relative": 0.0
+    },
+    {
+      "layer": 0,
+      "rank": 0,
+      "tokens": 129,
+      "oracle_rows": 32,
+      "dense": true,
+      "relative": 0.0058139534667134285,
+      "finite": true,
+      "output_absmax": 0.671875,
+      "reference_absmax": 0.671875,
+      "repeat_relative": 0.0,
+      "graph_relative": 0.0
+    },
+    {
+      "layer": 0,
+      "rank": 0,
+      "tokens": 4096,
+      "oracle_rows": 32,
+      "dense": true,
+      "relative": 0.006666666828095913,
+      "finite": true,
+      "output_absmax": 0.84765625,
+      "reference_absmax": 0.5859375,
+      "repeat_relative": 0.0,
+      "graph_relative": 0.0
+    },
+    {
+      "layer": 3,
+      "rank": 0,
+      "tokens": 1,
+      "oracle_rows": 1,
+      "dense": false,
+      "relative": 0.004385964944958687,
+      "finite": true,
+      "output_absmax": 0.4453125,
+      "reference_absmax": 0.4453125,
+      "repeat_relative": 0.0,
+      "graph_relative": 0.0
+    },
+    {
+      "layer": 3,
+      "rank": 0,
+      "tokens": 6,
+      "oracle_rows": 6,
+      "dense": false,
+      "relative": 0.003921568859368563,
+      "finite": true,
+      "output_absmax": 0.5,
+      "reference_absmax": 0.498046875,
+      "repeat_relative": 0.0,
+      "graph_relative": 0.0
+    },
+    {
+      "layer": 3,
+      "rank": 0,
+      "tokens": 129,
+      "oracle_rows": 32,
+      "dense": false,
+      "relative": 0.007299270015209913,
+      "finite": true,
+      "output_absmax": 0.54296875,
+      "reference_absmax": 0.53515625,
+      "repeat_relative": 0.0,
+      "graph_relative": 0.0
+    },
+    {
+      "layer": 3,
+      "rank": 0,
+      "tokens": 4096,
+      "oracle_rows": 32,
+      "dense": false,
+      "relative": 0.007575757801532745,
+      "finite": true,
+      "output_absmax": 0.71875,
+      "reference_absmax": 0.515625,
+      "repeat_relative": 0.0003396739193703979,
+      "graph_relative": 0.0003396739193703979
+    }
+  ]
+}

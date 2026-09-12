@@ -1,0 +1,54 @@
+{"weight_layout": "st-glm53-modelopt-up-gate-v1", "world": 4, "layers": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44], "tensors_per_rank": 1306, "payload_bytes_per_rank": 47623689640, "vision_payload_bytes": 1127254016, "source_tensors": 146425, "quantized_projections": 36297, "global_scales": "FP32 multipliers preserved separately; no folding or inversion", "dense_nvfp4_preserved": true, "live_serving_compatible": false, "source_config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d", "source_index_sha256": "26765b2601fd246ef361cfb9f5e10f9fb291a59e05ad0a109062f3a4747c7fd1", "source_revision": "09b04e5e74bca08ca8549fc736d4cdd8624bfde3"}
+{"stage": "write", "group": "top", "seconds": 5.3301536130020395}
+{"stage": "write", "group": "layer 0", "seconds": 6.255126989999553}
+{"stage": "write", "group": "layer 1", "seconds": 7.4868386880043545}
+{"stage": "write", "group": "layer 2", "seconds": 8.364975028001936}
+{"stage": "write", "group": "layer 3", "seconds": 18.011196573002962}
+{"stage": "write", "group": "layer 4", "seconds": 29.19153916700452}
+{"stage": "write", "group": "layer 5", "seconds": 38.433174147998216}
+{"stage": "write", "group": "layer 6", "seconds": 47.71423261000018}
+{"stage": "write", "group": "layer 7", "seconds": 59.14583041900187}
+{"stage": "write", "group": "layer 8", "seconds": 68.88871867299895}
+{"stage": "write", "group": "layer 9", "seconds": 78.8576882050038}
+{"stage": "write", "group": "layer 10", "seconds": 87.87039562500286}
+{"stage": "write", "group": "layer 11", "seconds": 98.50734095799999}
+{"stage": "write", "group": "layer 12", "seconds": 109.14168896200135}
+{"stage": "write", "group": "layer 13", "seconds": 119.06252538500121}
+{"stage": "write", "group": "layer 14", "seconds": 130.21994645600353}
+{"stage": "write", "group": "layer 15", "seconds": 140.0930470270032}
+{"stage": "write", "group": "layer 16", "seconds": 150.65910840500146}
+{"stage": "write", "group": "layer 17", "seconds": 161.15241385099944}
+{"stage": "write", "group": "layer 18", "seconds": 171.85373534799874}
+{"stage": "write", "group": "layer 19", "seconds": 181.66820376900432}
+{"stage": "write", "group": "layer 20", "seconds": 191.76073241099948}
+{"stage": "write", "group": "layer 21", "seconds": 201.9016012810025}
+{"stage": "write", "group": "layer 22", "seconds": 214.2424117460032}
+{"stage": "write", "group": "layer 23", "seconds": 224.2328473000016}
+{"stage": "write", "group": "layer 24", "seconds": 234.61784253299993}
+{"stage": "write", "group": "layer 25", "seconds": 244.93720969100104}
+{"stage": "write", "group": "layer 26", "seconds": 256.1275432750044}
+{"stage": "write", "group": "layer 27", "seconds": 267.07620775800024}
+{"stage": "write", "group": "layer 28", "seconds": 3974.8507982989977}
+{"stage": "write", "group": "layer 29", "seconds": 3988.110367018002}
+{"stage": "write", "group": "layer 30", "seconds": 4001.219059517003}
+{"stage": "write", "group": "layer 31", "seconds": 4014.209484197003}
+{"stage": "write", "group": "layer 32", "seconds": 4024.1397325920043}
+{"stage": "write", "group": "layer 33", "seconds": 4034.3282140180017}
+{"stage": "write", "group": "layer 34", "seconds": 4048.8372263530036}
+{"stage": "write", "group": "layer 35", "seconds": 4061.700368924001}
+{"stage": "write", "group": "layer 36", "seconds": 4073.7725484129987}
+{"stage": "write", "group": "layer 37", "seconds": 4086.2007997590044}
+{"stage": "write", "group": "layer 38", "seconds": 4097.3867827970025}
+{"stage": "write", "group": "layer 39", "seconds": 4107.692520905002}
+{"stage": "write", "group": "layer 40", "seconds": 4119.939883847001}
+{"stage": "write", "group": "layer 41", "seconds": 4130.401896918003}
+{"stage": "write", "group": "layer 42", "seconds": 4140.727964878002}
+{"stage": "write", "group": "layer 43", "seconds": 4151.09254967}
+{"stage": "write", "group": "layer 44", "seconds": 4160.6215039040035}
+{"stage": "verify", "rank": 0, "name": "rank0of4.safetensors", "bytes": 47623920136, "sha256": "2dedb2c717a1bb986be5aff5d95169ca6395baab2e785114c7a4984368399d43", "tensors_verified": 1306, "all_tensor_bytes_exact": true}
+{"stage": "verify", "rank": 1, "name": "rank1of4.safetensors", "bytes": 47623920136, "sha256": "48cb0238fa79176563355f270a5000abeaab57274e6b3f9cff7280094dcb75a7", "tensors_verified": 1306, "all_tensor_bytes_exact": true}
+{"stage": "verify", "rank": 2, "name": "rank2of4.safetensors", "bytes": 47623920136, "sha256": "a38ca612675bcc22a914bb6bed3910fff995c2d5a94a405498a8fcd7ff8f3b21", "tensors_verified": 1306, "all_tensor_bytes_exact": true}
+{"stage": "verify", "rank": 3, "name": "rank3of4.safetensors", "bytes": 47623920136, "sha256": "49802e05ada72446f870966ff25cfa587c7f4dc356f432367d499223dcb63e37", "tensors_verified": 1306, "all_tensor_bytes_exact": true}
+  vision           347 sources -> 347 tensors/rank     2.1 s
+  read 1.05 GiB, wrote 1 x 1.05 GiB in 2 s
+{"stage": "complete", "out": "/models/st-glm53-nvidia-tp4-9391", "seconds": 4721.978498246004}

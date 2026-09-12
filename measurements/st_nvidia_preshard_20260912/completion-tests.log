@@ -1,0 +1,14 @@
+test_missing_index_tensor_fails (test_glm53_modelopt_coverage.ModelOptCoverageTests.test_missing_index_tensor_fails) ... ok
+test_mtp_is_explicitly_excluded_without_copying_it (test_glm53_modelopt_coverage.ModelOptCoverageTests.test_mtp_is_explicitly_excluded_without_copying_it) ... ok
+test_omitted_real_layer_fails (test_glm53_modelopt_coverage.ModelOptCoverageTests.test_omitted_real_layer_fails) ... ok
+test_truncated_payload_fails (test_glm53_modelopt_coverage.ModelOptCoverageTests.test_truncated_payload_fails) ... ok
+test_unknown_auxiliary_tensor_is_not_silently_dropped (test_glm53_modelopt_coverage.ModelOptCoverageTests.test_unknown_auxiliary_tensor_is_not_silently_dropped) ... ok
+test_dense_mlp_remains_packed_nvfp4 (test_glm53_modelopt_preshard.ModelOptPreshardTests.test_dense_mlp_remains_packed_nvfp4) ... ok
+test_expert_tp_splits_preserve_packed_weights_raw_scales_and_multipliers (test_glm53_modelopt_preshard.ModelOptPreshardTests.test_expert_tp_splits_preserve_packed_weights_raw_scales_and_multipliers) ... ok
+test_incompatible_fused_gate_up_scales_are_rejected (test_glm53_modelopt_preshard.ModelOptPreshardTests.test_incompatible_fused_gate_up_scales_are_rejected) ... ok
+test_modelopt_rank_roundtrip_and_live_loader_rejection (test_glm53_modelopt_preshard.ModelOptPreshardTests.test_modelopt_rank_roundtrip_and_live_loader_rejection) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.020s
+
+OK
