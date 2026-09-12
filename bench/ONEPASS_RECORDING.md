@@ -60,7 +60,9 @@ gaps are not token ITL, since a speculative event can contain several tokens.
 Small samples have counts and ranges, without misleading tail percentiles.
 
 The ST endpoint is `GET/POST /v1/engine/latency`. Controls require loopback
-access, idle serving and a unique token. All ranks participate. While recording,
+access, idle serving and a unique token. All ranks participate;
+each rank must be a separate serving process; threaded LocalTP is refused
+because its ranks share one CUDA profiler. While recording,
 inference requests must carry `X-ST-Latency-Token`. `end` requires idle serving;
 `abort` with the owning token releases an abandoned recording and marks it
 incomplete. An abandoned idle recording expires after 120 seconds; active
