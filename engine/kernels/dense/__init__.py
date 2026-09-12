@@ -177,6 +177,8 @@ class DenseLinear:
     The K>4096 drafter projection is a fixed sequence of K tiles with FP32
     accumulation, matching the existing MK lane. Padding is weight-owned.
     """
+    input_dtype = torch.bfloat16  # __call__ enforces this before invoking its calibration observer
+
     def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None):
         """`smooth` [K]: the factor `weight` was multiplied by, its input divided by (kernels/dense/smoothing) -- the
         store scales the calibration Hessian alike; the calibration files its sums in the unsmoothed domain."""

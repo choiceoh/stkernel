@@ -1,0 +1,48 @@
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "b2e2b914de9e4b31859a0ed880ca2235", "phase": "waiting", "reason": "dequeue", "since": 101193.649601568, "updated_at": 1789227053.7574136, "version": 1}
+GO stdecode22bundle8 2026-09-13_00:30:53
+  node 10.10.10.1: gpu=ok stray=3 ram=92G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=92G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+{"lane": "imports", "modules": 79, "table": "served", "vllm_loaded": false}
+test_all_layers_match_separate_native_kernels_with_wrap_ghosts_and_graph_replay (tests.test_engine_decode_residency.DraftWriteTests.test_all_layers_match_separate_native_kernels_with_wrap_ghosts_and_graph_replay) ... ok
+test_fp32_arena_spec_preserves_bf16_checkpoint_and_projection (tests.test_engine_decode_residency.RouterResidencyTests.test_fp32_arena_spec_preserves_bf16_checkpoint_and_projection) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 3.211s
+
+OK
+{"lane": "residency", "passed": true, "tests": 2}
+{"lane": "residency_timing", "operation": "all_layer_context_write", "rows": 7, "measurements": [{"arm": "B", "ms": 0.020583374425768852}, {"arm": "A", "ms": 0.0051733748987317085}, {"arm": "A", "ms": 0.0051437499932944775}, {"arm": "B", "ms": 0.02050037495791912}], "scope": "single-GPU captured component; not consumer speed"}
+{"lane": "residency_timing", "operation": "router_projection_resident", "rows": 7, "measurements": [{"arm": "B", "ms": 0.04731562361121178}, {"arm": "A", "ms": 0.03494437411427498}, {"arm": "A", "ms": 0.03486362472176552}, {"arm": "B", "ms": 0.04718312621116638}], "scope": "single-GPU captured component; not consumer speed"}
+test_staging_is_charged_before_attaching_a_layer (tests.test_engine_calibration_gram.BudgetTests.test_staging_is_charged_before_attaching_a_layer) ... ok
+test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation) ... ok
+test_declared_bf16_staging_refuses_precision_loss (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_staging_refuses_precision_loss) ... ok
+test_graph_replay_masks_wraps_shape_changes_and_partial_save (tests.test_engine_calibration_gram.BufferedGramTests.test_graph_replay_masks_wraps_shape_changes_and_partial_save) ... ok
+test_peak_only_masked_strided_rows_need_no_hessian_staging (tests.test_engine_calibration_gram.BufferedGramTests.test_peak_only_masked_strided_rows_need_no_hessian_staging) ... ok
+test_small_unmasked_target_rows_are_still_excluded (tests.test_engine_calibration_gram.BufferedGramTests.test_small_unmasked_target_rows_are_still_excluded) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.445s
+
+OK
+{"lane": "calibration", "passed": true, "tests": 6}
+test_bf16_expert_join_retains_fp32_sum_rounding (tests.test_engine_glm_pointwise.PointwiseTests.test_bf16_expert_join_retains_fp32_sum_rounding) ... ok
+test_clamped_activation_on_strided_projection_halves (tests.test_engine_glm_pointwise.PointwiseTests.test_clamped_activation_on_strided_projection_halves) ... ok
+test_indexer_layernorm_and_target_rmsnorm (tests.test_engine_glm_pointwise.PointwiseTests.test_indexer_layernorm_and_target_rmsnorm) ... ok
+test_router_preserves_topk_ties_and_unbiased_weights (tests.test_engine_glm_pointwise.PointwiseTests.test_router_preserves_topk_ties_and_unbiased_weights) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 1.091s
+
+OK
+{"lane": "pointwise", "passed": true, "tests": 4}
+{"lane": "pointwise_timing", "operation": "shared_activation", "rows": 7, "measurements": [{"arm": "B", "ms": 0.018507499247789383}, {"arm": "A", "ms": 0.0038811250124126673}, {"arm": "A", "ms": 0.003749249968677759}, {"arm": "B", "ms": 0.018466874957084656}], "scope": "single-GPU captured kernel; not consumer speed"}
+{"lane": "pointwise_timing", "operation": "router_post_projection", "rows": 7, "measurements": [{"arm": "B", "ms": 0.03075375035405159}, {"arm": "A", "ms": 0.02048887498676777}, {"arm": "A", "ms": 0.02044537477195263}, {"arm": "B", "ms": 0.030745625495910645}], "scope": "single-GPU captured kernel; not consumer speed"}
+{"lane": "pointwise_timing", "operation": "rmsnorm", "rows": 7, "measurements": [{"arm": "B", "ms": 0.02058975026011467}, {"arm": "A", "ms": 0.004147625062614679}, {"arm": "A", "ms": 0.004123125225305557}, {"arm": "B", "ms": 0.02049425058066845}], "scope": "single-GPU captured kernel; not consumer speed"}
+{"lane": "pointwise_timing", "operation": "indexer_norm", "rows": 7, "measurements": [{"arm": "B", "ms": 0.010327749885618687}, {"arm": "A", "ms": 0.0041497498750686646}, {"arm": "A", "ms": 0.0041211252100765705}, {"arm": "B", "ms": 0.01027162466198206}], "scope": "single-GPU captured kernel; not consumer speed"}
+{"lane": "pointwise_timing", "operation": "expert_join", "rows": 7, "measurements": [{"arm": "B", "ms": 0.012374999932944775}, {"arm": "A", "ms": 0.005029249936342239}, {"arm": "A", "ms": 0.005030625034123659}, {"arm": "B", "ms": 0.012327250093221664}], "scope": "single-GPU captured kernel; not consumer speed"}
+{"lane": "calibration_timing", "rows": 1, "width": 20480, "measurements": [{"arm": "B", "ms": 15.310206413269043}, {"arm": "A", "ms": 0.10246425122022629}, {"arm": "A", "ms": 0.10547937452793121}, {"arm": "B", "ms": 15.302277565002441}], "includes_partial_flush": true, "staging_dtype": "torch.bfloat16", "scope": "single-GPU captured observer; not consumer speed"}
+{"lane": "calibration_timing", "rows": 7, "width": 20480, "measurements": [{"arm": "B", "ms": 15.453181266784668}, {"arm": "A", "ms": 0.6692914962768555}, {"arm": "A", "ms": 0.6704923510551453}, {"arm": "B", "ms": 15.405643463134766}], "includes_partial_flush": true, "staging_dtype": "torch.bfloat16", "scope": "single-GPU captured observer; not consumer speed"}
+{"passed": true, "vllm_loaded": false, "checks": [{"lane": "imports", "modules": 79, "table": "served", "vllm_loaded": false}, {"lane": "residency", "passed": true, "tests": 2}, {"lane": "residency_timing", "operation": "all_layer_context_write", "rows": 7, "measurements": [{"arm": "B", "ms": 0.020583374425768852}, {"arm": "A", "ms": 0.0051733748987317085}, {"arm": "A", "ms": 0.0051437499932944775}, {"arm": "B", "ms": 0.02050037495791912}], "scope": "single-GPU captured component; not consumer speed"}, {"lane": "residency_timing", "operation": "router_projection_resident", "rows": 7, "measurements": [{"arm": "B", "ms": 0.04731562361121178}, {"arm": "A", "ms": 0.03494437411427498}, {"arm": "A", "ms": 0.03486362472176552}, {"arm": "B", "ms": 0.04718312621116638}], "scope": "single-GPU captured component; not consumer speed"}, {"lane": "calibration", "passed": true, "tests": 6}, {"lane": "pointwise", "passed": true, "tests": 4}, {"lane": "pointwise_timing", "operation": "shared_activation", "rows": 7, "measurements": [{"arm": "B", "ms": 0.018507499247789383}, {"arm": "A", "ms": 0.0038811250124126673}, {"arm": "A", "ms": 0.003749249968677759}, {"arm": "B", "ms": 0.018466874957084656}], "scope": "single-GPU captured kernel; not consumer speed"}, {"lane": "pointwise_timing", "operation": "router_post_projection", "rows": 7, "measurements": [{"arm": "B", "ms": 0.03075375035405159}, {"arm": "A", "ms": 0.02048887498676777}, {"arm": "A", "ms": 0.02044537477195263}, {"arm": "B", "ms": 0.030745625495910645}], "scope": "single-GPU captured kernel; not consumer speed"}, {"lane": "pointwise_timing", "operation": "rmsnorm", "rows": 7, "measurements": [{"arm": "B", "ms": 0.02058975026011467}, {"arm": "A", "ms": 0.004147625062614679}, {"arm": "A", "ms": 0.004123125225305557}, {"arm": "B", "ms": 0.02049425058066845}], "scope": "single-GPU captured kernel; not consumer speed"}, {"lane": "pointwise_timing", "operation": "indexer_norm", "rows": 7, "measurements": [{"arm": "B", "ms": 0.010327749885618687}, {"arm": "A", "ms": 0.0041497498750686646}, {"arm": "A", "ms": 0.0041211252100765705}, {"arm": "B", "ms": 0.01027162466198206}], "scope": "single-GPU captured kernel; not consumer speed"}, {"lane": "pointwise_timing", "operation": "expert_join", "rows": 7, "measurements": [{"arm": "B", "ms": 0.012374999932944775}, {"arm": "A", "ms": 0.005029249936342239}, {"arm": "A", "ms": 0.005030625034123659}, {"arm": "B", "ms": 0.012327250093221664}], "scope": "single-GPU captured kernel; not consumer speed"}, {"lane": "calibration_timing", "rows": 1, "width": 20480, "measurements": [{"arm": "B", "ms": 15.310206413269043}, {"arm": "A", "ms": 0.10246425122022629}, {"arm": "A", "ms": 0.10547937452793121}, {"arm": "B", "ms": 15.302277565002441}], "includes_partial_flush": true, "staging_dtype": "torch.bfloat16", "scope": "single-GPU captured observer; not consumer speed"}, {"lane": "calibration_timing", "rows": 7, "width": 20480, "measurements": [{"arm": "B", "ms": 15.453181266784668}, {"arm": "A", "ms": 0.6692914962768555}, {"arm": "A", "ms": 0.6704923510551453}, {"arm": "B", "ms": 15.405643463134766}], "includes_partial_flush": true, "staging_dtype": "torch.bfloat16", "scope": "single-GPU captured observer; not consumer speed"}]}
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "9c5969ffe4594ad6af4b50440cc7fbb5", "phase": "waiting", "reason": "release", "since": 101225.855057112, "updated_at": 1789227085.9628642, "version": 1}

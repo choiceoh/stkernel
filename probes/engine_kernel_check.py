@@ -58,7 +58,40 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "latency"}, selected
+    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency"}, selected
+
+    if "residency" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_decode_residency")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "decode residency checks did not pass"
+        report("residency", passed=True, tests=result.testsRun)
+        from probes.engine_decode_fusions import residency
+        residency(report)
+
+    if "calibration" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_calibration_gram")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "calibration GPU checks did not pass"
+        report("calibration", passed=True, tests=result.testsRun)
+
+    if "pointwise" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_glm_pointwise")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "pointwise GPU checks did not pass"
+        report("pointwise", passed=True, tests=result.testsRun)
+
+    # Numerical/replay contracts always precede timings. These explicitly
+    # scoped component results do not replace the four-node onepass gate.
+    if selected & {"calibration", "pointwise"}:
+        from probes.engine_decode_fusions import calibration, pointwise
+        if "pointwise" in selected:
+            pointwise(report)
+        if "calibration" in selected:
+            calibration(report)
+
     if 'latency' in selected:
         from probes.engine_latency_check import check as latency_check
         report('latency', **latency_check())

@@ -238,6 +238,25 @@ class StepPeekTest(unittest.TestCase):
         # 증분이 없는 ttft: 요청이 그 창에 끝나지 않았다 → None (0이 아니다)
         self.assertIsNone(w["ttft"])
 
+    def test_decode_quantiles_exclude_active_prefill_with_shared_bounds(self):
+        a, b = dict(self.a), dict(self.b)
+        for bound in ("0.05", "0.1"):
+            key = f'st:step_seconds_bucket{{engine="st",kind="prefill",le="{bound}"}}'
+            a[key], b[key] = 0, 1000
+        h = peek.hist_delta(a, b, "st:step_seconds", kind="decode")
+        self.assertAlmostEqual(h["p50"], 0.05 * 25 / 40)
+        self.assertAlmostEqual(h["p95"], 0.05 + (7.5 / 10) * 0.05)
+
+    def test_changed_bucket_bounds_do_not_invent_quantiles(self):
+        b = dict(self.b)
+        old = 'st:step_seconds_bucket{engine="st",kind="decode",le="0.1"}'
+        b[old.replace('"0.1"', '"0.2"')] = b.pop(old)
+        h = peek.hist_delta(self.a, b, "st:step_seconds", kind="decode")
+        self.assertEqual(h["count"], 50)
+        self.assertAlmostEqual(h["mean"], .04)
+        self.assertIsNone(h["p50"])
+        self.assertIsNone(h["p95"])
+
     def test_decode_quantiles_exclude_prefill_buckets_with_the_same_bounds(self):
         expected = peek.hist_delta(self.a, self.b, "st:step_seconds", kind="decode")
         a, b = dict(self.a), dict(self.b)

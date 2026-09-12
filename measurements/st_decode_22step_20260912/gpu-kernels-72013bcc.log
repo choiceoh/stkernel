@@ -1,0 +1,59 @@
+waiting: pos 1/1 2026-09-13_00:24:09
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "490ad4754b9e4d6db0bc586438da30af", "phase": "waiting", "reason": "dequeue", "since": 101003.935784011, "updated_at": 1789226864.0435913, "version": 1}
+GO stdecode22bundle6 2026-09-13_00:27:44
+  node 10.10.10.1: gpu=ok stray=3 ram=92G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=92G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+{"lane": "imports", "modules": 76, "table": "served", "vllm_loaded": false}
+test_all_layers_match_separate_native_kernels_with_wrap_ghosts_and_graph_replay (tests.test_engine_decode_residency.DraftWriteTests.test_all_layers_match_separate_native_kernels_with_wrap_ghosts_and_graph_replay) ... ok
+test_fp32_arena_spec_preserves_bf16_checkpoint_and_projection (tests.test_engine_decode_residency.RouterResidencyTests.test_fp32_arena_spec_preserves_bf16_checkpoint_and_projection) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 4.261s
+
+OK
+{"lane": "residency", "passed": true, "tests": 2}
+{"lane": "residency_timing", "operation": "all_layer_context_write", "rows": 7, "measurements": [{"arm": "B", "ms": 0.02059287577867508}, {"arm": "A", "ms": 0.005197249818593264}, {"arm": "A", "ms": 0.005131999962031841}, {"arm": "B", "ms": 0.0205058753490448}], "scope": "single-GPU captured component; not consumer speed"}
+{"lane": "residency_timing", "operation": "router_projection_resident", "rows": 7, "measurements": [{"arm": "B", "ms": 0.04738587513566017}, {"arm": "A", "ms": 0.03493550047278404}, {"arm": "A", "ms": 0.03486662358045578}, {"arm": "B", "ms": 0.04723900184035301}], "scope": "single-GPU captured component; not consumer speed"}
+test_staging_is_charged_before_attaching_a_layer (tests.test_engine_calibration_gram.BudgetTests.test_staging_is_charged_before_attaching_a_layer) ... ok
+test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation) ... 
+  test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation) (width=64) ... FAIL
+  test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation) (width=95) ... FAIL
+test_declared_bf16_staging_refuses_precision_loss (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_staging_refuses_precision_loss) ... ok
+test_graph_replay_masks_wraps_shape_changes_and_partial_save (tests.test_engine_calibration_gram.BufferedGramTests.test_graph_replay_masks_wraps_shape_changes_and_partial_save) ... ok
+test_peak_only_masked_strided_rows_need_no_hessian_staging (tests.test_engine_calibration_gram.BufferedGramTests.test_peak_only_masked_strided_rows_need_no_hessian_staging) ... ok
+test_small_unmasked_target_rows_are_still_excluded (tests.test_engine_calibration_gram.BufferedGramTests.test_small_unmasked_target_rows_are_still_excluded) ... ok
+
+======================================================================
+FAIL: test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation) (width=64)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_calibration_gram.py", line 80, in _check_graph
+    torch.testing.assert_close(saved["amax"], expected_rows.abs().amax(0).cpu(), rtol=0, atol=0)
+  File "/usr/local/lib/python3.12/dist-packages/torch/testing/_comparison.py", line 1631, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: The values for attribute 'dtype' do not match: torch.float32 != torch.bfloat16.
+
+======================================================================
+FAIL: test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation) (width=95)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_calibration_gram.py", line 80, in _check_graph
+    torch.testing.assert_close(saved["amax"], expected_rows.abs().amax(0).cpu(), rtol=0, atol=0)
+  File "/usr/local/lib/python3.12/dist-packages/torch/testing/_comparison.py", line 1631, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: The values for attribute 'dtype' do not match: torch.float32 != torch.bfloat16.
+
+----------------------------------------------------------------------
+Ran 6 tests in 4.327s
+
+FAILED (failures=2)
+Traceback (most recent call last):
+  File "/repo/probes/engine_kernel_check.py", line 217, in <module>
+    main()
+  File "/repo/probes/engine_kernel_check.py", line 76, in main
+    assert result.wasSuccessful() and not result.skipped, "calibration GPU checks did not pass"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: calibration GPU checks did not pass
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "da66e487346646ef95ecdf2dd3039282", "phase": "waiting", "reason": "release", "since": 101020.608951902, "updated_at": 1789226880.7167652, "version": 1}

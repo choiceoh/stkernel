@@ -51,6 +51,7 @@ def layout(F, world, max_seqs):
         # independent of which calibration files happened to exist at boot.
         add('smooth/' + name, cols * 4)
     add('context_kv', F.layers * 2 * (F.kv_heads // world) * F.head_dim * F.hidden * 2)
+    add('context_norm', F.layers * F.head_dim * 2)
     return regions, (end + ALIGN - 1) // ALIGN * ALIGN
 
 
@@ -84,5 +85,6 @@ def compact(drafter, arena, max_seqs):
         if layer.smooth is not None:
             layer.smooth = copy('smooth/' + name, layer.smooth)
     drafter.context_kv = copy('context_kv', drafter.context_kv)
+    drafter.context_norm = copy('context_norm', drafter.context_norm)
     drafter.p = kept
     drafter.resident_bytes = size

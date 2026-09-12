@@ -1,0 +1,82 @@
+[
+  {
+    "rank": 0,
+    "ready": true,
+    "last": {
+      "phase": "production/ready",
+      "at_seconds": 398.8598,
+      "seconds": 38.4712,
+      "allocated_bytes": 66379137536,
+      "reserved_bytes": 66718793728,
+      "peak_allocated_bytes": 69772047872,
+      "peak_reserved_bytes": 70508347392,
+      "immediately_free_bytes": 12946599936,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 5893316792,
+      "available_bytes": 27742126080,
+      "oom_margin_bytes": 21299675136,
+      "oom_close": false,
+      "passed": true
+    }
+  },
+  {
+    "rank": 1,
+    "ready": true,
+    "last": {
+      "phase": "production/ready",
+      "at_seconds": 399.1591,
+      "seconds": 37.8806,
+      "allocated_bytes": 66379137024,
+      "reserved_bytes": 66718793728,
+      "peak_allocated_bytes": 69772047360,
+      "peak_reserved_bytes": 70508347392,
+      "immediately_free_bytes": 24050020352,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 5893316792,
+      "available_bytes": 22270246912,
+      "oom_margin_bytes": 15827795968,
+      "oom_close": false,
+      "passed": true
+    }
+  },
+  {
+    "rank": 2,
+    "ready": true,
+    "last": {
+      "phase": "production/ready",
+      "at_seconds": 396.1065,
+      "seconds": 35.9303,
+      "allocated_bytes": 66379137536,
+      "reserved_bytes": 66718793728,
+      "peak_allocated_bytes": 69772047872,
+      "peak_reserved_bytes": 70508347392,
+      "immediately_free_bytes": 11369828352,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 5893316792,
+      "available_bytes": 25410916352,
+      "oom_margin_bytes": 18968465408,
+      "oom_close": false,
+      "passed": true
+    }
+  },
+  {
+    "rank": 3,
+    "ready": true,
+    "last": {
+      "phase": "production/ready",
+      "at_seconds": 375.9433,
+      "seconds": 37.9047,
+      "allocated_bytes": 66379137536,
+      "reserved_bytes": 66718793728,
+      "peak_allocated_bytes": 69772047872,
+      "peak_reserved_bytes": 70508347392,
+      "immediately_free_bytes": 13864439808,
+      "reclaimed_bytes": 0,
+      "peak_workspace_bytes": 5893316792,
+      "available_bytes": 30599155712,
+      "oom_margin_bytes": 24156704768,
+      "oom_close": false,
+      "passed": true
+    }
+  }
+]

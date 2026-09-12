@@ -40,6 +40,7 @@ class DrafterStorageTests(unittest.TestCase):
         self.assertIn('source/candidate_selector.predecessor_codebook', regions)
         self.assertIn('source/layers.0.self_attn.k_norm.weight', regions)
         self.assertNotIn('source/layers.0.self_attn.k_proj.weight', regions)
+        self.assertEqual(regions['context_norm'][1], F.layers * F.head_dim * 2)
         end = 0
         for start, count in regions.values():
             self.assertEqual(start % 256, 0)
@@ -48,6 +49,25 @@ class DrafterStorageTests(unittest.TestCase):
         self.assertLessEqual(end, size)
         with self.assertRaises(ValueError):
             layout(F, 3, 4)
+
+    def test_fused_context_norm_is_owned_by_the_declared_compact_region(self):
+        import torch
+        from dataclasses import replace
+        from engine.profiles.glm53.drafter_storage import compact, layout, retained_specs
+        F = replace(self.facts(), layers=2, hidden=128, heads=4, kv_heads=4, inter=128,
+                    sel_rank=16, sel_top_k=4)
+        regions, size = layout(F, 4, 4)
+        storage = torch.empty(size, dtype=torch.uint8)
+        norm = torch.randn(F.layers, F.head_dim, dtype=torch.bfloat16)
+        d = SimpleNamespace(F=F, target=SimpleNamespace(comm=SimpleNamespace(world_size=4)),
+            p={s.name: torch.zeros(s.shape, dtype=s.dtype) for s in retained_specs(F)}, dense={},
+            context_kv=torch.zeros(F.layers * 2 * (F.kv_heads // 4) * F.head_dim, F.hidden,
+                                   dtype=torch.bfloat16), context_norm=norm)
+        compact(d, SimpleNamespace(carve=lambda count, label: storage[:count]), 4)
+        self.assertTrue(torch.equal(d.context_norm, norm))
+        self.assertEqual(d.context_norm.data_ptr(), storage.data_ptr() + regions['context_norm'][0])
+        norm.zero_()
+        self.assertFalse(torch.equal(d.context_norm, norm))
 
     def test_prepare_uses_the_declared_precision_and_refuses_oversized_blocks(self):
         import torch

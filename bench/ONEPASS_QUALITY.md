@@ -1,4 +1,4 @@
-# Onepass reasoning quality — harness 42 / ko-reasoning-v1
+# Onepass reasoning quality — harness 43 / ko-reasoning-v1
 
 > 살아 있는 참조 — **원패스가 무엇을 묻고 어떻게 채점하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
 
@@ -49,12 +49,15 @@ completion check even if some facts are correct. Explicit fixed-length requests
 may end with `length`, but still need a complete, correct JSON certificate. Small
 user-supplied fixed budgets can fail; no fallback silently restores easy questions.
 
-Default total completion budgets are **2,400 individual / 7,200 combined** tokens;
-reasoning caps are one third of the individual budget / 2,400 combined. These caps
-reserve room for the visible certificate. Thinking remains enabled. Increasing the
-budget and replacing the question changes the performance workload, so harness 42
-cannot reuse a harness 41 baseline. This change makes no GPU speed/quality claim;
-actual model scores require a new canonical serving run.
+Default total completion budgets are **8,192 individual / 24,576 combined** tokens;
+reasoning caps are half the individual budget (**4,096**) / **12,288** combined.
+Explicit fixed-length requests also reserve half their budget for visible content.
+Harness 42's three observed 2K preparation requests all reached their 800-token
+reasoning cap mid-sentence, before completing the calculations. The larger budget
+addresses that limit; it does not change the questions, oracles or grading rules.
+Thinking remains enabled. A budget change changes the performance workload, so
+harness 43 cannot reuse a harness 42 baseline. Higher-budget quality has not yet
+been measured; this change makes no GPU speed or quality claim.
 
 Before preparation, `workloads.json` stores exact prompts, schemas, evidence,
 oracles and valid witness sets. **Only prompts are sent to the model**. The record's

@@ -313,10 +313,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             calib_plan.append(("target", "head", missing, True))      # its rows are the batch's own, prefill and decode alike
         budget = BUDGET_BYTES
         for _module, _key, missing, _small in calib_plan:
-            need = Calibration.nbytes(missing)
+            from engine.kernels.dense import DenseLinear
+            need = Calibration.nbytes(missing, max_decode_rows=max_seqs * (D.k + 1 if D else 1) if _small else 0,
+                                      input_dtype=DenseLinear.input_dtype if _module == "drafter" else torch.float32)
             if need <= budget:
                 budget -= need
                 calib_bytes += need
+    router_bytes = net.router_nbytes() if execution == "native" else 0
     draft_bytes = total_bytes(dspecs)
     if D and execution == "native":
         from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
@@ -324,7 +327,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("drafter_source_bytes", total_bytes(dspecs))
         recorder.gauge("drafter_resident_bytes", draft_bytes)
         recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
-    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
+    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs) + calib_bytes)
     memory = None
     redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
@@ -370,7 +373,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
                             snapshots=snapshots,
                             draft_tp=comm.world_size if execution == "native" else 1,
-                            draft_native=execution == "native")
+                            draft_native=execution == "native", router_bytes=router_bytes)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
         # seconds ago in __init__, and this print is the moment anyone decides how much KV to
         # ask for: without it the first table said 42.77 GiB of KV remained on a box that had
@@ -406,6 +409,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         if execution == "native":
             from engine.kernels.prefill_collectives import PrefillCollectives
             with recorder.phase("prepare native execution"):
+                net.prepare_routers(arena)
+                recorder.gauge('router_resident_bytes', router_bytes)
                 net.prepare_dense(store, consume_weights=True)
                 net.prefill_transport = PrefillCollectives(comm)
                 if D:
@@ -969,6 +974,13 @@ def fleet(a) -> int:
             engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)   # response_format (json_object / json_schema), every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
+        # Vision/grammar qualification can leave several GiB of inactive
+        # allocator blocks behind (3.8 GiB on the decode22 boot). Return those
+        # once before admission; live tensors and graph pools remain owned.
+        with rec.phase("release warmup cache"):
+            reserved = torch.cuda.memory_reserved()
+            torch.cuda.empty_cache()
+            rec.gauge("production_warmup_cache_returned_bytes", reserved - torch.cuda.memory_reserved())
         engine.memory.checkpoint("production/ready")
         import json
         proof = native_execution_report(net, engine.drafter)

@@ -1,0 +1,130 @@
+{
+  "source": "7b6873019af67087eebdc86eaa6b142a3e738e1e",
+  "harness": 42,
+  "kv_gib": 6,
+  "phase": "prepare-c1",
+  "canonical_complete": false,
+  "no_baseline_on_this_build": true,
+  "stopped_at": "2026-09-13 01:51:43 KST",
+  "stop_reason": "investigate quality failures; user subsequently instructed stop measuring and merge with larger reasoning budgets",
+  "requests": [
+    {
+      "ctx": 2000,
+      "question": 0,
+      "phase": "prepare-c1",
+      "completion_tokens": 1053,
+      "decode_tok_s": 79.44517707965393,
+      "decode_s": 13.241835925990017,
+      "ttft_s": 22.878542912003468,
+      "finish_reason": "stop",
+      "request_sha256": "416282837e08e76671ed7e8de0829e5e744eb64c2223bebad725db616e8336d0",
+      "output_sha256": "4e8277b469da9c0b5128053f0356c976c255019fe9ba738c5666af2dc4349118",
+      "reasoning_budget": 800
+    },
+    {
+      "ctx": 2000,
+      "question": 1,
+      "phase": "prepare-c1",
+      "completion_tokens": 2041,
+      "decode_tok_s": 72.99602889227836,
+      "decode_s": 27.94672574600554,
+      "ttft_s": 6.414655601998675,
+      "finish_reason": "stop",
+      "request_sha256": "ac532725adf0dbc1f1796c58c14ca041b28a422a6568780c321da0f0fcaebbdb",
+      "output_sha256": "c74b28b004c2ec7cb20b4ad0f306f4903f1889c4dd5281f4a3039bb228b35cdf",
+      "reasoning_budget": 800
+    },
+    {
+      "ctx": 2000,
+      "question": 2,
+      "phase": "prepare-c1",
+      "completion_tokens": 1363,
+      "decode_tok_s": 77.18126488384418,
+      "decode_s": 17.646769615006633,
+      "ttft_s": 6.122711659991182,
+      "finish_reason": "stop",
+      "request_sha256": "45f48a282a662769069d48f0763a24f41d78e4f2246c1e387b5d643205979915",
+      "output_sha256": "441d4cf1d2bca4b876b29063e175aaee7371b4d69003a546c27a5275db7a3172",
+      "reasoning_budget": 800
+    },
+    {
+      "ctx": 32000,
+      "question": "all",
+      "phase": "prepare-c1",
+      "completion_tokens": 4298,
+      "decode_tok_s": 72.84817609700427,
+      "decode_s": 58.98569092901016,
+      "ttft_s": 20.024726516989176,
+      "finish_reason": "stop",
+      "request_sha256": "c1574e41acff7c1f417f503bf9b9f5ee61e54be6ffd116eda47746cc7ddac1e3",
+      "output_sha256": "7dbfdfe427628bb4010c184dcf3efdca1f3e364b246f1be778a110023e852327",
+      "reasoning_budget": 2400
+    },
+    {
+      "ctx": 128000,
+      "question": "all",
+      "phase": "prepare-c1",
+      "completion_tokens": 5198,
+      "decode_tok_s": 71.93297157970635,
+      "decode_s": 72.24781467899447,
+      "ttft_s": 72.22022636300244,
+      "finish_reason": "stop",
+      "request_sha256": "0778e17ac75278f89896d526658e93bf69d9476a48dd5c5a1e6d385b45b7c334",
+      "output_sha256": "54f32370d513d5149826916c324f141e68aca30c613b3e8997b82790b910fe94",
+      "reasoning_budget": 2400
+    },
+    {
+      "ctx": 2000,
+      "question": "fixed-all",
+      "phase": "prepare-c1",
+      "completion_tokens": 7200,
+      "decode_tok_s": 66.57095860096562,
+      "decode_s": 108.14024840999627,
+      "ttft_s": 6.325036006004666,
+      "finish_reason": "length",
+      "request_sha256": "6d4052ef53fdd8d4f4cf8cf33d2f3e1f6016ed3849f83694f0d9a0eb4085ed99",
+      "output_sha256": "98c0e4f18addab8ae865636b01a1f63f729691183c067e3593c1222553bda1a2",
+      "reasoning_budget": 2400
+    },
+    {
+      "ctx": 2000,
+      "question": "fixed-all",
+      "phase": "prepare-c1",
+      "completion_tokens": 7200,
+      "decode_tok_s": 56.59718189967572,
+      "decode_s": 127.1971458360058,
+      "ttft_s": 1.5019010260002688,
+      "finish_reason": "length",
+      "request_sha256": "857b5f3df2fefd4210e82de8099b549bc00ea5bf22064b04cee07f048cd9765b",
+      "output_sha256": "bdc4aabdad291b436f906c667549eb762e30b0e309206be73a0ac89dfe8cd67f",
+      "reasoning_budget": 2400
+    }
+  ],
+  "peek": [
+    {
+      "ctx": 2000,
+      "windows": 56,
+      "median_step_s": 18.903021180684934,
+      "pooled_step_s": 18.571585940705962,
+      "accepted": 3249.0,
+      "drafted": 6270.0,
+      "acceptance": 0.5181818181818182
+    },
+    {
+      "ctx": 32000,
+      "windows": 5,
+      "median_step_s": 17.90908353451299,
+      "pooled_step_s": 18.1120380432473,
+      "accepted": 284.0,
+      "drafted": 546.0,
+      "acceptance": 0.5201465201465202
+    }
+  ],
+  "counters": {
+    "vllm:spec_decode_num_accepted_tokens_total": 21536.0,
+    "vllm:spec_decode_num_draft_tokens_total": 44100.0,
+    "st:steps_decode_total": 7355.0,
+    "st:steps_prefill_total": 25.0,
+    "vllm:generation_tokens_total": 28353.0
+  }
+}

@@ -1338,6 +1338,50 @@ inspect 1(두 holder 나란히, 대기 대상은 자기 레인) + idle 1(single 
 `kind_of`)을 같이 뽑도록 고쳤다. `FLEET_AUDIT` 갱신. 이름: 규칙 9 대로 PR 번호다 — §97 로 썼다가 main 의
 §97(PR #759)이 먼저 들어왔고, 그 사이 원장이 얇아졌다(PR #765).
 
+### ST decode 22 step/s 후보 — GPU 구성요소 검증과 준비 구간 관측 (2026-09-13)
+
+적용: GB10 한 장의 **구성요소 측정**이다. 엔진 22 step/s 달성 또는 기본값 채택의 근거가 아니다.
+후보 `ccbea87c`, 공통 기준 main `21cb0539`, 런타임 `st-engine:main-ff728f43`.
+공식 예약 `stdecode22bundle8` / `17892270522509140`에서 수치·변경 입력 CUDA 그래프 재생 12개가
+통과했고 B/A/A/B를 측정했다. 앞선 BF16 테스트는 저장 피크 FP32와 기대값 BF16의 형식 차이로
+실패하여 기대값을 저장 계약에 맞췄다. 수치 허용 오차는 완화하지 않았다.
+
+| 구성요소 | B 두 구간 | A 두 구간 |
+|---|---:|---:|
+| 7행, 폭 20480 보정 Gram 관측·부분 flush | 15.453 / 15.406 ms | 0.669 / 0.670 ms |
+| 1행, 같은 보정 경로 | 15.310 / 15.302 ms | 0.102 / 0.105 ms |
+| 드래프터 5개 레이어 KV 쓰기 | 20.58 / 20.50 µs | 5.17 / 5.14 µs |
+| FP32 라우터 투영: 가중치 변환 포함→상주 | 47.32 / 47.18 µs | 34.94 / 34.86 µs |
+
+보정은 입력 BF16 값을 그대로 256행까지 모아 FP32로 누적한다. 일반 FP32 관측 경로는 유지한다.
+라우터 가중치 42개는 부팅 때 변환하여 아레나에 상주시킨다(랭크당 189 MiB 예산 포함).
+KV 통합 쓰기는 기존 개별 커널과 비트 동일하고 슬롯 패딩·거절 토큰·링 순환을 검증했다.
+GLM 점별 연산의 이전 GPU 비교도 재현했다. 세부 수치·로그·실패 이력은
+`measurements/st_decode_22step_20260912/README.md`와 `gpu-kernels-ccbea87c.log/json`에 있다.
+
+후속 후보 `7b687301`은 추론 한도 경계 수정, 보정 저장 후 관측 중지, 부팅 임시 allocator 캐시 반환을
+포함한다. 별도 GPU 예약 `stdecode22finalize3`에서 보정 수치·그래프·저장 후 재생 6개 검사를 통과했다.
+운영자 지시로 수정 기준판은 측정하지 않고 KV를 7→6 GiB로 낮췄다. TP4/K6 네 랭크가 production
+메모리 검사를 통과했다. 소비자 v6은 01:42~01:51의 harness-42 **준비 구간**만 실행했다.
+
+| 준비 구간 | 실제 출력 tok/s | PR760 관측 창 중앙 step/s | 관측 창 드래프트 수용률 |
+|---|---:|---:|---:|
+| 2K 개별 3문제 | 73.00–79.45 | 18.903 (56창, pooled 18.572) | 51.82% |
+| 32K 묶음 | 72.85 | 17.909 (초반 5창만) | 52.01% |
+| 128K 묶음 | 71.93 | 별도 창 없음 | 별도 창 없음 |
+| 고정 7200토큰 준비 2회 | 66.57 / 56.60 | 본측정 미완료 | 별도 창 없음 |
+
+중단까지 누적 accepted/drafted=21536/44100 (48.83%). 세 2K 요청 모두 800 추론 토큰에서 문장 중간에
+끊겼고 최종 정답 인증은 실패했다. 한도 부족이 유력하나 4096 대조 요청은 실행되지 않아 단독 원인으로
+확정하지 않는다. 네 랭크 소스·이미지·부팅은 전후 동일하다(Docker mount 배열 순서만 정규화).
+로그 보존 후 공식 stop으로 자기 부팅과 임대를 해제했다. 근거: `consumer-v6-stopped/`.
+
+운영자 지시로 추가 측정을 중단하고 구현 통합을 진행한다. 원패스 두 판, C4, 품질 통과, 22 step/s는
+**완료되지 않았다**. `no baseline on this build`; 맞춘 소비자 성능 향상률을 주장하지 않는다.
+하니스 43은 개별 총/추론 8192/4096, 묶음 24576/12288로 늘리고 질문·정답·판정기는 유지한다.
+증량 후 실측 정답률은 아직 없다. 새 예산의 원패스 CPU 검사 103개 통과. 이전 하니스 수치를 새 예산의
+성능 근거로 재사용하지 않는다.
+||||||| 21cb0539
 ### 45차 — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다 (2026-09-13, 맥→srv2, PR #771)
 
 PR #767 의 "준비물" 을 실제로 만들려고 ost-97x 부터 찾았다.
@@ -1488,6 +1532,14 @@ sha 하나·프로덕션 형상) → 배포·큐 연결(D17 프로브 티켓, �
 죽이지는 않는다. `--probe` 레인은 아직 ST 를 모른다(PR 3). `ST_LEASE_KIND=session` 수동 부팅은 `st-hold` 전까지의
 다리이고, 그 `stop` 은 kind 만 맞으면 된다(세션끼리 서로 내릴 수 있음 — 지금과 같다).
 
+### ST decode22 consumer scope correction (2026-09-13 00:55 KST)
+
+The v3 baseline boot reached canonical preparation, not a completed measurement. Its PR #760 `step_peek` window was 11.93 median step/s. The candidate never ran. Preparation exposed a pre-existing pipeline bug: reasoning_budget=800 was ignored, so 2400-token requests returned only reasoning and no final answer. The owned driver was interrupted and the official launcher stopped its four ranks at 00:44:40, retaining logs and raw preparation requests.
+
+`21a4c816` adds a conservative in-flight-aware boundary drain, with the existing rich sampler enforcing the cap and async decoding resuming after committed reasoning end. It also keeps hypothetical rejected draft end tokens from disabling the cap. Focused CPU validation: 19 reasoning/gate tests plus 35 async runner/pipeline/sampling tests passed.
+
+The user explicitly requested **no corrected-baseline measurement** and to proceed directly with the corrected improved candidate. The next boot therefore runs two canonical onepass invocations on the candidate alone. Record absolute step/s against the 22 step/s target, actual output tok/s and quality, with `no baseline on this build`; do not claim a matched consumer speedup. Evidence: `measurements/st_decode_22step_20260912/`.
+||||||| cd62b83a
 ### 45차 — 단일 GPU 레인은 **srv4 한 대에서 프로덕션 옆에**: 증거는 여유 메모리, 첫 실측이 OOM 과 b12x m=8 을 가르쳐 줬다 (2026-09-13, 맥→srv2/srv4, PR #774)
 
 **결정.** PR #771 뒤의 세 갈래(5050 = WSL2 sshd + x86 이미지 + DeepGEMM 포크 소스, 스파크 한 대 옆, OST-97X 우분투)

@@ -254,6 +254,7 @@ class Drafter:
             self.dense[name] = DenseLinear(w,store=store,name=store_name(name),smooth=smooth.get(name),
                                           prefill=needs_fp8(F, max_seqs, name))
         self.context_kv = torch.cat(context)
+        self.context_norm = torch.stack([p[f"layers.{L}.self_attn.k_norm.weight"] for L in range(F.layers)])
         if compact_into is not None:
             compact(self, compact_into, max_seqs)
         if consume_weights:
@@ -393,6 +394,14 @@ class Drafter:
     # GEMM weights, replicated on every rank) and copied the row's 40 MiB ring three times. Batched over the rows the
     # weights are read once a step; the rings are never copied -- the observe writes its cells in place and the
     # attention reads every slot's ring where it lies, one fused call over the whole field per layer.
+    def _project_context(self, positions, aux, valid):
+        """The shared context projection; calibration sees only committed rows."""
+        F, p = self.F, self.p
+        n, t = positions.shape
+        keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
+        c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
+        return Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
+
     def observe_kv(self, positions: torch.Tensor, aux: torch.Tensor, valid: torch.Tensor):
         """observe's compute phase (fast path): every position's drafter K/V, per layer, from `aux` and
         `positions` alone. It does NOT read the slot or the accepted count -- `valid` only forms the mask a
@@ -401,9 +410,7 @@ class Drafter:
         positions survive. Returns [(k, v)] over the layers, each [n, t, kv, D]."""
         F, p = self.F, self.p
         n, t = positions.shape
-        keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
-        c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
-        context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
+        context = self._project_context(positions, aux, valid)
         out = []
         for L in range(F.layers):
             q = f"layers.{L}.self_attn."
@@ -426,12 +433,9 @@ class Drafter:
         the whole draft field; slots [n]; positions [n, t]; aux [n*t, A] in row order; valid [n] (device counts)."""
         F, p = self.F, self.p
         if self.fast_attention:
-            # observe in two phases so the compute can overlap the target's tail (45차 §96): the K/V transform
-            # reads only `aux` and `positions`, and `positions` is `ctx_before + arange`, known at the step's
-            # start (decode_commit.advance returns the ENTERING context). Only the ring write needs `valid`
-            # (= how many drafts commit accepted), so it alone waits for the commit. This split is byte-for-byte
-            # the single call; the overlap that uses it lives in the captured pipeline.
-            self.observe_write(field, slots, positions, self.observe_kv(positions, aux, valid), valid)
+            from engine.kernels.draft_observe import write_context
+            context = self._project_context(positions, aux, valid)
+            write_context(field, slots, positions, context, self.context_norm, valid, F.rms_eps, F.rope_theta)
             return
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)

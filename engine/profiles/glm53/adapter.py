@@ -702,7 +702,27 @@ class Glm53Engine:
             return False
         if seq in self.matchers or seq in self.gens or seq in self.lps:
             return False
-        return self.min_new.get(seq, 0) <= self._generated_count(seq)
+        return (self.min_new.get(seq, 0) <= self._generated_count(seq)
+                and not self._reasoning_boundary(seq))
+
+    def _reasoning_boundary(self, seq: int) -> bool:
+        """Drain before outstanding blocks can cross a host-enforced thinking cap.
+
+        The device pipeline has no reasoning-end constraint. It can run ahead
+        safely below the cap, then the existing rich sampler closes the block.
+        Include every unresolved block: the committed host count lags them.
+        """
+        opts = self.options.get(seq, {})
+        budget = opts.get("reasoning_budget")
+        if budget is None or not self.thinking.get(seq, False):
+            return False
+        ahead = (self.inflight.get(seq, 0) + 1) * (self.drafter.k + 1)
+        if self._generated_count(seq) + ahead < budget:
+            return False
+        if opts["reasoning_end"] in self.tokens[seq][self.prompt_len[seq]:]:
+            self.thinking[seq] = False
+            return False
+        return True
 
     # WHAT kept a decode step off the device-side chain. `st:async_decode_steps_total` and
     # `st:sync_drain_steps_total` say how often it happened; neither says why, and the two answers call for
@@ -730,6 +750,8 @@ class Glm53Engine:
             return "logprobs"
         if self.min_new.get(seq, 0) > self._generated_count(seq):
             return "min_tokens"
+        if self._reasoning_boundary(seq):
+            return "reasoning_budget"
         return None
 
     def async_ready(self, seqs) -> bool:
@@ -930,8 +952,12 @@ class Glm53Engine:
         end = opts["reasoning_end"]
         if self._generated_count(seq) + len(drafts_before) < budget:
             return None
-        if end in drafts_before or end in self.tokens[seq][self.prompt_len[seq]:]:
+        if end in self.tokens[seq][self.prompt_len[seq]:]:
             self.thinking[seq] = False               # it left the block on its own; never asked again
+            return None
+        if end in drafts_before:
+            # This prefix is hypothetical until verification accepts it. A
+            # rejected draft must not disable the committed row's budget.
             return None
         return end
 

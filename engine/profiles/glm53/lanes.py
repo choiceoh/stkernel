@@ -82,6 +82,10 @@ class Lanes:
     kda_recurrent_ring: object = None  # recurrent inputs, then (ring [slots,R,H,K,V] f32, slot, context, lower_bound)
                                      # -> output only; writes each token state into the selected ring. None uses the functional lane.
     conv_ring: object = None  # (x [T,C], w [C,K], ring [slots,C,R], slot, context) -> y; writes raw inputs into ring, T<=8
+    rmsnorm: object = None    # None declares net.py's torch composition; served binds native pointwise lanes
+    swiglu: object = None     # (gate, up [T,I], limit) -> BF16; FP32 clamped activation
+    route_weights: object = None  # (FP32 logits [T,E], bias [E], topk, scale) -> int32 ids, FP32 weights
+    layernorm: object = None  # (x [T,D], weight, bias, eps) -> input dtype
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -464,12 +468,16 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
+    from engine.kernels.norm_rope import norm
+    from engine.kernels.glm_pointwise import swiglu_clamped as activation, route_weights, layernorm
     table = Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
                   moe_prepare=None if moe_prepare is None else on_main(moe_prepare),
                   graph_resources=graph_resources,
                   kda_recurrent_ring=None if recurrent_kda_ring is None else on_main(recurrent_kda_ring),
-                  conv_ring=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring))
+                  conv_ring=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring),
+                  rmsnorm=on_main(norm), swiglu=on_main(activation),
+                  route_weights=on_main(route_weights), layernorm=on_main(layernorm))
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table
     # (the served output is garbage while every self-consistency judge passes -- which lane, if any, is found by
     # swapping them one at a time; "expert" and "kda_recurrent" are the two the kernels already know how to declare).

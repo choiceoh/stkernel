@@ -1,0 +1,11 @@
+{
+  "kv_gib": 6,
+  "paged_gib": 4.767265319824219,
+  "block_bytes": 4730880,
+  "block_tokens": 768,
+  "blocks": 1082,
+  "conservative_four_request_blocks": 768,
+  "remaining_blocks": 314,
+  "assumption": "4 x (140000 prompt + 7200 output + 21 in-flight) tokens",
+  "scope": "CPU layout calculation in pinned ST runtime; not a runtime memory or performance result"
+}
