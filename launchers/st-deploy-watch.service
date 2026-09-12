@@ -8,6 +8,11 @@ After=st-glm53.service
 
 [Service]
 Type=oneshot
+# The D17 probe ticket a cycle queues (fleet.sh st-probe --detach) is a waiter process in this
+# unit's cgroup. A oneshot's cgroup is killed the moment the cycle ends, so the waiter died 0.25 s
+# after enqueue on the first armed cycle (srv2, 2026-09-13 02:49) and cancelled its own ticket.
+# process: only the main process ends with the cycle; what it left behind lives on.
+KillMode=process
 # One cycle. It waits for quiet inside the cycle, so the timer only has to come back often enough
 # to notice main moved -- not often enough to catch a gap.
 ExecStart=/usr/bin/python3 /home/choiceoh/st-engine/launchers/st-deploy-watch.py --once
