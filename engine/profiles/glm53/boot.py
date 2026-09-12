@@ -41,7 +41,7 @@ from engine.base.prefix import PrefixCache                       # noqa: E402
 from engine.base.shapes import chunk_for                         # noqa: E402
 from engine.base.tiered_kv import TieredKV                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
-from engine.profiles.glm53.caches import Glm53Caches, layout, snapshot_layout   # noqa: E402
+from engine.profiles.glm53.caches import Glm53Caches, layout, snapshot_layout, stage_bytes   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
@@ -53,9 +53,10 @@ KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
 MAX_WAIT_S = 20.0                   # D10's one starvation valve
 MAX_SEQS = 4                        # launcher MAX_SEQS
-PREFIX_SNAPSHOTS = 24               # block-boundary checkpoints kept for prefix reuse (base/prefix.py): ~77 MiB each per rank at
-                                    # 45 layers with the drafter (34 KDA states + conv taps + the drafter's context ring); the unit is
-                                    # the 2,304 block (three per 6,912 chunk, 45차 §23), so three times the eight chunk boundaries
+PREFIX_SNAPSHOTS = 96               # block-boundary checkpoints kept for prefix reuse (base/prefix.py): ~77 MiB each per rank at
+                                    # 45 layers with the drafter (34 KDA states + conv taps + the drafter's context ring) -- 7.2 GiB of the
+                                    # budget's ~40 GiB slack. The unit is the 768 block (nine per 6,912 chunk, 45차 §23); boundaries a
+                                    # request adopted outlive the ones nobody asked for (prefix._victim), so churn cannot flush them
 
 
 def tokenizer(ckpt=facts.CKPT):
@@ -192,7 +193,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     VF = vision_mod.load(ckpt_meta) if vision_file.exists() else None
     vspecs = vision_mod.specs(VF) if VF else []
     arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + total_bytes(vspecs) + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
-                   + cache_layout.nbytes(nb, max_seqs) + PREFIX_SNAPSHOTS * snapshot_bytes)
+                   + cache_layout.nbytes(nb, max_seqs) + PREFIX_SNAPSHOTS * snapshot_bytes + stage_bytes(F, net.layers, max_seqs))
     memory = None
     if len(net.layers) == F.layers:
         # Fixed byte ceilings, not a measured workspace claim. Preparation
@@ -221,7 +222,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("boot_reclaimed_GiB", round(report["reclaimed"] / GIB, 3))
         # D1: the box declared, with every line's provenance, before the arena is allocated
         from engine.profiles.glm53 import budget as budget_mod
-        b = budget_mod.budget(kv_gib, max_seqs, chunk=sched.chunk_for(F.block, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
+        b = budget_mod.budget(kv_gib, max_seqs, chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
                               ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None, snapshots=PREFIX_SNAPSHOTS)
         recorder.gauge("budget_unassigned_GiB", round(b.kv_gib - b.kv_declared_gib, 2))
         if comm.rank == 0:
@@ -251,13 +252,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         # (boot-time study 5-c): the caches and their zeroing, the engine, the tier's pinned staging,
         # the prefix snapshots and the runner.
         with recorder.phase("caches"):
-            caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=PREFIX_SNAPSHOTS)
+            caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=PREFIX_SNAPSHOTS, stage=True)
         with recorder.phase("engine"):
             # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
             aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
             engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
                                  decodable=decodable, aux_layers=aux, context_ceiling=context_ceiling)
-            contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
+            contract = sched.Contract(chunk_align=F.chunk_align, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs)
             engine.memory = memory
             engine.vision = vision
@@ -269,7 +270,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             if tier_dir:                                                                # D16: idle conversations park on NVMe, per rank
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
                 tiered = TieredKV(caches.pool, tier)
-            prefix = PrefixCache(F.block, engine.prefill_chunk, PREFIX_SNAPSHOTS)      # boundaries = prefill chunks (base/prefix.py)
+            prefix = PrefixCache(F.block, engine.prefill_chunk, PREFIX_SNAPSHOTS)      # boundaries = every 768 block (base/prefix.py)
             runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
                             keep_idle=tiered is not None, prefix=prefix)                # with a tier, conversations live on and park
         recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))

@@ -181,6 +181,46 @@ class PrefixCacheTests(unittest.TestCase):
         self.assertEqual(len(cache.entries), 2)              # the cache keeps its boundaries
         self.assertEqual(r.kv.available, 4)
 
+    def test_boundaries_crossed_while_generating_serve_a_resent_conversation(self):
+        class Generating(Model):
+            """Knows its history: the prompt, then one generated token (200 + position) per decode step."""
+            def __init__(self):
+                super().__init__(); self.ids, self.left = {}, {}
+            def submit_ids(self, seq, ids, left):
+                self.ids[seq], self.left[seq] = list(ids), left
+            def history(self, seq):
+                return self.ids[seq]
+            def decode(self, seqs, blocks, slots):
+                out = []
+                for seq in seqs:
+                    self.ids[seq].append(200 + self.ctx[seq]); self.ctx[seq] += 1; self.left[seq] -= 1
+                    out.append(self.left[seq] == 0)
+                return out
+        m = Generating()
+        cache = PrefixCache(BLOCK, CHUNK, 8)
+        r = Runner(m, CONTRACT, BlockPool(16, BLOCK, 4, 16), SlotPool(5), Ring(16, STEP_RECORD.size), prefix=cache)
+        m.submit_ids(0, list(range(6)), 6)                    # 6 prompt tokens, then 6 generated: boundaries 8 and 12 fall in generation
+        r.submit(0, 6, now=0, ids=list(range(6)))
+        run_to_end(r, 0)
+        checkpoints = [c for c in m.calls if c[0] == "checkpoint"]
+        self.assertEqual([c[2] for c in checkpoints], [8, 12])
+        self.assertEqual(sorted(e.tokens for e in cache.entries.values()), [4, 8, 12])
+        history = list(m.history(0))                          # the conversation, resent after it was forgotten
+        m.submit_ids(1, history[:11] + [9, 9], 1)
+        r.submit(1, 13, now=0, ids=history[:11] + [9, 9])
+        self.assertEqual(r.state.computed[1], 8)              # the answer's first block is reused
+        self.assertEqual(cache.hits, 1)
+
+    def test_boundaries_a_request_adopted_outlive_the_ones_nobody_asked_for(self):
+        c = PrefixCache(BLOCK, CHUNK, 2)
+        pool = BlockPool(16, BLOCK, 4, 16); c.bind(pool)
+        c.insert(b"hot", (), 0, c.take_snapshot())            # zero-length entries: the policy is all that is tested
+        c.tick += 1; c.entries[b"hot"].hits = 1              # adopted once
+        c.insert(b"fresh", (), 0, c.take_snapshot())
+        snap = c.take_snapshot()                              # room is needed: the fresh, never-adopted one leaves
+        self.assertIn(b"hot", c.entries); self.assertNotIn(b"fresh", c.entries)
+        c.give_snapshot(snap)
+
     def test_ids_must_match_the_prompt(self):
         r, _ = runner()
         with self.assertRaises(ValueError):
