@@ -120,7 +120,9 @@ class DenseLinear:
     The K>4096 drafter projection is a fixed sequence of K tiles with FP32
     accumulation, matching the existing MK lane. Padding is weight-owned.
     """
-    def __init__(self, weight, *, prefill=True, nvfp4=True, hessians=None, store=None, name=None):
+    def __init__(self, weight, *, prefill=True, nvfp4=True, hessians=None, store=None, name=None, smooth=None):
+        """`smooth` [K]: the factor `weight` was multiplied by, its input divided by (kernels/dense/smoothing) -- the
+        store scales the calibration Hessian alike; the calibration files its sums in the unsmoothed domain."""
         from flashinfer import nvfp4_quantize
         if (weight.ndim != 2 or not weight.is_cuda or weight.dtype != torch.bfloat16
                 or weight.shape[1] % 128):
@@ -128,24 +130,25 @@ class DenseLinear:
         extension()
         self.rows, self.cols = weight.shape
         self.name = name
+        self.smooth = smooth
         self.observer = None  # calibration.Calibration sums this layer's inputs through it (X^T X for the GPTQ packs)
         self.executed = 0  # boot proof: W4=1, FP8=2, NVFP4=4
         packs = []
         if self.cols > TILE and store is not None and store.calibrated(name):
-            packs = list(store.pack_wide(weight, name))              # one GPTQ over the whole K, from the full Hessian
+            packs = list(store.pack_wide(weight, name, smooth=smooth))   # one GPTQ over the whole K, from the full Hessian
         elif self.cols > TILE and hessians is not None and hessians.shape == (self.cols, self.cols):
             packs = pack_w4_wide(weight, hessians)
         else:
             for start in range(0, self.cols, TILE):
                 w = weight[:, start:start+TILE].contiguous()
                 key = name if self.cols <= TILE else f'{name}.k{start//TILE}'
-                packs.append(store.pack(w, key) if store is not None else
+                packs.append(store.pack(w, key, smooth=None if smooth is None else smooth[start:start+TILE]) if store is not None else
                              pack_w4(w, hessian=None if hessians is None else hessians[start//TILE]))
         self.packs = tuple(packs)
         self.calibrated = all(p.calibrated for p in self.packs)
         if prefill:
             # the FP8 lane's weights: GPTQ on the fp8 grid from the same calibration, else round-to-nearest
-            fp8 = store.pack_fp8(weight, name) if (store is not None and store.calibrated(name)) else None
+            fp8 = store.pack_fp8(weight, name, smooth=smooth) if (store is not None and store.calibrated(name)) else None
             self.fp8 = FP8Linear(weight, quantized=fp8, name=name)
         else:
             self.fp8 = None

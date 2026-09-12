@@ -53,12 +53,15 @@ class PackStore:
             if (hessian is None or tuple(hessian.shape) != (width, width) or int(blob.get('ntok', 0)) <= 0
                     or blob.get('name', key) != key or not hessian.is_floating_point()):
                 foreign.append(str(path))
+            elif blob.get('amax') is None:                  # an older blob without the channel peaks: summed again, packs GPTQ meanwhile
+                missing.append((key, start, width))
         if foreign:
             raise ValueError(f"calibration blobs that do not fit {name} [{cols} columns]: remove them and reboot -- {foreign}")
         return missing
 
-    def _hessian(self, name, k):
-        """The calibration blob of `name` as a finite [k, k] float Hessian, or None when the store has none."""
+    def _hessian(self, name, k, smooth=None):
+        """The calibration blob of `name` as a finite [k, k] float Hessian, or None when the store has none; with
+        `smooth` [k] the Hessian of the input divided by it (the weight was multiplied by it: kernels/dense/smoothing)."""
         path = self.calibration_path(name)
         if not path.is_file():
             return None
@@ -69,21 +72,38 @@ class PackStore:
                 or blob.get('name', name) != name or not hessian.is_floating_point()
                 or not torch.isfinite(hessian).all()):
             raise ValueError(f'incompatible calibration: {path} for a [.., {k}] weight')
+        if smooth is not None:
+            from engine.kernels.dense.smoothing import smooth_hessian
+            hessian = smooth_hessian(hessian.float(), smooth.cpu())
         return hessian
 
-    def pack_wide(self, weight, name, *, rank=None):
+    def amax(self, name):
+        """The channel peaks [k] of `name`'s calibrated input (unsmoothed domain), or None when the blob has none."""
+        path = self.calibration_path(name)
+        if not path.is_file():
+            return None
+        blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
+        amax = blob.get('amax')
+        return None if amax is None else amax.float()
+
+    @staticmethod
+    def _smooth_sha(smooth):
+        return 'none' if smooth is None else hashlib.sha256(smooth.detach().float().cpu().contiguous().numpy()).hexdigest()
+
+    def pack_wide(self, weight, name, *, rank=None, smooth=None):
         """The tiles of a weight wider than the decode kernel's K, from one GPTQ over the whole weight and its full
         calibration Hessian (kernels/dense.pack_w4_wide); cached as one blob under the wide identity."""
         from engine.kernels.dense import W4Pack, pack_w4_wide
         rank = self.rank if rank is None else rank
         n, k = weight.shape
-        hessian = self._hessian(name, k)
+        hessian = self._hessian(name, k, smooth)
         if hessian is None:
             raise ValueError(f"pack_wide needs the calibration of {name}")
         raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
         identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, wide=True,
                         calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(),
-                        per_row=not name.startswith('DFlash2Qwen3ForCausalLM/'), algorithm=self.algorithm)
+                        per_row=not name.startswith('DFlash2Qwen3ForCausalLM/'), algorithm=self.algorithm,
+                        smooth=self._smooth_sha(smooth))
         key = hashlib.sha256(repr(identity).encode()).hexdigest()
         cache = self.root/'st-dense-packs'/(key+'.pt')
         if cache.is_file():
@@ -110,27 +130,19 @@ class PackStore:
         self.stats['gptq'] += 1
         return packs
 
-    def pack(self, weight, name, *, rank=None):
+    def pack(self, weight, name, *, rank=None, smooth=None):
         from engine.kernels.dense import pack_w4
         rank = self.rank if rank is None else rank
         per_row = not name.startswith('DFlash2Qwen3ForCausalLM/')
         n, k = weight.shape
-        path = self.root/'mkcalib'/f'rank{rank}'/(name+'.pt')
-        hessian = None
-        if path.is_file():
-            self.read_files.add(path)
-            blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
-            hessian = blob['H']
-            if (tuple(hessian.shape) != (k,k) or int(blob['ntok']) <= 0
-                    or blob.get('name', name) != name or not hessian.is_floating_point()
-                    or not torch.isfinite(hessian).all()):
-                raise ValueError(f'incompatible calibration: {path} for {tuple(weight.shape)}')
+        hessian = self._hessian(name, k, smooth)
         raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
         weight_sha = hashlib.sha256(raw).hexdigest()
         calibration_sha = (hashlib.sha256(hessian.contiguous().numpy()).hexdigest()
                            if hessian is not None else 'rtn')
         identity = dict(version=2, weight=weight_sha, shape=(n,k), name=name,
-                        calibration=calibration_sha, per_row=per_row, algorithm=self.algorithm)
+                        calibration=calibration_sha, per_row=per_row, algorithm=self.algorithm,
+                        smooth=self._smooth_sha(smooth))
         key = hashlib.sha256(repr(identity).encode()).hexdigest()
         cache = self.root/'st-dense-packs'/(key+'.pt')
         pack = None
@@ -182,17 +194,18 @@ class PackStore:
         self.stats['gptq' if hessian is not None else 'rtn'] += 1
         return pack
 
-    def pack_fp8(self, weight, name, *, rank=None):
+    def pack_fp8(self, weight, name, *, rank=None, smooth=None):
         """The FP8 lane's (q e4m3, UE8M0 block scales) of a calibrated weight: GPTQ on the fp8 grid (packing.fp8_gptq),
         cached under the weight's, the Hessian's and the packer's identity; None when the store has no calibration."""
         from engine.kernels.dense.packing import fp8_gptq
         n, k = weight.shape
-        hessian = self._hessian(name, k)
+        hessian = self._hessian(name, k, smooth)
         if hessian is None:
             return None
         raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
         identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, kind='fp8',
-                        calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(), algorithm=self.algorithm)
+                        calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(), algorithm=self.algorithm,
+                        smooth=self._smooth_sha(smooth))
         key = hashlib.sha256(repr(identity).encode()).hexdigest()
         cache = self.root/'st-dense-packs'/(key+'.pt')
         if cache.is_file():

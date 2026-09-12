@@ -181,6 +181,30 @@ class Drafter:
         from engine.base.params import bind
         self.p = bind(self.specs(), views)
 
+    def smoothing_plan(self, amax_of) -> dict:
+        """The channel smoothing of the block's two norm outputs (kernels/dense/smoothing): input_layernorm feeds
+        attention_conv's kernel projection and, through the grouped conv (per channel, so the factor passes),
+        q/k/v; post_attention_layernorm feeds mlp_conv's kernel projection and gate/up. The norms are divided in
+        place; the readers' smoothed weights come back as {weight key: tensor} with {norm key: s_eff} -- the
+        CONTEXT projection keeps the unsmoothed k/v (its input, the fc's normed hidden, is not divided)."""
+        from engine.kernels.dense.smoothing import fold, scales, smooth_weight
+        F, p = self.F, self.p
+        weights, factors = {}, {}
+        for L in range(F.layers):
+            n = f"layers.{L}."
+            for norm, dense_name, readers in ((n + "input_layernorm.weight", n + "self_attn.qkv",
+                                               [n + "attention_conv.kernel_projection.weight"] + [n + f"self_attn.{s}_proj.weight" for s in ("q", "k", "v")]),
+                                              (n + "post_attention_layernorm.weight", n + "mlp.gate_up",
+                                               [n + "mlp_conv.kernel_projection.weight"] + [n + f"mlp.{s}_proj.weight" for s in ("gate", "up")])):
+                amax = amax_of(store_name(dense_name))
+                if amax is None or any(p.get(k) is None for k in readers + [norm]):
+                    continue
+                s_eff = fold(p[norm], scales(amax, [p[k] for k in readers]))
+                factors[norm] = s_eff
+                for k in readers:
+                    weights[k] = smooth_weight(p[k], s_eff)
+        return weights, factors
+
     def prepare_fast(self, store=None, *, consume_weights=False):
         """TP-shard dense compute and bind calibrated packs before capture.
 
@@ -195,20 +219,24 @@ class Drafter:
         self.local_heads, self.local_kv_heads = F.heads//comm.world_size, F.kv_heads//comm.world_size
         def shard(w, dim):
             return w.chunk(comm.world_size,dim=dim)[comm.rank].contiguous()
-        weights = {"fc.weight": p["fc.weight"]}
+        smoothed, factors = self.smoothing_plan(store.amax) if store is not None else ({}, {})
+        sw = lambda key: smoothed.get(key, p[key])                       # the block path's weight, smoothed when its norm was folded
+        weights, smooth = {"fc.weight": p["fc.weight"]}, {}
         context = []
         for L in range(F.layers):
             n = f"layers.{L}."
-            weights[n+"self_attn.qkv"] = torch.cat([shard(p[n+"self_attn."+s+"_proj.weight"],0) for s in ("q", "k", "v")])
-            weights[n+"mlp.gate_up"] = torch.cat([shard(p[n+"mlp."+s+"_proj.weight"],0) for s in ("gate", "up")])
+            weights[n+"self_attn.qkv"] = torch.cat([shard(sw(n+"self_attn."+s+"_proj.weight"),0) for s in ("q", "k", "v")])
+            weights[n+"mlp.gate_up"] = torch.cat([shard(sw(n+"mlp."+s+"_proj.weight"),0) for s in ("gate", "up")])
             for key in ("self_attn.o_proj.weight", "mlp.down_proj.weight"):
                 weights[n+key] = shard(p[n+key],1)
             for key in ("attention_conv.kernel_projection.weight", "mlp_conv.kernel_projection.weight"):
-                weights[n+key] = p[n+key]
-            context.extend(shard(p[n+"self_attn."+s+"_proj.weight"],0) for s in ("k", "v"))
+                weights[n+key] = sw(n+key)
+            smooth[n+"self_attn.qkv"] = smooth[n+"attention_conv.kernel_projection.weight"] = factors.get(n + "input_layernorm.weight")
+            smooth[n+"mlp.gate_up"] = smooth[n+"mlp_conv.kernel_projection.weight"] = factors.get(n + "post_attention_layernorm.weight")
+            context.extend(shard(p[n+"self_attn."+s+"_proj.weight"],0) for s in ("k", "v"))   # unsmoothed: its input is not divided
         self.dense = {}
         for name, w in weights.items():
-            self.dense[name] = DenseLinear(w,nvfp4=False,store=store,name=store_name(name))
+            self.dense[name] = DenseLinear(w,nvfp4=False,store=store,name=store_name(name),smooth=smooth.get(name))
         self.context_kv = torch.cat(context)
         if consume_weights:
             for name, layer in self.dense.items():
