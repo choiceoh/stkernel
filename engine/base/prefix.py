@@ -45,6 +45,15 @@ from engine.base.kv import CACHED, FADED, PINNED
 NO_SNAPSHOT = -1
 
 
+TENANT_TAG = b"tenant:"
+
+
+def is_tenant_salt(salt) -> bool:
+    """Whether a (position, bytes) salt is a tenant's, not a picture's. The runner rebuilds a row's media salts from
+    the model every time it extends a chain; the tenant's is not the model's to remember, so it is carried across."""
+    return salt[0] == 0 and bytes(salt[1]).startswith(TENANT_TAG)
+
+
 def tenant_salt(tenant) -> "tuple[int, bytes]":
     """The salt entry that separates one tenant's boundaries from every other tenant's.
 
@@ -52,7 +61,7 @@ def tenant_salt(tenant) -> "tuple[int, bytes]":
     the same place vLLM puts `cache_salt` (`kv_cache_utils.py`: extra keys on the first block only).
     The tag keeps it from ever colliding with a media digest standing at position 0."""
     raw = tenant.encode() if isinstance(tenant, str) else bytes(tenant)
-    return (0, b"tenant:" + raw)
+    return (0, TENANT_TAG + raw)
 
 
 @dataclass
@@ -398,6 +407,29 @@ class PrefixCache:
     def reclaimable(self) -> int:
         """Blocks a boundary holds and no row does: what a reservation would spend last."""
         return self.pool.cached + self.pool.faded
+
+    def check(self) -> None:
+        """The invariants a boundary's two resources have to keep, as SGLang's `mamba_radix_cache.sanity_check`
+        keeps `full_lock_ref >= mamba_lock_ref`: a boundary that cannot name its blocks is not a boundary, and a
+        faded one with its state nowhere is worse -- it holds blocks back for nothing. Called by the tests and by
+        anyone diagnosing a pool; never on the step path."""
+        for h, e in self.entries.items():
+            counts = self.pool.pins if e.pinned else self.pool.claims
+            if any(counts[b] <= 0 for b in e.blocks):
+                raise AssertionError(f"entry {h.hex()[:8]} holds blocks it never claimed at its grade")
+            if any(h not in self._on_block.get(b, ()) for b in e.blocks):
+                raise AssertionError(f"entry {h.hex()[:8]} holds a block that would not tell it when it leaves")
+        for h, e in self.faded.items():
+            if h not in self.tier_keys:
+                raise AssertionError(f"faded {h.hex()[:8]} has its state nowhere: it holds blocks for nothing")
+            if any(self.pool.fades[b] <= 0 for b in e.blocks):
+                raise AssertionError(f"faded {h.hex()[:8]} holds blocks it never claimed as faded")
+            if any(h not in self._on_block.get(b, ()) for b in e.blocks):
+                raise AssertionError(f"faded {h.hex()[:8]} holds a block that would not tell it when it leaves")
+        for b, holders in self._on_block.items():
+            for h in holders:
+                if h not in self.entries and h not in self.faded:
+                    raise AssertionError(f"block {b} still names {h.hex()[:8]}, which is neither")
 
     def clear(self) -> None:
         for h in list(self.entries):
