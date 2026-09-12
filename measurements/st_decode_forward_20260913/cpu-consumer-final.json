@@ -1,0 +1,18 @@
+{
+  "commit": "b0dd8b3ec20002f64cd6647f9d3e811f797836c9",
+  "image": "st-engine:main-ff728f43",
+  "workdir": "/repo",
+  "device": "CPU; CUDA_VISIBLE_DEVICES empty",
+  "modules": [
+    "tests.test_engine_pipeline",
+    "tests.test_engine_native_execution",
+    "tests.test_engine_shared_mlp",
+    "tests.test_engine_decode_seven"
+  ],
+  "tests": 32,
+  "passed": 25,
+  "skipped_gpu": 7,
+  "duration_s": 2.349,
+  "exit_code": 0,
+  "evidence": "unittest stderr captured in tool result; no GPU performance or numerical claim"
+}
