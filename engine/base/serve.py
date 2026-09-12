@@ -254,6 +254,50 @@ def repair_patterns(node):
     return node
 
 
+def device_memory_rows() -> "list[tuple]":
+    """What the box has left, as a scrape can see it (45차 §50).
+
+    The OOM study says the thing to watch is `memory_reserved`, not what is live: on this
+    machine the caching allocator maps new pages on churn rather than reusing freed ones, so the
+    gap between reserved and allocated is memory lost, not memory cached. And it says the period
+    has to be a step, not a scrape -- a boot went from 26 GiB free to 5 in four seconds.
+
+    A scrape every fifteen seconds cannot see a four-second cliff, so the peak is reported
+    beside the current value: torch keeps `max_memory_reserved` for nothing, so the high-water
+    mark between two scrapes costs no per-step work at all.
+
+    And `MemAvailable`, because that is the number earlyoom actually acts on -- it took this
+    engine at 3.64% of the box today (45차 §48) -- and nothing the engine exported could have
+    shown anyone that it was coming. vLLM does not export any of these either; its
+    `gpu_cache_usage_perc` counts blocks, not bytes.
+    """
+    rows = []
+    try:
+        from engine.base.runtime_memory import host_available_bytes
+        rows.append(("gauge", "st:host_memory_available_bytes",
+                     "MemAvailable: what the box has left, and what earlyoom decides on",
+                     host_available_bytes()))
+    except Exception:                                   # noqa: BLE001 -- /metrics answers with what it has
+        pass
+    try:
+        import torch
+        if torch.cuda.is_available():
+            free, total = torch.cuda.mem_get_info()
+            rows += [("gauge", "st:device_memory_reserved_bytes",
+                      "what the allocator holds: on this machine the gap to allocated is lost, not cached",
+                      torch.cuda.memory_reserved()),
+                     ("gauge", "st:device_memory_reserved_peak_bytes",
+                      "the high-water mark of that, which is what a scrape between two cliffs would miss",
+                      torch.cuda.max_memory_reserved()),
+                     ("gauge", "st:device_memory_allocated_bytes", "the part of it that is live tensors",
+                      torch.cuda.memory_allocated()),
+                     ("gauge", "st:device_memory_free_bytes", "what the driver says is left", free),
+                     ("gauge", "st:device_memory_total_bytes", "what the driver says there is", total)]
+    except Exception:                                   # noqa: BLE001
+        pass
+    return rows
+
+
 def media_parts(messages) -> "list[tuple[str, str]]":
     """(kind, url) of every image_url / video_url part, in the order the chat template renders them. Text parts
     pass through; any other part type is refused here rather than silently dropped by the template."""
@@ -1940,6 +1984,7 @@ class Server:
              kv.cached),
             ("gauge", "st:kv_blocks_faded", "free blocks held by a boundary whose snapshot is gone", kv.faded),
             ("gauge", "st:state_slots_free", "state slots a new request could take", slots.available),
+            *device_memory_rows(),
             ("gauge", "st:detokenizer_rust_stream",
              "1 when streamed text is decoded through tokenizers' Rust DecodeStream", int(self.rust_detok)),
         ]

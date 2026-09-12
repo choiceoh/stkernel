@@ -22,6 +22,19 @@ def host_free_bytes():
     raise RuntimeError("MemFree is unavailable")
 
 
+def host_available_bytes():
+    """MemAvailable, which is the number earlyoom decides on -- not MemFree.
+
+    `host_free_bytes` above reads MemFree, which is what the boot gate needs: a driver
+    allocation cannot take a clean page back the way an anonymous fault can. Anyone asking
+    "how close is this box to being killed" wants the other line.
+    """
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) * 1024
+    raise RuntimeError("MemAvailable is unavailable")
+
+
 def reclaim_preparation_pages(need, headroom, *, cache_roots=()):
     """Make a boot's remaining byte budget available despite UMA file cache.
 
