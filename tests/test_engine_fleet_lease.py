@@ -804,7 +804,10 @@ class OneRecordTests(unittest.TestCase):
         self.assertIn('elif [ "${ST_LEASE_KIND:-}" = session ]; then', self.launcher)   # by hand, and said so
         self.assertIn("--kind session", self.launcher)
         self.assertNotIn("FLEET_HOLDER", self.launcher)                         # the holder file is not a second record
-        self.assertIn('lease attach --owner "$LEASE_OWNER" --container "$NAME"', self.launcher)
+        # and names NO container on it: a supervisor from before kinds resolves `stop` by container
+        # name, so a lease naming st-glm53 would let its crash recovery evict the ticket's boot
+        self.assertNotIn('lease attach', self.launcher)
+        self.assertIn("A ticket's lease deliberately names NO container", self.launcher)
 
     def test_only_the_holder_stops_its_boot(self):
         """Every boot is named st-glm53: a stop resolved by container name alone let the production
