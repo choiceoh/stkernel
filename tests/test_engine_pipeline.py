@@ -90,7 +90,7 @@ class BatchTransitionTests(unittest.TestCase):
     def engine(self):
         e = SimpleNamespace(
             drafter=SimpleNamespace(k=1, decode_graphs=None,
-                                    propose_rows=lambda field, slots, anchors, ctx: torch.full((len(slots), 1), 7)),
+                                    propose_rows=lambda field, slots, anchors, ctx, alive=None: torch.full((len(slots), 1), 7)),
             caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device('cpu'),
                                    draft_field=lambda: torch.zeros(1), stage_boundaries=lambda *args: None),
             F=SimpleNamespace(vocab=32, block=16), tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1},

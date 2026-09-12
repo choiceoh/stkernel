@@ -354,10 +354,11 @@ class DrafterDecodeGraphs:
         def rows_propose_inputs(n, t):
             return dict(anchors=torch.zeros(n, device=device, dtype=torch.int64),
                         positions=torch.zeros(n, device=device, dtype=torch.int64),
-                        slots=torch.arange(1, n + 1, device=device, dtype=torch.int64))
+                        slots=torch.arange(1, n + 1, device=device, dtype=torch.int64),
+                        alive=torch.zeros(n, device=device, dtype=torch.bool))          # capture feeds junk: no row counts
 
         def rows_propose(inputs):
-            return drafter.propose_rows(self.field, inputs["slots"], inputs["anchors"], inputs["positions"])
+            return drafter.propose_rows(self.field, inputs["slots"], inputs["anchors"], inputs["positions"], alive=inputs["alive"])
 
         def rows_sampled_inputs(n, t):
             inputs = rows_propose_inputs(n, t)
@@ -366,7 +367,7 @@ class DrafterDecodeGraphs:
 
         def rows_sampled(inputs):
             return drafter.propose_rows(self.field, inputs["slots"], inputs["anchors"], inputs["positions"],
-                                        temps=inputs["temps"], generator=generator, vocab=vocab)
+                                        temps=inputs["temps"], generator=generator, vocab=vocab, alive=inputs["alive"])
 
         def propose_inputs(n, t):
             return dict(anchor=torch.zeros(1, device=device, dtype=torch.int64),
@@ -491,21 +492,23 @@ class DrafterDecodeGraphs:
             inputs["valid"].copy_(valid)
         self.rows_masked.run(tuple(positions.shape), fill)
 
-    def propose_rows(self, anchors, positions, slots):
-        """Every row's greedy drafts, [n, K]."""
+    def propose_rows(self, anchors, positions, slots, alive):
+        """Every row's greedy drafts, [n, K]; `alive` [n] marks the real rows (a calibration run sums only those)."""
         def fill(inputs):
             inputs["anchors"].copy_(anchors)
             inputs["positions"].copy_(positions)
             inputs["slots"].copy_(slots)
+            inputs["alive"].copy_(alive)
         return self.rows_propose.run((anchors.numel(), self.drafter.k + 1), fill)
 
-    def propose_rows_sampled(self, anchors, positions, slots, temps):
+    def propose_rows_sampled(self, anchors, positions, slots, temps, alive):
         """Every row's drafts drawn at its temperature (0 = greedy) and the distributions they came from: [n, K], [n, K, vocab]."""
         def fill(inputs):
             inputs["anchors"].copy_(anchors)
             inputs["positions"].copy_(positions)
             inputs["slots"].copy_(slots)
             inputs["temps"].copy_(temps)
+            inputs["alive"].copy_(alive)
         return self.rows_sampled.run((anchors.numel(), self.drafter.k + 1), fill)
 
 
