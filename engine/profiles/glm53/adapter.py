@@ -108,7 +108,7 @@ class Glm53Engine:
                                                   self.drafter.k + 1, self.aux_layers, memory=self.memory,
                                                   ceiling=self.max_context)
             if self.drafter.k:
-                self.drafter.capture_decode(self.caches, memory=self.memory)
+                self.drafter.capture_decode(self.caches, memory=self.memory, generator=self.gen, vocab=self.F.vocab)
                 self._check_graph_pools()
             from engine.profiles.glm53.decode_graphs import SamplingGraphs
             self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
@@ -130,8 +130,9 @@ class Glm53Engine:
         separation is what makes the loop correct, so it is asserted, not assumed."""
         target = self.decode_graphs.graphs.pool
         drafter = self.drafter.decode_graphs
-        for name, other in (("proposals", drafter.proposals), ("observations", drafter.observations)):
-            if other.pool == target:
+        for name in ("proposals", "observations", "masked", "rows_masked", "rows_propose", "rows_sampled"):
+            other = getattr(drafter, name, None)
+            if other is not None and other.pool == target:
                 raise ValueError(f"the drafter's {name} graphs share the target graphs' memory pool: "
                                  "a replay between segments would overwrite the auxiliary hidden states")
 
@@ -286,8 +287,7 @@ class Glm53Engine:
             self.decode_graphs.graphs.close()
             self.decode_graphs = None
         if self.drafter.k and self.drafter.decode_graphs is not None:
-            self.drafter.decode_graphs.proposals.close()
-            self.drafter.decode_graphs.observations.close()
+            self.drafter.decode_graphs.close()
             self.drafter.decode_graphs = None
         if self.memory is not None:
             self.memory.close()

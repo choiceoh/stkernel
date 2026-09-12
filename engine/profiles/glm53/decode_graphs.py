@@ -330,11 +330,41 @@ class Glm53DecodeGraphs:
 
 
 class DrafterDecodeGraphs:
-    """One proposal graph and the finite accepted-prefix context updates."""
-    def __init__(self, drafter, caches, memory=None):
+    """One proposal graph and the finite accepted-prefix context updates, per row (the synchronous step), and the
+    same over every row of a step at once (the pipeline, 45차 §23 GPU 판정 4차): one replay a step instead of one
+    a row, the weights read once, the rings never copied."""
+    def __init__(self, drafter, caches, memory=None, generator=None, vocab=None):
         self.field = caches._fields["draft", -1]
         self.drafter = drafter
         device = caches.device
+        rows_max = caches.pool.max_seqs
+        aux_width = drafter.F.hidden * len(drafter.aux_layers)
+
+        def rows_masked_inputs(n, t):
+            return dict(slots=torch.arange(1, n + 1, device=device, dtype=torch.int64),        # distinct at capture: no two rows one slot
+                        positions=torch.zeros(n, t, device=device, dtype=torch.int64),
+                        aux=torch.zeros(n * t, aux_width, device=device, dtype=torch.bfloat16),
+                        valid=torch.zeros(n, device=device, dtype=torch.int64))
+
+        def rows_masked(inputs):
+            drafter.observe_rows(self.field, inputs["slots"], inputs["positions"], inputs["aux"], inputs["valid"])
+
+        def rows_propose_inputs(n, t):
+            return dict(anchors=torch.zeros(n, device=device, dtype=torch.int64),
+                        positions=torch.zeros(n, device=device, dtype=torch.int64),
+                        slots=torch.arange(1, n + 1, device=device, dtype=torch.int64))
+
+        def rows_propose(inputs):
+            return drafter.propose_rows(self.field, inputs["slots"], inputs["anchors"], inputs["positions"])
+
+        def rows_sampled_inputs(n, t):
+            inputs = rows_propose_inputs(n, t)
+            inputs["temps"] = torch.ones(n, device=device, dtype=torch.float32)
+            return inputs
+
+        def rows_sampled(inputs):
+            return drafter.propose_rows(self.field, inputs["slots"], inputs["anchors"], inputs["positions"],
+                                        temps=inputs["temps"], generator=generator, vocab=vocab)
 
         def propose_inputs(n, t):
             return dict(anchor=torch.zeros(1, device=device, dtype=torch.int64),
@@ -368,6 +398,8 @@ class DrafterDecodeGraphs:
             drafter.observe_masked(rings[0], inputs["positions"], inputs["aux"], inputs["valid"])
             self.field.index_copy_(0, inputs["slot"], rings)
 
+        rows_shapes = [(n, drafter.k + 1) for n in range(1, rows_max + 1)]
+        saved = generator.get_state() if generator is not None else None                # capture draws; the engine's stream must not move
         try:
             self.proposals = DecodeGraphs(propose, propose_inputs, [(1, drafter.k + 1)],
                                           memory=memory, label="drafter/propose")
@@ -377,13 +409,27 @@ class DrafterDecodeGraphs:
             # the step ahead of the host observes all K+1 positions with a device count of the valid ones (B3)
             self.masked = DecodeGraphs(observe_masked, masked_inputs, [(1, drafter.k + 1)],
                                        memory=memory, label="drafter/observe_masked")
+            self.rows_masked = DecodeGraphs(rows_masked, rows_masked_inputs, rows_shapes,
+                                            memory=memory, label="drafter/observe_rows")
+            self.rows_propose = DecodeGraphs(rows_propose, rows_propose_inputs, rows_shapes,
+                                             memory=memory, label="drafter/propose_rows")
+            if generator is not None and vocab is not None:
+                self.rows_sampled = DecodeGraphs(rows_sampled, rows_sampled_inputs, rows_shapes, generators=(generator,),
+                                                 memory=memory, label="drafter/propose_rows_sampled")
         except BaseException:
-            for name in ("proposals", "observations"):
-                if hasattr(self, name):
-                    getattr(self, name).close()
+            self.close()
             raise
         finally:
+            if saved is not None:
+                generator.set_state(saved)
             caches.reset()
+
+    def close(self):
+        for name in ("proposals", "observations", "masked", "rows_masked", "rows_propose", "rows_sampled"):
+            graphs = getattr(self, name, None)
+            if graphs is not None:
+                graphs.close()
+                setattr(self, name, None)
 
     def slot(self, ring):
         stride = self.field.stride(0) * self.field.element_size()
@@ -425,6 +471,33 @@ class DrafterDecodeGraphs:
             inputs["position"].copy_(position.reshape(()))
             inputs["slot"].copy_(slot.reshape(1))
         return self.proposals.run((1, self.drafter.k + 1), fill)
+
+    # -- every row of a step at once ---------------------------------------------------------------------
+    def observe_rows(self, slots, positions, aux, valid):
+        """`observe_masked` for the rows [n]: positions [n, t], aux [n*t, A], valid [n] -- all device tensors."""
+        def fill(inputs):
+            inputs["slots"].copy_(slots)
+            inputs["positions"].copy_(positions)
+            inputs["aux"].copy_(aux)
+            inputs["valid"].copy_(valid)
+        self.rows_masked.run(tuple(positions.shape), fill)
+
+    def propose_rows(self, anchors, positions, slots):
+        """Every row's greedy drafts, [n, K]."""
+        def fill(inputs):
+            inputs["anchors"].copy_(anchors)
+            inputs["positions"].copy_(positions)
+            inputs["slots"].copy_(slots)
+        return self.rows_propose.run((anchors.numel(), self.drafter.k + 1), fill)
+
+    def propose_rows_sampled(self, anchors, positions, slots, temps):
+        """Every row's drafts drawn at its temperature (0 = greedy) and the distributions they came from: [n, K], [n, K, vocab]."""
+        def fill(inputs):
+            inputs["anchors"].copy_(anchors)
+            inputs["positions"].copy_(positions)
+            inputs["slots"].copy_(slots)
+            inputs["temps"].copy_(temps)
+        return self.rows_sampled.run((anchors.numel(), self.drafter.k + 1), fill)
 
 
 class SamplingGraphs:

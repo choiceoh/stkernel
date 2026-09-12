@@ -886,6 +886,10 @@ class Server:
                                                    # every streamed token, a fifth of this engine's inter-token time
         self._sent = {}                            # row -> generated tokens already handed to its stream
         self.prompt_tokens_total = self.generation_tokens_total = 0
+        # Tokens are what the engine spends; characters are what the reader gets, and on this
+        # checkpoint one token is 5.8 characters of English and 1.3 of Korean. A deployment with
+        # only the token counter reads its own throughput 4.4x too kindly (45차 §40).
+        self.generation_characters_total = 0
         self.arrivals = queue.Queue()
         self.pending, self.results = {}, {}
         # conversation ids are request ids; parked conversations from an earlier boot keep theirs
@@ -1002,10 +1006,15 @@ class Server:
             raise RequestError(str(exc)) from exc
         horizon = len(ids) + max_new - 1 + (self.runner.c.draft_slots if max_new > 1 else 0)
         blocks = self.runner.kv.blocks_for(horizon)
+        # The numbers, not just the verdict. A request reserves its whole horizon, so a caller
+        # who is refused needs to know which half to cut -- and the caller who meets this first
+        # is writing in a language that costs more tokens a character (45차 §40).
+        room = min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq) * self.runner.kv.block_size
+        needs = f"needs {horizon} ({len(ids)} for the prompt, {max_new} to generate)"
         if horizon >= 2**31 or blocks > min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq):
-            raise RequestError("prompt and generation limit exceed the KV capacity")
+            raise RequestError(f"the KV pool holds {room} tokens for one request; this one {needs}")
         if horizon > self.max_context:
-            raise RequestError("prompt and generation limit exceed the model's context")
+            raise RequestError(f"this model serves {self.max_context} tokens of context; this request {needs}")
         with self._lock:
             if not self.alive:
                 raise RequestError("engine is stopping", 503)
@@ -1330,13 +1339,15 @@ class Server:
                     resident = held = self.runner.kv.blocks_for(self.runner.kv.tokens[row])
                 horizon = end + limit - 1 + (self.runner.c.draft_slots if limit > 1 else 0)
                 promised = self.runner.kv.blocks_for(horizon)
+                room = min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq) * self.runner.kv.block_size
+                needs = f"needs {horizon} ({end} for the conversation so far, {limit} to generate)"
                 if horizon >= 2**31 or promised > min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq):
                     self._waiting.popleft()
-                    self._answer(request, RequestError("conversation and generation limit exceed the KV capacity"))
+                    self._answer(request, RequestError(f"the KV pool holds {room} tokens for one request; this turn {needs}"))
                     continue
                 if horizon > self.max_context:
                     self._waiting.popleft()
-                    self._answer(request, RequestError("conversation and generation limit exceed the model's context"))
+                    self._answer(request, RequestError(f"this model serves {self.max_context} tokens of context; this turn {needs}"))
                     continue
                 promised = max(promised, held)       # rejected-draft reservations may exceed the new turn
             if row is None and not self._free_rows:
@@ -1673,6 +1684,8 @@ class Server:
              len(runner.state.waiting) + len(self._waiting) + len(self.pending) - len(self._active)),
             ("counter", "vllm:prompt_tokens_total", "prompt tokens admitted", self.prompt_tokens_total),
             ("counter", "vllm:generation_tokens_total", "tokens generated", self.generation_tokens_total),
+            ("counter", "st:generation_characters_total", "characters those tokens spelled, as the client read them",
+             self.generation_characters_total),
             ("counter", "vllm:spec_decode_num_accepted_tokens_total", "drafts the target confirmed",
              getattr(engine, "accepted_total", 0)),
             ("counter", "vllm:spec_decode_num_draft_tokens_total", "tokens the drafter proposed",
@@ -1927,7 +1940,10 @@ class Server:
                 pass
 
             def reply(self, status, payload):
-                body = json.dumps(payload).encode()
+                # ensure_ascii=False: JSON is UTF-8 by definition (RFC 8259), and escaping puts a
+                # Korean character on the wire as six ASCII bytes instead of its three. A Korean
+                # answer's body was 1.83x the size it needed to be (45차 §40).
+                body = json.dumps(payload, ensure_ascii=False).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -1963,7 +1979,7 @@ class Server:
                 return req
 
             def sse(self, payload):
-                self.wfile.write(b"data: " + json.dumps(payload).encode() + b"\n\n")
+                self.wfile.write(b"data: " + json.dumps(payload, ensure_ascii=False).encode() + b"\n\n")
                 self.wfile.flush()
 
             def gone(self) -> bool:
@@ -2025,6 +2041,7 @@ class Server:
                             if c.finish == "stop":
                                 server.cancel(c.request, "stop")            # the loop drops the row; the answer is complete here
                                 c.done = True
+                                server.generation_characters_total += sum(len(t) for t in c.text.values())
                                 live.pop(c.request)
                         elif kind == "end":
                             deltas = c.flush(final=True)
@@ -2032,6 +2049,7 @@ class Server:
                                 on_delta(c, deltas)
                             c.finish = c.finish or payload
                             c.done = True
+                            server.generation_characters_total += sum(len(t) for t in c.text.values())
                             live.pop(c.request)
                         else:
                             c.error = payload

@@ -359,6 +359,10 @@ class Glm53Caches:
     def draft_ring(self, slot):
         return self._fields["draft", -1][slot]
 
+    def draft_field(self):
+        """Every slot's drafter ring, [slots, layers, 2, cells, kv, D]: the batched drafter paths address rows by slot."""
+        return self._fields["draft", -1]
+
     def latent(self, layer):
         return self._latent
 
