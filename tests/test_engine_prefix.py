@@ -280,3 +280,28 @@ class PrefixCacheTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChainTests(unittest.TestCase):
+    def test_extend_chain_equals_a_fresh_chain_and_hashes_only_the_new_blocks(self):
+        c = PrefixCache(BLOCK, CHUNK, 2)
+        ids = list(range(23))
+        chain = c.chain(ids[:9], [(2, b"x")])                                          # boundaries 4 and 8
+        grown = c.extend_chain(chain, ids[8:], [(2, b"x"), (14, b"y")], start=8)     # only the tail from the last boundary is given
+        with self.assertRaises(ValueError):
+            c.extend_chain(chain, ids[9:], (), start=9)                                # a tail that starts past it cannot continue
+        self.assertEqual(grown, c.chain(ids, [(2, b"x"), (14, b"y")]))
+        self.assertEqual(c.extend_chain(c.chain(ids), ids[20:], (), start=20), c.chain(ids))   # nothing new: unchanged
+        self.assertEqual(c.extend_chain({}, ids, ()), c.chain(ids))                  # from nothing: the whole chain
+
+    def test_chain_lookups_take_a_chain_computed_once(self):
+        r, cache = runner(snapshots=4)
+        ids = list(range(12))
+        r.submit(0, 12, now=0, ids=ids)
+        run_to_end(r, 0)
+        chain = cache.chain(ids + [1, 2])
+        self.assertEqual(cache.peek_chain(chain, 14), 12)
+        hits = cache.hits
+        self.assertEqual(cache.lookup_chain(chain, 14)[0], 12)
+        self.assertEqual(cache.hits, hits + 1)
+        self.assertIsNone(cache.tier_lookup_chain(chain, 14, 12))
