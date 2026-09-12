@@ -24,6 +24,11 @@ def cuda_source(source):
     templated = "template <bool CLUSTER = false>" in mla
     ordinary = "mk_mla_kernel<false>" if templated else "mk_mla_kernel"
     cluster = "mk_mla_kernel<true>" if templated else ordinary
+    # A packed PV loader must also preserve the scalar-strided conversion's
+    # NaN/subnormal bits; normal attention fixtures alone cannot prove that.
+    packed_pair = ("mla_e4m3x2_value(*(const uint16_t*)(input + i * 2))"
+                   if "mla_e4m3x2_value(" in mla else
+                   "mla_e4m3x2_strided(input + 131072 + i, 65536)")
     return """
 #include <cuda_runtime.h>
 #include <cuda_fp8.h>
@@ -72,6 +77,7 @@ __global__ void convert_pairs(const uint8_t* input, uint32_t* output) {{
   if (i < 65536) {{
     output[i] = mla_e4m3x2(input + i * 2);
     output[65536+i] = mla_e4m3x2_strided(input + 131072 + i, 65536);
+    output[131072+i] = {packed_pair};
   }}
 }}
 extern "C" int convert(uint64_t input, uint64_t output, uint64_t stream) {{
@@ -118,12 +124,13 @@ def main():
     ap.add_argument("--candidate", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--shapes", help="Explicit T:W pairs, separated by commas, for candidate screening.")
     args = ap.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("CUDA_MODULE_LOADING", "EAGER")
     import torch
     assert torch.cuda.get_device_capability() == (12, 1)
-    torch.cuda.set_per_process_memory_fraction((512 * 2**20) / torch.cuda.get_device_properties(0).total_memory)
+    torch.cuda.set_per_process_memory_fraction((768 * 2**20) / torch.cuda.get_device_properties(0).total_memory)
     torch.manual_seed(512)
     torch.backends.cuda.matmul.allow_tf32 = False
     old, old_info, old_hash = build(args.baseline, args.output, "baseline")
@@ -131,6 +138,9 @@ def main():
     print("kernel_info", old_info, new_info, flush=True)
     stream = torch.cuda.current_stream().cuda_stream
     output = {"baseline_sha256": old_hash, "candidate_sha256": new_hash,
+              "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+              "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
+              "device_name": torch.cuda.get_device_name(),
               "baseline_info": old_info, "candidate_info": new_info, "cases": []}
 
     # Exhaust every possible packed byte pair, including subnormals, signed
@@ -138,12 +148,13 @@ def main():
     pairs = torch.arange(65536, dtype=torch.int32, device="cuda")
     pair_bytes = torch.cat((torch.stack((pairs & 255, pairs >> 8), dim=1).flatten(),
                             pairs & 255, pairs >> 8)).to(torch.uint8)
-    converted = [torch.empty(131072, dtype=torch.int32, device="cuda") for _ in range(2)]
+    converted = [torch.empty(196608, dtype=torch.int32, device="cuda") for _ in range(2)]
     for index, lib in enumerate((old, new)):
         assert lib.convert(pair_bytes.data_ptr(), converted[index].data_ptr(), stream) == 0
     torch.cuda.synchronize()
     assert torch.equal(*converted), "FP8 conversion changed bits"
     output["fp8_pair_bits_exact"] = True
+    output["packed_vs_strided_fp8_pair_bits_exact"] = True
     max_input = torch.randint(-(2**31),2**31-1,(4096,32),dtype=torch.int32,device="cuda").view(torch.float32)
     max_input[0].fill_(-float("inf")); max_input[1].fill_(float("inf"))
     max_input[2].fill_(float("nan")); max_input[3].fill_(-0.0)
@@ -163,22 +174,34 @@ def main():
     eviction = torch.zeros(16 * 2**20, dtype=torch.float32, device="cuda")
     splits_for = lambda t, grid: next((s for s in range(1, min(64, 192 // t)+1)
                                       if t*s % grid == 0), min(64, 192//t, max(1, round(grid/t)))) if t<=64 else 1
-    shapes = [(12, 2048), (24, 2048), (48, 2048)] if args.quick else [
+    shapes = [(6,2048),(24,2048),(32,2048),(48,2048),(64,2048),(128,2048)] if args.quick else [
         (1,64),(1,2048),(6,512),(6,2048),(8,2048),(12,64),(12,512),(12,2048),
         (16,2048),(18,2048),(24,512),(24,2048),(32,64),(32,512),(32,2048),
         (32,1),(32,17),(32,2176),(33,2048),(36,2048),(40,2048),(42,2048),
         (48,64),(48,512),(48,2048),(48,2176),(54,2048),(60,2048),(63,2048),
-        (64,1),(64,2048),(64,2176),(128,2048)]
+        (64,1),(64,2048),(64,2176),(128,2048),
+        (512,2048),(2048,2048),(4096,2048),(6912,2048),(8192,2176)]
+    if args.shapes:
+        shapes = [tuple(map(int, shape.split(':'))) for shape in args.shapes.split(',')]
+        if any(len(shape) != 2 or not 1 <= shape[0] <= 8192 or not 1 <= shape[1] <= 2176
+               for shape in shapes):
+            ap.error('--shapes requires bounded T:W pairs (T<=8192, W<=2176)')
     for T,W in shapes:
         q = torch.randn(T,16,512,dtype=torch.bfloat16,device="cuda") * .3
         slots = torch.randint(len(cache),(T,W),dtype=torch.int32,device="cuda")
         lens = torch.full((T,),W,dtype=torch.int32,device="cuda")
         splits = splits_for(T,old_info[0])
-        part = torch.empty(max(1,T*splits)*16*512,dtype=torch.float32,device="cuda")
-        ml = torch.empty(max(1,T*splits)*32,dtype=torch.float32,device="cuda")
+        # The real unsplit path needs no partials; avoid allocating hundreds
+        # of MiB of unused scratch when checking full prefill shapes.
+        part = torch.empty(T*splits*16*512 if splits>1 else 1,dtype=torch.float32,device="cuda")
+        ml = torch.empty(T*splits*32 if splits>1 else 1,dtype=torch.float32,device="cuda")
         counter = torch.zeros(8,dtype=torch.int32,device="cuda")
-        variants = [("baseline",old,0,old_info[0]), ("warp_reduce",new,0,new_info[0])]
+        variants = [("baseline",old,0,old_info[0]), ("candidate",new,0,new_info[0])]
         if 2 <= splits <= 8:
+            # Isolate a candidate's cluster change from the cluster speedup
+            # that already exists in the supplied baseline.
+            if "template <bool CLUSTER = false>" in args.baseline.read_text():
+                variants.append(("baseline_cluster",old,1,old_info[0]))
             variants.append(("cluster",new,1,new_info[0]))
         values = {name:torch.empty_like(q) for name, *_ in variants}
         functions = {}
@@ -244,6 +267,7 @@ def main():
         output["cases"].append(row)
         print(json.dumps({k:v for k,v in row.items() if k!='samples_us'}),flush=True)
         (args.output/"results.json").write_text(json.dumps(output,indent=2)+"\n")
+        del q, slots, lens, part, ml, counter, values, value, graphs, functions
     print("PASS",flush=True)
 
 

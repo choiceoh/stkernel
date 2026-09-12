@@ -1,0 +1,27 @@
+/tmp/st-hw-d36a/local-compile/adopted.cu(48): warning #177-D: variable "MLA_SPLITS_MAX" was declared but never referenced
+  constexpr int MLA_SPLITS_MAX = 64;
+                ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_Z10max_valuesPKfPfi' for 'sm_121a'
+ptxas info    : Function properties for _Z10max_valuesPKfPfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers
+ptxas info    : Compile time = 39.166 ms
+ptxas info    : Compiling entry function '_Z13convert_pairsPKhPj' for 'sm_121a'
+ptxas info    : Function properties for _Z13convert_pairsPKhPj
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, used 0 barriers
+ptxas info    : Compile time = 2.820 ms
+ptxas info    : Compiling entry function '_Z13mk_mla_kernelILb1EEv9MKMlaArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z13mk_mla_kernelILb1EEv9MKMlaArgs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers
+ptxas info    : Compile time = 45.660 ms
+ptxas info    : Compiling entry function '_Z13mk_mla_kernelILb0EEv9MKMlaArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z13mk_mla_kernelILb0EEv9MKMlaArgs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 111 registers, used 1 barriers
+ptxas info    : Compile time = 47.951 ms
