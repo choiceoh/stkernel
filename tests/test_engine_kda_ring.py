@@ -20,7 +20,7 @@ class KdaRingTests(unittest.TestCase):
         self.reference = reference().kda_recurrent
         torch.manual_seed(129612)
 
-    def inputs(self, t, h=16, hv=16, k=128, v=128, dtype=None):
+    def inputs(self, t, h=16, hv=16, k=128, v=128, dtype=None, state_dtype=None, cells=6):
         dtype = dtype or torch.bfloat16
         # Exercise real merged-conv token strides and sliced projection beta.
         def strided(heads, dim):
@@ -30,8 +30,8 @@ class KdaRingTests(unittest.TestCase):
         beta = torch.randn(1,t,hv*3,device='cuda',dtype=dtype)[..., :hv]
         a, bias = torch.randn(h,device='cuda')*.2, torch.randn(h*k,device='cuda')*.1
         width = hv*k*v
-        backing = torch.randn(3*(6*width+64)+64,device='cuda')*.1
-        shape, stride = (3,6,hv,k,v), (6*width+64,width,k*v,v,1)
+        backing = torch.randn(3*(cells*width+64)+64,device='cuda',dtype=state_dtype or torch.float32)*.1
+        shape, stride = (3,cells,hv,k,v), (cells*width+64,width,k*v,v,1)
         ring = backing.as_strided(shape,stride,64)
         return (q,kk,vv,g,beta,a,bias), backing, ring
 
@@ -41,9 +41,9 @@ class KdaRingTests(unittest.TestCase):
     def expected(self, args, backing, ring, slot, ctx, lb=-5.):
         expected = backing.clone()
         target = expected.as_strided(ring.shape,ring.stride(),ring.storage_offset())
-        initial = ring[slot,(ctx-1)%6][None] if ctx else None
+        initial = ring[slot,(ctx-1)%ring.shape[1]][None].float() if ctx else None
         out,states = self.functional(*args,initial,lb)
-        for i,state in enumerate(states): target[slot,(ctx+i)%6].copy_(state)
+        for i,state in enumerate(states): target[slot,(ctx+i)%ring.shape[1]].copy_(state)
         return out,expected,states
 
     def test_every_snapshot_and_padding_with_wrapping_initial_row(self):
@@ -115,9 +115,50 @@ class KdaRingTests(unittest.TestCase):
         for stream in streams:torch.cuda.current_stream().wait_stream(stream)
         self.equal(actual1,out1);self.equal(actual2,out2);self.equal(backing,expected)
 
+    def test_fp16_storage_rounds_only_at_ring_writes_and_replays_rollback(self):
+        for t in (1, 7):
+            args, backing, ring = self.inputs(t, state_dtype=torch.float16, cells=7)
+            slot, ctx = (torch.tensor(x, device='cuda', dtype=torch.int64) for x in (1, 0))
+            self.run(*args, ring, slot, ctx, -5.)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                actual = self.run(*args, ring, slot, ctx, -5.)
+            try:
+                for physical, context in ((2, 0), (2, 7), (2, 9), (1, 1), (2, 11), (1, 32768)):
+                    for x in args[:5]:
+                        x.normal_()
+                    if context == 0:
+                        ring.fill_(float('nan'))
+                    slot.fill_(physical); ctx.fill_(context)
+                    out, expected, _ = self.expected(args, backing, ring, physical, context)
+                    graph.replay()
+                    # Start from the same FP16 bits, do an entire step in FP32,
+                    # then round each snapshot. This catches a half accumulator
+                    # or a reload of a rounded state between speculative tokens.
+                    self.equal(actual, out)
+                    self.equal(backing, expected)
+            finally:
+                graph.reset()
+
+    def test_fp16_initial_state_continues_prefill_and_functional_decode_in_fp32(self):
+        from engine.profiles.glm53.lanes import served
+        chunk = served(reference_for=('expert',)).kda_chunk
+        for tokens, lane in ((7, self.functional), (128, chunk)):
+            args, _, ring = self.inputs(tokens, state_dtype=torch.float16)
+            initial = ring[1, 0][None].contiguous()
+            saved = initial.clone()
+            expected = lane(*args, initial.float(), -5.)
+            actual = lane(*args, initial, -5.)
+            self.equal(initial, saved)
+            self.assertEqual(actual[1].dtype, torch.float32)
+            for a, b, limit in zip(actual, expected, (.002, 2e-6)):
+                self.assertTrue(torch.isfinite(a).all())
+                error = (a.float()-b.float()).abs().max()/b.float().abs().max().clamp_min(1e-6)
+                self.assertLessEqual(error.item(), limit)
+
     def test_invalid_layout_indices_and_overlapping_inputs(self):
         args,backing,ring = self.inputs(6)
-        for bad in (ring.half(),ring.transpose(-1,-2),ring[:,:5],ring.cpu()):
+        for bad in (ring.bfloat16(),ring.transpose(-1,-2),ring[:,:5],ring.cpu()):
             with self.assertRaises(ValueError):self.run(*args,bad,1,0,-5.)
         for slot,ctx in ((3,0),(-1,0),(1,-1),(1,torch.tensor(0,device='cuda')),
                          (torch.tensor(1),torch.tensor(0))):

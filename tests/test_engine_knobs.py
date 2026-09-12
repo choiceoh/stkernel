@@ -36,9 +36,9 @@ class KnobDeclarationTests(unittest.TestCase):
                 with self.subTest(production=production, knob=name), self.assertRaises(ConfigError):
                     self._declared({"STK_"+name:value}, production=production)
 
-    def test_only_unqualified_mla_and_context_experiments_remain(self):
+    def test_only_declared_precision_mla_and_context_experiments_remain(self):
         cfg = self._declared({"STK_mla_prefill":"stock", "STK_context_ceiling":"131072"})
-        self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling"})
+        self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "kda_state_dtype"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError

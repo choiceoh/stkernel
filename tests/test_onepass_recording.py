@@ -18,6 +18,12 @@ from onepass_recording import CURRENT, Run, group, steady_errors
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_kda_state_precision_is_read_from_the_bound_lane(self):
+        for dtype in ("fp32", "fp16"):
+            self.assertEqual(onepass.kda_state_storage(
+                f'# HELP st:lane_info labels\nst:lane_info{{engine="st",kda_state_dtype="{dtype}",spec_k="6"}} 1\n'), dtype)
+        self.assertIsNone(onepass.kda_state_storage('st:lane_info{engine="st"} 1'))
+
     def test_real_http_recording_blocks_foreign_requests_and_persists_server_spans(self):
         from tests.test_engine_serve import chat_server
         from engine.base.latency import Recorder

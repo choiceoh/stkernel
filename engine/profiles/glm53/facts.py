@@ -31,6 +31,7 @@ BLOCK = 768                                                           # the page
                                                                       # whole indexer pools of 4, nine per 6,912 prefill chunk)
 SPEC_K = 6                                                            # DFlash2 draft slots per decode step
 KV_DTYPE = "fp8_e4m3"                                                 # launcher KV_DTYPE
+KDA_STATE_DTYPE = "fp32"                                              # FP16 storage is an experiment; arithmetic stays FP32
 EXPERTS = "tp"                                                        # launcher ENABLE_EP=0
 
 
@@ -75,6 +76,7 @@ class Facts:
     chunk_align: int = CHUNK_ALIGN
     spec_k: int = SPEC_K
     weight_layout: str = "st-glm53-b12x-up-gate-v1"  # selected from checkpoint metadata before allocation
+    kda_state_dtype: str = KDA_STATE_DTYPE
 
     # -- what one of the four ranks holds (TP by heads / intermediate / vocab) --
     @property

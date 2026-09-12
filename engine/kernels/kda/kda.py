@@ -315,8 +315,8 @@ def fused_recurrent_kda_fwd(
             raise ValueError("kv state requires one dense sequence and separate output states")
         if initial_state is not None and (
                 initial_state.shape != (1, HV, K, V) or not initial_state.is_contiguous()
-                or initial_state.dtype != torch.float32 or initial_state.device != q.device):
-            raise ValueError("kv initial_state must be contiguous FP32 [1,HV,K,V] on the input device")
+                or initial_state.dtype not in (torch.float32, torch.float16) or initial_state.device != q.device):
+            raise ValueError("kv initial_state must be contiguous FP32/FP16 [1,HV,K,V] on the input device")
         if out is not None:
             if (out.shape != v.shape or out.dtype != v.dtype or out.device != v.device
                     or not out.is_contiguous()):

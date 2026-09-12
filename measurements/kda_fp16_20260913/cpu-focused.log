@@ -1,0 +1,6 @@
+..................................................ssssssssssssssssssssssssssssss...............................
+----------------------------------------------------------------------
+Ran 111 tests in 4.736s
+
+OK (skipped=30)
+  memory: 32.8 GiB left after 0.0 GiB of KV, floor 0.0 -- room for the weights

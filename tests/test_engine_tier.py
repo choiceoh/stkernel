@@ -559,6 +559,7 @@ class Index:
         self.index, self.block_bytes = index, block_bytes
 
     has = NvmeTier.has
+    _compatible = NvmeTier._compatible
     keys = NvmeTier.keys
     stale = NvmeTier.stale
     stale_bytes = NvmeTier.stale_bytes

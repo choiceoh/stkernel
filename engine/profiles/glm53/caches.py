@@ -20,6 +20,22 @@ def aligned(n: int, unit: int) -> int:
     return -(-n // unit) * unit
 
 
+def state_dtype(value: str) -> str:
+    if value not in ("fp32", "fp16"):
+        raise ValueError("KDA state storage must be fp32 or fp16")
+    return value
+
+
+def recurrent_field_dtype(F, override=None) -> str:
+    return {"fp32": "f32", "fp16": "f16"}[state_dtype(
+        getattr(F, "kda_state_dtype", "fp32") if override is None else override)]
+
+
+def field_dtype(name):
+    import torch
+    return {"f32": torch.float32, "f16": torch.float16, "bf16": torch.bfloat16}[name]
+
+
 @dataclass(frozen=True)
 class StateField:
     name: str
@@ -43,9 +59,10 @@ class CacheLayout:
                 + max_seqs * num_blocks * 4)
 
 
-def layout(F, layers, draft=None) -> CacheLayout:
+def layout(F, layers, draft=None, *, state_storage=None) -> CacheLayout:
     """Declared byte offsets; no CUDA allocation or model execution."""
     layers = tuple(layers)
+    recurrent_dtype = recurrent_field_dtype(F, state_storage)
     if not layers or len(set(layers)) != len(layers) or any(not 0 <= L < F.layers for L in layers):
         raise ValueError("cache layers must be nonempty, unique and inside the model")
     if F.block <= 0 or F.kpool <= 0 or F.block % F.kpool:
@@ -72,7 +89,7 @@ def layout(F, layers, draft=None) -> CacheLayout:
             field("tail", L, (F.kpool - 1 + F.spec_k, 2, F.idx_dim), "bf16")
         else:
             field("conv", L, (3 * F.kda_heads_local * F.kda_dim, F.conv - 1 + F.spec_k), "bf16")
-            field("rec", L, (F.spec_k + 1, F.kda_heads_local, F.kda_dim, F.kda_dim), "f32")
+            field("rec", L, (F.spec_k + 1, F.kda_heads_local, F.kda_dim, F.kda_dim), recurrent_dtype)
     if draft is not None:
         if len(draft) != 4 or any(not isinstance(n, int) or n <= 0 for n in draft):
             raise ValueError("draft cache shape must contain four positive dimensions")
@@ -83,13 +100,14 @@ def layout(F, layers, draft=None) -> CacheLayout:
                        token_offsets, pool_offsets, tuple(fields))
 
 
-def snapshot_layout(F, layers, draft=None):
+def snapshot_layout(F, layers, draft=None, *, state_storage=None):
     """What a prefix checkpoint at a chunk boundary P must keep (base/prefix.py), and its byte size:
     per KDA layer the conv ring's last conv-1 inputs (positions P-conv+1..P-1) and the recurrent
     state at P-1; the drafter's context ring whole (its window is position-addressed the same way).
     The indexer tail ring keeps nothing: a chunk is whole pools, so at P the tail is empty and the
     next pool starts fresh. Returns (nbytes, fields) with fields (name, layer, shape, dtype, offset)."""
     fields, at = [], 0
+    recurrent_dtype = recurrent_field_dtype(F, state_storage)
 
     def field(name, L, shape, dtype):
         nonlocal at
@@ -100,11 +118,26 @@ def snapshot_layout(F, layers, draft=None):
     for L in layers:
         if not F.is_dsa(L):
             field("conv", L, (3 * F.kda_heads_local * F.kda_dim, F.conv - 1), "bf16")
-            field("rec", L, (F.kda_heads_local, F.kda_dim, F.kda_dim), "f32")
+            field("rec", L, (F.kda_heads_local, F.kda_dim, F.kda_dim), recurrent_dtype)
     if draft is not None:
         dl, dw, dkv, dd = draft
         field("draft", -1, (dl, 2, dw, dkv, dd), "bf16")
     return aligned(max(at, 1), ALIGN), tuple(fields)
+
+
+def cache_capacity(F, layers, draft, kv_gib: float, max_seqs: int, snapshot_gib: float):
+    """Keep FP32's KV blocks and snapshot count when reducing state precision.
+
+    The budgets describe the baseline capacity, not a target to fill with more
+    KV or snapshots. Only the actual typed regions are allocated by the caller.
+    """
+    layers = tuple(layers)
+    baseline = layout(F, layers, draft, state_storage="fp32")
+    reference_snapshot = snapshot_layout(F, layers, draft, state_storage="fp32")[0]
+    blocks = int((kv_gib * (1 << 30) - (max_seqs + 1) * baseline.slot_bytes)
+                 // (baseline.block_bytes + max_seqs * 4))
+    snapshots = max(9, int(snapshot_gib * (1 << 30)) // reference_snapshot)
+    return blocks, snapshots
 
 
 def stage_bytes(F, layers, max_seqs: int) -> int:
@@ -135,7 +168,7 @@ class Glm53Caches:
         self.block_table = arena.carve(max_seqs * num_blocks * 4, "glm53 block table").view(torch.int32).view(max_seqs, num_blocks)
         self._fields = {}
         for f in p.fields:
-            dtype = torch.float32 if f.dtype == "f32" else torch.bfloat16
+            dtype = field_dtype(f.dtype)
             size = 4 if f.dtype == "f32" else 2
             strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
             base = self.state.view(dtype)
@@ -146,7 +179,7 @@ class Glm53Caches:
         if snapshots:
             self.snapshot_store = arena.carve(snapshots * self.snapshot_bytes_n, "glm53 prefix snapshots")
             for f in self._snapshot_fields:
-                dtype = torch.float32 if f.dtype == "f32" else torch.bfloat16
+                dtype = field_dtype(f.dtype)
                 size = 4 if f.dtype == "f32" else 2
                 strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
                 base = self.snapshot_store.view(dtype)
@@ -157,7 +190,7 @@ class Glm53Caches:
             self.stage_bytes, self._stage_fields = snapshot_layout(F, self.layers, None)
             self.stage_store = arena.carve((max_seqs + 1) * self.stage_bytes, "glm53 boundary stage")
             for f in self._stage_fields:
-                dtype = torch.float32 if f.dtype == "f32" else torch.bfloat16
+                dtype = field_dtype(f.dtype)
                 size = 4 if f.dtype == "f32" else 2
                 strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
                 base = self.stage_store.view(dtype)
