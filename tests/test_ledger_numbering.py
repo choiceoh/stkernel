@@ -54,18 +54,23 @@ class LedgerNumberingTests(unittest.TestCase):
         self.assertIn("PR 번호", rules, "rule 9 is what this test is the enforcement of")
         self.assertIn("9. ", rules)
 
-    def test_the_entries_that_shared_a_number_each_say_which_pr(self):
-        """The concrete damage of 2026-09-12: three numbers, six entries. Each must be readable."""
-        shared = {}
+    def test_the_numbers_that_were_written_twice_are_single_again(self):
+        """The concrete damage of 2026-09-12 was three numbers written twice. It was repaired by moving one of
+        each to the end of the campaign (PR #723: §76-§78 used to be §30-§32), so what this pins now is the
+        repair -- each of the six numbers names exactly one entry, and each entry names its PR."""
+        rows = {}
         for rnd, num, pr, line in entries():
-            if rnd == "45차" and num in {"30", "31", "32"}:
-                shared.setdefault(num, []).append((pr, line))
-        for num, rows in shared.items():
-            self.assertEqual(len(rows), 2, f"§{num} was written twice; that is the case this pins")
-            self.assertEqual(len({pr for pr, _ in rows}), 2,
-                             f"§{num}'s two entries do not name two different PRs: {[l for _, l in rows]}")
-            for pr, line in rows:
-                self.assertIsNotNone(pr, f"§{num} is ambiguous without a PR:\n  {line}")
+            if rnd == "45차" and num in {"30", "31", "32", "76", "77", "78"}:
+                rows.setdefault(num, []).append((pr, line))
+        for num in ("30", "31", "32", "76", "77", "78"):
+            self.assertEqual(len(rows.get(num, [])), 1,
+                             f"§{num} should name exactly one entry: {[l for _, l in rows.get(num, [])]}")
+            pr, line = rows[num][0]
+            self.assertIsNotNone(pr, f"§{num} is ambiguous without a PR:\n  {line}")
+        ledger = LEDGER.read_text()
+        self.assertIn("§76", ledger)
+        self.assertRegex(ledger, r"§7[678][^\n]*?(?:§3[012]|옛 §)",
+                         "a renumbered entry has to say which number it used to answer to")
 
 
 if __name__ == "__main__":
