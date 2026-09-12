@@ -1502,15 +1502,37 @@ class Server:
             },
         }
 
+    def catalog(self) -> "tuple[dict, int]":
+        """`/v1/models`, and whether this engine is routable right now.
+
+        This is the endpoint the control plane actually asks. Wormhole re-probes it every 60 s
+        for `max_model_len` (`router_discovery.probeMaxModelLen`), and SparkFleet sets a
+        service's model id from it -- which is what makes a backend routable at all
+        (`wormhole/fleet.go`: `if !sv.OK || sv.Model == ""` skips it). Nothing in that chain
+        reads `/health`, so a handover has to be visible HERE or it is not visible.
+
+        While draining the catalog is empty and the status is 503: a prober that checks the code
+        and one that checks for a model id reach the same conclusion, and the route is dropped
+        before a caller pays a failed hop into an engine that is already refusing (45차 §56).
+        """
+        if not self.alive:
+            return {"object": "list", "data": [], "status": "stopping"}, 503
+        if self.draining is not None:
+            return {"object": "list", "data": [], "status": "draining",
+                    "handing_over_to": self.draining}, 503
+        return {"object": "list", "data": [self.model_card()]}, 200
+
     def readiness(self) -> "tuple[dict, int]":
         """(body, HTTP status) for `/health`: serving, handing over, or stopping.
 
-        A handover used to look healthy. `alive` stays true through the drain -- that is the
-        point, the rows already here finish and are parked -- but every NEW request is refused
-        with 503, so a prober that only asks "alive?" keeps the engine in its inventory and
-        every caller pays a failed hop before the router fails over. Saying `draining` here
-        takes the engine out of the rotation one probe earlier, which is the difference between
-        a handover nobody notices and one that shows up as errors (45차 §56).
+        A handover used to look healthy: `alive` stays true through the drain -- that is the
+        point, the rows already here finish and are parked -- while every NEW request is already
+        refused with 503. So this said `ok` about an engine that was accepting nothing.
+
+        Nothing in the Deneb chain reads this endpoint (wormhole probes `/v1/models`, the
+        supervisor generates a real chat), so this is honesty rather than a route change; the
+        one that moves a route is `catalog` above. It is here because an operator with `curl`
+        asks `/health` first, and a state nobody can name is a state nobody watches.
         """
         if not self.alive:
             return {"status": "stopping"}, 503
@@ -2295,7 +2317,8 @@ class Server:
 
             def do_GET(self):
                 if self.path == "/v1/models":
-                    self.reply(200, {"object": "list", "data": [server.model_card()]})
+                    catalog, code = server.catalog()
+                    self.reply(code, catalog)
                 elif self.path == "/metrics":
                     body = server.metrics().encode()
                     self.send_response(200)

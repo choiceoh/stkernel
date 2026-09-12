@@ -2434,6 +2434,38 @@ class OpenAIDialectTests(unittest.TestCase):
         s.vision = object()
         self.assertEqual(s.model_card()["capabilities"]["vision"], True)
 
+    def test_the_catalog_stops_advertising_while_the_fleet_is_being_handed_over(self):
+        """`/v1/models` is the endpoint the control plane asks: wormhole re-probes it for
+        `max_model_len` and SparkFleet takes a service's model id from it, which is what makes a
+        backend routable. Nothing there reads `/health`, so a drain has to show up here."""
+        s = chat_server()
+        body, code = s.catalog()
+        self.assertEqual((code, len(body["data"])), (200, 1))
+
+        s.draining = "another-session"
+        body, code = s.catalog()
+        self.assertEqual(code, 503)
+        self.assertEqual(body["data"], [], "an empty catalog and a 503: both probes agree")
+        self.assertEqual((body["status"], body["handing_over_to"]), ("draining", "another-session"))
+
+        s.draining, s.alive = None, False
+        body, code = s.catalog()
+        self.assertEqual((code, body["status"], body["data"]), (503, "stopping", []))
+
+    def test_the_models_endpoint_carries_the_drain_verdict(self):
+        # No `drive`: a driven loop that is already quiet completes the handover.
+        s = chat_server()
+        s.draining = "another-session"
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self._get(base, "/v1/models")
+            self.assertEqual(caught.exception.code, 503)
+            self.assertEqual(json.loads(caught.exception.read())["data"], [])
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
     def test_health_says_draining_while_the_fleet_is_being_handed_over(self):
         """`alive` stays true through a drain -- that is the point -- but every new request is
         already refused with 503. A prober that only asks "alive?" keeps the engine in the
