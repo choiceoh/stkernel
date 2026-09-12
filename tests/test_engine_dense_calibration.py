@@ -58,33 +58,39 @@ class CalibrationTests(unittest.TestCase):
         layer(torch.randn(40, 32).bfloat16())                                 # a prefill chunk: every row real
         self.assertEqual(c.progress(), 40)
 
-    def test_wide_inputs_are_summed_per_tile_and_the_budget_defers_whole_layers(self):
-        c = Calibration("cpu", budget_bytes=PackStore.TILE * PackStore.TILE * 4 * 2 + 2 * 4096)
-        wide = FakeLayer(2 * PackStore.TILE, "Target/model.fc")
+    def test_a_wide_weight_is_summed_whole_and_the_budget_defers_whole_layers(self):
+        """A weight wider than the decode tile gets ONE Hessian over its whole K (pack_wide's error feedback crosses the
+        tiles), so its blob is the full width; what does not fit the budget waits for a later boot."""
+        wide_cols = 2 * PackStore.TILE
+        c = Calibration("cpu", budget_bytes=wide_cols * wide_cols * 4 + 4096)
+        wide = FakeLayer(wide_cols, "Target/model.fc")
+        self.assertEqual(PackStore.tiles(wide.name, wide_cols), [(wide.name, 0, wide_cols)])
         self.assertTrue(c.attach(wide.name, wide, PackStore.tiles(wide.name, wide.cols), small_rows=True))
-        self.assertEqual(sorted(c.H), [wide.name + ".k0", wide.name + ".k1"])
+        self.assertEqual(list(c.H), [wide.name])
+        self.assertEqual(tuple(c.H[wide.name].shape), (wide_cols, wide_cols))
         c.arm()
-        x = torch.randn(3, 2 * PackStore.TILE).bfloat16()
+        x = torch.randn(3, wide_cols).bfloat16()
         wide(x, torch.tensor([True, False, True]))
         kept = x[[0, 2]].float()
-        torch.testing.assert_close(c.H[wide.name + ".k1"], kept[:, PackStore.TILE:].T @ kept[:, PackStore.TILE:], atol=1e-2, rtol=1e-3)
+        torch.testing.assert_close(c.H[wide.name], kept.T @ kept, atol=1e-2, rtol=1e-3)
         self.assertEqual(c.progress(), 2)
         late = FakeLayer(64, "Target/model.late")
         self.assertFalse(c.attach(late.name, late, PackStore.tiles(late.name, 64), small_rows=True), "over budget: waits for a later boot")
         self.assertEqual(c.deferred, [(late.name, late.name)])
         self.assertIsNone(late.observer)
         self.assertIn("1 tiles deferred", c.status())
-        self.assertLessEqual(Calibration.nbytes(PackStore.tiles("y", 20480)), BUDGET_BYTES)
+        self.assertLessEqual(Calibration.nbytes(PackStore.tiles("y", 20480)), BUDGET_BYTES)    # the drafter's fc fits a boot's budget
 
     def test_the_store_reports_missing_tiles_and_refuses_foreign_blobs(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = PackStore(tmp, 0)
-            self.assertEqual(store.missing_calibration("A/model.x", 5 * PackStore.TILE),
-                             [(f"A/model.x.k{i}", i * PackStore.TILE, PackStore.TILE) for i in range(5)])
+            self.assertEqual(store.missing_calibration("A/model.x", 5 * PackStore.TILE), [("A/model.x", 0, 5 * PackStore.TILE)])
+            self.assertFalse(store.calibrated("A/model.x"))
             path = store.calibration_path("A/model.y")
             path.parent.mkdir(parents=True)
             torch.save({"H": torch.eye(128), "ntok": 10, "name": "A/model.y"}, path)
             self.assertEqual(store.missing_calibration("A/model.y", 128), [])
+            self.assertTrue(store.calibrated("A/model.y"))
             with self.assertRaisesRegex(ValueError, "do not fit"):
                 store.missing_calibration("A/model.y", 256)                  # a TP-sharded width the old dump does not match
 

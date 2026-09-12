@@ -38,13 +38,29 @@ class W4Pack:
     rowscale: torch.Tensor
     rows: int
     cols: int
+    calibrated: bool = False    # GPTQ from a calibration Hessian (the store says), not round-to-nearest
+
+
+GPTQ_ACT_ORDER = True       # columns in decreasing Hessian-diagonal order with static groups (45차 §23 GPU 판정 7차)
+TILE = 4096                 # the decode kernel's widest K: a wider weight is a sequence of tiles, fp32-accumulated
+
+
+def _tile_pack(codes, scales, shift, n, k0, k1):
+    """One W4Pack of columns [k0, k1) out of row-major codes/scales of a wider weight."""
+    padded = shift.shape[0]
+    k = k1 - k0
+    pairs = codes[:, k0:k1].reshape(padded, k//2, 2)
+    data = (pairs[..., 0] | (pairs[..., 1] << 4))
+    data = data.view(padded//128, 128, k//128, 64).permute(0, 2, 1, 3).contiguous()
+    sc = scales[:, k0//16:k1//16].reshape(padded//128, 128, k//128, 8).permute(0, 2, 1, 3).contiguous()
+    return W4Pack(data, sc, torch.exp2(-shift).contiguous(), n, k)
 
 
 @torch.inference_mode()
-def pack_w4(weight, *, hessian=None, per_row=True):
+def pack_w4(weight, *, hessian=None, per_row=True, act_order=None):
     from .packing import _E2M1_GRID, _E2M1_MIDS, _w4_row_shift, _w4_rtn_codes, _w4_gptq_codes
     if (not weight.is_cuda or weight.ndim != 2 or weight.dtype != torch.bfloat16
-            or weight.shape[1] % 128 or not 0 < weight.shape[1] <= 4096):
+            or weight.shape[1] % 128 or not 0 < weight.shape[1] <= TILE):
         raise ValueError("W4 packing requires CUDA BF16 [N,K], K in 128..4096 aligned to 128")
     n, k = weight.shape
     padded = (n+127)//128*128
@@ -56,12 +72,36 @@ def pack_w4(weight, *, hessian=None, per_row=True):
     else:
         if hessian.shape != (k, k) or not torch.isfinite(hessian).all():
             raise ValueError("GPTQ Hessian must be finite and match the input dimension")
-        codes, scales = _w4_gptq_codes(weight, shift, need, hessian, mids, grid)
-    pairs = codes.reshape(padded, k//2, 2)
-    data = (pairs[..., 0] | (pairs[..., 1] << 4))
-    data = data.view(padded//128, 128, k//128, 64).permute(0, 2, 1, 3).contiguous()
-    scales = scales.view(padded//128, 128, k//128, 8).permute(0, 2, 1, 3).contiguous()
-    return W4Pack(data, scales, torch.exp2(-shift).contiguous(), n, k)
+        codes, scales = _w4_gptq_codes(weight, shift, need, hessian, mids, grid,
+                                       act_order=GPTQ_ACT_ORDER if act_order is None else act_order)
+    pack = _tile_pack(codes, scales, shift, n, 0, k)
+    return W4Pack(pack.data, pack.scale, pack.rowscale, n, k, hessian is not None)
+
+
+@torch.inference_mode()
+def pack_w4_wide(weight, hessian, *, per_row=True, act_order=None):
+    """GPTQ over the WHOLE K of a weight wider than a tile (the drafter's fc: 20480 = five tiles), with the full
+    Hessian: the error feedback crosses tile boundaries, which tile-by-tile packing cannot (its input, the target's
+    hidden states of five layers, is correlated across the tiles). The fp64 factorisation runs on the CPU. Returns
+    the tiles' W4Packs, each calibrated."""
+    from .packing import _E2M1_GRID, _E2M1_MIDS, _w4_row_shift, _w4_gptq_codes
+    if (not weight.is_cuda or weight.ndim != 2 or weight.dtype != torch.bfloat16
+            or weight.shape[1] % TILE or weight.shape[1] <= TILE):
+        raise ValueError("wide W4 packing takes a CUDA BF16 [N,K] with K a multiple of 4096 above 4096")
+    n, k = weight.shape
+    if hessian.shape != (k, k) or not torch.isfinite(hessian).all():
+        raise ValueError("GPTQ Hessian must be finite and match the input dimension")
+    padded = (n+127)//128*128
+    mids = torch.tensor(_E2M1_MIDS, device=weight.device)
+    grid = torch.tensor(_E2M1_GRID, device=weight.device)
+    need, shift, _ = _w4_row_shift(weight, padded, k//16, per_row)
+    codes, scales = _w4_gptq_codes(weight, shift, need, hessian, mids, grid,
+                                   act_order=GPTQ_ACT_ORDER if act_order is None else act_order, factor_device="cpu")
+    packs = []
+    for k0 in range(0, k, TILE):
+        t = _tile_pack(codes, scales, shift, n, k0, k0 + TILE)
+        packs.append(W4Pack(t.data, t.scale, t.rowscale, n, TILE, True))
+    return packs
 
 
 def w4_gemm(x, pack):
@@ -91,19 +131,31 @@ class DenseLinear:
         self.observer = None  # calibration.Calibration sums this layer's inputs through it (X^T X for the GPTQ packs)
         self.executed = 0  # boot proof: W4=1, FP8=2, NVFP4=4
         packs = []
-        for start in range(0, self.cols, 4096):
-            w = weight[:, start:start+4096].contiguous()
-            key = name if self.cols <= 4096 else f'{name}.k{start//4096}'
-            packs.append(store.pack(w, key) if store is not None else
-                         pack_w4(w, hessian=None if hessians is None else hessians[start//4096]))
+        if self.cols > TILE and store is not None and store.calibrated(name):
+            packs = list(store.pack_wide(weight, name))              # one GPTQ over the whole K, from the full Hessian
+        elif self.cols > TILE and hessians is not None and hessians.shape == (self.cols, self.cols):
+            packs = pack_w4_wide(weight, hessians)
+        else:
+            for start in range(0, self.cols, TILE):
+                w = weight[:, start:start+TILE].contiguous()
+                key = name if self.cols <= TILE else f'{name}.k{start//TILE}'
+                packs.append(store.pack(w, key) if store is not None else
+                             pack_w4(w, hessian=None if hessians is None else hessians[start//TILE]))
         self.packs = tuple(packs)
+        self.calibrated = all(p.calibrated for p in self.packs)
         self.fp8 = FP8Linear(weight) if prefill else None
         self.nvfp4 = None
+        self.nvfp4_inexact = 0
         if prefill and nvfp4:
             padded_rows = (self.rows+127)//128*128
-            w = torch.nn.functional.pad(weight, (0, 0, 0, padded_rows-self.rows)).contiguous()
-            scale = (2688./w.abs().amax().float().clamp_min(1e-12)).reshape(1)
-            data, sf = nvfp4_quantize(w, scale, enable_pdl=False)
+            if self.calibrated:
+                # the prefill lane multiplies by the same GPTQ solution as the decode lane (packing.nvfp4_from_w4)
+                from .packing import nvfp4_from_w4
+                data, sf, scale, self.nvfp4_inexact = nvfp4_from_w4(self.packs, self.rows, self.cols)
+            else:
+                w = torch.nn.functional.pad(weight, (0, 0, 0, padded_rows-self.rows)).contiguous()
+                scale = (2688./w.abs().amax().float().clamp_min(1e-12)).reshape(1)
+                data, sf = nvfp4_quantize(w, scale, enable_pdl=False)
             self.nvfp4 = data, sf, scale, padded_rows
 
     def consume_weight(self, storage):

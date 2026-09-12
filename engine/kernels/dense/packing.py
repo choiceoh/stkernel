@@ -170,16 +170,92 @@ def _w4_quant_cols(w, sc, mids, grid):
     return code, deq
 
 
+def _w4_static_scales(weight, shift, need, mids, grid):
+    """The RTN packer's per-16-group e4m3 scales of the shifted weights, for every group at once: (d int8 [n_pad,
+    kg], sc fp32 [n_pad, kg]). What an act-ordered GPTQ quantises against -- its columns come in Hessian order, so a
+    group's scale cannot be re-derived when the group "starts" (it never does); the groups stay the kernel's."""
+    import torch
+
+    n, k = weight.shape
+    n_pad = shift.shape[0]
+    kg = k // 16
+    dev = weight.device
+    d_out = torch.zeros(n_pad, kg, dtype=torch.int8, device=dev)
+    sc_out = torch.ones(n_pad, kg, dtype=torch.float32, device=dev)
+    CH = max(128, (((1 << 20) // k) // 128) * 128)
+    for r0 in range(0, n_pad, CH):
+        r1 = min(r0 + CH, n_pad)
+        g = torch.zeros(r1 - r0, kg, 16, dtype=torch.float32, device=dev)
+        if r0 < n:
+            src = weight[r0:min(r1, n)].float()
+            g[:src.shape[0]] = src.view(src.shape[0], kg, 16)
+        g *= torch.exp2(shift[r0:r1])[:, None, None]
+        e0 = need[r0:r1].unsqueeze(-1) + shift[r0:r1, None, None]
+        _code, d, sc = _w4_search(g, e0, mids, grid)
+        d_out[r0:r1] = d.squeeze(-1)
+        sc_out[r0:r1] = sc.squeeze(-1)
+        del g, e0, _code, d, sc
+    return d_out, sc_out
+
+
+def _gptq_inverse_factor(H, k, percdamp, factor_device, perm=None):
+    """U = chol(H_damped^-1, upper) in fp32: symmetrised, columns permuted by `perm` when given, dead columns made
+    unit, damped up a ladder until it factors. Two K x K fp64 matrices alive at most (the source is re-read on a
+    retry instead of kept), on `factor_device` -- the CPU for a wide K: the GB10's fp64 is slow and a 20480^2 pair
+    is 6.8 GiB of unified memory either way. Returns (U on that device, dead)."""
+    import torch
+
+    dev = H.device if factor_device is None else torch.device(factor_device)
+    src = H.to(dev, torch.float32)                          # the symmetrised, permuted source in fp32: 1/2 the fp64 bytes
+    if perm is not None:
+        perm = perm.to(dev)
+        src = src.index_select(0, perm)
+        src = src.index_select(1, perm)
+    src = 0.5 * (src + src.T)
+    dead = torch.diagonal(src) <= 0
+    src[dead, dead] = 1.0
+    mean_diag = float(torch.mean(torch.diagonal(src)))
+    diag = torch.arange(k, device=dev)
+    U = None
+    for damp_f in (percdamp, 10 * percdamp, 100 * percdamp, 1.0):
+        Hd = src.to(torch.float64)
+        Hd[diag, diag] += damp_f * mean_diag
+        try:
+            L = torch.linalg.cholesky(Hd)
+            del Hd
+            Hinv = torch.cholesky_inverse(L)
+            del L
+            U = torch.linalg.cholesky(Hinv, upper=True)
+            del Hinv
+            U = U.to(torch.float32)
+            if damp_f != percdamp:
+                logger.warning("[megakernel] w4 pack GPTQ: Hessian held at damping %.0f%% "
+                               "(not at %.0f%%)", 100 * damp_f, 100 * percdamp)
+            break
+        except Exception:
+            U = None
+    del src
+    if U is None:
+        raise RuntimeError("Hessian not positive-definite at any damping")
+    return U, dead
+
+
 def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
-                   percdamp=0.01):
+                   percdamp=0.01, act_order=False, factor_device=None):
     """GPTQ (OBQ error feedback, Frantar et al. 2022) on the e2m1 x e4m3
     grid: columns are quantized in order; each column's rounding error is
     fed forward into the not-yet-quantized columns through the inverse
     Hessian of the layer's INPUT (H = sum x x^T over calibration tokens),
     so the rounding decisions minimise the OUTPUT error x @ (W - Q)^T, not
-    the weight error. Group scales are re-derived on the error-updated
-    weights when the group starts (groups never cross a block: 16 | 128).
-    Same bytes, same kernel: the accuracy is bought at pack time.
+    the weight error. In the plain order the group scales are re-derived on
+    the error-updated weights when the group starts (groups never cross a
+    block: 16 | 128). With `act_order` the columns come in decreasing
+    Hessian-diagonal order (the inputs that matter most are rounded first,
+    their error absorbed by the rest) and the group scales are the RTN
+    packer's, fixed before the walk (static groups: the kernel's 16-groups
+    are untouched). Same bytes, same kernel: the accuracy is bought at pack
+    time. `factor_device`: where the fp64 factorisation runs (see
+    _gptq_inverse_factor).
 
     Returns (codes uint8 [n_pad, k] with the sign in bit 3, d int8 [n_pad,
     kg]) in the SHIFTED domain (weights x 2^shift_r), like the RTN path."""
@@ -191,35 +267,22 @@ def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
     dev = weight.device
     W = torch.zeros(n_pad, k, dtype=torch.float32, device=dev)
     W[:n] = weight.float() * torch.exp2(shift[:n, None])
-    # The real Hessians (33K tokens, outlier channels 20x, fp32 addmm) are
-    # indefinite by rounding at the 1e-7 level: the first GPTQ boot lost 9+
-    # linears to "leading minor ... not positive-definite" at 1% damping.
-    # Symmetrise, factor in float64, and raise the damping until it holds.
-    H = H.to(dev, torch.float64)
-    H = 0.5 * (H + H.T)
-    dead = torch.diag(H) <= 0
-    H[dead, dead] = 1.0
-    W[:, dead] = 0.0
-    mean_diag = float(torch.mean(torch.diag(H)))
-    Hinv = None
-    for damp_f in (percdamp, 10 * percdamp, 100 * percdamp, 1.0):
-        try:
-            Hd = H + torch.eye(k, device=dev, dtype=torch.float64) * (damp_f * mean_diag)
-            L = torch.linalg.cholesky(Hd)
-            Hinv = torch.cholesky_inverse(L)
-            Hinv = torch.linalg.cholesky(Hinv, upper=True).to(torch.float32)
-            del Hd, L
-            if damp_f != percdamp:
-                logger.warning("[megakernel] w4 pack GPTQ: Hessian held at damping %.0f%% "
-                               "(not at %.0f%%)", 100 * damp_f, 100 * percdamp)
-            break
-        except Exception:
-            Hinv = None
-    if Hinv is None:
-        raise RuntimeError("Hessian not positive-definite at any damping")
-    del H
     codes = torch.zeros(n_pad, k, dtype=torch.uint8, device=dev)
-    d_out = torch.zeros(n_pad, kg, dtype=torch.int8, device=dev)
+    if act_order:
+        perm = torch.argsort(torch.diagonal(H).to(torch.float64), descending=True)   # no copy of H for its diagonal
+        d_out, sc_static = _w4_static_scales(weight, shift, need, mids, grid)
+    else:
+        perm = None
+        d_out = torch.zeros(n_pad, kg, dtype=torch.int8, device=dev)
+    Hinv, dead = _gptq_inverse_factor(H, k, percdamp, factor_device, perm)
+    Hinv = Hinv.to(dev)
+    dead = dead.to(dev)
+    if perm is not None:
+        perm = perm.to(dev)
+    if perm is not None:
+        W = W[:, perm].contiguous()
+    W[:, dead] = 0.0
+    del H
     sc = None
     for i1 in range(0, k, blocksize):
         i2 = min(i1 + blocksize, k)
@@ -229,7 +292,10 @@ def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
         Hinv1 = Hinv[i1:i2, i1:i2]
         for i in range(cnt):
             col = i1 + i
-            if col % 16 == 0:
+            orig = int(perm[col]) if perm is not None else col
+            if perm is not None:
+                sc = sc_static[:, orig // 16:orig // 16 + 1]
+            elif col % 16 == 0:
                 g16 = W1[:, i:i + 16]
                 amax = g16.abs().amax(-1, keepdim=True)
                 e0 = torch.ceil(torch.log2((amax / 6.0).clamp(min=1e-30)))
@@ -240,10 +306,68 @@ def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
             w = W1[:, i:i + 1]
             code, q = _w4_quant_cols(w, sc, mids, grid)
             sgn = torch.signbit(w).to(torch.uint8) << 3
-            codes[:, col] = (code.to(torch.uint8) | sgn).squeeze(-1)
+            codes[:, orig] = (code.to(torch.uint8) | sgn).squeeze(-1)
             err = (w - q) / Hinv1[i, i]
             W1[:, i:] -= err @ Hinv1[i:i + 1, i:]
             Err1[:, i:i + 1] = err
         W[:, i2:] -= Err1 @ Hinv[i1:i2, i2:]
     del W, Hinv
     return codes, d_out
+
+
+def _fp4_encode_nibbles(z):
+    """e2m1 nibble (sign in bit 3) of fp32 values already divided by their scale, round to nearest, |z| clamped to 6."""
+    import torch
+
+    grid = torch.tensor(_E2M1_GRID, device=z.device)
+    mids = torch.tensor(_E2M1_MIDS, device=z.device)
+    code = torch.bucketize(z.abs().clamp(max=6.0), mids)
+    return (code.to(torch.uint8) | (torch.signbit(z).to(torch.uint8) << 3)), grid[code]
+
+
+def w4_rowmajor(packs):
+    """(codes uint8 [n_pad, K] e2m1 nibbles with the sign in bit 3, scale fp32 [n_pad, K/16] = the group's e4m3 scale
+    times the row's undo of the shift) of a weight's K tiles of W4Pack, in row-major column order."""
+    import torch
+
+    codes, scales = [], []
+    for p in packs:
+        tn, tk, _, _ = p.data.shape
+        n_pad, k = tn * 128, tk * 128
+        rm = p.data.permute(0, 2, 1, 3).reshape(n_pad, k // 2)
+        codes.append(torch.stack([rm & 0xF, rm >> 4], dim=-1).reshape(n_pad, k))
+        d = p.scale.permute(0, 2, 1, 3).reshape(n_pad, k // 16).to(torch.int32)
+        scales.append((1.0 + (d & 7).float() / 8.0) * torch.exp2((d >> 3).float()) * p.rowscale.float()[:, None])
+    return torch.cat(codes, dim=1), torch.cat(scales, dim=1)
+
+
+def nvfp4_from_w4(packs, rows, cols):
+    """The NVFP4 prefill tensors (data [n_pad, K/2] uint8 even-low, sf [n_pad, K/16] uint8 e4m3 in flashinfer's
+    interleaved layout, scale [1] fp32 = the global scale) that carry a weight's W4 packs as they are: the same e2m1
+    nibbles, each 16-group's scale = the pack's e4m3 group scale x the row's shift undo x a power-of-two global scale,
+    so `mm_fp4` multiplies by the GPTQ solution the decode kernel multiplies by, instead of a fresh round-to-nearest
+    of the bf16 weight (45차 §23 GPU 판정 7차). A group whose scale the e4m3 range cannot hold exactly (a row far from
+    the tensor's median, a subnormal) is re-rounded to nearest on that scale -- counted, and rare."""
+    import torch
+    from engine.modules.nvfp4_sf import swizzle_sf
+
+    codes, s_eff = w4_rowmajor(packs)                                   # [n_pad, K], [n_pad, K/16]
+    n_pad = codes.shape[0]
+    smax = float(s_eff.max().clamp_min(1e-30))
+    m = int(torch.floor(torch.log2(torch.tensor(448.0 / smax))))       # code x sf <= 6 x 448
+    scale = torch.full((1,), 2.0 ** m, dtype=torch.float32, device=codes.device)
+    sf32 = s_eff * scale
+    sf = sf32.to(torch.float8_e4m3fn)
+    exact = sf.float() == sf32
+    inexact = int((~exact).sum())
+    if inexact:
+        grid = torch.tensor(_E2M1_GRID, device=codes.device)
+        vals = grid[(codes & 7).long()] * torch.where((codes & 8) != 0, -1.0, 1.0) * s_eff.repeat_interleave(16, dim=1)
+        z = vals * scale / sf.float().clamp_min(torch.finfo(torch.float32).tiny).repeat_interleave(16, dim=1)
+        re, _ = _fp4_encode_nibbles(z)
+        codes = torch.where((~exact).repeat_interleave(16, dim=1), re, codes)
+    pairs = codes.reshape(n_pad, cols // 2, 2)
+    data = (pairs[..., 0] | (pairs[..., 1] << 4)).contiguous()
+    sf_swizzled = swizzle_sf(sf.view(torch.uint8)).view(n_pad, cols // 16).contiguous()
+    return data, sf_swizzled, scale, inexact
+

@@ -27,18 +27,21 @@ class PackStore:
 
     @staticmethod
     def tiles(name, cols):
-        """(blob key, first column, width) of every K tile a dense weight of `cols` columns is packed and calibrated in."""
-        if cols <= PackStore.TILE:
-            return [(name, 0, cols)]
-        return [(f"{name}.k{i}", i * PackStore.TILE, min(PackStore.TILE, cols - i * PackStore.TILE))
-                for i in range((cols + PackStore.TILE - 1) // PackStore.TILE)]
+        """(blob key, first column, width) a dense weight of `cols` columns is calibrated in: one blob over the whole K
+        -- a weight wider than the decode kernel's tile is packed by one GPTQ over its full Hessian (pack_wide), so
+        the calibration covers the columns' correlations across the tiles."""
+        return [(name, 0, cols)]
 
     def calibration_path(self, key, rank=None):
         return self.root/'mkcalib'/f'rank{self.rank if rank is None else rank}'/(key+'.pt')
 
+    def calibrated(self, name):
+        """Whether this store holds a calibration blob for `name` (any shape: `pack` checks the fit)."""
+        return self.calibration_path(name).is_file()
+
     def missing_calibration(self, name, cols):
-        """The tiles of `name` this store has no calibration blob for: what a calibrating boot must sum. A blob that
-        exists but does not fit the tile is reported by name -- `pack` refuses it, so the boot says which file to remove."""
+        """The blobs of `name` this store lacks: what a calibrating boot must sum. A blob that exists but does not fit
+        the weight is reported by name -- `pack` refuses it, so the boot says which file to remove."""
         missing, foreign = [], []
         for key, start, width in self.tiles(name, cols):
             path = self.calibration_path(key)
@@ -53,6 +56,59 @@ class PackStore:
         if foreign:
             raise ValueError(f"calibration blobs that do not fit {name} [{cols} columns]: remove them and reboot -- {foreign}")
         return missing
+
+    def _hessian(self, name, k):
+        """The calibration blob of `name` as a finite [k, k] float Hessian, or None when the store has none."""
+        path = self.calibration_path(name)
+        if not path.is_file():
+            return None
+        self.read_files.add(path)
+        blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
+        hessian = blob['H']
+        if (tuple(hessian.shape) != (k,k) or int(blob['ntok']) <= 0
+                or blob.get('name', name) != name or not hessian.is_floating_point()
+                or not torch.isfinite(hessian).all()):
+            raise ValueError(f'incompatible calibration: {path} for a [.., {k}] weight')
+        return hessian
+
+    def pack_wide(self, weight, name, *, rank=None):
+        """The tiles of a weight wider than the decode kernel's K, from one GPTQ over the whole weight and its full
+        calibration Hessian (kernels/dense.pack_w4_wide); cached as one blob under the wide identity."""
+        from engine.kernels.dense import W4Pack, pack_w4_wide
+        rank = self.rank if rank is None else rank
+        n, k = weight.shape
+        hessian = self._hessian(name, k)
+        if hessian is None:
+            raise ValueError(f"pack_wide needs the calibration of {name}")
+        raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
+        identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, wide=True,
+                        calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(),
+                        per_row=not name.startswith('DFlash2Qwen3ForCausalLM/'), algorithm=self.algorithm)
+        key = hashlib.sha256(repr(identity).encode()).hexdigest()
+        cache = self.root/'st-dense-packs'/(key+'.pt')
+        if cache.is_file():
+            self.read_files.add(cache)
+            blob = torch.load(cache, map_location='cpu', mmap=True, weights_only=True)
+            if blob['identity'] != identity:
+                raise ValueError(f'dense pack identity mismatch: {cache}')
+            packs = []
+            for d, s in zip(blob['data'], blob['scale']):
+                tile = self.decode(dict(data=d, scale=s, rowscale=blob['rowscale']), weight.device, n, self.TILE)
+                packs.append(W4Pack(tile.data, tile.scale, tile.rowscale, n, self.TILE, True))
+            self.stats['cache'] += 1
+        else:
+            packs = pack_w4_wide(weight, hessian, per_row=identity['per_row'])
+            self.stats['built'] += 1
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            temporary = cache.with_suffix(f'.{os.getpid()}.tmp')
+            try:
+                torch.save(dict(identity=identity, data=[p.data.cpu() for p in packs], scale=[p.scale.cpu() for p in packs],
+                                rowscale=packs[0].rowscale.cpu()), temporary)
+                os.replace(temporary,cache)
+            finally:
+                temporary.unlink(missing_ok=True)
+        self.stats['gptq'] += 1
+        return packs
 
     def pack(self, weight, name, *, rank=None):
         from engine.kernels.dense import pack_w4
@@ -84,6 +140,9 @@ class PackStore:
             if blob['identity'] != identity:
                 raise ValueError(f'dense pack identity mismatch: {cache}')
             pack = self.decode(blob, weight.device, n, k)
+            if hessian is not None:
+                from dataclasses import replace
+                pack = replace(pack, calibrated=True)
             self.stats['cache'] += 1
         else:
             kind = 'gptq' if hessian is not None else 'rtn'
@@ -109,6 +168,9 @@ class PackStore:
             if pack is None:
                 pack = pack_w4(weight, hessian=hessian, per_row=per_row)
                 self.stats['built'] += 1
+            elif hessian is not None:
+                from dataclasses import replace
+                pack = replace(pack, calibrated=True)
             cache.parent.mkdir(parents=True, exist_ok=True)
             temporary = cache.with_suffix(f'.{os.getpid()}.tmp')
             try:
