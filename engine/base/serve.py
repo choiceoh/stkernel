@@ -2313,6 +2313,15 @@ class Server:
                  "sum over those of the target mass the drafter's candidates cover at all",
                  round(engine.covered_mass, 6)),
             ])
+        clock = getattr(getattr(engine, "pipeline", None), "clock", None)
+        if clock is not None and clock.totals:
+            # Where a decode step's DEVICE time goes, sampled one step in 64 and read a round late so nothing
+            # waits (base/stage_clock). The two step kinds are already counted; this is what a step is made of.
+            labelled.append(("st:decode_stage_seconds_total", "counter",
+                             "device time inside a decode step, by stage, over the sampled steps",
+                             [(f'stage="{k}"', round(v, 6)) for k, v in sorted(clock.totals.items())]))
+            rows.append(("counter", "st:decode_stage_samples_total",
+                         "decode steps whose stages were timed", clock.samples))
         exits = getattr(engine, "chain_exits", None)
         if exits:
             # st:sync_drain_steps_total says how often the pipeline was emptied. This says by what, which is the

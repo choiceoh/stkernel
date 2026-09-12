@@ -85,6 +85,116 @@ class ResolveTests(unittest.TestCase):
         self.assertIn(lane, p.free)
 
 
+class StageClockTests(unittest.TestCase):
+    """The decode step's stage meter. It must never make the step wait, and must not measure every step."""
+
+    def clock(self, every=4):
+        from engine.base.stage_clock import StageClock
+        c = StageClock(every=every, device=None)
+        c._torch = FakeTorch()                       # a device without a device: the sampling logic is the point
+        return c
+
+    def test_it_measures_one_step_in_every(self):
+        c = self.clock(every=4)
+        self.assertEqual([c.step() for _ in range(8)], [False, False, False, True] * 2)
+
+    def test_an_unsampled_step_records_nothing_and_costs_nothing(self):
+        c = self.clock(every=4)
+        c.step()
+        with c.mark("forward"):
+            pass
+        self.assertEqual(c._pending, [], "a step that is not sampled must not create events")
+
+    def test_a_sampled_step_is_read_back_a_round_later_not_now(self):
+        """Reading an event on the step that recorded it would synchronise. The whole design is that it does not."""
+        c = self.clock(every=1)
+        c.step()
+        with c.mark("forward"):
+            pass
+        with c.mark("verify"):
+            pass
+        self.assertEqual(c.totals, {}, "nothing is read on the step that recorded it")
+        self.assertEqual(len(c._pending), 2)
+        c.step()                                      # the next round drains the previous one
+        self.assertEqual(sorted(c.totals), ["forward", "verify"])
+        self.assertEqual(c.samples, 1)
+
+    def test_an_unfinished_round_is_left_alone_rather_than_waited_on(self):
+        c = self.clock(every=1)
+        c.step()
+        with c.mark("forward"):
+            pass
+        c._pending[0][2].done = False                 # still running on the device
+        c.step()
+        self.assertEqual(c.totals, {}, "it must not block; the round waits for the one after")
+
+    def test_both_ends_of_a_span_are_recorded(self):
+        """A start that is never recorded, or an end recorded outside the span, times something else entirely."""
+        c = self.clock(every=1)
+        c.step()
+        with c.mark("forward"):
+            start, end = c._pending[0][1], c._pending[0][2]
+            self.assertEqual((start.records, end.records), (1, 0), "start at entry, end not yet")
+        self.assertEqual((start.records, end.records), (1, 1), "and the end at exit")
+
+    def test_a_drained_round_is_not_counted_twice(self):
+        c = self.clock(every=1)
+        c.step()
+        with c.mark("forward"):
+            pass
+        c.step(); once = dict(c.totals)
+        c._drain()
+        self.assertEqual(c.totals, once, "draining again must not add the same events a second time")
+
+    def test_marking_before_the_first_step_is_inert_rather_than_an_error(self):
+        from engine.base.stage_clock import StageClock
+        c = StageClock(device=None)
+        with c.mark("forward"):
+            pass
+
+    def test_a_cuda_device_arms_it_and_anything_else_does_not(self):
+        from types import SimpleNamespace
+        from engine.base.stage_clock import StageClock
+        self.assertIsNone(StageClock(device=SimpleNamespace(type="cpu"))._torch)
+        self.assertIsNone(StageClock(device=None)._torch)
+        armed = StageClock(device=SimpleNamespace(type="cuda"))
+        self.assertIsNotNone(armed._torch, "a cuda device must bring torch in, or nothing is ever measured")
+
+    def test_shares_are_the_shape_of_a_step(self):
+        c = self.clock()
+        c.totals = {"forward": 9.0, "verify": 1.0}
+        self.assertEqual(c.shares(), {"forward": 0.9, "verify": 0.1})
+        self.assertEqual(self.clock().shares(), {}, "no samples yet is not a division by zero")
+
+    def test_without_a_cuda_device_it_is_inert(self):
+        from engine.base.stage_clock import StageClock
+        c = StageClock(device=None)
+        self.assertFalse(any(c.step() for _ in range(200)))
+        with c.mark("forward"):
+            pass
+        self.assertEqual((c.totals, c._pending), ({}, []))
+
+
+class FakeEvent:
+    def __init__(self, **kw):
+        self.done = True
+        self.records = 0
+
+    def record(self):
+        self.records += 1
+
+    def query(self):
+        return self.done
+
+    def elapsed_time(self, other):
+        return 2.0
+
+
+class FakeTorch:
+    class cuda:
+        Event = FakeEvent
+
+
 class BatchTransitionTests(unittest.TestCase):
     """Run the real launch/commit/readback chain; only model kernels are replaced."""
     def engine(self):

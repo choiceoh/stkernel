@@ -233,7 +233,10 @@ class FleetOccupancyTests(unittest.TestCase):
 
     def test_the_queue_sees_st_containers(self):
         self.assertIn("st_engine_up() {", self.fleet)
-        self.assertIn("grep -qE '^st-' && return 0", self.fleet)
+        # this node's containers, the head's lease, and the other three nodes -- the local
+        # `docker ps` alone answered for one Spark of four (2026-09-12)
+        self.assertIn("grep -E '^st-'", self.fleet)
+        self.assertIn("st_engine_elsewhere", self.fleet)
         self.assertIn("fleet_lease read", self.fleet)      # containers AND the lease: they disagreed once
         # a grant is refused on both paths that hand out the fleet
         self.assertIn('logit "hold refused: ST engine occupies the fleet', self.fleet)
