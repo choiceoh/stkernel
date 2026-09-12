@@ -4124,6 +4124,7 @@ def _get_dynamic_kernel(
         reform_sf_pack=reform_sf_pack,
         tp_sf6_q0=tp_sf6_q0,
     )
+    cache_key = (*cache_key, "tp_prefill_scatter_fp32_v1", tp_sf6_q0)
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -4326,7 +4327,7 @@ def _get_dynamic_kernel(
     global_scale_fake = cute.runtime.make_fake_compact_tensor(
         alpha_dtype, (E,), assumed_align=16
     )
-    scatter_dtype = cutlass.Float32 if ep_local_cls is not None else a_dtype
+    scatter_dtype = cutlass.Float32 if ep_local_cls is not None or tp_sf6_q0 else a_dtype
     scatter_fake = make_ptr(scatter_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
     token_map_fake = make_ptr(cutlass.Int32, 4, cute.AddressSpace.gmem, assumed_align=4)
     token_weights_fake = make_ptr(
@@ -4387,7 +4388,7 @@ def _get_dynamic_kernel(
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6_q0.py"),)
             if tp_sf6_q0 else ()) + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_ep_local.py"),)
-            if ep_local_cls is not None else ()),
+            if ep_local_cls is not None or tp_sf6_q0 else ()),
     )
 
     if prefill_reuse:
@@ -4479,8 +4480,15 @@ def launch_sm120_dynamic_moe(
         tile_m=workspace.tile_m, activation=activation, swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit, quant_mode=quant_mode,
         tiled=bool(getattr(weights, "tiled", False))) is not None
+    tp_scatter_fp32 = _tp_sf6_q0_eligible(
+        enabled=_TP_SF6_Q0_ENABLED if _tp_sf6_q0_override is None else _tp_sf6_q0_override,
+        E=num_experts, m=num_tokens, k=k, n=n, num_topk=top_k,
+        tile_m=workspace.tile_m, quant_mode=quant_mode,
+        tiled=bool(getattr(weights, "tiled", False)), reform_sf_pack=direct_sf6,
+        activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
     accumulator = (_ep_local_scatter_buffer(workspace, scatter_output, num_tokens, k)
-                   if ep_local else scatter_output)
+                   if ep_local or tp_scatter_fp32 else scatter_output)
     compiled, mac = _get_dynamic_kernel(
         num_experts,
         num_tokens,
@@ -4559,7 +4567,7 @@ def launch_sm120_dynamic_moe(
             and not torch.cuda.is_current_stream_capturing()):
         print("[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=" + str(num_tokens), flush=True)
         _TP_SF6_Q0_LAUNCH_LOGGED = True
-    if ep_local:
+    if ep_local or tp_scatter_fp32:
         # CuTe and copy_ use the current PyTorch stream; completion of all
         # atomic updates precedes this single FP32 -> BF16 conversion.
         scatter_output.copy_(accumulator)

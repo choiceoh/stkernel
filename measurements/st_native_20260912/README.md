@@ -136,3 +136,36 @@ The loaded four-rank model was reused for controlled diagnostic arms in `diagnos
 - Synchronizing before each observation, after each observation, or only once after each target forward selected 785. This narrows the discrepancy to a lifetime/order-sensitive path; it does not yet identify the faulty operation or establish full answer correctness.
 
 The wrapper exited 0, restored the pinned serving release and active systemd service, and removed its ingress drain rule. A separate fresh-session native / synchronized / native repeat is next, to check order effects before changing production behavior. The independently repaired pinned block-ID event is not claimed to explain this result.
+
+### TP prefill accumulation repair (J)
+
+The event-order hypothesis did not survive a fresh repetition: a device event
+also produced an incorrect first token and a 1/3 retrieval answer. No global
+fence was adopted. First-divergence tracing and a replay of actual L3 inputs
+isolated nondeterminism to the large-M dynamic MoE's BF16 atomic scatter; see
+`diagnostic-lifetime-h/`.
+
+The TP SF6 Q0 prefill lane now preserves each weighted BF16 contribution but
+accumulates it in the existing dynamic workspace's FP32 plane and casts once
+at completion. It reuses the M128 FP32 scatter epilogue, widens the entire zero
+fill, selects the matching compiled pointer dtype, and keys the compiled cache
+on the new ABI and imported epilogue source. The extra shared plane is 108 MiB
+at the production 6912-token chunk size, reused across layers.
+
+On srv1, the actual L3 [6912,4096] input now produced bit-identical output in
+all eight calls (previously 633113–871919 changed elements between calls).
+The four-node native eager runner then retrieved all three planted facts at
+128559 input tokens. All ranks produced identical 1200-token sequences, and
+a second cache-cleared request selected the same first token 785. The original
+onepass fact matcher passes 3/3 on the combined reasoning/output. The response
+hit its 1200-token cap before the final-answer separator; this is a retrieval
+repair result, not proof of complete final-answer delivery or serving throughput.
+No extra synchronization or disabled native lane was used.
+
+Targeted kernel/configuration CPU tests: 23 passed, 26 GPU-dependent tests
+skipped. The eight-call GPU replay and full-model results are in
+`diagnostic-fp32-j/`. The reusable replay probe also includes poisoned-workspace
+and zero-route-weight checks; those additional cases were not run in this
+session because the user accepted this verification level and requested merge.
+The live service is restored to the pinned release; merging this source change
+is separate from switching the running deployment.

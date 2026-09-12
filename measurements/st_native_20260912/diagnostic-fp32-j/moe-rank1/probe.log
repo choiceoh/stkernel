@@ -1,0 +1,15 @@
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+{"event": "loaded", "shape": [6912, 4096], "free_gib": 35.67963790893555}
+2026-09-12 04:29:26,080 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 04:29:26,081 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_d279bbfc7515c28d
+2026-09-12 04:29:35,289 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_d279bbfc7515c28d.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=55296 -> rows 92032/92032 tiles 719/719 tasks 2876/2876
+[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=6912
+{"repeat": 0, "different": 0, "rel": 0.0, "max": 0.0, "last_rel": 0.0, "seconds": 9.492968592006946}
+{"repeat": 1, "different": 0, "rel": 0.0, "max": 0.0, "last_rel": 0.0, "seconds": 0.07889217900083167}
+{"repeat": 2, "different": 0, "rel": 0.0, "max": 0.0, "last_rel": 0.0, "seconds": 0.06702463299734518}
+{"repeat": 3, "different": 0, "rel": 0.0, "max": 0.0, "last_rel": 0.0, "seconds": 0.07211133199598407}
+{"repeat": 4, "different": 0, "rel": 0.0, "max": 0.0, "last_rel": 0.0, "seconds": 0.07184622799832141}
+{"repeat": 5, "different": 0, "rel": 0.0, "max": 0.0, "last_rel": 0.0, "seconds": 0.07141664299706463}
+{"repeat": 6, "different": 0, "rel": 0.0, "max": 0.0, "last_rel": 0.0, "seconds": 0.06907636600226397}
+{"repeat": 7, "different": 0, "rel": 0.0, "max": 0.0, "last_rel": 0.0, "seconds": 0.07117235400073696}
