@@ -141,15 +141,31 @@ class Grammars:
             self.crossed.record()
         return StepMasks(self, landing, filled)
 
-    def warm(self, device) -> None:
-        """Pay the mask kernel's compile at boot, not inside the first structured request: xgrammar's CUDA backend
-        is a Triton kernel, and its JIT is a second that would otherwise land in a served step."""
+    def qualify(self, device) -> None:
+        """Prove the mask on this device before the door opens (D3), and pay xgrammar's Triton JIT here rather
+        than inside the first structured request.
+
+        A boot that cannot mask cannot serve `response_format`, and it should say so here and not in an answer.
+        So it is asked for a real mask -- what the builtin JSON grammar allows at its first position -- and the
+        kernel's verdict on the device is compared with the same packed words expanded on the host. The mask
+        must also be a proper subset: all-true or all-false at a JSON start means the tokenizer and the head
+        disagree about the vocabulary, which every later mask would inherit silently.
+        """
         import torch
-        staging, landing = self._buffers(1, device)
-        staging[0].fill_(-1)                                                   # every token allowed: a no-op mask
-        landing[:1].copy_(staging[:1])
-        self.xgr.apply_token_bitmask_inplace(torch.zeros(1, self.vocab_size, device=device), landing[:1],
-                                             vocab_size=self.vocab_size)
+        masks = self.prepare([(0, self.matcher({"type": "json_object"}, 1), [])], device)
+        at, live, needed = masks.filled[0]
+        logits = torch.zeros(1, self.vocab_size, device=device)
+        masks.apply(0, logits)
+        shift = torch.arange(32, dtype=torch.int32)
+        words = self.landing[at: at + live].cpu().unsqueeze(-1)
+        want = words.bitwise_right_shift(shift).bitwise_and_(1).reshape(live, -1)[:, : self.vocab_size].ne(0)
+        got = ~torch.isinf(logits.cpu())
+        if not needed or not torch.equal(want, got):
+            raise RuntimeError(f"the grammar mask kernel disagrees with the bitmask it was given on "
+                               f"{int((want != got).sum())} of {self.vocab_size} ids (needed={needed})")
+        if not bool(want.any()) or bool(want.all()):
+            raise RuntimeError(f"the grammar allows {int(want.sum())} of {self.vocab_size} ids at a JSON start: "
+                               "the tokenizer and the head do not agree on the vocabulary")
 
 
 class StepMasks:

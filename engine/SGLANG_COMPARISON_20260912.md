@@ -102,6 +102,19 @@ generation_config 의 셋 `[154820, 154827, 154829]` 안에 있다. 겹치지 �
 - **준비 합의**: 그들은 `all_gather_object` 교집합 + 폴 타임아웃. 우리는 문이 결정하고 랭크는 첫 마스크에서
   막힌다 — 메시지 없이 합의하는 우리 방식 그대로.
 
+## 3-b. 디바이스 판정 (2026-09-12 12:50)
+
+**지금 프로덕션은 `response_format` 을 서빙하지 않는다** — 프로덕션 릴리스가 커밋 5734b29f(06:34)라
+`engine/base/grammar.py` 가 없다. 그래서 §31·§33 의 디바이스 판정은 다운타임 창이 아니라 **다음 릴리스
+부팅에 얹는다**(운영자 판단). 대신 부팅이 스스로 증명한다:
+
+- `Grammars.qualify(device)` — `vision.qualify` 와 같은 모양(D3). 내장 JSON 문법의 첫 마스크를 실제로 만들어
+  커널에 걸고, **디바이스의 판정과 호스트에서 펼친 같은 워드를 비교**한다. 다르면 부팅이 죽는다. 마스크가
+  전부 허용/전부 금지여도 죽는다(토크나이저와 헤드의 어휘 불일치).
+- `probes/st_structured_output.py` — 서빙 게이트 넷(기본 사고 경로 + `response_format`, json_schema 강제,
+  사고 끔, 컴파일 불가 스키마 400 + 엔진 생존).
+- `probes/engine_grammar_gpu.py` — GPU 하나·모델 없음. 커널·전송·이벤트 증명 + 옛 경로 대비 가격.
+
 ## 4. 안 가져올 것
 
 **점프 포워드 — SGLang 자신이 안 쓴다.** `try_jump_forward` / `jump_and_retokenize` / `outlines_jump_forward.py`
