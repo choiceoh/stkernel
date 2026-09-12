@@ -1,0 +1,53 @@
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "4c2ed4b6ce8649d7be794fc6c312b6c0", "phase": "waiting", "reason": "dequeue", "since": 119265.42993291, "updated_at": 1789245125.5377436, "version": 1}
+GO st-decode-consumer0913v5 2026-09-13_05:32:05
+  node 10.10.10.1: gpu=ok stray=3 ram=91G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=95G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+== 05:32:07 chain: A (base = A = c8562a7c55a4, session st-decode-consumer0913v5, rehearse=0)
+  cut /home/choiceoh/st-releases/c8562a7c55a4
+== 05:32:07 arm A = c8562a7c55a49d53eefc13794ee035c4ed6dc10a -> /home/choiceoh/st-releases/c8562a7c55a4 (port 18122)
+== 05:36:03 door up: http://127.0.0.1:18122
+== 05:36:03 onepass run 1/2 on A (cold column)
+    return _main()
+           ^^^^^^^
+  File "/home/choiceoh/stkernel-worktrees/codex-st-decode-forward-consumer/bench/onepass.py", line 819, in _main
+    run.end()
+  File "/home/choiceoh/stkernel-worktrees/codex-st-decode-forward-consumer/bench/onepass_recording.py", line 126, in end
+    report = self.control(op='end', token=self.token) if self.supported else {'ranks': []}
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-worktrees/codex-st-decode-forward-consumer/bench/onepass_recording.py", line 107, in control
+    with urllib.request.urlopen(req, timeout=75) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 515, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 532, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 1373, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 1348, in do_open
+    r = h.getresponse()
+        ^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/client.py", line 1448, in getresponse
+    response.begin()
+  File "/usr/lib/python3.12/http/client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/client.py", line 297, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 707, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+== 06:01:11 onepass run 1 on A failed (rc=1)
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "a957df16652f45ba9938393fac3af8d2", "phase": "waiting", "reason": "release", "since": 121016.907821696, "updated_at": 1789246877.0156283, "version": 1}

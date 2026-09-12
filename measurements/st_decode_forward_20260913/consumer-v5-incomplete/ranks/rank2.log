@@ -1,0 +1,224 @@
+2026-09-12T20:32:12.653340548Z   fleet reserved by queue/st-decode-consumer0913v5
+2026-09-12T20:32:12.885859219Z   box: GB10 (DGX Spark): SM121, unified 120 GiB (89 free)
+2026-09-12T20:32:19.195711938Z boot rendezvous arena-admission: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-12T20:32:12.907050628Z [W912 20:32:12.874021620 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+2026-09-12T20:32:31.192217644Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:31.313577186Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:31.432870089Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:31.552275967Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:31.671693606Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:31.791489692Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:31.911968579Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:32.031401721Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:32.151467520Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:32.271052230Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:32.393243789Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:32.515737860Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:32.635958874Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:32.756580721Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:32.876196391Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:32.995592398Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:33.114994372Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:33.234565451Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:33.355037873Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:33.474577991Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:33.595022270Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:33.714444228Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:33.834033291Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:33.953998273Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:34.073018072Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:34.192597390Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:34.311460500Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:34.430820858Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:34.551140881Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:34.671311927Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:34.790680030Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:34.911177540Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:35.031050522Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:35.150507601Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:35.269726999Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:35.389393677Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:35.508653011Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:35.628990474Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:35.749709360Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:35.869187862Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:35.989437949Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:32:36.108585475Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:33:50.063084945Z boot rendezvous weights-loaded: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-12T20:33:50.422769542Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:33:50.422836294Z   return func(*args, **kwargs)
+2026-09-12T20:34:01.864038921Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:34:01.864127977Z   return func(*args, **kwargs)
+2026-09-12T20:34:02.442349663Z [megakernel] selftest mla rel=3.13e-03 prefill32=True -> ARM
+2026-09-12T20:34:02.444223647Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:34:02.444242511Z   return func(*args, **kwargs)
+2026-09-12T20:34:02.444645519Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:34:02.444660879Z   return func(*args, **kwargs)
+2026-09-12T20:34:02.646710257Z 2026-09-12 20:34:02,646 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12T20:34:02.647257425Z 2026-09-12 20:34:02,647 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_d279bbfc7515c28d
+2026-09-12T20:34:10.407809408Z 2026-09-12 20:34:10,407 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_d279bbfc7515c28d.o
+2026-09-12T20:34:10.408038624Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=1024 -> rows 37760/37760 tiles 295/295 tasks 1180/1180
+2026-09-12T20:34:10.408687824Z [tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=128
+2026-09-12T20:34:10.701473954Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:34:10.701538050Z   return func(*args, **kwargs)
+2026-09-12T20:34:10.707095730Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:34:10.707118210Z   return func(*args, **kwargs)
+2026-09-12T20:34:11.139217124Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:34:11.139238452Z   return func(*args, **kwargs)
+2026-09-12T20:34:11.146426180Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:34:11.146444964Z   return func(*args, **kwargs)
+2026-09-12T20:34:11.170727765Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=8192 -> rows 44928/44928 tiles 351/351 tasks 1404/1404
+2026-09-12T20:34:11.741929608Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:34:11.741952424Z   return func(*args, **kwargs)
+2026-09-12T20:34:12.085632666Z [megakernel] mla prefill32 LAUNCHED T=9216 W=2051 register-Q tile=32
+2026-09-12T20:34:12.122356506Z 2026-09-12 20:34:12,122 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12T20:34:12.122541434Z 2026-09-12 20:34:12,122 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b992da48e5369332
+2026-09-12T20:34:20.901287355Z 2026-09-12 20:34:20,901 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b992da48e5369332.o
+2026-09-12T20:34:20.901492955Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=73728 -> rows 110464/110464 tiles 863/863 tasks 3452/3452
+2026-09-12T20:34:33.278699664Z 2026-09-12 20:34:33,278 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1_99d2213b325520ff
+2026-09-12T20:34:34.345427068Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-12T20:34:35.222025689Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12T20:34:38.345419273Z 2026-09-12 20:34:38,345 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1_99d2213b325520ff.o
+2026-09-12T20:34:38.345639881Z [b12x static v2] lane serving: static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=1, routed=8, smem=98304 B)
+2026-09-12T20:34:38.610825192Z 2026-09-12 20:34:38,610 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1_c7b815ca2d5d4289
+2026-09-12T20:34:39.682631905Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-12T20:34:40.542955468Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12T20:34:43.457349703Z 2026-09-12 20:34:43,457 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1_c7b815ca2d5d4289.o
+2026-09-12T20:34:43.457470007Z [b12x static v2] lane serving: static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=8, routed=64, smem=98304 B)
+2026-09-12T20:34:43.735894565Z 2026-09-12 20:34:43,735 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_c77ac2a564f71fd3
+2026-09-12T20:34:44.835815676Z REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12T20:34:48.587063258Z 2026-09-12 20:34:48,586 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_c77ac2a564f71fd3.o
+2026-09-12T20:34:48.587173850Z [b12x static v2] lane serving: static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1 (mac=48, m=64, routed=512, smem=101376 B)
+2026-09-12T20:34:49.118567828Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:34:49.118605172Z   return func(*args, **kwargs)
+2026-09-12T20:34:49.126680116Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:34:49.126707348Z   return func(*args, **kwargs)
+2026-09-12T20:34:49.148037156Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=4096 -> rows 40832/110464 tiles 319/863 tasks 1276/3452
+2026-09-12T20:34:49.727912046Z 2026-09-12 20:34:49,727 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m28_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_d7bbdb97ffdecbeb
+2026-09-12T20:34:50.806707219Z REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12T20:34:54.768722549Z 2026-09-12 20:34:54,768 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m28_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_d7bbdb97ffdecbeb.o
+2026-09-12T20:34:54.769036485Z [b12x static v2] lane serving: static2_m28_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1 (mac=48, m=28, routed=224, smem=101376 B)
+2026-09-12T20:34:57.680838319Z 2026-09-12 20:34:57,680 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m21_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_55501d9399a7708c
+2026-09-12T20:34:58.101504745Z REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12T20:34:59.829960433Z 2026-09-12 20:34:59,829 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m21_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_55501d9399a7708c.o
+2026-09-12T20:34:59.830153681Z [b12x static v2] lane serving: static2_m21_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1 (mac=48, m=21, routed=168, smem=101376 B)
+2026-09-12T20:35:02.579785192Z 2026-09-12 20:35:02,579 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m14_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_f20d98d05ad9f491
+2026-09-12T20:35:02.999748433Z REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12T20:35:04.728674581Z 2026-09-12 20:35:04,728 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m14_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_f20d98d05ad9f491.o
+2026-09-12T20:35:04.728808757Z [b12x static v2] lane serving: static2_m14_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1 (mac=48, m=14, routed=112, smem=101376 B)
+2026-09-12T20:35:06.932664352Z 2026-09-12 20:35:06,932 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1_b2a485c76ae56c90
+2026-09-12T20:35:07.312834458Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-12T20:35:07.642336516Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12T20:35:09.005508252Z 2026-09-12 20:35:09,005 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1_b2a485c76ae56c90.o
+2026-09-12T20:35:09.005696092Z [b12x static v2] lane serving: static2_m7_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+2026-09-12T20:35:13.867427119Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:13.867454415Z   return func(*args, **kwargs)
+2026-09-12T20:35:13.904498494Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:13.904520542Z   return func(*args, **kwargs)
+2026-09-12T20:35:15.757826952Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:15.757876888Z   return func(*args, **kwargs)
+2026-09-12T20:35:15.794602215Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:15.794633159Z   return func(*args, **kwargs)
+2026-09-12T20:35:19.888254735Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:19.888287647Z   return func(*args, **kwargs)
+2026-09-12T20:35:23.931108290Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:23.931140242Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.012377101Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.012399229Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.277554854Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.277591030Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.362882404Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.362907588Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.413322787Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.413340099Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.463341889Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.463361441Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.784346985Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.784374521Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.811771496Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.811793304Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.837644824Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.837670680Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.862483207Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.862499751Z   return func(*args, **kwargs)
+2026-09-12T20:35:28.893586806Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:28.893601590Z   return func(*args, **kwargs)
+2026-09-12T20:35:29.101733585Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:35:29.101780609Z   return func(*args, **kwargs)
+2026-09-12T20:35:29.113435313Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=2048 -> rows 38784/110464 tiles 303/863 tasks 1212/3452
+2026-09-12T20:35:30.139900630Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:30.139933638Z   return func(*args, **kwargs)
+2026-09-12T20:35:30.199689620Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:35:30.199714564Z   return func(*args, **kwargs)
+2026-09-12T20:35:30.224987604Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=16384 -> rows 53120/110464 tiles 415/863 tasks 1660/3452
+2026-09-12T20:35:31.213749257Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:31.213777689Z   return func(*args, **kwargs)
+2026-09-12T20:35:31.269779640Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:35:31.269806264Z   return func(*args, **kwargs)
+2026-09-12T20:35:31.297685831Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=18432 -> rows 55168/110464 tiles 431/863 tasks 1724/3452
+2026-09-12T20:35:32.335629867Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:35:32.335663691Z   return func(*args, **kwargs)
+2026-09-12T20:35:32.550559989Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32768 -> rows 69504/110464 tiles 543/863 tasks 2172/3452
+2026-09-12T20:35:51.492052671Z [transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+2026-09-12T20:35:57.360422368Z ST_NATIVE_EXECUTION {"rank": 2, "target_w4": 202, "target_fp8": 202, "head_fp8": true, "drafter_w4": 31, "drafter_context_fp8": true, "mhc": 89, "shared_mlp": 42, "shared_overlap": true, "router_tensorcore": 42, "prefill_collectives": ["fp8_all_gather", "fp8_reduce_scatter"]}
+2026-09-12T20:35:57.742821906Z   calibration: rank 2 summing the inputs of 20 uncalibrated pack tiles (214 deferred) -> /cache/mkcalib/rank2/ (filed on its own at 32K rows, at shutdown, or on POST /v1/engine/calibration; the next boot packs GPTQ from them)
+2026-09-12T20:36:04.506385028Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=19720 -> rows 56576/110464 tiles 442/863 tasks 1768/3452
+2026-09-12T20:36:06.096236789Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:36:06.096271125Z   return func(*args, **kwargs)
+2026-09-12T20:37:12.763797215Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=19944 -> rows 56704/110464 tiles 443/863 tasks 1772/3452
+2026-09-12T20:38:24.673961461Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=19984 -> rows 56832/110464 tiles 444/863 tasks 1776/3452
+2026-09-12T20:39:40.319906784Z /usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+2026-09-12T20:39:40.319930384Z   warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+2026-09-12T20:40:21.446955327Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=46352 -> rows 83200/110464 tiles 650/863 tasks 2600/3452
+2026-09-12T20:41:07.044808588Z   calibration: rank 2 filed 20 blobs under /cache/mkcalib/rank2/ (filed 34006/32768 rows over 20 blobs, 214 tiles deferred to a later boot); the next boot packs GPTQ from them
+2026-09-12T20:44:19.765764263Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=2168 -> rows 38912/110464 tiles 304/863 tasks 1216/3452
+2026-09-12T20:44:20.267186971Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:44:20.267224091Z   return func(*args, **kwargs)
+2026-09-12T20:58:49.987829396Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:58:49.987863284Z   return func(*args, **kwargs)
+2026-09-12T20:58:51.654839707Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=1288 -> rows 38144/110464 tiles 298/863 tasks 1192/3452
+2026-09-12T20:58:52.007059147Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:58:52.007102331Z   return func(*args, **kwargs)
+2026-09-12T20:58:52.091511345Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:58:52.091532337Z   return func(*args, **kwargs)
+2026-09-12T21:01:11.600771987Z   calibration: rank 2 filed 20 blobs under /cache/mkcalib/rank2/
+2026-09-12T21:01:11.996222160Z [rank2]:[W912 21:01:11.952834138 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=56, addr=[srv3]:47842, remote=[::ffff:10.10.10.2]:29555): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+2026-09-12T21:01:11.996257040Z Exception raised from recvBytes at /__w/pytorch/pytorch/torch/csrc/distributed/c10d/Utils.hpp:787 (most recent call first):
+2026-09-12T21:01:11.996260320Z frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xc8 (0xe020ed94e158 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+2026-09-12T21:01:11.996263600Z frame #1: c10::DistError::DistError(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x78 (0xe020ed94ed48 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+2026-09-12T21:01:11.996266640Z frame #2: c10::DistNetworkError::DistNetworkError(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x78 (0xe020ed94f0c8 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+2026-09-12T21:01:11.996269616Z frame #3: <unknown function> + 0x70b84d4 (0xe0210b2b84d4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cpu.so)
+2026-09-12T21:01:11.996272496Z frame #4: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x258 (0xe0210b2bab38 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cpu.so)
+2026-09-12T21:01:11.996275776Z frame #5: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x330 (0xe020ee897350 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+2026-09-12T21:01:11.996278240Z frame #6: <unknown function> + 0xe1ae0 (0xe0219e621ae0 in /lib/aarch64-linux-gnu/libstdc++.so.6)
+2026-09-12T21:01:11.996280864Z frame #7: <unknown function> + 0x8582c (0xe0219f3e582c in /lib/aarch64-linux-gnu/libc.so.6)
+2026-09-12T21:01:11.996283104Z frame #8: <unknown function> + 0xeb79c (0xe0219f44b79c in /lib/aarch64-linux-gnu/libc.so.6)
+2026-09-12T21:01:11.996285296Z 
+2026-09-12T21:01:11.996288000Z [rank2]:[W912 21:01:11.963142912 ProcessGroupNCCL.cpp:1876] [PG ID 0 PG GUID 0(default_pg) Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+2026-09-12T21:01:12.733036253Z   released: rank 2 gave back 57.95 GiB of 55.01 GiB arena plus 1212 MiB of tier memory; 1.13 GiB reserved and 1027 MiB allocated still
+2026-09-12T21:01:12.733094477Z   released: rank 2 did NOT come back clean -- 1027 MiB is still held by live tensors, largest blocks 288 MiB, 216 MiB, 91 MiB, 36 MiB, 32 MiB, 32 MiB
+2026-09-12T21:01:13.297235753Z [rank2]: Traceback (most recent call last):
+2026-09-12T21:01:13.297267705Z [rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 1116, in <module>
+2026-09-12T21:01:13.297270777Z [rank2]:     raise SystemExit(main())
+2026-09-12T21:01:13.297273001Z [rank2]:                      ^^^^^^
+2026-09-12T21:01:13.297275417Z [rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 1112, in main
+2026-09-12T21:01:13.297277385Z [rank2]:     return fleet(a)
+2026-09-12T21:01:13.297279017Z [rank2]:            ^^^^^^^^
+2026-09-12T21:01:13.297280745Z [rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 1051, in fleet
+2026-09-12T21:01:13.297282425Z [rank2]:     latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease).loop()
+2026-09-12T21:01:13.297284137Z [rank2]:                                                                     ^^^^^^
+2026-09-12T21:01:13.297285897Z [rank2]:   File "/repo/engine/base/serve.py", line 3374, in loop
+2026-09-12T21:01:13.297287737Z [rank2]:     ran = self.once()
+2026-09-12T21:01:13.297289289Z [rank2]:           ^^^^^^^^^^^
+2026-09-12T21:01:13.297291049Z [rank2]:   File "/repo/engine/base/serve.py", line 2592, in once
+2026-09-12T21:01:13.297292809Z [rank2]:     step = self.runner.step()
+2026-09-12T21:01:13.297294537Z [rank2]:            ^^^^^^^^^^^^^^^^^^
+2026-09-12T21:01:13.297296201Z [rank2]:   File "/repo/engine/base/runner.py", line 788, in step
+2026-09-12T21:01:13.297297993Z [rank2]:     self.resolve_oldest()
+2026-09-12T21:01:13.297299545Z [rank2]:   File "/repo/engine/base/runner.py", line 525, in resolve_oldest
+2026-09-12T21:01:13.297301369Z [rank2]:     before = {s: self.model.context(s) for s in self._tracked(step.seqs)}
+2026-09-12T21:01:13.297303161Z [rank2]:                  ^^^^^^^^^^^^^^^^^^^^^
+2026-09-12T21:01:13.297304889Z [rank2]:   File "/repo/engine/profiles/glm53/adapter.py", line 773, in context
+2026-09-12T21:01:13.297306761Z [rank2]:     return self.ctx[seq]
+2026-09-12T21:01:13.297308537Z [rank2]:            ~~~~~~~~^^^^^
+2026-09-12T21:01:13.297310041Z [rank2]: KeyError: 0

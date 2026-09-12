@@ -728,10 +728,14 @@ class Runner:
         return report
 
     def _tracked(self, seqs) -> "list[int]":
-        """Rows whose generated boundaries can enter the prefix cache: a chain exists and the model tells its history."""
+        """Live decoders whose generated boundaries can enter the prefix cache.
+
+        A parked row retains its chain and slot until the disk write finishes,
+        but its model context is already closed. Its pending ghost is inert.
+        """
         if self.prefix is None or getattr(self.model, "history", None) is None:
             return []
-        return [s for s in seqs if s in self._chain and s in self.slot_of]
+        return [s for s in seqs if s in self.state.running and s in self._chain and s in self.slot_of]
 
     def _generated_boundaries(self, seq: int, before: int, after: int) -> None:
         """A decode step moved `seq` from `before` to `after`: the block boundaries it crossed become prefix entries

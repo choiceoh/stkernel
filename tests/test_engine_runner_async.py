@@ -4,11 +4,13 @@ and never releases a row with a step ahead of it. A fake model stands in for the
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from engine.base import scheduler as sched  # noqa: E402
 from engine.base.kv import BlockPool, SlotPool  # noqa: E402
+from engine.base.prefix import PrefixCache  # noqa: E402
 from engine.base.record import Ring  # noqa: E402
 from engine.base.runner import Runner, STEP_RECORD  # noqa: E402
 from engine.base.scheduler import Contract  # noqa: E402
@@ -77,6 +79,58 @@ def runner(model=None, blocks=64):
 
 
 class AsyncRunnerTests(unittest.TestCase):
+    def test_parked_row_ghost_does_not_read_the_closed_context(self):
+        class ParkingModel(Model):
+            def open(self, seq, slot):
+                super().open(seq, slot)
+                self.left[seq] = 100
+
+            def history(self, seq):
+                return list(range(seq * 100, seq * 100 + self.ctx[seq]))
+
+            def checkpoint(self, seq, position, snap):
+                self.log.append(("checkpoint", seq, position))
+
+            def park(self, seq):
+                record = dict(context=self.ctx.pop(seq), pending=0)
+                self.close(seq)
+                return record
+
+            def state_bytes(self, slot):
+                return b"state"
+
+        m = ParkingModel()
+        r = runner(m)
+        r.keep_idle = True
+        r.prefix = PrefixCache(16, 64, 8)
+        r.prefix.bind(r.kv)
+        parked = []
+        r.tiered = SimpleNamespace(
+            is_parked=lambda key: False,
+            park_begin=lambda seq, key, **kw: parked.append((seq, key, kw)))
+        for seq in range(4):
+            ids = list(range(seq * 100, seq * 100 + 15))
+            r.submit(seq, len(ids), now=0, ids=ids)
+        while r.state.waiting or r.state.in_prefill is not None:
+            r.step(now=25)
+        m.left[0] = 1
+        r.step(now=100); r.step(now=100)
+        r.resolve_oldest()                                  # row 0 ends; a four-row ghost still runs ahead
+        self.assertIn(0, r.idle)
+        survivors = [m.ctx[s] for s in (1, 2, 3)]
+        checkpoints = [c for c in m.log if c[0] == "checkpoint" and c[1] == 0]
+        r.park_begin(0, key=99)                             # closes model context before disk releases the slot
+        self.assertNotIn(0, m.ctx)
+        self.assertIn(0, r.slot_of)
+        self.assertIn(0, r._chain)
+        r.resolve_oldest()
+        self.assertEqual([m.ctx[s] for s in (1, 2, 3)], [ctx + 1 for ctx in survivors])
+        self.assertEqual([c for c in m.log if c[0] == "checkpoint" and c[1] == 0],
+                         checkpoints)
+        self.assertEqual(parked[0][:2], (0, 99))
+        self.assertFalse(r.inflight)
+        r.prefix.check()
+
     def test_cancel_does_not_wait_for_later_batches_without_that_row(self):
         r = runner()
         r.keep_idle = True

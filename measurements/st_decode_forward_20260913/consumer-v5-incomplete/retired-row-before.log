@@ -1,0 +1,20 @@
+E
+======================================================================
+ERROR: test_parked_row_ghost_does_not_read_the_closed_context (tests.test_engine_runner_async.AsyncRunnerTests.test_parked_row_ghost_does_not_read_the_closed_context)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/Documents/Github2/stkernel2-worktrees/st-decode-forward-22/tests/test_engine_runner_async.py", line 126, in test_parked_row_ghost_does_not_read_the_closed_context
+    r.resolve_oldest()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Users/ost/Documents/Github2/stkernel2-worktrees/st-decode-forward-22/engine/base/runner.py", line 525, in resolve_oldest
+    before = {s: self.model.context(s) for s in self._tracked(step.seqs)}
+                 ~~~~~~~~~~~~~~~~~~^^^
+  File "/Users/ost/Documents/Github2/stkernel2-worktrees/st-decode-forward-22/tests/test_engine_runner_async.py", line 56, in context
+    return self.ctx[seq]
+           ~~~~~~~~^^^^^
+KeyError: 0
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (errors=1)

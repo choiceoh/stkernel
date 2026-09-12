@@ -60,6 +60,19 @@
       "evidence": "production-052420/",
       "first_divergent_operation": "unresolved",
       "effect": "the same deterministic stall recurred after a fresh boot"
+    },
+    {
+      "time": "06:01:11",
+      "kind": "candidate consumer failed during C4 preparation",
+      "session": "st-decode-consumer0913v5",
+      "source": "c8562a7c55a49d53eefc13794ee035c4ed6dc10a",
+      "observed": "all C1 preparation and measurements completed; first C4 preparation did not complete; ranks 2 and 3 report KeyError: 0 in Runner.resolve_oldest -> _tracked -> model.context",
+      "cause": "a parked row retains its prefix chain and slot while the model context has already closed; its pending ghost was still selected for boundary tracking",
+      "cpu_reproduction": "four live rows, prefix cache, one row completes and starts parking before the next pending result; identical KeyError before the change, pass after",
+      "fix": "only live decoders participate in generated-boundary context tracking; the pending ghost still resolves normally",
+      "evidence": "consumer-v5-incomplete/",
+      "official_stop_and_release": "06:01:17",
+      "complete_onepasses": 0
     }
   ],
   "consumer": {
@@ -67,8 +80,9 @@
     "kv_gib": 6,
     "kda_state_dtype": "fp16",
     "private_metadata": "/home/choiceoh/glm53-logs/st-decode-forward-consumer-b12x-meta",
-    "private_tier": "/home/choiceoh/glm53-logs/st-bracket-tier/st-decode-consumer0913v4-A",
+    "private_tier": "/home/choiceoh/glm53-logs/st-bracket-tier/st-decode-consumer0913v5-A",
     "planned_onepasses": 2,
-    "baseline": "no baseline on this build"
+    "baseline": "no baseline on this build",
+    "status": "incomplete; first C4 preparation failed; no second pass"
   }
 }
