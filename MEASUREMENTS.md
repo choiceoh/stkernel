@@ -325,6 +325,7 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 - **PR #770** — 리스를 큐 아래로: 기록 하나, 주인은 큐, 인계는 이전 — 그리고 러너가 **영원히 거부**하고 있었다
 - **PR #771** — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다
 - **PR #774** — 단일 GPU 레인은 **srv4 한 대에서 프로덕션 옆에**: 증거는 여유 메모리, 첫 실측이 OOM 과 b12x m=8 을 가르쳐 줬다
+- **PR #775** — ST 브래킷을 큐에: 커밋 하나가 팔, 프로덕션 형상, 부팅당 두 판 — 큐가 드디어 **부팅할 것**을 얻었다
 
 ### 45차 §23 — 프로덕션 전환 시도: 창·45층 4노드 부팅·문 사다리, 그리고 깨진 글의 원인 = KDA `o_norm` epsilon (2026-09-11 밤 ~ 09-12 새벽)
 
@@ -1534,3 +1535,51 @@ earlyoom 의 몫이고, 무거운 검사는 `ST_PROBE_GIB` 를 올려 그만큼�
 것을 스텁으로 고침), `test_engine_fleet_lease`(`FLEET_RULES` 는 "3 이상"으로), fleet_queue·queue_lease_shell·onepass·
 source·ledger_numbering·docs_status — 이 맥에서 돌 수 있는 것 전부 통과. CI engine check success(7bd41141, 5fb71658).
 `FLEET_AUDIT` 갱신. 실물: 위의 둘.
+### 45차 — ST 브래킷을 큐에: 커밋 하나가 팔, 프로덕션 형상, 부팅당 두 판 — 큐가 드디어 **부팅할 것**을 얻었다 (2026-09-13, 맥 + 리눅스 컨테이너, GPU·플릿 미검증, PR #775)
+
+PR #770 으로 큐는 ST 엔진의 리스를 쥘 수 있게 됐지만 **부팅할 것이 없었다.** 승인된 부팅 러너는 vLLM 시대의
+`pair.sh`·`chain.sh`·`ab-lever.sh`(`VLLM_*` 노브, `start-glm53`) 뿐이라, §93 의 D17 측정은 손으로 했고 후보 비교는
+`measurements/st_native_20260912/run-exclusive-*.sh` 다섯 벌의 손글루(서비스 내리기 → iptables → 드레인 대기 → 8001 부팅 →
+onepass → 복구)로 했다. 39차가 "손으로 쓴 체인의 버그 셋" 때문에 `pair.sh` 를 만든 그 자리다. 운영자 인터뷰(§97 의 문답
+4)에서 정한 대로 만들었다.
+
+**팔 = origin 에 있는 sha 하나, 프로덕션 형상.** `bench/st_bracket.sh` 가 `launchers/st_release.py` 로 `~/st-releases/<sha12>`
+를 자르고(deploy-watch 의 `cut()` 을 이 모듈로 옮겨 **절단은 하나** — 이긴 팔은 프로덕션이 그 디렉터리를 가리키면 승격),
+네 노드에 밀어 `ST_ENGINE_DIR` 로 잡고(기본값이면 `push_tree` 가 프로덕션의 `~/st-engine` 을 덮어쓴다 — 손글루가 그렇게
+한 이유), `~/.config/st-glm53.env` 의 형상(KV·행 수·`ST_PRODUCTION=1`)으로 **포트 8001** 에, 티켓별 티어·덤프 디렉터리로
+띄운다. STK_ 노브 팔은 없다(`--production` 이 거부한다; sha 가 곧 팔이다). 릴리스의 **자기 런처**가 티켓의 리스
+(`ST_LEASE_OWNER`)를 검증하므로 **팔은 #770 이후의 sha 여야 한다** — 그 전 런처는 큐가 이미 쥔 리스를 잡으려다 죽는다.
+
+**레그는 고정(D17):** 부팅 → onepass 1회차(콜드 열: TTFT·컴파일 꼬리) → `POST /v1/prefix/reset`(§55) → 2회차(웜 열) → stop.
+둘 다 `--require-exclusive`. `bench/st_judge.py` 가 **웜끼리** 판정하고 콜드 열은 옆에 찍는다(§93 의 표). 바닥은 기준선의
+부팅 간 편차 — 부팅이 둘 미만이면 "바닥 없음" 이라고 말한다(§93 이 "D17 의 두 판은 컴파일 꼬리를 걸러 주지 부팅 간 변동은
+못 걸러 준다" 고 적은 그것). 게이트(품질 전부·한국어 0·트래픽 없음)를 못 넘긴 기록은 증거가 아니다. 기록의 정체성은
+브래킷이 지명한 sha(`arm_sha`) 또는 런처가 컨테이너 env 에 찍은 릴리스(`ST_RELEASE`) — `onepass.py` 의 `_served_build` 가
+`st-glm53` 컨테이너를 보면 런타임 매니페스트의 `engine_source_sha256`·`ST_RELEASE`·STK_ 노브를 적는다. 전엔 ST 기록에
+**vLLM 오버레이 스탬프**가 찍혀 릴리스가 달라도 같은 빌드로 보였다(측정 디렉터리의 `run_onepass_st.py` 가 몽키패치로 풀어
+두던 것을 본체로). `bracket.py` 는 `vllm:iteration_tokens_total_count` 가 없으면 `st:steps_prefill_total + st:steps_decode_total`
+을 스텝 카운터로 읽는다.
+
+**문법:** `fleet.sh st-pair s <sha> [--base <sha>] [est] [note]`(base 기본 = `deploy-state.json` 의 deployed; base sha 에 웜
+표본이 있으면 base 부팅 생략), `fleet.sh st-chain s [est] [note] -- A=<sha> B=<sha> A B`(반복 이름 = 같은 커밋의 다음 부팅
+→ `A B A B` 가 §93 이 요구한 교대), `fleet.sh st-hold s <sha> [est]`(세션 창; `fleet.sh cancel s` 로 끝낸다). 셋 다 부팅
+티켓이라 큐가 GO 때 리스를 잡는다. 승인(`fleet_onepass.py`)은 sha·리터럴 이름 문법만 받고 onepass·judge·릴리스 절단과
+함께 바이트 고정한다; 런처는 팔의 것이라 고정하지 않는다. `fleet_prepare` 는 이 티켓의 리비전을 체크아웃 HEAD 가 아니라
+**팔의 sha** 로 적어, 컨트롤러 체크아웃이 움직여도 "queued checkout revision changed"(§95) 로 멈추지 않는다.
+
+**런처 정정 둘:** 티켓 리스에 컨테이너를 붙이던 `attach`(#770)를 뺐다 — kind 이전의 슈퍼바이저(지금 배포된 것)는 `stop` 을
+컨테이너 이름으로 풀기 때문에 리스가 `st-glm53` 을 이름하면 그 크래시 복구가 티켓 부팅을 죽인다; 이름이 없으면 옛 `stop` 은
+거부한다. 컨테이너 env 에 `ST_RELEASE` 를 넣는다.
+
+**검증(GPU 없음):** 새 `tests/test_fleet_st_bracket.py` — 승인 문법·핀·단일 GPU 레인 거부, `st_release.cut` 을 git 픽스처에서,
+judge 의 바닥·게이트·정체성·CLI, 그리고 **리허설 끝까지**(`FLEET_REHEARSE=1`: pair 두 판×두 팔 → 판정 → base 재사용,
+deployed 기본 base, chain `A B A B`, hold). 리눅스 컨테이너에서 관련 모듈 247 tests OK; 플릿 스위트 **433**(+24), 엔진 991,
+onepass 102 를 origin/main 사본과 대조해 새 실패 0. **실측 없음.**
+
+**다음 창(srv2):** #770 의 셋(드롭인 이동 → `status` 의 `lease:` → 프로브 티켓 하나) 다음에 `fleet.sh st-pair <s> <sha>` —
+#770 이후 sha 하나를 deployed 에 대고 — 가 정숙 게이트 → 이전 → 두 판 → base 부팅(표본이 없으므로) → 판정 → 해제 → 복구를
+지나는지. 그리고 PR 3: 배포마다 D17 프로브 티켓(유휴 프로덕션 위 `--probe` 레인의 ST 인식)이 base 표본을 공짜로 남기게, 컨트롤러
+워크트리가 배포된 sha 를 따르게.
+
+**남는 노출:** base 재사용은 base sha 의 웜 표본이 있을 때만이라 PR 3 전엔 `st-pair` 가 base 도 부팅한다(팔당 ~10분). 후보가
+도는 동안 프로덕션(:8000)은 내려가 있다(#770 의 설계 그대로: 정숙 게이트가 문이고 대기 부팅 티켓이 없을 때만 되돌린다).
