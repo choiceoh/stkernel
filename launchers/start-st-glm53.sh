@@ -49,10 +49,18 @@ case "${1:-start}" in
     ssh $SSHOPT "choiceoh@${NODES[0]}" "python3 - release --owner x --force --path /home/choiceoh/st-fleet.lock" \
       < "$REPO/engine/base/fleet_lease.py" || true
     exit 0 ;;
+  yield)
+    # Ask whoever holds the fleet to finish, park its conversations and let go. The
+    # engine does the parking; this only asks (engine/base/fleet_lease.request_yield).
+    ssh $SSHOPT "choiceoh@${NODES[0]}" \
+      "python3 - yield --requester '$LEASE_OWNER' --note '${2:-another session needs the fleet}' --path $LOCK" \
+      < "$REPO/engine/base/fleet_lease.py"; exit 0 ;;
+  held)
+    ssh $SSHOPT "choiceoh@${NODES[0]}" "python3 - read --path $LOCK" < "$REPO/engine/base/fleet_lease.py"; exit 0 ;;
   logs)
     r=${2:-0}; node_sh "${NODES[$r]}" "docker logs --tail 60 $NAME"; exit 0 ;;
   start) ;;
-  *) echo "usage: $0 [start|stop|logs r]" >&2; exit 2 ;;
+  *) echo "usage: $0 [start|stop|yield [reason]|held|logs r]" >&2; exit 2 ;;
 esac
 
 # refuse to share the fleet: a serving/other container on any node, or another runner's lock on the head
@@ -123,6 +131,7 @@ start_rank() {
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV $KNOB_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
+    -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" \
     --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER' >/dev/null && echo '$ip: started'"
 }
 

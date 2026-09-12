@@ -23,5 +23,17 @@ if [ "${ST_PROBE_NO_GPU:-0}" = 1 ]; then
   gpu=()
   envs+=(-e CUTE_DSL_ARCH=sm_121a)
 fi
-exec docker run --rm "${gpu[@]}" "${mounts[@]}" "${envs[@]}" \
+# A probe takes the same GPUs as a boot, so it takes the same lease -- the last way in
+# was a bare `docker run` that no launcher and no queue could see. Short, named (so the
+# container is the lease's evidence), and released however the probe ends.
+LEASE_PATH=${ST_LEASE_PATH:-$HOME/st-fleet.lock}
+LEASE_OWNER=${ST_LEASE_OWNER:-probe/$(whoami)@$(hostname -s)/$$}
+NAME=st-probe-$$
+if [ "${ST_PROBE_NO_LEASE:-0}" != 1 ]; then
+  python3 "$repo/engine/base/fleet_lease.py" acquire --owner "$LEASE_OWNER" --path "$LEASE_PATH" \
+    --container "$NAME" --est-minutes "${ST_PROBE_MINUTES:-20}" --note "$probe" >/dev/null \
+    || { echo "ABORT: $(python3 "$repo/engine/base/fleet_lease.py" read --path "$LEASE_PATH")" >&2; exit 1; }
+  trap 'python3 "$repo/engine/base/fleet_lease.py" release --owner "$LEASE_OWNER" --path "$LEASE_PATH" >/dev/null 2>&1 || true' EXIT INT TERM
+fi
+docker run --rm --name "$NAME" "${gpu[@]}" "${mounts[@]}" "${envs[@]}" \
   --entrypoint python3 "$image" -u "/repo/$probe" "$@"
