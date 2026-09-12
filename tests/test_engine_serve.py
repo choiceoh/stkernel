@@ -1296,7 +1296,7 @@ class KoreanBudgetTests(unittest.TestCase):
 
 
 class KoreanWireTests(unittest.TestCase):
-    """What a Korean answer costs between the door and the client (45차 §39)."""
+    """What a Korean answer costs between the door and the client (45차 §40)."""
 
     def raw(self, s, path, body=None):
         httpd = s._serve_http()

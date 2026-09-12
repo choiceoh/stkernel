@@ -888,7 +888,7 @@ class Server:
         self.prompt_tokens_total = self.generation_tokens_total = 0
         # Tokens are what the engine spends; characters are what the reader gets, and on this
         # checkpoint one token is 5.8 characters of English and 1.3 of Korean. A deployment with
-        # only the token counter reads its own throughput 4.4x too kindly (45차 §39).
+        # only the token counter reads its own throughput 4.4x too kindly (45차 §40).
         self.generation_characters_total = 0
         self.arrivals = queue.Queue()
         self.pending, self.results = {}, {}
@@ -1008,7 +1008,7 @@ class Server:
         blocks = self.runner.kv.blocks_for(horizon)
         # The numbers, not just the verdict. A request reserves its whole horizon, so a caller
         # who is refused needs to know which half to cut -- and the caller who meets this first
-        # is writing in a language that costs more tokens a character (45차 §39).
+        # is writing in a language that costs more tokens a character (45차 §40).
         room = min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq) * self.runner.kv.block_size
         needs = f"needs {horizon} ({len(ids)} for the prompt, {max_new} to generate)"
         if horizon >= 2**31 or blocks > min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq):
@@ -1942,7 +1942,7 @@ class Server:
             def reply(self, status, payload):
                 # ensure_ascii=False: JSON is UTF-8 by definition (RFC 8259), and escaping puts a
                 # Korean character on the wire as six ASCII bytes instead of its three. A Korean
-                # answer's body was 1.83x the size it needed to be (45차 §39).
+                # answer's body was 1.83x the size it needed to be (45차 §40).
                 body = json.dumps(payload, ensure_ascii=False).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
