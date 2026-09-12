@@ -176,6 +176,25 @@ class OnepassIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'pinned runner integrity'):
             fleet_pin.pin(self.repo, self.directory)
 
+    def test_pinned_controller_can_read_lease_without_the_source_checkout(self):
+        # The controller resolves both helpers from its frozen runner. Omitting
+        # them makes even an empty fleet report "lease unreadable" forever.
+        for relative in ('launchers/lib/fleet-lease.sh', 'engine/base/fleet_lease.py'):
+            destination = self.repo / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, destination)
+        runner = fleet_pin.pin(self.repo, self.directory)
+        shutil.rmtree(self.repo / 'launchers')
+        shutil.rmtree(self.repo / 'engine')
+        result = subprocess.run([BASH, '-c',
+            '. "$FLEET_REPO/launchers/lib/fleet-lease.sh"; fleet_lease read'],
+            env={**os.environ, 'FLEET_REPO': str(runner),
+                 'FLEET_HEAD': subprocess.check_output(['hostname', '-s'], text=True).strip(),
+                 'FLEET_LEASE_PATH': str(self.root / 'missing-lease')},
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(result.stdout.strip(), 'free')
+
     def test_failed_real_preflight_edit_preserves_ticket_command_and_order(self):
         runner = fleet_pin.pin(self.repo, self.directory)
         pid = os.getpid()
