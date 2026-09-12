@@ -60,7 +60,29 @@
 set -uo pipefail
 # Transport metadata must not become a preparation or payload dependency.
 unset SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION LC_TERMINAL LC_TERMINAL_VERSION
+# Whether the caller named a queue, captured before the default fills it in: naming one
+# IS the statement that you mean that queue, wherever you are (tests, a private run).
+FLEET_DIR_EXPLICIT=${FLEET_DIR:+1}
 FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}
+# The queue is ONE queue and it lives on the controller. Homes are not shared between
+# the Sparks, so running this anywhere else silently creates a second, empty queue in a
+# directory nobody watches -- on 2026-09-12 three reservations sat in srv4's copy while
+# srv2 (the real one, with the ledger and every campaign's heartbeat) said nothing was
+# queued, and `status` answered FREE because that copy had no holder. Refuse instead.
+FLEET_CONTROLLER=${FLEET_CONTROLLER:-srv2}
+wrong_host() {
+  [ "$(me)" != "$FLEET_CONTROLLER" ] && [ -z "$FLEET_DIR_EXPLICIT" ] && [ "${FLEET_ALLOW_LOCAL:-0}" != 1 ]
+}
+require_controller() {
+  wrong_host || return 0
+  cat >&2 <<EOF
+REFUSED: the fleet queue lives on $FLEET_CONTROLLER and homes are not shared, so running it
+on $(me) would use a different, empty $FLEET_DIR and answer about nothing.
+  ssh $FLEET_CONTROLLER "cd \$REPO && bash bench/fleet.sh $*"
+Set FLEET_ALLOW_LOCAL=1 only for a queue you mean to keep on this host.
+EOF
+  return 1
+}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
 export FLEET_DIR LOGD
 # The checkout this script belongs to, not a fixed path: a worktree ran its helpers
@@ -428,6 +450,12 @@ _kick() {  # preserve the same lock used by idle recovery and admission
 }
 
 cmd=${1:-status}; shift || true
+# Everything that reads or moves queue STATE must be on the controller; policy-only
+# subcommands (classify, preflight, version) are host-independent and stay usable here.
+case "$cmd" in
+  classify|preflight|version|nodes|busy) ;;
+  *) require_controller "$cmd" "$@" || exit 2;;
+esac
 case "$cmd" in
   request)
     echo 'bare GPU reservations are disabled; use fleet.sh onepass, pair or chain' >&2; exit 2;;
