@@ -90,8 +90,10 @@ def samples(rows, sha, *, allow_rehearsal=False):
 
 
 def colds(rows, sha, *, allow_rehearsal=False):
+    """The cold column is a BOOT's run 1 (TTFT with the compile tail). A probe on the live door
+    marks its run 1 cold=reset -- after a prefix reset, not a boot -- and stays out of it."""
     return [rec for rec in rows if same(sha, rec) and rec.get("run_index") == 1
-            and (allow_rehearsal or not rec.get("rehearsal"))]
+            and rec.get("cold", "boot") == "boot" and (allow_rehearsal or not rec.get("rehearsal"))]
 
 
 def prefill(rec, ctx, key):

@@ -24,12 +24,10 @@ QUIET = "vllm:num_requests_running 0\nvllm:num_requests_waiting 0\nst:handing_ov
 BUSY = QUIET.replace("running 0", "running 2")
 STUBS = """
 st_engine_elsewhere() { :; }                 # no other nodes to ask in a sandbox
-serving_idle() { return 0; }
 legacy_busy() { return 1; }
 busy_procs() { echo 0; }
 busy_reqs() { echo 0; }
-booting() { return 1; }
-"""
+"""                                          # serving_idle and booting are the real ones: the stub docker and curl feed them
 
 
 @unittest.skipUnless(LINUX, "bench/fleet.sh needs flock and GNU coreutils: run this inside a Linux container")
@@ -47,7 +45,12 @@ class LeaseQueueTests(unittest.TestCase):
         self.metrics.write_text(QUIET)
         stubs = root / "bin"
         stubs.mkdir()
-        for name, body in (("docker", "#!/bin/sh\nexit 0\n"),
+        docker = ('#!/bin/sh\n'                       # no container unless the test says so (FAKE_DOCKER_PS)
+                  'case "$*" in\n'
+                  '  *"{{.Status}}"*) [ -z "${FAKE_DOCKER_PS:-}" ] || printf "%s Up 5 hours\\n" "$FAKE_DOCKER_PS";;\n'
+                  '  *ps*) [ -z "${FAKE_DOCKER_PS:-}" ] || printf "%s\\n" "$FAKE_DOCKER_PS";;\n'
+                  'esac\nexit 0\n')
+        for name, body in (("docker", docker),
                            ("curl", f'#!/bin/sh\ncat "{self.metrics}" 2>/dev/null\n'),
                            ("ssh", "#!/bin/sh\nexit 255\n")):
             (stubs / name).write_text(body)
@@ -184,6 +187,31 @@ class LeaseQueueTests(unittest.TestCase):
         self.assertEqual(self.try_hold("t1", pid), 0)
         self.assertIn("auto-kick dead holder", self.log())
         self.assertEqual(self.record()["owner"], "queue/t1")
+
+    def test_a_probe_ticket_runs_beside_an_idle_production_lease_and_takes_no_lease(self):
+        """The live onepass (D17's sample of the deployed commit) needs production UP and idle: the
+        production lease is not occupation for it, the door's own quiet reading is its condition,
+        and it takes no lease. Behind a session's boot it waits like everything else."""
+        self.lease_cmd("acquire", "--owner", "production/srv2/1", "--kind", "production", "--container", "st-glm53")
+        self.env["FAKE_DOCKER_PS"] = "st-glm53"                 # production's containers are up
+        pid = self.sleeper()
+        self.enqueue("p1", pid, kind="probe")
+        self.metrics.write_text(BUSY)
+        self.assertEqual(self.try_hold("p1", pid, kind="probe"), 1)          # a busy door is not idle
+        self.metrics.write_text(QUIET)
+        self.assertEqual(self.try_hold("p1", pid, kind="probe"), 0)          # GO, beside production
+        self.assertTrue(self.holder().startswith(f"p1|{pid}|"))
+        self.assertEqual(self.record()["owner"], "production/srv2/1", "the probe took no lease")
+        self.assertNotIn("asked it to hand over", self.log())
+        self.sh("with_lock _release p1")
+        self.assertEqual(self.record()["owner"], "production/srv2/1", "and released none")
+        # behind a session's boot: refused, and the session is not asked
+        self.lease_cmd("release", "--owner", "production/srv2/1")
+        self.lease_cmd("acquire", "--owner", "someone@srv4/7", "--kind", "session", "--container", "st-glm53")
+        pid2 = self.sleeper()
+        self.enqueue("p2", pid2, kind="probe")
+        self.assertEqual(self.try_hold("p2", pid2, kind="probe"), 1)
+        self.assertIn("p2 waits (a session holder is not asked)", self.log())
 
     def test_status_names_the_lease(self):
         self.lease_cmd("acquire", "--owner", "production/srv2/1", "--kind", "production", "--container", "st-glm53")

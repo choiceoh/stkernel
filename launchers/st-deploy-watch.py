@@ -267,7 +267,63 @@ def cycle(a, log) -> int:
     STATE.write_text(json.dumps({"deployed": head, "release": str(release), "deployed_at": time.time(),
                                  "launched_ok": True}, indent=1))
     log(f"  deployed {head[:12]} from {release}")
+    after_deploy(head, a, log)
     return 0
+
+
+# -- after a deploy: the queue follows ------------------------------------------------------------
+CONTROLLER = Path(os.environ.get("FLEET_CONTROLLER_REPO", HOME / "fleet-controller"))   # the queue's own checkout on the head
+
+
+def follow_controller(head: str, log, controller: Path = CONTROLLER) -> bool:
+    """The queue's checkout moves to the deployed commit, so the queue answers by production's rules.
+
+    A controller 639 commits behind main once told a session the fleet was FREE with four nodes
+    serving (45차 §91). Waiting tickets are unaffected: they run out of pinned runner snapshots.
+    """
+    if not (controller / ".git").exists():
+        log(f"  controller {controller} is not a checkout; the queue's rules stay where they are")
+        return False
+    code, _, err = run(["git", "-C", str(controller), "fetch", "--quiet", "origin", head], timeout=600)
+    if code:                                           # a remote that refuses a bare sha still serves its refs
+        code, _, err = run(["git", "-C", str(controller), "fetch", "--quiet", "origin"], timeout=600)
+    if code:
+        log(f"  controller: could not fetch {head[:12]} ({err.strip()[:80]})")
+        return False
+    code, _, err = run(["git", "-C", str(controller), "checkout", "--quiet", "--detach", head], timeout=120)
+    if code:
+        log(f"  controller: could not move to {head[:12]} ({err.strip()[:80]})")
+        return False
+    log(f"  controller {controller} now at {head[:12]}")
+    return True
+
+
+def queue_probe(head: str, log, controller: Path = CONTROLLER) -> bool:
+    """One D17 probe ticket for the deployed commit: two onepass runs on the live door when it is
+    idle, so the deployed commit always has a warm sample and st-pair never boots the base."""
+    fleet = controller / "bench" / "fleet.sh"
+    if not fleet.exists():
+        log(f"  no {fleet}: no D17 probe queued")
+        return False
+    session = "d17-" + head[:12]
+    code, out, err = run(["bash", str(fleet), "st-probe", "--detach", session, head, "10", f"D17 after deploy {head[:12]}"],
+                         cwd=str(controller), timeout=300)
+    tail = (out + err).strip().splitlines()[-1:] or [""]
+    if code:
+        log(f"  D17 probe {session} was not queued (rc={code}): {tail[0][:120]}")
+        return False
+    log(f"  D17 probe {session} queued: {tail[0][:120]}")
+    return True
+
+
+def after_deploy(head: str, a, log) -> None:
+    if getattr(a, "dry_run", False):
+        return
+    controller = Path(getattr(a, "controller", CONTROLLER))
+    if getattr(a, "follow", True):
+        follow_controller(head, log, controller)
+    if getattr(a, "probe", True):
+        queue_probe(head, log, controller)
 
 
 def main(argv=None) -> int:
@@ -284,6 +340,9 @@ def main(argv=None) -> int:
     ap.add_argument("--test-timeout", type=int, default=900)
     ap.add_argument("--no-gate", dest="gate", action="store_false")
     ap.add_argument("--interval", type=int, default=300, help="seconds between cycles in the loop")
+    ap.add_argument("--controller", default=str(CONTROLLER), help="the queue's checkout: moved to the deployed commit after a deploy")
+    ap.add_argument("--no-follow", dest="follow", action="store_false", help="leave the controller checkout where it is")
+    ap.add_argument("--no-probe", dest="probe", action="store_false", help="queue no D17 probe ticket after a deploy")
     a = ap.parse_args(argv)
 
     def log(line):
