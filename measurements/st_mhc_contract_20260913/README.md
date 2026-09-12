@@ -75,5 +75,22 @@ and 64 MiB cache-evicted regimes. Model execution, communication and RMSNorm
 are outside this measurement. Actual serving claims still require matched
 onepass quality, output hashes, tok/s and TTFT with two runs per boot.
 
-The existing KDA reservation remains frozen and paused for the operator's
-prefill priority. This candidate has not reserved or used a GPU.
+`compile.json` records both successful SM121 scalar-stride variants on
+Torch 2.13.0+cu130 and Triton 3.7.1, without initializing CUDA. All seven
+source hashes match the admitted tree. The ST-image package/audit check
+passed 10 CPU tests and skipped the five GPU-only tests. Local package,
+admission and step-tool checks passed 40 tests; after merging current main,
+the audit/onepass/ledger check passed 39 tests. These suites overlap.
+
+The code CI passed in run `34701264738`, including the engine suite and
+onepass recording/consumer contracts. The previous failure in run
+`34700561014` was the fleet audit hash during main's onepass-budget change;
+merging main includes its reviewed hash repair from PR #764.
+
+At 2026-09-12 15:10:56 UTC, KDA's operator-controlled reservation had resumed
+as queue #1. This candidate was accepted as `stmhc-contract0913`, ticket
+`17892258362318595`, after FP8 consumer ticket `17892258232315496`. Both
+new probes use frozen source `25d2b730` in their own checkout and image
+`st-engine:main-ff728f43`. KDA's original checkout remains at `19113939`.
+No GPU result exists yet. Admission identities and reproduction commands
+are recorded in `provenance.json`; queue positions are only that observation.
