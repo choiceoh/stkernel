@@ -9550,3 +9550,37 @@ vLLM 은 여기를 두 번 고쳐서 지금 모양이 됐다: `tokenizers` 의 �
 
 **안 한 것**: vLLM 의 네이티브 프리필(`DecodeStream(ids=프롬프트)`)로 채널을 시작하지 않는다. 우리 채널은 프롬프트가 아니라 **reasoning/content 경계**에서 시작하고,
 프롬프트로 프리필하면 첫 delta 의 모양이 바뀐다(Metaspace 계열에서 선두 공백). 복구 B 안에서만 프리필을 쓴다 — 거기선 그게 정확히 맞는 도구다.
+
+### 45차 §31 — 같은 부분의 SGLang 구현 조사: 러스트 스트림을 안 쓴다, 대신 우리·vLLM 둘 다 없는 것을 한다 (2026-09-12, srv4, GPU 없음)
+
+§30 을 vLLM 기준으로만 봤으니 SGLang(0.5.19 휠, `srt/managers/detokenizer_manager.py` 560줄 + `schedule_batch.Req`)도 읽었다. **결론: 구조는 완전히 다르고, 알고리즘은 우리와 같으며, 정책 하나가 우리보다 낫다.**
+
+**1. 러스트 `DecodeStream` 을 안 쓴다.** 전 소스 grep 0건(이름이 겹치는 건 전부 CUDA 스트림). vLLM 의 **옛 경로**(surr/read 오프셋 창)를 그대로 들고 있고 주석이 출처를 적어 뒀다(`Based on vllm .../detokenizer.py#L194-L313`). `INIT_INCREMENTAL_DETOKENIZATION_OFFSET = 5` — 프롬프트 끝 5토큰을 문맥으로 깔고 시작. 대신 `--tokenizer-backend fastokens` 라는 별도 선택지가 있다(vLLM 쪽 주석도 "fastokens shim 이 `tokenizers.decoders.DecodeStream` 을 갈아끼운다"고 적혀 있다).
+
+**2. 구조: 디토크나이저가 별도 프로세스다.** `sglang::detokenizer` 가 ZMQ 로 스케줄러에서 받아 토크나이저(HTTP) 프로세스로 민다. GIL 을 아예 안 나눈다. **우리에겐 레버가 아니다** — §30 측정으로 문의 스트리밍 비용은 스텝당 행 하나 4.0 µs, 4행 16 µs 대 46 ms 스텝 = **0.03%** 이고, 그 대가는 `BatchTokenIDOutput` 40여 필드를 매 스텝 직렬화하는 것이다. 동시성이 높을 때 갚는 설계지 `max_seqs=4` 가 살 것이 아니다.
+
+**3. 배치 디코드.** `_grouped_batch_decode` 가 **배치 전체**를 `tokenizer.batch_decode` 한 번으로(플래그 `(skip_special, spaces)` 별로 그룹), 빈 구간은 빼고 디코드 뒤 되돌려 놓는다("under high-concurrency streaming this adds up"). 우리는 행마다 `step` 하나 — 4행이면 러스트 호출 4번 대 1번. 4행에서 1~2 µs 차이라 지금은 안 가져온다. 이것도 동시성 레버다.
+
+**4. 우리 복구 A 에 해당하는 것**: `_clamp_decode_ids` 가 범위 밖·음수 id 를 **0 으로 클램프**한다(try/except 가 아니라 사전 방어). 이유가 우리와 다르다 — 멀티모달 자리표시 id 가 **음수**(-101/-102)이고 radix 캐시 pad 해시가 섞여서. **우리는 해당 없다**: ST 의 비전 자리표시는 어휘 안의 진짜 `image_token_id` 이고, 애초에 프롬프트에만 있어 디토크나이저를 안 지난다. **복구 B(Invalid prefix)에 해당하는 것은 없다** — `DecodeStream` 을 안 쓰니 그 실패 자체가 없다.
+
+**5. 정지 문자열: 우리가 §30 에서 한 것을 이미 하고 있다.** `_stop_match_tail_len` 이 `stop_str_max_len + 1 + (새로 수락된 토큰 − 1)` 만큼의 **꼬리 토큰만** 디코드해서 본다. 스펙 디코딩 주석까지 같다("Cover all newly accepted tokens so an early stop string is not missed"). 차이 둘: (a) 그들은 매 스텝 꼬리를 **다시 디코드**하고 우리는 이미 만든 문자열을 창으로 본다, (b) **부분 접두사 보류가 그들은 스텝 전체를 막는다**(`should_output &= not check_match_stop_str_prefix()`) — 우리는 겹치는 꼬리 글자만 접고 나머지는 보여 준다. 이건 우리가 곱다. 그들의 `check_match_stop_str_prefix` 에는 우리 `partial_suffix` 의 한 글자 단락도 없다.
+
+**6. 그들만 하는 것 — 그리고 이게 진짜 발견이다.** 스텝의 글자가 중간에 끊기면(`new_text` 가 `�` 로 끝나면) 우리와 vLLM 은 **그 스텝의 텍스트 전부를 붙잡는다.** SGLang 은 **오프셋을 커밋하지 않은 채 출력 가능한 앞부분만 내보내고**(`find_printable_text`), `sent_offset`/`pending` 으로 다음 스텝의 중복 송신을 막는다.
+
+**우리에게 얼마나 큰가**(이 체크포인트 tokenizer.json, 스텝당 수락 6 = 프로덕션):
+
+| 본문 | 지금(전부 보류) | SGLang | 글자 경계까지 |
+|---|---:|---:|---:|
+| 한국어 | **37.2%** | 0.0% | 0.0% |
+| CJK+이모지 | **43.5%** | 0.0% | 0.0% |
+| 영어·코드 | 0.0% | 0.0% | 0.0% |
+
+(= 아무것도 안 보여 주는 스텝의 비율. k=1 이면 한국어 28.1% → 18.7% / **15.6%**.)
+
+**한국어 답의 세 스텝 중 하나가 클라이언트에게 아무것도 안 보낸다**(연속 최대 4스텝). 영어에서는 0% 라 여태 안 보였다. §30 의 `_STALL_TOKENS` 가드는 이 증상의 극단만 막았지 본체를 못 봤다.
+
+**다만 SGLang 의 휴리스틱은 한국어에 맞지 않는다.** `find_printable_text` 는 HF `TextStreamer` 것이고 **단어 경계**(마지막 공백까지)로 자른다. CJK 예외는 `_is_chinese_char` 인데 그 문서 주석이 직접 말한다 — *"모던 한글은 다른 블록이고, 공백으로 띄어 쓰니 특별 취급하지 않는다."* 그래서 한글은 **진행 중인 단어를 통째로** 붙잡는다. **글자 경계로 자르면**(끝의 미완성 바이트만 보류) 같은 0.0% 를 내면서 지연이 더 짧다(k=1 에서 18.7% 대 15.6%).
+
+**그래서 제안(미착수)**: `_Stream` 에 `sent_offset` 식 임시 출력(provisional)을 더한다 — 러스트 스트림이 `None` 을 돌려준 스텝에 붙잡은 꼬리를 직접 디코드해 **끝의 `�` 런만** 떼고 내보내고, 커밋은 안 한다. 전체 텍스트는 그대로, 델타는 최대 4스텝 일찍. 비용은 보류 스텝(한국어 37%)에서 러스트 decode 한 번(~1 µs). 두 경로 모두 가능. **운영자 승인 대기.**
+
+**SGLang 에서 가져올 것 없다고 판정한 나머지**: 별도 프로세스(2), 배치 디코드(3) — 둘 다 동시성 레버고 `max_seqs=4` 에서는 손해. `DETOKENIZER_MAX_STATES=65536` LRU 축출(우리 상태는 요청과 함께 죽고 `max_pending` 이 상한). `stream_interval`(기본 1, 우리와 같음)·`batch_notify_size=16`(asyncio 깨우기 배칭 — 우리 `_wake` 는 이미 Event 하나).
