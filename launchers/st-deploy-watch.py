@@ -96,6 +96,18 @@ def busy(metrics: str) -> "int | None":
     return requests
 
 
+def unsupported(metrics: str) -> bool:
+    """True when the engine answered, but is older than `st:quiet` and cannot say whether it is idle.
+
+    Not the same as silence, and the difference matters: waiting fixes silence and does not fix this.
+    It is also the bootstrap -- `st:quiet` exists only in the tree this would deploy -- so an engine
+    this old has to be moved forward once by a person before the watcher can take over.
+    """
+    if re.search(r"^vllm:num_requests_running(?:\{[^}]*\})? +", metrics, re.M) is None:
+        return False                                  # nothing that looks like this engine's door
+    return re.search(r"^st:quiet(?:\{[^}]*\})? +", metrics, re.M) is None
+
+
 def failures(tree: Path, timeout: int) -> "dict[str, str]":
     """{test file: its one-line verdict} for the files that do not pass, over `tree`."""
     out = {}
@@ -190,7 +202,13 @@ def cycle(a, log) -> int:
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(BASE + "/metrics", timeout=10) as r:
-                load = busy(r.read().decode())
+                body = r.read().decode()
+            load = busy(body)
+            if load is None and unsupported(body):
+                log("  the engine answered, but it is older than st:quiet: it cannot say whether a tier")
+                log("  transfer is in flight, and this will not take down an engine that cannot say.")
+                log(f"  Move it forward once by hand, then --seed: the metric arrives with the tree.")
+                return 0
         except Exception as exc:                                     # noqa: BLE001 -- any failure is "not known to be quiet"
             load = None
             log(f"  /metrics did not answer ({type(exc).__name__}); not treating that as quiet")
@@ -245,9 +263,14 @@ def cycle(a, log) -> int:
         # Not recorded as deployed: what is serving now is whatever the supervisor recovered, which
         # is not this release, and the next gate must not take it as the baseline. Recorded as
         # rejected so the next cycle does not walk straight back into the same launch.
-        STATE.write_text(json.dumps({**held, "rejected": head, "rejected_at": time.time(),
-                                     "rejected_by": "launch"}, indent=1))
-        log(f"  {head[:12]} did not launch; left for a person, and not recorded as deployed")
+        # And the baseline goes with it. `start-st-glm53.sh` rsyncs the candidate to all four nodes
+        # BEFORE the step that failed, so what the supervisor recovered onto is the candidate if the
+        # rsync got that far and the old tree if it did not -- nobody knows which. A gate run against
+        # a guess is worse than no gate, so the next cycle refuses until a person says what is up.
+        STATE.write_text(json.dumps({**held, "release": None, "rejected": head,
+                                     "rejected_at": time.time(), "rejected_by": "launch"}, indent=1))
+        log(f"  {head[:12]} did not launch; not recorded as deployed, and the gate's baseline is dropped")
+        log(f"  (the tree on the nodes is no longer known: --seed once someone has looked)")
         return 1
     STATE.write_text(json.dumps({"deployed": head, "release": str(release), "deployed_at": time.time(),
                                  "launched_ok": True}, indent=1))
