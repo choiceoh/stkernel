@@ -1,0 +1,68 @@
+{
+  "pool_rows": 7152,
+  "eligible_pool_rows": 7098,
+  "category_totals": {
+    "notification": 3035,
+    "mail": 3617,
+    "conversation": 500
+  },
+  "quarantine_rows": 54,
+  "group_counts": {
+    "train": 1863,
+    "validation": 242,
+    "test": 225
+  },
+  "cross_split_group_overlaps": 0,
+  "residual_email_pattern_rows": 0,
+  "annotation_counts": {
+    "train": 32,
+    "validation": 8,
+    "test": 8
+  },
+  "annotation_decisions_by_split": {
+    "train": {
+      "review": 7,
+      "act": 12,
+      "inform": 4,
+      "ignore": 9
+    },
+    "validation": {
+      "act": 3,
+      "review": 3,
+      "inform": 1,
+      "ignore": 1
+    },
+    "test": {
+      "act": 4,
+      "inform": 2,
+      "ignore": 2
+    }
+  },
+  "exact_source_quotes_verified": 117,
+  "sft_token_masks_verified": true,
+  "target_truncations": 0,
+  "timestamp_ranges_utc": {
+    "mail": {
+      "parsed": 3612,
+      "missing_or_unparsed": 5,
+      "earliest": "2016-01-22T10:29:02+00:00",
+      "latest": "2026-09-11T04:34:24+00:00"
+    },
+    "notification": {
+      "parsed": 3035,
+      "missing_or_unparsed": 0,
+      "earliest": "2026-06-11T05:58:22.729000+00:00",
+      "latest": "2026-09-12T03:06:30.422000+00:00"
+    },
+    "conversation": {
+      "parsed": 500,
+      "missing_or_unparsed": 0,
+      "earliest": "2026-03-27T11:21:54.127000+00:00",
+      "latest": "2026-09-12T02:34:48.150000+00:00"
+    }
+  },
+  "raw_text_in_this_report": false,
+  "semantic_label_correctness_automatically_proven": false,
+  "human_verified_labels": 0,
+  "note": "The 48 assistant-reviewed annotations are a seed set. Historical development splits are not a new blind benchmark."
+}
