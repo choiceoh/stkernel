@@ -71,7 +71,10 @@ def tensorcore_router(report, ranks=None):
     from safetensors import safe_open
     from engine.kernels.glm_pointwise import router_logits, route_weights
     from engine.profiles.glm53 import facts
-    rank_file = Path(ranks or facts.RANKS) / 'rank0of4.safetensors'
+    root = Path(ranks or facts.RANKS)
+    if not root.is_absolute():
+        root = facts.RANKS.parent / root
+    rank_file = root / 'rank0of4.safetensors'
     weights = []
     with safe_open(str(rank_file), framework='pt', device='cpu') as source:
         for key in sorted(k for k in source.keys() if k.endswith('.moe.gate')):
