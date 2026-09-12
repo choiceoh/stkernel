@@ -8,7 +8,14 @@ launch, scaling metadata, duplicate weight set or stochastic rounding.
 The operator selected FP16 as the production default on 2026-09-13 after the
 storage/rollback/staging checks, without waiting for the matched onepass result.
 This default selection is not an end-to-end quality or speed verdict.
-A non-production comparison boot accepts `STK_kda_state_dtype=fp32`; invalid values
+A subsequent review on 2026-09-13 restored **FP32 as the production default**:
+FP32 arithmetic does not remove the recurrent error introduced by FP16 storage,
+and no matched long-generation length/termination result was obtained. This
+restoration returns active rings, snapshots and boundary staging to FP32 on the
+next boot; it adds back the 1,496 MiB/rank declared below at that geometry.
+The SR mitigation remains separate, unmerged work, not a serving validation.
+
+A non-production comparison boot accepts `STK_kda_state_dtype=fp16`; invalid values
 are rejected before allocation. Production rejects all experiment overrides.
 The canonical ST bracket selects committed source arms, so its FP16 arm changes
 only `facts.KDA_STATE_DTYPE` after the common implementation commit.
