@@ -346,13 +346,21 @@ class HistoryLifetimeTests(unittest.TestCase):
         self.assertFalse(bool(seen[2]), "nothing of the old conversation survives")
 
     def test_the_adapter_drops_it_wherever_it_reassigns_a_row_s_tokens(self):
-        """Through `_forget_history`, which is the only caller that survives a history nobody has built yet."""
-        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
-        for site in ("self.tokens[seq] = list(ids)", 'self.tokens[seq] = list(record["tokens"])'):
-            after = source[source.index(site):]
-            self.assertIn("self._forget_history(seq)", after[:400], site)
-        self.assertIn("self.history.forget(seq)", source, "and the helper still reaches the History")
+        """The property is EVERY reassignment site, not a call spelling: find the sites, do not list them.
 
+        Two layers, because one is not enough. The first would pass with `_forget_history` an empty
+        shell; the second would pass with a stray call nowhere near a reassignment.
+        """
+        import re
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        sites = [m for m in re.finditer(r"^ +self\.tokens\[seq\] = ", source, re.M)]
+        self.assertGreaterEqual(len(sites), 2, "the adapter reassigns a row's tokens somewhere")
+        for m in sites:
+            line = source[m.start():source.index("\n", m.start())].strip()
+            self.assertIn("self._forget_history(seq)", source[m.start(): m.start() + 400], line)
+        body = source[source.index("    def _forget_history(self"):]
+        body = body[:body.index("\n    def ", 10)]
+        self.assertIn("self.history.forget(seq)", body, "the helper has to reach the History, not just exist")
 
 class VerificationPathTests(unittest.TestCase):
     """A served row and a row with penalties must be verified by the same rule."""
