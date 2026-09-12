@@ -22,23 +22,30 @@ def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER
             B: tl.constexpr, H: tl.constexpr, HK: tl.constexpr, RHK: tl.constexpr, D: tl.constexpr,
             W: tl.constexpr, RS: tl.constexpr, SCALE: tl.constexpr, BN: tl.constexpr,
             SPAN: tl.constexpr, TILES: tl.constexpr, BQ: tl.constexpr):
-    """One KV head's slice of the window, every query of that head at once.
+    """One row's KV head, one slice of the window, every query of that head at once.
 
     The mask is the same for every query -- the block attends over its own keys without a causal step -- so a
-    slice's keys are read once and hit a whole tile of dot products. The tile is bounded: B * (H // HK) is 24
-    at TP=4 but 1024 where one KV head serves them all, and an accumulator that wide does not fit in a CTA."""
-    kh = tl.program_id(0) // TILES
-    tile = tl.program_id(0) % TILES
-    part = tl.program_id(1)
+    slice's keys are read once and hit a whole tile of dot products. The tile is bounded: B * (H // HK) is 28
+    at TP=4 but 1024 where one KV head serves them all, and an accumulator that wide does not fit in a CTA.
+
+    The step's rows ride the grid. They used to be a python loop -- one launch a (layer, row) and a `cat` to
+    put the answers back together -- which is the same disease `write_draft_kv_rows` cured for the ring."""
+    row = tl.program_id(0)
+    kh = tl.program_id(1) // TILES
+    tile = tl.program_id(1) % TILES
+    part = tl.program_id(2)
     if SLOT_STRIDE:
-        R += tl.load(Slot).to(tl.int64) * SLOT_STRIDE + LAYER_OFFSET
+        R += tl.load(Slot + row).to(tl.int64) * SLOT_STRIDE + LAYER_OFFSET
+    Q += row * B * H * D
+    K += row * B * HK * D
+    V += row * B * HK * D
     group = H // HK
     qi = tile * BQ + tl.arange(0, BQ)
     d = tl.arange(0, D)
     live = qi < B * group
     q = tl.load(Q + ((qi // group) * H + kh * group + qi % group)[:, None] * D + d[None, :],
                 live[:, None], other=0.0)                                        # [BQ, D]
-    position = tl.load(P)
+    position = tl.load(P + row)
     maximum = tl.full((BQ,), -float("inf"), tl.float32)
     denominator = tl.zeros((BQ,), tl.float32)
     accumulator = tl.zeros((BQ, D), tl.float32)
@@ -66,78 +73,95 @@ def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER
         accumulator = accumulator * correction[:, None] + tl.dot(probability, value, input_precision="ieee")
         denominator = denominator * correction + tl.sum(probability, 1)
         maximum = new_max
-    at = ((tl.program_id(0) * tl.num_programs(1)) + part) * BQ + tl.arange(0, BQ)
+    at = ((row * tl.num_programs(1) + tl.program_id(1)) * tl.num_programs(2) + part) * BQ + tl.arange(0, BQ)
     tl.store(ACC + at[:, None] * D + d[None, :], accumulator, live[:, None])
     tl.store(MAX + at, maximum, live)
     tl.store(DEN + at, denominator, live)
 
 
 @triton.jit
-def _combine(ACC, MAX, DEN, O, H: tl.constexpr, HK: tl.constexpr, D: tl.constexpr,
+def _combine(ACC, MAX, DEN, O, B: tl.constexpr, H: tl.constexpr, HK: tl.constexpr, D: tl.constexpr,
              PARTS: tl.constexpr, BP: tl.constexpr, TILES: tl.constexpr, BQ: tl.constexpr):
-    """The slices' partial softmaxes into one answer, one program per (row, head)."""
-    row, head = tl.program_id(0), tl.program_id(1)
+    """The slices' partial softmaxes into one answer, one program per (row, block position, head)."""
+    row, pos, head = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     group = H // HK
     kh = head // group
-    which = row * group + head % group
+    which = pos * group + head % group
     part = tl.arange(0, BP)
     live = part < PARTS
-    at = (((kh * TILES + which // BQ) * PARTS) + part) * BQ + which % BQ
+    at = ((row * HK * TILES + kh * TILES + which // BQ) * PARTS + part) * BQ + which % BQ
     maxima = tl.load(MAX + at, live, other=-float("inf"))
     whole = tl.max(maxima, 0)
     whole = tl.where(whole == -float("inf"), 0.0, whole)
     weight = tl.where(live, tl.exp(maxima - whole), 0.0)
     d = tl.arange(0, D)
     total = tl.sum(tl.load(ACC + at[:, None] * D + d[None, :], live[:, None], other=0.0) * weight[:, None], 0)
-    tl.store(O + (row * H + head) * D + d, total / tl.sum(tl.load(DEN + at, live, other=0.0) * weight, 0))
+    tl.store(O + ((row * B + pos) * H + head) * D + d, total / tl.sum(tl.load(DEN + at, live, other=0.0) * weight, 0))
 
 
 def draft_attention(q, k, v, ring, position, *, slot=None, layer=0):
-    """BF16 [B,H,128], [B,HK,128], ring [2,W,HK,128] -> [B,H,128]."""
-    if slot is not None:
-        if (ring.ndim != 6 or not 0 <= layer < ring.shape[1] or slot.numel()!=1
-                or slot.dtype!=torch.int64 or slot.device!=q.device):
-            raise ValueError("DFlash arena requires a device slot and an in-range layer")
-        geometry=ring.shape[2:]
-        stride,offset=ring.stride(0),layer*ring.stride(1)
-    else:
-        geometry=ring.shape
-        stride,offset=0,0
-    if (q.ndim != 3 or k.ndim != 3 or k.shape != v.shape or len(geometry) != 4
-            or q.shape[0] != k.shape[0] or q.shape[2] != 128 or k.shape[2] != 128
-            or geometry[0] != 2 or geometry[2] < k.shape[1] or geometry[3] != k.shape[2]
-            or q.shape[1] % k.shape[1] or not 1 <= q.shape[0] <= 32
-            or not all(t.is_cuda and t.device == q.device and t.dtype == torch.bfloat16
-                       for t in (q, k, v, ring))
-            or not all(t.is_contiguous() for t in (q,k,v))
-            or not (ring[0].is_contiguous() if slot is not None else ring.is_contiguous())):
-        raise ValueError("DFlash attention requires contiguous CUDA BF16 block and KV ring")
+    """One block: BF16 [B,H,128], [B,HK,128], ring [2,W,HK,128] or the arena field with a slot -> [B,H,128]."""
     if isinstance(position, int):
         if position < 0:
             raise ValueError("negative DFlash position")
         position = torch.tensor(position, device=q.device, dtype=torch.int64)
-    if (position.device != q.device or position.dtype != torch.int64 or position.numel() != 1):
-        raise ValueError("DFlash position must be a CUDA int64 scalar")
+    if q.ndim != 3:
+        raise ValueError("one block is [B, H, 128]; a step's rows go through attend_rows")
+    return attend_rows(q[None], k[None], v[None], ring, position.reshape(1),
+                       slot=slot, layer=layer)[0]
+
+
+def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
+    """Every row of a step at once: q [n, B, H, 128], k/v [n, B, HK, 128], positions [n], slots [n].
+
+    One launch a layer, not one a (layer, row). The rows are independent -- each reads its own slot's ring at
+    its own context length -- so they are a grid dimension, and the answers do not have to be concatenated
+    back together afterwards."""
+    if slot is not None:
+        if (ring.ndim != 6 or not 0 <= layer < ring.shape[1] or slot.ndim != 1 or slot.numel() != q.shape[0]
+                or slot.dtype != torch.int64 or slot.device != q.device):
+            raise ValueError("DFlash arena requires a device slot per row and an in-range layer")
+        geometry = ring.shape[2:]
+        stride, offset = ring.stride(0), layer * ring.stride(1)
+    else:
+        if q.shape[0] != 1:
+            raise ValueError("a bare ring belongs to one row; the arena field carries the rest")
+        geometry = ring.shape
+        stride, offset = 0, 0
+    if (q.ndim != 4 or k.ndim != 4 or k.shape != v.shape or len(geometry) != 4
+            or q.shape[:2] != k.shape[:2] or q.shape[3] != 128 or k.shape[3] != 128
+            or geometry[0] != 2 or geometry[2] < k.shape[2] or geometry[3] != k.shape[3]
+            or q.shape[2] % k.shape[2] or not 1 <= q.shape[1] <= 32
+            or not all(t.is_cuda and t.device == q.device and t.dtype == torch.bfloat16
+                       for t in (q, k, v, ring))
+            or not all(t.is_contiguous() for t in (q, k, v))
+            or not (ring[0].is_contiguous() if slot is not None else ring.is_contiguous())):
+        raise ValueError("DFlash attention requires contiguous CUDA BF16 blocks and KV ring")
+    # the values are not read here: a context length is a device number and looking at it would synchronise,
+    # which is not allowed while a graph is capturing
+    if positions.device != q.device or positions.dtype != torch.int64 or positions.numel() != q.shape[0]:
+        raise ValueError("DFlash positions must be one CUDA int64 context length per row")
     out = torch.empty_like(q)
-    b, h, d = q.shape
-    hk, cells = k.shape[1], geometry[1]
+    n, b, h, d = q.shape
+    hk, cells = k.shape[2], geometry[1]
     BN, SMS = 32, 48
-    # Cut the window so that (KV heads x slices) fills the machine: below that the slices are wider, above it
-    # they are one block each and the combine grows for nothing.
-    parts = max(1, min(triton.cdiv(cells + b, BN), SMS // hk))
+    # Cut the window so that (rows x KV heads x slices) fills the machine: below that the slices are wider,
+    # above it they are one block each and the combine grows for nothing.
+    parts = max(1, min(triton.cdiv(cells + b, BN), SMS // (n * hk)))
     span = triton.cdiv(triton.cdiv(cells + b, BN), parts) * BN
     parts = triton.cdiv(cells + b, span)
     BQ = 32                                     # a CTA's query tile: wider spills the fp32 accumulator
     tiles = triton.cdiv(b * (h // hk), BQ)
-    cells_of = hk * tiles * parts * BQ
-    acc = torch.empty(cells_of, d, device=q.device, dtype=torch.float32)
-    scale = torch.empty(2, cells_of, device=q.device, dtype=torch.float32)
-    _attend[(hk * tiles, parts)](q, k, v, ring, position, slot if slot is not None else position,
-                                 acc, scale[0], scale[1], stride, offset, b, h, hk, geometry[2], d,
-                                 cells, cells*geometry[2]*geometry[3], d**-.5, BN, span, tiles, BQ,
-                                 num_warps=4, enable_fp_fusion=False)
-    _combine[(b, h)](acc, scale[0], scale[1], out, h, hk, d,
-                     parts, triton.next_power_of_2(parts), tiles, BQ, num_warps=4, enable_fp_fusion=False)
+    held = n * hk * tiles * parts * BQ
+    acc = torch.empty(held, d, device=q.device, dtype=torch.float32)
+    scale = torch.empty(2, held, device=q.device, dtype=torch.float32)
+    _attend[(n, hk * tiles, parts)](q, k, v, ring, positions,
+                                    slot if slot is not None else positions,
+                                    acc, scale[0], scale[1], stride, offset, b, h, hk, geometry[2], d,
+                                    cells, cells*geometry[2]*geometry[3], d**-.5, BN, span, tiles, BQ,
+                                    num_warps=4, enable_fp_fusion=False)
+    _combine[(n, b, h)](acc, scale[0], scale[1], out, b, h, hk, d,
+                        parts, triton.next_power_of_2(parts), tiles, BQ, num_warps=4, enable_fp_fusion=False)
     return out
 
 

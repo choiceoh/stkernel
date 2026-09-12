@@ -43,6 +43,8 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             K.norm(x, torch.zeros(2, 8), 1e-5)                       # the norm weight is one row
         with self.assertRaises(ValueError):
+            K.add_norm(x, torch.zeros(4, 2, 7), w, 1e-5)             # the two sides of a join are one shape
+        with self.assertRaises(ValueError):
             K.norm_rope(torch.zeros(4, 2, 6), torch.zeros(6), 1e-5, pos, 1e4)  # 6 is not a power of two
 
     def test_the_table_is_built_once_per_device_dimension_and_theta(self):
@@ -107,6 +109,19 @@ class KernelTests(unittest.TestCase):
             self.assertNotEqual(view.stride(0), heads * 128)
             self.assertTrue(torch.equal(K.norm_rope(view, w, 1e-5, pos, 1e4),
                                         K.norm_rope(view.contiguous(), w, 1e-5, pos, 1e4)))
+
+    def test_the_residual_join_is_the_add_and_the_norm_that_read_it(self):
+        """A block writes `res = res + x` and then normalises `res`, twice a layer. Fused it is one launch,
+        and it has to be bit for bit what the pair was -- the sum is a residual every later layer reads."""
+        for rows, width in ((7, 4096), (28, 4096), (1, 4096), (7, 512), (7, 12288)):
+            with self.subTest(rows=rows, width=width):
+                gen = torch.Generator(device="cuda").manual_seed(rows + width)
+                a = torch.randn(rows, width, device="cuda", generator=gen).bfloat16()
+                b = torch.randn(rows, width, device="cuda", generator=gen).bfloat16()
+                w = torch.randn(width, device="cuda", generator=gen).abs().add(0.5).bfloat16()
+                total, normed = K.add_norm(a, b, w, 1e-5)
+                self.assertTrue(torch.equal(total, a + b))
+                self.assertTrue(torch.equal(normed, K.norm(a + b, w, 1e-5)))
 
     def test_a_missing_table_during_capture_is_an_error_not_an_allocation(self):
         K._TABLES.pop(("cuda:0", 64, 12345.0), None)

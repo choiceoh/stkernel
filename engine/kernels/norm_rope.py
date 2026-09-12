@@ -43,6 +43,24 @@ def warm(device, dim: int, theta: float) -> torch.Tensor:
 
 
 @triton.jit
+def _add_norm(A, B, W, SUM, OUT, sA, sB, sS, sO, EPS, D: tl.constexpr, BD: tl.constexpr):
+    """The residual join and the norm that reads it, in one launch.
+
+    A block writes `res = res + x` and then normalises `res`, twice a layer. Split, that is two launches over
+    the same row and one of them exists only to hand the other its input."""
+    r = tl.program_id(0)
+    d = tl.arange(0, BD)
+    m = d < D
+    total = (tl.load(A + r * sA + d, mask=m, other=0.0).to(tl.float32)
+             + tl.load(B + r * sB + d, mask=m, other=0.0).to(tl.float32)).to(SUM.dtype.element_ty)
+    tl.store(SUM + r * sS + d, total, mask=m)
+    x = total.to(tl.float32)
+    scale = tl.rsqrt(tl.sum(x * x) / D + EPS)
+    w = tl.load(W + d, mask=m, other=0.0).to(tl.float32)
+    tl.store(OUT + r * sO + d, (x * scale).to(OUT.dtype.element_ty) * w.to(OUT.dtype.element_ty), mask=m)
+
+
+@triton.jit
 def _norm(X, W, OUT, sX, sO, EPS, D: tl.constexpr, BD: tl.constexpr):
     r = tl.program_id(0)
     d = tl.arange(0, BD)
@@ -88,6 +106,23 @@ def norm(x: torch.Tensor, w: torch.Tensor, eps: float) -> torch.Tensor:
         _norm[(flat.shape[0],)](flat, w, out, flat.stride(0), out.stride(0), eps,
                                 D=D, BD=triton.next_power_of_2(D), num_warps=4 if D <= 1024 else 8)
     return out.view_as(x)
+
+
+def add_norm(a: torch.Tensor, b: torch.Tensor, w: torch.Tensor, eps: float):
+    """`total = a + b` and `norm(total, w, eps)`, returned together in one launch."""
+    if a.shape != b.shape or w.ndim != 1 or a.shape[-1] != w.shape[0]:
+        raise ValueError("the residual join takes two tensors of one shape and a weight for their last dimension")
+    if not a.is_cuda:
+        total = a + b
+        return total, _norm_by_torch(total, w, eps)
+    flat_a, flat_b = a.reshape(-1, a.shape[-1]), b.reshape(-1, b.shape[-1])
+    total, out = torch.empty_like(flat_a), torch.empty_like(flat_a)
+    D = flat_a.shape[1]
+    if flat_a.shape[0]:
+        _add_norm[(flat_a.shape[0],)](flat_a, flat_b, w, total, out, flat_a.stride(0), flat_b.stride(0),
+                                      total.stride(0), out.stride(0), eps,
+                                      D=D, BD=triton.next_power_of_2(D), num_warps=4 if D <= 1024 else 8)
+    return total.view_as(a), out.view_as(a)
 
 
 def norm_rope(x: torch.Tensor, w: torch.Tensor, eps: float, positions: torch.Tensor, theta: float) -> torch.Tensor:
