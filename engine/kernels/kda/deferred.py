@@ -42,7 +42,9 @@ def _commit(KEY, DECAY, UPDATE, RING, SLOT, CONTEXT, COUNT,
         update = tl.load(UPDATE + offset * V + vv, vv < V, other=0)
         # The verifier rounds decay multiplication before the dot product
         # which produces `update`; preserve that FP32 rounding here too.
-        state = tl.mul_rn(state, decay[None, :])
+        state = tl.inline_asm_elementwise("mul.rn.f32 $0, $1, $2;", constraints="=f,f,f",
+                                         args=[state, decay[None, :]], dtype=tl.float32,
+                                         is_pure=True, pack=1)
         state += update[:, None] * key[None, :]
         position = context + i
         if i == count - 1 or (position + 1) % BLOCK == 0:

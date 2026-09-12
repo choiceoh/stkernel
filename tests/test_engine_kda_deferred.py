@@ -65,7 +65,8 @@ class DeferredKdaTests(unittest.TestCase):
         for t in (1, 6, 7):
             args, backing, ring = self.inputs(t)
             slot, ctx, count = (torch.tensor(x, device="cuda", dtype=torch.int32) for x in (1, 0, t))
-            self.verify(*args, ring, slot, ctx, -5.)
+            _, warm_factors = self.verify(*args, ring, slot, ctx, -5.)
+            self.commit(warm_factors, ring, slot, ctx, count, block=768)
             graph = torch.cuda.CUDAGraph()
             with torch.cuda.graph(graph):
                 actual, factors = self.verify(*args, ring, slot, ctx, -5.)
