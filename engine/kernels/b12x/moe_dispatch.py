@@ -424,8 +424,11 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: stages must be >= 1")
     if cfg["a_ring"] and cfg["skip_a"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: v (A ring) and xa are exclusive")
+    # `r` keeps its geometry requirements and its conflicts with the cells that change the scale path
+    # (a_ring, sf_pack). The two timing-only skips are not a geometry -- they drop a TMA issue at compile
+    # time -- and they are already probe-gated above, so the served parse still cannot reach them.
     if cfg["decode_reform"] and (not cfg["tiled"] or any(
-        cfg[key] for key in ("a_ring", "sf_pack", "skip_sf", "skip_a")
+        cfg[key] for key in ("a_ring", "sf_pack")
     ) or cfg["fc1"] != 2 or cfg["fc2"] != 2):
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: r requires t with f2,g2")
     if cfg.get("reform_sf_pack") and not cfg["decode_reform"]:

@@ -190,10 +190,13 @@ class MoEStaticKernelV4:
         # shadow, where the MMA warps are already waiting.
         self.sf_pack = bool(sf_pack)
         self.reform_sf_pack = bool(reform_sf_pack)
-        if self.reform_sf_pack and any(
-            (self.sf_pack, self.skip_sf, self.skip_a, self.split, self.a_ring)
-        ):
+        if self.reform_sf_pack and any((self.sf_pack, self.split, self.a_ring)):
             raise ValueError("sf6 requires the unmodified t or t,r geometry")
+        # skip_sf / skip_a are compile-time omissions of a TMA issue, not a layout: the branches below are
+        # `const_expr(not self.skip_*)` around the box descriptors alone, so they compose with any scale
+        # geometry. They stayed excluded here only because nothing had asked -- and what asks is the one
+        # question the stamps exist for: which of the served recipe's boxes holds the fixed cost
+        # (45차 §23 조사 17차: 13.0 ms a layer against a 4.3 ms bank read).
         # SF6-v1 stays 2048 raw bytes -> 1552 packed bytes for both tile
         # geometries. Ordinary FC1 K512 needs two adjacent K256 blocks.
         # Ordinary FC2 N128 uses one row half of a packed N256 block.
