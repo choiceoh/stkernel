@@ -34,6 +34,29 @@ class SelectionTests(unittest.TestCase):
         self.assertTrue(torch.equal(chunked, single))
         self.assertTrue(((chunked < ke[:, None]) | (chunked == -1)).all())   # never a pool at or past the row's horizon
 
+    def test_topk_positions_picks_the_same_set_a_sorted_top_k_would(self):
+        """pool_slots re-orders the winners by position, so the selection owes the set, not an order -- and the
+        set must be the sorted top-k's, including which rows run out of valid positions."""
+        import torch
+
+        from engine.modules.sparse_indexer import topk_positions
+        g = torch.Generator().manual_seed(3)
+        for rows, n, k in ((7, 40, 8), (5, 12, 12), (3, 9, 16)):
+            logits = torch.randn(rows, n, generator=g)
+            valid = torch.randint(0, n + 1, (rows,), generator=g, dtype=torch.int32)
+            got = topk_positions(logits.clone(), k, valid=valid)
+            masked = logits.masked_fill(torch.arange(n)[None, :] >= valid[:, None], float("-inf"))
+            vals, want = masked.topk(min(k, n), dim=-1)
+            want = want.masked_fill(torch.isinf(vals), -1).to(torch.int32)
+            if min(k, n) < k:
+                want = torch.cat([want, torch.full((rows, k - min(k, n)), -1, dtype=torch.int32)], -1)
+            order = lambda t: torch.where(t >= 0, t, torch.full_like(t, 1 << 30)).sort(-1).values
+            self.assertTrue(torch.equal(order(got), order(want)), (rows, n, k))
+            self.assertEqual(got.shape, (rows, k))
+            self.assertEqual(got.dtype, torch.int32)
+            for r in range(rows):
+                self.assertEqual(int((got[r] >= 0).sum()), min(k, int(valid[r])), "a row keeps only its valid positions")
+
     def test_topk_positions_in_place_masks_the_callers_logits(self):
         import torch
         from engine.modules.sparse_indexer import topk_positions
