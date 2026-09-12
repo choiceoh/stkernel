@@ -175,7 +175,7 @@ launch(){
 }
 launch_fails=0; next_launch_at=0; held_logged=0; fails=0; wait_logged=
 attempt_launch(){
-  local reason key text
+  local reason key text taken
   if reason=$(wait_reason); then
     IFS=$'\t' read -r key text <<< "$reason"
     case "$key" in
@@ -185,6 +185,12 @@ attempt_launch(){
     return
   fi
   if launch; then launch_fails=0; next_launch_at=0; held_logged=0; return; fi
+  if taken=$(fleet_taken); then
+    # The launcher was refused because the fleet changed hands while we were launching -- a ticket
+    # took the lease the launcher's `stop` let go (05:30 and 06:25 on 2026-09-13 counted as attempts
+    # 1 and 5 and HELD production). That is a window, not a failed boot.
+    log "the fleet was taken while launching ($taken): not a failed attempt"; return
+  fi
   launch_fails=$((launch_fails+1))
   local backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
   [ "$backoff" -gt "$LAUNCH_BACKOFF_MAX" ] && backoff=$LAUNCH_BACKOFF_MAX
@@ -227,6 +233,11 @@ while :; do
     case "$key" in
       booting) adopt_boot ;;
       *) [ "$key" = "$wait_logged" ] || { log "$text: waiting -- no forensics, no launch attempt"; wait_logged=$key; } ;;
+    esac
+    case "$key" in
+      taken:*) # Someone else's window: the boots that failed before it are not this window's. The
+               # hold is for a boot that fails five times in a ROW; a foreign window ends the row.
+               [ "$launch_fails" = 0 ] || { log "a foreign window resets the launch count ($launch_fails attempt(s) before it)"; launch_fails=0; next_launch_at=0; held_logged=0; } ;;
     esac
     continue
   fi

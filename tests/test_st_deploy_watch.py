@@ -439,10 +439,16 @@ class ProbeSelfHealTests(unittest.TestCase):
         self.assertFalse(self.queued())
         self.assertIn("cannot tell whether", "\n".join(self.lines))
 
-    def test_the_cycle_asks_only_when_there_is_nothing_to_deploy(self):
+    def test_the_cycle_asks_at_its_start_candidate_or_not(self):
+        """Tied to the nothing-to-deploy branch, the self-heal never ran while main kept moving: 05:12
+        to 06:12 on 2026-09-13 the cycle chased a candidate through an hour of quiet-polling instead."""
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
         body = source[source.index("def cycle("):source.index("    log(f\"candidate: {why}\")")]
         self.assertIn("ensure_probe(held.get(\"deployed\")", body)
+        self.assertLess(body.index("ensure_probe("), body.index("wanted(head, held)"))
+        self.assertEqual(body.count("ensure_probe("), 1)
+        wait = source[source.index("while time.time() < deadline:"):source.index("never went quiet")]
+        self.assertIn("fleet_busy_with_tickets()", wait, "the quiet wait yields to the queue instead of polling a door it does not own")
         for flag in ("--probe-attempts", "--probe-gap"):
             self.assertIn(flag, source)
 

@@ -1114,7 +1114,20 @@ _STEP_BOUNDS = (0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.15, 0.2,
 
 class Server:
     @staticmethod
-    def _agree_on_parked(comm, parked) -> None:
+    def _forget_prefix_boundary(runner):
+        """A dropper for one prefix-tier slot: the cache's hold on it and the tier's copy."""
+        def forget(key):
+            prefix, tier = getattr(runner, "prefix", None), getattr(runner, "prefix_tier", None)
+            if prefix is not None:
+                for h, k in list(prefix.tier_keys.items()):
+                    if k == key:
+                        prefix.forget_tier(h)
+            if tier is not None:
+                tier.forget(key)
+        return forget
+
+    @staticmethod
+    def _agree_on_parked(comm, parked, *, forget=None, what="conversations") -> int:
         """Every rank's tier must hold the same conversations before the first request (D3).
 
         The tier is per rank and per node, so one node's leftovers are invisible to the others:
@@ -1122,10 +1135,19 @@ class Server:
         and the collectives then mix two different states -- the answer is garbage and nothing
         raises until a retire hits a key that rank already parked. 45th 21: srv4 still carried a
         local run's seq-0/seq-1, rank 3 died with "conversation 0 is already parked" and the other
-        three spun at 96% GPU in the next all-reduce. Disagreement kills the boot on every rank.
+        three spun at 96% GPU in the next all-reduce.
+
+        With `forget`, disagreement no longer kills the boot: every rank drops everything it holds
+        -- the same decision on every rank, off the same vote -- and boots empty. A rank that
+        crashed parked nothing while the survivors parked their rows on the way down (2026-09-13
+        05:24, rank 2's CUDA fault), and until this the next boot died on that skew every time:
+        production stayed down, five launches in a row, for want of one parked chat probe. What
+        is dropped could not have been resumed anyway -- resuming needs every rank's part.
+        Without `forget` the old contract holds: disagreement kills the boot on every rank.
+        Returns how many this rank dropped.
         """
         if int(getattr(comm, "world_size", 1)) <= 1:
-            return
+            return 0
         import torch
         checksum = 0
         for key in parked:
@@ -1136,12 +1158,21 @@ class Server:
         highest = comm.all_reduce_max(mine.clone())
         disagree = torch.tensor([0 if bool(torch.equal(highest, mine)) else 1], dtype=torch.int64, device=device)
         if int(comm.all_reduce_max(disagree).item()):
-            raise RuntimeError(
-                f"the ranks' NVMe tiers hold different conversations: this rank has {len(parked)} "
-                f"{parked[:8]}{'...' if len(parked) > 8 else ''}, the fleet's highest is "
-                f"{[int(x) for x in highest.tolist()]} (count, last key, checksum). Clear "
-                f"glm53-logs/st-tier on every node, or fan the same tier out -- a boot cannot start "
-                f"with the ranks numbering conversations differently.")
+            message = (f"the ranks' NVMe tiers hold different {what}: this rank has {len(parked)} "
+                       f"{parked[:8]}{'...' if len(parked) > 8 else ''}, the fleet's highest is "
+                       f"{[int(x) for x in highest.tolist()]} (count, last key, checksum).")
+            if forget is None:
+                raise RuntimeError(message + " Clear glm53-logs/st-tier on every node, or fan the same tier "
+                                   "out -- a boot cannot start with the ranks numbering conversations differently.")
+            for key in list(parked):
+                try:
+                    forget(key)
+                except Exception as exc:                  # noqa: BLE001 -- a stale disk copy must not stop the boot either
+                    print(f"  tier skew: could not drop {what} {key}: {exc}", flush=True)
+            print(f"  tier skew: {message} Dropped all {len(parked)} {what} on this rank (every rank does) so the "
+                  f"boot can start; they could not have been resumed unless every rank held them.", flush=True)
+            return len(parked)
+        return 0
 
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
@@ -1227,10 +1258,12 @@ class Server:
         self.pending, self.results = {}, {}
         # conversation ids are request ids; parked conversations from an earlier boot keep theirs
         parked = sorted(runner.parked_keys())
-        self._agree_on_parked(comm, parked)
+        if self._agree_on_parked(comm, parked, forget=runner.forget_parked):
+            parked = sorted(runner.parked_keys())                        # dropped on every rank: empty now
         if getattr(runner, "load_prefix_tier", None) is not None:
             runner.load_prefix_tier()                                    # boundaries an earlier boot left on the prefix tier
-            self._agree_on_parked(comm, runner.prefix_tier_keys())        # ... which every rank must hold alike (45차 §23 A)
+            self._agree_on_parked(comm, runner.prefix_tier_keys(),         # ... which every rank must hold alike (45차 §23 A)
+                                  forget=self._forget_prefix_boundary(runner), what="prefix boundaries")
         self.next_seq, self.served = 1 + max(parked, default=-1), 0
         self.alive = True
         self._lock = threading.Lock()
