@@ -108,6 +108,15 @@ class PrefixCacheTests(unittest.TestCase):
         self.assertNotEqual(a[8], c.chain([1] + list(range(1, 20)))[8])
         self.assertEqual(c.chain([1, 2, 3]), {})
 
+    def test_salts_split_identical_ids_from_the_chunk_that_holds_them_onward(self):
+        c = PrefixCache(BLOCK, CHUNK, 2)
+        ids = list(range(24))
+        plain, cat, dog = c.chain(ids), c.chain(ids, [(10, b"cat")]), c.chain(ids, [(10, b"dog")])
+        self.assertEqual(plain[8], cat[8])                                    # before the picture: the same boundary
+        self.assertNotEqual(plain[16], cat[16]); self.assertNotEqual(cat[16], dog[16]); self.assertNotEqual(cat[24], dog[24])
+        self.assertEqual(c.chain(ids, [(10, b"cat")]), cat)                   # deterministic
+        self.assertEqual(c.chain(ids, [(3, b"x"), (10, b"cat")])[8], c.chain(ids, [(10, b"cat"), (3, b"x")])[8])   # order-free
+
     def test_second_prompt_reuses_the_boundary_and_prefills_the_rest(self):
         r, cache = runner()
         r.submit(0, 19, now=0, ids=list(range(19)))

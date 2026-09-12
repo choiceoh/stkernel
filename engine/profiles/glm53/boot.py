@@ -46,9 +46,10 @@ from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
 from engine.profiles.glm53.weights import rank_loader            # noqa: E402
+from engine.profiles.glm53 import vision as vision_mod           # noqa: E402
 
 GIB = 1 << 30
-KV_GIB = 8.73                       # the 40th boot's KV (plan.py): what the box has left after weights, runtime floor and activations
+KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 28차 §8); the ST budget table leaves 41.6 GiB, 45차 §23
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
 MAX_WAIT_S = 20.0                   # D10's one starvation valve
 MAX_SEQS = 4                        # launcher MAX_SEQS
@@ -57,8 +58,32 @@ PREFIX_SNAPSHOTS = 8                # chunk-boundary checkpoints kept for prefix
 
 
 def tokenizer(ckpt=facts.CKPT):
+    """The checkpoint's tokenizer, and nothing else it carries: this tokenizer.json ships a truncation rule
+    (max_length 2048, direction Right) that `Tokenizer.from_file` honours and transformers' AutoTokenizer -- what
+    vLLM tokenizes with -- ignores. Left in, the door silently cut every prompt to its first 2,048 tokens and
+    answered about the head of a document whose question sat at the end (45차 §23: onepass 32K/128K 0/3)."""
     from tokenizers import Tokenizer
-    return Tokenizer.from_file(str(Path(ckpt) / "tokenizer.json"))
+    tok = Tokenizer.from_file(str(Path(ckpt) / "tokenizer.json"))
+    tok.no_truncation()
+    tok.no_padding()
+    return tok
+
+
+def generation_defaults(ckpt=facts.CKPT) -> dict:
+    """What a request may omit: the checkpoint's generation_config (vLLM applies it the same way -- temperature 1.0 here)."""
+    import json
+    g = json.loads((Path(ckpt) / "generation_config.json").read_text())
+    return {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}
+
+
+def grammars(ckpt, vocab: int):
+    """base/grammar.Grammars over the checkpoint's tokenizer, on every rank (each row's matcher runs everywhere), or None
+    where xgrammar is not installed -- then response_format is refused at the door (D3), never silently unenforced."""
+    from engine.base import grammar
+    if not grammar.available():
+        return None
+    from transformers import AutoTokenizer
+    return grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab)
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
@@ -160,8 +185,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors")
     snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
-    arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + 256 * (len(specs) + len(dspecs) + 64) + cache_layout.nbytes(nb, max_seqs)
-                   + PREFIX_SNAPSHOTS * snapshot_bytes)
+    # the vision tower (45차 §23 A7): whole on every rank, from vision.safetensors next to the rank files (preshard.py --vision);
+    # absent, the door refuses pictures -- the fleet boot requires it (production serves images, PR #431)
+    vision_file = Path(ranks_dir) / vision_mod.FILE
+    VF = vision_mod.load(ckpt_meta) if vision_file.exists() else None
+    vspecs = vision_mod.specs(VF) if VF else []
+    arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + total_bytes(vspecs) + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
+                   + cache_layout.nbytes(nb, max_seqs) + PREFIX_SNAPSHOTS * snapshot_bytes)
     memory = None
     if len(net.layers) == F.layers:
         # Fixed byte ceilings, not a measured workspace claim. Preparation
@@ -170,6 +200,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         files = sorted(Path(ranks_dir).glob("rank*of4.safetensors"))
         if D:
             files.append(drafter_dir / "model.safetensors")
+        if VF:
+            files.append(vision_file)
         failure = None
         try:
             report = prepare_allocation(arena_bytes, files, workspace_bytes + os_reserve_bytes,
@@ -209,6 +241,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
             drafter = drafter_mod.Drafter(D, net, decodable)
             drafter.bind(dviews)
+        vision = None
+        if VF:
+            with recorder.phase("load vision"):
+                vviews = RankLoader(vision_file).load([s.name for s in vspecs], arena=arena, recorder=recorder)
+                vision = vision_mod.Vision(VF, vviews, comm)
         # Everything from here to the first ledger row was 7.5 s of a measured boot with no name
         # (boot-time study 5-c): the caches and their zeroing, the engine, the tier's pinned staging,
         # the prefix snapshots and the runner.
@@ -222,6 +259,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs)
             engine.memory = memory
+            engine.vision = vision
             engine.prefill_chunk = sched.chunk_for(contract.chunk_align, contract.token_budget, contract.draft_slots)
         if memory is not None:
             memory.checkpoint("loaded")
@@ -357,9 +395,11 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
         tok = tokenizer(a.ckpt_meta)
         from engine.profiles.glm53.tools import parse_tool_calls
+        engine.grammars = grammars(a.ckpt_meta, F.vocab)
         server = Server(engine, runner, comm, port=port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
                         model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
-                        tool_parser=parse_tool_calls)
+                        tool_parser=parse_tool_calls, generation=generation_defaults(a.ckpt_meta),
+                        vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 and engine.vision is not None else None)
         httpd = None
         if comm.rank == 0:
             httpd = server._serve_http()                       # the door opens before the loop
@@ -467,6 +507,14 @@ def fleet(a) -> int:
                 engine.qualify_eager_decode(warmup=cfg["lanes"] == "served")   # no graphs: the step runs in Python, the lanes are the same
             else:
                 engine.capture_decode(MAX_SEQS)
+        with rec.phase("warmup shapes"):
+            paid = engine.warmup_shapes()                   # first-use JIT paid at boot, not on the first user (45차 §23 B2)
+        if engine.vision is None:                           # production serves images and video (PR #431): so does this boot, or it does not boot
+            raise RuntimeError(f"{vision_mod.FILE} is missing from {a.ranks}: write it once per node with "
+                               f"`python3 engine/profiles/glm53/preshard.py --vision --out {a.ranks}` (45차 §23 A7)")
+        with rec.phase("qualify vision"):
+            paid.update(engine.vision.qualify())            # the largest image and video, before the door opens (D3)
+        engine.grammars = grammars(a.ckpt_meta, F.vocab)    # response_format (json_object / json_schema), every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
@@ -481,9 +529,12 @@ def fleet(a) -> int:
             tok = tokenizer(a.ckpt_meta)
             renderer = chat_renderer(a.ckpt_meta) if comm.rank == 0 else None
         from engine.profiles.glm53.tools import parse_tool_calls
+        if comm.rank == 0:
+            print("  warmup: " + ", ".join(f"{k} {v}s" for k, v in paid.items()) + (f"; structured output: {'on' if engine.grammars else 'off (no xgrammar)'}"))
         Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
-               tool_parser=parse_tool_calls).loop()
+               tool_parser=parse_tool_calls, generation=generation_defaults(a.ckpt_meta),
+               vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None).loop()
     finally:
         try:
             if dump is not None:

@@ -68,8 +68,8 @@ def main(argv=None) -> int:
     if a.ids:
         ids_list = [int(x) for x in a.ids.split(",")]
     else:
-        from tokenizers import Tokenizer
-        tok = Tokenizer.from_file(str(Path(facts.CKPT) / "tokenizer.json"))
+        from engine.profiles.glm53.boot import tokenizer
+        tok = tokenizer()                                         # the door's tokenizer: no inherited truncation
         ids_list = tok.encode(a.prompt, add_special_tokens=False).ids
     print(f"  prompt {a.prompt!r} -> {len(ids_list)} ids {ids_list}")
     ids = torch.tensor(ids_list, dtype=torch.int64, device="cuda")
@@ -86,8 +86,8 @@ def main(argv=None) -> int:
     print(f"  ranks agree {agree}; top-10 ids {top.indices.tolist()}")
     print(f"  top-10 logits {[round(v, 3) for v in top.values.tolist()]}")
     try:
-        from tokenizers import Tokenizer
-        tok = Tokenizer.from_file(str(Path(facts.CKPT) / "tokenizer.json"))
+        from engine.profiles.glm53.boot import tokenizer
+        tok = tokenizer()
         print(f"  top-10 tokens {[tok.id_to_token(i) for i in top.indices.tolist()]}")
     except Exception:
         pass

@@ -65,10 +65,16 @@ class Segment:
 class Step:
     ids: torch.Tensor           # [N] int64
     segments: "tuple[Segment, ...]"
+    patches: tuple = ()         # ((positions [n] int64 into ids, rows [n, hidden]) ...): rows that replace the embedding at
+                                # those positions -- the vision tower's output at image placeholders (45차 §23 A7, vision.py)
 
     def __post_init__(self):
         if self.ids.ndim != 1 or self.ids.dtype != torch.int64 or not self.segments:
             raise ValueError("a step needs a flat int64 token vector and nonempty segments")
+        for pos, rows in self.patches:
+            if (pos.ndim != 1 or pos.dtype != torch.int64 or rows.ndim != 2 or rows.shape[0] != pos.numel()
+                    or (pos.numel() and (int(pos.min()) < 0 or int(pos.max()) >= self.ids.numel()))):
+                raise ValueError("patches are (positions inside the step, one row per position)")
         end, seqs, slots = 0, set(), set()
         for s in self.segments:
             if s.start != end or s.length <= 0 or s.ctx < 0 or s.seq < 0 or s.slot <= 0:
@@ -85,8 +91,8 @@ class Step:
         return torch.cat([torch.arange(s.ctx, s.ctx + s.length, device=self.ids.device) for s in self.segments])
 
     @staticmethod
-    def prefill(ids: torch.Tensor, ctx: int, seq: int, slot: int) -> "Step":
-        return Step(ids, (Segment(seq, slot, ctx, 0, ids.shape[0]),))
+    def prefill(ids: torch.Tensor, ctx: int, seq: int, slot: int, patches: tuple = ()) -> "Step":
+        return Step(ids, (Segment(seq, slot, ctx, 0, ids.shape[0]),), patches)
 
     @staticmethod
     def decode(chunks: "list[tuple[torch.Tensor, int, int, int]]") -> "Step":
@@ -366,6 +372,8 @@ class Glm53Net:
         F = self.F
         N = step.ids.shape[0]
         x = self.embed(step.ids)
+        for pos, rows in step.patches:                                               # image rows in place of their placeholders
+            x.index_copy_(0, pos, rows.to(x.dtype))
         res = x[:, None, :].expand(N, F.hc, F.hidden).contiguous()                   # hc_expand
         post = comb = None
         aux = {}

@@ -28,8 +28,10 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 
     bash launchers/fanout-st-ranks.sh            # 랭크 r 파일을 노드 r 로
     bash launchers/start-st-glm53.sh             # 부팅; glm53*/q38* 컨테이너가 있으면 거부
-    curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64}'
-    curl -s http://10.10.10.2:8000/v1/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
+    curl -s http://10.10.10.2:8000/v1/engine/completions -d '{"prompt": "...", "max_tokens": 64}'                    # 엔진 방언: ids/text
+    curl -s http://10.10.10.2:8000/v1/engine/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
+    curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64, "n": 2, "logprobs": 3}'    # OpenAI completions
+    curl -s http://10.10.10.2:8000/tokenize -d '{"prompt": "..."}'; curl -s http://10.10.10.2:8000/detokenize -d '{"tokens": [1, 2]}'
     STK_moe_static=t,r,sf6 STK_context_ceiling=131072 bash launchers/start-st-glm53.sh   # 선언된 D11 노브는 STK_* 로 부팅에 들어간다(미선언·만료 = 사망)
     bash launchers/start-st-glm53.sh stop        # 컨테이너 제거 + 잠금 해제. start 는 glm53*/q38*/vllm*/st-* 컨테이너나 srv2 의 `st-fleet.lock` 이 있으면 거부한다
                                                  # (플릿을 쓰는 세션은 모두 이 잠금을 지킨다: 09-11 19:42 두 세션의 플릿이 같은 노드에서 충돌해 둘 다 죽었다)
@@ -43,6 +45,12 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 `<tool_call>` 은 `tool_calls` 로 파싱, finish `tool_calls`), `n`=1 만, `logprobs` 는 400. 클라이언트가 끊으면(소켓 EOF·broken pipe) 요청을
 취소해 행을 돌려주고, `REQUEST_TIMEOUT_S`(3600) 를 넘긴 요청은 504 로 취소한다 — 취소는 rank 0 이 도착과 같은 브로드캐스트로 실어 네 랭크가
 같은 반복에서 같은 행을 버린다(`/metrics` 의 `st:requests_cancelled_total`).
+그림(45차 §23 A7, `profiles/glm53/vision.py`): chat 의 `content` 배열에 `image_url`(≤4)·`video_url`(≤1, 프로덕션 PR #431 의 MM_LIMIT) 파트를
+받는다 — `data:` 또는 http(s) URL. rank 0 의 문이 프로덕션 프로세서와 같은 규칙으로 캔버스를 만들고(28 정렬·pad·bicubic, 영상은 32 프레임
+균등 → GLM 샘플러 → 프레임 쌍마다 `<|begin_of_image|>…<|end_of_image|>N.N seconds`), 템플릿의 자리표시자 하나를 토큰 수만큼 늘려 보낸다;
+캔버스는 요청과 함께 네 랭크로 가고 각 랭크가 같은 비전 타워(`vision.safetensors`, 랭크 파일 옆; `preshard.py --vision` 으로 한 번)를 돌려
+자리표시자 위치의 임베딩을 바꿔 넣는다(D3: 네 랭크의 결과 합이 다르면 죽는다). 같은 자리표시자에 다른 그림은 다른 프롬프트다 — 이어가기(B1)와
+prefix 캐시 둘 다 그림의 digest 를 본다. 플릿 부팅은 `vision.safetensors` 가 없으면 서지 않는다(프로덕션이 그림을 서빙하므로).
 
 운영(`launchers/st-glm53-supervisor.sh` + `st-glm53.service`, 헤드 srv2 의 사용자 유닛): 30 s 마다 진짜 4 토큰 chat 으로 건강을 재고(문이
 열려 있어도 링은 죽어 있을 수 있다), 3 회 연속 실패면 포렌식(네 랭크 로그·free·nvidia-smi·metrics → `~/glm53-logs/st-forensics/`) → stop →
