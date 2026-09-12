@@ -5,7 +5,6 @@ packets for vocabulary selection. Other shapes use NCCL. A failure cannot
 change the selected collective on one rank.
 Graph owners must be destroyed before close(), just like the NCCL group.
 """
-import hashlib
 import os
 from pathlib import Path
 
@@ -17,14 +16,15 @@ MAX_ELEMENTS = 64 * 4096
 
 def build():
     from torch.utils.cpp_extension import load
+    from engine.kernels.native_cache import prepare_sources
     root = Path(__file__).parent
     sources = [root/'dsv4_oneshot_ar.cu', root/'dsv4_oneshot_transport.h']
     flags = ['-O2', '-gencode', 'arch=compute_121a,code=sm_121a', f'-DMAXEL={MAX_ELEMENTS}']
-    key = hashlib.sha256(b''.join(p.read_bytes() for p in sources)+repr((flags,torch.__version__,torch.version.cuda)).encode()).hexdigest()[:16]
-    directory = Path(os.environ.get('ST_ONESHOT_BUILD_ROOT', str(Path.home()/'.cache/st/oneshot')))/key
-    directory.mkdir(parents=True,exist_ok=True)
-    return load(name='st_oneshot_'+key,sources=[str(sources[0])],extra_cuda_cflags=flags,
-                extra_ldflags=['-libverbs'],build_directory=str(directory),verbose=False)
+    root = Path(os.environ.get('ST_ONESHOT_BUILD_ROOT', str(Path.home()/'.cache/st/oneshot')))
+    ldflags = ['-libverbs']
+    key, directory, staged = prepare_sources(root, sources, (flags, ldflags, torch.__version__, torch.version.cuda))
+    return load(name='st_oneshot_'+key,sources=[staged[0]],extra_cuda_cflags=flags,
+                extra_ldflags=ldflags,build_directory=str(directory),verbose=False)
 
 
 class OneShot:

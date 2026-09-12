@@ -82,7 +82,8 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
 
 ## 노브 (D11, 2026-09-12 정리)
 
-이 패키지는 환경 변수를 읽지 않는다(예외는 `ST_MLA_BUILD_ROOT` 캐시 경로 하나, `TRITON_CACHE_DIR` 와 같은 부류).
+이 패키지는 환경 변수를 읽지 않는다(예외는 `ST_MLA_BUILD_ROOT`, `ST_DENSE_BUILD_ROOT`,
+`ST_ONESHOT_BUILD_ROOT` 캐시 경로, `TRITON_CACHE_DIR` 와 같은 부류).
 `tests/test_engine_kernels.py` 가 AST 로 강제한다. 이식 때 남았던 43개 환경 노브는 셋으로 갈랐다.
 
 - **코드에 박은 프로덕션 채택값**: 메가커널 PDL on, GEMM 입력 모드(`MK_INPUT_CTA=4`, `MK_INPUT_REUSE=1`),
@@ -127,7 +128,16 @@ API, 전체 수치 검사를 다시 검증한다. 이미지 빌드·프로브는
 
 GPU 검사는 사용 가능한 GB10에서 실행한다. JIT 캐시는 기본 `$HOME/.cache/st`에 두며
 `ST_CACHE`로 변경한다. JIT 캐시 지도(2026-09-12 실측): Triton `/cache/triton`, TileLang `/cache/tilelang`,
-DeepGEMM `/cache/deep_gemm`, MLA nvcc 빌드 `/cache/mla`, b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
+DeepGEMM `/cache/deep_gemm`, nvcc 빌드는 MLA `/cache/mla`, dense `/cache/st-dense`,
+one-shot `/cache/st-oneshot`이다. 세 네이티브 확장은 소스·로컬 헤더의 내용과 명시적 빌드 옵션,
+Torch/CUDA 버전으로 캐시를 나누고, 그 안의 `src/`를 Ninja 입력으로 사용한다. 같은 내용의
+체크아웃·rsync·touch는 입력 경로나 수정 시각을 바꾸지 않는다. 실제 변경은 새 캐시를 만들며,
+Torch/Ninja의 빌드·헤더 의존성 검사·잠금은 그대로 사용한다. 이 방식으로 전환할 때 기존
+캐시는 한 번 새로 빌드한다. 컨테이너를 다시 만들어도 재사용하려면 `/cache`를 영속 볼륨으로
+연결해야 한다. CPU 전용 NVCC 재현은 `probes/engine_native_cache_check.py`와
+[네이티브 빌드 캐시 측정](../../measurements/st_native_cache_20260913/README.md)에 있다.
+
+b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
 `/cache/.cache/flashinfer/<버전>/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/*.o` 로 내보내고 적중 시 DSL 컴파일 없이 로드한다
 (키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
 `cute.compile` 에서 꺼지므로(`compile_only` → `no_cache`) ST 에는 무효다. direct micro 커널도 같은 래퍼를 탄다(모듈

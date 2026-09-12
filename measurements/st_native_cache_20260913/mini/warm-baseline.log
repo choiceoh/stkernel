@@ -1,0 +1,3 @@
+ninja: no work to do.
+RESULT {"arm": "baseline", "key": "3f8ceb38a977a7f9", "value": 41, "load_seconds": 0.006759644005796872, "nvcc_compilations": 0, "directory": "/evidence/native-cache-0913-v1/baseline/3f8ceb38a977a7f9", "torch": "2.13.0+cu130", "cuda": "13.0", "cuda_initialized": false}
+W0912 16:54:57.463000 131 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
