@@ -23,6 +23,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import sys
@@ -478,6 +479,28 @@ def workload_requests(args, cq):
     return items
 
 
+def diagnostic_request(item, num_spec):
+    """Keep the original prompt, with enough output for four profiled steps.
+
+    Diagnostic requests are not graded or timed as consumer measurements.
+    Eight maximum-width steps leave room for prefill's first output and for
+    all four clients to enter decode. A fixed floor prevents EOS from ending
+    this evidence replay before the recorder has its four steps.
+    """
+    tokens = max(64, 8 * (max(0, math.ceil(num_spec)) + 1))
+    return dict(item, max_tokens=tokens, min_tokens=tokens, reasoning_budget=tokens // 2)
+
+
+def diagnostic_complete(report):
+    def complete(rank):
+        traces = rank.get('traces', [])
+        def steps(phase):
+            return {t.get('step') for t in traces if t.get('phase') == phase
+                    and type(t.get('step')) is int and t.get('activities', 0) > 0}
+        return rank.get('complete') and len(steps('prefill')) >= 1 and len(steps('decode')) >= 4
+    return bool(report.get('ranks')) and all(complete(rank) for rank in report['ranks'])
+
+
 def main() -> int:
     global _RUN
     try:
@@ -833,7 +856,11 @@ def _main() -> int:
         run.checkpoint()
     rec['quality_c4'] = quality.summarize([q for result in rec['c4'] for r in result['requests'] for q in r['quality']])
     rec['diagnostics'] = []
-    diagnostic_items = [next(item for item in items if item['ctx'] == ctx) for ctx in map(int, args.ctx.split(','))]
+    diagnostic_items = [diagnostic_request(next(item for item in items if item['ctx'] == ctx), k_eff)
+                        for ctx in map(int, args.ctx.split(','))]
+    rec['diagnostic_budget'] = dict(version=1, max_tokens=diagnostic_items[0]['max_tokens'],
+        min_tokens=diagnostic_items[0]['min_tokens'], reasoning_budget=diagnostic_items[0]['reasoning_budget'],
+        scope='diagnostic replay only; consumer generation_budget and quality workloads unchanged')
     for concurrency in (1, 4):
         for item in diagnostic_items:
             phase = f"diagnostic-c{concurrency}-{item['ctx']}"
@@ -841,7 +868,7 @@ def _main() -> int:
             run.begin(phase, concurrency, diagnostic=True)
             group(run, ask_stream, bd.URL, cq.MODEL, item, concurrency)
             report = run.end()
-            complete = bool(report['ranks']) and all(r.get('complete') and r.get('traces') for r in report['ranks'])
+            complete = diagnostic_complete(report)
             rec['diagnostics'].append(dict(phase=phase, complete=complete))
             if not complete:
                 issues.append(f'{phase}: detailed GPU evidence incomplete')
