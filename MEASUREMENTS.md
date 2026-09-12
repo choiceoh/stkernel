@@ -12452,3 +12452,34 @@ full check 의 티어는 **실행마다 새 임시 디렉터리**(프로덕션 �
 **부수**: 티켓은 `queued checkout revision changed` 로 멈춰 있었다 — 내가 큐에 건 뒤 `~/stkernel` 이
 움직였고(그 사이 PR 셋이 머지됐다) 큐가 **다른 것을 돌리지 않으려고** 멈춘 것이다. 옳은 동작이다.
 `edit` 로 같은 명령을 현재 체크아웃에 재제출하고 `resume` 했다(대기 시간은 유지된다).
+
+### 45차 §96 — 관측 겹치기를 준비했다: observe 는 commit 전에 계산을 시작할 수 있다 (2026-09-12, srv4, 프로덕션 유지)
+
+§93 이 "40% 차이는 드래프터가 아니라 스텝 자체" 라고 했다. 스텝 구조를 코드로 보니 디코드 스텝은 한
+스트림에서 **forward → sample/verify → commit → observe → propose 를 직렬로** 낸다(스테이지 합 74.91 ms
+= 스텝 74.99 ms; `depth=2` 파이프라인은 호스트만 가린다). 그리고 그건 진짜 사슬이다 — 타깃이 드래프터의
+드래프트를 검증하므로 드래프터 27.3 ms(36.4%)가 임계경로에 얹힌다.
+
+**한 군데가 겹칠 수 있다. 그걸 준비했다.** observe(관측)를 뜯어 보니 두 부분이다:
+
+- **계산부**: `c = norm(fc·aux)` → `context_kv` → 레이어별 `norm_rope`. `aux` 와 `positions` 만 읽는다.
+  그리고 `positions = ctx_before + arange` 인데, `decode_commit.advance` 가 돌려주는 `ctx_before` 는
+  **스텝 진입 시점의 컨텍스트**다 — forward 전에 이미 아는 값이다(코드로 확인). 그래서 계산부는 `aux`
+  (타깃 레이어 41/45 에서 준비됨) 만 있으면 된다.
+- **쓰기부**: `write_draft_kv_rows(..., valid=valid)`. `valid`(=commit 이 수락한 드래프트 수) 만 이게 필요.
+
+즉 **observe 의 계산은 forward 의 꼬리(레이어 42~44 + head) + sample + verify + commit 과 겹칠 수 있고,
+쓰기만 commit 뒤로** 가면 된다. `valid` 는 어느 위치를 링에 쓸지 마스크할 뿐, 계산하는 K/V 값 자체엔
+영향이 없다(교정 팩 마스크는 서빙 부팅에서 no-op).
+
+**준비물(이 박스에서 검증됨):** `observe_rows` 의 fast 경로를 `observe_kv`(계산) + `observe_write`(쓰기)로
+쪼갰다. `tests/test_engine_drafter.py::ObserveOverlapTests` 가 둘을 박는다:
+(1) 분리가 **바이트 단위로** 단일 호출과 같다, (2) `observe_kv` 의 K/V 는 **`valid` 를 바꿔도 동일**하다 —
+겹치기가 옳기 위한 전제.
+
+**정직한 한계 — 크기는 창의 몫이다.** (1) 실제 겹치기는 캡처된 그래프 둘을 두 스트림에 얹고 레이어 41 의
+aux 이벤트로 묶는 배선이고, 그건 served 레인(4랭크)이라 창이 있어야 짓고 잰다. (2) 이득의 상한은
+`min(observe 계산, forward 꼬리 + head)` 인데, §84 가 프로덕션 observe 16 ms 를 이 박스에서 재현하지
+못했으므로(하니스 0.66 ms) **계산부가 그 16 ms 중 얼마인지 모른다.** 큐에 걸린 `st-fwd-lanes` 프로파일이
+forward 꼬리와 head 의 크기를, 그리고 다음 부팅의 `stage="observe"` 가 계산/쓰기 비중을 준다.
+**이번 변경은 겹치기를 주장하지 않는다 — 전제가 성립함을 증명하고 그 위에 지을 바닥을 놓았을 뿐이다.**
