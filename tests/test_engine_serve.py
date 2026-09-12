@@ -1920,6 +1920,10 @@ class OpenAIDialectTests(unittest.TestCase):
         with urllib.request.urlopen(req, timeout=5) as r:
             return json.load(r)
 
+    def _get(self, base, path):
+        with urllib.request.urlopen(base + path, timeout=5) as r:
+            return json.load(r)
+
     def _serve(self, s, fn):
         httpd = s._serve_http()
         base = f'http://127.0.0.1:{httpd.server_port}'
@@ -2396,6 +2400,66 @@ class OpenAIDialectTests(unittest.TestCase):
                 self.assertEqual(sum(1 for e in s.runner.prefix.entries.values() if e.pinned), 0)
                 out = drive(s, pool.submit(self._post, base, "/v1/prefix/warm", {"messages": [{"role": "user", "content": "abcdefghij"}]}))
                 self.assertEqual(out["boundaries"], [4, 8])              # the same prompt: nothing new, still cached
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_the_model_card_states_what_this_boot_actually_bound(self):
+        """SparkFleet probes `/v1/models` to decide a backend is routable and wormhole turns its
+        inventory into routes, so this is where the engine says what it can do (45차 §56)."""
+        s = chat_server(prefix=4)
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(self._get, base, "/v1/models"))
+            card = out["data"][0]
+            self.assertEqual((out["object"], card["object"], card["owned_by"]), ("list", "model", "st"))
+            self.assertEqual(card["id"], s.model_name)
+            self.assertIsNone(card["max_model_len"], "a fake engine declares no ceiling: the card says None, not a guess")
+            s.engine.max_context = 262144
+            self.assertEqual(s.model_card()["max_model_len"], 262144)       # vLLM's field name, so vLLM readers get it free
+            caps = card["capabilities"]
+            self.assertEqual(caps["prefix_cache"], True)
+            self.assertEqual(caps["max_concurrent_requests"], s.runner.c.max_running)
+            self.assertEqual(caps["streaming"], True)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_the_card_never_claims_a_capability_this_boot_did_not_bind(self):
+        # A hand-written capability drifts; this one is read off the objects that exist.
+        s = chat_server()
+        self.assertEqual(s.vision, None)
+        caps = s.model_card()["capabilities"]
+        self.assertEqual((caps["vision"], caps["conversation_tier"]), (False, False))
+        s.vision = object()
+        self.assertEqual(s.model_card()["capabilities"]["vision"], True)
+
+    def test_health_says_draining_while_the_fleet_is_being_handed_over(self):
+        """`alive` stays true through a drain -- that is the point -- but every new request is
+        already refused with 503. A prober that only asks "alive?" keeps the engine in the
+        inventory and every caller pays a failed hop before the router fails over."""
+        s = chat_server()
+        self.assertEqual(s.readiness(), ({"status": "ok"}, 200))
+        s.draining = "another-session"
+        body, code = s.readiness()
+        self.assertEqual(code, 503)
+        self.assertEqual((body["status"], body["handing_over_to"]), ("draining", "another-session"))
+        s.draining, s.alive = None, False
+        self.assertEqual(s.readiness(), ({"status": "stopping"}, 503))
+
+    def test_the_health_endpoint_carries_the_draining_verdict(self):
+        # No `drive` here on purpose: a driven loop that is already quiet finishes the handover
+        # and the answer becomes "stopping". The door thread answers a GET without the loop.
+        s = chat_server()
+        s.draining = "another-session"
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self._get(base, "/health")
+            self.assertEqual(caught.exception.code, 503)
+            body = json.loads(caught.exception.read())
+            self.assertEqual((body["status"], body["handing_over_to"]), ("draining", "another-session"))
         finally:
             httpd.shutdown(); httpd.server_close()
 
