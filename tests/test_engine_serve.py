@@ -2484,6 +2484,32 @@ class OpenAIDialectTests(unittest.TestCase):
         s.vision = object()
         self.assertEqual(s.model_card()["capabilities"]["vision"], True)
 
+    def test_the_continuation_scan_reads_a_digest_and_not_every_parked_conversation(self):
+        """A record carries the conversation's WHOLE token list -- 3.8 MiB of Python ints for a
+        100K-token turn -- and the scan used to pull one per parked conversation per request.
+        At this fleet's 280 parked that is 1.04 GiB resident, on a box whose OOM floor is an
+        absolute 6 GiB (45차 §62). The per-candidate question is three numbers."""
+        s = chat_server()
+        reads = []
+
+        class Runner:
+            def __init__(self, inner): self.inner = inner
+            def __getattr__(self, name): return getattr(self.inner, name)
+            def parked_keys(self): return [11, 22, 33]
+            def parked_digest(self, key):
+                return {11: {"tokens": 2, "last": ord("a"), "prev": ord("z"), "media": []},
+                        22: {"tokens": 3, "last": 999, "prev": 998, "media": []},
+                        33: {"tokens": 99, "last": 1, "prev": 2, "media": []}}[key]
+            def parked_record(self, key):
+                reads.append(key)
+                return {"tokens": [ord("z"), ord("a")], "media": []} if key == 11 else None
+
+        s.runner = Runner(s.runner)
+        ids = [ord("z"), ord("a"), ord("b")]
+        best = s._continuation(ids)
+        self.assertEqual(reads, [11], "only the candidate the digest could not reject was read")
+        self.assertEqual(best, (11, 2, False))
+
     def test_a_continuing_turn_tokenizes_only_its_tail(self):
         """An agent resends its whole conversation every turn. Measured on the real checkpoint:
         239 ms to re-tokenize a 106K-token conversation for 29 new tokens (0.05 ms). Splicing is

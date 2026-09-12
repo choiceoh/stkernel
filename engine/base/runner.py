@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import struct
 import time
+from collections import OrderedDict
 from typing import Protocol
 
 from engine.base import prefix as prefix_mod
@@ -83,7 +84,8 @@ class Runner:
             prefix.bind(kv)
         self._chain = {}                                    # seq -> boundary tokens -> hash (live prompts with a cache)
         self.idle = {}                                      # seq -> True: finished, not released, parkable
-        self.parked = {}                                    # key -> record, for conversations this process parked (the tier has the rest)
+        self.parked = OrderedDict()                         # key -> record, MRU last and bounded (PARKED_RECORDS_KEPT)
+        self.digests = {}                                   # key -> the three numbers a continuation scan actually needs
         self.retiring = {}                                  # row -> (key, record, slot): its park is on the tier's thread
         self.resuming = {}                                  # row -> (key, record, slot): its resume is on the tier's thread
         self.state = sched.State()
@@ -474,6 +476,7 @@ class Runner:
         self.model.resume(seq, slot, record)
         self.idle[seq] = True
         self.parked.pop(key, None)
+        self.digests.pop(key, None)
         return got
 
     def resume(self, seq: int, key: "int | None" = None) -> int:
@@ -547,15 +550,58 @@ class Runner:
     def is_parked(self, key: int) -> bool:
         return self.tiered is not None and (key in self.parked or self.tiered.is_parked(key))
 
+    PARKED_RECORDS_KEPT = 8
+    """How many whole records stay in memory.
+
+    A record carries the conversation's ENTIRE token list -- 3.8 MiB of Python ints for a 100K
+    token turn -- and the door's continuation scan used to pull one for every parked
+    conversation on every request. With 280 parked, which is what this fleet actually holds,
+    that is **1.04 GiB** of host memory resident for a scan whose per-candidate question is
+    three numbers, on a box whose OOM floor is an absolute 6 GiB (45차 §62).
+
+    So the records are an LRU and the three numbers are `parked_digest`, kept for everybody.
+    Eight is the rows this engine can hold plus slack: a record is read when a candidate
+    actually passes the cheap test, or when a conversation resumes, and both are rare.
+    """
+
     def parked_record(self, key: int) -> "dict | None":
+        """The whole record, read from the tier when it is not one of the few held."""
         if not self.is_parked(key):
             return None
         record = self.parked.get(key)
-        if record is None:
-            record = self.tiered.record(key)                    # a JSON file per conversation: read once, not per request
-            if record is not None:
-                self.parked[key] = record
+        if record is not None:
+            self.parked.move_to_end(key)
+            return record
+        record = self.tiered.record(key)
+        if record is not None:
+            self._hold_record(key, record)
         return record
+
+    def _hold_record(self, key: int, record: dict) -> None:
+        self.parked[key] = record
+        self.parked.move_to_end(key)
+        while len(self.parked) > self.PARKED_RECORDS_KEPT:
+            self.parked.popitem(last=False)
+
+    def parked_digest(self, key: int) -> "dict | None":
+        """What a continuation scan needs to reject a candidate: its length, its last two ids, its pictures.
+
+        Kept for every parked conversation because it is a handful of bytes; the token list behind
+        it is read only when these three say the candidate could match.
+        """
+        digest = self.digests.get(key)
+        if digest is not None:
+            return digest
+        record = self.parked_record(key)
+        if record is None or "tokens" not in record:
+            return None
+        tokens = record["tokens"]
+        if len(tokens) < 2:
+            return None
+        digest = {"tokens": len(tokens), "last": tokens[-1], "prev": tokens[-2],
+                  "media": [(r[2], r[1]) for r in record.get("media", [])]}
+        self.digests[key] = digest
+        return digest
 
     def parked_blocks(self, key: int) -> int:
         return self.tiered.blocks(key)
@@ -568,6 +614,7 @@ class Runner:
         if self.tiered is not None:
             self.tiered.forget(key)
         self.parked.pop(key, None)
+        self.digests.pop(key, None)
 
     def forget_oldest_parked(self) -> "int | None":
         """Make room on the tier: forget the least recently parked conversation. Returns its key."""

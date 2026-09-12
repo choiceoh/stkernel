@@ -1398,6 +1398,15 @@ class Server:
                 consider(key, view(row),                                  # read, compared, never mutated
                          self.engine.media_marks(row) if hasattr(self.engine, "media_marks") else [])
         for key in self.runner.parked_keys():
+            # The digest is three numbers; the token list behind it is 3.8 MiB of Python ints for
+            # a 100K-token conversation, and reading one per parked conversation per request kept
+            # 1.04 GiB resident at this fleet's 280 (45차 §62). Reject on the digest, read on a hit.
+            digest = self.runner.parked_digest(key)
+            if digest is None:
+                continue
+            m = digest["tokens"]
+            if m <= 1 or m - 1 >= n or (ids[m - 1] != digest["last"] and ids[m - 2] != digest["prev"]):
+                continue
             record = self.runner.parked_record(key)
             if record is not None and "tokens" in record:
                 consider(key, record["tokens"], [(r[2], r[1]) for r in record.get("media", [])])
