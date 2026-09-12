@@ -121,6 +121,19 @@ class Facts:
 
 def load(ckpt: "str | Path" = CKPT) -> Facts:
     c = json.loads((Path(ckpt) / "config.json").read_text())
+    f = architecture(c)
+    q = c["quantization_config"]["config_groups"]["group_0"]
+    assert q["format"] == "nvfp4-pack-quantized" and q["weights"]["group_size"] == 16 and q["input_activations"]["group_size"] == 16
+    assert q["targets"] == ["re:.*\\.layers\\.(?:[3-9]|[1-3][0-9]|4[0-4])\\.mlp\\.experts\\..*(gate|up|down)_proj$"], "NVFP4 is exactly the routed experts of layers 3-44"
+    return f
+
+
+def architecture(c: dict) -> Facts:
+    """Validate model geometry independently of an offline checkpoint encoding.
+
+    Serving still enters through load(), which additionally checks its exact
+    weight encoding. Offline importers validate their own source encoding.
+    """
     t = c.get("text_config", c)
     la = t["linear_attn_config"]
     n = t["num_hidden_layers"]
@@ -151,9 +164,6 @@ def load(ckpt: "str | Path" = CKPT) -> Facts:
     assert f.topk % f.kpool == 0 and f.block % f.kpool == 0 and f.idx_dim == 128, "kpool pools of 4 tile the block; FWHT is 128-wide"
     assert f.chunk_align % f.block == 0 and f.block % 64 == 0, "the prefill chunk is whole blocks and a block is whole KDA kernel chunks"
     assert not t["tie_word_embeddings"]
-    q = c["quantization_config"]["config_groups"]["group_0"]
-    assert q["format"] == "nvfp4-pack-quantized" and q["weights"]["group_size"] == 16 and q["input_activations"]["group_size"] == 16
-    assert q["targets"] == ["re:.*\\.layers\\.(?:[3-9]|[1-3][0-9]|4[0-4])\\.mlp\\.experts\\..*(gate|up|down)_proj$"], "NVFP4 is exactly the routed experts of layers 3-44"
     assert f.kda_heads % TP == 0 and f.heads % TP == 0 and f.moe_inter % (TP * 16) == 0 and f.dense_inter % TP == 0 and f.vocab % TP == 0, "TP=4 splits"
     return f
 

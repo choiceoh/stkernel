@@ -1,0 +1,9 @@
+test_dense_mlp_remains_packed_nvfp4 (__main__.ModelOptPreshardTests.test_dense_mlp_remains_packed_nvfp4) ... ok
+test_expert_tp_splits_preserve_packed_weights_raw_scales_and_multipliers (__main__.ModelOptPreshardTests.test_expert_tp_splits_preserve_packed_weights_raw_scales_and_multipliers) ... ok
+test_incompatible_fused_gate_up_scales_are_rejected (__main__.ModelOptPreshardTests.test_incompatible_fused_gate_up_scales_are_rejected) ... ok
+test_modelopt_rank_roundtrip_and_live_loader_rejection (__main__.ModelOptPreshardTests.test_modelopt_rank_roundtrip_and_live_loader_rejection) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.015s
+
+OK
