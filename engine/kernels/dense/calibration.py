@@ -23,6 +23,7 @@ import torch
 ROWS_TARGET = 32768        # rows per blob before the sums are filed on their own (33차: 33K tokens)
 ROWS_FLOOR = 4096          # fewer than this at shutdown is not filed: a starved Hessian would pack worse than none
 BUDGET_BYTES = 2 << 30     # per rank, from the arena; the rest waits for a later boot
+GRAM_ROWS = 256           # small calls share one Gram update; bounded staging is part of the same budget
 
 
 class Calibration:
@@ -34,6 +35,7 @@ class Calibration:
         self.budget, self.used = budget_bytes, 0
         self.arena = arena
         self.H, self.rows, self.tiles = {}, {}, {}          # blob key -> sums, rows, (start, width); layer name -> tiles
+        self.staging = {}                                  # key -> (float32 row buffer, device cursor); CUDA small-row Hessians only
         self.amax, self.unsmooth = {}, {}                   # blob key -> channel peaks [width]; layer name -> the s its input was divided by
         self.deferred = []                                  # (layer name, key) that did not fit this boot's budget
         self.armed = torch.zeros((), dtype=torch.float32, device=self.device)
@@ -54,7 +56,8 @@ class Calibration:
         the factor this boot divided the input by (smoothing folded into its norm) -- the sums are filed in the
         unsmoothed domain so every boot derives its own factors from scratch. Returns whether the tiles fit the
         budget (all or nothing per layer)."""
-        need = self.nbytes(missing)
+        decode_rows = self.max_decode_rows if small_rows and self.device.type == "cuda" else 0
+        need = self.nbytes(missing, max_decode_rows=decode_rows)
         if self.used + need > self.budget:
             self.deferred.extend((name, key) for key, _start, _width, _h in self._needs(missing))
             return False
@@ -63,6 +66,13 @@ class Calibration:
                 self.H[key] = self.arena.carve(width * width * 4, f"calibration/{key}").view(torch.float32).view(width, width).zero_()
             elif hessian:
                 self.H[key] = torch.zeros(width, width, dtype=torch.float32, device=self.device)
+            if hessian and decode_rows:
+                shape = (GRAM_ROWS + decode_rows - 1, width)
+                if self.arena is not None:
+                    buffer = self.arena.carve(shape[0] * width * 4, f"calibration/staging/{key}").view(torch.float32).view(shape)
+                else:
+                    buffer = torch.empty(shape, dtype=torch.float32, device=self.device)
+                self.staging[key] = (buffer, torch.zeros((), dtype=torch.int32, device=self.device))
             self.rows[key] = torch.zeros((), dtype=torch.float32, device=self.device)
             self.amax[key] = torch.zeros(width, dtype=torch.float32, device=self.device)
         self.used += need
@@ -73,8 +83,9 @@ class Calibration:
         return True
 
     @staticmethod
-    def nbytes(missing) -> int:
+    def nbytes(missing, max_decode_rows: int = 0) -> int:
         return sum((width * width * 4 if hessian else 0) + width * 4 + 4096
+                   + ((GRAM_ROWS + max_decode_rows - 1) * width * 4 if hessian and max_decode_rows else 0)
                    for _key, _start, width, hessian in Calibration._needs(missing))
 
     def arm(self) -> None:
@@ -95,9 +106,27 @@ class Calibration:
         for key, start, width, hessian in self.tiles[name]:
             part = xf[:, start:start + width]
             if hessian:
-                self.H[key].addmm_(part.t(), part)
+                if key in self.staging and flat.shape[0] <= self.max_decode_rows:
+                    from .calibration_gram import update
+                    buffer, cursor = self.staging[key]
+                    update(part, buffer, self.H[key], cursor, self.armed)
+                else:
+                    self.flush(key)
+                    self.H[key].addmm_(part.t(), part)
             self.rows[key] += count
             torch.maximum(self.amax[key], part.abs().amax(0), out=self.amax[key])
+
+    def flush(self, key=None) -> None:
+        """Include the pending small rows before a large update, inspection or filing.
+
+        All operations stay on the caller's stream; no device counter is read by Python.
+        Row counts and peaks already include staging, so progress needs no flush.
+        """
+        for name in ([key] if key is not None else self.staging):
+            if name in self.staging:
+                from .calibration_gram import flush
+                buffer, cursor = self.staging[name]
+                flush(buffer, self.H[name], cursor, self.armed)
 
     def progress(self) -> int:
         """The fewest rows any blob has (a device read: ask rarely)."""
@@ -110,6 +139,7 @@ class Calibration:
         """One blob per tile under `<root>/mkcalib/rank<rank>/`, in the store's form. Overwrites what an older stack
         left, through a temporary file. A tile summed for its peaks alone keeps the Hessian the store already had,
         and its token count with it: only the peaks are this boot's."""
+        self.flush()
         written = []
         back = {}                                                          # blob key -> the s to undo (H -> s H s, amax -> amax * s)
         for name, tiles in self.tiles.items():

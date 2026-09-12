@@ -58,7 +58,14 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe"}, selected
+    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "calibration"}, selected
+
+    if "calibration" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_calibration_gram")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "calibration GPU checks did not pass"
+        report("calibration", passed=True, tests=result.testsRun)
 
     def rand(*shape, scale=1.):
         return torch.randn(*shape, device="cuda", dtype=torch.bfloat16) * scale
