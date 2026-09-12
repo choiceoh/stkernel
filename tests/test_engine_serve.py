@@ -1003,6 +1003,46 @@ class StreamedTextTests(unittest.TestCase):
         self.assertLessEqual(max(seen), 4, "a window, not the whole answer")
 
 
+class MetricsTests(unittest.TestCase):
+    """The numbers a dashboard needs that a single latency histogram cannot give."""
+
+    def text(self, s):
+        return s.metrics()
+
+    def test_queue_and_inference_time_are_separate_series(self):
+        s = server()
+        out = self.text(s)
+        for name in ("vllm:request_queue_time_seconds", "vllm:request_inference_time_seconds",
+                     "vllm:inter_token_latency_seconds", "vllm:time_per_output_token_seconds"):
+            self.assertIn(name, out, name)
+
+    def test_the_per_step_and_per_token_series_are_not_the_same_measurement(self):
+        # under speculation a step carries several tokens; the two differ by the acceptance length
+        s = server()
+        s.step_gap.observe(0.3)
+        for _ in range(3):
+            s.itl.observe(0.1)
+        rows = dict(s.step_gap.rows("x")), dict(s.itl.rows("x"))
+        self.assertNotEqual(rows[0], rows[1])
+
+    def test_the_success_counter_is_broken_out_by_why_it_stopped(self):
+        s = server()
+        self.assertNotIn("finished_reason", self.text(s))
+        s.by_reason["stop"] = 2
+        s.by_reason["length"] = 1
+        out = self.text(s)
+        self.assertIn('finished_reason="stop"} 2', out)
+        self.assertIn('finished_reason="length"} 1', out)
+
+    def test_the_queue_clock_is_taken_once_for_a_continued_request(self):
+        s = server()
+        s._arrived[3] = s.clock() - 1.0
+        s._admit_clock(3)
+        first = s._admitted[3]
+        s._admit_clock(3)                       # the row is reused for the next turn
+        self.assertEqual(s._admitted[3], first)
+
+
 class StopFloorTests(unittest.TestCase):
     """min_tokens means at least that many, so a stop string cannot undo it from below."""
 

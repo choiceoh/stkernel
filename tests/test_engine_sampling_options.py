@@ -29,18 +29,81 @@ class OptionTests(unittest.TestCase):
         self.assertTrue(needs_rich_sampler({}, 0.8, drafts=True))          # rejection sampling needs the probabilities
         self.assertFalse(needs_rich_sampler({}, 0.8, drafts=False))
 
+    def history(self, vocab, prompt, generated):
+        """(seen, counts) as the adapter would hold them for a row with this history."""
+        from engine.base.sampler import History
+        return History(vocab, "cpu").of(0, list(prompt) + list(generated), len(prompt))
+
     def test_penalties_and_bias_act_on_the_named_tokens_only(self):
         logits = torch.tensor([2.0, -1.0, 0.5, 3.0, 0.0])
-        out = process_logits(logits, {"logit_bias": {1: 5.0}}, [], [])
+        seen, counts = self.history(5, [], [])
+        out = process_logits(logits, {"logit_bias": {1: 5.0}}, seen, counts)
         self.assertEqual(out[1].item(), 4.0)
-        out = process_logits(logits, {"repetition_penalty": 2.0}, [0], [1])
+        seen, counts = self.history(5, [0], [1])
+        out = process_logits(logits, {"repetition_penalty": 2.0}, seen, counts)
         self.assertEqual((out[0].item(), out[1].item(), out[3].item()), (1.0, -2.0, 3.0))   # positive / rp, negative * rp, untouched
-        out = process_logits(logits, {"presence_penalty": 1.0, "frequency_penalty": 0.5}, [], [2, 2, 4])
+        seen, counts = self.history(5, [], [2, 2, 4])
+        out = process_logits(logits, {"presence_penalty": 1.0, "frequency_penalty": 0.5}, seen, counts)
         self.assertAlmostEqual(out[2].item(), 0.5 - 1.0 - 1.0)             # present once, counted twice
         self.assertAlmostEqual(out[4].item(), 0.0 - 1.0 - 0.5)
         self.assertEqual(out[3].item(), 3.0)
-        out = process_logits(logits, {}, [], [], decodable=3, mask=torch.tensor([True, False, True, True, True]))
+        seen, counts = self.history(5, [], [])
+        out = process_logits(logits, {}, seen, counts, decodable=3, mask=torch.tensor([True, False, True, True, True]))
         self.assertTrue(torch.isinf(out[1]) and torch.isinf(out[3]) and torch.isinf(out[4]) and out[0] == 2.0)
+
+    def test_this_step_drafts_count_without_being_written_into_the_history(self):
+        logits = torch.zeros(5)
+        seen, counts = self.history(5, [], [])
+        plain = process_logits(logits, {"presence_penalty": 1.0}, seen, counts)
+        drafted = process_logits(logits, {"presence_penalty": 1.0}, seen, counts, extra=[3])
+        self.assertEqual(plain[3].item(), 0.0)
+        self.assertEqual(drafted[3].item(), -1.0)
+        # the correction must not stay behind: the next position sees the same history
+        again = process_logits(logits, {"presence_penalty": 1.0}, seen, counts)
+        self.assertEqual(again[3].item(), 0.0)
+
+    def test_a_draft_repeats_for_the_repetition_penalty_too(self):
+        logits = torch.tensor([2.0, 2.0])
+        seen, counts = self.history(2, [], [])
+        out = process_logits(logits, {"repetition_penalty": 2.0}, seen, counts, extra=[1])
+        self.assertEqual((out[0].item(), out[1].item()), (2.0, 1.0))
+
+    def test_the_history_is_grown_not_rebuilt_when_a_token_is_appended(self):
+        from engine.base.sampler import History
+        h = History(8, "cpu")
+        tokens, walked = [1, 2, 3], []
+        real = h._build
+
+        def counting(seq, ids, prompt_len):
+            walked.append(len(ids))
+            return real(seq, ids, prompt_len)
+
+        h._build = counting
+        h.of(0, tokens, 3)
+        for t in (4, 5, 6):                                  # one decode step each
+            tokens.append(t)
+            seen, counts = h.of(0, tokens, 3)
+        self.assertEqual(walked, [3], "only the prompt was ever walked")
+        self.assertTrue(bool(seen[6]) and bool(seen[1]))
+        self.assertEqual([float(counts[i]) for i in (1, 4, 5, 6)], [0.0, 1.0, 1.0, 1.0])
+
+    def test_a_prompt_that_moved_or_a_list_that_shrank_is_rebuilt(self):
+        from engine.base.sampler import History
+        h = History(8, "cpu")
+        h.of(0, [1, 2, 3], 2)
+        seen, counts = h.of(0, [1, 2, 3], 3)                  # the turn continued: output became prompt
+        self.assertEqual(float(counts[3]), 0.0)
+        h.of(1, [1, 2, 3], 2)
+        seen, counts = h.of(1, [1, 2], 2)                     # a rejected draft came back off the end
+        self.assertFalse(bool(seen[3]))
+
+    def test_forgetting_a_row_drops_its_history(self):
+        from engine.base.sampler import History
+        h = History(8, "cpu")
+        h.of(0, [1], 1)
+        self.assertIn(0, h.rows)
+        h.forget(0)
+        self.assertNotIn(0, h.rows)
 
     def test_distribution_top_k_top_p_and_greedy(self):
         logits = torch.tensor([3.0, 2.0, 1.0, 0.0, -1.0])
