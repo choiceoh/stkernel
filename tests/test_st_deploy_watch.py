@@ -200,6 +200,8 @@ class StateTests(unittest.TestCase):
         self.assertIn("/home/choiceoh/st-engine/launchers/st-deploy-watch.py", unit)
         self.assertIn("--once", unit, "the loop belongs to the timer, not to a service that never exits")
         self.assertIn("After=st-glm53.service", unit, "it restarts that service: it must not race its start")
+        self.assertIn("KillMode=process", unit, "the probe waiter a cycle queues must outlive the oneshot's cgroup "
+                                               "(the first armed cycle's ticket died 0.25 s after enqueue, 2026-09-13)")
         timer = (here / "st-deploy-watch.timer").read_text()
         self.assertNotIn("Persistent=true", timer, "a missed cycle sees the same main; there is nothing to catch up")
 
@@ -380,11 +382,27 @@ class ProbeSelfHealTests(unittest.TestCase):
     def test_a_ticket_already_queued_or_holding_is_not_doubled(self):
         (self.fleet / "queue").write_text("7|d17-0123abcdef01|100|10|D17|probe|4242\n")
         self.assertFalse(self.ensure())
+        (self.fleet / "queue").write_text("7|d17-0123abcdef01-2|100|10|D17|probe|4242\n")     # a later attempt counts too
+        self.assertFalse(self.ensure())
+        (self.fleet / "queue").write_text("7|d17-0123abcdef0199|100|10|D17|probe|4242\n")    # another sha does not
+        self.assertTrue(self.ensure())
+        (self.tmp / "argv").unlink()
         (self.fleet / "queue").write_text("")
         (self.fleet / "holder").write_text("d17-0123abcdef01|4242|srv2|100|10|D17|probe\n")
         self.assertFalse(self.ensure())
         (self.fleet / "holder").unlink()
         self.assertTrue(self.ensure())
+
+    def test_every_attempt_gets_a_name_of_its_own(self):
+        """The launch layer answers a same-name, same-arguments detached launch with the old
+        launch's record -- disposition "existing", its exit code replayed -- so a ticket that died
+        cannot be queued again under its own name (srv2, 2026-09-13 02:51: rc=143 replayed)."""
+        self.assertEqual(watch.probe_session(self.SHA), "d17-0123abcdef01")
+        self.assertEqual(watch.probe_session(self.SHA, 2), "d17-0123abcdef01-2")
+        held = {"probe": {"sha": self.SHA, "attempts": 1, "last_at": 0}}
+        self.assertTrue(self.ensure(held))
+        self.assertEqual((self.tmp / "argv").read_text().splitlines()[2], "d17-0123abcdef01-2")
+        self.assertEqual(watch.state_of(self.state)["probe"]["attempts"], 2)
 
     def test_the_tally_bounds_it(self):
         held = {"probe": {"sha": self.SHA, "attempts": 3, "last_at": 0}}
