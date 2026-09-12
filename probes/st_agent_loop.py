@@ -27,7 +27,7 @@ from engine.base.scheduler import Contract                                 # noq
 from engine.base.serve import Server                                       # noqa: E402
 from test_engine_serve import Comm, Engine, Tokenizer, drive               # noqa: E402
 
-BLOCK, CHUNK, SNAPSHOTS = 768, 6912, 96            # profiles/glm53/facts.py and boot.PREFIX_SNAPSHOTS
+BLOCK, CHUNK, SNAPSHOTS = 768, 6912, 96            # profiles/glm53/facts.py; 96 is what boot.PREFIX_SNAPSHOT_GIB yields for the native shape
 
 
 def agent_server(rows=4, blocks=512):

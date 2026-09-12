@@ -766,8 +766,9 @@ class Runner:
 
     def _note_fade(self, chain: dict) -> None:
         """A `take_snapshot` just displaced a boundary. Count it when the boundary was this row's own: with no minimum
-        spacing between checkpoints, a prompt longer than `PREFIX_SNAPSHOTS` blocks evicts its own earlier ones as it
-        goes, and the state copy that made each of them was device work spent for nothing. This is the meter that says
+        spacing between checkpoints, a prompt longer than the resident snapshot count allows (which follows
+        boot.PREFIX_SNAPSHOT_GIB and the shape) evicts its own earlier ones as it goes, and the state copy that
+        made each of them was device work spent for nothing. This is the meter that says
         whether that is happening; it does not change who gets evicted (`prefix._victim`)."""
         fade = self.prefix.last_fade
         if fade is not None and fade in chain.values():

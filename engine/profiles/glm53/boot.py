@@ -94,9 +94,35 @@ layouts first (`NvmeTier.oldest`).
 """
 PREFIX_TIER_GIB = 16.0
 TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem whatever its own cap allows
-PREFIX_SNAPSHOTS = 96               # block-boundary checkpoints: ~45 MiB/rank with the native two-head drafter KV shard.
-                                    # The unit is the 768 block (nine per 6,912 chunk); boundaries a request adopted
-                                    # outlive the ones nobody asked for (prefix._victim), so churn cannot flush them.
+PREFIX_SNAPSHOT_GIB = 4.25
+"""What the resident block-boundary checkpoints may occupy. The COUNT follows (snapshot_count).
+
+Declared in bytes, because the count is not the cost. One snapshot is the KDA recurrent state and
+conv taps of 34 layers plus the drafter's context ring: 35.2 MiB of state, and a ring that is
+10 MiB when the drafter's KV is sharded across the four ranks (native execution, what production
+runs) and 40 MiB when it is not. Same constant 96, 4.24 GiB or 7.06 GiB -- decided by an execution
+mode the constant could not see. 4.25 GiB is 96 snapshots of today's native shape, so production
+keeps exactly what it had, and every other shape is now bounded by the same line in the budget
+table rather than by arithmetic nobody ran.
+
+The unit is the 768 block (nine per 6,912 chunk); boundaries a request adopted outlive the ones
+nobody asked for (prefix._victim), so churn cannot flush them.
+
+What it buys is smaller than it looks, and that is the number to size against. With a prefix tier
+configured a boundary that loses its snapshot FADES rather than dying: its blocks stay, and the
+next prompt that wants it reads the snapshot back instead of prefilling (base/prefix.py). Measured
+on the tier's own filesystem, 45 MiB reads in 8.7 ms at 5.4 GB/s. So past the working set this
+line buys ~10 ms per hit, not a prefill -- and the meters say where the working set is:
+`st:prefix_snapshots_free` (how many of them were never needed),
+`st:prefix_snapshot_self_evicts_total` and `_denials_total` (pressure),
+`st:prefix_tier_restores_total` (what fading actually cost). All four read 0 on an idle boot,
+so the number to size against has to come off a fleet with Deneb's traffic on it.
+"""
+
+
+def snapshot_count(snapshot_bytes: int, gib: float = PREFIX_SNAPSHOT_GIB) -> int:
+    """How many boundaries fit the declared budget. At least a chunk's worth (nine blocks)."""
+    return max(9, int(gib * GIB) // max(1, int(snapshot_bytes)))
 
 
 def tokenizer(ckpt=facts.CKPT):
@@ -186,7 +212,7 @@ def declared(a, comm_world: int) -> Config:
         Fact("kv_gib", float(a.kv_gib), "40th boot's measured KV" if a.kv_gib == KV_GIB else "--kv-gib (local)"),
         Fact("port", int(a.port), "--port"),
         Fact("max_seqs", MAX_SEQS, "resident rows, state slots and captured decode widths"),
-        Fact("prefix_snapshots", PREFIX_SNAPSHOTS, "block-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
+        Fact("prefix_snapshot_gib", PREFIX_SNAPSHOT_GIB, "resident block-boundary checkpoints; the count follows the shape (boot.snapshot_count)"),
     ]
     fixed = dict(moe_static=lane_tables.MOE_STATIC_PRODUCTION,
                  lanes="served", decode_eager=0, execution="native")
@@ -249,6 +275,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
     recorder.gauge('weight_layout', F.weight_layout)
     snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
+    snapshots = snapshot_count(snapshot_bytes)
     # the vision tower (45차 §23 A7): whole on every rank, from vision.safetensors next to the rank files (preshard.py --vision);
     # absent, the door refuses pictures -- the fleet boot requires it (production serves images, PR #431)
     vision_file = Path(ranks_dir) / vision_mod.FILE
@@ -284,7 +311,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 budget -= need
                 calib_bytes += need
     arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + total_bytes(vspecs) + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
-                   + cache_layout.nbytes(nb, max_seqs) + PREFIX_SNAPSHOTS * snapshot_bytes + stage_bytes(F, net.layers, max_seqs) + calib_bytes)
+                   + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs) + calib_bytes)
     memory = None
     redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
     if len(net.layers) == F.layers:
@@ -326,7 +353,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         redeclare = partial(budget_mod.budget, kv_gib, max_seqs,
                             chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
                             ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
-                            snapshots=PREFIX_SNAPSHOTS,
+                            snapshots=snapshots,
                             draft_tp=comm.world_size if execution == "native" else 1,
                             draft_native=execution == "native")
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
@@ -393,7 +420,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         # (boot-time study 5-c): the caches and their zeroing, the engine, the tier's pinned staging,
         # the prefix snapshots and the runner.
         with recorder.phase("caches"):
-            caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=PREFIX_SNAPSHOTS, stage=True)
+            caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=snapshots, stage=True)
         with recorder.phase("engine"):
             # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
             aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
@@ -434,12 +461,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                                                              block_bytes=cache_layout.block_bytes, stage_bytes=PREFIX_TIER_STAGE,
                                                              capacity_bytes=int(PREFIX_TIER_GIB * GIB),
                                                              reserve_bytes=int(TIER_RESERVE_GIB * GIB)))
-            prefix = PrefixCache(F.block, engine.prefill_chunk, PREFIX_SNAPSHOTS)      # boundaries = every 768 block (base/prefix.py)
+            prefix = PrefixCache(F.block, engine.prefill_chunk, snapshots)      # boundaries = every 768 block (base/prefix.py)
             runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
                             keep_idle=tiered is not None, prefix=prefix)                # with a tier, conversations live on and park
             runner.prefix_tier = prefix_tier
         recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
-        recorder.gauge("prefix_snapshots", PREFIX_SNAPSHOTS); recorder.gauge("snapshot_MiB", round(snapshot_bytes / 2**20, 1))
+        recorder.gauge("prefix_snapshots", snapshots); recorder.gauge("snapshot_MiB", round(snapshot_bytes / 2**20, 1))
         return F, net, caches, engine, runner
     except BaseException:
         if memory is not None:
