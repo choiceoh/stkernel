@@ -25,6 +25,7 @@ CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-glm53
 LEASE_OWNER=${LEASE_OWNER:-$(whoami)@$(hostname -s)/$$}   # who holds the fleet, for the lease record
+LOCK=/home/choiceoh/st-fleet.lock                          # the one lease file, on rank 0's node
 
 # A node cannot ssh to itself (srv2 refuses its own key), and the head runs this script: run its own
 # commands in a local shell instead. Same for the tree push -- and if this checkout *is* the node's
@@ -43,20 +44,41 @@ push_tree() {
   fi
 }
 
+# Assignment prefixes on `.` are temporary in bash -- the helper's own defaults would be
+# discarded when the builtin returns. Set, then source.
+use_lease() {
+  FLEET_REPO=$REPO; FLEET_HEAD=${NODES[0]}; FLEET_LEASE_PATH=$LOCK; FLEET_LEASE_SSH=$SSHOPT
+  . "$REPO/launchers/lib/fleet-lease.sh"
+}
+
 case "${1:-start}" in
   stop)
     for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
-    ssh $SSHOPT "choiceoh@${NODES[0]}" "python3 - release --owner x --force --path /home/choiceoh/st-fleet.lock" \
-      < "$REPO/engine/base/fleet_lease.py" || true
+    use_lease
+    fleet_lease release --owner x --force >/dev/null 2>&1 || true
     exit 0 ;;
   yield)
-    # Ask whoever holds the fleet to finish, park its conversations and let go. The
-    # engine does the parking; this only asks (engine/base/fleet_lease.request_yield).
-    ssh $SSHOPT "choiceoh@${NODES[0]}" \
-      "python3 - yield --requester '$LEASE_OWNER' --note '${2:-another session needs the fleet}' --path $LOCK" \
-      < "$REPO/engine/base/fleet_lease.py"; exit 0 ;;
+    # Ask whoever holds the fleet to finish, park its conversations and let go, then WAIT
+    # for that to happen -- asking and leaving the caller to poll is not a handover.
+    use_lease
+    asked=$(fleet_lease yield --requester "'$LEASE_OWNER'" --note "'${2:-another session needs the fleet}'") || exit 1
+    case "$asked" in free) echo "the fleet is already free"; exit 0 ;; esac
+    echo "asked: $asked"
+    deadline=$(( $(date +%s) + 60 * ${YIELD_WAIT_MINUTES:-30} ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+      held=$(fleet_lease read 2>/dev/null || echo unreachable)
+      case "$held" in
+        free|free\ *) echo "the fleet is free: start when ready"; exit 0 ;;
+        unreachable) ;;
+        *) echo "  waiting: $held" ;;
+      esac
+      sleep "${YIELD_POLL_S:-10}"
+    done
+    echo "ABORT: the holder did not let go within ${YIELD_WAIT_MINUTES:-30} min: $(fleet_lease read)" >&2
+    exit 1 ;;
   held)
-    ssh $SSHOPT "choiceoh@${NODES[0]}" "python3 - read --path $LOCK" < "$REPO/engine/base/fleet_lease.py"; exit 0 ;;
+    use_lease
+    fleet_lease read; exit 0 ;;
   logs)
     r=${2:-0}; node_sh "${NODES[$r]}" "docker logs --tail 60 $NAME"; exit 0 ;;
   start) ;;
@@ -65,7 +87,6 @@ esac
 
 # refuse to share the fleet: a serving/other container on any node, or another runner's lock on the head
 # (the lock is a file on rank 0's node; `stop` removes it; every fleet runner -- every session -- honours it)
-LOCK=/home/choiceoh/st-fleet.lock
 for ip in "${NODES[@]}"; do
   busy=$(node_sh "$ip" "docker ps --format '{{.Names}}' | grep -E '^(glm53|q38|vllm|st-)' || true")
   [ -z "$busy" ] || { echo "ABORT: $ip runs $busy -- the fleet is taken (hand off the queue, do not squat)" >&2; exit 1; }
@@ -75,7 +96,8 @@ done
 # instead of needing a human to delete a file, and a live one names who to ask.
 # Piped, not rsynced: taking the lease must not touch $ENGINE_DIR, which a live session
 # may have mounted into its containers. The module is stdlib-only, so `python3 -` is enough.
-lease() { ssh $SSHOPT "choiceoh@${NODES[0]}" "python3 - $* --path $LOCK" < "$REPO/engine/base/fleet_lease.py"; }
+use_lease
+lease() { fleet_lease "$@"; }
 # The bench queue reserves the same four nodes and does not know this lock exists. Read its
 # holder before taking the fleet, so the two mechanisms refuse each other in both directions
 # until they become one (bench/fleet.sh now refuses a grant while any st-* container is up).
