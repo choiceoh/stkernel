@@ -45,8 +45,12 @@ class OptionTests(unittest.TestCase):
 
     def test_rich_rows_are_exactly_the_ones_the_captured_sampler_cannot_serve(self):
         self.assertFalse(needs_rich_sampler({}, 0.0, drafts=True))
-        self.assertTrue(needs_rich_sampler({"top_p": 0.9}, 0.0, drafts=True))    # the captured sampler has no nucleus branch
-        self.assertTrue(needs_rich_sampler({"top_k": 5}, 0.0, drafts=False))
+        # the captured sampler takes top-k and top-p as per-row arrays: a nucleus is not rich
+        self.assertFalse(needs_rich_sampler({"top_p": 0.9}, 0.0, drafts=True))
+        self.assertFalse(needs_rich_sampler({"top_k": 5}, 0.0, drafts=False))
+        self.assertTrue(needs_rich_sampler({"top_p": 0.9, "seed": 3}, 0.0, drafts=False))   # its own generator
+        self.assertTrue(needs_rich_sampler({"repetition_penalty": 1.1}, 0.0, drafts=False))
+        self.assertTrue(needs_rich_sampler({"logprobs": 3}, 0.0, drafts=False))
         self.assertTrue(needs_rich_sampler({}, 0.8, drafts=True))          # rejection sampling needs the probabilities
         self.assertFalse(needs_rich_sampler({}, 0.8, drafts=False))
 
@@ -69,8 +73,8 @@ class OptionTests(unittest.TestCase):
         self.assertAlmostEqual(out[4].item(), 0.0 - 1.0 - 0.5)
         self.assertEqual(out[3].item(), 3.0)
         seen, counts = self.history(5, [], [])
-        out = process_logits(logits, {}, seen, counts, decodable=3, mask=torch.tensor([True, False, True, True, True]))
-        self.assertTrue(torch.isinf(out[1]) and torch.isinf(out[3]) and torch.isinf(out[4]) and out[0] == 2.0)
+        out = process_logits(logits, {}, seen, counts, decodable=3)
+        self.assertTrue(torch.isinf(out[3]) and torch.isinf(out[4]) and out[0] == 2.0)
 
     def test_this_step_drafts_count_without_being_written_into_the_history(self):
         logits = torch.zeros(5)
@@ -151,13 +155,17 @@ class OptionTests(unittest.TestCase):
         self.assertTrue(torch.isinf(out[1]) and torch.isinf(out[4]))
         self.assertEqual([float(out[i]) for i in (0, 2, 3, 5)], [0.0] * 4)
 
-    def test_a_grammar_mask_and_a_forbidden_list_both_apply(self):
-        logits = torch.zeros(4)
-        seen, counts = self.history(4, [], [])
-        out = process_logits(logits, {}, seen, counts, mask=torch.tensor([True, True, False, True]),
-                             forbid=torch.tensor([0]))
-        self.assertTrue(torch.isinf(out[0]) and torch.isinf(out[2]))
-        self.assertEqual([float(out[i]) for i in (1, 3)], [0.0, 0.0])
+    def test_a_buffer_receives_the_row_instead_of_a_fresh_vocabulary(self):
+        """The grammar mask crosses a whole row in one launch, which needs the row's positions in consecutive
+        rows of one tensor -- so a position can be asked to land in one (base/grammar, 45차 §28)."""
+        raw = torch.tensor([1.0, -2.0, 3.0, 4.0])
+        seen, counts = self.history(4, [1], [1])
+        buf = torch.empty(2, 4)
+        got = process_logits(raw, {"repetition_penalty": 2.0}, seen, counts, forbid=torch.tensor([0]), out=buf[1])
+        self.assertEqual(got.data_ptr(), buf[1].data_ptr(), "the answer is in the buffer, not beside it")
+        fresh = process_logits(raw, {"repetition_penalty": 2.0}, seen, counts, forbid=torch.tensor([0]))
+        self.assertTrue(torch.equal(torch.nan_to_num(buf[1], neginf=-1e9), torch.nan_to_num(fresh, neginf=-1e9)))
+        self.assertTrue(torch.isinf(buf[1][0]))
 
     def test_picking_every_row_at_once_draws_what_picking_them_one_by_one_would(self):
         from engine.base.sampler import draw, pick_each
@@ -300,3 +308,102 @@ class BlockVerificationTests(unittest.TestCase):
         self.assertEqual(count.tolist(), [a + 1 for a in want])
         for r, a in enumerate(want):
             self.assertEqual(tokens[r, :a].tolist(), ids[r, :a].tolist(), "accepted drafts are committed as they were")
+
+
+class DraftCeilingTests(unittest.TestCase):
+    """Acceptance has three ceilings; the split is what makes "raise it" answerable."""
+
+    def test_the_reachable_mass_is_the_overlap_and_the_covered_mass_is_the_support(self):
+        from engine.base.sampler import draft_ceilings
+        target = torch.tensor([[0.5, 0.3, 0.2], [0.1, 0.8, 0.1]])
+        draft = torch.tensor([[0.4, 0.6, 0.0]])                       # one position, two candidates
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertAlmostEqual(reachable, 0.4 + 0.3, places=6)        # min(.5,.4) + min(.3,.6) + min(.2,0)
+        self.assertAlmostEqual(covered, 0.5 + 0.3, places=6)          # the target mass on the two candidates
+
+    def test_a_draft_that_covers_nothing_reaches_nothing(self):
+        from engine.base.sampler import draft_ceilings
+        target = torch.tensor([[0.0, 0.0, 1.0], [0.5, 0.5, 0.0]])
+        draft = torch.tensor([[0.5, 0.5, 0.0]])
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertAlmostEqual(reachable, 0.0, places=6)
+        self.assertAlmostEqual(covered, 0.0, places=6)
+
+    def test_the_ceilings_bound_the_acceptance_they_explain(self):
+        from engine.base.sampler import block_verify, draft_ceilings, draw
+        torch.manual_seed(5)
+        K, V, rounds = 3, 6, 4000
+        target = torch.softmax(torch.randn(K + 1, V), -1)
+        draft = torch.softmax(torch.randn(K, V), -1)
+        gen = torch.Generator().manual_seed(7)
+        accepted = 0
+        for _ in range(rounds):
+            ids = [draw(draft[i], gen) for i in range(K)]
+            got, _ = block_verify(target, ids, draft, gen)
+            accepted += got
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertLessEqual(reachable, covered + 1e-6, "what a rule can accept sits under what the candidates cover")
+        self.assertLessEqual(accepted / rounds, reachable + 0.05, "and acceptance sits under both")
+
+
+class HistoryLifetimeTests(unittest.TestCase):
+    """A kept history is only safe while the tokens it was built from are the row's own."""
+
+    def test_a_row_reused_with_the_same_shape_does_not_inherit_the_old_counts(self):
+        from engine.base.sampler import History
+        h = History(8, "cpu")
+        first = [1, 1, 2, 3]
+        h.of(0, first, 2)
+        self.assertEqual(float(h.of(0, first, 2)[1][1]), 0.0)     # token 1 is prompt here, not output
+        # the row is handed a different conversation of the same length and prompt length
+        h.forget(0)
+        second = [4, 5, 1, 1]
+        seen, counts = h.of(0, second, 2)
+        self.assertEqual(float(counts[1]), 2.0)
+        self.assertFalse(bool(seen[2]), "nothing of the old conversation survives")
+
+    def test_the_adapter_drops_it_wherever_a_row_stops_owning_its_tokens(self):
+        """The property, not a list of lines: every place a row is handed a different conversation, and the
+        place a row leaves, drops the history first. The sites are found rather than enumerated, so a fourth
+        one does not depend on anyone remembering this test."""
+        import re
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        sites = [m.start() for m in re.finditer(r"^ +self\.tokens\[seq\] = ", source, re.M)]
+        self.assertGreaterEqual(len(sites), 2, "the reassignment sites moved: this test cannot see them")
+        for at in sites + [source.index("rows.pop(seq, None)")]:
+            self.assertIn("self._forget_history(seq)", source[at: at + 400], source[at: at + 60])
+
+    def test_forgetting_reaches_the_history_and_tolerates_one_that_was_never_built(self):
+        """What a source pin cannot see. A helper that is only a name passes the test above; and the history
+        is lazy, so the callers that used to reach `self.history` directly died on the first request of a boot
+        that had not built one yet (which is what the helper was introduced for)."""
+        from engine.base.sampler import History
+        from engine.profiles.glm53.adapter import Glm53Engine
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        body = source[source.index("    def _forget_history"):]
+        self.assertIn("self.sampling_history.forget(seq)", body[: body.index("\n    def ", 1)], "the helper must reach the History")
+        engine = Glm53Engine.__new__(Glm53Engine)            # the method, none of the boot
+        engine.sampling_history = None
+        engine._forget_history(0)                            # a boot whose first request has not asked for penalties
+        engine.sampling_history = History(8, "cpu")
+        engine.sampling_history.of(0, [1, 1, 2, 3], 2)
+        self.assertIn(0, engine.sampling_history.rows)
+        engine._forget_history(0)
+        self.assertNotIn(0, engine.sampling_history.rows, "the helper has to reach the history, not merely exist")
+
+
+class VerificationPathTests(unittest.TestCase):
+    """A served row and a row with penalties must be verified by the same rule."""
+
+    def test_the_row_path_and_the_batch_path_accept_the_same_prefix(self):
+        from engine.base.sampler import block_verify, block_verify_batch
+        torch.manual_seed(11)
+        K, V = 4, 9
+        for trial in range(25):
+            target = torch.softmax(torch.randn(K + 1, V), -1)
+            draft = torch.softmax(torch.randn(K, V), -1)
+            ids = [int(torch.multinomial(draft[i], 1)) for i in range(K)]
+            one, _ = block_verify(target, ids, draft, torch.Generator().manual_seed(trial))
+            many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), draft.unsqueeze(0),
+                                            torch.Generator().manual_seed(trial))
+            self.assertEqual(one, int(many[0]), f"trial {trial}")

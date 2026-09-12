@@ -132,7 +132,8 @@ class ReplayStagingTests(unittest.TestCase):
         for line in ("target.contexts.copy_(self.staging[0, :n], non_blocking=True)",
                      "seqs.copy_(self.staging[1, :n], non_blocking=True)",
                      "slots.copy_(self.staging[2, :n], non_blocking=True)",
-                     "inputs[1].copy_(self.temps[:rows], non_blocking=True)"):
+                     # the sampler stages three arrays now (temperature, top-k, top-p), one loop
+                     "static.copy_(held[:rows], non_blocking=True)"):
             self.assertIn(line, source)
 
     def test_pinned_staging_round_trips_through_its_numpy_view(self):

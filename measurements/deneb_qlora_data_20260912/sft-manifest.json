@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "counts": {
+    "train": 32,
+    "validation": 8,
+    "test": 8
+  },
+  "category_split": {
+    "mail/train": 16,
+    "notification/train": 16,
+    "mail/validation": 4,
+    "notification/validation": 4,
+    "mail/test": 4,
+    "notification/test": 4
+  },
+  "decisions": {
+    "review": 10,
+    "act": 19,
+    "inform": 7,
+    "ignore": 12
+  },
+  "annotation_kind": "assistant_reviewed_source_grounded",
+  "human_verified": false,
+  "groups_disjoint": true,
+  "evidence_exact_match": true,
+  "historical_test_is_development_only": true,
+  "pool_sha256": "8efd4f1a64074ad74b1752a332a9c1f706d8b719f2eb74e161cd1679424a3901",
+  "annotations_sha256": "a5922219848f483f0ca2f7aaf7ce7f990d7d040f2e9b5e34763ff14bf22e65e4",
+  "loss_policy": "completion_only",
+  "truncate_targets": false,
+  "model_training_performed": false
+}

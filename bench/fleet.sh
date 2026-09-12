@@ -17,6 +17,7 @@
 #   fleet.sh show [s] | logs s | history s               exact command, retained output
 #   fleet.sh status | board | events | ledger [days]      queue, timings and results
 #   fleet.sh classify --explain <cmd>                    CPU/GPU classification evidence
+#   fleet.sh prune [--days N] [--apply]                  the queue's own debris, dry by default
 #   fleet.sh run --gpu s [est] [note] -- bash probes/run_engine_check.sh --layers 0-4
 #   fleet.sh run --gpu s [est] [note] -- bash probes/run_engine_probe.sh probes/engine_decode_graph_check.py
 #   fleet.sh cancel s                                   stop the waiter and withdraw
@@ -124,8 +125,27 @@ serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^glm53$'; 
 # entering this queue -- it has its own launcher lock. Until both are one mechanism the
 # queue must at least SEE it: holder-empty is not the same as free (2026-09-12, four
 # nodes running st-glm53 while status said FREE).
-st_engine_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-'; }
+# Containers AND the lease: the two disagreed once and the queue granted while the lease
+# was still held, so three reservations died on it in two seconds each (2026-09-12).
+st_engine_up() {
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-' && return 0
+  local repo=${FLEET_RUNNER_REPO:-$REPO}
+  [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 1
+  ( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"
+    held=$(fleet_lease read 2>/dev/null) || exit 1
+    case "$held" in free|free\ *) exit 1 ;; *) exit 0 ;; esac )
+}
 st_engine_line() { docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^st-' | head -1; }
+# Refusing is not enough: a queued session would then wait for a human to go and ask.
+# The ST engine can be ASKED to finish, park its conversations and let go, so the queue
+# asks on the waiter's behalf -- once per refusal, and never for a holder that predates
+# the protocol (its plain-text lock has nobody listening).
+st_engine_yield() {
+  local who=$1 repo=${FLEET_RUNNER_REPO:-$REPO}
+  [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 0
+  ( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"
+    fleet_lease yield --requester "'queue/$who'" --note "'a queued reservation needs the fleet'" ) >/dev/null 2>&1 || true
+}
 serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting
   ! serving_up && return 0
   booting && return 1
@@ -251,6 +271,41 @@ classify_cmd() {  # cmd... -> gpu|nogpu|unknown
   elif echo "$text" | grep -qE "$cpu"; then echo nogpu
   else echo unknown; fi
 }
+audit_line() {  # a stale pin silently turns off CPU reuse and contract narrowing
+  local out
+  out=$( (cd "$REPO" 2>/dev/null && timeout 20 python3 - <<'PY'
+import hashlib, sys
+sys.path.insert(0, "bench")
+from pathlib import Path
+try:
+    import cpu_contracts as cc, cpu_evidence as ce
+except Exception as exc:                      # noqa: BLE001 -- never take status down
+    print(f"audit: unreadable ({type(exc).__name__})"); raise SystemExit
+root = Path(".").resolve()
+def sha(rel):
+    path = root / rel
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
+stale = []
+if sha("tests/test_logic.py") != cc.LOGIC_AUDIT:
+    stale.append("tests/test_logic.py")
+for name in ("LOGIC_SOURCE_AUDIT", "FLEET_AUDIT", "STARTUP_AUDIT"):
+    for rel, want in (getattr(ce, name, {}) or {}).items():
+        if sha(rel) != want:
+            stale.append(rel)
+if not stale:
+    raise SystemExit
+print("audit: STALE -- CPU evidence falls back to full-tree and the planner cannot narrow")
+print("       a contract change, so every unrelated commit re-runs the work (it sat like")
+print("       this for five days once, seen only as four 'pre-existing' test failures).")
+for rel in sorted(set(stale))[:6]:
+    print("       drifted: " + rel)
+print("       fix: review the change, then update bench/cpu_contracts.LOGIC_AUDIT and")
+print("            bench/cpu_evidence.*_AUDIT. tests/test_fleet_source.py says it too.")
+PY
+  ) 2>/dev/null )
+  [ -n "$out" ] && echo "$out" | sed 's/^/  /'
+  return 0
+}
 production_line() {  # what is serving, judged from the container's env (idea 9)
   serving_up || { echo "production: no serving container"; return 0; }
   local k; k=$( (cd "$REPO" 2>/dev/null && timeout 20 python3 - <<'PY'
@@ -312,7 +367,34 @@ holder_alive() {
   [ -s "$H" ] || return 1
   IFS='|' read -r s pid host t0 est note kind < "$H"
   if [ "$host" = "$(me)" ] && [ -n "$pid" ]; then kill -0 "$pid" 2>/dev/null && return 0; return 1; fi
+  # A holder on another node used to be trusted blind for 3x its estimate -- a crashed
+  # one blocked the fleet for two hours at est 40, and the recovery the header promises
+  # is not installed. Ask instead: evidence first, and only fall back to the window when
+  # the node cannot answer (unreachable is not free).
+  if [ -n "$pid" ] && [ -n "$host" ]; then
+    local answer
+    answer=$(holder_probe "$host" "$pid")
+    case "$answer" in alive) return 0 ;; gone) return 1 ;; esac
+  fi
   [ $(( $(now) - t0 )) -lt $(( ${est:-30} * 60 * 3 )) ]
+}
+
+# holder_probe <host> <pid> -> alive|gone|unknown, cached briefly: holder_alive runs on
+# every poll of every waiter, and an ssh each time would put the network in the hot path.
+holder_probe() {
+  local host=$1 pid=$2 cache="$FLEET_DIR/.holder-probe.$1.$2" now age out
+  now=$(now)
+  if [ -f "$cache" ]; then
+    age=$(( now - $(stat -c %Y "$cache" 2>/dev/null || echo 0) ))
+    [ "$age" -lt "${HOLDER_PROBE_TTL_S:-20}" ] && { cat "$cache"; return 0; }
+  fi
+  # /proc, not `kill -0`: that one answers "gone" for a process you do not own, which is
+  # the opposite of the truth and would let a waiter take a held fleet.
+  out=$(timeout 8 ssh -o BatchMode=yes -o ConnectTimeout=4 "choiceoh@$host" \
+          "[ -d /proc/$pid ] && echo alive || echo gone" 2>/dev/null | tail -1)
+  case "$out" in alive|gone) ;; *) out=unknown ;; esac
+  printf '%s' "$out" > "$cache" 2>/dev/null || true
+  printf '%s' "$out"
 }
 holder_line() { [ -s "$H" ] && IFS='|' read -r s pid host t0 est note kind < "$H" && echo "$s${kind:+ [$kind]} (pid $pid@$host, since $(date -d @$t0 +%H:%M), est ${est}m, $note)"; }
 
@@ -363,7 +445,11 @@ _front() { { grep "^[0-9]*|$1|" "$Q"; grep -v "^[0-9]*|$1|" "$Q"; } > "$Q.tmp"; 
 
 _try_hold() {  # session pid est note [kind] -> 0 when held
   local s=$1 pid=$2 est=$3 note=$4 kind; kind=$(kind_of "${5:-}")
-  if st_engine_up; then logit "hold refused: ST engine occupies the fleet ($(st_engine_line))"; return 1; fi
+  if st_engine_up; then
+    logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); asking it to yield to $s"
+    st_engine_yield "$s"
+    return 1
+  fi
   if [ -s "$H" ]; then
     if holder_alive; then return 1; fi
     logit "auto-kick dead holder: $(holder_line)"; rm -f "$H"
@@ -569,6 +655,7 @@ case "$cmd" in
       hbf=$(hb_file "$hs"); [ -f "$hbf" ] && [ $(( $(now) - $(stat -c %Y "$hbf") )) -gt 600 ] && echo "  SILENT: no heartbeat for $(( ($(now) - $(stat -c %Y "$hbf")) / 60 ))m"
     fi
     echo "legacy: $(busy_procs) bench/boot procs, $(busy_reqs) requests in flight$(booting && echo ', head booting')"
+    audit_line
     echo "queue ($(grep -c . "$Q")):"; n=0; eta=$remaining; while IFS='|' read -r t s at est note kind qpid; do n=$((n+1)); exp=$(expected_min "$s" "$est"); echo "  $n. $s${kind:+ [$kind]} (since $(date -d @$at +%H:%M), est ${est}m, expect ~${exp}m, ETA ~$(date -d "@$(( $(now) + eta * 60 ))" +%H:%M)) $note"; eta=$(( eta + exp )); done < "$Q"
     ls -t "$LOGD"/FLEET-*.done 2>/dev/null | head -4 | while read -r f; do echo "  marker $(stat -c %y "$f" | cut -c12-16) $(basename "$f")"; done
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pause.py" list --format text
@@ -639,6 +726,11 @@ case "$cmd" in
   notify) s=${1:?session}; shift; [ $# -gt 0 ] && { echo "$*" > "$FLEET_DIR/notify.$s"; echo "hook for $s: $*"; } || { rm -f "$FLEET_DIR/notify.$s"; echo "hook for $s removed"; };;
   events) tail -"${1:-20}" "$FLEET_DIR/events.log" 2>/dev/null;;
   board) (cd "$REPO" && FLEET_DIR="$FLEET_DIR" LOGD="$LOGD" python3 bench/board.py --n "${1:-12}");;
+  prune)
+    # The queue's own debris: a heartbeat per session ever seen, a launch per detached
+    # run, a preparation per prepared input, a pinned runner per distinct source. Dry by
+    # default; it never touches the holder, the queue, the paused, or a runner they name.
+    exec python3 "$REPO/bench/fleet_prune.py" "$FLEET_DIR" "$@";;
   classify)
     if [ "${1:-}" = --explain ]; then
       shift; cls=$(classify_cmd "$@")

@@ -1,0 +1,12 @@
+[Unit]
+Description=Look for a main to deploy every 15 minutes
+
+[Timer]
+OnBootSec=20min
+OnUnitInactiveSec=15min
+AccuracySec=1min
+# Not Persistent: a cycle missed while the box was off is not one to catch up on -- the next one
+# sees the same main.
+
+[Install]
+WantedBy=timers.target

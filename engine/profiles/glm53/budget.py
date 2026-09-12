@@ -45,7 +45,7 @@ def ledger_peak(path: "str | Path | None") -> "tuple[float, str] | None":
 def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | None" = None,
            ckpt: "str | Path" = facts.CKPT, ranks_dir: "str | Path | None" = None, rank: int = 0,
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
-           snapshots: int = 8, draft_tp: int = 1) -> Budget:
+           snapshots: int = 8, draft_tp: int = 1, draft_native: "bool | None" = None) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave."""
     host_total, _ = host_box()
     if box_gib is None:
@@ -72,7 +72,9 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         D = drafter_mod.load(drafter_dir)
         if draft_tp <= 0 or D.kv_heads % draft_tp:
             raise ValueError("drafter KV heads must split over the declared TP group")
-        draft_shape = (D.layers, D.window, D.kv_heads // draft_tp, D.head_dim)
+        native = draft_tp > 1 if draft_native is None else draft_native
+        cells = D.window if native else drafter_mod.ring_cells(D)
+        draft_shape = (D.layers, cells, D.kv_heads // draft_tp, D.head_dim)
         drafter_gib = sum(s.nbytes() for s in drafter_mod.specs(D)) / GIB
     lay = layout(F, range(F.layers), draft_shape)
     slots_gib = (max_seqs + 1) * lay.slot_bytes / GIB

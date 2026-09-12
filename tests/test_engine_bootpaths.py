@@ -38,7 +38,7 @@ class BootPathTests(unittest.TestCase):
 
     def test_build_reads_drafter_facts_from_the_selected_directory(self):
         from engine.profiles.glm53 import boot
-        draft = SimpleNamespace(layers=1, window=8, kv_heads=1, head_dim=8)
+        draft = SimpleNamespace(layers=1, window=8, block=8, kv_heads=1, head_dim=8)
         cache = SimpleNamespace(block_bytes=4096, slot_bytes=4096)
         with patch.object(boot.facts, "load") as model_load, \
              patch.object(boot, "Glm53Net"), \

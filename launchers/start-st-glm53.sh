@@ -37,8 +37,12 @@ TIER_DIR=${ST_TIER_DIR:-/home/choiceoh/glm53-logs/st-tier}
 DUMP_DIR=${ST_DUMP_DIR:-/home/choiceoh/glm53-logs/st-dumps}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-glm53
-LOCK=/home/choiceoh/st-fleet.lock
-LEASE_OWNER=${LEASE_OWNER:-$(whoami)@$(hostname -s)/$$}
+LEASE_OWNER=${LEASE_OWNER:-$(whoami)@$(hostname -s)/$$}   # who holds the fleet, for the lease record
+# Under glm53-logs, the one directory every ST container already mounts at this path --
+# the engine must READ its lease to notice a yield request, and ~/st-fleet.lock was not
+# mounted into any container, so the handover was inert on the fleet.
+LOCK=${FLEET_LEASE_PATH:-/home/choiceoh/glm53-logs/st-fleet.lock}
+LEGACY_LOCK=/home/choiceoh/st-fleet.lock                   # older launchers still write here
 
 # A node cannot ssh to itself (srv2 refuses its own key), and the head runs this script: run its own
 # commands in a local shell instead. Same for the tree push -- and if this checkout *is* the node's
@@ -57,6 +61,15 @@ push_tree() {
   fi
 }
 
+# Assignment prefixes on `.` are temporary in bash -- the helper's own defaults would be
+# discarded when the builtin returns. Set, then source.
+use_lease() {
+  FLEET_REPO=$REPO; FLEET_HEAD=${NODES[0]}; FLEET_LEASE_PATH=$LOCK; FLEET_LEASE_SSH=$SSHOPT
+  . "$REPO/launchers/lib/fleet-lease.sh"
+}
+
+# Preserve argument boundaries when notes contain spaces; the lease lives at
+# the canonical, container-mounted path selected above.
 lease() {
   if is_self "${NODES[0]}"; then
     python3 "$REPO/engine/base/fleet_lease.py" "$@" --path "$LOCK"
@@ -72,12 +85,36 @@ case "${1:-start}" in
     held_owner=$(lease owner --container "$NAME") || {
       echo "ABORT: refusing to stop another fleet owner's lease" >&2; exit 1;
     }
+    legacy_owner=$(LOCK=$LEGACY_LOCK lease owner --container "$NAME") || {
+      echo "ABORT: refusing to stop another owner's legacy lease" >&2; exit 1;
+    }
     for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
-    lease release --owner "$held_owner"; exit 0 ;;
+    use_lease
+    lease release --owner "$held_owner"
+    node_sh "${NODES[0]}" "rm -f $LEGACY_LOCK" >/dev/null 2>&1 || true
+    exit 0 ;;
   yield)
-    lease yield --requester "$LEASE_OWNER" --note "${2:-another session needs the fleet}"; exit 0 ;;
+    # Ask whoever holds the fleet to finish, park its conversations and let go, then WAIT
+    # for that to happen -- asking and leaving the caller to poll is not a handover.
+    use_lease
+    asked=$(fleet_lease yield --requester "'$LEASE_OWNER'" --note "'${2:-another session needs the fleet}'") || exit 1
+    case "$asked" in free) echo "the fleet is already free"; exit 0 ;; esac
+    echo "asked: $asked"
+    deadline=$(( $(date +%s) + 60 * ${YIELD_WAIT_MINUTES:-30} ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+      held=$(fleet_lease read 2>/dev/null || echo unreachable)
+      case "$held" in
+        free|free\ *) echo "the fleet is free: start when ready"; exit 0 ;;
+        unreachable) ;;
+        *) echo "  waiting: $held" ;;
+      esac
+      sleep "${YIELD_POLL_S:-10}"
+    done
+    echo "ABORT: the holder did not let go within ${YIELD_WAIT_MINUTES:-30} min: $(fleet_lease read)" >&2
+    exit 1 ;;
   held)
-    lease read; exit 0 ;;
+    use_lease
+    fleet_lease read; exit 0 ;;
   logs)
     r=${2:-0}; node_sh "${NODES[$r]}" "docker logs --tail 60 $NAME"; exit 0 ;;
   start) ;;
@@ -95,10 +132,14 @@ done
 # instead of needing a human to delete a file, and a live one names who to ask.
 # Piped, not rsynced: taking the lease must not touch $ENGINE_DIR, which a live session
 # may have mounted into its containers. The module is stdlib-only, so `python3 -` is enough.
+use_lease
+
 # The bench queue reserves the same four nodes and does not know this lock exists. Read its
 # holder before taking the fleet, so the two mechanisms refuse each other in both directions
 # until they become one (bench/fleet.sh now refuses a grant while any st-* container is up).
 FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}
+legacy=$(node_sh "${NODES[0]}" "cat $LEGACY_LOCK 2>/dev/null || true")
+[ -z "$legacy" ] || { echo "ABORT: a session on the older lock path holds the fleet: $legacy ($LEGACY_LOCK on ${NODES[0]}); 'stop' from that side" >&2; exit 1; }
 queued=$(node_sh "${NODES[0]}" "cat $FLEET_HOLDER 2>/dev/null || true")
 [ -z "$queued" ] || { echo "ABORT: the bench queue holds the fleet: $queued (bench/fleet.sh status; release it there)" >&2; exit 1; }
 lease acquire --owner "$LEASE_OWNER" --container "$NAME" --est-minutes "${LEASE_MINUTES:-45}" \

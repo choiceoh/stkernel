@@ -12,7 +12,7 @@
 #      ships with both TMA lowering and warp specialization disabled. Unset
 #      or unparseable keeps the stock dict, so kernels compile exactly as
 #      the image's unless the knob deliberately says otherwise.
-# The stock kernel bodies are otherwise untouched.
+# Later ST changes, including the tiled TMA post path, are tracked in SOURCES.json.
 import contextlib
 import math
 from functools import cache
@@ -104,8 +104,8 @@ def _mhc_prefill_post_prenorm_kernel(
 # impls lean on CUtensorMap loads; see KERNEL_CAMPAIGN's GB10 dossier). This
 # knob is the offline A/B for that choice: unset or unparseable = exactly the
 # stock dict (compiled kernels byte-identical to the image's), while "tma" /
-# "ws" / "tma,ws" flip the matching TL_DISABLE_* to False for EVERY kernel in
-# this module. Frozen at import like the other
+# "ws" / "tma,ws" flip the shared TL_DISABLE_* configuration. The post kernel
+# now uses its own fixed TMA policy. Frozen at import like the other
 # MHC knobs -- the serving process sets env before import, and a captured
 # decode graph cannot branch on an env read.
 _MHC_PASSES_ENV = "ST_GLM53_MHC_PASSES"
@@ -129,9 +129,8 @@ def _deneb_parse_mhc_passes(raw: str):
     return picked["tma"], picked["ws"]
 
 
-# D11 (2026-09-12, ST): the offline TMA/warp-specialised pass A/B
-# (ST_GLM53_MHC_PASSES) was never adopted; the stock pass set is served and
-# nothing here reads the environment.
+# D11 (2026-09-12, ST): no environment read. The post kernel has its own fixed
+# TMA policy; this offline hook applies to the other mHC kernels.
 import engine.kernels as _kernels_pkg
 _DENEB_MHC_PASSES = _kernels_pkg.MHC_PASSES   # engine.kernels.configure_mhc_passes(), set before this import
 
@@ -155,8 +154,8 @@ pass_configs: dict[tilelang.PassConfigKey, Any] = {
 }
 
 if _DENEB_MHC_PASSES is not None:
-    # Mutable-dict write before the first @tilelang.jit below reads it; every
-    # decorator binds this same dict object, so one flip arms them all.
+    # Update the shared configuration before the decorators bind it. The post
+    # decorator copies it and then sets its mandatory TMA policy explicitly.
     _deneb_tma_on, _deneb_ws_on = _DENEB_MHC_PASSES
     if _deneb_tma_on:
         pass_configs[tilelang.PassConfigKey.TL_DISABLE_TMA_LOWER] = False
@@ -760,7 +759,11 @@ def mhc_fused_tilelang(
 
 
 @tilelang.jit(
-    pass_configs=pass_configs,
+    pass_configs={
+        **pass_configs,
+        tilelang.PassConfigKey.TL_DISABLE_TMA_LOWER: False,
+        tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
+    },
 )
 def mhc_post_tilelang(
     a,
@@ -771,7 +774,7 @@ def mhc_post_tilelang(
     hc: int,
     hidden: int,
     n_thr: int = 128,
-    h_blk: int = 1024,
+    h_blk: int = 512,
 ) -> tilelang.JITKernel:
     # rename for shorter code
     n = T.dynamic("num_tokens")
@@ -783,7 +786,10 @@ def mhc_post_tilelang(
     c: T.Tensor((n, hc), T.float32)  # type: ignore[no-redef, valid-type]
     d: T.Tensor((n, h), T.bfloat16)  # type: ignore[no-redef, valid-type]
     x: T.Tensor((n, hc, h), T.bfloat16)  # type: ignore[no-redef, valid-type]
-    with T.Kernel(n, threads=n_thr) as i_n:
+    # Independent hidden tiles expose 48 CTAs at the six-token decode shape.
+    # One completion barrier covers both TMA inputs; no tile storage is reused.
+    with T.Kernel(n, T.ceildiv(h, h_blk), threads=n_thr) as (i_n, i0_h):
+        ready = T.alloc_barrier([1])
         b_shared = T.alloc_shared((hc, h_blk), T.bfloat16)
         d_shared = T.alloc_shared(h_blk, T.bfloat16)
 
@@ -798,18 +804,22 @@ def mhc_post_tilelang(
         T.copy(a[i_n, 0, 0], a_local)
         T.copy(c[i_n, 0], c_local)
 
-        for i0_h in T.Serial(T.ceildiv(h, h_blk)):
-            T.copy(b[i_n, 0, i0_h * h_blk], b_shared)
-            T.copy(d[i_n, i0_h * h_blk], d_shared)
+        T.tma_copy(b[i_n, 0, i0_h * h_blk], b_shared, barrier=ready[0])
+        T.tma_copy(d[i_n, i0_h * h_blk], d_shared, barrier=ready[0])
+        # Use the same election as the TMA producers, so arrival cannot race
+        # ahead of their expected-byte updates under independent scheduling.
+        if T.shuffle_elect(n_thr):
+            T.mbarrier_arrive(ready[0])
+        T.mbarrier_wait_parity(ready[0], 0)
 
-            T.copy(b_shared, b_local)
-            T.copy(d_shared, d_local)
-            for i_hco, i1_h in T.Parallel(hc, h_blk):
-                x_local[i_hco, i1_h] = c_local[i_hco] * d_local[i1_h]
-                for i_hci in T.vectorized(hc):
-                    x_local[i_hco, i1_h] += a_local[i_hci, i_hco] * b_local[i_hci, i1_h]
+        T.copy(b_shared, b_local)
+        T.copy(d_shared, d_local)
+        for i_hco, i1_h in T.Parallel(hc, h_blk):
+            x_local[i_hco, i1_h] = c_local[i_hco] * d_local[i1_h]
+            for i_hci in T.vectorized(hc):
+                x_local[i_hco, i1_h] += a_local[i_hci, i_hco] * b_local[i_hci, i1_h]
 
-            T.copy(x_local, x[i_n, 0, i0_h * h_blk])
+        T.copy(x_local, x[i_n, 0, i0_h * h_blk])
         if ENABLE_PDL:
             T.pdl_trigger()
 

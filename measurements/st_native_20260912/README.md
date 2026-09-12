@@ -169,3 +169,26 @@ and zero-route-weight checks; those additional cases were not run in this
 session because the user accepted this verification level and requested merge.
 The live service is restored to the pinned release; merging this source change
 is separate from switching the running deployment.
+
+### Merge with main through PR #638
+
+Integrated main `e3f356a5` while preserving the FP32 MoE repair. Native batched
+DFlash now uses its prepared packs for projections, fused context KV, local
+heads and device-selected ring slots. Stock SDPA retains its block-key ring
+tail; native direct-ring attention retains its original window geometry, and
+both the allocation and budget use the selected geometry. The native weight
+retirement/slot plumbing regression compares against the full CPU drafter with
+only CUDA ring primitives replaced by CPU oracles. GPU integration after this
+main merge was not rerun at the user's requested stopping point.
+
+The canonical fleet lease path and main's yield handling are retained, with
+quoted launch arguments and ownership checks for both canonical and legacy
+leases before stop. Lazy penalty history keeps its distinct `sampling_history`
+name so the token-list `history(seq)` protocol remains callable.
+
+CPU integration ran 638 tests, with 130 environment/GPU skips. The remaining
+errors were four reports from three BatchTransitionTests whose fake drafter
+still exposed the old per-row API. Only that test fixture was updated to the
+batched API; all seven pipeline tests then passed. No engine code changed
+between that integration run and the targeted rerun. Logs:
+`merge-main-638/cpu2.log`, `merge-main-638/pipeline.log`.

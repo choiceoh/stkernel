@@ -198,6 +198,26 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(s.engine.opened, [0])
         self.assertEqual(s._conversations, {first: 0})
 
+    def test_a_retained_conversation_belongs_to_the_tenant_that_started_it(self):
+        from engine.base.prefix import tenant_salt
+        s = server(keep_idle=True)
+        first, _ = s.submit([3, 4], 2, 0, cache_salt="red")
+        self.drain(s, retained=True)
+        history = s.engine.history(0)                              # what the next turn would resend
+        self.assertEqual(s._tenant_of[first], tenant_salt("red"))
+        self.assertIsNone(s._continuation(history + [5], (), tenant_salt("blue")), "another tenant cannot continue it")
+        self.assertIsNone(s._continuation(history + [5], ()), "and neither can an unsalted caller")
+        self.assertEqual(s._continuation(history + [5], (), tenant_salt("red")), (first, len(history), False))
+        with self.assertRaisesRegex(RequestError, "unknown"):      # naming the id is not proof: ids are small integers
+            s.submit([9], 1, 0, conversation=first, cache_salt="blue")
+        second, _ = s.submit([9], 1, 0, conversation=first, cache_salt="red")
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(second), [9])
+        with self.assertRaises(RequestError):
+            s.submit([3], 1, 0, cache_salt="")                     # a salt is a string with something in it
+        with self.assertRaises(RequestError):
+            s.submit([3], 1, 0, cache_salt=7)
+
     def test_new_requests_evict_old_idle_conversations_without_exhausting_rows(self):
         s = server(keep_idle=True)
         jobs = [s.submit([i], 1, 0) for i in range(12)]
@@ -953,6 +973,24 @@ class ByteTokenizer:
         return bytes(ids).decode("utf-8", errors="replace")
 
 
+def _stream_bytes(data, tok, stop=(), per_step=6):
+    c = _choice(tok, stop)
+    shown = []
+    for i in range(0, len(data), per_step):
+        c.feed(list(data[i:i + per_step]), None, None)
+        shown.extend(d.get("content", "") for d in c.flush())
+        if c.finish == "stop":
+            return "".join(shown), c
+    shown.extend(d.get("content", "") for d in c.flush(final=True))
+    return "".join(shown), c
+
+
+def _choice(tok, stop=(), repairs=None):
+    from engine.base.serve import _Choice
+    return _Choice(0, 1, threading.Event(), queue.Queue(), tok=tok, stop=list(stop), reasoning=False,
+                   repairs=repairs)
+
+
 class StreamedTextTests(unittest.TestCase):
     """What the door shows a client, token by token, must be what the whole answer says."""
 
@@ -1009,6 +1047,621 @@ class StreamedTextTests(unittest.TestCase):
         self.assertLessEqual(max(seen), 4, "a window, not the whole answer")
 
 
+@unittest.skipUnless(importlib.util.find_spec("tokenizers") is not None, "requires the tokenizers library")
+class RustStreamTests(unittest.TestCase):
+    """The Rust DecodeStream path, against the Python window it replaces.
+
+    The fixture is a byte-fallback tokenizer whose id IS the byte, so it says exactly what
+    ByteTokenizer above says: the two paths can be put on the same tokens and compared.
+    """
+
+    def rust(self):
+        from tokenizers import Tokenizer, decoders, models
+        tok = Tokenizer(models.BPE({f"<0x{b:02X}>": b for b in range(256)}, [],
+                                   byte_fallback=True, unk_token=None))
+        tok.decoder = decoders.Sequence([decoders.ByteFallback(), decoders.Fuse()])
+        return tok
+
+    def setUp(self):
+        from engine.base.serve import new_repairs
+        self.repairs = new_repairs()
+
+    def shown(self, ids, tok, *, per_step=1, stop=()):
+        """What a client saw, fed `per_step` tokens at a time."""
+        c = _choice(tok, stop, self.repairs)
+        out = []
+        for i in range(0, len(ids), per_step):
+            c.feed(ids[i:i + per_step], None, None)
+            out.extend(d.get("content", "") for d in c.flush())
+            if c.finish == "stop":
+                return "".join(out), c
+        out.extend(d.get("content", "") for d in c.flush(final=True))
+        return "".join(out), c
+
+    def test_the_rust_stream_is_the_path_a_real_tokenizer_takes(self):
+        from engine.base.serve import _Stream
+        self.assertIsNotNone(_Stream(self.rust())._stream, "a Rust tokenizer must not fall to the window")
+        self.assertIsNone(_Stream(ByteTokenizer())._stream, "anything else must")
+
+    def test_both_paths_show_the_same_text(self):
+        text = "한국어 mixed ascii 漢字 and emoji 🙂 tail"
+        ids = list(text.encode())
+        for per_step in (1, 3, 7):
+            with self.subTest(per_step=per_step):
+                fast, _ = self.shown(ids, self.rust(), per_step=per_step)
+                slow, _ = self.shown(ids, ByteTokenizer(), per_step=per_step)
+                self.assertEqual(fast, text)
+                self.assertEqual(fast, slow)
+                self.assertNotIn("\ufffd", fast)
+
+    def test_a_stop_string_spanning_tokens_never_shows_its_prefix(self):
+        shown, c = self.shown(list(b"hi STOP there"), self.rust(), stop=["STOP"])
+        self.assertEqual(shown, "hi ")
+        self.assertEqual(c.finish, "stop")
+
+    # -- the two repairs vLLM hit in production ------------------------------------------------
+
+    def test_an_id_that_is_not_a_token_id_costs_its_own_text_and_no_more(self):
+        """vllm-project/vllm#21951. The batch is refused before the stream is touched, so a step
+        that carries several tokens still loses only the one id that is not a token id."""
+        before = self.repairs["invalid_token_id"]
+        for bad in (-1, 2 ** 63, 1.5, None):
+            with self.subTest(bad=bad):
+                ids = list(b"ab") + [bad] + list(b"cd")
+                shown, c = self.shown(ids, self.rust(), per_step=5)
+                self.assertEqual(shown, "abcd")
+                self.assertIsNone(c.error)
+        self.assertEqual(self.repairs["invalid_token_id"], before + 4)
+
+    def test_a_decoder_that_rewrites_its_own_output_does_not_end_the_answer(self):
+        """vllm-project/vllm#17448: a non-monotonic decoder breaks DecodeStream's prefix, and
+        every later step raises the same way until the stream is replaced."""
+        from tokenizers import Tokenizer, decoders, models, pre_tokenizers
+        from engine.base.serve import _Stream
+        tok = Tokenizer(models.WordLevel({"a": 0, "b": 1, "c": 2}, unk_token=None))
+        tok.pre_tokenizer = pre_tokenizers.Whitespace()
+        tok.decoder = decoders.Sequence([decoders.Fuse(), decoders.Replace("ab", "X")])
+        stream = _Stream(tok, self.repairs)
+        stream.extend([0])
+        self.assertEqual(stream.decoded(False), "a")            # the stream's prefix is now "a"
+        before = self.repairs["invalid_prefix"]
+        stream.extend([1])
+        self.assertEqual(stream.decoded(False), "a")            # "ab" became "X": held, not shown
+        stream.extend([2])
+        # Repaired, not raised. "a" is already out and cannot be taken back, so no answer here
+        # equals decode([0,1,2]) == "Xc"; this one at least loses no token -- vLLM's drops the
+        # held "b" and shows "ac".
+        self.assertEqual(stream.decoded(False), "abc")
+        self.assertEqual(self.repairs["invalid_prefix"], before + 1)
+        stream.extend([2])                                      # and the primed stream carries on
+        self.assertEqual(stream.decoded(True), "abcc")
+
+    def test_a_tail_that_will_never_finish_is_shown_instead_of_held_forever(self):
+        """A held-back tail is a character waiting for its rest. A run of lone lead bytes is not
+        waiting: holding it shows the client nothing for the rest of the answer, and the decode
+        that repeats grows with the run. The bound is `_STALL_TOKENS` tokens, not bytes -- see
+        the multi-byte test above for why that distinction is the whole point."""
+        from engine.base.serve import _STALL_TOKENS
+        before = self.repairs["stalled"]
+        stuck = [0xED] * (_STALL_TOKENS * 4)
+        for tok in (self.rust(), ByteTokenizer()):
+            with self.subTest(tok=type(tok).__name__):
+                c = _choice(tok, repairs=self.repairs)
+                seen = 0
+                for i in range(0, len(stuck), 4):
+                    c.feed(stuck[i:i + 4], None, None)
+                    seen += sum(len(d.get("content", "")) for d in c.flush())
+                self.assertGreater(seen, 0, "the client saw nothing while the answer ran")
+        self.assertGreater(self.repairs["stalled"], before)
+
+    def test_a_step_that_carries_several_tokens_does_not_break_multi_byte_text(self):
+        """The wait for a character's rest is bounded by the bytes missing, not by the tokens
+        they arrived among. Counting tokens, a step that commits five of them reaches the
+        bound after two waits and gives up on a character that was one byte away -- and the
+        answer gets a U+FFFD in the middle of a word. Korean is three bytes a syllable, so
+        this is every Korean answer under speculative decoding; English never shows it."""
+        text = "안녕하세요 세계 여러분 반갑습니다 좋은 하루 되세요 " * 8
+        for tok in (self.rust(), ByteTokenizer()):
+            for per_step in (2, 3, 5, 7):
+                with self.subTest(tok=type(tok).__name__, per_step=per_step):
+                    before = self.repairs["stalled"]
+                    shown, _ = self.shown(list(text.encode()), tok, per_step=per_step)
+                    self.assertEqual(shown, text)
+                    self.assertNotIn("\ufffd", shown)
+                    self.assertEqual(self.repairs["stalled"], before, "nothing here is stuck")
+
+    def test_an_unfinished_character_at_the_very_end_is_still_shown(self):
+        shown, _ = self.shown(list("ok ".encode()) + [0xED], self.rust())
+        self.assertEqual(shown, "ok \ufffd")
+
+
+@unittest.skipUnless(importlib.util.find_spec("tokenizers") is not None, "requires the tokenizers library")
+class ProvisionalTextTests(unittest.TestCase):
+    """A step that ends mid-character still shows the characters it did finish.
+
+    Where a character is one byte this never happens and there is nothing to see. Where it is
+    three, holding the step back is most of what the client waits for (45차 §32).
+    """
+
+    def byte_level(self):
+        """A tokenizer whose decode is a plain byte concatenation, as GLM-5.3's is."""
+        from tokenizers import Tokenizer, decoders, models, pre_tokenizers
+        alphabet = pre_tokenizers.ByteLevel.alphabet()
+        tok = Tokenizer(models.BPE({c: i for i, c in enumerate(sorted(alphabet))}, [], unk_token=None))
+        tok.decoder = decoders.ByteLevel()
+        return tok, {b: sorted(alphabet).index(c) for b, c in
+                     zip(range(256), _byte_level_chars())}
+
+    def ids_for(self, text):
+        tok, of_byte = self.byte_level()
+        return tok, [of_byte[b] for b in text.encode()]
+
+    def test_a_step_that_ends_mid_character_shows_what_it_finished(self):
+        from engine.base.serve import _Stream
+        tok, ids = self.ids_for("가나다")                      # three bytes a syllable
+        stream = _Stream(tok)
+        stream.extend(ids[:4])                                 # "가" and one byte of "나"
+        self.assertEqual(stream.decoded(False), "가")          # not "" -- the syllable is whole
+        stream.extend(ids[4:])
+        self.assertEqual(stream.decoded(True), "가나다")
+
+    def test_nothing_shown_is_taken_back(self):
+        from engine.base.serve import _Stream
+        tok, ids = self.ids_for("가나다라마바사아자차카타파하 ok 끝")
+        for per_step in (1, 2, 4, 7):
+            with self.subTest(per_step=per_step):
+                stream, seen = _Stream(tok), ""
+                for i in range(0, len(ids), per_step):
+                    stream.extend(ids[i:i + per_step])
+                    out = stream.decoded(False)
+                    self.assertTrue(out.startswith(seen), "what was shown changed")
+                    seen = out
+                self.assertEqual(stream.decoded(True), tok.decode(ids))
+
+    def test_what_is_settled_always_begins_with_what_was_shown(self):
+        """Both come from one decode of the tail in place (`_in_place`), so a step that ends
+        mid-character can never contradict the delta the client already read -- however the
+        tail is finally settled, whether by the next token, the stall bound or the end."""
+        from engine.base.serve import _Stream
+        tok, ids = self.ids_for("가나다 ok 라마")
+        for per_step in (1, 2, 3, 5):
+            with self.subTest(per_step=per_step):
+                stream, seen = _Stream(tok), ""
+                for i in range(0, len(ids), per_step):
+                    stream.extend(ids[i:i + per_step])
+                    for final in (False, False, True) if i + per_step >= len(ids) else (False,):
+                        out = stream.decoded(final)
+                        self.assertTrue(out.startswith(seen), f"{out!r} does not continue {seen!r}")
+                        seen = out
+                self.assertEqual(seen, tok.decode(ids))
+
+    def test_a_decoder_that_rewrites_its_settled_run_is_shown_nothing_early(self):
+        """Byte fallback turns a whole run into U+FFFD the moment one byte of it is missing,
+        so the settled part is not a prefix of the grown one. Then there is nothing safe to
+        show early, and the old behaviour -- wait -- is what happens."""
+        from engine.base.serve import _Stream
+        from tokenizers import Tokenizer, decoders, models
+        tok = Tokenizer(models.BPE({f"<0x{b:02X}>": b for b in range(256)}, [],
+                                   byte_fallback=True, unk_token=None))
+        tok.decoder = decoders.Sequence([decoders.ByteFallback(), decoders.Fuse()])
+        stream = _Stream(tok)
+        stream.extend(list("가".encode()) + list("나".encode())[:1])
+        self.assertEqual(stream.decoded(False), "")            # nothing, rather than something wrong
+        stream.extend(list("나".encode())[1:])
+        self.assertEqual(stream.decoded(True), "가나")
+
+
+def _byte_level_chars():
+    """GPT-2's byte-to-character map, which `pre_tokenizers.ByteLevel` decodes back."""
+    printable = (list(range(ord("!"), ord("~") + 1)) + list(range(ord("\u00a1"), ord("\u00ac") + 1))
+                 + list(range(ord("\u00ae"), ord("\u00ff") + 1)))
+    table, spare = {}, 0
+    for b in range(256):
+        if b in printable:
+            table[b] = chr(b)
+        else:
+            table[b] = chr(256 + spare)
+            spare += 1
+    return [table[b] for b in range(256)]
+
+
+class KoreanBudgetTests(unittest.TestCase):
+    """A token is not the same amount of answer in every language (45차 §38)."""
+
+    class ByteTok(Tokenizer):
+        """One token a byte, so a Korean syllable costs three and an ASCII letter one."""
+        def encode(self, text, add_special_tokens=True):
+            return Encoded(list(text.encode()))
+
+    def test_the_default_is_a_length_a_reader_would_recognise(self):
+        from engine.base.serve import DEFAULT_ANSWER_CHARS, DEFAULT_ANSWER_TOKENS, answer_budget
+        tok = self.ByteTok()
+        english = answer_budget(tok, "How should I reduce the latency of our inference server?")
+        korean = answer_budget(tok, "우리 서버의 지연 시간을 줄이려면 어떤 것부터 봐야 할까요?")
+        self.assertGreater(korean, english, "the same characters cost more tokens in Korean")
+        self.assertEqual(english, min(DEFAULT_ANSWER_TOKENS[1], DEFAULT_ANSWER_CHARS))  # one token a character
+        self.assertLessEqual(korean, DEFAULT_ANSWER_TOKENS[1])
+
+    def test_a_budget_never_fails_and_never_goes_below_the_old_one(self):
+        from engine.base.serve import DEFAULT_ANSWER_TOKENS, answer_budget
+        floor = DEFAULT_ANSWER_TOKENS[0]
+        self.assertEqual(answer_budget(None, "무엇이든"), floor)
+        self.assertEqual(answer_budget(self.ByteTok(), ""), floor)
+
+        class Broken(Tokenizer):
+            def encode(self, text, add_special_tokens=True):
+                raise RuntimeError("no")
+
+        self.assertEqual(answer_budget(Broken(), "안녕하세요"), floor)
+
+    def test_the_text_measured_is_what_the_person_last_wrote(self):
+        from engine.base.serve import written_text
+        self.assertEqual(written_text([{"role": "system", "content": "You are a helpful assistant."},
+                                       {"role": "user", "content": "안녕하세요"}]), "안녕하세요")
+        self.assertEqual(written_text([{"role": "user", "content": "first"},
+                                       {"role": "assistant", "content": "reply"},
+                                       {"role": "user", "content": "second"}]), "second")
+        self.assertEqual(written_text([{"role": "user", "content": [
+            {"type": "text", "text": "이 사진은"}, {"type": "image_url", "image_url": {"url": "x"}}]}]), "이 사진은")
+        self.assertEqual(written_text([{"role": "system", "content": "only a system turn"}]), "")
+        self.assertEqual(written_text("not a list"), "")
+
+    def test_a_default_that_does_not_fit_is_cut_down_to_the_old_one_and_no_further(self):
+        """Backing a default off to fit is the engine choosing; refusing a prompt the old
+        default could not fit is the contract, and that answer does not change."""
+        s = chat_server()
+        room = s.room_for(0)
+        self.assertGreaterEqual(room, 1)
+        self.assertLess(s.room_for(s.max_context), room)
+
+
+class ComposedFormTests(unittest.TestCase):
+    """The same Korean, written two ways, must not be two different prompts (45차 §42)."""
+
+    def nfd(self, text):
+        import unicodedata
+        return unicodedata.normalize("NFD", text)
+
+    def test_a_decomposed_prompt_is_tokenised_as_the_composed_one(self):
+        from engine.base.serve import nfc
+        for text in ("안녕하세요", "우리 서버의 지연 시간", "mixed 한글 and ascii", "Tiếng Việt"):
+            with self.subTest(text=text):
+                self.assertEqual(nfc(self.nfd(text)), text)
+                self.assertEqual(nfc(text), text, "already composed text is handed back")
+
+    def test_ascii_is_untouched(self):
+        from engine.base.serve import nfc
+        for text in ("", "plain ascii", "{\"v\": \"x\"}", "<|user|>"):
+            self.assertIs(nfc(text), text)
+
+    def test_a_decomposed_stop_string_is_composed_so_it_can_match(self):
+        from engine.base.serve import stop_strings
+        self.assertEqual(stop_strings({"stop": self.nfd("끝")}), ["끝"])
+        self.assertEqual(stop_strings({"stop": [self.nfd("끝"), "STOP"]}), ["끝", "STOP"])
+
+    def test_the_door_tokenises_both_forms_the_same(self):
+        """The fake tokenizer is one token a character, so a prompt's token count is its length:
+        decomposed "가" is three characters and composed is one, and the door must send one."""
+        s = chat_server()
+        seen, counted = [], []
+        s.chat = lambda messages, kwargs, *, generation_prompt=True, continue_final=False: (
+            seen.append(messages[0]["content"]) or messages[0]["content"])
+        for content in ("가", self.nfd("가")):
+            httpd = s._serve_http()
+            url = f"http://127.0.0.1:{httpd.server_port}/v1/chat/completions"
+            def post():
+                with urllib.request.urlopen(urllib.request.Request(
+                        url, data=json.dumps({"messages": [{"role": "user", "content": content}],
+                                              "max_tokens": 1}).encode()), timeout=5) as r:
+                    return json.load(r)
+            try:
+                with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                    counted.append(drive(s, pool.submit(post))["usage"]["prompt_tokens"])
+            finally:
+                httpd.shutdown(); httpd.server_close()
+        self.assertEqual([len(x) for x in seen], [1, len(self.nfd("가"))], "the two forms really did arrive differently")
+        self.assertGreater(len(self.nfd("가")), 1)
+        self.assertEqual(counted[0], counted[1], "and they reached the engine as the same prompt")
+        self.assertEqual(counted[0], 1)
+
+
+class HangulPatternTests(unittest.TestCase):
+    """`[가-힣]` is the natural way to say "Hangul", and xgrammar drops most of it (45차 §41)."""
+
+    def split(self, pattern):
+        from engine.base.serve import split_surrogate_branch
+        return split_surrogate_branch(pattern)
+
+    def test_a_range_that_ends_inside_the_0xed_branch_becomes_two(self):
+        self.assertEqual(self.split("^[가-힣]+$"), "^[가-\uCFFF\uD000-힣]+$")
+        self.assertEqual(self.split("^[가-힣a-z0-9 ]+$"), "^[가-\uCFFF\uD000-힣a-z0-9 ]+$")
+        self.assertEqual(self.split("^[^가-힣]+$"), "^[^가-\uCFFF\uD000-힣]+$")
+
+    def test_the_escaped_spelling_of_the_same_range_is_read_too(self):
+        self.assertEqual(self.split(r"^[\uAC00-\uD7A3]+$"), "^[\\uAC00-\uCFFF\uD000-\\uD7A3]+$")
+        self.assertEqual(self.split(r"^[\x41-\uD7A3]$"), "^[\\x41-\uCFFF\uD000-\\uD7A3]$")
+
+    def test_a_range_that_reaches_past_the_branch_is_left_alone(self):
+        """`[가-\uffff]` ends on a whole branch and already compiles (verified against the
+        xgrammar in the image), so rewriting it would change a caller's pattern for nothing."""
+        for pattern in ("^[가-\uffff]+$", "^[\u0000-\U0010FFFF]$", "^[가-\ue000]$"):
+            with self.subTest(pattern=pattern):
+                self.assertEqual(self.split(pattern), pattern)
+
+    def test_everything_else_is_handed_on_byte_for_byte(self):
+        for pattern in ("^[a-z]+$", "^[가-쿿]+$", "^[\uD000-힣]+$", r"\[가-힣\]", "가-힣", "",
+                        r"^[\d]+$", "^[-가-쿿]$", "^(안녕|반가워)$", "^한.*$"):
+            with self.subTest(pattern=pattern):
+                self.assertEqual(self.split(pattern), pattern)
+
+    def test_a_dash_at_either_end_of_a_class_is_a_literal(self):
+        self.assertEqual(self.split("^[-가-힣]$"), "^[-가-\uCFFF\uD000-힣]$")
+        self.assertEqual(self.split("^[가-힣-]$"), "^[가-\uCFFF\uD000-힣-]$")
+
+    def test_every_pattern_in_a_schema_is_repaired_wherever_it_sits(self):
+        from engine.base.serve import repair_patterns
+        schema = {"type": "object",
+                  "properties": {"name": {"type": "string", "pattern": "^[가-힣]+$"},
+                                 "tags": {"type": "array", "items": {"type": "string", "pattern": "^[가-힣]$"}}},
+                  "anyOf": [{"pattern": "^[가-힣]{2}$"}, {"pattern": "^[a-z]+$"}],
+                  "description": "^[가-힣]+$"}
+        out = repair_patterns(schema)
+        self.assertEqual(out["properties"]["name"]["pattern"], "^[가-\uCFFF\uD000-힣]+$")
+        self.assertEqual(out["properties"]["tags"]["items"]["pattern"], "^[가-\uCFFF\uD000-힣]$")
+        self.assertEqual(out["anyOf"][0]["pattern"], "^[가-\uCFFF\uD000-힣]{2}$")
+        self.assertEqual(out["anyOf"][1]["pattern"], "^[a-z]+$")
+        self.assertEqual(out["description"], "^[가-힣]+$", "only a pattern is a pattern")
+
+    def test_the_door_repairs_what_it_sends_to_the_grammar(self):
+        from engine.base.serve import response_format_grammar
+        spec = response_format_grammar({"response_format": {
+            "type": "json_schema",
+            "json_schema": {"schema": {"type": "object",
+                                       "properties": {"v": {"type": "string", "pattern": "^[가-힣]+$"}}}}}})
+        self.assertIn("\uD000", json.loads(spec["schema"])["properties"]["v"]["pattern"])
+
+
+class KoreanWireTests(unittest.TestCase):
+    """What a Korean answer costs between the door and the client (45차 §40)."""
+
+    def raw(self, s, path, body=None):
+        httpd = s._serve_http()
+        url = f"http://127.0.0.1:{httpd.server_port}{path}"
+        try:
+            req = urllib.request.Request(url, data=json.dumps(body).encode()) if body else urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.read()
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_the_body_carries_utf8_and_not_escapes(self):
+        s = chat_server()
+        s.model_name = "한국어-모델"
+        body = self.raw(s, "/v1/models")
+        self.assertIn("한국어-모델".encode(), body)
+        self.assertNotIn(rb"\u", body, "a Korean character must not cost six bytes where three do")
+        self.assertEqual(json.loads(body)["data"][0]["id"], "한국어-모델")   # still JSON, and still says the same
+
+    def test_a_refusal_says_the_numbers(self):
+        s = chat_server()
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.raw(s, "/v1/chat/completions",
+                     {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 10 ** 6})
+        message = json.loads(err.exception.read())["error"]
+        self.assertRegex(message, r"\d+ tokens")
+        self.assertIn("to generate", message)
+        self.assertIn("for the prompt", message)
+
+    def test_tokenize_says_when_it_composed_what_it_was_handed(self):
+        import unicodedata
+        s = chat_server()
+        plain = json.loads(self.raw(s, "/tokenize", {"prompt": "안녕"}))
+        self.assertNotIn("normalized", plain, "nothing to say when nothing changed")
+        moved = json.loads(self.raw(s, "/tokenize", {"prompt": unicodedata.normalize("NFD", "안녕")}))
+        self.assertEqual(moved["tokens"], plain["tokens"])          # the ids generation would use
+        self.assertEqual(moved["normalized"], "NFC")                # and it says they are not the caller's
+        self.assertEqual(moved["prompt"], "안녕")                    # here is the string they belong to
+
+    def test_an_answer_the_engine_killed_still_counts_what_it_showed(self):
+        """The counter is read against the token counter, and the traffic worth reading it for
+        is exactly the traffic that did not finish cleanly. Every way out of the streaming loop
+        goes through one `retire`, so this covers the client-hung-up way too."""
+        s = chat_server()
+        before = s.generation_characters_total
+        httpd = s._serve_http()
+        url = f"http://127.0.0.1:{httpd.server_port}/v1/chat/completions"
+        def stream():
+            body = {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 5, "stream": True}
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return [l.decode().strip() for l in r if l.strip()]
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                future = pool.submit(stream)
+                for _ in range(200):
+                    if s._streams:
+                        break
+                    threading.Event().wait(0.001)
+                s.once()                                   # one step of text reaches the client
+                s.engine.fail_decode = True
+                with self.assertRaisesRegex(RuntimeError, "kernel failed"):
+                    for _ in range(3):
+                        s.once()
+                lines = future.result(timeout=5)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+        shown = sum(len(json.loads(l[6:])["choices"][0]["delta"].get("content", ""))
+                    for l in lines if l.startswith("data: ") and l != "data: [DONE]"
+                    and json.loads(l[6:]).get("choices"))
+        self.assertTrue(any('"error"' in l for l in lines), lines)
+        self.assertGreater(shown, 0, "the client did read something before the engine died")
+        self.assertEqual(s.generation_characters_total - before, shown)
+
+    def test_the_characters_a_client_read_are_counted_next_to_the_tokens(self):
+        s = chat_server()
+        before = s.generation_characters_total
+        out = self._drive(s, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 3})
+        shown = out["choices"][0]["message"]["content"]
+        self.assertEqual(s.generation_characters_total - before, len(shown))
+        self.assertIn("st:generation_characters_total", s.metrics())
+
+    def _drive(self, s, body):
+        httpd = s._serve_http()
+        url = f"http://127.0.0.1:{httpd.server_port}/v1/chat/completions"
+        def post():
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                return drive(s, pool.submit(post))
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+
+class TokenSpanTests(unittest.TestCase):
+    """`text_offset` has to index into the text it describes, in every language."""
+
+    def spans(self, text, start=0):
+        from engine.base.serve import token_spans
+        tok = ByteTokenizer()
+        ids = list(text.encode())
+        tokens, offsets = token_spans(tok, ids, start)
+        self.assertEqual(len(tokens), len(ids))
+        return tok.decode(ids), tokens, offsets
+
+    def test_the_tokens_join_into_the_text_and_every_offset_lands_on_its_token(self):
+        for text in ("안녕하세요 세계 여러분", "漢字テスト 🙂 ok", "plain ascii only", "혼합 mixed 텍스트"):
+            with self.subTest(text=text):
+                whole, tokens, offsets = self.spans(text)
+                self.assertEqual("".join(tokens), whole)
+                for token, offset in zip(tokens, offsets):
+                    self.assertEqual(whole[offset:offset + len(token)], token)
+
+    def test_the_halves_of_a_character_add_nothing_and_the_last_adds_it_whole(self):
+        _, tokens, _ = self.spans("가")                       # three bytes, three tokens
+        self.assertEqual(tokens, ["", "", "가"])
+
+    def test_an_echoed_prompt_shifts_every_offset(self):
+        _, _, plain = self.spans("가나다")
+        _, _, shifted = self.spans("가나다", start=7)
+        self.assertEqual(shifted, [o + 7 for o in plain])
+
+    def test_no_tokens_is_no_rows(self):
+        from engine.base.serve import token_spans
+        self.assertEqual(token_spans(ByteTokenizer(), []), ([], []))
+
+
+@unittest.skipUnless(importlib.util.find_spec("tokenizers") is not None, "requires the tokenizers library")
+class TokenBytesTests(unittest.TestCase):
+    """OpenAI's `bytes` exists so a client can rejoin a character split across tokens."""
+
+    def byte_level(self):
+        from tokenizers import Tokenizer as Rust, decoders, models, pre_tokenizers
+        alphabet = sorted(pre_tokenizers.ByteLevel.alphabet())
+        tok = Rust(models.BPE({c: i for i, c in enumerate(alphabet)}, [], unk_token=None))
+        tok.decoder = decoders.ByteLevel()
+        from engine.base.serve import _byte_level_chars
+        order = {c: i for i, c in enumerate(alphabet)}
+        return tok, [order[c] for c in _byte_level_chars()]
+
+    def test_the_bytes_rejoin_into_the_text(self):
+        from engine.base.serve import token_bytes
+        tok, id_of_byte = self.byte_level()
+        for text in ("안녕하세요 세계", "漢字と emoji 🙂", "plain ascii"):
+            with self.subTest(text=text):
+                ids = [id_of_byte[b] for b in text.encode()]
+                joined = b"".join(bytes(token_bytes(tok, i, tok.decode([i]))) for i in ids)
+                self.assertEqual(joined.decode(), text)
+
+    def test_the_byte_table_is_gpt2s(self):
+        """Everything else here round-trips through the same table, so an error in it would
+        cancel out and pass. These four are GPT-2's published values, checked from outside."""
+        from engine.base.serve import _BYTE_OF_CHAR, _byte_level_chars
+        table = _byte_level_chars()
+        self.assertEqual(len(table), 256)
+        self.assertEqual(len(set(table)), 256, "the table has to be a bijection")
+        for byte, char in ((0x00, "\u0100"), (0x20, "\u0120"), (0x41, "A"), (0xFF, "\u00ff")):
+            self.assertEqual(table[byte], char, f"byte {byte:#04x}")
+            self.assertEqual(_BYTE_OF_CHAR[char], byte)
+
+    def test_a_whole_character_keeps_its_own_bytes(self):
+        from engine.base.serve import token_bytes
+        tok, id_of_byte = self.byte_level()
+        tid = id_of_byte[ord("A")]
+        self.assertEqual(token_bytes(tok, tid, tok.decode([tid])), [65])
+
+    def test_a_byte_fallback_vocabulary_is_read_too(self):
+        from engine.base.serve import token_bytes
+        from tokenizers import Tokenizer as Rust, decoders, models
+        tok = Rust(models.BPE({f"<0x{b:02X}>": b for b in range(256)}, [], byte_fallback=True, unk_token=None))
+        tok.decoder = decoders.Sequence([decoders.ByteFallback(), decoders.Fuse()])
+        self.assertEqual(token_bytes(tok, 0xEC, tok.decode([0xEC])), [0xEC])
+
+    def test_a_tokenizer_that_cannot_say_keeps_the_old_answer(self):
+        from engine.base.serve import token_bytes
+        self.assertEqual(token_bytes(Tokenizer(), 1, "\ufffd"), list("\ufffd".encode()))
+
+
+class StopScanCostTests(unittest.TestCase):
+    """A streamed step must not cost more because the answer is longer."""
+
+    def test_the_stop_scan_reads_the_new_tail_not_the_answer(self):
+        spans = []
+
+        class Seen(str):
+            def find(self, sub, start=0, *rest):
+                spans.append(len(self) - start)
+                return str.find(self, sub, start, *rest)
+
+        class Watched:
+            """The real stream, with what the stop scan is handed put on the record."""
+            def __init__(self, inner):
+                self.inner, self.ids = inner, inner.ids
+
+            def extend(self, ids):
+                self.inner.extend(ids)
+
+            def decoded(self, final):
+                return Seen(self.inner.decoded(final))
+
+        c = _choice(ByteTokenizer(), stop=["STOP", "\n\nHuman:"])
+        c.streams["content"] = Watched(c.streams["content"])
+        answer = list(b"the quick brown fox. " * 400)
+        for i in range(0, len(answer), 6):
+            c.feed(answer[i:i + 6], None, None)
+            c.flush()
+        self.assertGreater(len(c.text["content"]), 8000)
+        self.assertGreater(len(spans), 100)
+        self.assertLessEqual(max(spans), 64, "the scan grew with the answer")
+
+    def test_a_stop_string_is_still_found_after_a_long_run_before_it(self):
+        shown, c = _stream_bytes(b"x" * 5000 + b"STOP tail", ByteTokenizer(), stop=["STOP"])
+        self.assertEqual(c.finish, "stop")
+        self.assertEqual(shown, "x" * 5000)
+
+    def test_the_short_circuit_in_partial_suffix_changes_no_answer(self):
+        import itertools
+        import random
+        from engine.base.serve import partial_suffix
+
+        def naive(text, needles):
+            keep = 0
+            for needle in needles:
+                for cut in range(min(len(needle) - 1, len(text)), keep, -1):
+                    if text.endswith(needle[:cut]):
+                        keep = cut
+                        break
+            return keep
+
+        random.seed(11)
+        alphabet = "abST"
+        needles = ["STOP", "ab", "aab", "S"]
+        cases = ["".join(t) for n in range(5) for t in itertools.product(alphabet, repeat=n)]
+        cases += ["".join(random.choice(alphabet) for _ in range(random.randrange(12))) for _ in range(400)]
+        for text in cases:
+            for subset in (needles, needles[:1], needles[1:], []):
+                self.assertEqual(partial_suffix(text, subset), naive(text, subset), (text, subset))
+
+
 class StepCostTests(unittest.TestCase):
     """What the step loop asks each row must not grow with what that row has already said."""
 
@@ -1037,6 +1690,28 @@ class StepCostTests(unittest.TestCase):
         s.engine.output[0] = [7, 8, 9, 10]
         self.assertEqual(s.engine.generated_count(0), 4)
         self.assertEqual(s.engine.generated_since(0, 2), [9, 10])
+
+
+class RequestClockTests(unittest.TestCase):
+    """Two clocks per request. A request that does not finish must still clear both."""
+
+    def test_a_cancelled_request_leaves_no_clock_behind(self):
+        s = server()
+        request, event = s.submit([1, 2], 8, 0.0)
+        for _ in range(3):
+            s.once()
+        self.assertIn(request, s._admitted, "it was admitted, so the queue clock stopped")
+        s.cancel(request, "client closed")
+        for _ in range(3):
+            s.once()
+        self.assertNotIn(request, s._arrived)
+        self.assertNotIn(request, s._admitted)
+
+    def test_both_clocks_are_cleared_in_the_same_places(self):
+        source = (ROOT / "engine/base/serve.py").read_text()
+        self.assertEqual(source.count("self._arrived.pop(request, None)"),
+                         source.count("self._admitted.pop(request, None)"),
+                         "one of them is cleared somewhere the other is not")
 
 
 class MetricsTests(unittest.TestCase):
@@ -1069,6 +1744,15 @@ class MetricsTests(unittest.TestCase):
         out = self.text(s)
         self.assertIn('finished_reason="stop"} 2', out)
         self.assertIn('finished_reason="length"} 1', out)
+
+    def test_the_detokenizer_says_which_path_it_took_and_what_it_had_to_repair(self):
+        s, other = server(), server()
+        out = self.text(s)
+        self.assertIn("st:detokenizer_rust_stream", out)            # D3: a silent path is an unchecked path
+        self.assertNotIn("st:detokenizer_repairs_total", out)       # no series at all in a healthy run
+        s.detok_repairs["invalid_prefix"] = 1
+        self.assertIn('st:detokenizer_repairs_total{engine="st",reason="invalid_prefix"} 1', self.text(s))
+        self.assertNotIn("st:detokenizer_repairs_total", self.text(other), "another door's repairs are not ours")
 
     def test_the_queue_clock_is_taken_once_for_a_continued_request(self):
         s = server()
@@ -1235,6 +1919,46 @@ class OpenAIDialectTests(unittest.TestCase):
                                                    {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
                                                     "reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "low"}}))
         self.assertEqual(err.exception.code, 400)
+
+    def test_a_grammar_waits_for_the_reasoning_to_end(self):
+        """A grammar armed inside the think block forbids the block's own end token, so the block never closes
+        and the whole answer comes back as reasoning_content with content empty -- the 45차 §22 bug, reached
+        through response_format this time. The door tells the engine which token the grammar waits for."""
+        s = chat_server()
+        s.reasoning_end = ord('y')
+        body = {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 1,
+                "response_format": {"type": "json_object"}, "chat_template_kwargs": {"thinking": True}}
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+        opts = s.engine.options[0]                       # the rendered prompt is "xy!": the answer starts in the block
+        self.assertEqual(opts["grammar"], {"type": "json_object"})
+        self.assertEqual(opts["grammar_after"], ord('y'))
+        s = chat_server()
+        s.reasoning_end = ord('y')                       # thinking off: the prompt "xy" ends with the reasoning end,
+        body = dict(body); body.pop("chat_template_kwargs")   # so the answer starts in content and the grammar is armed at once
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+        self.assertNotIn("grammar_after", s.engine.options[0])
+
+    def test_a_schema_the_grammar_compiler_refuses_is_a_bad_request_not_a_dead_engine(self):
+        """`prepare_options` builds the grammar at the door. On the loop the compiler's error would leave
+        `once()` and take every live row on every rank with it."""
+        s = chat_server()
+        asked = []
+
+        class Engine(type(s.engine)):
+            def prepare_options(self, options):
+                asked.append(options.get("grammar"))
+                if options.get("grammar", {}).get("type") == "json_schema":
+                    raise ValueError("the grammar cannot be compiled: Regex parsing error")
+
+        s.engine.__class__ = Engine
+        body = {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                "response_format": {"type": "json_schema", "json_schema": {"schema": {"type": "string", "pattern": "(a)"}}}}
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("the grammar cannot be compiled", err.exception.read().decode())
+        self.assertFalse(s.pending or s.results or s._waiting)
+        self.assertTrue(asked)
 
     def test_sampling_options_are_validated_and_travel_to_the_engine(self):
         s = chat_server()

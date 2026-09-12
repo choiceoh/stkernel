@@ -10,12 +10,12 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 | KDA 출력 정규화 | `kda/output.py`에서 FP32 RMS norm·weight·sigmoid gate를 합치고 BF16으로 한 번 저장 | PyTorch, Triton |
 | causal conv | `causal_conv_single.py`의 단일 시퀀스 conv·상태 반환 커널; 범용 prefill / update는 `causal_conv.py` | PyTorch, Triton (범용 커널은 NumPy 추가) |
 | 상태 링 | `state.py`에서 물리 슬롯·위치로 필요한 이력을 읽고 변경된 위치만 쓰기 | PyTorch, Triton |
-| mHC pre / post | `mhc/`의 TileLang 혼합 커널과 작은 M의 prenorm 패딩 | PyTorch, TileLang, Triton, DeepGEMM |
+| mHC pre / post | `mhc/`의 TileLang 혼합, hidden 512 단위 TMA post, 작은 M의 prenorm 패딩 | PyTorch, TileLang, Triton, DeepGEMM |
 | 인덱서 로짓 | `deep_gemm.py`에서 `deep_gemm.fp8_fp4_mqa_logits` 직접 호출 | DeepGEMM |
 | 인덱서 query 양자화 | `kpool.py`의 Hadamard-128·FP8 커널, GB10 행 수별 1/8/32행 tile | PyTorch, Triton |
 | kpool | `kpool.py`의 1워프 반환 전용 압축·회전·FP8 변환, 별도 캐시 쓰기 진입점 | PyTorch, Triton |
 | 인덱서 슬롯 | `indexer.py`의 풀 ID 정렬·토큰 확장·페이지 주소 변환·유효 개수·출력 쓰기를 한 커널에서 처리 | PyTorch, Triton |
-| MLA | `mla/`의 전용 Python 드라이버, warp max reduction과 DSMEM split 병합을 적용한 `glm53_megakernel.cu` | PyTorch, CUDA 13 nvcc |
+| MLA | `mla/`의 전용 Python 드라이버, FP8/BF16 `ldmatrix`, warp max reduction과 DSMEM split 병합 | PyTorch, CUDA 13 nvcc |
 | b12x MoE | `b12x/`의 API·디스패치·CuTe 커널·내부 보조 모듈 | PyTorch, CUTLASS DSL, CUDA bindings, FlashInfer 유틸/JIT |
 
 `SOURCES.json`은 이식 전 파일의 경로와 SHA256을 기록한다. 저장소의 기존 overlay가
@@ -44,6 +44,13 @@ FP32 부분값을 합치므로 이 경로는 전역 partial 버퍼와 grid 전�
 않는다. 다른 형상은 기존 경로를 사용한다. A/B 는 `maybe_arm()` 전에 모듈 속성 `mla.ENABLE_MLA_CLUSTER=False` 로 끄고 비교하며(env 아님), 부팅 시 실제 커널의 cluster 수용량과 수치 결과를 확인한다.
 측정에서 느렸던 4~8-block cluster는 기본 디스패치에 포함하지 않았다.
 결과와 재현 절차는 [GB10 MLA 측정](../../measurements/st_gb10_mla_20260911/README.md)에 있다.
+
+mHC post는 hidden 512개마다 별도 CTA를 실행하고, residual과 layer output을 TMA로
+읽어 하나의 transaction barrier로 완료를 기다린다. MLA의 일반·클러스터 커널은
+BF16 Q/P를 `ldmatrix.x4`, FP8 PV 조각을 SM121의 byte `ldmatrix.trans`로 읽는다.
+이 변경은 벤치마크를 도입 조건에서 제외하라는 운영자 지시에 따라 코드 기본값에
+반영했다. GPU 수치 검증과 성능 수치는 아직 남아 있으며, 서버 배포 완료를 뜻하지 않는다.
+[도입·컴파일 기록](../../measurements/st_gb10_tma_cluster_20260912/README.md)에 상태와 재현 절차를 기록한다.
 
 인덱서 query 양자화는 회전·BF16 반올림·FP8 scale 계산을 유지하면서 launch 크기를
 선택한다. 1,024행 이하는 1행·1 warp, 1,025~65,536행은 8행·1 warp를 사용하며,
@@ -82,7 +89,7 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
 - **프로브 훅으로 남긴 것**(env 가 아니라 인자·모듈 속성; 서빙은 안 건드림): MLA 분할 강제 `mla_decode(splits=)`, MLA 루프라인 모드
   `mla_decode(probe=)`(`.cu` `run_mla` 의 넷째 int), 쌍 프리필 겹침 통계 `mla.PAIR_STATS`, 동적 tile_m 고정
   `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(새 형상 셀 측정용), 백엔드·컷오버·MAC 사다리 `moe_dispatch._GLM53_B12X_*`(직접 대입),
-  GEMM v2 k-슬라이스 `mk_set_gemm2`(pybind), mHC TileLang 패스(TMA·warp specialisation) `engine.kernels.configure_mhc_passes()`(mhc 임포트 전).
+  GEMM v2 k-슬라이스 `mk_set_gemm2`(pybind), mHC 공유 패스 `engine.kernels.configure_mhc_passes()`(mhc 임포트 전; post의 고정 TMA 정책은 유지).
 - **버린 것(측정돼서 진 것)**: EP 타일 계열 5파일(E=72 전문가 병렬; 프로덕션은 절대 목표로 채택했으나 디코드 TP 보다 9.8% 느림, ST 는 TP=4 형태),
   강제 W4A16(API 인자 `activation_precision="bf16"` 는 그대로), prefill reuse(39차 NEUTRAL) 와 FC1 N128(기각, −71%), KDA regime(NEUTRAL),
   mHC big-fuse(GLM in-graph +0.1%). 코드는 git 에 있고 되살리기는 `git checkout` 한 줄이다.

@@ -1,0 +1,16 @@
+[Unit]
+Description=ST engine: deploy main when it moves, the engine is quiet, and the suite has not regressed
+Documentation=file:/home/choiceoh/st-engine/launchers/st-deploy-watch.py
+After=network-online.target
+Wants=network-online.target
+# It restarts st-glm53 itself (stop, launch, start): it must not run while that service is starting.
+After=st-glm53.service
+
+[Service]
+Type=oneshot
+# One cycle. It waits for quiet inside the cycle, so the timer only has to come back often enough
+# to notice main moved -- not often enough to catch a gap.
+ExecStart=/usr/bin/python3 /home/choiceoh/st-engine/launchers/st-deploy-watch.py --once
+TimeoutStartSec=10800
+StandardOutput=append:/home/choiceoh/glm53-logs/st-deploy-watch.log
+StandardError=append:/home/choiceoh/glm53-logs/st-deploy-watch.log

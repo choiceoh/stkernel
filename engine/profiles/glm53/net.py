@@ -291,29 +291,21 @@ class Glm53Net:
                 o = self.lanes.kda_recurrent_ring(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"],
                                                   ring, physical, s.ctx, F.lower_bound)
             elif s.length > wr:                                                     # a prefill chunk: only the final state is kept --
-                # except at the step's marks (prefix snapshots inside the chunk): the recurrence is cut there and each piece's
-                # final state goes to its snapshot with the conv taps before it. Cutting is exact: the kernel's chunks restart
-                # at every mark, which the runner places on block boundaries (64-aligned from a chunk-aligned start).
-                cuts = [m for m, _ in step.marks if 0 < m < s.length] if step.marks else []
-                if not cuts:
-                    o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
+                # except at the step's marks (prefix snapshots at block boundaries inside the chunk): the lane hands out the
+                # fp32 state at the start of the kernel chunks the marks sit on, out of the one uncut computation (45차 §23:
+                # cutting the recurrence into 9 pieces is exact but costs +104% of the layer; the side output costs nothing
+                # and is bit-identical to the cut's state)
+                marks = [(m, snap) for m, snap in step.marks if 0 < m < s.length] if step.marks else []
+                if marks:
+                    unit = self.lanes.kda_chunk_tokens
+                    if any(m % unit for m, _ in marks):
+                        raise ValueError(f"a mark inside a prefill chunk must sit on a {unit}-token kernel chunk")
+                    o, state, states = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound,
+                                                            states_at=[m // unit for m, _ in marks])
+                    for (m, snap), st in zip(marks, states.unbind(0)):
+                        caches.mark_kda(L, snap, st, qkv_all[sl][m - (K - 1):m])
                 else:
-                    snaps = dict(step.marks)
-                    pieces, state, lo = [], state0, 0
-                    for hi in cuts + [s.length]:
-                        piece = slice(lo, hi)
-                        if hi - lo > wr:
-                            o_p, state = self.lanes.kda_chunk(q[:, piece], k[:, piece], v[:, piece], g_raw[:, piece], beta[:, piece],
-                                                              p[n + "A_log"], p[n + "dt_bias"], state, F.lower_bound)
-                        else:                                                       # a short tail piece: one state per position
-                            o_p, states = self.lanes.kda_recurrent(q[:, piece], k[:, piece], v[:, piece], g_raw[:, piece], beta[:, piece],
-                                                                   p[n + "A_log"], p[n + "dt_bias"], state, F.lower_bound)
-                            state = states[-1:]
-                        pieces.append(o_p)
-                        if hi in snaps:
-                            caches.mark_kda(L, snaps[hi], state[0], qkv_all[sl][hi - (K - 1):hi])
-                        lo = hi
-                    o = torch.cat(pieces, dim=1)
+                    o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
                 rec_ring[(s.ctx + s.length - 1) % wr] = state[0]
             else:                                                                   # a decode/verify step: one state per position
                 o, states = self.lanes.kda_recurrent(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)

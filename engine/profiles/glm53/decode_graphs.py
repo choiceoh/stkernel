@@ -332,11 +332,41 @@ class Glm53DecodeGraphs:
 
 
 class DrafterDecodeGraphs:
-    """One proposal graph and the finite accepted-prefix context updates."""
-    def __init__(self, drafter, caches, memory=None):
+    """One proposal graph and the finite accepted-prefix context updates, per row (the synchronous step), and the
+    same over every row of a step at once (the pipeline, 45차 §23 GPU 판정 4차): one replay a step instead of one
+    a row, the weights read once, the rings never copied."""
+    def __init__(self, drafter, caches, memory=None, generator=None, vocab=None):
         self.field = caches._fields["draft", -1]
         self.drafter = drafter
         device = caches.device
+        rows_max = caches.pool.max_seqs
+        aux_width = drafter.F.hidden * len(drafter.aux_layers)
+
+        def rows_masked_inputs(n, t):
+            return dict(slots=torch.arange(1, n + 1, device=device, dtype=torch.int64),        # distinct at capture: no two rows one slot
+                        positions=torch.zeros(n, t, device=device, dtype=torch.int64),
+                        aux=torch.zeros(n * t, aux_width, device=device, dtype=torch.bfloat16),
+                        valid=torch.zeros(n, device=device, dtype=torch.int64))
+
+        def rows_masked(inputs):
+            drafter.observe_rows(self.field, inputs["slots"], inputs["positions"], inputs["aux"], inputs["valid"])
+
+        def rows_propose_inputs(n, t):
+            return dict(anchors=torch.zeros(n, device=device, dtype=torch.int64),
+                        positions=torch.zeros(n, device=device, dtype=torch.int64),
+                        slots=torch.arange(1, n + 1, device=device, dtype=torch.int64))
+
+        def rows_propose(inputs):
+            return drafter.propose_rows(self.field, inputs["slots"], inputs["anchors"], inputs["positions"])
+
+        def rows_sampled_inputs(n, t):
+            inputs = rows_propose_inputs(n, t)
+            inputs["temps"] = torch.ones(n, device=device, dtype=torch.float32)
+            return inputs
+
+        def rows_sampled(inputs):
+            return drafter.propose_rows(self.field, inputs["slots"], inputs["anchors"], inputs["positions"],
+                                        temps=inputs["temps"], generator=generator, vocab=vocab)
 
         def propose_inputs(n, t):
             return dict(anchor=torch.zeros(1, device=device, dtype=torch.int64),
@@ -377,6 +407,8 @@ class DrafterDecodeGraphs:
             drafter.observe_masked(rings[0], inputs["positions"], inputs["aux"], inputs["valid"])
             self.field.index_copy_(0, inputs["slot"], rings)
 
+        rows_shapes = [(n, drafter.k + 1) for n in range(1, rows_max + 1)]
+        saved = generator.get_state() if generator is not None else None                # capture draws; the engine's stream must not move
         try:
             self.proposals = DecodeGraphs(propose, propose_inputs, [(1, drafter.k + 1)],
                                           memory=memory, label="drafter/propose")
@@ -386,13 +418,27 @@ class DrafterDecodeGraphs:
             # the step ahead of the host observes all K+1 positions with a device count of the valid ones (B3)
             self.masked = DecodeGraphs(observe_masked, masked_inputs, [(1, drafter.k + 1)],
                                        memory=memory, label="drafter/observe_masked")
+            self.rows_masked = DecodeGraphs(rows_masked, rows_masked_inputs, rows_shapes,
+                                            memory=memory, label="drafter/observe_rows")
+            self.rows_propose = DecodeGraphs(rows_propose, rows_propose_inputs, rows_shapes,
+                                             memory=memory, label="drafter/propose_rows")
+            if generator is not None and vocab is not None:
+                self.rows_sampled = DecodeGraphs(rows_sampled, rows_sampled_inputs, rows_shapes, generators=(generator,),
+                                                 memory=memory, label="drafter/propose_rows_sampled")
         except BaseException:
-            for name in ("proposals", "observations", "masked"):
-                if hasattr(self, name):
-                    getattr(self, name).close()
+            self.close()
             raise
         finally:
+            if saved is not None:
+                generator.set_state(saved)
             caches.reset()
+
+    def close(self):
+        for name in ("proposals", "observations", "masked", "rows_masked", "rows_propose", "rows_sampled"):
+            graphs = getattr(self, name, None)
+            if graphs is not None:
+                graphs.close()
+                setattr(self, name, None)
 
     def slot(self, ring):
         stride = self.field.stride(0) * self.field.element_size()
@@ -435,13 +481,45 @@ class DrafterDecodeGraphs:
             inputs["slot"].copy_(slot.reshape(1))
         return self.proposals.run((1, self.drafter.k + 1), fill)
 
+    # -- every row of a step at once ---------------------------------------------------------------------
+    def observe_rows(self, slots, positions, aux, valid):
+        """`observe_masked` for the rows [n]: positions [n, t], aux [n*t, A], valid [n] -- all device tensors."""
+        def fill(inputs):
+            inputs["slots"].copy_(slots)
+            inputs["positions"].copy_(positions)
+            inputs["aux"].copy_(aux)
+            inputs["valid"].copy_(valid)
+        self.rows_masked.run(tuple(positions.shape), fill)
+
+    def propose_rows(self, anchors, positions, slots):
+        """Every row's greedy drafts, [n, K]."""
+        def fill(inputs):
+            inputs["anchors"].copy_(anchors)
+            inputs["positions"].copy_(positions)
+            inputs["slots"].copy_(slots)
+        return self.rows_propose.run((anchors.numel(), self.drafter.k + 1), fill)
+
+    def propose_rows_sampled(self, anchors, positions, slots, temps):
+        """Every row's drafts drawn at its temperature (0 = greedy) and the distributions they came from: [n, K], [n, K, vocab]."""
+        def fill(inputs):
+            inputs["anchors"].copy_(anchors)
+            inputs["positions"].copy_(positions)
+            inputs["slots"].copy_(slots)
+            inputs["temps"].copy_(temps)
+        return self.rows_sampled.run((anchors.numel(), self.drafter.k + 1), fill)
+
 
 class SamplingGraphs:
     """Greedy and stochastic sampling bind the target graphs' output buffers.
 
-    Choosing the declared sampling policy uses host request metadata. Greedy
-    replay draws no random numbers; mixed/stochastic replay advances the
+    Greedy replay draws no random numbers; mixed/stochastic replay advances the
     engine's explicit generator exactly as the eager sampler does.
+
+    Temperature, top-k and top-p all arrive as per-row arrays staged from pinned
+    memory, so the captured program has no nucleus branch to be recorded with or
+    without -- one capture serves every truncation a request can ask for. That is
+    why a plain `temperature + top_p` row no longer needs the rich sampler
+    (base/sampler.needs_rich_sampler).
     """
     def __init__(self, target, generator, decodable, top_p):
         from engine.base.sampler import sample
@@ -460,9 +538,13 @@ class SamplingGraphs:
             elif target.graphs.outputs[first[key]][2] is not logits:
                 raise ValueError(f"target shapes {first[key]} and {shape} must share one logits buffer")
         shapes = list(first)
-        # Same pinned staging as the target's replay path, for the one array this one writes.
-        self.temps = torch.empty(max(n * t for n, t in shapes), dtype=torch.float32, pin_memory=True)
-        self.staged = self.temps.numpy()
+        # Same pinned staging as the target's replay path, for the three arrays this one writes.
+        width = max(n * t for n, t in shapes)
+        self.default_p = top_p
+        self.policy = (torch.empty(width, dtype=torch.float32, pin_memory=True),
+                       torch.empty(width, dtype=torch.int32, pin_memory=True),
+                       torch.empty(width, dtype=torch.float32, pin_memory=True))
+        self.staged = [x.numpy() for x in self.policy]
         saved = generator.get_state()
 
         def make_inputs(*shape):
@@ -471,18 +553,19 @@ class SamplingGraphs:
             # Capture records the target outputs but need not initialize them.
             # Sampling warmup must see finite logits before the first request.
             logits.zero_()
-            return logits, torch.ones(n*t, device=logits.device), torch.full((n*t,), top_p, device=logits.device)
+            return (logits, torch.ones(n*t, device=logits.device),
+                    torch.zeros(n*t, dtype=torch.int32, device=logits.device),
+                    torch.full((n*t,), top_p, device=logits.device))
 
         def greedy(inputs):
             return argmax(inputs[0], target.net.comm, target.net.rank * target.net.vp, decodable)
 
         def stochastic(inputs):
-            local_logits, temps, p = inputs
-            logits = target.net.comm.all_gather(local_logits, dim=-1)
-            if decodable is not None and logits.shape[-1] > decodable:
-                logits = logits.clone()
-                logits[:, decodable:] = float("-inf")
-            return sample(logits, temps, p, generator, top_p_enabled=top_p < 1.)
+            local_logits, temps, k, p = inputs
+            # The undecodable tail is a `valid` width the sampler stops at, not a copy of the
+            # whole gathered block with minus infinity written into its end.
+            return sample(target.net.comm.all_gather(local_logits, dim=-1), temps, p, generator,
+                          top_k=k, valid=decodable)
 
         try:
             memory = getattr(target, "memory", None)
@@ -496,14 +579,20 @@ class SamplingGraphs:
         finally:
             generator.set_state(saved)
 
-    def run(self, shape, temperatures):
+    def run(self, shape, temperatures, top_k=None, top_p=None):
         """`shape` is the target's, whose first two entries name the sampler."""
         shape = tuple(shape[:2])
         if all(t <= 0 for t in temperatures):
             return self.greedy.run(shape, lambda inputs: None)
         rows = len(temperatures)
-        self.staged[:rows] = temperatures
-        return self.stochastic.run(shape, lambda inputs: inputs[1].copy_(self.temps[:rows], non_blocking=True))
+        self.staged[0][:rows] = temperatures
+        self.staged[1][:rows] = 0 if top_k is None else top_k
+        self.staged[2][:rows] = self.default_p if top_p is None else top_p
+
+        def fill(inputs):
+            for held, static in zip(self.policy, inputs[1:]):
+                static.copy_(held[:rows], non_blocking=True)
+        return self.stochastic.run(shape, fill)
 
     def close(self):
         self.greedy.close()

@@ -48,7 +48,7 @@ class KdaMarkTests(unittest.TestCase):
     def test_cutting_at_marks_keeps_the_output_and_yields_the_states_at_the_cuts(self):
         F = tiny_facts()
         net = kda_net(F)
-        N, marks = 40, ((16, 0), (32, 1))
+        N, marks = 200, ((64, 0), (128, 1))                                # marks sit on the lane's 64-token kernel chunks
         x = (torch.randn(N, F.hidden, generator=torch.Generator().manual_seed(1)) * 0.5).to(torch.bfloat16)
         ids = torch.zeros(N, dtype=torch.int64)
         plain, cut = Caches(F, [0]), Caches(F, [0])
@@ -66,6 +66,13 @@ class KdaMarkTests(unittest.TestCase):
             # and the conv taps are the projected inputs of the conv-1 positions before it
             qkv = torch.nn.functional.linear(x, net.p["L0.kda.in_proj"])[:, : 3 * F.kda_heads_local * F.kda_dim]
             torch.testing.assert_close(cut.marks[0, snap][1], qkv[position - (F.conv - 1): position], atol=0, rtol=0)
+
+    def test_a_mark_off_the_kernel_chunk_is_refused(self):
+        F = tiny_facts()
+        net = kda_net(F)
+        x = torch.randn(80, F.hidden).to(torch.bfloat16)
+        with self.assertRaises(ValueError):
+            net._kda(0, x, Step.prefill(torch.zeros(80, dtype=torch.int64), 0, 1, 1, marks=((16, 0),)), Caches(F, [0]))
 
     def test_marks_are_validated_by_the_step(self):
         ids = torch.zeros(10, dtype=torch.int64)

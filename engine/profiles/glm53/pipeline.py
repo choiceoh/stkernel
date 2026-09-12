@@ -21,24 +21,25 @@ from __future__ import annotations
 
 import torch
 
-from engine.base.sampler import block_verify_batch, commit_batch
+from engine.base.sampler import block_verify_batch, commit_batch, rows as sampler_rows
 from engine.profiles.glm53.net import Segment, Step
 
 
-def distribution_batch(logits: torch.Tensor, temps: torch.Tensor, top_p: torch.Tensor, nucleus: bool) -> torch.Tensor:
-    """base/sampler.distribution for every row at once: [m, V] fp32 probabilities -- a one-hot argmax where the row's
-    temperature is 0, the nucleus-truncated softmax otherwise. `nucleus` is decided on the host (no device predicate)."""
-    greedy = temps <= 0
-    scaled = logits / temps.clamp_min(1e-5).unsqueeze(1)
-    probs = torch.softmax(scaled, dim=-1)
-    if nucleus:
-        srt, idx = probs.sort(dim=-1, descending=True)
-        cum = srt.cumsum(dim=-1)
-        keep = (cum - srt) < top_p.unsqueeze(1)
-        srt = srt * keep
-        probs = torch.zeros_like(probs).scatter_(1, idx, srt / srt.sum(dim=-1, keepdim=True).clamp_min(1e-30))
-    onehot = torch.zeros_like(probs).scatter_(1, logits.argmax(dim=-1, keepdim=True), 1.0)
-    return torch.where(greedy.unsqueeze(1), onehot, probs)
+def distribution_batch(logits: torch.Tensor, temps: torch.Tensor, top_k: torch.Tensor, top_p: torch.Tensor,
+                       valid: "int | None" = None, into: "torch.Tensor | None" = None) -> torch.Tensor:
+    """base/sampler.rows for every row at once, distributions only: [m, V] fp32 -- a one-hot argmax where the row's
+    temperature is 0, the truncated softmax otherwise.
+
+    There is no `nucleus` argument and no list of which rows to sort, because nothing here sorts: each row carries its
+    own top-k and top-p as numbers the sampler reads on the device (45차 §32). A host predicate had to exist while the
+    truncation was a sort -- the sort of a [24, 155k] batch was 2.9 ms and picking which rows to pay it for was worth
+    the bookkeeping. The threshold search is 467 us for the same block whether one row asks for a nucleus or all of
+    them do. No draw either: the speculative pick works from these distributions, not from a token drawn out of them.
+    """
+    out = torch.empty(logits.shape[0], logits.shape[-1], dtype=torch.float32,
+                      device=logits.device) if into is None else into
+    sampler_rows(logits, temps, top_k, top_p, None, valid, out)
+    return out
 
 
 class Pending:
@@ -67,9 +68,16 @@ class AsyncDecode:
                           done=torch.empty(n_max, dtype=torch.bool, pin_memory=pin),
                           accepted=torch.empty(n_max, dtype=torch.int64, pin_memory=pin)) for _ in range(depth)]
         self.free = list(range(depth))
-        self._slots = []
         self._zeros = {}                                 # n -> the host step's placeholder ids (prepare reads segments, never these)
         self._staged = []                                # pinned index tensors of recent shrinks, alive until their copies land
+        self._probs = None                               # the step's target distributions, kept: 15 MB the step stops reallocating
+
+    def _dists(self, rows: int, vocab: int):
+        """The block the sampler writes the step's distributions into."""
+        if self._probs is None or self._probs.shape[1] != vocab:
+            room = self.e.caches.pool.max_seqs * self.t
+            self._probs = torch.empty(room, vocab, dtype=torch.float32, device=self.e.caches.device)
+        return self._probs[:rows]
 
     # -- building the device view of a batch --------------------------------------------------------
     def _build(self, seqs, slots) -> None:
@@ -90,19 +98,18 @@ class AsyncDecode:
             limit=torch.tensor([e.limits[s][0] for s in seqs], dtype=torch.int64, device=dev),
             ends=torch.tensor([x + [-1] * (width - len(x)) for x in ends], dtype=torch.int64, device=dev),
             temps=torch.tensor(temps, dtype=torch.float32, device=dev),
+            top_k=torch.tensor([int(e.options.get(s, {}).get("top_k") or 0) for s in seqs], dtype=torch.int32, device=dev),
             top_p=torch.tensor(top_p, dtype=torch.float32, device=dev),
             alive=torch.ones(n, dtype=torch.bool, device=dev),
             anchor=torch.tensor([e.tokens[s][-1] for s in seqs], dtype=torch.int64, device=dev),
             ids=torch.zeros(n * t, dtype=torch.int64, device=dev),
             drafts=torch.zeros(n, K, dtype=torch.int64, device=dev),
             stochastic=any(x > 0 for x in temps),
-            nucleus=any(p < 1.0 for p in top_p),
         )
         b["slot"] = b["real_slot"].clone()
         b["dists"] = torch.zeros(n, K, e.F.vocab, dtype=torch.float32, device=dev) if b["stochastic"] else None
         self.buf, self.batch, self.stale = b, tuple(seqs), False
-        for i in range(n):
-            self._propose(i, temps[i])
+        self._propose_rows()
 
     def _shrink(self, seqs) -> None:
         """Rows left the batch (they finished, the host learned it a step late): keep the device view of the rest.
@@ -116,35 +123,37 @@ class AsyncDecode:
         else:
             idx = torch.tensor(keep, dtype=torch.int64, device=dev)
         b = self.buf
-        for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "ends", "temps", "top_p", "alive", "anchor", "drafts"):
+        for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "ends", "temps", "top_k", "top_p",
+                     "alive", "anchor", "drafts"):
             b[name] = b[name].index_select(0, idx)
         b["ids"] = b["ids"].view(-1, self.t).index_select(0, idx).reshape(-1)
         if b["dists"] is not None:
             b["dists"] = b["dists"].index_select(0, idx)
+        # nothing else to re-index: the truncations ride in `top_k` and `top_p` above, and the list of
+        # which rows to sort went away with the sort (45차 §32)
         self.batch = tuple(seqs)
 
-    def _propose(self, i: int, temperature: float) -> None:
-        """Row i's next proposal from its device anchor at its device context, into the next step's ids."""
-        e, b, K, t = self.e, self.buf, self.e.drafter.k, self.t
-        ring = e.caches.draft_ring(self._slots[i])
-        anchor, position = b["anchor"][i:i + 1], b["ctx"][i]
+    def _propose_rows(self) -> None:
+        """Every row's next proposal at once, from its device anchor at its device context, into the next step's ids
+        (45차 §23 GPU 판정 4차: one drafter replay a step, not one a row)."""
+        e, b, t = self.e, self.buf, self.t
+        n = len(self.batch)
+        graphs = e.drafter.decode_graphs
         if b["stochastic"]:
-            drafts, dists = e.drafter.propose_sampled_tensor(anchor, position, ring, temperature, e.gen, e.F.vocab) if temperature > 0 \
-                else (self._greedy_drafts(anchor, position, ring, b["real_slot"][i:i + 1]), None)
-            if dists is None:                                             # a greedy row among stochastic ones: one-hot draft distributions
-                dists = torch.zeros(K, e.F.vocab, dtype=torch.float32, device=ring.device).scatter_(1, drafts.view(K, 1), 1.0)
-            b["dists"][i] = dists
+            if graphs is not None:
+                drafts, dists = graphs.propose_rows_sampled(b["anchor"], b["ctx"], b["real_slot"], b["temps"])
+            else:
+                drafts, dists = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"],
+                                                       temps=b["temps"], generator=e.gen, vocab=e.F.vocab)
+            b["dists"].copy_(dists)
+        elif graphs is not None:
+            drafts = graphs.propose_rows(b["anchor"], b["ctx"], b["real_slot"])
         else:
-            drafts = self._greedy_drafts(anchor, position, ring, b["real_slot"][i:i + 1])
-        b["drafts"][i] = drafts
-        b["ids"][i * t] = anchor[0]
-        b["ids"][i * t + 1:(i + 1) * t] = drafts
-
-    def _greedy_drafts(self, anchor, position, ring, slot):
-        e = self.e
-        if e.drafter.decode_graphs is not None:
-            return e.drafter.decode_graphs.propose_from(anchor, position, slot)
-        return e.drafter.propose_tensor(anchor, position, ring)
+            drafts = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"])
+        b["drafts"].copy_(drafts)
+        ids = b["ids"].view(n, t)
+        ids[:, 0] = b["anchor"]
+        ids[:, 1:] = b["drafts"]
 
     # -- one step ---------------------------------------------------------------------------------------
     def launch(self, seqs, slots) -> Pending:
@@ -152,7 +161,6 @@ class AsyncDecode:
         seqs, slots = list(seqs), list(slots)
         if len(self.pending) >= self.depth or not self.free:
             raise RuntimeError("the decode pipeline is full: resolve a step before launching another")
-        self._slots = slots
         if self.stale or tuple(seqs) != self.batch:
             if self.pending:
                 if set(seqs) - set(self.batch) or self.stale:
@@ -175,10 +183,13 @@ class AsyncDecode:
         ctx_before = b["ctx"].clone()
         h, aux, local = e.decode_graphs.run_device(shape, host_step, b["ids"], b["ctx"], b["seqs"], b["slot"])
         if b["stochastic"]:
-            full = e.net.comm.all_gather(local, dim=-1).float()
-            if e.decodable is not None and full.shape[-1] > e.decodable:
-                full[:, e.decodable:] = float("-inf")
-            probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_p"].repeat_interleave(t), b["nucleus"]).view(n, t, -1)
+            # the model's dtype, not fp32: the sampler converts as it reads, and the undecodable tail
+            # is a width it stops at rather than a copy of the block with minus infinity in its end
+            full = e.net.comm.all_gather(local, dim=-1)
+            probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
+                                       b["top_p"].repeat_interleave(t), e.decodable,
+                                       self._dists(n * t, full.shape[-1])).view(n, t, -1)
+            e.note_ceilings(probs, b["dists"])
             accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["dists"], e.gen)
         else:
             picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
@@ -192,16 +203,12 @@ class AsyncDecode:
         b["alive"] = b["alive"] & ~done
         b["slot"] = torch.where(b["alive"], b["real_slot"], torch.zeros_like(b["real_slot"]))
         if aux is not None:
-            for i, slot in enumerate(slots):
-                ring = e.caches.draft_ring(slot)
-                positions = ctx_before[i] + torch.arange(t, device=ring.device)
-                rows = aux[i * t:(i + 1) * t]
-                if e.drafter.decode_graphs is not None:
-                    e.drafter.decode_graphs.observe_masked(ring, positions, rows, count[i])
-                else:
-                    e.drafter.observe_masked(ring, positions, rows, count[i])
-        for i, s in enumerate(seqs):
-            self._propose(i, e.limits[s][1])
+            positions = ctx_before.view(n, 1) + torch.arange(t, device=aux.device)
+            if e.drafter.decode_graphs is not None:
+                e.drafter.decode_graphs.observe_rows(b["real_slot"], positions, aux, count)
+            else:
+                e.drafter.observe_rows(e.caches.draft_field(), b["real_slot"], positions, aux, count)
+        self._propose_rows()
         # the outcome crosses to the host behind an event; the next step is already queued when it is read
         lane = self.free.pop(0)
         host = self.host[lane]

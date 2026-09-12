@@ -25,7 +25,9 @@ class Lanes:
     name: str
     conv_prefill: object      # (x [T,C] bf16, w [C,K] f32, state [C,K-1] | None) -> (y [T,C] bf16, state' [C,K-1])
     kda_chunk: object         # (q,k,v [1,T,H,D] bf16, g_raw [1,T,H,D] bf16, beta_raw [1,T,H] bf16 (logits: the lane sigmoids), A_log [H] f32,
-                              #  dt_bias [H*D] f32, state0 [1,H,D,D] f32 | None, lower_bound) -> (o [1,T,H,D] bf16, state [1,H,D,D] f32, [k, v] layout)
+                              #  dt_bias [H*D] f32, state0 [1,H,D,D] f32 | None, lower_bound, states_at=None) -> (o [1,T,H,D] bf16,
+                              #  state [1,H,D,D] f32, [k, v] layout); with `states_at` (ascending indices of kda_chunk_tokens-wide
+                              #  kernel chunks) a third value: the fp32 states [n,H,D,D] at the START of those chunks (45차 §23 marks)
     kda_recurrent: object     # same inputs for a decode/verify step (T <= spec_k+1) -> (o [1,T,H,D], states [T,H,D,D] f32: after EVERY token)
     mhc_pre: object           # (res [T,hc,H] bf16, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w [H], norm_eps)
                               #   -> (post [T,hc,1] f32, comb [T,hc,hc] f32, x [T,H] bf16 = rmsnorm(sum_i pre_i res_i) * norm_w)
@@ -44,6 +46,7 @@ class Lanes:
     moe_prepare: object = None  # (w13, w13_sf, w2, w2_sf, top_k, limit) -> None, once per bound MoE layer BEFORE any capture:
                               #  the served lane's weight views (in-place tile-major relayout, packed SF6 owner); reference: None
     graph_resources: object = None  # () -> external workspace owners to retain until the captured graphs close
+    kda_chunk_tokens: int = 64      # the kernel chunk `states_at` indexes: a mark inside a prefill chunk sits on a multiple of it
     kda_recurrent_ring: object = None  # recurrent inputs, then (ring [slots,R,H,K,V] f32, slot, context, lower_bound)
                                      # -> output only; writes each token state into the selected ring. None uses the functional lane.
     conv_ring: object = None  # (x [T,C], w [C,K], ring [slots,C,R], slot, context) -> y; writes raw inputs into ring, T<=8
@@ -69,10 +72,23 @@ def reference() -> Lanes:
     def conv_prefill(x, w, state):
         return causal_conv1d(x, w, None, state, "silu")
 
-    def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
+    def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound, states_at=None):
         g = kda_gate(g_raw, A_log, dt_bias, lower_bound, safe_gate=True)
-        return gated_delta_rule(q, k, v, g, torch.sigmoid(beta_raw.float()), state0, scale=q.shape[-1] ** -0.5,
-                                qk_l2norm=True, decay_per_channel=True)
+        beta = torch.sigmoid(beta_raw.float())
+        if not states_at:
+            return gated_delta_rule(q, k, v, g, beta, state0, scale=q.shape[-1] ** -0.5, qk_l2norm=True, decay_per_channel=True)
+        # the reference is a token-by-token recurrence: the state at a chunk's start is exactly the state after the
+        # piece before it, so the pieces are run one after another and each piece's final state is that mark
+        outs, states, state, lo = [], [], state0, 0
+        for hi in [c * 64 for c in states_at] + [q.shape[1]]:
+            if hi > lo:
+                o, state = gated_delta_rule(q[:, lo:hi], k[:, lo:hi], v[:, lo:hi], g[:, lo:hi], beta[:, lo:hi], state,
+                                            scale=q.shape[-1] ** -0.5, qk_l2norm=True, decay_per_channel=True)
+                outs.append(o)
+            if len(states) < len(states_at):
+                states.append(state[0] if state is not None else torch.zeros(q.shape[2], q.shape[-1], v.shape[-1], device=q.device))
+            lo = hi
+        return torch.cat(outs, dim=1), state, torch.stack(states)
 
     def kda_recurrent(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
         """The recurrence one token at a time, keeping every state: what a
@@ -174,16 +190,20 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     mk.configure_prefill(mla_prefill)
     ref = reference()
 
-    def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
+    def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound, states_at=None):
         t = q.shape[1]
         out = torch.empty_like(v)
-        o, state = chunk_kda_with_fused_gate(
+        result = chunk_kda_with_fused_gate(
             q=q, k=k, v=v, raw_g=g_raw, beta=torch.sigmoid(beta_raw.float()), A_log=A_log.view(1, 1, -1, 1), g_bias=dt_bias,
             initial_state=state0.transpose(-1, -2).contiguous() if state0 is not None else None,
             output_final_state=True, use_qk_l2norm_in_kernel=True,
             cu_seqlens=torch.tensor([0, t], dtype=torch.int32, device=q.device),
-            safe_gate=True, lower_bound=lower_bound, out=out)
+            safe_gate=True, lower_bound=lower_bound, out=out, states_at=list(states_at) if states_at else None)
         # The kernel stores [H,V,K]; the engine/reference contract is [H,K,V].
+        if states_at:
+            o, state, states = result
+            return o, state.transpose(-1, -2).contiguous(), states.transpose(-1, -2).contiguous()
+        o, state = result
         return o, state.transpose(-1, -2).contiguous()
 
     def kda_recurrent(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):

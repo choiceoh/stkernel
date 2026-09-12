@@ -6,7 +6,7 @@ import unittest
 
 from engine.base import scheduler as sched
 from engine.base.kv import BlockPool, SlotPool
-from engine.base.prefix import PrefixCache
+from engine.base.prefix import PrefixCache, tenant_salt
 from engine.base.record import Ring
 from engine.base.runner import Runner, STEP_RECORD
 from engine.base.scheduler import Contract
@@ -66,40 +66,80 @@ def runner(blocks=16, snapshots=2):
 def run_to_end(r, seq):
     while seq in r.state.waiting or seq in r.state.running:
         r.step(now=0)
+        r.prefix.check()                                     # the two resources' invariants hold at every step
 
 
 class PoolOwnershipTests(unittest.TestCase):
-    def test_adopt_pin_release_count_owners(self):
+    def test_a_claim_keeps_blocks_in_the_free_list_under_the_boundary_s_name(self):
         pool = BlockPool(8, BLOCK, 2, 8)
+        pool.forget = lambda b: pool.disclaim((b,), pool.CACHED)     # a cache of one boundary
         pool.reserve(0, 8)                                   # row 0: two blocks
         first = tuple(pool.row(0)[:2])
-        pool.pin(first)
-        self.assertEqual([pool.refs[b] for b in first], [2, 2])
-        pool.release(0)                                      # the cache still holds them
-        self.assertEqual([pool.refs[b] for b in first], [1, 1])
-        self.assertEqual(len(pool.free), 6)
-        pool.adopt(1, first, 8)
+        pool.claim(first, pool.CACHED)
+        self.assertEqual([pool.refs[b] for b in first], [1, 1], "a claim is not an owner")
+        pool.release(0)
+        self.assertEqual([pool.refs[b] for b in first], [0, 0])
+        self.assertEqual((pool.available, pool.anonymous, pool.cached), (8, 6, 2))
+        pool.adopt(1, first, 8)                              # out of the free list, not copied (vLLM's touch)
         self.assertEqual(list(pool.row(1)[:2]), list(first))
-        self.assertEqual(pool.tokens[1], 8)
+        self.assertEqual((pool.tokens[1], pool.available, pool.cached), (8, 6, 0))
         pool.reserve(1, 3)                                   # its own block after the prefix
         self.assertEqual(pool.tokens[1], 11)
         with self.assertRaises(ValueError):
             pool.adopt(1, first, 8)                          # not empty
         with self.assertRaises(ValueError):
             pool.adopt(0, first, 7)                          # not whole blocks
-        self.assertEqual(pool.unpin(first), 0)               # row 1 still uses them
         pool.release(1)
-        self.assertEqual(len(pool.free), 8)
+        self.assertEqual((pool.available, pool.cached), (8, 2), "the boundary still holds them")
+        pool.disclaim(first, pool.CACHED)
+        self.assertEqual((pool.anonymous, pool.cached), (8, 0))
         with self.assertRaises(ValueError):
-            pool.pin(first)                                  # dead blocks cannot be pinned
+            pool.adopt(0, first, 8)                          # nobody holds them: they are not a prefix any more
+
+    def test_a_reservation_spends_anonymous_blocks_before_any_boundary_pays(self):
+        r, cache = runner(blocks=8, snapshots=4)
+        r.submit(0, 9, now=0, ids=list(range(9)))            # three blocks: boundaries at 4 and 8
+        run_to_end(r, 0)
+        self.assertEqual(len(cache.entries), 2)
+        self.assertEqual((r.kv.available, r.kv.anonymous, r.kv.cached), (8, 6, 2))
+        r.submit(1, 20, now=0, ids=list(range(100, 120)))    # five blocks, and six are anonymous
+        self.assertEqual(len(cache.entries), 2, "nothing was evicted to make room for a prompt the free blocks fit")
+        self.assertEqual((cache.evictions, r.kv.anonymous, r.kv.cached), (0, 1, 2))
+
+    def test_an_operator_s_pinned_boundary_is_the_last_block_anybody_takes(self):
+        r, cache = runner(blocks=8, snapshots=4)
+        r.submit(0, 5, now=0, ids=list(range(5)))            # a boundary at 4: one block
+        run_to_end(r, 0)
+        r.submit(1, 5, now=0, ids=list(range(50, 55)))       # another prompt's, another block
+        run_to_end(r, 1)
+        self.assertEqual((r.kv.anonymous, r.kv.cached), (6, 2))
+        warm = cache.chain(list(range(5)))[4]
+        self.assertEqual(cache.pin([warm]), 1)
+        r.submit(2, 25, now=0, ids=list(range(100, 125)))    # seven blocks: six anonymous, then the boundary nobody pinned
+        self.assertEqual(list(cache.entries), [warm])
+        block = cache.entries[warm].blocks[0]
+        self.assertEqual((r.kv.pins[block], r.kv.claims[block]), (1, 0))
+        self.assertEqual(cache.unpin_all(), 1)
+        self.assertEqual((r.kv.pins[block], r.kv.claims[block]), (0, 1), "an ordinary boundary's block again")
+
+    def test_a_block_leaves_one_at_a_time_and_only_its_own_boundary_with_it(self):
+        r, cache = runner(blocks=6, snapshots=4)
+        r.submit(0, 17, now=0, ids=list(range(17)))          # five blocks: boundaries at 4, 8, 12 and 16
+        run_to_end(r, 0)
+        self.assertEqual(len(cache.entries), 4)
+        self.assertEqual((r.kv.anonymous, r.kv.cached), (2, 4))   # the last block is nobody's: no boundary ends there
+        r.submit(1, 9, now=0, ids=list(range(200, 209)))     # three blocks: both anonymous ones, then exactly one boundary's
+        self.assertEqual(sorted(e.tokens for e in cache.entries.values()), [4, 8, 12],
+                         "the longest boundary's tail block went, and the prefixes it shares stayed")
+        self.assertEqual(cache.evictions, 1)
 
     def test_reservation_reclaims_through_the_cache(self):
         r, cache = runner(blocks=4, snapshots=2)             # 16 tokens of blocks
         r.submit(0, 9, now=0, ids=list(range(9)))            # block boundaries at 4 (marked) and 8 (checkpoint), then a token
         run_to_end(r, 0)
         self.assertEqual(len(cache.entries), 2)
-        self.assertEqual(r.kv.available, 4)                  # the cached blocks count as available ...
-        self.assertEqual(len(r.kv.free), 2)                  # ... but only two are free right now
+        self.assertEqual(r.kv.available, 4)                  # every block is free ...
+        self.assertEqual((r.kv.anonymous, r.kv.cached), (2, 2))   # ... but two of them are a boundary's until one is needed
         r.submit(1, 13, now=0, ids=list(range(100, 113)))    # needs four blocks: the cache gives its two back
         self.assertEqual(len(cache.entries), 0)
         self.assertEqual(cache.evictions, 2)
@@ -124,6 +164,35 @@ class PrefixCacheTests(unittest.TestCase):
         self.assertNotEqual(plain[16], cat[16]); self.assertNotEqual(cat[16], dog[16]); self.assertNotEqual(cat[24], dog[24])
         self.assertEqual(c.chain(ids, [(10, b"cat")]), cat)                   # deterministic
         self.assertEqual(c.chain(ids, [(3, b"x"), (10, b"cat")])[8], c.chain(ids, [(10, b"cat"), (3, b"x")])[8])   # order-free
+
+    def test_a_tenant_salt_separates_the_same_prompt_from_the_first_block_on(self):
+        c = PrefixCache(BLOCK, CHUNK, 2)
+        ids = list(range(20))
+        plain, red, blue = c.chain(ids), c.chain(ids, [tenant_salt("red")]), c.chain(ids, [tenant_salt("blue")])
+        self.assertEqual(sorted(red), sorted(plain))                       # the same boundaries, different names
+        for t in plain:
+            self.assertNotEqual(red[t], plain[t]); self.assertNotEqual(red[t], blue[t])
+        self.assertEqual(c.chain(ids, [tenant_salt("red")]), red)          # deterministic: every rank agrees without a message
+        self.assertEqual(red, c.chain(ids, [tenant_salt(b"red")]))         # a string or its bytes are one tenant
+        salted = c.chain(ids, [tenant_salt("red"), (10, b"cat")])
+        self.assertEqual(salted[8], red[8])                                # a picture still separates only from its block on
+        self.assertNotEqual(salted[12], red[12])
+        self.assertEqual(c.extend_chain(c.chain(ids[:9], [tenant_salt("red")]), ids[8:], [tenant_salt("red")], start=8),
+                         c.chain(ids, [tenant_salt("red")]))               # the salt is inside the chain already
+
+    def test_one_tenant_s_boundaries_are_not_another_s(self):
+        r, cache = runner(blocks=32, snapshots=8)
+        ids = list(range(19))
+        red, blue = [tenant_salt("red")], [tenant_salt("blue")]
+        r.submit(0, 19, now=0, ids=ids, salts=red, chain=cache.chain(ids, red))
+        run_to_end(r, 0)
+        self.assertEqual(len(cache.entries), 4)
+        self.assertEqual(cache.peek(ids, blue), 0, "another tenant sees nothing of it")
+        r.submit(1, 19, now=0, ids=ids, salts=blue, chain=cache.chain(ids, blue))
+        self.assertEqual((r.state.computed[1], cache.hits), (0, 0))
+        run_to_end(r, 1)
+        r.submit(2, 19, now=0, ids=ids, salts=red, chain=cache.chain(ids, red))
+        self.assertEqual((r.state.computed[2], cache.hits), (16, 1), "its own tenant's boundary serves it")
 
     def test_second_prompt_reuses_the_boundary_and_prefills_the_rest(self):
         r, cache = runner(snapshots=4)
@@ -160,7 +229,7 @@ class PrefixCacheTests(unittest.TestCase):
         self.assertEqual(r.state.computed[2], 8)
         run_to_end(r, 2)
 
-    def test_snapshots_evict_least_recently_used_and_unpin_blocks(self):
+    def test_snapshots_take_the_least_recently_used_boundary_and_free_its_blocks(self):
         r, cache = runner(blocks=32, snapshots=1)
         r.submit(0, 9, now=0, ids=list(range(9)))
         run_to_end(r, 0)                                      # the one snapshot: boundary 4 (marked), then 8 evicts it (checkpoint)
@@ -171,9 +240,10 @@ class PrefixCacheTests(unittest.TestCase):
         self.assertEqual(cache.evictions, 3)
         self.assertIn(cache.chain(list(range(50, 59)))[8], cache.entries)
         self.assertEqual(r.kv.available, 32)
-        self.assertEqual(len(r.kv.free), 30)                # boundary 8 pins two blocks
+        self.assertEqual((r.kv.anonymous, r.kv.cached), (30, 2))   # boundary 8 holds two blocks; with no tier, the rest are gone
+        self.assertEqual(len(cache.faded), 0)
         cache.clear()
-        self.assertEqual(len(r.kv.free), 32)
+        self.assertEqual(r.kv.anonymous, 32)
 
     def test_failed_admission_returns_the_adopted_prefix(self):
         r, cache = runner(blocks=4)
@@ -216,6 +286,44 @@ class PrefixCacheTests(unittest.TestCase):
         self.assertEqual(r.state.computed[1], 8)              # the answer's first block is reused
         self.assertEqual(cache.hits, 1)
 
+    def test_a_prompt_shorter_than_one_block_still_caches_what_it_generates(self):
+        """Most first turns are shorter than a block (768 tokens in production). Its own chain is empty -- there is no
+        whole block in it -- but its ANSWER crosses boundaries, and those are the ones the next turn wants."""
+        class Generating(Model):
+            def __init__(self, media=False):
+                super().__init__(); self.ids, self.left = {}, {}
+                if media:
+                    self.media_marks = lambda seq: []       # a model that tells its pictures rebuilds salts from itself
+            def submit_ids(self, seq, ids, left):
+                self.ids[seq], self.left[seq] = list(ids), left
+            def history(self, seq):
+                return self.ids[seq]
+            def decode(self, seqs, blocks, slots):
+                out = []
+                for seq in seqs:
+                    self.ids[seq].append(200 + self.ctx[seq]); self.ctx[seq] += 1; self.left[seq] -= 1
+                    out.append(self.left[seq] == 0)
+                return out
+
+        def answer(prompt_len, salts=(), media=False):
+            m = Generating(media)
+            cache = PrefixCache(BLOCK, CHUNK, 8)
+            r = Runner(m, CONTRACT, BlockPool(16, BLOCK, 4, 16), SlotPool(5), Ring(16, STEP_RECORD.size), prefix=cache)
+            m.submit_ids(0, list(range(prompt_len)), 12)
+            r.submit(0, prompt_len, now=0, ids=list(range(prompt_len)), salts=salts,
+                     chain=cache.chain(list(range(prompt_len)), salts))
+            run_to_end(r, 0)
+            return cache
+
+        self.assertEqual(sorted(e.tokens for e in answer(3).entries.values()), [4, 8, 12])
+        self.assertEqual(sorted(e.tokens for e in answer(1).entries.values()), [4, 8, 12])
+        # and the tenant follows it there: the model knows its pictures, never whose request this is
+        red, blue = answer(3, [tenant_salt("red")]), answer(3, [tenant_salt("blue")])
+        self.assertEqual(len(red.entries), 3)
+        self.assertFalse(set(red.entries) & set(blue.entries), "one tenant's answer is not another's")
+        self.assertEqual(set(answer(3, [tenant_salt("red")], media=True).entries), set(red.entries),
+                         "a model that rebuilds its own media salts must not drop the tenant's")
+
     def test_boundaries_a_request_adopted_outlive_the_ones_nobody_asked_for(self):
         c = PrefixCache(BLOCK, CHUNK, 2)
         pool = BlockPool(16, BLOCK, 4, 16); c.bind(pool)
@@ -252,11 +360,13 @@ class PrefixCacheTests(unittest.TestCase):
         h12 = cache.chain(list(range(12)))[12]
         self.assertEqual(list(cache.tier_keys), [h12])
         self.assertTrue(cache.entries[h12].spilled)
-        # three fresh boundaries evict everything: the spilled leaf leaves memory but not the tier
+        # three fresh boundaries take every snapshot: the spilled leaf leaves memory but not the tier
         r.submit(1, 12, now=0, ids=list(range(50, 62)))
         run_to_end(r, 1)
         self.assertNotIn(h12, cache.entries)
         self.assertIn(h12, cache.tier_keys)
+        r.kv.reserve(3, r.kv.available * BLOCK); r.kv.release(3)   # and a prompt that needs every block takes its blocks too
+        self.assertNotIn(h12, cache.faded)
         # a prompt that starts with the first one: the tier's copy is read into the row, snapshot and all
         ids = list(range(12)) + [7, 7, 7]
         self.assertEqual(cache.tier_lookup(ids, (), cache.peek(ids)), (12, h12))
@@ -272,14 +382,48 @@ class PrefixCacheTests(unittest.TestCase):
         run_to_end(r, 2)
         self.assertEqual([c for c in r.model.calls if c[0] == "prefill"][-1], ("prefill", 2, 12, 3))
 
+    def test_a_faded_boundary_keeps_its_blocks_and_comes_back_by_the_snapshot_alone(self):
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 10
+        r.submit(0, 12, now=0, ids=list(range(12)))          # boundaries 4, 8, 12; the leaf (12) is written out
+        run_to_end(r, 0)
+        r.step(now=0); r.step(now=0)
+        h12 = cache.chain(list(range(12)))[12]
+        self.assertEqual(r.prefix_spills, 1)
+        blocks = cache.entries[h12].blocks
+        # every snapshot goes to a fresh prompt's boundaries. The spilled leaf gives its snapshot up first and keeps
+        # its blocks -- nobody needed those -- so its KV is still exactly where it was.
+        r.submit(1, 12, now=0, ids=list(range(50, 62)))
+        run_to_end(r, 1)
+        self.assertEqual((list(cache.faded), cache.faded[h12].blocks), ([h12], blocks))
+        # only its last block is the faded one's alone: the two before it are still a live shorter boundary's,
+        # which is a better claim, so they are graded by that one and leave even later
+        self.assertEqual((r.kv.faded, r.kv.cached), (1, 2))
+        self.assertFalse(cache.has(h12), "memory cannot serve it: the state has to be read back first")
+        ids = list(range(12)) + [7, 7, 7]
+        self.assertEqual(cache.tier_lookup(ids, (), cache.peek(ids)), (12, h12))
+        seen, promote = [], r.prefix_tier.tier.promote
+        r.prefix_tier.tier.promote = lambda seq, storage, ids_, extra=None: (seen.append(ids_), promote(seq, storage, ids_, extra))[1]
+        r.restore_begin(2, h12, 12)
+        self.assertEqual(list(r.kv.row(2))[:3], list(blocks), "the row adopted the blocks where they lay")
+        self.assertTrue(r.transfer_done(2))
+        tokens, snap = r.restore_finish(2)
+        self.assertEqual(seen, [None], "only the snapshot was read; the KV under it was never touched")
+        self.assertEqual((tokens, bytes(r.model.snaps[snap])), (12, bytes([12] * 4)))
+        self.assertNotIn(h12, cache.faded)
+        self.assertEqual(cache.entries[h12].blocks, blocks, "a whole boundary again, on the very blocks it always had")
+        r.submit(2, 15, now=0, ids=ids, prepared=(tokens, snap))
+        self.assertEqual(r.state.computed[2], 12)
+        run_to_end(r, 2)
+
     def test_ids_must_match_the_prompt(self):
         r, _ = runner()
         with self.assertRaises(ValueError):
             r.submit(0, 5, now=0, ids=[1, 2])
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ChainTests(unittest.TestCase):
@@ -305,3 +449,7 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(cache.lookup_chain(chain, 14)[0], 12)
         self.assertEqual(cache.hits, hits + 1)
         self.assertIsNone(cache.tier_lookup_chain(chain, 14, 12))
+
+
+if __name__ == "__main__":
+    unittest.main()

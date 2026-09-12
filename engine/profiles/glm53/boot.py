@@ -79,14 +79,20 @@ def generation_defaults(ckpt=facts.CKPT) -> dict:
     return {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}
 
 
-def grammars(ckpt, vocab: int):
+def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
     """base/grammar.Grammars over the checkpoint's tokenizer, on every rank (each row's matcher runs everywhere), or None
-    where xgrammar is not installed -- then response_format is refused at the door (D3), never silently unenforced."""
+    where xgrammar is not installed -- then response_format is refused at the door (D3), never silently unenforced.
+
+    `device`: prove the mask kernel here and pay its Triton JIT here (45차 §23 B2, the same rule as every other
+    first-use cost -- and the same shape as `vision.qualify`: what cannot be served does not boot, D3)."""
     from engine.base import grammar
     if not grammar.available():
         return None
     from transformers import AutoTokenizer
-    return grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab)
+    g = grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab, stop_token_ids=stop_token_ids)
+    if device is not None:
+        g.qualify(device)
+    return g
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
@@ -179,7 +185,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     # reads that shard; reserving the replicated ring would also waste three
     # quarters of every persistent prefix snapshot's drafter state.
     draft_heads = (D.kv_heads // comm.world_size if execution == "native" else D.kv_heads) if D else 0
-    draft_shape = (D.layers, D.window, draft_heads, D.head_dim) if D else None
+    draft_cells = (D.window if execution == "native" else drafter_mod.ring_cells(D)) if D else 0
+    draft_shape = (D.layers, draft_cells, draft_heads, D.head_dim) if D else None
     cache_layout = layout(F, net.layers, draft_shape)
     bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes
     ns = max_seqs + 1
@@ -230,7 +237,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         from engine.profiles.glm53 import budget as budget_mod
         b = budget_mod.budget(kv_gib, max_seqs, chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
                               ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None, snapshots=PREFIX_SNAPSHOTS,
-                              draft_tp=comm.world_size if execution == "native" else 1)
+                              draft_tp=comm.world_size if execution == "native" else 1,
+                              draft_native=execution == "native")
         recorder.gauge("budget_unassigned_GiB", round(b.kv_gib - b.kv_declared_gib, 2))
         if comm.rank == 0:
             print(budget_mod.report(b))
@@ -449,7 +457,7 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
         tok = tokenizer(a.ckpt_meta)
         from engine.profiles.glm53.tools import parse_tool_calls
-        engine.grammars = grammars(a.ckpt_meta, F.vocab)
+        engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)
         server = Server(engine, runner, comm, port=port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
                         model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                         tool_parser=parse_tool_calls, generation=generation_defaults(a.ckpt_meta),
@@ -581,7 +589,8 @@ def fleet(a) -> int:
                                f"`python3 engine/profiles/glm53/preshard.py --vision --out {a.ranks}` (45차 §23 A7)")
         with rec.phase("qualify vision"):
             paid.update(engine.vision.qualify())            # the largest image and video, before the door opens (D3)
-        engine.grammars = grammars(a.ckpt_meta, F.vocab)    # response_format (json_object / json_schema), every rank
+        with rec.phase("qualify grammar"):
+            engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)   # response_format (json_object / json_schema), every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
         engine.memory.checkpoint("production/ready")

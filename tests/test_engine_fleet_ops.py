@@ -32,7 +32,8 @@ class FleetOps(unittest.TestCase):
         self.script("ssh", '''#!/usr/bin/env python3
 import os, pathlib, subprocess, sys
 h = pathlib.Path(os.environ['FAKE_HOME'])
-cmd = sys.argv[-1].replace('/home/choiceoh/st-fleet.lock', str(h / 'fleet.lock'))
+cmd = sys.argv[-1].replace('/home/choiceoh/glm53-logs/st-fleet.lock', str(h / 'fleet.lock'))
+cmd = cmd.replace('/home/choiceoh/st-fleet.lock', str(h / 'fleet.lock'))
 if os.environ.get('FAKE_SSH_FAIL'):
     sys.exit(255)
 if 'python3 - acquire' in cmd and os.environ.get('FAKE_RACE'):
