@@ -246,7 +246,15 @@ __host__ __device__ constexpr bool osar_block_owns(unsigned block, unsigned thre
   return block == 0 || block * threads < (VECTOR_EXACT ? (n >> 3) : n);
 }
 
-template <bool CONSUMER_PDL, bool COMPACT = false, bool WRAP_SAFE = false>
+__host__ __device__ constexpr int64_t osar_max_int64(int64_t a, int64_t b,
+                                                    int64_t c, int64_t d) {
+  int64_t ab = a > b ? a : b;
+  int64_t cd = c > d ? c : d;
+  return ab > cd ? ab : cd;
+}
+
+template <bool CONSUMER_PDL, bool COMPACT = false, bool WRAP_SAFE = false,
+          bool MAX_INT64 = false>
 __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
                                               bf16 *dst, int n, int nbytes,
                                               const HintArgs h) {
@@ -342,8 +350,10 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   __syncthreads();
   __shared__ bool last;
   if (threadIdx.x == 0) {
-    if constexpr (WRAP_SAFE) {
-      constexpr unsigned weight = COMPACT ? ARGRID / OSAR_COMPACT_GRID : 1;
+    if constexpr (WRAP_SAFE || MAX_INT64) {
+      // The <=512-byte MAX packet fits one CTA. It contributes the same
+      // 48 tickets as a whole BF16 grid, after every writer has fenced.
+      constexpr unsigned weight = MAX_INT64 ? ARGRID : (COMPACT ? ARGRID / OSAR_COMPACT_GRID : 1);
       const auto old = atomicAdd((unsigned long long *)&c->done_ctr,
                                  (unsigned long long)weight);
       last = osar_publication_last(old, weight, nxt);
@@ -427,35 +437,55 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
     union {
       uint4 v4;
       __nv_bfloat162 b2[4];
+      int64_t i64[2];
     } a, r0, r1, r2, o;
     a.v4 = mine[k];
     r0.v4 = __ldcs(&rx4[0][v]);
     r1.v4 = __ldcs(&rx4[1][v]);
     r2.v4 = __ldcs(&rx4[2][v]);
+    if constexpr (MAX_INT64) {
 #pragma unroll
-    for (int p = 0; p < 4; p++) {
-      float2 fa = __bfloat1622float2(a.b2[p]);
-      float2 f0 = __bfloat1622float2(r0.b2[p]);
-      float2 f1 = __bfloat1622float2(r1.b2[p]);
-      float2 f2 = __bfloat1622float2(r2.b2[p]);
-      float2 acc;
-      acc.x = fa.x + f0.x;
-      acc.x += f1.x;
-      acc.x += f2.x;
-      acc.y = fa.y + f0.y;
-      acc.y += f1.y;
-      acc.y += f2.y;
-      o.b2[p] = __float22bfloat162_rn(acc);
+      for (int p = 0; p < 2; p++)
+        o.i64[p] = osar_max_int64(a.i64[p], r0.i64[p], r1.i64[p], r2.i64[p]);
+    } else {
+#pragma unroll
+      for (int p = 0; p < 4; p++) {
+        float2 fa = __bfloat1622float2(a.b2[p]);
+        float2 f0 = __bfloat1622float2(r0.b2[p]);
+        float2 f1 = __bfloat1622float2(r1.b2[p]);
+        float2 f2 = __bfloat1622float2(r2.b2[p]);
+        float2 acc;
+        acc.x = fa.x + f0.x;
+        acc.x += f1.x;
+        acc.x += f2.x;
+        acc.y = fa.y + f0.y;
+        acc.y += f1.y;
+        acc.y += f2.y;
+        o.b2[p] = __float22bfloat162_rn(acc);
+      }
     }
     dst4[v] = o.v4;
   }
-  for (int i = (nv << 3) + blockIdx.x * blockDim.x + threadIdx.x; i < n;
-       i += gridDim.x * blockDim.x) {
-    float acc = __bfloat162float(src[i]) +
-                __bfloat162float(c->rx[slot][0][i]) +
-                __bfloat162float(c->rx[slot][1][i]) +
-                __bfloat162float(c->rx[slot][2][i]);
-    dst[i] = __float2bfloat16(acc);
+  if constexpr (MAX_INT64) {
+    // n counts two-byte transport cells. An odd key count leaves one
+    // complete int64 after the 16-byte vectors; never convert its bits.
+    for (int i = (nv << 1) + blockIdx.x * blockDim.x + threadIdx.x; i < n / 4;
+         i += gridDim.x * blockDim.x) {
+      reinterpret_cast<int64_t *>(dst)[i] = osar_max_int64(
+          reinterpret_cast<const int64_t *>(src)[i],
+          reinterpret_cast<const int64_t *>(c->rx[slot][0])[i],
+          reinterpret_cast<const int64_t *>(c->rx[slot][1])[i],
+          reinterpret_cast<const int64_t *>(c->rx[slot][2])[i]);
+    }
+  } else {
+    for (int i = (nv << 3) + blockIdx.x * blockDim.x + threadIdx.x; i < n;
+         i += gridDim.x * blockDim.x) {
+      float acc = __bfloat162float(src[i]) +
+                  __bfloat162float(c->rx[slot][0][i]) +
+                  __bfloat162float(c->rx[slot][1][i]) +
+                  __bfloat162float(c->rx[slot][2][i]);
+      dst[i] = __float2bfloat16(acc);
+    }
   }
 
 }
@@ -470,6 +500,11 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
 __global__ void k_oneshot_consumer(Ctrl *c, const bf16 *src, bf16 *dst, int n,
                                    int nbytes, const HintArgs h) {
   k_oneshot_impl<true>(c, src, dst, n, nbytes, h);
+}
+
+__global__ void k_oneshot_max_int64(Ctrl *c, const bf16 *src, bf16 *dst, int n,
+                                   int nbytes, const HintArgs h) {
+  k_oneshot_impl<false, false, OSAR_COMPACT_CTA != 0, true>(c, src, dst, n, nbytes, h);
 }
 
 #if OSAR_COMPACT_CTA
@@ -859,6 +894,19 @@ static torch::Tensor py_oneshot_hint(torch::Tensor input,
 static torch::Tensor py_oneshot_consumer(torch::Tensor input) {
   return py_oneshot_impl(input, {}, {}, true);
 }
+
+static torch::Tensor py_oneshot_max_int64(torch::Tensor input) {
+  TORCH_CHECK(input.is_cuda() && input.scalar_type() == torch::kInt64 && input.is_contiguous(),
+              "oneshot MAX requires contiguous CUDA int64");
+  TORCH_CHECK(input.numel() > 0 && input.numel() <= 64 &&
+                  (reinterpret_cast<uintptr_t>(input.data_ptr()) & 15) == 0,
+              "oneshot MAX requires 1..64 aligned keys");
+  auto *data = reinterpret_cast<bf16 *>(input.data_ptr());
+  HintArgs hints{};
+  k_oneshot_max_int64<<<1, ARTHREADS, 0, c10::cuda::getCurrentCUDAStream()>>>(
+      g_ctrl, data, data, (int)input.numel() * 4, (int)input.numel() * 8, hints);
+  return input;
+}
 // The phase counters (SM cycles, monotonic) for a probe that wants the wait
 // per collective with and without hints: [guard, copy, wait, reduce, calls].
 static std::vector<int64_t> py_phase_counters() {
@@ -888,6 +936,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("connect", &py_connect);
   m.def("oneshot_ar", &py_oneshot);
   m.def("oneshot_ar_consumer", &py_oneshot_consumer);
+  m.def("oneshot_max_int64", &py_oneshot_max_int64);
   m.def("oneshot_ar_hint", &py_oneshot_hint);
   m.def("phase_counters", &py_phase_counters);
   m.def("transport_modes", []() {

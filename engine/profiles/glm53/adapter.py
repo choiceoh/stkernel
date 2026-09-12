@@ -185,11 +185,13 @@ class Glm53Engine:
         self.lane_info["calibration"] = "filed"
         return written
 
-    def warmup_shapes(self, lengths=(64, 256, 1024, 2048, 4096), widths=(1, 2, 3, 4)) -> dict:
+    def warmup_shapes(self, lengths=(64, 256, 1024, 2048, 2304, 4096), widths=None) -> dict:
         """Pay the first-use JIT at boot instead of on the first user (45차 §23 B2; production's prefill-warmup.py):
         one synthetic prefill per length (the served kernels specialise per M bucket) and one decode step per batch
         width through the captured graphs. Nothing is judged; the request rows are returned empty."""
         caches = self.caches
+        if widths is None:
+            widths = range(1, caches.pool.max_seqs + 1)
         if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("warmup requires empty request and state slots")
         paid = {}
@@ -568,10 +570,12 @@ class Glm53Engine:
         return tuple(out)
 
     def open(self, seq: int, slot: int) -> None:
+        self._moved((seq,))
         self.slot[seq] = slot; self.ctx[seq] = 0
         self.caches.reset_slot(slot)
 
     def close(self, seq: int) -> None:
+        self._moved((seq,))
         for d in (self.ctx, self.slot):
             d.pop(seq, None)
 
@@ -585,6 +589,7 @@ class Glm53Engine:
 
     def restore(self, seq: int, position: int, snap: int) -> None:
         """A new sequence adopts a cached prefix: its rings take the boundary's state, its context starts there."""
+        self._moved((seq,))
         self.caches.restore(self.slot[seq], position, snap)
         self.ctx[seq] = position
 
@@ -607,6 +612,7 @@ class Glm53Engine:
         """Reopen the row in `slot` from a record; the slot's bytes were restored by the tier, so no reset."""
         if seq in self.tokens or seq in self.slot:
             raise ValueError(f"seq {seq} is live or has an uncollected result")
+        self._moved((seq,))
         self.tokens[seq] = list(record["tokens"]); self.prompt_len[seq] = int(record["prompt_len"])
         self._forget_history(seq)                           # the row now holds another conversation's tokens
         self.limits[seq] = (int(record["limits"][0]), float(record["limits"][1]))
@@ -647,7 +653,7 @@ class Glm53Engine:
             del self.tokens[seq][-1]
         if media:
             self._bind_media(seq, list(ids), media, base=len(self.tokens[seq]))
-        self._moved()
+        self._moved((seq,))
         self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
@@ -677,8 +683,8 @@ class Glm53Engine:
     def async_ready(self, seqs) -> bool:
         if self.pipeline is None or self.decode_graphs is None or not self.drafter.k:
             return False
-        if self.pipeline.pending and any(s not in self.pipeline.batch for s in seqs):
-            return False                                    # rows joined: the runner drains, then the view is rebuilt from the host
+        if not self.pipeline.ready_for(seqs):
+            return False
         return all(self._plain_ahead(s) for s in seqs)
 
     def decode_async(self, seqs, blocks, slots):
@@ -927,15 +933,15 @@ class Glm53Engine:
         done = any(t in self.ends.get(seq, self.eos) for t in new) or self._generated_count(seq) >= self.limits[seq][0]
         return new, done
 
-    def _moved(self) -> None:
+    def _moved(self, seqs=None) -> None:
         if self.pipeline is not None:
-            self.pipeline.stale = True
+            self.pipeline.invalidate(seqs)
 
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int, marks=None) -> bool:
         """`marks`: {absolute position: snapshot} for the block boundaries inside this step that the prefix cache keeps
         (base/runner): the KDA states are taken by the forward at those cuts; the drafter's context ring at a mark is the
         ring before this step plus the step's positions before the mark, observed into the snapshot here."""
-        self._moved()
+        self._moved((seq,))
         ids = torch.tensor(self.tokens[seq][start: start + tokens], dtype=torch.int64, device=self.caches.device)
         patches = self._patches(seq, start, start + tokens) if seq in self.media else ()
         cuts = tuple(sorted((int(p) - start, int(snap)) for p, snap in (marks or {}).items()))

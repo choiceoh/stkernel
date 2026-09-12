@@ -71,6 +71,34 @@ class AsyncDecode:
         self._zeros = {}                                 # n -> the host step's placeholder ids (prepare reads segments, never these)
         self._staged = []                                # pinned index tensors of recent shrinks, alive until their copies land
         self._probs = None                               # the step's target distributions, kept: 15 MB the step stops reallocating
+        self.dirty = set()                               # only rows moved by synchronous host work
+        self.slots = {}                                  # host identities; never read device slots to compare batches
+        self.merges = 0
+
+    def invalidate(self, seqs=None):
+        if seqs is None:
+            self.stale = True
+        else:
+            self.dirty.update(seqs)
+
+    def ready_for(self, seqs, slots=None):
+        if not self.pending:
+            return True
+        if self.stale:
+            return False
+        # A reused/extended row cannot inherit the old turn's outstanding
+        # readback. Independent new rows may join without draining survivors.
+        changing = self.dirty | (set(seqs) - set(self.batch))
+        if slots is not None:
+            changing.update(s for s, slot in zip(seqs, slots) if self.slots.get(s) != slot)
+        return not any(changing.intersection(p.seqs) for p in self.pending)
+
+    def _upload(self, values, dtype):
+        if self.e.caches.device.type != "cuda":
+            return torch.tensor(values, dtype=dtype, device=self.e.caches.device)
+        host = torch.tensor(values, dtype=dtype, pin_memory=True)
+        self._staged.append(host)
+        return host.to(self.e.caches.device, non_blocking=True)
 
     def _dists(self, rows: int, vocab: int):
         """The block the sampler writes the step's distributions into."""
@@ -80,7 +108,7 @@ class AsyncDecode:
         return self._probs[:rows]
 
     # -- building the device view of a batch --------------------------------------------------------
-    def _build(self, seqs, slots) -> None:
+    def _new_rows(self, seqs, slots):
         """From the host's view, which is exact when nothing is in flight: every row's last token, context, limit,
         end tokens and sampling temperature, plus the first proposals (the synchronous step's first half)."""
         e, K, t = self.e, self.e.drafter.k, self.t
@@ -91,25 +119,70 @@ class AsyncDecode:
         ends = [sorted(e.ends.get(s, e.eos)) for s in seqs]
         width = max(1, max(len(x) for x in ends))
         b = dict(
-            seqs=torch.tensor(seqs, dtype=torch.int64, device=dev),
-            real_slot=torch.tensor(slots, dtype=torch.int64, device=dev),
-            ctx=torch.tensor([e.ctx[s] for s in seqs], dtype=torch.int64, device=dev),
-            generated=torch.tensor([e._generated_count(s) for s in seqs], dtype=torch.int64, device=dev),
-            limit=torch.tensor([e.limits[s][0] for s in seqs], dtype=torch.int64, device=dev),
-            ends=torch.tensor([x + [-1] * (width - len(x)) for x in ends], dtype=torch.int64, device=dev),
-            temps=torch.tensor(temps, dtype=torch.float32, device=dev),
-            top_k=torch.tensor([int(e.options.get(s, {}).get("top_k") or 0) for s in seqs], dtype=torch.int32, device=dev),
-            top_p=torch.tensor(top_p, dtype=torch.float32, device=dev),
+            seqs=self._upload(seqs, torch.int64),
+            real_slot=self._upload(slots, torch.int64),
+            ctx=self._upload([e.ctx[s] for s in seqs], torch.int64),
+            generated=self._upload([e._generated_count(s) for s in seqs], torch.int64),
+            limit=self._upload([e.limits[s][0] for s in seqs], torch.int64),
+            ends=self._upload([x + [-1] * (width - len(x)) for x in ends], torch.int64),
+            temps=self._upload(temps, torch.float32),
+            top_k=self._upload([int(e.options.get(s, {}).get("top_k") or 0) for s in seqs], torch.int32),
+            top_p=self._upload(top_p, torch.float32),
             alive=torch.ones(n, dtype=torch.bool, device=dev),
-            anchor=torch.tensor([e.tokens[s][-1] for s in seqs], dtype=torch.int64, device=dev),
+            anchor=self._upload([e.tokens[s][-1] for s in seqs], torch.int64),
             ids=torch.zeros(n * t, dtype=torch.int64, device=dev),
             drafts=torch.zeros(n, K, dtype=torch.int64, device=dev),
             stochastic=any(x > 0 for x in temps),
         )
         b["slot"] = b["real_slot"].clone()
         b["dists"] = torch.zeros(n, K, e.F.vocab, dtype=torch.float32, device=dev) if b["stochastic"] else None
-        self.buf, self.batch, self.stale = b, tuple(seqs), False
-        self._propose_rows()
+        self._propose_rows(b)
+        return b
+
+    def _build(self, seqs, slots):
+        self.buf = self._new_rows(seqs, slots)
+        self.batch, self.slots, self.stale = tuple(seqs), dict(zip(seqs, slots)), False
+        self.dirty.difference_update(seqs)
+
+    def _merge(self, seqs, slots):
+        """Preserve survivor progress/proposals on device, initialize only joining rows."""
+        keep = [s for s, slot in zip(seqs, slots)
+                if s in self.batch and s not in self.dirty and self.slots.get(s) == slot]
+        added = [s for s in seqs if s not in keep]
+        if not keep:
+            self._build(seqs, slots)
+            return
+        if tuple(keep) != self.batch:
+            self._shrink(keep)
+        if added:
+            fresh = self._new_rows(added, [slots[seqs.index(s)] for s in added])
+            b = self.buf
+            width = max(b["ends"].shape[1], fresh["ends"].shape[1])
+            for rows in (b, fresh):
+                if rows["ends"].shape[1] < width:
+                    rows["ends"] = torch.nn.functional.pad(rows["ends"], (0, width - rows["ends"].shape[1]), value=-1)
+            stochastic = b["stochastic"] or fresh["stochastic"]
+            if stochastic:
+                for rows in (b, fresh):
+                    if rows["dists"] is None:
+                        # Greedy proposals are point masses when a sampled row
+                        # joins; regenerating survivors would discard progress
+                        # and consume an extra set of random draws.
+                        rows["dists"] = torch.zeros((*rows["drafts"].shape, self.e.F.vocab),
+                                                    dtype=torch.float32, device=self.e.caches.device)
+                        rows["dists"].scatter_(2, rows["drafts"].unsqueeze(2), 1.0)
+            for name in b:
+                if name == "stochastic":
+                    continue
+                if b[name] is not None:
+                    b[name] = torch.cat((b[name], fresh[name]), 0)
+            b["stochastic"] = stochastic
+            self.batch = tuple(keep + added)
+            if self.batch != tuple(seqs):
+                self._shrink(seqs)
+        self.slots = dict(zip(seqs, slots))
+        self.dirty.difference_update(seqs)
+        self.merges += 1
 
     def _shrink(self, seqs) -> None:
         """Rows left the batch (they finished, the host learned it a step late): keep the device view of the rest.
@@ -119,7 +192,7 @@ class AsyncDecode:
         if dev.type == "cuda":
             host = torch.tensor(keep, dtype=torch.int64, pin_memory=True)     # a pageable copy would wait for the steps in flight
             idx = host.to(dev, non_blocking=True)
-            self._staged = (self._staged + [host])[-8:]
+            self._staged.append(host)
         else:
             idx = torch.tensor(keep, dtype=torch.int64, device=dev)
         b = self.buf
@@ -129,15 +202,19 @@ class AsyncDecode:
         b["ids"] = b["ids"].view(-1, self.t).index_select(0, idx).reshape(-1)
         if b["dists"] is not None:
             b["dists"] = b["dists"].index_select(0, idx)
+        if "stochastic" in b:
+            b["stochastic"] = any(self.e.limits[s][1] > 0 for s in seqs)
+            if not b["stochastic"]:
+                b["dists"] = None
         # nothing else to re-index: the truncations ride in `top_k` and `top_p` above, and the list of
         # which rows to sort went away with the sort (45차 §32)
         self.batch = tuple(seqs)
 
-    def _propose_rows(self) -> None:
+    def _propose_rows(self, rows=None) -> None:
         """Every row's next proposal at once, from its device anchor at its device context, into the next step's ids
         (45차 §23 GPU 판정 4차: one drafter replay a step, not one a row)."""
-        e, b, t = self.e, self.buf, self.t
-        n = len(self.batch)
+        e, b, t = self.e, self.buf if rows is None else rows, self.t
+        n = b["ctx"].shape[0]
         graphs = e.drafter.decode_graphs
         if b["stochastic"]:
             if graphs is not None:
@@ -161,15 +238,13 @@ class AsyncDecode:
         seqs, slots = list(seqs), list(slots)
         if len(self.pending) >= self.depth or not self.free:
             raise RuntimeError("the decode pipeline is full: resolve a step before launching another")
-        if self.stale or tuple(seqs) != self.batch:
-            if self.pending:
-                if set(seqs) - set(self.batch) or self.stale:
-                    raise RuntimeError("rows joined the batch while steps were in flight: the runner must drain first")
-                self._shrink(seqs)
-            else:
-                # A completed request leaves its batch identity behind. Once
-                # readbacks have drained, a new row or prefill can rebuild it.
-                self._build(seqs, slots)
+        if not self.ready_for(seqs, slots):
+            raise RuntimeError("invalidated rows have steps in flight: the runner must drain first")
+        if self.stale:
+            self._build(seqs, slots)
+        elif (tuple(seqs) != self.batch or self.dirty.intersection(seqs)
+              or any(self.slots.get(s) != slot for s, slot in zip(seqs, slots))):
+            self._merge(seqs, slots)
         b = self.buf
         n = len(seqs)
         # the host's step: its contexts may lag the device's by the steps in flight; the reservation covers that lag
@@ -180,7 +255,6 @@ class AsyncDecode:
         host_step = Step(zeros, tuple(Segment(s, slot, e.ctx[s], i * t, t) for i, (s, slot) in enumerate(zip(seqs, slots))))
         end = max(e.ctx[s] + t * ahead for s in seqs)
         shape = e.decode_graphs.shape_for(n, end)
-        ctx_before = b["ctx"].clone()
         h, aux, local = e.decode_graphs.run_device(shape, host_step, b["ids"], b["ctx"], b["seqs"], b["slot"])
         if b["stochastic"]:
             # the model's dtype, not fp32: the sampler converts as it reads, and the undecodable tail
@@ -194,14 +268,19 @@ class AsyncDecode:
         else:
             picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None
-        count, done, accepted, tokens = commit_batch(picks, b["drafts"], b["alive"], b["generated"], b["limit"], b["ends"], accepted)
+        if picks.is_cuda:
+            from engine.kernels.decode_commit import advance
+            count, done, accepted, tokens, ctx_before = advance(picks, b, accepted)
+        else:
+            ctx_before = b["ctx"].clone()
+            count, done, accepted, tokens = commit_batch(picks, b["drafts"], b["alive"], b["generated"], b["limit"], b["ends"], accepted)
+            b["generated"] += count
+            b["ctx"] += count
+            last = tokens.gather(1, (count - 1).clamp_min(0).unsqueeze(1)).squeeze(1)
+            b["anchor"] = torch.where(count > 0, last, b["anchor"])
+            b["alive"] = b["alive"] & ~done
+            b["slot"] = torch.where(b["alive"], b["real_slot"], torch.zeros_like(b["real_slot"]))
         e.caches.stage_boundaries(b["real_slot"], ctx_before, count)       # a block boundary crossed: its state parked for the host
-        b["generated"] += count
-        b["ctx"] += count
-        last = tokens.gather(1, (count - 1).clamp_min(0).unsqueeze(1)).squeeze(1)
-        b["anchor"] = torch.where(count > 0, last, b["anchor"])
-        b["alive"] = b["alive"] & ~done
-        b["slot"] = torch.where(b["alive"], b["real_slot"], torch.zeros_like(b["real_slot"]))
         if aux is not None:
             positions = ctx_before.view(n, 1) + torch.arange(t, device=aux.device)
             if e.drafter.decode_graphs is not None:
@@ -222,6 +301,7 @@ class AsyncDecode:
         for s in seqs:
             e.inflight[s] = e.inflight.get(s, 0) + 1
         pending = Pending(self, lane, seqs, event)
+        pending.staged, self._staged = self._staged, []
         self.pending.append(pending)
         return pending
 
@@ -231,6 +311,7 @@ class AsyncDecode:
         self.pending.pop(0)
         if pending.event is not None:
             pending.event.synchronize()
+        pending.staged = []                               # these uploads precede this exact event
         e, K = self.e, self.e.drafter.k
         host = self.host[pending.slot]
         n = len(pending.seqs)

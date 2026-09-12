@@ -127,12 +127,19 @@ class Comm:
             return t
         import torch
         import torch.distributed as dist
-        parts = [torch.empty_like(t) for _ in range(self.world_size)]
-        dist.all_gather(parts, t, group=self.group)
-        return torch.cat(parts, dim=dim)
+        if t.ndim == 0 or not -t.ndim <= dim < t.ndim:
+            raise IndexError('all_gather dimension is outside the tensor rank')
+        dim = dim % t.ndim
+        # NCCL writes directly into one rank-major allocation. The list API
+        # otherwise creates per-rank outputs before torch.cat copies them again.
+        gathered = torch.empty((self.world_size, *t.shape), device=t.device, dtype=t.dtype)
+        dist.all_gather_into_tensor(gathered.flatten(0, 1), t.contiguous(), group=self.group)
+        return gathered.movedim(0, dim).flatten(dim, dim + 1)
 
     def all_reduce_max(self, t):
         if self.world_size > 1:
+            if self.transport is not None and self.transport.eligible_max(t):
+                return self.transport.reduce_max(t)
             import torch.distributed as dist
             dist.all_reduce(t, op=dist.ReduceOp.MAX, group=self.group)
         return t

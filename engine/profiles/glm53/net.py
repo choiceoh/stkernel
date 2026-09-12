@@ -305,7 +305,7 @@ class Glm53Net:
 
     # -- KDA ------------------------------------------------------------------------
     def _hc_post_pre(self, L, x, res, post, comb, side):
-        if self.mhc is None or x.shape[0] > 32:
+        if self.mhc is None or x.shape[0] > 64:
             res = self.lanes.mhc_post(x, res, post, comb)
             post, comb, x = self._hc_pre(L, res, side)
             return res, post, comb, x
