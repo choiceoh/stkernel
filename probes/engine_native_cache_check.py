@@ -88,11 +88,27 @@ def worker(args):
     duration = time.perf_counter() - start
     directory = build["directory"]
     value = module.answer() if args.fixture == "mini" else sorted(n for n in dir(module) if not n.startswith("_"))
+    host_guards = []
+    if args.fixture == "oneshot":
+        # Exercise the actual Tensor type caster and early host-side guards
+        # without reaching CUDA stream lookup or initializing the transport.
+        for function, dtype, message in (("oneshot_ar", torch.bfloat16, "input.is_cuda()"),
+                                         ("oneshot_max_int64", torch.int64,
+                                          "oneshot MAX requires contiguous CUDA int64")):
+            try:
+                getattr(module, function)(torch.empty(8, dtype=dtype, device="cpu"))
+            except RuntimeError as exc:
+                if message not in str(exc):
+                    raise
+                host_guards.append(function)
+            else:
+                raise RuntimeError(f"{function} accepted a CPU tensor")
     assert not torch.cuda.is_initialized()
     print("RESULT " + json.dumps(dict(arm=args.arm, fixture=args.fixture, key=directory.name,
           value=value, load_seconds=duration,
           nvcc_compilations=compilations(directory) - build["before"], directory=str(directory),
-          torch=torch.__version__, cuda=torch.version.cuda, cuda_initialized=False)), flush=True)
+          torch=torch.__version__, cuda=torch.version.cuda, cuda_initialized=False,
+          host_guards=host_guards)), flush=True)
 
 
 def run(args):

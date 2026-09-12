@@ -1,0 +1,20 @@
+[1/2] /usr/local/cuda/bin/nvcc -MD -MF dsv4_oneshot_ar.cuda.o.d -DTORCH_EXTENSION_NAME=st_oneshot_3acfb5c1ed9631e29a58031e -DTORCH_API_INCLUDE_EXTENSION_H -isystem /usr/local/lib/python3.12/dist-packages/torch/include -isystem /usr/local/lib/python3.12/dist-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /usr/include/python3.12 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options '-fPIC' -O2 -gencode arch=compute_121a,code=sm_121a -DMAXEL=262144 -std=c++20 -c /evidence/oneshot-headers-0913-v3/cache-1-lean/3acfb5c1ed9631e29a58031e/src/dsv4_oneshot_ar.cu -o dsv4_oneshot_ar.cuda.o 
+/evidence/oneshot-headers-0913-v3/cache-1-lean/3acfb5c1ed9631e29a58031e/src/dsv4_oneshot_ar.cu(547): warning #3010-D: a volatile operand to an increment expression is deprecated
+      g_ctrl->proxy_beat++;
+      ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/evidence/oneshot-headers-0913-v3/cache-1-lean/3acfb5c1ed9631e29a58031e/src/dsv4_oneshot_ar.cu(547): warning #3010-D: a volatile operand to an increment expression is deprecated
+      g_ctrl->proxy_beat++;
+      ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/evidence/oneshot-headers-0913-v3/cache-1-lean/3acfb5c1ed9631e29a58031e/src/dsv4_oneshot_ar.cu: In function ‘void* proxy_fn(void*)’:
+/evidence/oneshot-headers-0913-v3/cache-1-lean/3acfb5c1ed9631e29a58031e/src/dsv4_oneshot_ar.cu:547:10: warning: ‘++’ expression of ‘volatile’-qualified type is deprecated [-Wvolatile]
+  547 |     g_ctrl->proxy_beat++;
+      |     ~~~~~^~~~~~~~~~~
+[2/2] c++ dsv4_oneshot_ar.cuda.o -shared -libverbs -L/usr/local/lib/python3.12/dist-packages/torch/lib -lc10 -lc10_cuda -ltorch_cpu -ltorch_cuda -ltorch -ltorch_python -L/usr/local/cuda/lib64 -lcudart -o st_oneshot_3acfb5c1ed9631e29a58031e.so
+RESULT {"arm": "stable", "fixture": "oneshot", "key": "3acfb5c1ed9631e29a58031e", "value": ["connect", "healthy", "init", "local_infos", "oneshot_ar", "oneshot_ar_consumer", "oneshot_ar_hint", "oneshot_max_int64", "phase_counters", "shutdown", "transport_modes"], "load_seconds": 22.900702493003337, "nvcc_compilations": 1, "directory": "/evidence/oneshot-headers-0913-v3/cache-1-lean/3acfb5c1ed9631e29a58031e", "torch": "2.13.0+cu130", "cuda": "13.0", "cuda_initialized": false, "host_guards": ["oneshot_ar", "oneshot_max_int64"]}
+W0912 17:25:25.752000 109 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'

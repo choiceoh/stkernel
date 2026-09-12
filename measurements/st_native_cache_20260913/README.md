@@ -94,5 +94,5 @@ python3 -m unittest tests.test_engine_native_cache tests.test_engine_mla_hardwar
 
 macOS에서는 전체 묶음 중 기존 Linux `O_DIRECT` 검사와 Torch 임포트 검사를 실행할 수
 없어 Linux 이미지에서 위 묶음을 검증했다. 두 probe의 모든 소스 해시는 기록된 커밋과,
-22개 실행의 JSON 행은 저장된 컴파일 로그와 대조했다. one-shot 증거의 소스는 최종
-브랜치에서도 같은 바이트다.
+22개 실행의 JSON 행은 저장된 컴파일 로그와 대조했다. one-shot 증거의 소스는 PR #781의
+최종 브랜치에서도 같은 바이트다.
