@@ -1,0 +1,11 @@
+10.10.10.2: stopped
+10.10.10.1: stopped
+10.10.10.3: stopped
+10.10.10.4: stopped
+released
+395
+228
+639
+413
+ABORT: 10.10.10.1 runs st-native-h-cpu -- the fleet is taken (hand off the queue, do not squat)
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Couldn't connect to server

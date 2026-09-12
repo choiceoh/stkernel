@@ -1,0 +1,7 @@
+Production drained; candidate run begins
+10.10.10.2: stopped
+10.10.10.1: stopped
+10.10.10.3: stopped
+10.10.10.4: stopped
+ABORT: the bench queue holds the fleet: st-knobs-stock|3238118|srv2|1789181909|40|45cha-21 same check, stock arm|boot (bench/fleet.sh status; release it there)
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Couldn't connect to server

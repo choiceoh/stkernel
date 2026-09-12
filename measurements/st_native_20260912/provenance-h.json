@@ -1,0 +1,9 @@
+{
+  "engine_source_sha256": "de14e0d8fc16cac0fff176cf743425baaf47e94cda29ca29f01c1a19be2e3245",
+  "image": "st-engine:perf-f4d7-h",
+  "source": "/home/choiceoh/st-releases/perf-f4d7-20260912h",
+  "merged_main": "c489ca4e",
+  "kv_gib": 12,
+  "workspace_gib": 12,
+  "os_reserve_gib": 4
+}
