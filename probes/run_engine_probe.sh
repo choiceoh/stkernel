@@ -23,17 +23,28 @@ if [ "${ST_PROBE_NO_GPU:-0}" = 1 ]; then
   gpu=()
   envs+=(-e CUTE_DSL_ARCH=sm_121a)
 fi
-# A probe takes the same GPUs as a boot, so it takes the same lease -- the last way in
-# was a bare `docker run` that no launcher and no queue could see. Short, named (so the
-# container is the lease's evidence), and released however the probe ends.
-LEASE_PATH=${ST_LEASE_PATH:-$HOME/st-fleet.lock}
+# A probe takes the same GPUs as a boot, so it takes the same lease -- a bare `docker run`
+# was the last way in that no launcher and no queue could see. The lease is the head
+# node's one file (launchers/lib/fleet-lease.sh), not this node's: a lease written here
+# would be one nobody else can read. Named container, heartbeat while it runs, released
+# however the probe ends.
 LEASE_OWNER=${ST_LEASE_OWNER:-probe/$(whoami)@$(hostname -s)/$$}
 NAME=st-probe-$$
-if [ "${ST_PROBE_NO_LEASE:-0}" != 1 ]; then
-  python3 "$repo/engine/base/fleet_lease.py" acquire --owner "$LEASE_OWNER" --path "$LEASE_PATH" \
-    --container "$NAME" --est-minutes "${ST_PROBE_MINUTES:-20}" --note "$probe" >/dev/null \
-    || { echo "ABORT: $(python3 "$repo/engine/base/fleet_lease.py" read --path "$LEASE_PATH")" >&2; exit 1; }
-  trap 'python3 "$repo/engine/base/fleet_lease.py" release --owner "$LEASE_OWNER" --path "$LEASE_PATH" >/dev/null 2>&1 || true' EXIT INT TERM
+# A probe that asks for no GPU (ST_PROBE_NO_GPU=1: import and source checks) reserves
+# nothing -- taking four Sparks for a CPU check is the opposite of smooth.
+if [ "${ST_PROBE_NO_LEASE:-0}" != 1 ] && [ "${ST_PROBE_NO_GPU:-0}" != 1 ]; then
+  # Set, then source: an assignment prefix on `.` is temporary in bash, so the helper's
+  # own defaults would be discarded the moment the builtin returns.
+  FLEET_REPO=$repo
+  . "$repo/launchers/lib/fleet-lease.sh"
+  fleet_lease acquire --owner "'$LEASE_OWNER'" --container "$NAME" \
+    --est-minutes "${ST_PROBE_MINUTES:-20}" --note "'$probe'" >/dev/null \
+    || { echo "ABORT: the fleet is $(fleet_lease read 2>/dev/null || echo unreachable)" >&2; exit 1; }
+  BEAT=$(fleet_lease_beat "$LEASE_OWNER")
+  # If this shell is killed outright (SIGKILL) the trap cannot run and the lease leaks.
+  # It is not lost: with its evidence on another node it goes stale after the grace and
+  # the next acquirer reclaims it, and `read` reports it as free (stale: ...) meanwhile.
+  trap 'kill $BEAT 2>/dev/null; fleet_lease release --owner "'"'"'$LEASE_OWNER'"'"'" >/dev/null 2>&1 || true' EXIT INT TERM
 fi
 docker run --rm --name "$NAME" "${gpu[@]}" "${mounts[@]}" "${envs[@]}" \
   --entrypoint python3 "$image" -u "/repo/$probe" "$@"

@@ -232,7 +232,9 @@ class FleetOccupancyTests(unittest.TestCase):
         self.assertIn("st_engine_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-'; }",
                       self.fleet)
         # a grant is refused on both paths that hand out the fleet
-        self.assertIn('if st_engine_up; then logit "hold refused: ST engine occupies the fleet', self.fleet)
+        self.assertIn('logit "hold refused: ST engine occupies the fleet', self.fleet)
+        # refusing alone would leave a queued session waiting for a human to go and ask
+        self.assertIn('st_engine_yield "$s"', self.fleet)
         self.assertIn('if st_engine_up; then echo "ST engine occupies the fleet', self.fleet)
         # and status says so instead of FREE
         self.assertIn('TAKEN by the ST engine, outside this queue', self.fleet)
