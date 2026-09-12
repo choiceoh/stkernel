@@ -60,6 +60,7 @@ class Glm53Engine:
         self.gen = torch.Generator(device=caches.device).manual_seed(seed)
         self.tokens, self.prompt_len, self.ctx, self.slot, self.limits = {}, {}, {}, {}, {}
         self.min_new = {}                                   # seq -> no end token before this many generated (OpenAI min_tokens)
+        self.thinking = {}                                  # seq -> still inside its reasoning block (a budget watches it)
         self.options = {}                                   # seq -> the request's sampling options beyond temperature (base/sampler.OPTION_KEYS)
         self.gens = {}                                      # seq -> its own torch.Generator when the request carries a seed
         self.ends = {}                                      # seq -> end tokens: the model's plus the request's stop_token_ids
@@ -368,6 +369,7 @@ class Glm53Engine:
         options = dict(options or {})
         self.options[seq] = options
         self.ends[seq] = self.eos | set(options.get("stop_token_ids") or ())
+        self.thinking[seq] = options.get("reasoning_budget") is not None
         if options.get("seed") is not None:
             self.gens[seq] = torch.Generator(device=self.caches.device).manual_seed(int(options["seed"]))
         else:
@@ -425,7 +427,7 @@ class Glm53Engine:
     def forget(self, seq: int) -> None:
         if seq in self.slot:
             raise ValueError(f"seq {seq} is still live")
-        for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers,
+        for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.thinking, self.options, self.gens, self.ends, self.lps, self.matchers,
                      self.media, self.embeds, self.inflight, self.staged, self._ends_tensor):
             rows.pop(seq, None)                             # a row leaving does not move the others: the pipeline shrinks its view
         self._forget_history(seq)
@@ -703,7 +705,32 @@ class Glm53Engine:
         seen, counts = self.sampling_history.of(seq, self.tokens[seq], self.prompt_len[seq])
         need = self.min_new.get(seq, 0) - self._generated_count(seq) - len(drafts_before)
         forbid = self._end_ids(seq, raw.device) if need > 0 and self.ends.get(seq) else None
-        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid, out=out)
+        force = self._reasoning_over(seq, opts, drafts_before)
+        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid, out=out,
+                              force=force)
+
+    def _reasoning_over(self, seq: int, opts: dict, drafts_before) -> "int | None":
+        """The reasoning-end token, when this row's thinking budget is spent and it is still thinking.
+
+        A thinking model can spend a whole answer inside the block -- writing a draft, counting its
+        characters, redrafting -- and hit the limit with nothing outside it, which is a real failure
+        in this stack's own record (29차: 상한에 걸려 답 0 자). llama.cpp bounds it with
+        `--reasoning-budget` and forces the closing tag when it runs out; this is that, and the door
+        sets the budget so the answer always keeps a share of the limit (45차 §46).
+
+        The scan only runs once the budget is spent, which is the couple of steps between that and
+        the token landing; before then this costs one comparison, and after it, nothing.
+        """
+        budget = opts.get("reasoning_budget")
+        if budget is None or not self.thinking.get(seq, False):
+            return None
+        end = opts["reasoning_end"]
+        if self._generated_count(seq) + len(drafts_before) < budget:
+            return None
+        if end in drafts_before or end in self.tokens[seq][self.prompt_len[seq]:]:
+            self.thinking[seq] = False               # it left the block on its own; never asked again
+            return None
+        return end
 
     def _end_ids(self, seq: int, device) -> torch.Tensor:
         """This row's end tokens as a tensor, kept: min_tokens asks for them on every position it covers."""

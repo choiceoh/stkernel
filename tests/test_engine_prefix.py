@@ -346,6 +346,107 @@ class PrefixCacheTests(unittest.TestCase):
         run_to_end(r, 0)
         self.assertIsNone(r.shared_ahead(ids, (), above=8))             # cached now: nothing to wait for
 
+    def test_two_boundaries_cannot_share_a_tier_slot(self):
+        """The tier indexes by 56 bits of the hash. Two boundaries naming one slot must not be served from it --
+        the loser would get the winner's KV, quietly, across the tenant separation the salt exists to draw."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 10
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        r.step(now=0); r.step(now=0)
+        h12 = cache.chain(list(range(12)))[12]
+        key = r.tier_key(h12)
+        self.assertEqual(cache.tier_holder(key), h12, "the boundary that spilled owns its slot")
+
+        # a second boundary whose hash begins with the same seven bytes
+        twin = h12[:7] + bytes((h12[7] ^ 0xff,)) + h12[8:]
+        self.assertNotEqual(twin, h12)
+        self.assertEqual(r.tier_key(twin), key)
+        with self.assertRaises(ValueError):
+            cache.hold_tier(twin, key)                       # the slot is taken: it cannot be double-booked
+        self.assertNotIn(twin, cache.tier_keys)
+
+        # and a restore that somehow names the taken slot is refused rather than served the other one's bytes
+        cache.tier_keys[twin] = key                          # as a stale mapping would leave it
+        with self.assertRaisesRegex(ValueError, "another boundary"):
+            r.restore_begin(2, twin, 12)
+        self.assertNotIn(twin, cache.tier_keys, "and the stale mapping is dropped on the way out")
+        self.assertEqual(cache.tier_holder(key), h12, "the real owner is untouched")
+        self.assertIn(h12, cache.tier_keys)
+
+    def test_a_boundary_whose_slot_is_taken_is_not_written_at_all(self):
+        """Not even attempted: writing would put this boundary's bytes over the owner's on disk, and only then
+        would anything notice. The loser stays in memory, which is what it was."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        tier = MemoryTier()
+        r.prefix_tier = TieredKV(r.kv, tier)
+        r.spill_low_water = 0                                # nothing spills while the boundary is being made
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        h12 = cache.chain(list(range(12)))[12]
+        stranger = h12[:7] + bytes((h12[7] ^ 0xff,)) + h12[8:]
+        cache.hold_tier(stranger, r.tier_key(h12))           # the slot is somebody else's before the spill can run
+        r.spill_low_water = 10
+        r.step(now=0); r.step(now=0)
+        self.assertEqual(r.prefix_spills, 0, "it must not have written")
+        self.assertEqual(tier.keys(), [], "and must not have touched the tier at all")
+        self.assertNotIn(h12, cache.tier_keys)
+        self.assertIn(h12, cache.entries, "the loser is still a memory boundary")
+        self.assertEqual(cache.tier_holder(r.tier_key(h12)), stranger)
+
+    def test_a_slot_taken_while_the_write_was_in_flight_goes_to_whoever_landed(self):
+        """The write is issued on the tier's thread and lands a step or more later. If the slot changed hands in
+        between, the bytes on the tier are the LANDING one's -- so the earlier owner is what is gone, and saying
+        otherwise would leave a mapping that reads somebody else's KV."""
+        import threading
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        gate = threading.Event()
+        tier = MemoryTier(gate=gate)
+        r.prefix_tier = TieredKV(r.kv, tier)
+        r.spill_low_water = 0
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        h12 = cache.chain(list(range(12)))[12]
+        r.spill_low_water = 10
+        r.step(now=0)                                        # the write is issued and waits on the gate
+        future = r._spills[h12]
+        stranger = h12[:7] + bytes((h12[7] ^ 0xff,)) + h12[8:]
+        cache.hold_tier(stranger, r.tier_key(h12))           # the slot changes hands while the bytes are in flight
+        gate.set()
+        future.result(timeout=10)                            # the bytes are on the tier now
+        r.step(now=0)                                        # and this is the step that lands it
+        self.assertEqual(r.prefix_spills, 1)
+        self.assertEqual(cache.tier_holder(r.tier_key(h12)), h12, "the one whose bytes are there owns the slot")
+        self.assertNotIn(stranger, cache.tier_keys, "and the one that was displaced is not left pointing at them")
+
+    def test_a_tier_record_that_does_not_name_its_own_slot_is_not_adopted_at_boot(self):
+        """`load_prefix_tier` trusts the disk. A record whose hash does not hash to its own key is not this
+        cache's -- a different hash form, or a slot written by something else."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        tier = MemoryTier()
+        r.prefix_tier = TieredKV(r.kv, tier)
+        good, stranger = bytes(range(20)), bytes(range(1, 21))
+        for key, h in ((r.tier_key(good), good), (12345, stranger)):
+            tier.index[str(key)] = True                      # as `keys()` reads them back at boot
+            tier.records[key] = {"hash": h.hex(), "tokens": 4}
+        self.assertNotEqual(r.tier_key(stranger), 12345, "the stranger's record does not name its own slot")
+        r.load_prefix_tier()
+        self.assertEqual(list(cache.tier_keys), [good])
+        self.assertEqual(cache.tier_holder(r.tier_key(good)), good)
+
     def test_a_leaf_spills_to_the_prefix_tier_and_a_later_prompt_restores_it_with_its_snapshot(self):
         from test_engine_tier import MemoryTier, Storage
         from engine.base.tiered_kv import TieredKV
