@@ -241,7 +241,10 @@ class FleetOccupancyTests(unittest.TestCase):
         # a grant is refused on both paths that hand out the fleet
         self.assertIn('logit "hold refused: ST engine occupies the fleet', self.fleet)
         # refusing alone would leave a queued session waiting for a human to go and ask
-        self.assertIn('st_engine_yield "$s"', self.fleet)
+        self.assertIn('if st_engine_yield "$s"; then', self.fleet)
+        # ... and when it CANNOT ask, it says so rather than reporting an ask nobody made:
+        # a runner's snapshot carries bench/, engine/ and probes/, not launchers/ (45차 §91)
+        self.assertIn('the holder was NOT asked', self.fleet)
         self.assertIn('if st_engine_up; then echo "ST engine occupies the fleet', self.fleet)
         # and status says so instead of FREE
         self.assertIn('TAKEN by the ST engine, outside this queue', self.fleet)
