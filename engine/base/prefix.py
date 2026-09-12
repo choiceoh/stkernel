@@ -34,6 +34,7 @@ class Entry:
     spilled: bool = False           # a copy is on the prefix tier: dropping it from memory loses nothing (A)
     spilling: bool = False          # the copy is being written: the snapshot and blocks must stay as they are
     spill_failed: bool = False      # the tier refused it for good (not room: an error)
+    children: int = 0               # cached boundaries one block longer that extend this one: zero means a leaf
 
 
 class PrefixCache:
@@ -47,6 +48,8 @@ class PrefixCache:
         self.hits = self.misses = self.evictions = 0
         self.pool = None
         self.tier_keys: "dict[bytes, int]" = {}   # boundaries whose blocks + snapshot the prefix tier holds (base/runner spills them)
+        self._by_blocks: "dict[tuple, bytes]" = {}   # block list -> hash: an entry's parent is the one a block shorter
+        self.version = 0                          # bumped by every insert/evict/pin: what changed since someone last looked
 
     def bind(self, pool) -> None:
         """The pool this cache pins blocks in; the pool reclaims through it when its free stack runs short."""
@@ -72,6 +75,53 @@ class PrefixCache:
                 j += 1
             out[end] = h
         return out
+
+    def extend_chain(self, chain: dict, ids, salts=(), start: int = 0) -> dict:
+        """`chain` continued over `ids[start:]` -- the tokens after the last boundary it knows. `ids` may be the whole
+        history or just its tail from `start`; only the new blocks are hashed (a 128K conversation crossing a boundary
+        while generating must not re-hash 170 blocks of it)."""
+        out = dict(chain)
+        last = max(out) if out else 0
+        if start > last:
+            raise ValueError("the tail must begin at or before the chain's last boundary")
+        h = out.get(last, b"")
+        unit = self.block_size
+        salted = sorted((int(p), bytes(d)) for p, d in salts if int(p) >= last)
+        j = 0
+        end = last + unit
+        while end - start <= len(ids):
+            h = hashlib.sha1(h + array("i", ids[end - unit - start:end - start]).tobytes()).digest()
+            while j < len(salted) and salted[j][0] < end:
+                h = hashlib.sha1(h + salted[j][1]).digest()
+                j += 1
+            out[end] = h
+            end += unit
+        return out
+
+    def peek_chain(self, chain: dict, n: int) -> int:
+        return max((t for t in chain if t < n and chain[t] in self.entries), default=0)
+
+    def lookup_chain(self, chain: dict, n: int):
+        """`lookup` over a chain computed once by the caller."""
+        for tokens in sorted(chain, reverse=True):
+            if tokens < n and chain[tokens] in self.entries:
+                entry = self.entries[chain[tokens]]
+                self.tick += 1
+                entry.used = self.tick
+                entry.hits += 1
+                self.hits += 1
+                return tokens, entry, chain[tokens]
+        self.misses += 1
+        return 0, None, None
+
+    def tier_lookup_chain(self, chain: dict, n: int, above: int = 0) -> "tuple[int, bytes] | None":
+        for tokens in sorted(chain, reverse=True):
+            if tokens <= above or tokens >= n:
+                continue
+            h = chain[tokens]
+            if h in self.tier_keys and h not in self.entries:
+                return tokens, h
+        return None
 
     def lookup(self, ids, salts=()):
         """(tokens, entry, hash) of the longest cached boundary strictly inside the prompt, or (0, None, None)."""
@@ -108,11 +158,10 @@ class PrefixCache:
         return None
 
     def is_leaf(self, h: bytes) -> bool:
-        """No cached boundary extends this one: its block list is not another entry's prefix. Only leaves go to the
-        tier -- a restored leaf brings every block of its chain back, an inner boundary would bring the same ones."""
-        e = self.entries[h]
-        n = len(e.blocks)
-        return not any(f is not e and len(f.blocks) > n and f.blocks[:n] == e.blocks for f in self.entries.values())
+        """No cached boundary one block longer extends this one. Only leaves go to the tier -- a restored leaf brings
+        every block of its chain back, an inner boundary would bring the same ones. Kept as a count at insert/evict:
+        the runner asks every step, and a scan of 96 entries' block lists per step is a decode-step's worth of host time."""
+        return self.entries[h].children == 0
 
     def spill_candidates(self, count: int) -> "list[bytes]":
         """Up to `count` leaves in eviction order that have no copy on the tier yet: what to write ahead of need."""
@@ -133,6 +182,7 @@ class PrefixCache:
             if h in self.entries and not self.entries[h].pinned:
                 self.entries[h].pinned = True
                 n += 1
+        self.version += n > 0
         return n
 
     def unpin_all(self) -> int:
@@ -141,6 +191,7 @@ class PrefixCache:
             if e.pinned:
                 e.pinned = False
                 n += 1
+        self.version += n > 0
         return n
 
     # -- snapshots and entries ----------------------------------------------------------------
@@ -171,11 +222,25 @@ class PrefixCache:
         if h in self.entries or tokens % self.block_size or len(blocks) != tokens // self.block_size:
             raise ValueError("a prefix entry is one whole-block boundary with exactly its blocks")
         self.tick += 1
+        self.version += 1
         self.pool.pin(blocks)
-        self.entries[h] = Entry(tuple(blocks), tokens, snap, self.tick)
+        blocks = tuple(blocks)
+        self.entries[h] = Entry(blocks, tokens, snap, self.tick)
+        self._by_blocks[blocks] = h
+        parent = self._by_blocks.get(blocks[:-1])
+        if parent is not None:
+            self.entries[parent].children += 1
+        for longer, hh in self._by_blocks.items():                      # a child inserted before its parent (a tier restore) counts too
+            if len(longer) == len(blocks) + 1 and longer[:-1] == blocks:
+                self.entries[h].children += 1
 
     def _evict(self, h: bytes) -> int:
         entry = self.entries.pop(h)
+        self.version += 1
+        self._by_blocks.pop(entry.blocks, None)
+        parent = self._by_blocks.get(entry.blocks[:-1])
+        if parent is not None and self.entries[parent].children > 0:
+            self.entries[parent].children -= 1
         freed = self.pool.unpin(entry.blocks)
         self.free_snaps.append(entry.snap)
         self.evictions += 1

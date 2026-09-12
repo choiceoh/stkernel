@@ -37,6 +37,21 @@ def swizzle_sf(sf: torch.Tensor) -> torch.Tensor:
     return t.permute(0, 3, 2, 1, 4).reshape(-1)          # [a, d, c, b, e]
 
 
+def swizzle_sf_batch(sf: torch.Tensor) -> torch.Tensor:
+    """[E, M, S] -> [E, Mp * Sp]: `swizzle_sf` of every matrix, stacked, byte for byte.
+
+    The interleave is built inside one matrix and never crosses the leading dimension, so
+    the two are the same permutation. Presharding wants 288 of these a layer a rank, and
+    one expert at a time measured 1.25 s against 0.22 s for the whole stack.
+    """
+    e, m, s = sf.shape
+    mp, sp = _pad(m, 128), _pad(s, 4)
+    x = torch.zeros(e, mp, sp, dtype=sf.dtype, device=sf.device)
+    x[:, :m, :s] = sf
+    t = x.view(e, mp // 128, 4, 32, sp // 4, 4)          # the single-matrix view with E in front
+    return t.permute(0, 1, 4, 3, 2, 5).reshape(e, -1)
+
+
 def unswizzle_sf(packed: torch.Tensor, m: int, s: int) -> torch.Tensor:
     mp, sp = _pad(m, 128), _pad(s, 4)
     t = packed.view(mp // 128, sp // 4, 32, 4, 4).permute(0, 3, 2, 1, 4)     # back to [a, b, c, d, e]

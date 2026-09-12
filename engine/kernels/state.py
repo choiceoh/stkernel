@@ -126,11 +126,16 @@ def stage_boundaries(caches, slots, ctx_before, counts):
         return
     state_f32, state_bf16 = caches.state.view(torch.float32), caches.state.view(torch.bfloat16)
     stage_f32, stage_bf16 = caches.stage_store.view(torch.float32), caches.stage_store.view(torch.bfloat16)
-    dev = slots.device
-    rec_off = torch.tensor([caches._fields["rec", L].storage_offset() - state_f32.storage_offset() for L in kda], device=dev)
-    rec_stage_off = torch.tensor([caches._stage["rec", L].storage_offset() - stage_f32.storage_offset() for L in kda], device=dev)
-    conv_off = torch.tensor([caches._fields["conv", L].storage_offset() - state_bf16.storage_offset() for L in kda], device=dev)
-    conv_stage_off = torch.tensor([caches._stage["conv", L].storage_offset() - stage_bf16.storage_offset() for L in kda], device=dev)
+    tables = getattr(caches, "_stage_tables", None)
+    if tables is None:
+        # the layout's offsets are constants: built once, not four host-to-device copies (each a stream wait) per step
+        dev = slots.device
+        tables = caches._stage_tables = (
+            torch.tensor([caches._fields["rec", L].storage_offset() - state_f32.storage_offset() for L in kda], device=dev),
+            torch.tensor([caches._stage["rec", L].storage_offset() - stage_f32.storage_offset() for L in kda], device=dev),
+            torch.tensor([caches._fields["conv", L].storage_offset() - state_bf16.storage_offset() for L in kda], device=dev),
+            torch.tensor([caches._stage["conv", L].storage_offset() - stage_bf16.storage_offset() for L in kda], device=dev))
+    rec_off, rec_stage_off, conv_off, conv_stage_off = tables
     n, cells = int(slots.numel()), F.spec_k + 1
     cell = F.kda_heads_local * F.kda_dim * F.kda_dim
     _stage_rec[(n, len(kda), triton.cdiv(cell, 1024))](

@@ -528,6 +528,18 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
     return 0 if ok else 1
 
 
+def fleet_lease_of() -> "dict | None":
+    """The reservation the launcher took for this boot, if it took one.
+
+    With it the engine publishes what it is doing and can be ASKED to hand the fleet
+    over -- it finishes, parks its conversations where they survive (D16), and lets go.
+    Without it the engine serves exactly as before; a lease is a reservation, not a
+    dependency.
+    """
+    owner, path = os.environ.get("ST_LEASE_OWNER"), os.environ.get("ST_LEASE_PATH")
+    return {"owner": owner, "path": path} if owner and path else None
+
+
 def fleet(a) -> int:
     """One rank per node, inside the glm53 image: served lanes (D3: all or nothing), every layer, then serve."""
     print(f"  box: {facts.check_box()}")
@@ -593,7 +605,8 @@ def fleet(a) -> int:
         Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                tool_parser=parse_tool_calls, generation=generation_defaults(a.ckpt_meta),
-               vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None).loop()
+               vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
+               lease=fleet_lease_of()).loop()
     finally:
         try:
             if dump is not None:

@@ -215,10 +215,29 @@ class Glm53Caches:
             # A released row already contains -1 after its active prefix. Send
             # that padding with the new ids to clear stale entries in one copy.
             end = max(count, previous)
-            self.block_table[s.seq, start:end].copy_(torch.tensor(row[start:end], dtype=torch.int32))
+            self.block_table[s.seq, start:end].copy_(self._staged_ids(row[start:end]), non_blocking=self.device.type == "cuda")
             # Commit only after the copy succeeds, so a failed update retries.
             self._table_blocks[s.seq] = count
             self._table_epochs[s.seq] = epoch
+
+    def _staged_ids(self, ids):
+        """An int32 host tensor of `ids` for an asynchronous upload: pinned, from a small ring whose slots are reused
+        only once their copy has landed (a pageable copy would make the host wait for every step queued ahead)."""
+        import torch
+        if self.device.type != "cuda":
+            return torch.tensor(ids, dtype=torch.int32)
+        ring = getattr(self, "_id_ring", None)
+        if ring is None:
+            width = self.block_table.shape[1]
+            ring = self._id_ring = [(torch.empty(width, dtype=torch.int32, pin_memory=True), torch.cuda.Event()) for _ in range(16)]
+            self._id_ring_next = 0
+        host, event = ring[self._id_ring_next]
+        self._id_ring_next = (self._id_ring_next + 1) % len(ring)
+        event.synchronize()                                       # the slot's previous copy has landed (almost always already)
+        n = len(ids)
+        host[:n].copy_(torch.tensor(ids, dtype=torch.int32))
+        event.record()                                            # recorded now; the upload is enqueued right after on the same stream
+        return host[:n]
 
     def _ring_cells(self, position: int, count: int, width: int):
         import torch

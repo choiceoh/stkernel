@@ -472,7 +472,8 @@ class Server:
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
-                 generation: "dict | None" = None, max_choices: int = 4, vision=None):
+                 generation: "dict | None" = None, max_choices: int = 4, vision=None,
+                 lease: "dict | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -497,6 +498,14 @@ class Server:
         self._deadline = {}                        # request id -> clock() by which it must have finished (rank 0)
         self.cancelled = 0
         self.timed_out = 0                         # the subset of `cancelled` the deadline scan took
+        # The fleet lease (engine/base/fleet_lease): `{'owner':..., 'path':...}` on rank 0, or
+        # None when nothing reserved this fleet. Two things ride on it -- what this engine is
+        # doing, published for whoever is waiting, and the request to hand the fleet over.
+        self.lease = dict(lease) if lease else None
+        self.draining = None                       # the requester we are handing the fleet to
+        self.drained = False                       # every conversation parked; the loop may end
+        self._lease_seen = 0.0                     # last poll, so a step is not a file stat
+        self.lease_poll_s = 2.0
         self.steps_prefill = self.steps_decode = 0   # D9: a step is one kind or the other, never both
         # Latency is owed from the request's arrival, not from the step that served it.
         # Rank 0 admits, answers and serves /metrics, so only rank 0 keeps these.
@@ -557,6 +566,11 @@ class Server:
         positions, canvas, grid); they ride to every rank with the request and are encoded there (45차 §23 A7)."""
         if self.comm.rank != 0:
             raise RequestError("requests must enter on rank 0")
+        if self.draining is not None:
+            # Handing the fleet over: what is here finishes and is parked, nothing new joins.
+            # Refused before any state exists -- a rejected request that left a pending entry
+            # behind would keep the engine from ever going quiet, and so from ever letting go.
+            raise RequestError("the engine is handing the fleet over; retry shortly", 503)
         options = dict(options or {})
         if options and hasattr(self.engine, "validate_options"):
             try:
@@ -620,14 +634,18 @@ class Server:
             self.prompt_tokens_total += len(ids)
             if options.get("stop_token_ids"):
                 self._stop_ids[request] = set(options["stop_token_ids"])
-            tier = None
+            tier = chain = None
             prefix = getattr(self.runner, "prefix", None)
-            if conversation is None and hint is None and prefix is not None and getattr(self.runner, "prefix_tier", None) is not None:
+            if conversation is None and prefix is not None:
+                # the prompt's boundary chain, hashed once here and carried to every rank with the request: admission's
+                # lookups, the dedup lookahead, the tier candidate and the runner's submit all read it, none recompute it
                 salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
-                found = prefix.tier_lookup(ids, salts, prefix.peek(ids, salts))     # rank 0's view; every rank votes at admission
-                if found is not None:
-                    tier = (found[0], found[1].hex())
-            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint, media, tier))
+                chain = prefix.chain(ids, salts)
+                if hint is None and getattr(self.runner, "prefix_tier", None) is not None:
+                    found = prefix.tier_lookup_chain(chain, len(ids), prefix.peek_chain(chain, len(ids)))   # rank 0's view; every rank votes
+                    if found is not None:
+                        tier = (found[0], found[1].hex())
+            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint, media, tier, chain))
         return request, event
 
     def _continuation(self, ids, media=()) -> "tuple[int, int] | None":
@@ -640,8 +658,10 @@ class Server:
         ends = set(getattr(self.engine, "eos", None) or ())
         def consider(key, history, history_marks):
             nonlocal best
-            history = list(history)
             m = len(history)
+            if m <= 1 or m - 1 >= n or (ids[m - 1] != history[m - 1] and ids[m - 2] != history[m - 2]):
+                return                                            # the cheap test first: no list compare for the many that cannot match
+            history = list(history)
             if (0 < m < n and (best is None or m > best[1]) and ids[:m] == history
                     and [(p, d) for p, d in marks if p < m] == sorted((int(p), str(d)) for p, d in history_marks)):
                 best = (key, m, False)
@@ -650,10 +670,11 @@ class Server:
             elif (m > 1 and m - 1 < n and history[-1] in ends and (best is None or m - 1 > best[1]) and ids[:m - 1] == history[:-1]
                     and [(p, d) for p, d in marks if p < m - 1] == sorted((int(p), str(d)) for p, d in history_marks)):
                 best = (key, m - 1, True)
+        view = getattr(self.engine, "history_ref", None) or getattr(self.engine, "history", None)
         for row in list(self._idle_order):
             key = self._conversation_of.get(row)
-            if key is not None and hasattr(self.engine, "history"):
-                consider(key, self.engine.history(row),
+            if key is not None and view is not None:
+                consider(key, view(row),                                  # read, compared, never mutated
                          self.engine.media_marks(row) if hasattr(self.engine, "media_marks") else [])
         for key in self.runner.parked_keys():
             record = self.runner.parked_record(key)
@@ -698,6 +719,7 @@ class Server:
         for i, entry in enumerate(self._waiting):
             if entry[0] == request:
                 del self._waiting[i]
+                self._deferred.discard(request)
                 break
         else:
             row = next((row for row, (req, _) in self._active.items() if req == request), None)
@@ -838,9 +860,8 @@ class Server:
         prefix = self.runner.prefix
         for i, entry in enumerate(self._waiting):
             if i and entry[0] in self._deferred:
-                ids, media = entry[1], entry[9]
-                salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
-                if self.runner.shared_ahead(ids, salts, prefix.peek(ids, salts)) is None:
+                ids, chain = entry[1], entry[11]
+                if chain is None or self.runner.shared_ahead(ids, (), prefix.peek_chain(chain, len(ids)), chain=chain) is None:
                     del self._waiting[i]
                     self._waiting.appendleft(entry)
                     return
@@ -849,7 +870,7 @@ class Server:
         self._reorder_waiting()
         spun = 0
         while self._waiting:
-            request, ids, limit, temperature, promised, conversation, min_new, options, hint, media, tier = self._waiting[0]
+            request, ids, limit, temperature, promised, conversation, min_new, options, hint, media, tier, chain = self._waiting[0]
             row = None
             resident = held = 0
             parked = False
@@ -859,20 +880,22 @@ class Server:
                 row_ = self._conversations.get(key)
                 rest = self._media_after(media, prefix)
                 if rest is None:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier)   # a picture straddles the cut
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain)   # a picture straddles the cut
                     continue
                 if (row_ is not None and row_ in self.runner.idle) or (row_ is None and self.runner.is_parked(key)):
                     conversation, ids, media = key, ids[prefix:], rest     # continue the retained conversation with the new turn
                 elif row_ is not None or key in self._retiring.values() or any(e["conversation"] == key for e in self._resuming.values()):
                     break                                         # it is mid-park/resume or live: decide next step
                 else:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier)   # gone: fresh prompt
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain)   # gone: fresh prompt
                     continue
             salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media] if media else []
             if conversation is None and hint is None and getattr(self.runner, "prefix", None) is not None:
+                if chain is None:
+                    chain = self.runner.prefix.chain(ids, salts)  # a request that arrived without one (a continuation that fell back)
                 # the same prompt is being prefilled right now: wait for its boundary rather than compute it beside it (B)
-                above = self.runner.prefix.peek(ids, salts)
-                ahead = self.runner.shared_ahead(ids, salts, above)
+                above = self.runner.prefix.peek_chain(chain, len(ids))
+                ahead = self.runner.shared_ahead(ids, salts, above, chain=chain)
                 if ahead is not None:
                     if request not in self._deferred:
                         self._deferred.add(request)
@@ -883,25 +906,8 @@ class Server:
                         continue
                     break
                 self._deferred.discard(request)
-                # a longer boundary is on the prefix tier: read it into the row, admit when every rank has it (A)
-                if tier is not None and tier[0] > above and self._free_rows:
-                    tokens, h = int(tier[0]), bytes.fromhex(tier[1])
-                    have = h in self.runner.prefix.tier_keys and not self.runner.prefix.has(h)
-                    world = int(getattr(self.comm, "world_size", 1) or 1)
-                    if self._votes([have])[0] == world:
-                        row = heapq.heappop(self._free_rows)
-                        try:
-                            self.runner.restore_begin(row, h, tokens)
-                        except Exception:                         # noqa: BLE001 -- no snapshot / no blocks / no tier: prefill it instead
-                            heapq.heappush(self._free_rows, row)
-                            self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
-                            continue
-                        self._restoring[row] = dict(request=request, ids=ids, limit=limit, temperature=temperature, promised=promised,
-                                                    min_new=min_new, options=options, media=media, cancelled=None)
-                        self._waiting.popleft()
-                        continue
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
-                    continue
+                if tier is not None and tier[0] <= above:
+                    tier = None                                   # memory already gives as much: nothing to read
             if conversation is not None:
                 row = self._conversations.get(conversation)
                 if row is None and (conversation in self._retiring.values()
@@ -937,17 +943,38 @@ class Server:
             # Future decode growth already belongs to admitted requests even
             # though the block pool acquires those blocks only when written.
             future = (sum(b - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, (_, b) in self._active.items())
-                      + sum(e["promised"] - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, e in self._resuming.items()))
+                      + sum(e["promised"] - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, e in self._resuming.items())
+                      + sum(e["promised"] - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, e in self._restoring.items()))
             if promised > self.runner.kv.available - future + resident:
                 if self._evict_idle(exclude=row):
                     continue
                 break
+            if conversation is None and tier is not None:
+                # a longer boundary is on the prefix tier: read it into the row, admit when every rank has it (A). The budget
+                # above already holds this request's blocks; the restore takes the first of them now.
+                tokens, h = int(tier[0]), bytes.fromhex(tier[1])
+                have = h in self.runner.prefix.tier_keys and not self.runner.prefix.has(h)
+                world = int(getattr(self.comm, "world_size", 1) or 1)
+                if self._votes([have])[0] == world:
+                    row = heapq.heappop(self._free_rows)
+                    try:
+                        self.runner.restore_begin(row, h, tokens)
+                    except Exception:                             # noqa: BLE001 -- no snapshot / no blocks / no tier: prefill it instead
+                        heapq.heappush(self._free_rows, row)
+                        self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain)
+                        continue
+                    self._restoring[row] = dict(request=request, ids=ids, limit=limit, temperature=temperature, promised=promised,
+                                                min_new=min_new, options=options, media=media, chain=chain, cancelled=None)
+                    self._waiting.popleft()
+                    continue
+                self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain)
+                continue
             if conversation is None:
                 row = heapq.heappop(self._free_rows)
                 try:
                     self.engine.add(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}),
                                     **({"options": options} if options else {}), **({"media": media} if media else {}))
-                    self.runner.submit(row, len(ids), ids=ids, salts=salts)
+                    self.runner.submit(row, len(ids), ids=ids, salts=salts, chain=chain)
                 except BaseException:
                     self.engine.forget(row)
                     heapq.heappush(self._free_rows, row)
@@ -1047,7 +1074,7 @@ class Server:
                                         **({"media": e["media"]} if e.get("media") else {}))
                         self.runner.submit(row, len(e["ids"]), ids=e["ids"],
                                            salts=[(m["positions"][0], bytes.fromhex(m["digest"])) for m in e["media"]] if e.get("media") else (),
-                                           prepared=(tokens, snap))
+                                           prepared=(tokens, snap), chain=e.get("chain"))
                     except BaseException:
                         self.engine.forget(row)
                         self.runner.restore_undo(row)
@@ -1063,7 +1090,7 @@ class Server:
                     heapq.heappush(self._free_rows, row)
                     if e["cancelled"] is None:                    # prefill it the plain way, ahead of the queue
                         self._waiting.appendleft((request, e["ids"], e["limit"], e["temperature"], e["promised"], None, e["min_new"],
-                                                  e["options"], None, e["media"], None))
+                                                  e["options"], None, e["media"], None, e.get("chain")))
             else:
                 e = self._resuming.pop(row)
                 conversation, request = e["conversation"], e["request"]
@@ -1091,6 +1118,66 @@ class Server:
                     heapq.heappush(self._free_rows, row)
                     if e["cancelled"] is None:
                         self._answer(request, RequestError("conversation could not be restored from the tier", 503))
+
+    def _yield_asked(self) -> "str | None":
+        """Rank 0: has anyone asked for the fleet? Polled, and it publishes while it looks.
+
+        This is the half of a handover a queue cannot do on its own. A queue can put a
+        session at the front of the line; only the engine can finish the conversations it
+        is holding and put them where they survive the next boot (D16).
+        """
+        if self.draining is not None:
+            return self.draining
+        if not self.lease or self.comm.rank != 0:
+            return None
+        now = self.clock()
+        if now - self._lease_seen < self.lease_poll_s:
+            return None
+        self._lease_seen = now
+        from engine.base import fleet_lease
+        try:
+            record = fleet_lease.read(self.lease["path"])
+            if not record or record.get("owner") != self.lease["owner"]:
+                return None                       # not our lease any more: nothing to answer
+            fleet_lease.publish(self.lease["owner"], path=self.lease["path"],
+                                running=len(self.runner.state.running),
+                                waiting=len(self.runner.state.waiting) + len(self._waiting),
+                                served=self.served, steps=self.runner.steps)
+            asked = fleet_lease.yield_requested(record)
+        except Exception:                         # noqa: BLE001 -- the lease never takes serving down
+            return None
+        return asked.get("requester") if asked else None
+
+    def _quiet(self) -> bool:
+        """Nothing left to finish: no request anywhere, and no transfer on the tier's thread."""
+        return not (self.runner.state.running or self.runner.state.waiting or self._waiting
+                    or self.pending or self._active or self._retiring or self._resuming
+                    or self._restoring)
+
+    def _hand_over(self) -> None:
+        """Park what is still resident, let the lease go, and end the loop.
+
+        A finished turn is already parked by `_retire` when a tier is configured, so what
+        is left here is the rows that stayed resident. They are parked under their
+        conversation key, which is exactly what the next holder resumes by -- so the
+        fleet changes hands without anyone losing their context.
+        """
+        if self.runner.tiered is not None:
+            for row, conversation in list(self._conversation_of.items()):
+                self._conversations.pop(conversation, None)
+                self._conversation_of.pop(row, None)
+                self._idle_order.pop(row, None)
+                try:
+                    self.runner.park(row, key=conversation)
+                except Exception:                 # noqa: BLE001 -- one lost turn is not a lost handover
+                    pass
+        if self.lease and self.comm.rank == 0:
+            from engine.base import fleet_lease
+            try:
+                fleet_lease.release(self.lease["owner"], path=self.lease["path"])
+            except Exception:                     # noqa: BLE001
+                pass
+        self.alive = False                        # `once` returns False and `loop` ends
 
     def _retire(self, row):
         """A finished turn leaves its row: parked with a tier, resident idle without, released otherwise."""
@@ -1191,6 +1278,8 @@ class Server:
             ("counter", "st:steps_decode_total", "steps that were a decode", self.steps_decode),
             ("counter", "st:requests_cancelled_total", "requests cancelled, for any reason", self.cancelled),
             ("counter", "st:requests_timed_out_total", "the subset the deadline scan took", self.timed_out),
+            ("gauge", "st:handing_over", "1 while the fleet is being handed to another session",
+             int(self.draining is not None)),
             ("gauge", "st:kv_blocks_total", f"blocks of {kv.block_size} tokens in the pool", kv.num_blocks),
             ("gauge", "st:kv_blocks_used", "blocks held by a row or pinned by the cache", used_blocks),
             ("gauge", "st:kv_rows_in_use", "pool rows with tokens", kv.rows_in_use),
@@ -1299,8 +1388,11 @@ class Server:
         try:
             if self.comm.rank == 0:
                 self._expire()
-            alive, arrivals, cancels, controls = self.comm.broadcast_object(
-                (self.alive, self._drain(), self._drain_cancels(), self._drain_controls()) if self.comm.rank == 0 else None)
+            alive, arrivals, cancels, controls, draining = self.comm.broadcast_object(
+                (self.alive, self._drain(), self._drain_cancels(), self._drain_controls(),
+                 self._yield_asked()) if self.comm.rank == 0 else None)
+            if draining is not None and self.draining is None:
+                self.draining = draining          # every rank stops admitting on the same step
             if not alive:
                 self._abort()
                 self._fail_pending()
@@ -1327,9 +1419,9 @@ class Server:
             # that lands several (the drafter's accepted run) shares its elapsed time across
             # them, which is how the vLLM counters these names belong to define it.
             for row, (request, _) in self._active.items():
-                generated = self.engine.generated(row)
                 sent = self._sent.get(row, 0)
-                fresh = len(generated) - sent
+                count = self.engine.generated_count(row)     # the row's whole output is never copied to count it
+                fresh = count - sent
                 if fresh > 0:
                     last = self._token_at.get(row)
                     if last is None:
@@ -1348,9 +1440,12 @@ class Server:
                     if stream is not None:                          # rank 0: hand it the new tokens
                         lp = getattr(self.engine, "logprobs", None)
                         entries = lp(row) if lp is not None else None
-                        stream.put(("tokens", (list(generated[sent:]), list(entries[sent:]) if entries else None)))
+                        stream.put(("tokens", (self.engine.generated_since(row, sent), list(entries[sent:]) if entries else None)))
                         self._wake.set()
-                    self._sent[row] = len(generated)
+                    self._sent[row] = count
+            if self.draining is not None and not self.drained and self._quiet():
+                self.drained = True
+                self._hand_over()
             live = set(self.runner.state.running) | set(self.runner.state.waiting)
             for row in list(self._active):
                 if row not in live:

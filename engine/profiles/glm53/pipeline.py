@@ -13,7 +13,7 @@ inert -- its state-slot input is redirected to the null slot so nothing it write
 sees it finish one step late and drops that ghost's result).
 
 Which rows may run ahead: greedy rows and rows with only a temperature / top_p (the batch's device rejection
-sampling, base/sampler.speculative_pick_batch); rows with penalties, logit_bias, seeds, logprobs, grammars or a
+sampling, base/sampler.block_verify_batch); rows with penalties, logit_bias, seeds, logprobs, grammars or a
 pending min_tokens keep the synchronous path, and the runner drains this one before them (adapter.async_ready).
 Every device-side draw comes from the engine's generator in the same order on every rank.
 """
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import torch
 
-from engine.base.sampler import commit_batch, speculative_pick_batch
+from engine.base.sampler import block_verify_batch, commit_batch
 from engine.profiles.glm53.net import Segment, Step
 
 
@@ -68,6 +68,8 @@ class AsyncDecode:
                           accepted=torch.empty(n_max, dtype=torch.int64, pin_memory=pin)) for _ in range(depth)]
         self.free = list(range(depth))
         self._slots = []
+        self._zeros = {}                                 # n -> the host step's placeholder ids (prepare reads segments, never these)
+        self._staged = []                                # pinned index tensors of recent shrinks, alive until their copies land
 
     # -- building the device view of a batch --------------------------------------------------------
     def _build(self, seqs, slots) -> None:
@@ -106,7 +108,13 @@ class AsyncDecode:
         """Rows left the batch (they finished, the host learned it a step late): keep the device view of the rest.
         Every tensor is re-indexed on the device, after the steps in flight, so nothing is read back."""
         keep = [self.batch.index(s) for s in seqs]
-        idx = torch.tensor(keep, dtype=torch.int64, device=self.e.caches.device)
+        dev = self.e.caches.device
+        if dev.type == "cuda":
+            host = torch.tensor(keep, dtype=torch.int64, pin_memory=True)     # a pageable copy would wait for the steps in flight
+            idx = host.to(dev, non_blocking=True)
+            self._staged = (self._staged + [host])[-8:]
+        else:
+            idx = torch.tensor(keep, dtype=torch.int64, device=dev)
         b = self.buf
         for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "ends", "temps", "top_p", "alive", "anchor", "drafts"):
             b[name] = b[name].index_select(0, idx)
@@ -158,8 +166,10 @@ class AsyncDecode:
         n = len(seqs)
         # the host's step: its contexts may lag the device's by the steps in flight; the reservation covers that lag
         ahead = max(e.inflight.get(s, 0) for s in seqs) + 1
-        host_step = Step(torch.zeros(n * t, dtype=torch.int64, device=e.caches.device),
-                         tuple(Segment(s, slot, e.ctx[s], i * t, t) for i, (s, slot) in enumerate(zip(seqs, slots))))
+        zeros = self._zeros.get(n)
+        if zeros is None:
+            zeros = self._zeros[n] = torch.zeros(n * t, dtype=torch.int64, device=e.caches.device)
+        host_step = Step(zeros, tuple(Segment(s, slot, e.ctx[s], i * t, t) for i, (s, slot) in enumerate(zip(seqs, slots))))
         end = max(e.ctx[s] + t * ahead for s in seqs)
         shape = e.decode_graphs.shape_for(n, end)
         ctx_before = b["ctx"].clone()
@@ -169,7 +179,7 @@ class AsyncDecode:
             if e.decodable is not None and full.shape[-1] > e.decodable:
                 full[:, e.decodable:] = float("-inf")
             probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_p"].repeat_interleave(t), b["nucleus"]).view(n, t, -1)
-            accepted, picks, _ = speculative_pick_batch(probs, b["drafts"], b["dists"], e.gen)
+            accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["dists"], e.gen)
         else:
             picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import time
 
+import numpy as np
 import torch
 from math import isfinite
 
@@ -61,6 +62,7 @@ class Glm53Engine:
         self.options = {}                                   # seq -> the request's sampling options beyond temperature (base/sampler.OPTION_KEYS)
         self.gens = {}                                      # seq -> its own torch.Generator when the request carries a seed
         self.ends = {}                                      # seq -> end tokens: the model's plus the request's stop_token_ids
+        self._ends_tensor = {}                              # cached device end-token ids for min_tokens
         self.sampling_history = None                        # penalty tensors; history(seq) remains the token-list protocol
         self.lps = {}                                       # seq -> per committed token (id, logprob, [(id, logprob)...]) when asked
         self.matchers = {}                                  # seq -> base/grammar.Matcher when the request carries a grammar
@@ -79,6 +81,7 @@ class Glm53Engine:
         self.decode_graphs = None
         self.sampling_graphs = None
         self.pipeline = None                                # pipeline.AsyncDecode once the graphs are captured (45차 §23 B3)
+        self._ids_stage = None                              # pinned host ids for the captured decode: an asynchronous upload, not a pageable one
         self.inflight = {}                                  # seq -> decode steps launched ahead whose tokens the host has not read
         self.staged = {}                                    # seq -> the block boundary a step ahead parked in the caches' stage
         self.memory = None
@@ -312,7 +315,11 @@ class Glm53Engine:
 
     # -- the runner's protocol -------------------------------------------------------
     def validate(self, ids, max_new, temperature) -> None:
-        if not ids or any(type(t) is not int or not 0 <= t < self.F.vocab for t in ids):
+        # every rank runs this inside the step loop when a request is admitted: the Python loop over a 120K prompt
+        # was 3.8 ms of a stalled decoder, numpy's conversion + min/max 1.3 ms (measured on the host). No dtype is
+        # forced, so a float or a string makes a non-integer array and is refused, never truncated.
+        packed = np.asarray(ids) if ids else None
+        if packed is None or packed.ndim != 1 or packed.dtype.kind != "i" or packed.min() < 0 or packed.max() >= self.F.vocab:
             raise ValueError("prompt token id is outside the model vocabulary")
         if type(max_new) is not int or max_new <= 0:
             raise ValueError("generation limit must be a positive integer")
@@ -335,6 +342,11 @@ class Glm53Engine:
     def history(self, seq: int) -> "list[int]":
         """Every token the row has seen or produced: what a re-sent chat must start with to continue it (B1)."""
         return list(self.tokens[seq])
+
+    def history_ref(self, seq: int) -> "list[int]":
+        """The same list, not copied: for a reader that compares and never mutates (the door scans every idle
+        conversation per request; copying 128K tokens per candidate was the scan's whole cost)."""
+        return self.tokens[seq]
 
     def logprobs(self, seq: int) -> "list | None":
         return self.lps.get(seq)
@@ -380,7 +392,7 @@ class Glm53Engine:
         if seq in self.slot:
             raise ValueError(f"seq {seq} is still live")
         for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers,
-                     self.media, self.embeds, self.inflight, self.staged):
+                     self.media, self.embeds, self.inflight, self.staged, self._ends_tensor):
             rows.pop(seq, None)                             # a row leaving does not move the others: the pipeline shrinks its view
         if self.sampling_history is not None:
             self.sampling_history.forget(seq)
@@ -555,6 +567,19 @@ class Glm53Engine:
     def generated(self, seq: int) -> "list[int]":
         return self.tokens[seq][self.prompt_len[seq]:]
 
+    def generated_count(self, seq: int) -> int:
+        """How many tokens this row has produced. The step loop asks every row every step, so it
+        must not be `len(generated(seq))`: that copies the whole answer to count it."""
+        return len(self.tokens[seq]) - self.prompt_len[seq]
+
+    def generated_since(self, seq: int, sent: int) -> "list[int]":
+        """Only what the caller has not seen, so the cost follows the step and not the answer."""
+        return self.tokens[seq][self.prompt_len[seq] + sent:]
+
+    def history_from(self, seq: int, start: int) -> "list[int]":
+        """The row's tokens from `start` on (the runner extends a boundary chain from where it stopped)."""
+        return self.tokens[seq][start:]
+
     def _generated_count(self, seq: int) -> int:
         return len(self.tokens[seq]) - self.prompt_len[seq]
 
@@ -607,8 +632,12 @@ class Glm53Engine:
         return needs_rich_sampler(self.options.get(seq, {}), self.limits[seq][1], bool(self.drafter.k))
 
     def _gather(self, local: torch.Tensor) -> torch.Tensor:
-        """This rank's logits shard [rows, vp] -> every rank's whole rows [rows, vocab] fp32 (a collective: same order everywhere)."""
-        return self.net.comm.all_gather(local, dim=-1).float()
+        """This rank's logits shard [rows, vp] -> every rank's whole rows [rows, vocab] (a collective: same order everywhere).
+
+        The model's dtype, not fp32: every row is copied to fp32 by `process_logits` anyway, so upcasting
+        the whole block here only to copy each row out of it again writes the vocabulary twice a step.
+        """
+        return self.net.comm.all_gather(local, dim=-1)
 
     def _row_logits(self, seq: int, raw: torch.Tensor, position: int, drafts_before: "list[int]") -> torch.Tensor:
         """`raw` [vocab] processed for `seq` at this step's position: bias, penalties over the row's tokens (with the drafts
@@ -618,17 +647,22 @@ class Glm53Engine:
         if self.sampling_history is None:                   # the vocabulary is whatever the head just produced
             self.sampling_history = History(int(raw.shape[-1]), raw.device)
         seen, counts = self.sampling_history.of(seq, self.tokens[seq], self.prompt_len[seq])
-        mask = None
         need = self.min_new.get(seq, 0) - self._generated_count(seq) - len(drafts_before)
-        if need > 0 and self.ends.get(seq):
-            mask = torch.ones(raw.shape[-1], dtype=torch.bool, device=raw.device)
-            mask[list(self.ends[seq])] = False
-        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, mask)
+        forbid = self._end_ids(seq, raw.device) if need > 0 and self.ends.get(seq) else None
+        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid)
+
+    def _end_ids(self, seq: int, device) -> torch.Tensor:
+        """This row's end tokens as a tensor, kept: min_tokens asks for them on every position it covers."""
+        held = self._ends_tensor.get(seq)
+        if held is None or held.device != torch.device(device):
+            held = torch.tensor(sorted(self.ends[seq]), dtype=torch.int64, device=device)
+            self._ends_tensor[seq] = held
+        return held
 
     def _pick_rich(self, seq: int, rows: torch.Tensor, drafts: "list[int]", draft_probs: "torch.Tensor | None"):
         """One sequence's positions through the base sampler. rows: [len(drafts) + 1, vocab] fp32 raw logits.
         Returns (accepted drafts, committed tokens, per-token (id, logprob, top) or None)."""
-        from engine.base.sampler import distribution, draw, speculative_pick, top_logprobs
+        from engine.base.sampler import block_verify, distribution, pick_each, top_logprobs
         opts = self.options.get(seq, {})
         temperature = self.limits[seq][1]
         gen = self.gens.get(seq, self.gen)
@@ -642,7 +676,7 @@ class Glm53Engine:
             processed.append(logits)
             dists.append(distribution(logits, temperature, opts.get("top_k"), opts.get("top_p")))
         if temperature <= 0 or draft_probs is None or not drafts:
-            picks = [int(d.argmax().item()) if temperature <= 0 else draw(d, gen) for d in dists]
+            picks = pick_each(dists, temperature, gen)
             accepted = 0
             for d, got in zip(drafts, picks):
                 if d != got:
@@ -650,7 +684,7 @@ class Glm53Engine:
                 accepted += 1
             new = picks[: accepted + 1]
         else:
-            accepted, new = speculative_pick(torch.stack(dists), drafts[: len(dists) - 1], draft_probs, gen)
+            accepted, new = block_verify(torch.stack(dists), drafts[: len(dists) - 1], draft_probs, gen)
         want = opts.get("logprobs")
         lps = None
         if want is not None:
@@ -723,7 +757,16 @@ class Glm53Engine:
             ids = [self.tokens[seq][-1]] + drafts[seq]
             segments.append(Segment(seq, slot, self.ctx[seq], len(flat), len(ids)))
             flat.extend(ids)
-        step = Step(torch.tensor(flat, dtype=torch.int64, device=self.caches.device), tuple(segments))
+        if self.decode_graphs is not None and self.caches.device.type == "cuda":
+            # the graph's fill copies the ids into its static input: from pinned memory that copy is asynchronous,
+            # from a pageable device tensor built here it would first wait for everything queued on the stream
+            if self._ids_stage is None or self._ids_stage.numel() < len(flat):
+                self._ids_stage = torch.empty(max(len(flat), self.caches.pool.max_seqs * (self.drafter.k + 1)), dtype=torch.int64, pin_memory=True)
+            ids_t = self._ids_stage[:len(flat)]
+            ids_t.copy_(torch.tensor(flat, dtype=torch.int64))
+        else:
+            ids_t = torch.tensor(flat, dtype=torch.int64, device=self.caches.device)
+        step = Step(ids_t, tuple(segments))
         rich = {s.seq: self._rich(s.seq) for s in step.segments}
         temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
         if self.decode_graphs is None:

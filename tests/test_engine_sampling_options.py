@@ -6,7 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import torch  # noqa: E402
+from pathlib import Path
+
+import torch
+
+ROOT = Path(__file__).resolve().parents[1]  # noqa: E402
 
 from engine.base.sampler import (distribution, draw, needs_rich_sampler, process_logits, speculative_pick,  # noqa: E402
                                  top_logprobs, validate_options)
@@ -122,6 +126,51 @@ class OptionTests(unittest.TestCase):
         h.forget(0)
         self.assertNotIn(0, h.rows)
 
+    def test_the_model_dtype_goes_in_and_float32_comes_out_unchanged(self):
+        # the gather hands over the model's dtype now; the one copy here is the upcast
+        raw = torch.tensor([2.0, -1.0, 0.5, 3.0])
+        seen, counts = self.history(4, [0], [1])
+        wide = process_logits(raw, {"repetition_penalty": 2.0}, seen, counts)
+        narrow = process_logits(raw.to(torch.bfloat16), {"repetition_penalty": 2.0}, seen, counts)
+        self.assertEqual(wide.dtype, torch.float32)
+        self.assertEqual(narrow.dtype, torch.float32)
+        self.assertEqual(wide.tolist(), narrow.tolist())
+        self.assertEqual(raw.tolist(), [2.0, -1.0, 0.5, 3.0], "the caller's logits are untouched")
+
+    def test_the_gather_does_not_upcast_what_every_row_copies_anyway(self):
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        body = source[source.index("    def _gather(self"):]
+        body = body[:body.index("\n    def ", 10)]
+        self.assertIn("all_gather(local, dim=-1)", body)
+        self.assertNotIn(".float()", body)
+
+    def test_a_handful_of_forbidden_ids_needs_no_vocabulary_of_true(self):
+        logits = torch.zeros(6)
+        seen, counts = self.history(6, [], [])
+        out = process_logits(logits, {}, seen, counts, forbid=torch.tensor([1, 4]))
+        self.assertTrue(torch.isinf(out[1]) and torch.isinf(out[4]))
+        self.assertEqual([float(out[i]) for i in (0, 2, 3, 5)], [0.0] * 4)
+
+    def test_a_grammar_mask_and_a_forbidden_list_both_apply(self):
+        logits = torch.zeros(4)
+        seen, counts = self.history(4, [], [])
+        out = process_logits(logits, {}, seen, counts, mask=torch.tensor([True, True, False, True]),
+                             forbid=torch.tensor([0]))
+        self.assertTrue(torch.isinf(out[0]) and torch.isinf(out[2]))
+        self.assertEqual([float(out[i]) for i in (1, 3)], [0.0, 0.0])
+
+    def test_picking_every_row_at_once_draws_what_picking_them_one_by_one_would(self):
+        from engine.base.sampler import draw, pick_each
+        rows = [torch.softmax(torch.randn(16, generator=torch.Generator().manual_seed(i)), -1) for i in range(4)]
+        one_at_a_time = torch.Generator().manual_seed(9)
+        together = torch.Generator().manual_seed(9)
+        self.assertEqual(pick_each(rows, 1.0, together), [draw(r, one_at_a_time) for r in rows])
+
+    def test_a_zero_temperature_row_set_picks_every_argmax(self):
+        from engine.base.sampler import pick_each
+        rows = [torch.tensor([0.1, 0.7, 0.2]), torch.tensor([0.6, 0.1, 0.3])]
+        self.assertEqual(pick_each(rows, 0.0, None), [1, 0])
+
     def test_distribution_top_k_top_p_and_greedy(self):
         logits = torch.tensor([3.0, 2.0, 1.0, 0.0, -1.0])
         self.assertEqual(distribution(logits, 0.0, None, None).tolist(), [1, 0, 0, 0, 0])
@@ -158,3 +207,96 @@ class OptionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ValidateTests(unittest.TestCase):
+    """adapter.validate runs on every rank inside the step loop: C-speed, and still strict."""
+
+    def test_validate_rejects_what_it_must_and_accepts_the_rest_without_a_python_loop(self):
+        from types import SimpleNamespace
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = SimpleNamespace(F=SimpleNamespace(vocab=100))
+        ok = lambda ids: Glm53Engine.validate(e, ids, 4, 0.0)          # noqa: E731
+        ok(list(range(100)))
+        for bad in ([], [1, 100], [-1], [1.5, 2], [1, "2"], [None]):
+            with self.assertRaises((ValueError, TypeError)):
+                ok(bad)
+
+
+class BlockVerificationTests(unittest.TestCase):
+    """Sun et al. 2024: a longer accepted prefix for the same output distribution.
+
+    The claim is distributional, so the gate is distributional. The control is the
+    token-level rule (`speculative_pick`), which the engine keeps as a reference.
+    """
+
+    def draws(self, seed, K, V, spread=1.3):
+        torch.manual_seed(seed)
+        return (torch.softmax(torch.randn(K + 1, V) * spread, -1),
+                torch.softmax(torch.randn(K, V) * spread, -1))
+
+    def emitted(self, pick, target, draft, rounds, seed):
+        from engine.base.sampler import draw
+        gen = torch.Generator().manual_seed(seed)
+        K, V = draft.shape
+        first = torch.zeros(V)
+        accepted = 0
+        for _ in range(rounds):
+            drafts = [draw(draft[i], gen) for i in range(K)]
+            got, new = pick(target, drafts, draft, gen)
+            accepted += got
+            first[new[0]] += 1
+        return first / first.sum(), accepted / rounds
+
+    def test_the_first_emitted_token_is_the_target_s_own(self):
+        from engine.base.sampler import block_verify, speculative_pick
+        target, draft = self.draws(72, 3, 5)
+        blocked, _ = self.emitted(block_verify, target, draft, 20000, 3)
+        token, _ = self.emitted(speculative_pick, target, draft, 20000, 3)
+        # the control says how close 20,000 rounds gets; the block scheme must not be worse
+        allowed = max(0.02, float((token - target[0]).abs().max()) * 1.5)
+        self.assertLess(float((blocked - target[0]).abs().max()), allowed)
+
+    def test_it_accepts_more_than_the_token_level_rule(self):
+        from engine.base.sampler import block_verify, speculative_pick
+        target, draft = self.draws(72, 3, 5)
+        _, blocked = self.emitted(block_verify, target, draft, 8000, 11)
+        _, token = self.emitted(speculative_pick, target, draft, 8000, 11)
+        self.assertGreater(blocked, token)
+
+    def test_one_draft_is_the_token_level_threshold(self):
+        from engine.base.sampler import block_verify
+        target = torch.tensor([[0.6, 0.4], [0.5, 0.5]])
+        draft = torch.tensor([[0.2, 0.8]])
+        # with K = 1 the threshold is min(p/q, 1) = min(0.6/0.2, 1) = 1: always accepted
+        for seed in range(8):
+            got, new = block_verify(target, [0], draft, torch.Generator().manual_seed(seed))
+            self.assertEqual(got, 1)
+            self.assertEqual(new[0], 0)
+
+    def test_the_batch_accepts_what_the_row_by_row_rule_accepts(self):
+        from engine.base.sampler import block_verify_batch
+        torch.manual_seed(3)
+        n, K, V = 4, 3, 7
+        target = torch.softmax(torch.randn(n, K + 1, V), -1)
+        draft = torch.softmax(torch.randn(n, K, V), -1)
+        ids = torch.stack([torch.multinomial(draft[r], 1).squeeze(1) for r in range(n)])
+        accepted, tokens, count = block_verify_batch(target, ids, draft, torch.Generator().manual_seed(5))
+        uniform = torch.rand(n, K, generator=torch.Generator().manual_seed(5))
+        want = []
+        for r in range(n):
+            carried, running = [], 1.0
+            for i in range(K):
+                q = float(draft[r, i, ids[r, i]]); p = float(target[r, i, ids[r, i]])
+                running = min(running * p / q, 1.0) if q > 0 else 0.0
+                carried.append(running)
+            thresholds = list(carried)
+            for i in range(K - 1):
+                mass = float((carried[i] * target[r, i + 1] - draft[r, i + 1]).clamp_min(0).sum())
+                denominator = mass + 1.0 - carried[i]
+                thresholds[i] = mass / denominator if denominator > 0 else 1.0
+            want.append(max([i + 1 for i in range(K) if float(uniform[r, i]) <= thresholds[i]], default=0))
+        self.assertEqual(accepted.tolist(), want)
+        self.assertEqual(count.tolist(), [a + 1 for a in want])
+        for r, a in enumerate(want):
+            self.assertEqual(tokens[r, :a].tolist(), ids[r, :a].tolist(), "accepted drafts are committed as they were")

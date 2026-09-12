@@ -74,10 +74,14 @@ case "${1:-start}" in
     }
     for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
     lease release --owner "$held_owner"; exit 0 ;;
+  yield)
+    lease yield --requester "$LEASE_OWNER" --note "${2:-another session needs the fleet}"; exit 0 ;;
+  held)
+    lease read; exit 0 ;;
   logs)
     r=${2:-0}; node_sh "${NODES[$r]}" "docker logs --tail 60 $NAME"; exit 0 ;;
   start) ;;
-  *) echo "usage: $0 [start|stop|logs r]" >&2; exit 2 ;;
+  *) echo "usage: $0 [start|stop|yield [reason]|held|logs r]" >&2; exit 2 ;;
 esac
 
 # refuse to share the fleet: a serving/other container on any node, or another runner's lock on the head
@@ -154,6 +158,7 @@ start_rank() {
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
+    -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" \
     --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER --tier-dir $TIER_DIR --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
 }
 
