@@ -17,12 +17,12 @@ _WS = None
 _EXT = None
 _MLA_CLUSTER_MAX = 0
 _ARMED = {"mla": False}
-# Large-M prefill candidates (39차). Production keeps all three off
-# (VLLM_GLM53_MK_MLA_PREFILL32=0, _PREFILL_PAIR=0, _PREFILL_GROUP=2, "pending
-# numerics/sanitizer and a matched TTFT bracket"). D11 (2026-09-12, ST): the
-# profile's STK_mla_prefill knob selects one through configure_prefill()
-# before the lane arms; nothing in this module reads the environment except
-# the build root (a cache path, like TRITON_CACHE_DIR).
+# Large-M prefill candidates (39차). tile32 is the qualified production default
+# after GPU numerical/graph/sanitizer and matched serving brackets; stock remains
+# available as a baseline and pair/pair4 remain comparison candidates. D11
+# (2026-09-12, ST): the profile's STK_mla_prefill knob selects one through
+# configure_prefill() before the lane arms; nothing in this module reads the
+# environment except the build root (a cache path, like TRITON_CACHE_DIR).
 PREFILL_MODES = ("stock", "tile32", "pair", "pair4")
 # Probe hooks (never env, never serving): mla_decode(splits=, probe=) overrides the
 # split rule and selects the kernel's roofline mode (1 = streams only, 2 = + the dot,

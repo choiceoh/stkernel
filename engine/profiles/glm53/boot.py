@@ -131,7 +131,7 @@ def eos_ids(ckpt=facts.CKPT) -> "list[int]":
 
 
 def declared(a, comm_world: int) -> Config:
-    """Native execution is fixed; only unqualified MLA and context experiments expire.
+    """Native execution and the qualified large-prefill MLA lane are fixed.
 
     Production declares no knobs and rejects every STK_* override. The
     retired execution, MoE, lane and eager-decode bisects cannot reappear
@@ -152,12 +152,16 @@ def declared(a, comm_world: int) -> Config:
                  lanes="served", decode_eager=0, execution="native")
     facts_ += [Fact(k, v, "native TP4 execution") for k, v in fixed.items()]
     if getattr(a, "production", False):
-        defaults = dict(mla_prefill="stock", context_ceiling=0)
+        # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
+        # serving brackets. Keep it in the production contract so a stale
+        # STK_* environment cannot silently restore the stock long-prefill
+        # path.
+        defaults = dict(mla_prefill="tile32", context_ceiling=0)
         return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
-        Knob("mla_prefill", "stock", _dt.date(2026, 9, 30),
-             "large-M MLA prefill candidates (39차: pair, pair4, tile32; production keeps them off pending numerics + a TTFT bracket)",
-             "STK_mla_prefill=stock"),
+        Knob("mla_prefill", "tile32", _dt.date(2026, 9, 30),
+             "large-M MLA prefill candidates (tile32 is the qualified production default; pair and pair4 remain selectable for comparison)",
+             "STK_mla_prefill=tile32"),
         Knob("context_ceiling", 0, _dt.date(2026, 9, 30),
              "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. "
              "0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's "

@@ -26,7 +26,7 @@ class KnobDeclarationTests(unittest.TestCase):
         cfg = self._declared({}, production=True, today=datetime.date(2040, 1, 1))
         self.assertFalse(cfg.knobs)
         self.assertEqual([cfg[k] for k in ("moe_static", "mla_prefill", "context_ceiling", "lanes", "decode_eager", "execution")],
-                         ["t,r,sf6,q0", "stock", 0, "served", 0, "native"])
+                         ["t,r,sf6,q0", "tile32", 0, "served", 0, "native"])
 
     def test_adopted_execution_cannot_be_changed_by_stale_bisect_environment(self):
         from engine.base.config import ConfigError
