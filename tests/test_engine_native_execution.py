@@ -16,6 +16,7 @@ class NativeQualificationTests(unittest.TestCase):
                  mhc=NS(executed={'a', 'b', 'c'}),
                  shared_mlp={1: NS(executed=True)},
                  shared_overlap=NS(executed=True),
+                 _router_weights={1: None}, _router_tensorcore={1},
                  prefill_transport=NS(executed={'fp8_all_gather', 'fp8_reduce_scatter'}))
         drafter = NS(dense={'fc.weight': NS(executed=3), 'q': NS(executed=1)})
         self.assertEqual(native_execution_report(net, drafter)['target_fp8'], 1)
@@ -24,7 +25,8 @@ class NativeQualificationTests(unittest.TestCase):
                                    (drafter.dense['q'], 'executed', 0),
                                    (net.mhc, 'executed', set()),
                                    (net.shared_mlp[1], 'executed', False),
-                                   (net.shared_overlap, 'executed', False)):
+                                   (net.shared_overlap, 'executed', False),
+                                   (net, '_router_tensorcore', set())):
             before = getattr(obj, field)
             setattr(obj, field, value)
             with self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):

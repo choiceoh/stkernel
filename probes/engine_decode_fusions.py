@@ -26,72 +26,91 @@ def _time(graph, iterations=256, flush=None):
     return start.elapsed_time(end) / iterations
 
 
-def kda_ring(report):
-    """The prior BV=8 against BV=16 on distinct per-layer state, no product knob."""
-    from unittest.mock import patch
-    from engine.kernels.kda import ring as impl
-    kernel = impl.fused_recurrent_gated_delta_rule_fwd_kernel
+def seven_row_dense(report):
+    from engine.kernels.dense import DenseLinear, W4Pack, w4_gemm, extension
+    ext = extension()
+    before, mode, state = ext.gemm_input_mode(), ext.gemm_input_cta_mode(), ext.probe_state()
+    try:
+        ext.set_gemm2(0)
+        ext.set_input_cta(4)
+        for n in (6416, 4096, 6144):
+            layer = DenseLinear((torch.randn(n, 4096, device='cuda') * .02).bfloat16(), prefill=False)
+            p = layer.packs[0]
+            # More than L2: an isolated warm weight is not a model's stream.
+            packs = [W4Pack(p.data.clone(), p.scale.clone(), p.rowscale.clone(), p.rows, p.cols)
+                     for _ in range(8)]
+            x = torch.randn(7, 4096, device='cuda', dtype=torch.bfloat16)
+            graphs, outputs = [], []
+            try:
+                for enabled in (0, 1):
+                    ext.set_gemm_input(enabled)
+                    graph, out = _capture(lambda: [w4_gemm(x, weight) for weight in packs])
+                    graphs.append(graph); outputs.append(out)
+                for _ in range(3):
+                    x.normal_()
+                    for graph in graphs:
+                        graph.replay()
+                    for got, want in zip(outputs[1], outputs[0]):
+                        torch.testing.assert_close(got, want, rtol=0, atol=0)
+                measurements = [dict(arm=label, ms=_time(graphs[i], iterations=64)/len(packs)) for label, i in
+                                (('B', 0), ('A', 1), ('A', 1), ('B', 0))]
+                report('seven_row_dense_timing', rows=7, n=n, k=4096, distinct_packs=len(packs),
+                       exact=True, plan=ext.gemm_input_cta_plan(7, n, 4096, False, False),
+                       measurements=measurements, scope='same packs, captured projection; not consumer speed')
+            finally:
+                for graph in graphs:
+                    graph.reset()
+    finally:
+        ext.set_gemm_input(before)
+        ext.set_input_cta(mode)
+        ext.restore_probe_state(state)
 
-    class ValueTile:
-        def __init__(self, width):
-            self.width = width
 
-        def __getitem__(self, grid):
-            def launch(**kwargs):
-                kwargs['BV'] = self.width
-                return kernel[(1, (kwargs['V'] + self.width - 1) // self.width, kwargs['HV'])](**kwargs)
-            return launch
-
-    for seqs in (1, 4):
-        layers, t, h, d = 34, 7, 16, 128
-        states = torch.randn(layers, seqs + 1, t, h, d, d, device='cuda') * .1
-        initial = states.clone()
-        inputs = []
-        for _ in range(layers):
-            merged = torch.randn(seqs, t, 3 * h * d, device='cuda', dtype=torch.bfloat16)
-            q, k, v = (x.reshape(seqs, t, h, d) for x in merged.split(h * d, dim=-1))
-            g = torch.randn_like(q)
-            beta = torch.randn(seqs, t, h, device='cuda', dtype=torch.bfloat16)
-            a = torch.randn(h, device='cuda') * .2
-            bias = torch.randn(h * d, device='cuda') * .1
-            inputs.append((q, k, v, g, beta, a, bias))
-        slot = torch.arange(1, seqs + 1, device='cuda', dtype=torch.int64)
-        context = torch.full((seqs,), 2048, device='cuda', dtype=torch.int64)
-
-        def run():
-            return [impl.recurrent_kda_ring(*(x[s:s+1] for x in args[:5]), *args[5:],
-                                            states[L], slot[s:s+1], context[s:s+1], -5.)
-                    for L, args in enumerate(inputs) for s in range(seqs)]
-
-        graphs, outputs = [], []
-        try:
-            for bv in (8, 16):
-                with patch.object(impl, 'fused_recurrent_gated_delta_rule_fwd_kernel', ValueTile(bv)):
-                    graph, output = _capture(run)
-                graphs.append(graph); outputs.append(output)
-            for step in range(3):
-                context.fill_(2048 + step * 3)
-                for args in inputs:
-                    for x in args[:5]:
-                        x.normal_()
-                states.copy_(initial)
-                graphs[0].replay()
-                reference_states = states.clone()
-                reference_outputs = [x.clone() for x in outputs[0]]
-                states.copy_(initial)
-                graphs[1].replay()
-                assert torch.equal(states, reference_states), 'KDA BV=16 changed a rollback snapshot'
-                for actual, expected in zip(outputs[1], reference_outputs):
-                    assert torch.equal(actual, expected), 'KDA BV=16 changed an output'
-                del reference_states, reference_outputs
-            measurements = [dict(arm=label, ms=_time(graphs[i], iterations=64)) for label, i in
-                            (('B8', 0), ('A16', 1), ('A16', 1), ('B8', 0))]
-            report('kda_ring_timing', seqs=seqs, tokens=t, layers=layers, every_state_exact=True,
-                   measurements=measurements, scope='captured 34-layer recurrence; not consumer speed')
-        finally:
-            for graph in graphs:
-                graph.reset()
-        del states, initial, inputs, outputs, graphs
+def tensorcore_router(report):
+    from safetensors import safe_open
+    from engine.kernels.glm_pointwise import router_logits, route_weights
+    from engine.profiles.glm53 import facts
+    weights = []
+    with safe_open(str(facts.RANKS / 'rank0of4.safetensors'), framework='pt', device='cpu') as source:
+        for key in sorted(k for k in source.keys() if k.endswith('.moe.gate')):
+            gate = source.get_tensor(key).cuda()
+            bias = source.get_tensor(key.removesuffix('gate')+'bias').cuda()
+            weights.append((gate, gate.float(), bias))
+    assert len(weights) == 42, 'real GLM router gate must cover every MoE layer'
+    x = torch.randn(7, 4096, device='cuda', dtype=torch.bfloat16)
+    max_logit_error = 0.
+    checked_rows = 0
+    for magnitude in (.01, .1, 1., 10.):
+        for correlated in (False, True):
+            x.normal_().mul_(magnitude)
+            if correlated:
+                x[1:].mul_(.02).add_(x[:1])
+            for gate, fp32, bias in weights:
+                base = x.float() @ fp32.T
+                cand = router_logits(x, gate)
+                torch.testing.assert_close(cand, base, rtol=5e-5, atol=3e-4)
+                max_logit_error = max(max_logit_error, (cand-base).abs().max().item())
+                ids, values = route_weights(cand, bias, 8, 2.5)
+                ref_ids, ref_values = route_weights(base, bias, 8, 2.5)
+                torch.testing.assert_close(ids, ref_ids, rtol=0, atol=0)
+                torch.testing.assert_close(values, ref_values, rtol=5e-5, atol=3e-6)
+                checked_rows += x.shape[0]
+    graphs = []
+    try:
+        for tensorcore in (False, True):
+            def run():
+                return [route_weights(router_logits(x, gate) if tensorcore else x.float() @ fp32.T,
+                                      bias, 8, 2.5) for gate, fp32, bias in weights]
+            graph, _ = _capture(run)
+            graphs.append(graph)
+        measurements = [dict(arm=label, ms=_time(graphs[i], iterations=64)) for label, i in
+                        (('B', 0), ('A', 1), ('A', 1), ('B', 0))]
+        report('tensorcore_router_timing', rows=7, layers=len(weights), checked_rows=checked_rows,
+               selected_ids_exact=True, max_logit_error=max_logit_error, measurements=measurements,
+               scope='real router weights, synthetic hidden states, captured; not consumer speed')
+    finally:
+        for graph in graphs:
+            graph.reset()
 
 
 def shared_mlp(report, native):

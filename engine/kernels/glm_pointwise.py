@@ -1,7 +1,7 @@
 """GLM pointwise lanes, preserving the composition's rounding boundaries.
 
-The router retains torch.topk, including its tie order. Its projection remains
-the same FP32 matmul; only the sigmoid/bias and gather/normalise are fused.
+The router retains torch.topk, including its tie order. Its decode projection
+can consume the original BF16 operands with FP32 accumulation and output.
 The clamped SwiGLU rounds once, after the FP32 product (unlike the drafter's
 unclamped SwiGLU, which also rounds its sigmoid product to BF16).
 """
@@ -9,6 +9,20 @@ import torch
 import triton as tr
 import triton.language as tl
 from triton.language.extra.cuda import libdevice
+
+
+def router_logits(x, gate):
+    """BF16 checkpoint values, tensor-core accumulation, FP32 logits.
+
+    Keep logits in FP32 through sigmoid, bias and selection. A BF16 output
+    matmul would discard logit resolution before top-k. No weight repacking
+    or TF32 conversion is needed: both original operands are already BF16.
+    """
+    if (x.ndim != 2 or gate.ndim != 2 or x.shape[1] != gate.shape[1]
+            or not x.is_cuda or x.device != gate.device
+            or x.dtype != torch.bfloat16 or gate.dtype != torch.bfloat16):
+        raise ValueError('tensor-core router requires matching CUDA BF16 operands')
+    return torch.mm(x, gate.T, out_dtype=torch.float32)
 
 
 @tr.jit

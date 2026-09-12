@@ -33,7 +33,7 @@ from engine.profiles.glm53.net import Step
 
 # A kernel's name says which lane it came from; anything unclaimed is listed under its own name so a
 # surprise cannot hide inside a bucket.
-LANES = (("mHC", r"mhc"), ("MLA / DSA", r"mla|sparse|logits|kpool|indexer"), ("KDA", r"kda|conv"),
+LANES = (("mHC", r"mhc"), ("MLA / DSA", r"mla|sparse|logits|kpool|indexer"), ("KDA", r"kda|conv|fused_recurrent"),
          ("MoE", r"moe|b12x|expert"), ("dense GEMM", r"gemm|cutlass|nvjet|sm90|sm100|sm121"),
          ("norm / elementwise", r"norm|elementwise|vectorized|copy|cat|fill"),
          ("collective", r"nccl|all_reduce|allgather|reduce_scatter"))

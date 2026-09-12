@@ -1294,13 +1294,13 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
 
 // C=1 opt-in: one CTA per 16 output columns, one warp per original K slice.
 // W4 packs, FP8 preparation, per-slice arithmetic and reduction order are unchanged.
-// Exact route only: M6/N6416/K4096 and split8; two W staging buffers.
+// Exact route only: M6 or M7 / N6416 / K4096 and split8; two W staging buffers.
 // MODE 0 retains runtime geometry; MODE 1/2 specialize it, with 3/4 blocks per SM.
 template <int MODE>
 __global__ void __launch_bounds__(MK_THREADS,MODE==2?4:3)
 mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
   constexpr int NB=2;
-  const int m=MODE?6:c.m;
+  const int m=c.m;
   asm volatile("griddepcontrol.launch_dependents;");
   extern __shared__ uint8_t smem[];
   uint8_t* sraw=smem;
@@ -1387,7 +1387,7 @@ mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
   }
   }
   // Each warp owns one of the original eight K slices. Publish all
-  // 6x16 partials inside this CTA, then reduce in exactly the old slice order.
+  // m x 16 partials inside this CTA, then reduce in exactly the old slice order.
   // This removes device-wide partial traffic, arrival atomics and fences.
 #pragma unroll
   for(int i=0;i<4;++i) {
@@ -1409,7 +1409,8 @@ mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
 template <int TILES, int NB>
 __global__ void __launch_bounds__(TILES*96,TILES==1?6:3)
 mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
-  constexpr int MODE=0,m=6;
+  constexpr int MODE=0;
+  const int m=c.m;
   constexpr int RAW_NIB=TILES*48*64,RAW_BYTES=TILES*48*72;
   asm volatile("griddepcontrol.launch_dependents;");
   extern __shared__ uint8_t smem[];
@@ -1496,7 +1497,7 @@ mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
   }
   }
   // Each three-warp group owns the original three K slices. Publish all
-  // 6x16 partials inside this CTA, then reduce in exactly the old slice order.
+  // m x 16 partials inside this CTA, then reduce in exactly the old slice order.
   // This removes device-wide partial traffic, arrival atomics and fences.
 #pragma unroll
   for(int i=0;i<4;++i) {
@@ -1504,12 +1505,12 @@ mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
     if(row<m)partial[(warp*m+row)*16+col]=acc[i];
   }
   __syncthreads();
-  for(int t=threadIdx.x;t<TILES*96;t+=TILES*96) {
-    const int tile=t/96,local=t%96,row=local/16;
+  for(int t=threadIdx.x;t<TILES*m*16;t+=TILES*96) {
+    const int tile=t/(m*16),local=t%(m*16),row=local/16;
     const int col=(blockIdx.x*TILES+tile)*16+local%16;
     float value=0.f;
 #pragma unroll
-    for(int s=0;s<3;++s)value+=partial[(tile*3+s)*96+local];
+    for(int s=0;s<3;++s)value+=partial[(tile*3+s)*m*16+local];
     value*=c.rgs?c.rgs[col]:1.f;
     c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
   }
@@ -2870,8 +2871,8 @@ int g_gemm2_bps = 0;
 int g_gemm2_m8_bps = 0;
 int g_gemm_input_bps = 0;
 int g_input_cta_bps[3] = {};
-constexpr int INPUT_CTA_SMEM=MK_SMEM_ALIGN+2*W4_RAW_BYTES+8*6*16*sizeof(float);
-constexpr int INPUT_CTA3_SMEM=MK_SMEM_ALIGN+2*2*48*72+2*3*96*sizeof(float);
+constexpr int INPUT_CTA_SMEM=MK_SMEM_ALIGN+2*W4_RAW_BYTES+8*8*16*sizeof(float);
+constexpr int INPUT_CTA3_SMEM=MK_SMEM_ALIGN+2*2*48*72+2*3*8*16*sizeof(float);
 int g_input_cta3_bps=0;
 int g_mk_sms = 0;  // multiprocessors, from the device (48 on GB10)
 
@@ -3015,7 +3016,7 @@ int mk_gemm_input_mode() {
 }
 bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
   // n is the logical output width; the real KDA projection pads 6416 to 6528.
-  return !bg && !lr && m == 6 && k == 4096 &&
+  return !bg && !lr && (m == 6 || m == 7) && k == 4096 &&
       (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)));
 }
 int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count

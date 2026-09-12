@@ -157,6 +157,7 @@ class Glm53Net:
         self.shared_mlp = {}
         self.shared_overlap = None
         self._router_weights = {}
+        self._router_tensorcore = set()
         self.prefill_transport = None
         self.mhc = None
         from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT
@@ -561,8 +562,13 @@ class Glm53Net:
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
         raw scores renormalised, times routed_scaling_factor."""
         F, p, n = self.F, self.p, f"L{L}.moe."
-        gate = self._router_weights.get(L, p[n + "gate"])
-        logits = x.float() @ gate.float().T
+        if self._router_weights and x.shape[0] <= F.spec_k + 1:
+            from engine.kernels.glm_pointwise import router_logits
+            logits = router_logits(x, p[n + "gate"])
+            self._router_tensorcore.add(L)
+        else:
+            gate = self._router_weights.get(L, p[n + "gate"])
+            logits = x.float() @ gate.float().T
         if self.lanes.route_weights is not None:
             return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
         s = torch.sigmoid(logits)

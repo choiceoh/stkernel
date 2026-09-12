@@ -65,9 +65,8 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
                torch.empty((t, hv, kd), device=q.device, dtype=torch.float32),
                torch.empty((t, hv, vd), device=q.device, dtype=torch.float32)) if deferred else (None, None, None)
     bk, bv = triton.next_power_of_2(kd), min(triton.next_power_of_2(vd), 8)
-    # SPEC_K=6 verifies seven tokens. Keep that production width on the
-    # same coalesced value tile as the earlier six-token verifier.
-    if h == hv == 16 and kd == vd == 128 and t <= 7:
+    # BV=16 at seven tokens changed rollback results in the GPU exact gate.
+    if h == hv == 16 and kd == vd == 128 and t <= 6:
         bv = 16
     strides = tuple(x.stride()[1:] for x in inputs) if any(not x.is_contiguous() for x in inputs) else None
     fused_recurrent_gated_delta_rule_fwd_kernel[(1, triton.cdiv(vd, bv), hv)](

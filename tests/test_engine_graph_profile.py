@@ -63,6 +63,7 @@ class LaneTests(unittest.TestCase):
         from probes.engine_graph_profile import lane_of
         for name, lane in (("mk_mhc_kernel", "mHC"), ("mk_mla_pair_kernel", "MLA / DSA"),
                            ("fused_recurrent_kda_fwd", "KDA"), ("causal_conv1d_ring", "KDA"),
+                           ("fused_recurrent_gated_delta_rule_fwd_kernel", "KDA"),
                            ("b12x_moe_dynamic_gated", "MoE"), ("nvjet_tst_128x_64", "dense GEMM"),
                            ("ncclDevKernel_AllReduce_Sum", "collective")):
             with self.subTest(kernel=name):

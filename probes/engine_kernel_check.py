@@ -58,7 +58,17 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring"}, selected
+    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
+
+    if "decode7" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_decode_seven")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "seven-row dense/router numerical gates did not pass"
+        report("decode7", passed=True, tests=result.testsRun)
+        from probes.engine_decode_fusions import seven_row_dense, tensorcore_router
+        seven_row_dense(report)
+        tensorcore_router(report)
 
     if "kda_ring" in selected:
         import unittest
@@ -66,8 +76,6 @@ def main():
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         assert result.wasSuccessful() and not result.skipped, "KDA ring numerical/replay checks did not pass"
         report("kda_ring", passed=True, tests=result.testsRun)
-        from probes.engine_decode_fusions import kda_ring
-        kda_ring(report)
 
     if "shared_mlp" in selected:
         import unittest

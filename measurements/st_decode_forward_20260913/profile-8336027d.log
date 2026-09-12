@@ -1,0 +1,158 @@
+waiting: pos 1/1, held by prefill3000-kv2b [boot] (pid 3379351@srv2, since 02:45, est 20m, ST prefill: user-requested 2 GiB KV, verified 128K plus output capacity), lease: queue queue/prefill3000-kv2b on srv2 since 2026-09-13 02:45:31 (ST prefill: user-requested 2 GiB KV, verified 128K plus  2026-09-13_02:47:01
+waiting: pos 1/1, held by prefill3000-kv2b [boot] (pid 3379351@srv2, since 02:45, est 20m, ST prefill: user-requested 2 GiB KV, verified 128K plus output capacity), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/prefill3000-kv2b on srv2 since 2026-09-13 02:45:31 (ST prefill: user-requested 2 GiB KV, verified 128K plus  2026-09-13_02:47:41
+waiting: pos 1/2, held by prefill3000-kv2b [boot] (pid 3379351@srv2, since 02:45, est 20m, ST prefill: user-requested 2 GiB KV, verified 128K plus output capacity), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/prefill3000-kv2b on srv2 since 2026-09-13 02:45:31 (ST prefill: user-requested 2 GiB KV, verified 128K plus  2026-09-13_02:51:59
+waiting: pos 1/2, held by prefill3000-kv2b [boot] (pid 3379351@srv2, since 02:45, est 20m, ST prefill: user-requested 2 GiB KV, verified 128K plus output capacity), lease: queue queue/prefill3000-kv2b on srv2 since 2026-09-13 02:45:31 (ST prefill: user-requested 2 GiB KV, verified 128K plus  2026-09-13_02:53:38
+waiting: pos 1/3, held by prefill3000-kv2b [boot] (pid 3379351@srv2, since 02:45, est 20m, ST prefill: user-requested 2 GiB KV, verified 128K plus output capacity), lease: queue queue/prefill3000-kv2b on srv2 since 2026-09-13 02:45:31 (ST prefill: user-requested 2 GiB KV, verified 128K plus  2026-09-13_02:53:41
+waiting: pos 1/3, lease: queue queue/st-forward-profile0913v6 on srv2 since 2026-09-13 02:53:43 (handed from prefill3000-kv2b): phase=handed over 2026-09-13_02:53:43
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "e5ce275a1a17419eaf8e03d45bb8d060", "phase": "waiting", "reason": "dequeue", "since": 109771.578184262, "updated_at": 1789235631.685998, "version": 1}
+GO st-forward-profile0913v6 2026-09-13_02:53:51
+  node 10.10.10.1: gpu=ok stray=3 ram=92G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=96G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+GLM-5.3-Flash on ST, one rank of TP=4, chunk 9,216, kv_gib 0.5608778223395348 -> 20 blocks
+
+  box                                      119.69 GiB
+  -------------------------------------  --------
+  reserve for the OS                        -8.00 GiB   [declared] base/runtime_memory: immediately free host/device byte floor
+  runtime floor (CUDA ctx + NCCL 16ch)      -5.54 GiB   [measured] this boot: the measured floor 31.44 GiB less what this engine's own start-up costs (GLM 40th boot table)
+  already on this box before us            -25.90 GiB   [measured] this boot floor minus start-up: other containers, page cache and anything else holding pages -- unified memory means they come out of our KV
+  weights (this rank, TP=4)                -44.35 GiB   [read] rank0of4.safetensors header: 1,741 tensors
+  resident FP32 routers                     -0.18 GiB   [read] net.router_nbytes: immutable BF16 gate values converted once into the arena
+  drafter weight reservation                -0.00 GiB   [read] no drafter declared
+  vision tower (BF16, replicated)           -1.05 GiB   [read] vision.safetensors header
+  state slots (1 + null) x 242 MiB          -0.47 GiB   [read] caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring
+  prefix snapshots (123 x 35 MiB)           -4.23 GiB   [read] caches.snapshot_layout: chunk-boundary position rings for prefix reuse; the count follows the tiered/untiered raw byte budget and this shape (sharded drafter ring: yes)
+  compressed prefix cache and codec         -0.00 GiB   [declared] prefix tier: bounded lossless RAM copies plus chunk workspace, outside the raw arena; compression ratio unmeasured
+  generated-boundary staging                -0.07 GiB   [read] caches.stage_bytes: per-slot recurrent state and convolution history
+  workspace ceiling (outside the arena)    -12.00 GiB   [declared] base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses beyond it; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a 9,216-token chunk at 4.7 GiB, indexer selection bounded to 1,024 query rows per pass (net.SELECT_ROWS)
+  NVMe tier staging                         -0.19 GiB   [declared] kv_tier: pinned staging + device scratch, conversations and prefix tiers
+  -------------------------------------  --------
+  KV (remainder)                            17.71 GiB
+
+  GATE: KV = 17.71 GiB, declared before load.
+  declared paged KV 0.09 GiB (0.09 in blocks of 4.51 MiB); unassigned +17.62 GiB
+  what the remainder buys at 6,160 B/token (paged, layout) + 242 MiB/sequence (slot):
+    concurrency   1: 1,048,576 tok each
+    concurrency   4:   730,428 tok each
+    concurrency   8:   344,648 tok each
+    concurrency  32:    55,313 tok each
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] raw fallback: fc2 stage spans 78 byte codes (limit 64); packed bytes=0
+weights loaded: 45 layers, 1 row(s) of 7 tokens
+2026-09-12 17:55:39  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+2026-09-12 17:55:49  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+2026-09-12 17:55:51,056 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/micro_m7_k4096_n3072_t1_r128_5d12341ad5ac39be
+2026-09-12 17:55:53,879 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/micro_m7_k4096_n3072_t1_r128_5d12341ad5ac39be.o
+[megakernel] selftest mla rel=3.13e-03 prefill32=True -> ARM
+2026-09-12 17:56:37,952 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_81e029e76c52a235
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12 17:56:43,105 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_81e029e76c52a235.o
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+2026-09-12 17:56:43  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_post_tilelang` with `out_idx=None`
+[17:56:43] : Warning: T.vectorized loop over `i_hci` with extent 4 is lowered as a serial loop because TileLang could not find a valid vectorization plan. Scalar accumulator updates inside the loop are a common cause; move reductions to T.unroll or T.serial if this is intended.
+2026-09-12 17:56:44  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_post_tilelang`
+2026-09-12 17:56:46,365 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256_fcb2c6e8a3a6f551
+DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-12 17:56:49,862 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256_fcb2c6e8a3a6f551.o
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256 (mac=48, m=7, routed=56, smem=98304 B)
+captured and warm
+execution=native, calibration=disabled, W4 layers=196, mHC layers=89, auxiliary layers=(5, 14, 24, 33, 42)
+isolated-rank replay elapsed: 51.599 ms/step
+USDT:2026-09-12 17:56:56 1:1 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-12 17:56:57 1:1 SyncActivityProfilerHandler.cpp:59] profiler_stop
+
+  summed kernel activity: 55935.6 us/step over 16 replays (overlapping streams are counted separately)
+
+  lane                     us/step   share  launches/step
+  MoE                      32344.3   57.8%           45.0
+  dense GEMM               15023.4   26.9%          365.0
+  mHC                       2808.7    5.0%           96.0
+  norm / elementwise        2550.4    4.6%          990.0
+  other                     2282.7    4.1%          354.0
+  MLA / DSA                  705.3    1.3%           33.0
+  KDA                        220.9    0.4%           45.0
+
+  kernel                                                             us/step  launches/step
+  kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoESt   31858.2           42.0
+  void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((an    9541.8          196.0
+  void gemmSN_TN_kernel<float, 128, 16, 2, 4, 8, 9, false, cublasG    3344.3           53.0
+  void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonym    2779.4           89.0
+  fused_recurrent_gated_delta_rule_fwd_kernel                          989.0           34.0
+  void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u     860.3            1.0
+  void at::native::sbtopk::gatherTopK<float, unsigned int, 2, fals     610.5           53.0
+  void mk_mla_kernel<false>(MKMlaArgs)                                 583.9           11.0
+  kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroK     486.0            3.0
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_     429.6           68.0
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_     313.0           11.0
+  void at::native::unrolled_elementwise_kernel<at::native::direct_     271.2           59.0
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_     262.6           11.0
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_     235.9           22.0
+  void at::native::index_elementwise_kernel<128, 4, at::native::gp     231.2           44.0
+  void at::native::bitonicSortKVInPlace<2, -1, 16, 16, float, long     230.7           42.0
+  _single_conv                                                         204.7           34.0
+  void at::native::index_elementwise_kernel<128, 4, at::native::gp     174.2           33.0
+  void at::native::vectorized_elementwise_kernel<2, at::native::BU     129.1           56.0
+  void at::native::vectorized_elementwise_kernel<2, at::native::BU     113.0           55.0
+  void at::native::unrolled_elementwise_kernel<at::native::direct_     104.3           55.0
+  void at::native::index_elementwise_kernel<128, 4, at::native::gp      98.5           11.0
+  void deep_gemm::sm120_fp8_mqa_logits<32u, 128u, false, 4u, 128u,      96.6           11.0
+  void at::native::elementwise_kernel<128, 2, at::native::gpu_kern      91.3           55.0
+  void at::native::unrolled_elementwise_kernel<at::native::CUDAFun      87.4           33.0
+  void at::native::index_elementwise_kernel<128, 4, at::native::gp      86.7           11.0
+  void at::native::vectorized_elementwise_kernel<4, at::native::CU      81.4           42.0
+  void at::native::vectorized_elementwise_kernel<4, at::native::bf      79.8           51.0
+  _scores                                                               79.6           42.0
+  void at::native::elementwise_kernel<128, 4, at::native::gpu_kern      75.9           22.0
+  void at::native::unrolled_elementwise_kernel<at::native::direct_      72.5           33.0
+  memcpy32_post                                                         70.6           59.0
+  _weights                                                              67.5           42.0
+  _norm                                                                 67.0           23.0
+  void at::native::elementwise_kernel<128, 4, at::native::gpu_kern      66.9           24.0
+  void at::native::elementwise_kernel<128, 2, at::native::gpu_kern      62.7           44.0
+  void at::native::vectorized_gather_kernel<16, long>(char*, char*      58.6            1.0
+  _pool_slots                                                           58.4           11.0
+  _output_norm                                                          57.6           34.0
+  void at::native::vectorized_elementwise_kernel<4, at::native::AU      50.5           33.0
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "d1eeaabcf6564b79b7dbcff1c5d1775b", "phase": "waiting", "reason": "release", "since": 109962.610746317, "updated_at": 1789235822.7185526, "version": 1}
