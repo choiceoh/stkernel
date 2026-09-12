@@ -6,7 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import torch  # noqa: E402
+from pathlib import Path
+
+import torch
+
+ROOT = Path(__file__).resolve().parents[1]  # noqa: E402
 
 from engine.base.sampler import (distribution, draw, needs_rich_sampler, process_logits, speculative_pick,  # noqa: E402
                                  top_logprobs, validate_options)
@@ -104,6 +108,24 @@ class OptionTests(unittest.TestCase):
         self.assertIn(0, h.rows)
         h.forget(0)
         self.assertNotIn(0, h.rows)
+
+    def test_the_model_dtype_goes_in_and_float32_comes_out_unchanged(self):
+        # the gather hands over the model's dtype now; the one copy here is the upcast
+        raw = torch.tensor([2.0, -1.0, 0.5, 3.0])
+        seen, counts = self.history(4, [0], [1])
+        wide = process_logits(raw, {"repetition_penalty": 2.0}, seen, counts)
+        narrow = process_logits(raw.to(torch.bfloat16), {"repetition_penalty": 2.0}, seen, counts)
+        self.assertEqual(wide.dtype, torch.float32)
+        self.assertEqual(narrow.dtype, torch.float32)
+        self.assertEqual(wide.tolist(), narrow.tolist())
+        self.assertEqual(raw.tolist(), [2.0, -1.0, 0.5, 3.0], "the caller's logits are untouched")
+
+    def test_the_gather_does_not_upcast_what_every_row_copies_anyway(self):
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        body = source[source.index("    def _gather(self"):]
+        body = body[:body.index("\n    def ", 10)]
+        self.assertIn("all_gather(local, dim=-1)", body)
+        self.assertNotIn(".float()", body)
 
     def test_a_handful_of_forbidden_ids_needs_no_vocabulary_of_true(self):
         logits = torch.zeros(6)
