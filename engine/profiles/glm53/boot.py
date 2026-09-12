@@ -30,6 +30,7 @@ import torch                                                     # noqa: E402
 from engine.base import scheduler as sched                       # noqa: E402
 from engine.base.arena import Arena, prepare_allocation          # noqa: E402
 from engine.base.runtime_memory import RuntimeMemory, reclaim_preparation_pages  # noqa: E402
+from engine.base import tenancy                                   # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.config import Config, Fact, Knob                # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
@@ -199,7 +200,8 @@ def decodable_vocab(tok) -> int:
 def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
           context_ceiling: "int | None" = None, execution: str = "stock",
-          ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER):
+          ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER,
+          lease_owner: "str | None" = None):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
     F = facts.load(ckpt_meta)
@@ -395,6 +397,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         with recorder.phase("runner"):
             tiered = prefix_tier = None
             if tier_dir:                                                                # D16: idle conversations park on NVMe, per rank
+                if lease_owner:
+                    # A restart keeps its conversations (D16). A HANDOVER does not: the previous holder's
+                    # clients are gone and its prefix tier is warm with boundaries this one never computed,
+                    # which is poison for anything anybody measures next (base/tenancy).
+                    left = tenancy.claim(Path(tier_dir) / f"rank{comm.rank}", lease_owner)
+                    if left:
+                        print(f"  rank{comm.rank}: tenant state cleared -- the fleet changed hands from {left}")
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes,  # a block is one NVMe unit (block-major)
                                 capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB))
                 tiered = TieredKV(caches.pool, tier)
@@ -764,7 +773,7 @@ def fleet(a) -> int:
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
                                                context_ceiling=cfg["context_ceiling"] or None,
-                                               execution=cfg["execution"])
+                                               execution=cfg["execution"], lease_owner=lease["owner"])
 
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
