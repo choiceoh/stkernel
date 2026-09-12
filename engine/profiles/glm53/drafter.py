@@ -38,6 +38,7 @@ from contextlib import nullcontext
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from engine.base.params import Spec
+from engine.kernels.draft_conv import tap_mix
 from engine.kernels.norm_rope import norm, norm_rope, warm as warm_rotary
 from engine.profiles.glm53.facts import SPEC_K, TP
 
@@ -307,16 +308,9 @@ class Drafter:
                 ring[L, 1, idx, :self.local_kv_heads] = v
 
     # -- the block ------------------------------------------------------------------------------
-    def _conv(self, x, delta, base, tap_valid):
-        F = self.F
-        G = F.hidden // F.conv_group
-        blocks = x.unflatten(-1, (G, F.conv_group))                                    # [B, G, 16]
-        coeff = base.view(1, F.conv_taps, G, F.conv_group) + delta.unsqueeze(-1)            # [B, taps, G, 16]
-        out = coeff[:, 0] * blocks
-        for tap in range(1, F.conv_taps):
-            shifted = Fn.pad(blocks[:-tap], (0, 0, 0, 0, tap, 0))
-            out = out + coeff[:, tap] * shifted * tap_valid[:, tap].view(-1, 1, 1)
-        return out.flatten(-2)
+    def _conv(self, x, delta, base):
+        """The grouped causal tap mix over one block's rows (kernels/draft_conv)."""
+        return tap_mix(x, delta, base, self.F.conv_group)
 
     def _attn(self, L: int, x: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int) -> torch.Tensor:
         F, p = self.F, self.p
@@ -357,7 +351,6 @@ class Drafter:
         """One block through the five layers; returns the final hidden [B, hidden]."""
         F, p = self.F, self.p
         B = ids.shape[0]
-        tap_valid = torch.arange(B, device=ids.device)[:, None] >= torch.arange(F.conv_taps, device=ids.device)[None, :]
         x = self.target.embed(ids)
         res = None
         for L in range(F.layers):
@@ -368,13 +361,13 @@ class Drafter:
                 res = res + x
                 h = norm(res, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
-            h = self._conv(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], tap_valid)
+            h = self._conv(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0])
             h = self._attn(L, h, positions, ring, ctx_len)
-            h = self._conv(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], tap_valid)
+            h = self._conv(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1])
             res = res + h
             h = norm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
-            h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid)
+            h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0])
             if self.fast_attention:
                 gate, up = self.linear(h, q+"mlp.gate_up").chunk(2, -1)
             else:
@@ -382,7 +375,7 @@ class Drafter:
             h = self.linear(Fn.silu(gate)*up, q + "mlp.down_proj.weight")
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
-            x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], tap_valid)
+            x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1])
         return norm(res + x, p["norm.weight"], F.rms_eps)
 
     # -- every row of a step at once (45차 §23 GPU 판정 4차) --------------------------------------------
@@ -403,7 +396,8 @@ class Drafter:
             context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
             for L in range(F.layers):
                 q = f"layers.{L}.self_attn."
-                k = norm_rope(context[:, :, L, 0].reshape(n*t, self.local_kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps, positions.reshape(-1), F.rope_theta)
+                k = norm_rope(context[:, :, L, 0].reshape(n*t, self.local_kv_heads, F.head_dim),
+                              p[q + "k_norm.weight"], F.rms_eps, positions.reshape(-1), F.rope_theta)
                 k = k.reshape(n, t, self.local_kv_heads, F.head_dim)
                 # one launch a layer, not one a (layer, row): the single-slot kernel required numel()==1 and
                 # the loop was the consequence
@@ -421,17 +415,9 @@ class Drafter:
             field[rows, L, 0, idx] = torch.where(keep, k, field[rows, L, 0, idx])
             field[rows, L, 1, idx] = torch.where(keep, v, field[rows, L, 1, idx])
 
-    def _conv_rows(self, x, delta, base, tap_valid, n: int, t: int):
-        """`_conv` over n blocks of t rows: the taps look back inside a block, never into the block before it."""
-        F = self.F
-        G = F.hidden // F.conv_group
-        blocks = x.view(n, t, G, F.conv_group)
-        coeff = base.view(1, 1, F.conv_taps, G, F.conv_group) + delta.view(n, t, F.conv_taps, G, 1)
-        out = coeff[:, :, 0] * blocks
-        for tap in range(1, F.conv_taps):
-            shifted = Fn.pad(blocks[:, :-tap], (0, 0, 0, 0, tap, 0))
-            out = out + coeff[:, :, tap] * shifted * tap_valid[:, tap].view(1, t, 1, 1)
-        return out.reshape(n * t, F.hidden)
+    def _conv_rows(self, x, delta, base, t: int):
+        """`_conv` over the step's blocks of t rows: the taps look back inside a block, never into the one before."""
+        return tap_mix(x, delta, base, self.F.conv_group, block=t)
 
     def _attn_rows(self, L: int, x: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
                    field: torch.Tensor, n: int, t: int, rows_ok=None) -> torch.Tensor:
@@ -479,7 +465,6 @@ class Drafter:
         rows that are real (a calibration run leaves the others out of its sums)."""
         F, p = self.F, self.p
         rows_ok = alive.repeat_interleave(t) if alive is not None else None
-        tap_valid = torch.arange(t, device=ids.device)[:, None] >= torch.arange(F.conv_taps, device=ids.device)[None, :]
         x = self.target.embed(ids)
         res = None
         for L in range(F.layers):
@@ -490,13 +475,13 @@ class Drafter:
                 res = res + x
                 h = norm(res, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
-            h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], tap_valid, n, t)
+            h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], t)
             h = self._attn_rows(L, h, positions, slots, ctx, field, n, t, rows_ok)
-            h = self._conv_rows(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], tap_valid, n, t)
+            h = self._conv_rows(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], t)
             res = res + h
             h = norm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
-            h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid, n, t)
+            h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], t)
             if self.fast_attention:
                 gate, up = self.linear(h, q + "mlp.gate_up", rows_ok).chunk(2, -1)
             else:
@@ -504,7 +489,7 @@ class Drafter:
             h = self.linear(Fn.silu(gate) * up, q + "mlp.down_proj.weight", rows_ok)
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
-            x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], tap_valid, n, t)
+            x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
         return norm(res + x, p["norm.weight"], F.rms_eps)
 
     def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
