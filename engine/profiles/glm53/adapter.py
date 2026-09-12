@@ -81,8 +81,13 @@ class Glm53Engine:
         self.reachable_mass = 0.0                            # sum_x min(p, q): the most any rule could accept
         self.covered_mass = 0.0                              # the target mass the drafter's candidates cover
         self.ceiling_positions = 0                           # draft positions behind those two sums
+        self.ceiling_failures = 0                            # samples that raised: the gauge's own health
+        self.ceiling_last_error = ""
+        self.ceilings_off = False                            # disarmed after CEILING_FAILURES_KEPT of them
         self.steps_verified = 0                              # verifications since the counters were last cleared
         self._ceiling_every = 64                             # two vocabulary passes, so sampled, not every step
+        # A gauge that keeps failing is not news after the third time, and the engine should stop
+        # paying for it. The counter and the last message stay in /metrics either way.
         self.lane_info = {}                        # what is actually bound: set by the boot that built the lanes
         self.calibration = None                    # kernels/dense/calibration.Calibration while this boot sums for GPTQ packs
         self.calibration_root = None               # the pack store's root the blobs are filed under
@@ -502,17 +507,31 @@ class Glm53Engine:
         if self.sampling_history is not None:
             self.sampling_history.forget(seq)
 
+    CEILING_FAILURES_KEPT = 3
+
     def note_ceilings(self, target_probs, draft_probs, draft_cand=None) -> None:
         """Every 64th verification, record what the draft allowed. See base/sampler.draft_ceilings.
 
         `draft_cand` is the shape the draft came in, not a choice: the device chain carries its distribution as
         the candidates and their mass, the rich rows still carry a row per position."""
         self.steps_verified += 1
-        if self.steps_verified % self._ceiling_every:
+        if self.steps_verified % self._ceiling_every or self.ceilings_off:
             return
         from engine.base.sampler import draft_ceilings, draft_ceilings_over
-        reachable, covered = (draft_ceilings(target_probs, draft_probs) if draft_cand is None
-                              else draft_ceilings_over(target_probs, draft_cand, draft_probs))
+        try:
+            reachable, covered = (draft_ceilings(target_probs, draft_probs) if draft_cand is None
+                                  else draft_ceilings_over(target_probs, draft_cand, draft_probs))
+        except Exception as exc:                            # noqa: BLE001 -- a gauge does not take the fleet down
+            # It did once. 2026-09-12: a request that reached its generation limit before the
+            # drafter's block was verified gave this four target rows against five draft rows,
+            # draft_ceilings raised, and the exception went decode -> runner.step -> serve.loop ->
+            # exit, on ALL FOUR ranks, because the one thing between them was a sampled statistic
+            # nothing reads back. The shape bug is fixed (#721); this is the class of it.
+            self.ceiling_failures += 1
+            self.ceiling_last_error = f"{type(exc).__name__}: {exc}"[:200]
+            if self.ceiling_failures >= self.CEILING_FAILURES_KEPT:
+                self.ceilings_off = True                    # stop paying for a measurement that cannot be taken
+            return
         self.reachable_mass += reachable
         self.covered_mass += covered
         self.ceiling_positions += int(draft_probs.shape[-2]) * (1 if draft_probs.dim() == 2 else int(draft_probs.shape[0]))

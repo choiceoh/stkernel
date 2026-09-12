@@ -2358,6 +2358,16 @@ class Server:
                              [(f'stage="{k}"', round(v, 6)) for k, v in sorted(clock.totals.items())]))
             rows.append(("counter", "st:decode_stage_samples_total",
                          "decode steps whose stages were timed", clock.samples))
+        # The gauge's own health, always, even when it never produced a position. It is off the
+        # answer path by construction now; this is how anyone finds out it stopped measuring.
+        failures = getattr(engine, "ceiling_failures", None)
+        if failures is not None:
+            rows.append(("counter", "st:spec_ceiling_samples_failed_total",
+                         "acceptance-ceiling samples that raised and were dropped rather than ending the step",
+                         failures))
+            if getattr(engine, "ceilings_off", False):
+                rows.append(("gauge", "st:spec_ceiling_sampling_off",
+                             "1 when the ceiling gauge disarmed itself after repeated failures", 1))
         exits = getattr(engine, "chain_exits", None)
         if exits:
             # st:sync_drain_steps_total says how often the pipeline was emptied. This says by what, which is the
