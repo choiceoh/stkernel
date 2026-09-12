@@ -114,7 +114,7 @@ class Grammars:
 
 
 class StepMasks:
-    """One step's masks, on the device, in the row order the step's logits already have."""
+    """One step's masks, on the device: a contiguous slice per row, in the order the rows were filled."""
 
     def __init__(self, grammars: Grammars, landing, filled: dict):
         self.g, self.landing, self.filled = grammars, landing, filled
