@@ -784,8 +784,18 @@ def fleet_lease_of() -> dict:
             "`start-st-glm53.sh yield` asks a current holder to hand over.")
     from engine.base import fleet_lease
     record = fleet_lease.read(pathlib.Path(path))
+    # The lock is ONE file and it lives on the head node -- homes are not shared between the
+    # Sparks, which is the whole reason launchers/lib/fleet-lease.sh pipes the module there.
+    # So ranks 1..3 read a path that is theirs and empty, and requiring a record of them
+    # refused every boot of the fleet: rank 0 came up, the other three exited in under a
+    # second (2026-09-12, first boot of this gate on real nodes). What those ranks CAN be held
+    # to is the thing a bare `docker run` still would not have -- an owner and a path in the
+    # environment, which only the launcher sets -- and agreement with any record they can read.
+    rank = os.environ.get("RANK", "0")
     if not record:
-        raise RuntimeError(f"the fleet lock at {path} is empty: nothing reserved this boot")
+        if rank == "0":
+            raise RuntimeError(f"the fleet lock at {path} is empty: nothing reserved this boot")
+        return {"owner": owner, "path": path}      # the head holds it; this node has no copy to hold
     held = record.get("owner")
     if held != owner:
         raise RuntimeError(

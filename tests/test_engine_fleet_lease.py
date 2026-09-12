@@ -517,6 +517,37 @@ class ReservationIsRequiredTests(unittest.TestCase):
         self.assertIn("holds no fleet reservation", str(caught.exception))
         self.assertIn("start-st-glm53.sh", str(caught.exception), "it has to say how to get one")
 
+    def test_the_ranks_that_have_no_copy_of_the_lock_still_boot(self):
+        """The lock is ONE file on the head node -- homes are not shared between the Sparks, which is
+        why the helper pipes the module there. Requiring a record of every rank refused the fleet
+        outright: rank 0 came up and the other three exited in under a second (2026-09-12, the first
+        boot of this gate on real nodes). They are still held to the environment only the launcher
+        sets, which is what a bare `docker run` would not have."""
+        boot = self.boot()
+        with tempfile.TemporaryDirectory() as tmp:
+            absent = os.path.join(tmp, "st-fleet.lock")           # rank 1's node: no copy, by design
+            env = {"ST_LEASE_OWNER": "me", "ST_LEASE_PATH": absent}
+            with mock.patch.dict(os.environ, dict(env, RANK="1"), clear=True):
+                self.assertEqual(boot.fleet_lease_of(), {"owner": "me", "path": absent})
+            with mock.patch.dict(os.environ, dict(env, RANK="0"), clear=True):
+                with self.assertRaises(RuntimeError):             # the head still has to hold it
+                    boot.fleet_lease_of()
+            with mock.patch.dict(os.environ, {"RANK": "3"}, clear=True):
+                with self.assertRaises(RuntimeError) as caught:   # and no environment is still no boot
+                    boot.fleet_lease_of()
+            self.assertIn("holds no fleet reservation", str(caught.exception))
+
+    def test_a_rank_that_can_read_the_lock_must_still_agree_with_it(self):
+        boot = self.boot()
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = Path(tmp) / "st-fleet.lock"
+            acquire("someone-else", path=lock, container="st-glm53")
+            with mock.patch.dict(os.environ, {"ST_LEASE_OWNER": "me", "ST_LEASE_PATH": str(lock),
+                                              "RANK": "2"}, clear=True):
+                with self.assertRaises(RuntimeError) as caught:
+                    boot.fleet_lease_of()
+            self.assertIn("someone-else", str(caught.exception))
+
     def test_an_empty_lock_is_not_a_reservation(self):
         boot = self.boot()
         with tempfile.TemporaryDirectory() as tmp:
