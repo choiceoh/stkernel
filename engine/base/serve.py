@@ -1079,6 +1079,7 @@ class Server:
         self.max_context = int(getattr(engine, "max_context", 2**31 - 1))   # the model's trained positions; the door refuses beyond
         self.request_timeout_s = float(request_timeout_s)
         self.clock = time.monotonic                # injectable for tests
+        self.booted = int(time.time())             # wall clock, for the model card's `created` (OpenAI's field)
         self._cancels = set()                      # (request id, reason) asked by HTTP threads / the timeout scan; rank 0 broadcasts them
         self._deadline = {}                        # request id -> clock() by which it must have finished (rank 0)
         self.cancelled = 0
@@ -1465,6 +1466,59 @@ class Server:
                 out.append(self.controls.get_nowait())
             except queue.Empty:
                 return out
+
+    def model_card(self) -> dict:
+        """What this engine serves, in the shape a router can read without being told.
+
+        `/v1/models` used to answer three fields, so everything downstream had to be configured
+        by hand -- and a hand-written capability drifts. SparkFleet probes exactly this endpoint
+        to decide a backend is a routable chat model, and wormhole turns its inventory into
+        routes (`gateway-go/cmd/wormhole/fleet.go`), so this is the one place the engine can
+        state what it can do and have it arrive.
+
+        `max_model_len` carries vLLM's field name on purpose: anything that already reads a vLLM
+        `/v1/models` gets the served ceiling for free. Everything under `capabilities` is read
+        off what this boot actually bound -- a vision tower that is present, a tool parser the
+        profile supplied, grammars that compiled, a drafter with a k -- never a constant, so it
+        cannot say yes to something this process cannot do (45차 §56).
+        """
+        engine = self.engine
+        drafter = getattr(engine, "drafter", None)
+        return {
+            "id": self.model_name, "object": "model", "owned_by": "st", "root": self.model_name,
+            "created": self.booted,
+            "max_model_len": int(getattr(engine, "max_context", 0)) or None,
+            "capabilities": {
+                "vision": self.vision is not None,
+                "tools": self.tool_parser is not None,
+                "tool_grammar": self.tool_grammar is not None,
+                "structured_output": bool(getattr(engine, "grammars", None)),
+                "reasoning": self.reasoning_end is not None,
+                "streaming": True,
+                "speculative_tokens": int(getattr(drafter, "k", 0) or 0),
+                "prefix_cache": getattr(self.runner, "prefix", None) is not None,
+                "conversation_tier": getattr(self.runner, "tiered", None) is not None,
+                "max_concurrent_requests": int(self.runner.c.max_running),
+            },
+        }
+
+    def readiness(self) -> "tuple[dict, int]":
+        """(body, HTTP status) for `/health`: serving, handing over, or stopping.
+
+        A handover used to look healthy. `alive` stays true through the drain -- that is the
+        point, the rows already here finish and are parked -- but every NEW request is refused
+        with 503, so a prober that only asks "alive?" keeps the engine in its inventory and
+        every caller pays a failed hop before the router fails over. Saying `draining` here
+        takes the engine out of the rotation one probe earlier, which is the difference between
+        a handover nobody notices and one that shows up as errors (45차 §56).
+        """
+        if not self.alive:
+            return {"status": "stopping"}, 503
+        if self.draining is not None:
+            return {"status": "draining", "handing_over_to": self.draining,
+                    "running": len(self.runner.state.running),
+                    "waiting": len(self.runner.state.waiting) + len(self._waiting)}, 503
+        return {"status": "ok"}, 200
 
     def _control(self, control) -> None:
         """A cache control, applied on every rank in the same iteration (the caches must stay identical)."""
@@ -2241,7 +2295,7 @@ class Server:
 
             def do_GET(self):
                 if self.path == "/v1/models":
-                    self.reply(200, {"object": "list", "data": [{"id": server.model_name, "object": "model", "owned_by": "st"}]})
+                    self.reply(200, {"object": "list", "data": [server.model_card()]})
                 elif self.path == "/metrics":
                     body = server.metrics().encode()
                     self.send_response(200)
@@ -2250,7 +2304,8 @@ class Server:
                     self.end_headers()
                     self.wfile.write(body)
                 elif self.path == "/health":
-                    self.reply(200 if server.alive else 503, {"status": "ok" if server.alive else "stopping"})
+                    status, code = server.readiness()
+                    self.reply(code, status)
                 else:
                     self.reply(200, {"engine": "ST", "model": server.model_name, "running": list(server.runner.state.running),
                                      "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
