@@ -19,7 +19,7 @@ def load(name: str):
     return module
 
 
-check, mutate = load("check"), load("mutate")
+check, mutate, push = load("check"), load("mutate"), load("push_check")
 
 PASSED = "....\n----\nRan 4 tests in 0.1s\n\nOK\n"
 SKIPPED = "..ss\n----\nRan 4 tests in 0.1s\n\nOK (skipped=2)\n"
@@ -90,6 +90,43 @@ class VerdictTests(unittest.TestCase):
     def test_only_a_real_failure_sets_the_exit_code(self):
         states = [check.judge("m", text, 0).state for text in (PASSED, SKIPPED, NEVER)]
         self.assertNotIn("FAILED", states)                 # CI stays quiet about a wheel it could not install
+
+
+class PushCheckTests(unittest.TestCase):
+    """A branch whose pull request is already merged still accepts pushes; the commit just never reaches main.
+    That happened twice on 2026-09-12, the second time with a note in memory saying not to, which is how a thing
+    that should be a check ends up being a story. These are the cases."""
+
+    MERGED = [{"number": 694, "state": "MERGED", "mergedAt": "2026-09-12T09:29:20Z"}]
+    OPEN = [{"number": 696, "state": "OPEN"}]
+
+    def test_a_merged_pull_request_stops_the_push(self):
+        code, lines = push.verdict(self.MERGED, ahead=1, behind=5)
+        self.assertEqual(code, 1)
+        self.assertIn("already merged", lines[0])
+        self.assertIn("#694", lines[0])
+        self.assertTrue(any("cherry-pick" in l for l in lines), "it has to say what to do instead")
+
+    def test_a_reopened_branch_with_an_open_request_is_fine(self):
+        """The same head can carry a second request. Merged history does not condemn it."""
+        code, lines = push.verdict(self.MERGED + self.OPEN, ahead=1, behind=0)
+        self.assertEqual(code, 0)
+        self.assertIn("#696", lines[0])
+
+    def test_nothing_to_push_is_also_a_stop(self):
+        code, lines = push.verdict([], ahead=0, behind=3)
+        self.assertEqual(code, 1)
+        self.assertIn("nothing to push", lines[0])
+
+    def test_a_branch_behind_the_base_is_told_so_but_not_blocked(self):
+        code, lines = push.verdict(self.OPEN, ahead=2, behind=7)
+        self.assertEqual(code, 0)
+        self.assertTrue(any("rebase" in l for l in lines))
+
+    def test_no_request_yet_says_so(self):
+        code, lines = push.verdict([], ahead=1, behind=0)
+        self.assertEqual(code, 0)
+        self.assertIn("gh pr create", lines[0])
 
 
 class MutationTests(unittest.TestCase):
