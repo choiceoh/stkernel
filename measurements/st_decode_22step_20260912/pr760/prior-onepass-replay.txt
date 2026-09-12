@@ -1,0 +1,8 @@
+== onepass ST-NATIVE-F4D7-20260912H (None, git None, session None)
+       ctx  cold TTFT  warm TTFT cold tok/s warm tok/s
+      2000      1.58s      0.63s       1348       3390
+     32000     15.89s     15.89s       2048       2048  (1요청 결합)
+    128000     64.97s     64.97s       1979       1979  (1요청 결합)
+   decode step/s 16.9367201331118 (창 44개)
+   수락률 49.5%, tokens/step 3.4760845383759733, TTFT med 1.579s, TPOT med 16.73 ms p95 20.11
+   품질 6/9, 깨진 응답 0/5

@@ -1,0 +1,17 @@
+{
+  "owner": "claude@srv4/main-ff728f43",
+  "host": "srv2",
+  "pid": 1339623,
+  "container": "st-glm53",
+  "since": 1789218977.9518561,
+  "beat": 1789219677.7255156,
+  "est_minutes": 45,
+  "note": "st-glm53 on four Sparks",
+  "state": {
+    "running": 0,
+    "waiting": 0,
+    "served": 10,
+    "steps": 2250
+  }
+}
+9a91f4dab6b05dd7af38f45ca836199d796806c0f0e0f14aefb35ca91f123ada 2026-09-12T13:16:18.39852Z st-engine:main-ff728f43

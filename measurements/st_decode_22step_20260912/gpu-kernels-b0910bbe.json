@@ -1,0 +1,192 @@
+{
+  "passed": true,
+  "vllm_loaded": false,
+  "checks": [
+    {
+      "lane": "imports",
+      "modules": 75,
+      "table": "served",
+      "vllm_loaded": false
+    },
+    {
+      "lane": "calibration",
+      "passed": true,
+      "tests": 4
+    },
+    {
+      "lane": "pointwise",
+      "passed": true,
+      "tests": 4
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "shared_activation",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.01850775070488453
+        },
+        {
+          "arm": "A",
+          "ms": 0.004140125121921301
+        },
+        {
+          "arm": "A",
+          "ms": 0.003869999898597598
+        },
+        {
+          "arm": "B",
+          "ms": 0.01846337504684925
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "router_post_projection",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.030804749578237534
+        },
+        {
+          "arm": "A",
+          "ms": 0.020527999848127365
+        },
+        {
+          "arm": "A",
+          "ms": 0.020534999668598175
+        },
+        {
+          "arm": "B",
+          "ms": 0.030731000006198883
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "rmsnorm",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.02062850072979927
+        },
+        {
+          "arm": "A",
+          "ms": 0.004141749814152718
+        },
+        {
+          "arm": "A",
+          "ms": 0.004104374907910824
+        },
+        {
+          "arm": "B",
+          "ms": 0.020495999604463577
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "indexer_norm",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.010335749946534634
+        },
+        {
+          "arm": "A",
+          "ms": 0.004135000053793192
+        },
+        {
+          "arm": "A",
+          "ms": 0.004122625105082989
+        },
+        {
+          "arm": "B",
+          "ms": 0.010268500074744225
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "expert_join",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.012389999814331532
+        },
+        {
+          "arm": "A",
+          "ms": 0.005003625061362982
+        },
+        {
+          "arm": "A",
+          "ms": 0.004976999945938587
+        },
+        {
+          "arm": "B",
+          "ms": 0.012311000376939774
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "calibration_timing",
+      "rows": 1,
+      "width": 20480,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 15.298091888427734
+        },
+        {
+          "arm": "A",
+          "ms": 0.826033353805542
+        },
+        {
+          "arm": "A",
+          "ms": 0.2275603711605072
+        },
+        {
+          "arm": "B",
+          "ms": 15.2443208694458
+        }
+      ],
+      "includes_partial_flush": true,
+      "scope": "single-GPU captured observer; not consumer speed"
+    },
+    {
+      "lane": "calibration_timing",
+      "rows": 7,
+      "width": 20480,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 15.329777717590332
+        },
+        {
+          "arm": "A",
+          "ms": 1.5220766067504883
+        },
+        {
+          "arm": "A",
+          "ms": 1.5273754596710205
+        },
+        {
+          "arm": "B",
+          "ms": 15.32262897491455
+        }
+      ],
+      "includes_partial_flush": true,
+      "scope": "single-GPU captured observer; not consumer speed"
+    }
+  ]
+}
