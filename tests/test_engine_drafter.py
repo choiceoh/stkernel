@@ -25,7 +25,7 @@ class DrafterTests(unittest.TestCase):
         return Drafter(F, SimpleNamespace(), 21)
 
     def test_long_observation_retains_the_newest_window(self):
-        from engine.profiles.glm53.drafter import rmsnorm, rope
+        from engine.profiles.glm53.drafter import norm, norm_rope   # the fused forms the observe itself runs
         d = self.make_drafter()
         dev = "cuda" if torch.cuda.is_available() else "cpu"
         gen = torch.Generator(device=dev).manual_seed(6)
@@ -39,11 +39,11 @@ class DrafterTests(unittest.TestCase):
         aux = rand(35, 16)
         d.observe(ring, positions, aux)
         # Compute the retained positions directly, without repeated scatter ids.
-        h = rmsnorm(torch.nn.functional.linear(aux[-8:], d.p["fc.weight"]),
-                    d.p["hidden_norm.weight"], d.F.rms_eps).bfloat16()
+        h = norm(torch.nn.functional.linear(aux[-8:], d.p["fc.weight"]),
+                 d.p["hidden_norm.weight"], d.F.rms_eps).bfloat16()
         key = torch.nn.functional.linear(h, d.p["layers.0.self_attn.k_proj.weight"]).view(8, 1, 4)
-        key = rope(rmsnorm(key, d.p["layers.0.self_attn.k_norm.weight"], d.F.rms_eps),
-                   positions[-8:], d.F.rope_theta)
+        key = norm_rope(key, d.p["layers.0.self_attn.k_norm.weight"], d.F.rms_eps,
+                        positions[-8:], d.F.rope_theta)
         value = torch.nn.functional.linear(h, d.p["layers.0.self_attn.v_proj.weight"]).view(8, 1, 4)
         self.assertTrue(torch.equal(ring[0, 0, positions[-8:] % 8], key))
         self.assertTrue(torch.equal(ring[0, 1, positions[-8:] % 8], value))

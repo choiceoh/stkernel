@@ -38,6 +38,7 @@ from contextlib import nullcontext
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from engine.base.params import Spec
+from engine.kernels.norm_rope import norm, norm_rope, warm as warm_rotary
 from engine.profiles.glm53.facts import SPEC_K, TP
 
 DRAFTER = Path("/home/choiceoh/models/GLM-5.3-Flash-DFlash2")
@@ -109,6 +110,9 @@ def specs(F: DrafterFacts) -> "list[Spec]":
     return out
 
 
+# The torch forms of the two normalisations. The block runs the fused kernels (kernels/norm_rope) -- one launch
+# where these are six and twenty-one -- and these stay as the reference they are judged against, which the graph
+# probe's FP64 oracle and the retention test read directly.
 def rmsnorm(x, w, eps):
     xf = x.float()
     return (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)).to(x.dtype) * w
@@ -163,6 +167,9 @@ class Drafter:
 
     def capture_decode(self, caches, memory=None, generator=None, vocab=None):
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
+        # The rotary table is a constant of the model; built here it belongs to the arena, not to whichever graph
+        # happened to run first and would free it on close (kernels/norm_rope.warm).
+        warm_rotary(caches.device, self.F.head_dim, self.F.rope_theta)
         self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory, generator=generator, vocab=vocab)
 
     def observe_decode(self, ring, positions, aux):
@@ -279,14 +286,14 @@ class Drafter:
         # defined last-writer order.
         positions, aux = positions[-F.window:], aux[-F.window:]
         keep = (torch.arange(len(positions), device=positions.device) < valid) if valid is not None else None
-        c = rmsnorm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
+        c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
         idx = positions % F.window
         context = (Fn.linear(c,self.context_kv).reshape(-1,F.layers,2,self.local_kv_heads,F.head_dim)
                    if self.context_kv is not None else None)
         for L in range(F.layers):
             q = f"layers.{L}.self_attn."
             k = context[:,L,0] if context is not None else self.linear(c, q + "k_proj.weight").view(-1, F.kv_heads, F.head_dim)
-            k = rope(rmsnorm(k, p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
+            k = norm_rope(k, p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
             v = context[:,L,1] if context is not None else self.linear(c, q + "v_proj.weight").view(-1, F.kv_heads, F.head_dim)
             if isinstance(ring, tuple):
                 from engine.kernels.draft_attention import write_draft_kv
@@ -320,8 +327,8 @@ class Drafter:
             q0, k0, v0 = self.linear(x, q+"qkv").split((heads*F.head_dim, kv_heads*F.head_dim, kv_heads*F.head_dim), -1)
         else:
             q0, k0, v0 = (Fn.linear(x, p[q+s+"_proj.weight"]) for s in ("q", "k", "v"))
-        qh = rope(rmsnorm(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps), positions, F.rope_theta)
-        kh = rope(rmsnorm(k0.reshape(B, kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
+        qh = norm_rope(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
+        kh = norm_rope(k0.reshape(B, kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         vh = v0.reshape(B, kv_heads, F.head_dim)
         if self.fast_attention:
             from engine.kernels.draft_attention import draft_attention
@@ -356,16 +363,16 @@ class Drafter:
         for L in range(F.layers):
             q = f"layers.{L}."
             if res is None:
-                res, h = x, rmsnorm(x, p[q + "input_layernorm.weight"], F.rms_eps)
+                res, h = x, norm(x, p[q + "input_layernorm.weight"], F.rms_eps)
             else:
                 res = res + x
-                h = rmsnorm(res, p[q + "input_layernorm.weight"], F.rms_eps)
+                h = norm(res, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], tap_valid)
             h = self._attn(L, h, positions, ring, ctx_len)
             h = self._conv(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], tap_valid)
             res = res + h
-            h = rmsnorm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
+            h = norm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid)
             if self.fast_attention:
@@ -376,7 +383,7 @@ class Drafter:
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
             x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], tap_valid)
-        return rmsnorm(res + x, p["norm.weight"], F.rms_eps)
+        return norm(res + x, p["norm.weight"], F.rms_eps)
 
     # -- every row of a step at once (45차 §23 GPU 판정 4차) --------------------------------------------
     # The pipeline used to replay the one-row graphs once per row: each replay read the whole drafter (2.03 GiB of
@@ -390,14 +397,13 @@ class Drafter:
         F, p = self.F, self.p
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
-        c = rmsnorm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
+        c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
         if self.fast_attention:
             from engine.kernels.draft_attention import write_draft_kv_rows
             context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
             for L in range(F.layers):
                 q = f"layers.{L}.self_attn."
-                k = rope(rmsnorm(context[:, :, L, 0].reshape(n*t, self.local_kv_heads, F.head_dim),
-                                 p[q + "k_norm.weight"], F.rms_eps), positions.reshape(-1), F.rope_theta)
+                k = norm_rope(context[:, :, L, 0].reshape(n*t, self.local_kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps, positions.reshape(-1), F.rope_theta)
                 k = k.reshape(n, t, self.local_kv_heads, F.head_dim)
                 # one launch a layer, not one a (layer, row): the single-slot kernel required numel()==1 and
                 # the loop was the consequence
@@ -410,7 +416,7 @@ class Drafter:
         for L in range(F.layers):
             q = f"layers.{L}.self_attn."
             k = Fn.linear(c, p[q + "k_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
-            k = rope(rmsnorm(k, p[q + "k_norm.weight"], F.rms_eps), flat, F.rope_theta).view(n, t, F.kv_heads, F.head_dim)
+            k = norm_rope(k, p[q + "k_norm.weight"], F.rms_eps, flat, F.rope_theta).view(n, t, F.kv_heads, F.head_dim)
             v = Fn.linear(c, p[q + "v_proj.weight"]).view(n, t, F.kv_heads, F.head_dim)
             field[rows, L, 0, idx] = torch.where(keep, k, field[rows, L, 0, idx])
             field[rows, L, 1, idx] = torch.where(keep, v, field[rows, L, 1, idx])
@@ -440,8 +446,8 @@ class Drafter:
             from engine.kernels.draft_attention import draft_attention
             heads, kv, D = self.local_heads, self.local_kv_heads, F.head_dim
             q0, k0, v0 = self.linear(x, q + "qkv", rows_ok).split((heads*D, kv*D, kv*D), -1)
-            qh = rope(rmsnorm(q0.reshape(n*t, heads, D), p[q + "q_norm.weight"], F.rms_eps), positions, F.rope_theta)
-            kh = rope(rmsnorm(k0.reshape(n*t, kv, D), p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
+            qh = norm_rope(q0.reshape(n*t, heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            kh = norm_rope(k0.reshape(n*t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
             vh = v0.reshape(n*t, kv, D)
             # GEMMs cover all rows once; attention reads each device-selected
             # slot directly, with no replicated heads or SDPA ring scratch.
@@ -450,10 +456,8 @@ class Drafter:
                    for r in range(n)]
             return self.target.comm.all_reduce(self.linear(torch.cat(out).reshape(n*t, heads*D), q + "o_proj.weight", rows_ok))
         S, W, kv, D, rep = field.shape[0], F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
-        qh = rope(rmsnorm(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps),
-                  positions, F.rope_theta)
-        kh = rope(rmsnorm(Fn.linear(x, p[q + "k_proj.weight"]).view(n * t, kv, D), p[q + "k_norm.weight"], F.rms_eps),
-                  positions, F.rope_theta)
+        qh = norm_rope(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
+        kh = norm_rope(Fn.linear(x, p[q + "k_proj.weight"]).view(n * t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         vh = Fn.linear(x, p[q + "v_proj.weight"]).view(n * t, kv, D)
         field[slots, L, 0, W:W + t] = kh.view(n, t, kv, D)
         field[slots, L, 1, W:W + t] = vh.view(n, t, kv, D)
@@ -481,16 +485,16 @@ class Drafter:
         for L in range(F.layers):
             q = f"layers.{L}."
             if res is None:
-                res, h = x, rmsnorm(x, p[q + "input_layernorm.weight"], F.rms_eps)
+                res, h = x, norm(x, p[q + "input_layernorm.weight"], F.rms_eps)
             else:
                 res = res + x
-                h = rmsnorm(res, p[q + "input_layernorm.weight"], F.rms_eps)
+                h = norm(res, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], tap_valid, n, t)
             h = self._attn_rows(L, h, positions, slots, ctx, field, n, t, rows_ok)
             h = self._conv_rows(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], tap_valid, n, t)
             res = res + h
-            h = rmsnorm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
+            h = norm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid, n, t)
             if self.fast_attention:
@@ -501,7 +505,7 @@ class Drafter:
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
             x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], tap_valid, n, t)
-        return rmsnorm(res + x, p["norm.weight"], F.rms_eps)
+        return norm(res + x, p["norm.weight"], F.rms_eps)
 
     def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
                      temps: "torch.Tensor | None" = None, generator=None, vocab: "int | None" = None, alive=None):
