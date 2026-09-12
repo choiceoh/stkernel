@@ -70,10 +70,19 @@ class DeviceStep:
     tokens: int
     captured = True
 
+    def __post_init__(self):
+        # Built once. Every layer asks for this tuple -- one loop in KDA, two in sparse
+        # MLA, so 45 layers ask 75 times per step -- and rebuilding it costs two view ops
+        # per segment per ask. The views stay correct because replay overwrites `contexts`
+        # in place rather than rebinding it, which is the same reason the captured graph
+        # can record their addresses.
+        self._segments = tuple(
+            Segment(i, i, self.contexts[i:i+1].reshape(()), i * self.tokens, self.tokens)
+            for i in range(self.contexts.numel()))
+
     @property
     def segments(self):
-        return tuple(Segment(i, i, self.contexts[i:i+1].reshape(()), i * self.tokens, self.tokens)
-                     for i in range(self.contexts.numel()))
+        return self._segments
 
     @property
     def positions(self):
@@ -164,7 +173,8 @@ def capacity_ladder(pool_tokens: int, max_position: int, ceiling: "int | None") 
 
 
 class Glm53DecodeGraphs:
-    def __init__(self, net, caches, max_seqs, tokens, aux_layers=(), memory=None, ceiling=None):
+    def __init__(self, net, caches, max_seqs, tokens, aux_layers=(), memory=None, ceiling=None,
+                 detail=False):
         if any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("capture requires no live state slots")
         if tokens not in (1, net.F.spec_k + 1):
@@ -242,7 +252,7 @@ class Glm53DecodeGraphs:
                                        [(n, tokens, capacity) for n in range(1, max_seqs + 1)
                                         for capacity in self.capacities],
                                        warmup=warmup_for, memory=memory, label="target",
-                                       resources=net.lanes.graph_resources)
+                                       resources=net.lanes.graph_resources, detail=detail)
         finally:
             # Warmup and capture execute real writes, before requests exist.
             caches.reset()

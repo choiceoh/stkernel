@@ -34,7 +34,7 @@ import torch
 
 class DecodeGraphs:
     def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup=2, generators=(),
-                 memory=None, label="decode", resources=None):
+                 memory=None, label="decode", resources=None, detail=False):
         """step_fn(inputs) runs one decode step over static `inputs`;
         make_inputs(num_seqs, tokens_per_seq) allocates them once per shape.
 
@@ -49,6 +49,14 @@ class DecodeGraphs:
         resources() returns owners of external kernel workspaces used by the
         capture. CUDA records their addresses, not Python references. Keep each
         generation alive before the next shape's warmup can replace it.
+
+        `memory` gets ONE row per shape, because a row is not free: each one
+        synchronizes the device and then all-reduces a qualification flag across
+        every TP rank, so it is a fleet-wide barrier whose price is the slowest
+        node's skew. A measured boot paid 21.9 ms per row, and three rows over
+        51 shapes came to 3.4 s -- 12% of that boot's graph work (boot-time study
+        5-h). `detail=True` restores the before/warmup/captured split for
+        diagnosis; it is what priced the warmup policy, and it costs 2.2 s.
         """
         self.graphs, self.inputs, self.outputs = {}, {}, {}
         self.resources = {}
@@ -56,10 +64,13 @@ class DecodeGraphs:
         # every other instance's: see the module docstring's second rule.
         self.pool = pool = torch.cuda.graph_pool_handle()
         side = torch.cuda.Stream()
+        def mark(shape, name=None):
+            if memory is not None:
+                memory.checkpoint(f"{label}/{shape}/{name}" if name else f"{label}/{shape}")
         try:
             for shape in shapes:
-                if memory is not None:
-                    memory.checkpoint(f"{label}/{shape}/before")
+                if detail:
+                    mark(shape, "before")
                 inp = make_inputs(*shape)
                 passes = warmup(shape) if callable(warmup) else warmup
                 if not isinstance(passes, int) or passes < 1:
@@ -69,8 +80,8 @@ class DecodeGraphs:
                     for _ in range(passes):
                         step_fn(inp)
                 torch.cuda.current_stream().wait_stream(side)
-                if memory is not None:
-                    memory.checkpoint(f"{label}/{shape}/warmup")
+                if detail:
+                    mark(shape, "warmup")
                 g = torch.cuda.CUDAGraph()
                 for generator in generators:
                     g.register_generator_state(generator)
@@ -87,8 +98,7 @@ class DecodeGraphs:
                     g.reset()
                     raise
                 self.graphs[shape], self.inputs[shape], self.outputs[shape] = g, inp, out
-                if memory is not None:
-                    memory.checkpoint(f"{label}/{shape}/captured")
+                mark(shape, "captured" if detail else None)
             torch.cuda.synchronize()
         except BaseException:
             self.close()
