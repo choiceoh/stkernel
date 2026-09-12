@@ -1240,6 +1240,12 @@ class Server:
         self._restoring = {}                       # row -> the request whose prefix is being read back from the prefix tier (45차 §23 A)
         self._deferred = set()                     # requests waiting for a running prefill to cache the prefix they share (B)
         self.controls = queue.Queue()              # rank 0's cache controls (pin / unpin / reset), broadcast with the arrivals (C)
+        # A decode step runs inside a captured graph, so its stages cannot be timed with CUDA events from
+        # python -- `Event.record` is not capturable, and a mark placed inside `forward` would time the
+        # CAPTURE. What does see through a replay is CUPTI: torch's profiler reports the kernels a replay
+        # runs. `/v1/engine/profile` turns it on for a few decode steps and hands back what they were made of.
+        self._profiling = None                     # {"left": n, "prof": profiler} while a run is in flight
+        self.profile_table = None                  # the last run's kernels, biggest device time first
         self.prefix_resets = 0                     # how many times an operator threw the prefix cache away
         # Which way a prompt found its KV. D16's conversation tier can only serve a prompt that
         # EXTENDS a retained history exactly; the prefix cache serves one that merely shares
@@ -1727,9 +1733,41 @@ class Server:
                     "waiting": len(self.runner.state.waiting) + len(self._waiting)}, 503
         return {"status": "ok"}, 200
 
+    PROFILE_MAX_STEPS = 32                         # a run holds every kernel of every step it covers
+
+    def _begin_profile(self, steps: int) -> None:
+        """Profile the next `steps` DECODE steps on this rank. Prefill is not offered: one chunk is seconds of
+        kernels, and what is unaccounted for is the decode step."""
+        import torch
+        if self._profiling is not None:
+            return                                 # a run is already in flight; the second ask joins nothing
+        steps = max(1, min(int(steps), self.PROFILE_MAX_STEPS))
+        prof = torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA], record_shapes=False)
+        prof.__enter__()
+        self._profiling = {"left": steps, "prof": prof, "steps": steps}
+
+    def _end_profile(self) -> None:
+        run = self._profiling
+        self._profiling = None
+        run["prof"].__exit__(None, None, None)
+        rows = []
+        for event in run["prof"].key_averages():
+            total = getattr(event, "self_device_time_total", 0.0) or 0.0
+            if total > 0:
+                rows.append({"kernel": event.key, "calls": event.count,
+                             "us_total": round(total, 1), "us_per_step": round(total / run["steps"], 1)})
+        rows.sort(key=lambda r: -r["us_total"])
+        device = sum(r["us_total"] for r in rows)
+        self.profile_table = {"steps": run["steps"], "rank": self.comm.rank,
+                              "device_us_per_step": round(device / run["steps"], 1),
+                              "kernels": rows[:120]}
+
     def _control(self, control) -> None:
         """A cache control, applied on every rank in the same iteration (the caches must stay identical)."""
         kind, payload = control
+        if kind == "profile":
+            self._begin_profile(int(payload))
+            return
         if kind == "calibration":                          # every rank files its own sums (the sharded projections differ per rank)
             file = getattr(self.engine, "file_calibration", None)
             if file is not None:
@@ -2479,6 +2517,10 @@ class Server:
                 else:
                     self.steps_decode += 1
                 self.step_seconds[kind].observe(now - began)
+                if self._profiling is not None and kind == "decode":
+                    self._profiling["left"] -= 1
+                    if self._profiling["left"] <= 0:
+                        self._end_profile()
             # Every live row's new tokens, whether or not it streams: the first one is this
             # request's time to first token, each later one an inter-token interval. A step
             # that lands several (the drafter's accepted run) shares its elapsed time across
@@ -2572,6 +2614,10 @@ class Server:
                 elif self.path == "/health":
                     status, code = server.readiness()
                     self.reply(code, status)
+                elif self.path == "/v1/engine/profile":
+                    table = server.profile_table
+                    self.reply(200 if table else 404,
+                               table or {"error": {"message": "no profile has been run: POST /v1/engine/profile"}})
                 else:
                     status = {"engine": "ST", "model": server.model_name, "running": list(server.runner.state.running),
                               "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
@@ -3164,13 +3210,26 @@ class Server:
                 server.controls.put(("calibration", req.get("root") if isinstance(req.get("root"), str) else None))
                 self.reply(200, {"ok": True, "status": calibration.status(), "rows": {k: float(v) for k, v in calibration.rows.items()}})
 
+            def profile(self, req):
+                """Profile the next few decode steps and say what their kernels were.
+
+                A decode step replays a captured graph, so nothing inside it can be timed with CUDA events --
+                the stage clock can only wrap the replay whole (base/stage_clock). CUPTI sees through it. The
+                answer is this rank's; the ranks are symmetric, and rank 0 is the one the door speaks for."""
+                steps = req.get("steps", 8)
+                if not isinstance(steps, int) or not 1 <= steps <= server.PROFILE_MAX_STEPS:
+                    raise RequestError(f"steps must be 1..{server.PROFILE_MAX_STEPS} decode steps", 400)
+                server.controls.put(("profile", steps))
+                self.reply(202, {"ok": True, "steps": steps,
+                                 "read": "GET /v1/engine/profile once those steps have run"})
+
             def do_POST(self):
                 try:
                     routes = {"/v1/chat/completions": self.chat, "/v1/completions": self.completions,
                               "/v1/engine/completions": self.engine_completions, "/tokenize": self.tokenize,
                               "/detokenize": self.detokenize, "/v1/prefix/warm": self.prefix_warm, "/v1/prefix/unpin": self.prefix_unpin,
                               "/v1/prefix/reset": self.prefix_reset,
-                              "/v1/engine/calibration": self.calibration}
+                              "/v1/engine/calibration": self.calibration, "/v1/engine/profile": self.profile}
                     handler = routes.get(self.path)
                     if handler is None:
                         raise RequestError("unknown endpoint", 404)
