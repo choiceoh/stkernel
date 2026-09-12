@@ -21,13 +21,34 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SIMPLE = (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Expr, ast.Delete, ast.Assert)
+
+
+@contextlib.contextmanager
+def restored(path: pathlib.Path, original: str):
+    """`path` goes back to `original` however we leave -- including on SIGTERM, which a plain `finally` does not
+    survive. A timeout killing this in the background used to be able to leave a source file mutated, and the next
+    thing to read that file would be somebody debugging a bug this tool wrote."""
+    def put_back(signum, frame):
+        path.write_text(original)
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    before = {s: signal.signal(s, put_back) for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+    try:
+        yield
+    finally:
+        path.write_text(original)
+        for s, handler in before.items():
+            signal.signal(s, handler)
 
 
 def added_lines(ref: str, path: pathlib.Path) -> "set[int]":
@@ -116,7 +137,7 @@ def main() -> int:
             continue
         print(f"  {rel}: {len(todo)} mutations over {len(wanted)} added lines")
         rows = original.splitlines(keepends=True)
-        try:
+        with restored(path, original):
             for at, replacement, what in todo:
                 broken = list(rows)
                 broken[at - 1] = replacement + ("\n" if rows[at - 1].endswith("\n") else "")
@@ -131,8 +152,6 @@ def main() -> int:
                 print(f"    {'SURVIVED' if alive else 'killed  '}  {rel}:{at}  {what}  {original.splitlines()[at - 1].strip()[:70]}")
                 if alive:
                     unkilled.append((rel, at, what, original.splitlines()[at - 1].strip()))
-        finally:
-            path.write_text(original)
 
     print(f"\n  {tried} mutations, {len(unkilled)} survived")
     for rel, at, what, text in unkilled:

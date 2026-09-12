@@ -2160,6 +2160,14 @@ class Server:
                  "sum over those of the target mass the drafter's candidates cover at all",
                  round(engine.covered_mass, 6)),
             ])
+        exits = getattr(engine, "chain_exits", None)
+        if exits:
+            # st:sync_drain_steps_total says how often the pipeline was emptied. This says by what, which is the
+            # half an operator can act on: the batch runs ahead together or not at all, so at max_seqs 4 one
+            # request asking for logprobs appears here as the whole step's reason.
+            labelled.append(("st:decode_chain_exits_total", "counter",
+                             "decode steps the device-side chain refused, by what refused them",
+                             [(f'reason="{k}"', v) for k, v in sorted(exits.items())]))
         accepted = getattr(engine, "accepted_per_step", None)
         if accepted:
             # Acceptance as a shape, not a mean: a run that is bimodal at 0 and k wants a

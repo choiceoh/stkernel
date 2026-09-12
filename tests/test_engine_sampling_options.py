@@ -1,6 +1,7 @@
 """CPU checks for the OpenAI-dialect sampling options (45차 §23 A3/A4/B4): validation, penalties and bias on raw
 logits, top-k/top-p distributions, seeded determinism, rejection sampling's output law, raw logprobs."""
 import sys
+import types
 import unittest
 from pathlib import Path
 
@@ -460,6 +461,83 @@ class HistoryLifetimeTests(unittest.TestCase):
         self.assertIn(0, engine.sampling_history.rows)
         engine._forget_history(0)
         self.assertNotIn(0, engine.sampling_history.rows, "the helper has to reach the history, not merely exist")
+
+
+class DecodeChainGateTests(unittest.TestCase):
+    """Why a decode step does or does not run ahead on the device, and whether anyone can find out.
+
+    A step that cannot run ahead makes the runner empty every step in flight before it, so this gate decides how
+    much of the time the engine is in the chain at all -- and that fraction is what any deeper fusion inside the
+    chain would be multiplied by. It went uncounted until now."""
+
+    def gate(self, **state):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = Glm53Engine.__new__(Glm53Engine)                 # the gate, none of the boot
+        e.chain_exits = {}
+        e.options, e.matchers, e.gens, e.lps, e.min_new = {}, set(), {}, {}, {}
+        e.tokens, e.prompt_len = {0: [1, 2, 3]}, {0: 2}
+        e.pipeline = types.SimpleNamespace(ready_for=lambda seqs, slots=None: True)
+        e.decode_graphs = object()
+        e.drafter = types.SimpleNamespace(k=5)
+        for name, value in state.items():
+            setattr(e, name, value)
+        return e
+
+    def test_the_counters_exist_from_the_boot_and_not_from_this_fixture(self):
+        """`gate()` sets them, so dropping the real initialiser kills no test above -- and a real boot would then
+        die with AttributeError on the first decode step the chain refused. Found by tools/mutate.py."""
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        init = source[source.index("    def __init__"):]
+        init = init[: init.index("\n    def ", 1)]
+        self.assertIn("self.chain_exits = {}", init)
+
+    def test_a_plain_row_runs_ahead_and_is_counted(self):
+        e = self.gate()
+        self.assertTrue(e.async_ready([0]))
+        self.assertEqual(e.chain_exits, {})
+
+    def test_every_blocker_names_itself(self):
+        for option in ("seed", "logprobs", "logit_bias", "min_p", "presence_penalty",
+                       "frequency_penalty", "repetition_penalty", "grammar"):
+            e = self.gate(options={0: {option: 1}})
+            self.assertFalse(e.async_ready([0]), option)
+            self.assertEqual(e.chain_exits, {option: 1}, option)
+
+    def test_state_the_options_do_not_carry_names_itself_too(self):
+        """A grammar, a seeded generator and a logprob request live in their own maps by then, not in `options`."""
+        for state, reason in (({"matchers": {0: 1}}, "grammar"), ({"gens": {0: 1}}, "seed"), ({"lps": {0: 1}}, "logprobs")):
+            e = self.gate(**state)
+            self.assertFalse(e.async_ready([0]))
+            self.assertEqual(e.chain_exits, {reason: 1})
+
+    def test_min_tokens_is_named_apart_from_the_rest_because_it_passes(self):
+        """min_tokens blocks only until the row has produced enough; the others never stop blocking. An operator
+        reading one number cannot act on it, and reading the two apart tells them which."""
+        e = self.gate(min_new={0: 9})
+        self.assertFalse(e.async_ready([0]))
+        self.assertEqual(e.chain_exits, {"min_tokens": 1})
+        e.min_new[0] = 1                                     # one generated token is already enough
+        self.assertTrue(e.async_ready([0]))
+
+    def test_one_row_takes_the_whole_batch_off_the_chain(self):
+        """The batch runs ahead together or not at all. At max_seqs 4 that is the cost of a single logprobs request,
+        and the counter has to show it as such rather than as one row's business."""
+        e = self.gate(options={0: {}, 1: {}, 2: {}, 3: {"logprobs": True}},
+                      tokens={s: [1, 2, 3] for s in range(4)}, prompt_len={s: 2 for s in range(4)})
+        self.assertFalse(e.async_ready([0, 1, 2, 3]))
+        self.assertEqual(e.chain_exits, {"logprobs": 1})
+
+    def test_rows_churning_mid_flight_is_its_own_reason(self):
+        """PR #671 made most of these go away (independent new rows may now join without draining survivors), so
+        telling them apart from a row's own options is what says whether any are left."""
+        e = self.gate(pipeline=types.SimpleNamespace(ready_for=lambda seqs, slots=None: False))
+        self.assertFalse(e.async_ready([0, 7]))
+        self.assertEqual(e.chain_exits, {"rows_churned": 1})
+
+    def test_no_drafter_is_not_a_row_s_fault(self):
+        e = self.gate(drafter=types.SimpleNamespace(k=0))
+        self.assertFalse(e.async_ready([0]))
+        self.assertEqual(e.chain_exits, {"no_pipeline": 1})
 
 
 class VerificationPathTests(unittest.TestCase):
