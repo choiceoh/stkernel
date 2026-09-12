@@ -102,13 +102,14 @@ class _Parser(argparse.ArgumentParser):
 def _onepass_args(arguments):
     # Mirror only the public, literal argv grammar; never import the GPU or
     # serving environment to validate a submission.
+    from measurement_contract import MAX_TOKENS, COMBINED_MAX_TOKENS, COMBINED_REASONING_BUDGET
     parser = _Parser(add_help=False, allow_abbrev=False)
     parser.add_argument('--name', default='onepass')
     parser.add_argument('--ctx', default='2000,32000,128000')
     parser.add_argument('--out')
-    parser.add_argument('--max-tokens', type=int, default=400)
-    parser.add_argument('--combined-max-tokens', type=int, default=2400)
-    parser.add_argument('--combined-reasoning-budget', type=int, default=900)
+    parser.add_argument('--max-tokens', type=int, default=MAX_TOKENS)
+    parser.add_argument('--combined-max-tokens', type=int, default=COMBINED_MAX_TOKENS)
+    parser.add_argument('--combined-reasoning-budget', type=int, default=COMBINED_REASONING_BUDGET)
     parser.add_argument('--num-spec', type=int, default=6)
     parser.add_argument('--combine-min-ctx', type=int, default=32000)
     parser.add_argument('--seed', type=int, default=7)
