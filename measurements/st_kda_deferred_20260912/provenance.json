@@ -1,0 +1,19 @@
+{
+  "recorded_at": "2026-09-12T13:55:35.647702+00:00",
+  "source_revision": "0e301990",
+  "runtime_image": "st-engine:main-ff728f43",
+  "runtime_image_id": "sha256:a13be2698a579983329b82a1fc2a98d6462346a323981ba17e97f27c3b7fbd7b",
+  "reservation": {
+    "session": "stkda-deferred0912v3",
+    "ticket": "17892205801518123",
+    "revision": 4
+  },
+  "source_sha256": {
+    "engine/kernels/kda/deferred.py": "9651eb229830b22784725018262057d1cbead7f01d8788882bc2fbaf05aeaa14",
+    "engine/kernels/kda/fused_recurrent.py": "7acf9efa5c1ad1ed1699ffea6156ad2b66fb89fc8da5005ff4ab26cec8e0fd75",
+    "engine/kernels/kda/ring.py": "7142eb4e46735bc7decfa80cbc82dbb456ef7404c181d12d556698552f16d96b",
+    "probes/engine_kda_deferred_check.py": "3dfd1fae3ea5dd7fd0a4ff7827bdb64ff20ee9274186ac77d596127038333220",
+    "probes/engine_kda_deferred_compile.py": "8e52b6234b6784f0451866b338aed3b240f660e82e5297f3c9036f0dd9fdd289",
+    "tests/test_engine_kda_deferred.py": "613c56ee3dfb4828c25a99aa44c15527b06943a1ab72a3da917c635a458404d6"
+  }
+}

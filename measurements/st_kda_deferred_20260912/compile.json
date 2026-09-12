@@ -1,0 +1,69 @@
+{
+  "scope": "SM121 compilation only",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "variants": [
+    {
+      "name": "verify-t1-deferred0",
+      "shared_bytes": 512,
+      "cubin_sha256": "2171c189b02c626e6dd53b4944e96ada6c3714a5cd255a9c30896ca66bbe5a03"
+    },
+    {
+      "name": "verify-t1-deferred1",
+      "shared_bytes": 512,
+      "cubin_sha256": "b7076b98ee23951f1900d4cca164808fc3fa7f2d1e2e991943f45707a5e0b103"
+    },
+    {
+      "name": "commit-t1",
+      "shared_bytes": 512,
+      "cubin_sha256": "a3ee7fbd64ee54c2396949f90ed06e3630a9abb47c64a4b7d113ffd36b33c984"
+    },
+    {
+      "name": "verify-t6-deferred0",
+      "shared_bytes": 512,
+      "cubin_sha256": "2171c189b02c626e6dd53b4944e96ada6c3714a5cd255a9c30896ca66bbe5a03"
+    },
+    {
+      "name": "verify-t6-deferred1",
+      "shared_bytes": 512,
+      "cubin_sha256": "b7076b98ee23951f1900d4cca164808fc3fa7f2d1e2e991943f45707a5e0b103"
+    },
+    {
+      "name": "commit-t6",
+      "shared_bytes": 512,
+      "cubin_sha256": "d269049964410ddee67d05e42d99d6ade0c95dc8f51a04abafb029f02d92dc3c"
+    },
+    {
+      "name": "verify-t7-deferred0",
+      "shared_bytes": 512,
+      "cubin_sha256": "9f6d968dcc379f49d1ad334363fa899e1d0a25ee7b1a660e8d2957f067b7f47b"
+    },
+    {
+      "name": "verify-t7-deferred1",
+      "shared_bytes": 512,
+      "cubin_sha256": "0e65e893c1a53f20e19591f72e74a47cedb365715242f9507c4229bbafc15e7f"
+    },
+    {
+      "name": "commit-t7",
+      "shared_bytes": 512,
+      "cubin_sha256": "afa0177cbbbd3627a92dd0eeef90b69855bb6abcbacb06413d279feee4ebb298"
+    },
+    {
+      "name": "verify-t8-deferred0",
+      "shared_bytes": 512,
+      "cubin_sha256": "9f6d968dcc379f49d1ad334363fa899e1d0a25ee7b1a660e8d2957f067b7f47b"
+    },
+    {
+      "name": "verify-t8-deferred1",
+      "shared_bytes": 512,
+      "cubin_sha256": "0e65e893c1a53f20e19591f72e74a47cedb365715242f9507c4229bbafc15e7f"
+    },
+    {
+      "name": "commit-t8",
+      "shared_bytes": 512,
+      "cubin_sha256": "8ebb316318a2ed4d670da37db7b382a7c098fb39037399c49f4ed3bc7f1bb027"
+    }
+  ],
+  "status": "PASS"
+}
