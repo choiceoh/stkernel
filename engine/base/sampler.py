@@ -146,7 +146,8 @@ if __name__ == "__main__":
 # rank identically (same generator seeds, same order), so the picks agree without a message.
 
 OPTION_KEYS = ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
-               "logit_bias", "stop_token_ids", "logprobs", "grammar", "grammar_after")
+               "logit_bias", "stop_token_ids", "logprobs", "grammar", "grammar_after",
+               "reasoning_budget", "reasoning_end")
 
 
 def validate_options(options: dict) -> None:
@@ -184,6 +185,13 @@ def validate_options(options: dict) -> None:
         raise ValueError("grammar must be a json_object, json_schema or ebnf spec")
     if g is not None and g.get("type") == "ebnf" and not (isinstance(g.get("grammar"), str) and g["grammar"]):
         raise ValueError("an ebnf grammar spec needs its grammar text")
+    budget, end = options.get("reasoning_budget"), options.get("reasoning_end")
+    if budget is not None and (type(budget) is not int or budget < 0):
+        raise ValueError("reasoning_budget must be a nonnegative integer")
+    if end is not None and (type(end) is not int or end < 0):
+        raise ValueError("reasoning_end must be a token id")
+    if (budget is None) != (end is None):
+        raise ValueError("reasoning_budget is spent by writing reasoning_end: give both or neither")
     after = options.get("grammar_after")
     if after is not None and (type(after) is not int or after < 0):
         raise ValueError("grammar_after must be a token id")
@@ -202,7 +210,8 @@ def needs_rich_sampler(options: dict, temperature: float, drafts: bool) -> bool:
     stochastic row with drafts, for the rejection sampling).
     """
     if any(options.get(k) is not None for k in ("seed", "presence_penalty", "frequency_penalty",
-                                                 "repetition_penalty", "logit_bias", "logprobs", "grammar")):
+                                                 "repetition_penalty", "logit_bias", "logprobs", "grammar",
+                                                 "reasoning_budget")):
         return True
     return drafts and temperature > 0
 
@@ -264,7 +273,7 @@ class History:
 
 def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, counts: torch.Tensor,
                    extra=(), decodable: "int | None" = None, forbid: "torch.Tensor | None" = None,
-                   out: "torch.Tensor | None" = None) -> torch.Tensor:
+                   out: "torch.Tensor | None" = None, force: "int | None" = None) -> torch.Tensor:
     """One row's raw logits [V] -> the logits the pick is made from: logit_bias, repetition/presence/frequency
     penalties over the row's tokens, the decodable cut and min_tokens' forbidden ids.
 
@@ -274,6 +283,10 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
     `forbid` is a handful of end tokens, written one by one: a vocabulary of True to say so would cost more than
     the writes. A grammar's mask is the size of the vocabulary and is not applied here at all -- it lands on the
     finished row as packed words, by xgrammar's kernel (base/grammar.StepMasks.apply).
+
+    `force` is a token the row must write here, and it is the mirror of `forbid`: everything else
+    goes to -inf. Only the reasoning budget uses it (45차 §46), and it is applied last, so a token
+    `forbid` rules out is not forced back in -- min_tokens is a promise and a budget is not.
 
     `out` [V] fp32 receives the result instead of a fresh tensor. A row's positions are written into consecutive
     rows of one buffer that way, which is what lets the grammar mask cross the whole row in a single launch.
@@ -301,6 +314,10 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
         out[decodable:] = float("-inf")
     if forbid is not None:
         out[forbid] = float("-inf")
+    if force is not None and (forbid is None or not bool((forbid == force).any())):
+        kept = out[force].item()
+        out.fill_(float("-inf"))
+        out[force] = kept if kept > float("-inf") else 0.0
     return out
 
 

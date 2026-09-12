@@ -358,6 +358,29 @@ def stop_strings(req: dict) -> "list[str]":
     return [nfc(x) for x in stop]
 
 
+# What an answer keeps for itself however long the model thinks. A thinking model can spend the
+# whole limit inside the block -- writing a draft, counting its characters, redrafting -- and come
+# back with nothing outside it, which is in this stack's own record (29차: 답 0 자). The block is
+# bounded so that an answer is always possible, and the bound is a share of the limit rather than
+# a number, because the limit is itself a share of a length now (45차 §38, §46).
+ANSWER_SHARE = 4                # the answer keeps at least a quarter of the limit ...
+ANSWER_FLOOR = 128              # ... and never fewer tokens than this
+
+
+def reasoning_budget(req: dict, max_tokens: int) -> "int | None":
+    """How many tokens this answer's reasoning may take, or None for as many as it likes.
+
+    `reasoning_budget` in the request overrides it; -1 asks for no bound at all, which is what
+    llama.cpp's flag of the same name means.
+    """
+    asked = req.get("reasoning_budget")
+    if asked is not None:
+        if type(asked) is not int or asked < -1:
+            raise RequestError("reasoning_budget must be -1 or a nonnegative integer")
+        return None if asked < 0 else asked
+    return max(1, max_tokens - max(ANSWER_FLOOR, max_tokens // ANSWER_SHARE))
+
+
 def response_format_grammar(req: dict) -> "dict | None":
     """OpenAI response_format -> the engine's grammar spec (enforced by the engine's grammar sampler)."""
     fmt = req.get("response_format")
@@ -2362,6 +2385,11 @@ class Server:
                     # default could not fit is still refused, in the same words, rather than
                     # quietly answered in one token.
                     max_tokens = min(max_tokens, max(DEFAULT_ANSWER_TOKENS[0], server.room_for(len(ids))))
+                if reasoning:
+                    budget = reasoning_budget(req, max_tokens)
+                    if budget is not None:
+                        options["reasoning_budget"] = budget
+                        options["reasoning_end"] = server.reasoning_end
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
                                            tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
                                            continue_history=True, media=media, cache_salt=req.get("cache_salt"))

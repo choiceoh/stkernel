@@ -213,6 +213,76 @@ class OptionTests(unittest.TestCase):
         self.assertEqual([i for i, _ in top], [1, 2])
 
 
+class ReasoningBudgetTests(unittest.TestCase):
+    """A thinking block that eats the whole limit leaves no answer (45차 §46)."""
+
+    END = 6
+
+    def engine(self, options):
+        from types import SimpleNamespace
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = Glm53Engine(None, SimpleNamespace(device=torch.device("cpu")), SimpleNamespace(spec_k=5))
+        e._bind_options(0, options)
+        return e
+
+    def allowed(self, e, generated, drafts=()):
+        e.tokens[0], e.prompt_len[0] = [1, 2] + list(generated), 2
+        out = e._row_logits(0, torch.ones(8), 0, list(drafts))
+        return [i for i, v in enumerate(out.tolist()) if v != float("-inf")]
+
+    def test_under_the_budget_nothing_is_forced(self):
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        self.assertEqual(self.allowed(e, [5, 5, 5]), list(range(8)))
+
+    def test_the_budget_spent_leaves_only_the_way_out(self):
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        self.assertEqual(self.allowed(e, [5, 5, 5, 5]), [self.END])
+        self.assertEqual(self.allowed(e, [5, 5, 5, 5, 5]), [self.END], "and it stays forced")
+
+    def test_this_step_s_drafts_count_towards_it(self):
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        self.assertEqual(self.allowed(e, [5, 5, 5], drafts=[5, 5]), [self.END])
+
+    def test_a_block_that_closed_itself_is_never_asked_again(self):
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        self.assertEqual(self.allowed(e, [5, 5, self.END, 5]), list(range(8)))
+        self.assertFalse(e.thinking[0])
+        self.assertEqual(self.allowed(e, [5, 5, self.END, 5, 5, 5, 5]), list(range(8)))
+
+    def test_no_budget_is_no_bound(self):
+        e = self.engine({})
+        self.assertEqual(self.allowed(e, [5] * 6), list(range(8)))
+        self.assertFalse(e.thinking[0])
+
+    def test_min_tokens_outranks_the_budget(self):
+        """`forbid` is a promise the caller made; a budget is the engine keeping room. If the two
+        ever name the same token, the promise wins and nothing is forced."""
+        from engine.base.sampler import process_logits
+        seen, counts = torch.zeros(8, dtype=torch.bool), torch.zeros(8)
+        out = process_logits(torch.ones(8), {}, seen, counts, forbid=torch.tensor([3]), force=3)
+        self.assertEqual(out.tolist(), [1.0, 1.0, 1.0, float("-inf")] + [1.0] * 4)
+
+    def test_the_option_pair_travels_together(self):
+        from engine.base.sampler import validate_options
+        validate_options({"reasoning_budget": 5, "reasoning_end": 3})
+        for bad in ({"reasoning_budget": 5}, {"reasoning_end": 3},
+                    {"reasoning_budget": -1, "reasoning_end": 3}, {"reasoning_budget": 5, "reasoning_end": -1}):
+            with self.assertRaises(ValueError, msg=bad):
+                validate_options(bad)
+
+    def test_the_default_leaves_the_answer_a_share_of_the_limit(self):
+        from engine.base.serve import ANSWER_FLOOR, RequestError, reasoning_budget
+        for limit in (256, 1192, 2048):
+            with self.subTest(limit=limit):
+                budget = reasoning_budget({}, limit)
+                self.assertGreaterEqual(limit - budget, min(ANSWER_FLOOR, limit - 1))
+                self.assertGreater(budget, 0)
+        self.assertIsNone(reasoning_budget({"reasoning_budget": -1}, 1000), "-1 asks for no bound")
+        self.assertEqual(reasoning_budget({"reasoning_budget": 0}, 1000), 0, "0 asks for no thinking")
+        with self.assertRaises(RequestError):
+            reasoning_budget({"reasoning_budget": -2}, 1000)
+
+
 if __name__ == "__main__":
     unittest.main()
 

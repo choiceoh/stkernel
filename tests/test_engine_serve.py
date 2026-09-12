@@ -2097,6 +2097,43 @@ class OpenAIDialectTests(unittest.TestCase):
                                                 "tools": [{"type": "function", "function": {"name": "f"}}]}))
         self.assertNotIn("grammar", s.engine.options[0])
 
+    def test_an_answer_that_starts_inside_a_think_block_gets_a_budget(self):
+        """The block is bounded so an answer is always possible; the door names the token that
+        ends it, and the engine forces that token when the budget runs out (45차 §46)."""
+        from engine.base.serve import reasoning_budget
+        s = chat_server()
+        s.reasoning_end = 7
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 5}))
+        got = s.engine.options[0]
+        self.assertEqual(got["reasoning_end"], 7)
+        self.assertEqual(got["reasoning_budget"], reasoning_budget({}, 5))
+        self.assertLess(got["reasoning_budget"], 5, "the answer keeps a share of the limit")
+
+    def test_a_caller_may_ask_for_no_bound_or_no_thinking(self):
+        s = chat_server()
+        s.reasoning_end = 7
+        for asked, expect in ((-1, None), (0, 0), (3, 3)):
+            with self.subTest(asked=asked):
+                self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                       {"messages": [{"role": "user", "content": "ab"}],
+                                                        "max_tokens": 5, "reasoning_budget": asked}))
+                got = s.engine.options[max(s.engine.options)]
+                self.assertEqual(got.get("reasoning_budget"), expect)
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                   {"messages": [{"role": "user", "content": "ab"}],
+                                                    "max_tokens": 5, "reasoning_budget": -2}))
+        self.assertEqual(err.exception.code, 400)
+
+    def test_an_answer_that_is_already_past_the_block_gets_no_budget(self):
+        """The prompt ended on the reasoning-end token, so there is no block to bound."""
+        s = chat_server()
+        s.reasoning_end = ord("b")                       # the rendered prompt "ab" ends on it
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 5}))
+        self.assertNotIn("reasoning_budget", s.engine.options[0])
+
     def test_legacy_completions_tokenize_and_detokenize(self):
         s = chat_server()
         out = self._serve(s, lambda base: self._post(base, "/v1/completions", {"prompt": "xy", "max_tokens": 2, "echo": True, "n": 1}))
