@@ -310,6 +310,14 @@ class Glm53Engine:
         if options.get("grammar") is not None and self.grammars is None:
             raise ValueError("structured output (response_format) is not served: no grammar compiler is bound")
 
+    def prepare_options(self, options: dict) -> None:
+        """What the door pays before a request is admitted, where a failure is still an answer to a request.
+        Building a grammar can fail (a regex xgrammar cannot convert, a `$ref` that goes nowhere) and can take
+        hundreds of milliseconds; on the loop that would be four ranks aborting every live row, or the decoder
+        stalling for a schema someone sent."""
+        if options.get("grammar") is not None and self.grammars is not None:
+            self.grammars.ready(options["grammar"])
+
     def history(self, seq: int) -> "list[int]":
         """Every token the row has seen or produced: what a re-sent chat must start with to continue it (B1)."""
         return list(self.tokens[seq])
@@ -337,7 +345,8 @@ class Glm53Engine:
         if options.get("grammar") is not None:
             if self.grammars is None:
                 raise ValueError("structured output (response_format) is not served: no grammar compiler is bound")
-            self.matchers[seq] = self.grammars.matcher(options["grammar"], self.drafter.k + 2)
+            self.matchers[seq] = self.grammars.matcher(options["grammar"], self.drafter.k + 2,
+                                                      after=options.get("grammar_after"))
         else:
             self.matchers.pop(seq, None)
 
