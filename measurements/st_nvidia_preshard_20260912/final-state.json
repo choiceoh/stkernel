@@ -1,0 +1,16 @@
+{
+  "checked_at_utc": "2026-09-12T04:10:55.697612+00:00",
+  "container_name": "paused-offline-nvidia-preshard-9391",
+  "state": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "OOMKilled": false,
+    "ExitCode": 0,
+    "FinishedAt": "2026-09-12T04:09:31.760409033Z"
+  },
+  "directory": "/home/choiceoh/models/st-glm53-nvidia-tp4-9391",
+  "incomplete_directory_exists": false,
+  "files": 16,
+  "total_bytes": 191643255409
+}

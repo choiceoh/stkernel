@@ -1,0 +1,134 @@
+{
+  "weight_layout": "st-glm53-modelopt-up-gate-v1",
+  "world": 4,
+  "layers": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44
+  ],
+  "tensors_per_rank": 1306,
+  "payload_bytes_per_rank": 47623689640,
+  "vision_payload_bytes": 1127254016,
+  "source_tensors": 146425,
+  "quantized_projections": 36297,
+  "global_scales": "FP32 multipliers preserved separately; no folding or inversion",
+  "dense_nvfp4_preserved": true,
+  "live_serving_compatible": false,
+  "source_config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d",
+  "source_index_sha256": "26765b2601fd246ef361cfb9f5e10f9fb291a59e05ad0a109062f3a4747c7fd1",
+  "source_revision": "09b04e5e74bca08ca8549fc736d4cdd8624bfde3",
+  "rank_files": [
+    {
+      "name": "rank0of4.safetensors",
+      "bytes": 47623920136,
+      "sha256": "2dedb2c717a1bb986be5aff5d95169ca6395baab2e785114c7a4984368399d43",
+      "tensors_verified": 1306,
+      "all_tensor_bytes_exact": true
+    },
+    {
+      "name": "rank1of4.safetensors",
+      "bytes": 47623920136,
+      "sha256": "48cb0238fa79176563355f270a5000abeaab57274e6b3f9cff7280094dcb75a7",
+      "tensors_verified": 1306,
+      "all_tensor_bytes_exact": true
+    },
+    {
+      "name": "rank2of4.safetensors",
+      "bytes": 47623920136,
+      "sha256": "a38ca612675bcc22a914bb6bed3910fff995c2d5a94a405498a8fcd7ff8f3b21",
+      "tensors_verified": 1306,
+      "all_tensor_bytes_exact": true
+    },
+    {
+      "name": "rank3of4.safetensors",
+      "bytes": 47623920136,
+      "sha256": "49802e05ada72446f870966ff25cfa587c7f4dc356f432367d499223dcb63e37",
+      "tensors_verified": 1306,
+      "all_tensor_bytes_exact": true
+    }
+  ],
+  "vision": {
+    "name": "vision.safetensors",
+    "bytes": 1127303288,
+    "sha256": "609aaf3d8b2b85e1c431869b3eb382146d03c40857837366d49c4e280516bb7e"
+  },
+  "metadata_files": [
+    {
+      "name": "README.md",
+      "sha256": "b592c5b0a0dc5e3c94f62b743ee6ae7a4205bb4d7c94ccefc211b5a56ca48f17"
+    },
+    {
+      "name": "chat_template.jinja",
+      "sha256": "34d5ee66b12fa6446cdae131c352b8f68cd85369e0e6fda115583805fada3891"
+    },
+    {
+      "name": "config.json",
+      "sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d"
+    },
+    {
+      "name": "generation_config.json",
+      "sha256": "a07de3408f578c6a7ca8a1646aa91a41df55d539349fda15fb8b611eb007e9b7"
+    },
+    {
+      "name": "hf_quant_config.json",
+      "sha256": "1277df937b780e7de8eace66286ffad207f57d33b536b40c9c35635b235c17c6"
+    },
+    {
+      "name": "processor_config.json",
+      "sha256": "aae38374c94b08cc9b0547c6e64f05b951bd9735cea571c6988f5ed552bed3ed"
+    },
+    {
+      "name": "tokenizer.json",
+      "sha256": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "sha256": "98b1271574f41abf89427ae2dda030d94dc9478f0edc5a8bd240db213c6fd5fc"
+    }
+  ],
+  "seconds": 4721.978498246004,
+  "torch_version": "2.13.0+cu130",
+  "source_script_sha256": "4e7ebbdd453b5b3597dafda6f15e08e89e57a090cccb0ffa162def4f992979cb"
+}

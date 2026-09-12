@@ -1,0 +1,17 @@
+{
+  "source_revision": "09b04e5e74bca08ca8549fc736d4cdd8624bfde3",
+  "conversion_commit": "5d64a5b8",
+  "completion_code_sha256": {
+    "engine/profiles/glm53/modelopt_coverage.py": "29de0cf13d255360f11fae8973cea1a2129f3aac2f4663ee4b9f26dc2e8fcd6b",
+    "engine/profiles/glm53/preshard_modelopt.py": "a0a844c7f8f832259972203351877976f4ee1b0801c3da74f88962d10aceb2d4",
+    "tests/test_glm53_modelopt_coverage.py": "1dde77ada9b786074da639a32051ac8583f8bf516c756650c524ae38f4f6d699",
+    "tests/test_glm53_modelopt_preshard.py": "778d43d9714c72820728da1d21ca057b1fbf496112711355e24332ee3f6ae95d",
+    "measurements/st_nvidia_preshard_20260912/verify_completed.py": "f89b0a3892487ce7f812485d678a4b67329595cf10e8dc964d6b0faa9907b2d8"
+  },
+  "native_mtp_used": false,
+  "drafter": "DFlash2",
+  "server": "srv3",
+  "container_name": "paused-offline-nvidia-preshard-9391",
+  "cpu_cores": 4,
+  "memory_limit_bytes": 17179869184
+}

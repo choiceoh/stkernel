@@ -8,17 +8,35 @@ SSH/rsync because srv4 could not hold the input and all output ranks together.
 
 ## Current status
 
-Paused after writing layer 27 so the separately coordinated ST fleet recovery
-and adoption can finish first. The process is preserved as
-`paused-offline-nvidia-preshard-9391` on srv3, with container ID
-`d528ddea7ab75b50916d60caac78e8f0876f4da1e24c4586330573651746b672`.
-The recovery task owns restoring its original name and unpausing it.
+**Completed on srv3 at 2026-09-12 13:09 KST; final audit passed at 13:09:44.**
+The preserved process resumed under its existing name,
+`paused-offline-nvidia-preshard-9391`, and exited successfully with code 0.
+It is no longer running or paused. No fleet service or model configuration was changed.
 
-The four files remain in
-`/home/choiceoh/models/st-glm53-nvidia-tp4-9391.incomplete/`. They are **not
-finished checkpoints**. Layers 28–44, full readback, checksums, vision output
-and atomic publication remain pending. Do not recreate the paused process or
-rename the partial directory into a completed model.
+Completed output: `/home/choiceoh/models/st-glm53-nvidia-tp4-9391/`.
+The `.incomplete` directory no longer exists. The output contains 16 files,
+191,643,255,409 bytes (191.64 GB), including the independent verification receipt.
+
+| Files | Count | Bytes each | Verification |
+|---|---:|---:|---|
+| `rank0of4.safetensors` through `rank3of4.safetensors` | 4 | 47,623,920,136 | 1,306 tensors per rank read back exactly; file SHA-256 |
+| `vision.safetensors` | 1 | 1,127,303,288 | 347 tensors compared byte-for-byte with source; file SHA-256 |
+| Original metadata | 8 | — | Every output hash matches its original source file |
+| Conversion manifest, checksums, completion receipt | 3 | — | Saved alongside the weights |
+
+See [final verification](final-verification.json), [process/output state](final-state.json),
+[conversion manifest](preshard-manifest.json), [file checksums](SHA256SUMS), and
+[completed log](build-completed.log). The converter verified 5,224 logical rank
+tensors in total. A separate audit opened all four ranks with the standard
+`safetensors` reader, checked tensor names/shapes, checked vision against source,
+and verified metadata and the checksum list. It did not recompute the large rank
+file hashes a second time; those are from the converter's completed readback.
+
+The converter's elapsed time includes the earlier pause for ST recovery. Its
+original manifest pins the frozen conversion script. [Complete source accounting](complete-plan.json)
+and [completion code provenance](completion-provenance.json) record the added
+MTP exclusion audit without rewriting any rank weights. The receipt is also
+stored in the output as `completion-verification.json`.
 
 ## Representation
 
@@ -44,6 +62,15 @@ projections of layers 0–2 in packed NVFP4.
 - Other tensors use the existing GLM placement rules, including FP32 kernel
   parameters. The BF16 vision tower is written separately.
 
+The checkpoint's native MTP layer 45 is intentionally excluded: ST uses
+**DFlash2** as its drafter. The original NVIDIA source retains all 889 MTP
+tensors (14,865,185,408 bytes); no duplicate MTP file is needed in this target.
+The full [source accounting](complete-plan.json) classifies all 147,661 input
+tensors as 146,425 text tensors, 347 vision tensors, and those 889 excluded MTP
+tensors, with **zero unaccounted tensors**. Future full conversions fail if
+anything outside that explicit MTP policy is omitted. DFlash2's own weights
+remain a separate existing checkpoint.
+
 **This is a prepared offline checkpoint, not a live-serving promotion.** The
 current serving loader intentionally rejects this different layout. A serving
 adapter still needs to bind the separate multipliers/input scales and route the
@@ -68,7 +95,9 @@ The source plan covers 146,425 source tensors and **36,297 quantized
 projections**, including the nine dense projections. Each rank has 1,306
 logical tensors and 47,623,689,640 payload bytes (about 44.35 GiB), before
 safetensors headers/alignment. Four placement/scale/roundtrip tests passed
-on both inspected ARM runtimes. Model architecture facts matched exactly
+on both inspected ARM runtimes. On completion, all nine importer/source-accounting
+[tests passed on srv3](completion-tests.log), including explicit MTP exclusion,
+unknown tensor rejection, absent source keys, and truncated source payloads. Model architecture facts matched exactly
 between the Red Hat and NVIDIA configs, and the existing Red Hat encoding
 validation continued to pass. The loader suite also passed all 11 tests with
 the real Red Hat checkpoint mounted, with no skips in that run.
@@ -80,8 +109,16 @@ python3 engine/profiles/glm53/preshard_modelopt.py \
   --source-revision 09b04e5e74bca08ca8549fc736d4cdd8624bfde3
 ```
 
-The conversion runs on srv3 in `st-engine:9391`, limited to 16 GiB of container
-memory and four CPU cores. It does not need a GPU.
+The conversion ran on srv3 in `st-engine:9391`, limited to 16 GiB of container
+memory and four CPU cores. The final audit used at most 3 GiB and two CPU cores.
+Neither operation used a GPU. [verify_completed.py](verify_completed.py) can
+repeat the independent audit, writing a new receipt outside the model directory:
+
+```sh
+python3 measurements/st_nvidia_preshard_20260912/verify_completed.py \
+  --ckpt /source --directory /models/st-glm53-nvidia-tp4-9391 \
+  --receipt /new-path/verification.json
+```
 
 ## Portable Deneb inputs saved separately
 

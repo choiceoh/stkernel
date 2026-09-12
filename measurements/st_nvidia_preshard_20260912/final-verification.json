@@ -1,0 +1,79 @@
+{
+  "checked_at_utc": "2026-09-12T04:09:44.005193+00:00",
+  "source_revision": "09b04e5e74bca08ca8549fc736d4cdd8624bfde3",
+  "source_coverage": {
+    "source_tensors": 147661,
+    "source_payload_bytes": 204419110596,
+    "text": {
+      "tensors": 146425,
+      "payload_bytes": 188426671172,
+      "source_keys_sha256": "988c9cfbcb57dbd61f68e76b9b22f4c152e92921933c4a2a2bec7cadc15b90e9"
+    },
+    "vision": {
+      "tensors": 347,
+      "payload_bytes": 1127254016,
+      "source_keys_sha256": "979f4ffc275a60843257793bb9c3a331f362362ab3149a4abf49a131261677be"
+    },
+    "intentionally_excluded_mtp": {
+      "tensors": 889,
+      "payload_bytes": 14865185408,
+      "source_keys_sha256": "817530fa3438d82086a84ed81475c6086fe43747079da0dcb3ea95e8fc51146b",
+      "layers": [
+        45
+      ],
+      "reason": "ST drafts with DFlash2; native MTP is not used.",
+      "retained_in_source_checkpoint": true,
+      "written_to_preshards": false
+    },
+    "unaccounted_tensors": 0,
+    "all_source_tensors_accounted_for": true
+  },
+  "rank_files": [
+    {
+      "name": "rank0of4.safetensors",
+      "bytes": 47623920136,
+      "sha256": "2dedb2c717a1bb986be5aff5d95169ca6395baab2e785114c7a4984368399d43",
+      "tensors_verified": 1306,
+      "all_tensor_bytes_exact": true,
+      "standard_safetensors_header_verified": true
+    },
+    {
+      "name": "rank1of4.safetensors",
+      "bytes": 47623920136,
+      "sha256": "48cb0238fa79176563355f270a5000abeaab57274e6b3f9cff7280094dcb75a7",
+      "tensors_verified": 1306,
+      "all_tensor_bytes_exact": true,
+      "standard_safetensors_header_verified": true
+    },
+    {
+      "name": "rank2of4.safetensors",
+      "bytes": 47623920136,
+      "sha256": "a38ca612675bcc22a914bb6bed3910fff995c2d5a94a405498a8fcd7ff8f3b21",
+      "tensors_verified": 1306,
+      "all_tensor_bytes_exact": true,
+      "standard_safetensors_header_verified": true
+    },
+    {
+      "name": "rank3of4.safetensors",
+      "bytes": 47623920136,
+      "sha256": "49802e05ada72446f870966ff25cfa587c7f4dc356f432367d499223dcb63e37",
+      "tensors_verified": 1306,
+      "all_tensor_bytes_exact": true,
+      "standard_safetensors_header_verified": true
+    }
+  ],
+  "rank_byte_readback": "all tensors checked by the completed converter",
+  "rank_hashes_recomputed_by_this_audit": false,
+  "vision_tensors_source_bytes_verified": 347,
+  "vision": {
+    "name": "vision.safetensors",
+    "bytes": 1127303288,
+    "sha256": "609aaf3d8b2b85e1c431869b3eb382146d03c40857837366d49c4e280516bb7e"
+  },
+  "metadata_files_verified": 8,
+  "manifest_sha256": "654ed93cd32ab8d0005b156afa39db4b6b44193ba175f542db19d4ab8c641478",
+  "checksum_list_sha256": "7dd369d846829e04ed07b3ecc4d1809bedd2e18ff54e24280b414fb1853629ee",
+  "verifier_sha256": "f89b0a3892487ce7f812485d678a4b67329595cf10e8dc964d6b0faa9907b2d8",
+  "live_serving_compatible": false,
+  "output_bytes": 191643252515
+}
