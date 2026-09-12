@@ -52,8 +52,8 @@ from engine.profiles.glm53 import vision as vision_mod           # noqa: E402
 GIB = 1 << 30
 KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 28차 §8); the ST budget table leaves 41.6 GiB, 45차 §23
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
-MAX_WAIT_S = 20.0                   # D10's one starvation valve
-MAX_SEQS = 4                        # launcher MAX_SEQS
+MAX_WAIT_S = 0.0                    # admit into a free decode row at the next chunk boundary
+MAX_SEQS = 8                        # 48 target tokens with K=5; mHC and one-shot cover this width
 PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch
 TIER_GIB = 64.0
 """What a rank's parked conversations may occupy on NVMe, and its evicted prefix boundaries below.
@@ -162,6 +162,7 @@ def declared(a, comm_world: int) -> Config:
         Fact("spec_k", facts.SPEC_K, "launcher SPEC_K with DFlash2"),
         Fact("kv_gib", float(a.kv_gib), "40th boot's measured KV" if a.kv_gib == KV_GIB else "--kv-gib (local)"),
         Fact("port", int(a.port), "--port"),
+        Fact("max_seqs", MAX_SEQS, "resident rows, state slots and captured decode widths"),
         Fact("prefix_snapshots", PREFIX_SNAPSHOTS, "block-boundary checkpoints for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
     ]
     fixed = dict(moe_static=lane_tables.MOE_STATIC_PRODUCTION,
@@ -327,7 +328,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 if D:
                     drafter.prepare_fast(store, consume_weights=True)
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
-                calibration = Calibration(torch.device("cuda"), BUDGET_BYTES, arena=arena)
+                calibration = Calibration(torch.device("cuda"), BUDGET_BYTES, arena=arena,
+                                          max_decode_rows=max_seqs * (1 + drafter.k))
                 for module, key, missing, small in calib_plan:
                     layer = (drafter if module == "drafter" else net).dense[key]
                     calibration.attach(layer.name, layer, missing, small, unsmooth=getattr(layer, "smooth", None))
@@ -364,7 +366,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
                                  decodable=decodable, aux_layers=aux, context_ceiling=context_ceiling)
             contract = sched.Contract(chunk_align=F.chunk_align, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
-                                      max_wait_s=MAX_WAIT_S, max_running=max_seqs)
+                                      max_wait_s=MAX_WAIT_S, max_running=max_seqs,
+                                      decode_token_budget=F.chunk_align + drafter.k)
             engine.memory = memory
             engine.budget = redeclare           # printed once from guesses at boot, once from this boot's ledger
             engine.arena = arena                # every device tensor is a view of it: `release` needs the last reference

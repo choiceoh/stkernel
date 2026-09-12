@@ -60,6 +60,27 @@ def pool_state(pool):
 
 
 class SchedulingTests(unittest.TestCase):
+    def test_free_decode_rows_admit_immediately_with_bounded_prefill_interference(self):
+        c = replace(CONTRACT, max_wait_s=0., decode_token_budget=16)
+        r = runner(contract=c, blocks=32)
+        r.submit(0, 16, now=0)
+        r.submit(1, 35, now=0)
+        self.assertEqual(r.step(now=0).seqs, (0,))
+        steps = [r.step(now=0) for _ in range(6)]
+        self.assertEqual([s.kind for s in steps], [sched.PREFILL, sched.DECODE] * 3)
+        self.assertEqual([s.tokens for s in steps if s.kind == sched.PREFILL], [16, 16, 3])
+        self.assertEqual(steps[-1].seqs, (0, 1))
+
+    def test_idle_gpu_keeps_large_prefill_chunks_and_bad_decode_budgets_fail(self):
+        c = replace(CONTRACT, max_wait_s=0., decode_token_budget=16)
+        r = runner(contract=c)
+        r.submit(0, 100, now=0)
+        self.assertEqual(r.step(now=0).tokens, 64)
+        self.assertEqual(r.step(now=0).tokens, 36)
+        for budget in (0, 15, 65, -1, True, 16.0):
+            with self.subTest(budget=budget), self.assertRaises(ValueError):
+                replace(c, decode_token_budget=budget)
+
     def test_invalid_contracts_fail_before_planning(self):
         for field, value in [("chunk_align", 0), ("chunk_align", -1),
                              ("token_budget", 0), ("token_budget", 15),

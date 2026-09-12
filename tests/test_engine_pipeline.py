@@ -95,7 +95,8 @@ class BatchTransitionTests(unittest.TestCase):
                                    draft_field=lambda: torch.zeros(1), stage_boundaries=lambda *args: None),
             F=SimpleNamespace(vocab=32, block=16), tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1},
             limits={1: (10, 0.0), 2: (10, 0.0)}, options={}, ends={}, eos={31}, top_p=1.0,
-            inflight={}, staged={}, accepted_total=0, drafted_total=0, steps=0)
+            inflight={}, staged={}, accepted_total=0, drafted_total=0, steps=0,
+            gen=torch.Generator().manual_seed(1))
         e._generated_count = lambda seq: len(e.tokens[seq]) - 1
         e.decode_graphs = SimpleNamespace(shape_for=lambda n, end: (n, 2, 64),
                                          run_device=lambda *args: (None, None, None))
@@ -118,18 +119,78 @@ class BatchTransitionTests(unittest.TestCase):
                 self.assertEqual(e.tokens[2], [6, 7, 8])
                 self.assertEqual(p.pending, [])
 
-    def test_joining_or_invalidating_with_an_outstanding_readback_is_rejected(self):
+    def test_joining_keeps_survivors_ahead_of_the_host(self):
         e = self.engine()
         p = AsyncDecode(e)
         first = p.launch([1], [1])
-        with self.assertRaisesRegex(RuntimeError, 'must drain first'):
-            p.launch([1, 2], [1, 2])
+        second = p.launch([2, 1], [2, 1])
+        self.assertEqual(e.ctx, {1: 1, 2: 1})
+        self.assertEqual(p.buf['ctx'].tolist(), [3, 5])
+        self.assertEqual(p.batch, (2, 1))
+        first.resolve()
+        second.resolve()
+        self.assertEqual(e.ctx, {1: 5, 2: 3})
+        self.assertEqual(e.tokens[1], [5, 7, 8, 7, 8])
+
+    def test_invalidating_an_outstanding_row_requires_a_drain(self):
+        e = self.engine()
+        p = AsyncDecode(e)
+        first = p.launch([1], [1])
         p.stale = True
         with self.assertRaisesRegex(RuntimeError, 'must drain first'):
             p.launch([1], [1])
         first.resolve()
         p.launch([1, 2], [1, 2]).resolve()
         self.assertEqual(e.ctx, {1: 5, 2: 3})
+
+    def test_prefill_invalidates_only_its_row_and_keeps_survivor_proposals(self):
+        e = self.engine()
+        proposed = []
+        def propose(field, slots, anchors, ctx, alive=None):
+            proposed.append(slots.tolist())
+            return torch.full((len(slots), 1), 7)
+        e.drafter.propose_rows = propose
+        p = AsyncDecode(e)
+        p.launch([1], [1]).resolve()
+        proposed.clear()
+        e.ctx[2] = 25
+        p.invalidate([2])
+        p.launch([1, 2], [1, 2]).resolve()
+        self.assertEqual(proposed, [[2], [1, 2]])
+        self.assertEqual(e.ctx, {1: 5, 2: 27})
+        self.assertEqual(p.buf['generated'].tolist(), [4, 2])
+
+    def test_replacing_an_inflight_slot_is_refused_and_rebuilds_after_drain(self):
+        e = self.engine()
+        p = AsyncDecode(e)
+        first = p.launch([1], [1])
+        with self.assertRaisesRegex(RuntimeError, 'must drain first'):
+            p.launch([1], [3])
+        first.resolve()
+        p.launch([1], [3]).resolve()
+        self.assertEqual(p.buf['real_slot'].tolist(), [3])
+
+    def test_mixed_join_preserves_greedy_drafts_and_pads_end_token_sets(self):
+        e = self.engine()
+        p = AsyncDecode(e)
+        p._build([1], [1])
+        e.limits[2] = (10, 0.7)
+        e.ends[2] = {29, 30, 31}
+        def sampled(field, slots, anchors, ctx, **kwargs):
+            ids = torch.full((len(slots), 1), 9)
+            dist = torch.nn.functional.one_hot(ids, 32).float()
+            return ids, dist
+        e.drafter.propose_rows = sampled
+        p._merge([2, 1], [2, 1])
+        self.assertEqual(p.buf['drafts'].tolist(), [[9], [7]])
+        self.assertEqual(p.buf['dists'].argmax(-1).tolist(), [[9], [7]])
+        self.assertEqual(p.buf['ends'].tolist(), [[29, 30, 31], [31, -1, -1]])
+        self.assertEqual(p.buf['temps'].tolist(), [torch.tensor(.7).item(), 0.])
+        self.assertEqual(p.buf['ids'].tolist(), [6, 9, 5, 7])
+        p._merge([1], [1])
+        self.assertFalse(p.buf['stochastic'])
+        self.assertIsNone(p.buf['dists'])
+        self.assertEqual(p.buf['ids'].tolist(), [5, 7])
 
     def test_shrinking_keeps_device_progress_ahead_of_the_host(self):
         e = self.engine()

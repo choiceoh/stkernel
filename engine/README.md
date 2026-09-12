@@ -44,7 +44,7 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     curl -s http://10.10.10.2:8000/v1/chat/completions -d '{"messages":[{"role":"user","content":"..."}],"max_tokens":64,"stream":true}'   # OpenAI 방언(SSE), bench/onepass.py 가 쓰는 것
     curl -s http://10.10.10.2:8000/v1/models; curl -s http://10.10.10.2:8000/metrics                                  # 모델 이름, 벤치 이름의 카운터
 
-`/metrics`(프로메테우스 텍스트, HELP·TYPE 포함): 벤치 방언(`vllm:request_success_total`·`num_requests_{running,waiting}`·`prompt/generation_tokens_total`·`spec_decode_*`·`iteration_tokens_total_count`)은 이름과 의미 그대로 유지하고, 그 위에 **지연 히스토그램 셋**(`vllm:time_to_first_token_seconds`·`time_per_output_token_seconds`·`e2e_request_latency_seconds`, 요청 도착 시각 기준), **포화도**(`vllm:gpu_cache_usage_perc`·`st:kv_blocks_{total,used,free}`·`st:state_slots_{total,free}`), **재사용**(`vllm:prefix_cache_{queries,hits}_total`·`st:prefix_cache_*`), **스텝 종류**(`st:steps_{prefill,decode}_total`, D9), **티어**(`st:conversations_parked`·`st:tier_bytes_*`), **취소·타임아웃**(`st:requests_{cancelled,timed_out}_total`)을 낸다.
+`/metrics`(프로메테우스 텍스트, HELP·TYPE 포함): 벤치 방언(`vllm:request_success_total`·`num_requests_{running,waiting}`·`prompt/generation_tokens_total`·`spec_decode_*`·`iteration_tokens_total_count`)은 이름과 의미 그대로 유지하고, 그 위에 **지연 히스토그램 셋**(`vllm:time_to_first_token_seconds`·`time_per_output_token_seconds`·`e2e_request_latency_seconds`, 요청 도착 시각 기준), **포화도**(`vllm:gpu_cache_usage_perc`·`st:kv_blocks_{total,used,free}`·`st:state_slots_{total,free}`), **재사용**(`vllm:prefix_cache_{queries,hits}_total`·`st:prefix_cache_*`), **스텝 종류**(`st:steps_{prefill,decode}_total`, D9), **티어**(`st:conversations_parked`·`st:tier_bytes_*`), **취소·타임아웃**(`st:requests_{cancelled,timed_out}_total`)을 낸다. 비동기 경로를 판단할 수 있도록 `st:async_decode_steps_total`, `st:sync_drain_steps_total`, `st:decode_row_steps_total`, `st:decode_batch_capacity`도 낸다.
 vLLM 이 낼 수 없는 것(이 엔진에만 있는 부품이라): **어느 캡처 그래프가 돌았나**(`st:decode_steps_by_sequences_total{sequences}` = 스케줄러가 실제로 채운 배치, `st:decode_capacity_bucket_total{capacity}` = `STK_context_ceiling` 을 자를 유일한 프로덕션 증거), **스텝 벽시계**(`st:step_seconds{kind}`, 호스트 관측 종단 — 두 종류 모두 샘플 읽기로 끝나므로 발사 시간이 아니라 스텝 전체다), **수용 분포**(`st:spec_accepted_per_step_total{accepted}` — 평균이 아니라 모양이 `spec_k` 를 정한다), **무엇이 실제로 묶였나**(`st:lane_info{lanes,moe_static,mla_prefill,spec_k,context_ceiling}` — "무장 ≠ 서빙"을 부팅 로그가 아니라 스크레이프로 판정).
 비용(실측): 렌더 0.096 ms·11 KB·190줄(스크레이프당 1회), 관측 0.96 µs(디코드 스텝 최악 24회 = 46 ms 스텝의 0.05%). 디바이스 읽기·동기화 없음.
 
@@ -84,6 +84,16 @@ tier_spills_total,tier_restores_total,dedup_waits_total}`. 이어가기(B1)는 �
 (`speculative_pick_batch`)으로 앞서 돌고, 페널티·logit_bias·seed·logprobs·문법·min_tokens 미충족 행은 동기 경로(러너가 먼저 비운다).
 루프의 도착 브로드캐스트와 투표는 gloo 제어 그룹(`Comm.control`)으로 간다 — NCCL 그룹의 객체 브로드캐스트는 스텝의 커널 뒤에
 줄 서고 읽기 위해 장치를 기다린다.
+
+현재 프로덕션 스케줄러는 `MAX_SEQS=8`로 캡처 폭을 1~8까지 준비한다. 빈 디코드 행은 대기 상한을 기다리지 않고 다음 프리필 경계에서 입장하며,
+기존 디코더가 있으면 프리필 예산을 2,304토큰으로 줄여 프리필 한 청크 뒤에 디코드 한 스텝을 실행한다. 프리필·디코드는 여전히 혼합하지 않는다.
+새 행이 합류하거나 행 순서가 바뀌어도 살아 있는 행의 장치 컨텍스트·draft·샘플링 분포를 보존해 다시 제안하지 않고, 실제로 바뀐 행에만 호스트 무효화를
+표시한다. 요청 취소·재사용·이어가기는 해당 행을 참조하는 pending prefix만 수거하므로 다른 행의 앞선 디코드를 불필요하게 비우지 않는다.
+
+커밋과 로짓 선택에는 작은 장치 경계를 줄이는 경로가 있다. `decode_commit`은 수용 토큰·EOS·생성 한도·null 슬롯 전환·상태 갱신을 한 Triton 행 프로그램으로 처리하고,
+`vocab_candidates`는 전체 FP32 어휘 임시 버퍼 없이 1,024개 부분 최댓값을 만든다. TP4의 1~64개 int64 후보 MAX는 one-shot transport를 사용하고 그 밖의 크기·형상은 NCCL로 남긴다.
+`Comm.all_gather`는 rank별 리스트와 `cat` 대신 직접 rank-major 출력 버퍼에 수집한다. 이 변경은 CUDA Graph를 하나의 영속 transformer 커널로 합치지 않으며,
+레이어별 mHC/KDA/MLA/MoE 경계와 row-parallel 집단통신은 모델 의미상 남아 있다.
 
 운영(`launchers/st-glm53-supervisor.sh` + `st-glm53.service`, 헤드 srv2 의 사용자 유닛): 30 s 마다 진짜 4 토큰 chat 으로 건강을 재고(문이
 열려 있어도 링은 죽어 있을 수 있다), 3 회 연속 실패면 포렌식(네 랭크 로그·free·nvidia-smi·metrics → `~/glm53-logs/st-forensics/`) → stop →
@@ -202,7 +212,7 @@ EOS나 생성 한도에 도달하면 그 스텝에서 KV와 상태 슬롯을 반
 DFlash2를 연결하며, 드래프터 문맥 링도 같은 아레나의 상태 슬롯 예산에 포함한다.
 
 `Glm53Engine`은 전체 행의 temperature가 0인 스텝에서 rank별 유효 어휘 최댓값과 토큰 ID를
-하나의 int64 후보로 부호화하고 NCCL MAX로 선택한다. 전체 로짓을 모으지 않으며, 동점은
+하나의 int64 후보로 부호화하고, 후보가 1~64개인 TP4 디코드에서는 one-shot MAX, 그 밖에는 NCCL MAX로 선택한다. 전체 로짓을 모으지 않으며, 동점은
 가장 작은 전역 토큰 ID로 결정한다. 타깃 그래프는 rank별 로짓만 보관하고, 확률·혼합
 샘플링 그래프가 필요할 때 전체 로짓을 모은다. DFlash의 후보 top-k는 기존 경로다.
 이 스텝은 RNG를 소비하지 않는다. 확률·혼합 스텝은 기존 base sampler를 사용하며, 같은

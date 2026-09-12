@@ -24,7 +24,7 @@ class MHCTests(unittest.TestCase):
             scale = torch.tensor([.2,.3,.4],device='cuda')
             base = torch.randn(24,device='cuda')*.1
             norm = torch.randn(4096,device='cuda',dtype=torch.bfloat16)
-            for n in (1,6,12,24,32):
+            for n in (1,6,12,24,32,36,48,64):
                 x = torch.randn(n,4096,device='cuda',dtype=torch.bfloat16)
                 res = torch.randn(n,4,4096,device='cuda',dtype=torch.bfloat16)
                 post = torch.rand(n,4,1,device='cuda')

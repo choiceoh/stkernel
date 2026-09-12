@@ -103,6 +103,8 @@ class Runner:
         self.snapshot_self_evicts = 0                        # checkpoints a prefill threw away to make room for its own later ones
         self.depth = 2                                      # steps the device may hold before the host reads the oldest back
         self.async_steps = 0
+        self.decode_batches = [0] * (contract.max_running + 1)
+        self.sync_drain_steps = 0
 
     def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None, salts=(), prepared=None, chain=None) -> None:
         """Publish a request only after its blocks, slot and model state exist.
@@ -119,6 +121,7 @@ class Runner:
         self.kv.row(seq)                                   # reject invalid row before indexing tokens
         if seq in self.slot_of or (self.kv.tokens[seq] and prepared is None):
             raise ValueError(f"seq {seq} already owns resident resources")
+        self._drain_row(seq)                              # a reused row may have an old, inert readback
         reused, snap = 0, None
         if self.prefix is None or ids is None:
             chain = None
@@ -372,7 +375,7 @@ class Runner:
         Parked conversations are not rows: see `forget_parked`."""
         if seq not in self.slot_of:
             return
-        self.drain()                                         # its steps ahead must land before the row's state goes
+        self._drain_row(seq)                                  # unrelated later steps may remain in flight
         self._settle_row(seq)
         if seq not in self.slot_of:                          # its park finished: the row is free already
             return
@@ -531,6 +534,11 @@ class Runner:
         while self.inflight:
             self.resolve_oldest()
 
+    def _drain_row(self, seq: int) -> None:
+        """Settle only the prefix of the queue which still references this row."""
+        while any(seq in step.seqs for step, _, _ in self.inflight):
+            self.resolve_oldest()
+
     def _async_ok(self, step) -> bool:
         ready = getattr(self.model, "async_ready", None)
         return (step.kind == sched.DECODE and ready is not None and hasattr(self.model, "decode_async")
@@ -576,6 +584,7 @@ class Runner:
         """An idle conversation decodes again (its next token is pending in the model)."""
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle")
+        self._drain_row(seq)
         if len(self.state.running) + int(self.state.in_prefill is not None) >= self.c.max_running:
             raise ValueError("decode width is full; wake it later")
         self.idle.pop(seq)
@@ -589,6 +598,7 @@ class Runner:
             raise ValueError(f"seq {seq} is not idle")
         if not isinstance(tokens, int) or tokens <= 0:
             raise ValueError("a turn adds at least one token to prefill")
+        self._drain_row(seq)
         held = self.model.context(seq)
         now = time.monotonic() if now is None else now
         sched.validate_arrival(self.state, seq, held + tokens, now)
@@ -731,6 +741,7 @@ class Runner:
             if self._async_ok(step):
                 return self._launch(step)
             if self.inflight:                                # a prefill or a synchronous decode needs every step ahead landed
+                self.sync_drain_steps += 1
                 self.resolve_oldest()
                 continue
             return self._run(step)
@@ -744,6 +755,7 @@ class Runner:
             sched.advance(self.state, step)
         self.steps += 1
         self.async_steps += 1
+        self.decode_batches[len(step.seqs)] += 1
         self.inflight.append((step, pending, time.perf_counter()))
         self.rec.count(f"{step.kind}_steps")
         self.rec.count(f"{step.kind}_tokens", step.tokens)
@@ -786,6 +798,8 @@ class Runner:
                     if finished:
                         self._finish(seq)
         self.steps += 1
+        if step.kind == sched.DECODE:
+            self.decode_batches[len(step.seqs)] += 1
         self.ring.push(STEP_RECORD.pack(self.steps, time.perf_counter() - t0, KIND[step.kind],
                                         len(step.seqs), step.tokens, step.seqs[0]))
         self.rec.count(f"{step.kind}_steps")

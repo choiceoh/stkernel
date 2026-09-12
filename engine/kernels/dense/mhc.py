@@ -26,7 +26,7 @@ class MHC:
 
     def __call__(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn):
         n = x.shape[0]
-        if not 1 <= n <= 32 or res.shape != (n,4,4096):
+        if not 1 <= n <= 64 or res.shape != (n,4,4096):
             raise ValueError("MK MHC decode geometry mismatch")
         small = n <= 8
         fp32, packed = self.weights[key]

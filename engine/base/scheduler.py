@@ -35,6 +35,7 @@ class Contract:
     draft_slots: int          # spec-decode slots taken out of the budget
     max_wait_s: float         # D10's one starvation valve
     max_running: int          # decode batch width the kernels support
+    decode_token_budget: int | None = None  # smaller prefill budget while decoders are live
 
     def __post_init__(self):
         for name in ("chunk_align", "token_budget", "max_running"):
@@ -46,6 +47,11 @@ class Contract:
             raise ValueError("max_wait_s must be finite and nonnegative")
         if chunk_for(self.chunk_align, self.token_budget, self.draft_slots) == 0:
             raise ValueError("token budget must hold an aligned chunk after reserving drafts")
+        if self.decode_token_budget is not None:
+            if (type(self.decode_token_budget) is not int or self.decode_token_budget > self.token_budget
+                    or self.decode_token_budget <= self.draft_slots
+                    or chunk_for(self.chunk_align, self.decode_token_budget, self.draft_slots) == 0):
+                raise ValueError("decode token budget must hold an aligned chunk inside the token budget")
 
 
 @dataclass
@@ -76,7 +82,8 @@ def _decode(state: State, c: Contract, reason: str) -> Step:
 def _prefill(state: State, c: Contract, reason: str) -> Step:
     seq = state.in_prefill if state.in_prefill is not None else state.waiting[0]
     remaining = state.prompt_len[seq] - state.computed.get(seq, 0)
-    chunk = min(remaining, chunk_for(c.chunk_align, c.token_budget, c.draft_slots))
+    budget = c.decode_token_budget if state.running and c.decode_token_budget is not None else c.token_budget
+    chunk = min(remaining, chunk_for(c.chunk_align, budget, c.draft_slots))
     return Step(PREFILL, (seq,), chunk, reason)
 
 
@@ -93,7 +100,9 @@ def plan(state: State, c: Contract, now: float) -> Step | None:
     if state.running:
         if state.waiting and len(state.running) < c.max_running:
             waited = now - state.arrived_at[state.waiting[0]]
-            if waited > c.max_wait_s:
+            if c.max_wait_s == 0 or waited > c.max_wait_s:
+                if c.max_wait_s == 0:
+                    return _prefill(state, c, "fill an available decode row")
                 return _prefill(state, c, f"waited {waited:.1f}s > {c.max_wait_s}s: starvation valve")
         return _decode(state, c, "running decoders are protected")
     if state.waiting:

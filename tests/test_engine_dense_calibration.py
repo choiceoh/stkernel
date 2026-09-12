@@ -20,6 +20,19 @@ class FakeLayer:
 
 
 class CalibrationTests(unittest.TestCase):
+    def test_wider_decode_does_not_calibrate_on_unmasked_ghost_rows(self):
+        c = Calibration('cpu', budget_bytes=1 << 20, max_decode_rows=48)
+        layer = FakeLayer(32)
+        c.attach(layer.name, layer, PackStore.tiles(layer.name, 32), small_rows=False)
+        c.arm()
+        for rows in (6, 24, 36, 48):
+            layer(torch.randn(rows, 32).bfloat16())
+        self.assertEqual(c.progress(), 0)
+        x = torch.randn(80, 32).bfloat16()
+        layer(x)
+        self.assertEqual(c.progress(), 80)
+        torch.testing.assert_close(c.H[layer.name], x.float().T @ x.float(), rtol=0, atol=0)
+
     def test_sums_the_real_rows_only_once_armed_and_files_the_stores_blobs(self):
         c = Calibration("cpu", budget_bytes=1 << 20)
         layer = FakeLayer(64, "Some/model.layers.0.self_attn.o_proj")

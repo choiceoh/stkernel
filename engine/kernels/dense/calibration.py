@@ -25,7 +25,10 @@ BUDGET_BYTES = 2 << 30     # per rank, from the arena; the rest waits for a late
 
 
 class Calibration:
-    def __init__(self, device, budget_bytes: int = BUDGET_BYTES, arena=None):
+    def __init__(self, device, budget_bytes: int = BUDGET_BYTES, arena=None, max_decode_rows: int = 32):
+        if type(max_decode_rows) is not int or max_decode_rows <= 0:
+            raise ValueError('max_decode_rows must be a positive integer')
+        self.max_decode_rows = max_decode_rows
         self.device = torch.device(device)
         self.budget, self.used = budget_bytes, 0
         self.arena = arena
@@ -36,7 +39,7 @@ class Calibration:
         self.filed = None                                   # the paths written, once
 
     def attach(self, name: str, layer, missing: "list[tuple[str, int, int]]", small_rows: bool, unsmooth=None) -> bool:
-        """Sum `layer`'s input over the tiles in `missing` [(key, start, width)]; `small_rows`: its calls of <= 32
+        """Sum `layer`'s input over the tiles in `missing` [(key, start, width)]; `small_rows`: its calls of <= max_decode_rows
         rows are real (with the caller's mask) -- False for a layer whose decode rows may be ghosts. `unsmooth` [K]:
         the factor this boot divided the input by (smoothing folded into its norm) -- the sums are filed in the
         unsmoothed domain so every boot derives its own factors from scratch. Returns whether the tiles fit the
@@ -69,7 +72,7 @@ class Calibration:
         self.armed.fill_(1.0)
 
     def observe(self, name: str, flat: torch.Tensor, rows_ok, small_rows: bool) -> None:
-        if flat.shape[0] <= 32 and not small_rows:
+        if flat.shape[0] <= self.max_decode_rows and not small_rows:
             return
         xf = flat.float()
         if rows_ok is not None:
