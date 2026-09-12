@@ -54,7 +54,7 @@ class DrafterStorageTests(unittest.TestCase):
         import torch
         from dataclasses import replace
         from engine.profiles.glm53.drafter_storage import compact, layout, retained_specs
-        F = replace(self.facts(), layers=2, hidden=128, heads=4, kv_heads=4, inter=128,
+        F = replace(self.facts(), layers=2, hidden=128, heads=4, kv_heads=4, inter=512,
                     sel_rank=16, sel_top_k=4)
         regions, size = layout(F, 4, 4)
         storage = torch.empty(size, dtype=torch.uint8)
