@@ -87,8 +87,11 @@ class Calibration:
         if rows_ok is not None:
             xf = xf * rows_ok.to(xf.dtype).view(-1, 1)
         xf = xf * self.armed
+        # `torch.tensor(python_scalar, device="cuda")` performs a host-to-device
+        # copy that CUDA graph capture rejects.  `new_full` emits a device-side
+        # fill and remains valid in both eager execution and captured graphs.
         count = (rows_ok.to(torch.float32).sum() if rows_ok is not None
-                 else torch.tensor(float(flat.shape[0]), device=xf.device)) * self.armed
+                 else xf.new_full((), flat.shape[0], dtype=torch.float32)) * self.armed
         for key, start, width, hessian in self.tiles[name]:
             part = xf[:, start:start + width]
             if hessian:
