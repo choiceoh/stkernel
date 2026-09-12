@@ -11,8 +11,12 @@ import unittest
 import urllib.error
 import urllib.request
 
+from pathlib import Path
+
 from engine.base.kv import BlockPool, SlotPool
 from engine.base.record import Ring
+
+ROOT = Path(__file__).resolve().parents[1]
 from engine.base.runner import Runner, STEP_RECORD
 from engine.base.scheduler import Contract
 from engine.base.serve import RequestError, Server
@@ -622,7 +626,7 @@ class Door:
 def chat_server(**kw):
     s = server(**kw)
     s.tok = Tokenizer()
-    def render(messages, kwargs):
+    def render(messages, kwargs, *, generation_prompt=True, continue_final=False):
         out = []
         for m in messages:
             c = m.get("content")
@@ -630,7 +634,7 @@ def chat_server(**kw):
                 out.append("".join(p["text"] if p["type"] == "text" else chr(Door.TOKEN) for p in c))
             else:
                 out.append(c or "")
-        return "".join(out) + ("!" if kwargs.get("thinking") else "")
+        return "".join(out) + ("!" if kwargs.get("thinking") else "") + ("" if generation_prompt else "<resume>")
     s.chat = render
     s.model_name = "fake"
     return s
@@ -836,7 +840,10 @@ class CancelTests(unittest.TestCase):
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 chunks = drive(s, pool.submit(stream, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 50, "stop": "yyy", "stream": True}))
             content = ''.join(c['choices'][0]['delta'].get('content', '') for c in chunks if c['choices'])
-            self.assertEqual(content, 'yy')
+            # The stop string starts at the first generated character, so nothing precedes it.
+            # This used to read 'yy': the stream showed two thirds of the stop string before the
+            # third token completed it, and the non-streaming case above already answered None.
+            self.assertEqual(content, '')
             self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'stop')
             self.assertFalse(s._active or s._streams or s.pending or s.results)
         finally:
@@ -872,8 +879,9 @@ class CancelTests(unittest.TestCase):
         s = chat_server()
         s.tool_parser = lambda text: [("f", '{"a": 1}')] if "<tool_call>" in text else None
         seen = {}
-        def render(messages, kwargs):
+        def render(messages, kwargs, *, generation_prompt=True, continue_final=False):
             seen["kwargs"] = kwargs
+            seen["switches"] = (generation_prompt, continue_final)
             return "ab"
         s.chat = render
         httpd = s._serve_http()
@@ -907,6 +915,114 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class ByteTokenizer:
+    """One byte per token, assembled as UTF-8: a character can span several tokens."""
+
+    def decode(self, ids):
+        return bytes(ids).decode("utf-8", errors="replace")
+
+
+class StreamedTextTests(unittest.TestCase):
+    """What the door shows a client, token by token, must be what the whole answer says."""
+
+    def choice(self, tok, stop=()):
+        from engine.base.serve import _Choice
+        return _Choice(0, 1, threading.Event(), queue.Queue(), tok=tok, stop=list(stop), reasoning=False)
+
+    def stream(self, ids, tok, stop=()):
+        """Feed one token at a time and return what the client saw."""
+        c = self.choice(tok, stop)
+        shown = []
+        for i in ids:
+            c.feed([i], None, None)
+            shown.extend(d.get("content", "") for d in c.flush())
+            if c.finish == "stop":
+                break
+        else:
+            shown.extend(d.get("content", "") for d in c.flush(final=True))
+        return "".join(shown), c
+
+    def test_a_character_split_across_tokens_is_never_shown_in_halves(self):
+        text = "한국어 ok 漢字"
+        shown, _ = self.stream(list(text.encode()), ByteTokenizer())
+        self.assertEqual(shown, text)
+        self.assertNotIn("\ufffd", shown)
+
+    def test_the_shown_text_matches_decoding_the_whole_answer(self):
+        tok = ByteTokenizer()
+        ids = list("mixed ascii and 한자 and emoji 🙂 tail".encode())
+        shown, _ = self.stream(ids, tok)
+        self.assertEqual(shown, tok.decode(ids))
+
+    def test_a_stop_string_spanning_tokens_never_shows_its_prefix(self):
+        # "STO" must not reach the client: the cut arrives with the next token, too late.
+        shown, c = self.stream(list("hi STOP there".encode()), ByteTokenizer(), stop=["STOP"])
+        self.assertEqual(shown, "hi ")
+        self.assertEqual(c.finish, "stop")
+
+    def test_a_tail_that_only_looks_like_a_stop_string_is_released(self):
+        shown, c = self.stream(list("hi STOup".encode()), ByteTokenizer(), stop=["STOP"])
+        self.assertEqual(shown, "hi STOup")
+        self.assertIsNone(c.finish)
+
+    def test_the_window_does_not_grow_with_the_answer(self):
+        # the whole point: decoding stays O(1) per token instead of O(answer)
+        seen = []
+
+        class Counting(ByteTokenizer):
+            def decode(self, ids):
+                seen.append(len(ids))
+                return super().decode(ids)
+
+        self.stream(list(b"x" * 200), Counting())
+        self.assertLessEqual(max(seen), 4, "a window, not the whole answer")
+
+
+class WakeupTests(unittest.TestCase):
+    """A streamed token must wake its reader, not wait out a poll."""
+
+    def test_answering_a_streaming_request_sets_the_wake(self):
+        s = server()
+        s._streams[7] = queue.Queue()
+        s.pending[7] = threading.Event()
+        s._wake.clear()
+        s._answer(7, [1, 2, 3])
+        self.assertTrue(s._wake.is_set())
+
+    def test_the_drain_clears_before_it_reads_and_waits_after(self):
+        source = (ROOT / "engine/base/serve.py").read_text()
+        drain = source[source.index("live = {c.request: c for c in choices}"):]
+        drain = drain[:drain.index("return True")]
+        self.assertLess(drain.index("server._wake.clear()"), drain.index("get_nowait"))
+        self.assertIn("server._wake.wait(", drain)
+        self.assertNotIn("time.sleep", drain)
+
+
+class PromptSwitchTests(unittest.TestCase):
+    """Opening a new assistant turn and resuming the last one are opposites."""
+
+    def switches(self, body):
+        from engine.base.serve import prompt_switches
+        return prompt_switches(body)
+
+    def test_the_default_opens_a_new_turn(self):
+        self.assertEqual(self.switches({}), (True, False))
+
+    def test_resuming_asks_for_both(self):
+        self.assertEqual(self.switches({"add_generation_prompt": False,
+                                        "continue_final_message": True}), (False, True))
+
+    def test_both_at_once_is_refused(self):
+        from engine.base.serve import RequestError
+        with self.assertRaisesRegex(RequestError, "cannot both be true"):
+            self.switches({"continue_final_message": True})
+
+    def test_they_must_be_booleans(self):
+        from engine.base.serve import RequestError
+        with self.assertRaisesRegex(RequestError, "must be booleans"):
+            self.switches({"add_generation_prompt": "yes"})
+
+
 class OpenAIDialectTests(unittest.TestCase):
     """45차 §23 A/B: the request surface the gateway uses -- reasoning_effort, sampling options, n, tool-call
     streaming, legacy completions, tokenize/detokenize -- and the multi-turn continuation (B1), over the fake engine."""
@@ -928,7 +1044,7 @@ class OpenAIDialectTests(unittest.TestCase):
     def test_reasoning_effort_and_enable_thinking_reach_the_template(self):
         s = chat_server()
         seen = {}
-        def chat(messages, kwargs):
+        def chat(messages, kwargs, *, generation_prompt=True, continue_final=False):
             seen.update(kwargs)
             return "".join(m.get("content") or "" for m in messages)
         s.chat = chat
