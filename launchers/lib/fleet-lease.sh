@@ -26,9 +26,11 @@ _fleet_lease_is_head() {
 fleet_lease() {
   local module="${FLEET_REPO:?FLEET_REPO must name this checkout}/engine/base/fleet_lease.py"
   if _fleet_lease_is_head; then
-    python3 "$module" $* --path "$FLEET_LEASE_PATH"
+    python3 "$module" "$@" --path "$FLEET_LEASE_PATH"
   else
-    ssh $FLEET_LEASE_SSH "choiceoh@$FLEET_HEAD" "python3 - $* --path $FLEET_LEASE_PATH" < "$module"
+    local quoted
+    printf -v quoted '%q ' "$@" --path "$FLEET_LEASE_PATH"
+    ssh $FLEET_LEASE_SSH "choiceoh@$FLEET_HEAD" "python3 - $quoted" < "$module"
   fi
 }
 
@@ -37,6 +39,6 @@ fleet_lease() {
 # lease would look stale after GRACE_S and another session could take the fleet underneath it.
 fleet_lease_beat() {
   local owner=$1
-  ( while sleep 120; do fleet_lease renew --owner "'$owner'" >/dev/null 2>&1 || exit 0; done ) &
+  ( while sleep 120; do fleet_lease renew --owner "$owner" >/dev/null 2>&1 || exit 0; done ) &
   echo $!
 }

@@ -214,7 +214,7 @@ st_engine_yield() {
   local who=$1 repo=${FLEET_RUNNER_REPO:-$REPO}
   [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 1
   ( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"
-    fleet_lease yield --requester "'queue/$who'" --note "'a queued reservation needs the fleet'" ) >/dev/null 2>&1
+    fleet_lease yield --requester "queue/$who" --note "a queued reservation needs the fleet" ) >/dev/null 2>&1
 }
 serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting
   ! serving_up && return 0

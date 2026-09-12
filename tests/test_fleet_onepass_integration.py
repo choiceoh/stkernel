@@ -195,6 +195,33 @@ class OnepassIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(result.stdout.strip(), 'free')
 
+    def test_lease_helper_preserves_arguments_locally_and_over_ssh(self):
+        # Run the real helper with inert Python/SSH transports. Shell metacharacters
+        # are data; the local path and the remote shell must deliver identical argv.
+        (self.bin / 'python3').write_text('#!' + sys.executable + '\n'
+            'import json, sys\nprint(json.dumps(sys.argv[1:]))\n')
+        ssh = self.bin / 'ssh'
+        ssh.write_text('#!' + sys.executable + '\n'
+            'import subprocess, sys\n'
+            'raise SystemExit(subprocess.call(["/bin/bash", "-c", sys.argv[-1]]))\n')
+        ssh.chmod(0o755)
+        owner = "codex/it's a task"
+        note = 'spaces and $(printf expanded) and `printf expanded` stay literal'
+        lease_path = str(self.root / 'lease path')
+        local = subprocess.check_output(['hostname', '-s'], text=True).strip()
+        for head in (local, 'remote-test-head'):
+            result = subprocess.run([BASH, '-c',
+                '. "$FLEET_REPO/launchers/lib/fleet-lease.sh"; '
+                'fleet_lease yield --requester "$TEST_OWNER" --note "$TEST_NOTE"'],
+                env={**os.environ, 'PATH': str(self.bin) + os.pathsep + os.environ['PATH'],
+                     'FLEET_REPO': str(ROOT), 'FLEET_HEAD': head, 'FLEET_LEASE_PATH': lease_path,
+                     'TEST_OWNER': owner, 'TEST_NOTE': note}, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            expected_module = str(ROOT / 'engine/base/fleet_lease.py') if head == local else '-'
+            self.assertEqual(json.loads(result.stdout),
+                [expected_module, 'yield', '--requester', owner, '--note', note, '--path', lease_path])
+
     def test_failed_real_preflight_edit_preserves_ticket_command_and_order(self):
         runner = fleet_pin.pin(self.repo, self.directory)
         pid = os.getpid()

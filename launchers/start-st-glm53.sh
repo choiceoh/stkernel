@@ -106,7 +106,7 @@ case "${1:-start}" in
     # Ask whoever holds the fleet to finish, park its conversations and let go, then WAIT
     # for that to happen -- asking and leaving the caller to poll is not a handover.
     use_lease
-    asked=$(fleet_lease yield --requester "'$LEASE_OWNER'" --note "'${2:-another session needs the fleet}'") || exit 1
+    asked=$(fleet_lease yield --requester "$LEASE_OWNER" --note "${2:-another session needs the fleet}") || exit 1
     case "$asked" in free) echo "the fleet is already free"; exit 0 ;; esac
     echo "asked: $asked"
     deadline=$(( $(date +%s) + 60 * ${YIELD_WAIT_MINUTES:-30} ))
