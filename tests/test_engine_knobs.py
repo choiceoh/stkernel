@@ -37,13 +37,13 @@ class KnobDeclarationTests(unittest.TestCase):
                     self._declared({"STK_"+name:value}, production=production)
 
     def test_only_unqualified_mla_and_context_experiments_remain(self):
-        cfg = self._declared({"STK_mla_prefill":"pair", "STK_context_ceiling":"131072"})
+        cfg = self._declared({"STK_mla_prefill":"stock", "STK_context_ceiling":"131072"})
         self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling"})
-        self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("pair", 131072))
+        self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError
         with self.assertRaises(ConfigError):
-            self._declared({"STK_mla_prefill":"pair"}, production=True)
+            self._declared({"STK_mla_prefill":"stock"}, production=True)
 
 
 class MoeStaticSpecTests(unittest.TestCase):
@@ -104,17 +104,21 @@ class MoeStaticSpecTests(unittest.TestCase):
 class MlaPrefillModeTests(unittest.TestCase):
     def test_configure_prefill_modes(self):
         from engine.kernels import mla as mk
-        self.assertEqual((mk.ENABLE_MLA_PREFILL32, mk.ENABLE_MLA_PREFILL_PAIR, mk.MLA_PREFILL_GROUP), (False, False, 2))
+        self.assertEqual(mk.PREFILL_MODES, ("stock", "tile32"), "the union candidates were measured and retired")
+        self.assertFalse(mk.ENABLE_MLA_PREFILL32)
         try:
-            mk.configure_prefill("pair4")
-            self.assertEqual((mk.ENABLE_MLA_PREFILL32, mk.ENABLE_MLA_PREFILL_PAIR, mk.MLA_PREFILL_GROUP), (False, True, 4))
+            mk.configure_prefill("stock")
+            self.assertFalse(mk.ENABLE_MLA_PREFILL32)
             mk.configure_prefill("tile32")
-            self.assertEqual((mk.ENABLE_MLA_PREFILL32, mk.ENABLE_MLA_PREFILL_PAIR, mk.MLA_PREFILL_GROUP), (True, False, 2))
+            self.assertTrue(mk.ENABLE_MLA_PREFILL32)
+            for gone in ("pair", "pair4"):
+                with self.assertRaises(ValueError):
+                    mk.configure_prefill(gone)
             with self.assertRaises(ValueError):
                 mk.configure_prefill("4")
             mk._ARMED["mla"] = True
             with self.assertRaisesRegex(RuntimeError, "already armed"):
-                mk.configure_prefill("pair")
+                mk.configure_prefill("stock")
             mk.configure_prefill("tile32")               # the armed mode itself stays selectable
         finally:
             mk._ARMED["mla"] = False
@@ -142,7 +146,6 @@ class ProbeHookTests(unittest.TestCase):
     def test_mla_probe_instruments_are_arguments_not_env(self):
         import inspect
         from engine.kernels import mla as mk
-        self.assertFalse(mk.PAIR_STATS)
         self.assertIn("forced", inspect.signature(mk.mla_splits).parameters)
         self.assertEqual(mk.mla_splits(8, forced=3), 1)            # no extension built here: the rule is inert
         params = inspect.signature(mk.mla_decode).parameters
