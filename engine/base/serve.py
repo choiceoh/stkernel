@@ -505,7 +505,13 @@ class Server:
         self.ttft = _Histogram(_TTFT_BOUNDS)
         self.step_seconds = {"prefill": _Histogram(_STEP_BOUNDS), "decode": _Histogram(_STEP_BOUNDS)}
         self._step_began = None                    # clock() at the top of the step being timed
-        self.itl = _Histogram(_ITL_BOUNDS)
+        self.itl = _Histogram(_ITL_BOUNDS)         # per output token: a step's seconds divided by what it produced
+        self.step_gap = _Histogram(_ITL_BOUNDS)    # per step: how bursty the stream is. Under speculation the two
+                                                   # differ by exactly the mean acceptance length, and one alone
+                                                   # cannot tell "steps got slower" from "tokens got cheaper"
+        self.queued = _Histogram(_E2E_BOUNDS)      # arrival to the first step that carried this request
+        self.inference = _Histogram(_E2E_BOUNDS)   # that step to the last token: the half queueing does not explain
+        self.by_reason = {}
         self.e2e = _Histogram(_E2E_BOUNDS)
         self._streams = {}                         # request id -> queue of ("tokens", ids) | ("end", finish) | ("error", text)
         self._wake = threading.Event()             # set whenever a stream queue gains an item, so a drain can wait
@@ -526,6 +532,7 @@ class Server:
         self._lock = threading.Lock()
         self._waiting = deque()                    # request id, tokens, limit, temperature, promised blocks
         self._active = {}                          # reusable row -> (request id, promised blocks)
+        self._admitted = {}                        # request id -> clock() when a row began stepping it
         self._conversations, self._conversation_of = {}, {}   # resident (idle or live) conversations <-> rows
         self._idle_order = {}                      # resident idle rows, least recently completed turn first (no tier)
         self._retiring = {}                        # row -> conversation: its park is on the tier's thread (D10: no step waits on it)
@@ -799,6 +806,15 @@ class Server:
             prefix.pin(bytes.fromhex(h) for h in payload)
         elif kind == "unpin":
             prefix.unpin_all()
+    def _admit_clock(self, request) -> None:
+        """The moment a row began stepping this request: queue time ends here, inference time starts."""
+        if request in self._admitted:
+            return                                  # a continuation reuses its row; the first admission owns the clock
+        now = self.clock()
+        self._admitted[request] = now
+        arrived = self._arrived.get(request)
+        if arrived is not None:
+            self.queued.observe(now - arrived)
 
     def _evict_idle(self, exclude=None):
         """No tier: a resident idle conversation makes room by ending."""
@@ -959,6 +975,7 @@ class Server:
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
+            self._admit_clock(request)
 
     def _votes(self, flags) -> "list[int]":
         """How many ranks say yes to each flag. Every rank must call this with the same flags in the
@@ -1060,6 +1077,7 @@ class Server:
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
                     self._active[row] = (request, e["promised"])
+                    self._admit_clock(request)
                 elif all_ok == world:                         # the client left while its conversation was coming back: park it again
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
@@ -1230,6 +1248,10 @@ class Server:
             labelled.append(("st:decode_capacity_bucket_total", "counter",
                              "decode steps by the context-capacity bucket whose graph served them",
                              [(f'capacity="{c}"', v) for c, v in sorted(by_bucket.items())]))
+        if self.by_reason:
+            labelled.append(("vllm:request_success_by_reason_total", "counter",
+                             "requests answered, by why they stopped",
+                             [(f'finished_reason="{reason}"', count) for reason, count in sorted(self.by_reason.items())]))
         accepted = getattr(engine, "accepted_per_step", None)
         if accepted:
             # Acceptance as a shape, not a mean: a run that is bimodal at 0 and k wants a
@@ -1253,8 +1275,11 @@ class Server:
                        "# TYPE st:lane_info gauge\n")
             out.append(f'st:lane_info{{engine="st",{labels}}} 1\n')
         for name, help_text, histogram in (
-                ("vllm:time_to_first_token_seconds", "admission to first token", self.ttft),
-                ("vllm:time_per_output_token_seconds", "interval between consecutive tokens", self.itl),
+                ("vllm:time_to_first_token_seconds", "arrival to first token, queueing included", self.ttft),
+                ("vllm:time_per_output_token_seconds", "a step's seconds divided by the tokens it produced", self.itl),
+                ("vllm:inter_token_latency_seconds", "seconds between steps that carried tokens", self.step_gap),
+                ("vllm:request_queue_time_seconds", "arrival to the first step that carried it", self.queued),
+                ("vllm:request_inference_time_seconds", "that step to the last token", self.inference),
                 ("vllm:e2e_request_latency_seconds", "admission to the answer", self.e2e)):
             out.append(f"# HELP {name} {help_text}\n# TYPE {name} histogram\n")
             out.extend(f"{series} {value}\n" for series, value in histogram.rows(name))
@@ -1314,6 +1339,7 @@ class Server:
                         fresh -= 1                                  # the first token is the TTFT, not an interval
                         last = now
                     if fresh > 0:
+                        self.step_gap.observe(now - last)     # one sample per step, however many tokens it carried
                         each = (now - last) / fresh
                         for _ in range(fresh):
                             self.itl.observe(each)
@@ -1335,8 +1361,13 @@ class Server:
                     if arrived is not None:
                         self.e2e.observe(now - arrived)
                     result = list(self.engine.generated(row))
+                    admitted = self._admitted.pop(request, None)
+                    if admitted is not None:
+                        self.inference.observe(now - admitted)
                     self._retire(row)
                     self.served += 1
+                    reason = self.finish_reason(result, request)
+                    self.by_reason[reason] = self.by_reason.get(reason, 0) + 1
                     self._deadline.pop(request, None)
                     self._answer(request, result)
             return step is not None
