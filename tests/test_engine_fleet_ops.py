@@ -129,6 +129,28 @@ elif a and a[0] == 'ps':
         self.assertEqual(result.stdout.strip(), "healthy", result.stderr)
         self.assertFalse(self.events.exists())
 
+    def test_supervisor_waits_through_a_deliberate_handover(self):
+        """A drain is not a dead engine. It refuses new work on purpose while it parks what it
+        holds and lets the lease go, and `base/serve.catalog` says so with an empty list and a
+        503. Counting that as three failed health checks relaunches into the next holder -- and
+        the window where the lease is released but not yet taken is where `fleet_taken` is blind
+        too (45차 §56)."""
+        self.lock.write_text("choiceoh@srv2 st-glm53 2026-09-12")
+        self.env["FAKE_CONTAINERS"] = "st-glm53"
+        self.script("curl", '#!/bin/sh\necho \'{"object": "list", "data": [], "status": "draining", '
+                            '"handing_over_to": "another-session"}\'\n')
+        result = self.run_script("st-glm53-supervisor.sh")
+        self.assertEqual(result.stdout.strip(), "handing over: waiting", result.stderr)
+        self.assertFalse(self.events.exists(), "nothing was stopped or relaunched")
+
+    def test_a_door_that_is_simply_down_still_reads_as_a_launch(self):
+        # The guard must not swallow a real outage: no draining status, no waiting.
+        self.lock.write_text("choiceoh@srv2 st-glm53 2026-09-12")
+        self.env["FAKE_CONTAINERS"] = "st-glm53"
+        self.script("curl", '#!/bin/sh\nexit 7\n')
+        result = self.run_script("st-glm53-supervisor.sh")
+        self.assertIn("would launch", result.stdout)
+
     def test_supervisor_preserves_unreachable_fleet(self):
         self.env["FAKE_SSH_FAIL"] = "1"
         result = self.run_script("st-glm53-supervisor.sh")
