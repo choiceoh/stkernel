@@ -1,0 +1,17 @@
+Permission denied, please try again.
+Permission denied, please try again.
+choiceoh@10.10.10.2: Permission denied (publickey,password).
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+Traceback (most recent call last):
+  File "<string>", line 6, in <module>
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['git', 'clone', '--quiet', '--no-checkout', '--depth', '1', 'ssh://choiceoh@10.10.10.2/home/choiceoh/stkernel-dsv41-megakernel-20260910', '/home/choiceoh/stkernel-dsv41-megakernel-20260910']' returned non-zero exit status 128.
+Traceback (most recent call last):
+  File "<stdin>", line 13, in <module>
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', 'choiceoh@10.10.10.3', 'python3 -B -c \'import json,subprocess,socket\nfrom pathlib import Path\nsource=\'"\'"\'/home/choiceoh/stkernel-dsv41-megakernel-20260910\'"\'"\'\nrevision=\'"\'"\'2c4b37b615a089cfd93f97e6423d52dca3846f7d\'"\'"\'\nassert not Path(source).exists()\nsubprocess.run([\'"\'"\'git\'"\'"\',\'"\'"\'clone\'"\'"\',\'"\'"\'--quiet\'"\'"\',\'"\'"\'--no-checkout\'"\'"\',\'"\'"\'--depth\'"\'"\',\'"\'"\'1\'"\'"\',\'"\'"\'ssh://choiceoh@10.10.10.2\'"\'"\'+source,source],check=True)\nsubprocess.run([\'"\'"\'git\'"\'"\',\'"\'"\'-C\'"\'"\',source,\'"\'"\'checkout\'"\'"\',\'"\'"\'--quiet\'"\'"\',\'"\'"\'--detach\'"\'"\',revision],check=True)\nassert subprocess.check_output([\'"\'"\'git\'"\'"\',\'"\'"\'-C\'"\'"\',source,\'"\'"\'rev-parse\'"\'"\',\'"\'"\'HEAD\'"\'"\'],text=True).strip()==revision\nassert not subprocess.check_output([\'"\'"\'git\'"\'"\',\'"\'"\'-C\'"\'"\',source,\'"\'"\'status\'"\'"\',\'"\'"\'--porcelain\'"\'"\'],text=True).strip()\nprint(json.dumps(dict(host=socket.gethostname(),source=source,revision=revision,clean=True,origin=\'"\'"\'head frozen source shallow clone\'"\'"\')))\n\'']' returned non-zero exit status 1.

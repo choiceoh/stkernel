@@ -1,0 +1,140 @@
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.068s
+
+OK
+[osar] VLLM_GLM53_AR_PREFETCH=40 MB is outside 1..20; off
+[osar] VLLM_GLM53_AR_PREFETCH='x' is not 0, 1 or an MB count; off
+[osar] prefetch hints learned (target): 2 collectives, 12.6 MB in total
+[osar] prefetch hints learned (drafter): 1 collectives, 0.0 MB in total
+[megakernel] calib: dumped 1 Hessians to /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp3i8xcoxw/rank0 (48 tokens seen); the next boot's packer uses them (GPTQ)
+[megakernel] calib: /var/folders/v6/9b6yvrb973q8xs8yynkdchyr0000gn/T/tmp3i8xcoxw/rank0/Glm5Next/layers.1.self_attn.q_proj.pt is (128, 128), this linear's k is 256 -> RTN
+[megakernel] w4 pack (100, 128): 12.3% of groups clamp even after the 2^2 shift -- the tensor's dynamic range exceeds the 11 octaves a byte-add expansion spans
+..[osar] consumer PDL CAPTURED numel=4096
+..[megakernel] mhc-bf16 large fallback CAPTURED T=12 storage=fp32
+[megakernel] mhc-bf16 CAPTURED T=6 cached=1
+[megakernel] mhc-bf16 large fallback CAPTURED T=12 storage=fp32
+[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True
+[megakernel] mhc-bf16 CAPTURED T=6 cached=1
+[megakernel] AR consumer MHC CAPTURED T=6 bf16=False vec4=False
+......................................................................
+----------------------------------------------------------------------
+Ran 74 tests in 3.318s
+
+OK
+  skip_topk rule ................ OK
+  rank cache eviction contracts .. OK
+  nvfp4 static scale contracts .. OK
+  prefill chunker budgets ....... OK
+  indexer-SP shard coverage ..... OK
+  helper functions .............. OK
+  profile-step buckets/union .... OK
+  bench-dec acceptance parser ... OK
+  overlay manifests (95 files across dsv4, glm53) .... OK
+  composed snapshot sync (95 files) . OK
+  overlay symbol contracts (123, per composition incl. orphans) ... OK
+  profile env carried (123 knobs) ... OK
+  profile keys have readers (180) ... OK
+  bf16-release guards ........... OK
+  DSpark speed-path guards ...... OK
+  acceptance lever guards ....... OK
+  ngram-ceiling sim math ........ OK
+  UE8M0 scale repair ............. OK
+  EP stock top-k chunks .......... OK
+  EP fixed/stock output init ..... OK
+  b12x zero-weight micro ......... OK
+  GLM53 b12x tuning controls ..... OK
+  b12x static v2 controls ........ OK
+  EP micro chunk width .......... OK
+  EP tail fixed shape ........... OK
+  EP compact shape align ........ OK
+  EP compact warmup ladder ...... OK
+  *_once args hashable .......... OK
+  dflash2 selector check ........ OK
+  dflash2 selector score precision  OK
+  overlay logger defined ........ OK
+  osar MAXEL rank agreement ..... OK
+  bench served-model resolve .... OK
+  extra-env comma guard ......... OK
+  torch imports guarded ......... OK
+  dflash2 conv mask buffer ....... OK
+  dflash AOT guard stays removed  OK
+  hot-path env latches ........... OK
+  launcher load-format gate ..... OK
+  launcher reject-method gate ... OK
+  dflash2 prefix-cache fail-closed  OK
+  accept profile arithmetic ..... OK
+  DSV4 launcher adoptions ....... OK
+  launcher nofile limit ......... OK
+  prefill ladder probe .......... OK
+  fp8 acceptance contracts ....... OK
+  glm53 V2/deploy contracts ...... OK
+  launcher head guard .......... OK
+  preflight applies GMU ......... OK
+  no hardcoded image paths ...... OK
+  b12x EP routing ................ OK
+  b12x EP preflight .............. OK
+  b12x EP launcher ............... OK
+  deploy refusal exits non-zero .. OK
+  fp8-dense nvfp4 scheme contract .. OK
+  benches ask the server for the model .. OK
+  korean gate notation vs damage .. OK
+  every module is mounted or explained .. OK
+  profile knobs are all readable .. OK
+  fp8-dense bf16 release contract .. OK
+  mhc probe contracts ............ OK
+  mhc bigfuse knob ............... OK
+  census KDA group ............... OK
+  census owner axis .............. OK
+  census streaming reader ....... OK
+  trace step tail cut ........... OK
+  profiles README module table .. OK
+  dflash warmup buckets .......... OK
+  DSV4 spec warmup contract ...... OK
+  DSV4 UE8M0 host guard ......... OK
+  GLM53 kpool packed scratch ...... OK
+  GLM53 KDA prefill regimes ....... OK
+  GLM53 KDA prefill direct out ... OK
+  GLM53 upstream prefill batch ..... OK
+  one-shot SM121 grid contract .... OK
+  cuda builds keep the sm_121a-specific target .. OK
+  self-built kernels persist their caches .. OK
+  boot stamps measure without changing the boot .. OK
+  cudagraph mem profiling off keeps kv size .. OK
+  kv cache is pinned in tokens ... OK
+  earlyoom fireable on UMA ...... OK
+  fp8-dense drafter patterns + opaque op .. OK
+  spec_k compile factor .. OK
+  dev lab contracts .. OK
+  mk head lane contracts .......... OK
+  ab runner measures both ....... OK
+  osar wait is split by message size .. OK
+  osar prefetch hints contract .. OK
+  glm53_dflash_early_fc contracts .. OK
+  glm53_drafter_prep contracts .... OK
+  indexer decode fused contracts .. OK
+  drafter ctx-KV W4 contracts ..... OK
+  trace step nodes tool ........... OK
+  micro-fusion bundle 2 contracts .. OK
+  glm53 megakernel contracts .. OK
+  prefill warmup contracts ... OK
+  w4 layout roundtrip ...... OK
+  megakernel core is shared ..... OK
+  glm53 prep fused contracts .. OK
+  launcher continued-string assignments carry no comments .. OK
+  launcher restores PREFILL_WARMUP from caller env .. OK
+  decode-first scheduler contracts .. OK
+  profile keys not via EXTRA_ENV .. OK
+  mm limit video slot off by decision ...... OK
+  kv-zero guard ................ OK
+  glm53 IndexCache layer rule ... OK
+  glm53 indexer gate split-K contracts .. OK
+  bracket runner contracts .. OK
+  trace composition analyze .. OK
+  drafter fc probe contracts .. OK
+  fp8-dense build peak .......... OK
+  hy4 entry point parity ........ OK
+  common tp4 library ............ OK
+  worker envv not re-parsed ..... OK
+  supervisor relaunch pacing .... OK
+core OK (71474 checks; 74 megakernel regressions; 0 fleet regressions)

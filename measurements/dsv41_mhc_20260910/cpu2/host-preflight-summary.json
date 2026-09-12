@@ -1,0 +1,40 @@
+{
+  "at": 1789040598.5507941,
+  "scope": "Read-only preflight, no process or cache changes",
+  "raw_private_path": "/tmp/dsv41-mhc-cpu2-host-inventory.json",
+  "raw_sha256": "58af3b2c9f00996a660b8ae46a8751a7c528dd190bbd44c3703d573575cf1dd1",
+  "nodes": [
+    {
+      "node": "10.10.10.1",
+      "host": "srv1",
+      "mem_available_bytes": 10237255680,
+      "eligible_12GiB": false,
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "runc": true
+    },
+    {
+      "node": "10.10.10.2",
+      "host": "srv2",
+      "mem_available_bytes": 9434439680,
+      "eligible_12GiB": false,
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "runc": true
+    },
+    {
+      "node": "10.10.10.3",
+      "host": "srv3",
+      "mem_available_bytes": 17881718784,
+      "eligible_12GiB": true,
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "runc": true
+    },
+    {
+      "node": "10.10.10.4",
+      "host": "srv4",
+      "mem_available_bytes": 12614381568,
+      "eligible_12GiB": false,
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "runc": true
+    }
+  ]
+}

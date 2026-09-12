@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "scope": "Derived ptxas static resource summary only; no runtime occupancy, GPU numerics or performance claims",
+  "compile_log_sha256": "5347c967112f1a513511cd51caf2fe6e7b678b87127df314a5def5ef176a36c3",
+  "mhc_entries": [
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85317mk_mhc_v41_kernelILi4096EEEvNS_12MKMhcV41ArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 158,
+      "resource_line": "ptxas info    : Used 158 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    },
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85317mk_mhc_v41_kernelILi5120EEEvNS_12MKMhcV41ArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 158,
+      "resource_line": "ptxas info    : Used 158 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    },
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85313mk_mhc_kernelILi4096EEEvNS_9MKMhcArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 162,
+      "resource_line": "ptxas info    : Used 162 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    },
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85318mk_mhc_bf16_kernelILi4096EEEvNS_9MKMhcArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 162,
+      "resource_line": "ptxas info    : Used 162 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    },
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb0ELi4096EEEvNS_9MKMhcArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 160,
+      "resource_line": "ptxas info    : Used 160 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    },
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb1ELi4096EEEvNS_9MKMhcArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 128,
+      "resource_line": "ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    },
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85313mk_mhc_kernelILi5120EEEvNS_9MKMhcArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 162,
+      "resource_line": "ptxas info    : Used 162 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    },
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85318mk_mhc_bf16_kernelILi5120EEEvNS_9MKMhcArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 162,
+      "resource_line": "ptxas info    : Used 162 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    },
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb0ELi5120EEEvNS_9MKMhcArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 160,
+      "resource_line": "ptxas info    : Used 160 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    },
+    {
+      "mangled": "_ZN52_GLOBAL__N__66e4769e_19_glm53_megakernel_cu_d64ed85316mk_mhc_ar_kernelILb1ELi5120EEEvNS_9MKMhcArgsE",
+      "stack_bytes": 16,
+      "spill_stores_bytes": 0,
+      "spill_loads_bytes": 0,
+      "registers": 128,
+      "resource_line": "ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size, 27712 bytes smem",
+      "static_shared_bytes": 27712
+    }
+  ],
+  "total_entry_count": 30
+}

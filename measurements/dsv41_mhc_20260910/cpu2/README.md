@@ -1,0 +1,11 @@
+CPU2 — device-free full translation-unit AOT PASS
+
+Normal fleet CPU session `dsv41mhccpu0910v2` ran on srv3 (10.10.10.3), frozen commit `2c4b37b615a089cfd93f97e6423d52dca3846f7d`. Original outer return code was 0; elapsed 45.43 seconds. Source was clean and identical before/after. CUDA source SHA256 is `61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1`.
+
+The pinned image was `sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211` (Torch 2.13.0+cu130, nvcc 13.0.88). The container used runc, no network/devices, no image pull, two CPU cores, 6 GiB memory/swap cap, and the unchanged 12 GiB host gate. Actual MemAvailable was 16.595 GiB. The complete CUDA TU and PyTorch extension linked; `run_mhc` and `run_mhc_v41` exports were callable. CUDA initialization was false before/after and device nodes were absent. Exact source paths, flags, artifact hashes and isolation command are in the original receipts.
+
+At both H4096/H5120: V4.1 entries used 158 registers; generic FP32/BF16 entries 162, AR-FP32 160, AR-BF16 128. Every one of these ten MHC entries had a 16-byte stack frame, zero spill stores/loads, and 27,712 bytes static shared memory. These are full-TU compiler resources, not the earlier PR518 extracted-TU figures or a runtime occupancy/performance result.
+
+`worker-*` files are unchanged remote originals, including the SHA256SUMS inventory of all ten original files. That original inventory intentionally also names binary files retained at `/home/choiceoh/dsv41-mhc-cpu2-evidence` on srv3 and `/tmp/dsv41-mhc-cpu2-readback` locally; binaries are omitted here. `resource-summary.json` and `host-preflight-summary.json` are derived readouts. `fleet-*` preserves the actual normal-fleet command/stdout and source-transfer attempts: the first srv3-to-head clone failed authentication, then a head-created shallow checkout was copied via existing head-to-srv3 SSH; no authentication settings changed.
+
+CPU1's distinct memory-guard refusal remains in ../cpu1. This PASS establishes compilation/link/export/source/isolation only. GPU arithmetic, replay, timing, serving integration and V4.1 model equivalence remain untested by this run. Later PR519 merge ancestry does not change this frozen-source identity.

@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "contracts": [
+    "legacy",
+    "v41"
+  ],
+  "v41_model_equivalence": false,
+  "compile_only": true,
+  "gpu_numerics": false,
+  "v41_reference_source": {
+    "revision": "fb2764a5cf321eaa5070ca8f9e892818f477c16d",
+    "model_sha256": "4e9ae23620edc8028ccc5d5fef552ab7fdc7dcd6f79608754fe9f67644056f65",
+    "kernel_sha256": "1236c3507019ed176f5dba5e04bcea58867cf654818c6cf138ed4845398c2455",
+    "scope": "inference/model.py Block.hc_mixes/hc_pre/hc_post and RMSNorm; kernel.py hc_split_sinkhorn"
+  },
+  "tolerance": 0.001,
+  "driver_sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
+  "cuda_sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
+  "rows": [],
+  "passed": true,
+  "compile": {
+    "exports": [
+      "run_mhc",
+      "run_mhc_v41"
+    ],
+    "cuda_initialized_before": false,
+    "cuda_initialized_after": false,
+    "device_nodes_absent": true,
+    "load": {
+      "cuda_flags": [
+        "-O2",
+        "-gencode",
+        "arch=compute_121a,code=sm_121a",
+        "-DMK_GRID_DEF=96",
+        "-DMK_MHC_GRID_DEF=144",
+        "-DMK_NBUF2_DEF=3",
+        "-DMK_FP8_PACK2_DEF=0",
+        "-DMK_GEMM_TRANSPOSE_M8_DEF=0",
+        "-DMK_GEMM_COMPACT_M8_DEF=0",
+        "-DMK_M8_FASTPATH_DEF=0",
+        "-Xptxas=-v",
+        "-Xptxas=--warn-on-spills"
+      ],
+      "sources": [
+        "/repo/overlay/modules/glm53_megakernel/glm53_megakernel.cu"
+      ]
+    }
+  }
+}
