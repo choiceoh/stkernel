@@ -1518,6 +1518,22 @@ class Server:
             },
         }
 
+    def fleet_status(self) -> "dict | None":
+        """Who holds the fleet, whether it has been asked to let go, and how the handover went.
+
+        The engine knows all three -- it writes them into `~/st-fleet.lock` -- and until now the
+        only way to read them was to ssh to rank 0 and cat that file. Everything that watches
+        this engine already reaches the door: the supervisor, wormhole's probe, SparkFleet, an
+        operator with curl. So the lifecycle belongs on the door too (45차 §60).
+
+        None when this boot holds no lease, so a bare `--local` run's status is unchanged and
+        nobody has to special-case a field that means nothing there.
+        """
+        if not self.lease:
+            return None
+        return {"owner": self.lease.get("owner"), "path": self.lease.get("path"),
+                "draining": self.draining, "handed_over": self.handed_over}
+
     def catalog(self) -> "tuple[dict, int]":
         """`/v1/models`, and whether this engine is routable right now.
 
@@ -2354,11 +2370,15 @@ class Server:
                     status, code = server.readiness()
                     self.reply(code, status)
                 else:
-                    self.reply(200, {"engine": "ST", "model": server.model_name, "running": list(server.runner.state.running),
-                                     "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
-                                     "parked": len(server.runner.parked_keys()),
-                                     "parking": len(server._retiring), "resuming": len(server._resuming),
-                                     "steps": server.runner.steps, "served": server.served})
+                    status = {"engine": "ST", "model": server.model_name, "running": list(server.runner.state.running),
+                              "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
+                              "parked": len(server.runner.parked_keys()),
+                              "parking": len(server._retiring), "resuming": len(server._resuming),
+                              "steps": server.runner.steps, "served": server.served}
+                    fleet = server.fleet_status()
+                    if fleet is not None:
+                        status["fleet"] = fleet
+                    self.reply(200, status)
 
             def body(self):
                 n = int(self.headers.get("Content-Length", "0"))

@@ -10969,3 +10969,46 @@ wormhole -local + No-Effort, medium -> 200
 
 **검증**: `tools/check.py` 60 files, **777 tests, 0 failed**. 새 테스트 2개 — 네 등급이 템플릿에 있는 칸에
 떨어진다 / 템플릿 kwargs 만 온 값도 검사받고 모르는 값은 400.
+
+### 45차 §60 — 양방향으로 보니 한쪽이 끊겨 있었다: 통제면이 우리 엔진을 모른다 (2026-09-12, srv4, 라이브 조사)
+
+운영자 "데네브와 양방향 연계 개선". 지금까지는 전부 **데네브 → ST** 아니면 **ST 가 물으면 답하는** 쪽이었다.
+반대 방향 — **누가 우리 상태를 알아야 하는가** — 을 따라가 보니 사슬 하나가 끊겨 있었다.
+
+**통제면에 물어봤다** (SparkFleet `/api/services`, 토큰은 웜홀 설정의 것):
+
+```json
+{"node":"srv1","name":"paddleocr",     "url":"http://127.0.0.1:18011/health",  "ok":false}
+{"node":"srv1","name":"vibevoice-asr", "url":"http://127.0.0.1:18013/health",  "ok":false}
+{"node":"srv2","name":"dsv4",          "url":"http://127.0.0.1:8000/v1/models","ok":true,"httpStatus":200}
+```
+
+**셋뿐이고, 우리 엔진은 목록에 없다.** `srv2/dsv4` 가 찌르는 `127.0.0.1:8000/v1/models` 가 **바로 ST 헤드**이고
+200 을 받는데 — **`model` 필드가 없다**. 웜홀 `discoverFleet` 은 `if !sv.OK || sv.Model == ""` 로 건너뛴다.
+
+**즉 SparkFleet 이 웜홀에 주는 라우팅 가능한 모델은 0개다.** 디스커버리 경로가 통째로 죽어 있고,
+모든 라우팅이 손으로 적은 설정으로만 돈다. 이름도 `dsv4` — DeepSeek V4 시절 서비스가 그대로 남아 ST 를 찌르고 있다.
+(SparkFleet 본체는 다른 노드에 있고 소스가 여기 없다. 데네브 쪽 클라이언트만 `gateway-go/internal/infra/sparkfleet/` 에 있다.)
+
+**우리 쪽에서 할 수 있는 것 — 수명주기를 문에 올린다.** 엔진은 리스에 대해 셋을 안다: **누가 들고 있는지,
+넘겨 달라는 요청을 받았는지, 넘긴 결과가 어땠는지.** 셋 다 `~/st-fleet.lock` 에 쓰지만 **읽으려면 rank 0 에
+ssh 해서 cat 해야 했다** — 정작 이 엔진을 지켜보는 것들(슈퍼바이저, 웜홀 프로브, SparkFleet, curl 든 운영자)은
+**전부 문에 닿아 있는데**.
+
+`GET /` 이 이제 `fleet` 블록을 싣는다:
+
+```json
+"fleet": {"owner": "st-glm53", "path": "…/st-fleet.lock",
+          "draining": "another-session", "handed_over": {"to": …, "parked": 3, "lost": 0}}
+```
+
+리스가 없는 부팅(`--local`)에는 **필드 자체가 없다** — 아무 의미 없는 칸을 특별 취급할 필요가 없게.
+
+**이걸로 닫히는 것**: §56 의 `catalog()`(드레인 중 빈 목록 + 503)는 *"지금 라우팅하지 마라"* 를 말하고,
+`fleet` 블록은 *"왜, 누구에게, 얼마나 옮겼는지"* 를 말한다. 폴링하는 쪽이 전자로 즉시 비키고, 사람이 후자로 사후에 읽는다.
+
+**안 한 것**: SparkFleet 에 등록하는 일. `/api/services` 는 GET 만 있고(다른 경로는 404), 본체는 다른 노드다 —
+**서비스 이름을 `dsv4` 에서 고치고 모델 id 를 채우는 건 그쪽 설정**이고, 우리 `/v1/models` 는 이미 표준대로 답한다.
+
+**검증**: `tools/check.py` 60 files, **779 tests, 0 failed**. 새 테스트 2개 — 리스 없으면 필드 없음·있으면 셋 다 /
+상태 본문이 리스가 있을 때만 블록을 싣는다.
