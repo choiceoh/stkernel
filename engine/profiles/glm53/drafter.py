@@ -39,6 +39,8 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from engine.base.params import Spec
 from engine.kernels.draft_conv import tap_mix
+from engine.kernels.draft_select import walk_scores
+from engine.kernels.swiglu import swiglu
 from engine.kernels.norm_rope import norm, norm_rope, warm as warm_rotary
 from engine.profiles.glm53.facts import SPEC_K, TP
 
@@ -369,10 +371,11 @@ class Drafter:
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0])
             if self.fast_attention:
-                gate, up = self.linear(h, q+"mlp.gate_up").chunk(2, -1)
+                h = swiglu(self.linear(h, q+"mlp.gate_up"))
             else:
                 gate, up = (Fn.linear(h, p[q+"mlp."+s+"_proj.weight"]) for s in ("gate", "up"))
-            h = self.linear(Fn.silu(gate)*up, q + "mlp.down_proj.weight")
+                h = swiglu(torch.cat([gate, up], -1))
+            h = self.linear(h, q + "mlp.down_proj.weight")
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
             x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1])
@@ -401,7 +404,7 @@ class Drafter:
                 k = k.reshape(n, t, self.local_kv_heads, F.head_dim)
                 # one launch a layer, not one a (layer, row): the single-slot kernel required numel()==1 and
                 # the loop was the consequence
-                write_draft_kv_rows(field, slots, L, positions, k, context[:, :, L, 1].contiguous(), valid=valid)
+                write_draft_kv_rows(field, slots, L, positions, k, context[:, :, L, 1], valid=valid)
             return
         flat = positions.reshape(-1)
         idx = positions % F.window
@@ -483,10 +486,11 @@ class Drafter:
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], t)
             if self.fast_attention:
-                gate, up = self.linear(h, q + "mlp.gate_up", rows_ok).chunk(2, -1)
+                h = swiglu(self.linear(h, q + "mlp.gate_up", rows_ok))
             else:
                 gate, up = (self.linear(h, q + "mlp." + name + "_proj.weight") for name in ("gate", "up"))
-            h = self.linear(Fn.silu(gate) * up, q + "mlp.down_proj.weight", rows_ok)
+                h = swiglu(torch.cat([gate, up], -1))
+            h = self.linear(h, q + "mlp.down_proj.weight", rows_ok)
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
             x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
@@ -510,6 +514,10 @@ class Drafter:
         unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
         unary, cand = unary.view(n, K, F.sel_top_k), cand.view(n, K, F.sel_top_k)
         proj = self.linear(h, "candidate_selector.hidden_projection.weight").float().view(n, K, -1)
+        if temps is None:
+            # the scores never exist: a step reads one codebook row against this step's candidates
+            return walk_scores(unary, cand, anchors, proj, p["candidate_selector.predecessor_codebook"],
+                               p["candidate_selector.successor_codebook"])
         pred_ids = torch.cat([anchors.view(n, 1, 1).expand(n, 1, F.sel_top_k), cand[:, :-1]], 1)         # [n, K, 16]
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()                              # [n, K, 16, 256]
         succ = p["candidate_selector.successor_codebook"][cand].float()
@@ -519,24 +527,22 @@ class Drafter:
         # The walk puts mass on `sel_top_k` candidates a position and nothing else. Handing that back as
         # [n, K, vocab] meant allocating and zeroing 12.4 MiB every decode step (n=4, K=5, V=154,880) to carry
         # 320 numbers, and the verifier then read it twice. The candidates and their mass are the same fact.
-        qprob = torch.zeros(n, K, F.sel_top_k, dtype=torch.float32, device=dev) if temps is not None else None
-        qcand = torch.zeros(n, K, F.sel_top_k, dtype=torch.int64, device=dev) if temps is not None else None
+        qprob = torch.zeros(n, K, F.sel_top_k, dtype=torch.float32, device=dev)
+        qcand = torch.zeros(n, K, F.sel_top_k, dtype=torch.int64, device=dev)
+        # The sampled walk stays a loop: its draw is the engine's generator, and moving that into a kernel
+        # would put rank agreement and D12's replay in there with it.
         out = []
         for s in range(K):
             sel = scores[rows, s, prev]                                                                    # [n, 16]
             best = sel.argmax(-1)
-            if temps is None:
-                pick = best
-            else:
-                stochastic = (temps > 0).view(n, 1)
-                probs = torch.softmax(sel / temps.clamp_min(1e-5).view(n, 1), dim=-1)
-                probs = torch.where(stochastic, probs, torch.zeros_like(probs).scatter_(1, best.view(n, 1), 1.0))
-                pick = torch.where(stochastic.view(n), torch.multinomial(probs, 1, generator=generator).view(n), best)
-                qcand[:, s], qprob[:, s] = cand[:, s], probs
+            stochastic = (temps > 0).view(n, 1)
+            probs = torch.softmax(sel / temps.clamp_min(1e-5).view(n, 1), dim=-1)
+            probs = torch.where(stochastic, probs, torch.zeros_like(probs).scatter_(1, best.view(n, 1), 1.0))
+            pick = torch.where(stochastic.view(n), torch.multinomial(probs, 1, generator=generator).view(n), best)
+            qcand[:, s], qprob[:, s] = cand[:, s], probs
             out.append(cand[rows, s, pick])
             prev = pick
-        drafts = torch.stack(out, 1)
-        return (drafts, qcand, qprob) if temps is not None else drafts
+        return torch.stack(out, 1), qcand, qprob
 
     def propose(self, anchor: int, position: int, ring: torch.Tensor) -> "list[int]":
         """K drafts for the block [anchor at `position`, K masks after it]; the ring holds the context up to position-1."""
@@ -557,15 +563,9 @@ class Drafter:
         unary, cand = topk(self.target.head_local(h), self.target.comm,
                            self.target.rank * self.target.vp, F.sel_top_k, self.decodable)  # [K, 16]
         proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()        # [K, 256]
-        pred_ids = torch.cat([anchor.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])   # [K, 16]
-        pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()                # [K, 16, 256]
-        succ = p["candidate_selector.successor_codebook"][cand].float()                      # [K, 16, 256]
-        scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)   # [K, prev, cur]
-        out, prev = [], torch.zeros(1, device=dev, dtype=torch.int64)
-        for s in range(K):                                                                  # greedy walk, as the served kernel at temperature 0
-            prev = scores[s].index_select(0, prev).argmax(-1)
-            out.append(cand[s].index_select(0, prev))
-        return torch.cat(out)
+        return walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),
+                           p["candidate_selector.predecessor_codebook"],
+                           p["candidate_selector.successor_codebook"]).reshape(K)   # the served kernel at temperature 0
 
     def propose_sampled(self, anchor: int, position: int, ring: torch.Tensor, temperature: float, generator,
                         vocab: int) -> "tuple[list[int], torch.Tensor]":

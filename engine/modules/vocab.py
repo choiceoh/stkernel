@@ -41,6 +41,10 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
     calling topk: selecting directly from the small packet changes tie order
     and can change the drafter's subsequent greedy walk.
 
+    The local selection is over the keys directly (kernels/vocab_candidates.select): they are unique, so the k
+    largest are one set, and `sorted=False` says this step does not decide the order. torch's dense topk over
+    the restored candidates still does, which is what keeps the tie order pinned (45차 §87).
+
     This saves network traffic, not the final dense selection workspace. CUDA
     tie equivalence must be rechecked when changing the pinned PyTorch runtime.
     CPU topk has a different, unspecified tie policy; only untied equivalence
@@ -60,8 +64,11 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
     fused = local_logits.is_cuda and local_logits.ndim == 2
     if local_k:
         if fused:
-            from engine.kernels.vocab_candidates import pack
-            key = pack(local_logits, start, valid)
+            # the k largest of a rank's shard, as a set: `sorted=False` says the order here is not the answer,
+            # and the merge below decides that. The keys are unique, so the set is one (kernels/vocab_candidates)
+            from engine.kernels.vocab_candidates import pack, select
+            packet = select(pack(local_logits, start, valid), local_k)
+            key = None
         else:
             value = local_logits[..., :valid].float().contiguous()
             bits = value.view(torch.int32).to(torch.int64)
@@ -69,7 +76,8 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
             ordered = torch.where(torch.isnan(value), 0x7fffffff, ordered)
             ids = start + torch.arange(valid, device=value.device, dtype=torch.int64)
             key = (ordered << 32) | (0xffffffff - ids)
-        packet = key.topk(local_k, dim=-1, sorted=False).values
+        if key is not None:
+            packet = key.topk(local_k, dim=-1, sorted=False).values
     else:
         packet = torch.empty((*local_logits.shape[:-1], 0), dtype=torch.int64, device=local_logits.device)
     if local_k < k:

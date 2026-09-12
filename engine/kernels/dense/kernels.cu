@@ -138,7 +138,12 @@ constexpr int KDA_INPROJ_N = KDA_QKV + KDA_H + 2 * KDA_D;  // 6416
 constexpr int KDA_INPROJ_N_PAD = ((KDA_INPROJ_N + 127) / 128) * 128;  // 6528
 
 constexpr int KSTEP = 128;               // one scale block of K
-constexpr int KBLK_MAX = 32;             // max k blocks (K <= 4096)
+constexpr int KBLK_MAX = 32;             // k blocks the staged-A arrays below can index (K <= 4096)
+// A plain launch walks its k blocks from global memory and indexes nothing by
+// KBLK_MAX, so its bound is only what a pack can be: the drafter's fc is one
+// [4096, 20480] weight and used to be called as five tiles with the partials
+// added in fp32 outside (kernels/dense TILE). 160 blocks is that weight whole.
+constexpr int KBLK_LIMIT = 160;          // max k blocks of a plain W4 launch (K <= 20480)
 // fp8 A tiles: dense 128 B rows with a 16 B-chunk XOR swizzle (mk_swz) keyed
 // by the row within the 16-row tile. The old 132 B pitch (33 words) put the
 // 8 rows of a fragment load on banks g+q, i.e. 4-way conflicts on 8 of the
@@ -3171,7 +3176,8 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
               "ws4 must be a contiguous [n/128, k/128, 128, 8] pack");
   c2.n = (int)wq4.size(0) * SMEM_W_ROWS;
   c2.n_orig = (int)n_orig;
-  TORCH_CHECK(c2.k % KSTEP == 0 && c2.k <= KBLK_MAX * KSTEP, "k out of contract");
+  TORCH_CHECK(c2.k % KSTEP == 0 && c2.k <= KBLK_LIMIT * KSTEP, "k out of contract");
+  TORCH_CHECK(!c2.a_ready && !c2.pair_act, "the staged-A path is smlp2's, not a plain launch");
   TORCH_CHECK((int)wq4.size(1) == c2.k / KSTEP, "wq4 k-tiles disagree with x");
   TORCH_CHECK(c2.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();

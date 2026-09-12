@@ -156,11 +156,15 @@ def _write_kv(K,V,R,Slot,Pos,Valid,HAS_VALID:tl.constexpr,N:tl.constexpr,WIDTH:t
 
 
 @triton.jit
-def _write_kv_rows(K,V,R,Slot,Pos,Valid,N:tl.constexpr,T:tl.constexpr,WIDTH:tl.constexpr,ROW:tl.constexpr,
+def _write_kv_rows(K,V,R,Slot,Pos,Valid,sKr,sKt,sVr,sVt,T:tl.constexpr,WIDTH:tl.constexpr,ROW:tl.constexpr,
                    W:tl.constexpr,STRIDE:tl.constexpr,OFFSET:tl.constexpr,BLOCK:tl.constexpr):
     """`_write_kv` for every row of the step at once. Same store, one program per (row, token) instead of one
     LAUNCH per row: the single-slot form made `observe_rows` issue layers x rows kernels a step, which is the
-    same disease the commit and the block verifier had."""
+    same disease the commit and the block verifier had.
+
+    K and V are read where they lie. The values arrive as one layer of a [n, t, layers, 2, kv, D] projection,
+    so making them contiguous first is a copy of the whole block for every layer -- and the kernel reads each
+    element once anyway."""
     row=tl.program_id(0)
     token=tl.program_id(1)
     d=tl.program_id(2)*BLOCK+tl.arange(0,BLOCK)
@@ -168,9 +172,8 @@ def _write_kv_rows(K,V,R,Slot,Pos,Valid,N:tl.constexpr,T:tl.constexpr,WIDTH:tl.c
     pos=tl.load(Pos+row*T+token).to(tl.int64)%W
     base=R+slot*STRIDE+OFFSET+pos*ROW+d
     mask=(d<WIDTH)&(token<tl.load(Valid+row))
-    src=(row*T+token)*WIDTH+d
-    tl.store(base,tl.load(K+src,mask,other=0),mask)
-    tl.store(base+W*ROW,tl.load(V+src,mask,other=0),mask)
+    tl.store(base,tl.load(K+row*sKr+token*sKt+d,mask,other=0),mask)
+    tl.store(base+W*ROW,tl.load(V+row*sVr+token*sVt+d,mask,other=0),mask)
 
 
 def write_draft_kv_rows(field,slots,layer,positions,k,v,*,valid):
@@ -187,9 +190,12 @@ def write_draft_kv_rows(field,slots,layer,positions,k,v,*,valid):
             or valid.dtype!=torch.int64 or not 0<=layer<field.shape[1]):
         raise ValueError("invalid batched DFlash ring write")
     width=k.shape[-1]*k.shape[-2]
+    if k.stride(-1)!=1 or v.stride(-1)!=1 or k.stride(-2)!=k.shape[-1] or v.stride(-2)!=v.shape[-1]:
+        k,v=k.contiguous(),v.contiguous()                 # the heads of a cell must be one run to be one read
     _write_kv_rows[(n,t,triton.cdiv(width,256))](
-        k.contiguous(),v.contiguous(),field,slots.contiguous(),positions.contiguous(),valid.contiguous(),
-        n,t,width,field.shape[-1]*field.shape[-2],field.shape[3],
+        k,v,field,slots.contiguous(),positions.contiguous(),valid.contiguous(),
+        k.stride(0),k.stride(1),v.stride(0),v.stride(1),
+        t,width,field.shape[-1]*field.shape[-2],field.shape[3],
         field.stride(0),layer*field.stride(1),256)
 
 

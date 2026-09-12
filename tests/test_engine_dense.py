@@ -119,3 +119,68 @@ class DenseTests(unittest.TestCase):
 
 
 if __name__=="__main__":unittest.main()
+
+
+@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "the W4 lane is a device kernel")
+class WidePackFoldTests(unittest.TestCase):
+    """A weight wider than one GPTQ tile used to be several packs, summed after the fact (45차 §86).
+
+    Every tile of a wide pack carries the same row shift, so the tiles are one quantisation cut into pieces and
+    concatenating them along the k-tile axis is the pack the kernel wants. These pin that -- and that the fold
+    does not happen where the shifts disagree, because there the sum is the answer.
+    """
+    def weight(self, rows, cols, seed=0):
+        gen = torch.Generator(device="cuda").manual_seed(seed)
+        return torch.randn(rows, cols, device="cuda", generator=gen, dtype=torch.float32).bfloat16() / 64
+
+    def test_a_wide_weight_becomes_one_pack(self):
+        from engine.kernels.dense import DenseLinear, TILE
+        layer = DenseLinear(self.weight(512, 4 * TILE), prefill=False, name="wide")
+        self.assertEqual(len(layer.packs), 1)
+        self.assertEqual(layer.packs[0].cols, 4 * TILE)
+
+    def test_the_folded_product_is_the_sum_the_tiles_used_to_make(self):
+        """Not bit for bit: the tiled call rounded every tile's output to bf16 before adding it, and the fold
+        accumulates the k blocks in fp32 and rounds once. Both approximate the same weight, so that is what
+        they are judged against -- and the fold is not the further of the two."""
+        from engine.kernels.dense import DenseLinear, W4Pack, w4_gemm, TILE
+        source = self.weight(512, 5 * TILE, seed=3)
+        layer = DenseLinear(source, prefill=False, name="wide")
+        whole = layer.packs[0]
+        per = whole.data.shape[1] // 5
+        tiles = [W4Pack(whole.data[:, i*per:(i+1)*per].contiguous(), whole.scale[:, i*per:(i+1)*per].contiguous(),
+                        whole.rowscale, whole.rows, TILE, whole.calibrated) for i in range(5)]
+        closer = further = 0
+        for trial in range(4):
+            gen = torch.Generator(device="cuda").manual_seed(100 + trial)
+            x = torch.randn(6, 5 * TILE, device="cuda", generator=gen, dtype=torch.float32).bfloat16()
+            truth = x.float() @ source.float().T
+            summed = None
+            for i, tile in enumerate(tiles):
+                part = w4_gemm(x[:, i*TILE:(i+1)*TILE], tile).float()
+                summed = part if summed is None else summed + part
+            folded = layer(x).float()
+            a = (summed.bfloat16().float() - truth).norm(dim=-1) / truth.norm(dim=-1)
+            b = (folded - truth).norm(dim=-1) / truth.norm(dim=-1)
+            self.assertLess((b - a).abs().max().item(), 1e-3)       # both live inside the 4-bit error
+            closer += int((b < a).sum())
+            further += int((b > a).sum())
+        self.assertGreaterEqual(closer, further)
+
+    def test_tiles_whose_shifts_disagree_are_left_alone(self):
+        from engine.kernels.dense import W4Pack, _fold
+        def tile(shift):
+            return W4Pack(torch.zeros(4, 32, 128, 64, device="cuda", dtype=torch.uint8),
+                          torch.zeros(4, 32, 128, 8, device="cuda", dtype=torch.int8),
+                          torch.full((512,), shift, device="cuda"), 512, 4096, True)
+        self.assertEqual(len(_fold([tile(1.0), tile(1.0)])), 1)
+        self.assertEqual(len(_fold([tile(1.0), tile(0.5)])), 2)
+
+    def test_a_weight_past_the_kernel_s_widest_k_is_not_folded(self):
+        from engine.kernels.dense import W4Pack, _fold, KMAX, TILE
+        def tile():
+            return W4Pack(torch.zeros(1, TILE // 128, 128, 64, device="cuda", dtype=torch.uint8),
+                          torch.zeros(1, TILE // 128, 128, 8, device="cuda", dtype=torch.int8),
+                          torch.ones(128, device="cuda"), 128, TILE, True)
+        self.assertEqual(len(_fold([tile() for _ in range(KMAX // TILE)])), 1)
+        self.assertEqual(len(_fold([tile() for _ in range(KMAX // TILE + 1)])), KMAX // TILE + 1)

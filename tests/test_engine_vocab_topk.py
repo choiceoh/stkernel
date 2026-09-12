@@ -106,5 +106,43 @@ class VocabTopkTests(unittest.TestCase):
         graph.reset()
 
 
+
+
+@unittest.skipUnless(torch is not None and torch.cuda.is_available(), 'the fused selection is the CUDA path')
+class CandidateSelectionTests(unittest.TestCase):
+    """`select` replaces the LOCAL step only (45차 §87).
+
+    Its job is the set, not the order: the shard's k largest keys, which torch was asked for with
+    `sorted=False`. The merge afterwards is still torch's dense topk, because that is what pins the tie order
+    this module promises -- see the tests above, which compare ids against `full.topk(k)` itself.
+    """
+    def keys(self, rows, width, seed, span=1.0):
+        from engine.kernels.vocab_candidates import pack
+        gen = torch.Generator(device='cuda').manual_seed(seed)
+        logits = (torch.randn(rows, width, device='cuda', generator=gen) * span).bfloat16()
+        return pack(logits, 0, width)
+
+    def test_it_is_the_same_set_torch_would_have_taken(self):
+        from engine.kernels.vocab_candidates import select
+        for rows, width, k in ((5, 38_720, 16), (1, 38_720, 16), (8, 4096, 4), (5, 17, 16), (3, 16, 16),
+                               (5, 38_720, 1), (2, 2048, 32)):
+            with self.subTest(rows=rows, width=width, k=k):
+                for span in (1.0, 0.01):                 # a narrow span packs many equal bf16 scores together
+                    keys = self.keys(rows, width, rows + width + k, span)
+                    want = keys.topk(min(k, width), dim=-1, sorted=False).values.sort(-1).values
+                    self.assertTrue(torch.equal(want, select(keys, min(k, width)).sort(-1).values))
+
+    def test_it_returns_them_in_descending_order(self):
+        from engine.kernels.vocab_candidates import select
+        got = select(self.keys(4, 4096, 11), 16)
+        self.assertTrue(bool((got[:, :-1] > got[:, 1:]).all()))       # keys are unique: strictly descending
+
+    def test_a_shard_narrower_than_k_pads_with_the_sentinel(self):
+        from engine.kernels.vocab_candidates import select
+        got = select(self.keys(2, 8, 12), 16)
+        self.assertEqual(tuple(got.shape), (2, 16))
+        self.assertEqual(int((got == -(2**63)).sum()), 2 * 8)
+
+
 if __name__ == '__main__':
     unittest.main()
