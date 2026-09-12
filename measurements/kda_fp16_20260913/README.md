@@ -10,10 +10,15 @@ storage/rollback/staging checks, without waiting for the matched onepass result.
 This default selection is not an end-to-end quality or speed verdict.
 A subsequent review on 2026-09-13 restored **FP32 as the production default**:
 FP32 arithmetic does not remove the recurrent error introduced by FP16 storage,
-and no matched long-generation length/termination result was obtained. This
-restoration returns active rings, snapshots and boundary staging to FP32 on the
+and the operator reported **increased verbosity and lower speculative acceptance**.
+The operator provisionally rejected the FP16 experiment on that basis. These are
+operator-reported observations; no quantitative matched result or runtime identity
+for those observations is attached here. The earlier failed bracket below is not
+their measurement source. SR follow-up is also stopped; its unfinished code is
+retained on `codex/kda-stochastic-rounding` (`6125db7c`) for reference, not promotion.
+
+The restoration returns active rings, snapshots and boundary staging to FP32 on the
 next boot; it adds back the 1,496 MiB/rank declared below at that geometry.
-The SR mitigation remains separate, unmerged work, not a serving validation.
 
 A non-production comparison boot accepts `STK_kda_state_dtype=fp16`; invalid values
 are rejected before allocation. Production rejects all experiment overrides.
