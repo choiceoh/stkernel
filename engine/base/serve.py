@@ -40,6 +40,7 @@ import threading
 import time
 import unicodedata
 import urllib.request
+import uuid
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -1143,7 +1144,7 @@ class Server:
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
                  generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
                  tool_grammar=None, tool_call_start: "int | None" = None,
-                 lease: "dict | None" = None):
+                 lease: "dict | None" = None, latency_root=None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1153,6 +1154,12 @@ class Server:
         if reasoning_end is not None and (type(reasoning_end) is not int or reasoning_end < 0):
             raise ValueError("reasoning_end must be a token id")
         self.engine, self.runner, self.comm = engine, runner, comm
+        from engine.base.latency import Recorder
+        from pathlib import Path
+        self.latency = Recorder(comm.rank, latency_root or Path.home() / 'glm53-logs' / 'onepass-latency')
+        runner.latency = self.latency
+        self.latency_replies = {}
+        self.latency_boot_id = uuid.uuid4().hex
         self.port, self.host, self.tok = port, host, tokenizer
         # D3 is about kernels, but its rule holds here too: a path that is taken silently is a
         # path nobody checks. /metrics says which detokenizer served, so a scrape settles it.
@@ -1765,7 +1772,40 @@ class Server:
     def _control(self, control) -> None:
         """A cache control, applied on every rank in the same iteration (the caches must stay identical)."""
         kind, payload = control
+        if kind == 'latency':
+            operation, token = payload.get('op'), payload.get('token')
+            try:
+                if operation == 'begin':
+                    if self._active or self._waiting or self.runner.inflight or self._profiling is not None:
+                        raise ValueError('latency recording requires idle serving and no other profiler')
+                    mine = self.latency.begin(token, payload.get('diagnostic', False), payload.get('concurrency', 1))
+                elif operation in ('end', 'abort'):
+                    if operation == 'end' and (self._active or self._waiting or self.runner.inflight):
+                        raise ValueError('latency recording still has active requests')
+                    if operation == 'abort' and self.latency.active and self.latency.active['token'] == token:
+                        self.latency.active['errors'].append('client aborted recording')
+                    clock = getattr(getattr(self.engine, 'pipeline', None), 'clock', None)
+                    mine = self.latency.finish(token, clock)
+                elif operation == 'artifact':
+                    mine = self.latency.artifact(token, payload.get('file'), payload.get('offset', 0)) if payload.get('rank') == self.comm.rank else {'rank': self.comm.rank}
+                else:
+                    raise ValueError('unknown latency operation')
+            except Exception as exc:
+                mine = dict(rank=self.comm.rank, token=token, error=str(exc), complete=False)
+            ranks = self.comm.gather_objects(mine) if getattr(self.comm, 'world_size', 1) > 1 else [mine]
+            if operation == 'begin' and any(r.get('error') for r in ranks):
+                if self.latency.active and self.latency.active['token'] == token:
+                    self.latency.active['errors'].append('another rank rejected begin')
+                    self.latency.finish(token)
+            if self.comm.rank == 0:
+                waiting = self.latency_replies.get(payload['_control_id'])
+                if waiting is not None:
+                    waiting['reply'] = dict(schema=1, ranks=ranks, boot_id=self.latency_boot_id)
+                    waiting['event'].set()
+            return
         if kind == "profile":
+            if self.latency.active:
+                return
             self._begin_profile(int(payload))
             return
         if kind == "calibration":                          # every rank files its own sums (the sharded projections differ per rank)
@@ -1797,6 +1837,8 @@ class Server:
         arrived = self._arrived.get(request)
         if arrived is not None:
             self.queued.observe(now - arrived)
+            self.latency.row(kind='request', operation='queue', phase='admission', request_id=request,
+                             duration_us=(now - arrived) * 1e6)
 
     def _note_cached(self, request, row) -> None:
         """Prompt tokens this row did not prefill, read where every admission path has already agreed on it: the
@@ -1806,6 +1848,8 @@ class Server:
             live = set(self.pending)
             self._cached = {k: v for k, v in self._cached.items() if k in live}
         self._cached[request] = int(self.runner.state.computed.get(row, 0))
+        self.latency.row(kind='request', operation='admit', phase='admission', request_id=request,
+                         row=row, cached_tokens=self._cached[request])
 
     def cached_tokens(self, *requests) -> int:
         """Prompt tokens these requests did not have to prefill. Taken, not read: one answer asks once."""
@@ -2488,6 +2532,10 @@ class Server:
         try:
             if self.comm.rank == 0:
                 self._expire()
+                run = self.latency.active
+                if (run and not self._active and not self._waiting and not self.runner.inflight and self.arrivals.empty()
+                        and time.monotonic() - run.get('last_row_at', run['started']) > 120):
+                    self.controls.put(('latency', dict(op='abort', token=run['token'], _control_id='idle-expiry')))
             alive, arrivals, cancels, controls, draining = self.comm.broadcast_object(
                 (self.alive, self._drain(), self._drain_cancels(), self._drain_controls(),
                  self._yield_asked()) if self.comm.rank == 0 else None)
@@ -2611,6 +2659,10 @@ class Server:
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
+                elif self.path == "/v1/engine/latency":
+                    self.reply(200, dict(schema=1, boot_id=server.latency_boot_id,
+                        ranks=getattr(server.comm, 'world_size', 1),
+                        policy='fresh-prefix; observed preparation; profiler-off measurement; separate diagnostic replay'))
                 elif self.path == "/health":
                     status, code = server.readiness()
                     self.reply(code, status)
@@ -2844,12 +2896,16 @@ class Server:
                         except ValueError as exc:
                             raise RequestError(f"{kind}: {exc}") from exc
                 try:
+                    template_start = time.perf_counter()
                     opening, resuming = prompt_switches(req)
                     prompt = server.chat(messages, dict(kwargs, tools=tools) if tools else kwargs,
                                          generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
                     raise RequestError(f"chat template rejected the request: {exc}") from exc
+                template_us = (time.perf_counter() - template_start) * 1e6
+                tokenize_start = time.perf_counter()
                 ids = server.prompt_tokens.encode(nfc(prompt))   # a continuing turn pays for its tail only
+                tokenize_us = (time.perf_counter() - tokenize_start) * 1e6
                 media = None
                 if items:
                     try:
@@ -2879,6 +2935,11 @@ class Server:
                                            tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
                                            continue_history=True, media=media, cache_salt=cache_key(req))
                 head = {"id": f"chatcmpl-{choices[0].request}", "created": int(time.time()), "model": model}
+                for c in choices:
+                    server.latency.row(kind='request', operation='template', phase='http',
+                        request_id=c.request, duration_us=template_us)
+                    server.latency.row(kind='request', operation='tokenize', phase='http',
+                        request_id=c.request, duration_us=tokenize_us)
 
                 def chunk(index, delta=None, finish=None, usage=None, logprobs=None):
                     payload = {**head, "object": "chat.completion.chunk",
@@ -3223,13 +3284,33 @@ class Server:
                 self.reply(202, {"ok": True, "steps": steps,
                                  "read": "GET /v1/engine/profile once those steps have run"})
 
+            def latency_control(self, req):
+                import ipaddress
+                if not ipaddress.ip_address(self.client_address[0]).is_loopback:
+                    raise RequestError('latency controls require a loopback client', 403)
+                ident = uuid.uuid4().hex
+                waiting = {'event': threading.Event()}
+                server.latency_replies[ident] = waiting
+                server.controls.put(('latency', dict(req, _control_id=ident)))
+                try:
+                    if not waiting['event'].wait(60):
+                        raise RequestError('latency control timed out; inspect server recording before retrying', 504)
+                    result = waiting['reply']
+                    self.reply(409 if any(r.get('error') for r in result['ranks']) else 200, result)
+                finally:
+                    server.latency_replies.pop(ident, None)
+
             def do_POST(self):
                 try:
+                    active = server.latency.active
+                    if active and self.path != '/v1/engine/latency' and self.headers.get('X-ST-Latency-Token') != active['token']:
+                        raise RequestError('server reserved by a latency recording', 409)
                     routes = {"/v1/chat/completions": self.chat, "/v1/completions": self.completions,
                               "/v1/engine/completions": self.engine_completions, "/tokenize": self.tokenize,
                               "/detokenize": self.detokenize, "/v1/prefix/warm": self.prefix_warm, "/v1/prefix/unpin": self.prefix_unpin,
                               "/v1/prefix/reset": self.prefix_reset,
-                              "/v1/engine/calibration": self.calibration, "/v1/engine/profile": self.profile}
+                              "/v1/engine/calibration": self.calibration, "/v1/engine/profile": self.profile,
+                              "/v1/engine/latency": self.latency_control}
                     handler = routes.get(self.path)
                     if handler is None:
                         raise RequestError("unknown endpoint", 404)

@@ -159,6 +159,15 @@ class Comm:
         dist.broadcast_object_list(box, src=0, group=self.control if self.control is not None else self.group)
         return box[0]
 
+    def gather_objects(self, obj):
+        """Bounded diagnostic replies, on the host control group between requests."""
+        if self.world_size == 1:
+            return [obj]
+        import torch.distributed as dist
+        out = [None] * self.world_size
+        dist.all_gather_object(out, obj, group=self.control if self.control is not None else self.group)
+        return out
+
     def all_reduce_host(self, values) -> "list[int]":
         """Sum small integer vectors across ranks on the control group (a vote), without touching the device."""
         values = [int(v) for v in values]
@@ -382,6 +391,14 @@ class _LocalRank:
             run.slots[0] = obj
         run.meet()
         out = run.slots[0]
+        run.meet()
+        return out
+
+    def gather_objects(self, obj):
+        run = self._state()
+        run.slots[self.rank] = obj
+        run.meet()
+        out = list(run.slots)
         run.meet()
         return out
 

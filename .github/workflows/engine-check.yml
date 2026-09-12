@@ -39,3 +39,5 @@ jobs:
           pip install triton || echo "no triton here: the graph-contract tests will report FAILED, not CANNOT RUN"
       - name: the verdict
         run: python3 tools/check.py --list
+      - name: onepass recording and consumer measurement contracts
+        run: python3 -m unittest discover -s tests -p 'test_onepass*.py'
