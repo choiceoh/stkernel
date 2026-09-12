@@ -26,8 +26,8 @@ TINY = tl.constexpr(1e-30)   # annotation form is rejected by the JIT; this is t
 
 
 @triton.jit
-def _verify(TARGET, DRAFTS, CAND, QPROB, U, ACCEPTED, AT, BEFORE, REST,
-            V, sT_n, sT_p, sD, sC_n, sC_k, sU,
+def _verify(TARGET, DRAFTS, CAND, QPROB, U, ACCEPTED, AT, TOKENS, REST,
+            V, sT_n, sT_p, sD, sC_n, sC_k, sU, sTok,
             K: tl.constexpr, C: tl.constexpr, BK: tl.constexpr, BC: tl.constexpr, BLOCK: tl.constexpr):
     n = tl.program_id(0)
     target = TARGET + n * sT_n
@@ -85,7 +85,11 @@ def _verify(TARGET, DRAFTS, CAND, QPROB, U, ACCEPTED, AT, BEFORE, REST,
     before = tl.where(accepted > 0, tl.sum(tl.where(ks == accepted - 1, carried, 0.0), axis=0), 1.0)
     tl.store(ACCEPTED + n, accepted)
     tl.store(AT + n, at)
-    tl.store(BEFORE + n, before)
+    # the committed block is the drafts with one slot left for the correction: written here rather than by a
+    # torch.cat, which at K=5 allocates and copies five numbers for about forty microseconds of dispatch
+    ts = tl.arange(0, BK)
+    drafted = tl.load(DRAFTS + n * sD + ts, mask=ts < K, other=0)
+    tl.store(TOKENS + n * sTok + ts, tl.where(ts < K, drafted, 0), mask=ts < K + 1)
 
     # -- the residual the correction is drawn from: before*p, less the draft where it put mass ----------
     cand = tl.load(CAND + n * sC_n + tl.minimum(at, K - 1) * sC_k + cs, mask=live_c, other=0)
@@ -119,7 +123,7 @@ def _verify(TARGET, DRAFTS, CAND, QPROB, U, ACCEPTED, AT, BEFORE, REST,
 
 
 def verify_rows(target_probs, drafts, draft_cand, draft_probs, uniforms, rest=None):
-    """(accepted [n], at [n], rest [n, V]) -- everything block verification does before the correction draw.
+    """(accepted [n], at [n], tokens [n, K+1], rest [n, V]) -- all of block verification bar the correction draw.
 
     `uniforms` [n, K] are the caller's, in the caller's order. `rest` may be a buffer to write into.
     """
@@ -129,11 +133,11 @@ def verify_rows(target_probs, drafts, draft_cand, draft_probs, uniforms, rest=No
         raise ValueError("block verification wants target [n, K+1, V], drafts [n, K], candidates [n, K, C]")
     accepted = torch.empty(n, dtype=torch.int64, device=target_probs.device)
     at = torch.empty_like(accepted)
-    before = torch.empty(n, dtype=torch.float32, device=target_probs.device)
+    tokens = torch.zeros(n, t, dtype=drafts.dtype, device=target_probs.device)
     if rest is None:
         rest = torch.empty(n, V, dtype=torch.float32, device=target_probs.device)
-    _verify[(n,)](target_probs, drafts, draft_cand, draft_probs, uniforms, accepted, at, before, rest,
+    _verify[(n,)](target_probs, drafts, draft_cand, draft_probs, uniforms, accepted, at, tokens, rest,
                   V, target_probs.stride(0), target_probs.stride(1), drafts.stride(0),
-                  draft_cand.stride(0), draft_cand.stride(1), uniforms.stride(0),
-                  K, C, triton.next_power_of_2(K), triton.next_power_of_2(C), 4096, num_warps=8)
-    return accepted, at, rest
+                  draft_cand.stride(0), draft_cand.stride(1), uniforms.stride(0), tokens.stride(0),
+                  K, C, triton.next_power_of_2(K + 1), triton.next_power_of_2(C), 4096, num_warps=8)
+    return accepted, at, tokens, rest
