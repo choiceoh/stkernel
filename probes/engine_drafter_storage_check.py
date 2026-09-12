@@ -6,6 +6,7 @@ graph replay. TP rank arithmetic is isolated: this is not full-model acceptance.
 import gc
 import hashlib
 import json
+import weakref
 from types import SimpleNamespace
 
 import torch
@@ -29,6 +30,7 @@ def check():
         torch.manual_seed(1183)
         before = torch.cuda.memory_allocated()
         source = Arena(source_bytes)
+        source_ref = weakref.ref(source.buf)
         views = {}
         for spec in declared:
             value = source.carve(spec.nbytes(), spec.name).view(spec.dtype).view(spec.shape)
@@ -46,8 +48,10 @@ def check():
         d.prepare_fast(max_seqs=4 if compact else None,
                        compact_into=resident if compact else None, consume_weights=not compact)
         if compact:
-            source.release()
+            del source  # boot drops normal loader owners; do not force storage invalidation
         gc.collect()
+        if compact:
+            assert source_ref() is None, 'a retired raw weight still owns the source allocation'
         torch.cuda.synchronize()
         live_allocated = torch.cuda.memory_allocated() - before
         assert all((layer.fp8 is not None) == (not compact or name == 'fc.weight')
