@@ -200,6 +200,8 @@ class StateTests(unittest.TestCase):
         self.assertIn("/home/choiceoh/st-engine/launchers/st-deploy-watch.py", unit)
         self.assertIn("--once", unit, "the loop belongs to the timer, not to a service that never exits")
         self.assertIn("After=st-glm53.service", unit, "it restarts that service: it must not race its start")
+        self.assertIn("KillMode=process", unit, "the probe waiter a cycle queues must outlive the oneshot's cgroup "
+                                               "(the first armed cycle's ticket died 0.25 s after enqueue, 2026-09-13)")
         timer = (here / "st-deploy-watch.timer").read_text()
         self.assertNotIn("Persistent=true", timer, "a missed cycle sees the same main; there is nothing to catch up")
 
