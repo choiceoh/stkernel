@@ -48,7 +48,7 @@ def measure(store, job, payload, name, knobs, work_indices=None):
                 raise ValueError('serving changed between grouped workloads')
             command = ['python3', 'bench/onepass.py', '--name', arm]
             spec_k = re.findall(r'^SPEC_K=([0-9]+)', profile_text, re.M)
-            env.update(SPEC_K=spec_k[-1] if spec_k else '7', BENCH_MODEL='glm-5.3-flash')
+            env.update(SPEC_K=spec_k[-1] if spec_k else '6', BENCH_MODEL='glm-5.3-flash')
             if records[0].get('cold_compile'):
                 env['MK_COLD_COMPILE'] = '1'
         if records:

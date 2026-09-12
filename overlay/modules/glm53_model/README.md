@@ -68,7 +68,7 @@ weights = torch.mm(hidden_states.float(), self._wp_fp32)   # [M, 4096] x [4096, 
 
 once per full-attention layer, in fp32 on purpose: bf16 head-gates (~1e-2
 error) flip near-tie pool rankings, and the ranking is what the sparse
-attention selects. The fleet checkpoint (`glm53-redhat-nvfp4`) has
+attention selects. The fleet checkpoint (`st-glm53-nvidia-tp4-9391`) has
 `index_n_heads = 32`, so the weight is `[4096, 32]` (the first version of this
 module admitted N <= 16 and never ran on the fleet; the offline numbers were
 taken on a synthetic N=16 -- corrected 2026-09-03). cuBLAS answers the M<=16
@@ -293,11 +293,11 @@ VLLM_GLM53_KDA_DUAL_GEMM=1 VLLM_GLM53_KDA_ONEPASS=1 bash launchers/start-glm53-n
 > runner never builds spec masks; 32차 §11's 04:50 correction and KDAPROOF3
 > (`kda lane CAPTURED ... n_spec=4`) retracted it.
 
-Checkpoint shape this was written for (`glm53-redhat-nvfp4`, TP=4):
+Checkpoint shape this was written for (`st-glm53-nvidia-tp4-9391`, TP=4):
 `linear_num_heads 64 -> 16 local`, `head_dim 128`, `short_conv_kernel_size 4`,
-verify block `SPEC_K 7 -> 8` tokens, so the merged `in_proj_qkvbfg_a` row is
+verify block `SPEC_K 6 -> 7` tokens, so the merged `in_proj_qkvbfg_a` row is
 `q|k|v (3 x 2048) | beta (16) | f_a (128) | g_a (128) = 6416` columns and the
-conv state holds `3 + 7 = 10` slots per line. The model overlay
+conv state holds `3 + 6 = 9` slots per line. The model overlay
 (`glm53_mk_kda_wiring/glm5next_kda.py`) only imports this module when a knob
 is armed (the exact string `1`; the profile's `0` costs no import), calls `resolve()` once and then `gate_gemms()` / `spec_onepass()`;
 every knob, guard, self-test, log line and counter lives here.

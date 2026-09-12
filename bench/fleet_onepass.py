@@ -106,7 +106,7 @@ def _onepass_args(arguments):
     parser.add_argument('--max-tokens', type=int, default=400)
     parser.add_argument('--combined-max-tokens', type=int, default=2400)
     parser.add_argument('--combined-reasoning-budget', type=int, default=900)
-    parser.add_argument('--num-spec', type=int, default=7)
+    parser.add_argument('--num-spec', type=int, default=6)
     parser.add_argument('--combine-min-ctx', type=int, default=32000)
     parser.add_argument('--seed', type=int, default=7)
     parser.add_argument('--fixed-decode-tokens', type=int, default=0)

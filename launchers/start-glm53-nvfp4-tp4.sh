@@ -44,11 +44,10 @@ IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 IMAGE="${IMAGE:-glm53:v13-b12x}"
 NAME_HEAD=glm53
 NAME_WORKER=glm53-worker
-# Last-resort host path, used only when no profile is in play. It named the
-# LibertAIDAI build, which is being removed from the fleet for corrupting
-# Korean (see profiles/glm53.env), so a profile-less run would have aborted on
-# missing weights.
-MODEL_HOST_PATH="${MODEL_HOST_PATH:-${PROFILE_MODEL_PATH:-/home/choiceoh/models/glm53-redhat-nvfp4}}"
+# Last-resort host path, used only when no profile is in play. It points to the
+# NVIDIA ModelOpt checkpoint retained on every fleet node, so a profile-less
+# run selects the same source as the profile.
+MODEL_HOST_PATH="${MODEL_HOST_PATH:-${PROFILE_MODEL_PATH:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}}"
 # Mount point inside the container. Deliberately left at the old name: it is
 # bound from whatever MODEL_HOST_PATH points at, and it keys the compile cache.
 MODEL_PATH=/models/glm-5.3-flash-nvfp4
@@ -192,7 +191,8 @@ if [ "$ENABLE_EP" = 1 ]; then
   fi
 fi
 # DFLASH2=1: block-diffusion drafter (2.15x over MTP-4 at TP2, acceptance 74%).
-# num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
+# Production fixes num_speculative_tokens at 6. The drafter emits a block of 8;
+# values 1..7 remain valid only for explicit experiments.
 DFLASH2="${DFLASH2:-1}"
 # 37차: overridable for a retrained drafter (the night round's candidate).
 DRAFT_HOST_PATH="${DRAFT_HOST_PATH:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}"
@@ -254,7 +254,7 @@ KV_BYTES="${KV_BYTES:-auto}"          # auto = let vLLM profile per node
 KV_TOKENS="${KV_TOKENS:-2000000}"     # auto/0 = let vLLM size it from GMU
 KV_HYBRID_BLOCKS="${KV_HYBRID_BLOCKS:-187}"
 MAX_LEN="${MAX_LEN:-1048576}"
-SPEC_K="${SPEC_K:-7}"             # the comment above is not advisory
+SPEC_K="${SPEC_K:-6}"             # production profile: six DFlash2 draft tokens
 SSHOPT="-o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8"
 
 # A live DSV4/Q38 stack holds tens of GiB under its own container names, and
@@ -519,9 +519,9 @@ elif [ "$DFLASH2" = 1 ]; then
     done
   fi
   COMMON="$COMMON -v $DRAFT_HOST_PATH:/models/dflash2-draft:ro"
-  # The drafter emits a block of 8 and one of them is the verified token, so
-  # this path only works at 7. It was a literal before, which meant SPEC_K was
-  # silently ignored rather than checked.
+  # The drafter emits a block of 8 and one of them is the verified token. The
+  # target may verify any shorter prefix too; SPEC_K is passed through instead
+  # of being silently forced to 7.
   # The drafter's dflash_config.block_size is 8, so it PROPOSES 7. Whether the
   # target has to VERIFY all 7 is a different question, and it has never been
   # tested. vLLM does not reject a smaller k for dflash -- dspark raises

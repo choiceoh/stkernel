@@ -406,7 +406,7 @@ deployed_line() {  # the build registry (idea 3): stamp <-> sha, and the checkou
 nodes_check() {  # idea 8: the four nodes before a boot; 0 = all fine
   local ok=0 ip out
   for ip in ${FLEET_NODES_IPS:-10.10.10.1 10.10.10.2 10.10.10.3 10.10.10.4}; do
-    out=$(timeout 12 ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@$ip" "nvidia-smi -L >/dev/null 2>&1 && echo gpu=ok || echo gpu=FAIL; echo stray=\$(docker ps --format '{{.Names}}' 2>/dev/null | grep -vc '^glm53\$'); echo ram=\$(free -g | awk 'NR==2{print \$7}')G; for p in ${FLEET_NODE_PATHS:-/home/choiceoh/models/glm53-redhat-nvfp4}; do [ -e \"\$p\" ] && echo path=ok || echo path=MISSING:\$p; done" 2>/dev/null | tr '\n' ' ')
+    out=$(timeout 12 ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@$ip" "nvidia-smi -L >/dev/null 2>&1 && echo gpu=ok || echo gpu=FAIL; echo stray=\$(docker ps --format '{{.Names}}' 2>/dev/null | grep -vc '^glm53\$'); echo ram=\$(free -g | awk 'NR==2{print \$7}')G; for p in ${FLEET_NODE_PATHS:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}; do [ -e \"\$p\" ] && echo path=ok || echo path=MISSING:\$p; done" 2>/dev/null | tr '\n' ' ')
     [ -n "$out" ] || { out="ssh=FAIL"; }
     echo "  node $ip: $out"
     echo "$out" | grep -qE "FAIL|MISSING|stray=[1-9]" && ok=1

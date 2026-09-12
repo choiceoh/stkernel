@@ -18,8 +18,8 @@ step is taken by the last block via a never-reset monotonic completion counter
 ## SM121a launch geometry
 
 The fixed grid is **48 blocks**, one per GB10 SM, rather than the inherited
-256-block grid. GLM-5.3's DFlash `k=7` verify shapes are T=8/16/32 for
-C=1/2/4, or 32,768/65,536/131,072 hidden elements; the old C=1 verify launch
+256-block grid. GLM-5.3's DFlash `k=6` verify shapes are T=7/14/28 for
+C=1/2/4, or 28,672/57,344/114,688 hidden elements; the old C=1 verify launch
 used 128 data-owning blocks and 128 empty CTAs. Plain T=1 calls were worse:
 only 16 blocks owned data and 240 were empty. Empty CTAs still crossed barriers
 and incremented the completion counter before publish.

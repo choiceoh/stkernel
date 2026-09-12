@@ -1,6 +1,6 @@
 """DFlash2, the fleet's drafter, on the ST engine (profile).
 
-GLM-5.3 is served with SPEC_K=5 drafts a step from GLM-5.3-Flash-DFlash2:
+GLM-5.3 is served with SPEC_K=6 drafts a step from GLM-5.3-Flash-DFlash2:
 a 5-layer Qwen3-shaped block drafter (hidden 4096, 32 q / 8 kv heads of
 128, q/k norms, rope theta 1e4, sliding window 2048, NON-causal inside the
 block) that reads the target's hidden states at layers 5,14,24,33,42

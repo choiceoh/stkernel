@@ -158,8 +158,9 @@ _register_compile_factor(
 def _spec_k_value() -> str:
     # num_speculative_tokens (the launcher forwards SPEC_K): the drafter's
     # compiled graphs are shaped by it, and a K=5 boot's artifacts killed the
-    # next K=7 boot ('expected size 7==5', 29차). Unset = "7" (the default).
-    return (os.environ.get("VLLM_GLM53_SPEC_K") or "7").strip()
+    # next K=7 boot ('expected size 7==5', 29차). Unset = "6" (the production
+    # default); explicit A/B runs still carry their requested value.
+    return (os.environ.get("VLLM_GLM53_SPEC_K") or "6").strip()
 
 
 _register_compile_factor("VLLM_GLM53_SPEC_K", _spec_k_value)

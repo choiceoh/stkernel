@@ -108,8 +108,8 @@ constexpr int MAX_TOK = 32;              // C=4 x (SPEC_K+1) verify buckets
 // and it is ALSO the SMLP lane's admission gate (`T > MAX_TOK -> return None`)
 // and the MLA workspace cap (`max(need, 2 * MAX_TOK)`). Raising one raised all
 // three, which is why the MHC cap sat at a value chosen for a different lane:
-// 32 = C 4 x (SPEC_K 5 + 1) rounded up, and GLM-5.3 serves max_num_seqs 4 at
-// SPEC_TOKENS 5, so T = 24 with eight to spare. Any concurrency above C=5
+// 32 = C 4 x (SPEC_K 6 + 1) rounded up, and GLM-5.3 serves max_num_seqs 4 at
+// SPEC_TOKENS 6, so T = 28 with four to spare. Any concurrency above C=5
 // silently falls back to the stock post+big_fuse pair -- not slower, ARMED AND
 // NOT RUNNING, which is the failure this fleet has been bitten by before.
 //

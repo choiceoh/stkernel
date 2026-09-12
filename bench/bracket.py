@@ -316,7 +316,7 @@ def main() -> int:
     lg.add_argument("--tag", required=True, choices=("base", "cand"))
     lg.add_argument("--reps", type=int, default=3)
     lg.add_argument("--conc", type=int, default=1)
-    lg.add_argument("--num-spec", type=int, default=7,
+    lg.add_argument("--num-spec", type=int, default=6,
                     help="스페큘레이티브 토큰 수 k (step/s 정규화 계수)")
     lg.add_argument("--out", default="runs/bracket.jsonl")
     lg.set_defaults(fn=cmd_leg)

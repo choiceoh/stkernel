@@ -47,7 +47,7 @@ import torch  # noqa: E402
 
 DEV = "cuda"
 E, TOPK, HID, INTER = 288, 8, 4096, 512   # per-rank intermediate 2048 / 4
-T = 8                                     # C=1 verify batch (k=7 + 1)
+T = 7                                     # C=1 verify batch (k=6 + 1)
 SETS = 8                                  # weight sets rotated per replay
 BYTES_PER_EXPERT = 1024 * 2048 + 1024 * 256 + 4096 * 256 + 4096 * 32
 
