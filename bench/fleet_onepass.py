@@ -20,6 +20,12 @@ import sys
 from fleet_prepare import command_environment
 
 POLICY = 'GPU work is onepass-only; use fleet.sh pair, chain or onepass'
+# The queue's GPU lanes. boot and probe take the fleet (four Sparks); single takes ONE GPU
+# on another host (fleet_single.py: the 5050 on ost-97x). A command's lane follows from how
+# many GPUs its entry needs -- `gpus` in the contract -- and the single lane refuses
+# anything that needs four, so a boot can never be sent to one card by naming the lane.
+SINGLE = 'single'
+KINDS = ('boot', 'probe', SINGLE)
 SHELL_ENTRIES = ('bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh',
                  'probes/run_ar_consumer_campaign.sh',
                  'probes/run_engine_probe.sh', 'probes/run_engine_check.sh')
@@ -37,6 +43,19 @@ ST_FLAGS = {'--layers', '--tokens', '--chunk', '--seed', '--moe-static', '--mla-
             '--lanes', '--moe-experts', '--samples', '--contexts', '--output', '--ranks',
             '--ckpt-meta'}
 ST_SWITCHES = {'--imports-only', '--distributed'}
+
+
+def gpus_needed(relative, args):
+    """How many GPUs the entry takes: one for an ST check on a single node, four otherwise.
+
+    The ST runner is one container on one node (`docker run --gpus all <probe>`; the four
+    ranks are four threads on that GPU) unless the check is told `--distributed`, which is
+    one rank per Spark. Everything vLLM-shaped -- pair, chain, ab-lever, a recorded
+    experiment, a live onepass -- serves TP=4 across the fleet.
+    """
+    if relative in ST_ENTRIES and '--distributed' not in args:
+        return 1
+    return 4
 
 
 def _st_args(relative, args, cwd, repo):
@@ -164,7 +183,7 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
     Recovery does not enter this GPU experiment lane: fleet_idle.authorize
     separately owns its boot-only maintenance action.
     """
-    if kind not in {'boot', 'probe'}:
+    if kind not in KINDS:
         raise ValueError('unknown GPU lane')
     if (not isinstance(command, (list, tuple)) or not command or
             any(not isinstance(v, str) or '\0' in v for v in command)):
@@ -240,7 +259,16 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
                 raise ValueError('AR onepass campaign accepts only --baseline-only or --gpu-evidence DIR')
     if rehearsal_only and relative not in {'bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh'}:
         raise ValueError('CPU rehearsal supports only the canonical pair, chain and ab-lever helpers')
-    return dict(policy='onepass-only', entry=relative, kind=kind)
+    gpus = gpus_needed(relative, args)
+    if kind == SINGLE and gpus != 1:
+        raise ValueError(POLICY + '; the single-GPU lane takes only an ST check without --distributed, and '
+                         + relative + ' needs the four Sparks')
+    if relative in ST_ENTRIES and effective.get('ST_PROBE_HOST'):
+        # Where a check runs is the lane's decision (the supervisor sets ST_PROBE_HOST for
+        # the single lane), never the command's: an env prefix naming a host would move a
+        # fleet-lane check onto a GPU the queue did not reserve.
+        raise ValueError(POLICY + '; ST_PROBE_HOST is set by the single-GPU lane, not by the command')
+    return dict(policy='onepass-only', entry=relative, kind=kind, gpus=gpus)
 
 
 def authorize_wait(directory, session, pid):
@@ -261,7 +289,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', required=True)
     parser.add_argument('--cwd', default=os.getcwd())
-    parser.add_argument('--kind', choices=('boot', 'probe'), default='boot')
+    parser.add_argument('--kind', choices=KINDS, default='boot')
     parser.add_argument('--rehearsal-only', action='store_true')
     parser.add_argument('--wait-owner', nargs=2, metavar=('SESSION', 'PID'))
     parser.add_argument('--directory')

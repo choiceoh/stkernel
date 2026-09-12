@@ -15,6 +15,35 @@ import socket
 import time
 
 PROTOCOL = 2
+SINGLE = 'single'   # the lane for a check that needs one GPU, not four (fleet_single.py says where)
+
+
+def lane(kind):
+    """'single' for the one-GPU lane; 'fleet' for boot and probe, which take the four Sparks."""
+    return SINGLE if kind == SINGLE else 'fleet'
+
+
+def holder_path(directory, kind='boot'):
+    """Each lane owns one holder file: `holder` (the fleet) and `holder-single` (the one GPU).
+
+    Two files, not one file with a lane column: everything that already reads `holder` --
+    the ST launcher, the idle controller, restore debt, the AR campaign -- means the FLEET
+    by it, and a single-GPU check must never look like the fleet being held to them.
+    """
+    return Path(directory) / ('holder-single' if lane(kind) == SINGLE else 'holder')
+
+
+def holders(directory):
+    """{lane: row} for every lane whose holder file names a session."""
+    found = {}
+    for name in ('fleet', SINGLE):
+        try:
+            row = holder_path(directory, name).read_text().strip().split('|')
+        except FileNotFoundError:
+            continue
+        if row and row[0]:
+            found[name] = row
+    return found
 
 
 def read(path, default=None):
@@ -94,7 +123,12 @@ def claim_held(directory, session, pid):
 
 
 def admit(directory, session, pid, kind, estimate='30', note=''):
-    """Commit ownership and reset the central idle clock without restore debt."""
+    """Commit ownership and reset the central idle clock without restore debt.
+
+    The single-GPU lane writes its own holder and touches nothing of the fleet's: not the
+    idle clock (that GPU is not one of the four, so its work is not fleet activity), not
+    restore debt, not the managed-handoff receipt.
+    """
     from fleet_pause import paused
     if paused(directory, session):
         return False
@@ -104,12 +138,15 @@ def admit(directory, session, pid, kind, estimate='30', note=''):
     current = metadata(directory, session, pid)
     if current:
         estimate, note = current
-    temporary = directory / 'holder.tmp'
+    holder = holder_path(directory, kind)
+    temporary = holder.with_name(holder.name + '.tmp')
     with temporary.open('w') as stream:
         stream.write(f'{session}|{pid}|{socket.gethostname().split(".")[0]}|{int(time.time())}|{estimate}|{note}|{kind}\n')
         stream.flush()
         os.fsync(stream.fileno())
-    temporary.replace(directory / 'holder')
+    temporary.replace(holder)
+    if lane(kind) == SINGLE:
+        return True
     if managed:
         claim_held(directory, session, pid)
     else:

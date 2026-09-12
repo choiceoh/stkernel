@@ -28,11 +28,11 @@ GROUPS = ("hb.*", "launches/*", "preparations/*", "runners/*", "run-logs/*", "va
 def live_sessions(directory: Path) -> set:
     """Sessions the queue still knows about: the holder, the queue, and anything paused."""
     names = set()
-    holder = directory / "holder"
-    if holder.is_file():
-        line = holder.read_text().strip()
-        if line:
-            names.add(line.split("|")[0])
+    for holder in (directory / "holder", directory / "holder-single"):   # the fleet's, the single GPU's
+        if holder.is_file():
+            line = holder.read_text().strip()
+            if line:
+                names.add(line.split("|")[0])
     queue = directory / "queue"
     if queue.is_file():
         for line in queue.read_text().splitlines():

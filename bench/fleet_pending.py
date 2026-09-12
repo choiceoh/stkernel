@@ -160,7 +160,7 @@ def save_record(directory, value):
 
 
 def queued(directory, session):
-    if (directory / 'holder').exists() and (directory / 'holder').read_text().split('|')[0] == session:
+    if any(row[0] == session for row in handoff.holders(directory).values()):
         raise ValueError('reservation already admitted; edits are closed')
     rows = handoff.rows(directory)
     matches = [(i, row) for i, row in enumerate(rows) if row[1] == session]
@@ -275,8 +275,8 @@ def validate(value, directory):
         raise ValueError('replacement executable does not exist or is not executable')
     # Use the same pinned controller as this waiter, including its preflight.
     args = ['bash', value['fleet'], 'preflight']
-    if value['kind'] == 'probe':
-        args.append('--probe')
+    if value['kind'] in ('probe', 'single'):
+        args.append('--' + value['kind'])
     result = subprocess.run([*args, value['session'], '--', *command], cwd=cwd,
                             env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if result.returncode:

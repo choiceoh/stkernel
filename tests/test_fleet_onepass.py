@@ -82,6 +82,34 @@ class OnepassPolicyTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.validate(command)['entry'], command[1])
 
+    def test_the_contract_counts_gpus_and_the_single_lane_takes_only_one_gpu_checks(self):
+        """A check that needs one GPU goes to the 5050 on ost-97x, not the four Sparks
+        (2026-09-12). The lane follows from `gpus`, and naming the lane can never move a
+        boot onto one card."""
+        one = ['bash', 'probes/run_engine_check.sh', '--layers', '0-4']
+        self.assertEqual(self.validate(one)['gpus'], 1)
+        self.assertEqual(self.validate(one, kind='single')['kind'], 'single')
+        self.assertEqual(self.validate(['bash', 'probes/run_engine_probe.sh',
+                                        'probes/engine_kernel_check.py'])['gpus'], 1)
+        four = ['bash', 'probes/run_engine_probe.sh', 'engine/profiles/glm53/check.py', '--distributed']
+        self.assertEqual(self.validate(four)['gpus'], 4)      # one rank per Spark
+        with self.assertRaisesRegex(ValueError, 'needs the four Sparks'):
+            self.validate(four, kind='single')
+        for command in (['bash', 'bench/pair.sh', 'A'], ['bash', 'bench/chain.sh', 'A='],
+                        ['python3', 'bench/onepass.py'], ['bash', 'probes/run_ar_consumer_campaign.sh']):
+            with self.subTest(command=command):
+                self.assertEqual(self.validate(command)['gpus'], 4)
+                with self.assertRaisesRegex(ValueError, 'needs the four Sparks'):
+                    self.validate(command, kind='single')
+        # where a check runs is the lane's decision, never the command's
+        with self.assertRaisesRegex(ValueError, 'ST_PROBE_HOST is set by the single-GPU lane'):
+            self.validate(['env', 'ST_PROBE_HOST=srv2', 'bash', 'probes/run_engine_check.sh'])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(policy.main(['--repo', str(self.controller), '--cwd', str(self.repo),
+                                          '--kind', 'single', '--', 'bash', 'probes/run_engine_check.sh']), 0)
+        self.assertEqual(json.loads(out.getvalue())['gpus'], 1)
+
     def test_admitting_the_st_runner_never_admits_an_arbitrary_probe(self):
         """The runner is `docker run --gpus all <probe>`; the probe is named, not supplied."""
         for probe in ('probes/invented.py', 'engine/profiles/glm53/boot.py', '../escape.py'):
