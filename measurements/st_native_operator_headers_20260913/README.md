@@ -71,3 +71,18 @@ docker run --rm --network none --memory 4g --cpus 2 \
 변형을 복원한다. 이전 날짜의 시간과 합쳐 누적 개선율을 계산하지 않는다.
 이 수치는 one-shot 네이티브 빌드·로드에 한정된다. 전체 모델 부팅·TTFT·tok/s와
 GPU 통신·수치·그래프 실행은 측정하지 않았다. 새 헤더는 새 캐시 키로 한 번 빌드된다.
+
+## 회귀 검사
+
+최종 소스 `f36b07d449a8d38b70f3508a7c317684369700c6`에서 같은 ST 이미지의 CPU 검사
+31개가 통과했다([로그](cpu-tests.log)). macOS에서는 헤더 변형 복원·cubin 비교·캐시·
+one-shot 정수 계약 검사 13개가 통과했다.
+
+```sh
+python3 -m unittest tests.test_engine_native_compile tests.test_engine_native_cache \
+  tests.test_engine_oneshot_integer tests.test_engine_mla_hardware \
+  tests.test_engine_kernels tests.test_engine_drafter_storage -q
+```
+
+프로브의 기본 `full-lean` 비교가 새 소스에서도 원래의 두 소스를 복원하고,
+`lean-operators`가 Tensor factory 호출을 유지하는지도 검사한다.
